@@ -455,8 +455,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var gateway = new OpenAiLlmGateway(_httpClient, options);
             var registry = new ToolRegistry();
-            registry.Register(new FileTool(CurrentProject));
-            registry.Register(new ShellTool(CurrentProject));
+
+            PermissionGuard? guard = CurrentProject is not null
+                ? new PermissionGuard(CurrentProject.RootPath)
+                : null;
+            registry.Register(new FileTool(CurrentProject, guard));
+            registry.Register(new ShellTool(CurrentProject, guard));
 
             GitSnapshotService? snapshot = CurrentProject is not null
                 ? new GitSnapshotService(CurrentProject.RootPath)

@@ -78,9 +78,10 @@ AnsiConsole.WriteLine();
 
 var httpClient = new HttpClient();
 var project = new ProjectContext(Environment.CurrentDirectory);
+var guard = new PermissionGuard(project.RootPath);
 var registry = new ToolRegistry();
-registry.Register(new FileTool(project));
-registry.Register(new ShellTool(project));
+registry.Register(new FileTool(project, guard));
+registry.Register(new ShellTool(project, guard));
 
 var snapshot = new GitSnapshotService(project.RootPath);
 if (snapshot.IsGitRepo)
@@ -292,9 +293,10 @@ void CmdOpen(string[] parts)
     }
 
     project = new ProjectContext(path);
+    guard = new PermissionGuard(project.RootPath);
     registry = new ToolRegistry();
-    registry.Register(new FileTool(project));
-    registry.Register(new ShellTool(project));
+    registry.Register(new FileTool(project, guard));
+    registry.Register(new ShellTool(project, guard));
     snapshot = new GitSnapshotService(project.RootPath);
     agent = new AgentOrchestrator(gateway, registry, project, snapshot);
     AnsiConsole.MarkupLine($"[green]✓[/] Project opened: [yellow]{project.RootPath.EscapeMarkup()}[/]");

@@ -157,10 +157,10 @@ Task 12 → OutputDistiller 实现 ───┘
 
 | 顺序 | 任务 | 产出 | 依赖前置 |
 | --- | --- | --- | --- |
-| ① | **D06** Git 快照与回滚 | `/undo` 指令 | D01 ✅ |
-| ② | **Task 11** → 实现 `PermissionGuard` | 路径沙盒 + 命令白名单 | D02 ✅, Task 10 设计 |
-| ③ | **Task 12** → 实现 `DefaultDistiller` | 输出截断 + 错误增强 | D02 ✅ |
-| ④ | 集成到 `ShellTool` / `FileTool` | 工具操作前权限校验 + 操作后输出过滤 | ①②③ |
+| ① | **D06** Git 快照与回滚 | `/undo` 指令 | D01 ✅ | ✅ 已完成 |
+| ② | **Task 11** → 实现 `PermissionGuard` | 路径沙盒 + 命令白名单 | D02 ✅, Task 10 设计 | ✅ 已完成 |
+| ③ | **Task 12** → 实现 `DefaultDistiller` | 输出截断 + 错误增强 | D02 ✅ | ✅ 已完成 |
+| ④ | 集成到 `ShellTool` / `FileTool` | 工具操作前权限校验 + 操作后输出过滤 | ①②③ | ✅ 已完成 |
 
 ### 第二阶段：蜂群串行 (V0.3-0.8)
 
@@ -233,9 +233,9 @@ V0.2 → Task 04 → D08 → V0.8
 
 | 阻塞项 | 阻塞了什么 | 建议 |
 | --- | --- | --- |
-| **D06** (Git 快照) 未开始 | D08 蜂群契约需要快照/回滚能力 | 🔴 立即开始 |
+| **D06** (Git 快照) ✅ 已完成 | D08 蜂群契约需要快照/回滚能力 | ✅ 已解除 |
 | **Task 04** 设计未定稿 | D08 及整个 Agent 智能化链 (09→10→11→12) | 🔴 优先定稿 |
-| **Task 11** 未实现 | ShellTool/FileTool 无安全防护，不敢放开使用 | 🔴 与 D06 并行 |
+| **Task 11** ✅ 已实现 | ShellTool/FileTool 已集成 PermissionGuard | ✅ 已解除 |
 
 ---
 
@@ -244,7 +244,7 @@ V0.2 → Task 04 → D08 → V0.8
 | 版本 | 阶段 | 目标 | 关键交付 | 预期状态 |
 | --- | --- | --- | --- | --- |
 | **V0.1** | 一 | Core 闭环 | ITool + LLM Gateway + CLI REPL | ✅ 已完成 |
-| **V0.2** | 一 | 安全闭环 | PermissionGuard + OutputDistiller + Git 快照 | 📋 **← 下一步** |
+| **V0.2** | 一 | 安全闭环 | PermissionGuard + OutputDistiller + Git 快照 | ✅ **已完成** |
 | **V0.3** | 二 | 自我调试 | 编译验证 + 错误回传 + 递归修复 | 📋 规划中 |
 | **V0.5** | 三 | 语义引擎 | LSP 集成 + 符号级操作 + `/map` 指令 | 📋 规划中 |
 | **V0.8** | 二 | 蜂群 Phase 1 | 契约驱动 + 作用域隔离 + Leader-Worker 串行 | 📋 规划中 |
