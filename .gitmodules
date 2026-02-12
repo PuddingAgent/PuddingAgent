@@ -1,0 +1,12 @@
+[submodule "Source/PuddingPlatformAdmin/vue-element-admin"]
+	path = Source/PuddingPlatformAdmin/vue-element-admin
+	url = git@github.com:PanJiaChen/vue-element-admin.git
+[submodule "Docs/claude-reviews-claude"]
+	path = Docs/claude-reviews-claude
+	url = git@github.com:openedclaude/claude-reviews-claude.git
+[submodule "external/github.hyfree.GM"]
+	path = external/github.hyfree.GM
+	url = git@github.com:hyfree/github.hyfree.GM.git
+[submodule "Docs/IndepthCoding-Guide"]
+	path = Docs/IndepthCoding-Guide
+	url = git@github.com:richardy2012/IndepthCoding-Guide.git

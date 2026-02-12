@@ -1,0 +1,54 @@
+@model List<PuddingCode.Platform.SessionRecord>
+@{
+    ViewData["Title"] = "会话列表";
+}
+
+<h2>会话列表</h2>
+@if (ViewBag.WorkspaceId is not null)
+{
+    <p class="text-muted">筛选 Workspace: <code>@ViewBag.WorkspaceId</code></p>
+}
+
+@if (Model.Count == 0)
+{
+    <div class="alert alert-info">暂无会话。</div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Session ID</th>
+                <th>Workspace</th>
+                <th>类型</th>
+                <th>用户</th>
+                <th>Agent</th>
+                <th>状态</th>
+                <th>创建时间</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in Model)
+            {
+                <tr>
+                    <td><code>@s.SessionId[..8]...</code></td>
+                    <td>@s.WorkspaceId</td>
+                    <td>@s.SessionType</td>
+                    <td>@s.OwnerUserId</td>
+                    <td>@s.AgentTemplateId</td>
+                    <td>
+                        @if (s.Status == PuddingCode.Platform.SessionStatus.Active)
+                        {
+                            <span class="badge bg-success">活跃</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">已结束</span>
+                        }
+                    </td>
+                    <td>@s.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

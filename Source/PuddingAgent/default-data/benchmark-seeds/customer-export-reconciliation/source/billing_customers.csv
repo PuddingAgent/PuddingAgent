@@ -1,0 +1,4 @@
+id,display_name,email,status
+C-001,Ada Chen,ada@example.com,active
+C-002,Ben Rao,ben.rao@example.com,active
+C-004,Dina Moss,dina@example.com,inactive

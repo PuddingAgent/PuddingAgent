@@ -1,0 +1,141 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace PuddingPlatform.Data.Entities;
+
+/// <summary>
+/// 全局系统内置 Agent 模板。
+/// Platform 管理员配置，跨所有 Workspace 共享使用。
+/// </summary>
+public class GlobalAgentTemplateEntity
+{
+    [Key]
+    public int Id { get; set; }
+
+    /// <summary>唯一标识符（slug），如 "assistant", "code-reviewer"</summary>
+    [Required, MaxLength(128)]
+    public string TemplateId { get; set; } = string.Empty;
+
+    /// <summary>显示名称</summary>
+    [Required, MaxLength(128)]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>功能描述</summary>
+    [MaxLength(2048)]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Agent 角色类型，与 PuddingCore 中 AgentTemplateType 对齐。
+    /// 值：Service | Task | Audit | Custom
+    /// </summary>
+    [Required, MaxLength(32)]
+    public string Role { get; set; } = "Service";
+
+    /// <summary>系统 Prompt（对话前置指令）</summary>
+    public string? SystemPrompt { get; set; }
+
+    /// <summary>用户 Prompt 模板（可含 {{variable}} 占位符）</summary>
+    public string? UserPromptTemplate { get; set; }
+
+    // ── 个性层（Persona）─────────────────────────────────────
+    /// <summary>人设与语气提示词（SOUL）。定义 Agent 的性格、边界、回复风格。</summary>
+    public string? PersonaPrompt { get; set; }
+
+    /// <summary>工具使用约定描述（TOOLS）。解释用户自定义工具的用途和用法。</summary>
+    public string? ToolsDescription { get; set; }
+
+    /// <summary>首次对话引导模板（BOOTSTRAP）。新会话首轮使用的问答模板。</summary>
+    public string? BootstrapTemplate { get; set; }
+
+    /// <summary>子 Agent 协作规范（AGENTS.md）。定义子 Agent 的分配和协作方式。</summary>
+    public string? AgentsPrompt { get; set; }
+
+    /// <summary>记忆层配置（MEMORY.md）。定义记忆中读取和写入的策略。</summary>
+    public string? MemoryPrompt { get; set; }
+
+    /// <summary>Agent 展示用 Emoji（如 🤖🧠🔧）。legacy fallback，新功能不写入。</summary>
+    [MaxLength(8)]
+    public string? AvatarEmoji { get; set; }
+
+    /// <summary>系统预置头像 ID，对应 AgentAvatarEntity.AvatarId。新功能主路径。</summary>
+    [MaxLength(128)]
+    public string? AvatarId { get; set; }
+
+    /// <summary>首选服务商（Provider.ProviderId）</summary>
+    [MaxLength(64)]
+    public string? PreferredProviderId { get; set; }
+
+    /// <summary>首选模型（Model.ModelId）</summary>
+    [MaxLength(128)]
+    public string? PreferredModelId { get; set; }
+
+    /// <summary>记忆专用 LLM ProviderId。端点与 Key 从 LLM 资源池读取。</summary>
+    [MaxLength(64)]
+    public string? MemoryLlmProviderId { get; set; }
+
+    /// <summary>记忆专用 LLM ModelId（建议使用轻量模型）。</summary>
+    [MaxLength(128)]
+    public string? MemoryLlmModelId { get; set; }
+
+    /// <summary>Embedding 专用 ProviderId。覆盖 llm.providers.json Embedding 节默认。</summary>
+    [MaxLength(64)]
+    public string? EmbeddingProviderId { get; set; }
+
+    /// <summary>Embedding 专用 ModelId。覆盖 llm.providers.json Embedding 节默认。</summary>
+    [MaxLength(128)]
+    public string? EmbeddingModelId { get; set; }
+
+    /// <summary>记忆搜索模式：off | instant | deep</summary>
+    [MaxLength(16)]
+    public string MemorySearchMode { get; set; } = "deep";
+
+    /// <summary>推理深度："low" | "medium" | "high"，null 表示跟随模型默认</summary>
+    [MaxLength(16)]
+    public string? ReasoningEffort { get; set; }
+
+    /// <summary>Agent Loop 最大轮次</summary>
+    public int MaxRounds { get; set; } = 200;
+
+    /// <summary>Agent Loop 最大总耗时（秒）</summary>
+    public int MaxElapsedSeconds { get; set; } = 1200;
+
+    /// <summary>Agent Loop 最大工具调用次数</summary>
+    public int MaxToolCallsTotal { get; set; } = 100;
+
+    /// <summary>最大上下文 token 数</summary>
+    public int MaxContextTokens { get; set; } = 8192;
+
+    /// <summary>每轮最大回复 token 数</summary>
+    public int MaxReplyTokens { get; set; } = 2048;
+
+    /// <summary>历史运行环境镜像字段，宿主模式下不参与执行。</summary>
+    [MaxLength(512)]
+    public string? ContainerImage { get; set; }
+
+    // ── 能力策略 ─────────────────────────────────────────────────
+    /// <summary>是否允许执行 Shell 命令。</summary>
+    public bool AllowShellExecution { get; set; } = false;
+    /// <summary>是否允许写文件。</summary>
+    public bool AllowFileWrite { get; set; } = false;
+    /// <summary>是否允许网络访问。</summary>
+    public bool AllowNetworkAccess { get; set; } = false;
+    /// <summary>工具白名单（JSON 数组，如 ["shell","file_write"]），空表示不额外限制。</summary>
+    public string AllowedToolNamesJson { get; set; } = "[]";
+
+    /// <summary>所选能力 ID 列表（JSON 数组，如 ["cap-shell"]）。</summary>
+    public string SelectedCapabilityIdsJson { get; set; } = "[]";
+
+    /// <summary>所选 Skill 包 ID 列表（JSON 数组）。Runtime 启动容器时挂载对应包目录。</summary>
+    public string SelectedSkillPackageIdsJson { get; set; } = "[]";
+
+    /// <summary>是否系统内置（内置模板不允许删除，只允许编辑）</summary>
+    public bool IsBuiltIn { get; set; } = false;
+
+    /// <summary>是否启用</summary>
+    public bool IsEnabled { get; set; } = true;
+
+    /// <summary>排序权重</summary>
+    public int SortOrder { get; set; } = 100;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}

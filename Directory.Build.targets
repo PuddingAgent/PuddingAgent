@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    ── Pudding 统一构建 Target ──────────────────────────────
+    所有项目自动继承此文件。
+    条件性导入：仅当对应 targets 文件存在时才导入。
+  -->
+
+  <!-- Jieba Resources 传递复制：在引用 PuddingMemoryEngine 的下游项目 Build 后自动执行 -->
+  <Import Project="$(MSBuildThisFileDirectory)Source\build\PuddingMemoryEngine.JiebaResources.targets"
+          Condition="Exists('$(MSBuildThisFileDirectory)Source\build\PuddingMemoryEngine.JiebaResources.targets')" />
+
+</Project>

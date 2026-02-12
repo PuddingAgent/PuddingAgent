@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <PackageReference Include="jieba.NET" Version="0.42.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingMemoryEngineTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Schema\init_memory.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Schema\init_library.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    Jieba 资源文件：从 NuGet 缓存声明为 None 项并复制到输出目录。
+    CopyToOutputDirectory=PreserveNewest 确保 PuddingMemoryEngine 自身输出包含 Resources/。
+    下游项目的传递复制由 build/PuddingMemoryEngine.JiebaResources.targets 负责。
+  -->
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)jieba.net\0.42.2\Resources\**\*"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Link="Resources\%(RecursiveDir)%(FileName)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+  </ItemGroup>
+
+</Project>

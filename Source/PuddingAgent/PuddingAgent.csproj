@@ -1,0 +1,66 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Map" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingController\PuddingController.csproj" />
+    <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
+    <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+    <ProjectReference Include="..\..\external\github.hyfree.GM\github.hyfree.GM\github.hyfree.GM.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="default-data\**\*" />
+    <None Remove="default-data\**\*" />
+    <Content Include="default-data\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- 运行时 data 目录（配置、数据库、Agent 实例等）拷贝到输出 -->
+  <ItemGroup Condition="Exists('..\..\data\config\llm.providers.json')">
+    <Content Include="..\..\data\**\*">
+      <Link>data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- ADR-037: Admin SPA 静态产物由脚本在构建时复制到 wwwroot/admin/ -->
+  <!-- 见 build-and-up.ps1（dotnet publish 前复制）和 dev-up.ps1（dotnet watch 前复制） -->
+
+  <!-- ADR-034: Agent 头像资源由 dev-up.ps1/build-and-up.ps1 在启动时复制到输出目录 -->
+
+  <Target Name="EnsureAdminDistExists" BeforeTargets="Publish" Condition="'$(SkipAdminDistCheck)' != 'true'">
+    <Error Condition="!Exists('..\PuddingPlatformAdmin\dist\index.html')" Text="Admin SPA dist is missing. Run pnpm run build in Source/PuddingPlatformAdmin first, or set SkipAdminDistCheck=true for backend-only development." />
+  </Target>
+
+  <ItemGroup>
+    <Content Include="Prompts\HeartbeatPrompt.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

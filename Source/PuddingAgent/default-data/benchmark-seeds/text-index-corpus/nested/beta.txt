@@ -1,0 +1,3 @@
+Customer feedback item B-14
+The report should include file size and the first two lines.
+Extra text should not affect the index format.

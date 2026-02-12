@@ -1,0 +1,83 @@
+  正在确定要还原的项目…
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2cmq-823j-5qj8
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-63p8-c4ww-9cg7
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-qxrv-gp6x-rc23
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-rxmq-m78w-7wmc
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-37gx-xxp4-5rgx [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-w3x6-4m5h-cxqf [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\PuddingCore.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1904: 包 "System.Drawing.Common" 4.7.0 具有已知的 严重 严重性漏洞，https://github.com/advisories/GHSA-rxg9-xrhp-64gj [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+  所有项目均是最新的，无法还原。
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2cmq-823j-5qj8
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-63p8-c4ww-9cg7
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-qxrv-gp6x-rc23
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-rxmq-m78w-7wmc
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-37gx-xxp4-5rgx
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-w3x6-4m5h-cxqf
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1904: 包 "System.Drawing.Common" 4.7.0 具有已知的 严重 严重性漏洞，https://github.com/advisories/GHSA-rxg9-xrhp-64gj
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+  PuddingFullTextIndex -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\bin\Debug\net10.0\PuddingFullTextIndex.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\PuddingCore.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+  PuddingCodeIntelligence -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCodeIntelligence\bin\Debug\net10.0\PuddingCodeIntelligence.dll
+  PuddingCore -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\bin\Debug\net10.0\PuddingCore.dll
+  PuddingMemoryEngine -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\bin\Debug\net10.0\PuddingMemoryEngine.dll
+  PuddingPlatform -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\bin\Debug\net10.0\PuddingPlatform.dll
+  PuddingRuntime -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\bin\Debug\net10.0\PuddingRuntime.dll
+
+已成功生成。
+
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2cmq-823j-5qj8
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-63p8-c4ww-9cg7
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-qxrv-gp6x-rc23
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-rxmq-m78w-7wmc
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-37gx-xxp4-5rgx [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-w3x6-4m5h-cxqf [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\PuddingCore.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1904: 包 "System.Drawing.Common" 4.7.0 具有已知的 严重 严重性漏洞，https://github.com/advisories/GHSA-rxg9-xrhp-64gj [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2cmq-823j-5qj8
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-63p8-c4ww-9cg7
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-qxrv-gp6x-rc23
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1902: 包 "SixLabors.ImageSharp" 2.1.8 具有已知的 中 严重性漏洞，https://github.com/advisories/GHSA-rxmq-m78w-7wmc
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-37gx-xxp4-5rgx
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj : warning NU1903: 包 "System.Security.Cryptography.Xml" 9.0.0 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-w3x6-4m5h-cxqf
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1903: 包 "Newtonsoft.Json" 12.0.3 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-5crp-9r3c-p9vr
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingFullTextIndex\PuddingFullTextIndex.csproj : warning NU1904: 包 "System.Drawing.Common" 4.7.0 具有已知的 严重 严重性漏洞，https://github.com/advisories/GHSA-rxg9-xrhp-64gj
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj : warning NU1903: 包 "SQLitePCLRaw.lib.e_sqlite3" 2.1.11 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-2m69-gcr7-jv3q
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\PuddingCore.csproj : warning NU1903: 包 "Microsoft.Bcl.Memory" 9.0.4 具有已知的 高 严重性漏洞，https://github.com/advisories/GHSA-73j8-2gch-69rq
+    34 个警告
+    0 个错误
+
+已用时间 00:00:13.63

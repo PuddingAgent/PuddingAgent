@@ -1,0 +1,93 @@
+﻿# task27 - PuddingController 路由与会话基础
+
+> **V1 简化**（2026-05-02）：移除审批链、Gateway Adapter Plugin、LLM 代发路由、事件总线订阅治理。V1 聚焦 MessageIngress → SessionRouter → RuntimeDispatcher 链路。
+
+最后更新：2026-03-18
+
+## 任务目标
+
+建立 `PuddingController` 作为统一控制入口的最小骨架，先打通 Gateway Adapter 接入、Workspace 命中、AgentTemplate 路由、ServiceSession 创建与基础权限校验。
+
+对应架构：
+- [../07架构/04PuddingController与Gateway.md](../07架构/04PuddingController与Gateway.md)
+- [../07架构/07协作网络与治理.md](../07架构/07协作网络与治理.md)
+- [../07架构/08数据模型与配置.md](../07架构/08数据模型与配置.md)
+- [../07架构/10事件系统与事件总线.md](../07架构/10事件系统与事件总线.md)
+
+## 前置依赖
+
+- 架构分层已确定：Controller 为控制面，Gateway 为内部模块。
+- Workspace / ChannelBinding / AgentTemplate 基础模型已明确。
+
+## 可并行关系
+
+- 可与 [task26-runtime-foundation.md](task26-runtime-foundation.md) 并行推进。
+- 可与 [task29-agent-template-and-audit.md](task29-agent-template-and-audit.md) 的模板数据建模并行。
+- 可与 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md) 的事件契约与订阅治理设计并行，但 Controller 事件路由实现要基于本任务的宿主入口和 SessionRouter 收口。
+- 客户端联调前，需要先完成本任务的 API 契约稳定。
+
+## 顺序任务
+
+1. 建立 `PuddingController` 宿主入口
+说明：HTTP API、后台服务、控制面 DI、基础健康接口。
+输出：最小可启动 Controller host。
+
+2. 建立 `ChannelManager` 与 `ChannelPluginHost`
+说明：把 Gateway 接入层明确为 Adapter Plugin 模式。V1 可保留 `ChannelPluginHost` 命名，但抽象上应支持 `IPuddingGatewayAdapter`、内置 CLI Adapter、Email Adapter、**WebChat Adapter（P0）**，以及后续飞书 Adapter（P3）、Webhook、MQTT、嵌入式 Runtime Adapter 等。
+内置渠道 ID 规则：CLI → `cli`，Email → `email-{workspaceId}`，Web Chat → `web-chat-{workspaceId}`，Feishu → `feishu-{workspaceId}`；`SeedDefaults()` 应在每个 Workspace 初始化时自动注册 Web Chat 对应的 `ChannelBindingDefinition`（P0 阶段仅注册 Web Chat，飞书等 P3 阶段补充）。
+渠道优先级：P0 = Web Chat；P1 = Email；P3 = 飞书及其他第三方渠道。
+输出：最小 Adapter 注册、装载与事件上送链路。
+前置依赖：任务 1。
+
+3. 建立 `SessionRouter`
+说明：根据 Adapter 来源、身份、消息类型和 Workspace 绑定规则，命中 Workspace 与 AgentTemplate。
+输出：可查询的路由决策。
+前置依赖：任务 2A。
+
+4. 建立 `ServiceSession` 自动创建或复用逻辑
+说明：收到消息时自动创建或复用 ServiceSession，并关联 Workspace 与 Runtime。
+输出：Session 索引与状态查询接口。
+前置依赖：任务 3。
+
+5. 建立 `AuthorizationService`
+说明：执行用户、WorkspaceRole、AgentTemplate 三者交集校验。
+输出：拒绝原因与权限判定查询。
+前置依赖：任务 3。
+
+6. 建立最小控制协议到 Runtime
+说明：把路由后的消息投递到 Runtime，并接收回复和状态。
+输出：Controller 到 Runtime 的最小调用协议。
+前置依赖：任务 4、任务 5；联调依赖 [task26-runtime-foundation.md](task26-runtime-foundation.md)。
+
+6A. 建立 Runtime 节点画像与心跳视图
+说明：接收并存储 Runtime 上报的 OS、硬件、能力标签、用途标签、负载、活跃 Agent 数等节点画像和动态心跳。
+输出：`RuntimeNodeDescriptor`、`RuntimeNodeHeartbeat` 查询与存储链路。
+前置依赖：任务 1、任务 6。
+
+6B. 建立最小 Runtime 选址与亲和性决策
+说明：支持显式指定 Runtime，或根据必需标签、偏好标签、排斥标签、Workspace 亲和性和节点负载选择 Runtime。
+输出：`RuntimePlacementDecision` 或等价控制面决策对象。
+前置依赖：任务 4、任务 6A。
+
+6C. 建立全局 Skill / MCP Registry 宿主
+说明：维护全局 Skill / MCP 注册信息、版本、风险等级、适用环境与可见性，供 AgentTemplate 引用。
+输出：最小 Skill / MCP 注册表与查询接口。
+前置依赖：任务 1。
+
+7. 建立首批调试查询接口
+说明：支持查询路由、Session 状态、拒绝原因、Runtime 映射和 Adapter 状态。
+输出：面向 CLI/Web/Avalonia 的基础调试接口。
+前置依赖：任务 6。
+
+## 验收标准
+
+- Controller 可接收 CLI through Controller API 的消息。
+- Gateway 可装载多个 Adapter，并可查询其启停、版本、健康状态与能力声明。
+- 系统可命中 Workspace 和 AgentTemplate。
+- ServiceSession 可自动创建或复用。
+- Controller 可完成最小权限校验与拒绝原因返回。
+- Controller 能把消息投递到 Runtime 并获得真实回复。
+- Controller 能看到 Runtime 的最小节点画像与心跳。
+- Controller 能基于标签和 Workspace 亲和性做 1 次最小选址决策。
+- 至少 1 个事件驱动 Adapter 与 1 个非 CLI Adapter 的接入模式被验证，证明新增接入源不需要修改 Controller 主路由骨架。
+- Controller 至少预留 1 条从 Gateway 入站事件进入 Workspace 域事件流的接入口。

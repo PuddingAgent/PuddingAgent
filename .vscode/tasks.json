@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "pudding-build-frontend",
+            "type": "shell",
+            "command": "pwsh",
+            "args": [
+                "-NoProfile",
+                "-Command",
+                "pushd '${workspaceFolder}/Source/PuddingPlatformAdmin'; if (Test-Path dist/index.html) { Write-Host '[i] dist/ 已存在，跳过构建' -ForegroundColor Yellow } else { Write-Host '==> 构建 Admin 前端...' -ForegroundColor Cyan; corepack enable 2>$null; pnpm install --frozen-lockfile 2>$null; if (`$LASTEXITCODE -ne 0) { pnpm install }; pnpm run build; if (`$LASTEXITCODE -ne 0) { exit 1 }; Write-Host 'V 前端构建完成' -ForegroundColor Green }; `$outputWwwroot = '${workspaceFolder}/Source/PuddingAgent/bin/Debug/net10.0/wwwroot'; if (Test-Path `$outputWwwroot) { Remove-Item `"`$outputWwwroot\*`" -Recurse -Force -ErrorAction SilentlyContinue }; New-Item -ItemType Directory -Path `$outputWwwroot -Force >`$null; Copy-Item '${workspaceFolder}/Source/PuddingPlatformAdmin/dist/*' `$outputWwwroot -Recurse -Force; Write-Host 'V 前端产物已同步到输出目录 wwwroot/' -ForegroundColor Green"
+            ],
+            "problemMatcher": [],
+            "group": "build"
+        }
+    ]
+}

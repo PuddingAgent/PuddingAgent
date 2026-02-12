@@ -1,0 +1,148 @@
+using PuddingCode.Observability;
+using PuddingCode.Platform;
+
+namespace PuddingCode.Runtime;
+
+/// <summary>
+/// 子代理权限继承模式。
+/// 子代理默认继承父 Agent 的能力策略；调用方只能主动降权，不能通过工具参数越权。
+/// </summary>
+public static class SubAgentPermissionModes
+{
+    public const string Inherit = "inherit";
+    public const string Low = "low";
+}
+
+/// <summary>单个批量子代理任务的结构化输入。</summary>
+public sealed record SubAgentBatchTask
+{
+    public required string TaskId { get; init; }
+    public required string Task { get; init; }
+    public string? Question { get; init; }
+    public string? Scope { get; init; }
+    public string? AlreadyKnown { get; init; }
+    public string? Effort { get; init; }
+    public string? StopCondition { get; init; }
+    public string? OutputContract { get; init; }
+    public string? ExpectedOutput { get; init; }
+    public IReadOnlyDictionary<string, object>? Metadata { get; init; }
+}
+
+/// <summary>子代理调用请求。</summary>
+public sealed record SubAgentInvocationRequest
+{
+    public required string ParentSessionId { get; init; }
+    public required string WorkspaceId { get; init; }
+    public required string ParentAgentInstanceId { get; init; }
+    /// <summary>子代理父 Agent ID（映射到 SubAgentSpawnRequest.ParentAgentId）。</summary>
+    public string? ParentAgentId { get; init; }
+    public required string TemplateId { get; init; }
+    public required string Task { get; init; }
+    public string? DelegationProtocol { get; init; }
+    public string? Question { get; init; }
+    public string? Scope { get; init; }
+    public string? AlreadyKnown { get; init; }
+    public string? Effort { get; init; }
+    public string? StopCondition { get; init; }
+    public string? OutputContract { get; init; }
+    public bool IsAsync { get; init; }
+    public string? ModelId { get; init; }
+    public LlmConfig? LlmConfig { get; init; }
+    public int? MaxRounds { get; init; }
+    public CapabilityPolicy? CapabilityPolicy { get; init; }
+    public RuntimeTraceContext? Trace { get; init; }
+    public string? TaskPlanId { get; init; }
+    public string? TaskNodeId { get; init; }
+    public string? ParentTaskNodeId { get; init; }
+    public int? DelegationDepth { get; init; }
+    public int? MaxDelegationDepth { get; init; }
+    public string? RoleInPlan { get; init; }
+    public bool? AllowSubDelegation { get; init; }
+    public bool? AllowAgentCreation { get; init; }
+    public string? AssignedObjective { get; init; }
+    public string? ExpectedOutputContract { get; init; }
+    public string PermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
+    public int? TimeoutSeconds { get; init; }
+}
+
+/// <summary>子代理调用结果。</summary>
+public sealed record SubAgentInvocationResult
+{
+    public required string SubSessionId { get; init; }
+    public string? TaskId { get; init; }
+    public string? RunId { get; init; }
+    public required string Status { get; init; }
+    public string? Reply { get; init; }
+    public string? Error { get; init; }
+}
+
+/// <summary>
+/// 批量子代理调用请求。
+/// 批量调用必须使用结构化 JSON 数组，避免 Agent 通过分隔符文本造成任务边界歧义。
+/// </summary>
+public sealed record SubAgentBatchInvocationRequest
+{
+    public required string ParentSessionId { get; init; }
+    public required string WorkspaceId { get; init; }
+    public required string ParentAgentInstanceId { get; init; }
+    public string? ParentAgentId { get; init; }
+    public required string TemplateId { get; init; }
+    public required IReadOnlyList<SubAgentBatchTask> Tasks { get; init; }
+    public bool IsAsync { get; init; }
+    public string? ModelId { get; init; }
+    public LlmConfig? LlmConfig { get; init; }
+    public int? MaxRounds { get; init; }
+    public CapabilityPolicy? CapabilityPolicy { get; init; }
+    public RuntimeTraceContext? Trace { get; init; }
+    public string? ParentTaskId { get; init; }
+    public string? TaskPlanId { get; init; }
+    public string? ParentTaskNodeId { get; init; }
+    public int? DelegationDepth { get; init; }
+    public int? MaxDelegationDepth { get; init; }
+    public string? RoleInPlan { get; init; }
+    public bool? AllowSubDelegation { get; init; }
+    public bool? AllowAgentCreation { get; init; }
+    public string PermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
+    public int? TimeoutSeconds { get; init; }
+}
+
+/// <summary>批量子代理调用聚合结果。</summary>
+public sealed record SubAgentBatchInvocationResult
+{
+    public required string BatchId { get; init; }
+    public required string Status { get; init; }
+    public required IReadOnlyList<SubAgentInvocationResult> Results { get; init; }
+    public string? Summary { get; init; }
+    public string? Error { get; init; }
+}
+
+/// <summary>
+/// 子代理运行调度配置。
+/// 这些值属于运行时基础设施契约，不能散落为工具或 Controller 中的硬编码常量。
+/// </summary>
+public sealed record SubAgentExecutionOptions
+{
+    public int MaxConcurrentPerTemplate { get; init; } = 3;
+    public int MaxConcurrentPerWorkspace { get; init; } = 6;
+    public int DefaultTimeoutSeconds { get; init; } = 3600;
+    public int MaxTimeoutSeconds { get; init; } = 3600;
+    public string DefaultPermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
+}
+
+public sealed record RuntimeExecutionOptions
+{
+    public SubAgentExecutionOptions SubAgents { get; init; } = new();
+}
+
+/// <summary>读取并补齐运行时执行配置。</summary>
+public interface IRuntimeExecutionConfigService
+{
+    RuntimeExecutionOptions GetOptions();
+}
+
+/// <summary>子代理调用服务，隔离父执行循环与子代理生命周期。</summary>
+public interface ISubAgentInvocationService
+{
+    Task<SubAgentInvocationResult> InvokeAsync(SubAgentInvocationRequest request, CancellationToken ct = default);
+    Task<SubAgentBatchInvocationResult> InvokeBatchAsync(SubAgentBatchInvocationRequest request, CancellationToken ct = default);
+}

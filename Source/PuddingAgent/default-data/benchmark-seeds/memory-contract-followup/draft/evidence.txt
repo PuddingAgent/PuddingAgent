@@ -1,0 +1,3 @@
+confirmed: benchmark prepare endpoint added
+confirmed: workspace seed files are copied before the prompt is sent
+assumption: existing warnings are not release blockers

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "neutral",
+    "file": "agent-avatar-neutral.png",
+    "name": "Neutral Agent",
+    "personality": "calm, default, balanced",
+    "hairColor": "charcoal purple",
+    "expression": "neutral and focused",
+    "visualTraits": [
+      "round glasses",
+      "small tech hair clip",
+      "white futuristic hoodie",
+      "lavender circular tech background"
+    ],
+    "recommendedUse": "default assistant avatar"
+  },
+  {
+    "id": "smile",
+    "file": "agent-avatar-smile.png",
+    "name": "Support Agent",
+    "personality": "friendly, warm, approachable",
+    "hairColor": "rose pink",
+    "expression": "slight smile",
+    "visualTraits": [
+      "round glasses",
+      "small tech hair clip",
+      "white hoodie with pale pink accents",
+      "soft pixel highlights"
+    ],
+    "recommendedUse": "support, welcome, positive feedback"
+  },
+  {
+    "id": "sleepy",
+    "file": "agent-avatar-sleepy.png",
+    "name": "Night Ops Agent",
+    "personality": "lazy, relaxed, low-energy",
+    "hairColor": "muted blue gray",
+    "expression": "sleepy half-lidded eyes",
+    "visualTraits": [
+      "round glasses",
+      "slightly tousled bangs",
+      "oversized white hoodie collar",
+      "cool blue accent details"
+    ],
+    "recommendedUse": "idle state, waiting, low priority agent"
+  },
+  {
+    "id": "thinking",
+    "file": "agent-avatar-thinking.png",
+    "name": "Analyst Agent",
+    "personality": "serious, analytical, thoughtful",
+    "hairColor": "deep teal black",
+    "expression": "focused and thinking",
+    "visualTraits": [
+      "round glasses",
+      "hand near chin",
+      "white high-collar tech jacket",
+      "subtle teal accents"
+    ],
+    "recommendedUse": "analysis, planning, reasoning tasks"
+  },
+  {
+    "id": "angry",
+    "file": "agent-avatar-angry.png",
+    "name": "Alert Agent",
+    "personality": "urgent, expressive, energetic",
+    "hairColor": "red magenta",
+    "expression": "exaggerated angry alert face",
+    "visualTraits": [
+      "round glasses",
+      "sharp eyebrows",
+      "small alert mark",
+      "white hoodie with red accents"
+    ],
+    "recommendedUse": "warnings, errors, urgent notifications"
+  },
+  {
+    "id": "silver",
+    "file": "agent-avatar-silver.png",
+    "name": "Engineer Agent",
+    "personality": "precise, cool, composed",
+    "hairColor": "silver white",
+    "expression": "confident and restrained",
+    "visualTraits": [
+      "round glasses",
+      "small tech hair clip",
+      "graphite inner collar",
+      "white jacket with silver accents"
+    ],
+    "recommendedUse": "technical execution, tools, automation"
+  },
+  {
+    "id": "amber",
+    "file": "agent-avatar-amber.png",
+    "name": "Cheer Agent",
+    "personality": "bright, upbeat, lively",
+    "hairColor": "honey amber",
+    "expression": "open cheerful smile",
+    "visualTraits": [
+      "round glasses",
+      "small tech hair clip",
+      "white hoodie with amber accents",
+      "warm pixel highlights"
+    ],
+    "recommendedUse": "success states, onboarding, encouraging replies"
+  },
+  {
+    "id": "mint",
+    "file": "agent-avatar-mint.png",
+    "name": "Ops Agent",
+    "personality": "reliable, steady, calm",
+    "hairColor": "mint green",
+    "expression": "relaxed neutral smile",
+    "visualTraits": [
+      "round glasses",
+      "small tech hair clip",
+      "white hoodie with mint accents",
+      "clean lavender tech backdrop"
+    ],
+    "recommendedUse": "operations, monitoring, stable background tasks"
+  }
+]

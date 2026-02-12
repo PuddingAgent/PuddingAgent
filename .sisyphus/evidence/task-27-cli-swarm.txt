@@ -1,0 +1,35 @@
+从 Source\PuddingCodeCLI\Properties\launchSettings.json 使用启动设置...
+[38;5;11m  ____                _       _   _                    ____               _ [0m
+[38;5;11m |  _ \   _   _    __| |   __| | (_)  _ __     __ _   / ___|   ___     __| |[0m
+[38;5;11m | |_) | | | | |  / _` |  / _` | | | | '_ \   / _` | | |      / _ \   / _` |[0m
+[38;5;11m |  __/  | |_| | | (_| | | (_| | | | | | | | | (_| | | |___  | (_) | | (_| |[0m
+[38;5;11m |_|      \__,_|  \__,_|  \__,_| |_| |_| |_|  \__, |  \____|  \___/   \__,_|[0m
+[38;5;11m                                              |___/                         [0m
+[38;5;11m       [0m
+[38;5;11m   ___ [0m
+[38;5;11m  / _ \[0m
+[38;5;11m |  __/[0m
+[38;5;11m  \___|[0m
+[38;5;11m       [0m
+[38;5;8mv0.1.0 - Agentic Self-Programming CLI[0m
+
+[38;5;8mConfig → C:\Users\huany\.pudding\config.json[0m
+[38;5;8mProvider : deepseek — DeepSeek[0m
+[38;5;8mModel    : deepseek-reasoner[0m
+[38;5;8mEndpoint : https://api.deepseek.com[0m
+[38;5;8mType /help for commands[0m
+
+[38;5;8mGit repo detected — auto-snapshots enabled (/undo to rollback)[0m
+[38;5;8mProject  : D:\WangXianQiang\github\hyfree\PuddingCode[0m
+
+[1;38;5;11mPudding >[0m Unhandled exception. System.InvalidOperationException: Failed to read input in non-interactive mode.
+   at Spectre.Console.DefaultInput.ReadKeyAsync(Boolean intercept, CancellationToken cancellationToken) in /_/src/Spectre.Console/Internal/DefaultInput.cs:line 36
+   at Spectre.Console.AnsiConsoleExtensions.ReadLine(IAnsiConsole console, Style style, Boolean secret, Nullable`1 mask, IEnumerable`1 items, CancellationToken cancellationToken) in /_/src/Spectre.Console/Extensions/AnsiConsoleExtensions.Input.cs:line 23
+   at Spectre.Console.TextPrompt`1.<>c__DisplayClass63_0.<<ShowAsync>b__0>d.MoveNext() in /_/src/Spectre.Console/Prompts/TextPrompt.cs:line 133
+--- End of stack trace from previous location ---
+   at Spectre.Console.Internal.DefaultExclusivityMode.RunAsync[T](Func`1 func) in /_/src/Spectre.Console/Internal/DefaultExclusivityMode.cs:line 40
+   at Spectre.Console.TextPrompt`1.ShowAsync(IAnsiConsole console, CancellationToken cancellationToken) in /_/src/Spectre.Console/Prompts/TextPrompt.cs:line 122
+   at Spectre.Console.TextPrompt`1.Show(IAnsiConsole console) in /_/src/Spectre.Console/Prompts/TextPrompt.cs:line 111
+   at Spectre.Console.AnsiConsole.Prompt[T](IPrompt`1 prompt) in /_/src/Spectre.Console/AnsiConsole.Prompt.cs:line 23
+   at Program.<Main>$(String[] args) in D:\WangXianQiang\github\hyfree\PuddingCode\Source\PuddingCodeCLI\Program.cs:line 110
+   at Program.<Main>(String[] args)

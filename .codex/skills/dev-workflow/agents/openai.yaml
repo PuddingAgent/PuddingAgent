@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dev Workflow"
+  short_description: "Pudding development lifecycle"
+  default_prompt: "Use $dev-workflow for this Pudding implementation task."

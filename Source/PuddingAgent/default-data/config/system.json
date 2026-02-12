@@ -1,0 +1,20 @@
+{
+  "environment": "development",
+  "http": {
+    "port": 8080,
+    "publicBaseUrl": "http://localhost:5000"
+  },
+  "logging": {
+    "level": "Debug",
+    "structuredJson": true
+  },
+  "runtime": {
+    "maxAgentRounds": 200,
+    "enableRuntimeDiagnostics": true,
+    "enableFrontendDebug": true,
+    "enableFakeLlm": true
+  },
+  "paths": {
+    "dataRoot": "/app/data"
+  }
+}

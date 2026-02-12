@@ -1,0 +1,9 @@
+{
+    "ok":  true,
+    "run_dir":  "E:\\github\\AgentNetworkPlan\\PuddingAgent\\tmp\\hatch-pet\\pudding",
+    "spritesheet":  "E:\\github\\AgentNetworkPlan\\PuddingAgent\\tmp\\hatch-pet\\pudding\\final\\spritesheet.webp",
+    "validation":  "E:\\github\\AgentNetworkPlan\\PuddingAgent\\tmp\\hatch-pet\\pudding\\final\\validation.json",
+    "contact_sheet":  "E:\\github\\AgentNetworkPlan\\PuddingAgent\\tmp\\hatch-pet\\pudding\\qa\\contact-sheet.png",
+    "review":  "E:\\github\\AgentNetworkPlan\\PuddingAgent\\tmp\\hatch-pet\\pudding\\qa\\review.json",
+    "package":  "C:\\Users\\huany\\.codex\\pets\\pudding"
+}

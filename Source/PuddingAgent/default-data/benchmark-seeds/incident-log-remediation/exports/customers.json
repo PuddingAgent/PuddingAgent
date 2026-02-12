@@ -1,0 +1,6 @@
+{
+  "rows": [
+    { "id": "C-001", "name": "Ada Chen", "email": "ada@example.com" },
+    { "id": "C-002", "name": "Ben Rao", "email": "ben@example.com" }
+  ]
+}

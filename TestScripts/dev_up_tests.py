@@ -1,0 +1,394 @@
+import contextlib
+import io
+import importlib.util
+import json
+import socket
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEV_UP = ROOT / "dev-up.py"
+
+
+def load_dev_up_module():
+    spec = importlib.util.spec_from_file_location("dev_up", DEV_UP)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class DevUpProxyTests(unittest.TestCase):
+    def test_proxy_target_routes_api_and_assets_to_expected_servers(self):
+        dev_up = load_dev_up_module()
+
+        self.assertEqual(
+            "http://127.0.0.1:5000/api/sessions",
+            dev_up.proxy_target_for_path("/api/sessions", "http://127.0.0.1:5000", "http://127.0.0.1:8000"),
+        )
+        self.assertEqual(
+            "http://127.0.0.1:5000/swagger/index.html",
+            dev_up.proxy_target_for_path("/swagger/index.html", "http://127.0.0.1:5000", "http://127.0.0.1:8000"),
+        )
+        self.assertEqual(
+            "http://127.0.0.1:5000/health",
+            dev_up.proxy_target_for_path("/health", "http://127.0.0.1:5000", "http://127.0.0.1:8000"),
+        )
+        self.assertEqual(
+            "http://127.0.0.1:8000/admin/user/login",
+            dev_up.proxy_target_for_path("/admin/user/login", "http://127.0.0.1:5000", "http://127.0.0.1:8000"),
+        )
+
+    def test_frontend_spa_fallback_rewrites_admin_deep_links_only(self):
+        dev_up = load_dev_up_module()
+
+        self.assertEqual("/admin/", dev_up.frontend_spa_fallback_path("/admin/bootstrap"))
+        self.assertEqual("/admin/", dev_up.frontend_spa_fallback_path("/admin/workspace/abc?tab=agents"))
+        self.assertEqual("/admin/assets/app.js", dev_up.frontend_spa_fallback_path("/admin/assets/app.js"))
+        self.assertEqual("/api/bootstrap/status", dev_up.frontend_spa_fallback_path("/api/bootstrap/status"))
+
+    def test_proxy_diagnostics_identifies_session_stream_and_replay_paths(self):
+        dev_up = load_dev_up_module()
+
+        self.assertTrue(dev_up.is_session_events_stream_path("/api/sessions/session-1/events/stream"))
+        self.assertTrue(dev_up.is_session_events_stream_path("/api/sessions/session-1/events/stream?x=1"))
+        self.assertTrue(dev_up.is_session_replay_path("/api/sessions/session-1/replay?from=42&limit=50"))
+        self.assertTrue(dev_up.should_log_proxy_diagnostics("/api/sessions/session-1/events/stream"))
+        self.assertTrue(dev_up.should_log_proxy_diagnostics("/api/sessions/session-1/replay?from=42"))
+        self.assertFalse(dev_up.should_log_proxy_diagnostics("/api/sessions/session-1/state"))
+
+    def test_proxy_diagnostic_jsonl_writes_under_data_logs_diagnostics(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "data" / "logs"
+
+            class FakeDateTime:
+                @staticmethod
+                def now():
+                    return datetime(2026, 5, 31, 14, 30, 0)
+
+            with patch.object(dev_up, "DATA_LOG_DIR", log_dir), patch.object(dev_up, "datetime", FakeDateTime):
+                dev_up.write_proxy_diagnostic_event({
+                    "stage": "proxy.request.started",
+                    "method": "GET",
+                    "path": "/api/sessions/session-1/events/stream",
+                    "sessionId": "session-1",
+                })
+
+            path = log_dir / "diagnostics" / "proxy" / "20260531.jsonl"
+            self.assertTrue(path.exists())
+            event = json.loads(path.read_text(encoding="utf-8").strip())
+            self.assertEqual(1, event["schemaVersion"])
+            self.assertEqual("proxy", event["recordKind"])
+            self.assertEqual("proxy.request.started", event["stage"])
+            self.assertEqual("session-1", event["sessionId"])
+
+    def test_proxy_detects_event_stream_content_type(self):
+        dev_up = load_dev_up_module()
+
+        self.assertTrue(dev_up.is_event_stream_content_type("text/event-stream"))
+        self.assertTrue(dev_up.is_event_stream_content_type("text/event-stream; charset=utf-8"))
+        self.assertFalse(dev_up.is_event_stream_content_type("application/json"))
+        self.assertFalse(dev_up.is_event_stream_content_type(None))
+
+    def test_choose_proxy_port_falls_back_when_preferred_port_is_in_use(self):
+        dev_up = load_dev_up_module()
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            occupied_port = listener.getsockname()[1]
+
+            self.assertEqual(
+                18088,
+                dev_up.choose_proxy_port("127.0.0.1", occupied_port, 18088),
+            )
+
+    def test_choose_proxy_port_exits_when_strict_port_is_in_use(self):
+        dev_up = load_dev_up_module()
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            occupied_port = listener.getsockname()[1]
+
+            with self.assertRaises(SystemExit):
+                dev_up.choose_proxy_port("127.0.0.1", occupied_port, None)
+
+    def test_resolve_command_prefers_windows_cmd_shim(self):
+        dev_up = load_dev_up_module()
+
+        def fake_which(name):
+            values = {
+                "pnpm.cmd": r"C:\tools\pnpm.cmd",
+                "pnpm": r"C:\tools\pnpm",
+            }
+            return values.get(name)
+
+        with patch.object(dev_up.os, "name", "nt"), patch.object(dev_up.shutil, "which", side_effect=fake_which):
+            self.assertEqual(r"C:\tools\pnpm.cmd", dev_up.resolve_command("pnpm"))
+
+    def test_backend_command_runs_compiled_app_directly(self):
+        dev_up = load_dev_up_module()
+
+        with patch.object(dev_up, "resolve_command", return_value="dotnet"):
+            command = dev_up.backend_command()
+
+        self.assertEqual("dotnet", command[0])
+        self.assertTrue(command[1].endswith("PuddingAgent.dll"))
+        self.assertNotIn("run", command)
+        self.assertNotIn("watch", command)
+
+    def test_backend_build_command_builds_backend_project(self):
+        dev_up = load_dev_up_module()
+
+        with patch.object(dev_up, "resolve_command", return_value="dotnet"):
+            command = dev_up.backend_build_command()
+
+        self.assertEqual(
+            ["dotnet", "build", "Source/PuddingAgent/PuddingAgent.csproj", "--nologo"],
+            command,
+        )
+
+    def test_start_proxy_binds_publicly_while_upstreams_stay_loopback(self):
+        dev_up = load_dev_up_module()
+
+        popen_calls = []
+
+        class FakeProcess:
+            pid = 4242
+
+        def fake_popen(command, **kwargs):
+            popen_calls.append((command, kwargs))
+            return FakeProcess()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            with (
+                patch.object(dev_up.subprocess, "Popen", side_effect=fake_popen),
+                patch.object(dev_up, "PROXY_PID_FILE", run_dir / "proxy.pid"),
+                patch.object(dev_up, "PROXY_PORT_FILE", run_dir / "proxy.port"),
+                patch.object(dev_up, "open_log", return_value=io.StringIO()),
+                patch.object(dev_up, "popen_kwargs", return_value={}),
+                patch.object(dev_up, "info"),
+            ):
+                dev_up.start_proxy(80)
+
+        command = popen_calls[0][0]
+
+        self.assertEqual("0.0.0.0", command[command.index("--proxy-host") + 1])
+        self.assertEqual("80", command[command.index("--proxy-port") + 1])
+        self.assertEqual("http://127.0.0.1:5000", command[command.index("--backend-url") + 1])
+        self.assertEqual("http://127.0.0.1:8000", command[command.index("--frontend-url") + 1])
+
+
+class DevUpSupervisorTests(unittest.TestCase):
+    def test_info_writes_launcher_log_under_data_logs(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "data" / "logs"
+            log_path = log_dir / "dev-up-2026-05-24.log"
+
+            class FakeDateTime:
+                @staticmethod
+                def now():
+                    return datetime(2026, 5, 24, 10, 30, 0)
+
+            with patch.object(dev_up, "DATA_LOG_DIR", log_dir), patch.object(dev_up, "datetime", FakeDateTime):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    dev_up.info("launcher ready")
+
+            content = log_path.read_text(encoding="utf-8")
+
+        self.assertIn("launcher ready", content)
+        self.assertIn("pid=", content)
+
+    def test_launcher_log_path_uses_current_date(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "data" / "logs"
+
+            class FakeDateTime:
+                @staticmethod
+                def now():
+                    return datetime(2026, 5, 24, 23, 59, 0)
+
+            with patch.object(dev_up, "DATA_LOG_DIR", log_dir), patch.object(dev_up, "datetime", FakeDateTime):
+                self.assertEqual(log_dir / "dev-up-2026-05-24.log", dev_up.launcher_log_path())
+
+    def test_logs_without_line_argument_defaults_to_tail_lines(self):
+        dev_up = load_dev_up_module()
+
+        args = dev_up.parse_args(["--logs"])
+
+        self.assertEqual(dev_up.DEFAULT_LOG_TAIL_LINES, args.logs)
+
+    def test_tail_file_lines_reads_last_lines_from_large_file(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "large.log"
+            path.write_text("\n".join(f"line-{index}" for index in range(200)) + "\n", encoding="utf-8")
+
+            lines = dev_up.tail_file_lines(path, 3, block_size=32)
+
+        self.assertEqual(["line-197", "line-198", "line-199"], lines)
+
+    def test_open_log_rotates_large_dev_log_before_append(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "backend.out.log"
+            path.write_bytes(b"x" * 12)
+            path.with_name("backend.out.log.1").write_bytes(b"old-1")
+
+            with (
+                patch.object(dev_up, "DEV_LOG_ROTATE_MAX_BYTES", 10),
+                patch.object(dev_up, "DEV_LOG_ROTATE_BACKUPS", 2),
+            ):
+                handle = dev_up.open_log(path)
+                handle.write(b"new\n")
+                handle.close()
+
+            self.assertEqual(b"new\n", path.read_bytes())
+            self.assertEqual(b"x" * 12, path.with_name("backend.out.log.1").read_bytes())
+            self.assertEqual(b"old-1", path.with_name("backend.out.log.2").read_bytes())
+
+    def test_write_stdout_replaces_unencodable_characters(self):
+        dev_up = load_dev_up_module()
+
+        class GbkStdout:
+            encoding = "gbk"
+
+            def __init__(self):
+                self.value = ""
+
+            def write(self, text):
+                text.encode(self.encoding)
+                self.value += text
+
+            def flush(self):
+                pass
+
+        stream = GbkStdout()
+
+        with patch.object(dev_up.sys, "stdout", stream):
+            dev_up.write_stdout("bad \ufffd char")
+
+        self.assertEqual("bad ? char", stream.value)
+
+    def test_supervised_roles_restart_unless_supervisor_is_stopping(self):
+        dev_up = load_dev_up_module()
+
+        self.assertTrue(dev_up.should_restart_role("backend", exit_code=1, stopping=False))
+        self.assertTrue(dev_up.should_restart_role("frontend", exit_code=0, stopping=False))
+        self.assertTrue(dev_up.should_restart_role("proxy", exit_code=1, stopping=False))
+        self.assertFalse(dev_up.should_restart_role("backend", exit_code=1, stopping=True))
+
+    def test_status_line_reports_missing_supervisor_and_running_children(self):
+        dev_up = load_dev_up_module()
+        snapshot = {
+            "supervisor": {"pid": None, "alive": False},
+            "backend": {"pid": 101, "alive": True},
+            "frontend": {"pid": None, "alive": False},
+            "proxy": {"pid": 303, "alive": True, "port": 8088},
+            "guard": {"enabled": True},
+        }
+
+        self.assertEqual(
+            [
+                "Supervisor: stopped",
+                "Guard     : enabled",
+                "Backend   : running (PID 101)",
+                "Frontend  : stopped",
+                "Proxy     : running (PID 303) on http://localhost:8088",
+                "Health    : pending",
+            ],
+            dev_up.format_status_lines(snapshot),
+        )
+
+    def test_health_status_line_reports_last_http_status(self):
+        dev_up = load_dev_up_module()
+        snapshot = {
+            "supervisor": {"pid": 10, "alive": True},
+            "backend": {"pid": 101, "alive": True},
+            "frontend": {"pid": 202, "alive": True},
+            "proxy": {"pid": 303, "alive": True, "port": 8088},
+            "guard": {"enabled": False},
+            "health": {
+                "url": "http://localhost:8088/health",
+                "status_code": 404,
+                "ok": False,
+                "checked_at": "2026-05-24T20:00:00Z",
+            },
+        }
+
+        self.assertEqual(
+            "Health    : HTTP 404 from http://localhost:8088/health at 2026-05-24T20:00:00Z",
+            dev_up.format_status_lines(snapshot)[-1],
+        )
+
+    def test_build_health_url_uses_proxy_port_and_default_path(self):
+        dev_up = load_dev_up_module()
+
+        self.assertEqual(
+            "http://127.0.0.1:8088/health",
+            dev_up.build_health_url("127.0.0.1", 8088, "/health"),
+        )
+        self.assertEqual(
+            "http://127.0.0.1/health",
+            dev_up.build_health_url("127.0.0.1", 80, "/health"),
+        )
+
+    def test_debounce_deadline_resets_on_each_change(self):
+        dev_up = load_dev_up_module()
+        debouncer = dev_up.ChangeDebouncer(delay_seconds=5)
+
+        self.assertIsNone(debouncer.changed(now=10.0))
+        self.assertEqual(15.0, debouncer.deadline)
+        self.assertIsNone(debouncer.changed(now=13.0))
+        self.assertEqual(18.0, debouncer.deadline)
+        self.assertFalse(debouncer.ready(now=17.9))
+        self.assertTrue(debouncer.ready(now=18.0))
+        self.assertTrue(debouncer.consume())
+        self.assertIsNone(debouncer.deadline)
+
+    def test_restart_policy_waits_after_five_failures_then_allows_retry(self):
+        dev_up = load_dev_up_module()
+        policy = dev_up.RestartBackoffPolicy(max_failures=5, cooldown_seconds=5)
+
+        self.assertEqual(0, policy.next_delay("backend", now=0))
+        self.assertEqual(0, policy.next_delay("backend", now=1))
+        self.assertEqual(0, policy.next_delay("backend", now=2))
+        self.assertEqual(0, policy.next_delay("backend", now=3))
+        self.assertEqual(0, policy.next_delay("backend", now=4))
+        self.assertEqual(5, policy.next_delay("backend", now=5))
+        self.assertEqual(0, policy.next_delay("backend", now=10))
+
+    def test_watch_snapshot_ignores_frontend_generated_umi_files(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_file = root / "Source" / "PuddingPlatformAdmin" / "src" / "pages" / "index.tsx"
+            generated_file = root / "Source" / "PuddingPlatformAdmin" / "src" / ".umi" / "core" / "routes.ts"
+            source_file.parent.mkdir(parents=True)
+            generated_file.parent.mkdir(parents=True)
+            source_file.write_text("export default null;\n", encoding="utf-8")
+            generated_file.write_text("export const routes = [];\n", encoding="utf-8")
+
+            snapshot = dev_up.scan_watch_snapshot(root)
+
+        self.assertIn("Source\\PuddingPlatformAdmin\\src\\pages\\index.tsx", snapshot)
+        self.assertNotIn("Source\\PuddingPlatformAdmin\\src\\.umi\\core\\routes.ts", snapshot)
+
+
+if __name__ == "__main__":
+    unittest.main()

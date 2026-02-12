@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/Source/">
+    <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
+    <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
+    <Project Path="Source/PuddingCore/PuddingCore.csproj" />
+    <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
+    <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
+    <Project Path="Source/PuddingMemoryEngine/PuddingMemoryEngine.csproj" Id="184bffb0-b17d-495a-971c-faee05af8d8c" />
+    <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
+    <Project Path="external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj" Id="2b2be7d9-5aae-437b-89f0-67b77d7f8e80" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
+    <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />
+    <Project Path="Source/PuddingPlatformTests/PuddingPlatformTests.csproj" />
+    <Project Path="Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj" />
+    <Project Path="Source/PuddingWebApiTests/PuddingWebApiTests.csproj" Id="78289515-7caa-47b2-b209-900edeaeb8bf" />
+  </Folder>
+  <Folder Name="/TestScripts/">
+    <Project Path="TestScripts/PuddingWsTest/PuddingWsTest.csproj" />
+  </Folder>
+  <Project Path="Docs/Docs.shproj" Id="405d8746-dcfa-4492-8b75-ae58b99dea44" />
+</Solution>

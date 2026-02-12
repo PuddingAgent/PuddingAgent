@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingFullTextIndexTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
+    <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />
+    <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
+    <PackageReference Include="jieba.NET" Version="0.42.2" />
+  </ItemGroup>
+
+  <!--
+    Jieba 资源文件：从 NuGet 缓存声明为 None 项并复制到输出目录。
+    下游项目的传递复制由 build/PuddingMemoryEngine.JiebaResources.targets 负责。
+  -->
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)jieba.net\0.42.2\Resources\**\*"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Link="Resources\%(RecursiveDir)%(FileName)%(Extension)" />
+  </ItemGroup>
+
+</Project>

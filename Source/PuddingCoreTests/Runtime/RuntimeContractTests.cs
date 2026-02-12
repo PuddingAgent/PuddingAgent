@@ -1,0 +1,325 @@
+using System.Text.Json;
+using PuddingCode.Models;
+using PuddingCode.Platform;
+using PuddingCode.Runtime;
+
+namespace PuddingCoreTests.Runtime;
+
+[TestClass]
+public sealed class RuntimeContractTests
+{
+    [TestMethod]
+    public void ExecutionLifecycleRecord_Default_Metadata_Is_Not_Null()
+    {
+        var record = new ExecutionLifecycleRecord
+        {
+            ExecutionId = "exec_1",
+            TraceId = "trace_1",
+            WorkspaceId = "default",
+            SessionId = "session_1",
+            AgentInstanceId = "agent_1",
+            Component = "agent_execution",
+            Operation = "execute",
+            Status = "started",
+            StartedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        Assert.IsNotNull(record.Metadata);
+        Assert.AreEqual(0, record.Metadata.Count);
+    }
+
+    [TestMethod]
+    public void ExecutionLifecycleRecord_Required_Fields_Are_Settable()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var record = new ExecutionLifecycleRecord
+        {
+            ExecutionId = "exec_2",
+            TraceId = "trace_2",
+            CorrelationId = "corr_2",
+            WorkspaceId = "ws",
+            SessionId = "sess",
+            AgentInstanceId = "agent",
+            Component = "llm_gateway",
+            Operation = "chat",
+            Status = "succeeded",
+            StartedAtUtc = now,
+            CompletedAtUtc = now.AddMilliseconds(100),
+            DurationMs = 100,
+            Summary = "ok",
+            Error = null,
+            Metadata = new Dictionary<string, string> { ["key"] = "val" },
+        };
+
+        Assert.AreEqual("exec_2", record.ExecutionId);
+        Assert.AreEqual("trace_2", record.TraceId);
+        Assert.AreEqual("corr_2", record.CorrelationId);
+        Assert.AreEqual("ws", record.WorkspaceId);
+        Assert.AreEqual("sess", record.SessionId);
+        Assert.AreEqual("agent", record.AgentInstanceId);
+        Assert.AreEqual("llm_gateway", record.Component);
+        Assert.AreEqual("chat", record.Operation);
+        Assert.AreEqual("succeeded", record.Status);
+        Assert.AreEqual(100, record.DurationMs);
+        Assert.AreEqual("ok", record.Summary);
+        Assert.IsNull(record.Error);
+        Assert.AreEqual(1, record.Metadata.Count);
+        Assert.AreEqual("val", record.Metadata["key"]);
+    }
+
+    [TestMethod]
+    public void LlmInvocationRequest_Default_Tools_Is_Not_Null()
+    {
+        var request = new LlmInvocationRequest
+        {
+            WorkspaceId = "default",
+            SessionId = "session_1",
+            AgentInstanceId = "agent_1",
+            AgentTemplateId = "general-assistant",
+            Profile = new LlmInvocationProfile
+            {
+                ProviderId = "openai",
+                ProfileId = "conscious.default",
+                ModelId = "gpt-4o",
+            },
+            Messages = Array.Empty<ChatMessage>(),
+        };
+
+        Assert.IsNotNull(request.Tools);
+        Assert.AreEqual(0, request.Tools.Count);
+        Assert.AreEqual("openai", request.Profile.ProviderId);
+        Assert.AreEqual("conscious.default", request.Profile.ProfileId);
+        Assert.AreEqual("gpt-4o", request.Profile.ModelId);
+        Assert.AreEqual("conscious", request.Profile.Role);
+    }
+
+    [TestMethod]
+    public void LlmInvocationResult_Default_ToolCalls_Is_Not_Null()
+    {
+        var result = new LlmInvocationResult
+        {
+            Success = true,
+            ReplyText = "hello",
+        };
+
+        Assert.IsNotNull(result.ToolCalls);
+        Assert.AreEqual(0, result.ToolCalls.Count);
+        Assert.AreEqual("hello", result.ReplyText);
+        Assert.IsTrue(result.Success);
+    }
+
+    [TestMethod]
+    public void ContextAssemblyRequest_Required_Fields_Are_Settable()
+    {
+        var request = new ContextAssemblyRequest
+        {
+            WorkspaceId = "ws",
+            SessionId = "sess",
+            AgentInstanceId = "agent",
+            AgentTemplateId = "tmpl",
+            UserMessage = "hello",
+            LlmProfileId = "profile",
+            MaxContextTokens = 8192,
+            ForStreaming = true,
+            IsFirstMessage = false,
+            SessionHistory = new List<ChatMessage> { new(ChatRole.User, "previous") },
+        };
+
+        Assert.AreEqual("ws", request.WorkspaceId);
+        Assert.AreEqual("sess", request.SessionId);
+        Assert.AreEqual("hello", request.UserMessage);
+        Assert.AreEqual(8192, request.MaxContextTokens);
+        Assert.IsTrue(request.ForStreaming);
+        Assert.IsFalse(request.IsFirstMessage);
+        Assert.AreEqual(1, request.SessionHistory.Count);
+    }
+
+    [TestMethod]
+    public void RuntimeDispatchRequest_TaskPlanningFields_RoundTripThroughJson()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var request = new RuntimeDispatchRequest
+        {
+            SessionId = "session_1",
+            AgentTemplateId = "workspace-task-agent",
+            MessageText = "execute task",
+            WorkspaceId = "default",
+            TaskPlanId = "plan_1",
+            TaskNodeId = "task_2",
+            ParentTaskNodeId = "task_1",
+            DelegationDepth = 1,
+            MaxDelegationDepth = 2,
+            RoleInPlan = "researcher",
+            AllowSubDelegation = true,
+            AllowAgentCreation = false,
+            AssignedObjective = "Collect evidence",
+            ExpectedOutputContract = "markdown report",
+        };
+
+        var json = JsonSerializer.Serialize(request, options);
+        var roundTripped = JsonSerializer.Deserialize<RuntimeDispatchRequest>(json, options);
+
+        Assert.IsNotNull(roundTripped);
+        Assert.AreEqual("plan_1", roundTripped.TaskPlanId);
+        Assert.AreEqual("task_2", roundTripped.TaskNodeId);
+        Assert.AreEqual("task_1", roundTripped.ParentTaskNodeId);
+        Assert.AreEqual(1, roundTripped.DelegationDepth);
+        Assert.AreEqual(2, roundTripped.MaxDelegationDepth);
+        Assert.AreEqual("researcher", roundTripped.RoleInPlan);
+        Assert.AreEqual(true, roundTripped.AllowSubDelegation);
+        Assert.AreEqual(false, roundTripped.AllowAgentCreation);
+        Assert.AreEqual("Collect evidence", roundTripped.AssignedObjective);
+        Assert.AreEqual("markdown report", roundTripped.ExpectedOutputContract);
+    }
+
+    [TestMethod]
+    public void ContextAssemblyResult_Layers_Are_Settable()
+    {
+        var layers = new List<ContextLayerSummary>
+        {
+            new() { Layer = "system", EstimatedTokens = 100, ItemCount = 1, Source = "prompt" },
+            new() { Layer = "user", EstimatedTokens = 50, ItemCount = 1, Source = "message" },
+        };
+
+        var result = new ContextAssemblyResult
+        {
+            Messages = new List<ChatMessage> { new(ChatRole.User, "hello") },
+            EstimatedTokens = 150,
+            Layers = layers,
+            CompactionMode = "gentle",
+            MemoryRecallMode = "vector",
+        };
+
+        Assert.AreEqual(150, result.EstimatedTokens);
+        Assert.AreEqual(2, result.Layers.Count);
+        Assert.AreEqual("gentle", result.CompactionMode);
+        Assert.AreEqual("vector", result.MemoryRecallMode);
+        Assert.AreEqual("system", result.Layers[0].Layer);
+        Assert.AreEqual(100, result.Layers[0].EstimatedTokens);
+    }
+
+    [TestMethod]
+    public void ToolInvocationRequest_Required_Fields_Are_Settable()
+    {
+        var request = new ToolInvocationRequest
+        {
+            WorkspaceId = "ws",
+            SessionId = "sess",
+            AgentInstanceId = "agent",
+            ToolCallId = "call_001",
+            ToolName = "file_read",
+            ArgumentsJson = "{\"path\":\"/tmp\"}",
+        };
+
+        Assert.AreEqual("call_001", request.ToolCallId);
+        Assert.AreEqual("file_read", request.ToolName);
+        Assert.AreEqual("{\"path\":\"/tmp\"}", request.ArgumentsJson);
+    }
+
+    [TestMethod]
+    public void ToolInvocationResult_Defaults()
+    {
+        var result = new ToolInvocationResult
+        {
+            Success = false,
+            ToolCallId = "call_001",
+            ToolName = "file_write",
+            Error = "permission denied",
+            DurationMs = 5,
+        };
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("", result.ArgsHash);
+        Assert.AreEqual(0, result.OutputLength);
+        Assert.AreEqual("permission denied", result.Error);
+        Assert.AreEqual(5, result.DurationMs);
+    }
+
+    [TestMethod]
+    public void SubAgentInvocationRequest_Defaults_IsAsync()
+    {
+        var request = new SubAgentInvocationRequest
+        {
+            ParentSessionId = "parent",
+            WorkspaceId = "ws",
+            ParentAgentInstanceId = "agent",
+            TemplateId = "code-agent",
+            Task = "review file",
+        };
+
+        Assert.IsFalse(request.IsAsync);
+        Assert.AreEqual("parent", request.ParentSessionId);
+        Assert.AreEqual("code-agent", request.TemplateId);
+        Assert.AreEqual("review file", request.Task);
+    }
+
+    [TestMethod]
+    public void SubAgentInvocationResult_Required_Fields()
+    {
+        var result = new SubAgentInvocationResult
+        {
+            SubSessionId = "sub_1",
+            RunId = "run_1",
+            Status = "completed",
+            Reply = "done",
+        };
+
+        Assert.AreEqual("sub_1", result.SubSessionId);
+        Assert.AreEqual("run_1", result.RunId);
+        Assert.AreEqual("completed", result.Status);
+        Assert.AreEqual("done", result.Reply);
+        Assert.IsNull(result.Error);
+    }
+
+    [TestMethod]
+    public void LlmInvocationResult_Error_Path()
+    {
+        var result = new LlmInvocationResult
+        {
+            Success = false,
+            Error = "rate limit exceeded",
+        };
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("rate limit exceeded", result.Error);
+        Assert.IsNull(result.ReplyText);
+        Assert.AreEqual(0, result.ToolCalls.Count);
+    }
+
+    [TestMethod]
+    public void LifecycleMetadata_Has_Stable_Metadata_Keys()
+    {
+        var record = new ExecutionLifecycleRecord
+        {
+            ExecutionId = "exec_meta",
+            TraceId = "trace_meta",
+            WorkspaceId = "default",
+            SessionId = "session",
+            AgentInstanceId = "agent",
+            Component = "llm_gateway",
+            Operation = "chat",
+            Status = "succeeded",
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            Metadata = new Dictionary<string, string>
+            {
+                [LifecycleMetadataKeys.ProfileId] = "conscious.default",
+                [LifecycleMetadataKeys.ProviderId] = "openai",
+                [LifecycleMetadataKeys.ModelId] = "gpt-4o",
+                [LifecycleMetadataKeys.ContextTokensEstimated] = "1200",
+                [LifecycleMetadataKeys.ContextLayerCount] = "5",
+                [LifecycleMetadataKeys.ToolName] = "file_read",
+                [LifecycleMetadataKeys.ToolArgsHash] = "abc123",
+                [LifecycleMetadataKeys.SubAgentRunId] = "run_001",
+            },
+        };
+
+        Assert.AreEqual("conscious.default", record.Metadata[LifecycleMetadataKeys.ProfileId]);
+        Assert.AreEqual("openai", record.Metadata[LifecycleMetadataKeys.ProviderId]);
+        Assert.AreEqual("gpt-4o", record.Metadata[LifecycleMetadataKeys.ModelId]);
+        Assert.AreEqual("1200", record.Metadata[LifecycleMetadataKeys.ContextTokensEstimated]);
+        Assert.AreEqual("5", record.Metadata[LifecycleMetadataKeys.ContextLayerCount]);
+        Assert.AreEqual("file_read", record.Metadata[LifecycleMetadataKeys.ToolName]);
+        Assert.AreEqual("abc123", record.Metadata[LifecycleMetadataKeys.ToolArgsHash]);
+        Assert.AreEqual("run_001", record.Metadata[LifecycleMetadataKeys.SubAgentRunId]);
+    }
+}

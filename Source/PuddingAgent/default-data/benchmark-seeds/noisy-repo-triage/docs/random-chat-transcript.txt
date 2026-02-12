@@ -1,0 +1,3 @@
+coffee order: two teas
+someone mentioned a deployment but did not provide a timestamp
+ignore this note unless it ties to a named release blocker

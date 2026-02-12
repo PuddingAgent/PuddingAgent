@@ -1,0 +1,11 @@
+name: E2E Tests
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: cd Source/PuddingPlatformAdmin && npm install
+      - run: npx playwright install chromium
+      - run: cd Source/PuddingPlatformAdmin && npx playwright test

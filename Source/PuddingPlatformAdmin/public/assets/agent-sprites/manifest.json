@@ -1,0 +1,51 @@
+{
+  "smile": {
+    "avatarId": "smile",
+    "pet": "/admin/assets/agent-sprites/smile/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/smile/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/smile/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/smile/contact-sheet.png"
+  },
+  "sleepy": {
+    "avatarId": "sleepy",
+    "pet": "/admin/assets/agent-sprites/sleepy/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/sleepy/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/sleepy/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/sleepy/contact-sheet.png"
+  },
+  "thinking": {
+    "avatarId": "thinking",
+    "pet": "/admin/assets/agent-sprites/thinking/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/thinking/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/thinking/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/thinking/contact-sheet.png"
+  },
+  "angry": {
+    "avatarId": "angry",
+    "pet": "/admin/assets/agent-sprites/angry/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/angry/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/angry/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/angry/contact-sheet.png"
+  },
+  "amber": {
+    "avatarId": "amber",
+    "pet": "/admin/assets/agent-sprites/amber/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/amber/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/amber/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/amber/contact-sheet.png"
+  },
+  "mint": {
+    "avatarId": "mint",
+    "pet": "/admin/assets/agent-sprites/mint/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/mint/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/mint/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/mint/contact-sheet.png"
+  },
+  "silver": {
+    "avatarId": "silver",
+    "pet": "/admin/assets/agent-sprites/silver/pet.json",
+    "spritesheet": "/admin/assets/agent-sprites/silver/spritesheet.png",
+    "spritesheetWebp": "/admin/assets/agent-sprites/silver/spritesheet.webp",
+    "contactSheet": "/admin/assets/agent-sprites/silver/contact-sheet.png"
+  }
+}

@@ -1,0 +1,55 @@
+// ⚠️  SEED FILE — copied to data/config/llm.providers.json on first boot only.
+// After first boot, only data/config/llm.providers.json is read by the Agent runtime.
+// The admin UI /admin/llm-resource-pool writes to SQLite, NOT to this file.
+// See: LlmProviderApiController.cs (DB) vs PuddingFileConfigLoader.cs (JSON file).
+{
+  "defaultProviderId": "fake",
+  "defaultModelId": "fake-chat",
+  "providers": [
+    {
+      "providerId": "fake",
+      "name": "Fake LLM",
+      "protocol": "openai",
+      "baseUrl": "http://localhost:8080/__fake_llm/v1",
+      "apiKey": "local-dev-only",
+      "isEnabled": true,
+      "requestTimeoutSeconds": 120,
+      "streamTimeoutSeconds": 300,
+      "maxRetries": 2,
+      "retryDelaySeconds": 1,
+      "circuitBreakerFailureThreshold": 5,
+      "circuitBreakerRecoverySeconds": 60,
+      "models": [
+        {
+          "modelId": "fake-chat",
+          "name": "Fake Chat",
+          "maxContextTokens": 65536,
+          "maxOutputTokens": 4096,
+          "capabilityTags": ["text", "function-calling", "streaming"],
+          "isEmbedding": false,
+          "isDefault": true,
+          "sortOrder": 1
+        }
+      ]
+    }
+  ],
+  "profiles": {
+    "default-conscious": {
+      "providerId": "fake",
+      "modelId": "fake-chat",
+      "reasoningEffort": "medium",
+      "thinkingMode": "disabled"
+    },
+    "default-subconscious": {
+      "providerId": "fake",
+      "modelId": "fake-chat",
+      "reasoningEffort": "low",
+      "thinkingMode": "disabled"
+    }
+  },
+  "roles": {
+    "conscious": "default-conscious",
+    "subconscious": "default-subconscious"
+  },
+  "embedding": {}
+}

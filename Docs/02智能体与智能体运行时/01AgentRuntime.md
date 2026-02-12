@@ -1,0 +1,2 @@
+
+PuddingRuntime 提供了 AgentRuntime，所以我们也可以将PuddingRuntime成为agent运行时，PuddingRuntime提供了agent所需要基础设施。

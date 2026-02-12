@@ -1,0 +1,180 @@
+@model PuddingPlatform.Controllers.ObservabilityViewModel
+@{
+    ViewData["Title"] = "可观测与调试";
+    var metrics = Model.Metrics;
+    var summary = Model.Summary;
+}
+
+<h2>可观测与调试</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input name="sessionId" class="form-control" placeholder="SessionId" value="@Model.SessionId" />
+    </div>
+    <div class="col-auto">
+        <input name="messageId" class="form-control" placeholder="MessageId" value="@Model.MessageId" />
+    </div>
+    <div class="col-auto">
+        <input name="workspaceId" class="form-control" placeholder="WorkspaceId" value="@Model.WorkspaceId" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" type="submit">查询</button>
+    </div>
+</form>
+
+@if (metrics is null)
+{
+    <div class="alert alert-warning">未能加载 metrics，请确认 Controller 正常运行。</div>
+}
+else
+{
+    <div class="row mb-3">
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">总会话</div><div class="h4">@metrics.Session.Total</div></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">活跃会话</div><div class="h4 text-success">@metrics.Session.Active</div></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">待审批</div><div class="h4 text-warning">@metrics.Approval.Pending</div></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">在线 Runtime</div><div class="h4 text-info">@metrics.Runtime.OnlineNodes / @metrics.Runtime.TotalNodes</div></div></div></div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h5>审计类型分布（最近窗口）</h5>
+            @if (metrics.Audit.ByType.Count == 0)
+            {
+                <div class="alert alert-light">暂无数据</div>
+            }
+            else
+            {
+                <table class="table table-sm table-striped">
+                    <thead><tr><th>事件类型</th><th>数量</th></tr></thead>
+                    <tbody>
+                    @foreach (var kv in metrics.Audit.ByType.OrderByDescending(x => x.Value))
+                    {
+                        <tr><td>@kv.Key</td><td>@kv.Value</td></tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="col-md-6">
+            <h5>最近审计（Top 10）</h5>
+            @if (summary is null || summary.RecentAuditEvents.Count == 0)
+            {
+                <div class="alert alert-light">暂无审计事件</div>
+            }
+            else
+            {
+                <table class="table table-sm table-striped">
+                    <thead><tr><th>事件</th><th>Session</th><th>时间</th></tr></thead>
+                    <tbody>
+                    @foreach (var e in summary.RecentAuditEvents)
+                    {
+                        <tr>
+                            <td>@e.EventType</td>
+                            <td><code>@e.SessionId</code></td>
+                            <td>@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+}
+
+@if (Model.SessionId is not null)
+{
+    <hr />
+    <h4>Session 调试快照</h4>
+    @if (Model.SessionDebug is null)
+    {
+        <div class="alert alert-warning">未找到该 Session 或暂无调试信息。</div>
+    }
+    else
+    {
+        <p class="text-muted">Session: <code>@Model.SessionDebug.Session?.SessionId</code> / Workspace: <code>@Model.SessionDebug.Session?.WorkspaceId</code></p>
+        <table class="table table-sm table-bordered">
+            <thead><tr><th>事件</th><th>详情</th><th>时间</th></tr></thead>
+            <tbody>
+            @foreach (var e in Model.SessionDebug.RecentAudit)
+            {
+                <tr>
+                    <td>@e.EventType</td>
+                    <td>@e.Detail</td>
+                    <td>@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+}
+
+@if (Model.MessageId is not null)
+{
+    <hr />
+    <h4>Message 调试快照</h4>
+    @if (Model.MessageDebug is null)
+    {
+        <div class="alert alert-warning">未找到该 Message 的调试信息。</div>
+    }
+    else
+    {
+        <p class="text-muted">Message: <code>@Model.MessageDebug.MessageId</code></p>
+        <div class="row mb-2">
+            <div class="col-md-3"><span class="badge bg-@(Model.MessageDebug.Diagnosis.RouteSuccess == true ? "success" : "secondary")">路由成功: @Model.MessageDebug.Diagnosis.RouteSuccess</span></div>
+            <div class="col-md-3"><span class="badge bg-warning text-dark">权限拒绝: @Model.MessageDebug.Diagnosis.HasPermissionDenied</span></div>
+            <div class="col-md-3"><span class="badge bg-danger">Runtime失败: @Model.MessageDebug.Diagnosis.HasRuntimeFailure</span></div>
+            <div class="col-md-3"><span class="badge bg-info text-dark">审计条数: @Model.MessageDebug.AuditCount</span></div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.MessageDebug.Diagnosis.RouteFailureReason))
+        {
+            <div class="alert alert-warning">@Model.MessageDebug.Diagnosis.RouteFailureReason</div>
+        }
+        <table class="table table-sm table-bordered">
+            <thead><tr><th>事件</th><th>详情</th><th>时间</th></tr></thead>
+            <tbody>
+            @foreach (var e in Model.MessageDebug.AuditTimeline)
+            {
+                <tr>
+                    <td>@e.EventType</td>
+                    <td>@e.Detail</td>
+                    <td>@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+}
+
+@if (Model.WorkspaceId is not null)
+{
+    <hr />
+    <h4>Workspace 调试快照</h4>
+    @if (Model.WorkspaceDebug is null)
+    {
+        <div class="alert alert-warning">未找到该 Workspace 的调试信息。</div>
+    }
+    else
+    {
+        <p class="text-muted">Workspace: <code>@Model.WorkspaceDebug.Workspace.WorkspaceId</code> / @Model.WorkspaceDebug.Workspace.Name</p>
+        <div class="row mb-2">
+            <div class="col-md-3"><span class="badge bg-@(Model.WorkspaceDebug.Workspace.IsEnabled ? "success" : "secondary")">启用: @Model.WorkspaceDebug.Workspace.IsEnabled</span></div>
+            <div class="col-md-3"><span class="badge bg-warning text-dark">冻结: @Model.WorkspaceDebug.Workspace.IsFrozen</span></div>
+            <div class="col-md-3"><span class="badge bg-info text-dark">活跃会话: @Model.WorkspaceDebug.Session.Active</span></div>
+            <div class="col-md-3"><span class="badge bg-danger">路由失败: @Model.WorkspaceDebug.Routing.RecentFailures</span></div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.WorkspaceDebug.Workflow.PotentialBlockerHint))
+        {
+            <div class="alert alert-warning">@Model.WorkspaceDebug.Workflow.PotentialBlockerHint</div>
+        }
+        <table class="table table-sm table-striped">
+            <thead><tr><th>高频失败原因</th><th>次数</th></tr></thead>
+            <tbody>
+            @foreach (var r in Model.WorkspaceDebug.Routing.TopFailureReasons)
+            {
+                <tr><td>@r.Reason</td><td>@r.Count</td></tr>
+            }
+            </tbody>
+        </table>
+    }
+}

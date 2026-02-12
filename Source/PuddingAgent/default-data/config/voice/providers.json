@@ -1,0 +1,74 @@
+{
+  "providers": [
+    {
+      "providerId": "dashscope",
+      "name": "阿里云百炼-语音",
+      "endpoint": "https://dashscope.aliyuncs.com",
+      "apiKey": "${DASHSCOPE_API_KEY}",
+      "isEnabled": true,
+      "description": "支持 CosyVoice 和 Qwen-TTS/ASR。",
+      "ttsModels": [
+        {
+          "modelId": "cosyvoice-v3-flash",
+          "name": "CosyVoice V3 Flash",
+          "path": "/api/v1/services/audio/tts/SpeechSynthesizer",
+          "voices": ["longanyang", "longanhuan_v3"],
+          "audioFormats": ["wav", "mp3"],
+          "sampleRates": [24000, 48000],
+          "supportsStreaming": true,
+          "supportsInstructions": true,
+          "isDefault": true,
+          "sortOrder": 1
+        },
+        {
+          "modelId": "qwen3-tts-flash",
+          "name": "Qwen3 TTS Flash",
+          "path": "/api/v1/services/aigc/multimodal-generation/generation",
+          "voices": ["Cherry", "Stella", "Vera"],
+          "audioFormats": ["wav", "mp3"],
+          "sampleRates": [24000],
+          "supportsStreaming": true,
+          "sortOrder": 2
+        }
+      ],
+      "asrModels": [
+        {
+          "modelId": "qwen3-asr-flash-realtime",
+          "name": "Qwen3 ASR Flash Realtime",
+          "path": "/api/v1/services/aigc/multimodal-generation/generation",
+          "languages": ["zh-CN", "en-US"],
+          "sampleRates": [16000],
+          "supportsEmotion": true,
+          "supportsTimestamps": true,
+          "isDefault": true,
+          "sortOrder": 1
+        }
+      ]
+    },
+    {
+      "providerId": "xunfei",
+      "name": "讯飞语音",
+      "endpoint": "https://iat-api.xfyun.cn/v2",
+      "apiKey": "${XUNFEI_API_KEY}",
+      "isEnabled": false,
+      "description": "讯飞语音，仅提供 ASR。",
+      "ttsModels": [],
+      "asrModels": [
+        {
+          "modelId": "xunfei-lark-realtime",
+          "name": "讯飞 Lark 实时语音识别",
+          "path": "/v2/iat",
+          "languages": ["zh-CN", "en-US"],
+          "sampleRates": [16000, 8000],
+          "supportsTimestamps": true,
+          "isDefault": true,
+          "sortOrder": 1
+        }
+      ]
+    }
+  ],
+  "defaultTtsProviderId": "dashscope",
+  "defaultTtsModelId": "cosyvoice-v3-flash",
+  "defaultAsrProviderId": "dashscope",
+  "defaultAsrModelId": "qwen3-asr-flash"
+}

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "PuddingController": {
+      "commandName": "Project",
+      "applicationUrl": "http://localhost:5000"
+    }
+  }
+}
