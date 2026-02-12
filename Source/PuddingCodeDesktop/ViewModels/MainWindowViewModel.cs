@@ -58,6 +58,45 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SwarmButtonWeight));
     }
 
+    // ──── Sidebar State (VS Code Activity Bar) ────
+
+    /// <summary>Which sidebar panel is active: Explorer, Search, Git, or null (collapsed).</summary>
+    [ObservableProperty] private string? _activeSidebarPanel = "Explorer";
+
+    public bool IsSidebarVisible => ActiveSidebarPanel is not null;
+    public bool IsSidebarExplorer => ActiveSidebarPanel == "Explorer";
+    public bool IsSidebarSearch => ActiveSidebarPanel == "Search";
+    public bool IsSidebarGit => ActiveSidebarPanel == "Git";
+
+    partial void OnActiveSidebarPanelChanged(string? value)
+    {
+        OnPropertyChanged(nameof(IsSidebarVisible));
+        OnPropertyChanged(nameof(IsSidebarExplorer));
+        OnPropertyChanged(nameof(IsSidebarSearch));
+        OnPropertyChanged(nameof(IsSidebarGit));
+    }
+
+    /// <summary>Which bottom panel tab is active: Chat, Output, Problems.</summary>
+    [ObservableProperty] private string _activeBottomPanel = "Chat";
+
+    public bool IsBottomChat => ActiveBottomPanel == "Chat";
+    public bool IsBottomOutput => ActiveBottomPanel == "Output";
+    public bool IsBottomProblems => ActiveBottomPanel == "Problems";
+
+    /// <summary>Whether the bottom panel is visible.</summary>
+    [ObservableProperty] private bool _isBottomPanelVisible = true;
+
+    partial void OnActiveBottomPanelChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsBottomChat));
+        OnPropertyChanged(nameof(IsBottomOutput));
+        OnPropertyChanged(nameof(IsBottomProblems));
+        if (!IsBottomPanelVisible) IsBottomPanelVisible = true;
+    }
+
+    // Problem list for the Problems panel
+    public ObservableCollection<string> Problems { get; } = new();
+
     // ──── Observable properties ────
 
     [ObservableProperty]
@@ -586,6 +625,31 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [RelayCommand]
     private void CreateTask() => Tasks.Add($"task-{Tasks.Count + 1:D3}: New Task");
+
+    /// <summary>Toggle a sidebar panel; clicking the same icon again collapses the sidebar.</summary>
+    [RelayCommand]
+    private void ToggleSidebar(string panel)
+    {
+        ActiveSidebarPanel = ActiveSidebarPanel == panel ? null : panel;
+        PuddingLogger.Info($"Sidebar: {ActiveSidebarPanel ?? "collapsed"}");
+    }
+
+    /// <summary>Switch to a bottom panel tab.</summary>
+    [RelayCommand]
+    private void SwitchBottomPanel(string panel)
+    {
+        if (ActiveBottomPanel == panel && IsBottomPanelVisible)
+            IsBottomPanelVisible = false;
+        else
+        {
+            ActiveBottomPanel = panel;
+            IsBottomPanelVisible = true;
+        }
+    }
+
+    /// <summary>Toggle bottom panel visibility.</summary>
+    [RelayCommand]
+    private void ToggleBottomPanel() => IsBottomPanelVisible = !IsBottomPanelVisible;
 
     // ──── Swarm Commands ────
 
