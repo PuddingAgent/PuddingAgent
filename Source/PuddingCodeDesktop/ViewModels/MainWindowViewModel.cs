@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -29,6 +30,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty] private ProjectContext? _currentProject;
     [ObservableProperty] private string _projectDisplayName = "No project opened";
+
+    /// <summary>
+    /// Set by the View (MainWindow) so the ViewModel can open platform dialogs.
+    /// </summary>
+    public IStorageProvider? StorageProvider { get; set; }
 
     // ──── View Switching ────
 
@@ -210,6 +216,84 @@ public partial class MainWindowViewModel : ViewModelBase
         PuddingLogger.Info("Initialization complete");
     }
 
+    // ──── Open Folder ────
+
+    /// <summary>Open a folder picker and set it as the current project workspace.</summary>
+    [RelayCommand]
+    private async Task OpenFolderAsync()
+    {
+        if (StorageProvider is null)
+        {
+            PuddingLogger.Warn("StorageProvider is null — cannot open folder picker");
+            return;
+        }
+
+        var result = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Open Project Folder",
+            AllowMultiple = false
+        });
+
+        if (result.Count == 0) return;
+
+        var folder = result[0];
+        var path = folder.TryGetLocalPath();
+        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+        {
+            PuddingLogger.Warn($"OpenFolder: invalid path from picker: {path}");
+            return;
+        }
+
+        SetProject(path);
+    }
+
+    /// <summary>Set the project workspace to a given directory path.</summary>
+    private void SetProject(string path)
+    {
+        CurrentProject = new ProjectContext(path);
+        ProjectDisplayName = CurrentProject.Name;
+        StatusText = $"Project: {CurrentProject.Name}";
+        PuddingLogger.Info($"OpenFolder: project set to \"{CurrentProject.RootPath}\"");
+
+        // Populate project file tree (shallow: top 2 levels, skip hidden/bin/obj)
+        ProjectTree.Clear();
+        PopulateTree(CurrentProject.RootPath, "", depth: 0, maxDepth: 2);
+
+        AddSystemMessage($"📂 Opened: {CurrentProject.RootPath}");
+
+        var snapshot = new GitSnapshotService(CurrentProject.RootPath);
+        if (snapshot.IsGitRepo)
+            AddSystemMessage("Git repo detected — auto-snapshots enabled");
+    }
+
+    private void PopulateTree(string dir, string indent, int depth, int maxDepth)
+    {
+        if (depth >= maxDepth) return;
+
+        try
+        {
+            var entries = Directory.GetFileSystemEntries(dir)
+                .Select(e => new { Path = e, Name = Path.GetFileName(e) })
+                .Where(e => !e.Name.StartsWith('.') &&
+                            !e.Name.Equals("bin", StringComparison.OrdinalIgnoreCase) &&
+                            !e.Name.Equals("obj", StringComparison.OrdinalIgnoreCase) &&
+                            !e.Name.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(e => !Directory.Exists(e.Path)) // folders first
+                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var entry in entries)
+            {
+                var isDir = Directory.Exists(entry.Path);
+                var icon = isDir ? "📁" : "📄";
+                ProjectTree.Add($"{indent}{icon} {entry.Name}");
+
+                if (isDir)
+                    PopulateTree(entry.Path, indent + "  ", depth + 1, maxDepth);
+            }
+        }
+        catch (UnauthorizedAccessException) { /* skip protected dirs */ }
+    }
+
     private void InitSwarmDemoData()
     {
         PuddingLogger.SwarmInfo("Initializing Swarm demo data...");
@@ -332,9 +416,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var gateway = new OpenAiLlmGateway(_httpClient, options);
             var registry = new ToolRegistry();
-            registry.Register(new FileTool());
-            registry.Register(new ShellTool());
-            var agent = new AgentOrchestrator(gateway, registry);
+            registry.Register(new FileTool(CurrentProject));
+            registry.Register(new ShellTool(CurrentProject));
+
+            GitSnapshotService? snapshot = CurrentProject is not null
+                ? new GitSnapshotService(CurrentProject.RootPath)
+                : null;
+            var agent = new AgentOrchestrator(gateway, registry, CurrentProject, snapshot);
 
             _agentCts = new CancellationTokenSource();
 

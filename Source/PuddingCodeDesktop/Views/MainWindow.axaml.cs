@@ -11,6 +11,13 @@ namespace PuddingCodeDesktop.Views
             InitializeComponent();
             // Subscribe to KeyDown to handle Enter in chat input
             AddHandler(KeyDownEvent, OnGlobalKeyDown, handledEventsToo: false);
+
+            // Wire the platform StorageProvider to the ViewModel so it can open folder pickers
+            Loaded += (_, _) =>
+            {
+                if (DataContext is MainWindowViewModel vm)
+                    vm.StorageProvider = StorageProvider;
+            };
         }
 
         private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
