@@ -3,5 +3,7 @@
     <Project Path="Docs/Docs.shproj" />
     <Project Path="Source/PuddingCode/PuddingCode.csproj" />
     <Project Path="Source/PuddingCodeCLI/PuddingCodeCLI.csproj" />
+    <Project Path="Source/PuddingCodeDesktop/PuddingCodeDesktop.csproj" Id="51dc16a4-66ab-49bd-a550-86dd40643f6c" />
+    <Project Path="Source/PuddingCodeServer/PuddingCodeServer.csproj" Id="caf2098c-08a8-4f0f-a8dc-098e6931a95f" />
   </Folder>
 </Solution>
