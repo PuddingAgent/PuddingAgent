@@ -1,152 +1,201 @@
-## 一、 系统架构设计 (Architecture)
+﻿# PuddingAssistant 架构总览
 
-PuddingAssistant 采用**“大脑-中枢-工具”**的三层解耦架构，核心由 C# (.NET 9) 驱动。
-
-### 1. 核心分层
-
-* **交互层 (The Shell/Face):** 基于 `Spectre.Console` 实现。处理 TUI 渲染、实时思维流展示和用户输入。
-* **中枢层 (The Orchestrator/Brain):** 基于 `Semantic Kernel` 或自定义 Agent 框架。负责任务拆解（Planning）、工具调用决策（Tool Calling）和长短期记忆管理。
-* **执行层 (The Hands/Senses):**
-* **LSP Client:** 对接各语言的 Language Server（Roslyn, Pyright 等）。
-* **File/Git Manager:** 处理原子化的文件修改和 Git 快照。
-* **Sandbox Shell:** 在受限环境中执行编译和测试命令。
-
-
+> **定位：** PuddingAssistant 是面向大众用户的**数字化布丁管家**，通过 Swarm 多智能体协作、本地环境控制和个人记忆图谱，为用户提供全方位的智能助手体验。
+>
+> **核心理念：** 从"程序员的生产力工具"转向"人类的数字化代理"。PuddingCode（编程能力）作为**专业形态 / Pro Mode** 保留为插件。
+>
+> **设计哲学：** **"AI 的大脑，绅士的手脚"** — 零配置、单机优先、情感交互。安静陪伴，确认执行，绝不破坏。
+>
+> **详细设计方案：** [task18定位.md](Tasks/task18定位.md)
 
 ---
 
-## 二、 核心功能模块详细设计
+## 一、系统架构
 
-### 1. 任务规划器 (Pudding Planner)
+PuddingAssistant 采用 **双态交互 + Swarm 编排 + 插件化能力** 的分层架构，核心由 C#（.NET 10）驱动。
 
-* **逻辑：** 借鉴 OpenCode，将任务拆分为 `Analysis` -> `Planning` -> `Execution` -> `Verification` 四个阶段。
-* **特性：** 采用 **Recursive Thinking**。如果子任务执行失败，Planner 会自动重新生成计划。
+### 1. 架构分层
 
-### 2. LSP 语义感知器 (Sense Tooling)
+```text
+┌──────────────────────────────────────────────────────────┐
+│  交互层 — 双态架构                                        │
+│  ├─ 桌面精灵态 (Desktop Spirit)  — 常驻轻量入口           │
+│  └─ 窗口态 (Command Center)      — 深度配置与编排         │
+├──────────────────────────────────────────────────────────┤
+│  编排层 — Swarm 集群                                      │
+│  ├─ Leader（总管）  — 意图识别、任务拆解、结果汇聚         │
+│  ├─ Worker（动态）  — 按需生成、任务结束后消失              │
+│  └─ SignalBus       — 消息总线、状态同步                   │
+├──────────────────────────────────────────────────────────┤
+│  记忆层 — MemoryHub                                       │
+│  ├─ Profile.md      — 用户约束（偏好、过敏、预算）         │
+│  ├─ Session_Log/    — 按日期存储任务流                     │
+│  └─ Refinement      — 长期记忆提炼                        │
+├──────────────────────────────────────────────────────────┤
+│  能力层 — 插件化 (IPuddingPlugin)                         │
+│  ├─ 意图执行  — 快捷指令、本地搜索、脚本唤醒              │
+│  ├─ 环境感知  — 屏幕拾取、文本精修、剪贴板管家            │
+│  ├─ 数字管家  — 记忆编辑、任务看板、行程提醒              │
+│  ├─ 系统管理  — Swarm 视图、Agent 商店、设置              │
+│  └─ Pro Mode  — PuddingCode 编程能力（原有 CLI 闭环）     │
+├──────────────────────────────────────────────────────────┤
+│  执行层 — LocalActionProvider                             │
+│  ├─ FileSystemConnector  — 读写文件（PDF / Excel / 代码） │
+│  ├─ CliWrap              — 执行本地命令                   │
+│  └─ EnvironmentSensor    — 桌面文件感知                   │
+└──────────────────────────────────────────────────────────┘
+```
 
-* **功能：** 不再让 AI 盲目读全文件。提供 `get_symbol_definitions`、`find_references` 等接口。
-* **优势：** 极大地节省 Token，并提高 AI 在大型项目中的重构准确度。
+### 2. 双态交互
 
-### 3. 自我修复环 (Self-Healing Loop)
-
-* **流程：** 1. Agent 修改代码。
-2. 自动触发 `dotnet build` 或 `pytest`。
-3. 捕获控制台输出（stdout/stderr）。
-4. 将错误日志反馈给 Opus 4.6，进入下一次修复。
-
-### 4. 视觉反馈系统 (Rich TUI)
-
-* **实时 Diff:** 借鉴 Crush，在终端用侧边栏或浮窗显示代码改动的对比。
-* **思维流 (Thought Stream):** 用淡紫色或橙色的小号字体实时滚动显示 AI 的思考过程，增加透明度。
-
----
-
-## 三、 路线图 (Roadmap 2026)
-
-我们将开发分为四个阶段，从“能对话的脚本”进化为“全自动工程师”。
-
-### **阶段 1：奠基 (Foundation) - 第 1-2 周**
-
-* **核心目标：** 打通 C# CLI 与 Claude Opus 4.6 的连接。
-* **关键任务：**
-* 使用 `Spectre.Console` 搭建 CLI 基础框架。
-* 实现基础的 **Tool Calling**（读写文件、运行简单的 Shell 命令）。
-* 建立简单的 `CLAUDE.md` 项目指令系统，让 Agent 了解当前项目规范。
-
-
-
-### **阶段 2：感知 (Sensing) - 第 3-5 周**
-
-* **核心目标：** 让 Agent 拥有“眼睛”，能理解代码架构。
-* **关键任务：**
-* 集成 **LSP Proxy**。实现 C# 和 Python 的语义查询工具。
-* 引入 **Local Vector Index**。对本地代码库进行向量化，实现相关代码片段的精准检索。
-* 实现 **Git Snapshot** 功能，确保每次改动前都有“后悔药”。
-
-
-
-### **阶段 3：自编程 (Self-Programming) - 第 6-9 周**
-
-* **核心目标：** 实现完整的“计划-执行-验证”闭环。
-* **关键任务：**
-* 开发 **Verification Engine**。自动识别项目类型并运行对应的测试框架。
-* 实现 **Recursive Bug-fixing**。Agent 能够根据错误日志连续进行 5 次以上的自主尝试。
-* 加入 **Token 剪枝算法**。自动压缩长对话上下文。
-
-
-
-### **阶段 4：蜂群与美化 (Swarm & Polishing) - 第 10 周+**
-
-* **核心目标：** 极致的协作与 UX 体验。
-* **关键任务：**
-* 实现 **Swarm Mode**。主 Agent 调度多个子 Agent 并行处理前后端任务。
-* 极致 TUI 美化：加入平滑的加载动画、任务卡片和“布丁感”配色方案。
-* 发布 **PuddingAssistant Hub**。支持用户分享自己调教好的“布丁技能（Skills）”。
-
-
-
----
-
-## 四、 核心技术栈清单
-
-| 类别 | 推荐选型 | 备注 |
+| 模式 | 载体 | 用途 |
 | --- | --- | --- |
-| **开发语言** | C# (.NET 9) | 利用原生 AOT 提高启动速度 |
-| **终端框架** | `Spectre.Console` | 实现类似 Crush 的美学 |
-| **AI SDK** | `Semantic Kernel` | 强大的 Tool Calling 管理能力 |
-| **本地索引** | `Microsoft.Extensions.VectorData` | 处理代码 RAG |
-| **多模型路由** | `LiteLLM` (或自定义 C# 实现) | 支持 Claude, DeepSeek 等切换 |
+| **桌面精灵态** | Avalonia 异形透明窗口，置顶常驻 | 拖入文件、双击输入、右键环形菜单、闲置提醒 |
+| **窗口态** | Avalonia 管理窗口 | Swarm 视图（指挥部）、Editor（记忆/脚本编辑）、成果墙、记忆抽屉 |
+
+两态通过 `SwarmManager` 共享状态，窗口启动任务时"光球"飞向精灵，精灵吐出通知气泡。
+
+**精灵态交互细节：**
+
+* **常驻态（Quiet Mode）**：半透明（15%）置顶，呼吸感动画，自动避让活跃窗口。
+* **感知态（Perception）**：鼠标悬停或拖拽文件靠近时变为不透明，产生"吸入"物理效果。
+* **语音唤醒（Wake-up）**：通过"布丁布丁"唤醒，精灵产生光晕并切换至"倾听"Lottie 动画。
+* **结果卡片**：任务反馈以精美的"物理卡片"弹出，可拖动、可钉选。
+
+### 3. Swarm 编排
+
+* **动态生成**：Leader 根据用户意图按需生成 Worker（如 Researcher、Auditor、Reporter），任务结束后角色消失。
+* **顺序依赖链**：Leader → Researcher → Auditor → Reporter，严格遵守逻辑先后。
+* **Leader 核心逻辑**：环境自省 → 约束检查（Profile.md）→ 任务拆解（优先并行）。
+
+### 4. 记忆系统
+
+采用 OpenClaw 风格的人类可读持久化记忆，管理 `~/Documents/Pudding/Memory/` 目录。
+
+| 层级 | 内容 | 示例 |
+| --- | --- | --- |
+| **底层 — 用户约束** | `Profile.md` | 海鲜过敏、预算 500 |
+| **中层 — 沉淀知识** | 任务中产生的事实 | 鸡蛋价格波动 |
+| **顶层 — 情感链接** | 长期个人化记忆 | 用户不喜欢太甜的蛋挞 |
 
 ---
 
-## 五 、开源
+## 二、核心功能模块
 
-1. 视觉与交互层：UI/UX (复刻 Crush 的美感)
-https://github.com/spectreconsole/spectre.console
-用途： 实现进度条、表格、富文本面板、动态渲染。它内置的 Status 组件可以完美模拟 Agent 思考时的“气泡感”。
+### 1. LocalActionProvider（本地环境连接器）
 
-Terminal.Gui:
-https://github.com/gui-cs/Terminal.Gui
-用途： 如果你想在终端里做一个完整的仪表盘（比如侧边栏显示文件树），这个库比 Spectre 更适合复杂的交互式 TUI。
+Agent 的**手**（执行命令）、**眼**（读取文件/感知屏幕）：
 
+* **读写文件**：代码、PDF 菜单、Excel 账单
+* **执行指令**：`ls` / `curl` / `python script.py`
+* **环境感知**：回答"桌面上有哪些文件？"
 
+### 2. MemoryHub（记忆引擎）
 
-2.智能体大脑：Agent Framework (实现 OpenCode 的逻辑)
-https://github.com/microsoft/semantic-kernel
-负责处理 Claude Opus 4.6 和其他模型的 API 调用、工具选择和任务编排。
+* **Profile.md**：核心约束存储
+* **Session_Log/**：按日期存储任务流
+* **Refinement**：任务结束时自动提炼关键信息存入长期记忆
 
-3. 感知与工具：LSP & Code Analysis (AI 的五感)
+### 3. 插件系统
 
-https://github.com/OmniSharp/csharp-language-server-protocol
+* **接口标准**：`IPuddingPlugin`（PluginIcon / OnAction / Contribution）
+* **动态载入**：MEF 或 `AssemblyLoadContext`，扫描 `Plugins/` 目录
+* **沙盒隔离**：第三方插件在独立子进程中运行
 
-让 Agent “看懂”代码，而不只是读字符串。
-用途： 既然你要做 LSP Proxy，这个库帮你处理了所有底层的 JSON-RPC 通讯。你只需要写 Handler，就能让你的 CLI 具备“跳转定义”的能力。
+### 4. PuddingCode Pro Mode（编程专业形态）
 
-https://github.com/tree-sitter/tree-sitter
-用途： 高性能语法解析。如果你想让 Agent 识别 Python、TS 或 SQL 的函数边界，Tree-sitter 是目前最通用的方案。
+原有的 Coding Agent 能力作为插件保留：
 
-https://github.com/dotnet/roslyn
-用途： 针对 C# 的深度手术刀。如果你想让 PuddingAssistant 完美重构 C# 代码，Roslyn 是必选项。
+* 任务规划器（Plan → Execute → Verify）
+* LSP 语义感知（Roslyn）
+* 自我修复环（编译 → 捕获错误 → 递归修复）
+* Git 快照与回滚
+* 权限沙盒（PermissionGuard）与输出蒸馏（OutputDistiller）
 
+---
 
-4. 记忆与检索：Vector & RAG ，管理项目上下文，减少 Token 浪费。
+## 三、视觉设计语言
 
+### 配色系统 — 布丁美学
 
-Microsoft.Extensions.VectorData:
+| 用途 | 色值 | 说明 |
+| --- | --- | --- |
+| **背景** | 极浅奶油色 | Creamy White |
+| **交互** | 焦糖色 | 按钮、链接、活跃元素 |
+| **成功** | 抹茶绿 `#A8E6CF` | 完成、确认 |
+| **提醒** | 蜜桃粉 | 通知、待办 |
+| **警告** | 焦糖棕 | 错误、危险操作 |
 
-用途： 2025 年新出的标准抽象库。它可以让你无缝切换本地的向量数据库（如 SQLite-VSS, Qdrant, 或 FAISS）。
+### 形态语言
 
+* 大圆角（BorderRadius > 20px）+ 柔和弥散阴影
+* 布丁呼吸缩放效果 + 流体粒子流动画
+* Agent 角色化：Leader（焦糖布丁）、Scholar（蓝莓布丁）、Executor（草莓布丁）、Keeper（抹茶布丁）
 
-https://github.com/ssone95/ChromaDB.Client
-用途： 如果你想在本地跑一个轻量级的向量库来存储代码索引，Chroma 是非常友好的选择。
+---
 
+## 四、安全与隐私策略
 
-5. 执行与安全：Sandboxing (防止 Agent 删库)
+* **确认机制**：所有涉及文件增删改的操作，必须通过精灵弹出"确认卡片"，用户点击后方可执行。
+* **撤销保障**：建立 `undo_log.json`，支持一键将操作恢复原位。
+* **隐私屏障**：语音转写与文本推理 100% 在本地完成，敏感信息（如密码框）自动避让截图与采集。
 
-https://github.com/dotnet/Docker.DotNet
-用途： 在 CLI 中动态启动 Docker 容器。你可以让 Agent 的 ExecuteCommand 永远运行在容器内，与宿主机隔离。
+---
 
-https://github.com/bytecodealliance/wasmtime-dotnet
+## 五、核心场景（MVP）
 
-用途： 如果你想追求极致的轻量，可以在 WebAssembly 沙盒里运行 Agent 生成的代码脚本。
+1. **语义清理**：用户说"帮我清理下桌面上的垃圾"，布丁分析文件名（如 `tmp_`、`副本_`），弹出清理清单供确认。
+2. **生活管家**：用户拖入体检报告，布丁自动更新 `Profile.md` 里的禁忌项（如"海鲜过敏"）。
+3. **桌面伴侣**：闲置时，布丁会随机根据天气或时间做出不同的可爱动作。
 
+---
+
+## 六、路线图
+
+> 详细里程碑见 [Tasks.md](Tasks.md)，详细设计见 [task18定位.md](Tasks/task18定位.md)。
+
+| 阶段 | 目标 | 关键交付 |
+| --- | --- | --- |
+| **一：透明精灵壳** | 桌面精灵原型 | Avalonia 异形窗口 + 静态布丁 + 鼠标拖动 |
+| **二：动作与状态机** | 精灵动态表情 | Lottie 动画 + 5 种状态切换 |
+| **三：意图与气泡** | 交互闭环 | Chat Bubble + 种子插件（意图输入框） |
+| **四：核心后端** | Agent 能力 | LocalActionProvider + MemoryHub + Leader 系统指令 |
+| **五：管理窗口** | 深度配置 | Swarm 视图 + Editor + 成果墙 + 记忆抽屉 |
+| **六：插件化** | 生态扩展 | IPuddingPlugin + 动态载入 + 沙盒隔离 |
+
+---
+
+## 七、核心技术栈
+
+| 类别 | 选型 | 备注 |
+| --- | --- | --- |
+| **开发语言** | C#（.NET 10） | 跨平台 |
+| **桌面框架** | Avalonia UI | 异形窗口、Lottie 动画、SkiaSharp 渲染 |
+| **CLI 框架** | Spectre.Console | Pro Mode 终端交互 |
+| **AI SDK** | Semantic Kernel | Tool Calling + Agent 编排 |
+| **记忆索引** | SQLite + sqlite-vec | Markdown 为 Truth，SQLite 为索引 |
+| **动画引擎** | SkiaSharp + Avalonia.Lottie | 布丁流体效果 + 动态表情 |
+| **状态绑定** | ReactiveUI | 精灵状态与 Swarm 状态强绑定 |
+| **命令执行** | CliWrap | 本地命令沙盒执行 |
+| **本地推理** | LLamaSharp | llama.cpp C# 绑定，内置 Qwen / Phi 模型，0 延时 |
+| **语音唤醒** | Porcupine | 低功耗唤醒词引擎 |
+| **语义感知** | FlaUI | Windows UI Automation 封装 |
+| **多模型路由** | 自定义 C# 实现 | 支持 Claude / DeepSeek 等切换 |
+
+---
+
+## 八、开源参考
+
+| 领域 | 项目 | 用途 |
+| --- | --- | --- |
+| **桌面 UI** | [Avalonia UI](https://github.com/AvaloniaUI/Avalonia) | 跨平台桌面框架，异形窗口 + 动画 |
+| **终端 UI** | [Spectre.Console](https://github.com/spectreconsole/spectre.console) | Pro Mode CLI 交互 |
+| **AI 编排** | [Semantic Kernel](https://github.com/microsoft/semantic-kernel) | Tool Calling + Agent 框架 |
+| **语义分析** | [Roslyn](https://github.com/dotnet/roslyn) | C# 深度代码理解（Pro Mode） |
+| **LSP** | [csharp-language-server-protocol](https://github.com/OmniSharp/csharp-language-server-protocol) | 语义查询（Pro Mode） |
+| **语法解析** | [Tree-sitter](https://github.com/tree-sitter/tree-sitter) | 多语言函数边界识别 |
+| **向量检索** | [Microsoft.Extensions.VectorData](https://www.nuget.org/packages/Microsoft.Extensions.VectorData) | 记忆检索 |
+| **沙盒** | [Docker.DotNet](https://github.com/dotnet/Docker.DotNet) | 命令执行隔离 |
+| **本地推理** | [LLamaSharp](https://github.com/SciSharp/LLamaSharp) | llama.cpp C# 绑定，本地 LLM 推理 |
+| **语音唤醒** | [Porcupine](https://github.com/Picovoice/porcupine) | 低功耗唤醒词引擎 |
+| **UI 自动化** | [FlaUI](https://github.com/FlaUI/FlaUI) | Windows UI Automation 封装 |

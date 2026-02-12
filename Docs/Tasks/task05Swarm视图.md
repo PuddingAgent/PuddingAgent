@@ -2,7 +2,9 @@
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 04 (蜂群模式设计)、D07 (桌面端 MVP)
-> **目标：** 在桌面端（Avalonia）和 CLI（Spectre.Console）实现 Swarm 多 Agent 可视化与指挥交互
+> **目标：** 在桌面端窗口态（Command Center）实现 Swarm 多 Agent 可视化与指挥交互
+>
+> **⚠️ 视觉对齐：** Swarm 视图是窗口态的核心板块之一（精灵的"大脑解剖图"）。视觉风格需遵循 [task18定位.md](../Tasks/task18定位.md) 的布丁美学：奶油黄/抹茶绿/焦糖棕配色、圆润布丁节点、弹性动画。Agent 角色化设计（Leader 焦糖布丁、Scholar 蓝莓布丁等）应体现在节点视觉中。
 
 ---
 

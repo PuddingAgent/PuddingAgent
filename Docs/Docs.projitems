@@ -29,6 +29,11 @@
     <None Include="$(MSBuildThisFileDirectory)Tasks\task15MCP服务器.md" />
     <None Include="$(MSBuildThisFileDirectory)Tasks\task16服务商界面.md" />
     <None Include="$(MSBuildThisFileDirectory)Tasks\task17Leader的动态路由.md" />
+    <None Include="$(MSBuildThisFileDirectory)Tasks\task18定位.md" />
+    <None Include="$(MSBuildThisFileDirectory)tasks\task19宠物表现.md" />
+    <None Include="$(MSBuildThisFileDirectory)Tasks\task20物理引擎.md" />
+    <None Include="$(MSBuildThisFileDirectory)Tasks\task21视觉.md" />
+    <None Include="$(MSBuildThisFileDirectory)tasks\task22心跳机制.md" />
     <None Include="$(MSBuildThisFileDirectory)讨论.md" />
   </ItemGroup>
 </Project>

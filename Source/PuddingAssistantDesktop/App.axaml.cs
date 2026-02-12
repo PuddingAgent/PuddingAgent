@@ -27,6 +27,14 @@ namespace PuddingAssistantDesktop
                 {
                     DataContext = new MainWindowViewModel(),
                 };
+
+                // Launch the desktop pudding spirit as a secondary window
+                var spiritVm = new SpiritViewModel();
+                var spiritWindow = new SpiritWindow
+                {
+                    DataContext = spiritVm,
+                };
+                spiritWindow.Show();
             }
 
             base.OnFrameworkInitializationCompleted();

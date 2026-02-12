@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PuddingAssistantDesktop.ViewModels"
+        xmlns:ctrl="using:PuddingAssistantDesktop.Controls"
+        x:Class="PuddingAssistantDesktop.Views.SpiritWindow"
+        x:DataType="vm:SpiritViewModel"
+        Title="PuddingSpirit"
+        Width="200" Height="220"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        SystemDecorations="None"
+        Topmost="True"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual">
+
+  <Design.DataContext>
+    <vm:SpiritViewModel/>
+  </Design.DataContext>
+
+  <ctrl:PuddingSpiritControl
+      x:Name="SpiritCanvas"
+      Opacity="{Binding SpiritOpacity}"
+      HorizontalAlignment="Stretch"
+      VerticalAlignment="Stretch"/>
+
+</Window>

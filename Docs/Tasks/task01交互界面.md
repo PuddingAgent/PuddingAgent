@@ -1,6 +1,8 @@
 # Task 01: 交互界面设计方案
 
-> **目标：** 开发一个类似 OpenCode、Claude Code、Crush 的 **Agentic Self-Programming CLI**，命名为 **PuddingAssistant**。基于 `Spectre.Console`（C# / .NET 10），打造功能强大且具有独特"布丁感"的界面与交互体验。
+> **⚠️ 定位变更：** 项目已从"Agentic Self-Programming CLI"重新定位为面向大众的**数字化布丁管家**。CLI 交互界面现作为 **Pro Mode（专业形态）** 保留，主交互入口转为桌面精灵 + 管理窗口的双态架构。最新设计见 [task18定位.md](../Tasks/task18定位.md)。
+>
+> **目标：** 开发一个类似 OpenCode、Claude Code、Crush 的 **Agentic Self-Programming CLI**，作为 PuddingAssistant 的 Pro Mode。基于 `Spectre.Console`（C# / .NET 10），打造功能强大且具有独特"布丁感"的终端交互体验。
 
 ---
 

@@ -12,12 +12,14 @@
 
 | 项 | 内容 |
 | --- | --- |
-| **项目名称** | PuddingAssistant — Agentic Self-Programming CLI |
-| **技术栈** | C# / .NET 10 · Spectre.Console · Avalonia UI · Semantic Kernel |
+| **项目名称** | PuddingAssistant — 数字化布丁管家 |
+| **定位** | 面向大众用户的智能助手，编程能力（PuddingCode）作为 Pro Mode 插件保留 |
+| **技术栈** | C# / .NET 10 · Avalonia UI · Spectre.Console · Semantic Kernel · SkiaSharp |
 | **代码仓库** | [github.com/hyfree/PuddingAssistant](https://github.com/hyfree/PuddingAssistant) |
 | **分支** | `master` |
 | **架构文档** | [Docs/Map.md](Map.md) |
-| **设计方案** | [Docs/讨论.md](讨论.md) — 行业瓶颈分析 + 6 层架构 + 5 个突破方向 |
+| **产品设计** | [task18定位.md](Tasks/task18定位.md) — 双态架构 + Swarm 编排 + 记忆系统 + 插件化 + 视觉设计 |
+| **行业分析** | [Docs/讨论.md](讨论.md) — 行业瓶颈分析 + 6 层架构 + 5 个突破方向（历史参考） |
 
 ---
 
@@ -114,6 +116,7 @@
 | 16 | 服务商与模型管理 | ✏️ 设计中 | 🟡 P2 | Task 12, 13, D03 | [task16服务商界面.md](tasks/task16服务商界面.md) | 模型元数据、能力标签、成本预算熔断、抽样评分、动态路由 |
 | 15 | MCP 服务器集成 | ✏️ 设计中 | 🟢 P3 | Task 11, 14 | [task15MCP服务器.md](tasks/task15MCP服务器.md) | JSON-RPC 2.0 对接、工具自动发现、权限桥接、懒启动 |
 | 17 | Leader 动态路由 | ✏️ 设计中 | 🟠 P1 | Task 04, 09, 10, D08 | [task17Leader的动态路由.md](tasks/task17Leader的动态路由.md) | Plan-then-Execute、智能路由、能力匹配、熔断机制、结果汇聚 |
+| 18 | 产品定位与设计 | ✅ 已完成 | 🔴 P0 | — | [task18定位.md](Tasks/task18定位.md) | 双态架构、Swarm 编排、记忆系统、插件化、布丁美学、MVP 路径 |
 
 ### 🔨 开发任务
 
@@ -243,14 +246,16 @@ V0.2 → Task 04 → D08 → V0.8
 
 | 版本 | 阶段 | 目标 | 关键交付 | 预期状态 |
 | --- | --- | --- | --- | --- |
-| **V0.1** | 一 | Core 闭环 | ITool + LLM Gateway + CLI REPL | ✅ 已完成 |
-| **V0.2** | 一 | 安全闭环 | PermissionGuard + OutputDistiller + Git 快照 | ✅ **已完成** |
-| **V0.3** | 二 | 自我调试 | 编译验证 + 错误回传 + 递归修复 | 📋 规划中 |
-| **V0.5** | 三 | 语义引擎 | LSP 集成 + 符号级操作 + `/map` 指令 | 📋 规划中 |
-| **V0.8** | 二 | 蜂群 Phase 1 | 契约驱动 + 作用域隔离 + Leader-Worker 串行 | 📋 规划中 |
-| **V0.9** | 三 | 蜂群 Phase 2 | 并行 Worktree + 插件化 + 上下文预热 | 📋 规划中 |
-| **V1.0** | 四 | 蜂群 Phase 3 | P2P 分布式组网 + MCP 生态 + Leader 选举 | 📋 规划中 |
-| **V1.x** | 四 | 蜂群 Phase 4 | 多模型调度 + 费用控制 + Swarm 可视化 | 📋 规划中 |
+| **V0.1** | 基础 | Core 闭环 | ITool + LLM Gateway + CLI REPL | ✅ 已完成 |
+| **V0.2** | 基础 | 安全闭环 | PermissionGuard + OutputDistiller + Git 快照 | ✅ **已完成** |
+| **V0.3** | 精灵 | 透明精灵壳 | Avalonia 异形窗口 + 静态布丁 + 鼠标拖动 | 📋 规划中 |
+| **V0.4** | 精灵 | 动作与状态机 | Lottie 动画 + 5 种状态切换（Idle/Thinking/Success/Error/Sleeping） | 📋 规划中 |
+| **V0.5** | 交互 | 意图与气泡 | Chat Bubble + 种子插件（意图输入框）+ 环形菜单 | 📋 规划中 |
+| **V0.6** | 后端 | 核心后端 | LocalActionProvider + MemoryHub + Leader 系统指令 | 📋 规划中 |
+| **V0.8** | 窗口 | 管理窗口 | Swarm 视图 + Editor + 成果墙 + 记忆抽屉 | 📋 规划中 |
+| **V0.9** | 蜂群 | 蜂群编排 | 契约驱动 + 作用域隔离 + Leader-Worker 串行/并行 | 📋 规划中 |
+| **V1.0** | 插件 | 插件化 | IPuddingPlugin + 动态载入 + 沙盒隔离 + Pro Mode | 📋 规划中 |
+| **V1.x** | 生态 | 生态扩展 | MCP 生态 + 多模型调度 + P2P 分布式 + 费用控制 | 📋 规划中 |
 
 ---
 
