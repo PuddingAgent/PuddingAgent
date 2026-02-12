@@ -82,8 +82,14 @@ var registry = new ToolRegistry();
 registry.Register(new FileTool(project));
 registry.Register(new ShellTool(project));
 
+var snapshot = new GitSnapshotService(project.RootPath);
+if (snapshot.IsGitRepo)
+    AnsiConsole.MarkupLine("[grey]Git repo detected — auto-snapshots enabled (/undo to rollback)[/]");
+else
+    AnsiConsole.MarkupLine("[grey]No Git repo — /undo disabled (run 'git init' to enable)[/]");
+
 var gateway = CreateGateway(active);
-var agent = new AgentOrchestrator(gateway, registry, project);
+var agent = new AgentOrchestrator(gateway, registry, project, snapshot);
 
 AnsiConsole.MarkupLine($"[grey]Project  : {project.RootPath.EscapeMarkup()}[/]");
 AnsiConsole.WriteLine();
@@ -202,7 +208,7 @@ void SwitchProvider(ProviderEntry provider)
 {
     active = provider;
     gateway = CreateGateway(provider);
-    agent = new AgentOrchestrator(gateway, registry, project);
+    agent = new AgentOrchestrator(gateway, registry, project, snapshot);
 }
 
 // ──────── Command router ────────
@@ -226,6 +232,15 @@ void HandleCommand(string input)
         case "/open":
             CmdOpen(parts);
             break;
+        case "/undo":
+            CmdUndo(parts).GetAwaiter().GetResult();
+            break;
+        case "/snapshot":
+            CmdSnapshot(parts).GetAwaiter().GetResult();
+            break;
+        case "/history":
+            CmdHistory().GetAwaiter().GetResult();
+            break;
         default:
             AnsiConsole.MarkupLine($"[grey]Unknown command: {cmd.EscapeMarkup()}. Type /help[/]");
             break;
@@ -242,6 +257,9 @@ void CmdHelp()
     table.AddRow("[yellow]/model add[/]", "Add a new LLM provider");
     table.AddRow("[yellow]/model use <id>[/]", "Switch active provider");
     table.AddRow("[yellow]/model remove <id>[/]", "Remove a provider");
+    table.AddRow("[yellow]/undo [N][/]", "Undo last N tool snapshots (default: 1)");
+    table.AddRow("[yellow]/snapshot [label][/]", "Create a manual snapshot");
+    table.AddRow("[yellow]/history[/]", "List recent snapshots");
     table.AddRow("[yellow]/config[/]", "Show current provider details");
     table.AddRow("[yellow]/exit[/]", "Exit PuddingCode");
     AnsiConsole.Write(table);
@@ -277,9 +295,87 @@ void CmdOpen(string[] parts)
     registry = new ToolRegistry();
     registry.Register(new FileTool(project));
     registry.Register(new ShellTool(project));
-    agent = new AgentOrchestrator(gateway, registry, project);
+    snapshot = new GitSnapshotService(project.RootPath);
+    agent = new AgentOrchestrator(gateway, registry, project, snapshot);
     AnsiConsole.MarkupLine($"[green]✓[/] Project opened: [yellow]{project.RootPath.EscapeMarkup()}[/]");
     AnsiConsole.MarkupLine("[grey]Conversation history has been reset.[/]");
+    if (snapshot.IsGitRepo)
+        AnsiConsole.MarkupLine("[grey]Git repo detected — auto-snapshots enabled[/]");
+}
+
+// ──────── Git snapshot commands (D06) ────────
+
+async Task CmdUndo(string[] parts)
+{
+    if (!snapshot.IsGitRepo)
+    {
+        AnsiConsole.MarkupLine("[red]No Git repo. Run 'git init' in the project root to enable /undo.[/]");
+        return;
+    }
+
+    var count = 1;
+    if (parts.Length > 1 && int.TryParse(parts[1], out var n) && n > 0)
+        count = n;
+
+    var undone = await snapshot.UndoAsync(count);
+    if (undone == 0)
+        AnsiConsole.MarkupLine("[grey]Nothing to undo — no pudding snapshots found.[/]");
+    else
+        AnsiConsole.MarkupLine($"[green]✓[/] Undid [yellow]{undone}[/] snapshot(s). Changes are back in your working tree.");
+}
+
+async Task CmdSnapshot(string[] parts)
+{
+    if (!snapshot.IsGitRepo)
+    {
+        AnsiConsole.MarkupLine("[red]No Git repo. Run 'git init' in the project root first.[/]");
+        return;
+    }
+
+    var label = parts.Length > 1
+        ? string.Join(' ', parts.Skip(1))
+        : "manual snapshot";
+
+    var hash = await snapshot.CreateSnapshotAsync(label);
+    if (hash is null)
+        AnsiConsole.MarkupLine("[grey]Nothing to snapshot — no changes detected.[/]");
+    else
+        AnsiConsole.MarkupLine($"[green]✓[/] Snapshot [yellow]{hash}[/]: {label.EscapeMarkup()}");
+}
+
+async Task CmdHistory()
+{
+    if (!snapshot.IsGitRepo)
+    {
+        AnsiConsole.MarkupLine("[red]No Git repo.[/]");
+        return;
+    }
+
+    var entries = await snapshot.ListSnapshotsAsync(10);
+    if (entries.Count == 0)
+    {
+        AnsiConsole.MarkupLine("[grey]No pudding snapshots found.[/]");
+        return;
+    }
+
+    var table = new Table()
+        .Border(TableBorder.Rounded)
+        .AddColumn("[grey]#[/]")
+        .AddColumn("Hash")
+        .AddColumn("Label")
+        .AddColumn("Time");
+
+    for (var i = 0; i < entries.Count; i++)
+    {
+        var e = entries[i];
+        table.AddRow(
+            $"[grey]{i + 1}[/]",
+            $"[yellow]{e.ShortHash.EscapeMarkup()}[/]",
+            e.Label.EscapeMarkup(),
+            e.Timestamp.LocalDateTime.ToString("HH:mm:ss"));
+    }
+
+    AnsiConsole.Write(table);
 }
 
 void CmdModel(string[] parts)

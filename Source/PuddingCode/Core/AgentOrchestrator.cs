@@ -10,12 +10,18 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly ILlmGateway _llm;
     private readonly IToolRegistry _tools;
+    private readonly IGitSnapshot? _snapshot;
     private readonly List<ChatMessage> _history;
 
-    public AgentOrchestrator(ILlmGateway llm, IToolRegistry tools, ProjectContext? project = null)
+    public AgentOrchestrator(
+        ILlmGateway llm,
+        IToolRegistry tools,
+        ProjectContext? project = null,
+        IGitSnapshot? snapshot = null)
     {
         _llm = llm;
         _tools = tools;
+        _snapshot = snapshot;
 
         var systemPrompt = """
             You are PuddingCode, an AI programming assistant.
@@ -152,6 +158,13 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             _history.Add(new ChatMessage(ChatRole.Assistant, content,
                 ToolCalls: toolCalls,
                 ReasoningContent: reasoning));
+
+            // Auto-snapshot before tool execution (D06)
+            if (_snapshot is { IsGitRepo: true })
+            {
+                var toolNames = string.Join("+", toolCalls.Select(c => c.Name));
+                await _snapshot.CreateSnapshotAsync($"pre-tool: {toolNames}", ct);
+            }
 
             // Execute each tool call
             foreach (var call in toolCalls)
