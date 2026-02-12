@@ -1,6 +1,6 @@
 # Task 03: V0.1 实现方案 — 从脚手架到 Agent 闭环
 
-> **目标：** 在现有三项目脚手架（`PuddingCode` / `PuddingCodeCLI` / `PuddingCodeDesktop`）基础上，完成 V0.1 里程碑——打通 **"用户输入 → LLM 调用 → 工具执行 → 结果回传 → 最终回答"** 的完整 Agent 闭环。
+> **目标：** 在现有三项目脚手架（`PuddingAssistant` / `PuddingAssistantCLI` / `PuddingAssistantDesktop`）基础上，完成 V0.1 里程碑——打通 **"用户输入 → LLM 调用 → 工具执行 → 结果回传 → 最终回答"** 的完整 Agent 闭环。
 
 ---
 
@@ -25,9 +25,9 @@
 
 | 项目 | 路径 | 当前状态 |
 | --- | --- | --- |
-| `PuddingCode` (Core 类库) | `Source/PuddingCode/` | 空 `Class1.cs`，.NET 10 |
-| `PuddingCodeCLI` (控制台) | `Source/PuddingCodeCLI/` | `Hello World`，已引用 Core，AOT 启用 |
-| `PuddingCodeDesktop` (桌面) | `Source/PuddingCodeDesktop/` | Avalonia 模板，暂不涉及 |
+| `PuddingAssistant` (Core 类库) | `Source/PuddingAssistant/` | 空 `Class1.cs`，.NET 10 |
+| `PuddingAssistantCLI` (控制台) | `Source/PuddingAssistantCLI/` | `Hello World`，已引用 Core，AOT 启用 |
+| `PuddingAssistantDesktop` (桌面) | `Source/PuddingAssistantDesktop/` | Avalonia 模板，暂不涉及 |
 
 ### 1.2 V0.1 目标
 
@@ -35,7 +35,7 @@
 用户输入 ──→ CLI (Spectre.Console REPL)
                 │
                 ▼
-         PuddingCode.Core
+         PuddingAssistant.Core
          ┌──────────────────────┐
          │  AgentOrchestrator   │ ← 编排 LLM 对话 + Tool Calling
          │    │                 │
@@ -63,7 +63,7 @@
 每个工具（读文件、执行命令等）都实现此接口。Agent 通过它来了解"我有哪些手"。
 
 ```csharp
-namespace PuddingCode.Abstractions;
+namespace PuddingAssistant.Abstractions;
 
 /// <summary>
 /// Agent 可调用的工具。实现此接口后自动被 ToolRegistry 发现。
@@ -87,7 +87,7 @@ public interface ITool
 #### `IToolRegistry` — 工具注册中心
 
 ```csharp
-namespace PuddingCode.Abstractions;
+namespace PuddingAssistant.Abstractions;
 
 /// <summary>
 /// 管理所有可用工具。支持自动发现（反射）和手动注册。
@@ -111,7 +111,7 @@ public interface IToolRegistry
 #### `ILlmGateway` — LLM 网关
 
 ```csharp
-namespace PuddingCode.Abstractions;
+namespace PuddingAssistant.Abstractions;
 
 /// <summary>
 /// LLM API 网关。屏蔽不同供应商的差异（Claude / GPT / DeepSeek），
@@ -130,7 +130,7 @@ public interface ILlmGateway
 #### `IAgentOrchestrator` — 编排器
 
 ```csharp
-namespace PuddingCode.Abstractions;
+namespace PuddingAssistant.Abstractions;
 
 /// <summary>
 /// Agent 主循环编排器。处理 "对话 → Tool Call → 执行 → 回传" 的闭环。
@@ -145,7 +145,7 @@ public interface IAgentOrchestrator
 ### 2.2 消息与事件模型
 
 ```csharp
-namespace PuddingCode.Models;
+namespace PuddingAssistant.Models;
 
 /// <summary>对话消息</summary>
 public sealed record ChatMessage(ChatRole Role, string Content, string? ToolCallId = null);
@@ -170,7 +170,7 @@ public sealed record ErrorEvent(string Message) : AgentEvent;
 ### 2.3 工具参数 Schema
 
 ```csharp
-namespace PuddingCode.Models;
+namespace PuddingAssistant.Models;
 
 /// <summary>描述工具参数的 JSON Schema</summary>
 public sealed record ToolParameterSchema(
@@ -192,7 +192,7 @@ public sealed record ToolParameter(
 ### 3.1 FileTool — 文件读写
 
 ```csharp
-namespace PuddingCode.Tools;
+namespace PuddingAssistant.Tools;
 
 public sealed class FileTool : ITool
 {
@@ -236,7 +236,7 @@ file record FileToolArgs(string? Action, string Path, string? Content);
 ### 3.2 ShellTool — 命令行执行
 
 ```csharp
-namespace PuddingCode.Tools;
+namespace PuddingAssistant.Tools;
 
 public sealed class ShellTool : ITool
 {
@@ -301,7 +301,7 @@ file record ShellToolArgs(string? Command, string? WorkingDirectory);
 ### 4.1 ToolRegistry 实现
 
 ```csharp
-namespace PuddingCode.Core;
+namespace PuddingAssistant.Core;
 
 public sealed class ToolRegistry : IToolRegistry
 {
@@ -347,7 +347,7 @@ public sealed class ToolRegistry : IToolRegistry
 ### 4.2 OpenAI 兼容 LLM 网关
 
 ```csharp
-namespace PuddingCode.Core;
+namespace PuddingAssistant.Core;
 
 /// <summary>
 /// 基于 OpenAI Chat Completions API 兼容协议的 LLM 网关。
@@ -386,7 +386,7 @@ public sealed record LlmOptions(string Endpoint, string ApiKey, string Model);
 这是 Agent 的主循环，实现 **"对话 → Tool Call → 执行 → 结果回传 → 最终回答"**：
 
 ```csharp
-namespace PuddingCode.Core;
+namespace PuddingAssistant.Core;
 
 public sealed class AgentOrchestrator(
     ILlmGateway llm,
@@ -395,7 +395,7 @@ public sealed class AgentOrchestrator(
     private readonly List<ChatMessage> _history =
     [
         new(ChatRole.System, """
-            You are PuddingCode, an AI programming assistant.
+            You are PuddingAssistant, an AI programming assistant.
             Use the provided tools to help the user with coding tasks.
             """)
     ];
@@ -464,12 +464,12 @@ public sealed class AgentOrchestrator(
 ### 5.1 Program.cs 主入口
 
 ```csharp
-using PuddingCode.Core;
-using PuddingCode.Tools;
+using PuddingAssistant.Core;
+using PuddingAssistant.Tools;
 using Spectre.Console;
 
 // 1. 初始化
-AnsiConsole.Write(new FigletText("PuddingCode").Color(Color.Yellow));
+AnsiConsole.Write(new FigletText("PuddingAssistant").Color(Color.Yellow));
 AnsiConsole.MarkupLine("[grey]v0.1.0 - Agentic Self-Programming CLI[/]\n");
 
 var options = new LlmOptions(
@@ -532,7 +532,7 @@ AnsiConsole.MarkupLine("[grey]Bye! 🍮[/]");
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│  PuddingCode v0.1.0                                             │
+│  PuddingAssistant v0.1.0                                             │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  Pudding > 帮我看一下 Program.cs 的内容                           │
@@ -540,7 +540,7 @@ AnsiConsole.MarkupLine("[grey]Bye! 🍮[/]");
 │  🍮 Calling LLM...                                              │
 │  ⚙️ Calling tool: file                                          │
 │  ┌─ 📂 file result ─────────────────────────────────────────┐   │
-│  │  namespace PuddingCodeCLI                                 │   │
+│  │  namespace PuddingAssistantCLI                                 │   │
 │  │  {                                                        │   │
 │  │      internal class Program { ... }                       │   │
 │  │  }                                                        │   │
@@ -557,10 +557,10 @@ AnsiConsole.MarkupLine("[grey]Bye! 🍮[/]");
 
 ## 6. 项目结构规划
 
-完成 V0.1 后，`Source/PuddingCode/` 的目录结构：
+完成 V0.1 后，`Source/PuddingAssistant/` 的目录结构：
 
 ```text
-Source/PuddingCode/
+Source/PuddingAssistant/
 ├── Abstractions/
 │   ├── ITool.cs
 │   ├── IToolRegistry.cs
@@ -579,13 +579,13 @@ Source/PuddingCode/
 ├── Tools/
 │   ├── FileTool.cs
 │   └── ShellTool.cs
-└── PuddingCode.csproj
+└── PuddingAssistant.csproj
 ```
 
 ```text
-Source/PuddingCodeCLI/
+Source/PuddingAssistantCLI/
 ├── Program.cs              ← REPL 主循环
-└── PuddingCodeCLI.csproj   ← 引用 PuddingCode.Core
+└── PuddingAssistantCLI.csproj   ← 引用 PuddingAssistant.Core
 ```
 
 ---
@@ -608,7 +608,7 @@ V0.1 完成时，以下场景必须可用：
 
 ## 8. 依赖清单
 
-### PuddingCode.csproj（Core 类库）
+### PuddingAssistant.csproj（Core 类库）
 
 | 包 | 用途 |
 | --- | --- |
@@ -616,7 +616,7 @@ V0.1 完成时，以下场景必须可用：
 
 > **设计决策：** V0.1 阶段 Core 类库零第三方依赖，仅使用 .NET 10 内置 API。降低复杂度，保持 AOT 兼容性。
 
-### PuddingCodeCLI.csproj
+### PuddingAssistantCLI.csproj
 
 | 包 | 用途 |
 | --- | --- |

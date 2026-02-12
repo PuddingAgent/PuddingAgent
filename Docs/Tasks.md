@@ -1,6 +1,6 @@
-# PuddingCode 任务索引
+# PuddingAssistant 任务索引
 
-> 本文档跟踪 PuddingCode 项目所有设计与开发任务的状态。
+> 本文档跟踪 PuddingAssistant 项目所有设计与开发任务的状态。
 >
 > **状态说明：** 📋 规划中 · ✏️ 设计中 · 🚧 开发中 · ✅ 已完成 · ⏸️ 暂停
 >
@@ -12,9 +12,9 @@
 
 | 项 | 内容 |
 | --- | --- |
-| **项目名称** | PuddingCode — Agentic Self-Programming CLI |
+| **项目名称** | PuddingAssistant — Agentic Self-Programming CLI |
 | **技术栈** | C# / .NET 10 · Spectre.Console · Avalonia UI · Semantic Kernel |
-| **代码仓库** | [github.com/hyfree/PuddingCode](https://github.com/hyfree/PuddingCode) |
+| **代码仓库** | [github.com/hyfree/PuddingAssistant](https://github.com/hyfree/PuddingAssistant) |
 | **分支** | `master` |
 | **架构文档** | [Docs/Map.md](Map.md) |
 | **设计方案** | [Docs/讨论.md](讨论.md) — 行业瓶颈分析 + 6 层架构 + 5 个突破方向 |

@@ -91,7 +91,7 @@
 ### 4.2 加载流程
 
 ```
-PuddingCode 启动
+PuddingAssistant 启动
   │
   ├─→ 扫描主程序集中的 [PuddingSkill] 类
   │     → 注册为内置插件

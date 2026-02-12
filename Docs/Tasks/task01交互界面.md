@@ -1,6 +1,6 @@
 # Task 01: 交互界面设计方案
 
-> **目标：** 开发一个类似 OpenCode、Claude Code、Crush 的 **Agentic Self-Programming CLI**，命名为 **PuddingCode**。基于 `Spectre.Console`（C# / .NET 10），打造功能强大且具有独特"布丁感"的界面与交互体验。
+> **目标：** 开发一个类似 OpenCode、Claude Code、Crush 的 **Agentic Self-Programming CLI**，命名为 **PuddingAssistant**。基于 `Spectre.Console`（C# / .NET 10），打造功能强大且具有独特"布丁感"的界面与交互体验。
 
 ---
 
@@ -214,7 +214,7 @@ public class PuddingUI
 {
     public void RenderHeader()
     {
-        AnsiConsole.Write(new FigletText("PuddingCode").Color(Color.Yellow));
+        AnsiConsole.Write(new FigletText("PuddingAssistant").Color(Color.Yellow));
         AnsiConsole.MarkupLine("[grey]v0.1.0 - Agentic Self-Programming CLI[/]");
     }
 

@@ -114,7 +114,7 @@ public static class PuddingNameGenerator
 
 ---
 
-### 2. PuddingCode 专用萌系词库（分门别类）
+### 2. PuddingAssistant 专用萌系词库（分门别类）
 
 为了让你直接能用在代码里，我为你整理了一份分好类的“布丁风”词库。你可以把这些存进 `JSON` 或 `Dictionary`：
 
@@ -276,7 +276,7 @@ public static readonly string[] Nouns = {
 你可以给 Leader 增加一个隐藏的“命名任务”。以下是一个推荐的 Prompt 模板：
 
 > **System Prompt 补充：**
-> “你是 PuddingCode 的指挥官。现在你需要为一个新加入的 Worker 命名。
+> “你是 PuddingAssistant 的指挥官。现在你需要为一个新加入的 Worker 命名。
 > **命名规则：**
 > 1. 必须是【形容词 + 烘焙/甜点名】的组合。
 > 2. 形容词要体现该 Worker 的模型特性（如 Claude 的优雅、DeepSeek 的极速）。
@@ -336,7 +336,7 @@ public Color GetAgentColor(string name)
 
 ### 🍮 总结
 
-通过 LLM 自动生成名字，PuddingCode 就从一个“工具”变成了一个“数字剧场”。
+通过 LLM 自动生成名字，PuddingAssistant 就从一个“工具”变成了一个“数字剧场”。
 
 **你要不要尝试给 Leader 写一段更完整的“赐名指令”？** 我们可以把刚才提到的蛋挞、可颂、司康这些词库都塞进 `System Message` 的 Constraints 里。这样每次启动 Swarm，都是一次全新的、充满惊喜的开幕式！
 

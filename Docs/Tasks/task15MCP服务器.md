@@ -2,7 +2,7 @@
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 11 (权限沙盒)、Task 14 (SKILL 插件化)
-> **目标：** 将 MCP 作为"超级插件驱动"集成到 PuddingCode，实现与社区 MCP 服务器的即插即用对接
+> **目标：** 将 MCP 作为"超级插件驱动"集成到 PuddingAssistant，实现与社区 MCP 服务器的即插即用对接
 
 ---
 
@@ -23,7 +23,7 @@
 
 ## 一、设计原则
 
-MCP (Model Context Protocol) 是 Anthropic 推出的行业标准，解决了"每个工具都要写一遍接口"的痛点。支持 MCP 意味着 PuddingCode 可以直接连接社区上百个现成的 MCP 服务器。
+MCP (Model Context Protocol) 是 Anthropic 推出的行业标准，解决了"每个工具都要写一遍接口"的痛点。支持 MCP 意味着 PuddingAssistant 可以直接连接社区上百个现成的 MCP 服务器。
 
 | 原则 | 说明 |
 |---|---|
@@ -59,7 +59,7 @@ MCP 位于软件桥梁层，作为外部能力源接入 Agent 体系：
 
 | 角色 | 实体 | 说明 |
 |---|---|---|
-| **Host** | PuddingCode 软件 | 管理 MCP Server 的生命周期 |
+| **Host** | PuddingAssistant 软件 | 管理 MCP Server 的生命周期 |
 | **Client** | `McpClient` 适配器 | 发送 JSON-RPC 请求、接收响应 |
 | **Server** | 独立进程 | 社区提供的 MCP Server（Node.js / Python / Go） |
 
@@ -71,7 +71,7 @@ MCP 位于软件桥梁层，作为外部能力源接入 Agent 体系：
 
 | 等级 | 功能 | 场景 |
 |---|---|---|
-| **L1: 客户端支持** | PuddingCode 作为 Host，连接现有 MCP Server | 直接使用社区的 Google Search / PostgreSQL / GitHub MCP |
+| **L1: 客户端支持** | PuddingAssistant 作为 Host，连接现有 MCP Server | 直接使用社区的 Google Search / PostgreSQL / GitHub MCP |
 | **L2: 内部转发器** | 将本地 Everything / Roslyn 包装为 MCP 协议 | Agent 之间通过 MCP 标准共享工具，无需重复开发 |
 | **L3: 远程路由** | 连接另一台机器或云端的 MCP Server | 跨设备操作、利用云端算力处理大型索引 |
 
@@ -91,7 +91,7 @@ MCP 支持两种传输方式：
 ### 4.2 Stdio 传输流程
 
 ```
-PuddingCode                          MCP Server (独立进程)
+PuddingAssistant                          MCP Server (独立进程)
     │                                       │
     │── Process.Start(mcp-server) ────────→ │  启动进程
     │                                       │
@@ -167,7 +167,7 @@ Available Skills:
 
 ## 六、权限桥接
 
-MCP 协议本身不带权限 UI。PuddingCode 在 Client 和 Server 之间插入 `PermissionGuard`：
+MCP 协议本身不带权限 UI。PuddingAssistant 在 Client 和 Server 之间插入 `PermissionGuard`：
 
 ### 6.1 拦截策略
 
@@ -209,7 +209,7 @@ MCP 工具自动映射到安全级别：
 
 ### 7.2 懒启动
 
-MCP Server 不随 PuddingCode 启动，仅在以下条件触发：
+MCP Server 不随 PuddingAssistant 启动，仅在以下条件触发：
 
 - LLM 首次请求调用该 MCP 工具
 - 用户手动在管理面板中启动
@@ -335,7 +335,7 @@ public class McpClient : IAsyncDisposable
         {
             protocolVersion = "2024-11-05",
             capabilities = new { },
-            clientInfo = new { name = "PuddingCode", version = "0.1.0" }
+            clientInfo = new { name = "PuddingAssistant", version = "0.1.0" }
         }, ct);
 
         await SendNotificationAsync("notifications/initialized", ct);

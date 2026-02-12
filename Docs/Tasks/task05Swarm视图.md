@@ -73,7 +73,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ [Editor | Swarm]     PuddingCode          Provider: [deepseek ▾]    │
+│ [Editor | Swarm]     PuddingAssistant          Provider: [deepseek ▾]    │
 ├────────────┬─────────────────────────────────────┬───────────────────┤
 │ Agent List │        Topology Graph                │   Agent Detail    │
 │            │                                      │                   │
