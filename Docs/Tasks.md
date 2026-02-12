@@ -124,7 +124,7 @@
 | D03 | LLM 网关 + Agent 编排器 | ✅ 已完成 | 🔴 P0 | D01 | `OpenAiLlmGateway`、`AgentOrchestrator`、Tool Calling 闭环 |
 | D04 | CLI REPL 原型 | ✅ 已完成 | 🔴 P0 | D02, D03 | Spectre.Console REPL、事件流渲染 |
 | D05 | LSP 语义感知集成 | 📋 规划中 | 🟠 P1 | D01 | Roslyn LSP Client、`/map` 指令 |
-| D06 | Git 快照与回滚 | 📋 规划中 | 🔴 P0 | D01 | `/undo` 指令、时光机基础（D08 前置） |
+| D06 | Git 快照与回滚 | ✅ 已完成 | 🔴 P0 | D01 | `IGitSnapshot`、`GitSnapshotService`、`/undo` `/snapshot` `/history` 指令、AgentOrchestrator 自动快照 |
 | D07 | 桌面端 MVP（Avalonia） | 🚧 开发中 | 🟠 P1 | D04, Task 01, 02 | 双视图 Editor/Swarm、流式 Chat、思维链、Swarm 拓扑图、Agent 右键菜单 |
 | D08 | 蜂群契约 + 串行编排 | 📋 规划中 | 🔴 P0 | D04, D06, Task 04 | `IContractManager`、`ScopedFileTool`、`ISwarmOrchestrator`、作用域隔离 |
 | D09 | 蜂群并行 + Worktree | 📋 规划中 | 🟠 P1 | D08 | Git Worktree 管理、Leader-Worker 并行、自动合并 |
