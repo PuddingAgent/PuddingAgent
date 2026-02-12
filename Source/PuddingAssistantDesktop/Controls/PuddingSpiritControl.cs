@@ -91,6 +91,10 @@ public sealed class PuddingSpiritControl : Control
         // ── 8. Falling wind lines ──
         if (vm.State == SpiritState.Falling)
             DrawWindLines(ctx, cx, cy, baseR, vm.AnimationPhase);
+
+        // ── 9. Heartbeat glow pulse ──
+        if (vm.HeartbeatGlow > 0.01)
+            DrawHeartbeatGlow(ctx, cx, cy, rx, ry, vm);
     }
 
     // ── Drawing helpers ──
@@ -372,6 +376,31 @@ public sealed class PuddingSpiritControl : Control
                 new Point(cx + r * 0.8 - xShift, cy + yOff),
                 new Point(cx + r * 0.8 + lineLen - xShift, cy + yOff));
         }
+    }
+
+    private static void DrawHeartbeatGlow(DrawingContext ctx, double cx, double cy,
+        double rx, double ry, SpiritViewModel vm)
+    {
+        // Soft radial glow overlay that pulses with the perception beat
+        var intensity = vm.HeartbeatGlow;
+        var glowR = Math.Max(rx, ry) * (1.2 + intensity * 0.3);
+        var alpha = (byte)(intensity * 60);
+
+        var glowBrush = new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(1.0, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(1.0, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(alpha, vm.GlowColor.R, vm.GlowColor.G, vm.GlowColor.B), 0),
+                new GradientStop(Color.FromArgb(0, vm.GlowColor.R, vm.GlowColor.G, vm.GlowColor.B), 1)
+            }
+        };
+
+        var glowGeom = new EllipseGeometry(new Rect(cx - glowR, cy - glowR, glowR * 2, glowR * 2));
+        ctx.DrawGeometry(glowBrush, null, glowGeom);
     }
 
     private static Color DarkenColor(Color c, double factor)

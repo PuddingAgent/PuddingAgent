@@ -1,9 +1,17 @@
 using System;
 using System.Linq;
+using System.Net.Http;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
-using Avalonia.Threading;
+using PuddingAssistant.Abstractions;
+using PuddingAssistant.Core;
+using PuddingAssistant.Models;
+using PuddingAssistant.Skills;
+using PuddingAssistant.Skills.BuiltIn;
+using PuddingAssistantDesktop.Heartbeat;
+using PuddingAssistantDesktop.Models;
 using PuddingAssistantDesktop.Physics;
 using PuddingAssistantDesktop.ViewModels;
 
@@ -11,19 +19,20 @@ namespace PuddingAssistantDesktop.Views;
 
 /// <summary>
 /// Transparent, borderless, topmost window hosting the pudding spirit.
-/// Integrates physics engine for gravity, window collision, and throw-on-release.
+/// Physics is driven by the <see cref="HeartbeatCoordinator"/>'s physics beat.
 /// Supports multi-monitor virtual desktop bounds.
 /// </summary>
 public partial class SpiritWindow : Window
 {
     private bool _isDragging;
     private Point _dragStart;
+    private ChatWindow? _chatWindow;
+    private MainWindow? _mainWindow;
 
     // ── Physics ──
 
     private PhysicsWorld? _physics;
     private PhysicsBody? _body;
-    private readonly DispatcherTimer _physicsTimer;
 
     /// <summary>Tracks previous position during drag to compute release velocity.</summary>
     private PixelPoint _prevDragPosition;
@@ -38,10 +47,6 @@ public partial class SpiritWindow : Window
 
         // Double-tap triggers poke/startle reaction
         DoubleTapped += OnSpiritDoubleTapped;
-
-        // Physics loop at ~60fps
-        _physicsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-        _physicsTimer.Tick += OnPhysicsTick;
     }
 
     private void OnOpened(object? sender, EventArgs e)
@@ -61,8 +66,8 @@ public partial class SpiritWindow : Window
     // ── Physics initialization ──
 
     /// <summary>
-    /// Computes the virtual desktop bounding box across all monitors
-    /// and initializes the physics world with correct bounds.
+    /// Computes the virtual desktop bounding box across all monitors,
+    /// initializes the physics world, and subscribes to the heartbeat's physics beat.
     /// </summary>
     private void InitializePhysics()
     {
@@ -77,14 +82,12 @@ public partial class SpiritWindow : Window
 
         foreach (var screen in allScreens)
         {
-            // Use WorkingArea (excludes taskbar) for bottom boundary
             var work = screen.WorkingArea;
             var bounds = screen.Bounds;
 
             virtualLeft = Math.Min(virtualLeft, bounds.X);
             virtualTop = Math.Min(virtualTop, bounds.Y);
             virtualRight = Math.Max(virtualRight, bounds.Right);
-            // Use working area bottom so the spirit lands above the taskbar
             virtualBottom = Math.Max(virtualBottom, work.Bottom);
         }
 
@@ -95,12 +98,17 @@ public partial class SpiritWindow : Window
         _physics.Configure(virtualLeft, virtualTop, virtualRight, virtualBottom, handle);
         _physics.SetWindowSize(Width, Height);
         _physics.RefreshPlatforms();
-
         _physics.OnLanded += OnPhysicsLanded;
-        _physicsTimer.Start();
+
+        // Subscribe physics tick to the heartbeat coordinator instead of a standalone timer
+        if (DataContext is SpiritViewModel vm)
+        {
+            vm.Heartbeat.PhysicsBeat += OnPhysicsBeat;
+            vm.Heartbeat.Start();
+        }
     }
 
-    private void OnPhysicsTick(object? sender, EventArgs e)
+    private void OnPhysicsBeat(double dt)
     {
         if (_physics is null || _body is null) return;
 
@@ -111,7 +119,6 @@ public partial class SpiritWindow : Window
 
         if (_isDragging)
         {
-            // During drag: sync physics body to window position
             _body.Teleport(Position.X, Position.Y);
             return;
         }
@@ -123,7 +130,6 @@ public partial class SpiritWindow : Window
         }
 
         // Step physics
-        var dt = 1.0 / 60.0;
         _physics.Update(dt);
 
         // Sync physics squash to ViewModel
@@ -150,7 +156,16 @@ public partial class SpiritWindow : Window
     {
         base.OnPointerPressed(e);
 
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        var props = e.GetCurrentPoint(this).Properties;
+
+        if (props.IsRightButtonPressed)
+        {
+            ShowSpiritContextMenu(e);
+            e.Handled = true;
+            return;
+        }
+
+        if (props.IsLeftButtonPressed)
         {
             _isDragging = true;
             _dragStart = e.GetPosition(this);
@@ -256,5 +271,197 @@ public partial class SpiritWindow : Window
                 _body.Detach();
             }
         }
+    }
+
+    // ── Right-click context menu ──
+
+    private void ShowSpiritContextMenu(PointerPressedEventArgs e)
+    {
+        var vm = DataContext as SpiritViewModel;
+
+        var menu = new ContextMenu();
+
+        // Show Main Window
+        var showMainItem = new MenuItem { Header = "Show Main Window" };
+        showMainItem.Click += (_, _) => ShowMainWindow();
+        menu.Items.Add(showMainItem);
+
+        // Chat
+        var chatItem = new MenuItem { Header = "Chat" };
+        chatItem.Click += (_, _) => OpenChatWindow();
+        menu.Items.Add(chatItem);
+
+        menu.Items.Add(new Separator());
+
+        // Sleep / Wake toggle
+        var isSleeping = vm?.State == SpiritState.Sleeping;
+        var sleepItem = new MenuItem { Header = isSleeping ? "Wake Up" : "Sleep" };
+        sleepItem.Click += (_, _) =>
+        {
+            if (vm is null) return;
+            if (vm.State == SpiritState.Sleeping)
+            {
+                vm.TouchInteraction();
+                vm.ShowBubble("I'm awake!");
+            }
+            else
+            {
+                vm.State = SpiritState.Sleeping;
+                vm.ShowBubble("Zzz...");
+            }
+        };
+        menu.Items.Add(sleepItem);
+
+        // Focus Mode
+        var focusItem = new MenuItem { Header = "Focus Mode" };
+        focusItem.Click += (_, _) =>
+        {
+            if (vm is null) return;
+            vm.State = SpiritState.Thinking;
+            vm.ShowBubble("Focus mode on!");
+        };
+        menu.Items.Add(focusItem);
+
+        menu.Items.Add(new Separator());
+
+        // Exit
+        var exitItem = new MenuItem { Header = "Exit" };
+        exitItem.Click += (_, _) =>
+        {
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime lifetime)
+                lifetime.Shutdown();
+        };
+        menu.Items.Add(exitItem);
+
+        // Attach to the spirit canvas and open
+        var canvas = this.FindControl<Control>("SpiritCanvas");
+        if (canvas is not null)
+        {
+            canvas.ContextMenu = menu;
+            menu.Open(canvas);
+        }
+    }
+
+    /// <summary>Lazily creates and shows the main application window.</summary>
+    private void ShowMainWindow()
+    {
+        if (_mainWindow is not null && _mainWindow.IsVisible)
+        {
+            _mainWindow.Activate();
+            if (_mainWindow.WindowState == WindowState.Minimized)
+                _mainWindow.WindowState = WindowState.Normal;
+            return;
+        }
+
+        if (_mainWindow is null)
+        {
+            _mainWindow = new MainWindow
+            {
+                DataContext = new MainWindowViewModel(),
+            };
+
+            // Hide instead of closing so it can be re-shown
+            _mainWindow.Closing += (_, e) =>
+            {
+                e.Cancel = true;
+                _mainWindow.Hide();
+            };
+        }
+
+        _mainWindow.Show();
+        _mainWindow.Activate();
+    }
+
+    /// <summary>Opens the chat window positioned at screen center.</summary>
+    private void OpenChatWindow()
+    {
+        if (_chatWindow is not null && _chatWindow.IsVisible)
+        {
+            _chatWindow.Activate();
+            return;
+        }
+
+        // Load LLM config and create gateway
+        var llm = CreateLlmGateway();
+
+        // Build skill registry with built-in skills for the Spirit role
+        var skillRegistry = CreateSpiritSkillRegistry();
+
+        var chatVm = new ChatWindowViewModel(llm, skillRegistry);
+        _chatWindow = new ChatWindow
+        {
+            DataContext = chatVm
+        };
+
+        // WindowStartupLocation=CenterScreen handles positioning
+
+        // Wire chat messages to spirit bubble
+        chatVm.MessageSent += msg =>
+        {
+            if (DataContext is SpiritViewModel vm)
+            {
+                vm.TouchInteraction();
+                vm.ShowBubble("Thinking...", TimeSpan.FromSeconds(2));
+            }
+        };
+
+        _chatWindow.Show();
+
+        if (DataContext is SpiritViewModel spiritVm)
+            spiritVm.ShowBubble("Let's chat!");
+    }
+
+    /// <summary>
+    /// Loads ~/.pudding/config.json and creates an LLM gateway for the active provider.
+    /// Returns null if no valid config is found (chat falls back to echo mode).
+    /// </summary>
+    private static ILlmGateway? CreateLlmGateway()
+    {
+        try
+        {
+            var config = DesktopConfigLoader.Load();
+            if (config.Providers.Count == 0) return null;
+
+            var provider = config.Providers.Find(p => p.Id == config.ActiveProvider)
+                           ?? config.Providers[0];
+
+            if (string.IsNullOrWhiteSpace(provider.ApiKey)) return null;
+
+            var options = new LlmOptions(
+                Endpoint: provider.Endpoint,
+                ApiKey: provider.ApiKey,
+                Model: provider.Model,
+                Temperature: provider.Temperature,
+                MaxTokens: provider.MaxTokens);
+
+            var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+            return new OpenAiLlmGateway(httpClient, options);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Creates a SkillRegistry populated with built-in skills for the desktop spirit.
+    /// </summary>
+    private static ISkillRegistry CreateSpiritSkillRegistry()
+    {
+        var registry = new SkillRegistry();
+
+        // Environment skills (file/shell operations)
+        registry.Register(new EnvironmentSkills());
+
+        // File management skills (smart probe, eco-recycle, rename, shortcuts)
+        registry.Register(new FileManagementSkills());
+
+        // App launcher skills (list installed apps, launch apps)
+        registry.Register(new AppLauncherSkills());
+
+        // Introspection skills (self-inspection, must be registered last so it sees all skills)
+        registry.Register(new IntrospectionSkills(registry));
+
+        return registry;
     }
 }

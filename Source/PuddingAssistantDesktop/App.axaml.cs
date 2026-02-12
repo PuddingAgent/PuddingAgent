@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using PuddingAssistantDesktop.Heartbeat;
 using PuddingAssistantDesktop.ViewModels;
 using PuddingAssistantDesktop.Views;
 using System.Linq;
@@ -23,13 +24,14 @@ namespace PuddingAssistantDesktop
                 // Avoid duplicate validations from both Avalonia and the CommunityToolkit. 
                 // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
                 DisableAvaloniaDataAnnotationValidation();
-                desktop.MainWindow = new MainWindow
-                {
-                    DataContext = new MainWindowViewModel(),
-                };
 
-                // Launch the desktop pudding spirit as a secondary window
-                var spiritVm = new SpiritViewModel();
+                // Don't create MainWindow at startup — only the spirit is visible.
+                // MainWindow is lazily created when the user requests it via right-click menu.
+                desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+
+                // Launch the desktop pudding spirit with a shared heartbeat coordinator
+                var heartbeat = new HeartbeatCoordinator();
+                var spiritVm = new SpiritViewModel(heartbeat);
                 var spiritWindow = new SpiritWindow
                 {
                     DataContext = spiritVm,

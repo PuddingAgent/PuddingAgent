@@ -3,6 +3,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PuddingAssistantDesktop.Heartbeat;
 
 namespace PuddingAssistantDesktop.ViewModels;
 
@@ -72,6 +73,17 @@ public partial class SpiritViewModel : ViewModelBase
     /// <summary>Whether physics engine is overriding squash/stretch (landing impact).</summary>
     [ObservableProperty] private bool _isPhysicsSquashing;
 
+    /// <summary>Heartbeat glow intensity (0–1), pulses with the perception beat.</summary>
+    [ObservableProperty] private double _heartbeatGlow;
+
+    // ── Bubble ──
+
+    /// <summary>Text shown in the speech bubble above the spirit. Empty = hidden.</summary>
+    [ObservableProperty] private string _bubbleText = string.Empty;
+
+    /// <summary>Opacity of the speech bubble (0–1). Fades out over time.</summary>
+    [ObservableProperty] private double _bubbleOpacity;
+
     // ── Interaction ──
 
     [ObservableProperty] private bool _isPointerOver;
@@ -83,36 +95,28 @@ public partial class SpiritViewModel : ViewModelBase
     [ObservableProperty] private Color _glowColor;
     [ObservableProperty] private Color _shadowColor;
 
-    // ── Animation timer ──
+    // ── Heartbeat ──
 
-    private readonly DispatcherTimer _animTimer;
-    private readonly DispatcherTimer _idleTimer;
-    private readonly DispatcherTimer _dayPeriodTimer;
+    private readonly HeartbeatCoordinator _heartbeat;
+    private readonly AutonomousBehavior _autonomy = new();
     private DateTime _lastInteraction = DateTime.UtcNow;
-
-    /// <summary>Seconds of idle before entering sleep state.</summary>
-    private const double IdleTimeoutSeconds = 300; // 5 minutes
 
     /// <summary>External physics squash values set by the physics engine.</summary>
     private double _physicsSquashY = 1.0;
     private double _physicsStretchX = 1.0;
 
-    public SpiritViewModel()
+    /// <summary>The heartbeat coordinator driving this ViewModel.</summary>
+    public HeartbeatCoordinator Heartbeat => _heartbeat;
+
+    public SpiritViewModel(HeartbeatCoordinator heartbeat)
     {
+        _heartbeat = heartbeat;
         ApplyPalette(SpiritState.Idle);
-        UpdateDayPeriod();
 
-        _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) }; // ~60fps
-        _animTimer.Tick += OnAnimationTick;
-        _animTimer.Start();
-
-        _idleTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _idleTimer.Tick += OnIdleCheck;
-        _idleTimer.Start();
-
-        _dayPeriodTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-        _dayPeriodTimer.Tick += (_, _) => UpdateDayPeriod();
-        _dayPeriodTimer.Start();
+        // Subscribe to heartbeat tiers
+        _heartbeat.PhysicsBeat += OnPhysicsBeat;
+        _heartbeat.PerceptionBeat += OnPerceptionBeat;
+        _heartbeat.ConsciousnessBeat += OnConsciousnessBeat;
     }
 
     partial void OnStateChanged(SpiritState value)
@@ -190,13 +194,46 @@ public partial class SpiritViewModel : ViewModelBase
         revert.Start();
     }
 
-    // ── Animation loop ──
-
-    private void OnAnimationTick(object? sender, EventArgs e)
+    /// <summary>Shows a speech bubble above the spirit that auto-fades after the given duration.</summary>
+    public void ShowBubble(string text, TimeSpan? duration = null)
     {
-        AnimationPhase += 0.05; // ~3 rad/sec at 60fps
-        if (AnimationPhase > Math.PI * 2)
-            AnimationPhase -= Math.PI * 2;
+        BubbleText = text;
+        BubbleOpacity = 1.0;
+
+        var fadeDelay = duration ?? TimeSpan.FromSeconds(4);
+        var fadeTimer = new DispatcherTimer { Interval = fadeDelay };
+        fadeTimer.Tick += (_, _) =>
+        {
+            fadeTimer.Stop();
+            // Start fade-out (decayed each physics beat)
+            _bubbleFading = true;
+        };
+        fadeTimer.Start();
+        _bubbleFading = false;
+    }
+
+    private bool _bubbleFading;
+
+    // ── Tier 1: Physics Beat (60 Hz) — animation + squash/stretch ──
+
+    private void OnPhysicsBeat(double dt)
+    {
+        AnimationPhase = _heartbeat.PhysicsPhase;
+
+        // Decay heartbeat glow
+        HeartbeatGlow *= 0.95;
+
+        // Decay bubble opacity when fading
+        if (_bubbleFading && BubbleOpacity > 0.01)
+        {
+            BubbleOpacity *= 0.92;
+            if (BubbleOpacity < 0.02)
+            {
+                BubbleOpacity = 0;
+                BubbleText = string.Empty;
+                _bubbleFading = false;
+            }
+        }
 
         // When physics is driving squash/stretch, use those values directly
         if (IsPhysicsSquashing)
@@ -243,12 +280,54 @@ public partial class SpiritViewModel : ViewModelBase
         StretchX = 1.0 - breath * 0.5; // volume conservation
     }
 
-    private void OnIdleCheck(object? sender, EventArgs e)
+    // ── Tier 2: Perception Beat (2 Hz) — environment sensing ──
+
+    /// <summary>Latest environment snapshot from the perception beat.</summary>
+    public EnvironmentSnapshot? LatestSnapshot { get; private set; }
+
+    private void OnPerceptionBeat()
     {
-        if (State is SpiritState.Idle or SpiritState.Happy
-            && (DateTime.UtcNow - _lastInteraction).TotalSeconds > IdleTimeoutSeconds)
+        // Pulse the heartbeat glow
+        HeartbeatGlow = 0.6;
+
+        // Capture environment
+        LatestSnapshot = EnvironmentSnapshot.Capture(
+            isGrounded: !IsDragging,
+            isDragging: IsDragging);
+    }
+
+    // ── Tier 3: Consciousness Beat (60 s) — autonomous decisions ──
+
+    private void OnConsciousnessBeat()
+    {
+        UpdateDayPeriod();
+
+        // Evaluate autonomous behavior
+        var snapshot = LatestSnapshot ?? EnvironmentSnapshot.Capture(isGrounded: true, isDragging: false);
+        var action = _autonomy.Evaluate(snapshot, State, DayPeriod);
+
+        if (action is null) return;
+
+        switch (action.Intent)
         {
-            State = SpiritState.Sleeping;
+            case AutonomousIntent.MorningGreeting:
+                State = SpiritState.Happy;
+                RevertStateAfter(SpiritState.Happy, SpiritState.Idle, TimeSpan.FromSeconds(3));
+                break;
+
+            case AutonomousIntent.RestReminder:
+                State = SpiritState.Warning;
+                RevertStateAfter(SpiritState.Warning, SpiritState.Idle, TimeSpan.FromSeconds(5));
+                break;
+
+            case AutonomousIntent.Sleep:
+                State = SpiritState.Sleeping;
+                break;
+
+            case AutonomousIntent.WakeUp:
+                if (State == SpiritState.Sleeping)
+                    State = SpiritState.Idle;
+                break;
         }
     }
 
