@@ -28,6 +28,7 @@
     <None Include="$(MSBuildThisFileDirectory)Tasks\task14SKILL插件化.md" />
     <None Include="$(MSBuildThisFileDirectory)Tasks\task15MCP服务器.md" />
     <None Include="$(MSBuildThisFileDirectory)Tasks\task16服务商界面.md" />
+    <None Include="$(MSBuildThisFileDirectory)Tasks\task17Leader的动态路由.md" />
     <None Include="$(MSBuildThisFileDirectory)讨论.md" />
   </ItemGroup>
 </Project>
