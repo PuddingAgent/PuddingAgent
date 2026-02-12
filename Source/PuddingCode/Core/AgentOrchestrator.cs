@@ -6,17 +6,39 @@ using PuddingCode.Models;
 
 namespace PuddingCode.Core;
 
-public sealed class AgentOrchestrator(ILlmGateway llm, IToolRegistry tools) : IAgentOrchestrator
+public sealed class AgentOrchestrator : IAgentOrchestrator
 {
-    private readonly List<ChatMessage> _history =
-    [
-        new(ChatRole.System, """
+    private readonly ILlmGateway _llm;
+    private readonly IToolRegistry _tools;
+    private readonly List<ChatMessage> _history;
+
+    public AgentOrchestrator(ILlmGateway llm, IToolRegistry tools, ProjectContext? project = null)
+    {
+        _llm = llm;
+        _tools = tools;
+
+        var systemPrompt = """
             You are PuddingCode, an AI programming assistant.
             Use the provided tools to help the user with coding tasks.
             Always use tools when the user asks to read files, write files, or run commands.
             After using a tool, summarize the result for the user.
-            """)
-    ];
+            """;
+
+        if (project is not null)
+        {
+            systemPrompt += $"""
+
+
+            Current project: {project.Name}
+            Project root: {project.RootPath}
+            All relative file paths are resolved from the project root.
+            When using the file tool, use paths relative to the project root.
+            When using the shell tool, commands run in the project root by default.
+            """;
+        }
+
+        _history = [new ChatMessage(ChatRole.System, systemPrompt)];
+    }
 
     public async IAsyncEnumerable<AgentEvent> ProcessAsync(
         string userInput,
@@ -43,8 +65,8 @@ public sealed class AgentOrchestrator(ILlmGateway llm, IToolRegistry tools) : IA
             {
                 try
                 {
-                    await foreach (var delta in llm.ChatStreamAsync(
-                        _history, tools.GetAllTools(), ct))
+                    await foreach (var delta in _llm.ChatStreamAsync(
+                        _history, _tools.GetAllTools(), ct))
                     {
                         if (delta.ReasoningDelta is not null)
                         {
@@ -149,7 +171,7 @@ public sealed class AgentOrchestrator(ILlmGateway llm, IToolRegistry tools) : IA
     private async Task<(string Result, AgentEvent Event)> ExecuteToolSafe(
         ToolCall call, CancellationToken ct)
     {
-        var tool = tools.GetTool(call.Name);
+        var tool = _tools.GetTool(call.Name);
         if (tool is null)
         {
             var msg = $"Error: unknown tool '{call.Name}'";

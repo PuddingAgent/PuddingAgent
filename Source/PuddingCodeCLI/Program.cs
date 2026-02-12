@@ -77,12 +77,16 @@ AnsiConsole.WriteLine();
 // ═══════════════════════ Initialize Agent ═══════════════════════
 
 var httpClient = new HttpClient();
+var project = new ProjectContext(Environment.CurrentDirectory);
 var registry = new ToolRegistry();
-registry.Register(new FileTool());
-registry.Register(new ShellTool());
+registry.Register(new FileTool(project));
+registry.Register(new ShellTool(project));
 
 var gateway = CreateGateway(active);
-var agent = new AgentOrchestrator(gateway, registry);
+var agent = new AgentOrchestrator(gateway, registry, project);
+
+AnsiConsole.MarkupLine($"[grey]Project  : {project.RootPath.EscapeMarkup()}[/]");
+AnsiConsole.WriteLine();
 
 // ═══════════════════════ REPL ═══════════════════════
 
@@ -198,7 +202,7 @@ void SwitchProvider(ProviderEntry provider)
 {
     active = provider;
     gateway = CreateGateway(provider);
-    agent = new AgentOrchestrator(gateway, registry);
+    agent = new AgentOrchestrator(gateway, registry, project);
 }
 
 // ──────── Command router ────────
@@ -219,6 +223,9 @@ void HandleCommand(string input)
         case "/model":
             CmdModel(parts);
             break;
+        case "/open":
+            CmdOpen(parts);
+            break;
         default:
             AnsiConsole.MarkupLine($"[grey]Unknown command: {cmd.EscapeMarkup()}. Type /help[/]");
             break;
@@ -230,6 +237,7 @@ void CmdHelp()
     var table = new Table().Border(TableBorder.None).HideHeaders()
         .AddColumn("cmd").AddColumn("desc");
     table.AddRow("[yellow]/help[/]", "Show this help");
+    table.AddRow("[yellow]/open [path][/]", "Open a project directory (default: current dir)");
     table.AddRow("[yellow]/model[/]", "List configured providers");
     table.AddRow("[yellow]/model add[/]", "Add a new LLM provider");
     table.AddRow("[yellow]/model use <id>[/]", "Switch active provider");
@@ -250,6 +258,28 @@ void CmdConfig()
     if (active.MaxTokens.HasValue)
         AnsiConsole.MarkupLine($"[grey]Max Tokens   : {active.MaxTokens.Value}[/]");
     AnsiConsole.MarkupLine($"[grey]Providers    : {config.Providers.Count} total[/]");
+    AnsiConsole.MarkupLine($"[grey]Project      : {project.RootPath.EscapeMarkup()}[/]");
+}
+
+void CmdOpen(string[] parts)
+{
+    var path = parts.Length > 1
+        ? string.Join(' ', parts.Skip(1))
+        : Environment.CurrentDirectory;
+
+    if (!Directory.Exists(path))
+    {
+        AnsiConsole.MarkupLine($"[red]Directory not found: {path.EscapeMarkup()}[/]");
+        return;
+    }
+
+    project = new ProjectContext(path);
+    registry = new ToolRegistry();
+    registry.Register(new FileTool(project));
+    registry.Register(new ShellTool(project));
+    agent = new AgentOrchestrator(gateway, registry, project);
+    AnsiConsole.MarkupLine($"[green]✓[/] Project opened: [yellow]{project.RootPath.EscapeMarkup()}[/]");
+    AnsiConsole.MarkupLine("[grey]Conversation history has been reset.[/]");
 }
 
 void CmdModel(string[] parts)

@@ -10,13 +10,17 @@ public sealed class ShellTool : ITool
 {
     private static readonly JsonSerializerOptions s_jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+    private readonly ProjectContext? _project;
+
+    public ShellTool(ProjectContext? project = null) => _project = project;
+
     public string Name => "shell";
     public string Description => "Execute a shell command and return stdout/stderr.";
 
     public ToolParameterSchema Parameters => new(
         [
             new("command", "string", "The shell command to execute"),
-            new("workingDirectory", "string", "Working directory (optional)")
+            new("workingDirectory", "string", "Working directory (optional, defaults to project root)")
         ],
         ["command"]);
 
@@ -28,7 +32,9 @@ public sealed class ShellTool : ITool
         var isWindows = OperatingSystem.IsWindows();
         var shell = isWindows ? "cmd.exe" : "/bin/sh";
         var prefix = isWindows ? "/c" : "-c";
-        var workDir = args.WorkingDirectory ?? Environment.CurrentDirectory;
+        var workDir = args.WorkingDirectory
+                      ?? _project?.RootPath
+                      ?? Environment.CurrentDirectory;
 
         try
         {

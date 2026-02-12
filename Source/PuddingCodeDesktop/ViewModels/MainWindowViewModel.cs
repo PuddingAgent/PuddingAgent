@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -22,6 +23,11 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly DesktopConfig _config;
     private readonly HttpClient _httpClient = new();
     private CancellationTokenSource? _agentCts;
+
+    // ──── Project Context ────
+
+    [ObservableProperty] private ProjectContext? _currentProject;
+    [ObservableProperty] private string _projectDisplayName = "No project opened";
 
     // ──── View Switching ────
 
@@ -142,8 +148,6 @@ public partial class MainWindowViewModel : ViewModelBase
         // Editor scaffolding
         Tasks.Add("task-001: Implement AuthService.LoginAsync");
         Tasks.Add("task-002: Add unit tests for TokenManager");
-        ProjectTree.Add("src/");
-        ProjectTree.Add("tests/");
         OpenEditors.Add("Program.cs");
         OpenEditors.Add("AuthService.cs");
 

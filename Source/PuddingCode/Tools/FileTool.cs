@@ -8,6 +8,10 @@ public sealed class FileTool : ITool
 {
     private static readonly JsonSerializerOptions s_jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+    private readonly ProjectContext? _project;
+
+    public FileTool(ProjectContext? project = null) => _project = project;
+
     public string Name => "file";
     public string Description => "Read or write file contents. Actions: read, write, list.";
 
@@ -24,13 +28,15 @@ public sealed class FileTool : ITool
         var args = JsonSerializer.Deserialize<FileToolArgs>(argumentsJson, s_jsonOptions);
         if (args?.Path is null) return "Error: path is required";
 
+        var path = ResolvePath(args.Path);
+
         try
         {
             return args.Action?.ToLower() switch
             {
-                "read" => await File.ReadAllTextAsync(args.Path, ct),
-                "write" => await WriteFileAsync(args.Path, args.Content ?? "", ct),
-                "list" => string.Join("\n", Directory.GetFileSystemEntries(args.Path)),
+                "read" => await File.ReadAllTextAsync(path, ct),
+                "write" => await WriteFileAsync(path, args.Content ?? "", ct),
+                "list" => string.Join("\n", Directory.GetFileSystemEntries(path)),
                 _ => $"Unknown action: {args.Action}"
             };
         }
@@ -39,6 +45,11 @@ public sealed class FileTool : ITool
             return $"Error: {ex.Message}";
         }
     }
+
+    private string ResolvePath(string path) =>
+        _project is not null && !Path.IsPathRooted(path)
+            ? _project.Resolve(path)
+            : path;
 
     private static async Task<string> WriteFileAsync(string path, string content, CancellationToken ct)
     {
