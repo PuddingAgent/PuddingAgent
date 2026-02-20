@@ -2,6 +2,9 @@
 
 > **目标：** 在现有三项目脚手架（`PuddingCode` / `PuddingCodeCLI` / `PuddingCodeDesktop`）基础上，完成 V0.1 里程碑——打通 **"用户输入 → LLM 调用 → 工具执行 → 结果回传 → 最终回答"** 的完整 Agent 闭环。
 
+PuddingCodeDesktop：已经被移除，我们暂时只做CLI模式。
+
+
 ---
 
 > 命令行可以使用CliWrap
