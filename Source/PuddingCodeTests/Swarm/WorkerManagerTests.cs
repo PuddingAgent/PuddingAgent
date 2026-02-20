@@ -5,8 +5,131 @@ using PuddingCode.Swarm;
 namespace PuddingCodeTests.Swarm;
 
 [TestClass]
+[DoNotParallelize]
 public class WorkerManagerTests
 {
+    /// <summary>
+    /// 清理所有测试前留下的 Git worktree 和分支。
+    /// </summary>
+    [ClassInitialize]
+    public static async Task ClassInitialize(TestContext context)
+    {
+        // 清理可能从之前测试运行中遗留的临时目录
+        var tempPath = Path.GetTempPath();
+        var workerTestDirs = Directory.GetDirectories(tempPath, "worker-test-*");
+        
+        foreach (var dir in workerTestDirs)
+        {
+            try
+            {
+                // 先清理 worktree
+                var worktreesDir = Path.Combine(dir, ".pudding", "worktrees");
+                if (Directory.Exists(worktreesDir))
+                {
+                    foreach (var worktree in Directory.GetDirectories(worktreesDir))
+                    {
+                        try
+                        {
+                            // 从 git 中移除 worktree
+                            await RunGitAsync(dir, ["worktree", "remove", "-f", worktree]);
+                        }
+                        catch
+                        {
+                            // 忽略失败
+                        }
+                    }
+                    Directory.Delete(worktreesDir, true);
+                }
+                
+                // 删除分支
+                var branches = await RunGitAsync(dir, ["branch", "--list", "swarm/*"]);
+                foreach (var branch in branches.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var branchName = branch.Trim('*', ' ');
+                    if (!string.IsNullOrWhiteSpace(branchName))
+                    {
+                        try
+                        {
+                            await RunGitAsync(dir, ["branch", "-D", branchName]);
+                        }
+                        catch
+                        {
+                            // 忽略失败
+                        }
+                    }
+                }
+                
+                Directory.Delete(dir, true);
+            }
+            catch
+            {
+                // 忽略清理失败
+            }
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 清理所有测试后留下的 Git worktree 和分支。
+    /// </summary>
+    [ClassCleanup]
+    public static async Task ClassCleanup()
+    {
+        var tempPath = Path.GetTempPath();
+        var workerTestDirs = Directory.GetDirectories(tempPath, "worker-test-*");
+        
+        foreach (var dir in workerTestDirs)
+        {
+            try
+            {
+                // 先清理 worktree
+                var worktreesDir = Path.Combine(dir, ".pudding", "worktrees");
+                if (Directory.Exists(worktreesDir))
+                {
+                    foreach (var worktree in Directory.GetDirectories(worktreesDir))
+                    {
+                        try
+                        {
+                            await RunGitAsync(dir, ["worktree", "remove", "-f", worktree]);
+                        }
+                        catch
+                        {
+                            // 忽略失败
+                        }
+                    }
+                    Directory.Delete(worktreesDir, true);
+                }
+                
+                // 删除分支
+                var branches = await RunGitAsync(dir, ["branch", "--list", "swarm/*"]);
+                foreach (var branch in branches.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var branchName = branch.Trim('*', ' ');
+                    if (!string.IsNullOrWhiteSpace(branchName))
+                    {
+                        try
+                        {
+                            await RunGitAsync(dir, ["branch", "-D", branchName]);
+                        }
+                        catch
+                        {
+                            // 忽略失败
+                        }
+                    }
+                }
+                
+                Directory.Delete(dir, true);
+            }
+            catch
+            {
+                // 忽略清理失败
+            }
+        }
+        
+        await Task.CompletedTask;
+    }
+
     [TestMethod]
     public async Task SpawnWorkerAsync_CreatesUniqueWorkerId()
     {
@@ -223,7 +346,7 @@ public class WorkerManagerTests
         var readmePath = Path.Combine(testDir, "README.md");
         await File.WriteAllTextAsync(readmePath, "# Test Repo");
         await RunGitAsync(testDir, ["add", "."]);
-        await RunGitAsync(testDir, ["commit", "-m", "Initial commit"]);
+        await RunGitAsync(testDir, ["commit", "-m \"Initial commit\"", "--allow-empty"]);
 
         return testDir;
     }
@@ -238,21 +361,44 @@ public class WorkerManagerTests
 
         try
         {
-            // 尝试清理 worktrees（如果存在）
+            // 先强制移除所有 worktree
             var worktreesDir = Path.Combine(testDir, ".pudding", "worktrees");
             if (Directory.Exists(worktreesDir))
             {
+                foreach (var worktree in Directory.GetDirectories(worktreesDir))
+                {
+                    try
+                    {
+                        // 使用 -f 强制移除 worktree
+                        await RunGitAsync(testDir, ["worktree", "remove", "-f", worktree]);
+                    }
+                    catch
+                    {
+                        // 忽略移除失败
+                    }
+                }
+                // 删除 worktrees 目录
                 try
                 {
                     Directory.Delete(worktreesDir, true);
                 }
                 catch
                 {
-                    // 忽略清理失败
+                    // 忽略删除失败
                 }
             }
 
-            // 删除分支
+            // 使用 git worktree prune 清理死链接
+            try
+            {
+                await RunGitAsync(testDir, ["worktree", "prune"]);
+            }
+            catch
+            {
+                // 忽略 prune 失败
+            }
+
+            // 删除所有 worktree 分支
             var branches = await RunGitAsync(testDir, ["branch", "--list", "swarm/*"]);
             foreach (var branch in branches.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
@@ -270,6 +416,7 @@ public class WorkerManagerTests
                 }
             }
 
+            // 最后删除目录
             Directory.Delete(testDir, true);
         }
         catch

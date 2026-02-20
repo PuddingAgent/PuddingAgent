@@ -142,7 +142,8 @@ public sealed class WorkerManager : IWorkerManager
         }
 
         // 创建并切换到新分支（基于当前 HEAD）
-        await RunGitAsync(["checkout", "-b", branchName], ct);
+        // 使用 -B 强制创建/重置分支（如果已存在则重置）
+        await RunGitAsync(["checkout", "-B", branchName], ct);
 
         // 创建 worktree
         await RunGitAsync(["worktree", "add", worktreePath, branchName], ct);
