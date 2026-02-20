@@ -90,7 +90,6 @@ public sealed class SwarmCommands
         // Worker Table
         var table = new Table()
             .Border(TableBorder.Rounded)
-            .Header("[bold]Active Workers[/]")
             .AddColumn("[bold]Role[/]")
             .AddColumn("[bold]Name[/]")
             .AddColumn("[bold]Worktree[/]")
@@ -147,9 +146,6 @@ public sealed class SwarmCommands
     /// <param name="workers">List of active workers.</param>
     private void RenderTaskProgress(IReadOnlyList<WorkerInfo> workers)
     {
-        var panelGrid = new Grid();
-        panelGrid.AddColumn(new GridColumn().Padding(0, 0, 2, 0));
-
         var taskRows = new List<(string task, string status, int progress)>();
 
         // Simulate task progress based on worker count (Phase 1 stub)
@@ -159,15 +155,14 @@ public sealed class SwarmCommands
         {
             var worker = workers[i];
             var progress = rng.Next(40, 100); // Simulated progress
-            var status = progress >= 100 ? "✓ Done" : progress > 70 ? "Testing" : progress > 30 ? "In Progress" : "Starting";
-            var statusColor = progress >= 100 ? "green" : progress > 70 ? "yellow" : "blue";
+            var status = progress >= 100 ? "Done" : progress > 70 ? "Testing" : progress > 30 ? "In Progress" : "Starting";
             
             taskRows.Add(($"{worker.Role} ({worker.Name})", status, progress));
         }
 
         var taskTable = new Table()
             .Border(TableBorder.Rounded)
-            .Header("[bold]Task Progress[/]")
+            .Title("[bold]Task Progress[/]")
             .AddColumn("[bold]Worker[/]")
             .AddColumn("[bold]Status[/]")
             .AddColumn("[bold]Progress[/]");
@@ -176,28 +171,35 @@ public sealed class SwarmCommands
         {
             var statusColor = status switch
             {
-                "✓ Done" => "green",
+                "Done" => "green",
                 "Testing" => "yellow",
                 "In Progress" => "blue",
                 "Starting" => "grey",
                 _ => "white"
             };
 
-            var progressBar = new ProgressBar()
-                .Value(progress)
-                .Size(100)
-                .CompletedColor(Color.Green)
-                .RemainingColor(Color.Grey)
-                .FinishedText("[green]✓[/]");
+            var progressText = RenderProgressBar(progress);
 
             taskTable.AddRow(
                 task.EscapeMarkup(),
                 $"[{statusColor}]{status}[/]",
-                $"{progressBar} [grey]{progress}%[/]");
+                $"{progressText} [grey]{progress}%[/]");
         }
 
         AnsiConsole.Write(taskTable);
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    /// Renders a simple text-based progress bar.
+    /// </summary>
+    /// <param name="percent">Progress percentage (0-100).</param>
+    /// <returns>Formatted progress bar string.</returns>
+    private static string RenderProgressBar(int percent)
+    {
+        var filled = percent / 10;
+        var empty = 10 - filled;
+        return $"[{new string('█', filled)}{new string('░', empty)}]";
     }
 
     /// <summary>
@@ -208,11 +210,6 @@ public sealed class SwarmCommands
         // Check for contract files in .pudding/swarm/contracts/
         var contractsDir = Path.Combine(_swarmDir, "contracts");
         var hasContracts = Directory.Exists(contractsDir) && Directory.GetFiles(contractsDir, "*.json").Length > 0;
-
-        var contractPanel = new Panel("");
-        contractPanel.Header = new PanelHeader("[bold]Contract Status[/]").Alignment(Justify.Left);
-        contractPanel.Border = BoxBorder.Rounded;
-        contractPanel.BorderColor = Color.Yellow;
 
         var contractGrid = new Grid();
         contractGrid.AddColumn(new GridColumn().Padding(1, 0, 1, 0));
@@ -234,11 +231,7 @@ public sealed class SwarmCommands
             }
 
             var progressPercent = total > 0 ? (completed * 100 / total) : 0;
-            var progressBar = new ProgressBar()
-                .Value(progressPercent)
-                .Size(100)
-                .CompletedColor(Color.Green)
-                .RemainingColor(Color.Grey);
+            var progressBar = RenderProgressBar(progressPercent);
 
             contractGrid.AddRow(new Markup($"[bold]Contracts:[/] {completed}/{total} completed"));
             contractGrid.AddRow(new Markup($"{progressBar} [grey]{progressPercent}%[/]"));
@@ -253,8 +246,10 @@ public sealed class SwarmCommands
             contractGrid.AddRow(new Markup("[grey italic]No contracts defined yet. Leader will define contracts when swarm starts.[/]"));
         }
 
-        contractPanel.Content = contractGrid;
-        AnsiConsole.Write(contractPanel);
+        var panel = new Panel(contractGrid);
+        panel.Header("[bold]Contract Status[/]");
+        panel.Border(BoxBorder.Rounded);
+        AnsiConsole.Write(panel);
     }
 
     /// <summary>

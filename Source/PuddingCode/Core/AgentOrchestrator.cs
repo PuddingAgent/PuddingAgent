@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading.Channels;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Skills;
 
 namespace PuddingCode.Core;
 
@@ -11,39 +12,181 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private readonly ILlmGateway _llm;
     private readonly IToolRegistry _tools;
     private readonly IGitSnapshot? _snapshot;
+    private readonly ISkillRegistry? _skillRegistry;
+    private readonly AgentRole _role;
+    private readonly WorkerScope? _scope;
     private readonly List<ChatMessage> _history;
+
+    /// <summary>
+    /// Gets the role of this Agent instance.
+    /// Default is <see cref="AgentRole.Spirit"/> for backward compatibility.
+    /// </summary>
+    public AgentRole Role => _role;
+
+    /// <summary>
+    /// Gets the optional Worker scope for this Agent instance.
+    /// </summary>
+    public WorkerScope? Scope => _scope;
 
     public AgentOrchestrator(
         ILlmGateway llm,
         IToolRegistry tools,
         ProjectContext? project = null,
-        IGitSnapshot? snapshot = null)
+        IGitSnapshot? snapshot = null,
+        AgentRole role = AgentRole.Spirit,
+        WorkerScope? scope = null,
+        ISkillRegistry? skillRegistry = null)
     {
         _llm = llm;
         _tools = tools;
         _snapshot = snapshot;
+        _role = role;
+        _scope = scope;
+        _skillRegistry = skillRegistry;
 
-        var systemPrompt = """
-            You are PuddingCode, an AI programming assistant.
-            Use the provided tools to help the user with coding tasks.
-            Always use tools when the user asks to read files, write files, or run commands.
-            After using a tool, summarize the result for the user.
-            """;
-
-        if (project is not null)
-        {
-            systemPrompt += $"""
-
-
-            Current project: {project.Name}
-            Project root: {project.RootPath}
-            All relative file paths are resolved from the project root.
-            When using the file tool, use paths relative to the project root.
-            When using the shell tool, commands run in the project root by default.
-            """;
-        }
+        var systemPrompt = BuildSystemPrompt(role, scope, project);
 
         _history = [new ChatMessage(ChatRole.System, systemPrompt)];
+    }
+
+    /// <summary>
+    /// Builds role-specific System Prompt.
+    /// </summary>
+    private static string BuildSystemPrompt(AgentRole role, WorkerScope? scope, ProjectContext? project)
+    {
+        var basePrompt = role switch
+        {
+            AgentRole.Leader => """
+                You are the Leader Agent of PuddingCode Swarm.
+                Your responsibilities:
+                - Design contracts (create interfaces and empty implementations with method signatures)
+                - Define contracts with clear specifications (parameters, return values, exceptions, constraints)
+                - Split tasks and assign them to Worker Agents
+                - Monitor Worker progress and make merge decisions
+                - Validate that Worker implementations match contract signatures
+
+                You can work in parallel with Workers while monitoring their progress.
+                """,
+
+            AgentRole.Worker => """
+                You are a Worker Agent of PuddingCode Swarm.
+                You are a focused software engineer implementing assigned modules.
+
+                SCOPE RESTRICTIONS:
+                - You can ONLY modify files within your assigned scope.
+                - You MUST NOT modify files outside your scope.
+                - Follow the contract specifications in method comments.
+                - Notify the Leader when you complete your tasks.
+
+                """,
+
+            AgentRole.Spirit => """
+                You are PuddingCode, an AI programming assistant.
+                Use the provided tools to help the user with coding tasks.
+                Always use tools when the user asks to read files, write files, or run commands.
+                After using a tool, summarize the result for the user.
+                """,
+
+            _ => """
+                You are PuddingCode, an AI programming assistant.
+                Use the provided tools to help the user with coding tasks.
+                Always use tools when the user asks to read files, write files, or run commands.
+                After using a tool, summarize the result for the user.
+                """
+        };
+
+        // Inject scope restrictions for Worker role
+        if (role == AgentRole.Worker && scope is not null)
+        {
+            var scopeInfo = BuildScopeInfo(scope);
+            basePrompt += $"""
+
+                YOUR ASSIGNED SCOPE:
+                {scopeInfo}
+
+                REMEMBER: Any attempt to modify files outside this scope will be rejected.
+
+                """;
+        }
+
+        // Inject project context
+        if (project is not null)
+        {
+            basePrompt += $"""
+
+
+                Current project: {project.Name}
+                Project root: {project.RootPath}
+                All relative file paths are resolved from the project root.
+                When using the file tool, use paths relative to the project root.
+                When using the shell tool, commands run in the project root by default.
+                """;
+        }
+
+        return basePrompt;
+    }
+
+    /// <summary>
+    /// Builds a human-readable scope description from WorkerScope.
+    /// </summary>
+    private static string BuildScopeInfo(WorkerScope scope)
+    {
+        var sb = new StringBuilder();
+
+        if (scope.AllowedPaths.Count > 0)
+        {
+            sb.AppendLine("Allowed file paths:");
+            foreach (var path in scope.AllowedPaths)
+            {
+                sb.AppendLine($"  - {path}");
+            }
+        }
+
+        if (scope.AllowedSymbols.Count > 0)
+        {
+            if (sb.Length > 0) sb.AppendLine();
+            sb.AppendLine("Allowed symbols:");
+            foreach (var symbol in scope.AllowedSymbols)
+            {
+                sb.AppendLine($"  - {symbol}");
+            }
+        }
+
+        return sb.Length > 0 ? sb.ToString() : "No scope restrictions.";
+    }
+
+    /// <summary>
+    /// Gets role-filtered tools for LLM function calling.
+    /// When SkillRegistry is available, returns skills filtered by the Agent's role.
+    /// Otherwise, returns all registered tools.
+    /// </summary>
+    private IReadOnlyList<ITool> GetRoleFilteredTools()
+    {
+        // If SkillRegistry is available, use role-filtered skills as tools
+        if (_skillRegistry is not null)
+        {
+            // Create a temporary registry with role-filtered skills
+            var roleTools = new List<ITool>();
+            foreach (var skill in _skillRegistry.GetSkills(_role))
+            {
+                roleTools.Add(new SkillTool(skill, _skillRegistry, _role));
+            }
+
+            // Also include base tools (non-skill tools like FileTool, ShellTool)
+            foreach (var tool in _tools.GetAllTools())
+            {
+                // Avoid duplicates if skill tools were already registered as base tools
+                if (!roleTools.Any(t => t.Name == tool.Name))
+                {
+                    roleTools.Add(tool);
+                }
+            }
+
+            return roleTools;
+        }
+
+        // No SkillRegistry - use all registered tools (backward compatible)
+        return _tools.GetAllTools();
     }
 
     public async IAsyncEnumerable<AgentEvent> ProcessAsync(
@@ -71,8 +214,10 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             {
                 try
                 {
+                    // Use role-filtered tools when SkillRegistry is available
+                    var tools = GetRoleFilteredTools();
                     await foreach (var delta in _llm.ChatStreamAsync(
-                        _history, _tools.GetAllTools(), ct))
+                        _history, tools, ct))
                     {
                         if (delta.ReasoningDelta is not null)
                         {
