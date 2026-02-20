@@ -135,17 +135,30 @@ public sealed class WorkerManager : IWorkerManager
     {
         // 检查分支是否已存在，如果存在则先清理
         var existingBranches = await RunGitAsync(["worktree", "list"], ct);
-        if (existingBranches.Contains(branchName, StringComparison.OrdinalIgnoreCase))
+        // 解析 worktree list 输出，每行格式为：path branch [status]
+        var branchExists = existingBranches
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Any(parts => parts.Length >= 2 && parts[1].Equals(branchName, StringComparison.OrdinalIgnoreCase));
+        
+        if (branchExists)
         {
             // 分支已存在，先清理
             await CleanupExistingWorktreeAsync(branchName, worktreePath, ct);
         }
 
-        // 创建并切换到新分支（基于当前 HEAD）
-        // 使用 -B 强制创建/重置分支（如果已存在则重置）
-        await RunGitAsync(["checkout", "-B", branchName], ct);
+        // 创建新分支（但不切换），基于当前 HEAD
+        // 如果分支已存在，git branch 会失败，但我们忽略这个错误
+        try
+        {
+            await RunGitAsync(["branch", branchName], ct);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        {
+            // 分支已存在，忽略（这可能是因为之前的工作树创建失败留下的）
+        }
 
-        // 创建 worktree
+        // 创建 worktree（这会自动检出该分支到 worktree 目录）
         await RunGitAsync(["worktree", "add", worktreePath, branchName], ct);
     }
 
@@ -158,7 +171,14 @@ public sealed class WorkerManager : IWorkerManager
     {
         // 先删除分支
         var branchName = Path.GetFileName(worktreePath);
-        await RunGitAsync(["branch", "-D", branchName], ct);
+        try
+        {
+            await RunGitAsync(["branch", "-D", branchName], ct);
+        }
+        catch
+        {
+            // 忽略分支不存在的情况
+        }
 
         // 移除 worktree
         await RunGitAsync(["worktree", "remove", worktreePath], ct);
