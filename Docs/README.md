@@ -1,7 +1,7 @@
 # PuddingCode 文档索引
 
 > **项目定位**: 面向大众用户的智能助手，编程能力（PuddingCode）作为 Pro Mode 插件保留  
-> **技术栈**: C# / .NET 10 · Avalonia UI · Spectre.Console · SemanticKernel  
+> **技术栈**: C# / .NET 10 · Spectre.Console · SemanticKernel  
 > **仓库**: [github.com/hyfree/PuddingCode](https://github.com/hyfree/PuddingCode)
 
 ---
@@ -39,7 +39,6 @@
 | Task 15 | [MCP 服务器集成](Tasks/task15-mcp-server.md) | ✏️ 设计中 | 🟢 P3 |
 | Task 17 | [Leader 动态路由](Tasks/task17-leader-routing.md) | ✏️ 设计中 | 🟠 P1 |
 
-> 📝 **注**: Task 02 (桌面端设计) 已暂停，保留参考。
 
 ### 功能规格（Features/）
 

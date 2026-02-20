@@ -3,6 +3,7 @@ using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingCode.Swarm;
 using PuddingCode.Abstractions;
+using PuddingCodeCLI;
 using PuddingCodeCLI.Commands;
 using Spectre.Console;
 
@@ -95,10 +96,14 @@ else
 var gateway = CreateGateway(active);
 var agent = new AgentOrchestrator(gateway, registry, project, snapshot);
 
-// Initialize Swarm components (Phase 1 stubs)
+// Initialize Swarm components
 IWorkerManager workerManager = new WorkerManager(project.RootPath);
-ISwarmOrchestrator? swarmOrchestrator = null; // Will be instantiated when swarm starts
-var swarmCommands = new SwarmCommands(swarmOrchestrator, workerManager, snapshot, project.RootPath);
+IContractManager contractManager = new ContractManager(project.RootPath);
+var swarmCommands = new SwarmCommands(
+    orchestratorFactory: () => new SwarmOrchestrator(contractManager, workerManager),
+    workerManager: workerManager,
+    snapshotService: snapshot,
+    projectRoot: project.RootPath);
 
 AnsiConsole.MarkupLine($"[grey]Project  : {project.RootPath.EscapeMarkup()}[/]");
 AnsiConsole.WriteLine();
@@ -107,9 +112,9 @@ AnsiConsole.WriteLine();
 
 while (true)
 {
-    var input = AnsiConsole.Prompt(
-        new TextPrompt<string>("[bold yellow]Pudding >[/]").AllowEmpty());
+    var input = SlashCommandPicker.ReadLine("[bold yellow]Pudding >[/]");
 
+    if (input is null) break; // Ctrl+C
     if (string.IsNullOrWhiteSpace(input)) continue;
     if (input.Equals("/exit", StringComparison.OrdinalIgnoreCase)) break;
 
@@ -145,16 +150,16 @@ while (true)
             case ReasoningEvent e:
                 if (!isStreamingReasoning)
                 {
-                    AnsiConsole.Markup("[dim]💭 ");
+                    AnsiConsole.Write(new Text("💭 ", new Style(Color.Grey)));
                     isStreamingReasoning = true;
                 }
-                AnsiConsole.Markup($"{e.Delta.EscapeMarkup()}");
+                AnsiConsole.Write(new Text(e.Delta, new Style(Color.Grey)));
                 break;
 
             case StreamingAnswerEvent e:
                 if (isStreamingReasoning)
                 {
-                    AnsiConsole.MarkupLine("[/]");   // close reasoning dim
+                    AnsiConsole.WriteLine();
                     isStreamingReasoning = false;
                 }
                 if (!isStreamingAnswer)

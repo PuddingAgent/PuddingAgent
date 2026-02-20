@@ -189,14 +189,22 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         return _tools.GetAllTools();
     }
 
+    private const int MaxToolIterations = 20;
+
     public async IAsyncEnumerable<AgentEvent> ProcessAsync(
         string userInput,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         _history.Add(new ChatMessage(ChatRole.User, userInput));
 
+        var iterations = 0;
         while (true)
         {
+            if (iterations++ >= MaxToolIterations)
+            {
+                yield return new ErrorEvent($"Tool call loop exceeded {MaxToolIterations} iterations. Stopping to prevent infinite loop.");
+                yield break;
+            }
             yield return new ThinkingEvent("Calling LLM...");
 
             // Use a Channel so the SSE reader (in try/catch) can push events

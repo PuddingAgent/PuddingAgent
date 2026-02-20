@@ -113,7 +113,7 @@ public sealed class PermissionGuard
     /// <summary>校验文件路径是否允许读取。</summary>
     public PermissionResult ValidateFileRead(string filePath)
     {
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(filePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         if (IsForbiddenPath(fullPath))
             return PermissionResult.Denied(
@@ -128,7 +128,7 @@ public sealed class PermissionGuard
     /// <summary>校验文件写入是否允许。</summary>
     public PermissionResult ValidateFileWrite(string filePath)
     {
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(filePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         // 禁区
         if (IsForbiddenPath(fullPath))
@@ -138,8 +138,10 @@ public sealed class PermissionGuard
                 $"Path: {fullPath}\n" +
                 $"Reason: Path is in a forbidden zone.");
 
-        // 项目外
-        if (!fullPath.StartsWith(_projectRoot, StringComparison.OrdinalIgnoreCase))
+        // 项目外 — 使用规范化路径比较，防止路径穿越攻击
+        var normalizedRoot = _projectRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (!fullPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            && !fullPath.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase))
             return PermissionResult.Denied(
                 $"[SECURITY ERROR]: Permission denied.\n" +
                 $"Action: write_file\n" +
@@ -163,7 +165,7 @@ public sealed class PermissionGuard
     /// <summary>校验目录列表是否允许。</summary>
     public PermissionResult ValidateDirectoryList(string dirPath)
     {
-        var fullPath = Path.GetFullPath(dirPath);
+        var fullPath = Path.GetFullPath(dirPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         if (IsForbiddenPath(fullPath))
             return PermissionResult.Denied(

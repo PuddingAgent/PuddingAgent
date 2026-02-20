@@ -8,11 +8,11 @@ namespace PuddingCodeCLI.Commands;
 
 /// <summary>
 /// Swarm mode CLI commands handler.
-/// Provides /swarm, /swarm status, /swarm cancel, and /swarm help commands.
+/// Provides /swarm &lt;task&gt;, /swarm status, /swarm cancel, and /swarm help commands.
 /// </summary>
 public sealed class SwarmCommands
 {
-    private readonly ISwarmOrchestrator? _swarmOrchestrator;
+    private readonly Func<ISwarmOrchestrator> _orchestratorFactory;
     private readonly IWorkerManager _workerManager;
     private readonly GitSnapshotService _snapshotService;
     private readonly string _swarmDir;
@@ -20,17 +20,17 @@ public sealed class SwarmCommands
     /// <summary>
     /// Initializes a new instance of the SwarmCommands class.
     /// </summary>
-    /// <param name="swarmOrchestrator">Swarm orchestrator instance (may be null if no active swarm).</param>
+    /// <param name="orchestratorFactory">Factory that creates a fresh ISwarmOrchestrator per swarm run.</param>
     /// <param name="workerManager">Worker manager for tracking active workers.</param>
     /// <param name="snapshotService">Git snapshot service for worktree cleanup and rollback.</param>
     /// <param name="projectRoot">Project root directory.</param>
     public SwarmCommands(
-        ISwarmOrchestrator? swarmOrchestrator,
+        Func<ISwarmOrchestrator> orchestratorFactory,
         IWorkerManager workerManager,
         GitSnapshotService snapshotService,
         string projectRoot)
     {
-        _swarmOrchestrator = swarmOrchestrator;
+        _orchestratorFactory = orchestratorFactory;
         _workerManager = workerManager;
         _snapshotService = snapshotService;
         _swarmDir = Path.Combine(projectRoot, ".pudding", "swarm");
@@ -42,18 +42,26 @@ public sealed class SwarmCommands
     /// <param name="input">Full command input (e.g., "/swarm cancel").</param>
     public void HandleCommand(string input)
     {
-        var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = input.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0 || !parts[0].Equals("/swarm", StringComparison.OrdinalIgnoreCase))
             return;
 
         if (parts.Length == 1)
         {
-            // /swarm without arguments - show usage
             ShowUsage();
             return;
         }
 
         var subCommand = parts[1].ToLowerInvariant();
+
+        // /swarm <task description> — start a new swarm
+        if (subCommand != "status" && subCommand != "cancel" && subCommand != "help")
+        {
+            var taskDescription = string.Join(' ', parts.Skip(1));
+            StartSwarm(taskDescription).GetAwaiter().GetResult();
+            return;
+        }
+
         switch (subCommand)
         {
             case "status":
@@ -65,9 +73,72 @@ public sealed class SwarmCommands
             case "help":
                 ShowUsage();
                 break;
-            default:
-                AnsiConsole.MarkupLine($"[grey]Unknown /swarm subcommand: {subCommand.EscapeMarkup()}. Type /swarm help[/]");
-                break;
+        }
+    }
+
+    /// <summary>
+    /// Starts a new swarm session for the given task description.
+    /// </summary>
+    private async Task StartSwarm(string taskDescription)
+    {
+        AnsiConsole.MarkupLine($"[bold yellow]🐝 Starting swarm:[/] {taskDescription.EscapeMarkup()}");
+        AnsiConsole.WriteLine();
+
+        var orchestrator = _orchestratorFactory();
+        using var cts = new CancellationTokenSource();
+
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+            AnsiConsole.MarkupLine("[yellow]Swarm cancelled by user.[/]");
+        };
+
+        try
+        {
+            await foreach (var evt in orchestrator.ProcessSwarmAsync(taskDescription, cts.Token))
+            {
+                switch (evt)
+                {
+                    case ThinkingEvent e:
+                        AnsiConsole.MarkupLine($"[grey italic]🍮 {e.Thought.EscapeMarkup()}[/]");
+                        break;
+                    case WorkerSpawnedEvent e:
+                        AnsiConsole.MarkupLine($"[blue]🔨 Worker spawned:[/] {e.WorkerId.EscapeMarkup()} ({e.Role})");
+                        break;
+                    case ContractDefinedEvent e:
+                        AnsiConsole.MarkupLine($"[cyan]📋 Contract defined:[/] {e.ContractId.EscapeMarkup()} — {e.Symbols.Count} symbol(s)");
+                        break;
+                    case ContractValidatedEvent e:
+                        var icon = e.Passed ? "[green]✓[/]" : "[red]✗[/]";
+                        AnsiConsole.MarkupLine($"{icon} Contract {e.ContractId.EscapeMarkup()} {(e.Passed ? "validated" : "FAILED")}");
+                        break;
+                    case MergeEvent e:
+                        var mergeIcon = e.Success ? "[green]✓[/]" : "[red]✗[/]";
+                        AnsiConsole.MarkupLine($"{mergeIcon} Merge {e.Branch.EscapeMarkup()} {(e.Success ? "succeeded" : "failed")}");
+                        break;
+                    case SwarmCompletedEvent e:
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine($"[bold green]✅ {e.Summary.EscapeMarkup()}[/]");
+                        break;
+                    case ErrorEvent e:
+                        AnsiConsole.MarkupLine($"[red]❌ {e.Message.EscapeMarkup()}[/]");
+                        break;
+                    case AnswerEvent e:
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine(e.Content.EscapeMarkup());
+                        AnsiConsole.WriteLine();
+                        break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine("[yellow]Swarm cancelled.[/]");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Swarm error: {ex.Message.EscapeMarkup()}[/]");
         }
     }
 
