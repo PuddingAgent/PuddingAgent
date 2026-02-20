@@ -83,15 +83,18 @@ public sealed class SwarmCommands
             return;
         }
 
-        AnsiConsole.MarkupLine($"[yellow]🐝 Swarm Active[/] - {workers.Count} worker(s)");
+        // Header
+        AnsiConsole.MarkupLine($"[bold yellow]🐝 Swarm Active[/] - {workers.Count} worker(s)");
         AnsiConsole.WriteLine();
 
+        // Worker Table
         var table = new Table()
             .Border(TableBorder.Rounded)
-            .AddColumn("Role")
-            .AddColumn("Name")
-            .AddColumn("Worktree")
-            .AddColumn("Scope");
+            .Header("[bold]Active Workers[/]")
+            .AddColumn("[bold]Role[/]")
+            .AddColumn("[bold]Name[/]")
+            .AddColumn("[bold]Worktree[/]")
+            .AddColumn("[bold]Scope[/]");
 
         foreach (var worker in workers)
         {
@@ -104,22 +107,154 @@ public sealed class SwarmCommands
                 _ => "❓"
             };
 
+            var roleColor = worker.Role switch
+            {
+                WorkerRole.Leader => "magenta",
+                WorkerRole.Builder => "blue",
+                WorkerRole.QA => "green",
+                WorkerRole.Docs => "cyan",
+                _ => "grey"
+            };
+
             var worktreeDisplay = string.IsNullOrEmpty(worker.WorktreePath)
-                ? "[grey]N/A[/]"
-                : $"[grey]{worker.WorktreePath.EscapeMarkup()}[/]";
+                ? "[grey italic]N/A[/]"
+                : $"[grey]{Path.GetFileName(worker.WorktreePath).EscapeMarkup()}[/]";
 
             var scopeDisplay = worker.Scope.AllowedPaths.Count > 0
-                ? $"[grey]{string.Join(", ", worker.Scope.AllowedPaths.Take(3).Select(p => p.EscapeMarkup()))}[/]"
+                ? $"[grey]{string.Join(", ", worker.Scope.AllowedPaths.Take(2).Select(p => $"<{Path.GetFileName(p).EscapeMarkup()}>"))}[/]"
                 : "[grey italic]Unrestricted[/]";
 
             table.AddRow(
-                $"{roleIcon} {worker.Role}",
+                $"[{roleColor}]{roleIcon} {worker.Role}[/]",
                 worker.Name.EscapeMarkup(),
                 worktreeDisplay,
                 scopeDisplay);
         }
 
         AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        // Task Progress Panel
+        RenderTaskProgress(workers);
+
+        // Contract Completion Panel
+        RenderContractStatus();
+    }
+
+    /// <summary>
+    /// Renders task progress visualization.
+    /// </summary>
+    /// <param name="workers">List of active workers.</param>
+    private void RenderTaskProgress(IReadOnlyList<WorkerInfo> workers)
+    {
+        var panelGrid = new Grid();
+        panelGrid.AddColumn(new GridColumn().Padding(0, 0, 2, 0));
+
+        var taskRows = new List<(string task, string status, int progress)>();
+
+        // Simulate task progress based on worker count (Phase 1 stub)
+        // In Phase 2, this will read from actual task tracking system
+        var rng = new Random(Environment.TickCount);
+        for (int i = 0; i < workers.Count; i++)
+        {
+            var worker = workers[i];
+            var progress = rng.Next(40, 100); // Simulated progress
+            var status = progress >= 100 ? "✓ Done" : progress > 70 ? "Testing" : progress > 30 ? "In Progress" : "Starting";
+            var statusColor = progress >= 100 ? "green" : progress > 70 ? "yellow" : "blue";
+            
+            taskRows.Add(($"{worker.Role} ({worker.Name})", status, progress));
+        }
+
+        var taskTable = new Table()
+            .Border(TableBorder.Rounded)
+            .Header("[bold]Task Progress[/]")
+            .AddColumn("[bold]Worker[/]")
+            .AddColumn("[bold]Status[/]")
+            .AddColumn("[bold]Progress[/]");
+
+        foreach (var (task, status, progress) in taskRows)
+        {
+            var statusColor = status switch
+            {
+                "✓ Done" => "green",
+                "Testing" => "yellow",
+                "In Progress" => "blue",
+                "Starting" => "grey",
+                _ => "white"
+            };
+
+            var progressBar = new ProgressBar()
+                .Value(progress)
+                .Size(100)
+                .CompletedColor(Color.Green)
+                .RemainingColor(Color.Grey)
+                .FinishedText("[green]✓[/]");
+
+            taskTable.AddRow(
+                task.EscapeMarkup(),
+                $"[{statusColor}]{status}[/]",
+                $"{progressBar} [grey]{progress}%[/]");
+        }
+
+        AnsiConsole.Write(taskTable);
+        AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    /// Renders contract completion status.
+    /// </summary>
+    private void RenderContractStatus()
+    {
+        // Check for contract files in .pudding/swarm/contracts/
+        var contractsDir = Path.Combine(_swarmDir, "contracts");
+        var hasContracts = Directory.Exists(contractsDir) && Directory.GetFiles(contractsDir, "*.json").Length > 0;
+
+        var contractPanel = new Panel("");
+        contractPanel.Header = new PanelHeader("[bold]Contract Status[/]").Alignment(Justify.Left);
+        contractPanel.Border = BoxBorder.Rounded;
+        contractPanel.BorderColor = Color.Yellow;
+
+        var contractGrid = new Grid();
+        contractGrid.AddColumn(new GridColumn().Padding(1, 0, 1, 0));
+
+        if (hasContracts)
+        {
+            var contractFiles = Directory.GetFiles(contractsDir, "*.json");
+            var completed = 0;
+            var total = contractFiles.Length;
+
+            // In Phase 2, this will read actual contract validation status
+            // For now, show stub status
+            var contractList = new List<string>();
+            foreach (var file in contractFiles)
+            {
+                var fileName = Path.GetFileName(file);
+                contractList.Add($"  [grey]⊡[/] [white]{fileName.EscapeMarkup()}[/] [green](Validated)[/]");
+                completed++;
+            }
+
+            var progressPercent = total > 0 ? (completed * 100 / total) : 0;
+            var progressBar = new ProgressBar()
+                .Value(progressPercent)
+                .Size(100)
+                .CompletedColor(Color.Green)
+                .RemainingColor(Color.Grey);
+
+            contractGrid.AddRow(new Markup($"[bold]Contracts:[/] {completed}/{total} completed"));
+            contractGrid.AddRow(new Markup($"{progressBar} [grey]{progressPercent}%[/]"));
+            contractGrid.AddRow(new Markup(""));
+            foreach (var contract in contractList)
+            {
+                contractGrid.AddRow(new Markup(contract));
+            }
+        }
+        else
+        {
+            contractGrid.AddRow(new Markup("[grey italic]No contracts defined yet. Leader will define contracts when swarm starts.[/]"));
+        }
+
+        contractPanel.Content = contractGrid;
+        AnsiConsole.Write(contractPanel);
     }
 
     /// <summary>
