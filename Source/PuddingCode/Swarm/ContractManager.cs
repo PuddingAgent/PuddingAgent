@@ -72,6 +72,44 @@ public sealed class ContractManager : IContractManager
         return true;
     }
 
+    /// <inheritdoc />
+    public async Task<string> InitializeSwarmDirectoryAsync(CancellationToken ct = default)
+    {
+        var swarmRoot = Path.Combine(Directory.GetCurrentDirectory(), ".pudding", "swarm");
+
+        // 创建目录结构
+        var directories = new[]
+        {
+            swarmRoot,
+            Path.Combine(swarmRoot, "contracts"),
+            Path.Combine(swarmRoot, "tasks"),
+            Path.Combine(swarmRoot, "messages"),
+            Path.Combine(swarmRoot, "worktrees")
+        };
+
+        foreach (var dir in directories)
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        // 创建配置文件（如果不存在）
+        var configPath = Path.Combine(swarmRoot, "config.json");
+        if (!File.Exists(configPath))
+        {
+            var config = new
+            {
+                version = "0.8",
+                created = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                mode = "local"
+            };
+
+            var json = JsonSerializer.Serialize(config, s_jsonOptions);
+            await File.WriteAllTextAsync(configPath, json, ct);
+        }
+
+        return swarmRoot;
+    }
+
     /// <summary>
     /// 从规格说明中提取文件路径。
     /// </summary>
