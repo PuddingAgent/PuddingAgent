@@ -88,7 +88,7 @@ public class SwarmMessageHub {
 
 ---
 
-### 🍮 针对 PuddingAssistant 的最佳实践建议
+### 🍮 针对 PuddingCode 的最佳实践建议
 
 我建议采用 **“方案一 + 方案三”的组合**：
 

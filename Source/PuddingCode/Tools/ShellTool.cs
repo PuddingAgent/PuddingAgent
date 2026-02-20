@@ -1,0 +1,85 @@
+using System.Text.Json;
+using CliWrap;
+using CliWrap.Buffered;
+using PuddingCode.Abstractions;
+using PuddingCode.Core;
+using PuddingCode.Models;
+
+namespace PuddingCode.Tools;
+
+public sealed class ShellTool : ITool
+{
+    private static readonly JsonSerializerOptions s_jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    private readonly ProjectContext? _project;
+    private readonly PermissionGuard? _guard;
+    private readonly IOutputDistiller _distiller;
+
+    public ShellTool(
+        ProjectContext? project = null,
+        PermissionGuard? guard = null,
+        IOutputDistiller? distiller = null)
+    {
+        _project = project;
+        _guard = guard;
+        _distiller = distiller ?? new DefaultDistiller();
+    }
+
+    public string Name => "shell";
+    public string Description => "Execute a shell command and return stdout/stderr.";
+
+    public ToolParameterSchema Parameters => new(
+        [
+            new("command", "string", "The shell command to execute"),
+            new("workingDirectory", "string", "Working directory (optional, defaults to project root)")
+        ],
+        ["command"]);
+
+    public async Task<string> ExecuteAsync(string argumentsJson, CancellationToken ct = default)
+    {
+        var args = JsonSerializer.Deserialize<ShellToolArgs>(argumentsJson, s_jsonOptions);
+        if (args?.Command is null) return "Error: command is required";
+
+        // ── Permission check (Task 11) ──
+        if (_guard is not null)
+        {
+            var perm = _guard.ValidateCommand(args.Command);
+            if (!perm.IsAllowed)
+                return perm.DenialReason ?? "Permission denied.";
+        }
+
+        var isWindows = OperatingSystem.IsWindows();
+        var shell = isWindows ? "cmd.exe" : "/bin/sh";
+        var prefix = isWindows ? "/c" : "-c";
+        var workDir = args.WorkingDirectory
+                      ?? _project?.RootPath
+                      ?? Environment.CurrentDirectory;
+
+        try
+        {
+            var result = await Cli.Wrap(shell)
+                .WithArguments([prefix, args.Command])
+                .WithWorkingDirectory(workDir)
+                .WithValidation(CommandResultValidation.None)
+                .ExecuteBufferedAsync(ct);
+
+            var rawOutput = $"Exit code: {result.ExitCode}";
+            if (!string.IsNullOrWhiteSpace(result.StandardOutput))
+                rawOutput += $"\n--- stdout ---\n{result.StandardOutput}";
+            if (!string.IsNullOrWhiteSpace(result.StandardError))
+                rawOutput += $"\n--- stderr ---\n{result.StandardError}";
+
+            // ── Output distillation (Task 12) ──
+            var cmdName = args.Command.Split(' ', 2)[0];
+            var ctx = new DistillContext(cmdName, result.ExitCode, workDir);
+            var distilled = _distiller.Distill(rawOutput, ctx);
+            return distilled.Summary;
+        }
+        catch (Exception ex)
+        {
+            return $"Error executing command: {ex.Message}";
+        }
+    }
+}
+
+file record ShellToolArgs(string? Command, string? WorkingDirectory);

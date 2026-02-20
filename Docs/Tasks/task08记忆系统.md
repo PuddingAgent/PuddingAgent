@@ -7,9 +7,9 @@
 
 ---
 
-参考 **OpenClaw** 的设计并结合我们 **PuddingAssistant** 的特点，我们可以为 Agent 构建一个“三层记忆、文件为本、混合检索”的记忆系统。
+参考 **OpenClaw** 的设计并结合我们 **PuddingCode** 的特点，我们可以为 Agent 构建一个“三层记忆、文件为本、混合检索”的记忆系统。
 
-在 PuddingAssistant 中，记忆不只是数据库里的 0 和 1，而是**透明的、可编辑的、像布丁一样易于塑形的 Markdown 文件**。
+在 PuddingCode 中，记忆不只是数据库里的 0 和 1，而是**透明的、可编辑的、像布丁一样易于塑形的 Markdown 文件**。
 
 ---
 

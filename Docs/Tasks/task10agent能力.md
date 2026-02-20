@@ -190,7 +190,7 @@ search_memory → commit_memory (检索后可追加新记忆)
 ### 5.2 属性定义
 
 ```csharp
-/// <summary>标记一个方法为 PuddingAssistant 技能。</summary>
+/// <summary>标记一个方法为 PuddingCode 技能。</summary>
 [AttributeUsage(AttributeTargets.Method)]
 public class PuddingSkillAttribute(string description) : Attribute
 {

@@ -1,6 +1,6 @@
-# PuddingAssistant 产品设计文档
+# PuddingCode 产品设计文档
 
-> **定位：** 从"程序员的生产力工具"向"人类的数字化代理"的范式转移。PuddingAssistant 是用户的"数字化布丁管家"，对标 OpenClaw，追求更懂用户、更具视觉吸引力。
+> **定位：** 从"程序员的生产力工具"向"人类的数字化代理"的范式转移。PuddingCode 是用户的"数字化布丁管家"，对标 OpenClaw，追求更懂用户、更具视觉吸引力。
 
 ---
 
@@ -8,7 +8,7 @@
 
 ### 1.1 范式转变
 
-| 维度 | PuddingCode（旧） | PuddingAssistant（新） |
+| 维度 | PuddingCode（旧） | PuddingCode（新） |
 | --- | --- | --- |
 | **核心关注** | 文件树、Diff 对比、终端输出 | "我的任务谁在做？做得怎样了？" |
 | **交互语言** | 文件中心 | 会话与拓扑中心 |
@@ -18,10 +18,10 @@
 
 ### 1.2 PuddingCode 的重新定位
 
-PuddingCode 不消失，它成为 PuddingAssistant 的 **"专业形态（Pro Mode）"** 或 **技能插件**。
+PuddingCode 不消失，它成为 PuddingCode 的 **"专业形态（Pro Mode）"** 或 **技能插件**。
 
 * 当用户说"帮我写个脚本爬取超市价格"时，Swarm 中亮起一个带有"代码标记"的特殊 Worker。
-* 类比：PuddingAssistant 是私人管家，而当需要修房子时，管家从工具箱里掏出一个专业的工程团队。
+* 类比：PuddingCode 是私人管家，而当需要修房子时，管家从工具箱里掏出一个专业的工程团队。
 
 ---
 
@@ -152,7 +152,7 @@ Leader → Researcher（读 Profile.md + 上网查配方）
 
 ### 4.1 配色系统 — 布丁美学
 
-| 元素 | PuddingCode（弃用） | PuddingAssistant（启用） |
+| 元素 | PuddingCode（弃用） | PuddingCode（启用） |
 | --- | --- | --- |
 | **配色方案** | 深灰色、代码蓝、警告红 | 奶油黄、抹茶绿、焦糖棕、蜜桃粉 |
 | **节点形状** | 矩形框、电路图连线 | 圆润的布丁球、平滑曲线、弹性动画 |

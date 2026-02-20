@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Source/">
+    <Project Path="Source/PuddingCode/PuddingCode.csproj" />
+    <Project Path="Source/PuddingCodeCLI/PuddingCodeCLI.csproj" />
+  </Folder>
+  <Project Path="Docs/Docs.shproj" Id="405d8746-dcfa-4492-8b75-ae58b99dea44" />
+</Solution>

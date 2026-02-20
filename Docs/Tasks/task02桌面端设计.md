@@ -2,7 +2,7 @@
 
 > **⚠️ 定位变更：** 桌面端已从"AI 协作指挥中心"升级为**双态架构**——桌面精灵态（Desktop Spirit，常驻轻量入口）+ 窗口态（Command Center，深度配置）。本文档中的共享内核、Swarm 视图等设计仍然有效，但整体交互范式需参照 [task18定位.md](../Tasks/task18定位.md) 的双态架构方案。
 >
-> **目标：** 基于共享的 `PuddingAssistant.Core` 内核，构建跨平台桌面客户端。桌面端采用**双态架构**：桌面精灵态为常驻轻量入口，窗口态提供深度配置与 Swarm 编排可视化。采用 **Avalonia UI**（C# / .NET 10）。
+> **目标：** 基于共享的 `PuddingCode.Core` 内核，构建跨平台桌面客户端。桌面端采用**双态架构**：桌面精灵态为常驻轻量入口，窗口态提供深度配置与 Swarm 编排可视化。采用 **Avalonia UI**（C# / .NET 10）。
 
 ---
 
@@ -50,7 +50,7 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│                     PuddingAssistant.Core (类库)                   │
+│                     PuddingCode.Core (类库)                   │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐  │
 │  │ AgentEngine  │  │ MemoryStore  │  │ CapabilityManager │  │
 │  │ (大脑/编排)   │  │ (记忆中枢)    │  │ (手/眼/能力系统)   │  │
@@ -62,7 +62,7 @@
           │                                  │
           ▼                                  ▼
 ┌──────────────────┐              ┌──────────────────┐
-│ PuddingAssistant.CLI  │              │ PuddingAssistant.Desktop│
+│ PuddingCode.CLI  │              │ PuddingCode.Desktop│
 │ (Spectre.Console) │              │ (Avalonia UI)      │
 │ 适配器 1          │              │ 适配器 2            │
 └──────────────────┘              └──────────────────┘
@@ -138,9 +138,36 @@
 
 ### 4.1 悬浮"布丁"按钮 (Overlay Mode)
 
-- 在 IDE（VS Code / Visual Studio）中编码时，PuddingAssistant 以小圆球悬浮
+- 在 IDE（VS Code / Visual Studio）中编码时，PuddingCode 以小圆球悬浮
 - 按下快捷键，"吸取"当前屏幕代码进入 Agent 会话
 - 适合碎片化场景：不离开 IDE 即可与 Agent 交互
+
+### 4.2 桌面精灵右键菜单 (Tray Menu)
+
+- **登录/账户**：显示登录窗口进行身份验证
+- **设置**：打开设置对话框 
+- **关于**：显示应用信息
+- **退出**：关闭桌面应用
+
+### 4.3 登录窗口设计
+
+登录窗口将使用用户名+口令方式进行身份验证，提供以下功能：
+
+| 功能项 | 描述 |
+|--------|--------|
+| **用户名字段** | 输入用户账户名的文本框 |
+| **密码字段** | 输入用户密码的安全文本框（密码字符隐藏） |
+| **记住我** | 可选的复选框，用于保存用户登录凭据（加密存储） |
+| **忘记密码** | 链接按钮，导向密码重置页面/流程 |
+| **登录按钮** | 执行登录验证操作 |
+| **取消按钮** | 关闭登录窗口 |
+
+登录验证流程:
+1. 在右键菜单中点击"登录/账户"进入登录窗口
+2. 输入用户名和密码
+3. 点击"登录"发起验证请求
+4. 验证成功后保存加密凭据并关闭窗口
+5. 验证失败显示相应错误信息
 
 ### 4.2 多代理可视化 (Swarm Visualization)
 
@@ -204,7 +231,7 @@ public enum NotifyLevel { Info, Warning, Error }
 | 模块 | 技术选型 | 说明 |
 | --- | --- | --- |
 | **桌面 GUI 框架** | [Avalonia UI](https://github.com/AvaloniaUI/Avalonia) | 跨平台（Win/Mac/Linux）、高性能、类 WPF 开发体验 |
-| **共享内核** | `PuddingAssistant.Core`（NuGet / Project Reference） | .NET 10 类库，零 UI 依赖 |
+| **共享内核** | `PuddingCode.Core`（NuGet / Project Reference） | .NET 10 类库，零 UI 依赖 |
 | **本地数据库** | SQLite | 存储会话历史与长期记忆 |
 | **向量索引** | `Microsoft.Extensions.VectorData` | 代码 RAG 检索 |
 | **通知/动画** | Avalonia 自定义控件 | 软弹动画、呼吸灯、Toast 通知 |
@@ -216,7 +243,7 @@ public enum NotifyLevel { Info, Warning, Error }
 
 | 阶段 | 目标 | 交付物 |
 | --- | --- | --- |
-| **Phase 1: Core + CLI** | 跑通 Agent 闭环，验证 Tool Calling 准确度 | `PuddingAssistant.Core` 类库 + CLI MVP |
+| **Phase 1: Core + CLI** | 跑通 Agent 闭环，验证 Tool Calling 准确度 | `PuddingCode.Core` 类库 + CLI MVP |
 | **Phase 2: 桌面观察者** | 解决 CLI 在复杂重构时的信息超载 | 轻量级桌面看板：任务详情 + 费用统计 + Diff 预览 |
 | **Phase 3: 完整桌面端** | 三段式控制塔布局，思维画布，气泡对话流 | 完整 Avalonia 桌面客户端 |
 | **Phase 4: 深度集成** | 桌面端与 IDE 双向联动，悬浮按钮，Swarm 可视化 | IDE 插件 + WebSocket 桥接 + 多 Agent 面板 |

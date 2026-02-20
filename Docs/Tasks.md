@@ -1,6 +1,6 @@
-# PuddingAssistant 任务索引
+# PuddingCode 任务索引
 
-> 本文档跟踪 PuddingAssistant 项目所有设计与开发任务的状态。
+> 本文档跟踪 PuddingCode 项目所有设计与开发任务的状态。
 >
 > **状态说明：** 📋 规划中 · ✏️ 设计中 · 🚧 开发中 · ✅ 已完成 · ⏸️ 暂停
 >
@@ -12,10 +12,10 @@
 
 | 项 | 内容 |
 | --- | --- |
-| **项目名称** | PuddingAssistant — 数字化布丁管家 |
+| **项目名称** | PuddingCode — 数字化布丁管家 |
 | **定位** | 面向大众用户的智能助手，编程能力（PuddingCode）作为 Pro Mode 插件保留 |
 | **技术栈** | C# / .NET 10 · Avalonia UI · Spectre.Console · Semantic Kernel · SkiaSharp |
-| **代码仓库** | [github.com/hyfree/PuddingAssistant](https://github.com/hyfree/PuddingAssistant) |
+| **代码仓库** | [github.com/hyfree/PuddingCode](https://github.com/hyfree/PuddingCode) |
 | **分支** | `master` |
 | **架构文档** | [Docs/Map.md](Map.md) |
 | **产品设计** | [task18定位.md](Tasks/task18定位.md) — 双态架构 + Swarm 编排 + 记忆系统 + 插件化 + 视觉设计 |

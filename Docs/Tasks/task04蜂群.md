@@ -1,6 +1,6 @@
 # Task 04: 蜂群模式设计方案 (Swarm Mode)
 
-> **目标：** 为 PuddingAssistant 设计去中心化的多智能体协作架构。核心理念：**像人类团队一样开发**——Leader 定义契约（接口/类名/方法签名），Worker 各自负责自己的模块，禁止越界修改。蜂群支持本地并行和跨机器 P2P 分布式协作。
+> **目标：** 为 PuddingCode 设计去中心化的多智能体协作架构。核心理念：**像人类团队一样开发**——Leader 定义契约（接口/类名/方法签名），Worker 各自负责自己的模块，禁止越界修改。蜂群支持本地并行和跨机器 P2P 分布式协作。
 
 ---
 
@@ -25,7 +25,7 @@
 
 ### 1.1 单 Agent 的天花板
 
-PuddingAssistant V0.1 已实现单 Agent 闭环。但以下场景中，单 Agent 模式遇到瓶颈：
+PuddingCode V0.1 已实现单 Agent 闭环。但以下场景中，单 Agent 模式遇到瓶颈：
 
 | 瓶颈 | 表现 | 根因 |
 | --- | --- | --- |
@@ -157,7 +157,7 @@ Step 6: 合并
 Leader 生成的"骨架代码"——提交到 main 分支后，Worker 在各自 Worktree 中填充实现：
 
 ```csharp
-namespace PuddingAssistant.Auth;
+namespace PuddingCode.Auth;
 
 /// <summary>
 /// 认证服务契约。
@@ -197,7 +197,7 @@ public class AuthService(ITokenManager tokenManager, IUserRepository userRepo) :
 ### 3.3 契约模型
 
 ```csharp
-namespace PuddingAssistant.Models;
+namespace PuddingCode.Models;
 
 /// <summary>Leader 生成的契约定义</summary>
 public sealed record Contract
@@ -298,7 +298,7 @@ public sealed record Contract
 Worker 的 `FileTool` 被包裹一层作用域检查器：
 
 ```csharp
-namespace PuddingAssistant.Tools;
+namespace PuddingCode.Tools;
 
 /// <summary>
 /// 带作用域约束的文件工具。Worker 只能读写其被分配的文件/目录。
@@ -432,7 +432,7 @@ main 分支（含 Leader 提交的契约/空实现）
 
 ### 7.2 P2P 协议栈
 
-参考 libp2p 架构，PuddingAssistant 的分布式通信栈：
+参考 libp2p 架构，PuddingCode 的分布式通信栈：
 
 | 层 | 职责 | 技术选型 |
 | --- | --- | --- |
@@ -446,7 +446,7 @@ main 分支（含 Leader 提交的契约/空实现）
 ### 7.3 节点模型
 
 ```csharp
-namespace PuddingAssistant.Swarm.Network;
+namespace PuddingCode.Swarm.Network;
 
 /// <summary>蜂群网络中的一个节点</summary>
 public sealed record SwarmNode
@@ -471,7 +471,7 @@ public enum SwarmNodeRole { Leader, Builder, QA, Docs, Relay }
 
 | 阶段 | 方式 | 说明 |
 | --- | --- | --- |
-| 1. 局域网发现 | mDNS 广播 | 同一网段内自动发现其他 PuddingAssistant 节点 |
+| 1. 局域网发现 | mDNS 广播 | 同一网段内自动发现其他 PuddingCode 节点 |
 | 2. 直连尝试 | STUN 探测 | 通过 STUN 服务器获取公网地址，尝试 UDP 打洞 |
 | 3. 中继回退 | TURN / 自建 Relay | 打洞失败时通过中继服务器转发消息 |
 
@@ -580,7 +580,7 @@ public static int ComputeCapabilityScore(SwarmNode node)
 ### 9.2 通信抽象（本地 + 分布式统一）
 
 ```csharp
-namespace PuddingAssistant.Abstractions;
+namespace PuddingCode.Abstractions;
 
 /// <summary>
 /// 蜂群通信通道。本地模式通过文件系统实现，分布式模式通过 P2P 网络实现。
@@ -663,7 +663,7 @@ public enum SwarmTaskStatus
 ### 10.2 新增抽象
 
 ```csharp
-namespace PuddingAssistant.Abstractions;
+namespace PuddingCode.Abstractions;
 
 /// <summary>蜂群编排器。管理契约驱动的 Leader-Worker 协作。</summary>
 public interface ISwarmOrchestrator
@@ -702,7 +702,7 @@ public enum WorkerRole { Leader, Builder, QA, Docs }
 ### 10.3 新增事件类型
 
 ```csharp
-namespace PuddingAssistant.Models;
+namespace PuddingCode.Models;
 
 // 蜂群事件，扩展 AgentEvent
 public sealed record SwarmStartedEvent(int WorkerCount) : AgentEvent;

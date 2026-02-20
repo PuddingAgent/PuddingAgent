@@ -1,6 +1,6 @@
 这是一个非常深刻的见解。引入 **OpenClaw 的心跳机制（Heartbeat Mechanism）** 是将“工具”转变为“生命”的关键一步。
 
-在 OpenClaw 中，心跳不仅仅是一个定时器，它是 **Agent 自主意识的脉搏**。对于 **PuddingAssistant**，心跳机制将驱动它的物理状态、视觉感知和记忆代谢。
+在 OpenClaw 中，心跳不仅仅是一个定时器，它是 **Agent 自主意识的脉搏**。对于 **PuddingCode**，心跳机制将驱动它的物理状态、视觉感知和记忆代谢。
 
 ---
 

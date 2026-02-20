@@ -1,9 +1,0 @@
-<Solution>
-  <Folder Name="/Source/">
-    <Project Path="Docs/Docs.shproj" />
-    <Project Path="Source/PuddingAssistant/PuddingAssistant.csproj" />
-    <Project Path="Source/PuddingAssistantCLI/PuddingAssistantCLI.csproj" />
-    <Project Path="Source/PuddingAssistantDesktop/PuddingAssistantDesktop.csproj" />
-    <Project Path="Source/PuddingAssistantServer/PuddingAssistantServer.csproj" />
-  </Folder>
-</Solution>
