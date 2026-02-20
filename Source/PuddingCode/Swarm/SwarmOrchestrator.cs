@@ -28,8 +28,8 @@ public sealed class SwarmOrchestrator : ISwarmOrchestrator
         IWorkerManager workerManager,
         string? swarmRoot = null)
     {
-        _contractManager = contractManager;
-        _workerManager = workerManager;
+        _contractManager = contractManager ?? throw new ArgumentNullException(nameof(contractManager));
+        _workerManager = workerManager ?? throw new ArgumentNullException(nameof(workerManager));
         _validator = new ContractValidator();
         _swarmRoot = swarmRoot ?? Path.Combine(Directory.GetCurrentDirectory(), ".pudding", "swarm");
     }

@@ -2,7 +2,10 @@
   <Folder Name="/Source/">
     <Project Path="Source/PuddingCode/PuddingCode.csproj" />
     <Project Path="Source/PuddingCodeCLI/PuddingCodeCLI.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
     <Project Path="Source/PuddingCodeCLITests/PuddingCodeCLITests.csproj" Id="3b60b24c-d3d9-4116-87d3-9ba30dda504f" />
+    <Project Path="Source/PuddingCodeTests/PuddingCodeTests.csproj" Id="b00c4c8e-25b7-40b8-9b2f-a118e7bfdb78" />
   </Folder>
   <Project Path="Docs/Docs.shproj" Id="405d8746-dcfa-4492-8b75-ae58b99dea44" />
 </Solution>

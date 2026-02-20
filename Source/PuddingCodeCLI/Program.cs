@@ -148,7 +148,7 @@ while (true)
                     AnsiConsole.Markup("[dim]💭 ");
                     isStreamingReasoning = true;
                 }
-                AnsiConsole.Markup($"[dim]{e.Delta.EscapeMarkup()}[/]");
+                AnsiConsole.Markup($"{e.Delta.EscapeMarkup()}");
                 break;
 
             case StreamingAnswerEvent e:

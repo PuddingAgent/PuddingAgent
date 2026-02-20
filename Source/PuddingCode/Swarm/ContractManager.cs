@@ -75,7 +75,9 @@ public sealed class ContractManager : IContractManager
     /// <inheritdoc />
     public async Task<string> InitializeSwarmDirectoryAsync(CancellationToken ct = default)
     {
-        var swarmRoot = Path.Combine(Directory.GetCurrentDirectory(), ".pudding", "swarm");
+        // Use the configured contracts directory parent as swarm root
+        var swarmRoot = Directory.GetParent(_contractsDirectory)?.FullName 
+            ?? Path.Combine(Directory.GetCurrentDirectory(), ".pudding", "swarm");
 
         // 创建目录结构
         var directories = new[]

@@ -180,8 +180,8 @@ public sealed class WorkerManager : IWorkerManager
             // 忽略分支不存在的情况
         }
 
-        // 移除 worktree
-        await RunGitAsync(["worktree", "remove", worktreePath], ct);
+        // 移除 worktree（使用 -f 强制删除，即使有未提交更改）
+        await RunGitAsync(["worktree", "remove", "-f", worktreePath], ct);
 
         // 清理本地目录（如果还存在）
         if (Directory.Exists(worktreePath))

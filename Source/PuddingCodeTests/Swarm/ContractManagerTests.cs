@@ -4,6 +4,7 @@ using PuddingCode.Swarm;
 namespace PuddingCodeTests.Swarm;
 
 [TestClass]
+[DoNotParallelize]
 public class ContractManagerTests
 {
     [TestMethod]

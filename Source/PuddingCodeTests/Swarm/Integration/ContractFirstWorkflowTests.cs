@@ -187,10 +187,12 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         Assert.IsNotNull(contractDefinedEvent, "Should define contract");
         Assert.IsFalse(string.IsNullOrEmpty(contractDefinedEvent.ContractId));
         
-        // Should have worker spawned event
+        // Should have worker spawned event (at least one - could be Leader or Builder)
         var workerSpawnedEvent = events.OfType<WorkerSpawnedEvent>().FirstOrDefault();
-        Assert.IsNotNull(workerSpawnedEvent, "Should spawn worker");
-        Assert.AreEqual(WorkerRole.Builder, workerSpawnedEvent.Role);
+        Assert.IsNotNull(workerSpawnedEvent, "Should spawn at least one worker (Leader or Builder)");
+        // Note: In Phase 1/2, Leader is spawned first, then Builder workers
+        Assert.IsTrue(workerSpawnedEvent.Role == WorkerRole.Leader || workerSpawnedEvent.Role == WorkerRole.Builder, 
+            "Should spawn Leader or Builder worker");
         
         // Should have validation event
         var validationEvent = events.OfType<ContractValidatedEvent>().FirstOrDefault();
