@@ -1,6 +1,9 @@
 using PuddingCode.Core;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingCode.Swarm;
+using PuddingCode.Abstractions;
+using PuddingCodeCLI.Commands;
 using Spectre.Console;
 
 // ═══════════════════════ Header ═══════════════════════
@@ -92,6 +95,11 @@ else
 var gateway = CreateGateway(active);
 var agent = new AgentOrchestrator(gateway, registry, project, snapshot);
 
+// Initialize Swarm components (Phase 1 stubs)
+IWorkerManager workerManager = new WorkerManager(project.RootPath);
+ISwarmOrchestrator? swarmOrchestrator = null; // Will be instantiated when swarm starts
+var swarmCommands = new SwarmCommands(swarmOrchestrator, workerManager, snapshot, project.RootPath);
+
 AnsiConsole.MarkupLine($"[grey]Project  : {project.RootPath.EscapeMarkup()}[/]");
 AnsiConsole.WriteLine();
 
@@ -108,7 +116,14 @@ while (true)
     // Slash commands
     if (input.StartsWith('/'))
     {
-        HandleCommand(input);
+        if (input.StartsWith("/swarm", StringComparison.OrdinalIgnoreCase))
+        {
+            swarmCommands.HandleCommand(input);
+        }
+        else
+        {
+            HandleCommand(input);
+        }
         continue;
     }
 
@@ -262,6 +277,9 @@ void CmdHelp()
     table.AddRow("[yellow]/snapshot [label][/]", "Create a manual snapshot");
     table.AddRow("[yellow]/history[/]", "List recent snapshots");
     table.AddRow("[yellow]/config[/]", "Show current provider details");
+    table.AddRow("[yellow]/swarm[/]", "Swarm mode commands");
+    table.AddRow("[yellow]/swarm status[/]", "View active swarm status");
+    table.AddRow("[yellow]/swarm cancel[/]", "Cancel active swarm and cleanup");
     table.AddRow("[yellow]/exit[/]", "Exit PuddingCode");
     AnsiConsole.Write(table);
 }
@@ -512,12 +530,12 @@ ProviderEntry PromptNewProvider()
         .Validate(val =>
         {
             if (string.IsNullOrWhiteSpace(val))
-                return ValidationResult.Error("Cannot be empty");
+                return Spectre.Console.ValidationResult.Error("Cannot be empty");
             if (val.Contains(' '))
-                return ValidationResult.Error("No spaces allowed");
+                return Spectre.Console.ValidationResult.Error("No spaces allowed");
             if (config.Providers.Any(p => p.Id.Equals(val, StringComparison.OrdinalIgnoreCase)))
-                return ValidationResult.Error($"\"{val}\" already exists");
-            return ValidationResult.Success();
+                return Spectre.Console.ValidationResult.Error($"\"{val}\" already exists");
+            return Spectre.Console.ValidationResult.Success();
         });
 
     if (!string.IsNullOrEmpty(defId)
