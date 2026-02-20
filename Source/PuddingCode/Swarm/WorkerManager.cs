@@ -133,7 +133,15 @@ public sealed class WorkerManager : IWorkerManager
     /// <param name="ct">取消令牌。</param>
     private async Task CreateWorktreeAsync(string branchName, string worktreePath, CancellationToken ct)
     {
-        // 先创建并切换到新分支（基于当前 HEAD）
+        // 检查分支是否已存在，如果存在则先清理
+        var existingBranches = await RunGitAsync(["worktree", "list"], ct);
+        if (existingBranches.Contains(branchName, StringComparison.OrdinalIgnoreCase))
+        {
+            // 分支已存在，先清理
+            await CleanupExistingWorktreeAsync(branchName, worktreePath, ct);
+        }
+
+        // 创建并切换到新分支（基于当前 HEAD）
         await RunGitAsync(["checkout", "-b", branchName], ct);
 
         // 创建 worktree
