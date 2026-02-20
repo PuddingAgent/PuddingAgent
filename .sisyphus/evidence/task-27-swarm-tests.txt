@@ -1,0 +1,12 @@
+D:\WangXianQiang\github\hyfree\PuddingCode\Source\PuddingCodeTests\bin\Debug\net10.0\PuddingCodeTests.dll (.NETCoreApp,Version=v10.0)的测试运行
+VSTest 版本 18.0.1 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+源“D:\WangXianQiang\github\hyfree\PuddingCode\Source\PuddingCodeTests\bin\Debug\net10.0\PuddingCodeTests.dll”的 Testhost 进程已退出，但出现错误: A fatal error was encountered. The library 'hostpolicy.dll' required to execute the application was not found in 'C:\Program Files\dotnet'.
+Failed to run as a self-contained app.
+  - The application was run as a self-contained app because 'D:\WangXianQiang\github\hyfree\PuddingCode\Source\PuddingCodeTests\bin\Debug\net10.0\testhost.runtimeconfig.json' was not found.
+  - If this should be a framework-dependent app, add the 'D:\WangXianQiang\github\hyfree\PuddingCode\Source\PuddingCodeTests\bin\Debug\net10.0\testhost.runtimeconfig.json' file and specify the appropriate framework.
+。请查看诊断日志以了解详细信息。
+
+测试运行已中止。
