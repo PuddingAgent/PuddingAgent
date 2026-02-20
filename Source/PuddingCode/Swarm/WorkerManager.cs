@@ -42,15 +42,25 @@ public sealed class WorkerManager : IWorkerManager
         CancellationToken ct = default)
     {
         // 生成唯一 Worker ID
-        var workerId = $"worker-{Guid.NewGuid():N[..8]}";
+        var workerId = $"worker-{Guid.NewGuid().ToString("N")[..8]}";
         var branchName = $"swarm/{workerId}";
         var worktreePath = Path.Combine(_workDir, ".pudding", "worktrees", workerId);
 
         // 确保 .pudding/worktrees 目录存在
         Directory.CreateDirectory(Path.GetDirectoryName(worktreePath)!);
 
-        // 创建 Git Worktree
-        await CreateWorktreeAsync(branchName, worktreePath, ct);
+        // 创建 Git Worktree (如果分支已存在则先删除)
+        try
+        {
+            await CreateWorktreeAsync(branchName, worktreePath, ct);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already used"))
+        {
+            // 清理旧 worktree 和分支
+            await CleanupExistingWorktreeAsync(branchName, worktreePath, ct);
+            // 重试创建
+            await CreateWorktreeAsync(branchName, worktreePath, ct);
+        }
 
         // 创建 WorkerInfo
         var workerName = $"{role}-{workerId.Split('-')[1][..4]}";
@@ -84,6 +94,35 @@ public sealed class WorkerManager : IWorkerManager
     public IReadOnlyList<WorkerInfo> GetActiveWorkers()
     {
         return _workers.Values.ToList().AsReadOnly();
+    }
+
+    /// <summary>
+    /// 清理已存在的 worktree 和分支。
+    /// </summary>
+    private async Task CleanupExistingWorktreeAsync(string branchName, string worktreePath, CancellationToken ct)
+    {
+        // 移除 worktree
+        if (Directory.Exists(worktreePath))
+        {
+            try
+            {
+                await RunGitAsync(["worktree", "remove", worktreePath, "--force"], ct);
+            }
+            catch
+            {
+                // 忽略删除失败
+            }
+        }
+
+        // 删除分支
+        try
+        {
+            await RunGitAsync(["branch", "-D", branchName], ct);
+        }
+        catch
+        {
+            // 忽略删除失败
+        }
     }
 
     /// <summary>
