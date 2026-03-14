@@ -1,6 +1,6 @@
-# PuddingCode
+# Pudding Agent Network
 
-**An agentic self-programming CLI tool.** Talk to it in natural language, it uses LLM tool-calling to read/write files and run shell commands on your project.
+**A workspace-scoped agent operations platform for multi-channel ingress, multi-agent execution, and governed automation.**
 
 ![Version](https://img.shields.io/badge/version-v0.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey)
@@ -8,139 +8,160 @@
 
 ---
 
-## 🍮 What Is This?
+## What Is This?
 
-PuddingCode is a CLI assistant that acts on your codebase. Describe what you want, and it will read files, write code, and run shell commands — tool by tool, with safety guards at every step.
+Pudding Agent Network is the product and platform direction of this repository.
 
-## Features
+It is not just a coding CLI. It is a platform for running agents behind a unified control plane, with clear workspace boundaries, pluggable channels, auditable execution, and support for multi-agent and sub-agent collaboration.
 
-- **Spirit Agent** — Conversational AI assistant that reads/writes files and runs shell commands via tool-calling
-- **Swarm Mode** — Leader-Worker multi-agent architecture: Leader defines contracts, spawns Workers that implement code in parallel within scoped file boundaries
-- **Git Snapshots** — Auto-snapshots before every tool execution, `/undo` to roll back
-- **Multi-provider LLM** — OpenAI, DeepSeek, Claude (via proxy), or any custom OpenAI-compatible endpoint
-- **Slash Command REPL** — `/help`, `/open`, `/model`, `/undo`, `/swarm`, `/exit` and more
-- **Permission Guard** — File operations sandboxed to project root
-- **Skill Registry** — Role-filtered tools per agent role (Leader/Worker/Spirit)
+At a high level:
 
----
-
-## Quick Start
-
-### Build
-
-```bash
-dotnet build
-```
-
-### Run
-
-```bash
-dotnet run --project Source/PuddingCodeCLI
-```
-
-Or publish a self-contained binary:
-
-```bash
-dotnet publish Source/PuddingCodeCLI -c Release -r win-x64 --self-contained
-```
+- **PuddingPlatform** is the control plane: channel ingress, routing, auth, approvals, audit, workflow, and governance.
+- **PuddingRuntime** is the execution plane: sessions, agent instances, memory, skills, tools, and sandboxed execution.
+- **PuddingAgent** defines agent templates, policies, and capability profiles.
+- **PuddingCLI** and **PuddingWeb** are clients and operator surfaces.
+- **PuddingCore** holds shared abstractions, protocols, and models.
 
 ---
 
-## Configuration
+## Product Definition
 
-PuddingCode stores config in your user config file. On first run it walks you through provider setup interactively.
+Pudding Agent Network is a Workspace-centered platform that binds channels, users, agents, memory, approvals, and workflows into one governed operating model.
 
-You can also skip the wizard entirely with environment variables:
+Its target shape is closer to an agent network than a single assistant:
 
-| Env Var | Description |
-|---------|-------------|
-| `PUDDING_API_KEY` | Your LLM API key |
-| `PUDDING_API_ENDPOINT` | API base URL (default: `https://api.openai.com/v1`) |
-| `PUDDING_MODEL` | Model name (default: `gpt-4o`) |
-
-```bash
-PUDDING_API_KEY=sk-... PUDDING_MODEL=gpt-4o dotnet run --project Source/PuddingCodeCLI
-```
-
-Supported provider templates out of the box: **OpenAI**, **DeepSeek**, **Claude (via proxy)**, **Custom endpoint**.
+- Multi-user, not only single-user local interaction
+- Multi-channel, not only terminal input
+- Multi-agent and sub-agent, not only one long-lived assistant
+- Platform-governed execution, not only direct tool calling
+- Audited and approval-aware operations, not only best-effort guardrails
 
 ---
 
-## Slash Commands
+## Core Goals
 
-| Command | Description |
-|---------|-------------|
-| `/help` | Show all commands |
-| `/open [path]` | Open a project directory (default: current dir) |
-| `/model` | List configured providers |
-| `/model add` | Add a new LLM provider |
-| `/model use <id>` | Switch active provider |
-| `/model remove <id>` | Remove a provider |
-| `/undo [N]` | Undo last N tool snapshots (default: 1) |
-| `/snapshot [label]` | Create a manual snapshot |
-| `/history` | List recent snapshots |
-| `/config` | Show current provider details |
-| `/swarm` | Swarm mode commands |
-| `/swarm status` | View active swarm status |
-| `/swarm cancel` | Cancel active swarm and cleanup |
-| `/exit` | Exit PuddingCode |
+- Support multiple channels such as CLI, HTTP, WebSocket, and built-in Email
+- Let one Workspace host multiple Agents and bind multiple channels
+- Route inbound messages by Workspace, ChannelBinding, identity, policy, and intent
+- Separate control plane and execution plane so Runtime nodes can scale independently
+- Support governed automation with approvals, audit trails, memory boundaries, and sandboxing
+- Support Swarm, SubAgent, workflow, and event-driven coordination as first-class primitives
+- Keep channel integration pluggable so future channels can be added without rewriting core routing
 
 ---
 
-## Swarm Mode
+## V1 Focus
 
-Swarm Mode enables parallel code generation with a Leader-Worker architecture.
+The first implementation target is one real vertical slice:
 
-### How It Works
-
-1. **Leader Agent** receives your task, designs contracts (interfaces + empty implementations with method signatures), and splits the work into scoped modules
-2. **Worker Agents** are spawned, each assigned to specific files or symbols — they can only touch their assigned scope
-3. **ContractManager** and **WorkerManager** coordinate the flow, validate implementations against contracts, and merge results
-
-```
-/swarm start
-> "Create a REST API with controllers for Users and Products"
-
-Leader  → defines IUserRepository, IProductRepository, empty controllers
-Workers → implement UserController, ProductController, services in parallel
+```text
+CLI -> Platform API -> Workspace routing -> ServiceSession -> Runtime Agent -> real LLM reply
 ```
 
-### Architecture
+V1 constraints and priorities:
 
-```
-SwarmOrchestrator
-├── ContractManager    # Defines and validates contracts
-├── WorkerManager      # Spawns, scopes, and dismisses Worker agents
-└── Leader Agent       # Plans, assigns tasks, monitors progress
-    └── Worker Agents  # Scoped implementers (one per file/module)
-```
-
-**Phase 1** (current): Local serial/parallel swarm  
-**Phase 2** (planned): Git worktree-based parallel execution + integrated test runner  
-**Phase 3** (planned): P2P distributed swarm across machines
+- Built-in support for Email as a core channel
+- One Workspace can bind multiple channels
+- Each ChannelBinding can declare a default Agent and allowed Agent set
+- Channel integration itself must be plugin-based
+- Storage can start with local files and SQLite before moving to larger deployments
 
 ---
 
-## Project Structure
+## Architecture Snapshot
 
+```text
+PuddingCLI / PuddingWeb / External Channels
+                |
+                v
+         PuddingPlatform
+  ingress, routing, auth, approval,
+  workflow, audit, governance
+                |
+                v
+         PuddingRuntime
+  session runtime, agent runtime,
+  memory runtime, skill runtime,
+  sandboxed execution
+                |
+                v
+           PuddingCore
+  shared abstractions, models,
+  tool and skill contracts
 ```
+
+Design baseline:
+
+- **Workspace is the main governance boundary**
+- **Runtime is the authority for hot session state**
+- **Platform owns global policy, routing, and control**
+- **Channels are plugins, not hard-coded branches**
+- **Public or low-trust input must not directly pollute long-term memory**
+
+---
+
+## Repository Status
+
+This repository is in transition from the earlier **PuddingCode** coding-agent prototype toward the broader **Pudding Agent Network** platform.
+
+That means:
+
+- Some existing code still reflects the earlier CLI-first implementation
+- The new Platform, Runtime, Agent, and governance layers are now the primary direction
+- The architecture and task docs are currently ahead of the implementation in several areas
+
+---
+
+## Repository Structure
+
+```text
+PuddingAgentNetwork.slnx
+Docs/
+  架构.md
+  Tasks.md
+  Tasks/
 Source/
-  PuddingCode/           # Core library
-    Core/                # AgentOrchestrator, LLM gateway, Git snapshots
-    Swarm/               # SwarmOrchestrator, ContractManager, WorkerManager
-    Skills/              # Skill registry (role-filtered tools)
-    Tools/               # FileTool, ShellTool
-    Abstractions/        # Interfaces
-    Models/              # Shared models
-  PuddingCodeCLI/        # CLI entry point
-  PuddingCodeCLITests/
-  PuddingCodeTests/
+  PuddingCore/        shared abstractions, protocols, models
+  PuddingRuntime/     execution plane host
+  PuddingPlatform/    control plane host
+  PuddingGateway/     platform gateway module
+  PuddingAgent/       agent templates and capability profiles
+  PuddingCLI/         CLI client and operator surface
+  PuddingWeb/         web frontend
+  PuddingCode/        legacy coding-agent implementation still being absorbed
+  PuddingCodeCLI/     legacy CLI entry point kept during transition
+  PuddingCoreTests/
+  PuddingCLITests/
 ```
+
+---
+
+## Getting Started
+
+Build the solution:
+
+```bash
+dotnet build PuddingAgentNetwork.slnx
+```
+
+Run the current CLI surface:
+
+```bash
+dotnet run --project Source/PuddingCLI
+```
+
+The platform is being reshaped around the new architecture, so the most accurate source of intent and near-term scope is the docs set below.
+
+---
+
+## Key Documents
+
+- `Docs/架构.md` - full architecture blueprint
+- `Docs/Tasks.md` - platform task board and priorities
+- `Docs/Tasks/task24-platform-v1-first-slice.md` - class and API level breakdown for the first vertical slice
 
 ---
 
 ## License
 
 MIT
-
-🍮
