@@ -11,11 +11,25 @@ public sealed class FileTool : ITool
 
     private readonly ProjectContext? _project;
     private readonly PermissionGuard? _guard;
+    private readonly ICentralLockManager? _lockManager;
+    private readonly string _ownerAgentId;
+    private readonly string _ownerAgentName;
+    private readonly string _ownerRole;
 
-    public FileTool(ProjectContext? project = null, PermissionGuard? guard = null)
+    public FileTool(
+        ProjectContext? project = null,
+        PermissionGuard? guard = null,
+        ICentralLockManager? lockManager = null,
+        string ownerAgentId = "spirit",
+        string ownerAgentName = "Spirit",
+        string ownerRole = "spirit")
     {
         _project = project;
         _guard = guard;
+        _lockManager = lockManager;
+        _ownerAgentId = ownerAgentId;
+        _ownerAgentName = ownerAgentName;
+        _ownerRole = ownerRole;
     }
 
     public string Name => "file";
@@ -54,6 +68,16 @@ public sealed class FileTool : ITool
 
     private async Task<string> ReadFileAsync(string path, CancellationToken ct)
     {
+        if (_lockManager is not null)
+        {
+            var access = await _lockManager.CheckAccessAsync(_ownerAgentId, path, ct);
+            if (!access.Allowed)
+            {
+                var lockId = access.ConflictingLock?.Id ?? "unknown";
+                return $"Error: {access.Message} Use request_unlock or wait for release. lockId={lockId}";
+            }
+        }
+
         // Permission check
         if (_guard is not null)
         {
@@ -67,6 +91,27 @@ public sealed class FileTool : ITool
 
     private async Task<string> WriteFileAsync(string path, string content, CancellationToken ct)
     {
+        string? lockId = null;
+        if (_lockManager is not null)
+        {
+            var acquire = await _lockManager.AcquireAsync(new LockAcquireRequest(
+                OwnerAgentId: _ownerAgentId,
+                OwnerAgentName: _ownerAgentName,
+                OwnerRole: _ownerRole,
+                Targets: [new LockTarget(path, CoordinationLockScope.File)],
+                Type: CoordinationLockType.Edit,
+                Ttl: TimeSpan.FromMinutes(15),
+                Description: $"Implicit edit lock for {Path.GetFileName(path)}"), ct);
+            if (!acquire.Acquired)
+            {
+                var conflict = acquire.ConflictingLock;
+                var lockRef = conflict?.Id ?? "unknown";
+                return $"Error: {acquire.Message} file is being edited by {conflict?.OwnerAgentName ?? "another agent"}. lockId={lockRef}";
+            }
+
+            lockId = acquire.LockId;
+        }
+
         // Permission check
         if (_guard is not null)
         {
@@ -75,11 +120,19 @@ public sealed class FileTool : ITool
                 return perm.DenialReason ?? "Permission denied.";
         }
 
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-        await File.WriteAllTextAsync(path, content, ct);
-        return $"Written {content.Length} chars to {path}";
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            await File.WriteAllTextAsync(path, content, ct);
+            return $"Written {content.Length} chars to {path}";
+        }
+        finally
+        {
+            if (_lockManager is not null && !string.IsNullOrWhiteSpace(lockId))
+                await _lockManager.ReleaseAsync(lockId, _ownerAgentId, force: false, ct);
+        }
     }
 
     private string ListDirectory(string path)

@@ -3,6 +3,7 @@ using PuddingCode.Core;
 using PuddingCode.Models;
 using PuddingCode.Swarm;
 using Spectre.Console;
+using System.Text.Json;
 
 namespace PuddingCodeCLI.Commands;
 
@@ -55,7 +56,7 @@ public sealed class SwarmCommands
         var subCommand = parts[1].ToLowerInvariant();
 
         // /swarm <task description> — start a new swarm
-        if (subCommand != "status" && subCommand != "cancel" && subCommand != "help")
+        if (subCommand != "status" && subCommand != "cancel" && subCommand != "help" && subCommand != "continue")
         {
             var taskDescription = string.Join(' ', parts.Skip(1));
             StartSwarm(taskDescription).GetAwaiter().GetResult();
@@ -72,6 +73,9 @@ public sealed class SwarmCommands
                 break;
             case "help":
                 ShowUsage();
+                break;
+            case "continue":
+                ContinueSwarm();
                 break;
         }
     }
@@ -108,6 +112,15 @@ public sealed class SwarmCommands
                         break;
                     case ContractDefinedEvent e:
                         AnsiConsole.MarkupLine($"[cyan]📋 Contract defined:[/] {e.ContractId.EscapeMarkup()} — {e.Symbols.Count} symbol(s)");
+                        break;
+                    case TaskAssignedEvent e:
+                        AnsiConsole.MarkupLine($"[blue]Task assigned:[/] {e.TaskId.EscapeMarkup()} -> {e.WorkerId.EscapeMarkup()}");
+                        break;
+                    case TaskCompletedEvent e:
+                        AnsiConsole.MarkupLine($"[green]Task completed:[/] {e.TaskId.EscapeMarkup()} by {e.WorkerId.EscapeMarkup()}");
+                        break;
+                    case TaskFailedEvent e:
+                        AnsiConsole.MarkupLine($"[red]Task blocked/failed:[/] {e.TaskId.EscapeMarkup()} by {e.WorkerId.EscapeMarkup()} ({e.Reason.EscapeMarkup()})");
                         break;
                     case ContractValidatedEvent e:
                         var icon = e.Passed ? "[green]✓[/]" : "[red]✗[/]";
@@ -148,61 +161,67 @@ public sealed class SwarmCommands
     private void ShowStatus()
     {
         var workers = _workerManager.GetActiveWorkers();
-        if (workers.Count == 0)
+        var latestState = LoadLatestSessionState();
+        if (workers.Count == 0 && latestState is null)
         {
             AnsiConsole.MarkupLine("[grey]No active swarm. Use /swarm to start a new swarm session.[/]");
             return;
         }
 
-        // Header
-        AnsiConsole.MarkupLine($"[bold yellow]🐝 Swarm Active[/] - {workers.Count} worker(s)");
+        var header = workers.Count > 0
+            ? $"[bold yellow]🐝 Swarm Active[/] - {workers.Count} worker(s)"
+            : $"[bold yellow]🐝 Swarm Idle[/] - last session: {latestState!.SessionId.EscapeMarkup()}";
+        AnsiConsole.MarkupLine(header);
         AnsiConsole.WriteLine();
 
         // Worker Table
-        var table = new Table()
-            .Border(TableBorder.Rounded)
-            .AddColumn("[bold]Role[/]")
-            .AddColumn("[bold]Name[/]")
-            .AddColumn("[bold]Worktree[/]")
-            .AddColumn("[bold]Scope[/]");
-
-        foreach (var worker in workers)
+        if (workers.Count > 0)
         {
-            var roleIcon = worker.Role switch
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("[bold]Role[/]")
+                .AddColumn("[bold]Name[/]")
+                .AddColumn("[bold]Worktree[/]")
+                .AddColumn("[bold]Scope[/]");
+
+            foreach (var worker in workers)
             {
-                WorkerRole.Leader => "👑",
-                WorkerRole.Builder => "🔨",
-                WorkerRole.QA => "🧪",
-                WorkerRole.Docs => "📝",
-                _ => "❓"
-            };
+                var roleIcon = worker.Role switch
+                {
+                    WorkerRole.Leader => "👑",
+                    WorkerRole.Builder => "🔨",
+                    WorkerRole.QA => "🧪",
+                    WorkerRole.Docs => "📝",
+                    _ => "❓"
+                };
 
-            var roleColor = worker.Role switch
-            {
-                WorkerRole.Leader => "magenta",
-                WorkerRole.Builder => "blue",
-                WorkerRole.QA => "green",
-                WorkerRole.Docs => "cyan",
-                _ => "grey"
-            };
+                var roleColor = worker.Role switch
+                {
+                    WorkerRole.Leader => "magenta",
+                    WorkerRole.Builder => "blue",
+                    WorkerRole.QA => "green",
+                    WorkerRole.Docs => "cyan",
+                    _ => "grey"
+                };
 
-            var worktreeDisplay = string.IsNullOrEmpty(worker.WorktreePath)
-                ? "[grey italic]N/A[/]"
-                : $"[grey]{Path.GetFileName(worker.WorktreePath).EscapeMarkup()}[/]";
+                var worktreeDisplay = string.IsNullOrEmpty(worker.WorktreePath)
+                    ? "[grey italic]N/A[/]"
+                    : $"[grey]{Path.GetFileName(worker.WorktreePath).EscapeMarkup()}[/]";
 
-            var scopeDisplay = worker.Scope.AllowedPaths.Count > 0
-                ? $"[grey]{string.Join(", ", worker.Scope.AllowedPaths.Take(2).Select(p => $"<{Path.GetFileName(p).EscapeMarkup()}>"))}[/]"
-                : "[grey italic]Unrestricted[/]";
+                var scopeDisplay = worker.Scope.AllowedPaths.Count > 0
+                    ? $"[grey]{string.Join(", ", worker.Scope.AllowedPaths.Take(2).Select(p => $"<{Path.GetFileName(p).EscapeMarkup()}>"))}[/]"
+                    : "[grey italic]Unrestricted[/]";
 
-            table.AddRow(
-                $"[{roleColor}]{roleIcon} {worker.Role}[/]",
-                worker.Name.EscapeMarkup(),
-                worktreeDisplay,
-                scopeDisplay);
+                table.AddRow(
+                    $"[{roleColor}]{roleIcon} {worker.Role}[/]",
+                    worker.Name.EscapeMarkup(),
+                    worktreeDisplay,
+                    scopeDisplay);
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
         }
-
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
 
         // Task Progress Panel
         RenderTaskProgress(workers);
@@ -217,19 +236,9 @@ public sealed class SwarmCommands
     /// <param name="workers">List of active workers.</param>
     private void RenderTaskProgress(IReadOnlyList<WorkerInfo> workers)
     {
-        var taskRows = new List<(string task, string status, int progress)>();
-
-        // Simulate task progress based on worker count (Phase 1 stub)
-        // In Phase 2, this will read from actual task tracking system
-        var rng = new Random(Environment.TickCount);
-        for (int i = 0; i < workers.Count; i++)
-        {
-            var worker = workers[i];
-            var progress = rng.Next(40, 100); // Simulated progress
-            var status = progress >= 100 ? "Done" : progress > 70 ? "Testing" : progress > 30 ? "In Progress" : "Starting";
-            
-            taskRows.Add(($"{worker.Role} ({worker.Name})", status, progress));
-        }
+        var taskRows = LoadTaskRows();
+        if (taskRows.Count == 0)
+            taskRows = workers.Select(w => ($"{w.Role} ({w.Name})", "In Progress", 35)).ToList();
 
         var taskTable = new Table()
             .Border(TableBorder.Rounded)
@@ -261,6 +270,45 @@ public sealed class SwarmCommands
         AnsiConsole.WriteLine();
     }
 
+    private List<(string task, string status, int progress)> LoadTaskRows()
+    {
+        var state = LoadLatestSessionState();
+        if (state is null) return [];
+
+        var rows = new List<(string task, string status, int progress)>();
+        foreach (var t in state.Tasks)
+        {
+            var status = t.Status switch
+            {
+                SwarmTaskStatus.Created => "Created",
+                SwarmTaskStatus.Assigned => "Assigned",
+                SwarmTaskStatus.InProgress => "In Progress",
+                SwarmTaskStatus.PendingReview => "Review",
+                SwarmTaskStatus.Testing => "Testing",
+                SwarmTaskStatus.Completed => "Done",
+                SwarmTaskStatus.Blocked => "Blocked",
+                SwarmTaskStatus.Failed => "Failed",
+                _ => "Unknown"
+            };
+
+            var progress = t.Status switch
+            {
+                SwarmTaskStatus.Created => 10,
+                SwarmTaskStatus.Assigned => 25,
+                SwarmTaskStatus.InProgress => 55,
+                SwarmTaskStatus.PendingReview => 80,
+                SwarmTaskStatus.Testing => 90,
+                SwarmTaskStatus.Completed => 100,
+                SwarmTaskStatus.Blocked => 65,
+                SwarmTaskStatus.Failed => 40,
+                _ => 0
+            };
+
+            rows.Add((t.Title, status, progress));
+        }
+        return rows;
+    }
+
     /// <summary>
     /// Renders a simple text-based progress bar.
     /// </summary>
@@ -278,43 +326,41 @@ public sealed class SwarmCommands
     /// </summary>
     private void RenderContractStatus()
     {
-        // Check for contract files in .pudding/swarm/contracts/
-        var contractsDir = Path.Combine(_swarmDir, "contracts");
-        var hasContracts = Directory.Exists(contractsDir) && Directory.GetFiles(contractsDir, "*.json").Length > 0;
-
         var contractGrid = new Grid();
         contractGrid.AddColumn(new GridColumn().Padding(1, 0, 1, 0));
-
-        if (hasContracts)
+        var state = LoadLatestSessionState();
+        if (state is null || state.Tasks.Count == 0)
         {
-            var contractFiles = Directory.GetFiles(contractsDir, "*.json");
-            var completed = 0;
-            var total = contractFiles.Length;
-
-            // In Phase 2, this will read actual contract validation status
-            // For now, show stub status
-            var contractList = new List<string>();
-            foreach (var file in contractFiles)
-            {
-                var fileName = Path.GetFileName(file);
-                contractList.Add($"  [grey]⊡[/] [white]{fileName.EscapeMarkup()}[/] [green](Validated)[/]");
-                completed++;
-            }
-
-            var progressPercent = total > 0 ? (completed * 100 / total) : 0;
-            var progressBar = RenderProgressBar(progressPercent);
-
-            contractGrid.AddRow(new Markup($"[bold]Contracts:[/] {completed}/{total} completed"));
-            contractGrid.AddRow(new Markup($"{progressBar} [grey]{progressPercent}%[/]"));
-            contractGrid.AddRow(new Markup(""));
-            foreach (var contract in contractList)
-            {
-                contractGrid.AddRow(new Markup(contract));
-            }
+            contractGrid.AddRow(new Markup("[grey italic]No contracts defined yet. Leader will define contracts when swarm starts.[/]"));
         }
         else
         {
-            contractGrid.AddRow(new Markup("[grey italic]No contracts defined yet. Leader will define contracts when swarm starts.[/]"));
+            var total = state.Tasks.Count;
+            var completed = state.Tasks.Count(t => t.Status == SwarmTaskStatus.Completed);
+            var blocked = state.Tasks.Count(t => t.Status == SwarmTaskStatus.Blocked);
+            var failed = state.Tasks.Count(t => t.Status == SwarmTaskStatus.Failed);
+            var progressPercent = total > 0 ? completed * 100 / total : 0;
+            var progressBar = RenderProgressBar(progressPercent);
+
+            contractGrid.AddRow(new Markup($"[bold]Contract:[/] {state.Contract.Id.EscapeMarkup()}"));
+            contractGrid.AddRow(new Markup($"[bold]Tasks:[/] {completed}/{total} done, [yellow]{blocked} blocked[/], [red]{failed} failed[/]"));
+            contractGrid.AddRow(new Markup($"{progressBar} [grey]{progressPercent}%[/]"));
+            contractGrid.AddRow(new Markup(string.Empty));
+
+            foreach (var task in state.Tasks.Take(8))
+            {
+                var statusColor = task.Status switch
+                {
+                    SwarmTaskStatus.Completed => "green",
+                    SwarmTaskStatus.Blocked => "yellow",
+                    SwarmTaskStatus.Failed => "red",
+                    SwarmTaskStatus.PendingReview => "cyan",
+                    SwarmTaskStatus.InProgress => "blue",
+                    _ => "grey"
+                };
+                contractGrid.AddRow(new Markup(
+                    $"  [grey]⊡[/] [white]{task.Title.EscapeMarkup()}[/] [{statusColor}]({task.Status})[/]"));
+            }
         }
 
         var panel = new Panel(contractGrid);
@@ -341,6 +387,7 @@ public sealed class SwarmCommands
 
         var cancelledCount = 0;
         var failedCount = 0;
+        var cancelledWorkerIds = workers.Select(w => w.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var worker in workers)
         {
@@ -367,6 +414,8 @@ public sealed class SwarmCommands
                 AnsiConsole.MarkupLine($"[red]  └─ ✗ Failed to dismiss {worker.Name.EscapeMarkup()}: {ex.Message.EscapeMarkup()}[/]");
             }
         }
+
+        MarkCancelledTasks(cancelledWorkerIds);
 
         // Rollback unmerged changes via Git soft reset
         if (_snapshotService.IsGitRepo)
@@ -471,11 +520,70 @@ public sealed class SwarmCommands
         var table = new Table().Border(TableBorder.None).HideHeaders()
             .AddColumn("cmd").AddColumn("desc");
         
-        table.AddRow("[yellow]/swarm[/]", "Start a new swarm session (not yet implemented)");
+        table.AddRow("[yellow]/swarm <task>[/]", "Start a new swarm session");
         table.AddRow("[yellow]/swarm status[/]", "View active swarm status");
+        table.AddRow("[yellow]/swarm continue[/]", "Resume latest pending swarm tasks");
         table.AddRow("[yellow]/swarm cancel[/]", "Cancel active swarm and cleanup");
         table.AddRow("[yellow]/swarm help[/]", "Show this help");
         
         AnsiConsole.Write(table);
+    }
+
+    private void ContinueSwarm()
+    {
+        StartSwarm("continue").GetAwaiter().GetResult();
+    }
+
+    private SwarmSessionState? LoadLatestSessionState()
+    {
+        var path = Path.Combine(_swarmDir, "runtime", "latest-session.json");
+        if (!File.Exists(path))
+            return null;
+        try
+        {
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<SwarmSessionState>(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void SaveLatestSessionState(SwarmSessionState state)
+    {
+        var runtimeDir = Path.Combine(_swarmDir, "runtime");
+        Directory.CreateDirectory(runtimeDir);
+        var path = Path.Combine(runtimeDir, "latest-session.json");
+        state.UpdatedAt = DateTimeOffset.Now;
+        var json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(path, json);
+    }
+
+    private void MarkCancelledTasks(HashSet<string> workerIds)
+    {
+        if (workerIds.Count == 0)
+            return;
+
+        var state = LoadLatestSessionState();
+        if (state is null || state.Tasks.Count == 0)
+            return;
+
+        var changed = false;
+        foreach (var task in state.Tasks)
+        {
+            if (task.AssignedTo is null || !workerIds.Contains(task.AssignedTo))
+                continue;
+
+            if (task.Status is SwarmTaskStatus.Completed or SwarmTaskStatus.Failed or SwarmTaskStatus.Abandoned)
+                continue;
+
+            task.Status = SwarmTaskStatus.Abandoned;
+            task.FailReason = "Cancelled by user via /swarm cancel.";
+            changed = true;
+        }
+
+        if (changed)
+            SaveLatestSessionState(state);
     }
 }

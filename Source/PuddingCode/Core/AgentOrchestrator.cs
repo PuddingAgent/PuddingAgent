@@ -16,6 +16,8 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private readonly AgentRole _role;
     private readonly WorkerScope? _scope;
     private readonly List<ChatMessage> _history;
+    private readonly List<IAgentHook> _hooks;
+    private readonly ContextBudgetOptions _contextBudget;
 
     /// <summary>
     /// Gets the role of this Agent instance.
@@ -35,7 +37,9 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         IGitSnapshot? snapshot = null,
         AgentRole role = AgentRole.Spirit,
         WorkerScope? scope = null,
-        ISkillRegistry? skillRegistry = null)
+        ISkillRegistry? skillRegistry = null,
+        IEnumerable<IAgentHook>? hooks = null,
+        ContextBudgetOptions? contextBudget = null)
     {
         _llm = llm;
         _tools = tools;
@@ -43,116 +47,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         _role = role;
         _scope = scope;
         _skillRegistry = skillRegistry;
+        _hooks = hooks?.ToList() ?? [];
+        _contextBudget = contextBudget ?? new ContextBudgetOptions();
 
-        var systemPrompt = BuildSystemPrompt(role, scope, project);
+        var systemPrompt = PromptTemplateLoader.BuildSystemPrompt(role, scope, project);
 
         _history = [new ChatMessage(ChatRole.System, systemPrompt)];
-    }
-
-    /// <summary>
-    /// Builds role-specific System Prompt.
-    /// </summary>
-    private static string BuildSystemPrompt(AgentRole role, WorkerScope? scope, ProjectContext? project)
-    {
-        var basePrompt = role switch
-        {
-            AgentRole.Leader => """
-                You are the Leader Agent of PuddingCode Swarm.
-                Your responsibilities:
-                - Design contracts (create interfaces and empty implementations with method signatures)
-                - Define contracts with clear specifications (parameters, return values, exceptions, constraints)
-                - Split tasks and assign them to Worker Agents
-                - Monitor Worker progress and make merge decisions
-                - Validate that Worker implementations match contract signatures
-
-                You can work in parallel with Workers while monitoring their progress.
-                """,
-
-            AgentRole.Worker => """
-                You are a Worker Agent of PuddingCode Swarm.
-                You are a focused software engineer implementing assigned modules.
-
-                SCOPE RESTRICTIONS:
-                - You can ONLY modify files within your assigned scope.
-                - You MUST NOT modify files outside your scope.
-                - Follow the contract specifications in method comments.
-                - Notify the Leader when you complete your tasks.
-
-                """,
-
-            AgentRole.Spirit => """
-                You are PuddingCode, an AI programming assistant.
-                Use the provided tools to help the user with coding tasks.
-                Always use tools when the user asks to read files, write files, or run commands.
-                After using a tool, summarize the result for the user.
-                """,
-
-            _ => """
-                You are PuddingCode, an AI programming assistant.
-                Use the provided tools to help the user with coding tasks.
-                Always use tools when the user asks to read files, write files, or run commands.
-                After using a tool, summarize the result for the user.
-                """
-        };
-
-        // Inject scope restrictions for Worker role
-        if (role == AgentRole.Worker && scope is not null)
-        {
-            var scopeInfo = BuildScopeInfo(scope);
-            basePrompt += $"""
-
-                YOUR ASSIGNED SCOPE:
-                {scopeInfo}
-
-                REMEMBER: Any attempt to modify files outside this scope will be rejected.
-
-                """;
-        }
-
-        // Inject project context
-        if (project is not null)
-        {
-            basePrompt += $"""
-
-
-                Current project: {project.Name}
-                Project root: {project.RootPath}
-                All relative file paths are resolved from the project root.
-                When using the file tool, use paths relative to the project root.
-                When using the shell tool, commands run in the project root by default.
-                """;
-        }
-
-        return basePrompt;
-    }
-
-    /// <summary>
-    /// Builds a human-readable scope description from WorkerScope.
-    /// </summary>
-    private static string BuildScopeInfo(WorkerScope scope)
-    {
-        var sb = new StringBuilder();
-
-        if (scope.AllowedPaths.Count > 0)
-        {
-            sb.AppendLine("Allowed file paths:");
-            foreach (var path in scope.AllowedPaths)
-            {
-                sb.AppendLine($"  - {path}");
-            }
-        }
-
-        if (scope.AllowedSymbols.Count > 0)
-        {
-            if (sb.Length > 0) sb.AppendLine();
-            sb.AppendLine("Allowed symbols:");
-            foreach (var symbol in scope.AllowedSymbols)
-            {
-                sb.AppendLine($"  - {symbol}");
-            }
-        }
-
-        return sb.Length > 0 ? sb.ToString() : "No scope restrictions.";
     }
 
     /// <summary>
@@ -205,6 +105,8 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
                 yield return new ErrorEvent($"Tool call loop exceeded {MaxToolIterations} iterations. Stopping to prevent infinite loop.");
                 yield break;
             }
+
+            ContextBudgetManager.TrimInPlace(_history, _contextBudget);
             yield return new ThinkingEvent("Calling LLM...");
 
             // Use a Channel so the SSE reader (in try/catch) can push events
@@ -301,9 +203,11 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             if (toolCalls is null or { Count: 0 })
             {
                 var answer = content ?? "";
+                await FireHookAsync(h => h.OnPreReplyAsync(answer, ct), ct);
                 _history.Add(new ChatMessage(ChatRole.Assistant, answer,
                     ReasoningContent: reasoning));
                 yield return new AnswerEvent(answer);
+                await FireHookAsync(h => h.OnPostReplyAsync(answer, ct), ct);
                 yield break;
             }
 
@@ -322,10 +226,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             // Execute each tool call
             foreach (var call in toolCalls)
             {
+                await FireHookAsync(h => h.OnPreToolCallAsync(call, ct), ct);
                 yield return new ToolCallEvent(call.Name, call.ArgumentsJson);
 
                 var (result, evt) = await ExecuteToolSafe(call, ct);
                 yield return evt;
+                await FireHookAsync(h => h.OnPostToolCallAsync(call, result, evt is ErrorEvent, ct), ct);
 
                 _history.Add(new ChatMessage(ChatRole.Tool, result, ToolCallId: call.Id));
             }
@@ -353,6 +259,21 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         {
             var msg = $"Error executing tool '{call.Name}': {ex.Message}";
             return (msg, new ErrorEvent(msg));
+        }
+    }
+
+    private async Task FireHookAsync(Func<IAgentHook, Task> invoke, CancellationToken ct)
+    {
+        foreach (var hook in _hooks)
+        {
+            try
+            {
+                await invoke(hook);
+            }
+            catch
+            {
+                // Hook failures should not break the coding loop.
+            }
         }
     }
 }

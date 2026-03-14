@@ -135,11 +135,10 @@ public sealed class WorkerManager : IWorkerManager
     {
         // 检查分支是否已存在，如果存在则先清理
         var existingBranches = await RunGitAsync(["worktree", "list"], ct);
-        // 解析 worktree list 输出，每行格式为：path branch [status]
+        // 解析 worktree list 输出，每行格式通常为：path <HEAD> [branch]
         var branchExists = existingBranches
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Any(parts => parts.Length >= 2 && parts[1].Equals(branchName, StringComparison.OrdinalIgnoreCase));
+            .Any(line => line.Contains($"[{branchName}]", StringComparison.OrdinalIgnoreCase));
         
         if (branchExists)
         {
@@ -170,7 +169,8 @@ public sealed class WorkerManager : IWorkerManager
     private async Task RemoveWorktreeAsync(string worktreePath, CancellationToken ct)
     {
         // 先删除分支
-        var branchName = Path.GetFileName(worktreePath);
+        var workerId = Path.GetFileName(worktreePath);
+        var branchName = $"swarm/{workerId}";
         try
         {
             await RunGitAsync(["branch", "-D", branchName], ct);

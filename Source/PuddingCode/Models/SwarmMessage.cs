@@ -15,5 +15,7 @@ public sealed record SwarmMessage(
     string? To,
     string Type,
     string Content,
-    DateTimeOffset Timestamp
+    DateTimeOffset Timestamp,
+    SwarmMessagePriority Priority = SwarmMessagePriority.Normal,
+    Dictionary<string, string>? Metadata = null
 );

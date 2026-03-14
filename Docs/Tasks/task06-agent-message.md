@@ -1,101 +1,87 @@
-这是一个非常核心的技术痛点。你说得很对，大模型（LLM）本质上是**无状态的 HTTP 请求-响应模型**，它不像真正的生物大脑那样能实时接收“耳边风”。
+﻿# Task 06 - Agent 消息系统（与中心锁协同）
+状态：`design`  
+优先级：`P1`  
+最后更新：2026-02-20
 
-要实现 Agent A 给 Agent B 发消息，且让 B 在合适的**“时机”**接收，我们不能简单地硬塞，而是要构建一套**“异步信箱 + 轮询/中断”**的机制。
+## 1. 目标
+- 为多 Agent 提供可控的异步通信机制（收件箱、优先级、可中断通知）。
+- 与中心锁（Task 23）联动，在冲突场景下提供“请求释放/等待/强制处理”闭环。
+- 在单仓与 worktree 两种模式下保持一致行为。
 
-以下是三种主流的技术实现方案：
+## 2. 依赖关系
+- 上游依赖：`task23-central-lock-coordination.md`
+- 关系：Task 23 负责“资源互斥”，Task 06 负责“消息协同”，两者通过同一协调中枢（Coordination Hub）统一编排。
 
----
+## 3. 消息语义模型
+### 3.1 消息优先级
+- `normal`：普通消息。任务阶段结束后注入。
+- `important`：重要消息。下一次 function call 前提醒并要求检查 Inbox。
+- `urgent`：紧急消息。触发中断请求（遵守编辑原子性）。
 
-### 方案一：基于“记忆槽”的上下文插入 (Context Injection)
+### 3.2 消息结构（v1）
+- `id`
+- `from` / `to`
+- `type`
+- `content`
+- `priority`
+- `timestamp`
+- `metadata`（可选：taskId、lockId、path、worktree）
 
-这是最简单、最符合 HTTP 逻辑的方案。
+## 4. 投递与消费时机
+### 4.1 被动注入（Context Injection）
+- Agent 进入下一轮推理前，系统检查 Inbox 并注入摘要。
 
-* **机制：** 每个 Agent 都有一个私有的**“收件箱（Inbox）”**（一个内存队列）。
-* **时机：** 当 Agent B 结束上一次任务，准备发起下一次 HTTP 请求（即下一轮 `Chat Completion`）时，`SwarmOrchestrator` 会扫描它的收件箱。
-* **实现：** 将 Agent A 发来的消息包装成一条特殊的 `System Message` 或 `User Message`，插入到 Agent B 请求的最前端。
-> **Prompt 示例：**
-> `[SYSTEM]: 在你继续之前，请注意收到来自 Agent-A 的实时消息："AuthService 的接口已更改为异步模式"。请在后续代码中适配。`
+### 4.2 主动拉取（Tool Polling）
+- 提供 `check_messages()` / `read_inbox()` 函数。
+- Leader 可要求 Worker 在关键步骤前强制检查。
 
+### 4.3 中断重规划（Interrupt & Re-plan）
+- `urgent` 可触发中断请求。
+- 若目标 Agent 处于编辑事务内（原子区），先标记“待中断”，事务结束后再中断。
 
-* **优缺点：** 简单稳定，但**不具备实时性**。如果 Agent B 正在生成一个超长代码块，它在生成结束前无法得知消息。
+## 5. 与中心锁协同（关键）
+### 5.1 锁冲突时的消息闭环
+1. Agent B 访问命中 A 的锁，返回冲突错误。
+2. 系统自动生成 `unlock_requested` 消息发送给 A（和 Leader 可见）。
+3. A 可主动释放；Leader 可强制解锁。
 
----
+### 5.2 事件总线
+最小事件集：
+- `message_posted`
+- `inbox_checked`
+- `inbox_drained`
+- `agent_interrupt_requested`
+- `agent_interrupted`
+- `unlock_requested`
 
-### 方案二：基于“工具回调”的实时查询 (Tool-based Polling)
+## 6. 协调中枢（SwarmCoordinationHub）
+建议中枢内部包含：
+- `MessageHub`（收件箱、优先级、投递）
+- `LockManager`（来自 Task 23）
+- `AgentRuntimeRegistry`（记录 Agent 当前阶段：Idle/Thinking/Editing/Streaming）
 
-如果你希望 Agent B 在处理长任务中能主动“看看有没有新消息”，可以给它一个**“眼睛”**。
+## 7. API / Function 设计（v1）
+- `post_message(to, content, priority, type, metadata)`
+- `check_messages(limit, min_priority)`
+- `read_inbox(clear=true)`
+- `request_unlock(lock_id, reason)`
+- `interrupt_agent(agent_id, reason)`（Leader / urgent）
 
-* **机制：** 给所有 Agent 定义一个内置工具 `check_messages()`。
-* **时机：** 1.  在 Leader 编排的任务流中，显式要求 Agent B 必须先 `check_messages` 再行动。
-2.  Agent B 在逻辑复杂处，可以自主决定调用该工具。
-* **实现：** ```csharp
-[KernelFunction("check_messages")]
-public async Task<string> CheckMessages() {
-var msgs = _inbox.ReadAll();
-return msgs.Any() ? string.Join("\n", msgs) : "没有新消息。";
-}
-```
+## 8. 错误与指引
+冲突返回应包含：
+1. 锁 owner
+2. 锁目标
+3. 建议动作（等待、request_unlock、联系 Leader）
 
-```
+## 9. 实施分期
+1. `v1-a`：消息结构升级（priority + metadata）+ Inbox 读写
+2. `v1-b`：`check_messages` 工具与优先级注入
+3. `v1-c`：与中心锁联动（unlock 请求消息）
+4. `v1-d`：紧急中断（带编辑原子性）
 
-
-* **优缺点：** 消耗一点 Token，但让 Agent 具备了**主动感知**的能力。
-
----
-
-### 方案三：异步“中断与重规划” (Interrupt & Re-plan) —— 最硬核方案
-
-这是实现“实时质疑”和“头脑风暴”最酷炫的办法。
-
-* **机制：** 利用 **流式输出（Streaming）** 和 ** cancellation (取消)**。
-* **时机：** 当 Agent A 发出一条优先级极高的“质疑”或“警告”消息时，`Orchestrator` 直接**强行中止（Cancel）** Agent B 正在进行的 HTTP 请求。
-* **过程：**
-1. Agent B 正在生成代码（流式输出中...）。
-2. Agent A 发送消息：“停！路径选错了！”
-3. `Orchestrator` 触发 `CancellationToken.Cancel()`。
-4. `Orchestrator` 自动组合 `[已生成的残缺代码] + [Agent A 的质疑]` 作为新 Prompt，重新启动 Agent B。
-
-
-* **视觉效果：** 在 UI 上，你会看到 Agent B 的打字机效果突然停住，闪烁一下红光，然后立刻开始重写。这非常有“讨论碰撞”的真实感！
-
----
-
-### 🛠️ 建议的 C# 架构实现：`SwarmMessageHub`
-
-你可以实现一个中心化的消息集散地，让所有的交互都通过这个 Hub 路由：
-
-```csharp
-public class SwarmMessageHub {
-    // 存储每个 Agent 的收件箱
-    private readonly ConcurrentDictionary<string, Queue<SwarmBullet>> _inboxes = new();
-
-    // Agent A 调用此方法发送消息
-    public void Post(string from, string to, string content) {
-        var bullet = new SwarmBullet(from, to, content);
-        _inboxes.GetOrAdd(to, _ => new Queue<SwarmBullet>()).Enqueue(bullet);
-        
-        // 触发 UI 弹幕动画
-        UIBus.Emit(bullet);
-        
-        // 如果是紧急消息，尝试中断目标 Agent 的当前任务
-        if (IsUrgent(content)) {
-            Orchestrator.InterruptAgent(to);
-        }
-    }
-}
-
-```
-
----
-
-### 🍮 针对 PuddingCode 的最佳实践建议
-
-我建议采用 **“方案一 + 方案三”的组合**：
-
-1. **常规交流：** 放在收件箱，等 Agent 下一次“喘息（Request）”时喂给它。这样节省 Token 且逻辑稳健。
-2. **质疑与冲突：** 采用方案三的中断机制。当 Reviewer 发现致命错误时，直接中断 Coder，展现出那种“拍案而起”的即视感。
-
-**这种“异步非阻塞”的通讯架构，能让你的 Swarm 视图真正动起来。**
-
-**你想让我帮你写一个支持“中断-重启”逻辑的 `AgentWrapper` 类吗？**
-它将演示如何在 C# 中利用 `CancellationToken` 优雅地中止 AI 生成并带着新上下文重启。
+## 10. DoD
+1. Agent 间可发送 normal/important/urgent 三类消息。
+2. Inbox 可查询、可清空、可按优先级排序。
+3. 锁冲突自动触发 unlock 请求消息。
+4. urgent 中断遵守编辑原子性，不破坏写事务。
+5. CLI 可见消息摘要与未读计数。
