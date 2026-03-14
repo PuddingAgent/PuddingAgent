@@ -1,6 +1,99 @@
 # PuddingCode 任务与状态看板
 
-最后更新：2026-02-20
+最后更新：2026-03-14
+
+## 2026-03-14 第一批平台任务（Pudding Agent Network V1）
+
+目标：先打通首条真实垂直切片。
+
+目标链路：`CLI -> Platform API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+
+细化任务文档：
+- `Docs/Tasks/task24-platform-v1-first-slice.md`
+
+补充约束：
+- 平台内置支持 Email Channel。
+- 一个 Workspace 可以挂接多个渠道，并为每个渠道声明默认 Agent 或允许 Agent 集合。
+- 渠道接入机制本身必须插件化，便于后续扩展更多渠道。
+
+### A. PuddingPlatform
+
+1. 实现 `ChannelManager` 最小模型与渠道身份映射
+验收标准：能够接收来自 CLI through Platform API 的消息请求，并附带渠道、用户、Workspace 识别信息进入平台；内置支持 Email Channel 基础模型。
+
+2. 实现 `ChannelPluginHost` 与 `IChannelProvider` 注册机制
+验收标准：平台可注册内置渠道 Provider，如 CLI 和 Email；后续新增渠道不需要改核心路由接口定义。
+
+3. 实现 `SessionRouter` 的 Workspace 命中与 AgentTemplate 路由
+验收标准：平台能根据渠道绑定、用户身份/角色、消息类型和基础意图分类，命中正确 Workspace 与 AgentTemplate；支持一个 Workspace 下多个渠道绑定到默认/允许 Agent；路由决策可查询。
+
+4. 实现 `ServiceSession` 自动创建或复用逻辑
+验收标准：收到消息时平台能自动新建或复用 ServiceSession，并可查询 Session 状态、所属 Workspace、所属 Runtime。
+
+5. 实现 `AuthorizationService` 最小权限校验链
+验收标准：平台能在消息进入执行前完成用户、WorkspaceRole、AgentTemplate 三者交集校验；拒绝原因可查询。
+
+6. 实现 `ApprovalService` 最小审批记录链路
+验收标准：高风险动作能生成 ApprovalRecord，支持确认码、过期时间、审批状态查询；CLI 与 HTTP API 可完成批准。
+
+7. 实现 `AuditStore` 与首批审计事件落盘
+验收标准：至少能记录并查询“渠道消息进入、Session 创建/复用、路由决策、审批请求与结果、工具执行、Workflow Step 开始/完成、记忆写入/提升”。
+
+8. 实现 `WorkflowEngine` 最小两到三步执行骨架
+验收标准：平台可执行一个 2 到 3 步 Workflow，支持步骤开始/完成、失败中止和状态查询。
+
+### B. PuddingRuntime
+
+1. 实现 `SessionRuntime` 最小会话承载能力
+验收标准：Runtime 能承载 ServiceSession，持有基础会话状态，并向 Platform 回报 Session 存活与状态。
+
+2. 实现 `AgentRuntime` 最小执行链路
+验收标准：Runtime 能根据 AgentTemplate 创建 AgentInstance，并处理单轮真实 LLM 回复。
+
+3. 实现 `SkillRuntime` 最小内置技能装配
+验收标准：至少支持基础低风险技能注入；Agent 执行时可获得模板声明的最小能力集。
+
+4. 实现 `MemoryRuntime` 最小记忆读写边界
+验收标准：至少区分 Session Memory 与 Workspace Memory；公开群/受限输入默认不能直接写入长期记忆。
+
+5. 实现 `SandboxExecutor` 最小受限执行环境
+验收标准：文件写入、网络访问、Shell/进程执行等高风险操作能够进入受限执行环境，并能被平台审批链控制。
+
+### C. PuddingCLI
+
+1. 改为通过 Platform API 发起消息与会话
+验收标准：CLI 不再直接驱动本地运行时主链路；从 CLI 发消息可获得平台返回的真实 Agent 回复。
+
+2. 增加 Session / Approval / Workflow 查询命令
+验收标准：CLI 可查询 Session 状态、审批待办、Workflow 执行状态。
+
+3. 增加批准命令与确认码提交流程
+验收标准：CLI 可对高风险动作进行批准，且批准结果可在平台查询。
+
+4. 增加路由与审计调试查询
+验收标准：CLI 可查看“某条消息命中了哪个 Agent”“某个动作为何被拒绝”“某个 Workflow 卡在哪一步”。
+
+### D. PuddingAgent
+
+1. 提供少量内置 `AgentTemplate`
+验收标准：至少提供一个对外服务 Agent 模板、一个低风险任务 Agent 模板；可被 Platform 路由命中并由 Runtime 创建实例。
+
+2. 为模板补齐权限画像与运行画像
+验收标准：模板可声明默认能力、受限运行环境、心跳策略与默认记忆策略，并被 Platform/Runtime 共同读取。
+
+### E. 集成验收
+
+1. 打通首条垂直切片
+验收标准：从 CLI 发消息，平台完成 Workspace/AgentTemplate 路由、自动创建或复用 ServiceSession、投递到 Runtime，并返回真实 LLM 回复。
+
+2. 打通首条高风险审批链
+验收标准：高风险动作不会直接执行，而是生成 ApprovalRecord；用户可通过 CLI 或 API 提交确认码，批准后再执行。
+
+3. 打通最小 Workflow 链路
+验收标准：一个 2 到 3 步 Workflow 可以执行完成，且每一步状态、失败和审计事件可查询。
+
+4. 打通最小可观测性链路
+验收标准：至少能查询 Session 状态、Agent 状态、路由决策、审批待办、Workflow 状态与审计事件。
 
 ## 状态定义
 - `done`：已完成并在源码中可用
@@ -50,6 +143,7 @@
 - `Docs/Tasks/task21-subconscious-dual-llm.md`：潜意识/显意识双模型机制设计。
 - `Docs/Tasks/task22-agent-roles-orchestration.md`：角色命名、职责边界、编排模式与 DoD。
 - `Docs/Tasks/task23-central-lock-coordination.md`：中心锁、消息通知、冲突治理与恢复策略。
+- `Docs/Tasks/task24-platform-v1-first-slice.md`：Platform V1 首条垂直切片的类/API 级开发子任务。
 
 ## 五、关键差距（必须补齐）
 1. Prompt 仍为硬编码字符串，无法版本化、灰度、项目级定制。  

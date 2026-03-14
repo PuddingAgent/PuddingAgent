@@ -297,22 +297,3 @@ public class SwarmStateMirror
 }
 ```
 
----
-
-## 十、当前实现状态
-
-### ✅ 已完成
-
-- 双视图切换（Editor / Swarm）
-- `SwarmAgent` 模型（Id, Role, Status, Model, CurrentTask, ParentId, TokensUsed）
-- Swarm 视图基础布局：Agent 列表 + 拓扑图 + Detail 面板 + Event Log
-- 基础控制命令：Spawn Worker, Pause, Resume, Kill, Assign Task
-- Leader/Worker 拓扑分层展示
-
-### 🚧 下一步
-
-1. 实现 `SwarmOrchestrator`（Core 层蜂群编排器）
-2. 连接真实 LLM 实例到 Worker 节点
-3. 实现节点间通信（`SwarmBullet` 事件流）
-4. 用 SkiaSharp 绘制连线动画和能量流
-5. 实现弹幕思维层

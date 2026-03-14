@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Source/">
+    <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
+    <Project Path="Source/PuddingCLI/PuddingCLI.csproj" />
+    <Project Path="Source/PuddingCore/PuddingCore.csproj" />
+    <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
+    <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" Id="5f096dbd-a49e-4bec-98a0-407ffb475c49" />
+    <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Source/PuddingCLITests/PuddingCLITests.csproj" />
+    <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
+  </Folder>
+  <Project Path="Docs/Docs.shproj" Id="405d8746-dcfa-4492-8b75-ae58b99dea44" />
+</Solution>
