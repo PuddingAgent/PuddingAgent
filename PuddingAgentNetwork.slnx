@@ -8,6 +8,7 @@
     <Project Path="E:/github/AgentNetworkPlan/PuddingAgent/Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
     <Project Path="E:/github/AgentNetworkPlan/PuddingAgent/Source/PuddingPlatform/PuddingPlatform.csproj" Id="5f096dbd-a49e-4bec-98a0-407ffb475c49" />
     <Project Path="E:/github/AgentNetworkPlan/PuddingAgent/Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
+    <Project Path="Source/PuddingMemoryEngine/PuddingMemoryEngine.csproj" Id="184bffb0-b17d-495a-971c-faee05af8d8c" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="E:/github/AgentNetworkPlan/PuddingAgent/Source/PuddingCLITests/PuddingCLITests.csproj" />
