@@ -1,6 +1,6 @@
 # Pudding Agent Network
 
-**An Agent OS and collaboration network platform for multi-channel ingress, multi-agent execution, and governed automation.**
+**An Agent OS and collaboration network platform for multi-channel ingress, multi-agent execution, governed automation, and workspace-scoped knowledge infrastructure.**
 
 ![Version](https://img.shields.io/badge/version-v0.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey)
@@ -21,7 +21,7 @@ At a high level:
 - **PuddingGateway** is a PuddingController module for ingress protocols and boundary access.
 - **PuddingRuntime** is the execution plane: sessions, agent instances, memory, skills, tools, and sandboxed execution.
 - **PuddingAgent** defines agent templates, policies, and capability profiles.
-- **PuddingCLI** and **PuddingWeb** are clients and operator surfaces that work through Controller and Gateway interfaces.
+- **PuddingCLI**, **PuddingWeb**, and **PuddingAvalonia** are client and operator surfaces that work through Controller and Gateway interfaces.
 - **PuddingCore** holds shared abstractions, protocols, and models.
 
 ---
@@ -37,6 +37,7 @@ Its target shape is closer to an Agent OS and agent network than a single assist
 - Multi-agent and sub-agent, not only one long-lived assistant
 - Platform-governed execution, not only direct tool calling
 - Audited and approval-aware operations, not only best-effort guardrails
+- Workspace-scoped knowledge, storage, and graph services, not only chat history and prompt context
 
 ---
 
@@ -49,6 +50,9 @@ Its target shape is closer to an Agent OS and agent network than a single assist
 - Support governed automation with approvals, audit trails, memory boundaries, and sandboxing
 - Support Swarm, SubAgent, workflow, and event-driven coordination as first-class primitives
 - Keep channel integration pluggable so future channels can be added without rewriting core routing
+- Provide Workspace-owned knowledge bases, knowledge graphs, and unified storage without exposing infrastructure details to agents
+- Support system-controlled approvals, including client-side voice approval, outside business-agent decision loops
+- Require at least one audit agent per Workspace for supervision, freeze control, and governance escalation
 
 ---
 
@@ -57,7 +61,7 @@ Its target shape is closer to an Agent OS and agent network than a single assist
 The first implementation target is one real vertical slice:
 
 ```text
-CLI -> Platform API -> Workspace routing -> ServiceSession -> Runtime Agent -> real LLM reply
+CLI / Avalonia -> Controller API -> Workspace routing -> ServiceSession -> Runtime Agent -> real LLM reply
 ```
 
 V1 constraints and priorities:
@@ -67,6 +71,9 @@ V1 constraints and priorities:
 - Each ChannelBinding can declare a default Agent and allowed Agent set
 - Channel integration itself must be plugin-based
 - Storage can start with local files and SQLite before moving to larger deployments
+- Workspace knowledge base, unified storage, and knowledge graph must be exposed through Controller-owned services
+- Voice approval is a system-controlled capability, not a business-agent capability
+- Each Workspace should include at least one audit agent
 
 ---
 
@@ -78,7 +85,7 @@ PuddingPlatform
   │   └─ PuddingGateway
   ├─ PuddingRuntime
   ├─ PuddingAgent
-  └─ PuddingCLI / PuddingWeb / External Channels
+  └─ PuddingCLI / PuddingWeb / PuddingAvalonia / External Channels
 ```
 
 Design baseline:
@@ -89,6 +96,9 @@ Design baseline:
 - **Controller owns lower-level policy, routing, and control**
 - **Channels are plugins, not hard-coded branches**
 - **Public or low-trust input must not directly pollute long-term memory**
+- **Knowledge, storage, and graph services belong to the Workspace and are mediated by Controller**
+- **Approvals are system-controlled and can be triggered from trusted clients such as Avalonia**
+- **Audit agents are required governance actors, not optional assistant personas**
 
 ---
 
@@ -101,6 +111,7 @@ That means:
 - Some existing code still reflects the earlier CLI-first implementation
 - The new Platform, Runtime, Agent, and governance layers are now the primary direction
 - The architecture and task docs are currently ahead of the implementation in several areas
+- Several planned components, including PuddingController and PuddingAvalonia, are defined at the architecture level before full code realization
 
 ---
 
@@ -120,6 +131,7 @@ Source/
   PuddingGateway/     transitional project, target module under PuddingController
   PuddingAgent/       agent templates and capability profiles
   PuddingCLI/         CLI client using Controller and Gateway interfaces
+  PuddingAvalonia/    planned desktop client for user-side control and voice approval
   PuddingWeb/         web frontend
   PuddingCode/        legacy coding-agent implementation still being absorbed
   PuddingCodeCLI/     legacy CLI entry point kept during transition
@@ -144,6 +156,8 @@ dotnet run --project Source/PuddingCLI
 ```
 
 The platform is being reshaped around the new architecture, so the most accurate source of intent and near-term scope is the docs set below.
+
+In practice, the current repository should be read as an evolving transition from a coding-agent prototype into an Agent OS with a governed collaboration network, Workspace-owned knowledge services, and multiple control clients.
 
 ---
 
