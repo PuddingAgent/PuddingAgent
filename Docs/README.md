@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-03-14
+最后更新：2026-03-15
 
 ## 文档定位
 
@@ -11,16 +11,22 @@
 ## 建议阅读顺序
 
 1. `Docs/架构.md`
-	 - 总体蓝图、分层边界、治理模型、租户与会话模型、渠道与插件化方向。
-2. `Docs/Tasks.md`
+	 - 架构总览、分层边界与阅读地图。
+2. `Docs/07架构/README.md`
+	 - 模块级架构分册入口，包含 Runtime、Controller、Platform、治理、数据模型与 V1 落地说明。
+
+3. `Docs/Tasks.md`
 	 - 当前任务看板、第一批平台任务、实现优先级与阶段目标。
-3. `Docs/Tasks/task24-platform-v1-first-slice.md`
+
+4. `Docs/Tasks/task24-platform-v1-first-slice.md`
 	 - Platform V1 首条垂直切片，已细化到类与 API 级别。
 
 ## 当前主线文档
 
 - `Docs/架构.md`
-	- Pudding Agent Network 的核心架构图纸。
+	- Pudding Agent Network 的架构总览与阅读入口。
+- `Docs/07架构/README.md`
+	- 按模块拆分后的架构分册目录。
 - `Docs/Tasks.md`
 	- 全局任务看板与当前阶段的实现路线。
 - `Docs/Tasks/task24-platform-v1-first-slice.md`
@@ -39,6 +45,7 @@
 - `Docs/02智能体与智能体运行时/`
 - `Docs/03多智能体/`
 - `Docs/04工具与技能/`
+- `Docs/07架构/`
 
 ### 3. 历史任务与设计演进记录
 
@@ -66,4 +73,4 @@
 
 - 当前仓库仍保留较多旧的 CLI / PuddingCode 原型实现。
 - 文档设计已经先行推进到平台化形态。
-- 因此阅读源码时，应优先以 `Docs/架构.md` 和 `Docs/Tasks.md` 作为目标状态参考，而不是把当前实现误认为最终分层。
+- 因此阅读源码时，应优先以 `Docs/架构.md`、`Docs/07架构/` 和 `Docs/Tasks.md` 作为目标状态参考，而不是把当前实现误认为最终分层。

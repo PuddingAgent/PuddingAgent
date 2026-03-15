@@ -121,6 +121,7 @@ That means:
 PuddingAgentNetwork.slnx
 Docs/
   架构.md
+  07架构/
   Tasks.md
   Tasks/
 Source/
@@ -163,7 +164,8 @@ In practice, the current repository should be read as an evolving transition fro
 
 ## Key Documents
 
-- `Docs/架构.md` - full architecture blueprint
+- `Docs/架构.md` - architecture overview and reading map
+- `Docs/07架构/README.md` - module-level architecture index
 - `Docs/Tasks.md` - platform task board and priorities
 - `Docs/Tasks/task24-platform-v1-first-slice.md` - class and API level breakdown for the first vertical slice
 

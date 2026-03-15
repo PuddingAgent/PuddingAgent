@@ -79,14 +79,14 @@
 1. 实现 `SessionRuntime` 最小会话承载能力
 验收标准：Runtime 能承载 ServiceSession，持有基础会话状态，并向 Controller 回报 Session 存活与状态。
 
-2. 实现 `AgentRuntime` 最小执行链路
+2. 实现 `PuddingRuntime` 最小 Agent 执行链路
 验收标准：Runtime 能根据 AgentTemplate 创建 AgentInstance，并处理单轮真实 LLM 回复。
 
 3. 实现 `SkillRuntime` 最小内置技能装配
 验收标准：至少支持基础低风险技能注入；Agent 执行时可获得模板声明的最小能力集。
 
-4. 实现 `MemoryRuntime` 最小记忆读写边界
-验收标准：至少区分 Session Memory 与 Workspace Memory；公开群/受限输入默认不能直接写入长期记忆。
+4. 实现 `PuddingMemoryEngine` 最小记忆处理链路（作为 `PuddingRuntime` 内模块）
+验收标准：至少区分 Session Memory 与 Workspace Memory；支持记忆召回、候选写回与边界判定；公开群/受限输入默认不能直接写入长期记忆。
 
 5. 实现 `KnowledgeAccessRuntime`
 验收标准：Runtime 可透明访问 Workspace 知识库、知识图谱和统一存储；上层 Agent 不需要感知底层 KV、向量库、PostgreSQL、NFS 或对象存储。

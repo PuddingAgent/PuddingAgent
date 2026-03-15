@@ -432,11 +432,18 @@
 - Agent 可获得模板声明的最小内置能力
 - 第一版先不要求完整 Skill 热加载
 
-#### T24-R-05 `MemoryBoundaryService`
-职责：执行第一版最小记忆边界。
+#### T24-R-05 `PuddingMemoryEngine`
+职责：作为 `PuddingRuntime` 内模块处理第一版记忆召回、边界判定、压缩与候选写回。
+
+建议类：
+- `PuddingMemoryEngine`
+- `MemoryBoundaryService`
+- `MemoryRecallRequest`
+- `MemoryWriteCandidate`
 
 验收标准：
 - 至少区分 `SessionMemory` 与 `WorkspaceMemory`
+- 支持最小记忆召回与候选写回链路
 - 公开群/低信任来源默认不能直接写入长期记忆
 
 #### T24-R-05A `KnowledgeAccessBridge`
