@@ -2,6 +2,7 @@
   <Folder Name="/Source/">
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingCLI/PuddingCLI.csproj" />
+    <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" Id="5f096dbd-a49e-4bec-98a0-407ffb475c49" />

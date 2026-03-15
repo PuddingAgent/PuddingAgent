@@ -6,7 +6,7 @@
 
 这里是 Pudding Agent Network 的设计入口，不再仅服务于旧的 PuddingCode CLI 原型。
 
-当前主线已经切换为一个以 Workspace 为边界、以 Platform + Runtime 为核心、支持多渠道、多智能体、审批审计与记忆治理的 Agent 平台。
+当前主线已经切换为一个以 Workspace 为边界、以 Platform + Controller + Runtime 为核心、支持多渠道、多智能体、审批审计与记忆治理的 Agent OS 与协作网络平台。
 
 ## 建议阅读顺序
 
@@ -53,8 +53,10 @@
 
 ## 当前架构基线
 
-- 产品目标已从“编码代理 CLI”升级为“Agent 平台与网络”。
-- `PuddingPlatform` 是控制面，负责渠道接入、路由、权限、审批、审计、工作流与治理。
+- 产品目标已从“编码代理 CLI”升级为“Agent OS 与协作网络平台”。
+- `PuddingPlatform` 是上层平台层，负责业务逻辑、产品语义与协作网络编排。
+- `PuddingController` 是底层控制面，负责渠道接入、路由、权限、审批、审计、工作流与治理。
+- `PuddingGateway` 是 `PuddingController` 的模块，负责协议入口与边界接入。
 - `PuddingRuntime` 是执行面，负责 Session、Agent、Memory、Skill、Sandbox 与运行态承载。
 - 一个 Workspace 可绑定多个 Channel，并容纳多个 Agent。
 - 平台内置支持 Email Channel，但渠道接入机制本身必须插件化。

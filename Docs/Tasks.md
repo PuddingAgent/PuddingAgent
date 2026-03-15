@@ -1,12 +1,12 @@
-# PuddingCode 任务与状态看板
+# Pudding Agent Network 任务与状态看板
 
-最后更新：2026-03-14
+最后更新：2026-03-15
 
-## 2026-03-14 第一批平台任务（Pudding Agent Network V1）
+## 2026-03-15 第一批平台任务（Pudding Agent Network V1）
 
-目标：先打通首条真实垂直切片。
+目标：先打通首条真实垂直切片，并为知识、存储、治理和多客户端扩展预留稳定接口。
 
-目标链路：`CLI -> Platform API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+目标链路：`CLI / Avalonia -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
 
 细化任务文档：
 - `Docs/Tasks/task24-platform-v1-first-slice.md`
@@ -15,37 +15,69 @@
 - 平台内置支持 Email Channel。
 - 一个 Workspace 可以挂接多个渠道，并为每个渠道声明默认 Agent 或允许 Agent 集合。
 - 渠道接入机制本身必须插件化，便于后续扩展更多渠道。
+- 知识库归属于 Workspace，由 Controller 持有服务端能力，Runtime 提供透明访问支持。
+- 统一存储层由 Controller 持有，Runtime 提供挂载与访问支持，上层 Agent 无感。
+- 知识图谱归属于 Workspace 共享资产，底层先用 PostgreSQL 实现，上层 Agent 无感。
+- 语音批准属于系统控制链路，不属于业务 Agent。
+- 每个 Workspace 至少拥有 1 个审计 Agent。
+- 新增客户端层 `PuddingAvalonia`，作为用户持有的桌面控制端。
 
-### A. PuddingPlatform
+### A. PuddingController
 
 1. 实现 `ChannelManager` 最小模型与渠道身份映射
-验收标准：能够接收来自 CLI through Platform API 的消息请求，并附带渠道、用户、Workspace 识别信息进入平台；内置支持 Email Channel 基础模型。
+验收标准：能够接收来自 CLI through Controller API 的消息请求，并附带渠道、用户、Workspace 识别信息进入平台；内置支持 Email Channel 基础模型。
 
 2. 实现 `ChannelPluginHost` 与 `IChannelProvider` 注册机制
-验收标准：平台可注册内置渠道 Provider，如 CLI 和 Email；后续新增渠道不需要改核心路由接口定义。
+验收标准：Controller 可注册内置渠道 Provider，如 CLI 和 Email；后续新增渠道不需要改核心路由接口定义。
 
 3. 实现 `SessionRouter` 的 Workspace 命中与 AgentTemplate 路由
-验收标准：平台能根据渠道绑定、用户身份/角色、消息类型和基础意图分类，命中正确 Workspace 与 AgentTemplate；支持一个 Workspace 下多个渠道绑定到默认/允许 Agent；路由决策可查询。
+验收标准：Controller 能根据渠道绑定、用户身份/角色、消息类型和基础意图分类，命中正确 Workspace 与 AgentTemplate；支持一个 Workspace 下多个渠道绑定到默认/允许 Agent；路由决策可查询。
 
 4. 实现 `ServiceSession` 自动创建或复用逻辑
-验收标准：收到消息时平台能自动新建或复用 ServiceSession，并可查询 Session 状态、所属 Workspace、所属 Runtime。
+验收标准：收到消息时 Controller 能自动新建或复用 ServiceSession，并可查询 Session 状态、所属 Workspace、所属 Runtime。
 
 5. 实现 `AuthorizationService` 最小权限校验链
-验收标准：平台能在消息进入执行前完成用户、WorkspaceRole、AgentTemplate 三者交集校验；拒绝原因可查询。
+验收标准：Controller 能在消息进入执行前完成用户、WorkspaceRole、AgentTemplate 三者交集校验；拒绝原因可查询。
 
 6. 实现 `ApprovalService` 最小审批记录链路
 验收标准：高风险动作能生成 ApprovalRecord，支持确认码、过期时间、审批状态查询；CLI 与 HTTP API 可完成批准。
 
-7. 实现 `AuditStore` 与首批审计事件落盘
-验收标准：至少能记录并查询“渠道消息进入、Session 创建/复用、路由决策、审批请求与结果、工具执行、Workflow Step 开始/完成、记忆写入/提升”。
+7. 扩展 `ApprovalService` 支持语音批准入口
+验收标准：平台可接收来自客户端的语音批准请求；语音批准与用户身份、审批记录、时间窗口绑定；批准链路由系统控制，不由 Agent 自行放行。
 
-8. 实现 `WorkflowEngine` 最小两到三步执行骨架
-验收标准：平台可执行一个 2 到 3 步 Workflow，支持步骤开始/完成、失败中止和状态查询。
+8. 实现 `AuditStore` 与首批审计事件落盘
+验收标准：至少能记录并查询“渠道消息进入、Session 创建/复用、路由决策、审批请求与结果、工具执行、Workflow Step 开始/完成、记忆写入/提升、Workspace 冻结动作”。
 
-### B. PuddingRuntime
+9. 实现 `WorkflowEngine` 最小两到三步执行骨架
+验收标准：Controller 可执行一个 2 到 3 步 Workflow，支持步骤开始/完成、失败中止和状态查询。
+
+10. 实现 `KnowledgeBaseService` 与 `KnowledgeIndexService`
+验收标准：Workspace 可挂接知识库；支持目录文件导入、RAG 检索、向量召回与 Agent 生产知识的入库/提升；上层 Agent 不直接感知底层数据库。
+
+11. 实现 `UnifiedStorageService`
+验收标准：Controller 可统一管理 NFS 和对象存储访问；支持跨网络或跨物理机 Runtime 访问统一存储；对象存储底层可采用 MinIO Docker。
+
+12. 实现 `KnowledgeGraphService`
+验收标准：Workspace 可共享结构化知识图谱；底层先基于 PostgreSQL 实现实体、关系和查询；Agent 通过统一知识能力间接访问。
+
+13. 实现 `WorkspaceAgentControlService`
+验收标准：可冻结某个 Workspace 内全部 Agent；冻结请求可由审计 Agent 或系统控制入口触发；冻结状态可查询和审计。
+
+### B. PuddingPlatform
+
+1. 实现 `WorkspaceBusinessService`
+验收标准：Platform 能承载 Workspace 级业务逻辑，统一组织知识库、知识图谱、统一存储、Agent 暴露策略与业务流程编排。
+
+2. 实现 `ServiceExposurePolicy`
+验收标准：Platform 能定义某个 Workspace 对哪些渠道暴露哪些 Agent、知识能力和服务形态。
+
+3. 实现 `AuditGovernancePolicy`
+验收标准：Platform 能确保每个 Workspace 至少拥有 1 个审计 Agent，并管理审计 Agent 的冻结、批准和监督策略。
+
+### C. PuddingRuntime
 
 1. 实现 `SessionRuntime` 最小会话承载能力
-验收标准：Runtime 能承载 ServiceSession，持有基础会话状态，并向 Platform 回报 Session 存活与状态。
+验收标准：Runtime 能承载 ServiceSession，持有基础会话状态，并向 Controller 回报 Session 存活与状态。
 
 2. 实现 `AgentRuntime` 最小执行链路
 验收标准：Runtime 能根据 AgentTemplate 创建 AgentInstance，并处理单轮真实 LLM 回复。
@@ -56,12 +88,15 @@
 4. 实现 `MemoryRuntime` 最小记忆读写边界
 验收标准：至少区分 Session Memory 与 Workspace Memory；公开群/受限输入默认不能直接写入长期记忆。
 
-5. 实现 `SandboxExecutor` 最小受限执行环境
+5. 实现 `KnowledgeAccessRuntime`
+验收标准：Runtime 可透明访问 Workspace 知识库、知识图谱和统一存储；上层 Agent 不需要感知底层 KV、向量库、PostgreSQL、NFS 或对象存储。
+
+6. 实现 `SandboxExecutor` 最小受限执行环境
 验收标准：文件写入、网络访问、Shell/进程执行等高风险操作能够进入受限执行环境，并能被平台审批链控制。
 
-### C. PuddingCLI
+### D. PuddingCLI
 
-1. 改为通过 Platform API 发起消息与会话
+1. 改为通过 Controller API 发起消息与会话
 验收标准：CLI 不再直接驱动本地运行时主链路；从 CLI 发消息可获得平台返回的真实 Agent 回复。
 
 2. 增加 Session / Approval / Workflow 查询命令
@@ -73,27 +108,50 @@
 4. 增加路由与审计调试查询
 验收标准：CLI 可查看“某条消息命中了哪个 Agent”“某个动作为何被拒绝”“某个 Workflow 卡在哪一步”。
 
-### D. PuddingAgent
+5. 增加 Workspace 冻结与审计控制命令
+验收标准：CLI 可触发或查询 Workspace 冻结状态，并查看对应审计记录。
+
+### E. PuddingAvalonia
+
+1. 实现桌面客户端基础会话面板
+验收标准：Avalonia 客户端可登录、查看 Workspace、发起消息、查看会话与 Agent 状态。
+
+2. 实现语音批准入口
+验收标准：客户端可采集语音并提交系统批准请求；批准结果与 ApprovalRecord 绑定可查询。
+
+3. 实现 Workspace 控制面板
+验收标准：客户端可触发审计相关控制，例如请求审计 Agent 冻结 Workspace 内全部 Agent。
+
+### F. PuddingAgent
 
 1. 提供少量内置 `AgentTemplate`
-验收标准：至少提供一个对外服务 Agent 模板、一个低风险任务 Agent 模板；可被 Platform 路由命中并由 Runtime 创建实例。
+验收标准：至少提供一个对外服务 Agent 模板、一个低风险任务 Agent 模板；可被 Controller 路由命中并由 Runtime 创建实例。
 
-2. 为模板补齐权限画像与运行画像
-验收标准：模板可声明默认能力、受限运行环境、心跳策略与默认记忆策略，并被 Platform/Runtime 共同读取。
+2. 提供 `AuditAgentTemplate`
+验收标准：每个 Workspace 至少可挂接 1 个审计 Agent 模板；审计 Agent 不接触外部原始信息与业务上下文，只处理结构化、脱敏、受限视图。
 
-### E. 集成验收
+3. 为模板补齐权限画像与运行画像
+验收标准：模板可声明默认能力、受限运行环境、心跳策略与默认记忆策略，并被 Controller/Runtime 共同读取。
+
+### G. 集成验收
 
 1. 打通首条垂直切片
-验收标准：从 CLI 发消息，平台完成 Workspace/AgentTemplate 路由、自动创建或复用 ServiceSession、投递到 Runtime，并返回真实 LLM 回复。
+验收标准：从 CLI 或 Avalonia 发消息，系统完成 Workspace/AgentTemplate 路由、自动创建或复用 ServiceSession、投递到 Runtime，并返回真实 LLM 回复。
 
 2. 打通首条高风险审批链
-验收标准：高风险动作不会直接执行，而是生成 ApprovalRecord；用户可通过 CLI 或 API 提交确认码，批准后再执行。
+验收标准：高风险动作不会直接执行，而是生成 ApprovalRecord；用户可通过 CLI、HTTP API 或客户端语音提交批准，批准后再执行。
 
-3. 打通最小 Workflow 链路
+3. 打通最小知识访问链路
+验收标准：Workspace 级知识库、知识图谱与统一存储可被 Runtime 透明访问，并为 Agent 提供无感知识支持。
+
+4. 打通最小审计冻结链路
+验收标准：用户可通过系统控制入口请求审计 Agent 冻结 Workspace 内全部 Agent；冻结结果、审批与审计状态可查询。
+
+5. 打通最小 Workflow 链路
 验收标准：一个 2 到 3 步 Workflow 可以执行完成，且每一步状态、失败和审计事件可查询。
 
-4. 打通最小可观测性链路
-验收标准：至少能查询 Session 状态、Agent 状态、路由决策、审批待办、Workflow 状态与审计事件。
+6. 打通最小可观测性链路
+验收标准：至少能查询 Session 状态、Agent 状态、路由决策、审批待办、Workflow 状态、知识访问链路与审计事件。
 
 ## 状态定义
 - `done`：已完成并在源码中可用

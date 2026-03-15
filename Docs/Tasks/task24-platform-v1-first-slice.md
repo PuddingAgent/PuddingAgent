@@ -2,21 +2,21 @@
 
 状态：`design`
 优先级：`P0`
-最后更新：2026-03-14
+最后更新：2026-03-15
 
 ## 1. 目标
 把第一条真实垂直切片拆到可直接编码的类/API 级别。
 
 目标链路：
 
-`CLI -> Platform API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+`CLI / Avalonia -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
 
 这条切片完成后，系统至少应具备：
 
-- 渠道消息进入 Platform
-- Platform 命中 Workspace 与 AgentTemplate
-- Platform 自动创建或复用 `ServiceSession`
-- Platform 将请求投递到 Runtime
+- 渠道消息进入 Controller
+- Controller 命中 Workspace 与 AgentTemplate
+- Controller 自动创建或复用 `ServiceSession`
+- Controller 将请求投递到 Runtime
 - Runtime 返回真实 LLM 回复
 - CLI 可以查询 Session、路由决策、审计事件、Runtime Agent 状态
 
@@ -24,6 +24,8 @@
 
 - 内置支持 Email Channel
 - 一个 Workspace 可以挂接多个渠道，并为每个渠道声明默认 Agent 或允许 Agent 集合
+- 为 Workspace 级知识库、统一存储层、知识图谱预留稳定接入点
+- 为语音批准、审计 Agent 冻结和 PuddingAvalonia 客户端预留接口
 
 ## 2. 非目标
 第一条切片不包含以下复杂能力：
@@ -36,14 +38,17 @@
 - 自动热更新 Workspace 配置
 
 ## 3. 设计约束
-- 路由权威在 `PuddingPlatform`
+- 路由权威在 `PuddingController`
+- 平台业务语义在 `PuddingPlatform`
 - 会话权威在 `PuddingRuntime`
 - 第一条切片必须走真实 LLM 回复，不接受纯模拟闭环
 - Agent 未命中时必须返回明确错误并记录审计事件
-- CLI 必须通过 Platform API 进入，不允许继续直连本地运行态主链路
+- CLI 必须通过 Controller API 进入，不允许继续直连本地运行态主链路
 - 渠道接入机制必须插件化，避免后续新增渠道时改动平台核心路由主干
+- 知识库、统一存储层、知识图谱的服务端能力由 `PuddingController` 持有，`PuddingRuntime` 提供透明访问支持
+- 每个 Workspace 至少应预留 1 个 `AuditAgent`
 
-## 4. PuddingPlatform 细化任务
+## 4. PuddingController 细化任务
 
 ### 4.1 配置与目录加载
 
@@ -56,11 +61,15 @@
 - `AgentTemplateDefinition`
 - `ChannelBindingDefinition`
 - `EmailChannelDefinition`
+- `KnowledgeBaseDefinition`
+- `StorageBindingDefinition`
+- `KnowledgeGraphDefinition`
+- `AuditAgentBindingDefinition`
 - `PermissionPolicyDefinition`
 
 输入：
 - Workspace YAML
-- Platform 持久化索引
+- Controller 持久化索引
 
 输出：
 - 可供路由层查询的 `WorkspaceDefinition`
@@ -265,6 +274,39 @@
 - 支持确认码和过期时间
 - 支持 CLI 与 HTTP API 批准
 
+#### T24-P-10A `VoiceApprovalService`
+职责：处理来自客户端的语音批准链路。
+
+建议类：
+- `VoiceApprovalService`
+- `VoiceApprovalRequest`
+- `ApprovalVoiceBinding`
+
+建议 API：
+- `POST /api/approvals/{approvalId}/voice-confirm`
+
+验收标准：
+- 支持客户端提交语音批准请求
+- 语音批准与 `ApprovalId`、用户身份、时间窗口绑定
+- 语音批准属于系统控制链路，不由业务 Agent 解释或放行
+
+#### T24-P-10B `WorkspaceAgentControlService`
+职责：处理 Workspace 级冻结与恢复控制。
+
+建议类：
+- `WorkspaceAgentControlService`
+- `WorkspaceFreezeRecord`
+
+建议 API：
+- `POST /api/workspaces/{workspaceId}/freeze`
+- `POST /api/workspaces/{workspaceId}/resume`
+- `GET /api/workspaces/{workspaceId}/freeze-state`
+
+验收标准：
+- 可冻结某个 Workspace 内全部 Agent
+- 冻结请求可与审计链路关联
+- 冻结状态与恢复状态可查询
+
 ### 4.6 审计与查询
 
 #### T24-P-11 `AuditEventStore`
@@ -289,6 +331,49 @@
 验收标准：
 - 审计事件可按 `SessionId`、`MessageId`、`ApprovalId` 查询
 - 路由失败和权限拒绝都能看到审计记录
+
+### 4.7 知识基础设施与统一存储
+
+#### T24-P-12 `KnowledgeBaseService`
+职责：承载 Workspace 级知识库服务。
+
+建议类：
+- `KnowledgeBaseService`
+- `KnowledgeDocumentRecord`
+- `KnowledgeChunkRecord`
+- `KnowledgeRetrievalService`
+
+验收标准：
+- Workspace 可注册目录文件知识源
+- 支持 RAG 检索与向量召回预留接口
+- 支持 Agent 生产知识的候选入库与提升
+
+#### T24-P-13 `UnifiedStorageService`
+职责：承载跨网络统一存储服务。
+
+建议类：
+- `UnifiedStorageService`
+- `StorageBindingRecord`
+- `ObjectStorageDescriptor`
+- `NfsMountDescriptor`
+
+验收标准：
+- Controller 可管理对象存储与 NFS 存储绑定
+- Runtime 可获得统一存储访问描述
+- 第一版对象存储底层可采用 MinIO Docker
+
+#### T24-P-14 `KnowledgeGraphService`
+职责：承载 Workspace 共享知识图谱。
+
+建议类：
+- `KnowledgeGraphService`
+- `KnowledgeNodeRecord`
+- `KnowledgeEdgeRecord`
+
+验收标准：
+- Workspace 可共享结构化知识图谱
+- 底层先使用 PostgreSQL 预留实现
+- 上层 Agent 通过统一知识服务间接使用图谱
 
 ## 5. PuddingRuntime 细化任务
 
@@ -354,6 +439,14 @@
 - 至少区分 `SessionMemory` 与 `WorkspaceMemory`
 - 公开群/低信任来源默认不能直接写入长期记忆
 
+#### T24-R-05A `KnowledgeAccessBridge`
+职责：为 Runtime 提供对知识库、统一存储、知识图谱的透明访问支持。
+
+验收标准：
+- Runtime 可读取 Workspace 知识库检索结果
+- Runtime 可访问统一存储层挂载或对象引用
+- Runtime 可读取知识图谱查询结果而不暴露底层数据库细节给 Agent
+
 #### T24-R-06 `SandboxExecutor`
 职责：承接高风险动作的受限执行。
 
@@ -369,7 +462,7 @@
 ## 6. PuddingCLI 细化任务
 
 #### T24-C-01 `PlatformApiClient`
-职责：统一调用 Platform HTTP API。
+职责：统一调用 Controller HTTP API，并兼容 Platform 上层业务入口。
 
 验收标准：
 - CLI 能发送消息、查询 Session、查询审批、查询审计
@@ -422,6 +515,7 @@
 建议模板：
 - `workspace-service-agent`
 - `workspace-task-agent`
+- `workspace-audit-agent`
 
 验收标准：
 - Platform 能命中这些模板
@@ -440,9 +534,39 @@
 - Platform 与 Runtime 都能读取这些画像
 - 权限与沙箱选择能按模板生效
 
-## 8. 首条切片 API 草案
+#### T24-A-03 `AuditAgentTemplate`
+职责：提供 Workspace 内最低配审计 Agent 模板。
 
-### Platform API
+验收标准：
+- 每个 Workspace 至少可声明 1 个审计 Agent
+- 审计 Agent 只读取结构化、脱敏、受限视图
+- 审计 Agent 可参与冻结、批准、拒绝、质询链路
+
+## 8. PuddingAvalonia 预留任务
+
+#### T24-V-01 `AvaloniaPlatformClient`
+职责：提供桌面客户端与 Platform/Controller 的交互基础。
+
+验收标准：
+- 客户端可发起消息、查看会话、查看审批、查看审计事件
+
+#### T24-V-02 `VoiceApprovalClient`
+职责：提供语音批准入口。
+
+验收标准：
+- 客户端可采集语音并提交批准请求
+- 批准结果与 `ApprovalRecord` 可关联查询
+
+#### T24-V-03 `WorkspaceControlPanel`
+职责：提供 Workspace 控制与冻结入口。
+
+验收标准：
+- 客户端可触发 Workspace 冻结请求
+- 客户端可查看冻结状态、审计记录与审计 Agent 处理结果
+
+## 9. 首条切片 API 草案
+
+### Controller API
 
 ```text
 POST   /api/messages
@@ -452,10 +576,14 @@ GET    /api/sessions/{sessionId}
 GET    /api/sessions
 POST   /api/approvals
 POST   /api/approvals/{approvalId}/confirm
+POST   /api/approvals/{approvalId}/voice-confirm
 GET    /api/approvals/{approvalId}
 GET    /api/approvals
 GET    /api/audit-events
 POST   /api/platform/workspaces/reload
+POST   /api/workspaces/{workspaceId}/freeze
+POST   /api/workspaces/{workspaceId}/resume
+GET    /api/workspaces/{workspaceId}/freeze-state
 ```
 
 ### Runtime API
@@ -467,7 +595,7 @@ GET    /runtime/sessions/{sessionId}
 GET    /runtime/agents/{agentId}
 ```
 
-## 9. 实现顺序（建议）
+## 10. 实现顺序（建议）
 1. `WorkspaceCatalog` + `MessageIngressController`
 2. `ChannelIdentityResolver` + `WorkspaceRouteResolver`
 3. `AgentTemplateRouteResolver` + `ServiceSessionService`
@@ -477,13 +605,16 @@ GET    /runtime/agents/{agentId}
 7. `PlatformApiClient` + `pudding send`
 8. `AuthorizationService` + `ApprovalService`
 9. `SandboxExecutor`
+10. `KnowledgeBaseService` + `KnowledgeAccessBridge`
+11. `UnifiedStorageService` + `KnowledgeGraphService`
+12. `VoiceApprovalService` + `AvaloniaPlatformClient`
 
-## 10. DoD
+## 11. DoD
 以下条件同时满足，Task 24 才算完成：
 
-1. CLI 能通过 Platform API 发消息。
-2. Platform 能命中 Workspace 与 AgentTemplate。
-3. Platform 能自动创建或复用 `ServiceSession`。
+1. CLI 能通过 Controller API 发消息。
+2. Controller 能命中 Workspace 与 AgentTemplate。
+3. Controller 能自动创建或复用 `ServiceSession`。
 4. Runtime 能创建 AgentInstance 并返回真实 LLM 回复。
 5. 路由决策、Session 状态、审计事件、Runtime Agent 状态都可查询。
 6. Agent 未命中时返回明确错误并记录审计。

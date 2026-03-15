@@ -1,6 +1,6 @@
 # Pudding Agent Network
 
-**A workspace-scoped agent operations platform for multi-channel ingress, multi-agent execution, and governed automation.**
+**An Agent OS and collaboration network platform for multi-channel ingress, multi-agent execution, and governed automation.**
 
 ![Version](https://img.shields.io/badge/version-v0.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey)
@@ -12,23 +12,25 @@
 
 Pudding Agent Network is the product and platform direction of this repository.
 
-It is not just a coding CLI. It is a platform for running agents behind a unified control plane, with clear workspace boundaries, pluggable channels, auditable execution, and support for multi-agent and sub-agent collaboration.
+It is not just a coding CLI, and not merely a single-agent framework. It is closer to an Agent OS with a governed collaboration network: a platform for running, coordinating, auditing, and controlling multiple agents behind a unified platform and control model.
 
 At a high level:
 
-- **PuddingPlatform** is the control plane: channel ingress, routing, auth, approvals, audit, workflow, and governance.
+- **PuddingPlatform** is the upper platform layer for business logic, product semantics, and collaboration-network orchestration.
+- **PuddingController** is the lower control plane: routing, auth, approvals, audit, workflow, and governance.
+- **PuddingGateway** is a PuddingController module for ingress protocols and boundary access.
 - **PuddingRuntime** is the execution plane: sessions, agent instances, memory, skills, tools, and sandboxed execution.
 - **PuddingAgent** defines agent templates, policies, and capability profiles.
-- **PuddingCLI** and **PuddingWeb** are clients and operator surfaces.
+- **PuddingCLI** and **PuddingWeb** are clients and operator surfaces that work through Controller and Gateway interfaces.
 - **PuddingCore** holds shared abstractions, protocols, and models.
 
 ---
 
 ## Product Definition
 
-Pudding Agent Network is a Workspace-centered platform that binds channels, users, agents, memory, approvals, and workflows into one governed operating model.
+Pudding Agent Network is a Workspace-centered Agent OS that binds channels, users, agents, memory, approvals, and workflows into one governed operating model.
 
-Its target shape is closer to an agent network than a single assistant:
+Its target shape is closer to an Agent OS and agent network than a single assistant:
 
 - Multi-user, not only single-user local interaction
 - Multi-channel, not only terminal input
@@ -71,30 +73,20 @@ V1 constraints and priorities:
 ## Architecture Snapshot
 
 ```text
-PuddingCLI / PuddingWeb / External Channels
-                |
-                v
-         PuddingPlatform
-  ingress, routing, auth, approval,
-  workflow, audit, governance
-                |
-                v
-         PuddingRuntime
-  session runtime, agent runtime,
-  memory runtime, skill runtime,
-  sandboxed execution
-                |
-                v
-           PuddingCore
-  shared abstractions, models,
-  tool and skill contracts
+PuddingPlatform
+  ├─ PuddingController
+  │   └─ PuddingGateway
+  ├─ PuddingRuntime
+  ├─ PuddingAgent
+  └─ PuddingCLI / PuddingWeb / External Channels
 ```
 
 Design baseline:
 
 - **Workspace is the main governance boundary**
 - **Runtime is the authority for hot session state**
-- **Platform owns global policy, routing, and control**
+- **Platform owns upper business logic and product semantics**
+- **Controller owns lower-level policy, routing, and control**
 - **Channels are plugins, not hard-coded branches**
 - **Public or low-trust input must not directly pollute long-term memory**
 
@@ -123,10 +115,11 @@ Docs/
 Source/
   PuddingCore/        shared abstractions, protocols, models
   PuddingRuntime/     execution plane host
-  PuddingPlatform/    control plane host
-  PuddingGateway/     platform gateway module
+  PuddingController/  planned control plane host
+  PuddingPlatform/    platform layer and network governance host
+  PuddingGateway/     transitional project, target module under PuddingController
   PuddingAgent/       agent templates and capability profiles
-  PuddingCLI/         CLI client and operator surface
+  PuddingCLI/         CLI client using Controller and Gateway interfaces
   PuddingWeb/         web frontend
   PuddingCode/        legacy coding-agent implementation still being absorbed
   PuddingCodeCLI/     legacy CLI entry point kept during transition
