@@ -31,6 +31,8 @@ public sealed class InMemoryAuditEventStore : IAuditEventStore
         var q = _events.AsEnumerable();
         if (workspaceId is not null) q = q.Where(e => e.WorkspaceId == workspaceId);
         if (sessionId is not null) q = q.Where(e => e.SessionId == sessionId);
+        if (messageId is not null) q = q.Where(e => e.MessageId == messageId);
+        if (approvalId is not null) q = q.Where(e => e.ApprovalId == approvalId);
         return Task.FromResult<IReadOnlyList<AuditEventRecord>>(
             q.OrderByDescending(e => e.Timestamp).Take(limit).ToList());
     }

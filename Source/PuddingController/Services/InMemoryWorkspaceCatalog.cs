@@ -47,4 +47,12 @@ public sealed class InMemoryWorkspaceCatalog : IWorkspaceCatalog
 
     public IReadOnlyList<WorkspaceDefinition> GetAll()
         => _workspaces.Values.ToList();
+
+    /// <summary>新增或替换 Workspace。</summary>
+    public void Upsert(WorkspaceDefinition workspace)
+        => _workspaces[workspace.WorkspaceId] = workspace;
+
+    /// <summary>删除 Workspace，返回是否存在。</summary>
+    public bool Remove(string workspaceId)
+        => _workspaces.TryRemove(workspaceId, out _);
 }

@@ -47,4 +47,8 @@ public sealed class AgentSessionManager
     /// <summary>列出所有活跃实例。</summary>
     public IReadOnlyList<AgentInstanceRecord> ListActive() =>
         _instances.Values.Where(i => i.Status == AgentInstanceStatus.Running).ToList();
+
+    /// <summary>移除实例记录（用于超时清理）。</summary>
+    public void Remove(string sessionId) =>
+        _instances.TryRemove(sessionId, out _);
 }

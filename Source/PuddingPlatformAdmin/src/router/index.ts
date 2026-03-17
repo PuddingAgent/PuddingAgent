@@ -46,7 +46,7 @@ export const constantRoutes: RouteRecordRaw[] = [
  * asyncRoutes - 需要权限判断的路由（后续扩展）
  */
 export const asyncRoutes: RouteRecordRaw[] = [
-  // 示例：workspace 管理
+  // Workspace 管理
   {
     path: '/workspace',
     component: Layout,
@@ -61,6 +61,7 @@ export const asyncRoutes: RouteRecordRaw[] = [
       },
     ],
   },
+  // Agent 模板
   {
     path: '/agent',
     component: Layout,
@@ -71,7 +72,67 @@ export const asyncRoutes: RouteRecordRaw[] = [
         path: 'list',
         name: 'AgentList',
         component: () => import('@/views/agent/list.vue'),
-        meta: { title: '智能体列表', icon: 'List' },
+        meta: { title: 'Agent 模板', icon: 'List' },
+      },
+    ],
+  },
+  // 审计
+  {
+    path: '/audit',
+    component: Layout,
+    redirect: '/audit/index',
+    meta: { title: '审计', icon: 'Document' },
+    children: [
+      {
+        path: 'index',
+        name: 'Audit',
+        component: () => import('@/views/audit/index.vue'),
+        meta: { title: '审计事件', icon: 'Document' },
+      },
+    ],
+  },
+  // 审批
+  {
+    path: '/approval',
+    component: Layout,
+    redirect: '/approval/index',
+    meta: { title: '审批', icon: 'Bell' },
+    children: [
+      {
+        path: 'index',
+        name: 'Approval',
+        component: () => import('@/views/approval/index.vue'),
+        meta: { title: '审批管理', icon: 'Bell' },
+      },
+    ],
+  },
+  // Runtime 会话
+  {
+    path: '/session',
+    component: Layout,
+    redirect: '/session/index',
+    meta: { title: 'Runtime 会话', icon: 'Connection' },
+    children: [
+      {
+        path: 'index',
+        name: 'Session',
+        component: () => import('@/views/session/index.vue'),
+        meta: { title: 'Runtime 会话', icon: 'Connection' },
+      },
+    ],
+  },
+  // 对话测试
+  {
+    path: '/chat',
+    component: Layout,
+    redirect: '/chat/index',
+    meta: { title: '对话测试', icon: 'ChatDotRound' },
+    children: [
+      {
+        path: 'index',
+        name: 'Chat',
+        component: () => import('@/views/chat/index.vue'),
+        meta: { title: '对话测试', icon: 'ChatDotRound' },
       },
     ],
   },

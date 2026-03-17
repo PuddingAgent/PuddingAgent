@@ -14,6 +14,7 @@ namespace PuddingRuntime.Services;
 public sealed class AgentExecutionService
 {
     private readonly AgentSessionManager _sessionManager;
+    private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;
     private readonly ILogger<AgentExecutionService> _logger;
     private readonly IConfiguration _configuration;
 
@@ -22,10 +23,12 @@ public sealed class AgentExecutionService
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
+        InMemoryRuntimeSessionStore runtimeSessionStore,
         ILogger<AgentExecutionService> logger,
         IConfiguration configuration)
     {
         _sessionManager = sessionManager;
+        _runtimeSessionStore = runtimeSessionStore;
         _logger = logger;
         _configuration = configuration;
     }
@@ -41,11 +44,18 @@ public sealed class AgentExecutionService
             // 1. 获取/创建 Agent 实例
             var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId);
 
-            // 2. 获取 Agent 模板
+            // 2. 登记/更新 RuntimeSessionStore 热状态
+            _runtimeSessionStore.GetOrCreate(
+                request.SessionId,
+                instance.AgentInstanceId,
+                request.WorkspaceId,
+                request.AgentTemplateId);
+
+            // 3. 获取 Agent 模板
             var template = BuiltInAgentTemplates.FindById(request.AgentTemplateId)
                            ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
 
-            // 3. 构建对话历史
+            // 4. 构建对话历史
             var history = _histories.GetOrAdd(request.SessionId, _ => []);
             if (history.Count == 0 && !string.IsNullOrEmpty(template.SystemPrompt))
             {
@@ -53,18 +63,19 @@ public sealed class AgentExecutionService
             }
             history.Add(new ChatMessage(ChatRole.User, request.MessageText));
 
-            // 4. 调用 LLM
+            // 5. 调用 LLM
             var llm = CreateLlmGateway();
             var response = await llm.ChatAsync(history, [], ct);
 
-            // 5. 提取回复
+            // 6. 提取回复
             var replyText = response.Content ?? "(no response)";
             history.Add(new ChatMessage(ChatRole.Assistant, replyText));
 
-            // 6. 裁剪历史以避免超 token（简单策略：保留 system + 最近 N 条）
+            // 7. 裁剪历史以避免超 token（简单策略：保留 system + 最近 N 条）
             TrimHistory(history, template.Runtime.MaxContextTokens);
 
             _sessionManager.Touch(request.SessionId);
+            _runtimeSessionStore.Touch(request.SessionId);
 
             _logger.LogInformation("[AgentExec] session={SessionId} reply length={Len}",
                 request.SessionId, replyText.Length);

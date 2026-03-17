@@ -12,6 +12,9 @@ builder.Services.AddHttpClient<PlatformApiClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// ── 注册 Workspace 业务层服务 ──────────────────────────────
+builder.Services.AddScoped<WorkspaceBusinessService>();
+
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())

@@ -7,7 +7,11 @@ builder.Services.AddEndpointsApiExplorer();
 
 // ── Runtime 服务 ──────────────────────────────────────
 builder.Services.AddSingleton<AgentSessionManager>();
+builder.Services.AddSingleton<InMemoryRuntimeSessionStore>();
 builder.Services.AddSingleton<AgentExecutionService>();
+
+// ── 后台心跳清理服务 ─────────────────────────────────
+builder.Services.AddHostedService<HeartbeatService>();
 
 var app = builder.Build();
 

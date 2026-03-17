@@ -6,15 +6,34 @@
 
 目标：先打通首条真实垂直切片，并为知识、存储、治理和多客户端扩展预留稳定接口。
 
-目标链路：`CLI  -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
-
-第2目标链路
 目标链路：`PuddingPlatform（含admin管理界面，PuddingPlatformAdmin）  -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
 
 
-我们桌面端PuddingAvalonia（优先级最低）优先级最低。
+我们桌面端PuddingAvalonia（不需要开发）、CLI（暂时不需要开发）等优先级最低。
+
+## 部署方式
+
+使用docker compose
+
+``
+
+Nginx容器：反向代理访问PuddingPlatform、PuddingPlatformAdmin、PuddingController的流量
+PostgreSQL容器：数据库
+Redis容器：KV缓存
+RabbitMQ容器：内部和外部的事件订阅
+MQTTServer容器：物联网设备订阅（可选）
 
 
+
+PuddingPlatform容器
+PuddingPlatformAdmin容器
+PuddingController容器
+PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置PuddingController的容器名（作为访问域名），PuddingRuntime可以访问并注册到PuddingController）
+
+
+
+``
+## 总览
 
 总览文档：
 - [Tasks/task24-platform-v1-first-slice.md](Tasks/task24-platform-v1-first-slice.md)

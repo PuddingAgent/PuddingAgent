@@ -27,6 +27,11 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      '/runtime-api': {
+        target: 'http://localhost:5100',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/runtime-api/, ''),
+      },
     },
   },
 })

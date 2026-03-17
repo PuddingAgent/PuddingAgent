@@ -5,6 +5,13 @@ using PuddingGateway.Adapters;
 var builder = WebApplication.CreateBuilder(args);
 
 // ── 基础设施 DI ──────────────────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.WithOrigins("http://localhost:9528", "http://localhost:9527")
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -12,6 +19,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<InMemoryWorkspaceCatalog>();
 builder.Services.AddSingleton<InMemorySessionRepository>();
 builder.Services.AddSingleton<InMemoryAuditEventStore>();
+builder.Services.AddSingleton<InMemoryRouteDecisionStore>();
+builder.Services.AddSingleton<InMemoryApprovalService>();
+builder.Services.AddSingleton<AuthorizationService>();
+builder.Services.AddSingleton<GatewayEgressService>();
 builder.Services.AddSingleton<RuntimeDispatcher>();
 builder.Services.AddSingleton<SessionRouter>();
 
@@ -47,6 +58,7 @@ if (!string.IsNullOrWhiteSpace(runtimeEndpoint))
 await gatewayHost.StartAllAsync();
 
 // ── 中间件管道 ──────────────────────────────────────
+app.UseCors();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
 
