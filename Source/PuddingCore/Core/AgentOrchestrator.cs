@@ -18,6 +18,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private readonly List<ChatMessage> _history;
     private readonly List<IAgentHook> _hooks;
     private readonly ContextBudgetOptions _contextBudget;
+    private readonly IHistoryCompressor? _historyCompressor;
 
     /// <summary>
     /// Gets the role of this Agent instance.
@@ -39,7 +40,8 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         WorkerScope? scope = null,
         ISkillRegistry? skillRegistry = null,
         IEnumerable<IAgentHook>? hooks = null,
-        ContextBudgetOptions? contextBudget = null)
+        ContextBudgetOptions? contextBudget = null,
+        IHistoryCompressor? historyCompressor = null)
     {
         _llm = llm;
         _tools = tools;
@@ -49,6 +51,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         _skillRegistry = skillRegistry;
         _hooks = hooks?.ToList() ?? [];
         _contextBudget = contextBudget ?? new ContextBudgetOptions();
+        _historyCompressor = historyCompressor;
 
         var systemPrompt = PromptTemplateLoader.BuildSystemPrompt(role, scope, project);
 
@@ -106,7 +109,10 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
                 yield break;
             }
 
-            ContextBudgetManager.TrimInPlace(_history, _contextBudget);
+            if (_historyCompressor is not null)
+                await ContextBudgetManager.CompressAndTrimAsync(_history, _contextBudget, _historyCompressor, ct);
+            else
+                ContextBudgetManager.TrimInPlace(_history, _contextBudget);
             yield return new ThinkingEvent("Calling LLM...");
 
             // Use a Channel so the SSE reader (in try/catch) can push events

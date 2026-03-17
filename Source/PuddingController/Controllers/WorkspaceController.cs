@@ -12,10 +12,12 @@ namespace PuddingController.Controllers;
 public class WorkspaceController : ControllerBase
 {
     private readonly InMemoryWorkspaceCatalog _catalog;
+    private readonly InMemoryAuditEventStore _auditStore;
 
-    public WorkspaceController(InMemoryWorkspaceCatalog catalog)
+    public WorkspaceController(InMemoryWorkspaceCatalog catalog, InMemoryAuditEventStore auditStore)
     {
         _catalog = catalog;
+        _auditStore = auditStore;
     }
 
     [HttpGet]
@@ -63,21 +65,37 @@ public class WorkspaceController : ControllerBase
 
     /// <summary>冻结 Workspace——拒绝一切新的 Agent 调度。</summary>
     [HttpPost("{workspaceId}/freeze")]
-    public ActionResult Freeze(string workspaceId)
+    public async Task<ActionResult> Freeze(string workspaceId, CancellationToken ct)
     {
         var ws = _catalog.GetWorkspace(workspaceId);
         if (ws is null) return NotFound();
         _catalog.Upsert(ws with { IsFrozen = true });
+
+        await _auditStore.RecordAsync(new AuditEventRecord
+        {
+            EventType = AuditEventType.WorkspaceFrozen,
+            WorkspaceId = workspaceId,
+            Detail = "Workspace frozen by API"
+        }, ct);
+
         return Ok(new { workspaceId, isFrozen = true });
     }
 
     /// <summary>解冻 Workspace。</summary>
     [HttpPost("{workspaceId}/unfreeze")]
-    public ActionResult Unfreeze(string workspaceId)
+    public async Task<ActionResult> Unfreeze(string workspaceId, CancellationToken ct)
     {
         var ws = _catalog.GetWorkspace(workspaceId);
         if (ws is null) return NotFound();
         _catalog.Upsert(ws with { IsFrozen = false });
+
+        await _auditStore.RecordAsync(new AuditEventRecord
+        {
+            EventType = AuditEventType.WorkspaceResumed,
+            WorkspaceId = workspaceId,
+            Detail = "Workspace unfrozen by API"
+        }, ct);
+
         return Ok(new { workspaceId, isFrozen = false });
     }
 

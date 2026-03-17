@@ -8,6 +8,14 @@ public sealed record RuntimeNodeInfo
     public RuntimeNodeStatus Status { get; init; } = RuntimeNodeStatus.Online;
     public DateTimeOffset LastHeartbeat { get; init; } = DateTimeOffset.UtcNow;
     public int ActiveSessionCount { get; init; }
+    /// <summary>是否为嵌入式桌面宿主节点。</summary>
+    public bool EmbeddedMode { get; init; }
+    /// <summary>宿主类型标识，例如 "DemoDesktopApp"。</summary>
+    public string? HostType { get; init; }
+    /// <summary>嵌入节点暴露的原生能力列表（注册时上报）。</summary>
+    public IReadOnlyList<NativeCapabilityDescriptor> NativeCapabilities { get; init; } = [];
+    /// <summary>嵌入节点是否被冻结（冻结时拒绝原生能力调用）。</summary>
+    public bool IsFrozen { get; init; }
 }
 
 public enum RuntimeNodeStatus
@@ -69,6 +77,12 @@ public sealed record RuntimeRegisterRequest
     public required string Endpoint { get; init; }
     /// <summary>当前活跃 Session 数，用于负载感知路由。</summary>
     public int ActiveSessionCount { get; init; }
+    /// <summary>是否为嵌入式桌面宿主节点。</summary>
+    public bool EmbeddedMode { get; init; }
+    /// <summary>宿主类型标识，例如 "DemoDesktopApp"。</summary>
+    public string? HostType { get; init; }
+    /// <summary>注册时上报的原生能力列表（嵌入模式专用）。</summary>
+    public IReadOnlyList<NativeCapabilityDescriptor> NativeCapabilities { get; init; } = [];
 }
 
 /// <summary>Controller 返回给 Runtime 的注册确认。</summary>
@@ -76,5 +90,7 @@ public sealed record RuntimeRegisterResponse
 {
     public bool Accepted { get; init; }
     public string? Message { get; init; }
+    /// <summary>当节点处于嵌入模式时，Controller 下发当前冻结状态。</summary>
+    public bool IsFrozen { get; init; }
 }
 

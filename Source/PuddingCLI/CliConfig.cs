@@ -100,6 +100,14 @@ public sealed class ContextBudgetConfig
     public int MaxPromptTokens { get; set; } = 24000;
     public int MaxHistoryMessages { get; set; } = 80;
     public int PreserveTailMessages { get; set; } = 8;
+    /// <summary>
+    /// When true, old history messages are summarised via the subconscious LLM
+    /// instead of being silently dropped when the context budget is exceeded.
+    /// Requires the subconscious model to be configured.
+    /// </summary>
+    public bool UseCompression { get; set; } = false;
+    /// <summary>Number of messages per compression pass (default: 16).</summary>
+    public int CompressionWindowSize { get; set; } = 16;
 }
 
 public sealed class HookConfig

@@ -1,5 +1,6 @@
 ﻿using PuddingMemoryEngine;
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.Demo;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,12 @@ var controllerBase = builder.Configuration["Pudding:ControllerEndpoint"]
     ?? "http://localhost:5000";
 builder.Services.AddHttpClient<KnowledgeAccessRuntime>(c =>
     c.BaseAddress = new Uri(controllerBase));
+
+// ── 嵌入式宿主原生能力桥接 ────────────────────────────
+// 注册所有实现了 INativeHostBridge 的桥接器
+builder.Services.AddSingleton<INativeHostBridge, DemoDesktopHostBridge>();
+// NativeCapabilityExecutor 聚合所有 bridge，供执行与注册上报使用
+builder.Services.AddSingleton<NativeCapabilityExecutor>();
 
 // ── 后台心跳清理服务 ─────────────────────────────────
 builder.Services.AddHostedService<HeartbeatService>();

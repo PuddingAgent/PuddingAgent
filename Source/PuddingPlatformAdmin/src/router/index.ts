@@ -136,6 +136,36 @@ export const asyncRoutes: RouteRecordRaw[] = [
       },
     ],
   },
+  // 知识基础设施
+  {
+    path: '/knowledge',
+    component: Layout,
+    redirect: '/knowledge/index',
+    meta: { title: '知识', icon: 'DataBoard' },
+    children: [
+      {
+        path: 'index',
+        name: 'Knowledge',
+        component: () => import('@/views/knowledge/index.vue'),
+        meta: { title: '知识基础设施', icon: 'DataBoard' },
+      },
+    ],
+  },
+  // 可观测性
+  {
+    path: '/observability',
+    component: Layout,
+    redirect: '/observability/index',
+    meta: { title: '可观测', icon: 'Monitor' },
+    children: [
+      {
+        path: 'index',
+        name: 'Observability',
+        component: () => import('@/views/observability/index.vue'),
+        meta: { title: '观测与调试', icon: 'Monitor' },
+      },
+    ],
+  },
   // 404 必须放最后
   { path: '/:pathMatch(.*)*', redirect: '/404', meta: { hidden: true } },
 ]

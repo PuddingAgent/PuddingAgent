@@ -22,4 +22,21 @@ public sealed class InMemoryRouteDecisionStore : IRouteDecisionStore
         var found = _decisions.Values.FirstOrDefault(d => d.MessageId == messageId);
         return Task.FromResult(found);
     }
+
+    /// <summary>查询路由决策记录（支持按 workspace/session/message 过滤）。</summary>
+    public Task<IReadOnlyList<RouteDecisionRecord>> QueryAsync(
+        string? workspaceId = null,
+        string? sessionId = null,
+        string? messageId = null,
+        int limit = 100,
+        CancellationToken ct = default)
+    {
+        var q = _decisions.Values.AsEnumerable();
+        if (workspaceId is not null) q = q.Where(d => d.WorkspaceId == workspaceId);
+        if (sessionId is not null) q = q.Where(d => d.SessionId == sessionId);
+        if (messageId is not null) q = q.Where(d => d.MessageId == messageId);
+
+        return Task.FromResult<IReadOnlyList<RouteDecisionRecord>>(
+            q.OrderByDescending(d => d.Timestamp).Take(limit).ToList());
+    }
 }

@@ -192,4 +192,185 @@ public sealed class PlatformApiClient
         if (!resp.IsSuccessStatusCode) return null;
         return await resp.Content.ReadFromJsonAsync<object>(ct);
     }
+
+    // ── Debug / Observability ─────────────────────────
+
+    public async Task<DebugSummaryDto?> GetDebugSummaryAsync(CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync("/api/debug/summary", ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<DebugSummaryDto>(ct);
+    }
+
+    public async Task<DebugMetricsDto?> GetDebugMetricsAsync(CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync("/api/debug/metrics", ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<DebugMetricsDto>(ct);
+    }
+
+    public async Task<SessionDebugDto?> GetSessionDebugAsync(string sessionId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/debug/session/{Uri.EscapeDataString(sessionId)}", ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<SessionDebugDto>(ct);
+    }
+
+    public async Task<MessageDebugDto?> GetMessageDebugAsync(string messageId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/debug/message/{Uri.EscapeDataString(messageId)}", ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<MessageDebugDto>(ct);
+    }
+
+    public async Task<WorkspaceDebugDto?> GetWorkspaceDebugAsync(string workspaceId, CancellationToken ct = default)
+    {
+        var resp = await _http.GetAsync($"/api/debug/workspace/{Uri.EscapeDataString(workspaceId)}", ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<WorkspaceDebugDto>(ct);
+    }
+}
+
+public sealed record DebugSummaryDto
+{
+    public DateTimeOffset UtcNow { get; init; }
+    public int RecentAuditCount { get; init; }
+    public IReadOnlyList<DebugAuditItemDto> RecentAuditEvents { get; init; } = [];
+}
+
+public sealed record DebugAuditItemDto
+{
+    public string? EventId { get; init; }
+    public string? EventType { get; init; }
+    public string? MessageId { get; init; }
+    public string? SessionId { get; init; }
+    public DateTimeOffset Timestamp { get; init; }
+    public string? Detail { get; init; }
+}
+
+public sealed record DebugMetricsDto
+{
+    public DateTimeOffset UtcNow { get; init; }
+    public DebugSessionMetricsDto Session { get; init; } = new();
+    public DebugApprovalMetricsDto Approval { get; init; } = new();
+    public DebugRuntimeMetricsDto Runtime { get; init; } = new();
+    public DebugWorkspaceMetricsDto Workspace { get; init; } = new();
+    public DebugAuditMetricsDto Audit { get; init; } = new();
+}
+
+public sealed record DebugSessionMetricsDto
+{
+    public int Total { get; init; }
+    public int Active { get; init; }
+    public int Closed { get; init; }
+}
+
+public sealed record DebugApprovalMetricsDto
+{
+    public int Pending { get; init; }
+}
+
+public sealed record DebugRuntimeMetricsDto
+{
+    public int TotalNodes { get; init; }
+    public int OnlineNodes { get; init; }
+    public int TotalActiveSessionLoad { get; init; }
+}
+
+public sealed record DebugWorkspaceMetricsDto
+{
+    public int Total { get; init; }
+    public int Enabled { get; init; }
+    public int Frozen { get; init; }
+}
+
+public sealed record DebugAuditMetricsDto
+{
+    public int RecentCount { get; init; }
+    public Dictionary<string, int> ByType { get; init; } = [];
+}
+
+public sealed record SessionDebugDto
+{
+    public SessionRecord? Session { get; init; }
+    public int AuditCount { get; init; }
+    public IReadOnlyList<DebugAuditItemDto> RecentAudit { get; init; } = [];
+}
+
+public sealed record MessageDebugDto
+{
+    public string? MessageId { get; init; }
+    public RouteDecisionRecord? RouteDecision { get; init; }
+    public SessionRecord? Session { get; init; }
+    public int AuditCount { get; init; }
+    public IReadOnlyList<DebugAuditItemDto> AuditTimeline { get; init; } = [];
+    public MessageDiagnosisDto Diagnosis { get; init; } = new();
+}
+
+public sealed record MessageDiagnosisDto
+{
+    public bool? RouteSuccess { get; init; }
+    public string? RouteFailureReason { get; init; }
+    public bool HasPermissionDenied { get; init; }
+    public bool HasRuntimeFailure { get; init; }
+}
+
+public sealed record WorkspaceDebugDto
+{
+    public WorkspaceDebugInfoDto Workspace { get; init; } = new();
+    public WorkspaceSessionSummaryDto Session { get; init; } = new();
+    public WorkspaceApprovalSummaryDto Approval { get; init; } = new();
+    public WorkspaceRoutingSummaryDto Routing { get; init; } = new();
+    public WorkspaceAuditSummaryDto Audit { get; init; } = new();
+    public WorkspaceWorkflowSummaryDto Workflow { get; init; } = new();
+}
+
+public sealed record WorkspaceDebugInfoDto
+{
+    public string? WorkspaceId { get; init; }
+    public string? Name { get; init; }
+    public bool IsEnabled { get; init; }
+    public bool IsFrozen { get; init; }
+    public int ChannelCount { get; init; }
+    public int AgentTemplateCount { get; init; }
+    public int AuditAgentCount { get; init; }
+}
+
+public sealed record WorkspaceSessionSummaryDto
+{
+    public int Total { get; init; }
+    public int Active { get; init; }
+    public int Frozen { get; init; }
+    public int Failed { get; init; }
+}
+
+public sealed record WorkspaceApprovalSummaryDto
+{
+    public int Pending { get; init; }
+}
+
+public sealed record WorkspaceRoutingSummaryDto
+{
+    public int RecentTotal { get; init; }
+    public int RecentFailures { get; init; }
+    public IReadOnlyList<WorkspaceFailureReasonDto> TopFailureReasons { get; init; } = [];
+}
+
+public sealed record WorkspaceFailureReasonDto
+{
+    public string? Reason { get; init; }
+    public int Count { get; init; }
+}
+
+public sealed record WorkspaceAuditSummaryDto
+{
+    public int RecentCount { get; init; }
+    public int PermissionDeniedCount { get; init; }
+    public int RuntimeFailedCount { get; init; }
+}
+
+public sealed record WorkspaceWorkflowSummaryDto
+{
+    public int BoundWorkflows { get; init; }
+    public string? PotentialBlockerHint { get; init; }
 }

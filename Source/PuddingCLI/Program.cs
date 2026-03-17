@@ -94,7 +94,9 @@ AnsiConsole.WriteLine();
 var httpClient = new HttpClient();
 var project = new ProjectContext(Environment.CurrentDirectory);
 var guard = new PermissionGuard(project.RootPath);
-var centralLockManager = new CentralLockManager(project.RootPath);
+var coordinationBus = new InMemoryCoordinationEventBus();
+var centralLockManager = new CentralLockManager(project.RootPath, coordinationBus);
+var lockEventFeed = new Queue<string>(40); // 锁事件流（最近 40 条，用于右侧面板展示）
 var registry = new ToolRegistry();
 registry.Register(new FileTool(project, guard, centralLockManager));
 registry.Register(new ShellTool(project, guard));
@@ -114,13 +116,15 @@ var gateway = CreateGateway(active);
 var hookRuntime = HookRegistry.Build(project.RootPath, config.Hooks);
 var hookMetrics = hookRuntime.Metrics;
 var contextBudget = BuildContextBudget();
+var historyCompressor = BuildHistoryCompressor();
 var agent = new AgentOrchestrator(
     gateway,
     registry,
     project,
     snapshot,
     hooks: hookRuntime.Hooks,
-    contextBudget: contextBudget);
+    contextBudget: contextBudget,
+    historyCompressor: historyCompressor);
 
 IWorkerManager workerManager = new WorkerManager(project.RootPath);
 IContractManager contractManager = new ContractManager(project.RootPath);
@@ -152,6 +156,30 @@ var interactionStream = new List<string>();
 var uiPinnedLayout = true;
 var interactionScrollOffset = 0;
 var uiNeedsRender = true;
+
+// 订阅协同总线事件（uiNeedsRender 必须在此处已声明）
+var _busSubscription = coordinationBus.Subscribe(evt =>
+{
+    var icon = evt.Kind switch
+    {
+        CoordinationEventKind.LockAcquired     => "[green]+[/]",
+        CoordinationEventKind.LockDenied       => "[red]x[/]",
+        CoordinationEventKind.LockReleased     => "[grey]-[/]",
+        CoordinationEventKind.LockForceReleased => "[red]![/]",
+        CoordinationEventKind.LockExpired      => "[yellow]~[/]",
+        CoordinationEventKind.UnlockRequested  => "[cyan]?[/]",
+        _                                      => "[grey]·[/]"
+    };
+    var clip = evt.LockId is { } id ? id[..Math.Min(id.Length, 12)] : "";
+    var line = $"{icon} {evt.Kind,-18} {clip.EscapeMarkup()} {Clip(evt.Detail ?? "", 24).EscapeMarkup()}";
+    lock (lockEventFeed)
+    {
+        lockEventFeed.Enqueue(line);
+        while (lockEventFeed.Count > 40) lockEventFeed.Dequeue();
+    }
+    uiNeedsRender = true;
+});
+
 var uiLastRenderAt = DateTimeOffset.MinValue;
 var uiLastWindowWidth = GetSafeWindowWidth();
 var uiLastWindowHeight = GetSafeWindowHeight();
@@ -594,6 +622,20 @@ Grid BuildRightPane(long tokenEstimate, string contextEstimate, string costEstim
     Add("[grey]Last tool[/]", lastTool);
     Add("[grey]Last error[/]", lastError);
     Add("[grey]Last answer[/]", lastAnswer);
+
+    // 锁事件流（最近 4 条）
+    string[] feedSnapshot;
+    lock (lockEventFeed)
+    {
+        feedSnapshot = lockEventFeed.TakeLast(4).ToArray();
+    }
+    if (feedSnapshot.Length > 0)
+    {
+        grid.AddRow("[grey]── Locks ──[/]", "");
+        foreach (var feedLine in feedSnapshot)
+            grid.AddRow("", feedLine);
+    }
+
     Add("[grey]Tips[/]", "PgUp/PgDn scroll  Alt+[ ] tab  Alt+4 view  Alt+5/6 worker  Alt+7 clear  Alt+8 review");
 
     return grid;
@@ -735,13 +777,15 @@ void SwitchProvider(ProviderEntry provider)
     hookRuntime = HookRegistry.Build(project.RootPath, config.Hooks);
     hookMetrics = hookRuntime.Metrics;
     contextBudget = BuildContextBudget();
+    historyCompressor = BuildHistoryCompressor();
     agent = new AgentOrchestrator(
         gateway,
         registry,
         project,
         snapshot,
         hooks: hookRuntime.Hooks,
-        contextBudget: contextBudget);
+        contextBudget: contextBudget,
+        historyCompressor: historyCompressor);
 
     if (!usingEnv)
         dualModelConfig = DualModelResolver.ResolveForRole(config, "spirit");
@@ -933,6 +977,8 @@ void CmdHelp()
     table.AddRow("[yellow]/locks[/]", "Show active coordination locks");
     table.AddRow("[yellow]/locks release <id>[/]", "Release one lock owned by current agent");
     table.AddRow("[yellow]/locks force-release <id>[/]", "Force release lock (leader/admin flow)");
+    table.AddRow("[yellow]/locks request-unlock <id> [reason][/]", "Request owner to release a lock (broadcasts event)");
+    table.AddRow("[yellow]/locks events [N][/]", "Show recent lock events from coordination bus (default 20)");
     table.AddRow("[yellow]/todo[/]", "Todo list commands (list|add|done|remove)");
     table.AddRow("[yellow]/ui scroll up|down[/]", "Scroll interaction stream");
     table.AddRow("[yellow]/ui tab next|prev|main|swarm|todo[/]", "Switch left pane tab");
@@ -1967,6 +2013,51 @@ void CmdLocks(string[] parts)
         return;
     }
 
+    if (parts.Length >= 3 && parts[1].Equals("request-unlock", StringComparison.OrdinalIgnoreCase))
+    {
+        var reason = parts.Length >= 4 ? string.Join(' ', parts.Skip(3)) : "";
+        var ok = centralLockManager.RequestUnlockAsync(parts[2], "spirit", reason).GetAwaiter().GetResult();
+        AnsiConsole.MarkupLine(ok
+            ? $"[cyan]Unlock requested for lock[/] [yellow]{parts[2].EscapeMarkup()}[/] [grey](owner will be notified via bus)[/]"
+            : $"[red]Lock not found or not active:[/] [yellow]{parts[2].EscapeMarkup()}[/]");
+        return;
+    }
+
+    if (parts.Length >= 2 && parts[1].Equals("events", StringComparison.OrdinalIgnoreCase))
+    {
+        var count = 20;
+        if (parts.Length >= 3 && int.TryParse(parts[2], out var n))
+            count = Math.Clamp(n, 1, 100);
+
+        var events = coordinationBus.GetRecent(count);
+        if (events.Count == 0) { AnsiConsole.MarkupLine("[grey]No lock events yet.[/]"); return; }
+
+        var evtTable = new Table().Border(TableBorder.Rounded)
+            .AddColumn("[bold]Time[/]").AddColumn("[bold]Kind[/]")
+            .AddColumn("[bold]LockId[/]").AddColumn("[bold]Agent[/]").AddColumn("[bold]Detail[/]");
+        foreach (var ev in events)
+        {
+            var kindMarkup = ev.Kind switch
+            {
+                CoordinationEventKind.LockAcquired      => "[green]acquired[/]",
+                CoordinationEventKind.LockDenied        => "[red]denied[/]",
+                CoordinationEventKind.LockReleased      => "[grey]released[/]",
+                CoordinationEventKind.LockForceReleased => "[red]force-released[/]",
+                CoordinationEventKind.LockExpired       => "[yellow]expired[/]",
+                CoordinationEventKind.UnlockRequested   => "[cyan]unlock-requested[/]",
+                _ => ev.Kind.ToString().EscapeMarkup()
+            };
+            evtTable.AddRow(
+                ev.Timestamp.ToLocalTime().ToString("HH:mm:ss"),
+                kindMarkup,
+                (ev.LockId ?? "-").EscapeMarkup(),
+                ev.AgentId.EscapeMarkup(),
+                Clip(ev.Detail ?? "", 40).EscapeMarkup());
+        }
+        AnsiConsole.Write(evtTable);
+        return;
+    }
+
     var locks = centralLockManager.ListActiveLocksAsync().GetAwaiter().GetResult();
     if (locks.Count == 0)
     {
@@ -2011,7 +2102,7 @@ void CmdOpen(string[] parts)
 
     project = new ProjectContext(path);
     guard = new PermissionGuard(project.RootPath);
-    centralLockManager = new CentralLockManager(project.RootPath);
+    centralLockManager = new CentralLockManager(project.RootPath, coordinationBus);
     registry = new ToolRegistry();
     registry.Register(new FileTool(project, guard, centralLockManager));
     registry.Register(new ShellTool(project, guard));
@@ -2022,13 +2113,15 @@ void CmdOpen(string[] parts)
     hookRuntime = HookRegistry.Build(project.RootPath, config.Hooks);
     hookMetrics = hookRuntime.Metrics;
     contextBudget = BuildContextBudget();
+    historyCompressor = BuildHistoryCompressor();
     agent = new AgentOrchestrator(
         gateway,
         registry,
         project,
         snapshot,
         hooks: hookRuntime.Hooks,
-        contextBudget: contextBudget);
+        contextBudget: contextBudget,
+        historyCompressor: historyCompressor);
     reviewSelectedId = null;
     reviewDecision = "pending";
     reviewSummary = "No review snapshot.";
@@ -2050,8 +2143,14 @@ ContextBudgetOptions BuildContextBudget()
     return new ContextBudgetOptions(
         MaxPromptTokens: cb.MaxPromptTokens,
         MaxHistoryMessages: cb.MaxHistoryMessages,
-        PreserveTailMessages: cb.PreserveTailMessages);
+        PreserveTailMessages: cb.PreserveTailMessages,
+        CompressionWindowSize: cb.CompressionWindowSize);
 }
+
+IHistoryCompressor? BuildHistoryCompressor() =>
+    config.ContextBudget.UseCompression
+        ? new SubconsciousHistoryCompressor(SummarizeWithSubconsciousModelAsync)
+        : null;
 
 void RunFirstLaunchOnboarding()
 {

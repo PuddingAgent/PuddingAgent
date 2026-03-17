@@ -32,7 +32,15 @@ public enum AuditEventType
     WorkspaceResumed,
     AgentInstanceCreated,
     AgentExecutionCompleted,
-    AgentExecutionFailed
+    AgentExecutionFailed,
+    /// <summary>嵌入节点原生能力调用成功。</summary>
+    NativeCapabilityInvoked,
+    /// <summary>嵌入节点原生能力调用被拒绝（权限或审批不足）。</summary>
+    NativeCapabilityDenied,
+    /// <summary>嵌入节点被冻结。</summary>
+    EmbeddedNodeFrozen,
+    /// <summary>嵌入节点冻结解除。</summary>
+    EmbeddedNodeUnfrozen
 }
 
 /// <summary>审计事件记录。</summary>
