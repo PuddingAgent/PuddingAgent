@@ -1,5 +1,5 @@
-@import './variables.scss';
-@import './mixin.scss';
+@use './variables.scss';
+@use './mixin.scss';
 
 html {
   height: 100%;

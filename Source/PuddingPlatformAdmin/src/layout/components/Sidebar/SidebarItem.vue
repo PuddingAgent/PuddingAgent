@@ -45,7 +45,11 @@ const props = withDefaults(defineProps<Props>(), {
   basePath: '',
 })
 
-interface OnlyOneChild extends RouteRecordRaw {
+interface OnlyOneChild {
+  path: string
+  name?: string
+  meta?: Record<string, unknown>
+  children?: RouteRecordRaw[]
   noShowingChildren?: boolean
 }
 
@@ -53,20 +57,25 @@ const onlyOneChild = ref<OnlyOneChild | null>(null)
 
 function hasOneShowingChild(children: RouteRecordRaw[] | undefined, parent: RouteRecordRaw): boolean {
   if (!children) {
-    onlyOneChild.value = { ...parent, path: '', noShowingChildren: true } as OnlyOneChild
+    onlyOneChild.value = { path: '', meta: parent.meta as Record<string, unknown>, noShowingChildren: true }
     return true
   }
 
   const showingChildren = children.filter((item) => {
     if (item.meta?.hidden) return false
-    onlyOneChild.value = item as OnlyOneChild
+    onlyOneChild.value = {
+      path: item.path,
+      name: item.name as string,
+      meta: item.meta as Record<string, unknown>,
+      children: item.children,
+    }
     return true
   })
 
   if (showingChildren.length === 1) return true
 
   if (showingChildren.length === 0) {
-    onlyOneChild.value = { ...parent, path: '', noShowingChildren: true } as OnlyOneChild
+    onlyOneChild.value = { path: '', meta: parent.meta as Record<string, unknown>, noShowingChildren: true }
     return true
   }
 
