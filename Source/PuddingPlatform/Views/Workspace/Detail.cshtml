@@ -1,0 +1,59 @@
+@model PuddingCode.Platform.WorkspaceDefinition
+@{
+    ViewData["Title"] = $"工作空间: {Model.Name}";
+}
+
+<h2>@Model.Name</h2>
+<p class="text-muted">@Model.Description</p>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">基本信息</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Workspace ID</dt>
+                    <dd class="col-sm-8"><code>@Model.WorkspaceId</code></dd>
+                    <dt class="col-sm-4">状态</dt>
+                    <dd class="col-sm-8">
+                        @if (Model.IsFrozen) { <span class="badge bg-danger">已冻结</span> }
+                        else if (Model.IsEnabled) { <span class="badge bg-success">启用</span> }
+                        else { <span class="badge bg-secondary">停用</span> }
+                    </dd>
+                    <dt class="col-sm-4">权限策略</dt>
+                    <dd class="col-sm-8">默认拒绝: @Model.PermissionPolicy.DefaultDeny</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">渠道绑定</div>
+            <ul class="list-group list-group-flush">
+                @foreach (var ch in Model.ChannelBindings)
+                {
+                    <li class="list-group-item">
+                        <strong>@ch.ChannelId</strong> (@ch.ChannelType)
+                        @if (ch.DefaultAgentTemplateId is not null)
+                        {
+                            <br /><small class="text-muted">默认 Agent: @ch.DefaultAgentTemplateId</small>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">Agent 模板</div>
+    <ul class="list-group list-group-flush">
+        @foreach (var tpl in Model.AgentTemplateIds)
+        {
+            <li class="list-group-item"><code>@tpl</code></li>
+        }
+    </ul>
+</div>
+
+<a asp-action="Index" class="btn btn-outline-secondary">返回列表</a>
+<a asp-controller="Session" asp-action="Index" asp-route-workspaceId="@Model.WorkspaceId" class="btn btn-outline-primary">查看会话</a>

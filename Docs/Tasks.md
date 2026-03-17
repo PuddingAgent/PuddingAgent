@@ -6,10 +6,19 @@
 
 目标：先打通首条真实垂直切片，并为知识、存储、治理和多客户端扩展预留稳定接口。
 
-目标链路：`CLI / Avalonia -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+目标链路：`CLI  -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+
+第2目标链路
+目标链路：`PuddingPlatform（含admin管理界面，PuddingPlatformAdmin）  -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+
+
+我们桌面端PuddingAvalonia（优先级最低）优先级最低。
+
+
 
 总览文档：
 - [Tasks/task24-platform-v1-first-slice.md](Tasks/task24-platform-v1-first-slice.md)
+- 架构.md
 
 细化任务文档：
 - [Tasks/task26-runtime-foundation.md](Tasks/task26-runtime-foundation.md)
@@ -30,7 +39,7 @@
 - 知识图谱归属于 Workspace 共享资产，底层先用 PostgreSQL 实现，上层 Agent 无感。
 - 语音批准属于系统控制链路，不属于业务 Agent。
 - 每个 Workspace 至少拥有 1 个审计 Agent。
-- 新增客户端层 `PuddingAvalonia`，作为用户持有的桌面控制端。
+- 新增客户端层 `PuddingAvalonia（优先级最低）`，作为用户持有的桌面控制端。
 - `PuddingRuntime` 后续支持嵌入其他 C# 桌面软件，使其成为可调度 Runtime 节点，并暴露受控原生能力。
 
 ### 路线总览
@@ -43,7 +52,7 @@
 | Phase 2A | [task28-platform-workspace-governance.md](Tasks/task28-platform-workspace-governance.md) | 建立 Platform 的 Workspace 业务层与治理策略 | Phase 1B | 可与 Phase 2B 并行 |
 | Phase 2B | [task29-agent-template-and-audit.md](Tasks/task29-agent-template-and-audit.md) | 建立 AgentTemplate、审计模板和运行画像 | Phase 1A + Phase 1B | 可与 Phase 2A 并行 |
 | Phase 3 | [task30-knowledge-infrastructure.md](Tasks/task30-knowledge-infrastructure.md) | 建立知识库、统一存储、知识图谱和 Runtime 透明访问 | Phase 1A + Phase 1B | 可与 Phase 2A/2B 后段局部并行 |
-| Phase 4 | [task31-client-surfaces.md](Tasks/task31-client-surfaces.md) | 建立 CLI / Avalonia 客户端控制面 | Phase 1A + Phase 1B，且 API 基本稳定 | CLI 与 Avalonia 可并行 |
+| Phase 4 | [task31-client-surfaces.md](Tasks/task31-client-surfaces.md) | 建立 CLI / Avalonia（优先级最低） 客户端控制面 | Phase 1A + Phase 1B，且 API 基本稳定 | CLI 与 Avalonia（优先级最低） 可并行 |
 | Phase 5 | [task32-observability-integration.md](Tasks/task32-observability-integration.md) | 建立可观测性并完成阶段验收 | Phase 1-4 | 审计、指标、调试查询可并行 |
 | Phase 6 | [task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md) | 支持把其他 C# 桌面软件作为嵌入式 Runtime 节点调度 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段和 Phase 4 后段局部并行 |
 
@@ -53,7 +62,7 @@
 2. 同时推进 task26 和 task27，分别稳定执行面与控制面基础。
 3. 在基础宿主稳定后，并行推进 task28 和 task29，稳定 Workspace 业务规则与模板体系。
 4. 接着推进 task30，补齐知识、存储、图谱三类基础设施。
-5. 当 API 与治理链路稳定后，推进 task31，打通 CLI 与 Avalonia。
+5. 当 API 与治理链路稳定后，推进 task31，打通 CLI 
 6. 最后执行 task32，把观测面和集成验收收口。
 7. 在主链路稳定后，推进 task33，把嵌入式桌面宿主纳入 Runtime 节点体系。
 
@@ -62,7 +71,7 @@
 - `task26` 与 `task27` 适合双线并行，是当前最重要的基础阶段。
 - `task28` 与 `task29` 可并行，但都依赖基础宿主和控制入口已经稳定。
 - `task30` 的知识库、统一存储、知识图谱底层服务可以拆成三个并行子流，但 Runtime 透明访问桥接必须最后收口。
-- `task31` 中 CLI 与 Avalonia 可以并行推进，但都依赖 Controller API 不再频繁变更。
+- `task31` 中 CLI /web 可以并行推进，但都依赖 Controller API 不再频繁变更。
 - `task32` 中审计事件、指标、调试查询三条线可以并行，最后统一验收。
 - `task33` 可以在主链路稳定后作为扩展能力推进；宿主抽象、节点注册、原生能力桥接可部分并行，但权限与审批接入必须后收口。
 

@@ -1,7 +1,8 @@
 {
   "profiles": {
     "PuddingController": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "applicationUrl": "http://localhost:5000"
     },
     "Container (Dockerfile)": {
       "commandName": "Docker"

@@ -1,0 +1,55 @@
+@model List<PuddingCode.Platform.WorkspaceDefinition>
+@{
+    ViewData["Title"] = "工作空间";
+}
+
+<h2>工作空间列表</h2>
+
+@if (Model.Count == 0)
+{
+    <div class="alert alert-info">暂无工作空间。</div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>名称</th>
+                <th>状态</th>
+                <th>渠道</th>
+                <th>Agent 模板</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var ws in Model)
+            {
+                <tr>
+                    <td>@ws.WorkspaceId</td>
+                    <td>@ws.Name</td>
+                    <td>
+                        @if (ws.IsFrozen)
+                        {
+                            <span class="badge bg-danger">已冻结</span>
+                        }
+                        else if (ws.IsEnabled)
+                        {
+                            <span class="badge bg-success">启用</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">停用</span>
+                        }
+                    </td>
+                    <td>@string.Join(", ", ws.ChannelBindings.Select(c => c.ChannelId))</td>
+                    <td>@ws.AgentTemplateIds.Count 个</td>
+                    <td>
+                        <a asp-action="Detail" asp-route-id="@ws.WorkspaceId" class="btn btn-sm btn-outline-primary">详情</a>
+                        <a asp-controller="Session" asp-action="Index" asp-route-workspaceId="@ws.WorkspaceId" class="btn btn-sm btn-outline-secondary">会话</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

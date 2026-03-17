@@ -4,12 +4,27 @@
 
 PuddingPlatform 是上层平台层与系统组合层。它不等于控制面进程，而是承载产品语义、业务模型、服务暴露策略与平台能力编排的上层概念。
 
+参考：
+### 前端PuddingPlatformAdmin
+
+前端PuddingPlatformAdmin，admin 管理后台，使用vue-element-admin开发。提供产品级别的服务（待补充设计）。
+https://github.com/PanJiaChen/vue-element-admin
+
+使用vue+pnpm+Typescript开发
+
+#### PuddingPlatform 
+
+asp.net core 提供API
+
+
+
 ## 负责的内容
 
 - Workspace 业务模型与产品入口。
 - 服务暴露策略、业务流程编排、产品能力组合。
 - 平台级部署形态、运维模型与演进路线。
 - 组织 Controller、Runtime、Agent、客户端之间的产品协作关系。
+
 
 ## 与 Controller 的边界
 
