@@ -23,8 +23,15 @@ builder.Services.AddSingleton<InMemoryRouteDecisionStore>();
 builder.Services.AddSingleton<InMemoryApprovalService>();
 builder.Services.AddSingleton<AuthorizationService>();
 builder.Services.AddSingleton<GatewayEgressService>();
+builder.Services.AddSingleton<RuntimeRegistryService>();
 builder.Services.AddSingleton<RuntimeDispatcher>();
 builder.Services.AddSingleton<SessionRouter>();
+builder.Services.AddSingleton<AgentTemplateRegistry>();
+
+// ── 知识基础设施服务 ─────────────────────────────────
+builder.Services.AddSingleton<KnowledgeBaseService>();
+builder.Services.AddSingleton<UnifiedStorageService>();
+builder.Services.AddSingleton<KnowledgeGraphService>();
 
 // ── Gateway 适配器宿主 ──────────────────────────────
 builder.Services.AddSingleton(sp =>
@@ -53,7 +60,7 @@ workspaceCatalog.SeedDefaults();
 var dispatcher = app.Services.GetRequiredService<RuntimeDispatcher>();
 var runtimeEndpoint = app.Configuration["Pudding:RuntimeEndpoint"];
 if (!string.IsNullOrWhiteSpace(runtimeEndpoint))
-    dispatcher.SetRuntimeEndpoint(runtimeEndpoint);
+    dispatcher.SetFallbackEndpoint(runtimeEndpoint);
 
 await gatewayHost.StartAllAsync();
 

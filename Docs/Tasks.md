@@ -23,14 +23,10 @@ Redis容器：KV缓存
 RabbitMQ容器：内部和外部的事件订阅
 MQTTServer容器：物联网设备订阅（可选）
 
-
-
 PuddingPlatform容器
 PuddingPlatformAdmin容器
 PuddingController容器
-PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置PuddingController的容器名（作为访问域名），PuddingRuntime可以访问并注册到PuddingController）
-
-
+PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置PuddingController的容器名（作为访问域名）和端口，PuddingRuntime可以访问并注册到PuddingController）
 
 ``
 ## 总览
@@ -90,7 +86,7 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 - `task26` 与 `task27` 适合双线并行，是当前最重要的基础阶段。
 - `task28` 与 `task29` 可并行，但都依赖基础宿主和控制入口已经稳定。
 - `task30` 的知识库、统一存储、知识图谱底层服务可以拆成三个并行子流，但 Runtime 透明访问桥接必须最后收口。
-- `task31` 中 CLI /web 可以并行推进，但都依赖 Controller API 不再频繁变更。
+- `task31` 中 CLI（暂不开发CLI） /web 可以并行推进，但都依赖 Controller API 不再频繁变更。
 - `task32` 中审计事件、指标、调试查询三条线可以并行，最后统一验收。
 - `task33` 可以在主链路稳定后作为扩展能力推进；宿主抽象、节点注册、原生能力桥接可部分并行，但权限与审批接入必须后收口。
 

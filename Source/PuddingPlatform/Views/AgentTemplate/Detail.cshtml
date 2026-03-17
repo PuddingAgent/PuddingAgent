@@ -1,0 +1,117 @@
+@model PuddingCode.Platform.AgentTemplateDefinition
+@{
+    ViewData["Title"] = $"Agent 模板: {Model.Name}";
+}
+
+<h2>@Model.Name</h2>
+<p class="text-muted">@Model.Description</p>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">基本信息</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Template ID</dt>
+                    <dd class="col-sm-8"><code>@Model.TemplateId</code></dd>
+                    <dt class="col-sm-4">类型</dt>
+                    <dd class="col-sm-8">
+                        @switch (Model.TemplateType)
+                        {
+                            case PuddingCode.Platform.AgentTemplateType.Audit:
+                                <span class="badge bg-warning text-dark">Audit</span>
+                                break;
+                            case PuddingCode.Platform.AgentTemplateType.Task:
+                                <span class="badge bg-info text-dark">Task</span>
+                                break;
+                            default:
+                                <span class="badge bg-primary">Service</span>
+                                break;
+                        }
+                    </dd>
+                    <dt class="col-sm-4">Skill IDs</dt>
+                    <dd class="col-sm-8">
+                        @if (Model.SkillIds.Count == 0)
+                        {
+                            <span class="text-muted">无</span>
+                        }
+                        else
+                        {
+                            @string.Join(", ", Model.SkillIds)
+                        }
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        @if (Model.Capability is not null)
+        {
+            <div class="card mb-3">
+                <div class="card-header">能力策略</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6">允许 Shell 执行</dt>
+                        <dd class="col-sm-6">@(Model.Capability.AllowShellExecution ? "✓ 是" : "✗ 否")</dd>
+                        <dt class="col-sm-6">允许文件写入</dt>
+                        <dd class="col-sm-6">@(Model.Capability.AllowFileWrite ? "✓ 是" : "✗ 否")</dd>
+                        <dt class="col-sm-6">允许网络访问</dt>
+                        <dd class="col-sm-6">@(Model.Capability.AllowNetworkAccess ? "✓ 是" : "✗ 否")</dd>
+                        @if (Model.Capability.AllowedToolNames.Count > 0)
+                        {
+                            <dt class="col-sm-6">白名单工具</dt>
+                            <dd class="col-sm-6">@string.Join(", ", Model.Capability.AllowedToolNames)</dd>
+                        }
+                    </dl>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="col-md-6">
+        @if (Model.Runtime is not null)
+        {
+            <div class="card mb-3">
+                <div class="card-header">运行画像</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6">首选模型</dt>
+                        <dd class="col-sm-6">@(Model.Runtime.PreferredModel ?? "默认")</dd>
+                        <dt class="col-sm-6">最大上下文</dt>
+                        <dd class="col-sm-6">@Model.Runtime.MaxContextTokens tokens</dd>
+                        <dt class="col-sm-6">最大轮数</dt>
+                        <dd class="col-sm-6">@Model.Runtime.MaxTurnsPerSession</dd>
+                        <dt class="col-sm-6">会话超时</dt>
+                        <dd class="col-sm-6">@Model.Runtime.SessionTimeout</dd>
+                    </dl>
+                </div>
+            </div>
+        }
+
+        @if (Model.Memory is not null)
+        {
+            <div class="card mb-3">
+                <div class="card-header">记忆策略</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6">Session 记忆</dt>
+                        <dd class="col-sm-6">@(Model.Memory.EnableSessionMemory ? "✓" : "✗")</dd>
+                        <dt class="col-sm-6">Workspace 记忆</dt>
+                        <dd class="col-sm-6">@(Model.Memory.EnableWorkspaceMemory ? "✓" : "✗")</dd>
+                    </dl>
+                </div>
+            </div>
+        }
+
+        @if (Model.SystemPrompt is not null)
+        {
+            <div class="card mb-3">
+                <div class="card-header">System Prompt</div>
+                <div class="card-body">
+                    <pre class="mb-0" style="white-space:pre-wrap;font-size:0.85rem;">@Model.SystemPrompt</pre>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<a asp-action="Index" class="btn btn-outline-secondary">返回列表</a>

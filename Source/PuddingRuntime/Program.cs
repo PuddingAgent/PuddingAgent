@@ -1,4 +1,5 @@
-﻿using PuddingRuntime.Services;
+﻿using PuddingMemoryEngine;
+using PuddingRuntime.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,10 +9,26 @@ builder.Services.AddEndpointsApiExplorer();
 // ── Runtime 服务 ──────────────────────────────────────
 builder.Services.AddSingleton<AgentSessionManager>();
 builder.Services.AddSingleton<InMemoryRuntimeSessionStore>();
+builder.Services.AddSingleton<SandboxExecutor>();
+
+// ── 记忆引擎 ─────────────────────────────────────────
+builder.Services.AddSingleton<SessionMemoryStore>();
+builder.Services.AddSingleton<WorkspaceMemoryStore>();
+builder.Services.AddSingleton<MemoryBoundaryService>();
+builder.Services.AddSingleton<MemoryEngine>();
+
 builder.Services.AddSingleton<AgentExecutionService>();
+
+// ── 知识访问桥接（调用 Controller 知识 API）──────────
+var controllerBase = builder.Configuration["Pudding:ControllerEndpoint"]
+    ?? "http://localhost:5000";
+builder.Services.AddHttpClient<KnowledgeAccessRuntime>(c =>
+    c.BaseAddress = new Uri(controllerBase));
 
 // ── 后台心跳清理服务 ─────────────────────────────────
 builder.Services.AddHostedService<HeartbeatService>();
+// ── Runtime 自注册服务（向 Controller 注册并定期续约）───────────────
+builder.Services.AddHostedService<RuntimeSelfRegistrationService>();
 
 var app = builder.Build();
 

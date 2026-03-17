@@ -1,0 +1,59 @@
+@model List<PuddingCode.Platform.AgentTemplateDefinition>
+@{
+    ViewData["Title"] = "Agent 模板";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Agent 模板</h2>
+</div>
+
+@if (Model.Count == 0)
+{
+    <div class="alert alert-info">暂无 Agent 模板。</div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>名称</th>
+                <th>类型</th>
+                <th>Shell</th>
+                <th>文件写</th>
+                <th>网络</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var tpl in Model)
+            {
+                <tr>
+                    <td><code>@tpl.TemplateId</code></td>
+                    <td>@tpl.Name</td>
+                    <td>
+                        @switch (tpl.TemplateType)
+                        {
+                            case PuddingCode.Platform.AgentTemplateType.Audit:
+                                <span class="badge bg-warning text-dark">Audit</span>
+                                break;
+                            case PuddingCode.Platform.AgentTemplateType.Task:
+                                <span class="badge bg-info text-dark">Task</span>
+                                break;
+                            default:
+                                <span class="badge bg-primary">Service</span>
+                                break;
+                        }
+                    </td>
+                    <td>@(tpl.Capability?.AllowShellExecution == true ? "✓" : "✗")</td>
+                    <td>@(tpl.Capability?.AllowFileWrite == true ? "✓" : "✗")</td>
+                    <td>@(tpl.Capability?.AllowNetworkAccess == true ? "✓" : "✗")</td>
+                    <td>
+                        <a asp-action="Detail" asp-route-id="@tpl.TemplateId"
+                           class="btn btn-sm btn-outline-primary">详情</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Docker 环境变量（含 API 密钥，禁止提交）
+.env

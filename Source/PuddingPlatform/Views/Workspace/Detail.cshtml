@@ -1,10 +1,44 @@
 @model PuddingCode.Platform.WorkspaceDefinition
+@using PuddingPlatform.Services
 @{
     ViewData["Title"] = $"工作空间: {Model.Name}";
+    var governance = ViewData["Governance"] as WorkspaceGovernanceStatus;
 }
 
 <h2>@Model.Name</h2>
 <p class="text-muted">@Model.Description</p>
+
+@if (governance is not null)
+{
+    <div class="alert @(governance.IsCompliant ? "alert-success" : "alert-warning") d-flex align-items-center mb-3">
+        <strong class="me-2">治理合规：</strong>
+        @if (governance.IsCompliant)
+        {
+            <span>✓ 合规</span>
+        }
+        else
+        {
+            <span>⚠ @governance.NonComplianceReason</span>
+        }
+    </div>
+}
+
+<div class="mb-3">
+    @if (Model.IsFrozen)
+    {
+        <form method="post" asp-action="Unfreeze" asp-route-id="@Model.WorkspaceId" class="d-inline">
+            <button type="submit" class="btn btn-warning btn-sm">解冻 Workspace</button>
+        </form>
+    }
+    else
+    {
+        <form method="post" asp-action="Freeze" asp-route-id="@Model.WorkspaceId" class="d-inline">
+            <button type="submit" class="btn btn-danger btn-sm">冻结 Workspace</button>
+        </form>
+    }
+    <a asp-controller="Session" asp-action="Index" asp-route-workspaceId="@Model.WorkspaceId"
+       class="btn btn-outline-primary btn-sm ms-2">查看会话</a>
+</div>
 
 <div class="row">
     <div class="col-md-6">
@@ -21,12 +55,11 @@
                         else { <span class="badge bg-secondary">停用</span> }
                     </dd>
                     <dt class="col-sm-4">权限策略</dt>
-                    <dd class="col-sm-8">默认拒绝: @Model.PermissionPolicy.DefaultDeny</dd>
+                    <dd class="col-sm-8">默认拒绝: @Model.PermissionPolicy?.DefaultDeny</dd>
                 </dl>
             </div>
         </div>
-    </div>
-    <div class="col-md-6">
+
         <div class="card mb-3">
             <div class="card-header">渠道绑定</div>
             <ul class="list-group list-group-flush">
@@ -43,17 +76,77 @@
             </ul>
         </div>
     </div>
-</div>
 
-<div class="card mb-3">
-    <div class="card-header">Agent 模板</div>
-    <ul class="list-group list-group-flush">
-        @foreach (var tpl in Model.AgentTemplateIds)
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">业务 Agent 模板</div>
+            <ul class="list-group list-group-flush">
+                @foreach (var tpl in Model.AgentTemplateIds)
+                {
+                    <li class="list-group-item">
+                        <a asp-controller="AgentTemplate" asp-action="Detail" asp-route-id="@tpl">
+                            <code>@tpl</code>
+                        </a>
+                    </li>
+                }
+            </ul>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                审计 Agent 模板
+                @if (Model.AuditAgentTemplateIds.Count == 0)
+                {
+                    <span class="badge bg-danger ms-1">缺失</span>
+                }
+                else
+                {
+                    <span class="badge bg-success ms-1">@Model.AuditAgentTemplateIds.Count 个</span>
+                }
+            </div>
+            <ul class="list-group list-group-flush">
+                @foreach (var tpl in Model.AuditAgentTemplateIds)
+                {
+                    <li class="list-group-item">
+                        <a asp-controller="AgentTemplate" asp-action="Detail" asp-route-id="@tpl">
+                            <code>@tpl</code>
+                        </a>
+                    </li>
+                }
+                @if (Model.AuditAgentTemplateIds.Count == 0)
+                {
+                    <li class="list-group-item text-warning">⚠ 未配置审计 Agent，治理不合规</li>
+                }
+            </ul>
+        </div>
+
+        @if (Model.WorkflowBindings.Count > 0)
         {
-            <li class="list-group-item"><code>@tpl</code></li>
+            <div class="card mb-3">
+                <div class="card-header">工作流绑定</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var wf in Model.WorkflowBindings)
+                    {
+                        <li class="list-group-item">
+                            <code>@wf.WorkflowId</code>
+                            @if (!string.IsNullOrEmpty(wf.Name))
+                            {
+                                <span class="ms-1">— @wf.Name</span>
+                            }
+                            @if (wf.AutoTriggerOnInit)
+                            {
+                                <span class="badge bg-info text-dark ms-1">自动触发</span>
+                            }
+                            @if (wf.TriggerChannelIds.Count > 0)
+                            {
+                                <br /><small class="text-muted">渠道: @string.Join(", ", wf.TriggerChannelIds)</small>
+                            }
+                        </li>
+                    }
+                </ul>
+            </div>
         }
-    </ul>
+    </div>
 </div>
 
 <a asp-action="Index" class="btn btn-outline-secondary">返回列表</a>
-<a asp-controller="Session" asp-action="Index" asp-route-workspaceId="@Model.WorkspaceId" class="btn btn-outline-primary">查看会话</a>

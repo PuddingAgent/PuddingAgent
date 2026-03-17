@@ -4,17 +4,21 @@ using PuddingCode.Abstractions;
 using PuddingCode.Core;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingMemoryEngine;
 
 namespace PuddingRuntime.Services;
 
 /// <summary>
 /// Agent 执行服务——接收 RuntimeDispatchRequest，创建/复用 Agent 实例，
 /// 调用 LLM，返回结果。V1 使用 PuddingCore 已有的 OpenAiLlmGateway。
+/// 集成 MemoryEngine（短期/长期记忆注入 + 写回）和 SandboxExecutor（能力门控）。
 /// </summary>
 public sealed class AgentExecutionService
 {
     private readonly AgentSessionManager _sessionManager;
     private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;
+    private readonly MemoryEngine _memory;
+    private readonly SandboxExecutor _sandbox;
     private readonly ILogger<AgentExecutionService> _logger;
     private readonly IConfiguration _configuration;
 
@@ -24,11 +28,15 @@ public sealed class AgentExecutionService
     public AgentExecutionService(
         AgentSessionManager sessionManager,
         InMemoryRuntimeSessionStore runtimeSessionStore,
+        MemoryEngine memory,
+        SandboxExecutor sandbox,
         ILogger<AgentExecutionService> logger,
         IConfiguration configuration)
     {
         _sessionManager = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
+        _memory = memory;
+        _sandbox = sandbox;
         _logger = logger;
         _configuration = configuration;
     }
@@ -55,12 +63,21 @@ public sealed class AgentExecutionService
             var template = BuiltInAgentTemplates.FindById(request.AgentTemplateId)
                            ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
 
-            // 4. 构建对话历史
+            // 4. 构建对话历史（首轮注入系统提示 + 记忆上下文）
             var history = _histories.GetOrAdd(request.SessionId, _ => []);
-            if (history.Count == 0 && !string.IsNullOrEmpty(template.SystemPrompt))
+            if (history.Count == 0)
             {
-                history.Add(new ChatMessage(ChatRole.System, template.SystemPrompt));
+                var systemContent = BuildSystemPrompt(template, request.SessionId, request.WorkspaceId);
+                history.Add(new ChatMessage(ChatRole.System, systemContent));
             }
+            else if (template.Memory?.EnableSessionMemory == true || template.Memory?.EnableWorkspaceMemory == true)
+            {
+                // 非首轮：刷新系统提示中的记忆片段（保持记忆上下文最新）
+                var systemContent = BuildSystemPrompt(template, request.SessionId, request.WorkspaceId);
+                if (history[0].Role == ChatRole.System)
+                    history[0] = new ChatMessage(ChatRole.System, systemContent);
+            }
+
             history.Add(new ChatMessage(ChatRole.User, request.MessageText));
 
             // 5. 调用 LLM
@@ -71,8 +88,14 @@ public sealed class AgentExecutionService
             var replyText = response.Content ?? "(no response)";
             history.Add(new ChatMessage(ChatRole.Assistant, replyText));
 
-            // 7. 裁剪历史以避免超 token（简单策略：保留 system + 最近 N 条）
-            TrimHistory(history, template.Runtime.MaxContextTokens);
+            // 7. 记忆写回——从 LLM 回复中解析 REMEMBER[tag] 标记
+            if (template.Memory?.EnableSessionMemory == true || template.Memory?.EnableWorkspaceMemory == true)
+            {
+                _memory.WriteBack(replyText, request.SessionId, request.WorkspaceId, instance.AgentInstanceId);
+            }
+
+            // 8. 裁剪历史以避免超 token（简单策略：保留 system + 最近 N 条）
+            TrimHistory(history, template.Runtime?.MaxContextTokens ?? 8192);
 
             _sessionManager.Touch(request.SessionId);
             _runtimeSessionStore.Touch(request.SessionId);
@@ -101,6 +124,22 @@ public sealed class AgentExecutionService
         }
     }
 
+    /// <summary>构建注入了记忆上下文的系统提示。</summary>
+    private string BuildSystemPrompt(AgentTemplateDefinition template, string sessionId, string? workspaceId)
+    {
+        var basePrompt = template.SystemPrompt ?? "You are a helpful assistant.";
+
+        // 如果记忆策略关闭，直接返回基础提示
+        if (template.Memory is null
+            || (!template.Memory.EnableSessionMemory && !template.Memory.EnableWorkspaceMemory))
+            return basePrompt;
+
+        var memoryContext = _memory.BuildMemoryContext(sessionId, workspaceId);
+        if (memoryContext is null) return basePrompt;
+
+        return basePrompt + "\n\n---\n" + memoryContext;
+    }
+
     private ILlmGateway CreateLlmGateway()
     {
         var endpoint = _configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com";
@@ -126,3 +165,4 @@ public sealed class AgentExecutionService
         history.AddRange(recent);
     }
 }
+

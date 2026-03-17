@@ -1,7 +1,9 @@
+﻿using PuddingMemoryEngine;
+
 namespace PuddingRuntime.Services;
 
 /// <summary>
-/// 心跳后台服务——周期扫描超时会话并清理 Agent 实例资源。
+/// 心跳后台服务——周期扫描超时会话并清理 Agent 实例资源（含记忆清除）。
 /// </summary>
 public sealed class HeartbeatService : BackgroundService
 {
@@ -10,15 +12,18 @@ public sealed class HeartbeatService : BackgroundService
 
     private readonly InMemoryRuntimeSessionStore _sessionStore;
     private readonly AgentSessionManager _agentSessionManager;
+    private readonly MemoryEngine _memory;
     private readonly ILogger<HeartbeatService> _logger;
 
     public HeartbeatService(
         InMemoryRuntimeSessionStore sessionStore,
         AgentSessionManager agentSessionManager,
+        MemoryEngine memory,
         ILogger<HeartbeatService> logger)
     {
         _sessionStore = sessionStore;
         _agentSessionManager = agentSessionManager;
+        _memory = memory;
         _logger = logger;
     }
 
@@ -53,7 +58,6 @@ public sealed class HeartbeatService : BackgroundService
         if (expired.Count == 0) return;
 
         _logger.LogInformation("[Heartbeat] Found {Count} expired sessions to cleanup", expired.Count);
-
         foreach (var session in expired)
         {
             try
@@ -61,6 +65,7 @@ public sealed class HeartbeatService : BackgroundService
                 _agentSessionManager.Terminate(session.SessionId);
                 _agentSessionManager.Remove(session.SessionId);
                 _sessionStore.Terminate(session.SessionId, "timeout");
+                _memory.ClearSession(session.SessionId);
                 _logger.LogInformation("[Heartbeat] Cleaned up session={SessionId} (last active={LastActive})",
                     session.SessionId, session.LastActiveAt);
             }

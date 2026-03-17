@@ -57,3 +57,24 @@ public sealed record AgentExecutionResult
     public string? ErrorMessage { get; init; }
     public int TokensUsed { get; init; }
 }
+
+// ── Runtime 节点注册协议 ──────────────────────────────────────────────────────
+
+/// <summary>Runtime 向 Controller 发送的节点注册/心跳请求。</summary>
+public sealed record RuntimeRegisterRequest
+{
+    /// <summary>Runtime 节点 ID（启动时生成的 GUID 或配置中的固定 ID）。</summary>
+    public required string NodeId { get; init; }
+    /// <summary>Runtime 对外可访问的 HTTP 端点，例如 "http://localhost:5100"。</summary>
+    public required string Endpoint { get; init; }
+    /// <summary>当前活跃 Session 数，用于负载感知路由。</summary>
+    public int ActiveSessionCount { get; init; }
+}
+
+/// <summary>Controller 返回给 Runtime 的注册确认。</summary>
+public sealed record RuntimeRegisterResponse
+{
+    public bool Accepted { get; init; }
+    public string? Message { get; init; }
+}
+

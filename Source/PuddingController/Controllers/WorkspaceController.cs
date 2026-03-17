@@ -60,5 +60,26 @@ public class WorkspaceController : ControllerBase
         await _catalog.ReloadAsync(ct);
         return Ok(new { status = "reloaded", count = _catalog.GetAll().Count });
     }
+
+    /// <summary>冻结 Workspace——拒绝一切新的 Agent 调度。</summary>
+    [HttpPost("{workspaceId}/freeze")]
+    public ActionResult Freeze(string workspaceId)
+    {
+        var ws = _catalog.GetWorkspace(workspaceId);
+        if (ws is null) return NotFound();
+        _catalog.Upsert(ws with { IsFrozen = true });
+        return Ok(new { workspaceId, isFrozen = true });
+    }
+
+    /// <summary>解冻 Workspace。</summary>
+    [HttpPost("{workspaceId}/unfreeze")]
+    public ActionResult Unfreeze(string workspaceId)
+    {
+        var ws = _catalog.GetWorkspace(workspaceId);
+        if (ws is null) return NotFound();
+        _catalog.Upsert(ws with { IsFrozen = false });
+        return Ok(new { workspaceId, isFrozen = false });
+    }
+
 }
 

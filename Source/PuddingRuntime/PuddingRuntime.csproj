@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingAgent\PuddingAgent.csproj" />
+    <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
   </ItemGroup>
 
 </Project>

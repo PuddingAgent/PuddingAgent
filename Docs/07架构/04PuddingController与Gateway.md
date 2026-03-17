@@ -4,6 +4,17 @@
 
 PuddingController 是整个协作网络的控制面宿主。PuddingGateway 是它内部的边界接入模块，而不是长期独立存在的平级产品。
 
+比如：
+路由
+授权
+审批
+审计
+调度
+Adapter 治理
+Runtime 节点管理
+Session 控制链路
+
+
 Gateway 的核心设计不应是为每一种外部系统硬编码接入逻辑，而应采用 Adapter Plugin 模式，把协议转换、事件订阅、身份标准化和出站回写封装为可热插拔的适配器插件。
 
 ## Controller 负责的能力
@@ -14,6 +25,8 @@ Gateway 的核心设计不应是为每一种外部系统硬编码接入逻辑，
 - Workflow 调度入口、Swarm 协调与控制面事件输出。
 - 插件注册、安装、启停、版本与装配策略。
 - 对 CLI、Web、Avalonia 以及其他客户端暴露控制接口。
+
+
 
 ## Gateway 负责的能力
 

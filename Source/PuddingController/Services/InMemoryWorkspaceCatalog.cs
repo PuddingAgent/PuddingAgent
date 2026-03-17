@@ -14,12 +14,18 @@ public sealed class InMemoryWorkspaceCatalog : IWorkspaceCatalog
     /// <summary>预置默认 Workspace。</summary>
     public void SeedDefaults()
     {
+        var allTemplates = BuiltInAgentTemplates.GetAll();
         var ws = new WorkspaceDefinition
         {
             WorkspaceId = "default",
             Name = "Default Workspace",
             Description = "预置的默认工作空间",
-            AgentTemplateIds = BuiltInAgentTemplates.GetAll().Select(t => t.TemplateId).ToList(),
+            AgentTemplateIds = allTemplates
+                .Where(t => t.TemplateType != AgentTemplateType.Audit)
+                .Select(t => t.TemplateId).ToList(),
+            AuditAgentTemplateIds = allTemplates
+                .Where(t => t.TemplateType == AgentTemplateType.Audit)
+                .Select(t => t.TemplateId).ToList(),
             ChannelBindings = [new ChannelBindingDefinition { ChannelId = "cli", ChannelType = "cli" }],
             PermissionPolicy = new PermissionPolicyDefinition
             {
