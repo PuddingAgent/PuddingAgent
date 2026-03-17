@@ -122,8 +122,8 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 | Worker 生命周期 | partial | `WorkerManager` 已有 worktree 逻辑，并补齐 `/swarm cancel` 到会话状态机（任务标记 `Abandoned`）与执行重试；整体调度策略与恢复策略仍需增强。 |
 | Prompt 模板体系 | partial | 已支持项目级 `.pudding/prompts/system.md` 与角色模板 `leader.md/worker.md/spirit.md` 外置；仍缺版本管理与灰度策略。 |
 | Hook 体系 | partial | 已有 `IAgentHook`、Hook 注册中心（`metrics`/`audit_file`/`external`）、`/hook status|enable|disable` 管理与状态可视化；外部进程 Hook 已支持，仍缺标准协议与隔离沙箱。 |
-| 中心锁与协同通知 | todo | 设计已完成（Task 23）；待实现中心锁、自动加解锁、Leader 强制控制与通知总线。 |
-| 双模型潜意识体系 | partial | 已有双模型配置解析、文本检索召回、`[S]` 心流与记忆落盘；向量召回与预算治理待实现。 |
+| 中心锁与协同通知 | done | `CentralLockManager` 已完整接入事件总线（`ICoordinationEventBus`）；支持 LockAcquired/Denied/Released/ForceReleased/Expired/UnlockRequested 六类事件；`/locks request-unlock`、`/locks events` 命令就绪；右侧面板实时显示最新锁事件。 |
+| 双模型潜意识体系 | partial | 已有双模型配置解析、文本检索召回、`[S]` 心流与记忆落盘；上下文分层压缩（`IHistoryCompressor` + `SubconsciousHistoryCompressor`）已实现，`config.ContextBudget.UseCompression=true` 可启用；向量召回与预算治理待实现。 |
 | MCP 集成 | todo | 源码尚无 MCP client/host 实现。 |
 | LSP 语义索引 | todo | 暂无 Roslyn/LSP runtime 集成。 |
 | 三栏 TUI | partial | UI v1 已实现；UI v2 最小版已实现会话/运行状态双面板、`/status` 与 `/todo`；UI v3 已实现三栏；UI v4 已实现中栏多视图、worker 焦点切换与任务状态汇总；UI v5 最小版已实现 review 面板、diff 审批命令、持久化审批队列，approve 已接入 Git 快照并支持 apply hooks，reject 支持可确认 discard 且提供丢弃前文件预览。 |
