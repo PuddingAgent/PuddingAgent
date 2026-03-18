@@ -18,10 +18,8 @@ Workspace 产品管理
 参考：
 ### 前端PuddingPlatformAdmin
 
-前端PuddingPlatformAdmin，admin 管理后台，使用vue-element-admin开发。提供产品级别的服务（待补充设计）。
-https://github.com/PanJiaChen/vue-element-admin
+前端PuddingPlatformAdmin，admin 管理后台。提供产品级别的服务（待补充设计）。
 
-使用vue+pnpm+Typescript开发
 
 #### PuddingPlatform 
 
