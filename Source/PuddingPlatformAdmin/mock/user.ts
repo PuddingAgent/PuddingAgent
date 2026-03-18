@@ -45,14 +45,14 @@ export default {
     res.send({
       success: true,
       data: {
-        name: 'Serati Ma',
+        name: 'Pudding Admin',
         avatar:
           'https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png',
         userid: '00000001',
-        email: 'antdesign@alipay.com',
-        signature: '海纳百川，有容乃大',
-        title: '交互专家',
-        group: '蚂蚁金服－某某某事业群－某某平台部－某某技术部－UED',
+        email: 'admin@pudding.local',
+        signature: '构建下一代智能体协作平台',
+        title: '平台管理员',
+        group: 'Pudding Platform - 系统管理',
         tags: [
           {
             key: '0',
@@ -122,7 +122,7 @@ export default {
   'POST /api/login/account': async (req: Request, res: Response) => {
     const { password, username, type } = req.body;
     await waitTime(2000);
-    if (password === 'ant.design' && username === 'admin') {
+    if (password === 'pudding.dev' && username === 'admin') {
       res.send({
         status: 'ok',
         type,
@@ -131,7 +131,7 @@ export default {
       access = 'admin';
       return;
     }
-    if (password === 'ant.design' && username === 'user') {
+    if (password === 'pudding.dev' && username === 'user') {
       res.send({
         status: 'ok',
         type,

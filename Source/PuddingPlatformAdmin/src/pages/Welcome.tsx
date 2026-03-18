@@ -1,164 +1,283 @@
-import { PageContainer } from '@ant-design/pro-components';
+import {
+  ApiOutlined,
+  BranchesOutlined,
+  ClusterOutlined,
+  RobotOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
+import { PageContainer, ProCard, StatisticCard } from '@ant-design/pro-components';
 import { useModel } from '@umijs/max';
-import { Card, theme } from 'antd';
+import { Badge, Col, List, Row, Space, Tag, theme, Typography } from 'antd';
 import React from 'react';
 
-/**
- * 每个单独的卡片，为了复用样式抽成了组件
- * @param param0
- * @returns
- */
-const InfoCard: React.FC<{
-  title: string;
-  index: number;
-  desc: string;
-  href: string;
-}> = ({ title, href, index, desc }) => {
-  const { useToken } = theme;
+const { Text } = Typography;
 
-  const { token } = useToken();
+const recentActivities = [
+  {
+    id: 1,
+    agent: 'CodeReviewer',
+    action: '完成代码审查任务 #PR-421',
+    time: '2 分钟前',
+    status: 'success' as const,
+  },
+  {
+    id: 2,
+    agent: 'TaskPlanner',
+    action: '新建执行计划，分配 3 个子任务',
+    time: '5 分钟前',
+    status: 'processing' as const,
+  },
+  {
+    id: 3,
+    agent: 'DataAnalyst',
+    action: '数据集分析完成，生成报告',
+    time: '12 分钟前',
+    status: 'success' as const,
+  },
+  {
+    id: 4,
+    agent: 'Monitor',
+    action: '检测到中心锁竞争异常事件',
+    time: '18 分钟前',
+    status: 'error' as const,
+  },
+  {
+    id: 5,
+    agent: 'Summarizer',
+    action: '生成会话上下文摘要',
+    time: '30 分钟前',
+    status: 'default' as const,
+  },
+];
 
-  return (
-    <div
-      style={{
-        backgroundColor: token.colorBgContainer,
-        boxShadow: token.boxShadow,
-        borderRadius: '8px',
-        fontSize: '14px',
-        color: token.colorTextSecondary,
-        lineHeight: '22px',
-        padding: '16px 19px',
-        minWidth: '220px',
-        flex: 1,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          gap: '4px',
-          alignItems: 'center',
-        }}
-      >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            lineHeight: '22px',
-            backgroundSize: '100%',
-            textAlign: 'center',
-            padding: '8px 16px 16px 12px',
-            color: '#FFF',
-            fontWeight: 'bold',
-            backgroundImage:
-              "url('https://gw.alipayobjects.com/zos/bmw-prod/daaf8d50-8e6d-4251-905d-676a24ddfa12.svg')",
-          }}
-        >
-          {index}
-        </div>
-        <div
-          style={{
-            fontSize: '16px',
-            color: token.colorText,
-            paddingBottom: 8,
-          }}
-        >
-          {title}
-        </div>
-      </div>
-      <div
-        style={{
-          fontSize: '14px',
-          color: token.colorTextSecondary,
-          textAlign: 'justify',
-          lineHeight: '22px',
-          marginBottom: 8,
-        }}
-      >
-        {desc}
-      </div>
-      <a href={href} target="_blank" rel="noreferrer">
-        了解更多 {'>'}
-      </a>
-    </div>
-  );
-};
+const systemServices = [
+  { name: 'PuddingRuntime', status: 'success' as const, label: '运行中' },
+  { name: 'PuddingController', status: 'success' as const, label: '运行中' },
+  { name: 'PuddingGateway', status: 'success' as const, label: '运行中' },
+  { name: 'PuddingMemoryEngine', status: 'warning' as const, label: '降级运行' },
+  { name: 'CoordinationBus', status: 'success' as const, label: '运行中' },
+];
 
 const Welcome: React.FC = () => {
   const { token } = theme.useToken();
   const { initialState } = useModel('@@initialState');
+  const userName = initialState?.currentUser?.name ?? '管理员';
+
   return (
-    <PageContainer>
-      <Card
-        style={{
-          borderRadius: 8,
-        }}
-        styles={{
-          body: {
-            backgroundImage:
-              initialState?.settings?.navTheme === 'realDark'
-                ? 'background-image: linear-gradient(75deg, #1A1B1F 0%, #191C1F 100%)'
-                : 'background-image: linear-gradient(75deg, #FBFDFF 0%, #F5F7FF 100%)',
-          },
-        }}
-      >
-        <div
-          style={{
-            backgroundPosition: '100% -30%',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '274px auto',
-            backgroundImage:
-              "url('https://gw.alipayobjects.com/mdn/rms_a9745b/afts/img/A*BuFmQqsB2iAAAAAAAAAAAAAAARQnAQ')",
+    <PageContainer
+      title="平台概览"
+      subTitle={`欢迎回来，${userName}`}
+      extra={
+        <Tag color="processing" style={{ marginLeft: 8 }}>
+          v1.0 · 开发预览
+        </Tag>
+      }
+    >
+      {/* ── 统计卡片行 ─────────────────────────────────── */}
+      <StatisticCard.Group style={{ marginBottom: 24 }}>
+        <StatisticCard
+          statistic={{
+            title: '智能体',
+            value: 12,
+            icon: (
+              <RobotOutlined
+                style={{
+                  fontSize: 28,
+                  color: token.colorPrimary,
+                  background: token.colorPrimaryBg,
+                  padding: 8,
+                  borderRadius: token.borderRadius,
+                }}
+              />
+            ),
+            description: (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                已注册 12 个智能体
+              </Text>
+            ),
           }}
-        >
-          <div
-            style={{
-              fontSize: '20px',
-              color: token.colorTextHeading,
-            }}
-          >
-            欢迎使用 Ant Design Pro
-          </div>
-          <p
-            style={{
-              fontSize: '14px',
-              color: token.colorTextSecondary,
-              lineHeight: '22px',
-              marginTop: 16,
-              marginBottom: 32,
-              width: '65%',
-            }}
-          >
-            Ant Design Pro 是一个整合了 umi，Ant Design 和 ProComponents
-            的脚手架方案。致力于在设计规范和基础组件的基础上，继续向上构建，提炼出典型模板/业务组件/配套设计资源，进一步提升企业级中后台产品设计研发过程中的『用户』和『设计者』的体验。
-          </p>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 16,
-            }}
-          >
-            <InfoCard
-              index={1}
-              href="https://umijs.org/docs/introduce/introduce"
-              title="了解 umi"
-              desc="umi 是一个可扩展的企业级前端应用框架,umi 以路由为基础的，同时支持配置式路由和约定式路由，保证路由的功能完备，并以此进行功能扩展。"
+        />
+        <StatisticCard.Divider />
+        <StatisticCard
+          statistic={{
+            title: '活跃会话',
+            value: 5,
+            icon: (
+              <ApiOutlined
+                style={{
+                  fontSize: 28,
+                  color: '#52c41a',
+                  background: '#f6ffed',
+                  padding: 8,
+                  borderRadius: token.borderRadius,
+                }}
+              />
+            ),
+            description: (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                实时活跃
+              </Text>
+            ),
+          }}
+        />
+        <StatisticCard.Divider />
+        <StatisticCard
+          statistic={{
+            title: '工作空间',
+            value: 3,
+            icon: (
+              <ClusterOutlined
+                style={{
+                  fontSize: 28,
+                  color: '#faad14',
+                  background: '#fffbe6',
+                  padding: 8,
+                  borderRadius: token.borderRadius,
+                }}
+              />
+            ),
+            description: (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                含 1 个默认空间
+              </Text>
+            ),
+          }}
+        />
+        <StatisticCard.Divider />
+        <StatisticCard
+          statistic={{
+            title: '今日事件',
+            value: 847,
+            trend: 'up',
+            icon: (
+              <ThunderboltOutlined
+                style={{
+                  fontSize: 28,
+                  color: '#ff4d4f',
+                  background: '#fff1f0',
+                  padding: 8,
+                  borderRadius: token.borderRadius,
+                }}
+              />
+            ),
+            description: (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                较昨日 +12%
+              </Text>
+            ),
+          }}
+        />
+      </StatisticCard.Group>
+
+      {/* ── 内容区 ──────────────────────────────────────── */}
+      <Row gutter={[24, 24]}>
+        {/* 最近活动 */}
+        <Col xs={24} lg={15}>
+          <ProCard title="最近活动" bordered headerBordered>
+            <List
+              itemLayout="horizontal"
+              dataSource={recentActivities}
+              renderItem={(item) => (
+                <List.Item>
+                  <List.Item.Meta
+                    avatar={
+                      <Badge
+                        status={item.status}
+                        style={{ marginTop: 6, marginRight: 4 }}
+                      />
+                    }
+                    title={
+                      <Space size={8}>
+                        <Text
+                          strong
+                          style={{ color: token.colorPrimary }}
+                        >
+                          {item.agent}
+                        </Text>
+                        <Text>{item.action}</Text>
+                      </Space>
+                    }
+                    description={
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: 12 }}
+                      >
+                        {item.time}
+                      </Text>
+                    }
+                  />
+                </List.Item>
+              )}
             />
-            <InfoCard
-              index={2}
-              title="了解 ant design"
-              href="https://ant.design"
-              desc="antd 是基于 Ant Design 设计体系的 React UI 组件库，主要用于研发企业级中后台产品。"
-            />
-            <InfoCard
-              index={3}
-              title="了解 Pro Components"
-              href="https://procomponents.ant.design"
-              desc="ProComponents 是一个基于 Ant Design 做了更高抽象的模板组件，以 一个组件就是一个页面为开发理念，为中后台开发带来更好的体验。"
-            />
-          </div>
-        </div>
-      </Card>
+          </ProCard>
+        </Col>
+
+        {/* 右侧列：快速操作 + 系统服务 */}
+        <Col xs={24} lg={9}>
+          <ProCard
+            title="快速操作"
+            bordered
+            headerBordered
+            style={{ marginBottom: 24 }}
+          >
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <ProCard
+                hoverable
+                size="small"
+                style={{ cursor: 'pointer' }}
+                onClick={() =>
+                  (window.location.href = '/admin/sub-page')
+                }
+              >
+                <Space>
+                  <RobotOutlined style={{ color: token.colorPrimary }} />
+                  <Text>管理智能体</Text>
+                </Space>
+              </ProCard>
+              <ProCard
+                hoverable
+                size="small"
+                style={{ cursor: 'pointer' }}
+                onClick={() => (window.location.href = '/list')}
+              >
+                <Space>
+                  <ClusterOutlined style={{ color: '#faad14' }} />
+                  <Text>工作空间列表</Text>
+                </Space>
+              </ProCard>
+              <ProCard
+                hoverable
+                size="small"
+                style={{ cursor: 'pointer' }}
+                onClick={() => (window.location.href = '/list')}
+              >
+                <Space>
+                  <BranchesOutlined style={{ color: '#52c41a' }} />
+                  <Text>查看会话记录</Text>
+                </Space>
+              </ProCard>
+            </Space>
+          </ProCard>
+
+          <ProCard title="系统服务" bordered headerBordered>
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              {systemServices.map((svc) => (
+                <div
+                  key={svc.name}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 13 }}>{svc.name}</Text>
+                  <Badge status={svc.status} text={svc.label} />
+                </div>
+              ))}
+            </Space>
+          </ProCard>
+        </Col>
+      </Row>
     </PageContainer>
   );
 };
