@@ -35,6 +35,10 @@ export default [
     component: './workspace',
   },
   {
+    path: '/workspace/:id',
+    component: './workspace/[id]',
+  },
+  {
     path: '/llm-resource-pool',
     name: 'llmResourcePool',
     icon: 'thunderbolt',
@@ -48,8 +52,6 @@ export default [
   },
   {
     path: '/workspace-agent-template',
-    name: 'workspaceAgentTemplate',
-    icon: 'team',
     component: './workspace-agent-template',
   },
   {

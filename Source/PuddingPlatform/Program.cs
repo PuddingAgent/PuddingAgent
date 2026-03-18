@@ -104,7 +104,7 @@ using (var scope = app.Services.CreateScope())
             Username = "admin",
             Email = "admin@pudding.local",
             DisplayName = "平台管理员",
-            PasswordHash = PasswordHasher.Hash("Admin@123"),
+            PasswordHash = PasswordHasher.Hash("pudding.dev"),
             UserType = UserType.Admin,
             IsEnabled = true,
         });

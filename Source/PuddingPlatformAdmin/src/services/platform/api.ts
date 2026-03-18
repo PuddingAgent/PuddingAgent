@@ -60,22 +60,25 @@ export interface SessionRecord {
 
 // ─── Workspace API ────────────────────────────────────────────────
 
-export async function listWorkspaces(): Promise<WorkspaceDefinition[]> {
+export async function listWorkspaces(): Promise<WorkspaceWithPermDto[]> {
   return request('/api/workspaces', { method: 'GET' });
 }
 
-export async function getWorkspace(id: string): Promise<WorkspaceDefinition> {
+export async function getWorkspace(id: string): Promise<WorkspaceWithPermDto> {
   return request(`/api/workspaces/${encodeURIComponent(id)}`, { method: 'GET' });
 }
 
-export async function createWorkspace(workspace: WorkspaceDefinition): Promise<WorkspaceDefinition> {
-  return request('/api/workspaces', { method: 'POST', data: workspace });
+export async function createWorkspace(req: CreateWorkspaceRequest): Promise<WorkspaceWithPermDto> {
+  return request('/api/workspaces', { method: 'POST', data: req });
 }
 
-export async function updateWorkspace(workspace: WorkspaceDefinition): Promise<WorkspaceDefinition> {
-  return request(`/api/workspaces/${encodeURIComponent(workspace.workspaceId)}`, {
+export async function updateWorkspace(
+  id: string,
+  req: UpdateWorkspaceRequest,
+): Promise<WorkspaceWithPermDto> {
+  return request(`/api/workspaces/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    data: workspace,
+    data: req,
   });
 }
 
@@ -659,3 +662,26 @@ export async function removeWorkspaceMember(workspaceId: string, id: number): Pr
   });
 }
 
+// ─── Workspace-scoped Member API (via /api/workspaces) ──────────
+// Used by the workspace detail page; routes are on WorkspaceApiController.
+
+export async function listWorkspaceMembersDirect(workspaceId: string): Promise<WorkspaceMemberDto[]> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`, { method: 'GET' });
+}
+
+export async function addWorkspaceMemberDirect(
+  workspaceId: string,
+  req: AddWorkspaceMemberRequest,
+): Promise<WorkspaceMemberDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`, {
+    method: 'POST',
+    data: req,
+  });
+}
+
+export async function removeWorkspaceMemberDirect(workspaceId: string, memberId: number): Promise<void> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${memberId}`,
+    { method: 'DELETE' },
+  );
+}

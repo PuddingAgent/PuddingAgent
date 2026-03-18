@@ -33,7 +33,7 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 
 总览文档：
 - [Tasks/task24-platform-v1-first-slice.md](Tasks/task24-platform-v1-first-slice.md)
-- 架构.md
+- [必要参考：架构.md](Docs/架构.md)
 
 细化任务文档：
 - [Tasks/task26-runtime-foundation.md](Tasks/task26-runtime-foundation.md)

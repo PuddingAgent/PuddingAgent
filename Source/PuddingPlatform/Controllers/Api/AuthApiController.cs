@@ -53,31 +53,30 @@ public class AuthApiController(IConfiguration config, PlatformDbContext db) : Co
 
         if (string.IsNullOrEmpty(userId))
         {
-            return Ok(new
+            return Unauthorized(new
             {
-                name = "游客",
-                avatar = "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png",
-                userid = "00000000",
-                access = "guest",
-                email = "",
-                signature = "",
-                title = "",
-                group = "",
-                unreadCount = 0,
+                data        = new { isLogin = false },
+                errorCode   = "401",
+                errorMessage = "请先登录！",
+                success     = true,
             });
         }
 
         return Ok(new
         {
-            name      = name ?? userId,
-            avatar    = "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png",
-            userid    = userId,
-            access    = authority ?? "user",
-            email     = email ?? $"{userId}@pudding.local",
-            signature = "Pudding Platform 管理控制台",
-            title     = authority == "admin" ? "系统管理员" : "普通用户",
-            group     = "Pudding Team",
-            unreadCount = 0,
+            success = true,
+            data    = new
+            {
+                name      = name ?? userId,
+                avatar    = "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png",
+                userid    = userId,
+                access    = authority ?? "user",
+                email     = email ?? $"{userId}@pudding.local",
+                signature = "Pudding Platform 管理控制台",
+                title     = authority == "admin" ? "系统管理员" : "普通用户",
+                group     = "Pudding Team",
+                unreadCount = 0,
+            },
         });
     }
 
