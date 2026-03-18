@@ -17,6 +17,14 @@ export default {
       changeOrigin: true,
       secure: false,
     },
+    // dev 环境代理 → PuddingController（port 5000）
+    // 模拟 nginx 对 /ingress/ 的 pathRewrite：/ingress/foo → /api/foo
+    '/ingress/': {
+      target: 'http://localhost:5000',
+      changeOrigin: true,
+      secure: false,
+      pathRewrite: { '^/ingress/': '/api/' },
+    },
   },
   /**
    * @name 详细的代理配置

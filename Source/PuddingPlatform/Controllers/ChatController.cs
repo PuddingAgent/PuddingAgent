@@ -26,7 +26,7 @@ public class ChatController : Controller
             userExternalId ?? "platform-user",
             messageText,
             workspaceId,
-            ct);
+            ct: ct);
 
         ViewBag.Result = result;
         return View("Index");

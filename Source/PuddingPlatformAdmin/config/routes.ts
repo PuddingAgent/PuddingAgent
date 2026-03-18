@@ -85,6 +85,12 @@ export default [
     component: './session',
   },
   {
+    path: '/runtime-management',
+    name: 'runtimeManagement',
+    icon: 'cloudServer',
+    component: './runtime-management',
+  },
+  {
     path: '/admin',
     name: 'admin',
     icon: 'crown',

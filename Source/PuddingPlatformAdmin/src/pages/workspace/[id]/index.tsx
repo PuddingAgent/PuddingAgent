@@ -3,10 +3,14 @@ import {
   DeleteOutlined,
   EditOutlined,
   LockOutlined,
+  MessageOutlined,
   PlusOutlined,
   RobotOutlined,
+  SendOutlined,
   SettingOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
+  ToolOutlined,
   UnlockOutlined,
   UserAddOutlined,
 } from '@ant-design/icons';
@@ -44,30 +48,65 @@ import React, { useEffect, useRef, useState } from 'react';
 import { history, useParams } from '@umijs/max';
 import {
   addWorkspaceMember,
+  createWorkspaceAgent,
   createWorkspaceAgentTemplate,
+  createWorkspaceChannel,
+  createWorkspaceSkill,
+  createKnowledgeBase,
+  createWorkflow,
+  deleteWorkspaceAgent,
   deleteWorkspaceAgentTemplate,
+  deleteWorkspaceChannel,
+  deleteWorkspaceSkill,
+  deleteKnowledgeBase,
+  deleteWorkflow,
   freezeWorkspace,
+  freezeWorkspaceAgent,
   getWorkspace,
   listGlobalAgentTemplates,
+  listKnowledgeBases,
   listLlmModels,
   listLlmProviders,
   listUsers,
   listWorkspaceAgentTemplates,
+  listWorkspaceAgents,
+  listWorkspaceChannels,
   listWorkspaceMembers,
+  listWorkspaceSkills,
+  listWorkflows,
   removeWorkspaceMember,
+  sendAdminChatMessage,
   unfreezeWorkspace,
+  unfreezeWorkspaceAgent,
   updateWorkspace,
+  updateWorkspaceAgent,
   updateWorkspaceAgentTemplate,
+  updateWorkspaceChannel,
+  updateWorkspaceSkill,
+  updateKnowledgeBase,
+  updateWorkflow,
   type AddWorkspaceMemberRequest,
+  type AdminChatRequest,
   type AppUserDto,
+  type CreateWorkspaceAgentRequest,
   type GlobalAgentTemplateDto,
+  type KnowledgeBaseDto,
   type LlmModelDto,
   type LlmProviderDto,
+  type UpsertKnowledgeBaseRequest,
+  type UpsertWorkflowRequest,
+  type UpsertWorkspaceChannelRequest,
+  type UpsertWorkspaceSkillRequest,
+  type UpdateWorkspaceAgentRequest,
   type UpdateWorkspaceRequest,
   type UpsertWorkspaceAgentTemplateRequest,
   type WorkspaceAccessPolicy,
+  type WorkspaceAgentDto,
   type WorkspaceAgentTemplateDto,
+  type WorkspaceChannelDto,
+  type WorkflowDto,
   type WorkspaceMemberDto,
+  type WorkspaceSkillDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
 
@@ -343,6 +382,875 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
             <ProFormDigit name="maxReplyTokens" label="最大回复 tokens" min={128} />
             <ProFormDigit name="sortOrder" label="排序权重" min={0} />
           </Space>
+          <ProFormSwitch name="isEnabled" label="启用" />
+        </ProForm>
+      </Drawer>
+    </>
+  );
+};
+
+// ─── 工作流 Tab ───────────────────────────────────────────────────────────────
+
+const WORKFLOW_STATUSES = [
+  { label: '草稿', value: 'Draft' },
+  { label: '激活', value: 'Active' },
+  { label: '暂停', value: 'Paused' },
+];
+
+const STATUS_COLORS: Record<string, string> = {
+  Draft: 'default', Active: 'green', Paused: 'orange',
+};
+
+const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { message } = App.useApp();
+  const tableRef = useRef<ActionType>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editItem, setEditItem] = useState<WorkflowDto | null>(null);
+  const [form] = Form.useForm<UpsertWorkflowRequest>();
+
+  const openCreate = () => {
+    setEditItem(null);
+    form.resetFields();
+    form.setFieldsValue({ status: 'Draft', isEnabled: true });
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (item: WorkflowDto) => {
+    setEditItem(item);
+    form.setFieldsValue(item);
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editItem) {
+        await updateWorkflow(workspaceId, editItem.workflowId, values);
+        message.success('工作流已更新');
+      } else {
+        await createWorkflow(workspaceId, values);
+        message.success('工作流已创建');
+      }
+      setDrawerOpen(false);
+      tableRef.current?.reload();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('保存失败');
+    }
+  };
+
+  const handleDelete = async (workflowId: string) => {
+    await deleteWorkflow(workspaceId, workflowId);
+    message.success('工作流已删除');
+    tableRef.current?.reload();
+  };
+
+  const columns: ProColumns<WorkflowDto>[] = [
+    { title: '名称', dataIndex: 'name', width: 160 },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 100,
+      render: (_, r) => <Tag color={STATUS_COLORS[r.status] ?? 'default'}>{r.status}</Tag>,
+    },
+    { title: '描述', dataIndex: 'description', ellipsis: true },
+    {
+      title: '启用',
+      dataIndex: 'isEnabled',
+      width: 80,
+      render: (_, r) => r.isEnabled
+        ? <Badge status="processing" text="启用" />
+        : <Badge status="default" text="停用" />,
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 160,
+      render: (v) => new Date(v as string).toLocaleString('zh-CN'),
+    },
+    {
+      title: '操作',
+      width: 100,
+      render: (_, r) => (
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(r.workflowId)} okButtonProps={{ danger: true }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <ProTable<WorkflowDto>
+        actionRef={tableRef}
+        rowKey="workflowId"
+        columns={columns}
+        request={async () => {
+          const data = await listWorkflows(workspaceId);
+          return { data, success: true };
+        }}
+        search={false}
+        toolBarRender={() => [
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建工作流</Button>,
+        ]}
+      />
+      <Drawer
+        title={editItem ? '编辑工作流' : '新建工作流'}
+        open={drawerOpen}
+        width={560}
+        onClose={() => setDrawerOpen(false)}
+        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+      >
+        <ProForm form={form} submitter={false} layout="vertical">
+          <ProFormText name="name" label="名称" rules={[{ required: true }]} />
+          <ProFormSelect name="status" label="状态" options={WORKFLOW_STATUSES} rules={[{ required: true }]} />
+          <ProFormTextArea name="description" label="描述" rows={2} />
+          <ProFormTextArea name="definitionJson" label="工作流定义 JSON" rows={8} placeholder='{"nodes": [], "edges": []}' />
+          <ProFormSwitch name="isEnabled" label="启用" />
+        </ProForm>
+      </Drawer>
+    </>
+  );
+};
+
+// ─── Agent 管理 Tab ───────────────────────────────────────────────────────────
+
+const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { message } = App.useApp();
+  const tableRef = useRef<ActionType>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editItem, setEditItem] = useState<WorkspaceAgentDto | null>(null);
+  const [providers, setProviders] = useState<LlmProviderDto[]>([]);
+  const [models, setModels] = useState<LlmModelDto[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [templates, setTemplates] = useState<WorkspaceAgentTemplateDto[]>([]);
+  const [form] = Form.useForm<CreateWorkspaceAgentRequest & UpdateWorkspaceAgentRequest>();
+
+  useEffect(() => {
+    listLlmProviders().then(setProviders).catch(() => {});
+    listWorkspaceAgentTemplates(workspaceId).then(setTemplates).catch(() => {});
+  }, [workspaceId]);
+
+  const handleProviderChange = async (providerId: string) => {
+    form.setFieldValue('preferredModelId', undefined);
+    if (!providerId) { setModels([]); return; }
+    setLoadingModels(true);
+    try {
+      const ms = await listLlmModels(providerId);
+      setModels(ms.filter((m) => !m.isDeprecated));
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const openCreate = () => {
+    setEditItem(null);
+    form.resetFields();
+    form.setFieldsValue({ isEnabled: true });
+    setModels([]);
+    setDrawerOpen(true);
+  };
+
+  const openEdit = async (item: WorkspaceAgentDto) => {
+    setEditItem(item);
+    if (item.preferredProviderId) {
+      const ms = await listLlmModels(item.preferredProviderId);
+      setModels(ms.filter((m) => !m.isDeprecated));
+    } else {
+      setModels([]);
+    }
+    form.setFieldsValue({ ...item });
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editItem) {
+        await updateWorkspaceAgent(workspaceId, editItem.agentId, values as UpdateWorkspaceAgentRequest);
+        message.success('Agent 已更新');
+      } else {
+        await createWorkspaceAgent(workspaceId, values as CreateWorkspaceAgentRequest);
+        message.success('Agent 已创建');
+      }
+      setDrawerOpen(false);
+      tableRef.current?.reload();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('保存失败');
+    }
+  };
+
+  const handleFreeze = async (agentId: string) => {
+    await freezeWorkspaceAgent(workspaceId, agentId);
+    message.success('Agent 已冻结');
+    tableRef.current?.reload();
+  };
+
+  const handleUnfreeze = async (agentId: string) => {
+    await unfreezeWorkspaceAgent(workspaceId, agentId);
+    message.success('Agent 已解冻');
+    tableRef.current?.reload();
+  };
+
+  const handleDelete = async (agentId: string) => {
+    await deleteWorkspaceAgent(workspaceId, agentId);
+    message.success('Agent 已删除');
+    tableRef.current?.reload();
+  };
+
+  const columns: ProColumns<WorkspaceAgentDto>[] = [
+    { title: '名称', dataIndex: 'name', width: 140 },
+    {
+      title: '来源模板',
+      dataIndex: 'sourceTemplateId',
+      ellipsis: true,
+      render: (_, r) => r.sourceTemplateId
+        ? <Tag color="geekblue">{r.sourceTemplateId}</Tag>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: '首选模型',
+      width: 140,
+      ellipsis: true,
+      render: (_, r) => r.preferredModelId
+        ? <Text code style={{ fontSize: 12 }}>{r.preferredModelId}</Text>
+        : <Text type="secondary">默认</Text>,
+    },
+    {
+      title: '状态',
+      width: 90,
+      render: (_, r) => r.isFrozen
+        ? <Badge status="error" text="冻结" />
+        : r.isEnabled
+          ? <Badge status="processing" text="运行中" />
+          : <Badge status="default" text="停用" />,
+    },
+    {
+      title: '操作',
+      width: 150,
+      render: (_, r) => (
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          {r.isFrozen ? (
+            <Button size="small" icon={<UnlockOutlined />} onClick={() => handleUnfreeze(r.agentId)} />
+          ) : (
+            <Button size="small" icon={<LockOutlined />} danger onClick={() => handleFreeze(r.agentId)} />
+          )}
+          <Popconfirm title="确认删除该 Agent？" onConfirm={() => handleDelete(r.agentId)} okButtonProps={{ danger: true }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <ProTable<WorkspaceAgentDto>
+        actionRef={tableRef}
+        rowKey="agentId"
+        columns={columns}
+        request={async () => {
+          const data = await listWorkspaceAgents(workspaceId);
+          return { data, success: true };
+        }}
+        search={false}
+        toolBarRender={() => [
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增 Agent</Button>,
+        ]}
+      />
+      <Drawer
+        title={editItem ? '编辑 Agent' : '新增 Agent'}
+        open={drawerOpen}
+        width={580}
+        onClose={() => setDrawerOpen(false)}
+        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+      >
+        <ProForm form={form} submitter={false} layout="vertical">
+          <ProFormText name="name" label="Agent 名称" rules={[{ required: true }]} />
+          <ProFormTextArea name="description" label="描述" rows={2} />
+          <ProFormSelect
+            name="sourceTemplateId"
+            label="来源模板（可选）"
+            options={templates.map((t) => ({ label: `${t.name} (${t.templateId})`, value: t.templateId }))}
+            placeholder="选择已有模板作为基础配置"
+            fieldProps={{ allowClear: true }}
+          />
+          <ProFormTextArea name="systemPromptOverride" label="覆盖系统提示词" rows={5} placeholder="留空则使用模板的系统提示词" />
+          <ProFormSelect
+            name="preferredProviderId"
+            label="首选服务商"
+            options={providers.filter((p) => p.isEnabled).map((p) => ({ label: p.name, value: p.providerId }))}
+            placeholder="不选则使用平台默认"
+            fieldProps={{ onChange: handleProviderChange, allowClear: true }}
+          />
+          <ProFormSelect
+            name="preferredModelId"
+            label="首选模型"
+            options={models.map((m) => ({ label: `${m.name} (${(m.maxContextTokens / 1000).toFixed(0)}K)`, value: m.modelId }))}
+            placeholder="不选则使用服务商默认"
+            fieldProps={{ loading: loadingModels, allowClear: true }}
+          />
+          {editItem && <ProFormSwitch name="isEnabled" label="启用" />}
+        </ProForm>
+      </Drawer>
+    </>
+  );
+};
+
+// ─── Chat 界面 Tab ─────────────────────────────────────────────────────────────
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
+const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { message } = App.useApp();
+  const [agents, setAgents] = useState<WorkspaceAgentDto[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    listWorkspaceAgents(workspaceId).then(setAgents).catch(() => {});
+  }, [workspaceId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text) return;
+    setInputText('');
+    setChatMessages((prev) => [
+      ...prev,
+      { role: 'user', content: text, timestamp: new Date().toISOString() },
+    ]);
+    setSending(true);
+    try {
+      const req: AdminChatRequest = {
+        messageText: text,
+        sessionId,
+        agentId: selectedAgentId,
+      };
+      const resp = await sendAdminChatMessage(workspaceId, req);
+      setSessionId(resp.sessionId);
+      if (resp.isSuccess && resp.reply) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: resp.reply!, timestamp: new Date().toISOString() },
+        ]);
+      } else {
+        message.error(resp.errorMessage ?? '发送失败，Agent 未返回回复');
+      }
+    } catch {
+      message.error('发送请求失败，请检查 Controller 服务状态');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleClearSession = () => {
+    setChatMessages([]);
+    setSessionId(undefined);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '520px', background: '#fff', border: '1px solid #f0f0f0', borderRadius: 8 }}>
+      {/* Toolbar */}
+      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Text type="secondary" style={{ flexShrink: 0 }}>对话 Agent：</Text>
+        <Select
+          style={{ width: 220 }}
+          placeholder="选择 Agent（不选则使用工作空间默认）"
+          allowClear
+          value={selectedAgentId}
+          onChange={(v) => { setSelectedAgentId(v); handleClearSession(); }}
+          options={agents.filter((a) => !a.isFrozen && a.isEnabled).map((a) => ({
+            label: a.name, value: a.agentId,
+          }))}
+        />
+        {sessionId && (
+          <Text type="secondary" style={{ fontSize: 12, flex: 1 }}>
+            会话 ID：<Text code style={{ fontSize: 11 }}>{sessionId}</Text>
+          </Text>
+        )}
+        <Button size="small" onClick={handleClearSession}>清空会话</Button>
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {chatMessages.length === 0 && (
+          <div style={{ textAlign: 'center', marginTop: 60 }}>
+            <MessageOutlined style={{ fontSize: 36, color: '#d9d9d9' }} />
+            <br />
+            <Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
+              选择 Agent 后开始对话
+            </Text>
+          </div>
+        )}
+        {chatMessages.map((m, idx) => (
+          <div key={idx} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div
+              style={{
+                maxWidth: '72%',
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: m.role === 'user' ? '#1677ff' : '#f5f5f5',
+                color: m.role === 'user' ? '#fff' : '#000',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f5f5f5' }}>
+              <Spin size="small" /> <Text type="secondary" style={{ marginLeft: 8 }}>Agent 思考中…</Text>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: '8px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8 }}>
+        <Input.TextArea
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="输入消息，Ctrl+Enter 发送"
+          autoSize={{ minRows: 1, maxRows: 4 }}
+          onKeyDown={(e) => {
+            if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleSend(); }
+          }}
+          style={{ flex: 1 }}
+        />
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          loading={sending}
+          onClick={handleSend}
+          style={{ alignSelf: 'flex-end' }}
+        >
+          发送
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+// ─── 知识库管理 Tab ───────────────────────────────────────────────────────────
+
+const KB_TYPES = [
+  { label: '向量存储 (VectorStore)', value: 'VectorStore' },
+  { label: '知识图谱 (Graph)', value: 'Graph' },
+  { label: '文件索引 (FileIndex)', value: 'FileIndex' },
+];
+
+const KB_TYPE_COLORS: Record<string, string> = {
+  VectorStore: 'blue', Graph: 'purple', FileIndex: 'cyan',
+};
+
+const KnowledgeBasesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { message } = App.useApp();
+  const tableRef = useRef<ActionType>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editItem, setEditItem] = useState<KnowledgeBaseDto | null>(null);
+  const [form] = Form.useForm<UpsertKnowledgeBaseRequest>();
+
+  const openCreate = () => {
+    setEditItem(null);
+    form.resetFields();
+    form.setFieldsValue({ kbType: 'VectorStore', isEnabled: true });
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (item: KnowledgeBaseDto) => {
+    setEditItem(item);
+    form.setFieldsValue(item);
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editItem) {
+        await updateKnowledgeBase(workspaceId, editItem.kbId, values);
+        message.success('知识库已更新');
+      } else {
+        await createKnowledgeBase(workspaceId, values);
+        message.success('知识库已创建');
+      }
+      setDrawerOpen(false);
+      tableRef.current?.reload();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('保存失败');
+    }
+  };
+
+  const handleDelete = async (kbId: string) => {
+    await deleteKnowledgeBase(workspaceId, kbId);
+    message.success('知识库已删除');
+    tableRef.current?.reload();
+  };
+
+  const columns: ProColumns<KnowledgeBaseDto>[] = [
+    { title: '名称', dataIndex: 'name', width: 160 },
+    {
+      title: '类型',
+      dataIndex: 'kbType',
+      width: 120,
+      render: (_, r) => <Tag color={KB_TYPE_COLORS[r.kbType] ?? 'default'}>{r.kbType}</Tag>,
+    },
+    { title: '文档数', dataIndex: 'documentCount', width: 90 },
+    { title: '描述', dataIndex: 'description', ellipsis: true },
+    {
+      title: '启用',
+      width: 80,
+      render: (_, r) => r.isEnabled
+        ? <Badge status="processing" text="启用" />
+        : <Badge status="default" text="停用" />,
+    },
+    {
+      title: '操作',
+      width: 100,
+      render: (_, r) => (
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          <Popconfirm title="确认删除知识库？" onConfirm={() => handleDelete(r.kbId)} okButtonProps={{ danger: true }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <ProTable<KnowledgeBaseDto>
+        actionRef={tableRef}
+        rowKey="kbId"
+        columns={columns}
+        request={async () => {
+          const data = await listKnowledgeBases(workspaceId);
+          return { data, success: true };
+        }}
+        search={false}
+        toolBarRender={() => [
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建知识库</Button>,
+        ]}
+      />
+      <Drawer
+        title={editItem ? '编辑知识库' : '新建知识库'}
+        open={drawerOpen}
+        width={480}
+        onClose={() => setDrawerOpen(false)}
+        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+      >
+        <ProForm form={form} submitter={false} layout="vertical">
+          <ProFormText name="name" label="名称" rules={[{ required: true }]} />
+          <ProFormSelect name="kbType" label="知识库类型" options={KB_TYPES} rules={[{ required: true }]} />
+          <ProFormTextArea name="description" label="描述" rows={2} />
+          <ProFormSwitch name="isEnabled" label="启用" />
+        </ProForm>
+      </Drawer>
+    </>
+  );
+};
+
+// ─── SKILL 库管理 Tab ──────────────────────────────────────────────────────────
+
+const SKILL_TYPES = [
+  { label: 'MCP Server', value: 'MCP' },
+  { label: '内置工具 (BuiltIn)', value: 'BuiltIn' },
+  { label: '自定义脚本 (CustomScript)', value: 'CustomScript' },
+  { label: 'HTTP 工具 (HttpTool)', value: 'HttpTool' },
+];
+
+const SKILL_TYPE_COLORS: Record<string, string> = {
+  MCP: 'magenta', BuiltIn: 'green', CustomScript: 'orange', HttpTool: 'blue',
+};
+
+const SkillsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { message } = App.useApp();
+  const tableRef = useRef<ActionType>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editItem, setEditItem] = useState<WorkspaceSkillDto | null>(null);
+  const [skillType, setSkillType] = useState<string>('BuiltIn');
+  const [form] = Form.useForm<UpsertWorkspaceSkillRequest>();
+
+  const openCreate = () => {
+    setEditItem(null);
+    form.resetFields();
+    form.setFieldsValue({ skillType: 'BuiltIn', isEnabled: true });
+    setSkillType('BuiltIn');
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (item: WorkspaceSkillDto) => {
+    setEditItem(item);
+    form.setFieldsValue(item);
+    setSkillType(item.skillType);
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editItem) {
+        await updateWorkspaceSkill(workspaceId, editItem.skillId, values);
+        message.success('Skill 已更新');
+      } else {
+        await createWorkspaceSkill(workspaceId, values);
+        message.success('Skill 已创建');
+      }
+      setDrawerOpen(false);
+      tableRef.current?.reload();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('保存失败');
+    }
+  };
+
+  const handleDelete = async (skillId: string) => {
+    await deleteWorkspaceSkill(workspaceId, skillId);
+    message.success('Skill 已删除');
+    tableRef.current?.reload();
+  };
+
+  const columns: ProColumns<WorkspaceSkillDto>[] = [
+    { title: '名称', dataIndex: 'name', width: 140 },
+    {
+      title: '类型',
+      dataIndex: 'skillType',
+      width: 120,
+      render: (_, r) => <Tag color={SKILL_TYPE_COLORS[r.skillType] ?? 'default'}>{r.skillType}</Tag>,
+    },
+    { title: '描述', dataIndex: 'description', ellipsis: true },
+    {
+      title: '启用',
+      width: 80,
+      render: (_, r) => r.isEnabled
+        ? <Badge status="processing" text="启用" />
+        : <Badge status="default" text="停用" />,
+    },
+    {
+      title: '操作',
+      width: 100,
+      render: (_, r) => (
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          <Popconfirm title="确认删除 Skill？" onConfirm={() => handleDelete(r.skillId)} okButtonProps={{ danger: true }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <ProTable<WorkspaceSkillDto>
+        actionRef={tableRef}
+        rowKey="skillId"
+        columns={columns}
+        request={async () => {
+          const data = await listWorkspaceSkills(workspaceId);
+          return { data, success: true };
+        }}
+        search={false}
+        toolBarRender={() => [
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>注册 Skill</Button>,
+        ]}
+      />
+      <Drawer
+        title={editItem ? '编辑 Skill' : '注册 Skill'}
+        open={drawerOpen}
+        width={500}
+        onClose={() => setDrawerOpen(false)}
+        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+      >
+        <ProForm form={form} submitter={false} layout="vertical">
+          <ProFormText name="name" label="名称" rules={[{ required: true }]} />
+          <ProFormSelect
+            name="skillType"
+            label="技能类型"
+            options={SKILL_TYPES}
+            rules={[{ required: true }]}
+            fieldProps={{ onChange: (v: string) => { setSkillType(v); form.setFieldValue('configJson', undefined); } }}
+          />
+          <ProFormTextArea name="description" label="描述" rows={2} />
+          <ProFormTextArea
+            name="configJson"
+            label={skillType === 'MCP' ? 'MCP Server 配置 JSON' : skillType === 'HttpTool' ? 'HTTP 工具配置 JSON' : '配置 JSON（可选）'}
+            rows={5}
+            placeholder={
+              skillType === 'MCP'
+                ? '{"serverUrl": "http://localhost:3100/sse", "transport": "sse"}'
+                : skillType === 'HttpTool'
+                  ? '{"endpoint": "https://api.example.com/tool", "method": "POST"}'
+                  : '可选的配置参数 JSON'
+            }
+          />
+          <ProFormSwitch name="isEnabled" label="启用" />
+        </ProForm>
+      </Drawer>
+    </>
+  );
+};
+
+// ─── 渠道管道 Tab ─────────────────────────────────────────────────────────────
+
+const CHANNEL_TYPES = [
+  { label: 'HTTP (Webhook)', value: 'HTTP' },
+  { label: 'RabbitMQ', value: 'RabbitMQ' },
+  { label: 'WebSocket', value: 'WebSocket' },
+  { label: 'CLI', value: 'CLI' },
+  { label: 'Telegram', value: 'Telegram' },
+  { label: 'Email', value: 'Email' },
+];
+
+const CHANNEL_COLORS: Record<string, string> = {
+  HTTP: 'blue', RabbitMQ: 'orange', WebSocket: 'purple', CLI: 'default', Telegram: 'geekblue', Email: 'cyan',
+};
+
+const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { message } = App.useApp();
+  const tableRef = useRef<ActionType>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editItem, setEditItem] = useState<WorkspaceChannelDto | null>(null);
+  const [workspaceAgents, setWorkspaceAgents] = useState<WorkspaceAgentDto[]>([]);
+  const [form] = Form.useForm<UpsertWorkspaceChannelRequest>();
+
+  useEffect(() => {
+    listWorkspaceAgents(workspaceId).then(setWorkspaceAgents).catch(() => {});
+  }, [workspaceId]);
+
+  const openCreate = () => {
+    setEditItem(null);
+    form.resetFields();
+    form.setFieldsValue({ channelType: 'HTTP', isEnabled: true });
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (item: WorkspaceChannelDto) => {
+    setEditItem(item);
+    form.setFieldsValue(item);
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      if (editItem) {
+        await updateWorkspaceChannel(workspaceId, editItem.channelId, values);
+        message.success('渠道已更新');
+      } else {
+        await createWorkspaceChannel(workspaceId, values);
+        message.success('渠道已创建');
+      }
+      setDrawerOpen(false);
+      tableRef.current?.reload();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('保存失败');
+    }
+  };
+
+  const handleDelete = async (channelId: string) => {
+    await deleteWorkspaceChannel(workspaceId, channelId);
+    message.success('渠道已删除');
+    tableRef.current?.reload();
+  };
+
+  const columns: ProColumns<WorkspaceChannelDto>[] = [
+    { title: '名称', dataIndex: 'name', width: 140 },
+    {
+      title: '类型',
+      dataIndex: 'channelType',
+      width: 110,
+      render: (_, r) => <Tag color={CHANNEL_COLORS[r.channelType] ?? 'default'}>{r.channelType}</Tag>,
+    },
+    {
+      title: '默认 Agent',
+      width: 160,
+      ellipsis: true,
+      render: (_, r) => r.defaultAgentId
+        ? <Text code style={{ fontSize: 12 }}>{r.defaultAgentId}</Text>
+        : <Text type="secondary">工作空间默认</Text>,
+    },
+    { title: '描述', dataIndex: 'description', ellipsis: true },
+    {
+      title: '启用',
+      width: 80,
+      render: (_, r) => r.isEnabled
+        ? <Badge status="processing" text="启用" />
+        : <Badge status="default" text="停用" />,
+    },
+    {
+      title: '操作',
+      width: 100,
+      render: (_, r) => (
+        <Space size={4}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          <Popconfirm title="确认删除渠道？" onConfirm={() => handleDelete(r.channelId)} okButtonProps={{ danger: true }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <ProTable<WorkspaceChannelDto>
+        actionRef={tableRef}
+        rowKey="channelId"
+        columns={columns}
+        request={async () => {
+          const data = await listWorkspaceChannels(workspaceId);
+          return { data, success: true };
+        }}
+        search={false}
+        toolBarRender={() => [
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>添加渠道</Button>,
+        ]}
+      />
+      <Drawer
+        title={editItem ? '编辑渠道' : '添加渠道'}
+        open={drawerOpen}
+        width={500}
+        onClose={() => setDrawerOpen(false)}
+        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+      >
+        <ProForm form={form} submitter={false} layout="vertical">
+          <ProFormText name="name" label="渠道名称" rules={[{ required: true }]} />
+          <ProFormSelect name="channelType" label="渠道类型" options={CHANNEL_TYPES} rules={[{ required: true }]} />
+          <ProFormTextArea name="description" label="描述" rows={2} />
+          <ProFormSelect
+            name="defaultAgentId"
+            label="默认路由 Agent"
+            options={workspaceAgents.filter((a) => !a.isFrozen && a.isEnabled).map((a) => ({
+              label: a.name, value: a.agentId,
+            }))}
+            placeholder="不选则使用工作空间默认路由策略"
+            fieldProps={{ allowClear: true }}
+          />
+          <ProFormTextArea name="configJson" label="连接配置 JSON" rows={4} placeholder='{"endpoint": "...", "authRef": "secret-name"}' />
           <ProFormSwitch name="isEnabled" label="启用" />
         </ProForm>
       </Drawer>
@@ -669,6 +1577,56 @@ const WorkspaceDetailPage: React.FC = () => {
               </Space>
             ),
             children: <AgentTemplatesTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'workspace-agents',
+            label: (
+              <Space>
+                <RobotOutlined />
+                Agent 管理
+              </Space>
+            ),
+            children: <WorkspaceAgentsTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'chat',
+            label: (
+              <Space>
+                <MessageOutlined />
+                Chat
+              </Space>
+            ),
+            children: <ChatTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'workflows',
+            label: (
+              <Space>
+                <ThunderboltOutlined />
+                工作流
+              </Space>
+            ),
+            children: <WorkflowsTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'knowledge-bases',
+            label: '知识库',
+            children: <KnowledgeBasesTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'skills',
+            label: (
+              <Space>
+                <ToolOutlined />
+                SKILL 库
+              </Space>
+            ),
+            children: <SkillsTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'channels',
+            label: '渠道管道',
+            children: <ChannelsTab workspaceId={workspace.workspaceId} />,
           },
         ]}
       />

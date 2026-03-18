@@ -8,7 +8,7 @@ PuddingPlatform API 集成测试
 用法：
     python PuddingPlatformTest.py
     python PuddingPlatformTest.py --base-url http://localhost/api
-    python PuddingPlatformTest.py --user admin --password Admin@123
+    python PuddingPlatformTest.py --user admin --password pudding.dev
 """
 
 import argparse
@@ -19,8 +19,8 @@ import requests
 # ─── 命令行参数 ───────────────────────────────────────────────
 parser = argparse.ArgumentParser(description="PuddingPlatform API 集成测试")
 parser.add_argument("--base-url", default="http://localhost/api", help="Platform API 基础 URL")
-parser.add_argument("--user",     default="admin",     help="管理员用户名")
-parser.add_argument("--password", default="Admin@123", help="管理员密码")
+parser.add_argument("--user",     default="admin",       help="管理员用户名")
+parser.add_argument("--password", default="pudding.dev", help="管理员密码")
 args = parser.parse_args()
 
 BASE = args.base_url.rstrip("/")
@@ -99,22 +99,26 @@ except Exception as e:
 # 1.3 currentUser（已登录）
 try:
     r = get("/currentUser")
-    data = r.json()
-    if data.get("userid") and data.get("access"):
-        ok(f"GET /currentUser — userid={data['userid']} access={data['access']}")
+    body = r.json()
+    d = body.get("data", {})
+    if d.get("userid") and d.get("access"):
+        ok(f"GET /currentUser — userid={d['userid']} access={d['access']}")
     else:
-        fail(f"GET /currentUser — 数据不完整: {data}")
+        fail(f"GET /currentUser — 数据不完整: {body}")
 except Exception as e:
     fail(f"GET /currentUser — 异常: {e}")
 
-# 1.4 currentUser（匿名）
+# 1.4 currentUser（匿名）：API 返回 HTTP 401 + {data:{isLogin:false}}
 try:
     r = requests.get(f"{BASE}/currentUser", timeout=10)
-    data = r.json()
-    if data.get("access") == "guest":
-        ok("GET /currentUser (匿名) — 正确返回 guest")
+    if r.status_code == 401:
+        ok("GET /currentUser (匿名) — 正确返回 401 Unauthorized")
     else:
-        fail(f"GET /currentUser (匿名) — 期望 guest，实际: {data.get('access')}")
+        body = r.json()
+        if body.get("data", {}).get("isLogin") is False:
+            ok("GET /currentUser (匿名) — 正确返回 isLogin=false")
+        else:
+            fail(f"GET /currentUser (匿名) — 期望 401/isLogin=false，实际: {r.status_code} {body}")
 except Exception as e:
     fail(f"GET /currentUser (匿名) — 异常: {e}")
 

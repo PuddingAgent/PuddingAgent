@@ -1,6 +1,6 @@
 # Pudding Agent Network 任务与状态看板
 
-最后更新：2026-03-15
+最后更新：2026-03-18
 
 ## 2026-03-15 第一批平台任务（Pudding Agent Network V1）
 
@@ -8,8 +8,45 @@
 
 目标链路：`PuddingPlatform（含admin管理界面，PuddingPlatformAdmin）  -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
 
+## 为什么要做这套系统
+
+Pudding 当前主线不是继续堆高单 Agent 的聊天能力，而是解决企业级多智能体落地中的几个硬问题：
+
+1. **多智能体与工作流能力不足**
+	真实任务更像任务图（Task Graph），而不是自由推理链，因此 Workflow 必须是一等能力，系统决定流程，LLM 只做 reasoning node。
+
+2. **多工作交叉导致上下文污染**
+	一个 Workspace 不应只是简单分组，而应成为 Memory + Agent + Tool + Event 的完整命名空间，保证任务、记忆和协作边界隔离。
+
+3. **现有智能体系统缺少事件队列机制**
+	只有心跳、没有事件总线，会导致响应缓慢、浪费 token。Pudding 的方向是 event-driven AI runtime，让 Agent 被事件唤醒，而不是轮询世界。
+
+4. **企业系统接入困难**
+	MQTT、WebSocket、HTTP、Webhook、GitHub 触发器等都应成为一等输入，而不是额外特判。
+
+5. **协同机制缺乏系统化设计**
+	多智能体不只是“多开几个 Agent”，而是需要角色、委派、监督、审查和共享痕迹的稳定协作协议。
+
+## MVP 三大核心模块
+
+如果只看最小可落地版本，Pudding 必须先站稳三块：
+
+1. **Agent Runtime**：承载 Session、Agent、sub_agent、技能、记忆与唤醒执行。
+2. **Event Bus**：承载外部输入、内部状态变化、订阅、直接唤醒、审计、死信与重放。
+3. **Workspace Memory**：把 Workspace 升级为 Memory + Agent + Tool + Event 的完整命名空间。
+
+这三者是当前所有任务排序的总前提。
+
 
 我们桌面端PuddingAvalonia（不需要开发）、CLI（暂时不需要开发）等优先级最低。
+
+## 当前主线的三层分工
+
+- **Controller / 控制层**：负责接入、路由、鉴权、审批、审计、事件治理、Workflow 控制、Runtime 节点管理。
+- **Runtime / 执行层**：负责 Session 热状态、Agent 执行、事件命中后的直接唤醒、技能/MCP/记忆/沙箱装配。
+- **Agent / 定义层**：负责角色、人设、系统提示词、默认能力组合、协作角色与策略画像定义。
+
+当前的任务路线必须服务于这三层稳定分工，而不是让它们重新缠在一起。
 
 ## 部署方式
 
@@ -44,11 +81,19 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 - [Tasks/task31-client-surfaces.md](Tasks/task31-client-surfaces.md)
 - [Tasks/task32-observability-integration.md](Tasks/task32-observability-integration.md)
 - [Tasks/task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md)
+- [Tasks/task34-event-bus-and-subscription.md](Tasks/task34-event-bus-and-subscription.md)
 
 补充约束：
+- Workflow 是一等能力，系统决定流程，LLM 只负责推理节点。
+- Workspace 不只是资源分组，而是 Memory + Agent + Tool + Event 的完整命名空间。
+- Agent 应优先由事件唤醒，而不是依赖心跳轮询。
+- 平台需要同时支持 Leader、投票/联邦、基于事件痕迹的自发协同三类协作模式。
 - 平台内置支持 Email Channel。
+- 平台内置支持 Web Chat Channel（嵌入式 HTTP + WebSocket 网页聊天；渠道 ID 采用 `web-chat-{workspaceId}` 固定格式，由 `WebChatGatewayAdapter` 统一处理，每个 Workspace 在初始化时自动注册该绑定）。**Web Chat 是后台管理的核心用户入口，优先级 P0。**
+- 平台规划支持飞书（Feishu）Channel，由 `FeishuGatewayAdapter` 实现；飞书及其他第三方渠道（Webhook、MQTT、钉钉等）优先级 P3，在所有关键链路任务完成后实现。
 - 一个 Workspace 可以挂接多个渠道，并为每个渠道声明默认 Agent 或允许 Agent 集合。
 - 渠道接入机制本身必须插件化，便于后续扩展更多渠道。
+- 渠道优先级分层：P0 = Web Chat（内置，首个真实用户入口）；P1 = Email（内置）；P2 = CLI/Avalonia（控制面）；P3 = 飞书及其他第三方渠道。
 - 知识库归属于 Workspace，由 Controller 持有服务端能力，Runtime 提供透明访问支持。
 - 统一存储层由 Controller 持有，Runtime 提供挂载与访问支持，上层 Agent 无感。
 - 知识图谱归属于 Workspace 共享资产，底层先用 PostgreSQL 实现，上层 Agent 无感。
@@ -59,17 +104,53 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 
 ### 路线总览
 
-| 阶段 | 任务 | 目标 | 前置依赖 | 可并行 |
-|---|---|---|---|---|
-| Phase 0 | [task24-platform-v1-first-slice.md](Tasks/task24-platform-v1-first-slice.md) | 固化首条垂直切片的类/API 设计 | 架构分层已稳定 | 否 |
-| Phase 1A | [task26-runtime-foundation.md](Tasks/task26-runtime-foundation.md) | 建立 `PuddingRuntime` 作为 Agent Runtime 宿主 | Phase 0 | 可与 Phase 1B 并行 |
-| Phase 1B | [task27-controller-routing-session.md](Tasks/task27-controller-routing-session.md) | 建立 `PuddingController` 路由、会话与控制入口 | Phase 0 | 可与 Phase 1A 并行 |
-| Phase 2A | [task28-platform-workspace-governance.md](Tasks/task28-platform-workspace-governance.md) | 建立 Platform 的 Workspace 业务层与治理策略 | Phase 1B | 可与 Phase 2B 并行 |
-| Phase 2B | [task29-agent-template-and-audit.md](Tasks/task29-agent-template-and-audit.md) | 建立 AgentTemplate、审计模板和运行画像 | Phase 1A + Phase 1B | 可与 Phase 2A 并行 |
-| Phase 3 | [task30-knowledge-infrastructure.md](Tasks/task30-knowledge-infrastructure.md) | 建立知识库、统一存储、知识图谱和 Runtime 透明访问 | Phase 1A + Phase 1B | 可与 Phase 2A/2B 后段局部并行 |
-| Phase 4 | [task31-client-surfaces.md](Tasks/task31-client-surfaces.md) | 建立 CLI / Avalonia（优先级最低） 客户端控制面 | Phase 1A + Phase 1B，且 API 基本稳定 | CLI 与 Avalonia（优先级最低） 可并行 |
-| Phase 5 | [task32-observability-integration.md](Tasks/task32-observability-integration.md) | 建立可观测性并完成阶段验收 | Phase 1-4 | 审计、指标、调试查询可并行 |
-| Phase 6 | [task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md) | 支持把其他 C# 桌面软件作为嵌入式 Runtime 节点调度 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段和 Phase 4 后段局部并行 |
+| 阶段 | 任务 | 目标 | 前置依赖 | 可并行 | 状态（2026-03-18 审计） |
+|---|---|---|---|---|---|
+| Phase 0 | [task24-platform-v1-first-slice.md](Tasks/task24-platform-v1-first-slice.md) | 固化首条垂直切片的类/API 设计 | 架构分层已稳定 | 否 | partial |
+| Phase 1A | [task26-runtime-foundation.md](Tasks/task26-runtime-foundation.md) | 建立 `PuddingRuntime` 作为 Agent Runtime 宿主 | Phase 0 | 可与 Phase 1B 并行 | partial |
+| Phase 1B | [task27-controller-routing-session.md](Tasks/task27-controller-routing-session.md) | 建立 `PuddingController` 路由、会话与控制入口 | Phase 0 | 可与 Phase 1A 并行 | partial |
+| Phase 2A | [task28-platform-workspace-governance.md](Tasks/task28-platform-workspace-governance.md) | 建立 Platform 的 Workspace 业务层与治理策略 | Phase 1B | 可与 Phase 2B 并行 | partial |
+| Phase 2B | [task29-agent-template-and-audit.md](Tasks/task29-agent-template-and-audit.md) | 建立 AgentTemplate、审计模板和运行画像 | Phase 1A + Phase 1B | 可与 Phase 2A 并行 | partial |
+| Phase 3 | [task30-knowledge-infrastructure.md](Tasks/task30-knowledge-infrastructure.md) | 建立知识库、统一存储、知识图谱和 Runtime 透明访问 | Phase 1A + Phase 1B | 可与 Phase 2A/2B 后段局部并行 | partial |
+| Phase 4 | [task31-client-surfaces.md](Tasks/task31-client-surfaces.md) | 建立 CLI / Avalonia（优先级最低） 客户端控制面 | Phase 1A + Phase 1B，且 API 基本稳定 | CLI 与 Avalonia（优先级最低） 可并行 | partial |
+| Phase 5 | [task34-event-bus-and-subscription.md](Tasks/task34-event-bus-and-subscription.md) | 建立统一事件总线、订阅治理与直接唤醒链路 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段局部并行 | partial |
+| Phase 6 | [task32-observability-integration.md](Tasks/task32-observability-integration.md) | 建立可观测性并完成阶段验收 | Phase 1-5 | 审计、指标、调试查询可并行 | partial（当前验收 blocked） |
+| Phase 7 | [task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md) | 支持把其他 C# 桌面软件作为嵌入式 Runtime 节点调度 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段和 Phase 5 后段局部并行 | todo |
+
+### 路线审计快照（2026-03-18）
+
+- 已按 `Docs/Tasks/task24~task34` 文档目标与当前源码状态进行对照审计。
+- 当前主链路处于“可运行但未全部收口”阶段：`task24~task32` 以 `partial` 为主，`task33` 仍为 `todo`。
+- `task32` 最新验收脚本结果：`blocked`（Controller API 当前不可达，报告：`TestResults/task32-acceptance-20260318-210259.json`）。
+- 具体已完成能力已在下方「能力状态总览（以源码为准）」中标记为 `done`（如 PlatformAdmin 登录/工作台、业务页面、JSON API、端到端冒烟链路、Docker Compose 基础设施等）。
+
+### 按控制层 / Runtime / Agent 观察当前主线
+
+为了避免只从“阶段”看任务而忽略职责边界，也可以从三层视角理解当前路线：
+
+#### 1. 控制层主线
+
+- `task27`：建立 `PuddingController` 最小控制入口
+- `task34`：建立统一事件总线、订阅治理与直接唤醒链路
+- `task32`：建立控制面的观测、审计与调试查询
+
+控制层的目标是：**先拿回治理权、路由权和事件控制权**。
+
+#### 2. Runtime 主线
+
+- `task26`：建立 `PuddingRuntime` 基础宿主
+- `task30`：接入知识、统一存储与 Runtime 透明访问
+- `task33`：扩展到嵌入式 Runtime 节点
+
+Runtime 的目标是：**先成为稳定执行宿主，再扩展事件唤醒、知识访问与宿主能力桥接**。
+
+#### 3. Agent 定义层主线
+
+- `task29`：建立 AgentTemplate、审计模板和运行画像
+- `task34`：补充事件订阅、唤醒与协作相关声明能力
+- 后续应继续补角色模型、委派图、协作契约等设计
+
+Agent 层的目标是：**先稳定定义“Agent 是谁”，再稳定它如何参与协作**。
 
 ### 推荐执行顺序
 
@@ -77,15 +158,24 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 2. 同时推进 task26 和 task27，分别稳定执行面与控制面基础。
 3. 在基础宿主稳定后，并行推进 task28 和 task29，稳定 Workspace 业务规则与模板体系。
 4. 接着推进 task30，补齐知识、存储、图谱三类基础设施。
-5. 当 API 与治理链路稳定后，推进 task31，打通 CLI 
-6. 最后执行 task32，把观测面和集成验收收口。
-7. 在主链路稳定后，推进 task33，把嵌入式桌面宿主纳入 Runtime 节点体系。
+5. 在 Controller 与 Runtime 主链路稳定后，推进 task34，建立统一事件总线、订阅与直接唤醒链路。
+6. 当 API 与治理链路稳定后，推进 task31，打通 CLI 
+7. 最后执行 task32，把观测面和集成验收收口。
+8. 在主链路稳定后，推进 task33，把嵌入式桌面宿主纳入 Runtime 节点体系。
+
+一个更直接的理解是：
+
+- 先稳住 **Controller + Runtime** 两条骨架线
+- 再稳住 **Workspace + AgentTemplate** 两条定义线
+- 再补 **Event Bus**，把系统从轮询世界切换到事件世界
+- 最后做观测面与嵌入式扩展能力收口
 
 ### 并行建议
 
 - `task26` 与 `task27` 适合双线并行，是当前最重要的基础阶段。
 - `task28` 与 `task29` 可并行，但都依赖基础宿主和控制入口已经稳定。
 - `task30` 的知识库、统一存储、知识图谱底层服务可以拆成三个并行子流，但 Runtime 透明访问桥接必须最后收口。
+- `task34` 中事件命名/Envelope、订阅治理、唤醒执行、死信与重放可分成多条子流并行，但最终契约必须统一收口。
 - `task31` 中 CLI（暂不开发CLI） /web 可以并行推进，但都依赖 Controller API 不再频繁变更。
 - `task32` 中审计事件、指标、调试查询三条线可以并行，最后统一验收。
 - `task33` 可以在主链路稳定后作为扩展能力推进；宿主抽象、节点注册、原生能力桥接可部分并行，但权限与审批接入必须后收口。
@@ -96,14 +186,16 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 2. `task26` + `task27` -> `task29`
 3. `task27` -> `task28`
 4. `task26` + `task27` -> `task30`
-5. `task26` + `task27` -> `task31`
-6. `task26` + `task27` + `task28` + `task29` + `task30` + `task31` -> `task32`
-7. `task26` + `task27` + `task29` -> `task33`
+5. `task26` + `task27` + `task29` -> `task34`
+6. `task26` + `task27` -> `task31`
+7. `task26` + `task27` + `task28` + `task29` + `task30` + `task31` + `task34` -> `task32`
+8. `task26` + `task27` + `task29` + `task34` -> `task33`
 
 ### 当前任务分工原则
 
 - `Tasks.md` 只保留路线总览、顺序、依赖和并行关系。
 - `Tasks/` 目录下的任务文档承载各任务的详细说明、分步目标、前置依赖和验收标准。
+- 如果某个能力既说不清归 Controller，又说不清归 Runtime，也说不清归 Agent，那么说明它的职责边界还没有定义干净，不应急着编码。
 
 ## 状态定义
 - `done`：已完成并在源码中可用

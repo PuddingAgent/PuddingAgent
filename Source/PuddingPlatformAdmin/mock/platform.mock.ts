@@ -207,6 +207,50 @@ const workspaceAgentTemplates: any[] = [
   { id: 3, workspaceId: 'ws-trial', templateId: 'trial-simple', name: '试用版助手', description: '功能受限的试用体验助手', role: 'Service', systemPrompt: '你是试用版 AI 助手，功能有限，如需完整体验请升级套餐。', userPromptTemplate: null, baseGlobalTemplateId: 'general-assistant', preferredProviderId: 'deepseek', preferredModelId: 'deepseek-chat', maxContextTokens: 4096, maxReplyTokens: 512, isEnabled: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
 ];
 
+// ── Runtime 节点 Mock 数据 ─────────────────────────────────────────
+const now = () => new Date().toISOString();
+const ago = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
+
+let runtimeNodes: any[] = [
+  {
+    nodeId: 'runtime-std-001',
+    endpoint: 'http://pudding-runtime:8080',
+    status: 'Online',
+    lastHeartbeat: ago(12),
+    activeSessionCount: 3,
+    embeddedMode: false,
+    hostType: null,
+    nativeCapabilities: [],
+    isFrozen: false,
+  },
+  {
+    nodeId: 'runtime-embedded-dev',
+    endpoint: 'http://192.168.1.42:5100',
+    status: 'Online',
+    lastHeartbeat: ago(28),
+    activeSessionCount: 1,
+    embeddedMode: true,
+    hostType: 'PuddingCode/CLI',
+    nativeCapabilities: [
+      { capabilityId: 'cap-run-test', name: '运行单元测试', description: '在宿主进程内执行 dotnet test 并返回结果', category: 'RunTest', requiresApproval: false },
+      { capabilityId: 'cap-exec-cmd', name: '执行 Shell 命令', description: '在宿主机上执行受限 Shell 命令', category: 'ExecuteCommand', requiresApproval: true },
+      { capabilityId: 'cap-query-state', name: '查询内存状态', description: '读取宿主进程当前内存快照', category: 'QueryState', requiresApproval: false },
+    ],
+    isFrozen: false,
+  },
+  {
+    nodeId: 'runtime-offline-003',
+    endpoint: 'http://192.168.1.100:5100',
+    status: 'Offline',
+    lastHeartbeat: ago(300),
+    activeSessionCount: 0,
+    embeddedMode: false,
+    hostType: null,
+    nativeCapabilities: [],
+    isFrozen: false,
+  },
+];
+
 // ── Routes ────────────────────────────────────────────────────────
 
 export default {
@@ -593,6 +637,40 @@ export default {
     const idx = mockWsMembers.findIndex((m) => m.id === Number(req.params.id));
     if (idx !== -1) mockWsMembers.splice(idx, 1);
     return res.status(204).end();
+  },
+
+  // ── Runtime Registry (Controller via /ingress/) ───────────────
+  'GET /ingress/runtime-registry/nodes': (_req: Request, res: Response) => {
+    // 每次刷新动态更新心跳时间（模拟在线节点持续发心跳）
+    runtimeNodes = runtimeNodes.map((n) => {
+      if (n.status === 'Online') return { ...n, lastHeartbeat: ago(Math.floor(Math.random() * 25) + 5) };
+      return n;
+    });
+    return res.json(runtimeNodes);
+  },
+
+  'GET /ingress/runtime-registry/embedded': (_req: Request, res: Response) => {
+    return res.json(runtimeNodes.filter((n) => n.embeddedMode));
+  },
+
+  'GET /ingress/runtime-registry/:nodeId/capabilities': (req: Request, res: Response) => {
+    const node = runtimeNodes.find((n) => n.nodeId === req.params.nodeId);
+    if (!node) return res.status(404).json({ message: 'Node not found' });
+    return res.json(node.nativeCapabilities ?? []);
+  },
+
+  'POST /ingress/runtime-registry/:nodeId/freeze': (req: Request, res: Response) => {
+    const node = runtimeNodes.find((n) => n.nodeId === req.params.nodeId);
+    if (!node) return res.status(404).json({ message: 'Node not found' });
+    node.isFrozen = true;
+    return res.json({ nodeId: node.nodeId, isFrozen: true, reason: req.body?.reason });
+  },
+
+  'POST /ingress/runtime-registry/:nodeId/unfreeze': (req: Request, res: Response) => {
+    const node = runtimeNodes.find((n) => n.nodeId === req.params.nodeId);
+    if (!node) return res.status(404).json({ message: 'Node not found' });
+    node.isFrozen = false;
+    return res.json({ nodeId: node.nodeId, isFrozen: false });
   },
 };
 

@@ -310,3 +310,139 @@ public record AddWorkspaceMemberRequest(
     string AccessLevel  // "ReadOnly" | "Write" | "Manage"
 );
 
+// ── WorkspaceAgent ─────────────────────────────────────────────────
+
+public record WorkspaceAgentDto(
+    string AgentId,
+    string Name,
+    string? Description,
+    string? SourceTemplateId,
+    string? SystemPromptOverride,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    bool IsEnabled,
+    bool IsFrozen,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record CreateWorkspaceAgentRequest(
+    string Name,
+    string? Description,
+    string? SourceTemplateId,
+    string? SystemPromptOverride,
+    string? PreferredProviderId,
+    string? PreferredModelId
+);
+
+public record UpdateWorkspaceAgentRequest(
+    string Name,
+    string? Description,
+    string? SourceTemplateId,
+    string? SystemPromptOverride,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    bool IsEnabled
+);
+
+// ── Workflow ────────────────────────────────────────────────────────
+
+public record WorkflowDto(
+    string WorkflowId,
+    string Name,
+    string? Description,
+    string? DefinitionJson,
+    string Status,
+    bool IsEnabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpsertWorkflowRequest(
+    string Name,
+    string? Description,
+    string? DefinitionJson,
+    string Status,
+    bool IsEnabled
+);
+
+// ── KnowledgeBase ───────────────────────────────────────────────────
+
+public record KnowledgeBaseDto(
+    string KbId,
+    string Name,
+    string? Description,
+    string KbType,
+    int DocumentCount,
+    bool IsEnabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpsertKnowledgeBaseRequest(
+    string Name,
+    string? Description,
+    string KbType,
+    bool IsEnabled
+);
+
+// ── WorkspaceSkill ──────────────────────────────────────────────────
+
+public record WorkspaceSkillDto(
+    string SkillId,
+    string Name,
+    string? Description,
+    string SkillType,
+    string? ConfigJson,
+    bool IsEnabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpsertWorkspaceSkillRequest(
+    string Name,
+    string? Description,
+    string SkillType,
+    string? ConfigJson,
+    bool IsEnabled
+);
+
+// ── WorkspaceChannel ────────────────────────────────────────────────
+
+public record WorkspaceChannelDto(
+    string ChannelId,
+    string Name,
+    string? Description,
+    string ChannelType,
+    string? DefaultAgentId,
+    string? ConfigJson,
+    bool IsEnabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpsertWorkspaceChannelRequest(
+    string Name,
+    string? Description,
+    string ChannelType,
+    string? DefaultAgentId,
+    string? ConfigJson,
+    bool IsEnabled
+);
+
+// ── Chat Proxy ──────────────────────────────────────────────────────
+
+public record AdminChatRequest(
+    string MessageText,
+    string? SessionId,
+    string? AgentId
+);
+
+public record AdminChatResponse(
+    string MessageId,
+    string SessionId,
+    string? Reply,
+    bool IsSuccess,
+    string? ErrorMessage
+);
+

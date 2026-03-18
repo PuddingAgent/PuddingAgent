@@ -19,6 +19,7 @@
 
 - 可与 [task27-controller-routing-session.md](task27-controller-routing-session.md) 并行推进。
 - 可与 [task29-agent-template-and-audit.md](task29-agent-template-and-audit.md) 的模板定义部分并行推进。
+- 可与 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md) 的契约设计与最小唤醒语义并行，但事件执行接入需要在 Runtime 宿主稳定后收口。
 - 不应早于 [task27-controller-routing-session.md](task27-controller-routing-session.md) 完成集成联调。
 
 ## 顺序任务
@@ -62,6 +63,11 @@
 输出：`SubAgentExecutionContext` 或等价内部模型。
 前置依赖：任务 4、任务 5。
 
+8. 预留事件订阅与直接唤醒接入口
+说明：为 Agent、Workflow Worker、sub_agent 提供最小事件订阅注册、命中恢复与执行入口，但详细事件契约与治理规则由 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md) 收口。
+输出：事件订阅接入口、唤醒回调或等价内部抽象。
+前置依赖：任务 2、任务 3、任务 4。
+
 ## 验收标准
 
 - Runtime 可以独立启动并上报健康状态。
@@ -69,3 +75,4 @@
 - Runtime 能根据模板创建 AgentInstance 并返回真实回复。
 - Runtime 能执行最小记忆召回和候选写回。
 - Runtime 能承载由主 Agent 派生的临时 sub_agent。
+- Runtime 至少预留 1 条事件命中后恢复 Agent 执行的接入点。

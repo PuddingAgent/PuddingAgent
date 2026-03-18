@@ -26,7 +26,11 @@ public sealed class InMemoryWorkspaceCatalog : IWorkspaceCatalog
             AuditAgentTemplateIds = allTemplates
                 .Where(t => t.TemplateType == AgentTemplateType.Audit)
                 .Select(t => t.TemplateId).ToList(),
-            ChannelBindings = [new ChannelBindingDefinition { ChannelId = "cli", ChannelType = "cli" }],
+            ChannelBindings =
+            [
+                new ChannelBindingDefinition { ChannelId = "cli", ChannelType = "cli" },
+                new ChannelBindingDefinition { ChannelId = "web-chat-default", ChannelType = "web-chat" },
+            ],
             PermissionPolicy = new PermissionPolicyDefinition
             {
                 DefaultDeny = false,

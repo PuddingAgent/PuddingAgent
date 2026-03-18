@@ -18,6 +18,7 @@
 - [task29-agent-template-and-audit.md](task29-agent-template-and-audit.md)
 - [task30-knowledge-infrastructure.md](task30-knowledge-infrastructure.md)
 - [task31-client-surfaces.md](task31-client-surfaces.md)
+- [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md)
 
 ## 可并行关系
 
@@ -31,7 +32,7 @@
 输出：AuditStore 可查询事件流。
 
 2. 建立首批运行指标
-说明：统计请求量、Session 数、Agent 活跃数、审批等待数、Workflow 成败、模型/工具成本、Runtime 负载。
+说明：统计请求量、Session 数、Agent 活跃数、审批等待数、Workflow 成败、模型/工具成本、Runtime 负载、事件吞吐、订阅命中率、死信数量。
 输出：最小指标采集与查询面。
 前置依赖：任务 1 可并行，不强依赖。
 
@@ -50,9 +51,15 @@
 输出：阶段验收报告。
 前置依赖：任务 4。
 
+6. 执行事件驱动链路验收
+说明：验证至少 1 条外部事件（例如 MQTT / Webhook）→ Gateway → Workspace 域事件流 → Runtime/Agent 订阅 → 直接唤醒的完整链路，并验证失败事件进入死信隔离或审计记录。
+输出：事件链路验收报告。
+前置依赖：任务 5。
+
 ## 验收标准
 
 - 平台至少具备审计事件、运行指标、调试查询三类观测面。
 - 首条垂直切片可以真实跑通。
 - 高风险审批、知识访问、审计冻结和最小 Workflow 可分别验收。
+- 至少 1 条事件驱动接入与直接唤醒链路可验收，且事件吞吐、命中、失败隔离可观测。
 - 文档和任务状态能对应到源码实际进展。

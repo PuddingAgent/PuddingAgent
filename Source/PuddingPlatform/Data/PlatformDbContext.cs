@@ -26,6 +26,13 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
     public DbSet<WorkspaceMemberEntity> WorkspaceMembers => Set<WorkspaceMemberEntity>();
 
+    // 工作区扩展资源
+    public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
+    public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
+    public DbSet<KnowledgeBaseEntity> KnowledgeBases => Set<KnowledgeBaseEntity>();
+    public DbSet<WorkspaceSkillEntity> WorkspaceSkills => Set<WorkspaceSkillEntity>();
+    public DbSet<WorkspaceChannelEntity> WorkspaceChannels => Set<WorkspaceChannelEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -139,7 +146,55 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
              .HasForeignKey(m => m.UserEntityId)
              .OnDelete(DeleteBehavior.Cascade);
         });
+        // ── WorkspaceAgent ────────────────────────────────────────
+        modelBuilder.Entity<WorkspaceAgentEntity>(e =>
+        {
+            e.HasIndex(a => a.AgentId).IsUnique();
+            e.HasOne(a => a.Workspace)
+             .WithMany()
+             .HasForeignKey(a => a.WorkspaceEntityId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
 
+        // ── Workflow ──────────────────────────────────────────────
+        modelBuilder.Entity<WorkflowEntity>(e =>
+        {
+            e.HasIndex(w => w.WorkflowId).IsUnique();
+            e.HasOne(w => w.Workspace)
+             .WithMany()
+             .HasForeignKey(w => w.WorkspaceEntityId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── KnowledgeBase ─────────────────────────────────────────
+        modelBuilder.Entity<KnowledgeBaseEntity>(e =>
+        {
+            e.HasIndex(k => k.KbId).IsUnique();
+            e.HasOne(k => k.Workspace)
+             .WithMany()
+             .HasForeignKey(k => k.WorkspaceEntityId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── WorkspaceSkill ────────────────────────────────────────
+        modelBuilder.Entity<WorkspaceSkillEntity>(e =>
+        {
+            e.HasIndex(s => s.SkillId).IsUnique();
+            e.HasOne(s => s.Workspace)
+             .WithMany()
+             .HasForeignKey(s => s.WorkspaceEntityId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── WorkspaceChannel ──────────────────────────────────────
+        modelBuilder.Entity<WorkspaceChannelEntity>(e =>
+        {
+            e.HasIndex(c => c.ChannelId).IsUnique();
+            e.HasOne(c => c.Workspace)
+             .WithMany()
+             .HasForeignKey(c => c.WorkspaceEntityId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
         // ── Seed：内置 OpenAI Provider + 常用模型 ────────────────────
         SeedBuiltInData(modelBuilder);
     }

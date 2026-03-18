@@ -10,6 +10,7 @@
 - [../07架构/04PuddingController与Gateway.md](../07架构/04PuddingController与Gateway.md)
 - [../07架构/07协作网络与治理.md](../07架构/07协作网络与治理.md)
 - [../07架构/08数据模型与配置.md](../07架构/08数据模型与配置.md)
+- [../07架构/10事件系统与事件总线.md](../07架构/10事件系统与事件总线.md)
 
 ## 前置依赖
 
@@ -20,6 +21,7 @@
 
 - 可与 [task26-runtime-foundation.md](task26-runtime-foundation.md) 并行推进。
 - 可与 [task29-agent-template-and-audit.md](task29-agent-template-and-audit.md) 的模板数据建模并行。
+- 可与 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md) 的事件契约与订阅治理设计并行，但 Controller 事件路由实现要基于本任务的宿主入口和 SessionRouter 收口。
 - 客户端联调前，需要先完成本任务的 API 契约稳定。
 
 ## 顺序任务
@@ -29,7 +31,9 @@
 输出：最小可启动 Controller host。
 
 2. 建立 `ChannelManager` 与 `ChannelPluginHost`
-说明：把 Gateway 接入层明确为 Adapter Plugin 模式。V1 可保留 `ChannelPluginHost` 命名，但抽象上应支持 `IPuddingGatewayAdapter`、内置 CLI Adapter、Email Adapter，以及后续 Webhook、MQTT、嵌入式 Runtime Adapter。
+说明：把 Gateway 接入层明确为 Adapter Plugin 模式。V1 可保留 `ChannelPluginHost` 命名，但抽象上应支持 `IPuddingGatewayAdapter`、内置 CLI Adapter、Email Adapter、**WebChat Adapter（P0）**，以及后续飞书 Adapter（P3）、Webhook、MQTT、嵌入式 Runtime Adapter 等。
+内置渠道 ID 规则：CLI → `cli`，Email → `email-{workspaceId}`，Web Chat → `web-chat-{workspaceId}`，Feishu → `feishu-{workspaceId}`；`SeedDefaults()` 应在每个 Workspace 初始化时自动注册 Web Chat 对应的 `ChannelBindingDefinition`（P0 阶段仅注册 Web Chat，飞书等 P3 阶段补充）。
+渠道优先级：P0 = Web Chat；P1 = Email；P3 = 飞书及其他第三方渠道。
 输出：最小 Adapter 注册、装载与事件上送链路。
 前置依赖：任务 1。
 
@@ -68,6 +72,11 @@
 输出：首批双向 Adapter 联调链路。
 前置依赖：任务 6。
 
+9. 预留事件域路由与订阅治理接入口
+说明：为全局域 / Workspace 域事件流、订阅权限判定、事件重放与死信隔离预留最小接入口，详细实现由 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md) 收口。
+输出：事件路由器接口、订阅治理接口或等价控制面抽象。
+前置依赖：任务 3、任务 7。
+
 ## 验收标准
 
 - Controller 可接收 CLI through Controller API 的消息。
@@ -77,3 +86,4 @@
 - Controller 可完成最小权限校验与拒绝原因返回。
 - Controller 能把消息投递到 Runtime 并获得真实回复。
 - 至少 1 个事件驱动 Adapter 与 1 个非 CLI Adapter 的接入模式被验证，证明新增接入源不需要修改 Controller 主路由骨架。
+- Controller 至少预留 1 条从 Gateway 入站事件进入 Workspace 域事件流的接入口。

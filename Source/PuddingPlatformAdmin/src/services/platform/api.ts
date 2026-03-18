@@ -685,3 +685,330 @@ export async function removeWorkspaceMemberDirect(workspaceId: string, memberId:
     { method: 'DELETE' },
   );
 }
+
+// ─── WorkspaceAgent types ─────────────────────────────────────
+
+export interface WorkspaceAgentDto {
+  agentId: string;
+  name: string;
+  description?: string;
+  sourceTemplateId?: string;
+  systemPromptOverride?: string;
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  isEnabled: boolean;
+  isFrozen: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateWorkspaceAgentRequest {
+  name: string;
+  description?: string;
+  sourceTemplateId?: string;
+  systemPromptOverride?: string;
+  preferredProviderId?: string;
+  preferredModelId?: string;
+}
+
+export interface UpdateWorkspaceAgentRequest {
+  name: string;
+  description?: string;
+  sourceTemplateId?: string;
+  systemPromptOverride?: string;
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  isEnabled: boolean;
+}
+
+// ─── WorkspaceAgent API ───────────────────────────────────────
+
+export async function listWorkspaceAgents(workspaceId: string): Promise<WorkspaceAgentDto[]> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents`, { method: 'GET' });
+}
+
+export async function createWorkspaceAgent(
+  workspaceId: string, req: CreateWorkspaceAgentRequest,
+): Promise<WorkspaceAgentDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents`, { method: 'POST', data: req });
+}
+
+export async function updateWorkspaceAgent(
+  workspaceId: string, agentId: string, req: UpdateWorkspaceAgentRequest,
+): Promise<WorkspaceAgentDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function freezeWorkspaceAgent(workspaceId: string, agentId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/freeze`, { method: 'POST' });
+}
+
+export async function unfreezeWorkspaceAgent(workspaceId: string, agentId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/unfreeze`, { method: 'POST' });
+}
+
+export async function deleteWorkspaceAgent(workspaceId: string, agentId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' });
+}
+
+// ─── Workflow types ───────────────────────────────────────────
+
+export interface WorkflowDto {
+  workflowId: string;
+  name: string;
+  description?: string;
+  definitionJson?: string;
+  status: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertWorkflowRequest {
+  name: string;
+  description?: string;
+  definitionJson?: string;
+  status: string;
+  isEnabled: boolean;
+}
+
+// ─── Workflow API ─────────────────────────────────────────────
+
+export async function listWorkflows(workspaceId: string): Promise<WorkflowDto[]> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { method: 'GET' });
+}
+
+export async function createWorkflow(workspaceId: string, req: UpsertWorkflowRequest): Promise<WorkflowDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { method: 'POST', data: req });
+}
+
+export async function updateWorkflow(workspaceId: string, workflowId: string, req: UpsertWorkflowRequest): Promise<WorkflowDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function deleteWorkflow(workspaceId: string, workflowId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}`, { method: 'DELETE' });
+}
+
+// ─── KnowledgeBase types ──────────────────────────────────────
+
+export interface KnowledgeBaseDto {
+  kbId: string;
+  name: string;
+  description?: string;
+  kbType: string;
+  documentCount: number;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertKnowledgeBaseRequest {
+  name: string;
+  description?: string;
+  kbType: string;
+  isEnabled: boolean;
+}
+
+// ─── KnowledgeBase API ────────────────────────────────────────
+
+export async function listKnowledgeBases(workspaceId: string): Promise<KnowledgeBaseDto[]> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge-bases`, { method: 'GET' });
+}
+
+export async function createKnowledgeBase(workspaceId: string, req: UpsertKnowledgeBaseRequest): Promise<KnowledgeBaseDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge-bases`, { method: 'POST', data: req });
+}
+
+export async function updateKnowledgeBase(workspaceId: string, kbId: string, req: UpsertKnowledgeBaseRequest): Promise<KnowledgeBaseDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge-bases/${encodeURIComponent(kbId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function deleteKnowledgeBase(workspaceId: string, kbId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/knowledge-bases/${encodeURIComponent(kbId)}`, { method: 'DELETE' });
+}
+
+// ─── WorkspaceSkill types ─────────────────────────────────────
+
+export interface WorkspaceSkillDto {
+  skillId: string;
+  name: string;
+  description?: string;
+  skillType: string;
+  configJson?: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertWorkspaceSkillRequest {
+  name: string;
+  description?: string;
+  skillType: string;
+  configJson?: string;
+  isEnabled: boolean;
+}
+
+// ─── WorkspaceSkill API ───────────────────────────────────────
+
+export async function listWorkspaceSkills(workspaceId: string): Promise<WorkspaceSkillDto[]> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/skills`, { method: 'GET' });
+}
+
+export async function createWorkspaceSkill(workspaceId: string, req: UpsertWorkspaceSkillRequest): Promise<WorkspaceSkillDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/skills`, { method: 'POST', data: req });
+}
+
+export async function updateWorkspaceSkill(workspaceId: string, skillId: string, req: UpsertWorkspaceSkillRequest): Promise<WorkspaceSkillDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/skills/${encodeURIComponent(skillId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function deleteWorkspaceSkill(workspaceId: string, skillId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/skills/${encodeURIComponent(skillId)}`, { method: 'DELETE' });
+}
+
+// ─── WorkspaceChannel types ───────────────────────────────────
+
+export interface WorkspaceChannelDto {
+  channelId: string;
+  name: string;
+  description?: string;
+  channelType: string;
+  defaultAgentId?: string;
+  configJson?: string;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertWorkspaceChannelRequest {
+  name: string;
+  description?: string;
+  channelType: string;
+  defaultAgentId?: string;
+  configJson?: string;
+  isEnabled: boolean;
+}
+
+// ─── WorkspaceChannel API ─────────────────────────────────────
+
+export async function listWorkspaceChannels(workspaceId: string): Promise<WorkspaceChannelDto[]> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/channels`, { method: 'GET' });
+}
+
+export async function createWorkspaceChannel(workspaceId: string, req: UpsertWorkspaceChannelRequest): Promise<WorkspaceChannelDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/channels`, { method: 'POST', data: req });
+}
+
+export async function updateWorkspaceChannel(workspaceId: string, channelId: string, req: UpsertWorkspaceChannelRequest): Promise<WorkspaceChannelDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/channels/${encodeURIComponent(channelId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function deleteWorkspaceChannel(workspaceId: string, channelId: string): Promise<void> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/channels/${encodeURIComponent(channelId)}`, { method: 'DELETE' });
+}
+
+// ─── Chat types ───────────────────────────────────────────────
+
+export interface AdminChatRequest {
+  messageText: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface AdminChatResponse {
+  messageId: string;
+  sessionId: string;
+  reply?: string;
+  isSuccess: boolean;
+  errorMessage?: string;
+}
+
+// ─── Chat API ─────────────────────────────────────────────────
+
+export async function sendAdminChatMessage(
+  workspaceId: string, req: AdminChatRequest,
+): Promise<AdminChatResponse> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
+    method: 'POST', data: req,
+  });
+}
+
+// ─── Runtime 节点管理类型（对齐 PuddingCore.Platform.RuntimeModels）──
+
+export type RuntimeNodeStatus = 'Online' | 'Offline' | 'Degraded';
+
+export type NativeCapabilityCategory =
+  | 'QueryState'
+  | 'RunTest'
+  | 'ReadResult'
+  | 'ExecuteCommand'
+  | 'Custom';
+
+export interface NativeCapabilityDescriptor {
+  capabilityId: string;
+  name: string;
+  description?: string;
+  category: NativeCapabilityCategory;
+  requiresApproval: boolean;
+}
+
+export interface RuntimeNodeInfo {
+  nodeId: string;
+  endpoint: string;
+  status: RuntimeNodeStatus;
+  lastHeartbeat: string;
+  activeSessionCount: number;
+  embeddedMode: boolean;
+  hostType?: string;
+  nativeCapabilities: NativeCapabilityDescriptor[];
+  isFrozen: boolean;
+}
+
+// ─── Runtime Registry API（调 /ingress/ 路由→PuddingController）───
+
+/** 列出所有已注册的 Runtime 节点（含离线节点）。 */
+export async function listRuntimeNodes(): Promise<RuntimeNodeInfo[]> {
+  return request('/ingress/runtime-registry/nodes', { method: 'GET' });
+}
+
+/** 列出所有嵌入式宿主节点。 */
+export async function listEmbeddedRuntimeNodes(): Promise<RuntimeNodeInfo[]> {
+  return request('/ingress/runtime-registry/embedded', { method: 'GET' });
+}
+
+/** 获取指定节点的原生能力列表。 */
+export async function getRuntimeNodeCapabilities(
+  nodeId: string,
+): Promise<NativeCapabilityDescriptor[]> {
+  return request(`/ingress/runtime-registry/${encodeURIComponent(nodeId)}/capabilities`, {
+    method: 'GET',
+  });
+}
+
+/** 冻结指定 Runtime 节点（嵌入式专用）。 */
+export async function freezeRuntimeNode(nodeId: string, reason: string): Promise<void> {
+  return request(`/ingress/runtime-registry/${encodeURIComponent(nodeId)}/freeze`, {
+    method: 'POST',
+    data: { reason, operatorId: 'admin' },
+  });
+}
+
+/** 解除指定 Runtime 节点冻结。 */
+export async function unfreezeRuntimeNode(nodeId: string): Promise<void> {
+  return request(`/ingress/runtime-registry/${encodeURIComponent(nodeId)}/unfreeze`, {
+    method: 'POST',
+    data: { reason: 'admin unfreeze', operatorId: 'admin' },
+  });
+}
+

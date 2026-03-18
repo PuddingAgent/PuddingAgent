@@ -8,12 +8,15 @@
 
 当前主线已经切换为一个以 Workspace 为边界、以 Platform + Controller + Runtime 为核心、支持多渠道、多智能体、审批审计与记忆治理的 Agent OS 与协作网络平台。
 
+一句更聚焦的理解是：Pudding 正在尝试构建一个 **Event-Driven Multi-Agent Operating System**，重点解决工作流编排、记忆隔离、事件驱动和协同机制，而不是继续堆高单 Agent 的聊天能力。
+
 ## 建议阅读顺序
 
 1. `Docs/架构.md`
 	 - 架构总览、分层边界与阅读地图。
 2. `Docs/07架构/README.md`
 	 - 模块级架构分册入口，包含 Runtime、Controller、Platform、治理、数据模型与 V1 落地说明。
+	 - 其中 `10事件系统与事件总线.md` 负责解释统一事件模型、订阅、唤醒、重放与死信策略。
 
 3. `Docs/Tasks.md`
 	 - 当前任务看板、第一批平台任务、实现优先级与阶段目标。
