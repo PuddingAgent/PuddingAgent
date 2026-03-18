@@ -29,6 +29,60 @@ export default [
     component: './Welcome',
   },
   {
+    path: '/workspace',
+    name: 'workspace',
+    icon: 'appstore',
+    component: './workspace',
+  },
+  {
+    path: '/llm-resource-pool',
+    name: 'llmResourcePool',
+    icon: 'thunderbolt',
+    component: './llm-resource-pool',
+  },
+  {
+    path: '/global-agent-template',
+    name: 'globalAgentTemplate',
+    icon: 'robot',
+    component: './global-agent-template',
+  },
+  {
+    path: '/workspace-agent-template',
+    name: 'workspaceAgentTemplate',
+    icon: 'team',
+    component: './workspace-agent-template',
+  },
+  {
+    path: '/user-management',
+    name: 'userManagement',
+    icon: 'user',
+    component: './user-management',
+  },
+  {
+    path: '/role-management',
+    name: 'roleManagement',
+    icon: 'safety',
+    component: './role-management',
+  },
+  {
+    path: '/team-management',
+    name: 'teamManagement',
+    icon: 'cluster',
+    component: './team-management',
+  },
+  {
+    path: '/agent-template',
+    name: 'agentTemplate',
+    icon: 'deploymentUnit',
+    component: './agent-template',
+  },
+  {
+    path: '/session',
+    name: 'session',
+    icon: 'message',
+    component: './session',
+  },
+  {
     path: '/admin',
     name: 'admin',
     icon: 'crown',
@@ -44,12 +98,6 @@ export default [
         component: './Admin',
       },
     ],
-  },
-  {
-    name: 'list.table-list',
-    icon: 'table',
-    path: '/list',
-    component: './table-list',
   },
   {
     path: '/',

@@ -74,6 +74,9 @@ const Login: React.FC = () => {
     try {
       const msg = await login({ ...values, type: 'account' });
       if (msg.status === 'ok') {
+        if (msg.token) {
+          localStorage.setItem('pudding_token', msg.token);
+        }
         message.success(
           intl.formatMessage({
             id: 'pages.login.success',

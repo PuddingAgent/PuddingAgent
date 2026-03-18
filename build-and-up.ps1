@@ -20,6 +20,16 @@ function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "    ✓ $msg" -ForegroundColor Green }
 function Fail($msg) { Write-Host "    ✗ $msg" -ForegroundColor Red; exit 1 }
 
+# ── 0. 检查 .env 文件（生产环境必要）────────────────────────────
+if (-not (Test-Path "$Root\.env")) {
+    Write-Host "`n[!] 未找到 .env 文件，将自动从 .env.example 复制" -ForegroundColor Yellow
+    Copy-Item "$Root\.env.example" "$Root\.env"
+    Write-Host "    请编辑 .env 并至少填写：" -ForegroundColor Yellow
+    Write-Host "      LLM_API_KEY  — 你的 LLM 密钥" -ForegroundColor Yellow
+    Write-Host "      JWT_KEY      — 生产环境必须替换（openssl rand -base64 48）" -ForegroundColor Yellow
+    Write-Host "    就绪内将使用默认开发密码。`n" -ForegroundColor DarkYellow
+}
+
 # ── 1. 前端：pnpm build ───────────────────────────────────────
 if (-not $SkipFrontend) {
     Step "构建前端 PuddingPlatformAdmin"

@@ -88,18 +88,26 @@ export const errorConfig: RequestConfig = {
   // 请求拦截器
   requestInterceptors: [
     (config: RequestOptions) => {
-      // 拦截请求配置，进行个性化处理。
-      const url = config?.url?.concat('?token=123');
-      return { ...config, url };
+      const token = localStorage.getItem('pudding_token');
+      if (token) {
+        return { ...config, headers: { ...config.headers, Authorization: `Bearer ${token}` } };
+      }
+      return config;
     },
   ],
 
   // 响应拦截器
   responseInterceptors: [
     (response) => {
-      // 拦截响应数据，进行个性化处理
+      // 401 → 清除 Token 并跳回登录页
+      if ((response as any).status === 401) {
+        localStorage.removeItem('pudding_token');
+        if (window.location.pathname !== '/user/login') {
+          window.location.href = '/user/login';
+        }
+        return response;
+      }
       const { data } = response as unknown as ResponseStructure;
-
       if (data?.success === false) {
         message.error('请求失败！');
       }

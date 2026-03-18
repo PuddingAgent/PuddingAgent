@@ -130,9 +130,16 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 | 计费模型抽象 | partial | Provider 已支持 `per_token/per_request/per_session/monthly_flat/local_free` 配置与会话估算显示；仍缺供应商模板与账单对账。 |
 | YAML 配置扫描 | partial | 已支持 `pudding.yaml` + `providers/*.yaml` 启动扫描并合并服务商/模型，并支持 `swarm_final_test_command` 覆盖 Swarm 最终测试命令；仍缺 schema 校验与热重载。 |
 | 冷启动引导与配置诊断 | partial | 已有首次引导（本地/Ollama、云服务商、YAML 脚手架）、配置健康检查（`/config check`）与安全自动修复（`/config fix`）；仍缺 YAML 模式一键修复与 schema 级修复。 |
+| PuddingPlatformAdmin 登录+工作台 | done | Ant Design Pro 6 + UmiJS 4，登录页（mock 凭证 admin/pudding.dev），工作台 Dashboard（统计卡/近期事件/快捷入口/服务健康），运行于 http://localhost:8004。 |
+| PuddingPlatformAdmin 业务页面 | done | Workspace 管理 / AgentTemplate 管理 / Session 历史三个页面已完成，含 ProTable、冻结/解冻/删除操作、详情 Drawer；mock 数据已在 `mock/platform.mock.ts` 注册，无需后端即可预览。 |
+| PuddingPlatform JSON API | done | `AuthApiController`、`WorkspaceApiController`、`SessionApiController`、`AgentTemplateApiController` 四个 REST API 控制器已就绪；CORS Policy "AdminSpa" + Session 中间件已配置；dotnet build 0 errors。 |
+| PuddingController 骨架 | partial | 13 个控制器 + 14 个 InMemory 服务均已就绪；`MessageIngressController → SessionRouter → RuntimeDispatcher → Runtime` 链路完整；待持久化层（PostgreSQL）替换 InMemory 实现。 |
+| PuddingRuntime 骨架 | partial | `AgentExecutionService` 已集成 LLM 调用（OpenAI）、MemoryEngine、SandboxExecutor；`RuntimeSelfRegistrationService` 自动向 Controller 注册；`appsettings.json` 的 `LlmEndpoint` 已修正为 `https://api.openai.com/v1`，填入真实 `LlmApiKey` 即可全链路 LLM 调用。 |
+| 端到端冒烟链路 | done | Controller(5000)→SessionRouter→RuntimeDispatcher→Runtime(5100)→OpenAI 链路已验证通畅；HTTP 200 返回正确的 `messageId`+`sessionId`；LLM 报 401/NoKey 属预期（未配置密钥）。 |
+| Docker Compose 基础设施 | done | `docker-compose.yml` + 4 个 Dockerfile（多阶段 SDK 构建）+ `deploy/nginx/nginx.conf`（路由 `/api/`→Platform, `/ingress/`→Controller）+ `.env.example`；`docker compose config` 校验通过；启动顺序：Runtime → Controller → Platform → nginx；`Pudding__ControllerEndpoint` / `SelfEndpoint` / `LlmEndpoint`（含 /v1）已通过环境变量注入。 |
 
 ## 二、近期目标（M1）
-目标：把 PuddingCode 从“可用原型”推进到“稳定编码代理 CLI”。
+
 
 1. Prompt 外置化（避免硬编码）：system prompt、角色 prompt、命令策略 prompt 可配置。  
 2. Hook v1：pre_tool_call / post_tool_call / pre_reply / post_reply。  

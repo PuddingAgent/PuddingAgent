@@ -84,13 +84,19 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_HTTP_PORTS:  "8080"
       Pudding__ControllerEndpoint: http://pudding-controller:8080
+      # PostgreSQL 连接串（覆盖 appsettings.json 中的 SQLite 默认值）
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=pudding;Username=pudding;Password=${POSTGRES_PASSWORD:-pudding_dev}"
+      # JWT 签名密钥（生产环境必须替换为高强度随机值）
+      Jwt__Key: ${JWT_KEY:-Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      pudding-controller:
+        condition: service_healthy
     healthcheck:
-      test:         ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      test:         ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
       interval:     10s
       timeout:      5s
       retries:      5
@@ -117,7 +123,7 @@ services:
       pudding-runtime:
         condition: service_healthy
     healthcheck:
-      test:         ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      test:         ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
       interval:     10s
       timeout:      5s
       retries:      5
@@ -133,12 +139,15 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_HTTP_PORTS:  "8080"
+      Pudding__ControllerEndpoint: http://pudding-controller:8080
+      Pudding__SelfEndpoint:       http://pudding-runtime:8080
       # LLM 配置 —— 必须在 .env 中设置 LLM_API_KEY
-      Pudding__LlmEndpoint: ${LLM_ENDPOINT:-https://api.openai.com}
+      # LLM_ENDPOINT 应包含 /v1，例如 https://api.openai.com/v1
+      Pudding__LlmEndpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1}
       Pudding__LlmApiKey:   ${LLM_API_KEY}
       Pudding__LlmModel:    ${LLM_MODEL:-gpt-4o-mini}
     healthcheck:
-      test:         ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      test:         ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
       interval:     10s
       timeout:      5s
       retries:      5
