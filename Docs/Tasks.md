@@ -82,6 +82,7 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 - [Tasks/task32-observability-integration.md](Tasks/task32-observability-integration.md)
 - [Tasks/task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md)
 - [Tasks/task34-event-bus-and-subscription.md](Tasks/task34-event-bus-and-subscription.md)
+- [Tasks/task35-workspace-cockpit-and-collaboration-tools.md](Tasks/task35-workspace-cockpit-and-collaboration-tools.md)
 
 补充约束：
 - Workflow 是一等能力，系统决定流程，LLM 只负责推理节点。
@@ -97,6 +98,8 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 - 知识库归属于 Workspace，由 Controller 持有服务端能力，Runtime 提供透明访问支持。
 - 统一存储层由 Controller 持有，Runtime 提供挂载与访问支持，上层 Agent 无感。
 - 知识图谱归属于 Workspace 共享资产，底层先用 PostgreSQL 实现，上层 Agent 无感。
+- Workspace 内应提供以 TaskMap / DAG 为主视图的多 Agent 协作驾驶舱，默认展示聚合状态而不是原子事件洪流。
+- Workspace 共享工具台至少应抽象任务板、表格、Wiki、对象存储和事件中心，Agent 通过 Runtime API / HTTP API 访问；HTTP API 需通过 `agent-token` 声明身份。
 - 语音批准属于系统控制链路，不属于业务 Agent。
 - 每个 Workspace 至少拥有 1 个审计 Agent。
 - 新增客户端层 `PuddingAvalonia（优先级最低）`，作为用户持有的桌面控制端。
@@ -114,8 +117,9 @@ PuddingRuntime容器（也可以直接运行在物理机上，环境变量配置
 | Phase 3 | [task30-knowledge-infrastructure.md](Tasks/task30-knowledge-infrastructure.md) | 建立知识库、统一存储、知识图谱和 Runtime 透明访问 | Phase 1A + Phase 1B | 可与 Phase 2A/2B 后段局部并行 | partial |
 | Phase 4 | [task31-client-surfaces.md](Tasks/task31-client-surfaces.md) | 建立 CLI / Avalonia（优先级最低） 客户端控制面 | Phase 1A + Phase 1B，且 API 基本稳定 | CLI 与 Avalonia（优先级最低） 可并行 | partial |
 | Phase 5 | [task34-event-bus-and-subscription.md](Tasks/task34-event-bus-and-subscription.md) | 建立统一事件总线、订阅治理与直接唤醒链路 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段局部并行 | partial |
-| Phase 6 | [task32-observability-integration.md](Tasks/task32-observability-integration.md) | 建立可观测性并完成阶段验收 | Phase 1-5 | 审计、指标、调试查询可并行 | partial（当前验收 blocked） |
-| Phase 7 | [task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md) | 支持把其他 C# 桌面软件作为嵌入式 Runtime 节点调度 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段和 Phase 5 后段局部并行 | todo |
+| Phase 6 | [task35-workspace-cockpit-and-collaboration-tools.md](Tasks/task35-workspace-cockpit-and-collaboration-tools.md) | 建立 Workspace 内的多 Agent 协作驾驶舱与共享虚拟工作台 | Phase 2A + Phase 3 + Phase 5 | 可与 Phase 4 后段和 Phase 6 后段局部并行 | todo |
+| Phase 7 | [task32-observability-integration.md](Tasks/task32-observability-integration.md) | 建立可观测性并完成阶段验收 | Phase 1-6 | 审计、指标、调试查询可并行 | partial（当前验收 blocked） |
+| Phase 8 | [task33-embedded-runtime-host.md](Tasks/task33-embedded-runtime-host.md) | 支持把其他 C# 桌面软件作为嵌入式 Runtime 节点调度 | Phase 1A + Phase 1B + Phase 2B | 可与 Phase 3 后段和 Phase 5 后段局部并行 | todo |
 
 ### 路线审计快照（2026-03-18）
 
@@ -160,8 +164,9 @@ Agent 层的目标是：**先稳定定义“Agent 是谁”，再稳定它如何
 4. 接着推进 task30，补齐知识、存储、图谱三类基础设施。
 5. 在 Controller 与 Runtime 主链路稳定后，推进 task34，建立统一事件总线、订阅与直接唤醒链路。
 6. 当 API 与治理链路稳定后，推进 task31，打通 CLI 
-7. 最后执行 task32，把观测面和集成验收收口。
-8. 在主链路稳定后，推进 task33，把嵌入式桌面宿主纳入 Runtime 节点体系。
+7. 在 TaskMap、知识与事件链路稳定后，推进 task35，建立 Workspace 协作驾驶舱和共享工具台。
+8. 最后执行 task32，把观测面和集成验收收口。
+9. 在主链路稳定后，推进 task33，把嵌入式桌面宿主纳入 Runtime 节点体系。
 
 一个更直接的理解是：
 
@@ -176,6 +181,7 @@ Agent 层的目标是：**先稳定定义“Agent 是谁”，再稳定它如何
 - `task28` 与 `task29` 可并行，但都依赖基础宿主和控制入口已经稳定。
 - `task30` 的知识库、统一存储、知识图谱底层服务可以拆成三个并行子流，但 Runtime 透明访问桥接必须最后收口。
 - `task34` 中事件命名/Envelope、订阅治理、唤醒执行、死信与重放可分成多条子流并行，但最终契约必须统一收口。
+- `task35` 中 TaskMap 主视图、Agent 侧边栏、关键事件流、共享工具台可以分成多条前后端子流并行，但聚合查询模型必须统一收口。
 - `task31` 中 CLI（暂不开发CLI） /web 可以并行推进，但都依赖 Controller API 不再频繁变更。
 - `task32` 中审计事件、指标、调试查询三条线可以并行，最后统一验收。
 - `task33` 可以在主链路稳定后作为扩展能力推进；宿主抽象、节点注册、原生能力桥接可部分并行，但权限与审批接入必须后收口。
@@ -188,8 +194,9 @@ Agent 层的目标是：**先稳定定义“Agent 是谁”，再稳定它如何
 4. `task26` + `task27` -> `task30`
 5. `task26` + `task27` + `task29` -> `task34`
 6. `task26` + `task27` -> `task31`
-7. `task26` + `task27` + `task28` + `task29` + `task30` + `task31` + `task34` -> `task32`
-8. `task26` + `task27` + `task29` + `task34` -> `task33`
+7. `task28` + `task30` + `task34` -> `task35`
+8. `task26` + `task27` + `task28` + `task29` + `task30` + `task31` + `task34` + `task35` -> `task32`
+9. `task26` + `task27` + `task29` + `task34` -> `task33`
 
 ### 当前任务分工原则
 

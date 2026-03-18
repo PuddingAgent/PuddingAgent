@@ -36,10 +36,20 @@
 输出：最小指标采集与查询面。
 前置依赖：任务 1 可并行，不强依赖。
 
+2A. 建立 Workspace 日志三层模型
+说明：建立 `AgentExecutionLog`、`EventLogRecord`、`WorkspaceLogProjection` 三层日志对象与最小查询接口。
+输出：Workspace 日志查询面。
+前置依赖：任务 1；依赖 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md)。
+
 3. 建立首批调试查询能力
 说明：支持查看消息命中的 Agent、动作拒绝原因、Workflow 卡点、Session 权限快照、记忆写入拦截原因。
 输出：调试查询接口。
-前置依赖：任务 1。
+前置依赖：任务 1、任务 2A。
+
+3A. 建立单 Agent / Workspace 日志视图查询
+说明：支持单 Agent 时间轴、Workspace 事件时间轴、按 task / node / eventType / timeRange 过滤的日志查询。
+输出：日志时间轴查询接口。
+前置依赖：任务 2A。
 
 4. 执行首条垂直切片集成验收
 说明：验证 CLI / Avalonia -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复。
@@ -56,10 +66,17 @@
 输出：事件链路验收报告。
 前置依赖：任务 5。
 
+7. 执行 Workspace 日志系统验收
+说明：验证 Agent 执行日志、事件总线日志和 Workspace 聚合日志三层链路均可查询，并能在驾驶舱中按 Agent / Workspace / 时间 / 事件类型过滤展示。
+输出：日志系统验收报告。
+前置依赖：任务 6、任务 3A。
+
 ## 验收标准
 
 - 平台至少具备审计事件、运行指标、调试查询三类观测面。
+- 平台至少具备 Agent 执行日志、事件日志、Workspace 聚合日志三类日志视图。
 - 首条垂直切片可以真实跑通。
 - 高风险审批、知识访问、审计冻结和最小 Workflow 可分别验收。
 - 至少 1 条事件驱动接入与直接唤醒链路可验收，且事件吞吐、命中、失败隔离可观测。
+- 单 Agent 时间轴、Workspace 事件时间轴和聚合日志投影至少可查询。
 - 文档和任务状态能对应到源码实际进展。

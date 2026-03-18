@@ -29,6 +29,7 @@
 | `researcher` | 研究员 | Research Analyst | 方案调研、最佳实践、风险与取舍 |
 | `planner` | 规划师 | Solution Planner | 需求澄清、计划生成、验收标准定义 |
 | `reviewer` | 质量审阅者 | Quality Reviewer | 代码审阅、回归风险、测试缺口识别 |
+| `orchestrator` | 编排者 | Orchestrator | 维护 TaskMap、调整优先级、处理阻塞、收敛任务图 |
 
 可扩展角色（后续）：
 - `guardian`（边界守卫，权限/安全策略）
@@ -58,11 +59,25 @@
 - Leader 的任务状态机：`todo -> in_progress -> review -> done/blocked`
 - Continue Executor：发现未完成任务时强制续跑
 - Reviewer 审阅门禁：阻断项不允许直接完成
+- Orchestrator 能维护最小 `TaskMap` / `TaskNode` 状态
+- Agent 可以基于节点事件而不是只靠显式点对点派单协作
 
 ### v2（增强）
 - 哈希锚定编辑（防止陈旧行写入）
 - LSP/AstGrep 语义定位与重构安全网
 - 多 Agent 可视化拓扑（右栏/子面板）
+- 节点 claim / release / retry 语义
+- Emergent 协作可视化与数字信息素回放
+
+## 5A. 编排者与自发协作的关系
+
+Pudding 不应把协作理解为“只能由 Leader 手工派单”，更合理的目标是：
+
+- `orchestrator` 负责定义 TaskMap、优先级、阻塞处理与收敛
+- `worker` / `explore` / `reviewer` 等角色基于事件和节点状态自主选择局部任务
+- 当系统足够成熟时，Leader 调度与 Emergent 协作应能共存，而不是相互排斥
+
+也就是说，编排者是协作增强器，不是唯一协作入口。
 
 ## 6. 模板与配置建议
 - Agent 模板来自配置（`agentTemplates`）+ 项目级 Prompt（`.pudding/prompts/*.md`）。

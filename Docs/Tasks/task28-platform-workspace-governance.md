@@ -43,10 +43,20 @@
 输出：Workflow 在 Workspace 业务层的注册与绑定接口。
 前置依赖：任务 1；关联 [task25-workflow.md](task25-workflow.md)。
 
+4A. 建立 Workspace 协作驾驶舱语义层
+说明：为 Workspace 内的 TaskMap / DAG 主视图、Agent 侧边栏、关键事件流和聚合指标卡提供产品语义与查询聚合接口。
+输出：Workspace 协作驾驶舱查询模型与聚合服务接口。
+前置依赖：任务 1；关联 `07架构/05PuddingPlatform.md`。
+
+4B. 建立 Workspace 共享工具台语义层
+说明：把 TaskBoard、Spreadsheet、Wiki、ObjectStorage、WorkspaceEventHub 等能力组织成统一的 Workspace 虚拟工作台。
+输出：共享工具台聚合入口与能力目录。
+前置依赖：任务 1、任务 4。
+
 5. 对接 Controller 与配置模型
 说明：让 Controller 路由和权限链能读取 Platform 的业务规则输出。
 输出：Platform 到 Controller 的规则桥接层。
-前置依赖：任务 2、任务 3、任务 4。
+前置依赖：任务 2、任务 3、任务 4、任务 4A、任务 4B。
 
 ## 验收标准
 
@@ -54,3 +64,5 @@
 - 平台能表达服务暴露策略和审计治理策略。
 - Platform 规则可被 Controller 消费。
 - Workflow 能在 Workspace 语义下被组织和挂接。
+- Platform 能提供 Workspace 内的多 Agent 协作驾驶舱语义模型。
+- Platform 能将共享任务板、表格、知识和对象存储组织成统一工作台入口。

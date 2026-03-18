@@ -65,11 +65,15 @@ Gateway 的核心设计不应是为每一种外部系统硬编码接入逻辑，
 ## Controller 负责的能力
 
 - Runtime 节点注册、发现、健康检查与容量感知。
+- Runtime 节点标签、资源画像、用途画像、能力画像与负载画像管理。
 - 渠道路由、Session 建立、用户与租户边界隔离。
 - 认证、鉴权、审批、审计、治理与冻结控制。
 - Workflow 调度入口、Swarm 协调与控制面事件输出。
 - 统一事件路由、事件域隔离、事件权限判定与订阅治理。
 - 插件注册、安装、启停、版本与装配策略。
+- 全局 Skill Registry 与 MCP Registry 管理。
+- AgentTemplate 存储、查询、版本化与运行画像解释。
+- Runtime 放置决策：根据显式指定、标签偏好、隔离级别、Workspace 亲和性与节点负载选择 Runtime。
 - 对 CLI、Web、Avalonia 以及其他客户端暴露控制接口。
 - 与LLM API服务商的链接，Runtime与Controller沟通
 
@@ -99,6 +103,15 @@ Gateway 的核心设计不应是为每一种外部系统硬编码接入逻辑，
        - 统一托管 LLM API Key、预算、配额与供应商路由策略
        - 统一托管 Adapter 插件、来源校验与装配策略
 
+6. **全局能力注册与分发治理**
+       - 统一托管 Skill 与 MCP 的注册信息、版本、可见性、风险等级与适用环境
+       - 让 AgentTemplate 只引用能力，而不是复制能力定义
+
+7. **Runtime 选址与亲和性调度**
+       - 支持显式指定 Runtime
+       - 支持根据必需标签、偏好标签和排斥标签选择 Runtime
+       - 在缺省情况下优先保持同一 Workspace 的 Agent 落在同一 Runtime
+
 ## Controller 的最小阶段目标
 
 第一阶段至少应做到：
@@ -108,6 +121,77 @@ Gateway 的核心设计不应是为每一种外部系统硬编码接入逻辑，
 - 能记录首批审计事件与拒绝原因
 - 能管理最小事件总线与订阅判定
 - 能管理 Runtime 节点与最小 LLM 路由
+- 能维护最小 Skill / MCP 全局注册表
+- 能基于标签与负载做最小 Runtime 选择
+
+## 全局 Skill / MCP Registry
+
+`PuddingController` 应维护一套全局 `Skill Registry` 与 `Mcp Registry`，作为平台能力定义的权威入口。
+
+建议由 Controller 负责：
+
+- 注册 Skill / MCP 元数据
+- 维护版本、来源、信任等级与风险等级
+- 维护适用的 Runtime 标签、宿主要求与资源要求
+- 控制哪些 Workspace / Template 可以引用这些能力
+- 审计能力的启用、冻结、升级与弃用
+
+第一阶段建议：
+
+- 元数据、可见性、版本和审计信息存储在 PostgreSQL
+- Runtime 不直接拥有全局定义权，只消费 Controller 批准后的引用与配置
+
+这也回答了“SKILL 在哪里”这个问题：
+
+- **定义和注册，在 Controller**
+- **配置和管理，在 Platform**
+- **装配和执行，在 Runtime**
+
+## Runtime 节点画像与心跳
+
+Controller 不应该只知道“有几个 Runtime 活着”，还应该知道它们分别适合做什么。
+
+因此每个 Runtime 节点至少应持续上报：
+
+- 操作系统与架构
+- CPU / 内存 / 磁盘 / GPU 基础能力
+- 用途标签，例如 `coding`、`drawing`、`test-runner`
+- 环境标签，例如 `windows`、`linux`、`high-memory`
+- 支持的沙箱提供者，例如 `docker`、`wasm`、`gvisor`
+- 当前负载、压力、活跃 Agent 数和活跃 Workspace 数
+
+这些信息不只是用来做监控，更是 Runtime 选址与降级路由的输入。
+
+## Runtime 选址与放置策略
+
+当用户通过 `PuddingPlatform` 创建 Agent，或者编排 Agent 派生新的 Agent 时，Controller 应支持以下几类放置方式：
+
+1. **显式指定 Runtime**
+       - 用户或上层流程直接指定 `runtimeId`
+
+2. **按标签与偏好选择**
+       - 模板或请求声明 `requiredRuntimeTags`
+       - 声明 `preferredRuntimeTags`
+       - 声明 `excludedRuntimeTags`
+
+3. **缺省规则选择**
+       - 如果没有显式指定，则由 Controller 按内置规则选址
+
+建议默认原则：
+
+- **同一 Workspace 的 Agent 优先放在同一个 Runtime**
+- 只有在模板偏好、隔离要求、OS 要求或资源要求冲突时，才拆到不同 Runtime
+- Dedicated 隔离会影响 sandbox 选择，但不一定要求更换 Runtime 节点；除非节点能力不满足
+
+建议最小决策输入：
+
+- Workspace 亲和性
+- 当前 Runtime 负载
+- 模板运行画像
+- 沙箱提供者可用性
+- 风险等级与审批状态
+
+这部分本质上是 Pudding 的“放置与编排权”，应归 Controller，而不是 Runtime 自己私下找地方落脚。
 
 
 

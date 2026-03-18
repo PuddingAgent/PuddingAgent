@@ -1,6 +1,6 @@
 # task29 - AgentTemplate 与审计 Agent
 
-最后更新：2026-03-15
+最后更新：2026-03-18
 
 ## 任务目标
 
@@ -25,7 +25,7 @@
 ## 顺序任务
 
 1. 定义最小 `AgentTemplate` 模型
-说明：包含角色、人设、默认能力、权限画像、运行画像、默认记忆策略、心跳策略。
+说明：包含角色、人设、默认能力、权限画像、运行画像、默认记忆策略、心跳策略，以及 Runtime 偏好、隔离级别、Skill / MCP 引用等字段。
 输出：稳定模板对象。
 
 2. 提供内置服务模板
@@ -43,6 +43,16 @@
 输出：统一的模板消费接口。
 前置依赖：任务 1。
 
+4A. 定义 Runtime 偏好与隔离策略字段
+说明：支持 `requiredRuntimeTags`、`preferredRuntimeTags`、`excludedRuntimeTags`、`defaultIsolationLevel`、`runtimeAffinityPolicy` 等字段。
+输出：可被 Controller 与 Runtime 共同消费的模板运行画像。
+前置依赖：任务 1。
+
+4B. 定义 Skill / MCP 引用模型
+说明：AgentTemplate 引用 Controller 管理的全局 Skill / MCP Registry，而不是复制定义本体。
+输出：`SkillRef`、`McpRef`、版本与可见性消费规则。
+前置依赖：任务 1。
+
 5. 对接审计链与冻结链
 说明：让审计模板参与批准、拒绝、质询与 Workspace 冻结链路。
 输出：最小审计 Agent 工作流。
@@ -53,4 +63,5 @@
 - Controller 能命中内置 AgentTemplate。
 - Runtime 能依据模板创建 AgentInstance。
 - 模板权限与运行画像能被多个层共同读取。
+- 模板至少能表达 Runtime 偏好、隔离级别与 Skill / MCP 引用。
 - 每个 Workspace 至少可挂接一个审计模板。
