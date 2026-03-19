@@ -1,3 +1,5 @@
+using PuddingCode.Platform;
+
 namespace PuddingPlatform.Data.Dtos;
 
 // ─── LLM Provider ────────────────────────────────────────────────
@@ -94,6 +96,37 @@ public record UpsertLlmModelRequest(
 
 // ─── Global Agent Template ────────────────────────────────────────
 
+public record CapabilityDto(
+    int Id,
+    string CapabilityId,
+    string Name,
+    string? Description,
+    string ToolName,
+    string? ToolDescription,
+    string? ToolParametersJson,
+    bool RequiresShellExecution,
+    bool RequiresFileWrite,
+    bool RequiresNetworkAccess,
+    bool IsEnabled,
+    int SortOrder,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpsertCapabilityRequest(
+    string CapabilityId,
+    string Name,
+    string? Description,
+    string ToolName,
+    string? ToolDescription,
+    string? ToolParametersJson,
+    bool RequiresShellExecution,
+    bool RequiresFileWrite,
+    bool RequiresNetworkAccess,
+    bool IsEnabled,
+    int SortOrder
+);
+
 public record GlobalAgentTemplateDto(
     int Id,
     string TemplateId,
@@ -107,6 +140,7 @@ public record GlobalAgentTemplateDto(
     int MaxContextTokens,
     int MaxReplyTokens,
     string? ContainerImage,
+    List<string> SelectedCapabilityIds,
     bool IsBuiltIn,
     bool IsEnabled,
     int SortOrder,
@@ -126,6 +160,7 @@ public record UpsertGlobalAgentTemplateRequest(
     int MaxContextTokens,
     int MaxReplyTokens,
     string? ContainerImage,
+    List<string>? SelectedCapabilityIds,
     bool IsEnabled,
     int SortOrder
 );
@@ -147,6 +182,7 @@ public record WorkspaceAgentTemplateDto(
     int MaxReplyTokens,
     string? ContainerImage,
     string? BaseGlobalTemplateId,
+    List<string> SelectedCapabilityIds,
     bool IsEnabled,
     int SortOrder,
     DateTimeOffset CreatedAt,
@@ -167,6 +203,7 @@ public record UpsertWorkspaceAgentTemplateRequest(
     int MaxReplyTokens,
     string? ContainerImage,
     string? BaseGlobalTemplateId,
+    List<string>? SelectedCapabilityIds,
     bool IsEnabled,
     int SortOrder
 );
@@ -449,6 +486,7 @@ public record AdminChatResponse(
     string SessionId,
     string? Reply,
     bool IsSuccess,
-    string? ErrorMessage
+    string? ErrorMessage,
+    IReadOnlyList<TurnStepDto>? TurnSteps
 );
 

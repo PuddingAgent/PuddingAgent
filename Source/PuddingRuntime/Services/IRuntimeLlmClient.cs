@@ -11,6 +11,7 @@ public interface IRuntimeLlmClient
         string sessionId,
         string agentTemplateId,
         IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools = null,
         LlmConfig? llmConfig = null,
         CancellationToken ct = default);
 }

@@ -83,7 +83,8 @@ public sealed class SessionRouter
         }, ct);
 
         // 3. 选择 Agent 模板
-        var templateId = ResolveAgentTemplate(workspace, request.ChannelId);
+        var templateId = request.AgentTemplateId
+                 ?? ResolveAgentTemplate(workspace, request.ChannelId);
 
         // 4. 权限校验
         var authDecision = _authService.Authorize(
@@ -190,7 +191,14 @@ public sealed class SessionRouter
             AgentTemplateId = session.AgentTemplateId,
             MessageText = request.MessageText,
             LlmConfig = request.LlmConfig,
+            CapabilityPolicy = request.CapabilityPolicy,
+            ToolDefinitions = request.ToolDefinitions,
         };
+
+        _logger.LogInformation(
+            "[Router] DISPATCH msgId={MsgId} session={Session} ws={Ws} template={Template} hasLlmConfig={HasConfig}",
+            messageId, session.SessionId, workspace.WorkspaceId, session.AgentTemplateId,
+            request.LlmConfig is not null);
 
         await _auditStore.RecordAsync(new AuditEventRecord
         {
@@ -201,6 +209,15 @@ public sealed class SessionRouter
         }, ct);
 
         var dispatchResult = await _dispatcher.DispatchAsync(dispatchRequest, ct);
+
+        if (dispatchResult.IsSuccess)
+            _logger.LogInformation(
+                "[Router] RESULT ok msgId={MsgId} session={Session} replyLen={Len}",
+                messageId, session.SessionId, dispatchResult.ReplyText?.Length ?? 0);
+        else
+            _logger.LogWarning(
+                "[Router] RESULT failed msgId={MsgId} session={Session} error={Error}",
+                messageId, session.SessionId, dispatchResult.ErrorMessage);
 
         // 8. 审计：Runtime 响应
         await _auditStore.RecordAsync(new AuditEventRecord
@@ -232,6 +249,7 @@ public sealed class SessionRouter
             Reply = dispatchResult.ReplyText,
             IsSuccess = dispatchResult.IsSuccess,
             ErrorMessage = dispatchResult.ErrorMessage,
+            TurnSteps = dispatchResult.TurnSteps,
         };
     }
 

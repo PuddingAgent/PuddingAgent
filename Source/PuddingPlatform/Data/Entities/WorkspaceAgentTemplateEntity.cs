@@ -63,6 +63,19 @@ public class WorkspaceAgentTemplateEntity
     [MaxLength(512)]
     public string? ContainerImage { get; set; }
 
+    // ── 能力策略 ─────────────────────────────────────────────────
+    /// <summary>是否允许执行 Shell/Bash 命令（BashSkill）。</summary>
+    public bool AllowShellExecution { get; set; } = false;
+    /// <summary>是否允许写文件。</summary>
+    public bool AllowFileWrite { get; set; } = false;
+    /// <summary>是否允许网络访问。</summary>
+    public bool AllowNetworkAccess { get; set; } = false;
+    /// <summary>工具白名单（JSON 数组，如 ["bash","file_write"]），空表示不额外限制。</summary>
+    public string AllowedToolNamesJson { get; set; } = "[]";
+
+    /// <summary>所选能力 ID 列表（JSON 数组，如 ["cap-bash"]）。</summary>
+    public string SelectedCapabilityIdsJson { get; set; } = "[]";
+
     /// <summary>是否启用</summary>
     public bool IsEnabled { get; set; } = true;
 

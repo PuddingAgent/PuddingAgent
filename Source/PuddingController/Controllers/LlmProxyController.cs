@@ -10,7 +10,9 @@ namespace PuddingController.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/internal/llm")]
-public sealed class LlmProxyController(ControllerLlmProxyService llmProxyService) : ControllerBase
+public sealed class LlmProxyController(
+    ControllerLlmProxyService llmProxyService,
+    ILogger<LlmProxyController> logger) : ControllerBase
 {
     [HttpPost("chat")]
     public async Task<ActionResult<ControllerLlmChatResponse>> Chat(
@@ -20,6 +22,12 @@ public sealed class LlmProxyController(ControllerLlmProxyService llmProxyService
         if (request.Messages is null || request.Messages.Count == 0)
             return BadRequest("messages cannot be empty");
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        logger.LogInformation(
+            "[LlmProxy] REQUEST ws={Ws} session={Session} template={Template} msgCount={Count} hasLlmConfig={HasConfig}",
+            request.WorkspaceId, request.SessionId, request.AgentTemplateId,
+            request.Messages.Count, request.LlmConfig is not null);
+
         try
         {
             var result = await llmProxyService.ChatAsync(
@@ -27,8 +35,15 @@ public sealed class LlmProxyController(ControllerLlmProxyService llmProxyService
                 request.SessionId,
                 request.AgentTemplateId,
                 request.Messages,
+                request.Tools,
                 request.LlmConfig,
                 ct);
+
+            sw.Stop();
+            logger.LogInformation(
+                "[LlmProxy] OK ws={Ws} session={Session} contentLen={Len} elapsed={Elapsed}ms",
+                request.WorkspaceId, request.SessionId,
+                result.Content?.Length ?? 0, sw.ElapsedMilliseconds);
 
             return Ok(new ControllerLlmChatResponse
             {
@@ -39,10 +54,18 @@ public sealed class LlmProxyController(ControllerLlmProxyService llmProxyService
         }
         catch (InvalidOperationException ex)
         {
+            sw.Stop();
+            logger.LogError(
+                "[LlmProxy] ERROR (config) ws={Ws} session={Session} elapsed={Elapsed}ms msg={Msg}",
+                request.WorkspaceId, request.SessionId, sw.ElapsedMilliseconds, ex.Message);
             return StatusCode(502, new { error = ex.Message });
         }
         catch (HttpRequestException ex)
         {
+            sw.Stop();
+            logger.LogError(
+                "[LlmProxy] ERROR (http) ws={Ws} session={Session} elapsed={Elapsed}ms msg={Msg}",
+                request.WorkspaceId, request.SessionId, sw.ElapsedMilliseconds, ex.Message);
             return StatusCode(502, new { error = ex.Message });
         }
     }

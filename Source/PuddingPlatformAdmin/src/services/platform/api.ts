@@ -190,6 +190,37 @@ export interface UpsertLlmModelRequest {
   sortOrder: number;
 }
 
+export interface CapabilityDto {
+  id: number;
+  capabilityId: string;
+  name: string;
+  description?: string;
+  toolName: string;
+  toolDescription?: string;
+  toolParametersJson?: string;
+  requiresShellExecution: boolean;
+  requiresFileWrite: boolean;
+  requiresNetworkAccess: boolean;
+  isEnabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertCapabilityRequest {
+  capabilityId: string;
+  name: string;
+  description?: string;
+  toolName: string;
+  toolDescription?: string;
+  toolParametersJson?: string;
+  requiresShellExecution: boolean;
+  requiresFileWrite: boolean;
+  requiresNetworkAccess: boolean;
+  isEnabled: boolean;
+  sortOrder: number;
+}
+
 export interface UpdateQuotaRequest {
   dailyTokenLimit?: number;
   monthlyTokenLimit?: number;
@@ -210,6 +241,7 @@ export interface GlobalAgentTemplateDto {
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
+  selectedCapabilityIds: string[];
   isBuiltIn: boolean;
   isEnabled: boolean;
   sortOrder: number;
@@ -229,6 +261,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
+  selectedCapabilityIds?: string[];
   isEnabled: boolean;
   sortOrder: number;
 }
@@ -250,6 +283,7 @@ export interface WorkspaceAgentTemplateDto {
   maxReplyTokens: number;
   containerImage?: string;
   baseGlobalTemplateId?: string;
+  selectedCapabilityIds: string[];
   isEnabled: boolean;
   sortOrder: number;
   createdAt: string;
@@ -270,6 +304,7 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   maxReplyTokens: number;
   containerImage?: string;
   baseGlobalTemplateId?: string;
+  selectedCapabilityIds?: string[];
   isEnabled: boolean;
   sortOrder: number;
 }
@@ -342,6 +377,35 @@ export async function deleteLlmModel(providerId: string, modelId: string): Promi
     `/api/llm/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
     { method: 'DELETE' },
   );
+}
+
+// ─── Capability API ─────────────────────────────────────────────
+
+export async function listCapabilities(enabledOnly?: boolean): Promise<CapabilityDto[]> {
+  const url = enabledOnly ? '/api/capabilities?enabledOnly=true' : '/api/capabilities';
+  return request(url, { method: 'GET' });
+}
+
+export async function getCapability(capabilityId: string): Promise<CapabilityDto> {
+  return request(`/api/capabilities/${encodeURIComponent(capabilityId)}`, { method: 'GET' });
+}
+
+export async function createCapability(req: UpsertCapabilityRequest): Promise<CapabilityDto> {
+  return request('/api/capabilities', { method: 'POST', data: req });
+}
+
+export async function updateCapability(
+  capabilityId: string,
+  req: UpsertCapabilityRequest,
+): Promise<CapabilityDto> {
+  return request(`/api/capabilities/${encodeURIComponent(capabilityId)}`, {
+    method: 'PUT',
+    data: req,
+  });
+}
+
+export async function deleteCapability(capabilityId: string): Promise<void> {
+  return request(`/api/capabilities/${encodeURIComponent(capabilityId)}`, { method: 'DELETE' });
 }
 
 // ─── Global Agent Template API ───────────────────────────────────
@@ -932,12 +996,27 @@ export interface AdminChatRequest {
   agentId?: string;
 }
 
+/** 单轮工具调用步骤摘要（对应后端 TurnStepDto）。 */
+export interface TurnStep {
+  round: number;
+  /** CONTINUE / DONE / WAIT / FAILED / CANCELLED */
+  status: string;
+  messageSummary?: string;
+  toolName?: string;
+  toolArgs?: string;
+  toolSuccess?: boolean;
+  toolError?: string;
+  durationMs?: number;
+}
+
 export interface AdminChatResponse {
   messageId: string;
   sessionId: string;
   reply?: string;
   isSuccess: boolean;
   errorMessage?: string;
+  /** 本次执行产生的逐轮步骤（包含工具调用记录）。 */
+  turnSteps?: TurnStep[];
 }
 
 // ─── Chat API ─────────────────────────────────────────────────

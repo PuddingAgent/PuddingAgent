@@ -45,7 +45,7 @@ public static class BuiltInAgentTemplates
             AllowFileWrite = true,
             AllowShellExecution = true,
             AllowNetworkAccess = false,
-            AllowedToolNames = ["file_read", "file_write", "shell_execute"],
+            AllowedToolNames = ["bash", "file_read", "file_write"],
         },
         Runtime = new RuntimeProfile
         {
@@ -60,6 +60,34 @@ public static class BuiltInAgentTemplates
             AllowPublicSourceWrite = false,
         },
         SystemPrompt = "You are a task-oriented agent. You can read/write files and run shell commands to accomplish tasks. Always ask for approval before destructive operations.",
+    };
+
+    public static readonly AgentTemplateDefinition CodeAgent = new()
+    {
+        TemplateId = "code-agent",
+        Name = "Code Agent",
+        Description = "代码执行型 Agent，支持通过 bash 工具在隔离容器内执行命令。",
+        TemplateType = AgentTemplateType.Task,
+        Capability = new CapabilityPolicy
+        {
+            AllowFileWrite = true,
+            AllowShellExecution = true,
+            AllowNetworkAccess = false,
+            AllowedToolNames = ["bash", "file_read", "file_write"],
+        },
+        Runtime = new RuntimeProfile
+        {
+            MaxContextTokens = 16384,
+            MaxTurnsPerSession = 200,
+            SessionTimeout = TimeSpan.FromHours(2),
+        },
+        Memory = new MemoryPolicy
+        {
+            EnableSessionMemory = true,
+            EnableWorkspaceMemory = true,
+            AllowPublicSourceWrite = false,
+        },
+        SystemPrompt = "You are a coding agent. Use bash tool when needed to inspect files, run commands, and complete coding tasks safely in sandbox.",
     };
 
     public static readonly AgentTemplateDefinition WorkspaceAuditAgent = new()
@@ -91,7 +119,7 @@ public static class BuiltInAgentTemplates
 
     /// <summary>获取所有内置模板。</summary>
     public static IReadOnlyList<AgentTemplateDefinition> GetAll() =>
-        [WorkspaceServiceAgent, WorkspaceTaskAgent, WorkspaceAuditAgent];
+        [WorkspaceServiceAgent, WorkspaceTaskAgent, CodeAgent, WorkspaceAuditAgent];
 
     /// <summary>按 ID 查找内置模板。</summary>
     public static AgentTemplateDefinition? FindById(string templateId) =>

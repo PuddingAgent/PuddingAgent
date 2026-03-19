@@ -7,14 +7,15 @@
 1. [01总览与分层](01总览与分层.md)
 2. [02PuddingCore](02PuddingCore.md)
 3. [03PuddingRuntime](03PuddingRuntime.md)
-4. [04PuddingController与Gateway](04PuddingController与Gateway.md)
-5. [10事件系统与事件总线](10事件系统与事件总线.md)
-6. [11工作流与任务图](11工作流与任务图.md)
-7. [05PuddingPlatform](05PuddingPlatform.md)
-8. [06PuddingAgent与客户端](06PuddingAgent与客户端.md)
-9. [07协作网络与治理](07协作网络与治理.md)
-10. [08数据模型与配置](08数据模型与配置.md)
-11. [09V1落地与验收](09V1落地与验收.md)
+4. [12多轮会话与工具调用执行](12多轮会话与工具调用执行.md)
+5. [04PuddingController与Gateway](04PuddingController与Gateway.md)
+6. [10事件系统与事件总线](10事件系统与事件总线.md)
+7. [11工作流与任务图](11工作流与任务图.md)
+8. [05PuddingPlatform](05PuddingPlatform.md)
+9. [06PuddingAgent与客户端](06PuddingAgent与客户端.md)
+10. [07协作网络与治理](07协作网络与治理.md)
+11. [08数据模型与配置](08数据模型与配置.md)
+12. [09V1落地与验收](09V1落地与验收.md)
 
 文档分工：
 

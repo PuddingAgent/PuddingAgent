@@ -185,6 +185,156 @@ namespace PuddingPlatform.Migrations
                     b.ToTable("AppUserRoles", "platform");
                 });
 
+            modelBuilder.Entity("PuddingPlatform.Data.Entities.CapabilityEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CapabilityId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("RequiresFileWrite")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequiresNetworkAccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequiresShellExecution")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ToolDescription")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("ToolName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ToolParametersJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CapabilityId")
+                        .IsUnique();
+
+                    b.ToTable("Capabilities", "platform");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CapabilityId = "cap-bash",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "允许 Agent 在隔离容器中执行 bash 命令。",
+                            IsEnabled = true,
+                            Name = "Bash 命令执行",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = true,
+                            SortOrder = 10,
+                            ToolDescription = "Execute a bash shell command inside the agent sandbox container.",
+                            ToolName = "bash",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Shell command to execute\"}},\"required\":[\"command\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CapabilityId = "cap-python",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "允许 Agent 在隔离容器中执行 Python 3 代码。",
+                            IsEnabled = true,
+                            Name = "Python 代码执行",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = true,
+                            SortOrder = 20,
+                            ToolDescription = "Execute Python 3 code inside the agent sandbox container.",
+                            ToolName = "python",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"code\":{\"type\":\"string\",\"description\":\"Python 3 code to execute\"}},\"required\":[\"code\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CapabilityId = "cap-read-file",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "允许 Agent 读取沙箱容器内的文件内容。",
+                            IsEnabled = true,
+                            Name = "读取文件",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = true,
+                            SortOrder = 30,
+                            ToolDescription = "Read the content of a file from the agent's container filesystem.",
+                            ToolName = "read_file",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute or relative file path inside the container\"}},\"required\":[\"path\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CapabilityId = "cap-write-file",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "允许 Agent 在沙箱容器内创建或覆写文件。",
+                            IsEnabled = true,
+                            Name = "写入文件",
+                            RequiresFileWrite = true,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = true,
+                            SortOrder = 40,
+                            ToolDescription = "Create or overwrite a file in the agent's container filesystem.",
+                            ToolName = "write_file",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"File path to write\"},\"content\":{\"type\":\"string\",\"description\":\"Text content to write to the file\"}},\"required\":[\"path\",\"content\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CapabilityId = "cap-http-fetch",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "允许 Agent 发起 HTTP GET/POST 请求，访问外部 API 或网页。",
+                            IsEnabled = true,
+                            Name = "HTTP 请求",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = true,
+                            RequiresShellExecution = false,
+                            SortOrder = 50,
+                            ToolDescription = "Make an HTTP GET or POST request to a URL and return the response body.",
+                            ToolName = "http_fetch",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"The full HTTP/HTTPS URL to request\"},\"method\":{\"type\":\"string\",\"description\":\"HTTP method: GET or POST (default: GET)\"},\"body\":{\"type\":\"string\",\"description\":\"Request body for POST requests (optional)\"}},\"required\":[\"url\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        });
+                });
+
             modelBuilder.Entity("PuddingPlatform.Data.Entities.GlobalAgentTemplateEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -192,6 +342,19 @@ namespace PuddingPlatform.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowFileWrite")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowNetworkAccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowShellExecution")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AllowedToolNamesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("ContainerImage")
                         .HasMaxLength(512)
@@ -234,6 +397,10 @@ namespace PuddingPlatform.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("SelectedCapabilityIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
@@ -262,6 +429,10 @@ namespace PuddingPlatform.Migrations
                         new
                         {
                             Id = 1,
+                            AllowFileWrite = false,
+                            AllowNetworkAccess = false,
+                            AllowShellExecution = false,
+                            AllowedToolNamesJson = "[]",
                             CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
                             Description = "通用型对话助手，适合日常问答、文案写作等场景。",
                             IsBuiltIn = true,
@@ -272,6 +443,7 @@ namespace PuddingPlatform.Migrations
                             PreferredModelId = "gpt-4o-mini",
                             PreferredProviderId = "openai",
                             Role = "Service",
+                            SelectedCapabilityIdsJson = "[]",
                             SortOrder = 10,
                             SystemPrompt = "你是一个专业、友好的 AI 助手。请直接、准确地回答用户的问题。",
                             TemplateId = "general-assistant",
@@ -724,6 +896,19 @@ namespace PuddingPlatform.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("AllowFileWrite")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowNetworkAccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowShellExecution")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AllowedToolNamesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("BaseGlobalTemplateId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -765,6 +950,10 @@ namespace PuddingPlatform.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SelectedCapabilityIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");

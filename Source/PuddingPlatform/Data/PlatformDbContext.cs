@@ -12,6 +12,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<LlmProviderQuotaEntity> LlmProviderQuotas => Set<LlmProviderQuotaEntity>();
 
     // Agent 模板
+    public DbSet<CapabilityEntity> Capabilities => Set<CapabilityEntity>();
     public DbSet<GlobalAgentTemplateEntity> GlobalAgentTemplates => Set<GlobalAgentTemplateEntity>();
     public DbSet<WorkspaceAgentTemplateEntity> WorkspaceAgentTemplates => Set<WorkspaceAgentTemplateEntity>();
 
@@ -62,6 +63,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(m => new { m.ProviderId, m.ModelId }).IsUnique();
             e.Property(m => m.InputPricePer1MTokens).HasColumnType("decimal(18,6)");
             e.Property(m => m.OutputPricePer1MTokens).HasColumnType("decimal(18,6)");
+        });
+
+        // ── GlobalAgentTemplate ───────────────────────────────────────
+        modelBuilder.Entity<CapabilityEntity>(e =>
+        {
+            e.HasIndex(c => c.CapabilityId).IsUnique();
         });
 
         // ── GlobalAgentTemplate ───────────────────────────────────────
@@ -249,6 +256,94 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
                 CapabilityTagsJson = "[\"text\",\"vision\",\"function-calling\",\"json-mode\"]",
                 IsDefault = false,
                 SortOrder = 20,
+                CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            }
+        );
+
+        modelBuilder.Entity<CapabilityEntity>().HasData(
+            new CapabilityEntity
+            {
+                Id = 1,
+                CapabilityId = "cap-bash",
+                Name = "Bash 命令执行",
+                Description = "允许 Agent 在隔离容器中执行 bash 命令。",
+                ToolName = "bash",
+                ToolDescription = "Execute a bash shell command inside the agent sandbox container.",
+                ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Shell command to execute\"}},\"required\":[\"command\"]}",
+                RequiresShellExecution = true,
+                RequiresFileWrite = false,
+                RequiresNetworkAccess = false,
+                IsEnabled = true,
+                SortOrder = 10,
+                CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            new CapabilityEntity
+            {
+                Id = 2,
+                CapabilityId = "cap-python",
+                Name = "Python 代码执行",
+                Description = "允许 Agent 在隔离容器中执行 Python 3 代码。",
+                ToolName = "python",
+                ToolDescription = "Execute Python 3 code inside the agent sandbox container.",
+                ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"code\":{\"type\":\"string\",\"description\":\"Python 3 code to execute\"}},\"required\":[\"code\"]}",
+                RequiresShellExecution = true,
+                RequiresFileWrite = false,
+                RequiresNetworkAccess = false,
+                IsEnabled = true,
+                SortOrder = 20,
+                CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            new CapabilityEntity
+            {
+                Id = 3,
+                CapabilityId = "cap-read-file",
+                Name = "读取文件",
+                Description = "允许 Agent 读取沙箱容器内的文件内容。",
+                ToolName = "read_file",
+                ToolDescription = "Read the content of a file from the agent's container filesystem.",
+                ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Absolute or relative file path inside the container\"}},\"required\":[\"path\"]}",
+                RequiresShellExecution = true,
+                RequiresFileWrite = false,
+                RequiresNetworkAccess = false,
+                IsEnabled = true,
+                SortOrder = 30,
+                CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            new CapabilityEntity
+            {
+                Id = 4,
+                CapabilityId = "cap-write-file",
+                Name = "写入文件",
+                Description = "允许 Agent 在沙箱容器内创建或覆写文件。",
+                ToolName = "write_file",
+                ToolDescription = "Create or overwrite a file in the agent's container filesystem.",
+                ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"File path to write\"},\"content\":{\"type\":\"string\",\"description\":\"Text content to write to the file\"}},\"required\":[\"path\",\"content\"]}",
+                RequiresShellExecution = true,
+                RequiresFileWrite = true,
+                RequiresNetworkAccess = false,
+                IsEnabled = true,
+                SortOrder = 40,
+                CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            new CapabilityEntity
+            {
+                Id = 5,
+                CapabilityId = "cap-http-fetch",
+                Name = "HTTP 请求",
+                Description = "允许 Agent 发起 HTTP GET/POST 请求，访问外部 API 或网页。",
+                ToolName = "http_fetch",
+                ToolDescription = "Make an HTTP GET or POST request to a URL and return the response body.",
+                ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"The full HTTP/HTTPS URL to request\"},\"method\":{\"type\":\"string\",\"description\":\"HTTP method: GET or POST (default: GET)\"},\"body\":{\"type\":\"string\",\"description\":\"Request body for POST requests (optional)\"}},\"required\":[\"url\"]}",
+                RequiresShellExecution = false,
+                RequiresFileWrite = false,
+                RequiresNetworkAccess = true,
+                IsEnabled = true,
+                SortOrder = 50,
                 CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 UpdatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             }

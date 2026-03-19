@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
@@ -82,6 +83,7 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         entity.MaxReplyTokens = req.MaxReplyTokens;
         entity.ContainerImage = req.ContainerImage;
         entity.BaseGlobalTemplateId = req.BaseGlobalTemplateId;
+        entity.SelectedCapabilityIdsJson = JsonSerializer.Serialize(req.SelectedCapabilityIds ?? []);
         entity.IsEnabled = req.IsEnabled;
         entity.SortOrder = req.SortOrder;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -119,6 +121,7 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         MaxReplyTokens = req.MaxReplyTokens,
         ContainerImage = req.ContainerImage,
         BaseGlobalTemplateId = req.BaseGlobalTemplateId,
+        SelectedCapabilityIdsJson = JsonSerializer.Serialize(req.SelectedCapabilityIds ?? []),
         IsEnabled = req.IsEnabled,
         SortOrder = req.SortOrder,
     };
@@ -129,6 +132,13 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         t.PreferredProviderId, t.PreferredModelId,
         t.MaxContextTokens, t.MaxReplyTokens,
         t.ContainerImage,
-        t.BaseGlobalTemplateId, t.IsEnabled, t.SortOrder,
+        t.BaseGlobalTemplateId, ParseStringList(t.SelectedCapabilityIdsJson), t.IsEnabled, t.SortOrder,
         t.CreatedAt, t.UpdatedAt);
+
+    private static List<string> ParseStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
+    }
 }

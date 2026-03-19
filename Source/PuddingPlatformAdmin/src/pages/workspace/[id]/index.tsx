@@ -1,5 +1,8 @@
 import {
   ArrowLeftOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  CodeOutlined,
   DeleteOutlined,
   EditOutlined,
   LockOutlined,
@@ -30,6 +33,7 @@ import {
   App,
   Badge,
   Button,
+  Collapse,
   Descriptions,
   Drawer,
   Form,
@@ -42,6 +46,7 @@ import {
   Table,
   Tag,
   Tabs,
+  Tooltip,
   Typography,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
@@ -93,6 +98,7 @@ import {
   type KnowledgeBaseDto,
   type LlmModelDto,
   type LlmProviderDto,
+  type TurnStep,
   type UpsertKnowledgeBaseRequest,
   type UpsertWorkflowRequest,
   type UpsertWorkspaceChannelRequest,
@@ -730,10 +736,85 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
 // ─── Chat 界面 Tab ─────────────────────────────────────────────────────────────
 
 interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool-trace';
   content: string;
   timestamp: string;
+  /** 工具调用步骤（仅 role=tool-trace 时有值）。 */
+  turns?: TurnStep[];
 }
+
+/** 工具调用步骤卡片（内嵌在消息列表中）。 */
+const ToolTraceCard: React.FC<{ turns: TurnStep[] }> = ({ turns }) => {
+  // 只展示有工具调用的轮次，纯 LLM 推理轮不单独列出
+  const toolTurns = turns.filter((t) => t.toolName);
+  const totalRounds = turns.length;
+
+  if (toolTurns.length === 0) return null;
+
+  const items = toolTurns.map((t) => {
+    const success = t.toolSuccess !== false;
+    const icon = success
+      ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
+      : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+
+    let argsPreview = '';
+    if (t.toolArgs) {
+      try {
+        const parsed = JSON.parse(t.toolArgs);
+        const cmd = parsed.command ?? parsed.input ?? parsed.query ?? Object.values(parsed)[0];
+        argsPreview = typeof cmd === 'string' ? cmd.slice(0, 120) : t.toolArgs.slice(0, 120);
+      } catch {
+        argsPreview = t.toolArgs.slice(0, 120);
+      }
+    }
+
+    const label = (
+      <Space size={6}>
+        {icon}
+        <Text strong style={{ fontSize: 12 }}>{t.toolName}</Text>
+        {argsPreview && (
+          <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>
+            {argsPreview}{argsPreview.length >= 120 ? '…' : ''}
+          </Text>
+        )}
+        {t.durationMs != null && (
+          <Text type="secondary" style={{ fontSize: 11 }}>{t.durationMs}ms</Text>
+        )}
+      </Space>
+    );
+
+    const detailItems = [
+      t.toolArgs && { key: 'args', label: '参数', children: <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{(() => { try { return JSON.stringify(JSON.parse(t.toolArgs), null, 2); } catch { return t.toolArgs; } })()}</pre> },
+      t.toolError && { key: 'err', label: '错误', children: <Text type="danger" style={{ fontSize: 11 }}>{t.toolError}</Text> },
+      t.messageSummary && { key: 'msg', label: 'LLM 输出', children: <Text style={{ fontSize: 11 }}>{t.messageSummary}</Text> },
+    ].filter(Boolean) as { key: string; label: string; children: React.ReactNode }[];
+
+    return {
+      key: String(t.round),
+      label,
+      children: detailItems.length > 0
+        ? <Descriptions column={1} size="small" items={detailItems} />
+        : <Text type="secondary" style={{ fontSize: 11 }}>无详情</Text>,
+    };
+  });
+
+  return (
+    <div style={{ maxWidth: '72%', marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <ToolOutlined style={{ color: '#faad14', fontSize: 13 }} />
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          Agent 思考过程 · {totalRounds} 轮推理 · {toolTurns.length} 次工具调用
+        </Text>
+      </div>
+      <Collapse
+        size="small"
+        ghost
+        style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 6, fontSize: 12 }}
+        items={items}
+      />
+    </div>
+  );
+};
 
 const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   const { message } = App.useApp();
@@ -771,10 +852,20 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       const resp = await sendAdminChatMessage(workspaceId, req);
       setSessionId(resp.sessionId);
       if (resp.isSuccess && resp.reply) {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: resp.reply!, timestamp: new Date().toISOString() },
-        ]);
+        setChatMessages((prev) => {
+          const next: ChatMessage[] = [...prev];
+          // 如果有工具调用步骤，先插入 trace 卡片，再插入 assistant 回复
+          if (resp.turnSteps && resp.turnSteps.length > 0) {
+            next.push({
+              role: 'tool-trace',
+              content: '',
+              timestamp: new Date().toISOString(),
+              turns: resp.turnSteps,
+            });
+          }
+          next.push({ role: 'assistant', content: resp.reply!, timestamp: new Date().toISOString() });
+          return next;
+        });
       } else {
         message.error(resp.errorMessage ?? '发送失败，Agent 未返回回复');
       }
@@ -824,23 +915,33 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             </Text>
           </div>
         )}
-        {chatMessages.map((m, idx) => (
-          <div key={idx} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div
-              style={{
-                maxWidth: '72%',
-                padding: '8px 12px',
-                borderRadius: 8,
-                background: m.role === 'user' ? '#1677ff' : '#f5f5f5',
-                color: m.role === 'user' ? '#fff' : '#000',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {m.content}
+        {chatMessages.map((m, idx) => {
+          // tool-trace 渲染工具调用卡片
+          if (m.role === 'tool-trace') {
+            return (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                {m.turns && <ToolTraceCard turns={m.turns} />}
+              </div>
+            );
+          }
+          return (
+            <div key={idx} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div
+                style={{
+                  maxWidth: '72%',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  background: m.role === 'user' ? '#1677ff' : '#f5f5f5',
+                  color: m.role === 'user' ? '#fff' : '#000',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {m.content}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {sending && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f5f5f5' }}>

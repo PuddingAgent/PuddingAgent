@@ -148,6 +148,9 @@ services:
       ASPNETCORE_HTTP_PORTS:  "8080"
       Pudding__ControllerEndpoint: http://pudding-controller:8080
       Pudding__SelfEndpoint:       http://pudding-runtime:8080
+    volumes:
+      # 挂载 Docker socket，使 Runtime 能够管理 Agent 沙箱容器
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test:         ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
       interval:     10s

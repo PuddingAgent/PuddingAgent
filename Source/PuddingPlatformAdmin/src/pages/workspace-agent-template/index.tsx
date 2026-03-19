@@ -32,12 +32,14 @@ import {
   deleteWorkspaceAgentTemplate,
   listLlmProviders,
   listLlmModels,
+  listCapabilities,
   type WorkspaceDefinition,
   type WorkspaceAgentTemplateDto,
   type GlobalAgentTemplateDto,
   type UpsertWorkspaceAgentTemplateRequest,
   type LlmProviderDto,
   type LlmModelDto,
+  type CapabilityDto,
 } from '@/services/platform/api';
 
 const { Text } = Typography;
@@ -63,6 +65,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
   const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
   const [providers, setProviders] = useState<LlmProviderDto[]>([]);
   const [models, setModels] = useState<LlmModelDto[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [formDrawer, setFormDrawer] = useState(false);
   const [editItem, setEditItem] = useState<WorkspaceAgentTemplateDto | null>(null);
@@ -72,6 +75,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
     listWorkspaces().then(setWorkspaces).catch(() => {});
     listGlobalAgentTemplates().then(setGlobalTemplates).catch(() => {});
     listLlmProviders().then(setProviders).catch(() => {});
+    listCapabilities(true).then(setCapabilities).catch(() => {});
   }, []);
 
   const handleProviderChange = async (providerId: string) => {
@@ -100,6 +104,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       maxContextTokens: tpl.maxContextTokens,
       maxReplyTokens: tpl.maxReplyTokens,
       containerImage: tpl.containerImage,
+      selectedCapabilityIds: tpl.selectedCapabilityIds,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
@@ -114,6 +119,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       maxContextTokens: 8192,
       maxReplyTokens: 2048,
       workspaceId: filterWorkspaceId,
+      selectedCapabilityIds: [],
     });
     setModels([]);
     setFormDrawer(true);
@@ -190,6 +196,21 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
         ) : (
           <Text type="secondary">—</Text>
         ),
+    },
+    {
+      title: '能力',
+      width: 220,
+      render: (_, r) => {
+        if (!r.selectedCapabilityIds?.length) return <Text type="secondary">—</Text>;
+        return (
+          <Space wrap>
+            {r.selectedCapabilityIds.map((id) => {
+              const cap = capabilities.find((x) => x.capabilityId === id);
+              return <Tag key={id}>{cap?.name ?? id}</Tag>;
+            })}
+          </Space>
+        );
+      },
     },
     {
       title: '容器镜像',
@@ -320,6 +341,14 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
 
           <ProFormSelect name="role" label="角色类型" options={ROLES} rules={[{ required: true }]} />
           <ProFormTextArea name="description" label="描述" rows={2} />
+
+          <ProFormSelect
+            name="selectedCapabilityIds"
+            label="能力选择（多选）"
+            mode="multiple"
+            options={capabilities.map((c) => ({ label: `${c.name} (${c.toolName})`, value: c.capabilityId }))}
+            placeholder="选择能力后，Runtime 会在上下文注入对应工具"
+          />
 
           <ProFormTextArea
             name="systemPrompt"

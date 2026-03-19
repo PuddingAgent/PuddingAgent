@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
@@ -61,6 +62,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         entity.MaxContextTokens = req.MaxContextTokens;
         entity.MaxReplyTokens = req.MaxReplyTokens;
         entity.ContainerImage = req.ContainerImage;
+        entity.SelectedCapabilityIdsJson = JsonSerializer.Serialize(req.SelectedCapabilityIds ?? []);
         entity.IsEnabled = req.IsEnabled;
         entity.SortOrder = req.SortOrder;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -95,6 +97,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         MaxContextTokens = req.MaxContextTokens,
         MaxReplyTokens = req.MaxReplyTokens,
         ContainerImage = req.ContainerImage,
+        SelectedCapabilityIdsJson = JsonSerializer.Serialize(req.SelectedCapabilityIds ?? []),
         IsBuiltIn = isBuiltIn,
         IsEnabled = req.IsEnabled,
         SortOrder = req.SortOrder,
@@ -105,7 +108,14 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         t.SystemPrompt, t.UserPromptTemplate,
         t.PreferredProviderId, t.PreferredModelId,
         t.MaxContextTokens, t.MaxReplyTokens,
-        t.ContainerImage,
+        t.ContainerImage, ParseStringList(t.SelectedCapabilityIdsJson),
         t.IsBuiltIn, t.IsEnabled, t.SortOrder,
         t.CreatedAt, t.UpdatedAt);
+
+    private static List<string> ParseStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
+    }
 }

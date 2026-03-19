@@ -86,7 +86,10 @@ public sealed class SandboxExecutor
     // ── 工具分类辅助方法 ─────────────────────────────────────────────────────
 
     private static bool IsShellTool(string name) =>
-        name.Contains("shell", StringComparison.OrdinalIgnoreCase)
+        name.Equals("bash", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("python", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("read_file", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("shell", StringComparison.OrdinalIgnoreCase)
         || name.Contains("cmd", StringComparison.OrdinalIgnoreCase)
         || name.Contains("exec", StringComparison.OrdinalIgnoreCase)
         || name.Contains("process", StringComparison.OrdinalIgnoreCase);

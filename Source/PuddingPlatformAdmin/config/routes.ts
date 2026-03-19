@@ -51,6 +51,12 @@ export default [
     component: './global-agent-template',
   },
   {
+    path: '/capability-management',
+    name: 'capabilityManagement',
+    icon: 'tool',
+    component: './capability-management',
+  },
+  {
     path: '/workspace-agent-template',
     component: './workspace-agent-template',
   },

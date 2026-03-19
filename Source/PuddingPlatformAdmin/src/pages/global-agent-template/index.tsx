@@ -30,10 +30,12 @@ import {
   deleteGlobalAgentTemplate,
   listLlmProviders,
   listLlmModels,
+  listCapabilities,
   type GlobalAgentTemplateDto,
   type UpsertGlobalAgentTemplateRequest,
   type LlmProviderDto,
   type LlmModelDto,
+  type CapabilityDto,
 } from '@/services/platform/api';
 
 const { Text } = Typography;
@@ -59,10 +61,12 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const [form] = Form.useForm<UpsertGlobalAgentTemplateRequest>();
   const [providers, setProviders] = useState<LlmProviderDto[]>([]);
   const [models, setModels] = useState<LlmModelDto[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
     listLlmProviders().then(setProviders).catch(() => {});
+    listCapabilities(true).then(setCapabilities).catch(() => {});
   }, []);
 
   const handleProviderChange = async (providerId: string) => {
@@ -83,7 +87,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const openCreate = () => {
     setEditItem(null);
     form.resetFields();
-    form.setFieldsValue({ role: 'Service', isEnabled: true, sortOrder: 100, maxContextTokens: 8192, maxReplyTokens: 2048 });
+    form.setFieldsValue({ role: 'Service', isEnabled: true, sortOrder: 100, maxContextTokens: 8192, maxReplyTokens: 2048, selectedCapabilityIds: [] });
     setModels([]);
     setFormDrawer(true);
   };
@@ -146,6 +150,21 @@ const GlobalAgentTemplatePage: React.FC = () => {
       dataIndex: 'role',
       width: 120,
       render: (_, r) => <Tag color={roleColorMap[r.role] ?? 'default'}>{r.role}</Tag>,
+    },
+    {
+      title: '能力',
+      width: 220,
+      render: (_, r) => {
+        if (!r.selectedCapabilityIds?.length) return <Text type="secondary">—</Text>;
+        return (
+          <Space wrap>
+            {r.selectedCapabilityIds.map((id) => {
+              const cap = capabilities.find((x) => x.capabilityId === id);
+              return <Tag key={id}>{cap?.name ?? id}</Tag>;
+            })}
+          </Space>
+        );
+      },
     },
     {
       title: '首选模型',
@@ -263,6 +282,14 @@ const GlobalAgentTemplatePage: React.FC = () => {
           <ProFormText name="name" label="名称" rules={[{ required: true }]} />
           <ProFormSelect name="role" label="角色类型" options={ROLES} rules={[{ required: true }]} />
           <ProFormTextArea name="description" label="描述" rows={2} />
+
+          <ProFormSelect
+            name="selectedCapabilityIds"
+            label="能力选择（多选）"
+            mode="multiple"
+            options={capabilities.map((c) => ({ label: `${c.name} (${c.toolName})`, value: c.capabilityId }))}
+            placeholder="选择能力后，Runtime 会在上下文注入对应工具"
+          />
 
           <ProFormTextArea
             name="systemPrompt"

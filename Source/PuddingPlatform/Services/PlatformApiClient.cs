@@ -132,7 +132,13 @@ public sealed class PlatformApiClient
 
     public async Task<MessageIngressResponse?> SendMessageAsync(
         string channelId, string userExternalId, string messageText,
-        string? workspaceId = null, string? sessionId = null, LlmConfig? llmConfig = null, CancellationToken ct = default)
+        string? workspaceId = null,
+        string? sessionId = null,
+        LlmConfig? llmConfig = null,
+        string? agentTemplateId = null,
+        CapabilityPolicy? capabilityPolicy = null,
+        IReadOnlyList<LlmToolDefinition>? toolDefinitions = null,
+        CancellationToken ct = default)
     {
         var request = new MessageIngressRequest
         {
@@ -141,7 +147,10 @@ public sealed class PlatformApiClient
             MessageText = messageText,
             WorkspaceId = workspaceId,
             SessionId = sessionId,
+            AgentTemplateId = agentTemplateId,
             LlmConfig = llmConfig,
+            CapabilityPolicy = capabilityPolicy,
+            ToolDefinitions = toolDefinitions,
         };
 
         var resp = await _http.PostAsJsonAsync("/api/messageingress", request, ct);

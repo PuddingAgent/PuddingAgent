@@ -37,10 +37,25 @@ public class MessageIngressController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.MessageText))
             return BadRequest(new { error = "MessageText is required" });
 
-        _logger.LogInformation("[Ingress] workspace={Ws} channel={Ch} user={User}",
-            request.WorkspaceId ?? "default", request.ChannelId, request.UserExternalId);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var correlationId = request.CorrelationId ?? "(none)";
+        _logger.LogInformation(
+            "[Ingress] REQUEST ws={Ws} channel={Ch} user={User} hasLlmConfig={HasConfig} correlationId={CorrId}",
+            request.WorkspaceId ?? "default", request.ChannelId, request.UserExternalId,
+            request.LlmConfig is not null, correlationId);
 
         var response = await _router.RouteMessageAsync(request, ct);
+        sw.Stop();
+
+        if (response.IsSuccess)
+            _logger.LogInformation(
+                "[Ingress] OK msgId={MsgId} session={Session} elapsed={Elapsed}ms correlationId={CorrId}",
+                response.MessageId, response.SessionId, sw.ElapsedMilliseconds, correlationId);
+        else
+            _logger.LogWarning(
+                "[Ingress] FAILED msgId={MsgId} elapsed={Elapsed}ms error={Error} correlationId={CorrId}",
+                response.MessageId, sw.ElapsedMilliseconds, response.ErrorMessage, correlationId);
+
         return Ok(response);
     }
 }

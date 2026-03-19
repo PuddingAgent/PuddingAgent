@@ -1,4 +1,5 @@
 using PuddingCode.Core;
+using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 
@@ -17,9 +18,11 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
         string sessionId,
         string agentTemplateId,
         IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools = null,
         LlmConfig? llmConfig = null,
         CancellationToken ct = default)
     {
+        var configSource = llmConfig is not null ? "request(Platform)" : ".env(fallback)";
         var endpoint = NormalizeV1Endpoint(
             llmConfig?.Endpoint ?? configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com/v1");
         var apiKey = llmConfig?.ApiKey ?? configuration["Pudding:LlmApiKey"] ?? string.Empty;
@@ -33,11 +36,29 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
 
         // 未来在这里加入 Workspace 级配额检查/扣减。
         logger.LogInformation(
-            "[ControllerLLM] ws={WorkspaceId} session={SessionId} template={Template} model={Model} endpoint={Endpoint}",
-            workspaceId, sessionId, agentTemplateId, model, endpoint);
+                "[ControllerLLM] CALL ws={WorkspaceId} session={SessionId} template={Template} model={Model} endpoint={Endpoint} configSource={ConfigSource} toolCount={ToolCount}",
+                workspaceId, sessionId, agentTemplateId, model, endpoint, configSource, tools?.Count ?? 0);
 
-        var gateway = new OpenAiLlmGateway(new HttpClient(), new LlmOptions(endpoint, apiKey, model));
-        return await gateway.ChatAsync(messages, [], ct);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var gateway = new OpenAiLlmGateway(new HttpClient(), new LlmOptions(endpoint, apiKey, model));
+            var toolSpecs = (tools ?? []).Select(t => (ITool)new ProxyTool(t)).ToList();
+            var result = await gateway.ChatAsync(messages, toolSpecs, ct);
+            sw.Stop();
+            logger.LogInformation(
+                "[ControllerLLM] OK ws={WorkspaceId} session={SessionId} elapsed={Elapsed}ms contentLen={Len}",
+                workspaceId, sessionId, sw.ElapsedMilliseconds, result.Content?.Length ?? 0);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            logger.LogError(
+                "[ControllerLLM] ERROR ws={WorkspaceId} session={SessionId} elapsed={Elapsed}ms model={Model} endpoint={Endpoint} msg={Msg}",
+                workspaceId, sessionId, sw.ElapsedMilliseconds, model, endpoint, ex.Message);
+            throw;
+        }
     }
 
     /// <summary>确保端点以 /v1 结尾（兼容已含 /v1 的 URL）。</summary>
@@ -45,5 +66,15 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
     {
         var u = url.TrimEnd('/');
         return u.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? u : u + "/v1";
+    }
+
+    private sealed class ProxyTool(LlmToolDefinition dto) : ITool
+    {
+        public string Name => dto.Name;
+        public string Description => dto.Description;
+        public ToolParameterSchema Parameters => dto.Parameters;
+
+        public Task<string> ExecuteAsync(string argumentsJson, CancellationToken ct = default)
+            => throw new NotSupportedException("Proxy tool definitions are only for function schema transport.");
     }
 }
