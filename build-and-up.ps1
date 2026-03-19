@@ -2,22 +2,29 @@
 # Pudding Agent Network — 本地编译 + Docker 打包启动脚本
 # ============================================================
 # 用法：
-#   .\build-and-up.ps1                  # 完整构建并启动
-#   .\build-and-up.ps1 -SkipFrontend    # 跳过前端构建
-#   .\build-and-up.ps1 -SkipBackend     # 跳过后端构建
-#   .\build-and-up.ps1 -BuildOnly       # 只编译，不启动 Docker
-#   .\build-and-up.ps1 -Restart         # 仅重建应用镜像并重启（不重新编译）
+#   .\build-and-up.ps1                   # 完整构建并启动
+#   .\build-and-up.ps1 -SkipFrontend     # 跳过前端构建
+#   .\build-and-up.ps1 -SkipBackend      # 跳过后端构建
+#   .\build-and-up.ps1 -SkipMigration    # 跳过数据库迁移步骤
+#   .\build-and-up.ps1 -BuildOnly        # 只编译，不启动 Docker
+#   .\build-and-up.ps1 -Restart          # 仅重建应用镜像并重启（不重新编译）
 #
 # 架构说明：
 #   后端 Dockerfile 使用宿主机 dotnet publish 产物（publish/ 目录），
 #   不在容器内重复编译，构建速度更快且不依赖容器内网络访问 NuGet。
 #   前端 Dockerfile 同理，使用宿主机 npm run build 产物（dist/ 目录）。
+#
+# 迁移说明：
+#   默认运行时先启 postgres 容器，对它执行 dotnet ef database update，
+#   确保 platform/ctrl schema 均应用最新迁移后再启动应用。
+#   应用内的 MigrateAsync() 作为儆备。
 
 param(
     [switch]$SkipFrontend,
     [switch]$SkipBackend,
+    [switch]$SkipMigration,   # 跳过数据库迁移
     [switch]$BuildOnly,
-    [switch]$Restart   # 仅重建镜像并重启，不重新编译
+    [switch]$Restart          # 仅重建镜像并重启，不重新编译
 )
 
 # 使用 Continue 避免 docker/dotnet 的 stderr 被误判为致命错误
@@ -73,6 +80,37 @@ if (-not $SkipBackend -and -not $Restart) {
         } "$name 发布失败"
         Ok "产物已生成 → $($p.Out)"
     }
+}
+
+# ── 2.5. 数据库迁移（EF Core — 对运行中的 postgres 执行）─────
+if (-not $SkipMigration -and -not $Restart) {
+    Step "启动 postgres 并等待就绪"
+    Push-Location $Root
+    docker compose up -d postgres
+    # 等待 postgres healthy（最多 60 秒）
+    $waited = 0
+    do {
+        Start-Sleep -Seconds 2
+        $waited += 2
+        $health = docker inspect --format='{{.State.Health.Status}}' puddingcode-postgres-1 2>$null
+        if ($waited -ge 60) { Fail "postgres 启动超时，请检查 Docker 日志" }
+    } while ($health -ne 'healthy')
+    Ok "postgres 已就绪（${waited}s）"
+    Pop-Location
+
+    Step "执行 EF Core 迁移 — PuddingPlatform"
+    Invoke-Native {
+        dotnet ef database update `
+            --project "$Root\Source\PuddingPlatform\PuddingPlatform.csproj"
+    } "PuddingPlatform 数据库迁移失败"
+    Ok "platform schema 迁移完成"
+
+    Step "执行 EF Core 迁移 — PuddingController"
+    Invoke-Native {
+        dotnet ef database update `
+            --project "$Root\Source\PuddingController\PuddingController.csproj"
+    } "PuddingController 数据库迁移失败"
+    Ok "ctrl schema 迁移完成"
 }
 
 # ── 3. Docker Compose：构建应用镜像 + 启动全部服务 ────────────

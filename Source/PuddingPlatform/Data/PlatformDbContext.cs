@@ -36,6 +36,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.HasDefaultSchema("platform");
 
         // ── LlmProvider ──────────────────────────────────────────────
         modelBuilder.Entity<LlmProviderEntity>(e =>

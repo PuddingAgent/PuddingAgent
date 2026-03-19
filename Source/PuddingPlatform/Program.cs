@@ -88,12 +88,11 @@ builder.Services.AddSession(options =>
 
 var app = builder.Build();
 
-// ── 测试环境：直接重建数据库（EnsureDeleted + EnsureCreated）──
+// ── 启动时应用迁移（自动建表、不删已有数据，多服务共享库安全）──
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-    db.Database.EnsureDeleted();
-    db.Database.EnsureCreated();
+    await db.Database.MigrateAsync();
 
     // 初始化 Admin 账号（仅首次启动且无 Admin 时创建）
     if (!db.AppUsers.Any(u => u.UserType == UserType.Admin))

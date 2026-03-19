@@ -1,6 +1,9 @@
-﻿using PuddingController.Services;
+﻿using Microsoft.EntityFrameworkCore;
+using PuddingController.Data;
+using PuddingController.Services;
 using PuddingGateway;
 using PuddingGateway.Adapters;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +23,16 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+// ── PostgreSQL（持久化数据：Workspace、审计、路由决策）──────────
+var pgConnStr = builder.Configuration.GetConnectionString("Default")
+    ?? "Host=localhost;Port=5432;Database=pudding;Username=pudding;Password=pudding_dev";
+builder.Services.AddDbContextFactory<ControllerDbContext>(opt => opt.UseNpgsql(pgConnStr));
+
+// ── Redis（热数据：Session、审批、Runtime 节点注册）──────────────
+var redisConnStr = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnStr));
+
 // ── Controller 业务服务 ──────────────────────────────
 builder.Services.AddSingleton<InMemoryWorkspaceCatalog>();
 builder.Services.AddSingleton<InMemorySessionRepository>();
@@ -32,6 +45,7 @@ builder.Services.AddSingleton<RuntimeRegistryService>();
 builder.Services.AddSingleton<RuntimeDispatcher>();
 builder.Services.AddSingleton<SessionRouter>();
 builder.Services.AddSingleton<AgentTemplateRegistry>();
+builder.Services.AddSingleton<ControllerLlmProxyService>();
 
 // ── 知识基础设施服务 ─────────────────────────────────
 builder.Services.AddSingleton<KnowledgeBaseService>();
@@ -54,6 +68,11 @@ builder.Services.AddSingleton(sp =>
 
 var app = builder.Build();
 
+// ── 初始化：应用迁移（自动建 ctrl_ 表，多服务共享库安全）────────────
+var dbFactory = app.Services.GetRequiredService<IDbContextFactory<ControllerDbContext>>();
+await using (var db = dbFactory.CreateDbContext())
+    await db.Database.MigrateAsync();
+
 // ── 初始化 ──────────────────────────────────────────
 var gatewayHost = app.Services.GetRequiredService<GatewayAdapterHost>();
 gatewayHost.Register(new CliGatewayAdapter());
@@ -61,7 +80,7 @@ gatewayHost.Register(new EmailGatewayAdapter());
 gatewayHost.Register(new WebChatGatewayAdapter());
 
 var workspaceCatalog = app.Services.GetRequiredService<InMemoryWorkspaceCatalog>();
-workspaceCatalog.SeedDefaults();
+await workspaceCatalog.LoadAsync();
 
 var dispatcher = app.Services.GetRequiredService<RuntimeDispatcher>();
 var runtimeEndpoint = app.Configuration["Pudding:RuntimeEndpoint"];
@@ -76,3 +95,4 @@ app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
 
 app.Run();
+

@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using PuddingAgent;
 using PuddingCode.Abstractions;
-using PuddingCode.Core;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingMemoryEngine;
@@ -19,8 +18,8 @@ public sealed class AgentExecutionService
     private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;
     private readonly MemoryEngine _memory;
     private readonly SandboxExecutor _sandbox;
+    private readonly IRuntimeLlmClient _llmClient;
     private readonly ILogger<AgentExecutionService> _logger;
-    private readonly IConfiguration _configuration;
 
     // 每个 Session 的对话历史（内存）
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories = new();
@@ -30,15 +29,15 @@ public sealed class AgentExecutionService
         InMemoryRuntimeSessionStore runtimeSessionStore,
         MemoryEngine memory,
         SandboxExecutor sandbox,
-        ILogger<AgentExecutionService> logger,
-        IConfiguration configuration)
+        IRuntimeLlmClient llmClient,
+        ILogger<AgentExecutionService> logger)
     {
         _sessionManager = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
         _memory = memory;
         _sandbox = sandbox;
+        _llmClient = llmClient;
         _logger = logger;
-        _configuration = configuration;
     }
 
     /// <summary>执行 Agent 逻辑——接收消息、调 LLM、返回回复。</summary>
@@ -81,8 +80,12 @@ public sealed class AgentExecutionService
             history.Add(new ChatMessage(ChatRole.User, request.MessageText));
 
             // 5. 调用 LLM
-            var llm = CreateLlmGateway();
-            var response = await llm.ChatAsync(history, [], ct);
+            var response = await _llmClient.ChatAsync(
+                request.WorkspaceId,
+                request.SessionId,
+                request.AgentTemplateId,
+                history,
+                ct);
 
             // 6. 提取回复
             var replyText = response.Content ?? "(no response)";
@@ -138,17 +141,6 @@ public sealed class AgentExecutionService
         if (memoryContext is null) return basePrompt;
 
         return basePrompt + "\n\n---\n" + memoryContext;
-    }
-
-    private ILlmGateway CreateLlmGateway()
-    {
-        var endpoint = _configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com";
-        var apiKey = _configuration["Pudding:LlmApiKey"] ?? "";
-        var model = _configuration["Pudding:LlmModel"] ?? "gpt-4o-mini";
-
-        var options = new LlmOptions(endpoint, apiKey, model);
-
-        return new OpenAiLlmGateway(new HttpClient(), options);
     }
 
     private static void TrimHistory(List<ChatMessage> history, int maxTokenBudget)

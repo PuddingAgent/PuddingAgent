@@ -26,6 +26,10 @@ var controllerBase = builder.Configuration["Pudding:ControllerEndpoint"]
 builder.Services.AddHttpClient<KnowledgeAccessRuntime>(c =>
     c.BaseAddress = new Uri(controllerBase));
 
+// ── LLM 路由桥接（Runtime -> Controller -> LLM Provider）──
+builder.Services.AddHttpClient<IRuntimeLlmClient, ControllerRoutedLlmClient>(c =>
+    c.BaseAddress = new Uri(controllerBase));
+
 // ── 嵌入式宿主原生能力桥接 ────────────────────────────
 // 注册所有实现了 INativeHostBridge 的桥接器
 builder.Services.AddSingleton<INativeHostBridge, DemoDesktopHostBridge>();

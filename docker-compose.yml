@@ -22,7 +22,9 @@ services:
       POSTGRES_USER:     pudding
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pudding_dev}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"   # 供宿主机 dotnet ef database update 使用
     healthcheck:
       test:     ["CMD-SHELL", "pg_isready -U pudding"]
       interval: 5s
@@ -113,6 +115,11 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_HTTP_PORTS:  "8080"
       Pudding__RuntimeEndpoint: http://pudding-runtime:8080
+      Pudding__LlmEndpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1}
+      Pudding__LlmApiKey:   ${LLM_API_KEY}
+      Pudding__LlmModel:    ${LLM_MODEL:-gpt-4o-mini}
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=pudding;Username=pudding;Password=${POSTGRES_PASSWORD:-pudding_dev}"
+      Redis__ConnectionString: "redis:6379"
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,11 +148,6 @@ services:
       ASPNETCORE_HTTP_PORTS:  "8080"
       Pudding__ControllerEndpoint: http://pudding-controller:8080
       Pudding__SelfEndpoint:       http://pudding-runtime:8080
-      # LLM 配置 —— 必须在 .env 中设置 LLM_API_KEY
-      # LLM_ENDPOINT 应包含 /v1，例如 https://api.openai.com/v1
-      Pudding__LlmEndpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1}
-      Pudding__LlmApiKey:   ${LLM_API_KEY}
-      Pudding__LlmModel:    ${LLM_MODEL:-gpt-4o-mini}
     healthcheck:
       test:         ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
       interval:     10s
@@ -183,7 +185,6 @@ services:
 # ── 持久化卷 ──────────────────────────────────────────────────────
 
 volumes:
-  postgres_data:
   redis_data:
   rabbitmq_data:
   # mosquitto_data:
