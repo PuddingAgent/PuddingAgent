@@ -38,6 +38,11 @@
 输出：审计治理策略骨架。
 前置依赖：任务 1。
 
+3A. 建立 Workspace 紧急 stop / recover 治理语义
+说明：定义用户和审计 Agent 在检测到入侵、上下文污染或泄露风险时，如何冻结单 Agent 或整个 Workspace，并如何发起恢复。
+输出：Workspace 紧急治理语义层、权限边界和审计要求。
+前置依赖：任务 3。
+
 4. 建立 Workflow 的平台编排入口
 说明：把工作流编排从单纯控制链路上升到平台业务语义层。
 输出：Workflow 在 Workspace 业务层的注册与绑定接口。
@@ -62,6 +67,7 @@
 
 - Platform 能统一承载 Workspace 级业务逻辑。
 - 平台能表达服务暴露策略和审计治理策略。
+- 平台能表达 Workspace 级紧急 stop / recover 治理语义。
 - Platform 规则可被 Controller 消费。
 - Workflow 能在 Workspace 语义下被组织和挂接。
 - Platform 能提供 Workspace 内的多 Agent 协作驾驶舱语义模型。

@@ -49,7 +49,7 @@
 前置依赖：任务 2。
 
 3A. 建立最小执行状态机
-说明：明确 `Ready / Running / WaitingEvent / WaitingApproval / WaitingSubAgent / Sleeping / Completed / Failed / Frozen` 等状态与状态迁移规则。
+说明：明确 `Created / Running / Busy / WaitingEvent / WaitingApproval / WaitingSubAgent / Sleeping / Hibernated / Archived / Completed / Failed / Frozen / Destroyed` 等状态与状态迁移规则。
 输出：`AgentExecutionState`、状态迁移约束、基础恢复判断逻辑。
 前置依赖：任务 3。
 
@@ -83,6 +83,11 @@
 输出：`AgentSandboxBinding`、`SandboxInstanceRecord` 或等价内部模型。
 前置依赖：任务 6A。
 
+6C. 建立 Agent -> DockerContainer 绑定表与 stop / recover 控制入口
+说明：为 Docker 首批实现维护 Agent 与容器的绑定关系，支持按 Agent 或 Workspace 批量 stop / restart 容器。
+输出：`AgentContainerBinding`、`DockerContainerRecord`、stop / recover 控制入口。
+前置依赖：任务 6A。
+
 7. 支持 sub_agent 承载
 说明：由主 Agent 派生临时 sub_agent，支持创建、回收、结果回传与生命周期约束。
 输出：`SubAgentExecutionContext` 或等价内部模型。
@@ -103,8 +108,13 @@
 输出：`RuntimeNodeRegistration`、`RuntimeHeartbeat`、`DispatchExecutionRequest`、`DispatchWakeupRequest` 等最小契约。
 前置依赖：任务 1、任务 2、任务 4A。
 
+9A. 建立单 Agent 冻结与 Workspace 全局冻结协议
+说明：定义 `FreezeAgentRequest`、`ResumeAgentRequest`、`FreezeWorkspaceRequest`、`ResumeWorkspaceRequest` 及其返回结果。
+输出：冻结 / 恢复控制协议与权限检查入口。
+前置依赖：任务 6C、任务 9。
+
 10. 建立最小恢复与续跑能力
-说明：支持 Runtime 在进程重启或执行中断后恢复 `WaitingEvent` / `WaitingApproval` / `Sleeping` 等挂起态，并避免重复执行已产生外部副作用的步骤。
+说明：支持 Runtime 在进程重启或执行中断后恢复 `WaitingEvent` / `WaitingApproval` / `Sleeping` / `Hibernated` 等挂起态，并避免重复执行已产生外部副作用的步骤。
 输出：最小恢复快照、恢复判断逻辑、幂等保护约束。
 前置依赖：任务 3A、任务 4A、任务 8A、任务 9。
 
@@ -122,5 +132,6 @@
 - Runtime 能承载由主 Agent 派生的临时 sub_agent。
 - Runtime 至少预留 1 条事件命中后恢复 Agent 执行的接入点。
 - Runtime 至少具备 1 套清晰可查询的执行状态机。
-- Runtime 至少能保留最小执行日志，并能恢复 1 类挂起态。
+- Runtime 至少能保留最小执行日志，并能恢复 1 类挂起态或深度休眠态。
 - Runtime 至少支持 1 种 sandbox provider，并具备 Agent -> sandbox 绑定关系查询能力。
+- Runtime 至少支持按 Agent 和按 Workspace 的 stop / recover，并能定位对应 Docker 容器。

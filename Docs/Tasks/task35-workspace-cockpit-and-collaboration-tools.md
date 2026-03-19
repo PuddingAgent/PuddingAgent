@@ -52,6 +52,7 @@
 5. **监测优先，干预可选**
    - 允许手动重分配、暂停、取消或释放节点
    - 不应把人工操作设计成自动协作的必经门槛
+   - 对安全风险应提供 Workspace 级 stop / recover 紧急入口
 
 ## 界面结构建议
 
@@ -75,9 +76,15 @@
 
 - 当前任务
 - role
-- 状态：`idle / busy / blocked / sleeping`
+- 状态：`idle / busy / blocked / sleeping / hibernated / frozen`
 - 工作负载
 - 最近一次关键动作
+
+并建议支持：
+
+- 单 Agent `Freeze` / `Resume` 操作
+- 查看当前绑定 Docker 容器 / sandbox
+- 查看最近一次冻结原因与发起者
 
 支持查看 Agent 历史执行轨迹，但不把整页变成“Agent 聊天记录浏览器”。
 
@@ -116,6 +123,22 @@
 - 失败 / 阻塞数
 - 忙碌 Agent 数 / 空闲 Agent 数
 - 平均节点执行时长
+- 已冻结 Agent 数 / 已停止容器数
+- 当前 Workspace 是否处于冻结态
+
+### 5. Workspace 紧急按钮区
+
+建议在 Workspace 页面显著位置提供：
+
+- `Stop Workspace`
+- `Recover Workspace`
+
+其中：
+
+- `Stop Workspace` 为紧急按钮，用于快速冻结当前 Workspace 的全部 Agent
+- 触发后，Controller / Runtime 应批量 stop 对应 Docker 容器或 sandbox
+- `Recover Workspace` 用于在风险解除后恢复 Agent 与容器
+- 两个动作都必须留下审计痕迹，并立即反馈执行结果
 
 ## 共享虚拟工作台
 
@@ -191,7 +214,7 @@ Agent 不应直接访问底层存储或数据库。
 前置依赖：任务 1；依赖 task30。
 
 6. 建立人工干预操作入口
-说明：支持重分配、暂停、取消、释放节点等操作。
+说明：支持重分配、暂停、取消、释放节点，以及冻结单 Agent、冻结 Workspace、恢复 Agent、恢复 Workspace 等操作。
 输出：最小干预控制接口。
 前置依赖：任务 2、任务 3、任务 4。
 
@@ -205,8 +228,9 @@ Agent 不应直接访问底层存储或数据库。
 - Workspace 内至少有 1 个 TaskMap / DAG 主视图页面。
 - 主视图能显示节点状态与执行 Agent 标记。
 - Agent 侧边栏能显示当前任务、role、状态与工作负载。
+- Agent 侧边栏能显示当前绑定容器信息，并支持冻结 / 恢复操作入口。
 - 关键事件流默认只显示摘要事件，并支持按 agent / task / workspace 过滤。
 - 至少支持 1 个单 Agent 日志时间轴视图和 1 个 Workspace 汇总日志视图。
 - 至少能暴露 4 类共享工具：TaskBoard、Spreadsheet、Wiki、ObjectStorage。
 - Agent 通过统一 API 访问共享工具时具备身份令牌与 Workspace 边界约束。
-- 用户可以对节点执行至少 1 种人工干预操作（如 release / cancel / reassign）。
+- 用户可以对节点和 Workspace 执行至少 1 种人工干预操作，并具备 Workspace 紧急 stop / recover 按钮。
