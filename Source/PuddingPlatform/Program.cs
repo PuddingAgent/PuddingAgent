@@ -58,6 +58,9 @@ builder.Services.AddHttpClient<PlatformApiClient>(client =>
 // ── 注册 Workspace 业务层服务 ──────────────────────────────
 builder.Services.AddScoped<WorkspaceBusinessService>();
 
+// ── MinIO 对象存储服务 ─────────────────────────────────────
+builder.Services.AddSingleton<PuddingPlatform.Services.MinioStorageService>();
+
 // ── EF Core / 数据库 ──────────────────────────────────────
 var connStr = builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=pudding_platform.db";

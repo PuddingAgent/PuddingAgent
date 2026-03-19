@@ -127,6 +127,29 @@ public record UpsertCapabilityRequest(
     int SortOrder
 );
 
+// ─── Skill Package ────────────────────────────────────────────────
+
+public record SkillPackageDto(
+    int Id,
+    string SkillPackageId,
+    string Name,
+    string? Description,
+    string Version,
+    string FileName,
+    long FileSizeBytes,
+    bool IsEnabled,
+    int SortOrder,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpdateSkillPackageRequest(
+    string Name,
+    string? Description,
+    bool IsEnabled,
+    int SortOrder
+);
+
 public record GlobalAgentTemplateDto(
     int Id,
     string TemplateId,
@@ -141,6 +164,7 @@ public record GlobalAgentTemplateDto(
     int MaxReplyTokens,
     string? ContainerImage,
     List<string> SelectedCapabilityIds,
+    List<string> SelectedSkillPackageIds,
     bool IsBuiltIn,
     bool IsEnabled,
     int SortOrder,
@@ -161,6 +185,7 @@ public record UpsertGlobalAgentTemplateRequest(
     int MaxReplyTokens,
     string? ContainerImage,
     List<string>? SelectedCapabilityIds,
+    List<string>? SelectedSkillPackageIds,
     bool IsEnabled,
     int SortOrder
 );

@@ -18,6 +18,7 @@ namespace PuddingPlatform.Controllers.Api;
 public class ChatApiController(
     PlatformDbContext db,
     PlatformApiClient apiClient,
+    MinioStorageService minio,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     // POST /api/workspaces/{workspaceId}/chat/message
@@ -49,6 +50,7 @@ public class ChatApiController(
         LlmConfig? llmConfig = null;
         CapabilityPolicy? capabilityPolicy = null;
         IReadOnlyList<LlmToolDefinition>? toolDefinitions = null;
+        IReadOnlyList<SkillPackageInfo>? skillPackages = null;
         string? agentTemplateId = null;
         WorkspaceAgentEntity? agent = null;
         if (!string.IsNullOrEmpty(req.AgentId))
@@ -61,6 +63,9 @@ public class ChatApiController(
                 db, workspaceId, agentTemplateId, ct);
             capabilityPolicy = resolved.Policy;
             toolDefinitions = resolved.ToolDefinitions;
+
+            // 解析 Agent 模板关联的 Skill 包，生成预签名下载 URL
+            skillPackages = await ResolveSkillPackagesAsync(db, minio, agentTemplateId, ct);
 
             if (agent?.PreferredProviderId is not null)
             {
@@ -110,6 +115,7 @@ public class ChatApiController(
             agentTemplateId: agentTemplateId,
             capabilityPolicy: capabilityPolicy,
             toolDefinitions: toolDefinitions,
+            skillPackages: skillPackages,
             ct:             ct);
 
         sw.Stop();
@@ -383,5 +389,50 @@ public class ChatApiController(
         if (string.IsNullOrWhiteSpace(json)) return [];
         try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
         catch { return []; }
+    }
+
+    /// <summary>解析 Agent 模板关联的 Skill 包列表，生成 MinIO 预签名下载 URL。</summary>
+    private static async Task<IReadOnlyList<SkillPackageInfo>?> ResolveSkillPackagesAsync(
+        PlatformDbContext db,
+        MinioStorageService minio,
+        string? templateId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(templateId))
+            return null;
+
+        var (_, globalId) = NormalizeTemplateId(templateId);
+
+        // 先查全局模板
+        var globalTemplate = await db.GlobalAgentTemplates.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TemplateId == globalId && t.IsEnabled, ct);
+        if (globalTemplate is null)
+            return null;
+
+        var selectedIds = ParseStringList(globalTemplate.SelectedSkillPackageIdsJson);
+        if (selectedIds.Count == 0)
+            return null;
+
+        var packages = await db.SkillPackages.AsNoTracking()
+            .Where(s => selectedIds.Contains(s.SkillPackageId) && s.IsEnabled)
+            .ToListAsync(ct);
+
+        if (packages.Count == 0)
+            return null;
+
+        var result = new List<SkillPackageInfo>(packages.Count);
+        foreach (var pkg in packages)
+        {
+            var url = await minio.GetPresignedDownloadUrlAsync(pkg.ObjectKey, 86400, ct);
+            result.Add(new SkillPackageInfo
+            {
+                SkillPackageId = pkg.SkillPackageId,
+                Name           = pkg.Name,
+                Description    = pkg.Description,
+                Version        = pkg.Version,
+                DownloadUrl    = url,
+            });
+        }
+        return result;
     }
 }

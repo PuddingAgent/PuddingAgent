@@ -226,6 +226,30 @@ export interface UpdateQuotaRequest {
   monthlyTokenLimit?: number;
 }
 
+// ─── Skill Package Types ──────────────────────────────────────────
+
+export interface SkillPackageDto {
+  id: number;
+  skillPackageId: string;
+  name: string;
+  description?: string;
+  version: string;
+  fileName: string;
+  fileSizeBytes: number;
+  contentType: string;
+  isEnabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateSkillPackageRequest {
+  name: string;
+  description?: string;
+  isEnabled: boolean;
+  sortOrder: number;
+}
+
 // ─── Global Agent Template Types ────────────────────────────────
 
 export interface GlobalAgentTemplateDto {
@@ -242,6 +266,7 @@ export interface GlobalAgentTemplateDto {
   maxReplyTokens: number;
   containerImage?: string;
   selectedCapabilityIds: string[];
+  selectedSkillPackageIds: string[];
   isBuiltIn: boolean;
   isEnabled: boolean;
   sortOrder: number;
@@ -262,6 +287,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   maxReplyTokens: number;
   containerImage?: string;
   selectedCapabilityIds?: string[];
+  selectedSkillPackageIds?: string[];
   isEnabled: boolean;
   sortOrder: number;
 }
@@ -377,6 +403,50 @@ export async function deleteLlmModel(providerId: string, modelId: string): Promi
     `/api/llm/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
     { method: 'DELETE' },
   );
+}
+
+// ─── Skill Package API ────────────────────────────────────────────
+
+export async function listSkillPackages(enabledOnly?: boolean): Promise<SkillPackageDto[]> {
+  const url = enabledOnly ? '/api/skill-packages?enabledOnly=true' : '/api/skill-packages';
+  return request(url, { method: 'GET' });
+}
+
+export async function getSkillPackage(skillPackageId: string): Promise<SkillPackageDto> {
+  return request(`/api/skill-packages/${encodeURIComponent(skillPackageId)}`, { method: 'GET' });
+}
+
+export async function createSkillPackage(formData: FormData): Promise<SkillPackageDto> {
+  return request('/api/skill-packages', { method: 'POST', data: formData, requestType: 'form' });
+}
+
+export async function updateSkillPackage(
+  skillPackageId: string,
+  req: UpdateSkillPackageRequest,
+): Promise<SkillPackageDto> {
+  return request(`/api/skill-packages/${encodeURIComponent(skillPackageId)}`, {
+    method: 'PUT',
+    data: req,
+  });
+}
+
+export async function updateSkillPackageFile(
+  skillPackageId: string,
+  formData: FormData,
+): Promise<SkillPackageDto> {
+  return request(`/api/skill-packages/${encodeURIComponent(skillPackageId)}/file`, {
+    method: 'PUT',
+    data: formData,
+    requestType: 'form',
+  });
+}
+
+export async function deleteSkillPackage(skillPackageId: string): Promise<void> {
+  return request(`/api/skill-packages/${encodeURIComponent(skillPackageId)}`, { method: 'DELETE' });
+}
+
+export async function getSkillPackageDownloadUrl(skillPackageId: string): Promise<{ url: string }> {
+  return request(`/api/skill-packages/${encodeURIComponent(skillPackageId)}/download-url`, { method: 'GET' });
 }
 
 // ─── Capability API ─────────────────────────────────────────────

@@ -31,11 +31,13 @@ import {
   listLlmProviders,
   listLlmModels,
   listCapabilities,
+  listSkillPackages,
   type GlobalAgentTemplateDto,
   type UpsertGlobalAgentTemplateRequest,
   type LlmProviderDto,
   type LlmModelDto,
   type CapabilityDto,
+  type SkillPackageDto,
 } from '@/services/platform/api';
 
 const { Text } = Typography;
@@ -62,11 +64,13 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const [providers, setProviders] = useState<LlmProviderDto[]>([]);
   const [models, setModels] = useState<LlmModelDto[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
+  const [skillPackages, setSkillPackages] = useState<SkillPackageDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
     listLlmProviders().then(setProviders).catch(() => {});
     listCapabilities(true).then(setCapabilities).catch(() => {});
+    listSkillPackages(true).then(setSkillPackages).catch(() => {});
   }, []);
 
   const handleProviderChange = async (providerId: string) => {
@@ -87,7 +91,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const openCreate = () => {
     setEditItem(null);
     form.resetFields();
-    form.setFieldsValue({ role: 'Service', isEnabled: true, sortOrder: 100, maxContextTokens: 8192, maxReplyTokens: 2048, selectedCapabilityIds: [] });
+    form.setFieldsValue({ role: 'Service', isEnabled: true, sortOrder: 100, maxContextTokens: 8192, maxReplyTokens: 2048, selectedCapabilityIds: [], selectedSkillPackageIds: [] });
     setModels([]);
     setFormDrawer(true);
   };
@@ -289,6 +293,14 @@ const GlobalAgentTemplatePage: React.FC = () => {
             mode="multiple"
             options={capabilities.map((c) => ({ label: `${c.name} (${c.toolName})`, value: c.capabilityId }))}
             placeholder="选择能力后，Runtime 会在上下文注入对应工具"
+          />
+
+          <ProFormSelect
+            name="selectedSkillPackageIds"
+            label="SKILL 包选择（多选）"
+            mode="multiple"
+            options={skillPackages.map((s) => ({ label: `${s.name} v${s.version}`, value: s.skillPackageId }))}
+            placeholder="选择 SKILL 后，Runtime 会下载并挂载到容器内"
           />
 
           <ProFormTextArea

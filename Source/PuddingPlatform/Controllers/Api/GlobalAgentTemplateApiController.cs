@@ -63,6 +63,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         entity.MaxReplyTokens = req.MaxReplyTokens;
         entity.ContainerImage = req.ContainerImage;
         entity.SelectedCapabilityIdsJson = JsonSerializer.Serialize(req.SelectedCapabilityIds ?? []);
+        entity.SelectedSkillPackageIdsJson = JsonSerializer.Serialize(req.SelectedSkillPackageIds ?? []);
         entity.IsEnabled = req.IsEnabled;
         entity.SortOrder = req.SortOrder;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -98,6 +99,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         MaxReplyTokens = req.MaxReplyTokens,
         ContainerImage = req.ContainerImage,
         SelectedCapabilityIdsJson = JsonSerializer.Serialize(req.SelectedCapabilityIds ?? []),
+        SelectedSkillPackageIdsJson = JsonSerializer.Serialize(req.SelectedSkillPackageIds ?? []),
         IsBuiltIn = isBuiltIn,
         IsEnabled = req.IsEnabled,
         SortOrder = req.SortOrder,
@@ -109,6 +111,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         t.PreferredProviderId, t.PreferredModelId,
         t.MaxContextTokens, t.MaxReplyTokens,
         t.ContainerImage, ParseStringList(t.SelectedCapabilityIdsJson),
+        ParseStringList(t.SelectedSkillPackageIdsJson),
         t.IsBuiltIn, t.IsEnabled, t.SortOrder,
         t.CreatedAt, t.UpdatedAt);
 

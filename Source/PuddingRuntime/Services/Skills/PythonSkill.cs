@@ -13,8 +13,9 @@ public sealed class PythonSkill : ContainerSkillBase
     public PythonSkill(
         AgentContainerRegistry registry,
         ISandboxProvider sandbox,
+        AgentSkillPackageRegistry skillPackageRegistry,
         ILogger<PythonSkill> logger)
-        : base(registry, sandbox, logger)
+        : base(registry, sandbox, skillPackageRegistry, logger)
     {
         _logger = logger;
     }

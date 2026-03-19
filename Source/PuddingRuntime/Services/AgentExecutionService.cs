@@ -34,6 +34,8 @@ public sealed class AgentExecutionService
     private readonly ExecutionControlRegistry _controlRegistry;
     private readonly ExecutionJournal _journal;
     private readonly CompletionPolicy _completionPolicy;
+    private readonly AgentSkillPackageRegistry _skillPackageRegistry;
+    private readonly SkillPackageDownloadService _skillPackageDownloader;
     private readonly IReadOnlyList<IAgentLoopHook> _hooks;
     private readonly ILogger<AgentExecutionService> _logger;
 
@@ -50,6 +52,8 @@ public sealed class AgentExecutionService
         ExecutionControlRegistry controlRegistry,
         ExecutionJournal journal,
         CompletionPolicy completionPolicy,
+        AgentSkillPackageRegistry skillPackageRegistry,
+        SkillPackageDownloadService skillPackageDownloader,
         IEnumerable<IAgentLoopHook> hooks,
         ILogger<AgentExecutionService> logger)
     {
@@ -63,6 +67,8 @@ public sealed class AgentExecutionService
         _controlRegistry     = controlRegistry;
         _journal             = journal;
         _completionPolicy    = completionPolicy;
+        _skillPackageRegistry    = skillPackageRegistry;
+        _skillPackageDownloader  = skillPackageDownloader;
         _hooks               = hooks.ToArray();
         _logger              = logger;
     }
@@ -86,6 +92,12 @@ public sealed class AgentExecutionService
             request.SessionId, instance.AgentInstanceId,
             request.WorkspaceId, request.AgentTemplateId);
 
+        // ── 注册并预下载 Skill 包────────────────────────────────────
+        var skillPackages = request.SkillPackages ?? [];
+        _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
+        if (skillPackages.Count > 0)
+            await _skillPackageDownloader.EnsureDownloadedAsync(skillPackages);
+
         // 前端给全局模板附加了 "global:" 前缀（用于在 UI 中区分工作区模板），
         // Runtime 侧查内置模板时需剥除前缀后再匹配。
         const string globalPrefix = "global:";
@@ -102,14 +114,14 @@ public sealed class AgentExecutionService
         if (history.Count == 0)
         {
             history.Add(new ChatMessage(ChatRole.System,
-                BuildSystemPrompt(template, request.SessionId, request.WorkspaceId, effectiveCapability)));
+                BuildSystemPrompt(template, request.SessionId, request.WorkspaceId, effectiveCapability, instance.AgentInstanceId)));
         }
         else if (template.Memory?.EnableSessionMemory == true
               || template.Memory?.EnableWorkspaceMemory == true)
         {
             if (history[0].Role == ChatRole.System)
                 history[0] = new ChatMessage(ChatRole.System,
-                    BuildSystemPrompt(template, request.SessionId, request.WorkspaceId, effectiveCapability));
+                    BuildSystemPrompt(template, request.SessionId, request.WorkspaceId, effectiveCapability, instance.AgentInstanceId));
         }
         history.Add(new ChatMessage(ChatRole.User, request.MessageText));
 
@@ -507,6 +519,8 @@ public sealed class AgentExecutionService
             // WAIT 态：保留控制注册条目，等待唤醒后 CreateLinkedToken 时再清理
             if (execState != AgentExecutionState.WaitingEvent)
                 _controlRegistry.Remove(request.SessionId);
+            if (execState != AgentExecutionState.WaitingEvent)
+                _skillPackageRegistry.Remove(instance.AgentInstanceId);
         }
 
         // ── 记忆写回 ──────────────────────────────────────────────────
@@ -616,7 +630,8 @@ public sealed class AgentExecutionService
         AgentTemplateDefinition template,
         string sessionId,
         string? workspaceId,
-        CapabilityPolicy? capability)
+        CapabilityPolicy? capability,
+        string agentInstanceId)
     {
         var sb = new System.Text.StringBuilder(
             template.SystemPrompt ?? "You are a helpful assistant.");
@@ -627,6 +642,22 @@ public sealed class AgentExecutionService
             var memCtx = _memory.BuildMemoryContext(sessionId, workspaceId);
             if (memCtx is not null)
                 sb.Append("\n\n---\n").Append(memCtx);
+        }
+
+        // 注入已挂载的 Skill 包信息（名称+用途，不披露下载 URL）
+        var pkgs = _skillPackageRegistry.Get(agentInstanceId);
+        if (pkgs.Count > 0)
+        {
+            sb.Append("\n\n---\n## Available Skill Packages\n");
+            sb.Append("The following skill packages are pre-installed at /skills/<package-id>/ in your container:\n");
+            foreach (var pkg in pkgs)
+            {
+                sb.Append($"- **{pkg.Name}** (`/skills/{pkg.SkillPackageId}/`)");
+                if (!string.IsNullOrWhiteSpace(pkg.Description))
+                    sb.Append($": {pkg.Description}");
+                sb.AppendLine();
+            }
+            sb.Append("Invoke scripts or binaries in these directories directly from your shell commands.\n");
         }
 
         sb.Append(_skillRuntime.BuildLoopInstructions(capability));

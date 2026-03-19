@@ -14,8 +14,9 @@ public sealed class WriteFileSkill : ContainerSkillBase
     public WriteFileSkill(
         AgentContainerRegistry registry,
         ISandboxProvider sandbox,
+        AgentSkillPackageRegistry skillPackageRegistry,
         ILogger<WriteFileSkill> logger)
-        : base(registry, sandbox, logger)
+        : base(registry, sandbox, skillPackageRegistry, logger)
     {
         _logger = logger;
     }

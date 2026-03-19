@@ -66,6 +66,27 @@ services:
       - pudding-internal
     restart: unless-stopped
 
+  minio:
+    image: docker.xuanyuan.run/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER:-pudding}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-pudding_dev_minio}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # MinIO S3 API（供 Runtime/Platform 直接访问）
+      - "9001:9001"   # MinIO Web 控制台（仅开发用）
+    healthcheck:
+      test:     ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+      start_period: 15s
+    networks:
+      - pudding-internal
+    restart: unless-stopped
+
   # 可选：MQTT（物联网设备接入）
   # mosquitto:
   #   image: eclipse-mosquitto:2
@@ -90,10 +111,17 @@ services:
       ConnectionStrings__Default: "Host=postgres;Port=5432;Database=pudding;Username=pudding;Password=${POSTGRES_PASSWORD:-pudding_dev}"
       # JWT 签名密钥（生产环境必须替换为高强度随机值）
       Jwt__Key: ${JWT_KEY:-Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!}
+      # MinIO 对象存储
+      Minio__Endpoint: "minio:9000"
+      Minio__AccessKey: ${MINIO_ROOT_USER:-pudding}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-pudding_dev_minio}
+      Minio__BucketSkills: "pudding-skills"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
       pudding-controller:
         condition: service_healthy
@@ -148,9 +176,18 @@ services:
       ASPNETCORE_HTTP_PORTS:  "8080"
       Pudding__ControllerEndpoint: http://pudding-controller:8080
       Pudding__SelfEndpoint:       http://pudding-runtime:8080
+      # MinIO 对象存储（用于下载 Skill 包到 Agent 容器）
+      Minio__Endpoint: "minio:9000"
+      Minio__AccessKey: ${MINIO_ROOT_USER:-pudding}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-pudding_dev_minio}
+      Minio__BucketSkills: "pudding-skills"
+      # Skill 包下载后解压到宿主机此目录，再通过 -v 挂载进 Agent 容器
+      Pudding__SkillsHostPath: "/pudding-skills"
     volumes:
       # 挂载 Docker socket，使 Runtime 能够管理 Agent 沙箱容器
       - /var/run/docker.sock:/var/run/docker.sock
+      # Skill 包宿主机持久化目录（解压后挂载进 Agent 沙箱）
+      - pudding_skills:/pudding-skills
     healthcheck:
       test:         ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8080"]
       interval:     10s
@@ -190,6 +227,8 @@ services:
 volumes:
   redis_data:
   rabbitmq_data:
+  minio_data:
+  pudding_skills:
   # mosquitto_data:
 
 # ── 内部网络 ──────────────────────────────────────────────────────

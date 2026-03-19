@@ -13,8 +13,9 @@ public sealed class ReadFileSkill : ContainerSkillBase
     public ReadFileSkill(
         AgentContainerRegistry registry,
         ISandboxProvider sandbox,
+        AgentSkillPackageRegistry skillPackageRegistry,
         ILogger<ReadFileSkill> logger)
-        : base(registry, sandbox, logger)
+        : base(registry, sandbox, skillPackageRegistry, logger)
     {
         _logger = logger;
     }

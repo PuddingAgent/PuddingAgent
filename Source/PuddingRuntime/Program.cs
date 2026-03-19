@@ -53,6 +53,12 @@ builder.Services.AddHttpClient<KnowledgeAccessRuntime>(c =>
 builder.Services.AddHttpClient<IRuntimeLlmClient, ControllerRoutedLlmClient>(c =>
     c.BaseAddress = new Uri(controllerBase));
 
+// -- Skill 包下载与注册 -----------------------------------------------
+builder.Services.AddSingleton<AgentSkillPackageRegistry>();
+builder.Services.AddSingleton<SkillPackageDownloadService>();
+builder.Services.AddHttpClient("SkillPackageDL", c =>
+    c.Timeout = TimeSpan.FromMinutes(5));
+
 // -- HttpFetchSkill 所需命名 HttpClient ----------------------------------
 builder.Services.AddHttpClient("HttpFetchSkill", c =>
     c.Timeout = TimeSpan.FromSeconds(15));

@@ -13,8 +13,9 @@ public sealed class BashSkill : ContainerSkillBase
     public BashSkill(
         AgentContainerRegistry registry,
         ISandboxProvider sandbox,
+        AgentSkillPackageRegistry skillPackageRegistry,
         ILogger<BashSkill> logger)
-        : base(registry, sandbox, logger)
+        : base(registry, sandbox, skillPackageRegistry, logger)
     {
         _logger = logger;
     }

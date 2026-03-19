@@ -193,6 +193,7 @@ public sealed class SessionRouter
             LlmConfig = request.LlmConfig,
             CapabilityPolicy = request.CapabilityPolicy,
             ToolDefinitions = request.ToolDefinitions,
+            SkillPackages = request.SkillPackages,
         };
 
         _logger.LogInformation(

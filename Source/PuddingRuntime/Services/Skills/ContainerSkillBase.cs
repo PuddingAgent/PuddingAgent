@@ -10,12 +10,18 @@ public abstract class ContainerSkillBase : IAgentSkill
 {
     protected readonly AgentContainerRegistry Registry;
     protected readonly ISandboxProvider Sandbox;
+    private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly ILogger _logger;
 
-    protected ContainerSkillBase(AgentContainerRegistry registry, ISandboxProvider sandbox, ILogger logger)
+    protected ContainerSkillBase(
+        AgentContainerRegistry registry,
+        ISandboxProvider sandbox,
+        AgentSkillPackageRegistry skillPackageRegistry,
+        ILogger logger)
     {
         Registry = registry;
         Sandbox  = sandbox;
+        _skillPackageRegistry = skillPackageRegistry;
         _logger  = logger;
     }
 
@@ -28,6 +34,7 @@ public abstract class ContainerSkillBase : IAgentSkill
 
     /// <summary>
     /// 确保 Agent 的沙箱容器在运行状态；不存在时自动按需创建。
+    /// 若 Agent 关联了 Skill 包，会将 pudding_skills 卷以只读方式挂载到 /skills/。
     /// </summary>
     protected async Task<AgentContainerBinding?> EnsureContainerRunningAsync(
         string agentInstanceId, string workspaceId, CancellationToken ct)
@@ -45,11 +52,18 @@ public abstract class ContainerSkillBase : IAgentSkill
         _logger.LogInformation("[{Skill}] Auto-provisioning container for agent={Agent}",
             GetType().Name, agentInstanceId);
 
+        // 若有 Skill 包，挂载 pudding_skills 卷到 /skills（只读）
+        var skillPackages = _skillPackageRegistry.Get(agentInstanceId);
+        var mounts = skillPackages.Count > 0
+            ? (IReadOnlyList<string>)["pudding_skills:/skills:ro"]
+            : [];
+
         var result = await Sandbox.StartAsync(new SandboxStartRequest
         {
             AgentInstanceId = agentInstanceId,
             WorkspaceId     = workspaceId,
             Image           = "ubuntu:22.04",
+            Mounts          = mounts,
         }, ct);
 
         if (!result.Success)
@@ -67,6 +81,7 @@ public abstract class ContainerSkillBase : IAgentSkill
             ContainerName   = result.ContainerName!,
             Image           = "ubuntu:22.04",
             Status          = AgentContainerStatus.Running,
+            SkillPackages   = skillPackages,
         };
         Registry.Register(newBinding);
         return newBinding;

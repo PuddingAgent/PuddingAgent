@@ -1,6 +1,23 @@
 namespace PuddingCode.Platform;
 
 /// <summary>
+/// Skill 包摘要——随 Dispatch 请求下发给 Runtime，Runtime 据此下载并挂载。
+/// </summary>
+public sealed record SkillPackageInfo
+{
+    /// <summary>Skill 包唯一标识（即目录名），如 "my-skill-pack"</summary>
+    public required string SkillPackageId { get; init; }
+    /// <summary>展示名称</summary>
+    public required string Name { get; init; }
+    /// <summary>简短用途描述（注入 Agent 系统提示时使用）</summary>
+    public string? Description { get; init; }
+    /// <summary>版本号</summary>
+    public string? Version { get; init; }
+    /// <summary>预签名下载 URL（有效期 24h），Runtime 使用 HttpClient 直接下载。</summary>
+    public required string DownloadUrl { get; init; }
+}
+
+/// <summary>
 /// LLM 配置快照——由 Platform 在入口点解析 DB 配置后随请求下发，
 /// Controller/Runtime 无需直接查询 DB 或依赖静态 .env。
 /// </summary>
@@ -30,6 +47,8 @@ public sealed record MessageIngressRequest
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     /// <summary>由 Platform 注入的 function-call 工具定义（来源于能力注册表）。</summary>
     public IReadOnlyList<LlmToolDefinition>? ToolDefinitions { get; init; }
+    /// <summary>Agent 模板关联的 Skill 包列表（含预签名下载 URL）。由 Platform 解析后注入，经 Controller 透传至 Runtime。</summary>
+    public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
 }
 
 /// <summary>消息入口响应。</summary>
@@ -60,6 +79,8 @@ public sealed record RuntimeDispatchRequest
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     /// <summary>由 Platform 注入的 function-call 工具定义（来源于能力注册表）。</summary>
     public IReadOnlyList<LlmToolDefinition>? ToolDefinitions { get; init; }
+    /// <summary>Agent 模板关联的 Skill 包列表（含预签名下载 URL）。Runtime 启动容器时下载并挂载至 /skills/。</summary>
+    public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
 }
 
 /// <summary>Agent 执行的最终状态。</summary>

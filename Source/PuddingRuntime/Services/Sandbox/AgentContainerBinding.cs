@@ -1,3 +1,5 @@
+using PuddingCode.Platform;
+
 namespace PuddingRuntime.Services.Sandbox;
 
 /// <summary>Agent 与 Docker 容器的绑定状态。</summary>
@@ -24,4 +26,6 @@ public sealed class AgentContainerBinding
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? TerminatedAt { get; set; }
     public string? LastError { get; set; }
+    /// <summary>Agent 本次任务关联的 Skill 包列表（已下载到宿主机 /pudding-skills/ 目录下）。</summary>
+    public IReadOnlyList<SkillPackageInfo> SkillPackages { get; set; } = [];
 }

@@ -138,6 +138,7 @@ public sealed class PlatformApiClient
         string? agentTemplateId = null,
         CapabilityPolicy? capabilityPolicy = null,
         IReadOnlyList<LlmToolDefinition>? toolDefinitions = null,
+        IReadOnlyList<SkillPackageInfo>? skillPackages = null,
         CancellationToken ct = default)
     {
         var request = new MessageIngressRequest
@@ -151,6 +152,7 @@ public sealed class PlatformApiClient
             LlmConfig = llmConfig,
             CapabilityPolicy = capabilityPolicy,
             ToolDefinitions = toolDefinitions,
+            SkillPackages = skillPackages,
         };
 
         var resp = await _http.PostAsJsonAsync("/api/messageingress", request, ct);

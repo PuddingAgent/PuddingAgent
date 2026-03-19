@@ -57,6 +57,12 @@ export default [
     component: './capability-management',
   },
   {
+    path: '/skill-management',
+    name: 'skillManagement',
+    icon: 'code',
+    component: './skill-management',
+  },
+  {
     path: '/workspace-agent-template',
     component: './workspace-agent-template',
   },

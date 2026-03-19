@@ -27,6 +27,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
     public DbSet<WorkspaceMemberEntity> WorkspaceMembers => Set<WorkspaceMemberEntity>();
 
+    // 全局 Skill 包
+    public DbSet<SkillPackageEntity> SkillPackages => Set<SkillPackageEntity>();
+
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -63,6 +66,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(m => new { m.ProviderId, m.ModelId }).IsUnique();
             e.Property(m => m.InputPricePer1MTokens).HasColumnType("decimal(18,6)");
             e.Property(m => m.OutputPricePer1MTokens).HasColumnType("decimal(18,6)");
+        });
+
+        // ── SkillPackage ──────────────────────────────────────────────
+        modelBuilder.Entity<SkillPackageEntity>(e =>
+        {
+            e.HasIndex(s => s.SkillPackageId).IsUnique();
         });
 
         // ── GlobalAgentTemplate ───────────────────────────────────────

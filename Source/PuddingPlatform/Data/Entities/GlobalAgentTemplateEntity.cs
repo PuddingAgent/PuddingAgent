@@ -67,6 +67,9 @@ public class GlobalAgentTemplateEntity
     /// <summary>所选能力 ID 列表（JSON 数组，如 ["cap-bash"]）。</summary>
     public string SelectedCapabilityIdsJson { get; set; } = "[]";
 
+    /// <summary>所选 Skill 包 ID 列表（JSON 数组）。Runtime 启动容器时挂载对应包目录。</summary>
+    public string SelectedSkillPackageIdsJson { get; set; } = "[]";
+
     /// <summary>是否系统内置（内置模板不允许删除，只允许编辑）</summary>
     public bool IsBuiltIn { get; set; } = false;
 
