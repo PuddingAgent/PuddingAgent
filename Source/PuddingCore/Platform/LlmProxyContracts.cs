@@ -12,6 +12,8 @@ public sealed record ControllerLlmChatRequest
     public required string SessionId { get; init; }
     public required string AgentTemplateId { get; init; }
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
+    /// <summary>由 Platform 下发的 LLM 配置；Controller 优先使用，缺省回退 .env。</summary>
+    public LlmConfig? LlmConfig { get; init; }
 }
 
 /// <summary>Controller 返回给 Runtime 的 LLM 代理响应。</summary>

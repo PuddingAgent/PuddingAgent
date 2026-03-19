@@ -1,5 +1,17 @@
 namespace PuddingCode.Platform;
 
+/// <summary>
+/// LLM 配置快照——由 Platform 在入口点解析 DB 配置后随请求下发，
+/// Controller/Runtime 无需直接查询 DB 或依赖静态 .env。
+/// </summary>
+public sealed record LlmConfig
+{
+    /// <summary>API 基础地址（含 /v1，如 https://api.deepseek.com/v1）</summary>
+    public string? Endpoint { get; init; }
+    public string? ApiKey { get; init; }
+    public string? ModelId { get; init; }
+}
+
 /// <summary>消息入口请求。</summary>
 public sealed record MessageIngressRequest
 {
@@ -10,6 +22,8 @@ public sealed record MessageIngressRequest
     public string? SessionId { get; init; }
     public string? MessageType { get; init; }
     public string? CorrelationId { get; init; }
+    /// <summary>由 Platform 解析 Agent 配置后注入；Controller/Runtime 优先使用此值。</summary>
+    public LlmConfig? LlmConfig { get; init; }
 }
 
 /// <summary>消息入口响应。</summary>
@@ -32,6 +46,8 @@ public sealed record RuntimeDispatchRequest
     public required string WorkspaceId { get; init; }
     public string? AgentInstanceId { get; init; }
     public PermissionSnapshot? PermissionSnapshot { get; init; }
+    /// <summary>由 Platform 解析后下发的 LLM 配置；Runtime 转发给 Controller LLM 代理。</summary>
+    public LlmConfig? LlmConfig { get; init; }
 }
 
 /// <summary>Runtime 执行结果——Runtime 回传 Controller。</summary>

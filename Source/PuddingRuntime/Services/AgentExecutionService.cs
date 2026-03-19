@@ -85,6 +85,7 @@ public sealed class AgentExecutionService
                 request.SessionId,
                 request.AgentTemplateId,
                 history,
+                request.LlmConfig,
                 ct);
 
             // 6. 提取回复

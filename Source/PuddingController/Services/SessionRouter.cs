@@ -189,6 +189,7 @@ public sealed class SessionRouter
             WorkspaceId = workspace.WorkspaceId,
             AgentTemplateId = session.AgentTemplateId,
             MessageText = request.MessageText,
+            LlmConfig = request.LlmConfig,
         };
 
         await _auditStore.RecordAsync(new AuditEventRecord

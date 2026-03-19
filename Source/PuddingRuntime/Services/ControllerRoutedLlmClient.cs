@@ -15,6 +15,7 @@ public sealed class ControllerRoutedLlmClient(HttpClient httpClient) : IRuntimeL
         string sessionId,
         string agentTemplateId,
         IReadOnlyList<ChatMessage> messages,
+        LlmConfig? llmConfig = null,
         CancellationToken ct = default)
     {
         var request = new ControllerLlmChatRequest
@@ -23,10 +24,16 @@ public sealed class ControllerRoutedLlmClient(HttpClient httpClient) : IRuntimeL
             SessionId = sessionId,
             AgentTemplateId = agentTemplateId,
             Messages = messages,
+            LlmConfig = llmConfig,
         };
 
         var response = await httpClient.PostAsJsonAsync("/api/internal/llm/chat", request, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"Controller LLM proxy returned {(int)response.StatusCode}: {errorBody}");
+        }
 
         var payload = await response.Content.ReadFromJsonAsync<ControllerLlmChatResponse>(ct);
         if (payload is null)

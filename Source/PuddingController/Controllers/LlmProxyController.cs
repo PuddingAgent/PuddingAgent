@@ -20,18 +20,30 @@ public sealed class LlmProxyController(ControllerLlmProxyService llmProxyService
         if (request.Messages is null || request.Messages.Count == 0)
             return BadRequest("messages cannot be empty");
 
-        var result = await llmProxyService.ChatAsync(
-            request.WorkspaceId,
-            request.SessionId,
-            request.AgentTemplateId,
-            request.Messages,
-            ct);
-
-        return Ok(new ControllerLlmChatResponse
+        try
         {
-            Content = result.Content,
-            ToolCalls = result.ToolCalls,
-            ReasoningContent = result.ReasoningContent
-        });
+            var result = await llmProxyService.ChatAsync(
+                request.WorkspaceId,
+                request.SessionId,
+                request.AgentTemplateId,
+                request.Messages,
+                request.LlmConfig,
+                ct);
+
+            return Ok(new ControllerLlmChatResponse
+            {
+                Content = result.Content,
+                ToolCalls = result.ToolCalls,
+                ReasoningContent = result.ReasoningContent
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(502, new { error = ex.Message });
+        }
+        catch (HttpRequestException ex)
+        {
+            return StatusCode(502, new { error = ex.Message });
+        }
     }
 }

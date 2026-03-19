@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
@@ -28,11 +29,32 @@ public class ChatApiController(PlatformDbContext db, PlatformApiClient apiClient
             return BadRequest(new { message = "消息内容不能为空" });
 
         // 使用 web-chat 内置渠道 ID（已在 SeedDefaults 中注册）
-        // 会话隔离通过 sessionId 实现，无需在 channelId 中区分 Agent
         var channelId = $"web-chat-{workspaceId}";
 
-        // 将当前登录用户作为外部用户 ID（或使用固定 admin 标识）
+        // 将当前登录用户作为外部用户 ID
         var userExternalId = User.Identity?.Name ?? "admin";
+
+        // 解析 Agent 绑定的 LLM Provider 配置，随请求下发给 Controller
+        LlmConfig? llmConfig = null;
+        if (!string.IsNullOrEmpty(req.AgentId))
+        {
+            var agent = await db.WorkspaceAgents.AsNoTracking()
+                .FirstOrDefaultAsync(a => a.AgentId == req.AgentId && a.IsEnabled, ct);
+            if (agent?.PreferredProviderId is not null)
+            {
+                var provider = await db.LlmProviders.AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.ProviderId == agent.PreferredProviderId && p.IsEnabled, ct);
+                if (provider is not null)
+                {
+                    llmConfig = new LlmConfig
+                    {
+                        Endpoint = provider.BaseUrl,
+                        ApiKey = provider.ApiKey,
+                        ModelId = agent.PreferredModelId,
+                    };
+                }
+            }
+        }
 
         var result = await apiClient.SendMessageAsync(
             channelId:      channelId,
@@ -40,6 +62,7 @@ public class ChatApiController(PlatformDbContext db, PlatformApiClient apiClient
             messageText:    req.MessageText,
             workspaceId:    workspaceId,
             sessionId:      req.SessionId,
+            llmConfig:      llmConfig,
             ct:             ct);
 
         if (result is null)
