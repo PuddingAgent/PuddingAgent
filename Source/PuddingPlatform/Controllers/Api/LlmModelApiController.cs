@@ -55,6 +55,7 @@ public class LlmModelApiController(PlatformDbContext db) : ControllerBase
             Name = req.Name,
             Description = req.Description,
             MaxContextTokens = req.MaxContextTokens,
+            MaxOutputTokens = req.MaxOutputTokens,
             InputPricePer1MTokens = req.InputPricePer1MTokens,
             OutputPricePer1MTokens = req.OutputPricePer1MTokens,
             CapabilityTagsJson = JsonSerializer.Serialize(req.CapabilityTags ?? []),
@@ -81,6 +82,7 @@ public class LlmModelApiController(PlatformDbContext db) : ControllerBase
         entity.Name = req.Name;
         entity.Description = req.Description;
         entity.MaxContextTokens = req.MaxContextTokens;
+        entity.MaxOutputTokens = req.MaxOutputTokens;
         entity.InputPricePer1MTokens = req.InputPricePer1MTokens;
         entity.OutputPricePer1MTokens = req.OutputPricePer1MTokens;
         entity.CapabilityTagsJson = JsonSerializer.Serialize(req.CapabilityTags ?? []);
@@ -126,7 +128,7 @@ public class LlmModelApiController(PlatformDbContext db) : ControllerBase
             catch { /* ignore */ }
         }
         return new(m.Id, m.ProviderId, m.ModelId, m.Name, m.Description,
-            m.MaxContextTokens, m.InputPricePer1MTokens, m.OutputPricePer1MTokens,
+            m.MaxContextTokens, m.MaxOutputTokens, m.InputPricePer1MTokens, m.OutputPricePer1MTokens,
             tags, m.IsDeprecated, m.IsDefault, m.SortOrder, m.CreatedAt, m.UpdatedAt);
     }
 }

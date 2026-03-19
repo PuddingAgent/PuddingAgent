@@ -165,6 +165,17 @@ const GlobalAgentTemplatePage: React.FC = () => {
       render: (_, r) => <Tag>{(r.maxContextTokens / 1000).toFixed(0)}K tokens</Tag>,
     },
     {
+      title: '容器镜像',
+      width: 200,
+      ellipsis: true,
+      render: (_, r) =>
+        r.containerImage ? (
+          <Text code style={{ fontSize: 11 }}>{r.containerImage}</Text>
+        ) : (
+          <Text type="secondary">平台默认</Text>
+        ),
+    },
+    {
       title: '系统提示词',
       ellipsis: true,
       render: (_, r) =>
@@ -264,6 +275,12 @@ const GlobalAgentTemplatePage: React.FC = () => {
             label="用户 Prompt 模板"
             rows={3}
             placeholder="可选，支持 {{variable}} 占位符"
+          />
+
+          <ProFormText
+            name="containerImage"
+            label="容器镜像"
+            placeholder="如 docker.xuanyuan.run/library/ubuntu:latest，留空则使用平台默认"
           />
 
           <ProFormSelect

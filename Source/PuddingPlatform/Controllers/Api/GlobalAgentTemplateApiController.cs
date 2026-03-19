@@ -60,6 +60,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         entity.PreferredModelId = req.PreferredModelId;
         entity.MaxContextTokens = req.MaxContextTokens;
         entity.MaxReplyTokens = req.MaxReplyTokens;
+        entity.ContainerImage = req.ContainerImage;
         entity.IsEnabled = req.IsEnabled;
         entity.SortOrder = req.SortOrder;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -93,6 +94,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         PreferredModelId = req.PreferredModelId,
         MaxContextTokens = req.MaxContextTokens,
         MaxReplyTokens = req.MaxReplyTokens,
+        ContainerImage = req.ContainerImage,
         IsBuiltIn = isBuiltIn,
         IsEnabled = req.IsEnabled,
         SortOrder = req.SortOrder,
@@ -103,6 +105,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         t.SystemPrompt, t.UserPromptTemplate,
         t.PreferredProviderId, t.PreferredModelId,
         t.MaxContextTokens, t.MaxReplyTokens,
+        t.ContainerImage,
         t.IsBuiltIn, t.IsEnabled, t.SortOrder,
         t.CreatedAt, t.UpdatedAt);
 }

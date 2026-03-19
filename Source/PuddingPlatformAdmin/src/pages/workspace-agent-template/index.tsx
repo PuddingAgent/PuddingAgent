@@ -99,6 +99,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
       maxReplyTokens: tpl.maxReplyTokens,
+      containerImage: tpl.containerImage,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
@@ -188,6 +189,17 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
           <Tag color="geekblue">{r.baseGlobalTemplateId}</Tag>
         ) : (
           <Text type="secondary">—</Text>
+        ),
+    },
+    {
+      title: '容器镜像',
+      width: 200,
+      ellipsis: true,
+      render: (_, r) =>
+        r.containerImage ? (
+          <Text code style={{ fontSize: 11 }}>{r.containerImage}</Text>
+        ) : (
+          <Text type="secondary">平台默认</Text>
         ),
     },
     {
@@ -320,6 +332,12 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
             label="用户 Prompt 模板"
             rows={3}
             placeholder="可选，支持 {{variable}} 占位符"
+          />
+
+          <ProFormText
+            name="containerImage"
+            label="容器镜像"
+            placeholder="如 docker.xuanyuan.run/library/ubuntu:latest，留空则继承全局模板或平台默认"
           />
 
           <ProFormSelect

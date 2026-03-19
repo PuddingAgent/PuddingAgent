@@ -59,6 +59,10 @@ public class WorkspaceAgentTemplateEntity
     [MaxLength(128)]
     public string? BaseGlobalTemplateId { get; set; }
 
+    /// <summary>Agent 容器镜像（如 docker.xuanyuan.run/library/ubuntu:latest），留空则继承全局模板或使用平台默认</summary>
+    [MaxLength(512)]
+    public string? ContainerImage { get; set; }
+
     /// <summary>是否启用</summary>
     public bool IsEnabled { get; set; } = true;
 

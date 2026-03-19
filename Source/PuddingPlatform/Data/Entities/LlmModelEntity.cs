@@ -29,6 +29,9 @@ public class LlmModelEntity
     /// <summary>最大上下文长度（tokens）</summary>
     public int MaxContextTokens { get; set; } = 8192;
 
+    /// <summary>最大输出长度（tokens）</summary>
+    public int MaxOutputTokens { get; set; } = 2048;
+
     /// <summary>输入价格（每百万 tokens，USD）</summary>
     public decimal InputPricePer1MTokens { get; set; }
 

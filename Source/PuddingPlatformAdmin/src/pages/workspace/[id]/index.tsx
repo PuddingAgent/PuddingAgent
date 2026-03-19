@@ -185,6 +185,7 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
       maxReplyTokens: tpl.maxReplyTokens,
+      containerImage: tpl.containerImage,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
@@ -360,6 +361,11 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
             rows={3}
             placeholder="可选，支持 {{variable}} 占位符"
           />
+          <ProFormText
+            name="containerImage"
+            label="容器镜像"
+            placeholder="如 docker.xuanyuan.run/library/ubuntu:latest，留空则继承全局模板或平台默认"
+          />
           <ProFormSelect
             name="preferredProviderId"
             label="首选服务商"
@@ -527,11 +533,13 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
   const [models, setModels] = useState<LlmModelDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [templates, setTemplates] = useState<WorkspaceAgentTemplateDto[]>([]);
+  const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
   const [form] = Form.useForm<CreateWorkspaceAgentRequest & UpdateWorkspaceAgentRequest>();
 
   useEffect(() => {
     listLlmProviders().then(setProviders).catch(() => {});
     listWorkspaceAgentTemplates(workspaceId).then(setTemplates).catch(() => {});
+    listGlobalAgentTemplates().then(setGlobalTemplates).catch(() => {});
   }, [workspaceId]);
 
   const handleProviderChange = async (providerId: string) => {
@@ -676,9 +684,26 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
           <ProFormSelect
             name="sourceTemplateId"
             label="来源模板（可选）"
-            options={templates.map((t) => ({ label: `${t.name} (${t.templateId})`, value: t.templateId }))}
             placeholder="选择已有模板作为基础配置"
-            fieldProps={{ allowClear: true }}
+            fieldProps={{
+              allowClear: true,
+              options: [
+                {
+                  label: '工作区模板',
+                  options: templates.map((t) => ({
+                    label: `${t.name} (${t.templateId})`,
+                    value: t.templateId,
+                  })),
+                },
+                {
+                  label: '全局模板',
+                  options: globalTemplates.map((t) => ({
+                    label: `${t.name} (${t.templateId})`,
+                    value: `global:${t.templateId}`,
+                  })),
+                },
+              ],
+            }}
           />
           <ProFormTextArea name="systemPromptOverride" label="覆盖系统提示词" rows={5} placeholder="留空则使用模板的系统提示词" />
           <ProFormSelect

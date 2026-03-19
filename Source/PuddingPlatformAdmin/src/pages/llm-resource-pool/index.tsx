@@ -92,7 +92,13 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
   const openCreate = () => {
     setEditModel(null);
     modelForm.resetFields();
-    modelForm.setFieldsValue({ sortOrder: 100, maxContextTokens: 8192, isDefault: false, isDeprecated: false });
+    modelForm.setFieldsValue({
+      sortOrder: 100,
+      maxContextTokens: 8192,
+      maxOutputTokens: 2048,
+      isDefault: false,
+      isDeprecated: false,
+    });
     setModelDrawer(true);
   };
 
@@ -141,6 +147,12 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
       dataIndex: 'maxContextTokens',
       width: 120,
       render: (_, r) => `${(r.maxContextTokens / 1000).toFixed(0)}K tokens`,
+    },
+    {
+      title: '输出长度',
+      dataIndex: 'maxOutputTokens',
+      width: 120,
+      render: (_, r) => `${r.maxOutputTokens.toLocaleString()} tokens`,
     },
     {
       title: '输入价格 ($/1M)',
@@ -214,6 +226,8 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
           <ProFormTextArea name="description" label="描述" rows={3} />
           <ProFormDigit name="maxContextTokens" label="上下文长度 (tokens)"
             rules={[{ required: true }]} min={1024} />
+          <ProFormDigit name="maxOutputTokens" label="输出长度 (tokens)"
+            rules={[{ required: true }]} min={1} />
           <ProFormDigit name="inputPricePer1MTokens" label="输入价格 ($/1M tokens)"
             fieldProps={{ precision: 6 }} />
           <ProFormDigit name="outputPricePer1MTokens" label="输出价格 ($/1M tokens)"

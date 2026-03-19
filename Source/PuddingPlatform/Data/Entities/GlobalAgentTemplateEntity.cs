@@ -50,6 +50,10 @@ public class GlobalAgentTemplateEntity
     /// <summary>每轮最大回复 token 数</summary>
     public int MaxReplyTokens { get; set; } = 2048;
 
+    /// <summary>Agent 容器镜像（如 docker.xuanyuan.run/library/ubuntu:latest），留空则使用平台默认镜像</summary>
+    [MaxLength(512)]
+    public string? ContainerImage { get; set; }
+
     /// <summary>是否系统内置（内置模板不允许删除，只允许编辑）</summary>
     public bool IsBuiltIn { get; set; } = false;
 

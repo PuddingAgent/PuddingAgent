@@ -155,6 +155,7 @@ export interface LlmModelDto {
   name: string;
   description?: string;
   maxContextTokens: number;
+  maxOutputTokens: number;
   inputPricePer1MTokens: number;
   outputPricePer1MTokens: number;
   capabilityTags: string[];
@@ -180,6 +181,7 @@ export interface UpsertLlmModelRequest {
   name: string;
   description?: string;
   maxContextTokens: number;
+  maxOutputTokens: number;
   inputPricePer1MTokens: number;
   outputPricePer1MTokens: number;
   capabilityTags?: string[];
@@ -207,6 +209,7 @@ export interface GlobalAgentTemplateDto {
   preferredModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
+  containerImage?: string;
   isBuiltIn: boolean;
   isEnabled: boolean;
   sortOrder: number;
@@ -225,6 +228,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   preferredModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
+  containerImage?: string;
   isEnabled: boolean;
   sortOrder: number;
 }
@@ -244,6 +248,7 @@ export interface WorkspaceAgentTemplateDto {
   preferredModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
+  containerImage?: string;
   baseGlobalTemplateId?: string;
   isEnabled: boolean;
   sortOrder: number;
@@ -263,6 +268,7 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   preferredModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
+  containerImage?: string;
   baseGlobalTemplateId?: string;
   isEnabled: boolean;
   sortOrder: number;

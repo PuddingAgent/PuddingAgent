@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PuddingPlatform.Data;
@@ -11,9 +12,11 @@ using PuddingPlatform.Data;
 namespace PuddingPlatform.Migrations
 {
     [DbContext(typeof(PlatformDbContext))]
-    partial class PlatformDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260319033446_AddLlmModelMaxOutputTokens")]
+    partial class AddLlmModelMaxOutputTokens
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -192,10 +195,6 @@ namespace PuddingPlatform.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ContainerImage")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -727,10 +726,6 @@ namespace PuddingPlatform.Migrations
                     b.Property<string>("BaseGlobalTemplateId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
-
-                    b.Property<string>("ContainerImage")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

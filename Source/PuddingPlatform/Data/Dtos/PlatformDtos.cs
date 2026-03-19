@@ -67,6 +67,7 @@ public record LlmModelDto(
     string Name,
     string? Description,
     int MaxContextTokens,
+    int MaxOutputTokens,
     decimal InputPricePer1MTokens,
     decimal OutputPricePer1MTokens,
     List<string> CapabilityTags,
@@ -82,6 +83,7 @@ public record UpsertLlmModelRequest(
     string Name,
     string? Description,
     int MaxContextTokens,
+    int MaxOutputTokens,
     decimal InputPricePer1MTokens,
     decimal OutputPricePer1MTokens,
     List<string>? CapabilityTags,
@@ -104,6 +106,7 @@ public record GlobalAgentTemplateDto(
     string? PreferredModelId,
     int MaxContextTokens,
     int MaxReplyTokens,
+    string? ContainerImage,
     bool IsBuiltIn,
     bool IsEnabled,
     int SortOrder,
@@ -122,6 +125,7 @@ public record UpsertGlobalAgentTemplateRequest(
     string? PreferredModelId,
     int MaxContextTokens,
     int MaxReplyTokens,
+    string? ContainerImage,
     bool IsEnabled,
     int SortOrder
 );
@@ -141,6 +145,7 @@ public record WorkspaceAgentTemplateDto(
     string? PreferredModelId,
     int MaxContextTokens,
     int MaxReplyTokens,
+    string? ContainerImage,
     string? BaseGlobalTemplateId,
     bool IsEnabled,
     int SortOrder,
@@ -160,6 +165,7 @@ public record UpsertWorkspaceAgentTemplateRequest(
     string? PreferredModelId,
     int MaxContextTokens,
     int MaxReplyTokens,
+    string? ContainerImage,
     string? BaseGlobalTemplateId,
     bool IsEnabled,
     int SortOrder
