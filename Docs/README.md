@@ -6,7 +6,7 @@
 
 这里是 Pudding Agent Network 的设计入口，不再仅服务于旧的 PuddingCode CLI 原型。
 
-当前主线已经切换为一个以 Workspace 为边界、以 Platform + Controller + Runtime 为核心、支持多渠道、多智能体、审批审计与记忆治理的 Agent OS 与协作网络平台。
+当前主线已经切换为一个以 Workspace 为边界、以 Platform +6 Controller + Runtime 为核心、支持多渠道、多智能体、审批审计与记忆治理的 Agent OS 与协作网络平台。
 
 一句更聚焦的理解是：Pudding 正在尝试构建一个 **Event-Driven Multi-Agent Operating System**，重点解决工作流编排、记忆隔离、事件驱动和协同机制，而不是继续堆高单 Agent 的聊天能力。
 
