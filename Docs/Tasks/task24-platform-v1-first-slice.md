@@ -360,7 +360,7 @@
 验收标准：
 - Controller 可管理对象存储与 NFS 存储绑定
 - Runtime 可获得统一存储访问描述
-- 第一版对象存储底层可采用 MinIO Docker
+- 第一版对象存储底层可采用 MinIO
 
 #### T24-P-14 `KnowledgeGraphService`
 职责：承载 Workspace 共享知识图谱。
@@ -454,17 +454,17 @@
 - Runtime 可访问统一存储层挂载或对象引用
 - Runtime 可读取知识图谱查询结果而不暴露底层数据库细节给 Agent
 
-#### T24-R-06 `SandboxExecutor`
-职责：承接高风险动作的受限执行。
+#### T24-R-06 `ToolExecutor`（V1 简化版）
+职责：在 Runtime 进程内直接执行工具调用，V1 不引入沙箱隔离。
 
 建议类：
-- `SandboxExecutor`
-- `SandboxExecutionRequest`
-- `SandboxExecutionResult`
+- `ToolExecutor`
+- `ToolExecutionRequest`
+- `ToolExecutionResult`
 
 验收标准：
-- Shell/进程、文件写入、网络访问可进入受限执行路径
-- 未批准的高风险动作不能直接执行
+- 工具在 Runtime 进程内直接执行
+- 高风险动作由 Controller 审批链控制准入
 
 ## 6. PuddingCLI 细化任务
 
@@ -539,7 +539,7 @@
 
 验收标准：
 - Platform 与 Runtime 都能读取这些画像
-- 权限与沙箱选择能按模板生效
+- 权限选择能按模板生效
 
 #### T24-A-03 `AuditAgentTemplate`
 职责：提供 Workspace 内最低配审计 Agent 模板。
@@ -611,7 +611,7 @@ GET    /runtime/agents/{agentId}
 6. `AuditEventStore` + 查询接口
 7. `PlatformApiClient` + `pudding send`
 8. `AuthorizationService` + `ApprovalService`
-9. `SandboxExecutor`
+9. `ToolExecutor`
 10. `KnowledgeBaseService` + `KnowledgeAccessBridge`
 11. `UnifiedStorageService` + `KnowledgeGraphService`
 12. `VoiceApprovalService` + `AvaloniaPlatformClient`

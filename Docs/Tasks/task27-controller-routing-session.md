@@ -1,4 +1,6 @@
-# task27 - PuddingController 路由与会话基础
+﻿# task27 - PuddingController 路由与会话基础
+
+> **V1 简化**（2026-05-02）：移除审批链、Gateway Adapter Plugin、LLM 代发路由、事件总线订阅治理。V1 聚焦 MessageIngress → SessionRouter → RuntimeDispatcher 链路。
 
 最后更新：2026-03-18
 
@@ -36,11 +38,6 @@
 渠道优先级：P0 = Web Chat；P1 = Email；P3 = 飞书及其他第三方渠道。
 输出：最小 Adapter 注册、装载与事件上送链路。
 前置依赖：任务 1。
-
-2A. 建立 `GatewayAdapterHost` 热插拔边界
-说明：定义 Adapter 描述、来源校验、版本信息、探活状态、启停控制和配置 reload 行为，避免把 Adapter 仅实现为一次性 DI 注册。
-输出：可查询、可启停、可审计的 Adapter 宿主。
-前置依赖：任务 2。
 
 3. 建立 `SessionRouter`
 说明：根据 Adapter 来源、身份、消息类型和 Workspace 绑定规则，命中 Workspace 与 AgentTemplate。
@@ -81,16 +78,6 @@
 说明：支持查询路由、Session 状态、拒绝原因、Runtime 映射和 Adapter 状态。
 输出：面向 CLI/Web/Avalonia 的基础调试接口。
 前置依赖：任务 6。
-
-8. 建立事件驱动接入与回写验证
-说明：验证 Adapter 既能接收入站事件，也能把 Runtime 或 Controller 的结果按原协议回写到外部系统，并尽量使用 Webhook、订阅或长连接而不是高频轮询。
-输出：首批双向 Adapter 联调链路。
-前置依赖：任务 6。
-
-9. 预留事件域路由与订阅治理接入口
-说明：为全局域 / Workspace 域事件流、订阅权限判定、事件重放与死信隔离预留最小接入口，详细实现由 [task34-event-bus-and-subscription.md](task34-event-bus-and-subscription.md) 收口。
-输出：事件路由器接口、订阅治理接口或等价控制面抽象。
-前置依赖：任务 3、任务 7。
 
 ## 验收标准
 

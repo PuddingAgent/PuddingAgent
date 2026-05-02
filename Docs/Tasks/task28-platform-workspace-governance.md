@@ -1,4 +1,6 @@
-# task28 - Platform 工作空间治理与服务暴露
+﻿# task28 - Platform 工作空间治理与服务暴露
+
+> **V1 简化**（2026-05-02）：移除知识库/图谱/存储（V3）、审计治理策略（V2）、协作驾驶舱（V3）、共享工具台（V3）。V1 聚焦 Workspace CRUD 与 AgentTemplate 管理。
 
 最后更新：2026-03-15
 
@@ -33,30 +35,10 @@
 输出：服务暴露策略模型与判定接口。
 前置依赖：任务 1。
 
-3. 建立 `AuditGovernancePolicy`
-说明：确保每个 Workspace 至少 1 个审计 Agent，并定义冻结、批准和监督策略。
-输出：审计治理策略骨架。
-前置依赖：任务 1。
-
-3A. 建立 Workspace 紧急 stop / recover 治理语义
-说明：定义用户和审计 Agent 在检测到入侵、上下文污染或泄露风险时，如何冻结单 Agent 或整个 Workspace，并如何发起恢复。
-输出：Workspace 紧急治理语义层、权限边界和审计要求。
-前置依赖：任务 3。
-
 4. 建立 Workflow 的平台编排入口
 说明：把工作流编排从单纯控制链路上升到平台业务语义层。
 输出：Workflow 在 Workspace 业务层的注册与绑定接口。
 前置依赖：任务 1；关联 [task25-workflow.md](task25-workflow.md)。
-
-4A. 建立 Workspace 协作驾驶舱语义层
-说明：为 Workspace 内的 TaskMap / DAG 主视图、Agent 侧边栏、关键事件流和聚合指标卡提供产品语义与查询聚合接口。
-输出：Workspace 协作驾驶舱查询模型与聚合服务接口。
-前置依赖：任务 1；关联 `07架构/05PuddingPlatform.md`。
-
-4B. 建立 Workspace 共享工具台语义层
-说明：把 TaskBoard、Spreadsheet、Wiki、ObjectStorage、WorkspaceEventHub 等能力组织成统一的 Workspace 虚拟工作台。
-输出：共享工具台聚合入口与能力目录。
-前置依赖：任务 1、任务 4。
 
 5. 对接 Controller 与配置模型
 说明：让 Controller 路由和权限链能读取 Platform 的业务规则输出。

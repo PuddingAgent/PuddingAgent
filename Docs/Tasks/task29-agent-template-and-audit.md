@@ -1,4 +1,6 @@
-# task29 - AgentTemplate 与审计 Agent
+﻿# task29 - AgentTemplate 定义
+
+> **V1 简化**（2026-05-02）：移除审计 Agent 模板、审批链对接、冻结链对接。V1 聚焦 AgentTemplate 的 CRUD 管理与 Runtime 装配。
 
 最后更新：2026-03-18
 
@@ -33,19 +35,9 @@
 输出：Controller 可命中的模板集合。
 前置依赖：任务 1。
 
-3. 提供 `AuditAgentTemplate`
-说明：定义只接触结构化、脱敏、受限视图的审计模板。
-输出：可挂接到 Workspace 的审计模板。
-前置依赖：任务 1。
-
 4. 定义模板权限与运行画像读取链路
 说明：Controller 用于权限判断，Runtime 用于执行环境和能力装配，Platform 用于服务暴露与治理。
 输出：统一的模板消费接口。
-前置依赖：任务 1。
-
-4A. 定义 Runtime 偏好与隔离策略字段
-说明：支持 `requiredRuntimeTags`、`preferredRuntimeTags`、`excludedRuntimeTags`、`defaultIsolationLevel`、`runtimeAffinityPolicy` 等字段。
-输出：可被 Controller 与 Runtime 共同消费的模板运行画像。
 前置依赖：任务 1。
 
 4B. 定义 Skill / MCP 引用模型
@@ -53,10 +45,6 @@
 输出：`SkillRef`、`McpRef`、版本与可见性消费规则。
 前置依赖：任务 1。
 
-5. 对接审计链与冻结链
-说明：让审计模板参与批准、拒绝、质询与 Workspace 冻结链路。
-输出：最小审计 Agent 工作流。
-前置依赖：任务 3、任务 4；关联 [task28-platform-workspace-governance.md](task28-platform-workspace-governance.md)。
 
 ## 验收标准
 

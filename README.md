@@ -1,6 +1,17 @@
-# Pudding Agent Network
+﻿# Pudding Agent
 
-**An event-driven Agent OS and governed collaboration platform for workspace-scoped multi-agent execution.**
+<p align="center">
+  <img src="me.png" alt="Pudding" width="200"/>
+</p>
+
+<p align="center">
+  <strong>你好，我是布丁。你的 AI 代理。</strong><br/>
+  <sub>Hi. I'm Pudding. Your AI agent.</sub>
+</p>
+
+---
+
+**A self-contained, P2P-capable AI agent that runs as a single binary. Double-click to start.**
 
 [中文说明](README_zh-CN.md)
 
@@ -12,170 +23,133 @@
 
 ## What Is Pudding?
 
-Pudding Agent Network is the product and platform direction of this repository.
+Pudding is not a platform. Not a framework. Not a service mesh.
 
-It is not just a coding CLI, and not merely a single-agent framework. It is being shaped as an **Agent OS** with a governed collaboration network: a platform for routing, coordinating, auditing, approving, and controlling multiple agents behind a unified control and execution model.
+**Pudding is an AI agent that runs on your machine.**
 
-In one sentence:
+One binary. Double-click. A browser tab opens. You talk. She works.
 
-> **Pudding is a Workspace-centered, event-driven multi-agent operating system.**
+She has her own memory (SQLite), her own tools, her own web UI. She doesn't need PostgreSQL. She doesn't need Redis. She doesn't need RabbitMQ.
 
----
+When you run multiple Pudding agents, they find each other automatically over the local network — peer-to-peer, no central server. They collaborate like ants: each working on what they can see, leaving traces for others to pick up.
 
-## Why This Exists
-
-Pudding is designed around a few hard problems that typical assistant-style systems do not solve well:
-
-- **Real work is workflow-shaped, not only chat-shaped.** Pudding treats `Workflow` and `TaskMap` as first-class system primitives rather than afterthought orchestration.
-- **Multi-task work creates context pollution.** Pudding uses `Workspace` as a governance boundary for agents, memory, tools, events, and workflows.
-- **Polling is weak coordination.** Pudding is built around an event bus so agents can be awakened by system events instead of repeatedly asking whether something happened.
-- **Enterprise ingress is messy.** Channels and protocols are expected to be plug-in based rather than hard-coded into one client surface.
-- **Governance cannot be bolted on later.** Approvals, audit, memory boundaries, and supervisory controls are part of the platform model from the start.
+<p align="center">
+  <em>A quiet girl in the library corner. Reading. Thinking. Waiting for your task.<br/>
+  She doesn't talk much — but she gets things done.</em>
+</p>
 
 ---
 
-## Core Concepts at a Glance
+## Why Pudding?
 
-- **Workspace** — the main governance boundary for memory, tools, events, workflows, channels, and agent configuration.
-- **Controller** — the control authority for routing, auth, approvals, audit, policy, workflow control, and governance.
-- **Runtime** — the execution authority for hot session state, agent instances, memory access, tools, and sandboxed execution.
-- **Event Bus** — the collaboration backbone that connects ingress, control, runtime wakeups, workflow transitions, and system feedback.
-- **Workflow / TaskMap** — first-class execution structures for orchestrated and collaborative multi-agent work.
-- **Governance** — approvals, audit agents, freeze controls, and policy boundaries are native parts of the system, not optional add-ons.
+Most AI tools today are either cloud services that own your data, or complex platforms that need a dozen Docker containers before you can say "hello."
 
----
+Pudding is different:
 
-## Architecture Snapshot
-
-```text
-PuddingPlatform
-  ├─ PuddingController
-  │   └─ PuddingGateway
-  ├─ PuddingRuntime
-  ├─ PuddingAgent
-  └─ PuddingCLI / PuddingWeb / PuddingAvalonia / External Channels
-```
-
-Design baseline:
-
-- **Workspace is the main governance boundary**
-- **Runtime is the authority for hot session state**
-- **Controller is the authority for routing, policy, approvals, audit, and governance**
-- **Platform owns upper-layer product semantics and business surfaces**
-- **Agent templates define capability and policy, but do not own hot execution state**
-- **Event Bus is the backbone of ingress, wakeup, workflow, and coordination**
-- **Workflow and TaskMap are first-class execution models**
-- **Channels are plugins, not hard-coded branches**
-- **Public or low-trust input must not directly pollute long-term memory**
-- **Knowledge, storage, and graph services belong to the Workspace and are mediated by Controller**
-- **Approvals are system-controlled and can be triggered from trusted clients such as Avalonia**
-- **Audit agents are required governance actors, not optional assistant personas**
+- **It's yours.** Runs on your machine. Your data stays with you.
+- **It's simple.** One file. No database setup. No infrastructure.
+- **It's personal.** She has a face, a name, a memory. She's your agent, not a faceless API.
+- **It scales sideways.** More agents join the P2P network when you need them. No orchestration needed.
 
 ---
 
-## Current Status
-
-This repository is in transition from the earlier **PuddingCode** coding-agent prototype toward the broader **Pudding Agent Network** platform.
-
-That means the architecture direction is already much clearer than the current implementation surface.
-
-| Area | Status | Notes |
-|---|---|---|
-| Architecture docs | Active | The current source of truth for platform direction |
-| CLI vertical slice | Partial | A runnable surface still exists and remains useful for iteration |
-| Controller / Runtime split | In transition | Core responsibilities are defined, implementation is still catching up |
-| Workflow / event-driven model | Designed | Architecture is established, implementation remains incremental |
-| Platform governance surfaces | Planned + partial | Product/admin direction is defined ahead of full realization |
-
-In practice, treat this repository as an evolving transition from a coding-agent prototype into an Agent OS with governed collaboration, workspace-owned knowledge services, and multiple control clients.
-
----
-
-## V1 Focus
-
-The first implementation target is a real vertical slice:
-
-```text
-CLI / Avalonia -> Controller API -> Workspace routing -> ServiceSession -> Runtime Agent -> real LLM reply
-```
-
-Current V1 constraints and priorities:
-
-- Built-in support for Email as a core channel
-- One Workspace can bind multiple channels
-- Each ChannelBinding can declare a default Agent and allowed Agent set
-- Channel integration itself must be plugin-based
-- Storage can start with local files and SQLite before moving to larger deployments
-- Workspace knowledge base, unified storage, and knowledge graph must be exposed through Controller-owned services
-- Voice approval is a system-controlled capability, not a business-agent capability
-- Each Workspace should include at least one audit agent
-
----
-
-## Getting Started
-
-### Build the solution
+## Quick Start
 
 ```bash
-dotnet build PuddingAgentNetwork.slnx
+# Download the binary for your OS
+# Windows: PuddingAgent.exe
+# Linux:   PuddingAgent
+# macOS:   PuddingAgent
+
+# Run it
+./PuddingAgent
+
+# Browser opens automatically -> http://localhost:8080
+# That's it. Start talking.
 ```
 
-### Run the current CLI surface
+### Docker (optional)
 
 ```bash
-dotnet run --project Source/PuddingCLI
+docker run -p 8080:8080 pudding-agent
 ```
 
-### Read the architecture first
+---
 
-The platform is being reshaped around the new architecture, so the most accurate source of intent and near-term scope is the docs set below.
+## Tech Stack
 
-- Start with `Docs/架构.md` for the high-level reading map
-- Continue with `Docs/07架构/README.md` for module-level architecture
-- Use `Docs/Tasks.md` to understand the current roadmap and work breakdown
+She's built with one rule: **zero external dependencies for the user.**
+
+| What | How |
+|---|---|
+| Runtime | .NET (ASP.NET Core, single binary) |
+| Database | SQLite — one file, auto-created |
+| Web UI | React, bundled inside the binary |
+| LLM | Direct API call (OpenAI-compatible) |
+| P2P | mDNS discovery + direct HTTP/gRPC |
+| Memory | Local, persistent, private |
 
 ---
 
-## Repository Map
+## Architecture
 
-### Core system modules
+```
++--------------------------------------+
+|         Pudding Agent (1 process)     |
+|                                       |
+|  Browser -> localhost:8080             |
+|  +---------------------------------+ |
+|  |        Web UI (React)           | |
+|  +---------------------------------+ |
+|  |     Controller (routing/auth)   | |
+|  +---------------------------------+ |
+|  |     Runtime (LLM/tools/memory)  | |
+|  +---------------------------------+ |
+|  |     P2P Network Layer           | |
+|  +---------------------------------+ |
+|  |     SQLite                      | |
+|  +---------------------------------+ |
+|                                       |
+|  <- P2P -> other Pudding agents         |
++--------------------------------------+
+```
 
-- `Source/PuddingCore` — shared abstractions, protocols, and common models
-- `Source/PuddingRuntime` — execution-plane host
-- `Source/PuddingController` — control-plane host in progress
-- `Source/PuddingPlatform` — platform and governance host
-- `Source/PuddingAgent` — agent templates and capability profiles
-- `Source/PuddingMemoryEngine` — runtime memory subsystem
-
-### Client and operator surfaces
-
-- `Source/PuddingCLI` — CLI surface using Controller and Gateway interfaces
-- `Source/PuddingWeb` — web frontend
-- `Source/PuddingAvalonia` — planned desktop operator/client surface
-- `Source/PuddingGateway` — ingress and adapter boundary module
-
-### Transitional and legacy modules
-
-- `Source/PuddingCode` — earlier coding-agent implementation being absorbed into the broader platform direction
-- `Source/PuddingCodeCLI` — legacy CLI entry point retained during transition
-
-### Docs and planning
-
-- `Docs/架构.md` — high-level architecture overview and reading map
-- `Docs/07架构/` — module-level architecture set
-- `Docs/Tasks.md` and `Docs/Tasks/` — roadmap, task board, and implementation breakdown
+Read the full architecture: [Docs/架构.md](Docs/架构.md)
 
 ---
 
-## Key Documents
+## The Name & The Face
 
-- `Docs/架构.md` — architecture overview and reading map
-- `Docs/07架构/README.md` — module-level architecture index
-- `Docs/Tasks.md` — platform task board and priorities
-- `Docs/Tasks/task24-platform-v1-first-slice.md` — class and API level breakdown for the first vertical slice
+She's called **Pudding** (布丁). Quiet. Efficient. A little mysterious.
+
+You give her a task. She tilts her head slightly. A few seconds pass. "Done."
+
+She keeps her own notebook (SQLite). She remembers you. She doesn't share your secrets with the cloud. She just works — from your desktop, your server, or a Raspberry Pi in the corner.
+
+Her design is inspired by the quiet capability of a certain library-dwelling literary girl. She reads. She understands. She acts. No fanfare. Just results.
+
+---
+
+## Multi-Agent: The Ant Colony
+
+When you run more than one Pudding agent on your network:
+
+1. They discover each other automatically (mDNS)
+2. They talk directly (no central broker)
+3. They share task events (P2P broadcast)
+4. They divide work like ants — each doing what fits their role and skills
+
+This is not orchestration. This is emergence.
 
 ---
 
 ## License
 
 Apache License 2.0
+
+---
+
+<p align="center">
+  <sub>「……交给我吧。」</sub><br/>
+  <sub><em>"...Leave it to me."</em></sub>
+</p>
