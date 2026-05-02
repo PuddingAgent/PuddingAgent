@@ -1,0 +1,24 @@
+{
+  "title": "实现 Cron 定时任务调度",
+  "priority": "P2",
+  "project": "Pudding",
+  "tags": ["V1", "Cron", "自动化"],
+  "goal": "内嵌 Cron 调度器，支持用户配置周期性任务（日报、备份、审计等），Agent 自主按计划执行",
+  "out_of_scope": "分布式 Cron 锁、复杂工作流编排、任务依赖 DAG",
+  "acceptance_criteria": [
+    "支持标准 Cron 表达式配置",
+    "可通过前端/配置文件添加/编辑/删除定时任务",
+    "任务执行结果记录到审计日志",
+    "任务失败可配置通知"
+  ],
+  "impact_scope": "Source/PuddingAgent/Runtime/Scheduling/",
+  "entry_points": [
+    "Docs/架构.md §L5 自动化层",
+    "参考 Hermes 内置 cron 调度器"
+  ],
+  "risk_notes": "实现简单（可用 NCrontab 库），核心注意点是时区处理和任务超时管理",
+  "depends_on": ["task-20260502-001"],
+  "executor_type": "agent",
+  "stage": "ready",
+  "lease_minutes": 45
+}

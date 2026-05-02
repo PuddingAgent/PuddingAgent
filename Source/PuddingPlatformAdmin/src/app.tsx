@@ -18,6 +18,7 @@ import '@ant-design/v5-patch-for-react-19';
 
 const isDev = process.env.NODE_ENV === 'development';
 const loginPath = '/user/login';
+const bootstrapPath = '/bootstrap';
 
 /**
  * @see https://umijs.org/docs/api/runtime-config#getinitialstate
@@ -39,24 +40,59 @@ export async function getInitialState(): Promise<{
     }
     return undefined;
   };
-  // 如果不是登录页面，执行
+
+  const checkBootstrapAndRedirect = async () => {
+    try {
+      const res = await fetch('/api/bootstrap/status');
+      const data = await res.json();
+      if (data.needsSetup) {
+        history.push(bootstrapPath);
+      } else {
+        history.push(loginPath);
+      }
+    } catch {
+      history.push(loginPath);
+    }
+  };
+
   const { location } = history;
-  if (
-    ![loginPath, '/user/register', '/user/register-result'].includes(
-      location.pathname,
-    )
-  ) {
-    const currentUser = await fetchUserInfo();
+
+  // Bootstrap / Login pages: skip auth check entirely
+  if ([loginPath, bootstrapPath].includes(location.pathname)) {
     return {
       fetchUserInfo,
-      currentUser,
       settings: defaultSettings as Partial<LayoutSettings>,
     };
   }
-  return {
-    fetchUserInfo,
-    settings: defaultSettings as Partial<LayoutSettings>,
-  };
+
+  const token = localStorage.getItem('pudding_token');
+
+  if (!token) {
+    // No token → check bootstrap status to decide where to redirect
+    await checkBootstrapAndRedirect();
+    return {
+      fetchUserInfo,
+      settings: defaultSettings as Partial<LayoutSettings>,
+    };
+  }
+
+  // Has token → try to validate it
+  try {
+    const msg = await queryCurrentUser({ skipErrorHandler: true });
+    return {
+      fetchUserInfo,
+      currentUser: msg.data,
+      settings: defaultSettings as Partial<LayoutSettings>,
+    };
+  } catch {
+    // Token expired/invalid → clear it and re-check bootstrap status
+    localStorage.removeItem('pudding_token');
+    await checkBootstrapAndRedirect();
+    return {
+      fetchUserInfo,
+      settings: defaultSettings as Partial<LayoutSettings>,
+    };
+  }
 }
 
 // ProLayout 支持的api https://procomponents.ant.design/components/layout
@@ -82,8 +118,12 @@ export const layout: RunTimeLayoutConfig = ({
     footerRender: () => <Footer />,
     onPageChange: () => {
       const { location } = history;
-      // 如果没有登录，重定向到 login
-      if (!initialState?.currentUser && location.pathname !== loginPath) {
+      // 如果没有登录且不在登录页或初始化页，重定向到登录页
+      if (
+        !initialState?.currentUser &&
+        location.pathname !== loginPath &&
+        location.pathname !== bootstrapPath
+      ) {
         history.push(loginPath);
       }
     },

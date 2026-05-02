@@ -1,59 +1,102 @@
-# PuddingCode Desktop 登录功能实现
+# Pudding Agent Web 用户认证系统
+
+> **关联任务**：task-20260502-011  
+> **实现日期**：2026-05-02
 
 ## 概述
 
-为PuddingCode桌面应用添加用户认证功能，包括一个专门的登录窗口和桌面精灵的右键菜单集成。
+Pudding Agent 使用基于 Web UI 的 JWT 认证系统，通过 **Bootstrap 引导初始化 → 登录 → 受控用户管理** 三阶段流程，替代了早期 Avalonia 桌面端登录窗口。公开注册被禁止，仅 admin 用户可创建其他用户。
 
-## 主要组成
+## 认证流程
 
-### 1. UI组件
-- `LoginWindow.axaml` - 登录窗口的界面定义
-- `LoginWindow.xaml.cs` - 登录窗口的逻辑处理，集成认证服务
+```
+首次启动                  已初始化
+   │                        │
+   ▼                        ▼
+GET /api/bootstrap/status   登录页 (/user/login)
+   │                        │
+   ├─ needsSetup=true       ├─ 输入用户名+密码
+   │  └─ Bootstrap 页       ├─ POST /api/login/account
+   │     (/bootstrap)       ├─ 获取 JWT token
+   │     │                  ├─ 存入 localStorage
+   │     └─ POST /api/bootstrap/admin
+   │        ├─ 校验 BOOTSTRAP_SECRET（可选）
+   │        ├─ 密码强度 ≥8位，含大小写+数字
+   │        ├─ Serializable 事务防并发
+   │        └─ 创建 admin → 签发 JWT → 跳转 /
+   │
+   └─ needsSetup=false
+      └─ 登录页
+```
 
-### 2. 服务组件
-- `AuthenticationService.cs` - 认证服务接口和实现
-- `ContextMenuService.cs` - 桌面精灵右键菜单服务
+### 路由守卫三态分发（app.tsx）
 
-### 3. 菜单集成
-- `SpiritWindow.axaml.cs` - 桌面精灵窗口（已修改），添加了右键菜单中"登录/账户"选项
+| 状态 | 路由 | 行为 |
+|------|------|------|
+| 无 admin 用户 | `/bootstrap` | 显示 Bootstrap 初始化向导 |
+| 有用户但未登录 | `/user/login` | 显示登录页 |
+| 已登录（有效 token） | 正常页面 | 进入管理后台 |
 
-## 功能特性
+## 核心 API
 
-### 登录窗口功能
-- 用户名和密码输入
-- "记住我"功能选择
-- 忘记密码链接
-- 输入验证和错误提示
-- 响应式设计
-- 安全密码处理（使用PBKDF2加密）
+| 端点 | 方法 | 说明 | 鉴权 |
+|------|------|------|------|
+| `/api/bootstrap/status` | GET | 检查系统是否需要初始化（返回 `needsSetup`、`hasAdmin`、`userCount`） | 匿名 |
+| `/api/bootstrap/admin` | POST | 创建首个管理员账号（需 `BootstrapSecret` 可配置） | 匿名 + Secret |
+| `/api/login/account` | POST | 已有用户登录 | 匿名 |
 
-### 认证服务
-- 用户验证
-- 加密凭据存储
-- 登录状态管理
-- PBKDF2密码加密算法
-- 安全的身份认证流程
+### POST /api/bootstrap/admin 请求体
 
-### 菜单集成
-- 桌面精灵右键菜单增加"登录/账户"选项
-- 打开登录窗口进行用户名+密码验证
+```json
+{
+  "userId": "admin",
+  "email": "admin@example.com",
+  "password": "StrongP@ss1",
+  "displayName": "管理员",
+  "bootstrapSecret": "<配置的 BOOTSTRAP_SECRET>"
+}
+```
 
-## 使用方法
+**安全约束**：
+- `BOOTSTRAP_SECRET` 不为空时强制校验，防止未授权初始化
+- 密码强度正则：`^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$`
+- 使用 `Serializable` 事务隔离级别防止 TOCTOU 并发创建多个 admin
+- 仅当数据库中无任何 Admin 用户时允许调用
 
-1. 在桌面上右键点击Pudding精灵
-2. 选择"登录/账户"菜单项
-3. 在弹出的登录窗口中输入用户名和密码
-4. 点击"登录"按钮完成验证
+## 关键文件
+
+| 文件 | 说明 |
+|------|------|
+| `Source/PuddingPlatform/Controllers/Api/BootstrapApiController.cs` | Bootstrap 状态检查 + admin 创建 API |
+| `Source/PuddingPlatform/Program.cs` | JWT 认证中间件注册（已移除硬编码 admin 创建） |
+| `Source/PuddingPlatformAdmin/src/pages/bootstrap/index.tsx` | Bootstrap 初始化向导页面 |
+| `Source/PuddingPlatformAdmin/src/pages/user/login/index.tsx` | 登录页 |
+| `Source/PuddingPlatformAdmin/src/app.tsx` | 路由守卫三态分发逻辑 |
+| `.env.example` | `BOOTSTRAP_SECRET` 环境变量说明 |
+
+## 用户模型（AppUserEntity）
+
+| 字段 | 说明 |
+|------|------|
+| `UserId` | 登录用户 ID（唯一） |
+| `Username` | 用户名（同 UserId） |
+| `Email` | 邮箱 |
+| `DisplayName` | 显示名称 |
+| `PasswordHash` | PBKDF2 哈希密码 |
+| `UserType` | `Admin` / `User` |
+| `IsEnabled` | 是否启用 |
 
 ## 安全特性
 
-- 所有密码都使用PBKDF2算法进行安全加密
-- 认证凭据的加密存储（使用操作系统的安全存储服务）
-- 认证状态安全管理
-- 符合PuddingCode的零知识架构设计
+- 密码使用 PBKDF2 哈希存储（`PasswordHasher.Hash`）
+- JWT Bearer 认证（可配置 Key / Issuer / Audience / ExpiryHours）
+- 公开注册禁止，用户管理仅限 admin
+- `BOOTSTRAP_SECRET` 保护首次初始化
+- Session Cookie `HttpOnly` + `SameSite=None`
+- Serializable 事务防并发竞态
 
-## 扩展性
+## 部署注意事项
 
-- 通过`IAuthenticationService`接口易于扩展到第三方认证服务
-- UI与业务逻辑分离，便于自定义界面
-- 菜单项易于扩展其他功能
+- 首次部署时必须通过 `.env` 设置 `BOOTSTRAP_SECRET`（生产环境必填）
+- `JWT_KEY` 必须替换为高强度随机密钥（≥ 32 字符）
+- Bootstrap 成功后即可通过登录页使用已创建的 admin 账号

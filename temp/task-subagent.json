@@ -1,0 +1,25 @@
+{
+  "title": "实现子代理与Orchestrator-Workers",
+  "priority": "P1",
+  "project": "Pudding",
+  "tags": ["V1", "子代理", "Orchestrator", "runtime"],
+  "goal": "基于 task-20260502-010 调研设计，实现进程内子代理（逻辑分区+独立对话上下文）和 Orchestrator-Workers 动态任务拆分模式",
+  "out_of_scope": "跨进程子代理、子代理资源配额限制、子代理沙箱隔离",
+  "acceptance_criteria": [
+    "主 Agent 可创建/销毁子代理，子代理拥有独立对话上下文",
+    "Orchestrator 可动态拆分任务并委派给子代理并行执行",
+    "子代理执行结果可合并回主会话",
+    "超时/错误隔离：子代理异常不影响主 Agent"
+  ],
+  "impact_scope": "Source/PuddingAgent/Runtime/SubAgent/, Orchestrator/",
+  "entry_points": [
+    "Docs/Tasks/task36-event-trigger-and-subagent.md（已完成调研）",
+    "task-20260502-010（调研卡，已完结）",
+    "Docs/架构.md §L3 多智能体层"
+  ],
+  "risk_notes": "子代理是进程内逻辑分区（非真进程），资源隔离有限。上下文管理需注意 Token 预算。遵循 Anthropic Orchestrator-Workers 模式",
+  "depends_on": ["task-20260502-005", "task-20260502-008"],
+  "executor_type": "agent",
+  "stage": "ready",
+  "lease_minutes": 120
+}

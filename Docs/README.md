@@ -1,14 +1,10 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-03-18
+最后更新：2026-05-02
 
 ## 文档定位
 
-这里是 Pudding Agent Network 的设计入口，不再仅服务于旧的 PuddingCode CLI 原型。
-
-当前主线已经切换为一个以 Workspace 为边界、以 Platform +6 Controller + Runtime 为核心、支持多渠道、多智能体、审批审计与记忆治理的 Agent OS 与协作网络平台。
-
-一句更聚焦的理解是：Pudding 正在尝试构建一个 **Event-Driven Multi-Agent Operating System**，重点解决工作流编排、记忆隔离、事件驱动和协同机制，而不是继续堆高单 Agent 的聊天能力。
+这里是 Pudding Agent 的设计入口。当前主线为 V1 单进程模型：一个可执行文件，内嵌 Web UI + Controller + Runtime + SQLite，双击启动，浏览器自动打开即用。支持 LLM 多轮对话（带工具调用）及 P2P 节点发现与直连通信（mDNS + HTTP/gRPC）。仓库正在从旧分布式架构（Platform/Controller/Runtime 多服务）向单进程 V1 模型迁移。
 
 ## 建议阅读顺序
 
@@ -20,10 +16,7 @@
 	 - `11工作流与任务图.md` 负责解释工作流节点类型、触发方式、任务图表达与 Agent 生命周期。
 
 3. `Docs/Tasks.md`
-	 - 当前任务看板、第一批平台任务、实现优先级与阶段目标。
-
-4. `Docs/Tasks/task24-platform-v1-first-slice.md`
-	 - Platform V1 首条垂直切片，已细化到类与 API 级别。
+	 - 全局任务入口与 V1 目标，任务状态通过 Todo API 实时查询，不依赖硬编码表格。
 
 ## 当前主线文档
 
@@ -32,9 +25,7 @@
 - `Docs/07架构/README.md`
 	- 按模块拆分后的架构分册目录。
 - `Docs/Tasks.md`
-	- 全局任务看板与当前阶段的实现路线。
-- `Docs/Tasks/task24-platform-v1-first-slice.md`
-	- 第一条真实链路：`CLI -> Platform API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`。
+	- 全局任务入口，任务状态通过 Todo API 管理。
 
 ## 主题文档分组
 
@@ -64,17 +55,15 @@
 
 ## 当前架构基线
 
-- 产品目标已从“编码代理 CLI”升级为“Agent OS 与协作网络平台”。
-- `PuddingPlatform` 是上层平台层，负责业务逻辑、产品语义与协作网络编排。
-- `PuddingController` 是底层控制面，负责渠道接入、路由、权限、审批、审计、工作流与治理。
-- `PuddingGateway` 是 `PuddingController` 的模块，负责协议入口与边界接入。
-- `PuddingRuntime` 是执行面，负责 Session、Agent、Memory、Skill、Sandbox 与运行态承载。
-- 一个 Workspace 可绑定多个 Channel，并容纳多个 Agent。
-- 平台内置支持 Email Channel，但渠道接入机制本身必须插件化。
-- 公开或低信任输入默认不能直接污染长期记忆。
+- V1 目标：单进程 Pudding Agent，内嵌 Web UI + Controller + Runtime + SQLite
+- 双击启动，浏览器自动打开即用
+- 支持 LLM 多轮对话（带工具调用）
+- 支持 P2P 节点发现与直连通信（mDNS + HTTP/gRPC）
+- 支持裸进程运行或 Docker 单容器部署
+- 任务管理已迁移至 Todo API（`python .github/skills/todo-api/todo_api.py`）
 
 ## 当前实现状态说明
 
-- 当前仓库仍保留较多旧的 CLI / PuddingCode 原型实现。
-- 文档设计已经先行推进到平台化形态。
-- 因此阅读源码时，应优先以 `Docs/架构.md`、`Docs/07架构/` 和 `Docs/Tasks.md` 作为目标状态参考，而不是把当前实现误认为最终分层。
+- 仓库正在从旧分布式架构（Platform/Controller/Runtime 多服务 + PuddingCode CLI）向单进程 V1 模型迁移。
+- 当前源码中仍保留较多旧架构残留，阅读时请以本文档和 `Docs/Tasks.md` 作为 V1 目标状态参考。
+- 任务状态通过 Todo API 管理，不在文档或代码中硬编码。

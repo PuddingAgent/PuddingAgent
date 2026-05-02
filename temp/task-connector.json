@@ -1,0 +1,25 @@
+{
+  "title": "实现连接器框架与基础连接器（Webhook + CLI）",
+  "priority": "P1",
+  "project": "Pudding",
+  "tags": ["V1", "连接器", "Connector", "Webhook", "CLI"],
+  "goal": "基于 task-20260502-010 调研设计，实现 IPuddingConnector 连接器框架和 Webhook/CLI 两个基础连接器",
+  "out_of_scope": "MQTT/邮箱/IM 消息平台连接器、连接器热加载",
+  "acceptance_criteria": [
+    "IPuddingConnector 接口可用（StartAsync/StopAsync/SendAsync/OperateAsync）",
+    "Webhook 连接器：监听 HTTP POST 事件，转换为内部事件并路由到 Runtime",
+    "CLI 连接器：命令行可发送消息给 Agent 并接收回复",
+    "连接器通过 DI 注册，config 可开关"
+  ],
+  "impact_scope": "Source/PuddingAgent/Connectors/, PuddingCore/Abstractions/IPuddingConnector.cs",
+  "entry_points": [
+    "Docs/07架构/04PuddingController与Gateway.md（已重写，含Connector设计）",
+    "Docs/Tasks/task36-event-trigger-and-subagent.md §0 连接器接口",
+    "task-20260502-010（调研卡，已完结）"
+  ],
+  "risk_notes": "连接器入站事件路由需与 Controller 的事件路由器配合。先实现最简 Webhook（单一端点+签名验证），后续扩展",
+  "depends_on": ["task-20260502-005"],
+  "executor_type": "agent",
+  "stage": "ready",
+  "lease_minutes": 90
+}

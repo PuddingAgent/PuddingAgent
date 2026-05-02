@@ -2,35 +2,30 @@
 
 ## Project Orientation
 
-- This repository is transitioning from the earlier `PuddingCode` prototype to the broader `Pudding Agent Network` platform.
-- When current implementation and design intent differ, treat `README.md`, `Docs/架构.md`, `Docs/07架构/README.md`, and `Docs/Tasks.md` as the source of truth for direction and boundaries.
+- This repository is transitioning from the earlier `PuddingCode` prototype to the V1 single-process Pudding Agent model.
+- When current implementation and design intent differ, treat `README.md`, `Docs/架构.md`, `Docs/07架构/README.md`, and `Docs/Tasks.md` as the source of truth for direction and boundaries. Task status lives in Todo API, not hardcoded in documents.
 - Link to existing docs instead of duplicating architecture details in code comments or new instruction files.
 
 ## Architecture
 
-- Preserve the documented authority split:
-  - `Source/PuddingPlatform` owns product semantics, workspace management, and upper-layer orchestration.
-  - `Source/PuddingController` owns routing, auth, approvals, audit, policy, workflow control, and governance.
-  - `Source/PuddingRuntime` owns hot session state, agent execution, memory access, tool execution, and sandboxed runtime behavior.
-  - `Source/PuddingCore` should contain stable abstractions, protocols, and shared models, not hot runtime state.
-  - `Source/PuddingGateway` is the ingress and adapter boundary under the control-plane design.
-- `Workspace` is the main isolation and governance boundary for memory, tools, events, workflows, and agent configuration.
-- Avoid designs that let public or low-trust input directly pollute long-term memory.
-- For architecture-sensitive work, read the corresponding docs first:
-  - `Docs/07架构/01总览与分层.md`
-  - `Docs/07架构/02PuddingCore.md`
-  - `Docs/07架构/03PuddingRuntime.md`
-  - `Docs/07架构/04PuddingController与Gateway.md`
-  - `Docs/07架构/05PuddingPlatform.md`
+- V1 架构为单进程模型，运行在一个 .NET 进程中：
+  - 内嵌 ASP.NET Core（Controller + Gateway）
+  - 内嵌 Runtime（Agent 执行、Memory、Tool、Session）
+  - 内嵌 SQLite（EF Core 持久化）
+  - 内嵌 React 前端（Web Chat UI）
+- P2P 通信通过 mDNS 发现 + HTTP/gRPC 直连实现
+- 任务管理使用 Todo API，禁止在代码或文档中硬编码任务状态
+- 架构文档参考：
+  - `Docs/架构.md`
+  - `Docs/07架构/README.md`
 
 ## Build and Test
 
 - For broad .NET validation from the repo root, use `dotnet build PuddingAgentNetwork.slnx`.
 - Prefer targeted builds for smaller backend changes to reduce noise:
+  - `dotnet build Source/PuddingAgent/PuddingAgent.csproj`
   - `dotnet build Source/PuddingCore/PuddingCore.csproj`
-  - `dotnet build Source/PuddingController/PuddingController.csproj`
   - `dotnet build Source/PuddingRuntime/PuddingRuntime.csproj`
-  - `dotnet build Source/PuddingPlatform/PuddingPlatform.csproj`
 - Frontend app: `Source/PuddingPlatformAdmin`
   - Requires Node.js `>=20`
   - Common commands: `npm install`, `npm run build`, `npm run lint`, `npm run test`
@@ -39,7 +34,7 @@
 
 ## Conventions
 
-- Do not manually edit database schema; use EF Core migrations under `Source/PuddingPlatform` and `Source/PuddingController`.
+- Do not manually edit database schema; use EF Core migrations under `Source/PuddingPlatform` and `Source/PuddingController`（V1 中均为内嵌模块，不再独立部署）。
 - Docker packaging depends on host-generated build artifacts:
   - backend publishes to `publish/`
   - frontend builds to `dist/`
@@ -50,3 +45,10 @@
   - `Docs/README.md`
   - `Docs/07架构/README.md`
   - `Docs/Tasks.md`
+
+
+使用todo-api管理任务状态，避免在代码或文档中硬编码任务进度。
+
+临时脚本（python或者其他语言脚本）或一次性验证可以直接放在 `temp` 目录下，不需要放在 `Source/` 内或者根目录。
+
+Docs\架构.md 和 Docs\07架构\README.md 是架构设计的主要文档，任何新的设计决策都应该先更新这两个文档，而不是直接在代码里添加注释或者创建新的 instruction 文件。

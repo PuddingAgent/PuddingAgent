@@ -1,0 +1,25 @@
+{
+  "title": "实现工具与Skill系统",
+  "priority": "P0",
+  "project": "Pudding",
+  "tags": ["V1", "工具", "Skill", "runtime"],
+  "goal": "建立可扩展的工具注册/发现/执行框架和 Skill 可复用技能系统，支持 Function Calling 和 SKILL.md 格式",
+  "out_of_scope": "MCP 协议客户端、社区技能商店、自动技能生成",
+  "acceptance_criteria": [
+    "可注册进程内工具，LLM 可通过 Function Calling 发现和调用",
+    "Skill 以 SKILL.md 格式定义，支持加载/搜索/执行",
+    "至少内置 3 个基础工具（文件读写、Shell执行、HTTP请求）",
+    "前端可查看工具和技能列表"
+  ],
+  "impact_scope": "Source/PuddingAgent/Runtime/Tools/, Skills/",
+  "entry_points": [
+    "Docs/架构.md §L2 工具与技能层",
+    "参考 Anthropic ACI 设计原则",
+    "参考 Hermes SKILL.md 格式"
+  ],
+  "risk_notes": "工具定义需投入与 prompt 同等的设计精力。Shell 执行工具需限制可用命令",
+  "depends_on": ["task-20260502-007", "task-20260502-008"],
+  "executor_type": "agent",
+  "stage": "ready",
+  "lease_minutes": 120
+}

@@ -120,6 +120,13 @@ export default [
     ],
   },
   {
+    path: '/bootstrap',
+    name: 'bootstrap',
+    component: './bootstrap',
+    layout: false,
+    hideInMenu: true,
+  },
+  {
     path: '/',
     redirect: '/welcome',
   },

@@ -96,22 +96,6 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     await db.Database.MigrateAsync();
-
-    // 初始化 Admin 账号（仅首次启动且无 Admin 时创建）
-    if (!db.AppUsers.Any(u => u.UserType == UserType.Admin))
-    {
-        db.AppUsers.Add(new AppUserEntity
-        {
-            UserId = "admin",
-            Username = "admin",
-            Email = "admin@pudding.local",
-            DisplayName = "平台管理员",
-            PasswordHash = PasswordHasher.Hash("pudding.dev"),
-            UserType = UserType.Admin,
-            IsEnabled = true,
-        });
-        db.SaveChanges();
-    }
 }
 
 if (!app.Environment.IsDevelopment())

@@ -1,0 +1,23 @@
+{
+  "title": "实现工作流管道（Prompt Chaining + Routing）",
+  "priority": "P2",
+  "project": "Pudding",
+  "tags": ["V1", "工作流", "pipeline"],
+  "goal": "实现 Anthropic 推荐的 Prompt Chaining（步骤链式调用）和 Routing（意图分类路由）两种基础工作流模式",
+  "out_of_scope": "Parallelization/Orchestrator-Workers/Evaluator-Optimizer 模式、可视化工作流编辑器",
+  "acceptance_criteria": [
+    "Prompt Chaining：可定义多步 LLM 调用链，上一步输出作为下一步输入",
+    "Routing：可根据用户意图分类路由到不同的处理 prompt",
+    "工作流定义可通过 JSON/YAML 配置"
+  ],
+  "impact_scope": "Source/PuddingAgent/Runtime/Workflow/",
+  "entry_points": [
+    "Docs/架构.md §L5 自动化层",
+    "参考 Anthropic Prompt chaining/Routing 工作流模式"
+  ],
+  "risk_notes": "P2 能力，V1 阶段实现最小可用版本即可。设计时预留 Evaluator-Optimizer 模式的扩展点",
+  "depends_on": ["task-20260502-008"],
+  "executor_type": "agent",
+  "stage": "ready",
+  "lease_minutes": 90
+}

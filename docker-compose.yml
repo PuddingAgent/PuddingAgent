@@ -11,6 +11,7 @@
 
 services:
 
+  # ── 单进程（管理台 + 聊天 + LLM Runtime）──────────────
   pudding-agent:
     build:
       context:    .
@@ -21,6 +22,12 @@ services:
       LLM_API_KEY:  ${LLM_API_KEY}
       LLM_ENDPOINT: ${LLM_ENDPOINT:-https://api.openai.com/v1}
       LLM_MODEL:    ${LLM_MODEL:-gpt-4o-mini}
+      Jwt__Key:        ${JWT_KEY:-Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!}
+      Jwt__Issuer:     ${JWT_ISSUER:-pudding-platform}
+      Jwt__Audience:   ${JWT_AUDIENCE:-pudding-admin}
+      Jwt__ExpiryHours: "${JWT_EXPIRY_HOURS:-8}"
+      Bootstrap__Secret: "${BOOTSTRAP_SECRET:-}"
+      ConnectionStrings__Default: "Data Source=/app/data/pudding_platform.db"
       P2P__Enabled: "true"
       P2P__Port:    "9527"
     ports:

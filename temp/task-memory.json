@@ -1,0 +1,24 @@
+{
+  "title": "实现长期记忆引擎",
+  "priority": "P0",
+  "project": "Pudding",
+  "tags": ["V1", "记忆", "runtime"],
+  "goal": "实现跨会话的长期记忆召回、存储与检索，支持语义相似度搜索和记忆衰减/强化策略",
+  "out_of_scope": "向量数据库集成、图谱记忆、记忆共享到其他 Agent",
+  "acceptance_criteria": [
+    "Agent 跨会话记住用户偏好和关键信息",
+    "支持语义相似度召回相关记忆",
+    "记忆可手动查看和管理",
+    "SQLite 存储，重启后不丢失"
+  ],
+  "impact_scope": "Source/PuddingAgent/Runtime/Memory/",
+  "entry_points": [
+    "Docs/架构.md §L1 记忆与上下文",
+    "参考 Hermes 持久记忆设计"
+  ],
+  "risk_notes": "语义搜索初期可用简单关键词匹配，后期再引入嵌入向量",
+  "depends_on": ["task-20260502-007", "task-20260502-008"],
+  "executor_type": "agent",
+  "stage": "ready",
+  "lease_minutes": 90
+}
