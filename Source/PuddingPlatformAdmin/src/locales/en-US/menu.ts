@@ -2,6 +2,7 @@ export default {
   'menu.welcome': 'Welcome',
   'menu.chat': 'Chat',
   'menu.capabilityManagement': 'Capability Management',
+  'menu.keyVault': 'Key Vault',
   'menu.more-blocks': 'More Blocks',
   'menu.home': 'Home',
   'menu.admin': 'Admin',

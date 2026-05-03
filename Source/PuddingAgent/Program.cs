@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
@@ -86,6 +87,14 @@ builder.Services.AddDbContext<PlatformDbContext>(opt =>
     opt.UseSqlite(connStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
+
+builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
+{
+    opt.UseSqlite(connStr);
+    opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+});
+
+builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
 
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {

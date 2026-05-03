@@ -38,6 +38,7 @@ public sealed class AgentExecutionService
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly SkillPackageDownloadService _skillPackageDownloader;
     private readonly IReadOnlyList<IAgentLoopHook> _hooks;
+    private readonly IKeyVaultService _keyVaultService;
     private readonly ILogger<AgentExecutionService> _logger;
 
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories = new();
@@ -56,7 +57,8 @@ public sealed class AgentExecutionService
         AgentSkillPackageRegistry skillPackageRegistry,
         SkillPackageDownloadService skillPackageDownloader,
         IEnumerable<IAgentLoopHook> hooks,
-        ILogger<AgentExecutionService> logger)
+        ILogger<AgentExecutionService> logger,
+        IKeyVaultService? keyVaultService = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -71,6 +73,7 @@ public sealed class AgentExecutionService
         _skillPackageRegistry    = skillPackageRegistry;
         _skillPackageDownloader  = skillPackageDownloader;
         _hooks               = hooks.ToArray();
+        _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
         _logger              = logger;
     }
 
@@ -195,14 +198,16 @@ public sealed class AgentExecutionService
                         .Where(t => availableSkillNames.Contains(t.Name))
                         .ToList()
                     : _skillRuntime.BuildLlmTools(effectiveCapability);
+
+                var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
                 var llmResp = await _llmClient.ChatAsync(
                     request.WorkspaceId, request.SessionId,
-                    request.AgentTemplateId, history, llmTools, request.LlmConfig, ct);
+                    request.AgentTemplateId, injectedHistory, llmTools, request.LlmConfig, ct);
                 if (llmResp.Usage is not null)
                     usage = llmResp.Usage;
                 llmSw.Stop();
 
-                var rawText = llmResp.Content ?? "{}";
+                var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
                 _logger.LogInformation(
                     "[AgentExec] LLM round={Round}/{Max} session={Session} elapsed={Ms}ms",
                     round + 1, _guardrails.MaxRounds, request.SessionId, llmSw.ElapsedMilliseconds);
@@ -229,7 +234,10 @@ public sealed class AgentExecutionService
                             break;
                         }
 
-                        var repeatKey = $"{call.Name}|{call.ArgumentsJson}";
+                        var injectedArgsJson = await _keyVaultService.InjectAsync(call.ArgumentsJson ?? "{}", ct);
+                        var safeToolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
+
+                        var repeatKey = $"{call.Name}|{injectedArgsJson}";
                         toolRepeatMap.TryGetValue(repeatKey, out var repeatCount);
                         if (repeatCount >= _guardrails.MaxSameToolRepeat)
                         {
@@ -241,7 +249,7 @@ public sealed class AgentExecutionService
                         toolRepeatMap[repeatKey] = repeatCount + 1;
 
                         totalToolCalls++;
-                        await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, call.Name, call.ArgumentsJson, ct));
+                        await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, call.Name, safeToolArgs, ct));
 
                         var skillResult = await _skillRuntime.InvokeAsync(
                             call.Name,
@@ -250,17 +258,22 @@ public sealed class AgentExecutionService
                                 AgentInstanceId = instance.AgentInstanceId,
                                 WorkspaceId = request.WorkspaceId,
                                 SessionId = request.SessionId,
-                                Input = ExtractInputFromJson(call.ArgumentsJson),
-                                Parameters = ExtractParametersFromJson(call.ArgumentsJson),
+                                Input = ExtractInputFromJson(injectedArgsJson),
+                                Parameters = ExtractParametersFromJson(injectedArgsJson),
                             },
                             effectiveCapability,
                             ct);
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
 
-                        var toolPayload = skillResult.Success
+                        var toolPayloadRaw = skillResult.Success
                             ? $"Tool '{call.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
                             : $"Tool '{call.Name}' failed (exit={skillResult.ExitCode}):\n{skillResult.Error}";
+                        var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
+
+                        var safeToolError = string.IsNullOrWhiteSpace(skillResult.Error)
+                            ? skillResult.Error
+                            : await _keyVaultService.StripAsync(skillResult.Error, ct);
 
                         history.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id));
 
@@ -272,9 +285,9 @@ public sealed class AgentExecutionService
                             Status = "CONTINUE",
                             MessageSummary = Truncate(rawText, 512),
                             ToolName = call.Name,
-                            ToolArgs = call.ArgumentsJson,
+                            ToolArgs = safeToolArgs,
                             ToolSuccess = skillResult.Success,
-                            ToolError = skillResult.Error,
+                            ToolError = safeToolError,
                         });
                     }
 
@@ -392,10 +405,11 @@ public sealed class AgentExecutionService
                     }
 
                     var argsJson = loopResp.Tool!.Args?.GetRawText() ?? "{}";
-                    toolArgs = argsJson;
+                    var injectedArgsJson = await _keyVaultService.InjectAsync(argsJson, ct);
+                    toolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
 
                     // 检查点 D：相同工具相同参数重复次数
-                    var repeatKey = $"{toolName}|{argsJson}";
+                    var repeatKey = $"{toolName}|{injectedArgsJson}";
                     toolRepeatMap.TryGetValue(repeatKey, out var repeatCount);
                     if (repeatCount >= _guardrails.MaxSameToolRepeat)
                     {
@@ -409,14 +423,14 @@ public sealed class AgentExecutionService
                         {
                             Round = round, StartedAt = turnStart, CompletedAt = DateTimeOffset.UtcNow,
                             Status = "CONTINUE", MessageSummary = Truncate(finalMessage, 512),
-                            ToolName = toolName, ToolArgs = argsJson,
+                            ToolName = toolName, ToolArgs = toolArgs,
                             ToolSuccess = false, ToolError = "MaxSameToolRepeat reached",
                         });
                         continue; // 给 LLM 机会换策略，不计入轮次工具调用
                     }
                     toolRepeatMap[repeatKey] = repeatCount + 1;
 
-                    await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, toolName, argsJson, ct));
+                    await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, toolName, toolArgs, ct));
                     totalToolCalls++;
 
                     // 检查点 E：工具执行前再次检查取消
@@ -433,19 +447,22 @@ public sealed class AgentExecutionService
                             AgentInstanceId = instance.AgentInstanceId,
                             WorkspaceId     = request.WorkspaceId,
                             SessionId       = request.SessionId,
-                            Input           = ExtractInput(loopResp.Tool.Args),
-                            Parameters      = ExtractParameters(loopResp.Tool.Args),
+                            Input           = ExtractInputFromJson(injectedArgsJson),
+                            Parameters      = ExtractParametersFromJson(injectedArgsJson),
                         },
                         effectiveCapability, ct);
 
                     toolSuccess = skillResult.Success;
-                    toolError   = skillResult.Error;
+                    toolError   = string.IsNullOrWhiteSpace(skillResult.Error)
+                        ? skillResult.Error
+                        : await _keyVaultService.StripAsync(skillResult.Error, ct);
 
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
 
-                    var toolMsg = skillResult.Success
+                    var toolMsgRaw = skillResult.Success
                         ? $"Tool '{toolName}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
                         : $"Tool '{toolName}' failed (exit={skillResult.ExitCode}):\n{skillResult.Error}";
+                    var toolMsg = await _keyVaultService.StripAsync(toolMsgRaw, ct);
                     history.Add(new ChatMessage(ChatRole.User, toolMsg));
                 }
 
@@ -627,11 +644,12 @@ public sealed class AgentExecutionService
         {
             // Streaming chat intentionally does not expose function-call deltas to the UI.
             // Tool execution remains available on the synchronous structured loop path.
+            var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
             await foreach (var delta in _llmClient.ChatStreamAsync(
                 request.WorkspaceId,
                 request.SessionId,
                 request.AgentTemplateId,
-                history,
+                injectedHistory,
                 tools: null,
                 llmConfig: request.LlmConfig,
                 ct: ct))
@@ -644,8 +662,9 @@ public sealed class AgentExecutionService
 
                 if (!string.IsNullOrEmpty(delta.ContentDelta))
                 {
-                    finalMessage.Append(delta.ContentDelta);
-                    yield return ServerSentEventFrame.Json("delta", new { delta = delta.ContentDelta });
+                    var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
+                    finalMessage.Append(safeDelta);
+                    yield return ServerSentEventFrame.Json("delta", new { delta = safeDelta });
                 }
 
                 if (delta.ToolCallIndex is not null)
@@ -659,7 +678,8 @@ public sealed class AgentExecutionService
                 }
             }
 
-            var reply = finalMessage.Length > 0 ? finalMessage.ToString() : "（Agent 未返回可展示文本）";
+            var replyRaw = finalMessage.Length > 0 ? finalMessage.ToString() : "（Agent 未返回可展示文本）";
+            var reply = await _keyVaultService.StripAsync(replyRaw, ct);
             history.Add(new ChatMessage(ChatRole.Assistant, reply));
 
             if (template.Memory?.EnableSessionMemory == true
@@ -911,6 +931,68 @@ public sealed class AgentExecutionService
         {
             return new Dictionary<string, string>();
         }
+    }
+
+    /// <summary>
+    /// 仅对发送给 LLM 的 System/User 文本执行 KeyVault 占位符注入，
+    /// 避免把密钥明文持久化到会话历史中。
+    /// </summary>
+    private async Task<IReadOnlyList<ChatMessage>> BuildInjectedHistoryAsync(
+        IReadOnlyList<ChatMessage> source,
+        CancellationToken ct)
+    {
+        if (source.Count == 0) return source;
+
+        var result = new List<ChatMessage>(source.Count);
+        foreach (var message in source)
+        {
+            if (message.Role is ChatRole.System or ChatRole.User)
+            {
+                var content = message.Content ?? string.Empty;
+                var injected = await _keyVaultService.InjectAsync(content, ct);
+                result.Add(string.Equals(injected, content, StringComparison.Ordinal)
+                    ? message
+                    : message with { Content = injected });
+            }
+            else
+            {
+                result.Add(message);
+            }
+        }
+
+        return result;
+    }
+
+    private sealed class NoOpKeyVaultService : IKeyVaultService
+    {
+        public static NoOpKeyVaultService Instance { get; } = new();
+
+        public Task<string> EncryptAsync(string plainText, CancellationToken ct = default)
+            => Task.FromResult(plainText);
+
+        public Task<string> DecryptAsync(string encryptedValue, CancellationToken ct = default)
+            => Task.FromResult(encryptedValue);
+
+        public Task<KeyVaultSecretSummary> CreateSecretAsync(CreateKeyVaultSecretCommand request, CancellationToken ct = default)
+            => Task.FromResult(new KeyVaultSecretSummary());
+
+        public Task<KeyVaultSecretSummary?> UpdateSecretAsync(string keyVaultId, UpdateKeyVaultSecretCommand request, CancellationToken ct = default)
+            => Task.FromResult<KeyVaultSecretSummary?>(null);
+
+        public Task<KeyVaultSecretDetail?> GetSecretAsync(string keyVaultId, bool includePlainText = false, CancellationToken ct = default)
+            => Task.FromResult<KeyVaultSecretDetail?>(null);
+
+        public Task<IReadOnlyList<KeyVaultSecretSummary>> ListSecretsAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<KeyVaultSecretSummary>>([]);
+
+        public Task<bool> DeleteSecretAsync(string keyVaultId, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<string> InjectAsync(string text, CancellationToken ct = default)
+            => Task.FromResult(text);
+
+        public Task<string> StripAsync(string text, CancellationToken ct = default)
+            => Task.FromResult(text);
     }
 
     private async Task FireHooksAsync(Func<IAgentLoopHook, Task> action)

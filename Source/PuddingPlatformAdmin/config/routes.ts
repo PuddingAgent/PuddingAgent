@@ -75,6 +75,12 @@ export default [
     component: './skill-management',
   },
   {
+    path: '/keyvault',
+    name: 'keyVault',
+    icon: 'lock',
+    component: './keyvault',
+  },
+  {
     path: '/user-management',
     name: 'userManagement',
     icon: 'user',

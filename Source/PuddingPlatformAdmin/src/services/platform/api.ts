@@ -255,6 +255,47 @@ export interface UpdateSkillPackageRequest {
   sortOrder: number;
 }
 
+// ─── KeyVault Types ──────────────────────────────────────────────
+
+export interface KeyVaultSecretDto {
+  id: number;
+  keyVaultId: string;
+  name: string;
+  description?: string;
+  category: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface KeyVaultSecretDetailDto extends KeyVaultSecretDto {
+  value?: string;
+}
+
+export interface CreateKeyVaultSecretRequest {
+  name: string;
+  value: string;
+  description?: string;
+  category: string;
+  tags?: string[];
+}
+
+export interface UpdateKeyVaultSecretRequest {
+  name: string;
+  value?: string;
+  description?: string;
+  category: string;
+  tags?: string[];
+}
+
+export interface KeyVaultTextTransformRequest {
+  text: string;
+}
+
+export interface KeyVaultTextTransformResponse {
+  text: string;
+}
+
 // ─── Global Agent Template Types ────────────────────────────────
 
 export interface GlobalAgentTemplateDto {
@@ -452,6 +493,52 @@ export async function deleteSkillPackage(skillPackageId: string): Promise<void> 
 
 export async function getSkillPackageDownloadUrl(skillPackageId: string): Promise<{ url: string }> {
   return request(`/api/skill-packages/${encodeURIComponent(skillPackageId)}/download-url`, { method: 'GET' });
+}
+
+// ─── KeyVault API ────────────────────────────────────────────────
+
+export async function listKeyVaultSecrets(): Promise<KeyVaultSecretDto[]> {
+  return request('/api/keyvault/secrets', { method: 'GET' });
+}
+
+export async function createKeyVaultSecret(
+  req: CreateKeyVaultSecretRequest,
+): Promise<KeyVaultSecretDto> {
+  return request('/api/keyvault/secrets', { method: 'POST', data: req });
+}
+
+export async function updateKeyVaultSecret(
+  keyVaultId: string,
+  req: UpdateKeyVaultSecretRequest,
+): Promise<KeyVaultSecretDto> {
+  return request(`/api/keyvault/secrets/${encodeURIComponent(keyVaultId)}`, {
+    method: 'PUT',
+    data: req,
+  });
+}
+
+export async function getKeyVaultSecret(
+  keyVaultId: string,
+  confirm = true,
+): Promise<KeyVaultSecretDetailDto> {
+  const qs = `?confirm=${confirm ? 'true' : 'false'}`;
+  return request(`/api/keyvault/secrets/${encodeURIComponent(keyVaultId)}${qs}`, { method: 'GET' });
+}
+
+export async function deleteKeyVaultSecret(keyVaultId: string): Promise<void> {
+  return request(`/api/keyvault/secrets/${encodeURIComponent(keyVaultId)}`, { method: 'DELETE' });
+}
+
+export async function injectKeyVaultText(
+  req: KeyVaultTextTransformRequest,
+): Promise<KeyVaultTextTransformResponse> {
+  return request('/api/keyvault/inject', { method: 'POST', data: req });
+}
+
+export async function stripKeyVaultText(
+  req: KeyVaultTextTransformRequest,
+): Promise<KeyVaultTextTransformResponse> {
+  return request('/api/keyvault/strip', { method: 'POST', data: req });
 }
 
 // ─── Capability API ─────────────────────────────────────────────

@@ -33,6 +33,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // 聊天消息持久化
     public DbSet<ChatMessageEntity> ChatMessages => Set<ChatMessageEntity>();
 
+    // KeyVault 密钥保管箱
+    public DbSet<KeyVaultEntity> KeyVaults => Set<KeyVaultEntity>();
+
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -221,6 +224,17 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(m => m.SessionId);
             e.HasIndex(m => new { m.SessionId, m.CreatedAt });
         });
+
+        // ── KeyVault ──────────────────────────────────────────
+        modelBuilder.Entity<KeyVaultEntity>(e =>
+        {
+            e.HasIndex(k => k.KeyVaultId).IsUnique();
+            e.HasIndex(k => k.Name).IsUnique();
+            e.Property(k => k.Name).HasMaxLength(128);
+            e.Property(k => k.Description).HasMaxLength(1024);
+            e.Property(k => k.Category).HasMaxLength(64);
+        });
+
         // ── Seed：内置 OpenAI Provider + 常用模型 ────────────────────
         SeedBuiltInData(modelBuilder);
     }

@@ -1,0 +1,1034 @@
+﻿{
+  "success": true,
+  "tasks": [
+    {
+      "id": "task-20260502-030",
+      "title": "潜意识记忆引擎研究与设计：记忆处理、提纯与召回子系统",
+      "status": "pending",
+      "priority": "P1",
+      "owner": "WangXianQiang",
+      "project": "Pudding",
+      "tags": [
+        "记忆",
+        "Memory",
+        "潜意识",
+        "研究",
+        "架构设计"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T15:01:28Z",
+      "updated_at": "2026-05-02T15:27:34Z",
+      "depends_on": [],
+      "blocks": [
+        "task-20260502-023"
+      ],
+      "subtask_ids": [],
+      "notes": [
+        {
+          "author": "大黄",
+          "text": "设计讨论 (2026-05-02)：记忆评价从三维扩展到五维（置信度+重要性+新鲜度+持久性+关键词匹配）。衰减不是删分而是不断摘要化的过程，指数衰减时间线：1天→7天→30天→1年→3年→5年→10年。三层检索架构：活跃层（优先）→沉淀层（保留降权）→归档层（完整日志）。核心洞察：Agent不需要记住每句话（有完整日志），记忆引擎的职责是从废话中提取金子。",
+          "created_at": "2026-05-02T15:11:46Z"
+        },
+        {
+          "author": "大黄",
+          "text": "设计讨论 (2026-05-02) #2：核心设计哲学转变——不定义硬编码规则（如1天→1KB，30天=活跃层边界），而是让潜意识AI根据提示词自行判断何时压缩、压缩多少、哪些记忆优先返回。硬编码规则是上一代软件的做法，AI驱动的自适应才是Agent该有的方式。衰减触发、压缩程度、检索排序均由小模型根据提示词+上下文灵活决策。",
+          "created_at": "2026-05-02T15:17:51Z"
+        },
+        {
+          "author": "大黄",
+          "text": "设计讨论3: 标签索引升级为标签树 Taxonomy Tree, 类似知识图谱物种分类树, 树状继承向上泛化向下钻取, 跨树关联形成记忆网络, AI自动维护演化树结构",
+          "created_at": "2026-05-02T15:23:50Z"
+        },
+        {
+          "author": "大黄",
+          "text": "设计讨论 #4：新增两个特性——(1) 动态标签树（Taxonomy Tree），AI自组织的知识图谱，类似生物物种树，支持挂载/拆分/合并/提升/重命名/归档操作，O(log n)树定位替代O(n)全扫描；(2) 输入法式预测网络（IME-style Predictive Network），可选实验特性，轻量神经网络运行时在线学习用户模式，预测用户下一步可能需要什么记忆，预测失败不影响确定性检索结果。性能约束：<50ms延迟，<10MB模型，冷启动退化为关键词匹配。",
+          "created_at": "2026-05-02T15:26:04Z"
+        },
+        {
+          "author": "大黄",
+          "text": "设计讨论 #5：预测网络需要渐进激活——冷启动（无数据）→预热期（标签树生长，样本 < 200，仅收集）→热运行（样本充足，在线推理）。标签树是预测网络的前提：树的层级结构直接作为神经网络的输出分类空间，树越完善预测越准。用户用得越多→标签树越完善→训练数据越充足→预测越精准，就像输入法越用越准。",
+          "created_at": "2026-05-02T15:27:34Z"
+        }
+      ],
+      "goal": "研究并设计一个轻量、快速、后台异步运行的潜意识记忆引擎（Memory Engine），负责记忆处理、提纯、标签索引、召回与验证。参考 openclaw 的记忆架构。",
+      "out_of_scope": "具体代码实现（本卡仅研究设计）；主模型推理逻辑；前端 UI",
+      "acceptance_criteria": [
+        "完成记忆引擎架构设计文档，明确短期记忆/长期记忆/Soul身份文件三层结构",
+        "设计五维评分模型（置信度/重要性/新鲜度/持久性/关键词匹配）与综合召回公式",
+        "设计AI驱动的自适应衰减机制（提示词判断，非硬编码时间线），压缩不丢失可回溯性",
+        "设计AI自组织的动态标签树（知识图谱），支持挂载/拆分/合并/提升/重命名/归档",
+        "设计三层检索架构（活跃层→沉淀层→归档层），AI自适应排序，沉淀知识永远保留降低优先级",
+        "设计输入法式预测网络（可选实验特性），运行时动态训练，预测延迟<50ms",
+        "设计记忆验证流程（先验证可靠性再召回，可回溯原始日志）",
+        "明确潜意识Agent与显意识Agent的交互协议（反思先行、闲聊过滤、多目标消歧）",
+        "设计文档输出至 Docs/ 目录，与现有架构文档对齐"
+      ],
+      "impact_scope": "PuddingCore 新增 Memory Engine 抽象接口；PuddingRuntime 新增 MemoryEngine 模块；新增 SQLite 记忆存储表；可能引入轻量本地小模型",
+      "entry_points": [
+        "Docs/07架构/01总览与分层.md",
+        "Docs/Tasks/task08-memory.md"
+      ],
+      "risk_notes": "小模型选型需权衡速度与质量（候选：本地 ONNX 小模型 / Phi / Gemma 等）；记忆提纯可能丢失关键信息熵；异步架构增加系统复杂度；记忆验证的可靠性标准需明确",
+      "executor_type": "hybrid",
+      "assigned_agent": "lead",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "draft",
+      "doc_path": "Docs/Tasks/task38-subconscious-memory-engine.md",
+      "task_doc_path": "Docs/Tasks/task38-subconscious-memory-engine.md",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-029",
+      "title": "实现浏览器自动化（P3 远期）",
+      "status": "pending",
+      "priority": "P3",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "浏览器",
+        "automation",
+        "远期"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:41:04Z",
+      "updated_at": "2026-05-02T14:41:04Z",
+      "depends_on": [],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "集成 Playwright 实现网页搜索、页面提取、浏览器自动化操作（导航、点击、输入、截图）",
+      "out_of_scope": "视觉分析、验证码识别、多标签页管理",
+      "acceptance_criteria": [
+        "Agent 可通过工具调用打开网页并提取内容",
+        "支持截图功能",
+        "支持简单的页面交互（点击、输入）"
+      ],
+      "impact_scope": "Source/PuddingAgent/Runtime/Tools/BrowserTool.cs",
+      "entry_points": [
+        "Docs/架构.md §远期规划 P3",
+        "参考 OpenClaw 浏览器自动化"
+      ],
+      "risk_notes": "P3 远期任务，V1 不实现。Playwright 依赖较大（~300MB），需评估对单文件发布的影响",
+      "executor_type": "agent",
+      "lease_minutes": 120,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-028",
+      "title": "实现工作流管道（Prompt Chaining + Routing）",
+      "status": "pending",
+      "priority": "P2",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "工作流",
+        "pipeline"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:41:03Z",
+      "updated_at": "2026-05-02T14:41:03Z",
+      "depends_on": [
+        "task-20260502-008"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "实现 Anthropic 推荐的 Prompt Chaining（步骤链式调用）和 Routing（意图分类路由）两种基础工作流模式",
+      "out_of_scope": "Parallelization/Orchestrator-Workers/Evaluator-Optimizer 模式、可视化工作流编辑器",
+      "acceptance_criteria": [
+        "Prompt Chaining：可定义多步 LLM 调用链，上一步输出作为下一步输入",
+        "Routing：可根据用户意图分类路由到不同的处理 prompt",
+        "工作流定义可通过 JSON/YAML 配置"
+      ],
+      "impact_scope": "Source/PuddingAgent/Runtime/Workflow/",
+      "entry_points": [
+        "Docs/架构.md §L5 自动化层",
+        "参考 Anthropic Prompt chaining/Routing 工作流模式"
+      ],
+      "risk_notes": "P2 能力，V1 阶段实现最小可用版本即可。设计时预留 Evaluator-Optimizer 模式的扩展点",
+      "executor_type": "agent",
+      "lease_minutes": 90,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-027",
+      "title": "实现 Cron 定时任务调度",
+      "status": "pending",
+      "priority": "P2",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "Cron",
+        "自动化"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:41:02Z",
+      "updated_at": "2026-05-02T14:41:02Z",
+      "depends_on": [
+        "task-20260502-001"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "内嵌 Cron 调度器，支持用户配置周期性任务（日报、备份、审计等），Agent 自主按计划执行",
+      "out_of_scope": "分布式 Cron 锁、复杂工作流编排、任务依赖 DAG",
+      "acceptance_criteria": [
+        "支持标准 Cron 表达式配置",
+        "可通过前端/配置文件添加/编辑/删除定时任务",
+        "任务执行结果记录到审计日志",
+        "任务失败可配置通知"
+      ],
+      "impact_scope": "Source/PuddingAgent/Runtime/Scheduling/",
+      "entry_points": [
+        "Docs/架构.md §L5 自动化层",
+        "参考 Hermes 内置 cron 调度器"
+      ],
+      "risk_notes": "实现简单（可用 NCrontab 库），核心注意点是时区处理和任务超时管理",
+      "executor_type": "agent",
+      "lease_minutes": 45,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-026",
+      "title": "实现连接器框架与基础连接器（Webhook + CLI）",
+      "status": "pending",
+      "priority": "P1",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "连接器",
+        "Connector",
+        "Webhook",
+        "CLI"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:41:01Z",
+      "updated_at": "2026-05-02T14:41:01Z",
+      "depends_on": [
+        "task-20260502-005"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "基于 task-20260502-010 调研设计，实现 IPuddingConnector 连接器框架和 Webhook/CLI 两个基础连接器",
+      "out_of_scope": "MQTT/邮箱/IM 消息平台连接器、连接器热加载",
+      "acceptance_criteria": [
+        "IPuddingConnector 接口可用（StartAsync/StopAsync/SendAsync/OperateAsync）",
+        "Webhook 连接器：监听 HTTP POST 事件，转换为内部事件并路由到 Runtime",
+        "CLI 连接器：命令行可发送消息给 Agent 并接收回复",
+        "连接器通过 DI 注册，config 可开关"
+      ],
+      "impact_scope": "Source/PuddingAgent/Connectors/, PuddingCore/Abstractions/IPuddingConnector.cs",
+      "entry_points": [
+        "Docs/07架构/04PuddingController与Gateway.md（已重写，含Connector设计）",
+        "Docs/Tasks/task36-event-trigger-and-subagent.md §0 连接器接口",
+        "task-20260502-010（调研卡，已完结）"
+      ],
+      "risk_notes": "连接器入站事件路由需与 Controller 的事件路由器配合。先实现最简 Webhook（单一端点+签名验证），后续扩展",
+      "executor_type": "agent",
+      "lease_minutes": 90,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-025",
+      "title": "实现子代理与Orchestrator-Workers",
+      "status": "pending",
+      "priority": "P1",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "子代理",
+        "Orchestrator",
+        "runtime"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:40:50Z",
+      "updated_at": "2026-05-02T14:40:50Z",
+      "depends_on": [
+        "task-20260502-005",
+        "task-20260502-008"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "基于 task-20260502-010 调研设计，实现进程内子代理（逻辑分区+独立对话上下文）和 Orchestrator-Workers 动态任务拆分模式",
+      "out_of_scope": "跨进程子代理、子代理资源配额限制、子代理沙箱隔离",
+      "acceptance_criteria": [
+        "主 Agent 可创建/销毁子代理，子代理拥有独立对话上下文",
+        "Orchestrator 可动态拆分任务并委派给子代理并行执行",
+        "子代理执行结果可合并回主会话",
+        "超时/错误隔离：子代理异常不影响主 Agent"
+      ],
+      "impact_scope": "Source/PuddingAgent/Runtime/SubAgent/, Orchestrator/",
+      "entry_points": [
+        "Docs/Tasks/task36-event-trigger-and-subagent.md（已完成调研）",
+        "task-20260502-010（调研卡，已完结）",
+        "Docs/架构.md §L3 多智能体层"
+      ],
+      "risk_notes": "子代理是进程内逻辑分区（非真进程），资源隔离有限。上下文管理需注意 Token 预算。遵循 Anthropic Orchestrator-Workers 模式",
+      "executor_type": "agent",
+      "lease_minutes": 120,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-024",
+      "title": "实现工具与Skill系统",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "工具",
+        "Skill",
+        "runtime"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:40:41Z",
+      "updated_at": "2026-05-02T14:40:41Z",
+      "depends_on": [
+        "task-20260502-007",
+        "task-20260502-008"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "建立可扩展的工具注册/发现/执行框架和 Skill 可复用技能系统，支持 Function Calling 和 SKILL.md 格式",
+      "out_of_scope": "MCP 协议客户端、社区技能商店、自动技能生成",
+      "acceptance_criteria": [
+        "可注册进程内工具，LLM 可通过 Function Calling 发现和调用",
+        "Skill 以 SKILL.md 格式定义，支持加载/搜索/执行",
+        "至少内置 3 个基础工具（文件读写、Shell执行、HTTP请求）",
+        "前端可查看工具和技能列表"
+      ],
+      "impact_scope": "Source/PuddingAgent/Runtime/Tools/, Skills/",
+      "entry_points": [
+        "Docs/架构.md §L2 工具与技能层",
+        "参考 Anthropic ACI 设计原则",
+        "参考 Hermes SKILL.md 格式"
+      ],
+      "risk_notes": "工具定义需投入与 prompt 同等的设计精力。Shell 执行工具需限制可用命令",
+      "executor_type": "agent",
+      "lease_minutes": 120,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-023",
+      "title": "实现长期记忆引擎",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "记忆",
+        "runtime"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:38:36Z",
+      "updated_at": "2026-05-02T14:38:36Z",
+      "depends_on": [
+        "task-20260502-007",
+        "task-20260502-008"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "实现跨会话的长期记忆召回、存储与检索，支持语义相似度搜索和记忆衰减/强化策略",
+      "out_of_scope": "向量数据库集成、图谱记忆、记忆共享到其他 Agent",
+      "acceptance_criteria": [
+        "Agent 跨会话记住用户偏好和关键信息",
+        "支持语义相似度召回相关记忆",
+        "记忆可手动查看和管理",
+        "SQLite 存储，重启后不丢失"
+      ],
+      "impact_scope": "Source/PuddingAgent/Runtime/Memory/",
+      "entry_points": [
+        "Docs/架构.md §L1 记忆与上下文",
+        "参考 Hermes 持久记忆设计"
+      ],
+      "risk_notes": "语义搜索初期可用简单关键词匹配，后期再引入嵌入向量",
+      "executor_type": "agent",
+      "lease_minutes": 90,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-021",
+      "title": "前端密钥保管箱页面",
+      "summary": "在 PuddingPlatformAdmin 中实现密钥保管箱前端页面，依赖 task-20260502-019（API 端点可用）",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [],
+      "completed": false,
+      "created_at": "2026-05-02T14:37:23Z",
+      "updated_at": "2026-05-02T14:37:23Z",
+      "depends_on": [
+        "task-20260502-019"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "实现 KeyVaultPage 前端页面：解锁/锁定、密钥列表、CRUD Modal、占位符复制",
+      "out_of_scope": "后端 API 实现、加密算法、Agent Loop 集成",
+      "acceptance_criteria": [
+        "页面路由 /key-vault 可访问",
+        "未解锁时显示锁定状态和密码输入框",
+        "解锁后可查看密钥列表（名称、分类、时间）",
+        "新增/编辑 Modal 可录入密钥，密钥值默认掩码显示",
+        "每个条目旁有一键复制 {{vault:name}} 按钮",
+        "删除有确认对话框"
+      ],
+      "impact_scope": "PuddingPlatformAdmin(新增 KeyVaultPage, 路由注册)",
+      "entry_points": [],
+      "executor_type": "human",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "doc_path": "Docs/Features/KeyVaultFeature.md",
+      "task_doc_path": "Docs/Features/KeyVaultFeature.md",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-020",
+      "title": "Agent Loop 密钥注入与剥离集成",
+      "summary": "改造 AgentExecutionService 和 MemoryEngine，在三个剥离点(A:LLM响应 B:记忆写回 C:上下文构建)和一个注入点(工具调用前)集成 KeyVaultService",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [],
+      "completed": false,
+      "created_at": "2026-05-02T14:36:46Z",
+      "updated_at": "2026-05-02T14:36:46Z",
+      "depends_on": [
+        "task-20260502-019"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "在 AgentExecutionService 工具调用前注入密钥，LLM 响应后剥离密钥; 在 MemoryEngine 写回和召回时剥离密钥",
+      "out_of_scope": "KeyVaultService 实现、前端页面、加密算法",
+      "acceptance_criteria": [
+        "工具调用参数中 {{vault:name}} 被替换为实际密钥",
+        "LLM 响应中密钥明文被替换为 [REDACTED:name]",
+        "Memory 写回和召回中无密钥明文",
+        "保险库未解锁时注入/剥离为 NOP（不影响正常流程）"
+      ],
+      "impact_scope": "PuddingRuntime(AgentExecutionService, MemoryEngine)",
+      "entry_points": [],
+      "executor_type": "human",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "doc_path": "Docs/Features/KeyVaultFeature.md",
+      "task_doc_path": "Docs/Features/KeyVaultFeature.md",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-019",
+      "title": "KeyVaultService 与 API 端点",
+      "summary": "实现 KeyVaultService 完整业务逻辑和 KeyVaultController REST 端点，依赖 task-20260502-018",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [],
+      "completed": false,
+      "created_at": "2026-05-02T14:36:30Z",
+      "updated_at": "2026-05-02T14:36:30Z",
+      "depends_on": [
+        "task-20260502-018"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "实现 KeyVaultService（解锁/锁定/注入/剥离）和 KeyVaultController REST API",
+      "out_of_scope": "前端页面、Agent Loop 集成、加密算法实现",
+      "acceptance_criteria": [
+        "POST /api/key-vault/unlock 返回解锁成功",
+        "GET /api/key-vault/entries 返回列表不含明文",
+        "Inject 正确解析 {{vault:name}} 占位符",
+        "Strip 正确替换明文为 [REDACTED:name]",
+        "锁定后 API 返回 423 Locked"
+      ],
+      "impact_scope": "PuddingRuntime(KeyVaultService)、PuddingAgent(KeyVaultController)",
+      "entry_points": [],
+      "executor_type": "human",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "doc_path": "Docs/Features/KeyVaultFeature.md",
+      "task_doc_path": "Docs/Features/KeyVaultFeature.md",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-018",
+      "title": "KeyVault 数据模型与加密层",
+      "summary": "在 PuddingCore 定义 KeyVaultEntry 实体、IKeyVaultStore 接口、IKeyVaultCrypto 接口; 在 PuddingRuntime 实现 AesGcmCrypto; 创建 EF Core 实体映射和数据库迁移",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [],
+      "completed": false,
+      "created_at": "2026-05-02T14:36:14Z",
+      "updated_at": "2026-05-02T14:36:14Z",
+      "depends_on": [],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "完成密钥保管箱的数据模型、加密接口和加密实现，新增 VaultKeyEntries 表到 SQLite",
+      "out_of_scope": "KeyVaultService 业务逻辑、API 端点、前端页面、Agent Loop 集成",
+      "acceptance_criteria": [
+        "dotnet build 通过 0 error 0 warning",
+        "VaultKeyEntries 表通过 EF Migration 成功创建",
+        "AesGcmCrypto Encrypt/Decrypt 往返测试通过",
+        "EncryptedValue 在数据库中为非明文 BLOB"
+      ],
+      "impact_scope": "PuddingCore(新增KeyVault命名空间)、PuddingRuntime(新增AesGcmCrypto)、PuddingAgent(EFCoreMigration)",
+      "entry_points": [],
+      "executor_type": "human",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "doc_path": "Docs/Features/KeyVaultFeature.md",
+      "task_doc_path": "Docs/Features/KeyVaultFeature.md",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-017",
+      "title": "连接器基础设施与Webhook连接器实现",
+      "status": "pending",
+      "priority": "P0",
+      "owner": "dahuang",
+      "project": "Pudding",
+      "tags": [
+        "连接器",
+        "Webhook",
+        "Connector",
+        "基础设施"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T14:33:22Z",
+      "updated_at": "2026-05-02T14:33:22Z",
+      "depends_on": [
+        "task-20260502-010"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "实现IPuddingConnector接口+ConnectorHost+WebhookConnector，建立连接器基础设施层。Webhook入站→IngressEnvelope→OnEventReceived回调链路。",
+      "out_of_scope": "MQTT/Email连接器、EventRouter、BranchSessionManager、子代理、旧Adapter迁移、UI界面",
+      "acceptance_criteria": [
+        "IPuddingConnector接口及6个模型在PuddingCore中编译通过",
+        "ConnectorHost能注册并管理多个连接器生命周期",
+        "POST /webhook/test → PuddingIngressEnvelope → OnEventReceived触发",
+        "ConnectorHost同时管理新旧接口（IPuddingConnector+IPuddingGatewayAdapter）",
+        "dotnet build零错误",
+        "连接器配置持久化到SQLite ConnectorConfig表"
+      ],
+      "impact_scope": "PuddingCore新增IPuddingConnector接口+6模型；PuddingAgent新增ConnectorHost+WebhookConnector；新增SQLite ConnectorConfig表",
+      "entry_points": [
+        "Source/PuddingCore/Platform/（新增IPuddingConnector.cs）",
+        "Source/PuddingAgent/Connectors/（新增ConnectorHost.cs、WebhookConnector.cs）",
+        "Docs/Tasks/task36-event-trigger-and-subagent.md",
+        "Docs/架构.md",
+        "Docs/07架构/04PuddingController与Gateway.md"
+      ],
+      "risk_notes": "接口设计可能需要调整；新旧并存增加复杂度；Webhook签名算法需确认",
+      "executor_type": "hybrid",
+      "assigned_agent": "dahuang",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "draft",
+      "doc_path": "Docs/Tasks/task37-connector-infra-webhook.md",
+      "task_doc_path": "Docs/Tasks/task37-connector-infra-webhook.md",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-015",
+      "title": "S3: 前端 AI 服务商管理页面 — 适配 V1 API",
+      "status": "pending",
+      "priority": "P2",
+      "owner": "WangXianQiang",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "frontend",
+        "服务商",
+        "migration"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T13:17:07Z",
+      "updated_at": "2026-05-02T13:17:07Z",
+      "depends_on": [
+        "task-20260502-014",
+        "task-20260502-002"
+      ],
+      "blocks": [],
+      "parent_id": "task-20260502-012",
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "复用现有 llm-resource-pool 管理页面，适配新 V1 API 端点，确保服务商注册/编辑/删除、模型增删改、配额管理功能完整可用",
+      "out_of_scope": "不做 UI 重新设计、不新增协议类型支持、不做国际化更新",
+      "acceptance_criteria": [
+        "页面 /llm-resource-pool 可访问并正确加载数据",
+        "服务商 CRUD 操作正常（注册/编辑/删除）",
+        "模型管理子页面正常（增删改模型）",
+        "配额设置和查看正常",
+        "API Key 输入框不显示已保存的明文"
+      ],
+      "impact_scope": "Source/PuddingPlatformAdmin/src/pages/llm-resource-pool/index.tsx, api.ts",
+      "entry_points": [
+        "Source/PuddingPlatformAdmin/src/pages/llm-resource-pool/index.tsx",
+        "Source/PuddingPlatformAdmin/src/services/platform/api.ts"
+      ],
+      "risk_notes": "需确认新 V1 的 API 基础路径是否变化。旧页面依赖 @ant-design/pro-components，需确认新前端构建是否包含此依赖",
+      "executor_type": "agent",
+      "lease_minutes": 45,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-014",
+      "title": "S2: Provider CRUD API — 服务商/模型管理接口",
+      "status": "pending",
+      "priority": "P1",
+      "owner": "WangXianQiang",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "API",
+        "服务商",
+        "migration"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T13:16:52Z",
+      "updated_at": "2026-05-02T13:16:52Z",
+      "depends_on": [
+        "task-20260502-013"
+      ],
+      "blocks": [],
+      "parent_id": "task-20260502-012",
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "在新 V1 ASP.NET Core 宿主中注册 LlmProviderApiController，实现服务商/模型的 CRUD + 配额管理 API，复用 PuddingCore 的 OpenAI 网关",
+      "out_of_scope": "不实现 Anthropic/Azure/Custom 协议、不做 API 版本管理",
+      "acceptance_criteria": [
+        "GET/POST/PUT/DELETE /api/llm/providers 全部可用",
+        "GET/POST/PUT/DELETE /api/llm/providers/{id}/models 全部可用",
+        "配额管理接口（GET/PUT quota, reset-daily）可用",
+        "API Key 在 DTO 中不返回明文（用 hasApiKey bool 替代）",
+        "Swagger/OpenAPI 可查看接口文档"
+      ],
+      "impact_scope": "Source/PuddingAgent/Controllers/ (新建 API Controller)",
+      "entry_points": [
+        "参考旧 Controller: Source/PuddingPlatform/Controllers/Api/LlmProviderApiController.cs",
+        "网关接口: Source/PuddingCore/Abstractions/ILlmGateway.cs"
+      ],
+      "risk_notes": "需适配 SQLite 的异步查询特性（无 Npgsql 特有方法）。DTO 映射逻辑可直接复用旧代码",
+      "executor_type": "agent",
+      "lease_minutes": 60,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-013",
+      "title": "S1: SQLite 实体与数据层 — AI 服务商/模型/配额",
+      "status": "pending",
+      "priority": "P1",
+      "owner": "WangXianQiang",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "数据层",
+        "服务商",
+        "migration"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T13:14:47Z",
+      "updated_at": "2026-05-02T13:14:47Z",
+      "depends_on": [
+        "task-20260502-001",
+        "task-20260502-007"
+      ],
+      "blocks": [],
+      "parent_id": "task-20260502-012",
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "在新 V1 数据项目中建立 LlmProviderEntity/LlmModelEntity/LlmProviderQuotaEntity，适配 SQLite，添加 EF Core DbSet 和迁移",
+      "out_of_scope": "不涉及 PostgreSQL 兼容、不涉及旧数据迁移",
+      "acceptance_criteria": [
+        "三个实体定义完成并适配 SQLite",
+        "EF Core DbContext 包含对应 DbSet",
+        "dotnet ef migrations add 生成迁移脚本",
+        "dotnet build 通过"
+      ],
+      "impact_scope": "Source/PuddingAgent/Data/ (新建), PuddingCore 实体引用",
+      "entry_points": [
+        "参考旧实体: Source/PuddingPlatform/Data/Entities/LlmProviderEntity.cs",
+        "SQLite 规范: Docs/07架构/08数据模型与配置.md"
+      ],
+      "risk_notes": "旧实体有 PostgreSQL 特有注解（如 Npgsql），需清理。API Key 字段需注意安全（前端不返回明文，但存储层先不加密）",
+      "executor_type": "agent",
+      "lease_minutes": 45,
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-012",
+      "title": "AI 服务商管理功能 — 迁移到 V1 新架构（OpenAI 协议优先）",
+      "status": "pending",
+      "priority": "P1",
+      "project": "Pudding",
+      "tags": [
+        "V1",
+        "服务商",
+        "OpenAI",
+        "迁移",
+        "frontend",
+        "backend",
+        "数据层"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T13:05:04Z",
+      "updated_at": "2026-05-02T23:24:52Z",
+      "depends_on": [
+        "task-20260502-001",
+        "task-20260502-002",
+        "task-20260502-007"
+      ],
+      "blocks": [],
+      "subtask_ids": [
+        "task-20260502-013",
+        "task-20260502-014",
+        "task-20260502-015"
+      ],
+      "notes": [],
+      "goal": "将 AI 服务商管理（注册/修改/删除/模型管理/配额）从旧多服务架构迁移到 V1 单进程 Pudding Agent 架构。首先实现 OpenAI 协议（protocol=openai），其他协议后续扩展。",
+      "out_of_scope": "Agent 设置/模板/角色管理（Agent 配置属于独立模块）",
+      "acceptance_criteria": [
+        "前端：AI 服务商管理页面可访问（/llm-resource-pool），支持 CRUD",
+        "前端：可注册/编辑/删除 AI 服务商，配置 API Key、Base URL",
+        "前端：可在服务商下管理模型列表（增删改），配置能力标签",
+        "后端：Provider CRUD API 在新 ASP.NET Core 宿主中可用",
+        "后端：数据持久化到 SQLite，重启后不丢失",
+        "后端：OpenAI 协议网关可正常调用 LLM API（流式+非流式）",
+        "API Key 在前端不返回明文"
+      ],
+      "impact_scope": "涉及新 V1 宿主的 Web API 层、SQLite 数据层、前端 UI 层。核心复用 PuddingCore 中已有的 ILlmGateway/OpenAiLlmGateway 抽象。",
+      "entry_points": [
+        "Source/PuddingPlatform/Controllers/Api/LlmProviderApiController.cs",
+        "Source/PuddingPlatform/Data/Entities/LlmProviderEntity.cs",
+        "Source/PuddingCore/Abstractions/ILlmGateway.cs",
+        "Source/PuddingCore/Core/OpenAiLlmGateway.cs",
+        "Source/PuddingPlatformAdmin/src/pages/llm-resource-pool/index.tsx",
+        "Source/PuddingPlatformAdmin/src/services/platform/api.ts",
+        "Docs/07架构/08数据模型与配置.md",
+        "Docs/07架构/09V1落地与验收.md"
+      ],
+      "risk_notes": "旧 Provider 实体在 V1 文档中被列为「废弃实体」。需评估是否在 SQLite 中重新建立精简版实体，还是走纯配置文件（appsettings.json）方式。建议先在 SQLite 中实现完整实体，后续按需简化。API Key 明文存储需在后续迭代中迁移到安全存储。",
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_agent_summary": "边界澄清：服务商管理仅管理 AI API 提供商（注册/修改/删除/模型/配额），不包括 Agent 设置",
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-009",
+      "title": "单文件发布与打包",
+      "status": "pending",
+      "priority": "P1",
+      "project": "Pudding",
+      "tags": [
+        "Pudding",
+        "V1",
+        "release"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T11:55:51Z",
+      "updated_at": "2026-05-02T11:58:13Z",
+      "depends_on": [
+        "task-20260502-001",
+        "task-20260502-002"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "dotnet publish 生成单个可执行文件，内嵌前端 + SQLite，用户下载即可运行",
+      "acceptance_criteria": [
+        "Windows/Linux/macOS 三平台可构建",
+        "双击可启动，浏览器自动打开"
+      ],
+      "entry_points": [],
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-008",
+      "title": "实现多轮会话与工具调用框架",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [
+        "Pudding",
+        "V1",
+        "runtime"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T11:54:53Z",
+      "updated_at": "2026-05-02T11:58:05Z",
+      "depends_on": [
+        "task-20260502-001",
+        "task-20260502-007"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "Runtime 模块驱动多轮 LLM 对话循环，支持工具调用（function calling）",
+      "acceptance_criteria": [
+        "多轮对话上下文正确传递",
+        "至少 1 个工具可被 LLM 调用并返回结果",
+        "超时/错误可正确处理"
+      ],
+      "entry_points": [],
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-007",
+      "title": "实现 SQLite 数据持久化层",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [
+        "Pudding",
+        "V1",
+        "data"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T11:54:52Z",
+      "updated_at": "2026-05-02T11:57:54Z",
+      "depends_on": [
+        "task-20260502-001"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "使用 EF Core + SQLite 实现会话历史、记忆条目、Agent 配置的持久化存储",
+      "acceptance_criteria": [
+        "对话历史重启后保留",
+        "Agent 配置可读写",
+        "WAL 模式启用"
+      ],
+      "entry_points": [],
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-006",
+      "title": "清理过渡代码：移除旧 CLI/PuddingCode/多服务架构残留",
+      "status": "pending",
+      "priority": "P1",
+      "project": "Pudding",
+      "tags": [
+        "Pudding",
+        "V1",
+        "cleanup"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T11:51:42Z",
+      "updated_at": "2026-05-02T11:57:31Z",
+      "depends_on": [
+        "task-20260502-001"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "删除不再需要的旧项目引用、废弃的 Docker Compose 服务、旧的架构代码",
+      "acceptance_criteria": [
+        "dotnet build 通过且无旧命名空间引用",
+        "docker-compose.yml 仅含单容器"
+      ],
+      "entry_points": [],
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-005",
+      "title": "实现 P2P 节点发现与直连通信",
+      "status": "pending",
+      "priority": "P1",
+      "project": "Pudding",
+      "tags": [
+        "Pudding",
+        "V1",
+        "p2p"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T11:51:32Z",
+      "updated_at": "2026-05-02T11:57:47Z",
+      "depends_on": [
+        "task-20260502-001"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "基于 mDNS 实现局域网内 Agent 自动发现，HTTP/gRPC 直连通信",
+      "out_of_scope": "DHT 广域网发现、NAT 穿透",
+      "acceptance_criteria": [
+        "两个 Agent 进程可互相发现",
+        "可跨节点发送消息并获得回复"
+      ],
+      "entry_points": [],
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    },
+    {
+      "id": "task-20260502-002",
+      "title": "实现内嵌 Web Chat 对话界面",
+      "status": "pending",
+      "priority": "P0",
+      "project": "Pudding",
+      "tags": [
+        "Pudding",
+        "V1",
+        "frontend"
+      ],
+      "completed": false,
+      "created_at": "2026-05-02T11:51:20Z",
+      "updated_at": "2026-05-02T11:57:23Z",
+      "depends_on": [
+        "task-20260502-001"
+      ],
+      "blocks": [],
+      "subtask_ids": [],
+      "notes": [],
+      "goal": "React 前端打包嵌入 ASP.NET Core，提供对话输入/回复/历史展示",
+      "out_of_scope": "多 Agent 管理界面、Workspace 配置界面",
+      "acceptance_criteria": [
+        "Web UI 可通过 localhost:8080 访问",
+        "可输入消息并显示 LLM 回复",
+        "对话历史在刷新后保留"
+      ],
+      "entry_points": [],
+      "executor_type": "hybrid",
+      "lease_minutes": 60,
+      "human_owner": "WangXianQiang",
+      "requires_human_confirmation": false,
+      "last_operator_id": "dahuang",
+      "last_operator_name": "大黄",
+      "stage": "ready",
+      "reflection_required": false,
+      "docs_synced": false
+    }
+  ]
+}

@@ -6,6 +6,7 @@ export default {
   'menu.globalAgentTemplate': '全局 Agent 模板',
   'menu.capabilityManagement': '能力管理',
   'menu.skillManagement': 'SKILL 管理',
+  'menu.keyVault': '密钥保管箱',
   'menu.workspaceAgentTemplate': '场景 Agent 模板',
   'menu.userManagement': '用户管理',
   'menu.roleManagement': '权限角色',
