@@ -1,0 +1,27 @@
+{
+  "title": "Chat 核心体验升级 — 时间戳、重试、骨架屏、欢迎引导",
+  "priority": "P0",
+  "project": "Pudding",
+  "tags": ["V1", "UI", "Chat", "体验"],
+  "goal": "补齐聊天界面最基础的用户体验要素：消息时间线可追踪、发送失败可恢复、加载过程可感知、新用户有引导。",
+  "out_of_scope": "流式输出效果（见 Task-UI-02）、消息搜索、会话历史列表（见 Task-UI-03）",
+  "acceptance_criteria": [
+    "AC1: 每条消息气泡旁显示相对时间戳（刚刚/X分钟前/X小时前），hover 显示精确时间",
+    "AC2: 间隔超过5分钟的消息组之间显示时间分隔线（如 '—— 15:32 ——'）",
+    "AC3: 发送失败的消息保留原文，气泡显示错误状态+「重新发送」按钮，点击后重试",
+    "AC4: 消息加载中显示骨架屏（Skeleton）而非仅 Spin，模拟2-3条气泡轮廓",
+    "AC5: 未选择 Agent 时显示欢迎引导页：Pudding 头像/Logo + 能力简介 + 3-5个快捷提示词入口",
+    "AC6: 点击快捷提示词自动填入输入框或直接发送"
+  ],
+  "impact_scope": "Source/PuddingPlatformAdmin/src/pages/chat/index.tsx",
+  "entry_points": [
+    "Docs/架构.md §V1 单进程模型",
+    "现有 Chat 页面: Source/PuddingPlatformAdmin/src/pages/chat/index.tsx"
+  ],
+  "risk_notes": "快捷提示词需要定义能力边界描述，需与后端 Agent 能力对齐。骨架屏与消息渲染共用样式需注意一致性。",
+  "depends_on": [],
+  "executor_type": "lightweight-developer",
+  "stage": "done",
+  "lease_minutes": 120,
+  "module_count": 1
+}

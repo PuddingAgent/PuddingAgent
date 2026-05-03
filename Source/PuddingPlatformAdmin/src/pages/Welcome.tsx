@@ -123,7 +123,7 @@ const Welcome: React.FC = () => {
         <StatisticCard.Divider />
         <StatisticCard
           statistic={{
-            title: '工作空间',
+            title: '场景',
             value: 3,
             icon: (
               <ClusterOutlined
@@ -138,7 +138,7 @@ const Welcome: React.FC = () => {
             ),
             description: (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                含 1 个默认空间
+                含 1 个默认场景
               </Text>
             ),
           }}
@@ -242,7 +242,7 @@ const Welcome: React.FC = () => {
               >
                 <Space>
                   <ClusterOutlined style={{ color: '#faad14' }} />
-                  <Text>工作空间列表</Text>
+                  <Text>场景列表</Text>
                 </Space>
               </ProCard>
               <ProCard

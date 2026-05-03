@@ -4,4 +4,5 @@ namespace PuddingCode.Models;
 public sealed record LlmResponse(
     string? Content,
     IReadOnlyList<ToolCall>? ToolCalls,
-    string? ReasoningContent = null);
+    string? ReasoningContent = null,
+    TokenUsageDto? Usage = null);

@@ -1,4 +1,6 @@
 ﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -142,6 +144,7 @@ public sealed class AgentExecutionService
         var                stopReason     = AgentLoopStopReason.MaxRoundsReached;
         var                execState      = AgentExecutionState.Running;
         string?            resumeAnchorId = null;
+        TokenUsageDto?     usage          = null;
 
         // 记录本次 dispatch 前已有的 journal 条数，用于在结束时截取本次新增的 turns
         var journalStartCount = _journal.GetTurns(request.SessionId).Count;
@@ -195,6 +198,8 @@ public sealed class AgentExecutionService
                 var llmResp = await _llmClient.ChatAsync(
                     request.WorkspaceId, request.SessionId,
                     request.AgentTemplateId, history, llmTools, request.LlmConfig, ct);
+                if (llmResp.Usage is not null)
+                    usage = llmResp.Usage;
                 llmSw.Stop();
 
                 var rawText = llmResp.Content ?? "{}";
@@ -490,7 +495,7 @@ public sealed class AgentExecutionService
         {
             stopReason = AgentLoopStopReason.Cancelled;
             execState  = AgentExecutionState.Cancelled;
-            _logger.LogWarning("[AgentExec] Cancelled session={Session}", request.SessionId);
+            _logger.LogInformation("[AgentExec] Cancelled session={Session}", request.SessionId);
             await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
         }
         catch (Exception ex)
@@ -510,6 +515,7 @@ public sealed class AgentExecutionService
                 ExecutionState  = AgentExecutionState.Failed,
                 StopReason      = AgentLoopStopReason.Failed.ToString(),
                 ErrorMessage    = ex.Message,
+                Usage           = usage,
                 TurnSteps       = CollectNewTurnSteps(request.SessionId, journalStartCount),
             };
         }
@@ -550,8 +556,142 @@ public sealed class AgentExecutionService
             StopReason      = stopReason.ToString(),
             ResumeAnchorId  = resumeAnchorId,
             ErrorMessage    = isSuccess ? null : $"Execution ended with state={execState}",
+            Usage           = usage,
             TurnSteps       = CollectNewTurnSteps(request.SessionId, journalStartCount),
         };
+    }
+
+    /// <summary>
+    /// 面向 Chat UI 的流式执行路径。
+    /// 它沿用 Session/Memory/LLM 配置链路，但刻意使用直接 Markdown 回复提示，
+    /// 避免把结构化 Agent Loop JSON（status/tool/meta）逐 token 暴露给用户界面。
+    /// </summary>
+    public async IAsyncEnumerable<ServerSentEventFrame> ExecuteStreamAsync(
+        RuntimeDispatchRequest request,
+        [EnumeratorCancellation] CancellationToken external = default)
+    {
+        _logger.LogInformation(
+            "[AgentExec] STREAM session={Session} template={Template} msgLen={Len} hasLlmConfig={HasCfg}",
+            request.SessionId, request.AgentTemplateId,
+            request.MessageText.Length, request.LlmConfig is not null);
+
+        var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId);
+        _runtimeSessionStore.GetOrCreate(
+            request.SessionId, instance.AgentInstanceId,
+            request.WorkspaceId, request.AgentTemplateId);
+
+        var skillPackages = request.SkillPackages ?? [];
+        _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
+        if (skillPackages.Count > 0)
+            await _skillPackageDownloader.EnsureDownloadedAsync(skillPackages);
+
+        const string globalPrefix = "global:";
+        var canonicalTemplateId = request.AgentTemplateId.StartsWith(globalPrefix, StringComparison.OrdinalIgnoreCase)
+            ? request.AgentTemplateId[globalPrefix.Length..]
+            : request.AgentTemplateId;
+
+        var template = BuiltInAgentTemplates.FindById(canonicalTemplateId)
+                       ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
+        var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
+
+        var history = _histories.GetOrAdd(request.SessionId, _ => []);
+        if (history.Count == 0)
+        {
+            history.Add(new ChatMessage(ChatRole.System,
+                BuildStreamingSystemPrompt(template, request.SessionId, request.WorkspaceId, effectiveCapability, instance.AgentInstanceId)));
+        }
+        else if (history[0].Role == ChatRole.System)
+        {
+            history[0] = new ChatMessage(ChatRole.System,
+                BuildStreamingSystemPrompt(template, request.SessionId, request.WorkspaceId, effectiveCapability, instance.AgentInstanceId));
+        }
+        history.Add(new ChatMessage(ChatRole.User, request.MessageText));
+
+        var loopCtx = new AgentLoopContext
+        {
+            SessionId       = request.SessionId,
+            AgentInstanceId = instance.AgentInstanceId,
+            WorkspaceId     = request.WorkspaceId,
+            AgentTemplateId = request.AgentTemplateId,
+            UserMessage     = request.MessageText,
+            MaxRounds       = 1,
+        };
+
+        var ct = _controlRegistry.CreateLinkedToken(request.SessionId, external);
+        var finalMessage = new StringBuilder();
+        TokenUsageDto? usage = null;
+
+        await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
+
+        try
+        {
+            // Streaming chat intentionally does not expose function-call deltas to the UI.
+            // Tool execution remains available on the synchronous structured loop path.
+            await foreach (var delta in _llmClient.ChatStreamAsync(
+                request.WorkspaceId,
+                request.SessionId,
+                request.AgentTemplateId,
+                history,
+                tools: null,
+                llmConfig: request.LlmConfig,
+                ct: ct))
+            {
+                if (delta.Usage is not null)
+                {
+                    usage = delta.Usage;
+                    yield return ServerSentEventFrame.Json("usage", usage);
+                }
+
+                if (!string.IsNullOrEmpty(delta.ContentDelta))
+                {
+                    finalMessage.Append(delta.ContentDelta);
+                    yield return ServerSentEventFrame.Json("delta", new { delta = delta.ContentDelta });
+                }
+
+                if (delta.ToolCallIndex is not null)
+                {
+                    yield return ServerSentEventFrame.Json("step", new
+                    {
+                        status = "TOOL_CALL_DELTA",
+                        message = "模型请求工具调用；当前流式 UI 路径仅展示自然语言回复。",
+                        toolCallIndex = delta.ToolCallIndex,
+                    });
+                }
+            }
+
+            var reply = finalMessage.Length > 0 ? finalMessage.ToString() : "（Agent 未返回可展示文本）";
+            history.Add(new ChatMessage(ChatRole.Assistant, reply));
+
+            if (template.Memory?.EnableSessionMemory == true
+             || template.Memory?.EnableWorkspaceMemory == true)
+            {
+                _memory.WriteBack(reply, request.SessionId, request.WorkspaceId, instance.AgentInstanceId);
+            }
+
+            TrimHistory(history, template.Runtime?.MaxContextTokens ?? 8192);
+            _sessionManager.Touch(request.SessionId);
+            _runtimeSessionStore.Touch(request.SessionId);
+
+            await FireHooksAsync(h => h.OnCompletedAsync(loopCtx, reply, ct));
+            await FireHooksAsync(h => h.OnLoopCompleteAsync(loopCtx, reply, AgentLoopStopReason.Done, ct));
+
+            _logger.LogInformation(
+                "[AgentExec] STREAM end session={Session} replyLen={Len} usage={Usage}",
+                request.SessionId, reply.Length, usage?.TotalTokens);
+
+            yield return ServerSentEventFrame.Json("done", new { reply, usage });
+        }
+        finally
+        {
+            if (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation("[AgentExec] STREAM cancelled session={Session}", request.SessionId);
+                await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, CancellationToken.None));
+            }
+
+            _controlRegistry.Remove(request.SessionId);
+            _skillPackageRegistry.Remove(instance.AgentInstanceId);
+        }
     }
 
     /// <summary>央取本次 dispatch 新增的 journal turns 并转换为 DTO。</summary>
@@ -660,6 +800,50 @@ public sealed class AgentExecutionService
         }
 
         sb.Append(_skillRuntime.BuildLoopInstructions(capability));
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 构建 Chat UI 流式回复专用提示。
+    /// 与结构化 Loop 提示不同，这里要求模型直接输出 Markdown，
+    /// 因为 SSE 会逐 token 到达浏览器，任何控制 JSON 都会被用户立即看到。
+    /// </summary>
+    private string BuildStreamingSystemPrompt(
+        AgentTemplateDefinition template,
+        string sessionId,
+        string? workspaceId,
+        CapabilityPolicy? capability,
+        string agentInstanceId)
+    {
+        var sb = new StringBuilder(template.SystemPrompt ?? "You are a helpful assistant.");
+
+        if (template.Memory?.EnableSessionMemory == true
+         || template.Memory?.EnableWorkspaceMemory == true)
+        {
+            var memCtx = _memory.BuildMemoryContext(sessionId, workspaceId);
+            if (memCtx is not null)
+                sb.Append("\n\n---\n").Append(memCtx);
+        }
+
+        var pkgs = _skillPackageRegistry.Get(agentInstanceId);
+        if (pkgs.Count > 0)
+        {
+            sb.Append("\n\n---\n## Available Skill Packages\n");
+            foreach (var pkg in pkgs)
+            {
+                sb.Append($"- **{pkg.Name}** (`/skills/{pkg.SkillPackageId}/`)");
+                if (!string.IsNullOrWhiteSpace(pkg.Description))
+                    sb.Append($": {pkg.Description}");
+                sb.AppendLine();
+            }
+        }
+
+        sb.Append("\n\n---\n");
+        sb.AppendLine("Respond directly to the user in Markdown.");
+        sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
+        sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
+        if (capability?.AllowedToolNames is { Count: > 0 })
+            sb.AppendLine("If a task requires tools, explain the limitation briefly instead of emitting tool-call JSON.");
         return sb.ToString();
     }
 

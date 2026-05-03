@@ -2,7 +2,7 @@
 name: super-dev
 description: "超级开发 Agent：使用 Claude Opus 4.7 处理架构级实现、跨多模块复杂改动、核心算法、密码学核心、并发/性能关键路径、不可逆变更等高难度高风险开发任务。"
 argument-hint: "高复杂度任务ID 或描述，例如 'TASK-200 实现 P2P 网络层|重构 Agent 核心管线'、'实现 P2P 网络层|重构 Agent 核心管线' 或 '实现 P2P 网络层|重构 Agent 核心管线'"
-model: Claude Opus 4.7 (copilot)
+model: GPT-5.5 (copilot)
 tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'todo']
 handoffs:
   - label: HandoffToArchitect

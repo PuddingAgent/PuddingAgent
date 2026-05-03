@@ -58,4 +58,79 @@ public class MessageIngressController : ControllerBase
 
         return Ok(response);
     }
+
+    /// <summary>
+    /// POST /api/messageingress/stream
+    /// 发送消息并以 SSE 事件流返回 Agent 回复。
+    /// </summary>
+    [HttpPost("stream")]
+    public async Task PostStream(
+        [FromBody] MessageIngressRequest request,
+        CancellationToken ct)
+    {
+        ConfigureSseResponse(Response);
+
+        if (string.IsNullOrWhiteSpace(request.ChannelId))
+        {
+            await WriteSseAsync(Response, "error", new { message = "ChannelId is required" }, ct);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(request.UserExternalId))
+        {
+            await WriteSseAsync(Response, "error", new { message = "UserExternalId is required" }, ct);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(request.MessageText))
+        {
+            await WriteSseAsync(Response, "error", new { message = "MessageText is required" }, ct);
+            return;
+        }
+
+        var correlationId = request.CorrelationId ?? "(none)";
+        _logger.LogInformation(
+            "[Ingress] STREAM ws={Ws} channel={Ch} user={User} hasLlmConfig={HasConfig} correlationId={CorrId}",
+            request.WorkspaceId ?? "default", request.ChannelId, request.UserExternalId,
+            request.LlmConfig is not null, correlationId);
+
+        try
+        {
+            await foreach (var frame in _router.RouteMessageStreamAsync(request, ct))
+                await WriteRawSseAsync(Response, frame, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[Ingress] STREAM cancelled correlationId={CorrId}", correlationId);
+            await WriteSseAsync(Response, "cancelled", new { correlationId }, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Ingress] STREAM failed correlationId={CorrId}", correlationId);
+            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+        }
+    }
+
+    private static void ConfigureSseResponse(HttpResponse response)
+    {
+        response.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Connection = "keep-alive";
+        response.Headers["X-Accel-Buffering"] = "no";
+    }
+
+    private static async Task WriteRawSseAsync(
+        HttpResponse response,
+        ServerSentEventFrame frame,
+        CancellationToken ct)
+    {
+        await response.WriteAsync($"event: {frame.Event}\n", ct);
+        await response.WriteAsync($"data: {frame.Data}\n\n", ct);
+        await response.Body.FlushAsync(ct);
+    }
+
+    private static Task WriteSseAsync(
+        HttpResponse response,
+        string eventName,
+        object payload,
+        CancellationToken ct) =>
+        WriteRawSseAsync(response, ServerSentEventFrame.Json(eventName, payload), ct);
 }

@@ -23,4 +23,7 @@ public sealed record StreamDelta
 
     /// <summary>Finish reason: "stop", "tool_calls", etc. null if not finished.</summary>
     public string? FinishReason { get; init; }
+
+    /// <summary>Token usage payload, usually emitted by the final streaming chunk.</summary>
+    public TokenUsageDto? Usage { get; init; }
 }

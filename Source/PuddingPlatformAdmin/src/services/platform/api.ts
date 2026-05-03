@@ -1034,6 +1034,13 @@ export interface AdminChatRequest {
   agentId?: string;
 }
 
+export interface TokenUsageDto {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  contextWindowTokens?: number;
+}
+
 /** 单轮工具调用步骤摘要（对应后端 TurnStepDto）。 */
 export interface TurnStep {
   round: number;
@@ -1053,9 +1060,19 @@ export interface AdminChatResponse {
   reply?: string;
   isSuccess: boolean;
   errorMessage?: string;
+  usage?: TokenUsageDto;
   /** 本次执行产生的逐轮步骤（包含工具调用记录）。 */
   turnSteps?: TurnStep[];
 }
+
+export type AdminChatStreamEvent =
+  | { type: 'metadata'; messageId: string; sessionId: string; routeDecisionId?: string }
+  | { type: 'delta'; delta: string }
+  | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
+  | { type: 'usage'; usage: TokenUsageDto }
+  | { type: 'done'; reply?: string; usage?: TokenUsageDto }
+  | { type: 'error'; message: string }
+  | { type: 'cancelled'; message?: string };
 
 // ─── Chat API ─────────────────────────────────────────────────
 
@@ -1065,6 +1082,88 @@ export async function sendAdminChatMessage(
   return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
     method: 'POST', data: req,
   });
+}
+
+export async function sendAdminChatMessageStream(
+  workspaceId: string,
+  req: AdminChatRequest,
+  onEvent: (event: AdminChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = localStorage.getItem('pudding_token');
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message/stream`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(req),
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `请求失败 (${response.status})`);
+  }
+
+  if (!response.body) {
+    throw new Error('浏览器不支持流式响应读取。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  const flushFrame = (rawFrame: string) => {
+    const lines = rawFrame.split(/\r?\n/);
+    const eventLine = lines.find((line) => line.startsWith('event:'));
+    const dataLines = lines.filter((line) => line.startsWith('data:'));
+    const eventName = eventLine?.slice('event:'.length).trim();
+    const dataText = dataLines.map((line) => line.slice('data:'.length).trimStart()).join('\n');
+
+    if (!eventName) return;
+
+    let payload: any = {};
+    if (dataText) {
+      try {
+        payload = JSON.parse(dataText);
+      } catch {
+        payload = { message: dataText };
+      }
+    }
+
+    if (eventName === 'metadata') {
+      onEvent({ type: 'metadata', ...payload });
+    } else if (eventName === 'delta') {
+      onEvent({ type: 'delta', delta: payload.delta ?? payload.contentDelta ?? '' });
+    } else if (eventName === 'step') {
+      onEvent({ type: 'step', ...payload });
+    } else if (eventName === 'usage') {
+      onEvent({ type: 'usage', usage: payload });
+    } else if (eventName === 'done') {
+      onEvent({ type: 'done', ...payload });
+    } else if (eventName === 'cancelled') {
+      onEvent({ type: 'cancelled', ...payload });
+    } else if (eventName === 'error') {
+      onEvent({ type: 'error', message: payload.message ?? dataText ?? '流式响应错误' });
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() ?? '';
+    frames.forEach(flushFrame);
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) flushFrame(buffer);
 }
 
 // ─── Runtime 节点管理类型（对齐 PuddingCore.Platform.RuntimeModels）──

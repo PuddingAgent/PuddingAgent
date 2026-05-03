@@ -89,7 +89,7 @@ export default function TeamManagementPage() {
   const [teamForm] = Form.useForm();
   const [teamSaving, setTeamSaving] = useState(false);
 
-  // 团队详情 Drawer（成员 + 工作区）
+  // 团队详情 Drawer（成员 + 场景）
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [teamDetail, setTeamDetail] = useState<TeamDetailDto | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -99,13 +99,13 @@ export default function TeamManagementPage() {
   const [memberForm] = Form.useForm();
   const [allUsers, setAllUsers] = useState<AppUserDto[]>([]);
 
-  // 工作区 Drawer
+  // 场景 Drawer
   const [wsDrawerOpen, setWsDrawerOpen] = useState(false);
   const [editingWs, setEditingWs] = useState<WorkspaceWithPermDto | null>(null);
   const [wsForm] = Form.useForm();
   const [wsSaving, setWsSaving] = useState(false);
 
-  // 工作区成员
+  // 场景成员
   const [wsMembersOpen, setWsMembersOpen] = useState(false);
   const [wsMembers, setWsMembers] = useState<WorkspaceMemberDto[]>([]);
   const [addWsMemberOpen, setAddWsMemberOpen] = useState(false);
@@ -121,7 +121,7 @@ export default function TeamManagementPage() {
       render: (v) => <Tag icon={<TeamOutlined />}>{v as number}</Tag>,
     },
     {
-      title: '工作区数', dataIndex: 'workspaceCount', width: 90,
+      title: '场景数', dataIndex: 'workspaceCount', width: 90,
       render: (v) => <Tag icon={<AppstoreOutlined />}>{v as number}</Tag>,
     },
     {
@@ -135,7 +135,7 @@ export default function TeamManagementPage() {
           <Button size="small" onClick={() => openDetail(r.teamId)}>详情</Button>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEditTeam(r)}>编辑</Button>
           <Popconfirm
-            title={`确认删除团队 "${r.name}"？（需先删除所有工作区）`}
+            title={`确认删除团队 "${r.name}"？（需先删除所有场景）`}
             onConfirm={() => handleDeleteTeam(r.teamId)}
             okText="删除" cancelText="取消"
           >
@@ -240,7 +240,7 @@ export default function TeamManagementPage() {
     }
   }
 
-  // ── 工作区操作 ───────────────────────────────────────────────────
+  // ── 场景操作 ───────────────────────────────────────────────────
   function openCreateWs() {
     setEditingWs(null);
     wsForm.resetFields();
@@ -265,13 +265,13 @@ export default function TeamManagementPage() {
     try {
       if (editingWs) {
         await updateWorkspacePerm(editingWs.workspaceId, values as UpdateWorkspaceRequest);
-        message.success('工作区已更新');
+        message.success('场景已更新');
       } else {
         await createTeamWorkspace(teamDetail.teamId, {
           ...(values as CreateWorkspaceRequest),
           teamId: teamDetail.teamId,
         });
-        message.success('工作区已创建');
+        message.success('场景已创建');
       }
       setWsDrawerOpen(false);
       const detail = await getTeam(teamDetail.teamId);
@@ -287,7 +287,7 @@ export default function TeamManagementPage() {
     if (!teamDetail) return;
     try {
       await deleteWorkspacePerm(workspaceId);
-      message.success('工作区已删除');
+      message.success('场景已删除');
       const detail = await getTeam(teamDetail.teamId);
       setTeamDetail(detail);
     } catch (e: any) {
@@ -327,7 +327,7 @@ export default function TeamManagementPage() {
   }
 
   return (
-    <PageContainer title="团队管理" subTitle="管理平台团队、工作区及访问权限">
+    <PageContainer title="团队管理" subTitle="管理平台团队、场景及访问权限">
       <ProTable<TeamDto>
         actionRef={actionRef}
         rowKey="teamId"
@@ -436,16 +436,16 @@ export default function TeamManagementPage() {
               },
               {
                 key: 'workspaces',
-                label: <><AppstoreOutlined /> 工作区（{teamDetail.workspaces.length}）</>,
+                label: <><AppstoreOutlined /> 场景（{teamDetail.workspaces.length}）</>,
                 children: (
                   <>
                     <div style={{ marginBottom: 12 }}>
                       <Button icon={<PlusOutlined />} onClick={openCreateWs} size="small">
-                        新建工作区
+                        新建场景
                       </Button>
                     </div>
                     {teamDetail.workspaces.length === 0
-                      ? <Empty description="暂无工作区" />
+                      ? <Empty description="暂无场景" />
                       : (
                         <Table
                           rowKey="workspaceId"
@@ -454,7 +454,7 @@ export default function TeamManagementPage() {
                           dataSource={teamDetail.workspaces}
                           columns={[
                             {
-                              title: '工作区', dataIndex: 'name', width: 140,
+                              title: '场景', dataIndex: 'name', width: 140,
                               render: (v: string, r: WorkspaceWithPermDto) => (
                                 <div>
                                   <div>{v}</div>
@@ -495,7 +495,7 @@ export default function TeamManagementPage() {
                                     白名单
                                   </Button>
                                   <Popconfirm
-                                    title="确认删除此工作区？"
+                                    title="确认删除此场景？"
                                     onConfirm={() => handleDeleteWs(r.workspaceId)}
                                     okText="删除" cancelText="取消"
                                   >
@@ -515,9 +515,9 @@ export default function TeamManagementPage() {
         )}
       </Drawer>
 
-      {/* ── 新建/编辑工作区 Drawer ────────────────────────────── */}
+      {/* ── 新建/编辑场景 Drawer ────────────────────────────── */}
       <Drawer
-        title={editingWs ? `编辑工作区：${editingWs.name}` : '新建工作区'}
+        title={editingWs ? `编辑场景：${editingWs.name}` : '新建场景'}
         open={wsDrawerOpen}
         onClose={() => setWsDrawerOpen(false)}
         width={480}
@@ -537,7 +537,7 @@ export default function TeamManagementPage() {
               placeholder="e.g. my-workspace"
             />
           )}
-          <ProFormText name="name" label="工作区名称" rules={[{ required: true }]} />
+          <ProFormText name="name" label="场景名称" rules={[{ required: true }]} />
           <ProFormTextArea name="description" label="描述" rows={2} />
           <ProFormSelect
             name="teamAccessPolicy"
@@ -591,9 +591,9 @@ export default function TeamManagementPage() {
         </Form>
       </Modal>
 
-      {/* ── 工作区白名单成员 Modal ────────────────────────────── */}
+      {/* ── 场景白名单成员 Modal ────────────────────────────── */}
       <Modal
-        title="工作区白名单成员"
+        title="场景白名单成员"
         open={wsMembersOpen}
         onCancel={() => setWsMembersOpen(false)}
         footer={null}
@@ -636,7 +636,7 @@ export default function TeamManagementPage() {
         />
       </Modal>
 
-      {/* ── 添加工作区白名单成员 Modal ────────────────────────── */}
+      {/* ── 添加场景白名单成员 Modal ────────────────────────── */}
       <Modal
         title="添加白名单成员"
         open={addWsMemberOpen}

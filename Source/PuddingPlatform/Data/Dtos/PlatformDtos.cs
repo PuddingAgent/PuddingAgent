@@ -1,3 +1,4 @@
+using PuddingCode.Models;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Data.Dtos;
@@ -512,6 +513,7 @@ public record AdminChatResponse(
     string? Reply,
     bool IsSuccess,
     string? ErrorMessage,
+    TokenUsageDto? Usage,
     IReadOnlyList<TurnStepDto>? TurnSteps
 );
 

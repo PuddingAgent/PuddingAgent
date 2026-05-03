@@ -65,10 +65,12 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        while (!reader.EndOfStream)
+        while (true)
         {
             ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
+
+            if (line is null) break;
 
             if (string.IsNullOrEmpty(line)) continue;           // blank separator
             if (!line.StartsWith("data: ")) continue;           // skip comments / other
@@ -85,12 +87,15 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     private static StreamDelta? ParseStreamChunk(string json)
     {
         var root = JsonNode.Parse(json);
+        var usage = ParseUsage(root?["usage"]);
         var choices = root?["choices"]?.AsArray();
-        if (choices is null || choices.Count == 0) return null;
+        if (choices is null || choices.Count == 0)
+            return usage is not null ? new StreamDelta { Usage = usage } : null;
 
         var choice = choices[0];
         var delta = choice?["delta"];
-        if (delta is null) return null;
+        if (delta is null)
+            return usage is not null ? new StreamDelta { Usage = usage } : null;
 
         var finishReason = choice?["finish_reason"]?.GetValue<string>();
 
@@ -116,7 +121,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
         // Skip empty deltas (only happens on very first chunk sometimes)
         if (contentDelta is null && reasoningDelta is null
-            && tcIndex is null && finishReason is null)
+            && tcIndex is null && finishReason is null && usage is null)
             return null;
 
         return new StreamDelta
@@ -127,7 +132,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             ToolCallId = tcId,
             ToolCallNameDelta = tcNameDelta,
             ToolCallArgsDelta = tcArgsDelta,
-            FinishReason = finishReason
+            FinishReason = finishReason,
+            Usage = usage,
         };
     }
 
@@ -202,6 +208,16 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             ["messages"] = messagesArray,
             ["stream"] = stream
         };
+
+        if (stream)
+        {
+            // OpenAI-compatible providers only emit final usage in streaming mode
+            // when explicitly requested via stream_options.include_usage.
+            requestObj["stream_options"] = new JsonObject
+            {
+                ["include_usage"] = true
+            };
+        }
 
         if (options.Temperature.HasValue)
             requestObj["temperature"] = options.Temperature.Value;
@@ -279,6 +295,30 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             }
         }
 
-        return new LlmResponse(content, toolCalls, reasoningContent);
+        return new LlmResponse(content, toolCalls, reasoningContent, ParseUsage(root?["usage"]));
+    }
+
+    private static TokenUsageDto? ParseUsage(JsonNode? usage)
+    {
+        if (usage is null) return null;
+
+        return new TokenUsageDto
+        {
+            PromptTokens = ReadInt(usage, "prompt_tokens"),
+            CompletionTokens = ReadInt(usage, "completion_tokens"),
+            TotalTokens = ReadInt(usage, "total_tokens"),
+        };
+    }
+
+    private static int? ReadInt(JsonNode usage, string propertyName)
+    {
+        try
+        {
+            return usage[propertyName]?.GetValue<int>();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text;
 using PuddingCode.Platform;
 
 namespace PuddingController.Services;
@@ -60,6 +62,73 @@ public sealed class RuntimeDispatcher
                 IsSuccess = false,
                 ErrorMessage = $"Runtime dispatch failed: {ex.Message}"
             };
+        }
+    }
+
+    /// <summary>将消息分发到 Runtime 的 SSE 执行端点，并逐帧转发。</summary>
+    public async IAsyncEnumerable<ServerSentEventFrame> DispatchStreamAsync(
+        RuntimeDispatchRequest request,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var node = _registry.PickNode();
+        var endpoint = node?.Endpoint ?? _fallbackEndpoint;
+
+        _logger.LogInformation("[RuntimeDispatch] stream session={SessionId} → {Endpoint} (via {Source})",
+            request.SessionId, endpoint, node is null ? "fallback" : "registry");
+
+        using var httpClient = new HttpClient { BaseAddress = new Uri(endpoint) };
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/runtime/execute/stream")
+        {
+            Content = JsonContent.Create(request)
+        };
+        using var response = await httpClient.SendAsync(
+            httpRequest,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError(
+                "[RuntimeDispatch] stream failed status={Status} endpoint={Endpoint} body={Body}",
+                (int)response.StatusCode, endpoint, errorBody);
+            yield return ServerSentEventFrame.Json("error", new { message = $"Runtime stream failed: {errorBody}" });
+            yield break;
+        }
+
+        await foreach (var frame in ReadSseFramesAsync(response, ct))
+            yield return frame;
+    }
+
+    private static async IAsyncEnumerable<ServerSentEventFrame> ReadSseFramesAsync(
+        HttpResponseMessage response,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        string? eventName = null;
+        var data = new StringBuilder();
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(ct);
+            if (line is null) break;
+
+            if (line.Length == 0)
+            {
+                if (eventName is not null && data.Length > 0)
+                    yield return new ServerSentEventFrame(eventName, data.ToString());
+
+                eventName = null;
+                data.Clear();
+                continue;
+            }
+
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+                eventName = line["event: ".Length..].Trim();
+            else if (line.StartsWith("data: ", StringComparison.Ordinal))
+                data.Append(line["data: ".Length..]);
         }
     }
 }

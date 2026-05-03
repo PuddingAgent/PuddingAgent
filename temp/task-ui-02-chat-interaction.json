@@ -1,0 +1,32 @@
+{
+  "title": "Chat 交互增强 — 消息操作、流式输出、停止生成、Token 指示器、快捷指令、Markdown 增强",
+  "priority": "P1",
+  "project": "Pudding",
+  "tags": ["V1", "UI", "Chat", "交互"],
+  "goal": "将聊天体验从「能用」提升到「好用」：消息可操作、输出有动画、生成可中断、上下文可视化、输入更高效、内容更可读。",
+  "out_of_scope": "消息时间戳/重试/骨架屏/欢迎引导（见 Task-UI-01）、会话历史列表（见 Task-UI-03）",
+  "acceptance_criteria": [
+    "AC1: hover 消息气泡显示操作按钮组：复制、重新生成（仅 Agent 消息）、删除",
+    "AC2: Agent 回复以打字机效果逐字/逐词输出，带闪烁光标动画",
+    "AC3: 生成过程中发送按钮变为「停止」按钮，点击中断 LLM 响应",
+    "AC4: 输入区域下方显示 Token 用量进度条或圆环（如 2430/4096，60%），接近上限变黄/红警告",
+    "AC5: 输入框支持 '/' 触发指令菜单，至少实现 /clear（清空对话）、/help（显示帮助）、/export（导出对话）",
+    "AC6: 代码块使用语法高亮（Prism.js 或 highlight.js）+ 右上角一键复制按钮",
+    "AC7: Markdown 表格在窄屏可横向滚动，LaTeX 公式正确渲染（KaTeX）"
+  ],
+  "impact_scope": [
+    "Source/PuddingPlatformAdmin/src/pages/chat/index.tsx（主要）",
+    "Source/PuddingPlatformAdmin/package.json（新增依赖：prismjs/katex）"
+  ],
+  "entry_points": [
+    "Docs/架构.md",
+    "现有 Chat 页面消息渲染逻辑"
+  ],
+  "risk_notes": "打字机效果需后端支持流式响应（SSE/WebSocket）或前端模拟逐字显示。若当前后端不支持流式，此项降级为前端模拟延迟显示。Token 用量需后端 API 返回 usage 字段。快捷指令系统需设计可扩展的指令注册机制。",
+  "depends_on": ["task-ui-01-chat-core"],
+  "executor_type": "dev",
+  "stage": "done",
+  "lease_minutes": 180,
+  "module_count": 2,
+  "architect_review_required": true
+}

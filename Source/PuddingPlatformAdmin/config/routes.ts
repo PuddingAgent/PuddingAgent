@@ -24,19 +24,29 @@ export default [
   },
   {
     path: '/welcome',
-    name: 'welcome',
-    icon: 'dashboard',
-    component: './Welcome',
+    redirect: '/chat',
+    hideInMenu: true,
+  },
+  {
+    path: '/chat',
+    name: 'chat',
+    icon: 'message',
+    component: './chat',
   },
   {
     path: '/workspace',
-    name: 'workspace',
-    icon: 'appstore',
     component: './workspace',
+    hideInMenu: true,
   },
   {
     path: '/workspace/:id',
     component: './workspace/[id]',
+    hideInMenu: true,
+  },
+  {
+    path: '/workspace-agent-template',
+    redirect: '/workspace',
+    hideInMenu: true,
   },
   {
     path: '/llm-resource-pool',
@@ -63,10 +73,6 @@ export default [
     component: './skill-management',
   },
   {
-    path: '/workspace-agent-template',
-    component: './workspace-agent-template',
-  },
-  {
     path: '/user-management',
     name: 'userManagement',
     icon: 'user',
@@ -89,12 +95,6 @@ export default [
     name: 'session',
     icon: 'message',
     component: './session',
-  },
-  {
-    path: '/chat',
-    name: 'chat',
-    icon: 'message',
-    component: './chat',
   },
   {
     path: '/runtime-management',
@@ -128,7 +128,7 @@ export default [
   },
   {
     path: '/',
-    redirect: '/welcome',
+    redirect: '/chat',
   },
   {
     path: '*',

@@ -1,6 +1,6 @@
 ﻿# Pudding Agent — 任务看板
 
-最后更新：2026-05-02（架构简化后重建）
+最后更新：2026-05-03（Task-UI-02 全栈流式改造完成）
 
 ## 项目定位
 
@@ -42,6 +42,15 @@ python .github/skills/todo-api/todo_api.py list-tasks --project Pudding
 | **P2** | L5 自动化 | task-20260502-027 | 实现 Cron 定时任务调度 |
 | **P2** | L5 工作流 | task-20260502-028 | 实现工作流管道（Prompt Chaining + Routing） |
 | **P3** | 远期 | task-20260502-029 | 实现浏览器自动化（P3 远期） |
+
+### UI 任务（PuddingPlatformAdmin）
+
+| 优先级 | 任务卡 ID | 标题 | 状态 | QA |
+|--------|-----------|------|------|-----|
+| **P1** | task-ui-01-chat-core | Chat 核心体验 — 时间戳/重试/骨架屏/欢迎引导 | ✅ done | [PASS_WITH_NOTES](QA/QA-2026-05-03-ChatCoreUpgrade.md) |
+| **P1** | task-ui-02-chat-interaction | Chat 交互增强 — 全栈 SSE 流式改造 + 消息操作 | ✅ done | [PASS_WITH_NOTES](QA/QA-2026-05-03-ChatStreamingUpgrade.md) |
+| **P2** | task-ui-03-visual-system | 视觉系统 — 主题/响应式/动效/无障碍 | 🔲 ready | — |
+| **P2** | task-ui-04-management-details | 管理详情页 — 仪表盘/场景/Agent 详情 | 🔲 ready | — |
 
 ## 技术选型
 

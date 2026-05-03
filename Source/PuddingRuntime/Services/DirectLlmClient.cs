@@ -1,7 +1,10 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Abstractions;
+using PuddingCode.Core;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 
@@ -76,6 +79,54 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         _logger.LogInformation("[DirectLlm] OK contentLen={Len} elapsed={Elapsed}ms", replyContent.Length, sw.ElapsedMilliseconds);
 
-        return new LlmResponse(replyContent, null, null);
+        var usage = body.TryGetProperty("usage", out var usageEl)
+            ? new TokenUsageDto
+            {
+                PromptTokens = usageEl.TryGetProperty("prompt_tokens", out var prompt) ? prompt.GetInt32() : null,
+                CompletionTokens = usageEl.TryGetProperty("completion_tokens", out var completion) ? completion.GetInt32() : null,
+                TotalTokens = usageEl.TryGetProperty("total_tokens", out var total) ? total.GetInt32() : null,
+            }
+            : null;
+
+        return new LlmResponse(replyContent, null, null, usage);
+    }
+
+    public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
+        string workspaceId,
+        string sessionId,
+        string agentTemplateId,
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools = null,
+        LlmConfig? llmConfig = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var endpoint = llmConfig?.Endpoint ?? "https://api.openai.com/v1";
+        var apiKey = llmConfig?.ApiKey ?? "";
+        var model = llmConfig?.ModelId ?? "gpt-4o-mini";
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("LLM_API_KEY not configured.");
+
+        _logger.LogInformation(
+            "[DirectLlm] STREAM model={Model} endpoint={Endpoint} msgCount={Count}",
+            model, endpoint, messages.Count);
+
+        var gateway = new OpenAiLlmGateway(
+            _httpClientFactory.CreateClient("DirectLlm"),
+            new LlmOptions(endpoint, apiKey, model));
+        var toolSpecs = (tools ?? []).Select(t => (ITool)new ProxyTool(t)).ToList();
+
+        await foreach (var delta in gateway.ChatStreamAsync(messages, toolSpecs, ct))
+            yield return delta;
+    }
+
+    private sealed class ProxyTool(LlmToolDefinition dto) : ITool
+    {
+        public string Name => dto.Name;
+        public string Description => dto.Description;
+        public ToolParameterSchema Parameters => dto.Parameters;
+
+        public Task<string> ExecuteAsync(string argumentsJson, CancellationToken ct = default)
+            => throw new NotSupportedException("Proxy tool definitions are only for function schema transport.");
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 using PuddingCode.Platform;
 using PuddingController.Services;
 
@@ -49,7 +50,8 @@ public sealed class LlmProxyController(
             {
                 Content = result.Content,
                 ToolCalls = result.ToolCalls,
-                ReasoningContent = result.ReasoningContent
+                ReasoningContent = result.ReasoningContent,
+                Usage = result.Usage,
             });
         }
         catch (InvalidOperationException ex)
@@ -68,5 +70,78 @@ public sealed class LlmProxyController(
                 request.WorkspaceId, request.SessionId, sw.ElapsedMilliseconds, ex.Message);
             return StatusCode(502, new { error = ex.Message });
         }
+    }
+
+    [HttpPost("chat/stream")]
+    public async Task ChatStream(
+        [FromBody] ControllerLlmChatRequest request,
+        CancellationToken ct)
+    {
+        if (request.Messages is null || request.Messages.Count == 0)
+        {
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            await Response.WriteAsync("messages cannot be empty", ct);
+            return;
+        }
+
+        ConfigureSseResponse(Response);
+
+        try
+        {
+            await foreach (var delta in llmProxyService.ChatStreamAsync(
+                request.WorkspaceId,
+                request.SessionId,
+                request.AgentTemplateId,
+                request.Messages,
+                request.Tools,
+                request.LlmConfig,
+                ct))
+            {
+                if (delta.Usage is not null)
+                    await WriteSseAsync(Response, "usage", delta.Usage, ct);
+
+                if (delta.ContentDelta is not null
+                    || delta.ReasoningDelta is not null
+                    || delta.ToolCallIndex is not null
+                    || delta.FinishReason is not null)
+                {
+                    await WriteSseAsync(Response, "delta", delta, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation(
+                "[LlmProxy] STREAM cancelled ws={Ws} session={Session}",
+                request.WorkspaceId, request.SessionId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "[LlmProxy] STREAM error ws={Ws} session={Session}",
+                request.WorkspaceId, request.SessionId);
+            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+        }
+    }
+
+    private static void ConfigureSseResponse(HttpResponse response)
+    {
+        response.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Connection = "keep-alive";
+        response.Headers["X-Accel-Buffering"] = "no";
+    }
+
+    private static async Task WriteSseAsync(
+        HttpResponse response,
+        string eventName,
+        object payload,
+        CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await response.WriteAsync($"event: {eventName}\n", ct);
+        await response.WriteAsync($"data: {json}\n\n", ct);
+        await response.Body.FlushAsync(ct);
     }
 }

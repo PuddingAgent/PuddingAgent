@@ -1,3 +1,5 @@
+using PuddingCode.Models;
+
 namespace PuddingCode.Platform;
 
 /// <summary>
@@ -60,6 +62,8 @@ public sealed record MessageIngressResponse
     public string? Reply { get; init; }
     public bool IsSuccess { get; init; }
     public string? ErrorMessage { get; init; }
+    /// <summary>本次 LLM 调用返回的 token 用量统计。</summary>
+    public TokenUsageDto? Usage { get; init; }
     /// <summary>本次执行产生的逐轮步骤摘要（包含工具调用记录），由 Runtime → Controller → Platform 逐层透传。</summary>
     public IReadOnlyList<TurnStepDto>? TurnSteps { get; init; }
 }
@@ -124,6 +128,8 @@ public sealed record RuntimeDispatchResult
     public string? ReplyText { get; init; }
     public bool IsSuccess { get; init; }
     public string? ErrorMessage { get; init; }
+    /// <summary>本次 LLM 调用返回的 token 用量统计。</summary>
+    public TokenUsageDto? Usage { get; init; }
     /// <summary>执行结束时的最终状态。</summary>
     public AgentExecutionState ExecutionState { get; init; } = AgentExecutionState.Running;
     /// <summary>Loop 停止原因（对应 AgentLoopStopReason 的字符串值）。</summary>

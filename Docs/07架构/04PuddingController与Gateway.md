@@ -14,6 +14,20 @@
 - 对等 Agent 的 P2P 请求转发
 - **事件路由**：将连接器入站事件分发到正确的处理链路（自己处理或 P2P 转发）
 
+### 流式端点（SSE）
+
+> **2026-05-03**：新增 SSE 流式端点，支持 Chat 打字机效果与可中断生成。
+
+| 端点 | 路径 | 功能 |
+|------|------|------|
+| MessageIngressController | `/api/messageingress/stream` | 接收 Platform 转发的流式消息，路由到 Runtime |
+| LlmProxyController | `/api/internal/llm/chat/stream` | LLM 代理，将 Runtime 请求转发到 OpenAI 兼容 API |
+
+流式端点与同步端点共用 SessionRouter 和 RuntimeDispatcher，区别在于：
+- 返回类型为 `IAsyncEnumerable<ServerSentEventFrame>`（通过 `ConfigureSseResponse` 写入 SSE 响应）
+- 每层 relay 时消费下游 `ServerSentEventFrame`，原样转发上游
+- 取消由独立 `CancellationToken` 逐级传播
+
 ## 连接器（Connector）
 
 连接器是对外部协议通道的完整抽象，**替代旧的 Gateway Adapter Plugin**：

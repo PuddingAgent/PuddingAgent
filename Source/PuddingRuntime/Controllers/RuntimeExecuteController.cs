@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
@@ -61,6 +62,39 @@ public class RuntimeExecuteController : ControllerBase
                 request.SessionId, sw.ElapsedMilliseconds, result.ErrorMessage);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/runtime/execute/stream
+    /// Controller 调用此端点获取 Agent 的 SSE 流式回复。
+    /// </summary>
+    [HttpPost("execute/stream")]
+    public async Task ExecuteStream(
+        [FromBody] RuntimeDispatchRequest request,
+        CancellationToken ct)
+    {
+        ConfigureSseResponse(Response);
+        _logger.LogInformation(
+            "[RuntimeAPI] Stream session={SessionId} ws={Ws} template={Template} hasLlmConfig={HasConfig}",
+            request.SessionId, request.WorkspaceId, request.AgentTemplateId, request.LlmConfig is not null);
+
+        try
+        {
+            await foreach (var frame in _executionService.ExecuteStreamAsync(request, ct))
+            {
+                await WriteRawSseAsync(Response, frame, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[RuntimeAPI] Stream cancelled session={SessionId}", request.SessionId);
+            await WriteSseAsync(Response, "cancelled", new { sessionId = request.SessionId }, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[RuntimeAPI] Stream failed session={SessionId}", request.SessionId);
+            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+        }
     }
 
     /// <summary>
@@ -139,4 +173,29 @@ public class RuntimeExecuteController : ControllerBase
         var anchor = _journal.GetAnchor(sessionId);
         return anchor is null ? NotFound() : Ok(anchor);
     }
+
+    private static void ConfigureSseResponse(HttpResponse response)
+    {
+        response.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Connection = "keep-alive";
+        response.Headers["X-Accel-Buffering"] = "no";
+    }
+
+    private static async Task WriteRawSseAsync(
+        HttpResponse response,
+        ServerSentEventFrame frame,
+        CancellationToken ct)
+    {
+        await response.WriteAsync($"event: {frame.Event}\n", ct);
+        await response.WriteAsync($"data: {frame.Data}\n\n", ct);
+        await response.Body.FlushAsync(ct);
+    }
+
+    private static Task WriteSseAsync(
+        HttpResponse response,
+        string eventName,
+        object payload,
+        CancellationToken ct) =>
+        WriteRawSseAsync(response, ServerSentEventFrame.Json(eventName, payload), ct);
 }

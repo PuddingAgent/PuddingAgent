@@ -142,8 +142,133 @@ public class ChatApiController(
             result.Reply,
             result.IsSuccess,
             result.ErrorMessage,
+                result.Usage,
             result.TurnSteps));
     }
+
+    // POST /api/workspaces/{workspaceId}/chat/message/stream
+    [HttpPost("message/stream")]
+    public async Task<IActionResult> SendMessageStream(
+        string workspaceId, [FromBody] AdminChatRequest req, CancellationToken ct)
+    {
+        logger.LogInformation(
+            "[Chat] STREAM REQUEST ws={WorkspaceId} agentId={AgentId} msgLen={MsgLen}",
+            workspaceId, req.AgentId ?? "(none)", req.MessageText?.Length ?? 0);
+
+        var ws = await db.Workspaces.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId, ct);
+        if (ws is null)
+            return NotFound(new { message = $"Workspace '{workspaceId}' 不存在" });
+
+        if (string.IsNullOrWhiteSpace(req.MessageText))
+            return BadRequest(new { message = "消息内容不能为空" });
+
+        var channelId = $"web-chat-{workspaceId}";
+        var userExternalId = User.Identity?.Name ?? "admin";
+
+        LlmConfig? llmConfig = null;
+        CapabilityPolicy? capabilityPolicy = null;
+        IReadOnlyList<LlmToolDefinition>? toolDefinitions = null;
+        IReadOnlyList<SkillPackageInfo>? skillPackages = null;
+        string? agentTemplateId = null;
+        WorkspaceAgentEntity? agent = null;
+        if (!string.IsNullOrEmpty(req.AgentId))
+        {
+            agent = await db.WorkspaceAgents.AsNoTracking()
+                .FirstOrDefaultAsync(a => a.AgentId == req.AgentId && a.IsEnabled, ct);
+            agentTemplateId = agent?.SourceTemplateId;
+
+            var resolved = await ResolveCapabilitiesAsync(
+                db, workspaceId, agentTemplateId, ct);
+            capabilityPolicy = resolved.Policy;
+            toolDefinitions = resolved.ToolDefinitions;
+            skillPackages = await ResolveSkillPackagesAsync(db, minio, agentTemplateId, ct);
+
+            if (agent?.PreferredProviderId is not null)
+            {
+                var provider = await db.LlmProviders.AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.ProviderId == agent.PreferredProviderId && p.IsEnabled, ct);
+                if (provider is not null)
+                {
+                    llmConfig = new LlmConfig
+                    {
+                        Endpoint = provider.BaseUrl,
+                        ApiKey = provider.ApiKey,
+                        ModelId = agent.PreferredModelId,
+                    };
+                    logger.LogInformation(
+                        "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} endpoint={Endpoint}",
+                        agent.PreferredProviderId, agent.PreferredModelId ?? "(none)", provider.BaseUrl);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "[Chat] STREAM LlmConfig NOT resolved: agentId={AgentId} provider={ProviderId} not found/disabled (fallback .env)",
+                        req.AgentId, agent.PreferredProviderId);
+                }
+            }
+        }
+
+        ConfigureSseResponse(Response);
+
+        try
+        {
+            await foreach (var frame in apiClient.SendMessageStreamAsync(
+                channelId:      channelId,
+                userExternalId: userExternalId,
+                messageText:    req.MessageText,
+                workspaceId:    workspaceId,
+                sessionId:      req.SessionId,
+                llmConfig:      llmConfig,
+                agentTemplateId: agentTemplateId,
+                capabilityPolicy: capabilityPolicy,
+                toolDefinitions: toolDefinitions,
+                skillPackages: skillPackages,
+                ct:             ct))
+            {
+                await WriteRawSseAsync(Response, frame, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation(
+                "[Chat] STREAM cancelled ws={WorkspaceId} agentId={AgentId}",
+                workspaceId, req.AgentId ?? "(none)");
+            await WriteSseAsync(Response, "cancelled", new { workspaceId }, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[Chat] STREAM failed ws={WorkspaceId}", workspaceId);
+            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+        }
+
+        return new EmptyResult();
+    }
+
+    private static void ConfigureSseResponse(HttpResponse response)
+    {
+        response.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Connection = "keep-alive";
+        response.Headers["X-Accel-Buffering"] = "no";
+    }
+
+    private static async Task WriteRawSseAsync(
+        HttpResponse response,
+        ServerSentEventFrame frame,
+        CancellationToken ct)
+    {
+        await response.WriteAsync($"event: {frame.Event}\n", ct);
+        await response.WriteAsync($"data: {frame.Data}\n\n", ct);
+        await response.Body.FlushAsync(ct);
+    }
+
+    private static Task WriteSseAsync(
+        HttpResponse response,
+        string eventName,
+        object payload,
+        CancellationToken ct) =>
+        WriteRawSseAsync(response, ServerSentEventFrame.Json(eventName, payload), ct);
 
     private sealed record ResolvedCapabilities(
         CapabilityPolicy? Policy,

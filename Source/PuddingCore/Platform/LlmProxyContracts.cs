@@ -31,4 +31,5 @@ public sealed record ControllerLlmChatResponse
     public string? Content { get; init; }
     public IReadOnlyList<ToolCall>? ToolCalls { get; init; }
     public string? ReasoningContent { get; init; }
+    public TokenUsageDto? Usage { get; init; }
 }

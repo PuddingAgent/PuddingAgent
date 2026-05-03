@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services;
@@ -157,6 +159,80 @@ public sealed class PlatformApiClient
 
         var resp = await _http.PostAsJsonAsync("/api/messageingress", request, ct);
         return await resp.Content.ReadFromJsonAsync<MessageIngressResponse>(ct);
+    }
+
+    public async IAsyncEnumerable<ServerSentEventFrame> SendMessageStreamAsync(
+        string channelId, string userExternalId, string messageText,
+        string? workspaceId = null,
+        string? sessionId = null,
+        LlmConfig? llmConfig = null,
+        string? agentTemplateId = null,
+        CapabilityPolicy? capabilityPolicy = null,
+        IReadOnlyList<LlmToolDefinition>? toolDefinitions = null,
+        IReadOnlyList<SkillPackageInfo>? skillPackages = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var request = new MessageIngressRequest
+        {
+            ChannelId = channelId,
+            UserExternalId = userExternalId,
+            MessageText = messageText,
+            WorkspaceId = workspaceId,
+            SessionId = sessionId,
+            AgentTemplateId = agentTemplateId,
+            LlmConfig = llmConfig,
+            CapabilityPolicy = capabilityPolicy,
+            ToolDefinitions = toolDefinitions,
+            SkillPackages = skillPackages,
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/messageingress/stream")
+        {
+            Content = JsonContent.Create(request)
+        };
+        using var resp = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            yield return ServerSentEventFrame.Json("error", new { message = $"Controller stream failed: {body}" });
+            yield break;
+        }
+
+        await foreach (var frame in ReadSseFramesAsync(resp, ct))
+            yield return frame;
+    }
+
+    private static async IAsyncEnumerable<ServerSentEventFrame> ReadSseFramesAsync(
+        HttpResponseMessage response,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        string? eventName = null;
+        var data = new StringBuilder();
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(ct);
+            if (line is null) break;
+
+            if (line.Length == 0)
+            {
+                if (eventName is not null && data.Length > 0)
+                    yield return new ServerSentEventFrame(eventName, data.ToString());
+
+                eventName = null;
+                data.Clear();
+                continue;
+            }
+
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+                eventName = line["event: ".Length..].Trim();
+            else if (line.StartsWith("data: ", StringComparison.Ordinal))
+                data.Append(line["data: ".Length..]);
+        }
     }
 
     // ── Knowledge Base ─────────────────────────────────

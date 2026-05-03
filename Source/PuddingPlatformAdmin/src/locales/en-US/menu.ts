@@ -1,5 +1,6 @@
 export default {
   'menu.welcome': 'Welcome',
+  'menu.chat': 'Chat',
   'menu.capabilityManagement': 'Capability Management',
   'menu.more-blocks': 'More Blocks',
   'menu.home': 'Home',

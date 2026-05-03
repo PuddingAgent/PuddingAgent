@@ -1,0 +1,32 @@
+{
+  "title": "管理体验细节优化 — 文件上传预览、空状态插画、表单校验反馈、键盘快捷键",
+  "priority": "P2",
+  "project": "Pudding",
+  "tags": ["V1", "UI", "管理", "细节", "体验"],
+  "goal": "打磨管理后台的细节体验：上传可视化、空状态有温度、校验有反馈、操作更高效。",
+  "out_of_scope": "表格列宽优化（见 Task-UI-03 响应式部分）、深色主题（见 Task-UI-03）",
+  "acceptance_criteria": [
+    "AC1: 技能管理页文件上传组件显示缩略图预览 + 文件名 + 文件大小标签",
+    "AC2: 所有 ProTable 空状态使用自定义插画（区分「暂无数据」和「搜索无结果」），配合引导文案",
+    "AC3: 表单校验失败时输入框添加 shake 动画 + 红色图标提示（非仅红色边框）",
+    "AC4: 全局键盘快捷键：Ctrl+Enter 发送消息、Esc 关闭弹窗/Drawer、Ctrl+K 聚焦搜索",
+    "AC5: 快捷键在设置菜单或帮助面板中可查看"
+  ],
+  "impact_scope": [
+    "Source/PuddingPlatformAdmin/src/pages/skill-management/index.tsx（上传预览）",
+    "Source/PuddingPlatformAdmin/src/pages/*/index.tsx（空状态）",
+    "Source/PuddingPlatformAdmin/src/global.style.ts（动画）",
+    "Source/PuddingPlatformAdmin/src/app.tsx（快捷键注册）"
+  ],
+  "entry_points": [
+    "Docs/架构.md",
+    "Ant Design Upload 组件文档",
+    "Ant Design Empty 组件文档"
+  ],
+  "risk_notes": "快捷键可能与浏览器默认快捷键冲突，需做冲突检测。空状态插画需统一风格。上传预览需注意文件类型图标映射。",
+  "depends_on": ["task-ui-03-visual-system"],
+  "executor_type": "lightweight-developer",
+  "stage": "ready",
+  "lease_minutes": 90,
+  "module_count": 2
+}

@@ -35,7 +35,7 @@ const SessionPage: React.FC = () => {
       ),
     },
     {
-      title: '工作空间',
+      title: '场景',
       dataIndex: 'workspaceId',
       ellipsis: true,
       width: 120,
@@ -93,10 +93,10 @@ const SessionPage: React.FC = () => {
     <PageContainer
       header={{
         title: '会话记录',
-        subTitle: '查看所有工作空间的历史会话',
+        subTitle: '查看所有场景的历史会话',
         extra: (
           <Select
-            placeholder="筛选工作空间"
+            placeholder="筛选场景"
             allowClear
             style={{ width: 200 }}
             onChange={(val) => setSelectedWorkspace(val)}

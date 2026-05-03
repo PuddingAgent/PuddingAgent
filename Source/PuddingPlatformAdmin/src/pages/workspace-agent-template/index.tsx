@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import React, { useRef, useState, useEffect } from 'react';
+import { history } from '@umijs/max';
 import {
   listWorkspaces,
   listGlobalAgentTemplates,
@@ -72,11 +73,20 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
   const [form] = Form.useForm<UpsertWorkspaceAgentTemplateRequest>();
 
   useEffect(() => {
-    listWorkspaces().then(setWorkspaces).catch(() => {});
-    listGlobalAgentTemplates().then(setGlobalTemplates).catch(() => {});
-    listLlmProviders().then(setProviders).catch(() => {});
-    listCapabilities(true).then(setCapabilities).catch(() => {});
+    history.replace('/workspace');
   }, []);
+
+  return (
+    <PageContainer
+      title="页面已迁移"
+      subTitle="场景模板管理已合并到场景详情页（模板管理 Tab）。"
+      extra={(
+        <Button type="primary" onClick={() => history.push('/workspace')}>
+          前往场景设置
+        </Button>
+      )}
+    />
+  );
 
   const handleProviderChange = async (providerId: string) => {
     form.setFieldValue('preferredModelId', undefined);

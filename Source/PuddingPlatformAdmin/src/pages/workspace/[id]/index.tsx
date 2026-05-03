@@ -5,7 +5,6 @@ import {
   CodeOutlined,
   DeleteOutlined,
   EditOutlined,
-  LockOutlined,
   MessageOutlined,
   PlusOutlined,
   RobotOutlined,
@@ -14,7 +13,6 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
   ToolOutlined,
-  UnlockOutlined,
   UserAddOutlined,
 } from '@ant-design/icons';
 import {
@@ -30,6 +28,7 @@ import {
   type ActionType,
 } from '@ant-design/pro-components';
 import {
+  Alert,
   App,
   Badge,
   Button,
@@ -46,11 +45,10 @@ import {
   Table,
   Tag,
   Tabs,
-  Tooltip,
   Typography,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
-import { history, useParams } from '@umijs/max';
+import { history, useLocation, useParams } from '@umijs/max';
 import {
   addWorkspaceMember,
   createWorkspaceAgent,
@@ -65,8 +63,6 @@ import {
   deleteWorkspaceSkill,
   deleteKnowledgeBase,
   deleteWorkflow,
-  freezeWorkspace,
-  freezeWorkspaceAgent,
   getWorkspace,
   listGlobalAgentTemplates,
   listKnowledgeBases,
@@ -81,8 +77,6 @@ import {
   listWorkflows,
   removeWorkspaceMember,
   sendAdminChatMessage,
-  unfreezeWorkspace,
-  unfreezeWorkspaceAgent,
   updateWorkspace,
   updateWorkspaceAgent,
   updateWorkspaceAgentTemplate,
@@ -124,13 +118,6 @@ const POLICY_COLOURS: Record<WorkspaceAccessPolicy, string> = {
   Write: 'green',
   Manage: 'red',
 };
-
-const POLICY_OPTIONS: { label: string; value: WorkspaceAccessPolicy }[] = [
-  { label: '无访问（白名单模式）', value: 'None' },
-  { label: '只读', value: 'ReadOnly' },
-  { label: '可读写', value: 'Write' },
-  { label: '可管理', value: 'Manage' },
-];
 
 const ACCESS_OPTIONS: { label: string; value: WorkspaceAccessPolicy }[] = [
   { label: '只读', value: 'ReadOnly' },
@@ -191,7 +178,6 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
       maxReplyTokens: tpl.maxReplyTokens,
-      containerImage: tpl.containerImage,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
@@ -367,11 +353,6 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
             rows={3}
             placeholder="可选，支持 {{variable}} 占位符"
           />
-          <ProFormText
-            name="containerImage"
-            label="容器镜像"
-            placeholder="如 docker.xuanyuan.run/library/ubuntu:latest，留空则继承全局模板或平台默认"
-          />
           <ProFormSelect
             name="preferredProviderId"
             label="首选服务商"
@@ -414,6 +395,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const isLimited = true;
   const { message } = App.useApp();
   const tableRef = useRef<ActionType>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -480,7 +462,10 @@ const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       width: 160,
       render: (v) => new Date(v as string).toLocaleString('zh-CN'),
     },
-    {
+  ];
+
+  if (!isLimited) {
+    columns.push({
       title: '操作',
       width: 100,
       render: (_, r) => (
@@ -491,11 +476,18 @@ const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           </Popconfirm>
         </Space>
       ),
-    },
-  ];
+    });
+  }
 
   return (
     <>
+      <Alert
+        showIcon
+        type="info"
+        message="工作流功能将在后续版本开放"
+        description="V1 阶段暂不支持在场景内创建和编辑工作流。"
+        style={{ marginBottom: 12 }}
+      />
       <ProTable<WorkflowDto>
         actionRef={tableRef}
         rowKey="workflowId"
@@ -505,25 +497,27 @@ const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           return { data, success: true };
         }}
         search={false}
-        toolBarRender={() => [
+        toolBarRender={isLimited ? false : () => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建工作流</Button>,
         ]}
       />
-      <Drawer
-        title={editItem ? '编辑工作流' : '新建工作流'}
-        open={drawerOpen}
-        width={560}
-        onClose={() => setDrawerOpen(false)}
-        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
-      >
-        <ProForm form={form} submitter={false} layout="vertical">
-          <ProFormText name="name" label="名称" rules={[{ required: true }]} />
-          <ProFormSelect name="status" label="状态" options={WORKFLOW_STATUSES} rules={[{ required: true }]} />
-          <ProFormTextArea name="description" label="描述" rows={2} />
-          <ProFormTextArea name="definitionJson" label="工作流定义 JSON" rows={8} placeholder='{"nodes": [], "edges": []}' />
-          <ProFormSwitch name="isEnabled" label="启用" />
-        </ProForm>
-      </Drawer>
+      {!isLimited && (
+        <Drawer
+          title={editItem ? '编辑工作流' : '新建工作流'}
+          open={drawerOpen}
+          width={560}
+          onClose={() => setDrawerOpen(false)}
+          extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+        >
+          <ProForm form={form} submitter={false} layout="vertical">
+            <ProFormText name="name" label="名称" rules={[{ required: true }]} />
+            <ProFormSelect name="status" label="状态" options={WORKFLOW_STATUSES} rules={[{ required: true }]} />
+            <ProFormTextArea name="description" label="描述" rows={2} />
+            <ProFormTextArea name="definitionJson" label="工作流定义 JSON" rows={8} placeholder='{"nodes": [], "edges": []}' />
+            <ProFormSwitch name="isEnabled" label="启用" />
+          </ProForm>
+        </Drawer>
+      )}
     </>
   );
 };
@@ -538,13 +532,11 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
   const [providers, setProviders] = useState<LlmProviderDto[]>([]);
   const [models, setModels] = useState<LlmModelDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [templates, setTemplates] = useState<WorkspaceAgentTemplateDto[]>([]);
   const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
   const [form] = Form.useForm<CreateWorkspaceAgentRequest & UpdateWorkspaceAgentRequest>();
 
   useEffect(() => {
     listLlmProviders().then(setProviders).catch(() => {});
-    listWorkspaceAgentTemplates(workspaceId).then(setTemplates).catch(() => {});
     listGlobalAgentTemplates().then(setGlobalTemplates).catch(() => {});
   }, [workspaceId]);
 
@@ -598,18 +590,6 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     }
   };
 
-  const handleFreeze = async (agentId: string) => {
-    await freezeWorkspaceAgent(workspaceId, agentId);
-    message.success('Agent 已冻结');
-    tableRef.current?.reload();
-  };
-
-  const handleUnfreeze = async (agentId: string) => {
-    await unfreezeWorkspaceAgent(workspaceId, agentId);
-    message.success('Agent 已解冻');
-    tableRef.current?.reload();
-  };
-
   const handleDelete = async (agentId: string) => {
     await deleteWorkspaceAgent(workspaceId, agentId);
     message.success('Agent 已删除');
@@ -645,15 +625,10 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     },
     {
       title: '操作',
-      width: 150,
+      width: 100,
       render: (_, r) => (
         <Space size={4}>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-          {r.isFrozen ? (
-            <Button size="small" icon={<UnlockOutlined />} onClick={() => handleUnfreeze(r.agentId)} />
-          ) : (
-            <Button size="small" icon={<LockOutlined />} danger onClick={() => handleFreeze(r.agentId)} />
-          )}
           <Popconfirm title="确认删除该 Agent？" onConfirm={() => handleDelete(r.agentId)} okButtonProps={{ danger: true }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -693,22 +668,10 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
             placeholder="选择已有模板作为基础配置"
             fieldProps={{
               allowClear: true,
-              options: [
-                {
-                  label: '工作区模板',
-                  options: templates.map((t) => ({
-                    label: `${t.name} (${t.templateId})`,
-                    value: t.templateId,
-                  })),
-                },
-                {
-                  label: '全局模板',
-                  options: globalTemplates.map((t) => ({
-                    label: `${t.name} (${t.templateId})`,
-                    value: `global:${t.templateId}`,
-                  })),
-                },
-              ],
+              options: globalTemplates.map((t) => ({
+                label: `${t.name} (${t.templateId})`,
+                value: `global:${t.templateId}`,
+              })),
             }}
           />
           <ProFormTextArea name="systemPromptOverride" label="覆盖系统提示词" rows={5} placeholder="留空则使用模板的系统提示词" />
@@ -888,7 +851,7 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
         <Text type="secondary" style={{ flexShrink: 0 }}>对话 Agent：</Text>
         <Select
           style={{ width: 220 }}
-          placeholder="选择 Agent（不选则使用工作空间默认）"
+          placeholder="选择 Agent（不选则使用场景默认）"
           allowClear
           value={selectedAgentId}
           onChange={(v) => { setSelectedAgentId(v); handleClearSession(); }}
@@ -991,6 +954,7 @@ const KB_TYPE_COLORS: Record<string, string> = {
 };
 
 const KnowledgeBasesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const isLimited = true;
   const { message } = App.useApp();
   const tableRef = useRef<ActionType>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1051,7 +1015,10 @@ const KnowledgeBasesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
         ? <Badge status="processing" text="启用" />
         : <Badge status="default" text="停用" />,
     },
-    {
+  ];
+
+  if (!isLimited) {
+    columns.push({
       title: '操作',
       width: 100,
       render: (_, r) => (
@@ -1062,11 +1029,18 @@ const KnowledgeBasesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
           </Popconfirm>
         </Space>
       ),
-    },
-  ];
+    });
+  }
 
   return (
     <>
+      <Alert
+        showIcon
+        type="info"
+        message="知识库功能将在后续版本开放"
+        description="V1 阶段暂不支持在场景内创建和编辑知识库。"
+        style={{ marginBottom: 12 }}
+      />
       <ProTable<KnowledgeBaseDto>
         actionRef={tableRef}
         rowKey="kbId"
@@ -1076,24 +1050,26 @@ const KnowledgeBasesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
           return { data, success: true };
         }}
         search={false}
-        toolBarRender={() => [
+        toolBarRender={isLimited ? false : () => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建知识库</Button>,
         ]}
       />
-      <Drawer
-        title={editItem ? '编辑知识库' : '新建知识库'}
-        open={drawerOpen}
-        width={480}
-        onClose={() => setDrawerOpen(false)}
-        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
-      >
-        <ProForm form={form} submitter={false} layout="vertical">
-          <ProFormText name="name" label="名称" rules={[{ required: true }]} />
-          <ProFormSelect name="kbType" label="知识库类型" options={KB_TYPES} rules={[{ required: true }]} />
-          <ProFormTextArea name="description" label="描述" rows={2} />
-          <ProFormSwitch name="isEnabled" label="启用" />
-        </ProForm>
-      </Drawer>
+      {!isLimited && (
+        <Drawer
+          title={editItem ? '编辑知识库' : '新建知识库'}
+          open={drawerOpen}
+          width={480}
+          onClose={() => setDrawerOpen(false)}
+          extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+        >
+          <ProForm form={form} submitter={false} layout="vertical">
+            <ProFormText name="name" label="名称" rules={[{ required: true }]} />
+            <ProFormSelect name="kbType" label="知识库类型" options={KB_TYPES} rules={[{ required: true }]} />
+            <ProFormTextArea name="description" label="描述" rows={2} />
+            <ProFormSwitch name="isEnabled" label="启用" />
+          </ProForm>
+        </Drawer>
+      )}
     </>
   );
 };
@@ -1317,7 +1293,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       ellipsis: true,
       render: (_, r) => r.defaultAgentId
         ? <Text code style={{ fontSize: 12 }}>{r.defaultAgentId}</Text>
-        : <Text type="secondary">工作空间默认</Text>,
+        : <Text type="secondary">场景默认</Text>,
     },
     { title: '描述', dataIndex: 'description', ellipsis: true },
     {
@@ -1373,7 +1349,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             options={workspaceAgents.filter((a) => !a.isFrozen && a.isEnabled).map((a) => ({
               label: a.name, value: a.agentId,
             }))}
-            placeholder="不选则使用工作空间默认路由策略"
+            placeholder="不选则使用场景默认路由策略"
             fieldProps={{ allowClear: true }}
           />
           <ProFormTextArea name="configJson" label="连接配置 JSON" rows={4} placeholder='{"endpoint": "...", "authRef": "secret-name"}' />
@@ -1384,10 +1360,11 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   );
 };
 
-// ─── 工作空间详情页 ────────────────────────────────────────────────────────────
+// ─── 场景详情页 ────────────────────────────────────────────────────────────────
 
 const WorkspaceDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const { message } = App.useApp();
 
   const [workspace, setWorkspace] = useState<WorkspaceWithPermDto | null>(null);
@@ -1409,6 +1386,20 @@ const WorkspaceDetailPage: React.FC = () => {
   const [editForm] = Form.useForm<UpdateWorkspaceRequest>();
 
   const workspaceId = id ?? '';
+  const tabFromQuery = new URLSearchParams(location.search).get('tab');
+  const defaultTabKey = [
+    'overview',
+    'workspace-agents',
+    'agent-templates',
+    'chat',
+    'workflows',
+    'knowledge-bases',
+    'skills',
+    'channels',
+    'members',
+  ].includes(tabFromQuery ?? '')
+    ? (tabFromQuery as string)
+    : 'overview';
 
   const loadWorkspace = async () => {
     setLoading(true);
@@ -1416,7 +1407,7 @@ const WorkspaceDetailPage: React.FC = () => {
       const ws = await getWorkspace(workspaceId);
       setWorkspace(ws);
     } catch {
-      message.error('加载工作空间失败');
+      message.error('加载场景失败');
     } finally {
       setLoading(false);
     }
@@ -1441,28 +1432,6 @@ const WorkspaceDetailPage: React.FC = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
-
-  const handleFreeze = async () => {
-    if (!workspace) return;
-    try {
-      await freezeWorkspace(workspaceId);
-      message.success('工作空间已冻结');
-      loadWorkspace();
-    } catch {
-      message.error('操作失败');
-    }
-  };
-
-  const handleUnfreeze = async () => {
-    if (!workspace) return;
-    try {
-      await unfreezeWorkspace(workspaceId);
-      message.success('工作空间已解冻');
-      loadWorkspace();
-    } catch {
-      message.error('操作失败');
-    }
-  };
 
   const openAddMember = async () => {
     try {
@@ -1507,19 +1476,25 @@ const WorkspaceDetailPage: React.FC = () => {
     editForm.setFieldsValue({
       name: workspace.name,
       description: workspace.description,
-      teamAccessPolicy: workspace.teamAccessPolicy,
-      companyAccessPolicy: workspace.companyAccessPolicy,
       isEnabled: workspace.isEnabled,
     });
     setEditOpen(true);
   };
 
   const handleEdit = async () => {
+    if (!workspace) return;
     try {
       const values = await editForm.validateFields();
       setEditLoading(true);
-      await updateWorkspace(workspaceId, values);
-      message.success('工作空间已更新');
+      const request: UpdateWorkspaceRequest = {
+        name: values.name,
+        description: values.description,
+        isEnabled: values.isEnabled,
+        teamAccessPolicy: workspace.teamAccessPolicy,
+        companyAccessPolicy: workspace.companyAccessPolicy,
+      };
+      await updateWorkspace(workspaceId, request);
+      message.success('场景已更新');
       setEditOpen(false);
       loadWorkspace();
     } catch (err: unknown) {
@@ -1581,7 +1556,7 @@ const WorkspaceDetailPage: React.FC = () => {
     return (
       <PageContainer>
         <div style={{ textAlign: 'center', padding: 80 }}>
-          <Text type="secondary">工作空间不存在或已被删除</Text>
+          <Text type="secondary">场景不存在或已被删除</Text>
           <br />
           <Button style={{ marginTop: 16 }} onClick={() => history.push('/workspace')}>
             返回列表
@@ -1611,51 +1586,29 @@ const WorkspaceDetailPage: React.FC = () => {
             {workspace.workspaceId === 'default' && <Tag color="blue">内置</Tag>}
           </Space>
         ),
-        subTitle: workspace.workspaceId,
+        subTitle: `场景 ID：${workspace.workspaceId}`,
         extra: [
           <Button key="edit" icon={<SettingOutlined />} onClick={openEdit}>
             编辑设置
           </Button>,
-          workspace.isFrozen ? (
-            <Button key="unfreeze" icon={<UnlockOutlined />} onClick={handleUnfreeze}>
-              解冻
-            </Button>
-          ) : (
-            <Button key="freeze" icon={<LockOutlined />} danger onClick={handleFreeze}>
-              冻结
-            </Button>
-          ),
         ],
       }}
     >
       <Tabs
-        defaultActiveKey="overview"
+        defaultActiveKey={defaultTabKey}
         items={[
           {
             key: 'overview',
             label: '概览',
             children: (
               <Descriptions bordered column={2} style={{ background: '#fff', padding: 16 }}>
-                <Descriptions.Item label="Workspace ID">{workspace.workspaceId}</Descriptions.Item>
+                <Descriptions.Item label="场景 ID">{workspace.workspaceId}</Descriptions.Item>
                 <Descriptions.Item label="状态">{statusBadge}</Descriptions.Item>
                 <Descriptions.Item label="名称">{workspace.name}</Descriptions.Item>
-                <Descriptions.Item label="所属团队">
-                  <Tag color="geekblue">{workspace.teamName}</Tag>
-                </Descriptions.Item>
+                <Descriptions.Item label="成员数">{workspace.memberCount}</Descriptions.Item>
                 <Descriptions.Item label="描述" span={2}>
                   {workspace.description ?? <Text type="secondary">暂无描述</Text>}
                 </Descriptions.Item>
-                <Descriptions.Item label="团队访问策略">
-                  <Tag color={POLICY_COLOURS[workspace.teamAccessPolicy]}>
-                    {workspace.teamAccessPolicy}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="全公司访问策略">
-                  <Tag color={POLICY_COLOURS[workspace.companyAccessPolicy]}>
-                    {workspace.companyAccessPolicy}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="成员数">{workspace.memberCount}</Descriptions.Item>
                 <Descriptions.Item label="创建时间">
                   {new Date(workspace.createdAt).toLocaleString('zh-CN')}
                 </Descriptions.Item>
@@ -1663,56 +1616,24 @@ const WorkspaceDetailPage: React.FC = () => {
             ),
           },
           {
-            key: 'members',
+            key: 'workspace-agents',
             label: (
               <Space>
-                <TeamOutlined />
-                成员
-                <Tag>{workspace.memberCount}</Tag>
+                <RobotOutlined />
+                Agent 列表
               </Space>
             ),
-            children: (
-              <>
-                <div style={{ marginBottom: 12, textAlign: 'right' }}>
-                  <Button
-                    type="primary"
-                    icon={<UserAddOutlined />}
-                    onClick={openAddMember}
-                  >
-                    添加成员
-                  </Button>
-                </div>
-                <Table
-                  rowKey="id"
-                  loading={membersLoading}
-                  dataSource={members}
-                  columns={memberColumns}
-                  pagination={false}
-                  size="small"
-                  bordered
-                />
-              </>
-            ),
+            children: <WorkspaceAgentsTab workspaceId={workspace.workspaceId} />,
           },
           {
             key: 'agent-templates',
             label: (
               <Space>
                 <RobotOutlined />
-                Agent 模板
+                模板管理
               </Space>
             ),
             children: <AgentTemplatesTab workspaceId={workspace.workspaceId} />,
-          },
-          {
-            key: 'workspace-agents',
-            label: (
-              <Space>
-                <RobotOutlined />
-                Agent 管理
-              </Space>
-            ),
-            children: <WorkspaceAgentsTab workspaceId={workspace.workspaceId} />,
           },
           {
             key: 'chat',
@@ -1753,6 +1674,38 @@ const WorkspaceDetailPage: React.FC = () => {
             key: 'channels',
             label: '渠道管道',
             children: <ChannelsTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'members',
+            label: (
+              <Space>
+                <TeamOutlined />
+                成员
+                <Tag>{workspace.memberCount}</Tag>
+              </Space>
+            ),
+            children: (
+              <>
+                <div style={{ marginBottom: 12, textAlign: 'right' }}>
+                  <Button
+                    type="primary"
+                    icon={<UserAddOutlined />}
+                    onClick={openAddMember}
+                  >
+                    添加成员
+                  </Button>
+                </div>
+                <Table
+                  rowKey="id"
+                  loading={membersLoading}
+                  dataSource={members}
+                  columns={memberColumns}
+                  pagination={false}
+                  size="small"
+                  bordered
+                />
+              </>
+            ),
           },
         ]}
       />
@@ -1796,7 +1749,7 @@ const WorkspaceDetailPage: React.FC = () => {
 
       {/* Edit workspace modal */}
       <Modal
-        title="编辑工作空间设置"
+        title="编辑场景设置"
         open={editOpen}
         onOk={handleEdit}
         onCancel={() => setEditOpen(false)}
@@ -1812,16 +1765,10 @@ const WorkspaceDetailPage: React.FC = () => {
             label="名称"
             rules={[{ required: true, message: '请输入名称' }, { max: 128 }]}
           >
-            <Input placeholder="工作空间显示名称" />
+            <Input placeholder="场景显示名称" />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} maxLength={512} placeholder="可选描述" />
-          </Form.Item>
-          <Form.Item name="teamAccessPolicy" label="团队成员默认权限">
-            <Select options={POLICY_OPTIONS} />
-          </Form.Item>
-          <Form.Item name="companyAccessPolicy" label="全公司默认权限">
-            <Select options={POLICY_OPTIONS} />
           </Form.Item>
           <Form.Item name="isEnabled" label="启用状态">
             <Select
