@@ -12,6 +12,7 @@
 | 0503 | T-001 | GPT-5.3-Codex | Sonnet 4.6 | FAIL | P1 AbortError 未清理流式状态 |
 | 0503 | T-001 | GPT-5.3-Codex | GLM-5.1 | PASS | 5项修复确认 |
 | 0503 | T-NewChat-Session | DeepSeek-V4-Pro | Sonnet 4.6 | PASS_WITH_NOTES | P2 handleSelectSession 未复位 forceNewSessionRef（已修复） |
+| 0503 | Bug-admin-chat-scroll-jitter | DeepSeek-V4-Pro | GPT-5.3-Codex | PASS_WITH_NOTES | scrollbar-gutter: stable 修复 hover 抖动，建议补做 Safari/移动端回归 |
 
 ## Architect 领航审查
 
