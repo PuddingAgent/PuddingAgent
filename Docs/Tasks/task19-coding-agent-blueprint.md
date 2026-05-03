@@ -27,7 +27,7 @@
 
 ## 3. 建议的模块抽象
 ```text
-PuddingCodeCLI (UI Shell)
+Web UI (UI Shell)
   -> InteractionController
   -> SessionRuntime
 

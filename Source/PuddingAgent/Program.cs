@@ -68,22 +68,12 @@ builder.Services.AddHttpClient<PlatformApiClient>(client =>
 // ── Workspace 业务层 ──────────────────────────────────
 builder.Services.AddScoped<WorkspaceBusinessService>();
 
-// ── MinIO 对象存储 ────────────────────────────────────
-builder.Services.AddSingleton<MinioStorageService>();
-
 // ── EF Core / 数据库 ──────────────────────────────────
 var connStr = builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=data/pudding_platform.db";
 builder.Services.AddDbContext<PlatformDbContext>(opt =>
 {
-    if (connStr.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase))
-        opt.UseSqlite(connStr);
-    else if (connStr.StartsWith("Host=", StringComparison.OrdinalIgnoreCase)
-          || connStr.StartsWith("Server=", StringComparison.OrdinalIgnoreCase)
-          || connStr.Contains("Npgsql", StringComparison.OrdinalIgnoreCase))
-        opt.UseNpgsql(connStr);
-    else
-        opt.UseSqlServer(connStr);
+    opt.UseSqlite(connStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
@@ -123,13 +113,27 @@ builder.Services.AddHttpClient("DirectLlm", client =>
     client.Timeout = TimeSpan.FromSeconds(120);
 });
 
-var app = builder.Build();
+// ── Bootstrap 初始化 ─────────────────────────────────
+var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+Directory.CreateDirectory(dataDir);
+var stateFilePath = Path.Combine(dataDir, "bootstrap-state.json");
 
-if (string.IsNullOrEmpty(app.Configuration["Bootstrap:Secret"]))
+if (!File.Exists(stateFilePath))
 {
-    var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    logger.LogWarning("Bootstrap:Secret 未设置。生产环境请设置 BOOTSTRAP_SECRET 环境变量以防止未授权管理员注册。");
+    var secretBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    var secret = Convert.ToBase64String(secretBytes);
+    var initialState = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        Bootstrap = new { Secret = secret, Initialized = false }
+    });
+    File.WriteAllText(stateFilePath, initialState);
 }
+
+builder.Configuration.AddJsonFile(stateFilePath, optional: true, reloadOnChange: true);
+builder.Services.AddSingleton<BootstrapStateService>(sp =>
+    new BootstrapStateService(stateFilePath, sp.GetRequiredService<IConfiguration>()));
+
+var app = builder.Build();
 
 // ── 启动时应用迁移 ───────────────────────────────────
 using (var scope = app.Services.CreateScope())
@@ -160,14 +164,15 @@ app.UseAuthorization();
 
 // ── 静态文件 ─────────────────────────────────────────
 app.MapStaticAssets();
+app.UseStaticFiles();
 
 // ── API 路由（必须在 Fallback 前）────────────────────
 app.MapControllers();
 
 // ── MVC Controller 路由 ──────────────────────────────
 app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}")
+    name: "platform",
+    pattern: "platform/{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
 
 // ── 健康检查 ─────────────────────────────────────────
@@ -208,8 +213,8 @@ app.MapPost("/api/chat", async (
     });
 });
 
-// ── Admin SPA fallback（/admin/* → Admin）─────────────
-app.MapFallbackToFile("admin/{**path}", "admin/index.html");
+// ── Admin SPA fallback（/admin 下的前端路由回退）───────────
+app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
 // ── Chat SPA fallback（根路径 → Chat，必须最后！）──────
 app.MapFallbackToFile("index.html");

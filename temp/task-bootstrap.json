@@ -1,0 +1,64 @@
+{
+  "id": "task-20260503-001",
+  "title": "Bootstrap 初始化安全加固 + 配置文件统一",
+  "status": "todo",
+  "priority": "P1",
+  "created": "2026-05-03",
+  "complexity": "high",
+  "modules": ["PuddingPlatform", "PuddingAgent", "PuddingPlatformAdmin", "Docker"],
+  "tags": ["security", "bootstrap", "config", "breaking-change"],
+
+  "description": "重构 Bootstrap 初始化流程：服务端自动生成安全密钥替代用户手动配置；admin 注册后永久关闭初始化窗口；统一分散的配置文件。",
+
+  "current_behavior": {
+    "config": "Bootstrap:Secret 来自 .env（Docker）或 appsettings.json 硬编码空字符串（本地）。两个配置源不一致。",
+    "bootstrap": "POST /api/bootstrap/admin 要求客户端传入 bootstrapSecret 字段与服务器配置的 Bootstrap:Secret 比对。空 secret 时跳过校验（不安全）。",
+    "initialization_window": "仅通过 Serializable 事务防止并发创建多个 admin，无持久化初始化完成标志。",
+    "frontend": "Bootstrap 页面始终显示 bootstrapSecret 输入框。"
+  },
+
+  "target_behavior": {
+    "config": "统一为 appsettings.json + 环境变量覆盖的标准 ASP.NET Core 模式。移除 .env 中 BOOTSTRAP_SECRET 的手动配置需求。",
+    "bootstrap_secret_generation": "启动时若 Bootstrap:Secret 为空，服务端调用 CryptographicRandom 生成安全密钥，写入 appsettings.json（或持久化存储）。",
+    "bootstrap_flow": "初始化阶段（无 admin 用户）：POST /api/bootstrap/admin 不再要求客户端传入 bootstrapSecret，服务端自动使用已生成的密钥。",
+    "initialization_lock": "admin 用户（username='admin'）注册成功后，设置持久化标志 Bootstrap:Initialized=true，后续所有 bootstrap API 返回 403。",
+    "frontend": "Bootstrap 页面移除 bootstrapSecret 输入框。"
+  },
+
+  "acceptance_criteria": [
+    "AC1: 首次启动（无 admin），Bootstrap:Secret 为空时，服务端自动生成 ≥32 字符的 CSPRNG 密钥",
+    "AC2: 自动生成的密钥持久化到 appsettings.json 的 Bootstrap:Secret 字段",
+    "AC3: POST /api/bootstrap/admin 在无 admin 时不需要 bootstrapSecret 字段即可创建管理员",
+    "AC4: admin 创建成功后 GET /api/bootstrap/status 返回 needsSetup=false, initialized=true",
+    "AC5: admin 创建成功后 POST /api/bootstrap/admin 返回 403 Forbidden",
+    "AC6: 前端 Bootstrap 页面移除 bootstrapSecret 输入框",
+    "AC7: docker-compose.yml 移除 Bootstrap__Secret 环境变量映射（改为容器内自动生成）",
+    "AC8: .env / .env.example 移除 BOOTSTRAP_SECRET 相关行"
+  ],
+
+  "affected_files": {
+    "backend": [
+      "Source/PuddingPlatform/appsettings.json",
+      "Source/PuddingPlatform/Controllers/Api/BootstrapApiController.cs",
+      "Source/PuddingAgent/Program.cs"
+    ],
+    "frontend": [
+      "Source/PuddingPlatformAdmin/src/pages/bootstrap/index.tsx"
+    ],
+    "infra": [
+      "docker-compose.yml",
+      ".env.example"
+    ],
+    "docs": [
+      "Docs/Features/LoginFeature.md"
+    ]
+  },
+
+  "risk": "breaking-change — Bootstrap API 请求体格式变更（移除 bootstrapSecret 字段），影响已有部署的前端页面。需同步更新前端。",
+  "rollback": "git revert + 恢复旧版 Bootstrap 页面 + 重新设置 BOOTSTRAP_SECRET 环境变量",
+
+  "dependencies": [],
+  "assigned_to": null,
+  "qa_required": true,
+  "architect_review_required": true
+}

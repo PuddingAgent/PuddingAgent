@@ -9,7 +9,7 @@
 
 目标链路：
 
-`CLI / Avalonia -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
+`Web UI / CLI -> Controller API -> Workspace 路由 -> ServiceSession -> Runtime Agent -> 真实 LLM 回复`
 
 这条切片完成后，系统至少应具备：
 
@@ -25,7 +25,7 @@
 - 内置支持 Email Channel
 - 一个 Workspace 可以挂接多个渠道，并为每个渠道声明默认 Agent 或允许 Agent 集合
 - 为 Workspace 级知识库、统一存储层、知识图谱预留稳定接入点
-- 为语音批准、审计 Agent 冻结和 PuddingAvalonia 客户端预留接口
+- 为语音批准、审计 Agent 冻结预留接口
 
 ## 2. 非目标
 第一条切片不包含以下复杂能力：
@@ -466,54 +466,6 @@
 - 工具在 Runtime 进程内直接执行
 - 高风险动作由 Controller 审批链控制准入
 
-## 6. PuddingCLI 细化任务
-
-#### T24-C-01 `PlatformApiClient`
-职责：统一调用 Controller HTTP API，并兼容 Platform 上层业务入口。
-
-验收标准：
-- CLI 能发送消息、查询 Session、查询审批、查询审计
-
-#### T24-C-02 `SendMessageCommand`
-职责：从 CLI 发起首条切片消息。
-
-建议命令：
-- `pudding send`
-
-验收标准：
-- CLI 发消息后能显示真实 Agent 回复
-- 失败时显示可读错误
-
-#### T24-C-03 `SessionStatusCommand`
-职责：查询 Session 状态。
-
-建议命令：
-- `pudding session show <sessionId>`
-
-验收标准：
-- 能看到 SessionType、Workspace、Runtime、当前状态
-
-#### T24-C-04 `ApprovalCommand`
-职责：查询和批准高风险动作。
-
-建议命令：
-- `pudding approval list`
-- `pudding approval approve <approvalId> --code <confirmationCode>`
-
-验收标准：
-- CLI 能查询待批准记录
-- CLI 能用确认码完成批准
-
-#### T24-C-05 `DebugRouteCommand`
-职责：查看消息路由决策。
-
-建议命令：
-- `pudding debug route <messageId>`
-
-验收标准：
-- 能看到该消息命中了哪个 Workspace 和 AgentTemplate
-- 路由失败原因可见
-
 ## 7. PuddingAgent 细化任务
 
 #### T24-A-01 `ServiceAgentTemplates`
@@ -549,29 +501,7 @@
 - 审计 Agent 只读取结构化、脱敏、受限视图
 - 审计 Agent 可参与冻结、批准、拒绝、质询链路
 
-## 8. PuddingAvalonia 预留任务
-
-#### T24-V-01 `AvaloniaPlatformClient`
-职责：提供桌面客户端与 Platform/Controller 的交互基础。
-
-验收标准：
-- 客户端可发起消息、查看会话、查看审批、查看审计事件
-
-#### T24-V-02 `VoiceApprovalClient`
-职责：提供语音批准入口。
-
-验收标准：
-- 客户端可采集语音并提交批准请求
-- 批准结果与 `ApprovalRecord` 可关联查询
-
-#### T24-V-03 `WorkspaceControlPanel`
-职责：提供 Workspace 控制与冻结入口。
-
-验收标准：
-- 客户端可触发 Workspace 冻结请求
-- 客户端可查看冻结状态、审计记录与审计 Agent 处理结果
-
-## 9. 首条切片 API 草案
+## 8. 首条切片 API 草案
 
 ### Controller API
 
@@ -602,7 +532,7 @@ GET    /runtime/sessions/{sessionId}
 GET    /runtime/agents/{agentId}
 ```
 
-## 10. 实现顺序（建议）
+## 9. 实现顺序（建议）
 1. `WorkspaceCatalog` + `MessageIngressController`
 2. `ChannelIdentityResolver` + `WorkspaceRouteResolver`
 3. `AgentTemplateRouteResolver` + `ServiceSessionService`
@@ -614,9 +544,8 @@ GET    /runtime/agents/{agentId}
 9. `ToolExecutor`
 10. `KnowledgeBaseService` + `KnowledgeAccessBridge`
 11. `UnifiedStorageService` + `KnowledgeGraphService`
-12. `VoiceApprovalService` + `AvaloniaPlatformClient`
 
-## 11. DoD
+## 10. DoD
 以下条件同时满足，Task 24 才算完成：
 
 1. CLI 能通过 Controller API 发消息。

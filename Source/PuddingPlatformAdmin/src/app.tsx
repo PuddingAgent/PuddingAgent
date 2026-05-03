@@ -44,6 +44,10 @@ export async function getInitialState(): Promise<{
   const checkBootstrapAndRedirect = async () => {
     try {
       const res = await fetch('/api/bootstrap/status');
+      if (res.status === 403) {
+        history.push(loginPath);
+        return;
+      }
       const data = await res.json();
       if (data.needsSetup) {
         history.push(bootstrapPath);

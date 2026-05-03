@@ -116,7 +116,7 @@ const Login: React.FC = () => {
             minWidth: 320,
             maxWidth: '75vw',
           }}
-          logo={<img alt="Pudding" src="/logo.svg" />}
+          logo={<img alt="Pudding" src="/admin/assets/images/logo.png" />}
           title="Pudding Platform"
           subTitle={intl.formatMessage({
             id: 'pages.layouts.userLayout.title',

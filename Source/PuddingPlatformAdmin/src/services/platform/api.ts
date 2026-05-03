@@ -4,8 +4,6 @@ import { request } from '@umijs/max';
 
 export type SessionStatus = 'Active' | 'Idle' | 'Completed' | 'Failed' | 'Frozen';
 export type SessionType = 'ServiceSession' | 'TaskSession' | 'AuditSession';
-export type AgentTemplateType = 'Service' | 'Task' | 'Audit';
-
 export interface ChannelBinding {
   channelId: string;
   channelType: string;
@@ -22,26 +20,6 @@ export interface WorkspaceDefinition {
   channelBindings: ChannelBinding[];
   agentTemplateIds: string[];
   auditAgentTemplateIds: string[];
-}
-
-export interface AgentTemplateDefinition {
-  templateId: string;
-  name: string;
-  description?: string;
-  templateType: AgentTemplateType;
-  skillIds: string[];
-  systemPrompt?: string;
-  runtime?: {
-    preferredModel?: string;
-    maxContextTokens: number;
-    maxTurnsPerSession: number;
-  };
-  capability?: {
-    allowShellExecution: boolean;
-    allowFileWrite: boolean;
-    allowNetworkAccess: boolean;
-    allowedToolNames: string[];
-  };
 }
 
 export interface SessionRecord {
@@ -92,16 +70,6 @@ export async function freezeWorkspace(id: string): Promise<void> {
 
 export async function unfreezeWorkspace(id: string): Promise<void> {
   return request(`/api/workspaces/${encodeURIComponent(id)}/unfreeze`, { method: 'POST' });
-}
-
-// ─── AgentTemplate API ───────────────────────────────────────────
-
-export async function listAgentTemplates(): Promise<AgentTemplateDefinition[]> {
-  return request('/api/agent-templates', { method: 'GET' });
-}
-
-export async function getAgentTemplate(id: string): Promise<AgentTemplateDefinition> {
-  return request(`/api/agent-templates/${encodeURIComponent(id)}`, { method: 'GET' });
 }
 
 // ─── Session API ─────────────────────────────────────────────────

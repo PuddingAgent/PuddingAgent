@@ -1,12 +1,12 @@
-# task31 - Web Chat、CLI、Avalonia 与控制客户端
+# task31 - Web Chat、CLI 与控制客户端
 
 最后更新：2026-03-18
 
 ## 任务目标
 
-建立客户端层，使 Web Chat（内置网页聊天渠道）、CLI 和 Avalonia 都通过 Controller API 工作，分别承担**最优先的用户会话入口**、调试入口与桌面控制端职责。
+建立客户端层，使 Web Chat（内置网页聊天渠道）和 CLI 通过 Controller API 工作，分别承担**最优先的用户会话入口**与调试入口职责。
 
-Web Chat 是平台内置的首个真实用户接入渠道，优先级高于 CLI 和 Avalonia。其渠道 ID 采用固定格式 `web-chat-{workspaceId}`，由 `WebChatGatewayAdapter` 统一处理；前端不应自行生成随机 channelId。
+Web Chat 是平台内置的首个真实用户接入渠道，优先级高于 CLI。其渠道 ID 采用固定格式 `web-chat-{workspaceId}`，由 `WebChatGatewayAdapter` 统一处理；前端不应自行生成随机 channelId。
 
 对应架构：
 - [../07架构/06PuddingAgent与客户端.md](../07架构/06PuddingAgent与客户端.md)
@@ -20,7 +20,7 @@ Web Chat 是平台内置的首个真实用户接入渠道，优先级高于 CLI 
 
 ## 可并行关系
 
-- CLI 与 Avalonia 可以并行推进。
+- CLI 可独立推进。
 - 客户端调试查询可与 [task32-observability-integration.md](task32-observability-integration.md) 部分并行。
 - 最终联调依赖 Controller、Runtime 和模板链路。
 
@@ -44,21 +44,6 @@ Web Chat 是平台内置的首个真实用户接入渠道，优先级高于 CLI 
 输出：CLI 治理操作集。
 前置依赖：任务 2。
 
-4. Avalonia 建立基础会话面板
-说明：支持登录、查看 Workspace、发起消息、查看 Session 与 Agent 状态。
-输出：桌面控制端最小 UI。
-前置依赖：任务 1 可并行，但接口依赖 Controller 基础完成。
-
-5. Avalonia 建立语音批准入口
-说明：采集语音、提交系统批准请求、绑定 ApprovalRecord。
-输出：客户端语音批准入口。
-前置依赖：任务 4；依赖 ApprovalService 稳定。
-
-6. Avalonia 建立 Workspace 控制面板
-说明：支持请求审计 Agent 冻结 Workspace、查看治理状态与审计反馈。
-输出：桌面治理控制面板。
-前置依赖：任务 4、任务 5。
-
 ---
 
 ### P3 渠道扩展（在所有关键链路任务完成后实施）
@@ -80,11 +65,9 @@ Web Chat 是平台内置的首个真实用户接入渠道，优先级高于 CLI 
 **P0**
 - Web Chat 前端以 `web-chat-{workspaceId}` 渠道 ID 能成功发起消息并得到真实回复，不报权限错误。
 
-**P2（CLI / Avalonia）**
+**P2（CLI）**
 - CLI 能通过 Controller API 发起消息并得到真实回复。
 - CLI 能查询路由、Session、审批、审计和 Workflow 状态。
-- Avalonia 能作为桌面控制端发起消息、批准和治理操作。
-- 语音批准与 ApprovalRecord 可绑定查询。
 
 **P3（飞书及其他渠道）**
 - 飞书机器人能在指定 Workspace 内收发消息，且 channelId 格式正确。

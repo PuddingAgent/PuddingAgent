@@ -10,10 +10,10 @@
  * @doc https://umijs.org/docs/guides/proxy
  */
 export default {
-  // dev 环境代理 → PuddingPlatform ASP.NET Core 后端（port 5039）
+  // dev 环境代理 → PuddingAgent 统一后端（port 8080, V1 单进程架构）
   dev: {
     '/api/': {
-      target: 'http://localhost:5039',
+      target: 'http://localhost:8080',
       changeOrigin: true,
       secure: false,
     },

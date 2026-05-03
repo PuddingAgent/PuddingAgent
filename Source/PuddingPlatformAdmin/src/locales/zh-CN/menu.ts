@@ -9,7 +9,6 @@ export default {
   'menu.userManagement': '用户管理',
   'menu.roleManagement': '权限角色',
   'menu.teamManagement': '团队管理',
-  'menu.agentTemplate': 'Agent 模板（旧）',
   'menu.session': '会话记录',
   'menu.runtimeManagement': 'Runtime 节点',
   'menu.more-blocks': '更多区块',

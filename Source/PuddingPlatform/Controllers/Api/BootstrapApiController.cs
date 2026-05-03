@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 using PuddingPlatform.Utils;
 
 namespace PuddingPlatform.Controllers.Api;
@@ -20,12 +21,23 @@ namespace PuddingPlatform.Controllers.Api;
 [ApiController]
 [Route("api/bootstrap")]
 [AllowAnonymous]
-public partial class BootstrapApiController(IConfiguration config, PlatformDbContext db) : ControllerBase
+public partial class BootstrapApiController(IConfiguration config, PlatformDbContext db, BootstrapStateService stateService) : ControllerBase
 {
+    private IActionResult? CheckInitialized()
+    {
+        var initialized = config.GetValue<bool>("Bootstrap:Initialized");
+        if (initialized)
+            return StatusCode(403, new { status = "error", message = "系统已完成初始化" });
+        return null;
+    }
+
     /// <summary>GET /api/bootstrap/status — 检查系统是否需要初始化</summary>
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus(CancellationToken ct)
     {
+        var lockResult = CheckInitialized();
+        if (lockResult != null) return lockResult;
+
         var hasAdmin = await db.AppUsers.AnyAsync(u => u.UserType == UserType.Admin, ct);
         var userCount = await db.AppUsers.CountAsync(ct);
 
@@ -41,10 +53,8 @@ public partial class BootstrapApiController(IConfiguration config, PlatformDbCon
     [HttpPost("admin")]
     public async Task<IActionResult> CreateAdmin([FromBody] BootstrapAdminRequest request, CancellationToken ct)
     {
-        // 校验 Bootstrap Secret（在事务外提前校验，减少事务持有时间）
-        var requiredSecret = config["Bootstrap:Secret"] ?? string.Empty;
-        if (!string.IsNullOrEmpty(requiredSecret) && request.BootstrapSecret != requiredSecret)
-            return Unauthorized(new { status = "error", message = "Bootstrap 密钥不正确" });
+        var lockResult = CheckInitialized();
+        if (lockResult != null) return lockResult;
 
         // 密码强度校验：≥8位，含大小写+数字（事务外提前校验）
         if (!PasswordStrengthRegex().IsMatch(request.Password))
@@ -87,6 +97,8 @@ public partial class BootstrapApiController(IConfiguration config, PlatformDbCon
             db.AppUsers.Add(entity);
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
+
+            await stateService.SetInitializedAsync();
 
             var token = GenerateJwt(entity.UserId, entity.DisplayName ?? entity.UserId, entity.Email, "admin");
 
@@ -140,6 +152,5 @@ public sealed record BootstrapAdminRequest(
     string UserId,
     string Email,
     string Password,
-    string BootstrapSecret,
     string? DisplayName = null
 );

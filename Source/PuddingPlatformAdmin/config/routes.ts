@@ -85,16 +85,16 @@ export default [
     component: './team-management',
   },
   {
-    path: '/agent-template',
-    name: 'agentTemplate',
-    icon: 'deploymentUnit',
-    component: './agent-template',
-  },
-  {
     path: '/session',
     name: 'session',
     icon: 'message',
     component: './session',
+  },
+  {
+    path: '/chat',
+    name: 'chat',
+    icon: 'message',
+    component: './chat',
   },
   {
     path: '/runtime-management',

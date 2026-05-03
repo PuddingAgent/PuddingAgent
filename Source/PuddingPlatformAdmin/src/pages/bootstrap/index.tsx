@@ -1,4 +1,4 @@
-import { LockOutlined, MailOutlined, UserOutlined, KeyOutlined, IdcardOutlined } from '@ant-design/icons';
+import { LockOutlined, MailOutlined, UserOutlined, IdcardOutlined } from '@ant-design/icons';
 import { ProForm, ProFormText } from '@ant-design/pro-components';
 import { Helmet, history, useIntl } from '@umijs/max';
 import { App } from 'antd';
@@ -73,7 +73,6 @@ const Bootstrap: React.FC = () => {
           email: values.email,
           displayName: values.displayName,
           password: values.password,
-          bootstrapSecret: values.bootstrapSecret || '',
         }),
       });
 
@@ -101,7 +100,7 @@ const Bootstrap: React.FC = () => {
       <div className={styles.card}>
         <div className={styles.content}>
           <div className={styles.header}>
-            <img alt="Pudding" src="/logo.svg" className={styles.logo} />
+            <img alt="Pudding" src="/admin/assets/images/logo.png" className={styles.logo} />
             <div className={styles.title}>Pudding Platform</div>
             <div className={styles.desc}>
               {intl.formatMessage({
@@ -209,17 +208,6 @@ const Bootstrap: React.FC = () => {
               ]}
             />
 
-            <ProFormText.Password
-              name="bootstrapSecret"
-              fieldProps={{
-                size: 'large',
-                prefix: <KeyOutlined />,
-              }}
-              placeholder={intl.formatMessage({
-                id: 'pages.bootstrap.secret.placeholder',
-                defaultMessage: 'Bootstrap 密钥 (如未配置则留空)',
-              })}
-            />
           </ProForm>
         </div>
       </div>

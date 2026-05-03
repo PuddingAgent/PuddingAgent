@@ -17,7 +17,7 @@ const Settings: ProLayoutProps & {
   colorWeak: false,
   title: 'Pudding Platform',
   pwa: false,
-  logo: '/logo.svg',
+  logo: '/admin/assets/images/logo.png',
   iconfontUrl: '',
   token: {},
 };

@@ -26,7 +26,6 @@ services:
       Jwt__Issuer:     ${JWT_ISSUER:-pudding-platform}
       Jwt__Audience:   ${JWT_AUDIENCE:-pudding-admin}
       Jwt__ExpiryHours: "${JWT_EXPIRY_HOURS:-8}"
-      Bootstrap__Secret: "${BOOTSTRAP_SECRET:-}"
       ConnectionStrings__Default: "Data Source=/app/data/pudding_platform.db"
       P2P__Enabled: "true"
       P2P__Port:    "9527"
