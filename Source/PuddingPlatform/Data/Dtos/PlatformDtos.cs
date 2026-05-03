@@ -510,7 +510,8 @@ public record UpsertWorkspaceChannelRequest(
 public record AdminChatRequest(
     string MessageText,
     string? SessionId,
-    string? AgentId
+    string? AgentId,
+    bool ForceNewSession = false
 );
 
 public record AdminChatResponse(

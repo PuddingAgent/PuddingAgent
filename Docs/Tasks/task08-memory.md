@@ -2,8 +2,32 @@
 
 > **状态：** ✏️ 设计中
 > **依赖：** Task 09 (Agent 生命周期)
->
-> **⚠️ 定位变更：** 记忆系统已从代码文档记忆升级为**个人生活图谱**。存储内容涵盖用户约束（过敏/预算/偏好）、任务沉淀知识、长期情感链接三层。记忆目录为 `~/Documents/Pudding/Memory/`，核心设计见 [task18定位.md](../Tasks/task18定位.md)。
+> **参考：** [Claude Code EP10 Context Assembly](../../Docs/claude-reviews-claude/architecture/10-context-assembly.md) — CLAUDE.md 6 层记忆体系
+
+---
+
+## 参考设计：CLAUDE.md 多层记忆体系
+
+借鉴 Claude Code 的上下文装配系统，Pudding 可设计自己的 `PUDDING.md` 体系，按优先级从低到高加载：
+
+```
+加载顺序（优先级从低到高）：
+1. Managed     → 组织策略（V2 企业版）
+2. User        → ~/.pudding/PUDDING.md（用户全局偏好）
+3. Scene       → 场景目录/PUDDING.md（场景级规则，从目录向上遍历）
+4. Local       → PUDDING.local.md（私有规则，gitignored）
+5. AutoMem     → ~/.pudding/memory/MEMORY.md（Agent 自动管理，越用越了解用户）
+6. Session     → 当前会话临时指令
+```
+
+### 对 Pudding 记忆系统的启示
+
+| Claude Code | Pudding 对应 | 说明 |
+|-------------|-------------|------|
+| CLAUDE.md（Project） | 场景级 PUDDING.md | 不同场景（工作/生活）有独立规则 |
+| CLAUDE.local.md | PUDDING.local.md | 用户私有偏好，不共享 |
+| AutoMem MEMORY.md | 长期记忆引擎自动写入 | Agent 越用越了解用户偏好 |
+| 目录向上遍历 | 场景目录向上查找 | 父目录的规则被子目录继承 |
 
 ---
 

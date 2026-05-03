@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using PuddingCode.Platform;
 using PuddingCode.Models;
@@ -19,6 +20,7 @@ public class ChatApiController(
     PlatformDbContext db,
     PlatformApiClient apiClient,
     MinioStorageService minio,
+    IServiceScopeFactory scopeFactory,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     // POST /api/workspaces/{workspaceId}/chat/message
@@ -120,6 +122,7 @@ public class ChatApiController(
             capabilityPolicy: capabilityPolicy,
             toolDefinitions: toolDefinitions,
             skillPackages: skillPackages,
+            forceNewSession: req.ForceNewSession,
             ct:             ct);
 
         sw.Stop();
@@ -239,6 +242,7 @@ public class ChatApiController(
                 capabilityPolicy: capabilityPolicy,
                 toolDefinitions: toolDefinitions,
                 skillPackages: skillPackages,
+                forceNewSession: req.ForceNewSession,
                 ct:             ct))
             {
                 await WriteRawSseAsync(Response, frame, ct);
@@ -627,7 +631,7 @@ public class ChatApiController(
     // ── 消息持久化 ─────────────────────────────────────────────────
 
     /// <summary>
-    /// SSE 流结束后将消息写入 ChatMessageEntity。
+    /// SSE 流结束后将消息写入 ChatMessageEntity（使用独立 scope 避免 DbContext 随请求结束而释放）。
     /// </summary>
     private async Task PersistMessagesAsync(
         string workspaceId,
@@ -641,20 +645,21 @@ public class ChatApiController(
         if (string.IsNullOrEmpty(sessionId))
             return;
 
+        using var scope = scopeFactory.CreateScope();
+        var persistDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        var userMsg = new ChatMessageEntity
+        persistDb.ChatMessages.Add(new ChatMessageEntity
         {
             SessionId = sessionId,
             Role = "user",
             Content = userText.Length > 4000 ? userText[..4000] : userText,
             CreatedAt = now - 1,
-        };
-        db.ChatMessages.Add(userMsg);
+        });
 
         if (!string.IsNullOrWhiteSpace(agentReply))
         {
-            var agentMsg = new ChatMessageEntity
+            persistDb.ChatMessages.Add(new ChatMessageEntity
             {
                 SessionId = sessionId,
                 Role = "agent",
@@ -663,11 +668,10 @@ public class ChatApiController(
                     ? JsonSerializer.Serialize(usage)
                     : null,
                 CreatedAt = now,
-            };
-            db.ChatMessages.Add(agentMsg);
+            });
         }
 
-        await db.SaveChangesAsync(ct);
+        await persistDb.SaveChangesAsync(ct);
         logger.LogInformation(
             "[Chat] Persisted messages session={SessionId} userLen={UserLen} replyLen={ReplyLen}",
             sessionId, userText.Length, agentReply.Length);

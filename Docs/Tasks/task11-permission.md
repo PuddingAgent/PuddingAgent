@@ -3,6 +3,35 @@
 > **状态：** ✏️ 设计中
 > **依赖：** Task 10 (Agent 能力体系)、D02 (ShellTool / FileTool)
 > **目标：** 为 Agent 的文件访问和命令执行建立路径沙盒、指令分级白名单和人工授权机制，防止 AI 产生非预期破坏
+> **参考：** [Claude Code EP07 Permission Pipeline](../../Docs/claude-reviews-claude/architecture/07-permission-pipeline.md) — 7 层纵深防御、fail-closed/fail-open 判定原则
+
+---
+
+## 参考设计：7 层纵深防御
+
+借鉴 Claude Code 的 `hasPermissionsToUseToolInner()` 权限评估管道：
+
+```
+Layer 1: 工具级 Deny 规则 → 硬拒绝，不可覆盖
+Layer 2: 工具级 Ask 规则  → 需要用户确认（沙箱例外：自动允许）
+Layer 3: 工具自定义检查   → 每个工具实现自己的 checkPermissions()
+Layer 4: 不可绕过的安全护栏 → .git/.claude/密钥文件保护
+Layer 5: Bypass 模式判断   → 计划模式/信任模式可跳过确认
+Layer 6: Always-Allow 规则 → MCP 服务级白名单
+Layer 7: 默认 → Ask 用户   → 兜底策略
+```
+
+### fail-closed vs fail-open 判定原则
+
+| 场景 | 策略 | 说明 |
+|------|------|------|
+| Bash 命令解析失败 | **fail-closed** → 拒绝执行 | 安全相关 |
+| 权限检查超时 | **fail-closed** → 默认拒绝 | 安全相关 |
+| 未知命令类别 | **fail-closed** → 需用户确认 | 安全相关 |
+| 策略加载失败 | **fail-open** → 允许所有 | 可用性优先 |
+| 远程配置不可用 | **fail-open** → 使用本地缓存 | 可用性优先 |
+
+**Pudding 的对应策略**：安全相关检查 fail-closed（未知→拒绝），可用性相关检查 fail-open（服务不可用→降级放行）。
 
 ---
 

@@ -31,14 +31,14 @@ export default [
     path: '/chat',
     name: 'chat',
     icon: 'message',
-    component: './chat',
     layout: false,
-    hideInMenu: true,
+    component: './chat',
   },
   {
     path: '/workspace',
+    name: 'workspace',
+    icon: 'appstore',
     component: './workspace',
-    hideInMenu: true,
   },
   {
     path: '/workspace/:id',

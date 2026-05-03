@@ -3,6 +3,33 @@
 > **状态：** ✏️ 设计中
 > **依赖：** Task 04 (蜂群模式)、Task 09 (Agent 生命周期)
 > **目标：** 定义 Agent 技能的三层架构、内置能力清单、权限模型及自适应 Token 优化策略
+> **参考：** [Claude Code EP02 Tool System](../../Docs/claude-reviews-claude/architecture/02-tool-system.md) — 30+ 方法 Tool 接口、fail-closed 默认值
+
+---
+
+## 参考设计：fail-closed 工具默认值
+
+借鉴 Claude Code 的 `buildTool()` 工厂模式——默认值是保守的，忘记声明 = 更严格的安全约束：
+
+```csharp
+// 工具默认值
+public static class ToolDefaults
+{
+    public const bool IsReadOnly = false;        // fail-closed: 默认需权限
+    public const bool IsConcurrencySafe = false; // fail-closed: 默认串行
+    public const bool IsDestructive = false;
+}
+
+// BuildTool 工厂：只需声明差异部分
+public static IPuddingTool BuildTool(ToolDefinition def) => new PuddingTool
+{
+    IsReadOnly = def.IsReadOnly ?? ToolDefaults.IsReadOnly,
+    IsConcurrencySafe = def.IsConcurrencySafe ?? ToolDefaults.IsConcurrencySafe,
+    // ...
+};
+```
+
+每个工具实现 `IPuddingTool` 接口（对应 Claude Code 的 30+ 方法 `Tool<Input, Output, Progress>` 类型），通过工厂函数创建，未声明的属性自动取保守默认值。
 
 ---
 

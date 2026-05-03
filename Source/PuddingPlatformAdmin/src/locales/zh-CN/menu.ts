@@ -1,6 +1,6 @@
 export default {
   'menu.welcome': '工作台',
-  'menu.workspace': '场景管理',
+  'menu.workspace': '工作区管理',
   'menu.chat': '对话',
   'menu.llmResourcePool': 'LLM 资源池',
   'menu.globalAgentTemplate': '全局 Agent 模板',
@@ -14,8 +14,8 @@ export default {
   'menu.runtimeManagement': 'Runtime 节点',
   'menu.more-blocks': '更多区块',
   'menu.home': '首页',
-  'menu.admin': '控制台',
-  'menu.admin.sub-page': '总览',
+  'menu.admin': '管理页',
+  'menu.admin.sub-page': '二级管理页',
   'menu.login': '登录',
   'menu.register': '注册',
   'menu.register-result': '注册结果',

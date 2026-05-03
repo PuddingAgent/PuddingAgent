@@ -141,6 +141,7 @@ public sealed class PlatformApiClient
         CapabilityPolicy? capabilityPolicy = null,
         IReadOnlyList<LlmToolDefinition>? toolDefinitions = null,
         IReadOnlyList<SkillPackageInfo>? skillPackages = null,
+        bool forceNewSession = false,
         CancellationToken ct = default)
     {
         var request = new MessageIngressRequest
@@ -155,6 +156,7 @@ public sealed class PlatformApiClient
             CapabilityPolicy = capabilityPolicy,
             ToolDefinitions = toolDefinitions,
             SkillPackages = skillPackages,
+            ForceNewSession = forceNewSession,
         };
 
         var resp = await _http.PostAsJsonAsync("/api/messageingress", request, ct);
@@ -170,6 +172,7 @@ public sealed class PlatformApiClient
         CapabilityPolicy? capabilityPolicy = null,
         IReadOnlyList<LlmToolDefinition>? toolDefinitions = null,
         IReadOnlyList<SkillPackageInfo>? skillPackages = null,
+        bool forceNewSession = false,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var request = new MessageIngressRequest
@@ -184,6 +187,7 @@ public sealed class PlatformApiClient
             CapabilityPolicy = capabilityPolicy,
             ToolDefinitions = toolDefinitions,
             SkillPackages = skillPackages,
+            ForceNewSession = forceNewSession,
         };
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/messageingress/stream")

@@ -1,6 +1,69 @@
 # task36 — 事件触发、外部协议接入与子代理模型（调研）
 
-最后更新：2026-05-02
+最后更新：2026-05-03
+
+> **参考：**
+> - [Claude Code EP03 Coordinator](../../Docs/claude-reviews-claude/architecture/03-coordinator.md) — Coordinator/Worker 上下文隔离、受限工具集
+> - [Claude Code EP08 Agent Swarms](../../Docs/claude-reviews-claude/architecture/08-agent-swarms.md) — 文件邮箱 IPC、7 种任务类型、锁文件并发控制
+
+---
+
+## 参考设计：Coordinator/Worker 隔离 + 文件邮箱 IPC
+
+### Coordinator/Worker 上下文隔离
+
+借鉴 Claude Code 的多智能体协调器设计：
+
+```
+Coordinator 的工具箱（仅 3 个）：
+  - Agent（派生子代理）
+  - SendMessage（向已有子代理发送消息）
+  - TaskStop（终止运行中的子代理）
+
+Worker 的工具箱：
+  - 全部执行工具（Bash、Read、Edit、Grep 等）
+  - MCP 工具 + Skill
+  - 内部工具（TeamCreate 等）被排除
+
+关键原则：Workers 看不到 Coordinator 的对话！
+每个 prompt 必须自包含——Coordinator 必须写入所有上下文。
+```
+
+### 7 种任务类型（Claude Code → Pudding 对应）
+
+| Claude Code | Pudding 对应 | 说明 |
+|-------------|-------------|------|
+| LocalShell | Shell 工具执行 | 命令行进程 |
+| LocalAgent | 子代理（Sub-Agent） | 独立上下文窗口 |
+| RemoteAgent | P2P 远程 Agent | Agent 间任务分发 |
+| InProcessTeammate | 进程内协作者 | AsyncLocalStorage 隔离 |
+| LocalWorkflow | 工作流管道 | 确定性工作流执行 |
+| MonitorMcp | MCP 健康监控 | MCP 服务可用性检查 |
+| DreamTask | 记忆巩固任务 | 后台自动记忆整理 |
+
+### 文件邮箱 IPC
+
+借鉴 Claude Code 的文件邮箱系统——用于 Agent 间异步通信：
+
+```
+~/.pudding/teams/{team-name}/
+├── config.json              # Team 清单
+└── inboxes/
+    ├── lead.json            # Leader 的收件箱
+    ├── worker-a.json        # Worker A 的收件箱
+    └── worker-b.json        # Worker B 的收件箱
+```
+
+消息类型：纯文本 DM、广播（`to: "*"`）、空闲通知、权限请求/响应、计划审批、关停请求/确认。
+
+**并发控制**：文件锁（lockfile）+ 指数退避重试，多个进程可安全并发写入同一邮箱。
+
+### 对 Pudding 子代理设计的启示
+
+- **上下文隔离**是架构级保证，不是约定——Worker 无法访问 Coordinator 的对话
+- Coordinator 的 prompt 必须自包含所有 Worker 需要的上下文
+- 文件邮箱比 ZeroMQ 更轻量且持久化，适合 V1 的 Agent 间通信
+- 可考虑 P2P 直连 + 文件邮箱双通道：P2P 用于实时性要求高的场景，邮箱用于异步/离线场景
 
 ---
 

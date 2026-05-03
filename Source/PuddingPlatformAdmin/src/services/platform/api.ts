@@ -1075,6 +1075,7 @@ export interface AdminChatRequest {
   messageText: string;
   sessionId?: string;
   agentId?: string;
+  forceNewSession?: boolean;
 }
 
 export interface TokenUsageDto {

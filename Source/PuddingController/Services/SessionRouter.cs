@@ -132,8 +132,11 @@ public sealed class SessionRouter
             session = await _sessionRepo.GetAsync(request.SessionId, ct);
         }
 
-        session ??= await _sessionRepo.FindActiveAsync(
-            request.ChannelId, userId, workspace.WorkspaceId, templateId, ct);
+        if (session is null && !request.ForceNewSession)
+        {
+            session = await _sessionRepo.FindActiveAsync(
+                request.ChannelId, userId, workspace.WorkspaceId, templateId, ct);
+        }
 
         if (session is null)
         {
@@ -313,8 +316,11 @@ public sealed class SessionRouter
         if (request.SessionId is not null)
             session = await _sessionRepo.GetAsync(request.SessionId, ct);
 
-        session ??= await _sessionRepo.FindActiveAsync(
-            request.ChannelId, userId, workspace.WorkspaceId, templateId, ct);
+        if (session is null && !request.ForceNewSession)
+        {
+            session = await _sessionRepo.FindActiveAsync(
+                request.ChannelId, userId, workspace.WorkspaceId, templateId, ct);
+        }
 
         if (session is null)
         {

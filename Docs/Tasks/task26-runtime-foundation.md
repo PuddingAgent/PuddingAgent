@@ -1,6 +1,31 @@
 # task26 - PuddingRuntime 基础宿主
 
-最后更新：2026-03-18
+最后更新：2026-05-03
+
+## 参考设计
+
+> 详见 [Claude Code EP01 QueryEngine](../../Docs/claude-reviews-claude/architecture/01-query-engine.md) — 12 步状态机主循环。
+
+### Agent 主循环（参考 Claude Code）
+
+```
+User Input
+  → ① 输入预处理（斜杠命令、附件解析）
+  → ② 上下文装配（系统提示词 + 记忆 + 工具定义）
+  → ③ API 调用 → ④ 流式响应 → ⑤ 工具调用提取
+  → ⑥ 权限检查 → ⑦ 工具执行 → ⑧ 结果注入
+  → ⑨ 继续/结束判断 → 循环回到 ②
+```
+
+**核心范式**：`while(true)` 循环替代请求-响应。Runtime 是"故意做傻"的执行器——所有智能在 LLM 端，Runtime 只负责执行和约束。每个工具调用都是完整的 API roundtrip。
+
+### 关键设计决策（从 Claude Code 迁移）
+
+| 决策 | 说明 |
+|------|------|
+| AsyncGenerator 模式 | C# 对应 `IAsyncEnumerable<T>`，`yield return` 逐帧产出工具调用和文本 |
+| 状态机而非回调 | 每个 Agent 执行实例有自己的状态机，不被全局状态污染 |
+| 双写路径 | 正常运行时异步队列写 SQLite（100ms 合并），退出时同步刷盘 |
 
 ## 任务目标
 

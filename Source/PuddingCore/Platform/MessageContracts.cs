@@ -51,6 +51,8 @@ public sealed record MessageIngressRequest
     public IReadOnlyList<LlmToolDefinition>? ToolDefinitions { get; init; }
     /// <summary>Agent 模板关联的 Skill 包列表（含预签名下载 URL）。由 Platform 解析后注入，经 Controller 透传至 Runtime。</summary>
     public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
+    /// <summary>强制新建会话（跳过 FindActive 复用逻辑），用于"新对话"场景。</summary>
+    public bool ForceNewSession { get; init; }
 }
 
 /// <summary>消息入口响应。</summary>

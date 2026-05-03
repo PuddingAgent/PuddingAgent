@@ -3,6 +3,41 @@
 > **状态：** ✏️ 设计中
 > **依赖：** Task 10 (Agent 能力体系)、Task 11 (权限沙盒)、Task 13 (上下文预热)
 > **目标：** 将 Agent 能力从硬编码解耦为可热插拔的插件架构，支持内置插件、外部 DLL 加载和环境自适应探活
+> **参考：** [Claude Code EP04 Plugin System](../../Docs/claude-reviews-claude/architecture/04-plugin-system.md) — Skill = YAML frontmatter + Markdown、6 种 skill 来源
+
+---
+
+## 参考设计：Skill = YAML frontmatter + Markdown
+
+借鉴 Claude Code 的 Skill 格式——Skill 是"prompt as code"：
+
+```yaml
+---
+name: commit
+description: Create a git commit with AI-generated message
+type: prompt
+allowedTools: [Bash, Read, Glob, Grep]
+context: inline    # inline = 当前上下文执行; fork = 子代理执行
+---
+Analyze all staged changes and generate a conventional commit message...
+```
+
+### 6 种 Skill 来源层次（Claude Code → Pudding 对应）
+
+| Claude Code | Pudding 对应 | 说明 |
+|-------------|-------------|------|
+| bundled/ | 内置 Skill | 框架自带，不可删除 |
+| ~/.claude/skills/ | ~/.pudding/skills/ | 用户自定义 Skill |
+| plugin skills | 插件 Skill | 由插件包提供 |
+| managed skills | 组织管理 Skill（V2） | 企业统一管理 |
+| MCP skills | MCP 服务提供 | 通过 MCP 协议暴露 |
+| command skills | 命令转换（已废弃） | 不采用 |
+
+### 对 Pudding Skill 系统的启示
+
+- Skill 格式统一为 YAML + Markdown，与 SKILL.md 规范一致 ✅ 已规划
+- 支持 `context: inline | fork` 决定执行模式（当前上下文 vs 子代理）
+- 支持 `allowedTools` 声明限制工具集
 
 ---
 

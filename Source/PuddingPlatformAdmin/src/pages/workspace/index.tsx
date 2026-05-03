@@ -77,7 +77,7 @@ const WorkspaceTable: React.FC = () => {
       };
 
       await createWorkspace(request);
-      message.success(`工作空间 "${values.name}" 创建成功`);
+      message.success(`场景 "${values.name}" 创建成功`);
       setCreateOpen(false);
       refreshTable();
     } catch (err: unknown) {
@@ -91,7 +91,7 @@ const WorkspaceTable: React.FC = () => {
   const handleDelete = async (ws: WorkspaceWithPermDto) => {
     try {
       await deleteWorkspace(ws.workspaceId);
-      message.success(`工作空间 "${ws.name}" 已删除`);
+      message.success(`场景 "${ws.name}" 已删除`);
       refreshTable();
     } catch {
       message.error('删除失败，请稍后重试');
@@ -127,7 +127,7 @@ const WorkspaceTable: React.FC = () => {
       },
     },
     {
-      title: '工作空间 ID',
+      title: '场景 ID',
       dataIndex: 'workspaceId',
       copyable: true,
       width: 180,
@@ -139,7 +139,7 @@ const WorkspaceTable: React.FC = () => {
       valueType: 'option',
       width: 160,
       render: (_, record) => [
-        <Tooltip title="进入工作空间" key="enter">
+        <Tooltip title="进入场景" key="enter">
           <Button
             type="link"
             icon={<EnterOutlined />}
@@ -151,8 +151,8 @@ const WorkspaceTable: React.FC = () => {
         </Tooltip>,
         <Popconfirm
           key="delete"
-          title="确认删除此工作空间？"
-          description="此操作不可恢复，内置工作空间无法删除。"
+          title="确认删除此场景？"
+          description="此操作不可恢复，内置场景无法删除。"
           onConfirm={() => handleDelete(record)}
           okText="删除"
           cancelText="取消"
@@ -175,8 +175,8 @@ const WorkspaceTable: React.FC = () => {
   return (
     <PageContainer
       header={{
-        title: '工作空间管理',
-        subTitle: '管理你的 AI 助手工作空间',
+        title: '场景管理',
+        subTitle: '管理你的 AI 助手场景',
       }}
     >
       <ProTable<WorkspaceWithPermDto>

@@ -115,15 +115,3 @@
 3. finally 块清理 registry（`_controlRegistry`、`_skillPackageRegistry` 等）
 4. 前端 catch `AbortError` → 设置 status='success' 并显示"已停止生成"
 5. 不 rethrow OperationCanceledException
-
-## 主交互页不要继承后台壳
-
-**经验**：当产品存在高频主交互页（如 Chat）和低频管理后台时，主交互页应使用独立 Layout，后台入口收敛为轻量按钮或抽屉，不能与管理菜单平级展示。
-
-**原因**：后台侧栏、顶栏、水印和 Footer 会把用户心智从“正在与代理交互”拉回“正在管理系统”，破坏沉浸感并增加认知负担。
-
-**改进方法**：
-1. 高频交互页路由显式 `layout: false`
-2. 页面内自建轻量 Shell，只保留完成主任务所需元素
-3. 后台入口命名为“控制台/设置”，视觉降级
-4. 验收时检查是否仍出现 ProLayout 侧栏、Footer、水印等后台 chrome

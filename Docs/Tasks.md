@@ -35,10 +35,13 @@ python .github/skills/todo-api/todo_api.py list-tasks --project Pudding
 | **P0** | L0 基础 | task-20260502-007 | 实现 SQLite 数据持久化层 |
 | **P0** | L0 基础 | task-20260502-012 | AI 服务商管理功能迁移 |
 | **P0** | L1 记忆 | task-20260502-023 | 实现长期记忆引擎 |
+| **P0** | L1 记忆 | task-20260503-039 | 会话持久化设计（JSONL + parent-UUID 链） |
 | **P0** | L2 工具 | task-20260502-024 | 实现工具与Skill系统 |
+| **P1** | L1 记忆 | task-20260503-040 | 上下文压缩设计（3层压缩 + Token 预算） |
 | **P1** | — | task-20260502-005 | 实现 P2P 节点发现与直连通信 |
 | **P1** | L3 子代理 | task-20260502-025 | 实现子代理与Orchestrator-Workers |
 | **P1** | L4 连接器 | task-20260502-026 | 实现连接器框架与基础连接器（Webhook + CLI） |
+| **P1.5** | L2 工具 | task-20260503-041 | Hook 系统设计（PreToolUse/PostToolUse） |
 | **P2** | L5 自动化 | task-20260502-027 | 实现 Cron 定时任务调度 |
 | **P2** | L5 工作流 | task-20260502-028 | 实现工作流管道（Prompt Chaining + Routing） |
 | **P3** | 远期 | task-20260502-029 | 实现浏览器自动化（P3 远期） |

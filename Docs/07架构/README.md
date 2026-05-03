@@ -29,4 +29,4 @@
 - Gateway 负责把外部协议世界转换为平台事件世界，Runtime 负责把订阅命中变成实际唤醒与执行。
 - Workflow / TaskMap 是复杂任务的一等表达，前端可借鉴 FlowGram 风格画布，但运行时语义仍以 Pudding 自身架构为准。
 - 若需要继续细化事件命名、Envelope、重放与死信策略，应优先阅读 [10事件系统与事件总线](10事件系统与事件总线.md)。
-- **2026-05-03**：Workspace 保留为"工作空间"分组概念。Chat 为一级入口（顶栏含工作空间选择器+Agent选择器），工作空间管理和 Agent 管理退入设置后台。Agent 模板简化为全局模板库。详见 [../架构.md#工作空间workspace与-agent-关系模型](../架构.md#工作空间workspace与-agent-关系模型)。
+- **2026-05-03**：Workspace 保留为"场景"分组概念。Chat 为一级入口（顶栏含场景选择器+Agent选择器），场景管理和 Agent 管理退入设置后台。Agent 模板简化为全局模板库。详见 [../架构.md#场景sceneworkspace与-agent-关系模型](../架构.md#场景sceneworkspace与-agent-关系模型)。
