@@ -14,12 +14,13 @@ import { Alert, App, Button, Card, Divider, Form, Input, Modal, Popover, Progres
 import { createStyles } from 'antd-style';
 import 'katex/dist/katex.min.css';
 import Prism from 'prismjs';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-tsx';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-csharp';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-python';
-import 'prismjs/components/prism-tsx';
-import 'prismjs/components/prism-typescript';
 import 'prismjs/themes/prism-tomorrow.css';
 import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -56,10 +57,10 @@ interface CreateSceneFormValues {
 const { Text, Title } = Typography;
 
 const QUICK_PROMPTS = [
-  '帮我写一份工作周报',
-  '解释这段代码的作用',
-  '翻译以下内容为英文',
-  '帮我总结这篇文章的要点',
+  '整理一段凌乱的想法',
+  '分析一份错误日志',
+  '为当前任务生成执行步骤',
+  '总结一段长文本',
 ];
 
 const COMMANDS = [
@@ -71,26 +72,78 @@ const COMMANDS = [
 const DEFAULT_CONTEXT_WINDOW = 4096;
 
 // ── 样式 ─────────────────────────────────────────────
-const useStyles = createStyles(({ token, isDarkMode }) => ({
+const useStyles = createStyles(({ token }) => ({
   container: {
     display: 'flex',
     flexDirection: 'column',
-    height: 'calc(100vh - 108px)',
-    maxWidth: 980,
-    margin: '0 auto',
-    background: token.colorBgContainer,
-    border: `1px solid ${token.colorBorderSecondary}`,
-    borderRadius: token.borderRadiusXL,
+    height: '100vh',
+    minHeight: 0,
+    padding: '20px 24px 24px',
     overflow: 'hidden',
+    background: `radial-gradient(circle at 12% 10%, ${token.colorPrimaryBg} 0, transparent 28%), radial-gradient(circle at 88% 0%, ${token.colorFillAlter} 0, transparent 30%), linear-gradient(135deg, ${token.colorBgLayout} 0%, ${token.colorBgContainer} 58%, ${token.colorFillQuaternary} 100%)`,
   },
   topBar: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 16,
+    width: '100%',
+    maxWidth: 1180,
+    margin: '0 auto',
+    padding: '4px 2px 12px',
+  },
+  brandArea: {
+    display: 'flex',
+    alignItems: 'center',
     gap: 12,
-    padding: '12px 16px',
-    borderBottom: `1px solid ${token.colorBorderSecondary}`,
+    minWidth: 0,
+  },
+  brandLogo: {
+    width: 42,
+    height: 42,
+    objectFit: 'contain' as const,
+    animation: 'puddingLogoPulse 2400ms ease-in-out infinite',
+  },
+  brandTitle: {
+    margin: 0,
+    lineHeight: 1.15,
+    letterSpacing: 0.2,
+  },
+  brandSubtitle: {
+    color: token.colorTextSecondary,
+    fontSize: 13,
+  },
+  shellActions: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flexWrap: 'wrap' as const,
+  },
+  contextSummary: {
+    maxWidth: 360,
+    padding: '6px 12px',
+    borderRadius: 999,
+    color: token.colorTextSecondary,
+    background: token.colorFillQuaternary,
+    whiteSpace: 'nowrap' as const,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    border: `1px solid ${token.colorBorderSecondary}`,
+  },
+  contextBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    width: '100%',
+    maxWidth: 980,
+    margin: '0 auto 12px',
+    padding: '10px 12px',
+    border: `1px solid ${token.colorBorderSecondary}`,
+    borderRadius: token.borderRadiusXL,
     background: token.colorBgElevated,
+    boxShadow: '0 10px 32px rgba(24, 18, 12, 0.04)',
   },
   selectors: {
     display: 'flex',
@@ -101,17 +154,35 @@ const useStyles = createStyles(({ token, isDarkMode }) => ({
   selector: {
     width: 190,
   },
+  selectorField: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+  },
+  selectorLabel: {
+    color: token.colorTextTertiary,
+    fontSize: 12,
+    lineHeight: 1,
+  },
   chatBody: {
     display: 'flex',
     flexDirection: 'column',
     flex: 1,
+    width: '100%',
+    maxWidth: 980,
+    margin: '0 auto',
     minHeight: 0,
-    padding: '0 16px',
+    padding: '0 20px',
+    border: `1px solid ${token.colorBorderSecondary}`,
+    borderRadius: 28,
+    background: token.colorBgContainer,
+    boxShadow: '0 24px 80px rgba(24, 18, 12, 0.08)',
+    overflow: 'hidden',
   },
   messageList: {
     flex: 1,
     overflowY: 'auto' as const,
-    padding: '16px 0 8px',
+    padding: '22px 0 8px',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 12,
@@ -159,7 +230,7 @@ const useStyles = createStyles(({ token, isDarkMode }) => ({
     borderBottomRightRadius: 4,
   },
   agentBubble: {
-    background: token.colorBgElevated,
+    background: token.colorFillQuaternary,
     color: token.colorText,
     border: `1px solid ${token.colorBorderSecondary}`,
     borderBottomLeftRadius: 4,
@@ -217,7 +288,7 @@ const useStyles = createStyles(({ token, isDarkMode }) => ({
     alignItems: 'flex-end',
   },
   inputPanel: {
-    padding: '10px 0 14px',
+    padding: '12px 0 18px',
     borderTop: `1px solid ${token.colorBorderSecondary}`,
     background: token.colorBgContainer,
   },
@@ -277,7 +348,7 @@ const useStyles = createStyles(({ token, isDarkMode }) => ({
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 14,
     padding: '24px 0',
   },
   onboardingLogo: {
@@ -322,10 +393,12 @@ const useStyles = createStyles(({ token, isDarkMode }) => ({
   },
   onboardingTitle: {
     margin: 0,
+    letterSpacing: 0.2,
   },
   onboardingSubtitle: {
     color: token.colorTextSecondary,
     fontSize: 14,
+    textAlign: 'center' as const,
   },
   promptList: {
     marginTop: 8,
@@ -406,7 +479,7 @@ const useStyles = createStyles(({ token, isDarkMode }) => ({
     margin: '10px 0',
     borderRadius: 10,
     overflow: 'hidden',
-    background: isDarkMode ? token.colorBgElevated : token.colorTextHeading,
+    background: '#1e1e1e',
     '& pre': {
       margin: 0,
       padding: '14px 16px',
@@ -838,13 +911,23 @@ const ChatPage: React.FC = () => {
 
   const handleRetry = (message: ChatMessage) => {
     if (message.status !== 'error') return;
+    const messageIndex = messages.findIndex((msg) => msg.id === message.id);
+    const nextMessage = messageIndex >= 0 ? messages[messageIndex + 1] : undefined;
+
+    if (nextMessage?.role === 'agent' && nextMessage.status === 'error') {
+      setMessages((prev) => prev.filter((msg) => msg.id !== nextMessage.id));
+    }
+
     void sendMessage(message.text, message.id);
   };
 
   const handleRegenerate = (agentMessage: ChatMessage) => {
     const index = messages.findIndex((msg) => msg.id === agentMessage.id);
     const previousUser = [...messages.slice(0, index)].reverse().find((msg) => msg.role === 'user');
-    if (previousUser) void sendMessage(previousUser.text);
+    if (!previousUser) return;
+
+    setMessages((prev) => prev.filter((msg) => msg.id !== agentMessage.id));
+    void sendMessage(previousUser.text, previousUser.id);
   };
 
   const handleCopy = async (text: string) => {
@@ -952,6 +1035,9 @@ const ChatPage: React.FC = () => {
     disabled: !item.isEnabled || item.isFrozen,
   }));
 
+  const currentWorkspaceName = workspaces.find((item) => item.workspaceId === workspaceId)?.name ?? workspaceId ?? '未选择场景';
+  const currentAgentName = agents.find((item) => item.agentId === agentId)?.name ?? agentId ?? '未选择 Agent';
+
   const tokenLimit = latestUsage?.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW;
   const tokenUsed = latestUsage?.totalTokens ?? 0;
   const tokenPercent = Math.min(100, Math.round((tokenUsed / tokenLimit) * 100));
@@ -1012,50 +1098,74 @@ const ChatPage: React.FC = () => {
   return (
     <div className={styles.container}>
       <div className={styles.topBar}>
-        <div className={styles.selectors}>
-          <Select
-            className={styles.selector}
-            value={workspaceId}
-            loading={workspaceLoading}
-            options={workspaceOptions}
-            onChange={handleWorkspaceChange}
-            placeholder="请选择一个场景开始对话"
-            popupMatchSelectWidth={false}
-            dropdownRender={(menu) => (
-              <>
-                {menu}
-                <Divider className={styles.selectorDivider} />
-                <Button type="link" block onClick={openCreateSceneModal}>
-                  + 新建场景
-                </Button>
-              </>
-            )}
-          />
-
-          <Select
-            className={styles.selector}
-            value={agentId}
-            loading={agentLoading}
-            options={agentOptions}
-            onChange={handleAgentChange}
-            placeholder="💬 助手 Agent"
-            notFoundContent="暂无可用 Agent"
-            popupMatchSelectWidth={false}
-            dropdownRender={(menu) => (
-              <>
-                {menu}
-                <Divider className={styles.selectorDivider} />
-                <Button type="link" block onClick={goAgentSettings}>
-                  管理 Agent...
-                </Button>
-              </>
-            )}
-          />
+        <div className={styles.brandArea}>
+          <img src="/admin/assets/images/logo.png" alt="Pudding" className={styles.brandLogo} />
+          <div>
+            <Title level={4} className={styles.brandTitle}>Pudding</Title>
+            <Text className={styles.brandSubtitle}>安静地理解，可靠地执行</Text>
+          </div>
         </div>
 
-        <Button icon={<SettingOutlined />} onClick={goWorkspaceSettings}>
-          设置
-        </Button>
+        <div className={styles.shellActions}>
+          <Text className={styles.contextSummary}>{currentWorkspaceName} · {currentAgentName}</Text>
+          <Button type="text" onClick={resetConversation} disabled={loading && messages.length === 0}>
+            新对话
+          </Button>
+          <Button icon={<SettingOutlined />} onClick={goWorkspaceSettings}>
+            控制台
+          </Button>
+        </div>
+      </div>
+
+      <div className={styles.contextBar}>
+        <div className={styles.selectors}>
+          <div className={styles.selectorField}>
+            <Text className={styles.selectorLabel}>场景</Text>
+            <Select
+              className={styles.selector}
+              value={workspaceId}
+              loading={workspaceLoading}
+              options={workspaceOptions}
+              onChange={handleWorkspaceChange}
+              placeholder="请选择场景"
+              popupMatchSelectWidth={false}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <Divider className={styles.selectorDivider} />
+                  <Button type="link" block onClick={openCreateSceneModal}>
+                    + 新建场景
+                  </Button>
+                </>
+              )}
+            />
+          </div>
+
+          <div className={styles.selectorField}>
+            <Text className={styles.selectorLabel}>Agent</Text>
+            <Select
+              className={styles.selector}
+              value={agentId}
+              loading={agentLoading}
+              options={agentOptions}
+              onChange={handleAgentChange}
+              placeholder="选择助手 Agent"
+              notFoundContent="暂无可用 Agent"
+              popupMatchSelectWidth={false}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <Divider className={styles.selectorDivider} />
+                  <Button type="link" block onClick={goAgentSettings}>
+                    管理 Agent...
+                  </Button>
+                </>
+              )}
+            />
+          </div>
+        </div>
+
+        <Text type="secondary">当前对话上下文</Text>
       </div>
 
       <div className={styles.chatBody}>
@@ -1064,8 +1174,8 @@ const ChatPage: React.FC = () => {
             <div className={styles.onboardingState}>
               <img src="/admin/assets/images/logo.png" alt="Pudding Logo" className={styles.onboardingLogo} />
               <div className={styles.onboardingIllustration} aria-hidden="true" />
-              <Title level={2} className={styles.onboardingTitle}>你好，我是布丁 👋</Title>
-              <Text className={styles.onboardingSubtitle}>选择一个场景和 Agent，开始对话吧</Text>
+              <Title level={2} className={styles.onboardingTitle}>你好，我是布丁</Title>
+              <Text className={styles.onboardingSubtitle}>我在这里。选择一个场景和 Agent，然后把任务交给我。</Text>
 
               <div className={styles.promptList}>
                 {QUICK_PROMPTS.map((prompt) => (
@@ -1224,7 +1334,7 @@ const ChatPage: React.FC = () => {
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="输入消息，Enter 发送，Shift+Enter 换行，输入 / 打开快捷指令"
+                placeholder="交给我吧。Enter 发送，Shift+Enter 换行"
                 disabled={!workspaceId || !agentId}
                 autoSize={{ minRows: 1, maxRows: 5 }}
                 className={styles.input}

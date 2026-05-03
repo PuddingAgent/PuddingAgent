@@ -32,6 +32,8 @@ export default [
     name: 'chat',
     icon: 'message',
     component: './chat',
+    layout: false,
+    hideInMenu: true,
   },
   {
     path: '/workspace',

@@ -1,50 +1,31 @@
-import { HeartTwoTone, SmileTwoTone } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { useIntl } from '@umijs/max';
-import { Alert, Card, Typography, theme } from 'antd';
+import { history, useIntl } from '@umijs/max';
+import { Button, Card, Space, Typography } from 'antd';
 import React from 'react';
 
 const Admin: React.FC = () => {
   const intl = useIntl();
-  const { token } = theme.useToken();
   return (
     <PageContainer
+      title="Pudding Console"
       content={intl.formatMessage({
         id: 'pages.admin.subPage.title',
-        defaultMessage: 'This page can only be viewed by admin',
+        defaultMessage: 'Pudding Console',
       })}
     >
       <Card>
-        <Alert
-          message={intl.formatMessage({
-            id: 'pages.welcome.alertMessage',
-            defaultMessage:
-              'Faster and stronger heavy-duty components have been released.',
-          })}
-          type="success"
-          showIcon
-          banner
-          style={{
-            margin: -12,
-            marginBottom: 48,
-          }}
-        />
-        <Typography.Title level={2} style={{ textAlign: 'center' }}>
-          <SmileTwoTone /> Ant Design Pro{' '}
-          <HeartTwoTone twoToneColor={token.colorPrimary} /> You
-        </Typography.Title>
+        <Space direction="vertical" size={16}>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            Pudding 的设置与管理抽屉
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ margin: 0, maxWidth: 720 }}>
+            这里用于管理 Agent、场景、技能、模型资源与运行时配置。日常使用请回到独立对话页，让后台保持低频、安静、可靠。
+          </Typography.Paragraph>
+          <Button type="primary" onClick={() => history.push('/chat')}>
+            返回对话
+          </Button>
+        </Space>
       </Card>
-      <p style={{ textAlign: 'center', marginTop: 24 }}>
-        Want to add more pages? Please refer to{' '}
-        <a
-          href="https://pro.ant.design/docs/block-cn"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          use block
-        </a>
-        。
-      </p>
     </PageContainer>
   );
 };

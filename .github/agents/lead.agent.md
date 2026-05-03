@@ -3,7 +3,7 @@ name: lead
 description: "团队编排 Agent：统一入口，分析用户意图，协调 lightweight-developer/dev/super-dev/qa/pm/doc/architect/user-agent/crypto-evaluation-expert 完成任务。"
 argument-hint: "任何需求或指令，例如 '实现 P2P 组网功能|审阅代码变更' 或 '实现 P2P 组网功能|审阅代码变更'"
 model: DeepSeek-V4-Pro (gcmp.deepseek)
-tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'todo', 'web']
+tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vscode/newWorkspace, vscode/resolveMemoryFileUri, vscode/runCommand, vscode/switchAgent, vscode/vscodeAPI, vscode/extensions, vscode/askQuestions, vscode/toolSearch, execute/runNotebookCell, execute/getTerminalOutput, execute/killTerminal, execute/sendToTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, read/terminalSelection, read/terminalLastCommand, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/searchSubagent, search/usages, web/fetch, web/githubTextSearch, browser/openBrowserPage, browser/readPage, browser/screenshotPage, browser/navigatePage, browser/clickElement, browser/dragElement, browser/hoverElement, browser/typeInPage, browser/runPlaywrightCode, browser/handleDialog, todo]
 handoffs:
   - label: HandoffToPM
     agent: pm

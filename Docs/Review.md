@@ -9,3 +9,4 @@
 | 2026-05-03 | Chat 核心体验升级 — 时间戳/重试/骨架屏/欢迎引导 | **PASS_WITH_NOTES** | [QA-2026-05-03-ChatCoreUpgrade.md](QA/QA-2026-05-03-ChatCoreUpgrade.md) |
 | 2026-05-03 | Chat 交互增强 — 全栈 SSE 流式改造 (Task-UI-02) | **PASS_WITH_NOTES** | [QA-2026-05-03-ChatStreamingUpgrade.md](QA/QA-2026-05-03-ChatStreamingUpgrade.md) |
 | 2026-05-03 | 全局视觉系统升级 — 深色主题 / Design Token / 品牌动效 (Task-UI-03) | **PASS_WITH_NOTES** | [QA-2026-05-03-VisualSystemUpgrade.md](QA/QA-2026-05-03-VisualSystemUpgrade.md) |
+| 2026-05-03 | UI/UX Phase 1 — Chat Shell 独立布局 / 登录品牌化 / 后台降噪 | **PASS_WITH_NOTES** | [QA-2026-05-03-UIUX-Phase1.md](QA/QA-2026-05-03-UIUX-Phase1.md) |

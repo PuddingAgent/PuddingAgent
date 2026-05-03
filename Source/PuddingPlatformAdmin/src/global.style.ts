@@ -60,11 +60,7 @@ injectGlobal`
   }
 
   .ant-btn:not(.ant-btn-icon-only) {
-    transition: transform 200ms ease, box-shadow 200ms ease;
-  }
-
-  .ant-btn:not(.ant-btn-icon-only):hover {
-    transform: scale(1.02);
+    transition: border-color 200ms ease, background-color 200ms ease, box-shadow 200ms ease;
   }
 
   .ant-pro-global-header-logo img,

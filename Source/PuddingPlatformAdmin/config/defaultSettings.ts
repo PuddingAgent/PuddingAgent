@@ -17,7 +17,7 @@ const Settings: ProLayoutProps & {
   fixedHeader: true,
   fixSiderbar: true,
   colorWeak: false,
-  title: 'Pudding Platform',
+  title: 'Pudding',
   pwa: false,
   logo: '/admin/assets/images/logo.png',
   iconfontUrl: '',

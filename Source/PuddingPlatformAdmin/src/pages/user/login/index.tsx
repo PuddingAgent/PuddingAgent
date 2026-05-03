@@ -116,17 +116,17 @@ const Login: React.FC = () => {
             maxWidth: '75vw',
           }}
           logo={<img alt="Pudding" src="/admin/assets/images/logo.png" />}
-          title="Pudding Platform"
+          title="Pudding"
           subTitle={intl.formatMessage({
             id: 'pages.layouts.userLayout.title',
-            defaultMessage: 'AI 驱动的智能体协作平台',
+            defaultMessage: '你的本地 AI 代理，安静地理解，可靠地执行',
           })}
           initialValues={{ autoLogin: true }}
           submitter={{
             searchConfig: {
               submitText: intl.formatMessage({
                 id: 'pages.login.submit',
-                defaultMessage: '登录',
+                defaultMessage: '进入',
               }),
             },
           }}
