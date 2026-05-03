@@ -1,9 +1,10 @@
-import { LinkOutlined } from '@ant-design/icons';
+import { BulbOutlined, LinkOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
-import React from 'react';
+import { Button, ConfigProvider, Tooltip, theme as antdTheme } from 'antd';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AvatarDropdown,
   AvatarName,
@@ -12,13 +13,184 @@ import {
   SelectLang,
 } from '@/components';
 import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/api';
-import defaultSettings from '../config/defaultSettings';
+import defaultSettings, { DARK_NAV_THEME } from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
+import './global.style';
 
 const isDev = process.env.NODE_ENV === 'development';
 const loginPath = '/user/login';
 const bootstrapPath = '/bootstrap';
+const THEME_MODE_STORAGE_KEY = 'pudding_admin_theme_mode';
+const THEME_MEDIA_QUERY = '(prefers-color-scheme: dark)';
+
+type ThemeMode = 'system' | 'light' | 'dark';
+
+interface ThemeModeContextValue {
+  themeMode: ThemeMode;
+  isDark: boolean;
+  setThemeMode: (mode: ThemeMode) => void;
+  toggleTheme: () => void;
+}
+
+const ThemeModeContext = createContext<ThemeModeContextValue>({
+  themeMode: 'system',
+  isDark: false,
+  setThemeMode: () => {},
+  toggleTheme: () => {},
+});
+
+const getStoredThemeMode = (): ThemeMode => {
+  if (typeof window === 'undefined') {
+    return 'system';
+  }
+
+  const stored = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+};
+
+const getSystemPrefersDark = (): boolean => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia(THEME_MEDIA_QUERY).matches;
+};
+
+const useThemeMode = () => useContext(ThemeModeContext);
+
+const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(getStoredThemeMode);
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(getSystemPrefersDark);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const media = window.matchMedia(THEME_MEDIA_QUERY);
+    const onThemeChange = (event: MediaQueryListEvent) => {
+      setSystemPrefersDark(event.matches);
+    };
+
+    setSystemPrefersDark(media.matches);
+    media.addEventListener('change', onThemeChange);
+
+    return () => {
+      media.removeEventListener('change', onThemeChange);
+    };
+  }, []);
+
+  const isDark = themeMode === 'system' ? systemPrefersDark : themeMode === 'dark';
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+    }
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setThemeMode(isDark ? 'light' : 'dark');
+  }, [isDark, setThemeMode]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-pudding-theme', isDark ? 'dark' : 'light');
+    }
+  }, [isDark]);
+
+  const contextValue = useMemo<ThemeModeContextValue>(
+    () => ({
+      themeMode,
+      isDark,
+      setThemeMode,
+      toggleTheme,
+    }),
+    [isDark, setThemeMode, themeMode, toggleTheme],
+  );
+
+  const themeConfig = useMemo(
+    () => ({
+      cssVar: true,
+      algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+      token: {
+        colorPrimary: '#7c3aed',
+        colorBgLayout: isDark ? '#1f1a17' : '#f5f5f4',
+        borderRadius: 8,
+        borderRadiusLG: 8,
+        borderRadiusXL: 16,
+      },
+    }),
+    [isDark],
+  );
+
+  return (
+    <ThemeModeContext.Provider value={contextValue}>
+      <ConfigProvider theme={themeConfig}>{children}</ConfigProvider>
+    </ThemeModeContext.Provider>
+  );
+};
+
+const ThemeToggleAction: React.FC<{
+  setInitialState: ((state: any) => void) | undefined;
+}> = ({ setInitialState }) => {
+  const { isDark, themeMode, toggleTheme, setThemeMode } = useThemeMode();
+
+  useEffect(() => {
+    if (!setInitialState) {
+      return;
+    }
+
+    const nextNavTheme = isDark ? DARK_NAV_THEME : 'light';
+    setInitialState((prevState: any) => {
+      if (prevState?.settings?.navTheme === nextNavTheme) {
+        return prevState;
+      }
+
+      return {
+        ...prevState,
+        settings: {
+          ...(prevState?.settings ?? {}),
+          navTheme: nextNavTheme,
+        },
+      };
+    });
+  }, [isDark, setInitialState]);
+
+  const icon = themeMode === 'system' ? <BulbOutlined /> : isDark ? <MoonOutlined /> : <SunOutlined />;
+
+  const tooltipText =
+    themeMode === 'system'
+      ? `跟随系统（当前${isDark ? '暗色' : '亮色'}），点击切换到手动模式`
+      : isDark
+        ? '切换到亮色主题'
+        : '切换到暗色主题';
+
+  return (
+    <Tooltip title={tooltipText}>
+      <Button
+        type="text"
+        aria-label="切换主题"
+        icon={icon}
+        onClick={toggleTheme}
+        onDoubleClick={() => setThemeMode('system')}
+      />
+    </Tooltip>
+  );
+};
+
+const getInitialSettings = (): Partial<LayoutSettings> => {
+  const mode = getStoredThemeMode();
+  const shouldUseDark = mode === 'dark' || (mode === 'system' && getSystemPrefersDark());
+  return {
+    ...(defaultSettings as Partial<LayoutSettings>),
+    navTheme: shouldUseDark ? DARK_NAV_THEME : 'light',
+  };
+};
+
+export const rootContainer = (container: React.ReactNode) => {
+  return <ThemeProviderContainer>{container}</ThemeProviderContainer>;
+};
 
 /**
  * @see https://umijs.org/docs/api/runtime-config#getinitialstate
@@ -65,7 +237,7 @@ export async function getInitialState(): Promise<{
   if ([loginPath, bootstrapPath].includes(location.pathname)) {
     return {
       fetchUserInfo,
-      settings: defaultSettings as Partial<LayoutSettings>,
+      settings: getInitialSettings(),
     };
   }
 
@@ -76,7 +248,7 @@ export async function getInitialState(): Promise<{
     await checkBootstrapAndRedirect();
     return {
       fetchUserInfo,
-      settings: defaultSettings as Partial<LayoutSettings>,
+      settings: getInitialSettings(),
     };
   }
 
@@ -86,7 +258,7 @@ export async function getInitialState(): Promise<{
     return {
       fetchUserInfo,
       currentUser: msg.data,
-      settings: defaultSettings as Partial<LayoutSettings>,
+      settings: getInitialSettings(),
     };
   } catch {
     // Token expired/invalid → clear it and re-check bootstrap status
@@ -94,7 +266,7 @@ export async function getInitialState(): Promise<{
     await checkBootstrapAndRedirect();
     return {
       fetchUserInfo,
-      settings: defaultSettings as Partial<LayoutSettings>,
+      settings: getInitialSettings(),
     };
   }
 }
@@ -106,6 +278,7 @@ export const layout: RunTimeLayoutConfig = ({
 }) => {
   return {
     actionsRender: () => [
+      <ThemeToggleAction key="theme-toggle" setInitialState={setInitialState} />,
       <Question key="doc" />,
       <SelectLang key="SelectLang" />,
     ],

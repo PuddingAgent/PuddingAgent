@@ -14,7 +14,7 @@ const useStyles = createStyles(({ token }) => {
       flexDirection: 'column',
       height: '100vh',
       overflow: 'auto',
-      background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f0ff 100%)',
+      background: `linear-gradient(135deg, ${token.colorBgLayout} 0%, ${token.colorBgContainer} 50%, ${token.colorFillAlter} 100%)`,
     },
     card: {
       flex: '1',
@@ -27,9 +27,9 @@ const useStyles = createStyles(({ token }) => {
       width: 420,
       maxWidth: '90vw',
       padding: '32px 24px',
-      background: '#fff',
+      background: token.colorBgContainer,
       borderRadius: token.borderRadiusLG,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+      boxShadow: token.boxShadowSecondary,
     },
     header: {
       textAlign: 'center' as const,

@@ -28,8 +28,7 @@ const useStyles = createStyles(({ token }) => {
       flexDirection: 'column',
       height: '100vh',
       overflow: 'auto',
-      background:
-        'linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f0ff 100%)',
+      background: `linear-gradient(135deg, ${token.colorBgLayout} 0%, ${token.colorBgContainer} 50%, ${token.colorFillAlter} 100%)`,
     },
     formArea: {
       flex: '1',

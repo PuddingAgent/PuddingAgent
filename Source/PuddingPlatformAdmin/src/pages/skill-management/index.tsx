@@ -15,10 +15,12 @@ import {
   Popconfirm,
   Space,
   Badge,
+  Input,
   message,
   Typography,
   Upload,
   Tag,
+  theme,
 } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
@@ -43,6 +45,7 @@ function formatBytes(bytes: number): string {
 }
 
 const SkillManagementPage: React.FC = () => {
+  const { token } = theme.useToken();
   const tableRef = useRef<ActionType | undefined>(undefined);
 
   // Create/Edit meta drawer
@@ -304,8 +307,14 @@ const SkillManagementPage: React.FC = () => {
       >
         <div style={{ marginBottom: 16 }}>
           <Text>新版本号：</Text>
-          <input
-            style={{ marginLeft: 8, border: '1px solid #d9d9d9', borderRadius: 4, padding: '4px 11px', width: 140 }}
+          <Input
+            style={{
+              marginLeft: 8,
+              borderRadius: token.borderRadius,
+              width: 140,
+              display: 'inline-block',
+              verticalAlign: 'middle',
+            }}
             value={updateVersion}
             onChange={(e) => setUpdateVersion(e.target.value)}
             placeholder="如 1.1.0"

@@ -27,7 +27,7 @@
   "risk_notes": "Design Token 重构涉及全局颜色替换，需逐文件检查无遗漏。暗色主题需与所有第三方组件（ProTable/ProForm）兼容测试。Logo 动效需控制文件大小，避免首屏加载慢。",
   "depends_on": ["task-ui-01-chat-core"],
   "executor_type": "dev",
-  "stage": "ready",
+  "stage": "done",
   "lease_minutes": 180,
   "module_count": 3,
   "architect_review_required": true

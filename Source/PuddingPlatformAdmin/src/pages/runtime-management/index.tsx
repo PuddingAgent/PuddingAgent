@@ -23,6 +23,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  theme,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -40,11 +41,11 @@ const { Text } = Typography;
 // ─── 状态配置 ─────────────────────────────────────────────────
 const statusConfig: Record<
   RuntimeNodeStatus,
-  { badge: 'success' | 'processing' | 'error' | 'warning' | 'default'; label: string; color: string }
+  { badge: 'success' | 'processing' | 'error' | 'warning' | 'default'; label: string }
 > = {
-  Online: { badge: 'success', label: '在线', color: '#52c41a' },
-  Offline: { badge: 'error', label: '离线', color: '#ff4d4f' },
-  Degraded: { badge: 'warning', label: '降级', color: '#faad14' },
+  Online: { badge: 'success', label: '在线' },
+  Offline: { badge: 'error', label: '离线' },
+  Degraded: { badge: 'warning', label: '降级' },
 };
 
 const categoryLabels: Record<string, string> = {
@@ -87,6 +88,7 @@ function relativeTime(isoTime: string): string {
 // ─── 主组件 ──────────────────────────────────────────────────
 export default function RuntimeManagementPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [nodes, setNodes] = useState<RuntimeNodeInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -184,6 +186,14 @@ export default function RuntimeManagementPage() {
   const offlineCount = nodes.filter((n) => n.status === 'Offline').length;
   const frozenCount = nodes.filter((n) => n.isFrozen).length;
   const totalSessions = nodes.reduce((sum, n) => sum + n.activeSessionCount, 0);
+
+  const statCardStyle = {
+    background: token.colorBgContainer,
+    borderRadius: token.borderRadiusLG,
+    padding: '16px 24px',
+    boxShadow: token.boxShadowSecondary,
+    border: `1px solid ${token.colorBorderSecondary}`,
+  };
 
   // ── 表格列 ────────────────────────────────────────────────
   const columns: ProColumns<RuntimeNodeInfo>[] = [
@@ -289,14 +299,14 @@ export default function RuntimeManagementPage() {
             cancelText="取消"
             onConfirm={() => handleUnfreeze(record.nodeId)}
           >
-            <a style={{ color: '#52c41a' }}>
+            <a style={{ color: token.colorSuccess }}>
               <UnlockOutlined /> 解冻
             </a>
           </Popconfirm>
         ) : (
           <a
             key="freeze"
-            style={{ color: '#fa8c16' }}
+            style={{ color: token.colorWarning }}
             onClick={() => openFreezeModal(record.nodeId)}
           >
             <LockOutlined /> 冻结
@@ -357,46 +367,26 @@ export default function RuntimeManagementPage() {
           }}
         >
           <div
-            style={{
-              background: '#fff',
-              borderRadius: 8,
-              padding: '16px 24px',
-              boxShadow: '0 1px 2px rgba(0,0,0,.06)',
-            }}
+            style={statCardStyle}
           >
             <Statistic title="总节点数" value={nodes.length} prefix={<CloudServerOutlined />} />
           </div>
           <div
-            style={{
-              background: '#fff',
-              borderRadius: 8,
-              padding: '16px 24px',
-              boxShadow: '0 1px 2px rgba(0,0,0,.06)',
-            }}
+            style={statCardStyle}
           >
-            <Statistic title="在线节点" value={onlineCount} valueStyle={{ color: '#52c41a' }} />
+            <Statistic title="在线节点" value={onlineCount} valueStyle={{ color: token.colorSuccess }} />
           </div>
           <div
-            style={{
-              background: '#fff',
-              borderRadius: 8,
-              padding: '16px 24px',
-              boxShadow: '0 1px 2px rgba(0,0,0,.06)',
-            }}
+            style={statCardStyle}
           >
             <Statistic
               title="离线节点"
               value={offlineCount}
-              valueStyle={{ color: offlineCount > 0 ? '#ff4d4f' : undefined }}
+              valueStyle={{ color: offlineCount > 0 ? token.colorError : undefined }}
             />
           </div>
           <div
-            style={{
-              background: '#fff',
-              borderRadius: 8,
-              padding: '16px 24px',
-              boxShadow: '0 1px 2px rgba(0,0,0,.06)',
-            }}
+            style={statCardStyle}
           >
             <Statistic title="活跃会话总数" value={totalSessions} />
           </div>
@@ -515,7 +505,7 @@ export default function RuntimeManagementPage() {
       <Modal
         title={
           <Space>
-            <LockOutlined style={{ color: '#fa8c16' }} />
+            <LockOutlined style={{ color: token.colorWarning }} />
             冻结节点
           </Space>
         }

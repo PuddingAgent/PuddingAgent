@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
 import dayjs from 'dayjs';
-import { Alert, App, Button, Card, Divider, Form, Input, Modal, Popover, Progress, Select, Skeleton, Space, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Divider, Form, Input, Modal, Popover, Progress, Select, Skeleton, Space, Tooltip, Typography, theme } from 'antd';
 import { createStyles } from 'antd-style';
 import 'katex/dist/katex.min.css';
 import Prism from 'prismjs';
@@ -71,7 +71,7 @@ const COMMANDS = [
 const DEFAULT_CONTEXT_WINDOW = 4096;
 
 // ── 样式 ─────────────────────────────────────────────
-const useStyles = createStyles(({ token }) => ({
+const useStyles = createStyles(({ token, isDarkMode }) => ({
   container: {
     display: 'flex',
     flexDirection: 'column',
@@ -80,7 +80,7 @@ const useStyles = createStyles(({ token }) => ({
     margin: '0 auto',
     background: token.colorBgContainer,
     border: `1px solid ${token.colorBorderSecondary}`,
-    borderRadius: 12,
+    borderRadius: token.borderRadiusXL,
     overflow: 'hidden',
   },
   topBar: {
@@ -118,6 +118,7 @@ const useStyles = createStyles(({ token }) => ({
   },
   messageRow: {
     display: 'flex',
+    animation: 'slideUp 300ms ease-out',
   },
   messageContent: {
     maxWidth: '76%',
@@ -146,15 +147,15 @@ const useStyles = createStyles(({ token }) => ({
   bubble: {
     maxWidth: '100%',
     padding: '10px 16px',
-    borderRadius: 12,
+    borderRadius: token.borderRadiusLG,
     lineHeight: 1.6,
     wordBreak: 'break-word' as const,
     whiteSpace: 'pre-wrap' as const,
     border: '1px solid transparent',
   },
   userBubble: {
-    background: '#6366f1',
-    color: '#fff',
+    background: token.colorPrimary,
+    color: token.colorTextLightSolid,
     borderBottomRightRadius: 4,
   },
   agentBubble: {
@@ -259,7 +260,7 @@ const useStyles = createStyles(({ token }) => ({
     '& .ant-skeleton-button': {
       width: '100%',
       height: 38,
-      borderRadius: 12,
+      borderRadius: token.borderRadiusLG,
     },
   },
   emptyState: {
@@ -283,6 +284,41 @@ const useStyles = createStyles(({ token }) => ({
     width: 84,
     height: 84,
     objectFit: 'contain' as const,
+    animation: 'puddingLogoPulse 2400ms ease-in-out infinite',
+  },
+  onboardingIllustration: {
+    width: 320,
+    maxWidth: '86%',
+    height: 140,
+    borderRadius: token.borderRadiusXL,
+    border: `1px solid ${token.colorPrimaryBorder}`,
+    background: `linear-gradient(135deg, ${token.colorPrimaryBgHover} 0%, ${token.colorBgContainer} 100%)`,
+    boxShadow: token.boxShadowSecondary,
+    position: 'relative' as const,
+    overflow: 'hidden' as const,
+    animation: 'fadeIn 200ms ease-out',
+    '&::before': {
+      content: '""',
+      position: 'absolute' as const,
+      width: 180,
+      height: 180,
+      borderRadius: '50%',
+      background: token.colorPrimaryBg,
+      top: -90,
+      left: -30,
+      opacity: 0.9,
+    },
+    '&::after': {
+      content: '""',
+      position: 'absolute' as const,
+      width: 120,
+      height: 120,
+      borderRadius: '50%',
+      background: token.colorPrimary,
+      right: -20,
+      bottom: -40,
+      opacity: 0.18,
+    },
   },
   onboardingTitle: {
     margin: 0,
@@ -301,7 +337,7 @@ const useStyles = createStyles(({ token }) => ({
   },
   promptCard: {
     width: 210,
-    borderRadius: 12,
+    borderRadius: token.borderRadiusXL,
     cursor: 'pointer',
     transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
     '& .ant-card-body': {
@@ -370,7 +406,7 @@ const useStyles = createStyles(({ token }) => ({
     margin: '10px 0',
     borderRadius: 10,
     overflow: 'hidden',
-    background: '#111827',
+    background: isDarkMode ? token.colorBgElevated : token.colorTextHeading,
     '& pre': {
       margin: 0,
       padding: '14px 16px',
@@ -435,6 +471,7 @@ const CodeBlock: React.FC<{
 const ChatPage: React.FC = () => {
   const { styles, cx } = useStyles();
   const { message: messageApi } = App.useApp();
+  const { token } = theme.useToken();
 
   const [workspaces, setWorkspaces] = useState<WorkspaceWithPermDto[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string>();
@@ -919,7 +956,7 @@ const ChatPage: React.FC = () => {
   const tokenUsed = latestUsage?.totalTokens ?? 0;
   const tokenPercent = Math.min(100, Math.round((tokenUsed / tokenLimit) * 100));
   const tokenStatus = tokenPercent >= 95 ? 'exception' : tokenPercent >= 80 ? 'normal' : 'active';
-  const tokenColor = tokenPercent >= 95 ? '#ff4d4f' : tokenPercent >= 80 ? '#faad14' : undefined;
+  const tokenColor = tokenPercent >= 95 ? token.colorError : tokenPercent >= 80 ? token.colorWarning : undefined;
 
   const commandContent = (
     <div className={styles.commandList}>
@@ -1026,6 +1063,7 @@ const ChatPage: React.FC = () => {
           {!agentId && !error && (
             <div className={styles.onboardingState}>
               <img src="/admin/assets/images/logo.png" alt="Pudding Logo" className={styles.onboardingLogo} />
+              <div className={styles.onboardingIllustration} aria-hidden="true" />
               <Title level={2} className={styles.onboardingTitle}>你好，我是布丁 👋</Title>
               <Text className={styles.onboardingSubtitle}>选择一个场景和 Agent，开始对话吧</Text>
 

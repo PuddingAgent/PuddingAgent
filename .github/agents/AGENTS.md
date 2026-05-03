@@ -11,16 +11,16 @@
 
 | 模型 | 费率 | 定位 | 备注 |
 |------|------|------|------|
-| Claude Opus 4.7 (copilot) | x7.5 | 顶级推理，架构/核心算法/不可逆变更 | super-dev 专用 |
+| Claude Opus 4.7 (copilot) | **15x** | 顶级推理，战略架构决策 | architect 专用（极低频，新架构方向） |
 | Claude Sonnet 4.6 (copilot) | x1 | 通用审阅 | qa-sonnet 专用（审查 Codex 代码） |
 | Claude Haiku 4.5 (copilot) | x0.33 | 极速探索（量大管饱） | explore 专用（读大量代码固定费率最省） |
-| GPT-5.5 (copilot) | x7.5 | 长程推理/大上下文 | architect + user-agent 专用 |
-| GPT-5.3-Codex (copilot) | - | 代码生成+审阅 | dev + qa 专用（审查非 Codex 代码） |
+| GPT-5.5 (copilot) | x7.5 | 长程推理/大上下文 | super-dev + 复杂任务方案 |
+| GPT-5.3-Codex (copilot) | x1 | 代码生成+审阅 | dev（主）+ qa（交错调度中用） |
 | Gemini-3.1-Pro-Preview (copilot) | 按量 | 代码生成/UI设计 | ui-designer 专用（MiMo Coding Bench 77.1 最高） |
-| **DeepSeek-V4-Pro (gcmp.deepseek)** | TBD | 强推理/中文原生；编排与规划入口 | lead 专用 |
-| **GLM-5.1 (按量计费) (gcmp.zhipu)** | TBD | 注释/可解释性最强；安全审查 + QA 二审 | 基准测试总分 88 |
+| **DeepSeek-V4-Pro (gcmp.deepseek)** | 按量 | 强推理/中文原生；编排入口 + 轻量开发 + 用户评测 | lead + lightweight-dev + user-agent + integration-debugger |
+| **GLM-5.1 (按量计费) (gcmp.zhipu)** | 按量 | 注释/可解释性最强；安全审查 | 基准测试总分 88 |
 | **Kimi-K2.6 (gcmp.moonshot)** | TBD | 代码质量最严谨；文档与规范审查 | 基准测试总分 90，最高 |
-| **MiniMax-M2.7 (gcmp.minimax)** | TBD | 速度碾压（10×）；简单开发 | lightweight-developer 专用（占比 50%，速度优先） |
+| **MiniMax-M2.7 (gcmp.minimax)** | 按量 | 速度碾压（10×） | 备选轻量开发（速度优先场景） |
 
 
 
@@ -39,21 +39,30 @@
 
 | # | Agent | 模型 | 费率 | 一句话职责 |
 |---|-------|------|------|-----------|
-| 1 | @lead | **DeepSeek-V4-Pro (按量计费)** | TBD | 用户唯一入口，意图分析、规划、编排、交付 |
-| 2 | @pm | **Kimi-K2.6 (按量计费)** | TBD | 任务拆解、DoR 门禁、进度追踪 |
+| 1 | @lead | **DeepSeek-V4-Pro (按量计费)** | 按量 | 用户唯一入口，意图分析、规划、编排、交付 |
+| 2 | @pm | **Kimi-K2.6 (按量计费)** | 按量 | 任务拆解、DoR 门禁、进度追踪（复杂多任务时） |
 | 3 | @explore | **Claude Haiku 4.5** | x0.33 | 只读代码/日志探索，**量大管饱固定费率** |
-| 4 | @architect | GPT-5.5 | x7.5 | 架构决策、影响面评估、Map.yaml 维护（**只出方案**） |
-| 5 | @super-dev | **Claude Opus 4.7** | **x7.5** | **架构级实现、跨 3+ 模块、密码学核心、并发关键、不可逆变更** |
-| 6 | @dev | **GPT-5.3-Codex** | x1 | 1-2 模块复杂逻辑、中等风险、TDD 全流程 |
-| 7 | @lightweight-developer | **MiniMax-M2.7 (按量计费)** | TBD | 简单功能、低风险修复、样板代码（**速度优先**） |
-| 8 | @qa | **GPT-5.3-Codex** | 免费 | 独立审阅（审查 MiniMax/Claude 开发代码）；GLM-5.1 二审 |
-| 9 | @qa-sonnet | **Claude Sonnet 4.6** | x1 | 独立审阅（**专门审查 GPT-5.3-Codex 开发代码**）；GLM-5.1 二审 |
-| 10 | @security-reviewer | **GLM-5.1 (按量计费)** | TBD | 安全漏洞识别、密码学合规检查（注释/解释力强） |
-| 11 | @integration-debugger | **DeepSeek-V4-Pro (按量计费)** | TBD | 跨模块故障复现与根因定位 |
-| 12 | @doc | **Kimi-K2.6 (按量计费)** | TBD | 文档同步、日志维护、经验沉淀（结构最严谨） |
-| 13 | @ui-designer | Gemini-3.1-Pro-Preview | x1 | UI/UX 设计评审、界面一致性 |
-| 14 | @crypto-evaluation-expert | **Kimi-K2.6 (按量计费)** | TBD | 密评规范审查（长文本规范理解） |
-| 15 | @user-agent | GPT-5.5 | x7.5 | 模拟挑剔的测评工程师体验软件 |
+| 4 | @architect | **Claude Opus 4.7** | **15x** | 战略架构决策，新方向/新模式设计（**极低频，非逐任务触发**） |
+| 5 | @super-dev | **GPT-5.5** | **7.5x** | 复杂实现（跨模块、核心算法），已有架构设计覆盖时直接实施 |
+| 6 | @dev | **GPT-5.3-Codex / Claude Sonnet 4.6** | x1 | 1-2 模块中等复杂度开发，Lead 按场景选择模型 |
+| 7 | @lightweight-developer | **DeepSeek-V4-Pro (按量计费)** | 按量 | 简单功能、低风险修复、样板代码（**占比 ~50%，推理换速度**） |
+| 8 | @qa | **多模型交错 (Codex / Sonnet 4.6 / GLM-5.1)** | 混合 | 独立审阅，Lead 交错调度不同模型杜绝自审偏见 |
+| 9 | @security-reviewer | **GLM-5.1 (按量计费)** | 按量 | 安全漏洞识别、密码学合规检查（注释/解释力强） |
+| 10 | @integration-debugger | **DeepSeek-V4-Pro (按量计费)** | 按量 | 跨模块故障复现与根因定位 |
+| 11 | @doc | **Kimi-K2.6 (按量计费)** | 按量 | 文档同步、日志维护、经验沉淀（结构最严谨） |
+| 12 | @ui-designer | **Gemini-3.1-Pro-Preview** | x1 | UI/UX 设计评审、界面一致性 |
+| 13 | @crypto-evaluation-expert | **Kimi-K2.6 (按量计费)** | 按量 | 密评规范审查（长文本规范理解） |
+| 14 | @user-agent | **DeepSeek-V4-Pro (按量计费)** | 按量 | 模拟挑剔的测评工程师体验软件（中文语感天然） |
+
+### v2.9 变更（2026-05-03，Opus 4.7 → 15x 费率冲击下的全面重构）
+- **Opus 4.7 费率 7.5x → 15x**：必须降频使用，从 super-dev 移至 architect（极低频战略角色）
+- **@architect 重新定义**：从「每次 ≥3 模块触发」改为「仅新架构方向时触发」。任务级方案由 Lead/Dev 自定。模型从 GPT-5.5 (7.5x) 升级为 Opus 4.7 (15x)，极低频高杠杆
+- **@super-dev 模型从 Opus 4.7 降为 GPT-5.5 (7.5x)**：承载已有架构设计覆盖的复杂实现
+- **@dev 增加灵活性**：GPT-5.3-Codex / Claude Sonnet 4.6 双选，Lead 按场景路由
+- **@lightweight-developer 切换为 DeepSeek-V4-Pro（按量）**：推理换速度，成本更优
+- **@user-agent 回归 DeepSeek-V4-Pro（按量）**：释放 GPT-5.5 给 super-dev，中文语感天然
+- **@qa 合并 @qa-sonnet**：单 QA Agent，Lead 交错调度不同模型（Codex / Sonnet / GLM）杜绝自审
+- **Agent 总数 15 → 14**（@qa-sonnet 移除）
 
 ### v2.8 变更（2026-04-29，双 QA 机制）
 - **新增 @qa-sonnet Agent（Claude Sonnet 4.6）**：专门审查 GPT-5.3-Codex 开发的代码
@@ -99,14 +108,16 @@
 
 ## 开发梯队分流（28 原则）
 
-| 占比目标 | 梯队 | 触发条件 |
-|---------|------|---------|
-| ~50% | `@lightweight-developer` (MiniMax-M2.7 / 按量计费) | 单/少文件、样板、UI 文案、简单 CRUD |
-| ~35% | `@dev` (GPT-5.3-Codex / 免费) | 1-2 模块复杂逻辑、中等风险修复、TDD |
-| ~15% | `@super-dev` (Opus 4.7 / x7.5) | 跨 3+ 模块 / 核心算法 / 密码学核心 / 并发关键 / 不可逆变更 |
+| 占比目标 | 梯队 | 模型 | 费率 | 触发条件 |
+|---------|------|------|------|---------|
+| ~50% | `@lightweight-developer` | DeepSeek-V4-Pro | 按量 | 单/少文件、样板、UI 文案、简单 CRUD |
+| ~35% | `@dev` | GPT-5.3-Codex / Sonnet 4.6 | x1 | 1-2 模块复杂逻辑、中等风险修复、TDD |
+| ~15% | `@super-dev` | GPT-5.5 | **7.5x** | 复杂实现，已有架构设计覆盖；跨模块但非新方向 |
 
-**升级链**：`@lightweight-developer` → `@dev` → `@super-dev`，**禁止跳级降级**（避免硬扛或浪费）。
-**与 @architect 协作**：架构决策由 `@architect` 出方案，`@super-dev` 负责执行；`@super-dev` 不替代架构决策权。
+> **@architect (Opus 4.7, 15x) 不在梯队内**——它是战略角色，仅在项目出现新架构方向时由 Lead 判断触发。一次架构设计覆盖后续一族任务。
+
+**升级链**：`@lightweight-developer` → `@dev` → `@super-dev`，**禁止跳级降级**。
+**@architect 不是升级链的一环**——它是战略决策角色，为新架构方向提供设计。任务级方案由 Lead 或 Dev 参考已有架构设计自行制定。
 
 ---
 
@@ -130,12 +141,23 @@
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  2. 方案 @architect（条件触发）                                  │
-│     触发条件（满足任一即必需）：                                 │
-│       • 涉及模块/文件 ≥ 3 个                                     │
-│       • 跨层修改、引入新模块、不可逆变更                         │
-│       • 数据库 schema、契约接口、并发模型变更                    │
-│     输出必须包含：                                               │
+│  2. 方案（两层决策）                                            │
+│                                                                 │
+│  【战略层】是否触发 @architect (Opus 4.7, 15x)？                  │
+│     → Lead 判断：这是新的架构方向吗？（新模块/新模式/跨切面）    │
+│     必须满足 ≥2 项：                                            │
+│       A. 引入新的架构模式或抽象层                                │
+│       B. 跨 3+ 模块的不可逆数据模型变更                          │
+│       C. 影响安全/密码学边界的决策                               │
+│       D. 引入新的项目/模块（非简单 CRUD）                        │
+│       E. 影响部署/运维拓扑的变更                                 │
+│     满足 → @architect 出战略 ADR，覆盖后续一族任务               │
+│     不满足 → 跳过，直接进入任务方案                              │
+│                                                                 │
+│  【任务层】每个任务必须已有方案覆盖                              │
+│     • 已有架构设计 → 参考架构文档，Lead/Dev 自定任务方案          │
+│     • 无架构设计，非新方向 → Lead 或 Dev 自定                    │
+│     方案必须包含：                                               │
 │       ① 技术方案（含备选与权衡）                                 │
 │       ② **工作量评估**（人天 / 复杂度等级）                      │
 │       ③ **阶段拆分**（是否分多阶段、是否需多个 dev 并行）        │
@@ -147,25 +169,25 @@
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  3. 实施（按 28 原则分流）                                       │
-│     • 单/少文件、低风险           → @lightweight-developer │
-│     • 1-2 模块、中等复杂           → @dev           │
-│     • 3+ 模块/核心算法/不可逆      → @super-dev     │
+│  3. 实施（按复杂度智能分流，非简单计数）                         │
+│     Lead 综合判断：模块数 × 风险 × 是否新方向 × 是否核心          │
+│     • 单/少文件、低风险           → @lightweight-dev (DeepSeek)│
+│     • 1-2 模块、中等复杂           → @dev (Codex/Sonnet)       │
+│     • 跨模块/核心算法/复杂逻辑     → @super-dev (GPT-5.5, 7.5x)│
 │     多阶段任务由 @pm 协调多个 dev 并行/串行执行                  │
 │     联调故障：@integration-debugger 介入定位根因后再回开发       │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  4. QA 强制独立审阅（禁止开发者自审）                       │
-│     双 QA 分流（杜绝同模型自审）：                             │
-│     • @dev (GPT-5.3-Codex) 开发   → @qa-sonnet (Sonnet 4.6)  │
-│     • @lightweight-developer (MiniMax) 开发 → @qa (GPT-5.3-Codex) │
-│     • @super-dev (Claude Opus) 开发 → @qa (GPT-5.3-Codex)    │
-│     二审：GLM-5.1（注释/文档/可解释性维度）                    │
+│     单一 @qa Agent，Lead 交错调度模型杜绝自审偏见：            │
+│     • 开发模型 ≠ QA 模型（查 context.md 记录保证错开）         │
+│     • 可用 QA 模型池：GPT-5.3-Codex / Sonnet 4.6 / GLM-5.1    │
 │     安全敏感：+ @security-reviewer                             │
 │     密评相关：+ @crypto-evaluation-expert                      │
 │     用户体验关键：+ @user-agent 终验                           │
-│     FAIL → 回原开发者修复 → 再次 QA（不跳级）                    │
+│     FAIL → 回原开发者修复 → 再次 QA（不跳级，模型可换）        │
+│     Lead 在 context.md 记录本次 QA 模型，供下次交错参考         │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -207,7 +229,7 @@
 | 门禁 | 检查项 | 责任人 | 缺失后果 |
 |------|--------|--------|---------|
 | 探索 → 方案/实施 | explore 输出的影响面清单 | @lead | 退回 explore |
-| 方案 → 实施 | 工作量评估 + 阶段拆分（≥3 模块时） | @architect | 退回 architect |
+| 方案 → 实施 | 任务方案完备（参考已有架构设计或自定） | @lead / @dev | 补充方案 |
 | 方案 → 实施（UI 类） | ui-designer 设计稿 + user-agent 反馈 | @lead | 退回方案阶段 |
 | 实施 → QA | DoD 完整 + 测试通过 | 开发者 | 拒收 |
 | QA → doc | QA 报告 PASS | @qa | 阻止 doc |
@@ -219,8 +241,59 @@
 | 交接 | 检查项 | 责任人 |
 |------|--------|--------|
 | pm → 开发梯队 | DoR 完整 + 复杂度评级 | pm |
-| lightweight-developer → dev | 升级原因明确（复杂度超出） | lightweight-developer |
-| dev → super-dev | 升级原因明确 + architect 方案已就绪 | dev |
+| lightweight-developer → dev | 升级原因明确（复杂度超出），Lead 批准 | lightweight-developer |
+| dev → super-dev | 升级原因明确 + 已有架构设计覆盖，Lead 批准 | dev |
+
+---
+
+## Architect 领航审查（周期性纠偏）
+
+Architect (Opus 4.7, 15x) 不止响应新架构方向，还承担**领航员**角色——周期性审视项目整体方向。Lead 在以下累积条件触发时安排审查：
+
+**触发条件**（满足任一即评估，但 Lead 仍有权延后）：
+- 累计完成 **10+ 个任务卡** 未审查
+- 距上次 Architect 交互（含新架构方向触发）超过 **7 天**
+- git 提交数超过 **50 次** 未审查
+
+**审查内容**：Architect 阅读近期任务卡、git log、架构文档，产出：
+- 当前架构方向是否偏离设计意图
+- 新产生的技术债务及其优先级
+- 是否需要更新现有 ADR 或新增架构决策
+- 建议调整的开发优先级
+
+**Lead 职责**：在 context.md 的 Architect 审查记录表中追加一行。
+
+---
+
+## QA 交错调度规则
+
+> Lead 每次委派 QA 时，必须确保 **QA 模型 ≠ 开发模型**，避免同模型自审偏见。
+
+| 开发模型 | 可用 QA 模型（Lead 交错选择） |
+|---------|---------------------------|
+| DeepSeek-V4-Pro | GPT-5.3-Codex / Sonnet 4.6 / GLM-5.1 |
+| GPT-5.3-Codex | Sonnet 4.6 / GLM-5.1 |
+| Claude Sonnet 4.6 | GPT-5.3-Codex / GLM-5.1 |
+| GPT-5.5 | GPT-5.3-Codex / Sonnet 4.6 / GLM-5.1 |
+| Claude Opus 4.7 | GPT-5.3-Codex / Sonnet 4.6 / GLM-5.1 |
+
+**Lead 调度原则**：查 `Docs/context.md` 中的 QA 记录，优先选择最近最少使用的非开发模型。
+
+### context.md 记录格式
+
+```markdown
+## QA 交错调度
+| 日期 | 任务ID | 开发模型 | QA模型 | 结果 | 备注 |
+|------|--------|---------|--------|------|------|
+| 0503 | T-042 | Codex | Sonnet 4.6 | PASS | — |
+| 0503 | T-043 | DeepSeek | Codex | PASS | — |
+| 0504 | T-044 | Sonnet 4.6 | Codex | 2 issues | 并发问题漏检 |
+
+## Architect 领航审查
+| 日期 | 触发原因 | 审查范围 | 产出 | 备注 |
+|------|---------|---------|------|------|
+| 0510 | 累计12个任务卡 | 全局架构 | ADR-003 更新+2项债务 | — |
+```
 
 ---
 
@@ -236,6 +309,6 @@
 - 第三方 DOM 库切换数据时优先测试引擎完整重建路径
 - ---
 
-最后更新: 2026-04-29
-系统版本: v2.8 (双 QA：@qa Codex 审查 MiniMax/Claude，@qa-sonnet Sonnet 审查 Codex；杜绝同模型自审)
+最后更新: 2026-05-03
+系统版本: v2.9 (Opus 4.7 → 15x 冲击重构：Architect 重新定义为战略角色，super-dev 降为 GPT-5.5，QA 合并交错调度)
 

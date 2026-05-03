@@ -1,5 +1,7 @@
 import type { ProLayoutProps } from '@ant-design/pro-components';
 
+export const DARK_NAV_THEME: ProLayoutProps['navTheme'] = 'realDark';
+
 /**
  * @name Pudding Platform 管理后台配置
  */
@@ -8,8 +10,8 @@ const Settings: ProLayoutProps & {
   logo?: string;
 } = {
   navTheme: 'light',
-  // Pudding 主色 — 靛蓝
-  colorPrimary: '#6366f1',
+  // Pudding 主色 — Violet
+  colorPrimary: '#7c3aed',
   layout: 'mix',
   contentWidth: 'Fluid',
   fixedHeader: true,

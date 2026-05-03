@@ -49,7 +49,7 @@ python .github/skills/todo-api/todo_api.py list-tasks --project Pudding
 |--------|-----------|------|------|-----|
 | **P1** | task-ui-01-chat-core | Chat 核心体验 — 时间戳/重试/骨架屏/欢迎引导 | ✅ done | [PASS_WITH_NOTES](QA/QA-2026-05-03-ChatCoreUpgrade.md) |
 | **P1** | task-ui-02-chat-interaction | Chat 交互增强 — 全栈 SSE 流式改造 + 消息操作 | ✅ done | [PASS_WITH_NOTES](QA/QA-2026-05-03-ChatStreamingUpgrade.md) |
-| **P2** | task-ui-03-visual-system | 视觉系统 — 主题/响应式/动效/无障碍 | 🔲 ready | — |
+| **P2** | task-ui-03-visual-system | 视觉系统 — 主题/响应式/动效/无障碍 | ✅ done | [PASS_WITH_NOTES](QA/QA-2026-05-03-VisualSystemUpgrade.md) |
 | **P2** | task-ui-04-management-details | 管理详情页 — 仪表盘/场景/Agent 详情 | 🔲 ready | — |
 
 ## 技术选型
