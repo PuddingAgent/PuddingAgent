@@ -35,6 +35,7 @@ import {
   Collapse,
   Descriptions,
   Drawer,
+  Empty,
   Form,
   Input,
   Modal,
@@ -305,6 +306,14 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
           return { data, success: true };
         }}
         search={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无 Agent 模板，点击上方按钮创建"
+            />
+          ),
+        }}
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             创建模板
@@ -497,6 +506,14 @@ const WorkflowsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           return { data, success: true };
         }}
         search={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无工作流，功能将在后续版本开放"
+            />
+          ),
+        }}
         toolBarRender={isLimited ? false : () => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建工作流</Button>,
         ]}
@@ -648,6 +665,14 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
           return { data, success: true };
         }}
         search={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无 Agent，点击上方按钮新增"
+            />
+          ),
+        }}
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增 Agent</Button>,
         ]}
@@ -843,6 +868,16 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
     setChatMessages([]);
     setSessionId(undefined);
   };
+
+  // 全局 Ctrl+Enter 快捷键：监听 pudding:chat:send 自定义事件触发发送
+  const handleSendRef = useRef(handleSend);
+  handleSendRef.current = handleSend;
+
+  useEffect(() => {
+    const handler = () => handleSendRef.current();
+    window.addEventListener('pudding:chat:send', handler);
+    return () => window.removeEventListener('pudding:chat:send', handler);
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '520px', background: '#fff', border: '1px solid #f0f0f0', borderRadius: 8 }}>
@@ -1050,6 +1085,14 @@ const KnowledgeBasesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
           return { data, success: true };
         }}
         search={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无知识库，功能将在后续版本开放"
+            />
+          ),
+        }}
         toolBarRender={isLimited ? false : () => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建知识库</Button>,
         ]}
@@ -1175,6 +1218,14 @@ const SkillsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           return { data, success: true };
         }}
         search={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无 Skill，点击上方按钮注册"
+            />
+          ),
+        }}
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>注册 Skill</Button>,
         ]}
@@ -1328,6 +1379,14 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           return { data, success: true };
         }}
         search={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无渠道，点击上方按钮添加"
+            />
+          ),
+        }}
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>添加渠道</Button>,
         ]}

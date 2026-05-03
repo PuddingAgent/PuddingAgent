@@ -21,6 +21,18 @@ injectGlobal`
     }
   }
 
+  @keyframes shake {
+    0%, 100% {
+      transform: translateX(0);
+    }
+    10%, 50%, 90% {
+      transform: translateX(-4px);
+    }
+    30%, 70% {
+      transform: translateX(4px);
+    }
+  }
+
   @keyframes puddingLogoPulse {
     0% {
       transform: scale(1);
@@ -69,6 +81,14 @@ injectGlobal`
   .ant-pro-layout-logo img {
     transform-origin: center;
     animation: puddingLogoPulse 2400ms ease-in-out infinite;
+  }
+
+  .ant-form-item-has-error .ant-input,
+  .ant-form-item-has-error .ant-input-affix-wrapper,
+  .ant-form-item-has-error .ant-input-number,
+  .ant-form-item-has-error .ant-select-selector,
+  .ant-form-item-has-error textarea.ant-input {
+    animation: shake 0.4s ease-in-out;
   }
 
   canvas {

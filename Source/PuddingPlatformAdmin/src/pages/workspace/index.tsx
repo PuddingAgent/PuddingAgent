@@ -9,6 +9,7 @@ import {
   App,
   Badge,
   Button,
+  Empty,
   Form,
   Input,
   Modal,
@@ -201,6 +202,14 @@ const WorkspaceTable: React.FC = () => {
         pagination={{ pageSize: 20 }}
         options={{ reload: true, density: true }}
         cardBordered
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无场景，点击上方「新建场景」按钮创建"
+            />
+          ),
+        }}
       />
 
       <Modal

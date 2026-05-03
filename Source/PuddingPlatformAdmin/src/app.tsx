@@ -15,6 +15,7 @@ import {
 import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/api';
 import defaultSettings, { DARK_NAV_THEME } from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import '@ant-design/v5-patch-for-react-19';
 import './global.style';
 
@@ -59,6 +60,8 @@ const getSystemPrefersDark = (): boolean => {
 const useThemeMode = () => useContext(ThemeModeContext);
 
 const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  useGlobalShortcuts();
+
   const [themeMode, setThemeModeState] = useState<ThemeMode>(getStoredThemeMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(getSystemPrefersDark);
 

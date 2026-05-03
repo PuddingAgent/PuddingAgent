@@ -22,7 +22,7 @@ import {
   Tag,
   theme,
 } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, DownloadOutlined, FileZipOutlined, FileTextOutlined } from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import type { UploadFile } from 'antd';
 import {
@@ -43,6 +43,32 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
+
+/** 根据文件扩展名映射图标组件 */
+function getFileIcon(fileName: string): React.ReactNode {
+  const name = fileName.toLowerCase();
+  if (name.endsWith('.zip')) return <FileZipOutlined style={{ fontSize: 20, color: '#faad14' }} />;
+  if (name.endsWith('.tar.gz') || name.endsWith('.tgz')) return <FileTextOutlined style={{ fontSize: 20, color: '#1677ff' }} />;
+  return <FileTextOutlined style={{ fontSize: 20, color: '#8c8c8c' }} />;
+}
+
+/** Upload 文件列表项渲染：图标 + 文件名 + 文件大小 */
+const fileItemRender: Parameters<typeof Upload>[0]['itemRender'] = (originNode, file) => {
+  const size = (file as any).size ?? (file.originFileObj as any)?.size;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+      {getFileIcon(file.name)}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {file.name}
+        </div>
+        {size != null && (
+          <Text type="secondary" style={{ fontSize: 11 }}>{formatBytes(size)}</Text>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const SkillManagementPage: React.FC = () => {
   const { token } = theme.useToken();
@@ -275,6 +301,7 @@ const SkillManagementPage: React.FC = () => {
                 accept={acceptTypes}
                 maxCount={1}
                 fileList={fileList}
+                itemRender={fileItemRender}
                 beforeUpload={(file) => {
                   const name = file.name.toLowerCase();
                   if (!name.endsWith('.zip') && !name.endsWith('.tar.gz') && !name.endsWith('.tgz')) {
@@ -324,6 +351,7 @@ const SkillManagementPage: React.FC = () => {
           accept={acceptTypes}
           maxCount={1}
           fileList={updateFileList}
+          itemRender={fileItemRender}
           beforeUpload={(file) => {
             const name = file.name.toLowerCase();
             if (!name.endsWith('.zip') && !name.endsWith('.tar.gz') && !name.endsWith('.tgz')) {

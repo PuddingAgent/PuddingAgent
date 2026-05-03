@@ -629,6 +629,23 @@ const ChatPage: React.FC = () => {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => { if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); loading ? abortRef.current?.abort() : (()=>{ const t=inputValue.trim(); if(!t) return; setInputValue(''); void sendMessage(t); })(); } };
 
+  // 全局 Ctrl+Enter 快捷键：监听 pudding:chat:send 自定义事件触发发送
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  const inputValueRef2 = useRef(inputValue);
+  inputValueRef2.current = inputValue;
+
+  useEffect(() => {
+    const handler = () => {
+      const text = inputValueRef2.current.trim();
+      if (!text) return;
+      setInputValue('');
+      sendMessageRef.current(text);
+    };
+    window.addEventListener('pudding:chat:send', handler);
+    return () => window.removeEventListener('pudding:chat:send', handler);
+  }, []);
+
   const renderMd = (markdownText: string, isStreaming?: boolean) => (
     <div className={styles.markdownBody}>
       <ReactMarkdown remarkPlugins={[remarkGfm,remarkMath]} rehypePlugins={[rehypeKatex]}
