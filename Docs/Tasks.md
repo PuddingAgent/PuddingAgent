@@ -44,14 +44,14 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 
 | 优先级 | 任务卡 ID | 标题 | 阶段 | 依赖 |
 |--------|-----------|------|------|------|
-| P0 | task-20260503-042 | QA 独立审阅 — 新增代码 | ready | — |
-| P1 | task-20260503-043 | Hook 系统实现 | ready | task-042 |
-| P1 | task-20260503-044 | 会话持久化实现 | ready | — |
-| P1 | task-20260503-045 | MicroCompact 上下文压缩 | ready | — |
-| P0 | task-20260503-046 | 端到端部署验证 | ready | — |
-| P1 | task-20260503-047 | Cron/Webhook API 端点补充 | ready | — |
-| P1 | task-20260503-048 | Cron 定时任务管理页面 | ready | task-047 |
-| P1 | task-20260503-049 | Webhook 连接器管理页面 | ready | task-047 |
+| P0 | task-20260503-002 | QA 独立审阅 — 新增代码 | ready | — |
+| P0 | task-20260503-010 | 端到端部署验证 | verifying | — |
+| P1 | task-20260503-003 | Hook 系统实现 — PreToolUse/PostToolUse | ready | task-002 |
+| P1 | task-20260503-005 | 会话持久化 — SQLite+JSONL双写 | ready | — |
+| P1 | task-20260503-009 | MicroCompact 上下文压缩 | ready | — |
+| P1 | task-20260503-013 | Cron/Webhook API 端点补充 | ready | — |
+| P1 | task-20260503-011 | Cron 管理页面 | ready | task-013 |
+| P1 | task-20260503-012 | Webhook 管理页面 | ready | task-013 |
 
 ### UI 任务（PuddingPlatformAdmin）
 
