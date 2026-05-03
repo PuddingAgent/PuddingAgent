@@ -43,7 +43,7 @@ Agent 模板分为两个层级，存储在本地 SQLite：
 > **2026-05-03**：Chat 页从后台 ProLayout 中剥离，作为 Pudding 的主交互界面独立呈现。
 
 - `/chat` 是用户登录后的主界面，使用独立 Chat Shell，不继承后台侧栏、顶栏、Footer 或水印。
-- 后台管理区定位为 Pudding Console，仅承载 Agent、场景、技能、模型资源和运行时配置。
+- 后台管理区定位为 Pudding Console，仅承载 Agent、工作空间、技能、模型资源和运行时配置。
 - Chat 页通过轻量“控制台”入口进入管理区，避免后台菜单干扰日常对话。
 - 登录页、Chat 页和后台应共享 Pudding 品牌风格，但信息密度按“主交互 → 管理工具箱”递增。
 

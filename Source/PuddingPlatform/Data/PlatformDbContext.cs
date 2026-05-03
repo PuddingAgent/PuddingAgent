@@ -30,6 +30,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // 全局 Skill 包
     public DbSet<SkillPackageEntity> SkillPackages => Set<SkillPackageEntity>();
 
+    // 聊天消息持久化
+    public DbSet<ChatMessageEntity> ChatMessages => Set<ChatMessageEntity>();
+
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -211,6 +214,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
              .WithMany()
              .HasForeignKey(c => c.WorkspaceEntityId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+        // ── ChatMessage ───────────────────────────────────────
+        modelBuilder.Entity<ChatMessageEntity>(e =>
+        {
+            e.HasIndex(m => m.SessionId);
+            e.HasIndex(m => new { m.SessionId, m.CreatedAt });
         });
         // ── Seed：内置 OpenAI Provider + 常用模型 ────────────────────
         SeedBuiltInData(modelBuilder);

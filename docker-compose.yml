@@ -27,6 +27,8 @@ services:
       Jwt__Audience:   ${JWT_AUDIENCE:-pudding-admin}
       Jwt__ExpiryHours: "${JWT_EXPIRY_HOURS:-8}"
       ConnectionStrings__Default: "Data Source=/app/data/pudding_platform.db"
+      Pudding__ControllerEndpoint: ${PUDDING_CONTROLLER_ENDPOINT:-http://localhost:8080}
+      Pudding__RuntimeEndpoint: ${PUDDING_RUNTIME_ENDPOINT:-http://localhost:8080}
       P2P__Enabled: "true"
       P2P__Port:    "9527"
     ports:

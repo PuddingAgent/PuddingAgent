@@ -85,6 +85,43 @@ export async function getSession(sessionId: string): Promise<SessionRecord> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'GET' });
 }
 
+// ─── Chat Message (history) API ────────────────────────────────
+
+export interface ChatMessageDto {
+  id: number;
+  role: 'user' | 'agent';
+  content: string;
+  thinking?: ThinkingChunkDto[];
+  usage?: TokenUsageDto;
+  createdAt: number;
+}
+
+export interface ThinkingChunkDto {
+  text: string;
+  timestamp: number;
+}
+
+export interface MessageListResponse {
+  items: ChatMessageDto[];
+  hasMore: boolean;
+  oldestCreatedAt: number | null;
+}
+
+export async function listSessionMessages(
+  sessionId: string,
+  before?: number,
+  limit?: number,
+): Promise<MessageListResponse> {
+  const params = new URLSearchParams();
+  if (before) params.set('before', String(before));
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs ? `?${qs}` : ''}`,
+    { method: 'GET' },
+  );
+}
+
 // ─── LLM Resource Pool Types ─────────────────────────────────────
 
 export interface LlmProviderDto {
@@ -800,6 +837,8 @@ export interface WorkspaceAgentDto {
   agentId: string;
   name: string;
   description?: string;
+  displayName?: string;
+  avatarUrl?: string;
   sourceTemplateId?: string;
   systemPromptOverride?: string;
   preferredProviderId?: string;
@@ -813,6 +852,8 @@ export interface WorkspaceAgentDto {
 export interface CreateWorkspaceAgentRequest {
   name: string;
   description?: string;
+  displayName?: string;
+  avatarUrl?: string;
   sourceTemplateId?: string;
   systemPromptOverride?: string;
   preferredProviderId?: string;
@@ -822,6 +863,8 @@ export interface CreateWorkspaceAgentRequest {
 export interface UpdateWorkspaceAgentRequest {
   name: string;
   description?: string;
+  displayName?: string;
+  avatarUrl?: string;
   sourceTemplateId?: string;
   systemPromptOverride?: string;
   preferredProviderId?: string;

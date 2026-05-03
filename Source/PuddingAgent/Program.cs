@@ -7,9 +7,14 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
+using PuddingController;
+using PuddingController.Data;
+using PuddingController.Services;
 using PuddingRuntime;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
+using PuddingRuntime.Services.Sandbox;
+using PuddingRuntime.Services.Skills;
 using PuddingMemoryEngine;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,7 +30,8 @@ builder.Services.AddCors(options =>
                 "http://localhost:8000",
                 "http://localhost:8001",
                 "http://localhost:8004",
-                "http://localhost:3000")
+            "http://localhost:3000",
+            "http://localhost:8080")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials());
@@ -60,20 +66,30 @@ builder.Services.AddAuthorization();
 // ── PlatformApiClient（通过 Controller API 操作控制面）──
 builder.Services.AddHttpClient<PlatformApiClient>(client =>
 {
-    var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:5000";
+    var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:8080";
     client.BaseAddress = new Uri(endpoint);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
 // ── Workspace 业务层 ──────────────────────────────────
 builder.Services.AddScoped<WorkspaceBusinessService>();
+builder.Services.AddSingleton<MinioStorageService>();
+builder.Services.AddPuddingController();
 
 // ── EF Core / 数据库 ──────────────────────────────────
 var connStr = builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=data/pudding_platform.db";
+var controllerConnStr = builder.Configuration.GetConnectionString("Controller")
+    ?? "Data Source=data/pudding_controller.db";
 builder.Services.AddDbContext<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
+    opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+});
+
+builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
+{
+    opt.UseSqlite(controllerConnStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
@@ -99,6 +115,17 @@ builder.Services.AddSingleton<AgentExecutionGuardrails>();
 builder.Services.AddSingleton<ExecutionControlRegistry>();
 builder.Services.AddSingleton<ExecutionJournal>();
 builder.Services.AddSingleton<CompletionPolicy>();
+builder.Services.AddSingleton<SandboxExecutor>();
+builder.Services.AddSingleton<AgentContainerRegistry>();
+builder.Services.AddSingleton<ISandboxProvider, DockerSandboxProvider>();
+builder.Services.AddSingleton<AgentSkillPackageRegistry>();
+builder.Services.AddSingleton<SkillPackageDownloadService>();
+builder.Services.AddSingleton<IAgentSkill, BashSkill>();
+builder.Services.AddSingleton<IAgentSkill, ReadFileSkill>();
+builder.Services.AddSingleton<IAgentSkill, WriteFileSkill>();
+builder.Services.AddSingleton<IAgentSkill, PythonSkill>();
+builder.Services.AddSingleton<IAgentSkill, HttpFetchSkill>();
+builder.Services.AddSingleton<SkillRuntime>();
 builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<AgentExecutionService>();
@@ -107,10 +134,21 @@ builder.Services.AddSingleton<AgentExecutionService>();
 var llmEndpoint = builder.Configuration["LLM_ENDPOINT"] ?? "https://api.openai.com/v1";
 var llmApiKey = builder.Configuration["LLM_API_KEY"] ?? "";
 var llmModel = builder.Configuration["LLM_MODEL"] ?? "gpt-4o-mini";
+var runtimeEndpoint = builder.Configuration["Pudding:RuntimeEndpoint"] ?? "http://localhost:8080";
 
 builder.Services.AddHttpClient("DirectLlm", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(120);
+});
+
+builder.Services.AddHttpClient("HttpFetchSkill", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services.AddHttpClient("SkillPackageDL", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(2);
 });
 
 // ── Bootstrap 初始化 ─────────────────────────────────
@@ -140,6 +178,18 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     await db.Database.MigrateAsync();
+
+    var controllerDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ControllerDbContext>>();
+    await using (var controllerDb = await controllerDbFactory.CreateDbContextAsync())
+    {
+        await controllerDb.Database.EnsureCreatedAsync();
+    }
+
+    var workspaceCatalog = scope.ServiceProvider.GetRequiredService<InMemoryWorkspaceCatalog>();
+    await workspaceCatalog.LoadAsync();
+
+    var runtimeDispatcher = scope.ServiceProvider.GetRequiredService<RuntimeDispatcher>();
+    runtimeDispatcher.SetFallbackEndpoint(runtimeEndpoint);
 }
 
 // ── 错误处理 ─────────────────────────────────────────

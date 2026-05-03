@@ -73,15 +73,19 @@ public class ChatApiController(
                     .FirstOrDefaultAsync(p => p.ProviderId == agent.PreferredProviderId && p.IsEnabled, ct);
                 if (provider is not null)
                 {
+                    var normalizedModelId = NormalizePreferredModelId(provider.ProviderId, agent.PreferredModelId);
                     llmConfig = new LlmConfig
                     {
                         Endpoint = provider.BaseUrl,
                         ApiKey = provider.ApiKey,
-                        ModelId = agent.PreferredModelId,
+                        ModelId = normalizedModelId,
                     };
                     logger.LogInformation(
-                        "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} endpoint={Endpoint}",
-                        agent.PreferredProviderId, agent.PreferredModelId ?? "(none)", provider.BaseUrl);
+                        "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint}",
+                        agent.PreferredProviderId,
+                        normalizedModelId ?? "(none)",
+                        agent.PreferredModelId ?? "(none)",
+                        provider.BaseUrl);
                 }
                 else
                 {
@@ -190,15 +194,19 @@ public class ChatApiController(
                     .FirstOrDefaultAsync(p => p.ProviderId == agent.PreferredProviderId && p.IsEnabled, ct);
                 if (provider is not null)
                 {
+                    var normalizedModelId = NormalizePreferredModelId(provider.ProviderId, agent.PreferredModelId);
                     llmConfig = new LlmConfig
                     {
                         Endpoint = provider.BaseUrl,
                         ApiKey = provider.ApiKey,
-                        ModelId = agent.PreferredModelId,
+                        ModelId = normalizedModelId,
                     };
                     logger.LogInformation(
-                        "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} endpoint={Endpoint}",
-                        agent.PreferredProviderId, agent.PreferredModelId ?? "(none)", provider.BaseUrl);
+                        "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint}",
+                        agent.PreferredProviderId,
+                        normalizedModelId ?? "(none)",
+                        agent.PreferredModelId ?? "(none)",
+                        provider.BaseUrl);
                 }
                 else
                 {
@@ -210,6 +218,13 @@ public class ChatApiController(
         }
 
         ConfigureSseResponse(Response);
+
+        // 流式消息累积
+        var streamSessionId = req.SessionId;
+        var agentReplyBuilder = new System.Text.StringBuilder();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        TokenUsageDto? streamUsage = null;
+        var isNewSession = string.IsNullOrEmpty(req.SessionId);
 
         try
         {
@@ -227,7 +242,40 @@ public class ChatApiController(
                 ct:             ct))
             {
                 await WriteRawSseAsync(Response, frame, ct);
+
+                // 捕获 sessionId、累积回复文本（仅用于事后持久化，不影响流式转发）
+                try
+                {
+                    using var doc = JsonDocument.Parse(frame.Data);
+                    var root = doc.RootElement;
+                    if (frame.Event == "metadata" && root.TryGetProperty("sessionId", out var sid))
+                        streamSessionId = sid.GetString();
+                    else if (frame.Event == "delta" && root.TryGetProperty("delta", out var d) && d.ValueKind == JsonValueKind.String)
+                        agentReplyBuilder.Append(d.GetString());
+                    else if (frame.Event == "done")
+                    {
+                        if (root.TryGetProperty("reply", out var rep) && rep.ValueKind == JsonValueKind.String && agentReplyBuilder.Length == 0)
+                            agentReplyBuilder.Append(rep.GetString());
+                        if (streamUsage is null && root.TryGetProperty("usage", out _))
+                            streamUsage = JsonSerializer.Deserialize<TokenUsageDto>(frame.Data);
+                    }
+                }
+                catch { /* ignore frame parse errors, forward anyway */ }
             }
+
+            // 流正常结束：异步持久化（fire-and-forget，不阻塞 SSE 响应）
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await PersistMessagesAsync(workspaceId, streamSessionId, req.MessageText,
+                        agentReplyBuilder.ToString(), streamUsage, isNewSession, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "[Chat] PersistMessages background failed ws={Ws}", workspaceId);
+                }
+            });
         }
         catch (OperationCanceledException)
         {
@@ -516,6 +564,21 @@ public class ChatApiController(
         catch { return []; }
     }
 
+    /// <summary>
+    /// 规范化 Provider 模型 ID。mimo 网关模型名大小写敏感，历史配置中的 "MiMo-V2.5" 需降为 "mimo-v2.5"。
+    /// </summary>
+    private static string? NormalizePreferredModelId(string providerId, string? modelId)
+    {
+        if (string.IsNullOrWhiteSpace(modelId))
+            return modelId;
+
+        var trimmed = modelId.Trim();
+        if (providerId.Equals("mimo", StringComparison.OrdinalIgnoreCase))
+            return trimmed.ToLowerInvariant();
+
+        return trimmed;
+    }
+
     /// <summary>解析 Agent 模板关联的 Skill 包列表，生成 MinIO 预签名下载 URL。</summary>
     private static async Task<IReadOnlyList<SkillPackageInfo>?> ResolveSkillPackagesAsync(
         PlatformDbContext db,
@@ -560,4 +623,61 @@ public class ChatApiController(
         }
         return result;
     }
+
+    // ── 消息持久化 ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// SSE 流结束后将消息写入 ChatMessageEntity。
+    /// </summary>
+    private async Task PersistMessagesAsync(
+        string workspaceId,
+        string? sessionId,
+        string userText,
+        string agentReply,
+        TokenUsageDto? usage,
+        bool isNewSession,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(sessionId))
+            return;
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var userMsg = new ChatMessageEntity
+        {
+            SessionId = sessionId,
+            Role = "user",
+            Content = userText.Length > 4000 ? userText[..4000] : userText,
+            CreatedAt = now - 1,
+        };
+        db.ChatMessages.Add(userMsg);
+
+        if (!string.IsNullOrWhiteSpace(agentReply))
+        {
+            var agentMsg = new ChatMessageEntity
+            {
+                SessionId = sessionId,
+                Role = "agent",
+                Content = agentReply,
+                UsageJson = usage is not null
+                    ? JsonSerializer.Serialize(usage)
+                    : null,
+                CreatedAt = now,
+            };
+            db.ChatMessages.Add(agentMsg);
+        }
+
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation(
+            "[Chat] Persisted messages session={SessionId} userLen={UserLen} replyLen={ReplyLen}",
+            sessionId, userText.Length, agentReply.Length);
+    }
+
+    /// <summary>TokenUsageDto（内联定义，与前端对齐）。</summary>
+    private sealed record TokenUsageDto(
+        int PromptTokens = 0,
+        int CompletionTokens = 0,
+        int TotalTokens = 0,
+        int ContextWindowTokens = 4096
+    );
 }

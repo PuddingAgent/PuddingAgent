@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PuddingCode.Platform;
@@ -21,12 +22,13 @@ public sealed class RuntimeRegistryService
     private static readonly TimeSpan NodeTimeout = TimeSpan.FromSeconds(90);
     private const string NodesKey = "ctrl:runtimenodes";
 
-    private readonly IDatabase _redis;
+    private readonly IDatabase? _redis;
     private readonly ILogger<RuntimeRegistryService> _logger;
+    private static readonly ConcurrentDictionary<string, RuntimeNodeInfo> Nodes = new();
 
-    public RuntimeRegistryService(IConnectionMultiplexer redis, ILogger<RuntimeRegistryService> logger)
+    public RuntimeRegistryService(ILogger<RuntimeRegistryService> logger, IConnectionMultiplexer? redis = null)
     {
-        _redis = redis.GetDatabase();
+        _redis = redis?.GetDatabase();
         _logger = logger;
     }
 
@@ -50,7 +52,11 @@ public sealed class RuntimeRegistryService
             IsFrozen = isFrozen,
         };
 
-        _redis.HashSet(NodesKey, request.NodeId, JsonSerializer.Serialize(node, JsonOpts));
+        if (_redis is not null)
+            _redis.HashSet(NodesKey, request.NodeId, JsonSerializer.Serialize(node, JsonOpts));
+        else
+            Nodes[request.NodeId] = node;
+
         _logger.LogInformation(
             "[RuntimeRegistry] Registered node={NodeId} endpoint={Endpoint} activeSessions={Count} embedded={Em} hostType={Ht}",
             request.NodeId, request.Endpoint, request.ActiveSessionCount, request.EmbeddedMode, request.HostType);
@@ -91,7 +97,12 @@ public sealed class RuntimeRegistryService
     {
         var node = GetNode(nodeId);
         if (node is null) return false;
-        _redis.HashSet(NodesKey, nodeId, JsonSerializer.Serialize(node with { IsFrozen = true }, JsonOpts));
+
+        if (_redis is not null)
+            _redis.HashSet(NodesKey, nodeId, JsonSerializer.Serialize(node with { IsFrozen = true }, JsonOpts));
+        else
+            Nodes[nodeId] = node with { IsFrozen = true };
+
         _logger.LogWarning("[RuntimeRegistry] Node={NodeId} FROZEN", nodeId);
         return true;
     }
@@ -101,7 +112,12 @@ public sealed class RuntimeRegistryService
     {
         var node = GetNode(nodeId);
         if (node is null) return false;
-        _redis.HashSet(NodesKey, nodeId, JsonSerializer.Serialize(node with { IsFrozen = false }, JsonOpts));
+
+        if (_redis is not null)
+            _redis.HashSet(NodesKey, nodeId, JsonSerializer.Serialize(node with { IsFrozen = false }, JsonOpts));
+        else
+            Nodes[nodeId] = node with { IsFrozen = false };
+
         _logger.LogInformation("[RuntimeRegistry] Node={NodeId} UNFROZEN", nodeId);
         return true;
     }
@@ -110,15 +126,31 @@ public sealed class RuntimeRegistryService
     private void MarkStaledOffline()
     {
         var threshold = DateTimeOffset.UtcNow - NodeTimeout;
-        var entries = _redis.HashGetAll(NodesKey);
-        foreach (var entry in entries)
+
+        if (_redis is not null)
         {
-            var node = Deserialize(entry.Value);
-            if (node is null) continue;
+            var entries = _redis.HashGetAll(NodesKey);
+            foreach (var entry in entries)
+            {
+                var node = Deserialize(entry.Value);
+                if (node is null) continue;
+                if (node.Status == RuntimeNodeStatus.Online && node.LastHeartbeat < threshold)
+                {
+                    var offline = node with { Status = RuntimeNodeStatus.Offline };
+                    _redis.HashSet(NodesKey, entry.Name, JsonSerializer.Serialize(offline, JsonOpts));
+                    _logger.LogWarning("[RuntimeRegistry] Node={NodeId} marked Offline (last heartbeat={Hb})",
+                        node.NodeId, node.LastHeartbeat);
+                }
+            }
+            return;
+        }
+
+        foreach (var kv in Nodes)
+        {
+            var node = kv.Value;
             if (node.Status == RuntimeNodeStatus.Online && node.LastHeartbeat < threshold)
             {
-                var offline = node with { Status = RuntimeNodeStatus.Offline };
-                _redis.HashSet(NodesKey, entry.Name, JsonSerializer.Serialize(offline, JsonOpts));
+                Nodes[kv.Key] = node with { Status = RuntimeNodeStatus.Offline };
                 _logger.LogWarning("[RuntimeRegistry] Node={NodeId} marked Offline (last heartbeat={Hb})",
                     node.NodeId, node.LastHeartbeat);
             }
@@ -127,18 +159,30 @@ public sealed class RuntimeRegistryService
 
     private RuntimeNodeInfo? GetNode(string nodeId)
     {
-        var json = _redis.HashGet(NodesKey, nodeId);
-        return Deserialize(json);
+        if (_redis is not null)
+        {
+            var json = _redis.HashGet(NodesKey, nodeId);
+            return Deserialize(json);
+        }
+
+        return Nodes.TryGetValue(nodeId, out var node) ? node : null;
     }
 
     private IEnumerable<RuntimeNodeInfo> LoadAll()
     {
-        var entries = _redis.HashGetAll(NodesKey);
-        foreach (var e in entries)
+        if (_redis is not null)
         {
-            var n = Deserialize(e.Value);
-            if (n is not null) yield return n;
+            var entries = _redis.HashGetAll(NodesKey);
+            foreach (var e in entries)
+            {
+                var n = Deserialize(e.Value);
+                if (n is not null) yield return n;
+            }
+            yield break;
         }
+
+        foreach (var n in Nodes.Values)
+            yield return n;
     }
 
     private RuntimeNodeInfo? Deserialize(RedisValue v)

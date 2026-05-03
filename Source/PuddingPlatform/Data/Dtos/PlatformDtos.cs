@@ -385,6 +385,8 @@ public record WorkspaceAgentDto(
     string AgentId,
     string Name,
     string? Description,
+    string? DisplayName,
+    string? AvatarUrl,
     string? SourceTemplateId,
     string? SystemPromptOverride,
     string? PreferredProviderId,
@@ -398,6 +400,8 @@ public record WorkspaceAgentDto(
 public record CreateWorkspaceAgentRequest(
     string Name,
     string? Description,
+    string? DisplayName,
+    string? AvatarUrl,
     string? SourceTemplateId,
     string? SystemPromptOverride,
     string? PreferredProviderId,
@@ -407,6 +411,8 @@ public record CreateWorkspaceAgentRequest(
 public record UpdateWorkspaceAgentRequest(
     string Name,
     string? Description,
+    string? DisplayName,
+    string? AvatarUrl,
     string? SourceTemplateId,
     string? SystemPromptOverride,
     string? PreferredProviderId,

@@ -58,6 +58,8 @@ public class WorkspaceAgentApiController(PlatformDbContext db) : ControllerBase
             WorkspaceEntityId    = ws.Id,
             Name                 = req.Name,
             Description          = req.Description,
+            DisplayName          = req.DisplayName,
+            AvatarUrl            = req.AvatarUrl,
             SourceTemplateId     = req.SourceTemplateId,
             SystemPromptOverride = req.SystemPromptOverride,
             PreferredProviderId  = req.PreferredProviderId,
@@ -89,6 +91,8 @@ public class WorkspaceAgentApiController(PlatformDbContext db) : ControllerBase
 
         agent.Name                 = req.Name;
         agent.Description          = req.Description;
+        agent.DisplayName          = req.DisplayName;
+        agent.AvatarUrl            = req.AvatarUrl;
         agent.SourceTemplateId     = req.SourceTemplateId;
         agent.SystemPromptOverride = req.SystemPromptOverride;
         agent.PreferredProviderId  = req.PreferredProviderId;
@@ -157,7 +161,9 @@ public class WorkspaceAgentApiController(PlatformDbContext db) : ControllerBase
             .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId, ct);
 
     private static WorkspaceAgentDto ToDto(WorkspaceAgentEntity e) => new(
-        e.AgentId, e.Name, e.Description, e.SourceTemplateId,
+        e.AgentId, e.Name, e.Description,
+        e.DisplayName, e.AvatarUrl,
+        e.SourceTemplateId,
         e.SystemPromptOverride, e.PreferredProviderId, e.PreferredModelId,
         e.IsEnabled, e.IsFrozen, e.CreatedAt, e.UpdatedAt);
 }

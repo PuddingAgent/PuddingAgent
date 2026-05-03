@@ -1,0 +1,51 @@
+﻿import {
+  CopyOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  MessageOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SendOutlined,
+  SettingOutlined,
+  StopOutlined,
+} from '@ant-design/icons';
+import { history } from '@umijs/max';
+import dayjs from 'dayjs';
+import { Alert, App, Avatar, Button, Divider, Form, Input, Modal, Progress, Select, Space, Spin, Tooltip, Typography, theme } from 'antd';
+import { createStyles } from 'antd-style';
+import 'katex/dist/katex.min.css';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-csharp';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-python';
+import 'prismjs/themes/prism-tomorrow.css';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeKatex from 'rehype-katex';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import {
+  createWorkspace,
+  createWorkspaceAgent,
+  listSessions,
+  listSessionMessages,
+  listTeams,
+  listWorkspaceAgents,
+  listWorkspaces,
+  sendAdminChatMessageStream,
+  type CreateWorkspaceRequest,
+  type ChatMessageDto,
+  type MessageListResponse,
+  type TokenUsageDto,
+  type WorkspaceAgentDto,
+  type WorkspaceWithPermDto,
+} from '@/services/platform/api';

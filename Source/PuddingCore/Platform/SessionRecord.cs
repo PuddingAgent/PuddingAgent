@@ -30,6 +30,8 @@ public sealed record SessionRecord
     public SessionStatus Status { get; init; } = SessionStatus.Active;
     public string? RuntimeNodeId { get; init; }
     public string? AgentInstanceId { get; init; }
+    /// <summary>会话标题（用户第一条消息截取前30字自动生成，可为 null）。</summary>
+    public string? Title { get; init; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastActiveAt { get; init; } = DateTimeOffset.UtcNow;
 }
