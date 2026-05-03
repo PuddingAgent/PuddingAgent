@@ -18,6 +18,8 @@ using PuddingRuntime.Services.Sandbox;
 using PuddingRuntime.Services.Skills;
 using PuddingMemoryEngine;
 using PuddingAgent.P2P;
+using PuddingAgent.Connectors;
+using PuddingAgent.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -142,6 +144,13 @@ builder.Services.AddSingleton<AgentExecutionService>();
 
 // ── P2P 发现（局域网 UDP 广播 + HTTP 探活）────────────────
 builder.Services.AddSingleton<IP2pDiscoveryService, MdnsDiscoveryService>();
+
+// ── Webhook 连接器 ─────────────────────────────────
+builder.Services.AddSingleton<WebhookConnector>();
+builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<WebhookConnector>());
+
+// ── Cron 定时任务调度 ──────────────────────────────
+builder.Services.AddHostedService<CronSchedulerService>();
 
 // ── LLM 配置 ─────────────────────────────────────────
 var llmEndpoint = builder.Configuration["LLM_ENDPOINT"] ?? "https://api.openai.com/v1";
