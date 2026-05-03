@@ -17,34 +17,38 @@ Pudding Agent 是一个单进程、零外部依赖、支持 P2P 组网的 AI 代
 
 ## V1 任务管理
 
-所有 V1 任务的详细状态、进度、依赖关系通过 Todo API 管理，不在本文档中硬编码。
+所有 V1 任务通过 Todo API 管理。以下为任务看板概览，详细状态以 API 为准。
 
-查看任务：
 ```bash
 python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pudding
-python .github/skills/todo-api/todo_api.py list-tasks --project Pudding
 ```
 
-### V1 能力分层任务一览
+### V1 任务 一览（已全部完成）
 
-> 详见 [架构.md §Agent 能力分层模型](架构.md#agent-能力分层模型)
+| 优先级 | 层级 | 任务卡 ID | 标题 | 状态 |
+|--------|------|-----------|------|------|
+| P0 | L0 基础 | task-20260502-008 | 实现多轮会话与工具调用框架 | ✅ done |
+| P0 | L0 基础 | task-20260502-007 | 实现 SQLite 数据持久化层 | ✅ done |
+| P0 | L0 基础 | task-20260502-012 | AI 服务商管理功能迁移 | ✅ done |
+| P0 | L1 记忆 | task-20260502-023 | 实现长期记忆引擎 | ✅ done |
+| P0 | L2 工具 | task-20260502-024 | 实现工具与Skill系统 | ✅ done |
+| P0 | 安全 | task-20260502-018~021 | KeyVault 密钥保管箱 | ✅ done |
+| P1 | — | task-20260502-005 | 实现 P2P 节点发现与直连通信 | ✅ done |
+| P1 | L3 子代理 | task-20260502-025 | 实现子代理与Orchestrator-Workers | ✅ done |
+| P1 | L4 连接器 | task-20260502-026/017 | 连接器框架 + Webhook | ✅ done |
+| P2 | L5 自动化 | task-20260502-027 | Cron 定时任务调度 | ✅ done |
+| P2 | L5 工作流 | task-20260502-028 | 工作流管道 CRUD | ✅ done |
+| P3 | 远期 | task-20260502-029 | 浏览器自动化 | 📋 远期 |
 
-| 优先级 | 层级 | 任务卡 ID | 标题 |
-|--------|------|-----------|------|
-| **P0** | L0 基础 | task-20260502-008 | 实现多轮会话与工具调用框架 |
-| **P0** | L0 基础 | task-20260502-007 | 实现 SQLite 数据持久化层 |
-| **P0** | L0 基础 | task-20260502-012 | AI 服务商管理功能迁移 |
-| **P0** | L1 记忆 | task-20260502-023 | 实现长期记忆引擎 |
-| **P0** | L1 记忆 | task-20260503-039 | 会话持久化设计（JSONL + parent-UUID 链） |
-| **P0** | L2 工具 | task-20260502-024 | 实现工具与Skill系统 |
-| **P1** | L1 记忆 | task-20260503-040 | 上下文压缩设计（3层压缩 + Token 预算） |
-| **P1** | — | task-20260502-005 | 实现 P2P 节点发现与直连通信 |
-| **P1** | L3 子代理 | task-20260502-025 | 实现子代理与Orchestrator-Workers |
-| **P1** | L4 连接器 | task-20260502-026 | 实现连接器框架与基础连接器（Webhook + CLI） |
-| **P1.5** | L2 工具 | task-20260503-041 | Hook 系统设计（PreToolUse/PostToolUse） |
-| **P2** | L5 自动化 | task-20260502-027 | 实现 Cron 定时任务调度 |
-| **P2** | L5 工作流 | task-20260502-028 | 实现工作流管道（Prompt Chaining + Routing） |
-| **P3** | 远期 | task-20260502-029 | 实现浏览器自动化（P3 远期） |
+### 下一批任务（2026-05-03 新建）
+
+| 优先级 | 任务卡 ID | 标题 | 阶段 |
+|--------|-----------|------|------|
+| P0 | task-20260503-042 | QA 独立审阅 — 新增代码 | ready |
+| P1 | task-20260503-043 | Hook 系统实现 | ready |
+| P1 | task-20260503-044 | 会话持久化实现 | ready |
+| P1 | task-20260503-045 | MicroCompact 上下文压缩 | ready |
+| P0 | task-20260503-046 | 端到端部署验证 | ready |
 
 ### UI 任务（PuddingPlatformAdmin）
 
