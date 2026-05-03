@@ -75,6 +75,7 @@ import {
   listWorkspaceChannels,
   listWorkspaceMembers,
   listWorkspaceSkills,
+  listP2pPeers,
   listWorkflows,
   removeWorkspaceMember,
   sendAdminChatMessage,
@@ -93,6 +94,7 @@ import {
   type KnowledgeBaseDto,
   type LlmModelDto,
   type LlmProviderDto,
+  type PeerNodeDto,
   type TurnStep,
   type UpsertKnowledgeBaseRequest,
   type UpsertWorkflowRequest,
@@ -1266,6 +1268,96 @@ const SkillsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   );
 };
 
+// ─── 对等节点 Tab ────────────────────────────────────────────────────────────
+
+const PeersTab: React.FC = () => {
+  const { message } = App.useApp();
+  const [loading, setLoading] = useState(false);
+  const [peers, setPeers] = useState<PeerNodeDto[]>([]);
+
+  const loadPeers = async (showError = false) => {
+    setLoading(true);
+    try {
+      const data = await listP2pPeers();
+      const sorted = [...data].sort(
+        (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
+      );
+      setPeers(sorted);
+    } catch {
+      if (showError) {
+        message.error('加载对等节点失败，请检查 P2P 服务状态');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPeers(false);
+    const timer = window.setInterval(() => {
+      void loadPeers(false);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <>
+      <div style={{ marginBottom: 12, textAlign: 'right' }}>
+        <Button onClick={() => loadPeers(true)} loading={loading}>刷新节点</Button>
+      </div>
+      <Table<PeerNodeDto>
+        rowKey="nodeId"
+        loading={loading}
+        dataSource={peers}
+        pagination={false}
+        size="small"
+        bordered
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无已发现对等节点"
+            />
+          ),
+        }}
+        columns={[
+          {
+            title: '节点名',
+            dataIndex: 'displayName',
+            render: (value: string, record: PeerNodeDto) => (
+              <Space direction="vertical" size={0}>
+                <Text>{value || record.nodeId}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {record.nodeId}
+                </Text>
+              </Space>
+            ),
+          },
+          {
+            title: '主机',
+            dataIndex: 'host',
+          },
+          {
+            title: '端口',
+            dataIndex: 'port',
+            width: 100,
+          },
+          {
+            title: '最后心跳',
+            dataIndex: 'lastSeen',
+            render: (value: string) => new Date(value).toLocaleString('zh-CN'),
+            width: 200,
+          },
+        ]}
+      />
+    </>
+  );
+};
+
 // ─── 渠道管道 Tab ─────────────────────────────────────────────────────────────
 
 const CHANNEL_TYPES = [
@@ -1454,6 +1546,7 @@ const WorkspaceDetailPage: React.FC = () => {
     'workflows',
     'knowledge-bases',
     'skills',
+    'peers',
     'channels',
     'members',
   ].includes(tabFromQuery ?? '')
@@ -1728,6 +1821,16 @@ const WorkspaceDetailPage: React.FC = () => {
               </Space>
             ),
             children: <SkillsTab workspaceId={workspace.workspaceId} />,
+          },
+          {
+            key: 'peers',
+            label: (
+              <Space>
+                <CodeOutlined />
+                对等节点
+              </Space>
+            ),
+            children: <PeersTab />,
           },
           {
             key: 'channels',

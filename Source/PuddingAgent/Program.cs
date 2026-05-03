@@ -17,6 +17,7 @@ using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Sandbox;
 using PuddingRuntime.Services.Skills;
 using PuddingMemoryEngine;
+using PuddingAgent.P2P;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -139,6 +140,9 @@ builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<AgentExecutionService>();
 
+// ── P2P 发现（局域网 UDP 广播 + HTTP 探活）────────────────
+builder.Services.AddSingleton<IP2pDiscoveryService, MdnsDiscoveryService>();
+
 // ── LLM 配置 ─────────────────────────────────────────
 var llmEndpoint = builder.Configuration["LLM_ENDPOINT"] ?? "https://api.openai.com/v1";
 var llmApiKey = builder.Configuration["LLM_API_KEY"] ?? "";
@@ -181,6 +185,37 @@ builder.Services.AddSingleton<BootstrapStateService>(sp =>
     new BootstrapStateService(stateFilePath, sp.GetRequiredService<IConfiguration>()));
 
 var app = builder.Build();
+
+var p2pDiscoveryService = app.Services.GetRequiredService<IP2pDiscoveryService>();
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await p2pDiscoveryService.StartAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(ex, "[P2P] Discovery 启动失败。");
+        }
+    });
+});
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await p2pDiscoveryService.StopAsync();
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(ex, "[P2P] Discovery 停止失败。");
+        }
+    });
+});
 
 // ── 启动时应用迁移 ───────────────────────────────────
 using (var scope = app.Services.CreateScope())

@@ -1297,6 +1297,20 @@ export async function sendAdminChatMessageStream(
   if (buffer.trim()) flushFrame(buffer);
 }
 
+// ─── P2P Peer Discovery API ────────────────────────────────────
+
+export interface PeerNodeDto {
+  nodeId: string;
+  displayName: string;
+  host: string;
+  port: number;
+  lastSeen: string;
+}
+
+export async function listP2pPeers(): Promise<PeerNodeDto[]> {
+  return request('/api/p2p/peers', { method: 'GET' });
+}
+
 // ─── Runtime 节点管理类型（对齐 PuddingCore.Platform.RuntimeModels）──
 
 export type RuntimeNodeStatus = 'Online' | 'Offline' | 'Degraded';
