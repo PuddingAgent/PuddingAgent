@@ -1,3 +1,6 @@
 [submodule "Source/PuddingPlatformAdmin/vue-element-admin"]
 	path = Source/PuddingPlatformAdmin/vue-element-admin
 	url = git@github.com:PanJiaChen/vue-element-admin.git
+[submodule "Docs/claude-reviews-claude"]
+	path = Docs/claude-reviews-claude
+	url = git@github.com:openedclaude/claude-reviews-claude.git
