@@ -84,7 +84,7 @@ const Login: React.FC = () => {
         );
         await fetchUserInfo();
         const urlParams = new URL(window.location.href).searchParams;
-        window.location.href = urlParams.get('redirect') || '/';
+        window.location.href = urlParams.get('redirect') || '/admin/chat';
         return;
       }
       setUserLoginState(msg);

@@ -65,9 +65,10 @@ public partial class BootstrapApiController(IConfiguration config, PlatformDbCon
                 message = "密码必须至少8位，且包含大写字母、小写字母和数字",
             });
 
-        // 使用 Serializable 事务防止 TOCTOU 竞态条件：
-        // 并发 POST 请求同时通过 Admin 存在性检查并创建多个管理员。
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        // 使用 ReadCommitted 事务防止 TOCTOU 竞态条件：
+        // SQLite 不支持 Serializable 隔离级别与 EF Core 的可靠交互（事务可能自动完成导致
+        // "This SqliteTransaction has completed" 异常），ReadCommitted 在 EnsureCreated 表上已足够。
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
             // 仅当无 Admin 时允许
@@ -110,7 +111,8 @@ public partial class BootstrapApiController(IConfiguration config, PlatformDbCon
         }
         catch
         {
-            await transaction.RollbackAsync(ct);
+            // 事务可能已被 SQLite/EF Core 自动完成，仅在仍可用时回滚
+            try { await transaction.RollbackAsync(ct); } catch (InvalidOperationException) { }
             throw;
         }
     }

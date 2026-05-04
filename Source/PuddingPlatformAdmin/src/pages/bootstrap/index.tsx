@@ -83,7 +83,7 @@ const Bootstrap: React.FC = () => {
           localStorage.setItem('pudding_token', data.token);
         }
         message.success('管理员账号创建成功，正在跳转...');
-        window.location.href = '/';
+        window.location.href = '/admin/chat';
       } else {
         message.error(data.message || '初始化失败，请重试');
       }
