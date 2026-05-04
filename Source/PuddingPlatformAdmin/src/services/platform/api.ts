@@ -1342,30 +1342,39 @@ export interface RuntimeNodeInfo {
   isFrozen: boolean;
 }
 
-// ─── Runtime Registry API（调 /ingress/ 路由→PuddingController）───
+// ─── Runtime Registry API（优先 /api，兼容旧部署 /ingress）───
+
+async function requestRuntimeRegistry<T>(path: string, options: { method: string; data?: unknown }): Promise<T> {
+  try {
+    return await request(`/api/runtime-registry${path}`, options);
+  } catch {
+    // 兼容旧部署：某些网关通过 /ingress 暴露 RuntimeRegistry。
+    return request(`/ingress/runtime-registry${path}`, options);
+  }
+}
 
 /** 列出所有已注册的 Runtime 节点（含离线节点）。 */
 export async function listRuntimeNodes(): Promise<RuntimeNodeInfo[]> {
-  return request('/ingress/runtime-registry/nodes', { method: 'GET' });
+  return requestRuntimeRegistry<RuntimeNodeInfo[]>('/nodes', { method: 'GET' });
 }
 
 /** 列出所有嵌入式宿主节点。 */
 export async function listEmbeddedRuntimeNodes(): Promise<RuntimeNodeInfo[]> {
-  return request('/ingress/runtime-registry/embedded', { method: 'GET' });
+  return requestRuntimeRegistry<RuntimeNodeInfo[]>('/embedded', { method: 'GET' });
 }
 
 /** 获取指定节点的原生能力列表。 */
 export async function getRuntimeNodeCapabilities(
   nodeId: string,
 ): Promise<NativeCapabilityDescriptor[]> {
-  return request(`/ingress/runtime-registry/${encodeURIComponent(nodeId)}/capabilities`, {
+  return requestRuntimeRegistry<NativeCapabilityDescriptor[]>(`/${encodeURIComponent(nodeId)}/capabilities`, {
     method: 'GET',
   });
 }
 
 /** 冻结指定 Runtime 节点（嵌入式专用）。 */
 export async function freezeRuntimeNode(nodeId: string, reason: string): Promise<void> {
-  return request(`/ingress/runtime-registry/${encodeURIComponent(nodeId)}/freeze`, {
+  return requestRuntimeRegistry<void>(`/${encodeURIComponent(nodeId)}/freeze`, {
     method: 'POST',
     data: { reason, operatorId: 'admin' },
   });
@@ -1373,7 +1382,7 @@ export async function freezeRuntimeNode(nodeId: string, reason: string): Promise
 
 /** 解除指定 Runtime 节点冻结。 */
 export async function unfreezeRuntimeNode(nodeId: string): Promise<void> {
-  return request(`/ingress/runtime-registry/${encodeURIComponent(nodeId)}/unfreeze`, {
+  return requestRuntimeRegistry<void>(`/${encodeURIComponent(nodeId)}/unfreeze`, {
     method: 'POST',
     data: { reason: 'admin unfreeze', operatorId: 'admin' },
   });

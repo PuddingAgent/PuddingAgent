@@ -15,11 +15,14 @@ COPY Source/PuddingAgent/PuddingAgent.csproj         Source/PuddingAgent/
 COPY Source/PuddingPlatform/PuddingPlatform.csproj   Source/PuddingPlatform/
 COPY Source/PuddingController/PuddingController.csproj Source/PuddingController/
 COPY Source/PuddingGateway/PuddingGateway.csproj     Source/PuddingGateway/
+# 复制国密算法子模块
+COPY external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj external/github.hyfree.GM/github.hyfree.GM/
 
 RUN dotnet restore Source/PuddingAgent/PuddingAgent.csproj
 
 # 复制全部源码
 COPY Source/ Source/
+COPY external/ external/
 
 # 发布
 RUN dotnet publish Source/PuddingAgent/PuddingAgent.csproj \

@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using PuddingPlatform.Data;
 
 #nullable disable
 
 namespace PuddingPlatform.Migrations;
 
 /// <summary>新增 KeyVault 密钥保管箱表。</summary>
+[DbContext(typeof(PlatformDbContext))]
+[Migration("20260503123000_AddKeyVault")]
 public partial class AddKeyVault : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

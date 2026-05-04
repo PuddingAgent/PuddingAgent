@@ -89,13 +89,13 @@ builder.Services.AddDbContext<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-});
+}, ServiceLifetime.Singleton);
 
 builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-});
+}, ServiceLifetime.Singleton);
 
 builder.Services.AddSingleton<Sm2JwtSigner>();
 builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
@@ -104,7 +104,7 @@ builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {
     opt.UseSqlite(controllerConnStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-});
+}, ServiceLifetime.Singleton);
 
 // ── Session（用于 Auth API 的轻量登录态）──────────────
 builder.Services.AddDistributedMemoryCache();
