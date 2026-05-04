@@ -15,15 +15,18 @@ public class RuntimeRegistryController : ControllerBase
 {
     private readonly RuntimeRegistryService _registry;
     private readonly InMemoryAuditEventStore _audit;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RuntimeRegistryController> _logger;
 
     public RuntimeRegistryController(
         RuntimeRegistryService registry,
         InMemoryAuditEventStore audit,
+        IHttpClientFactory httpClientFactory,
         ILogger<RuntimeRegistryController> logger)
     {
         _registry = registry;
         _audit = audit;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -152,7 +155,8 @@ public class RuntimeRegistryController : ControllerBase
         // 代理转发到 Runtime 节点
         try
         {
-            using var http = new HttpClient { BaseAddress = new Uri(node.Endpoint) };
+            using var http = _httpClientFactory.CreateClient();
+            http.BaseAddress = new Uri(node.Endpoint);
             var invokeRequest = request with { NodeId = nodeId };
             var resp = await http.PostAsJsonAsync("/api/native-capability/invoke", invokeRequest, ct);
             NativeCapabilityInvokeResult? result;

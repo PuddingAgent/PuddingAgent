@@ -17,9 +17,14 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public sealed class KeyVaultService(
     IDbContextFactory<PlatformDbContext> dbFactory,
+    IConfiguration configuration,
     ILogger<KeyVaultService> logger) : IKeyVaultService
 {
     private const string MasterKeyEnvName = "PUDDING_KEYVAULT_MASTER_KEY";
+    private const string PreferredAlgorithmConfigKey = "Crypto:PreferredAlgorithm";
+    private const string AesAlgorithmName = "AES";
+    private const string Sm4AlgorithmName = "SM4";
+    private const string Sm4CipherPrefix = "SM4:";
     private const int KeySizeBytes = 32;
     private const int NonceSizeBytes = 12;
     private const int TagSizeBytes = 16;
@@ -31,11 +36,19 @@ public sealed class KeyVaultService(
         new(@"^[a-zA-Z0-9._-]+$", RegexOptions.Compiled);
 
     private readonly byte[] _masterKey = ResolveMasterKey(logger);
+    private readonly string _preferredAlgorithm = ResolvePreferredAlgorithm(configuration, logger);
 
     public Task<string> EncryptAsync(string plainText, CancellationToken ct = default)
     {
         if (plainText is null)
             throw new ArgumentNullException(nameof(plainText));
+
+        if (string.Equals(_preferredAlgorithm, Sm4AlgorithmName, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogDebug("[KeyVault] 使用 {Algorithm} 算法加密。", Sm4AlgorithmName);
+            var encrypted = Sm4Crypto.Encrypt(_masterKey, plainText);
+            return Task.FromResult(Sm4CipherPrefix + encrypted);
+        }
 
         var nonce = RandomNumberGenerator.GetBytes(NonceSizeBytes);
         var plaintextBytes = Encoding.UTF8.GetBytes(plainText);
@@ -57,6 +70,13 @@ public sealed class KeyVaultService(
     {
         if (string.IsNullOrWhiteSpace(encryptedValue))
             throw new ArgumentException("密文字段不能为空。", nameof(encryptedValue));
+
+        if (encryptedValue.StartsWith(Sm4CipherPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogDebug("[KeyVault] 检测到 {Algorithm} 前缀，使用 SM4 解密。", Sm4AlgorithmName);
+            var sm4Payload = encryptedValue[Sm4CipherPrefix.Length..];
+            return Task.FromResult(Sm4Crypto.Decrypt(_masterKey, sm4Payload));
+        }
 
         byte[] payload;
         try
@@ -354,5 +374,27 @@ public sealed class KeyVaultService(
             MasterKeyEnvName);
 
         return generated;
+    }
+
+    private static string ResolvePreferredAlgorithm(IConfiguration configuration, ILogger logger)
+    {
+        var configured = configuration[PreferredAlgorithmConfigKey];
+
+        if (string.IsNullOrWhiteSpace(configured))
+            return AesAlgorithmName;
+
+        if (string.Equals(configured, Sm4AlgorithmName, StringComparison.OrdinalIgnoreCase))
+            return Sm4AlgorithmName;
+
+        if (string.Equals(configured, AesAlgorithmName, StringComparison.OrdinalIgnoreCase))
+            return AesAlgorithmName;
+
+        logger.LogWarning(
+            "[KeyVault] 配置项 {ConfigKey}={Configured} 不受支持，已回退到 {DefaultAlgorithm}。",
+            PreferredAlgorithmConfigKey,
+            configured,
+            AesAlgorithmName);
+
+        return AesAlgorithmName;
     }
 }

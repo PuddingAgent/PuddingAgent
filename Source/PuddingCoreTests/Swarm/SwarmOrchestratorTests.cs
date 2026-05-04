@@ -5,6 +5,7 @@ using PuddingCode.Swarm;
 
 namespace PuddingCodeTests.Swarm;
 
+[TestClass]
 [DoNotParallelize]
 /// <summary>
 /// Unit tests for SwarmOrchestrator.
@@ -47,13 +48,13 @@ public sealed class SwarmOrchestratorTests : IDisposable
         }
 
         // Assert: Workflow should complete successfully
-        Assert.IsTrue(events.Count > 0, "Should emit events during workflow");
+        Assert.IsNotEmpty(events, "Should emit events during workflow");
         
         // Should complete with SwarmCompletedEvent
         var completedEvent = events.OfType<SwarmCompletedEvent>().FirstOrDefault();
         Assert.IsNotNull(completedEvent, "Should emit SwarmCompletedEvent");
         Assert.IsNotNull(completedEvent.Summary);
-        Assert.IsTrue(completedEvent.Summary.Contains("completed"), "Summary should indicate completion");
+        Assert.Contains("completed", completedEvent.Summary, "Summary should indicate completion");
     }
 
     [TestMethod]
@@ -82,14 +83,14 @@ public sealed class SwarmOrchestratorTests : IDisposable
 
         // Assert: Should spawn workers for multiple files
         var workerSpawnedEvents = events.OfType<WorkerSpawnedEvent>().ToList();
-        Assert.IsTrue(workerSpawnedEvents.Count > 0, "Should spawn at least one worker");
+        Assert.IsNotEmpty(workerSpawnedEvents, "Should spawn at least one worker");
         
         // Should have contract defined
         var contractDefinedEvent = events.OfType<ContractDefinedEvent>().FirstOrDefault();
         Assert.IsNotNull(contractDefinedEvent, "Should define contract");
         
         // Should complete
-        Assert.IsTrue(events.Any(e => e is SwarmCompletedEvent), "Should complete swarm");
+        Assert.IsNotEmpty(events.OfType<SwarmCompletedEvent>(), "Should complete swarm");
     }
 
     [TestMethod]
@@ -143,7 +144,7 @@ public sealed class SwarmOrchestratorTests : IDisposable
 
         // Assert: Should emit thinking events throughout workflow
         var thinkingEvents = events.OfType<ThinkingEvent>().ToList();
-        Assert.IsTrue(thinkingEvents.Count > 0, "Should emit thinking events");
+        Assert.IsNotEmpty(thinkingEvents, "Should emit thinking events");
         
         // Should have initialization thinking event
         Assert.IsTrue(thinkingEvents.Any(e => e.Thought.Contains("Initializing", StringComparison.OrdinalIgnoreCase) || 
@@ -267,18 +268,18 @@ public sealed class SwarmOrchestratorTests : IDisposable
         var validationIndex = events.FindIndex(e => e is ContractValidatedEvent);
         var completedIndex = events.FindIndex(e => e is SwarmCompletedEvent);
 
-        Assert.IsTrue(thinkingEventIndex >= 0, "Should have thinking event");
-        Assert.IsTrue(contractDefinedIndex >= 0, "Should have contract defined event");
-        Assert.IsTrue(workerSpawnedIndex >= 0, "Should have worker spawned event");
-        Assert.IsTrue(validationIndex >= 0, "Should have validation event");
-        Assert.IsTrue(completedIndex >= 0, "Should have completed event");
+        Assert.IsGreaterThanOrEqualTo(thinkingEventIndex, 0, "Should have thinking event");
+        Assert.IsGreaterThanOrEqualTo(contractDefinedIndex, 0, "Should have contract defined event");
+        Assert.IsGreaterThanOrEqualTo(workerSpawnedIndex, 0, "Should have worker spawned event");
+        Assert.IsGreaterThanOrEqualTo(validationIndex, 0, "Should have validation event");
+        Assert.IsGreaterThanOrEqualTo(completedIndex, 0, "Should have completed event");
 
         // Verify order: thinking -> (Leader spawn OR contract defined) -> validation -> completed
         // Note: Leader is spawned before contract definition in Phase 1/2
-        Assert.IsTrue(thinkingEventIndex < contractDefinedIndex, "Thinking should come before contract defined");
+        Assert.IsLessThan(thinkingEventIndex, contractDefinedIndex, "Thinking should come before contract defined");
         // Worker spawned can come before OR after contract defined (Leader spawns first, then contract, then workers)
         // So we just verify both events exist, not their relative order
-        Assert.IsTrue(validationIndex < completedIndex, "Validation should come before completed");
+        Assert.IsLessThan(validationIndex, completedIndex, "Validation should come before completed");
     }
 
     #endregion
@@ -331,8 +332,7 @@ public sealed class SwarmOrchestratorTests : IDisposable
             // If it doesn't crash, test passes
             break;
         }
-        
-        Assert.IsTrue(true, "Method should handle null input without crashing");
+        // Method should handle null input without crashing - test passes if we reach here
     }
 
     [TestMethod]

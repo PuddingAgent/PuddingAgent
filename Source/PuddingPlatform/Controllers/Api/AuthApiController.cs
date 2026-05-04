@@ -5,8 +5,10 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 using PuddingPlatform.Utils;
 
 namespace PuddingPlatform.Controllers.Api;
@@ -17,7 +19,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Route("api")]
-public class AuthApiController(IConfiguration config, PlatformDbContext db) : ControllerBase
+public class AuthApiController(IConfiguration config, PlatformDbContext db, Sm2JwtSigner sm2JwtSigner) : ControllerBase
 {
     /// <summary>POST /api/login/account</summary>
     [HttpPost("login/account")]
@@ -94,25 +96,43 @@ public class AuthApiController(IConfiguration config, PlatformDbContext db) : Co
         var issuer      = config["Jwt:Issuer"] ?? "pudding-platform";
         var audience    = config["Jwt:Audience"] ?? "pudding-admin";
         var expiryHours = int.TryParse(config["Jwt:ExpiryHours"], out var h) ? h : 8;
+        var utcNow      = DateTime.UtcNow;
+        var expiresAt   = utcNow.AddHours(expiryHours);
+        var jti         = Guid.NewGuid().ToString();
 
         var secKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
         var creds  = new SigningCredentials(secKey, SecurityAlgorithms.HmacSha256);
 
+        var sm2Payload = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["aud"] = audience,
+            ["email"] = email,
+            ["exp"] = new DateTimeOffset(expiresAt).ToUnixTimeSeconds().ToString(),
+            ["iss"] = issuer,
+            ["jti"] = jti,
+            ["name"] = displayName,
+            ["nameid"] = userId,
+            ["role"] = authority,
+            ["sub"] = userId,
+        };
+        var sm2Signature = sm2JwtSigner.SignPayload(JsonSerializer.Serialize(sm2Payload));
+
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, jti),
             new Claim(ClaimTypes.NameIdentifier, userId),
             new Claim(ClaimTypes.Name, displayName),
             new Claim(ClaimTypes.Email, email),
             new Claim(ClaimTypes.Role, authority),
+            new Claim("sm2_sig", sm2Signature),
         };
 
         var token = new JwtSecurityToken(
             issuer:             issuer,
             audience:           audience,
             claims:             claims,
-            expires:            DateTime.UtcNow.AddHours(expiryHours),
+            expires:            expiresAt,
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

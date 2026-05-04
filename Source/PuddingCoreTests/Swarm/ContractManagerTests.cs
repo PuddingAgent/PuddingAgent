@@ -52,10 +52,10 @@ public class ContractManagerTests
             // Assert
             Assert.IsTrue(File.Exists(configPath));
             var configContent = await File.ReadAllTextAsync(configPath);
-            Assert.IsTrue(configContent.Contains("\"version\""));
-            Assert.IsTrue(configContent.Contains("\"0.8\""));
-            Assert.IsTrue(configContent.Contains("\"mode\""));
-            Assert.IsTrue(configContent.Contains("\"local\""));
+            Assert.Contains("\"version\"", configContent);
+            Assert.Contains("\"0.8\"", configContent);
+            Assert.Contains("\"mode\"", configContent);
+            Assert.Contains("\"local\"", configContent);
         }
         finally
         {
@@ -87,7 +87,7 @@ public class ContractManagerTests
             // Assert
             Assert.IsNotNull(contract);
             Assert.IsNotNull(contract.Id);
-            Assert.IsTrue(contract.Id.StartsWith("contract-"));
+            Assert.StartsWith("contract-", contract.Id);
             Assert.AreEqual(specification, contract.Specification);
             Assert.IsNotNull(contract.Files);
             Assert.IsNotNull(contract.Symbols);
@@ -119,7 +119,7 @@ public class ContractManagerTests
 
             // Assert
             Assert.IsNotNull(contract);
-            Assert.IsTrue(contract.Files.Count > 0, "Should extract at least one file path");
+            Assert.IsNotEmpty(contract.Files, "Should extract at least one file path");
             CollectionAssert.Contains(contract.Files.ToList(), "src/Auth/LoginService.cs");
             CollectionAssert.Contains(contract.Files.ToList(), "src/Auth/IAuthService.cs");
             CollectionAssert.Contains(contract.Files.ToList(), "src/Auth/Validators.cs");
@@ -151,12 +151,12 @@ public class ContractManagerTests
 
             // Assert
             Assert.IsNotNull(contract);
-            Assert.IsTrue(contract.Symbols.Count > 0, "Should extract at least one symbol");
+            Assert.IsNotEmpty(contract.Symbols, "Should extract at least one symbol");
             // The implementation extracts class/interface names
             var symbols = contract.Symbols.ToList();
-            Assert.IsTrue(symbols.Contains("AuthService"), "Should contain AuthService");
-            Assert.IsTrue(symbols.Contains("IAuthService"), "Should contain IAuthService");
-            Assert.IsTrue(symbols.Contains("UserManager"), "Should contain UserManager");
+            Assert.Contains("AuthService", symbols);
+            Assert.Contains("IAuthService", symbols);
+            Assert.Contains("UserManager", symbols);
         }
         finally
         {
@@ -343,8 +343,8 @@ public class ContractManagerTests
             // Verify file content
             var jsonContent = await File.ReadAllTextAsync(contractFilePath);
             Assert.IsNotNull(jsonContent);
-            Assert.IsTrue(jsonContent.Contains(contract.Id));
-            Assert.IsTrue(jsonContent.Contains("PersistentService"));
+            Assert.Contains(contract.Id, jsonContent);
+            Assert.Contains("PersistentService", jsonContent);
         }
         finally
         {
@@ -381,13 +381,13 @@ public class ContractManagerTests
             var jsonContent = await File.ReadAllTextAsync(contractFilePath);
 
             // Verify all properties are persisted
-            Assert.IsTrue(jsonContent.Contains("\"Id\""));
-            Assert.IsTrue(jsonContent.Contains("\"Files\""));
-            Assert.IsTrue(jsonContent.Contains("\"Symbols\""));
-            Assert.IsTrue(jsonContent.Contains("\"Specification\""));
-            Assert.IsTrue(jsonContent.Contains("ExampleService"));
-            Assert.IsTrue(jsonContent.Contains("ProcessData"));
-            Assert.IsTrue(jsonContent.Contains("src/Example.cs"));
+            Assert.Contains("\"Id\"", jsonContent);
+            Assert.Contains("\"Files\"", jsonContent);
+            Assert.Contains("\"Symbols\"", jsonContent);
+            Assert.Contains("\"Specification\"", jsonContent);
+            Assert.Contains("ExampleService", jsonContent);
+            Assert.Contains("ProcessData", jsonContent);
+            Assert.Contains("src/Example.cs", jsonContent);
         }
         finally
         {

@@ -86,7 +86,7 @@ public sealed class DefaultDistillerTests
         // Assert
         Assert.IsTrue(result.IsTruncated);
         Assert.AreEqual(50, result.OriginalLines);
-        Assert.IsTrue(result.RetainedLines < 50);
+        Assert.IsLessThan(result.RetainedLines, 50);
         StringAssert.Contains(result.Summary, "Line 1");
         StringAssert.Contains(result.Summary, "Line 50");
         StringAssert.Contains(result.Summary, "truncated");
@@ -409,7 +409,7 @@ public sealed class DefaultDistillerTests
 
         // Assert
         Assert.IsTrue(result.IsTruncated);
-        Assert.IsTrue(result.Summary.Length <= 4500); // MaxLlmChars + truncation marker
+        Assert.IsLessThanOrEqualTo(result.Summary.Length, 4500); // MaxLlmChars + truncation marker
     }
 
     // ──── Custom Config Tests ────

@@ -53,8 +53,8 @@ public sealed class ScopeIsolationTests : IDisposable
         var result = await scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Error"), "Should return error");
-        Assert.IsTrue(result.Contains("scope", StringComparison.OrdinalIgnoreCase), "Error should mention scope");
+        Assert.Contains("Error", result, "Should return error");
+        Assert.Contains("scope", result, "Error should mention scope");
         Assert.IsFalse(File.Exists(blockedFile), "File should not be created outside scope");
     }
 
@@ -75,8 +75,8 @@ public sealed class ScopeIsolationTests : IDisposable
         var result = await scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Error"), "Should return error");
-        Assert.IsTrue(result.Contains("cannot modify", StringComparison.OrdinalIgnoreCase), "Should mention cannot modify");
+        Assert.Contains("Error", result, "Should return error");
+        Assert.Contains("cannot modify", result, "Should mention cannot modify");
     }
 
     [TestMethod]
@@ -147,8 +147,8 @@ public sealed class ScopeIsolationTests : IDisposable
         var result4 = await worker2Tool.ExecuteAsync(args4);
 
         // Assert
-        Assert.IsTrue(result1.Contains("Error"), "Worker 1 should be blocked from Worker 2's scope");
-        Assert.IsTrue(result2.Contains("Error"), "Worker 2 should be blocked from Worker 1's scope");
+        Assert.Contains("Error", result1, "Worker 1 should be blocked from Worker 2's scope");
+        Assert.Contains("Error", result2, "Worker 2 should be blocked from Worker 1's scope");
         Assert.IsFalse(File.Exists(worker1BlockedFile), "Worker 1 file should not exist in Worker 2's scope");
         Assert.IsFalse(File.Exists(worker2BlockedFile), "Worker 2 file should not exist in Worker 1's scope");
         
@@ -201,7 +201,7 @@ public sealed class ScopeIsolationTests : IDisposable
             "Worker 1 should write to shared");
         Assert.IsTrue(result2.Contains("Written", StringComparison.OrdinalIgnoreCase) || result2.Contains("Success", StringComparison.OrdinalIgnoreCase), 
             "Worker 2 should write to shared");
-        Assert.IsTrue(result3.Contains("Error"), "Worker 1 should be blocked from outside");
+        Assert.Contains("Error", result3, "Worker 1 should be blocked from outside");
     }
 
     [TestMethod]
@@ -236,11 +236,11 @@ public sealed class ScopeIsolationTests : IDisposable
         }
 
         // Assert
-        Assert.AreEqual(3, violations.Count, "All violations should be logged/recorded");
+        Assert.HasCount(3, violations, "All violations should be logged/recorded");
         foreach (var violation in violations)
         {
-            Assert.IsTrue(violation.Contains("Error"), "Each violation should return error");
-            Assert.IsTrue(violation.Contains("scope", StringComparison.OrdinalIgnoreCase), "Error should mention scope");
+            Assert.Contains("Error", violation, "Each violation should return error");
+            Assert.Contains("scope", violation, "Error should mention scope");
         }
         
         // Verify no files were created
@@ -323,7 +323,7 @@ public sealed class ScopeIsolationTests : IDisposable
         // Assert
         Assert.IsTrue(result1.Contains("Written", StringComparison.OrdinalIgnoreCase) || result1.Contains("Success", StringComparison.OrdinalIgnoreCase), 
             "Exact file should be allowed");
-        Assert.IsTrue(result2.Contains("Error"), "Other files should be blocked");
+        Assert.Contains("Error", result2, "Other files should be blocked");
     }
 
     [TestMethod]
@@ -346,7 +346,7 @@ public sealed class ScopeIsolationTests : IDisposable
         var result = await scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Error"), "Traversal attack should be blocked");
+        Assert.Contains("Error", result, "Traversal attack should be blocked");
         Assert.IsFalse(File.Exists(normalizedPath), "Traversal file should not be created");
     }
 
@@ -368,7 +368,7 @@ public sealed class ScopeIsolationTests : IDisposable
         var result = await scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Error"), "Empty scope should block everything");
+        Assert.Contains("Error", result, "Empty scope should block everything");
         Assert.IsFalse(File.Exists(anyFile), "No files should be created");
     }
 

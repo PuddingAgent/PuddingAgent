@@ -4,3 +4,6 @@
 [submodule "Docs/claude-reviews-claude"]
 	path = Docs/claude-reviews-claude
 	url = git@github.com:openedclaude/claude-reviews-claude.git
+[submodule "external/github.hyfree.GM"]
+	path = external/github.hyfree.GM
+	url = git@github.com:hyfree/github.hyfree.GM.git

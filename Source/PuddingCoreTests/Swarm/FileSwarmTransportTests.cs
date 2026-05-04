@@ -40,7 +40,7 @@ public sealed class FileSwarmTransportTests : IDisposable
         var messages = JsonSerializer.Deserialize<List<SwarmMessage>>(json);
 
         Assert.IsNotNull(messages);
-        Assert.AreEqual(1, messages.Count);
+        Assert.HasCount(1, messages);
         Assert.AreEqual(message.Id, messages[0].Id);
     }
 
@@ -62,7 +62,7 @@ public sealed class FileSwarmTransportTests : IDisposable
         var messages = JsonSerializer.Deserialize<List<SwarmMessage>>(json);
 
         Assert.IsNotNull(messages);
-        Assert.AreEqual(2, messages.Count);
+        Assert.HasCount(2, messages);
         Assert.AreEqual(message1.Id, messages[0].Id);
         Assert.AreEqual(message2.Id, messages[1].Id);
     }
@@ -84,7 +84,7 @@ public sealed class FileSwarmTransportTests : IDisposable
         var messages = JsonSerializer.Deserialize<List<SwarmMessage>>(json);
 
         Assert.IsNotNull(messages);
-        Assert.AreEqual(1, messages.Count);
+        Assert.HasCount(1, messages);
         Assert.AreEqual(message.Id, messages[0].Id);
     }
 
@@ -105,7 +105,7 @@ public sealed class FileSwarmTransportTests : IDisposable
         var messages = JsonSerializer.Deserialize<List<SwarmMessage>>(json);
 
         Assert.IsNotNull(messages);
-        Assert.AreEqual(2, messages.Count);
+        Assert.HasCount(2, messages);
     }
 
     [TestMethod]

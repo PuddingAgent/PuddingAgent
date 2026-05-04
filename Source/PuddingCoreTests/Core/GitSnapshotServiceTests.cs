@@ -68,7 +68,7 @@ public sealed class GitSnapshotServiceTests
 
         // Assert
         Assert.IsNotNull(hash);
-        Assert.IsTrue(hash.Length > 0);
+        Assert.IsGreaterThan(hash.Length, 0);
     }
 
     [TestMethod]
@@ -93,7 +93,7 @@ public sealed class GitSnapshotServiceTests
 
         // Assert
         var snapshots = await _service.ListSnapshotsAsync(10);
-        Assert.AreEqual(2, snapshots.Count);
+        Assert.HasCount(2, snapshots);
         Assert.AreEqual("my custom label", snapshots[0].Label);
     }
 
@@ -114,7 +114,7 @@ public sealed class GitSnapshotServiceTests
         var snapshots = await _service.ListSnapshotsAsync(10);
 
         // Assert
-        Assert.AreEqual(4, snapshots.Count);
+        Assert.HasCount(4, snapshots);
         Assert.AreEqual("snapshot 3", snapshots[0].Label);
         Assert.AreEqual("snapshot 2", snapshots[1].Label);
         Assert.AreEqual("snapshot 1", snapshots[2].Label);
@@ -215,7 +215,7 @@ public sealed class GitSnapshotServiceTests
         var snapshots = await _service.ListSnapshotsAsync(10);
 
         // Assert
-        Assert.AreEqual(3, snapshots.Count);
+        Assert.HasCount(3, snapshots);
         Assert.AreEqual("second", snapshots[0].Label);
         Assert.AreEqual("first", snapshots[1].Label);
         Assert.IsTrue(snapshots[0].Timestamp > snapshots[1].Timestamp);
@@ -235,7 +235,7 @@ public sealed class GitSnapshotServiceTests
         var snapshots = await _service.ListSnapshotsAsync(10);
 
         // Assert
-        Assert.AreEqual(10, snapshots.Count);
+        Assert.HasCount(10, snapshots);
     }
 
     [TestMethod]
@@ -245,7 +245,7 @@ public sealed class GitSnapshotServiceTests
         var snapshots = await _service.ListSnapshotsAsync(10);
 
         // Assert: Only initial commit exists (label "init")
-        Assert.AreEqual(1, snapshots.Count);
+        Assert.HasCount(1, snapshots);
         Assert.AreEqual("init", snapshots[0].Label);
     }
 

@@ -173,7 +173,7 @@ public class WorkerManagerTests
             // Assert
             Assert.IsNotNull(worker.WorktreePath);
             Assert.IsTrue(Directory.Exists(worker.WorktreePath));
-            Assert.IsTrue(worker.WorktreePath.Contains(worker.Id));
+            Assert.Contains(worker.Id, worker.WorktreePath);
         }
         finally
         {
@@ -197,7 +197,7 @@ public class WorkerManagerTests
             var workers = manager.GetActiveWorkers();
 
             // Assert
-            Assert.AreEqual(2, workers.Count);
+            Assert.HasCount(2, workers);
             Assert.IsTrue(workers.Any(w => w.Role == WorkerRole.Builder));
             Assert.IsTrue(workers.Any(w => w.Role == WorkerRole.QA));
         }
@@ -223,7 +223,7 @@ public class WorkerManagerTests
             var workers = manager.GetActiveWorkers();
 
             // Assert
-            Assert.AreEqual(0, workers.Count);
+            Assert.IsEmpty(workers);
         }
         finally
         {
@@ -296,8 +296,8 @@ public class WorkerManagerTests
 
             // Assert
             Assert.IsNotNull(worker.Name);
-            Assert.IsTrue(worker.Name.StartsWith("Builder-"));
-            Assert.IsTrue(worker.Name.Length > 8); // "Builder-" + at least some chars
+            Assert.StartsWith("Builder-", worker.Name);
+            Assert.IsGreaterThan(worker.Name.Length, 8); // "Builder-" + at least some chars
         }
         finally
         {
@@ -321,7 +321,7 @@ public class WorkerManagerTests
 
             // Assert
             Assert.IsInstanceOfType<IReadOnlyList<WorkerInfo>>(workers);
-            Assert.AreEqual(1, workers.Count);
+            Assert.HasCount(1, workers);
         }
         finally
         {

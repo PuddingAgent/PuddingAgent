@@ -97,6 +97,7 @@ builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
+builder.Services.AddSingleton<Sm2JwtSigner>();
 builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
 
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
@@ -112,8 +113,8 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromHours(8);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 });
 
 // ── Runtime 核心服务 ─────────────────────────────────

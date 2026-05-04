@@ -18,11 +18,16 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<DirectLlmClient> _logger;
+    private readonly IKeyVaultService? _keyVaultService;
 
-    public DirectLlmClient(IHttpClientFactory httpClientFactory, ILogger<DirectLlmClient> logger)
+    public DirectLlmClient(
+        IHttpClientFactory httpClientFactory,
+        ILogger<DirectLlmClient> logger,
+        IKeyVaultService? keyVaultService = null)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _keyVaultService = keyVaultService;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -34,9 +39,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         LlmConfig? llmConfig = null,
         CancellationToken ct = default)
     {
-        var endpoint = llmConfig?.Endpoint ?? "https://api.openai.com/v1";
-        var apiKey = llmConfig?.ApiKey ?? "";
-        var model = llmConfig?.ModelId ?? "gpt-4o-mini";
+        var effectiveConfig = await ResolveLlmConfigAsync(llmConfig, ct);
+        var endpoint = effectiveConfig?.Endpoint ?? "https://api.openai.com/v1";
+        var apiKey = effectiveConfig?.ApiKey ?? "";
+        var model = effectiveConfig?.ModelId ?? "gpt-4o-mini";
 
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("LLM_API_KEY not configured.");
@@ -88,7 +94,19 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             }
             : null;
 
-        return new LlmResponse(replyContent, null, null, usage);
+        var toolCalls = body.TryGetProperty("choices", out var tcChoices) && tcChoices.GetArrayLength() > 0
+            ? tcChoices[0].TryGetProperty("message", out var tcMsg) && tcMsg.TryGetProperty("tool_calls", out var tcArr)
+                ? tcArr.EnumerateArray().Select(tc => new ToolCall(
+                    tc.TryGetProperty("id", out var tcid) ? tcid.GetString() ?? "" : "",
+                    tc.TryGetProperty("function", out var tcfn) && tcfn.TryGetProperty("name", out var tcname)
+                        ? tcname.GetString() ?? "" : "",
+                    tc.TryGetProperty("function", out var tcargs) && tcargs.TryGetProperty("arguments", out var tcargStr)
+                        ? tcargStr.GetString() ?? "" : ""
+                )).ToArray()
+                : null
+            : null;
+
+        return new LlmResponse(replyContent, toolCalls, null, usage);
     }
 
     public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
@@ -100,9 +118,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         LlmConfig? llmConfig = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var endpoint = llmConfig?.Endpoint ?? "https://api.openai.com/v1";
-        var apiKey = llmConfig?.ApiKey ?? "";
-        var model = llmConfig?.ModelId ?? "gpt-4o-mini";
+        var effectiveConfig = await ResolveLlmConfigAsync(llmConfig, ct);
+        var endpoint = effectiveConfig?.Endpoint ?? "https://api.openai.com/v1";
+        var apiKey = effectiveConfig?.ApiKey ?? "";
+        var model = effectiveConfig?.ModelId ?? "gpt-4o-mini";
 
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("LLM_API_KEY not configured.");
@@ -118,6 +137,47 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         await foreach (var delta in gateway.ChatStreamAsync(messages, toolSpecs, ct))
             yield return delta;
+    }
+
+    /// <summary>
+    /// 解析 LLM 配置中的 KeyVault 引用并产出最终可用 ApiKey（仅在内存中使用）。
+    /// </summary>
+    private async Task<LlmConfig?> ResolveLlmConfigAsync(LlmConfig? config, CancellationToken ct)
+    {
+        if (config is null)
+            return null;
+
+        var apiKey = config.ApiKey;
+
+        if (!string.IsNullOrWhiteSpace(config.KeyVaultId)
+            && string.IsNullOrWhiteSpace(apiKey)
+            && _keyVaultService is not null)
+        {
+            var byId = await _keyVaultService.GetSecretAsync(config.KeyVaultId, includePlainText: true, ct);
+            if (!string.IsNullOrWhiteSpace(byId?.Value))
+            {
+                apiKey = byId.Value;
+            }
+            else
+            {
+                var placeholder = $"{{{{vault:{config.KeyVaultId}}}}}";
+                var injected = await _keyVaultService.InjectAsync(placeholder, ct);
+                if (!string.Equals(injected, placeholder, StringComparison.Ordinal))
+                    apiKey = injected;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(apiKey)
+            && apiKey.Contains("{{vault:", StringComparison.OrdinalIgnoreCase)
+            && _keyVaultService is not null)
+        {
+            apiKey = await _keyVaultService.InjectAsync(apiKey, ct);
+        }
+
+        if (string.Equals(apiKey, config.ApiKey, StringComparison.Ordinal))
+            return config;
+
+        return config with { ApiKey = apiKey };
     }
 
     private sealed class ProxyTool(LlmToolDefinition dto) : ITool

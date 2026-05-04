@@ -88,7 +88,7 @@ public sealed class ToolRegistryTests
         var tools = _registry.GetAllTools();
 
         // Assert
-        Assert.AreEqual(3, tools.Count);
+        Assert.HasCount(3, tools);
         CollectionAssert.Contains(tools.Select(t => t.Name).ToList(), "tool1");
         CollectionAssert.Contains(tools.Select(t => t.Name).ToList(), "tool2");
         CollectionAssert.Contains(tools.Select(t => t.Name).ToList(), "tool3");
@@ -159,7 +159,7 @@ public sealed class ToolRegistryTests
         var tools = _registry.GetAllTools();
 
         // Assert
-        Assert.AreEqual(0, tools.Count);
+        Assert.IsEmpty(tools);
     }
 }
 

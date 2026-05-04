@@ -41,7 +41,7 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         // Assert Step 1: Contract should be created with correct structure
         Assert.IsNotNull(contract);
         Assert.IsFalse(string.IsNullOrEmpty(contract.Id));
-        Assert.IsTrue(contract.Id.StartsWith("contract-"));
+        Assert.StartsWith("contract-", contract.Id);
         // Symbol extraction depends on regex patterns - check for key service symbols
         Assert.IsTrue(contract.Symbols.Any(s => s.Contains("Auth", StringComparison.OrdinalIgnoreCase)), 
             $"Should identify Auth-related symbols. Found: {string.Join(", ", contract.Symbols)}");
@@ -92,7 +92,7 @@ public sealed class ContractFirstWorkflowTests : IDisposable
 
         // Assert Step 5: Worktree should be cleaned up
         Assert.IsFalse(Directory.Exists(worker.WorktreePath), "Worktree should be removed after dismiss");
-        Assert.AreEqual(0, workerManager.GetActiveWorkers().Count, "No active workers after dismiss");
+        Assert.IsEmpty(workerManager.GetActiveWorkers(), "No active workers after dismiss");
     }
 
     [TestMethod]
@@ -115,8 +115,8 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         var contract = await contractManager.DefineContractAsync(specification);
 
         // Assert: Contract should identify multiple files
-        Assert.IsTrue(contract.Files.Count >= 1, "Should identify at least one file");
-        Assert.IsTrue(contract.Symbols.Count >= 3, "Should identify multiple symbols");
+        Assert.IsGreaterThanOrEqualTo(contract.Files.Count, 1, "Should identify at least one file");
+        Assert.IsGreaterThanOrEqualTo(contract.Symbols.Count, 3, "Should identify multiple symbols");
 
         // Act: Spawn multiple workers for different files
         var workers = new List<WorkerInfo>();
@@ -138,8 +138,8 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         }
 
         // Assert: All workers should be spawned
-        Assert.AreEqual(filesToImplement.Count, workers.Count);
-        Assert.AreEqual(filesToImplement.Count, workerManager.GetActiveWorkers().Count);
+        Assert.HasCount(filesToImplement.Count, workers);
+        Assert.HasCount(filesToImplement.Count, workerManager.GetActiveWorkers());
 
         // Act: Each worker implements their file
         foreach (var worker in workers)
@@ -154,7 +154,7 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         }
 
         // Assert: All workers cleaned up
-        Assert.AreEqual(0, workerManager.GetActiveWorkers().Count);
+        Assert.IsEmpty(workerManager.GetActiveWorkers());
     }
 
     [TestMethod]
@@ -177,7 +177,7 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         }
 
         // Assert: Verify event sequence
-        Assert.IsTrue(events.Count > 0, "Should emit events");
+        Assert.IsNotEmpty(events, "Should emit events");
         
         // Should have swarm started event (via ThinkingEvent)
         Assert.IsTrue(events.Any(e => e is ThinkingEvent), "Should have thinking events");

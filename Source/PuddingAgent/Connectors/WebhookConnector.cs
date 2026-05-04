@@ -11,6 +11,7 @@ namespace PuddingAgent.Connectors;
 public sealed class WebhookConnector : IPuddingConnector
 {
     private readonly ILogger<WebhookConnector> _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
     private ConnectorContext? _context;
 
     private long _messagesReceived;
@@ -36,9 +37,10 @@ public sealed class WebhookConnector : IPuddingConnector
         Capabilities = ["receive", "send"],
     };
 
-    public WebhookConnector(IConfiguration configuration, ILogger<WebhookConnector> logger)
+    public WebhookConnector(IConfiguration configuration, IHttpClientFactory httpClientFactory, ILogger<WebhookConnector> logger)
     {
         _logger = logger;
+        _httpClientFactory = httpClientFactory;
         // 签名密钥从配置读取，默认使用随机生成（仅开发环境）
         _signingSecret = configuration["Webhook:SigningSecret"]
             ?? configuration["Jwt:Key"]
@@ -71,7 +73,8 @@ public sealed class WebhookConnector : IPuddingConnector
 
         try
         {
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(30);
             var content = new StringContent(message.Content, Encoding.UTF8, "application/json");
 
             // 复制元数据到请求头

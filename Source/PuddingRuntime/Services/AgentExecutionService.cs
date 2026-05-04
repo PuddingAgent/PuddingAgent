@@ -25,6 +25,8 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class AgentExecutionService
 {
+    private static readonly TimeSpan DefaultSessionTimeout = TimeSpan.FromHours(1);
+
     private readonly AgentSessionManager _sessionManager;
     private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;
     private readonly MemoryEngine _memory;
@@ -42,6 +44,9 @@ public sealed class AgentExecutionService
     private readonly ILogger<AgentExecutionService> _logger;
 
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _historyLastAccessedAt = new();
+    private readonly ConcurrentDictionary<string, TimeSpan> _historyTimeouts = new();
+    private readonly ConcurrentDictionary<string, int> _activeExecutions = new();
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -90,18 +95,6 @@ public sealed class AgentExecutionService
             request.SessionId, request.AgentTemplateId,
             request.MessageText.Length, request.LlmConfig is not null);
 
-        // ── 获取/创建 Agent 实例 ──────────────────────────────────────
-        var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId);
-        _runtimeSessionStore.GetOrCreate(
-            request.SessionId, instance.AgentInstanceId,
-            request.WorkspaceId, request.AgentTemplateId);
-
-        // ── 注册并预下载 Skill 包────────────────────────────────────
-        var skillPackages = request.SkillPackages ?? [];
-        _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
-        if (skillPackages.Count > 0)
-            await _skillPackageDownloader.EnsureDownloadedAsync(skillPackages);
-
         // 前端给全局模板附加了 "global:" 前缀（用于在 UI 中区分工作区模板），
         // Runtime 侧查内置模板时需剥除前缀后再匹配。
         const string globalPrefix = "global:";
@@ -112,6 +105,24 @@ public sealed class AgentExecutionService
         var template = BuiltInAgentTemplates.FindById(canonicalTemplateId)
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
         var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
+        var sessionTimeout = ResolveSessionTimeout(template);
+
+        CleanupExpiredSessions(request.SessionId);
+
+        // ── 获取/创建 Agent 实例 ──────────────────────────────────────
+        var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId, sessionTimeout);
+        _sessionManager.MarkRunning(request.SessionId);
+        TouchHistoryAccess(request.SessionId, sessionTimeout);
+
+        _runtimeSessionStore.GetOrCreate(
+            request.SessionId, instance.AgentInstanceId,
+            request.WorkspaceId, request.AgentTemplateId);
+
+        // ── 注册并预下载 Skill 包────────────────────────────────────
+        var skillPackages = request.SkillPackages ?? [];
+        _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
+        if (skillPackages.Count > 0)
+            await _skillPackageDownloader.EnsureDownloadedAsync(skillPackages);
 
         // ── 构建对话历史 ─────────────────────────────────────────────
         var history = _histories.GetOrAdd(request.SessionId, _ => []);
@@ -142,6 +153,7 @@ public sealed class AgentExecutionService
 
         // ── 创建与外部令牌联结的执行控制令牌 ─────────────────────────
         var ct = _controlRegistry.CreateLinkedToken(request.SessionId, external);
+        var effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
 
         string             finalMessage   = "(no response)";
         var                stopReason     = AgentLoopStopReason.MaxRoundsReached;
@@ -158,10 +170,11 @@ public sealed class AgentExecutionService
         int  noProgressCount  = 0;   // 连续无工具调用进展的轮次计数
         var  toolRepeatMap    = new Dictionary<string, int>(StringComparer.Ordinal);
 
-        await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
-
         try
         {
+            MarkSessionExecuting(request.SessionId);
+            await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
+
             for (int round = 0; round < _guardrails.MaxRounds; round++)
             {
                 // ── 检查点 A：取消 / 冻结 ─────────────────────────────
@@ -202,7 +215,7 @@ public sealed class AgentExecutionService
                 var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
                 var llmResp = await _llmClient.ChatAsync(
                     request.WorkspaceId, request.SessionId,
-                    request.AgentTemplateId, injectedHistory, llmTools, request.LlmConfig, ct);
+                    request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
                 if (llmResp.Usage is not null)
                     usage = llmResp.Usage;
                 llmSw.Stop();
@@ -349,6 +362,7 @@ public sealed class AgentExecutionService
                     _logger.LogInformation(
                         "[AgentExec] WAIT round={Round} session={Session} reason={Reason} anchorId={AnchorId}",
                         round + 1, request.SessionId, loopResp.Meta?.Reason, resumeAnchorId);
+                    _sessionManager.MarkWaitingEvent(request.SessionId);
                     await FireHooksAsync(h => h.OnWaitingAsync(loopCtx, loopResp, ct));
                     break;
                 }
@@ -543,6 +557,7 @@ public sealed class AgentExecutionService
                 _controlRegistry.Remove(request.SessionId);
             if (execState != AgentExecutionState.WaitingEvent)
                 _skillPackageRegistry.Remove(instance.AgentInstanceId);
+            MarkSessionExecutionCompleted(request.SessionId);
         }
 
         // ── 记忆写回 ──────────────────────────────────────────────────
@@ -553,6 +568,7 @@ public sealed class AgentExecutionService
         }
 
         TrimHistory(history, template.Runtime?.MaxContextTokens ?? 8192);
+        TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);
         _runtimeSessionStore.Touch(request.SessionId);
 
@@ -592,16 +608,6 @@ public sealed class AgentExecutionService
             request.SessionId, request.AgentTemplateId,
             request.MessageText.Length, request.LlmConfig is not null);
 
-        var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId);
-        _runtimeSessionStore.GetOrCreate(
-            request.SessionId, instance.AgentInstanceId,
-            request.WorkspaceId, request.AgentTemplateId);
-
-        var skillPackages = request.SkillPackages ?? [];
-        _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
-        if (skillPackages.Count > 0)
-            await _skillPackageDownloader.EnsureDownloadedAsync(skillPackages);
-
         const string globalPrefix = "global:";
         var canonicalTemplateId = request.AgentTemplateId.StartsWith(globalPrefix, StringComparison.OrdinalIgnoreCase)
             ? request.AgentTemplateId[globalPrefix.Length..]
@@ -610,6 +616,22 @@ public sealed class AgentExecutionService
         var template = BuiltInAgentTemplates.FindById(canonicalTemplateId)
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
         var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
+        var sessionTimeout = ResolveSessionTimeout(template);
+
+        CleanupExpiredSessions(request.SessionId);
+
+        var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId, sessionTimeout);
+        _sessionManager.MarkRunning(request.SessionId);
+        TouchHistoryAccess(request.SessionId, sessionTimeout);
+
+        _runtimeSessionStore.GetOrCreate(
+            request.SessionId, instance.AgentInstanceId,
+            request.WorkspaceId, request.AgentTemplateId);
+
+        var skillPackages = request.SkillPackages ?? [];
+        _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
+        if (skillPackages.Count > 0)
+            await _skillPackageDownloader.EnsureDownloadedAsync(skillPackages);
 
         var history = _histories.GetOrAdd(request.SessionId, _ => []);
         if (history.Count == 0)
@@ -635,13 +657,15 @@ public sealed class AgentExecutionService
         };
 
         var ct = _controlRegistry.CreateLinkedToken(request.SessionId, external);
+        var effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
         var finalMessage = new StringBuilder();
         TokenUsageDto? usage = null;
 
-        await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
-
         try
         {
+            MarkSessionExecuting(request.SessionId);
+            await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
+
             // Streaming chat intentionally does not expose function-call deltas to the UI.
             // Tool execution remains available on the synchronous structured loop path.
             var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
@@ -651,7 +675,7 @@ public sealed class AgentExecutionService
                 request.AgentTemplateId,
                 injectedHistory,
                 tools: null,
-                llmConfig: request.LlmConfig,
+                llmConfig: effectiveLlmConfig,
                 ct: ct))
             {
                 if (delta.Usage is not null)
@@ -689,6 +713,7 @@ public sealed class AgentExecutionService
             }
 
             TrimHistory(history, template.Runtime?.MaxContextTokens ?? 8192);
+            TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);
             _runtimeSessionStore.Touch(request.SessionId);
 
@@ -711,6 +736,7 @@ public sealed class AgentExecutionService
 
             _controlRegistry.Remove(request.SessionId);
             _skillPackageRegistry.Remove(instance.AgentInstanceId);
+            MarkSessionExecutionCompleted(request.SessionId);
         }
     }
 
@@ -784,6 +810,112 @@ public sealed class AgentExecutionService
     }
 
     // ── 私有辅助 ──────────────────────────────────────────────────────────
+
+    private static TimeSpan ResolveSessionTimeout(AgentTemplateDefinition template)
+    {
+        var configured = template.Runtime?.SessionTimeout ?? TimeSpan.Zero;
+        return NormalizeSessionTimeout(configured);
+    }
+
+    private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
+        timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;
+
+    private void TouchHistoryAccess(string sessionId, TimeSpan sessionTimeout)
+    {
+        _historyLastAccessedAt[sessionId] = DateTimeOffset.UtcNow;
+        _historyTimeouts[sessionId] = NormalizeSessionTimeout(sessionTimeout);
+    }
+
+    private void CleanupExpiredSessions(string protectedSessionId)
+    {
+        CleanupExpiredHistories(protectedSessionId);
+
+        var expiredSessions = _sessionManager.CleanupExpired(
+            protectedSessionId,
+            shouldSkip: IsSessionExecuting);
+
+        if (expiredSessions.Count == 0)
+            return;
+
+        foreach (var sessionId in expiredSessions)
+        {
+            _histories.TryRemove(sessionId, out _);
+            _historyLastAccessedAt.TryRemove(sessionId, out _);
+            _historyTimeouts.TryRemove(sessionId, out _);
+
+            _runtimeSessionStore.Terminate(sessionId, "timeout");
+            _controlRegistry.Remove(sessionId);
+            _journal.ClearAnchor(sessionId);
+        }
+
+        _logger.LogInformation(
+            "[AgentExec] Cleanup removed {Count} expired sessions (protected={ProtectedSession})",
+            expiredSessions.Count,
+            protectedSessionId);
+    }
+
+    private void CleanupExpiredHistories(string protectedSessionId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var removedCount = 0;
+
+        foreach (var pair in _historyLastAccessedAt)
+        {
+            var sessionId = pair.Key;
+            if (string.Equals(sessionId, protectedSessionId, StringComparison.Ordinal))
+                continue;
+
+            if (IsSessionExecuting(sessionId))
+                continue;
+
+            if (_sessionManager.IsWaitingEvent(sessionId))
+                continue;
+
+            var timeout = NormalizeSessionTimeout(_historyTimeouts.GetValueOrDefault(sessionId));
+            if (now - pair.Value <= timeout)
+                continue;
+
+            if (_histories.TryRemove(sessionId, out _))
+                removedCount++;
+
+            _historyLastAccessedAt.TryRemove(sessionId, out _);
+            _historyTimeouts.TryRemove(sessionId, out _);
+        }
+
+        if (removedCount > 0)
+        {
+            _logger.LogInformation(
+                "[AgentExec] Cleanup removed {Count} expired history entries (protected={ProtectedSession})",
+                removedCount,
+                protectedSessionId);
+        }
+    }
+
+    private void MarkSessionExecuting(string sessionId)
+    {
+        _activeExecutions.AddOrUpdate(sessionId, 1, static (_, current) => current + 1);
+    }
+
+    private void MarkSessionExecutionCompleted(string sessionId)
+    {
+        while (true)
+        {
+            if (!_activeExecutions.TryGetValue(sessionId, out var current))
+                return;
+
+            if (current <= 1)
+            {
+                _activeExecutions.TryRemove(sessionId, out _);
+                return;
+            }
+
+            if (_activeExecutions.TryUpdate(sessionId, current - 1, current))
+                return;
+        }
+    }
+
+    private bool IsSessionExecuting(string sessionId) =>
+        _activeExecutions.ContainsKey(sessionId);
 
     private string BuildSystemPrompt(
         AgentTemplateDefinition template,
@@ -961,6 +1093,59 @@ public sealed class AgentExecutionService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 解析 Runtime 有效 LLM 配置：
+    /// - 优先使用上游已提供的 ApiKey（兼容旧链路）；
+    /// - 当仅有 KeyVaultId 时，优先按 KeyVaultId 读取，再回退 {{vault:...}} 注入；
+    /// - 当 ApiKey 是 {{vault:...}} 占位符时，调用 InjectAsync 解析。
+    /// </summary>
+    private async Task<LlmConfig?> ResolveLlmConfigAsync(LlmConfig? config, CancellationToken ct)
+    {
+        if (config is null)
+            return null;
+
+        var apiKey = config.ApiKey;
+
+        if (!string.IsNullOrWhiteSpace(config.KeyVaultId))
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                try
+                {
+                    var byId = await _keyVaultService.GetSecretAsync(config.KeyVaultId, includePlainText: true, ct);
+                    if (!string.IsNullOrWhiteSpace(byId?.Value))
+                        apiKey = byId.Value;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "[AgentExec] Resolve key by KeyVaultId failed keyVaultId={KeyVaultId}",
+                        config.KeyVaultId);
+                }
+
+                if (string.IsNullOrWhiteSpace(apiKey))
+                {
+                    var placeholder = $"{{{{vault:{config.KeyVaultId}}}}}";
+                    var injected = await _keyVaultService.InjectAsync(placeholder, ct);
+                    if (!string.Equals(injected, placeholder, StringComparison.Ordinal))
+                        apiKey = injected;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(apiKey)
+            && apiKey.Contains("{{vault:", StringComparison.OrdinalIgnoreCase))
+        {
+            apiKey = await _keyVaultService.InjectAsync(apiKey, ct);
+        }
+
+        if (string.Equals(apiKey, config.ApiKey, StringComparison.Ordinal))
+            return config;
+
+        return config with { ApiKey = apiKey };
     }
 
     private sealed class NoOpKeyVaultService : IKeyVaultService

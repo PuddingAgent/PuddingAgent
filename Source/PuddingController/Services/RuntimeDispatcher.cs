@@ -13,14 +13,17 @@ namespace PuddingController.Services;
 public sealed class RuntimeDispatcher
 {
     private readonly RuntimeRegistryService _registry;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RuntimeDispatcher> _logger;
     private string _fallbackEndpoint = "http://localhost:5100";
 
     public RuntimeDispatcher(
         RuntimeRegistryService registry,
+        IHttpClientFactory httpClientFactory,
         ILogger<RuntimeDispatcher> logger)
     {
         _registry = registry;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -39,7 +42,9 @@ public sealed class RuntimeDispatcher
 
         try
         {
-            using var httpClient = new HttpClient { BaseAddress = new Uri(endpoint) };
+            using var httpClient = _httpClientFactory.CreateClient();
+            httpClient.BaseAddress = new Uri(endpoint);
+
             var response = await httpClient.PostAsJsonAsync("/api/runtime/execute", request, ct);
             response.EnsureSuccessStatusCode();
 
@@ -76,7 +81,8 @@ public sealed class RuntimeDispatcher
         _logger.LogInformation("[RuntimeDispatch] stream session={SessionId} → {Endpoint} (via {Source})",
             request.SessionId, endpoint, node is null ? "fallback" : "registry");
 
-        using var httpClient = new HttpClient { BaseAddress = new Uri(endpoint) };
+        using var httpClient = _httpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(endpoint);
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/runtime/execute/stream")
         {
             Content = JsonContent.Create(request)

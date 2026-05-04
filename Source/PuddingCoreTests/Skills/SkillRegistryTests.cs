@@ -27,7 +27,7 @@ public sealed class SkillRegistryTests
 
         // Assert
         var skills = _registry.GetAllSkills();
-        Assert.AreEqual(5, skills.Count);
+        Assert.HasCount(5, skills);
         Assert.IsTrue(skills.Any(s => s.Name == "test_skill"));
         Assert.IsTrue(skills.Any(s => s.Name == "another_skill"));
     }
@@ -75,7 +75,7 @@ public sealed class SkillRegistryTests
         // Assert
         var skill = _registry.FindSkill("restricted_skill");
         Assert.IsNotNull(skill);
-        Assert.AreEqual(1, skill!.AllowedRoles.Length);
+        Assert.HasCount(1, skill!.AllowedRoles);
         Assert.AreEqual(AgentRole.Leader, skill.AllowedRoles[0]);
     }
 
@@ -93,7 +93,7 @@ public sealed class SkillRegistryTests
         // Assert
         var skill = _registry.FindSkill("skill_with_params");
         Assert.IsNotNull(skill);
-        Assert.AreEqual(2, skill!.Parameters.Properties.Count);
+        Assert.HasCount(2, skill!.Parameters.Properties);
         CollectionAssert.Contains(
             skill.Parameters.Properties.Select(p => p.Name).ToList(),
             "message");
@@ -148,7 +148,7 @@ public sealed class SkillRegistryTests
         var skills = _registry.SearchSkills("skill");
 
         // Assert
-        Assert.AreEqual(5, skills.Count);
+        Assert.HasCount(5, skills);
         Assert.IsTrue(skills.Any(s => s.Name == "test_skill"));
         Assert.IsTrue(skills.Any(s => s.Name == "another_skill"));
     }
@@ -164,7 +164,7 @@ public sealed class SkillRegistryTests
         var skills = _registry.SearchSkills("description");
 
         // Assert
-        Assert.AreEqual(1, skills.Count);
+        Assert.HasCount(1, skills);
         Assert.AreEqual("another_skill", skills[0].Name);
     }
 
@@ -179,7 +179,7 @@ public sealed class SkillRegistryTests
         var skills = _registry.SearchSkills("");
 
         // Assert
-        Assert.AreEqual(5, skills.Count);
+        Assert.HasCount(5, skills);
     }
 
     // ──── Role Filtering Tests ────
@@ -195,7 +195,7 @@ public sealed class SkillRegistryTests
         var skills = _registry.GetSkills(AgentRole.Worker);
 
         // Assert
-        Assert.AreEqual(4, skills.Count); // All except restricted_skill
+        Assert.HasCount(4, skills); // All except restricted_skill
         Assert.IsFalse(skills.Any(s => s.Name == "restricted_skill"));
     }
 
@@ -210,7 +210,7 @@ public sealed class SkillRegistryTests
         var skills = _registry.GetSkills(AgentRole.Leader);
 
         // Assert
-        Assert.AreEqual(5, skills.Count);
+        Assert.HasCount(5, skills);
         Assert.IsTrue(skills.Any(s => s.Name == "restricted_skill"));
     }
 

@@ -17,6 +17,7 @@ public sealed class RuntimeSelfRegistrationService : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly AgentSessionManager _sessionManager;
     private readonly NativeCapabilityExecutor _capabilityExecutor;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RuntimeSelfRegistrationService> _logger;
 
     // 本 Runtime 节点在本次进程生命周期内的固定 ID
@@ -26,11 +27,13 @@ public sealed class RuntimeSelfRegistrationService : BackgroundService
         IConfiguration configuration,
         AgentSessionManager sessionManager,
         NativeCapabilityExecutor capabilityExecutor,
+        IHttpClientFactory httpClientFactory,
         ILogger<RuntimeSelfRegistrationService> logger)
     {
         _configuration = configuration;
         _sessionManager = sessionManager;
         _capabilityExecutor = capabilityExecutor;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -81,7 +84,8 @@ public sealed class RuntimeSelfRegistrationService : BackgroundService
                     : [],
             };
 
-            using var http = new HttpClient { BaseAddress = new Uri(controllerEndpoint) };
+            using var http = _httpClientFactory.CreateClient();
+            http.BaseAddress = new Uri(controllerEndpoint);
             var resp = await http.PostAsJsonAsync("/api/runtime-registry/register", request, ct);
             if (resp.IsSuccessStatusCode)
             {

@@ -1,0 +1,19 @@
+{
+  "description": "## 文献来源\nAnthropic《Building Effective Agents》(2024.12.19) §Evaluator-Optimizer 一节：\n\"When we have clear evaluation criteria, and when iterative refinement provides measurable value... one LLM call generates a response while another provides evaluation and feedback in a loop.\"\n\n## 项目现状\n当前 AgentExecutionService 和 AgentOrchestrator 均为单 LLM 驱动，无内部自评估反馈循环。LLM 输出直接交付给用户，缺少「生成→评估→迭代优化」的闭环。\n\n## 实现方案\n1. 新增 EvaluatorPrompt 模板（可配置评估维度：正确性、完整性、安全性、风格）\n2. Generator LLM 产出后 → Evaluator LLM 评分+反馈 → Generator 基于反馈改进 → 循环直到评分达标或达到最大轮次\n3. 评估标准通过 Agent Template 配置（EvaluatorSettings: MaxIterations, PassThreshold, Criteria）\n4. 适用于场景：代码生成、文档写作、翻译、数据分析报告\n5. 评估结果记录到 ExecutionJournal，前端可展示每轮改进轨迹\n\n## 关键设计决策\n- Evaluator 和 Generator 可使用不同模型（如 Generator 用 Sonnet，Evaluator 用 Haiku 节约成本）\n- 每次评估只需增量 token（Evaluator 只看到改进前后 diff，而非全量上下文）\n- 与 CompletionPolicy 整合：Evaluator 通过才视为 DONE",
+  "goal": "在 Agent Loop 中实现 Evaluator-Optimizer 自评估循环，让 Agent 输出经过内部迭代优化后再交付用户",
+  "tags": ["anthropic-review", "agent-loop", "quality", "evaluator-optimizer"],
+  "acceptance_criteria": [
+    "EvaluatorPrompt 模板可配置，支持多维度评分",
+    "Generator→Evaluator→Generator 循环正确执行，最多可配置 N 轮",
+    "评估结果记录到 ExecutionJournal，前端可见改进轨迹",
+    "支持 Generator/Evaluator 使用不同模型（成本优化）"
+  ],
+  "impact_scope": "Source/PuddingRuntime/Services/AgentExecutionService.cs 新增 EvaluatorOptimizerLoop; Source/PuddingCore/Core/AgentOrchestrator.cs 同步支持; Source/PuddingCore/Models/ 新增 EvaluatorSettings DTO",
+  "entry_points": [
+    "Source/PuddingRuntime/Services/AgentExecutionService.cs",
+    "Source/PuddingCore/Core/AgentOrchestrator.cs"
+  ],
+  "risk_notes": "多次 LLM 调用增加延迟和成本，需设计合理的迭代上限（默认3轮）和早期退出策略",
+  "out_of_scope": "不涉及前端 UI 大改（改进轨迹展示为 P1 后续任务）",
+  "doc_path": "Docs/07架构/03PuddingRuntime.md"
+}

@@ -27,6 +27,15 @@ public sealed record LlmConfig
 {
     /// <summary>API 基础地址（含 /v1，如 https://api.deepseek.com/v1）</summary>
     public string? Endpoint { get; init; }
+    /// <summary>
+    /// KeyVault 密钥引用（推荐）。
+    /// Runtime 在实际调用 LLM 前通过 IKeyVaultService 解析为明文，仅在内存中使用。
+    /// </summary>
+    public string? KeyVaultId { get; init; }
+    /// <summary>
+    /// 明文 API Key（仅为向后兼容保留，避免跨服务明文传输）。
+    /// </summary>
+    [Obsolete("请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。")]
     public string? ApiKey { get; init; }
     public string? ModelId { get; init; }
 }

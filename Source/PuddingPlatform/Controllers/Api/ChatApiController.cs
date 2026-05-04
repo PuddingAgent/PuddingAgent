@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using PuddingCode.Platform;
 using PuddingCode.Models;
 using PuddingPlatform.Data;
@@ -23,6 +24,9 @@ public class ChatApiController(
     IServiceScopeFactory scopeFactory,
     ILogger<ChatApiController> logger) : ControllerBase
 {
+    private static readonly Regex VaultPlaceholderRegex =
+        new(@"^\{\{vault:(?<name>[a-zA-Z0-9._-]+)\}\}$", RegexOptions.Compiled);
+
     // POST /api/workspaces/{workspaceId}/chat/message
     [HttpPost("message")]
     public async Task<ActionResult<AdminChatResponse>> SendMessage(
@@ -76,18 +80,27 @@ public class ChatApiController(
                 if (provider is not null)
                 {
                     var normalizedModelId = NormalizePreferredModelId(provider.ProviderId, agent.PreferredModelId);
+                    var keyVaultId = await ResolveProviderKeyVaultIdAsync(provider.ApiKey, ct);
                     llmConfig = new LlmConfig
                     {
                         Endpoint = provider.BaseUrl,
-                        ApiKey = provider.ApiKey,
+                        KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
                     };
                     logger.LogInformation(
-                        "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint}",
+                        "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
                         agent.PreferredProviderId,
                         normalizedModelId ?? "(none)",
                         agent.PreferredModelId ?? "(none)",
-                        provider.BaseUrl);
+                        provider.BaseUrl,
+                        !string.IsNullOrWhiteSpace(keyVaultId));
+
+                    if (string.IsNullOrWhiteSpace(keyVaultId) && !string.IsNullOrWhiteSpace(provider.ApiKey))
+                    {
+                        logger.LogWarning(
+                            "[Chat] provider={ProviderId} ApiKey is plaintext/non-reference; not forwarding API key to Runtime. Fallback may use env key.",
+                            agent.PreferredProviderId);
+                    }
                 }
                 else
                 {
@@ -198,18 +211,27 @@ public class ChatApiController(
                 if (provider is not null)
                 {
                     var normalizedModelId = NormalizePreferredModelId(provider.ProviderId, agent.PreferredModelId);
+                    var keyVaultId = await ResolveProviderKeyVaultIdAsync(provider.ApiKey, ct);
                     llmConfig = new LlmConfig
                     {
                         Endpoint = provider.BaseUrl,
-                        ApiKey = provider.ApiKey,
+                        KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
                     };
                     logger.LogInformation(
-                        "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint}",
+                        "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
                         agent.PreferredProviderId,
                         normalizedModelId ?? "(none)",
                         agent.PreferredModelId ?? "(none)",
-                        provider.BaseUrl);
+                        provider.BaseUrl,
+                        !string.IsNullOrWhiteSpace(keyVaultId));
+
+                    if (string.IsNullOrWhiteSpace(keyVaultId) && !string.IsNullOrWhiteSpace(provider.ApiKey))
+                    {
+                        logger.LogWarning(
+                            "[Chat] STREAM provider={ProviderId} ApiKey is plaintext/non-reference; not forwarding API key to Runtime. Fallback may use env key.",
+                            agent.PreferredProviderId);
+                    }
                 }
                 else
                 {
@@ -512,6 +534,41 @@ public class ChatApiController(
         return new ToolParameterSchema(
             [new ToolParameter("command", "string", "Tool input command")],
             ["command"]);
+    }
+
+    /// <summary>
+    /// 从 Provider 的 ApiKey 字段中解析可安全下发给 Runtime 的 KeyVault 引用。
+    /// 支持两种形式：
+    /// 1) {{vault:secret-name}} 占位符（优先映射为 KeyVaultId，查不到则退化为 secret-name）；
+    /// 2) 直接存储 KeyVaultId。
+    /// 其他明文情况返回 null，避免跨服务传输密钥明文。
+    /// </summary>
+    private async Task<string?> ResolveProviderKeyVaultIdAsync(string? providerApiKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(providerApiKey))
+            return null;
+
+        var raw = providerApiKey.Trim();
+        var placeholderMatch = VaultPlaceholderRegex.Match(raw);
+        if (placeholderMatch.Success)
+        {
+            var secretName = placeholderMatch.Groups["name"].Value;
+            var keyVaultId = await db.KeyVaults.AsNoTracking()
+                .Where(k => k.Name == secretName)
+                .Select(k => k.KeyVaultId)
+                .FirstOrDefaultAsync(ct);
+
+            return string.IsNullOrWhiteSpace(keyVaultId)
+                ? secretName
+                : keyVaultId;
+        }
+
+        var isKeyVaultId = await db.KeyVaults.AsNoTracking()
+            .AnyAsync(k => k.KeyVaultId == raw, ct);
+        if (isKeyVaultId)
+            return raw;
+
+        return null;
     }
 
     private static CapabilityPolicy BuildPolicy(

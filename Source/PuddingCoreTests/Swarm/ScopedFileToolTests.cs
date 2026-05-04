@@ -61,7 +61,7 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Written"));
+        Assert.Contains("Written", result);
         Assert.IsTrue(File.Exists(filePath));
     }
 
@@ -76,7 +76,7 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert - should contain the Auth subdirectory (full path)
-        Assert.IsTrue(result.Contains(_scopePath, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(_scopePath, result);
     }
 
     [TestMethod]
@@ -108,8 +108,8 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Error: your scope is"));
-        Assert.IsTrue(result.Contains("cannot modify"));
+        Assert.Contains("Error: your scope is", result);
+        Assert.Contains("cannot modify", result);
         Assert.IsFalse(File.Exists(filePath));
     }
 
@@ -124,8 +124,8 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Error: your scope is"));
-        Assert.IsTrue(result.Contains("cannot modify"));
+        Assert.Contains("Error: your scope is", result);
+        Assert.Contains("cannot modify", result);
     }
 
     [TestMethod]
@@ -140,7 +140,7 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains(_scopePath));
+        Assert.Contains(_scopePath, result);
     }
 
     // ──── IsPathAllowed Tests ────
@@ -290,7 +290,7 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("Unknown action"));
+        Assert.Contains("Unknown action", result);
     }
 
     [TestMethod]
@@ -303,7 +303,7 @@ public sealed class ScopedFileToolTests
         var result = await _scopedTool.ExecuteAsync(args);
 
         // Assert
-        Assert.IsTrue(result.Contains("path is required"));
+        Assert.Contains("path is required", result);
     }
 
     [TestMethod]
@@ -311,7 +311,7 @@ public sealed class ScopedFileToolTests
     {
         // Act & Assert
         Assert.AreEqual("file", _scopedTool.Name);
-        Assert.IsTrue(_scopedTool.Description.Contains("file"));
+        Assert.Contains("file", _scopedTool.Description);
         Assert.IsNotNull(_scopedTool.Parameters);
     }
 
@@ -330,6 +330,6 @@ public sealed class ScopedFileToolTests
         var result = _scopedTool.ExecuteAsync(args).Result;
 
         // Assert - read 操作应该成功（因为没有 scope 检查）
-        Assert.IsTrue(result.Contains("// Controller"));
+        Assert.Contains("// Controller", result);
     }
 }
