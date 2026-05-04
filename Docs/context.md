@@ -14,6 +14,12 @@
 | 0503 | T-NewChat-Session | DeepSeek-V4-Pro | Sonnet 4.6 | PASS_WITH_NOTES | P2 handleSelectSession 未复位 forceNewSessionRef（已修复） |
 | 0503 | Bug-admin-chat-scroll-jitter | DeepSeek-V4-Pro | GPT-5.3-Codex | PASS_WITH_NOTES | scrollbar-gutter: stable 修复 hover 抖动，建议补做 Safari/移动端回归 |
 | 0504 | task-20260504-003 | Claude Sonnet 4.6 | GPT-5.3-Codex | FAIL | 3×P0安全(端点无鉴权/API Key明文传输)+5×P1+6×P2，须修复后重审 |
+| 0504 | task-20260504-001 | DeepSeek-V4-Pro | — | PASS | 88个MSTEST0037警告→0，dotnet build clean |
+| 0504 | task-20260504-004 | GPT-5.3-Codex | — | PASS | LlmConfig.KeyVaultId替代ApiKey明文 |
+| 0504 | task-20260504-005 | DeepSeek-V4-Pro | — | PASS | HttpClient池化+ToolCalls+Cookie修复 |
+| 0504 | task-20260504-006 | GPT-5.3-Codex | — | PASS | _histories/_instances过期清理 |
+| 0504 | GM-001~003 | GPT-5.3-Codex/DeepSeek | — | PASS | SM2/SM3/SM4国密集成完成 |
+| 0504 | E2E-Playwright | — | — | DEFERRED | task-002待办，前端Jest需修复@umijs/max/test |
 
 ## Architect 领航审查
 
