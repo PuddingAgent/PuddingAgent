@@ -11,7 +11,7 @@
 
 ---
 
-**A self-contained, P2P-capable AI agent that runs as a single binary. Double-click to start.**
+**A self-contained, P2P-capable AI agent.**
 
 [中文说明](README_zh-CN.md)
 
@@ -23,13 +23,11 @@
 
 ## What Is Pudding?
 
-Pudding is not a platform. Not a framework. Not a service mesh.
-
 **Pudding is an AI agent that runs on your machine.**
 
 One binary. Double-click. A browser tab opens. You talk. She works.
 
-She has her own memory (SQLite), her own tools, her own web UI. She doesn't need PostgreSQL. She doesn't need Redis. She doesn't need RabbitMQ.
+She has her own memory (SQLite), her own tools, her own web UI.
 
 When you run multiple Pudding agents, they find each other automatically over the local network — peer-to-peer, no central server. They collaborate like ants: each working on what they can see, leaving traces for others to pick up.
 
@@ -41,8 +39,6 @@ When you run multiple Pudding agents, they find each other automatically over th
 ---
 
 ## Why Pudding?
-
-Most AI tools today are either cloud services that own your data, or complex platforms that need a dozen Docker containers before you can say "hello."
 
 Pudding is different:
 
