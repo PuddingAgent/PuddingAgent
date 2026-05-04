@@ -1,4 +1,4 @@
-﻿# Pudding Agent
+# Pudding Agent
 
 <p align="center">
   <img src="me.png" alt="Pudding" width="200"/>
@@ -9,15 +9,16 @@
   <sub>Hi. I'm Pudding. Your AI agent.</sub>
 </p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/version-v0.1.0-blue" alt="Version"/>
+  <img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"/>
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"/>
+</p>
 
-**A self-contained, P2P-capable AI agent that runs as a single binary. Double-click to start.**
-
-[中文说明](README_zh-CN.md)
-
-![Version](https://img.shields.io/badge/version-v0.1.0-blue)
-![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey)
-![License](https://img.shields.io/badge/license-Apache%202.0-green)
+<p align="center">
+  <strong>A self-contained, P2P-capable AI agent that runs as a single binary. Double-click to start.</strong><br/>
+  <sub><a href="README_zh-CN.md">中文说明</a></sub>
+</p>
 
 ---
 
@@ -80,38 +81,38 @@ docker run -p 8080:8080 pudding-agent
 
 She's built with one rule: **zero external dependencies for the user.**
 
-| What | How |
-|---|---|
-| Runtime | .NET (ASP.NET Core, single binary) |
-| Database | SQLite — one file, auto-created |
-| Web UI | React, bundled inside the binary |
-| LLM | Direct API call (OpenAI-compatible) |
-| P2P | mDNS discovery + direct HTTP/gRPC |
-| Memory | Local, persistent, private |
+| What     | How                                      |
+| :------- | :--------------------------------------- |
+| Runtime  | .NET (ASP.NET Core, single binary)       |
+| Database | SQLite — one file, auto-created          |
+| Web UI   | React, bundled inside the binary         |
+| LLM      | Direct API call (OpenAI-compatible)      |
+| P2P      | mDNS discovery + direct HTTP/gRPC        |
+| Memory   | Local, persistent, private               |
 
 ---
 
 ## Architecture
 
 ```
-+--------------------------------------+
-|         Pudding Agent (1 process)     |
-|                                       |
-|  Browser -> localhost:8080             |
-|  +---------------------------------+ |
-|  |        Web UI (React)           | |
-|  +---------------------------------+ |
-|  |     Controller (routing/auth)   | |
-|  +---------------------------------+ |
-|  |     Runtime (LLM/tools/memory)  | |
-|  +---------------------------------+ |
-|  |     P2P Network Layer           | |
-|  +---------------------------------+ |
-|  |     SQLite                      | |
-|  +---------------------------------+ |
-|                                       |
-|  <- P2P -> other Pudding agents         |
-+--------------------------------------+
+┌──────────────────────────────────────┐
+│        Pudding Agent (1 process)      │
+│                                       │
+│  Browser → localhost:8080             │
+│  ┌─────────────────────────────────┐ │
+│  │        Web UI (React)           │ │
+│  ├─────────────────────────────────┤ │
+│  │     Controller (routing/auth)   │ │
+│  ├─────────────────────────────────┤ │
+│  │     Runtime (LLM/tools/memory)  │ │
+│  ├─────────────────────────────────┤ │
+│  │     P2P Network Layer           │ │
+│  ├─────────────────────────────────┤ │
+│  │     SQLite                      │ │
+│  └─────────────────────────────────┘ │
+│                                       │
+│  ← P2P → other Pudding agents         │
+└──────────────────────────────────────┘
 ```
 
 Read the full architecture: [Docs/架构.md](Docs/架构.md)
@@ -156,6 +157,8 @@ And here's something even more interesting: AI changes the very nature of open s
 On that note, **[EVO MAP](https://github.com/nousresearch/evo-map)** introduced a fascinating concept: the **Experience Capsule** (经验胶囊). It's a brilliant idea — like Doraemon's "Memory Bread" — packaging learned knowledge into portable, reusable capsules that other agents can consume. This is the kind of thinking that inspires Pudding's memory system.
 
 This project was born from my exploration of various AI tools. It draws ideas from many excellent projects and products — not copying, but standing on the shoulders of those who came before, asking: *"What should the next generation of AI agents look like?"*
+
+---
 
 ## Acknowledgments
 
