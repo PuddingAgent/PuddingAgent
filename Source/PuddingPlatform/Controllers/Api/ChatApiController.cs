@@ -86,6 +86,7 @@ public class ChatApiController(
                         Endpoint = provider.BaseUrl,
                         KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
+                        ApiKey = string.IsNullOrWhiteSpace(keyVaultId) ? provider.ApiKey : null,
                     };
                     logger.LogInformation(
                         "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
@@ -98,7 +99,7 @@ public class ChatApiController(
                     if (string.IsNullOrWhiteSpace(keyVaultId) && !string.IsNullOrWhiteSpace(provider.ApiKey))
                     {
                         logger.LogWarning(
-                            "[Chat] provider={ProviderId} ApiKey is plaintext/non-reference; not forwarding API key to Runtime. Fallback may use env key.",
+                            "[Chat] provider={ProviderId} ApiKey is plaintext; forwarding as ApiKey to Runtime.",
                             agent.PreferredProviderId);
                     }
                 }
@@ -217,6 +218,7 @@ public class ChatApiController(
                         Endpoint = provider.BaseUrl,
                         KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
+                        ApiKey = string.IsNullOrWhiteSpace(keyVaultId) ? provider.ApiKey : null,
                     };
                     logger.LogInformation(
                         "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
@@ -229,7 +231,7 @@ public class ChatApiController(
                     if (string.IsNullOrWhiteSpace(keyVaultId) && !string.IsNullOrWhiteSpace(provider.ApiKey))
                     {
                         logger.LogWarning(
-                            "[Chat] STREAM provider={ProviderId} ApiKey is plaintext/non-reference; not forwarding API key to Runtime. Fallback may use env key.",
+                            "[Chat] provider={ProviderId} ApiKey is plaintext; forwarding as ApiKey to Runtime.",
                             agent.PreferredProviderId);
                     }
                 }
