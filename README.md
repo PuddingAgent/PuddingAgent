@@ -143,6 +143,42 @@ This is not orchestration. This is emergence.
 
 ---
 
+## AI, Open Source, and the New Game
+
+AI has fundamentally rewritten the rules of open source. In the past, monumental projects like Linux and ffmpeg were guided by brilliant programmers. Today, AI is gradually taking over what once required years of experience — and more and more ordinary people can now participate in building open source.
+
+The cost of starting an open source project is dropping — but so might be its quality. It's hard to judge whether this is good or bad. Perhaps it's just the growing pains of a new era.
+
+But here's the good part: now, if you have an idea in your head, AI can bring it to life for you — no more spending countless hours writing code line by line. **The distance from idea to reality has never been shorter.**
+
+And here's something even more interesting: AI changes the very nature of open source participation. We can now have our own bespoke software. We can dispatch AI agents to build software *for us*, rather than waiting for OpenClaw or Hermes-Agent to ship the features we need. When we want a feature, we can just fork the repo and let AI implement it — no more waiting for the original author. Perhaps, in the future, open source projects will be built by many, many AIs, not just humans.
+
+On that note, **[EVO MAP](https://github.com/nousresearch/evo-map)** introduced a fascinating concept: the **Experience Capsule** (经验胶囊). It's a brilliant idea — like Doraemon's "Memory Bread" — packaging learned knowledge into portable, reusable capsules that other agents can consume. This is the kind of thinking that inspires Pudding's memory system.
+
+This project was born from my exploration of various AI tools. It draws ideas from many excellent projects and products — not copying, but standing on the shoulders of those who came before, asking: *"What should the next generation of AI agents look like?"*
+
+## Acknowledgments
+
+Pudding's design is deeply inspired by the following projects and research:
+
+- **[Claude Code](https://github.com/anthropics/claude-code)** (Anthropic) — Tool interface design, permission pipeline, Coordinator/Worker patterns
+- **[Hermes-Agent](https://github.com/NousResearch/hermes-agent)** (Nous Research) — Self-registering plugin architecture, memory provider pattern, multi-platform routing
+- **[OpenCode](https://github.com/anthropics/opencode)** — Bottleneck analysis of structured code understanding
+- **[Cursor](https://cursor.com/)** — Product experience of AI-powered code editors
+- **[OpenHarness](https://github.com/anthropics/openharness)** — Harness loop, Hook system, 5-level security boundaries
+- **[OpenClaw](https://github.com/anthropics/openclaw)** — Memory system, multi-channel Gateway architecture
+- **[SuperPowers](https://github.com/anthropics/superpowers)** — Skill system, TDD discipline, subagent-driven development
+- **[EVO MAP](https://github.com/nousresearch/evo-map)** — Experience Capsule concept, portable knowledge packaging
+- **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan et al.) — Multi-agent coordination mechanisms, information drift, shared Board research
+- **[Strange Loop Canon Archive](https://www.strangeloopcanon.com/archive)** — Comprehensive archive of agent economy experiments
+- **[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)** (Anthropic) — Agent design patterns guide
+- **[AutoGPT](https://github.com/Significant-Gravitas/AutoGPT)** / **[BabyAGI](https://github.com/yoheinakajima/babyagi)** — Early pioneers of autonomous agents
+- **[LangChain](https://github.com/langchain-ai/langchain)** / **[CrewAI](https://github.com/crewAIInc/crewAI)** — Agent framework engineering practices
+
+And to all the open source contributors and researchers exploring the frontier of AI agents.
+
+---
+
 ## License
 
 Apache License 2.0

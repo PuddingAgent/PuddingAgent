@@ -146,6 +146,42 @@ docker run -p 8080:8080 pudding-agent
 
 ---
 
+## AI 时代与开源
+
+AI 的来临彻底改变了开源软件的游戏规则。过去，Linux、ffmpeg 这样的伟大项目由卓越的程序员引导；如今，AI 正在逐渐承担起过去需要多年经验才能完成的工作，越来越多的普通人得以参与到开源事业中。
+
+在 AI 时代，启动一个开源项目的成本在持续降低——但随之而来的可能也是开源的劣化。我们很难简单评价这件事，这或许是时代的阵痛。
+
+但好的一面是：现在只要脑中有一个想法，AI 就能轻易为我们实现，而不再像从前那样，需要一行一行地花大量时间和精力去编写。**想法到现实的距离，越来越短。**
+
+更有意思的是，AI 彻底改变了开源的参与方式。我们可以拥有自己的专属定制软件，派遣 Agent 为我们自己开发软件，而不是苦苦等待 OpenClaw 或 Hermes-Agent 去更新他们的版本。当我们需要某个功能时，可以直接 Fork 然后让 AI 实现它，而不是等待原作者哪天有空——也许，以后的开源项目，是由很多很多的 AI 参与的，而不仅仅是人类。
+
+说到这个，**[EVO MAP](https://github.com/nousresearch/evo-map)** 这个项目很有意思——它提出的 **"经验胶囊"（Experience Capsule）** 概念是一个很酷的想法：就像哆啦 A 梦的"记忆面包"一样，将学到的知识打包成可移植、可复用的胶囊，供其他 Agent 消费。这正是激发 Pudding 记忆系统设计的灵感之一。
+
+这个项目诞生于我对各种 AI 工具开发的探索。在思路上，它参考了许多优秀项目和产品的想法——不是抄袭，而是站在先行者的肩膀上，思考"下一代 AI 代理应该是什么样的"。
+
+## 感谢
+
+Pudding 的设计深受以下项目和研究的启发：
+
+- **[Claude Code](https://github.com/anthropics/claude-code)** (Anthropic) — 工具接口设计、权限管线、Coordinator/Worker 模式
+- **[Hermes-Agent](https://github.com/NousResearch/hermes-agent)** (Nous Research) — 自注册插件架构、记忆提供者模式、多平台统一路由
+- **[OpenCode](https://github.com/anthropics/opencode)** — 结构化代码理解的瓶颈分析
+- **[Cursor](https://cursor.com/)** — AI 编码编辑器的产品体验
+- **[OpenHarness](https://github.com/anthropics/openharness)** — Harness 循环、Hook 系统、5 级安全边界
+- **[OpenClaw](https://github.com/anthropics/openclaw)** — 记忆系统、多渠道 Gateway 架构
+- **[SuperPowers](https://github.com/anthropics/superpowers)** — 技能系统、TDD 铁律、子代理驱动开发
+- **[EVO MAP](https://github.com/nousresearch/evo-map)** — 经验胶囊概念、可移植知识打包
+- **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan 等) — 多 Agent 协作机制、信息漂移、共享 Board 研究
+- **[Strange Loop Canon 文章归档](https://www.strangeloopcanon.com/archive)** — Agent 经济实验的完整归档
+- **[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)** (Anthropic) — Agent 设计模式指南
+- **[AutoGPT](https://github.com/Significant-Gravitas/AutoGPT)** / **[BabyAGI](https://github.com/yoheinakajima/babyagi)** — 早期自主 Agent 的先驱探索
+- **[LangChain](https://github.com/langchain-ai/langchain)** / **[CrewAI](https://github.com/crewAIInc/crewAI)** — Agent 框架的工程实践
+
+以及所有在 AI Agent 领域探索的开源贡献者和研究者。
+
+---
+
 ## License
 
 Apache License 2.0

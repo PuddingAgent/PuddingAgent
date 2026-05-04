@@ -1,0 +1,20 @@
+{
+  "description": "## 文献来源\nAnthropic《Building Effective Agents》生产实践总结：Agent 系统的自治性意味着更高的成本，以及错误的复合效应。对应 Claude Code 的 retry engine：指数退避 + jitter + 模型 fallback。\n\n## 项目现状\nAgentExecutionService 的 LLM 调用仅有一次调用，无重试逻辑。网络故障、模型超载、速率限制均导致直接失败返回给用户，不可恢复。\n\n## 实现方案\n1. 重试策略：指数退避 + jitter（1s, 2s, 4s, 8s，最多3次）\n2. 故障分类：网络超时重试；429 等待 Retry-After 后重试；503 fallback 备用模型；400 触发 Reactive Compact 后重试；401 立即失败不重试\n3. 模型 Fallback 链：主模型 -> 备用1 -> 备用2（可配置优先级）\n4. 断路器：连续失败 N 次后暂停模型 30 秒防雪崩\n5. 指标记录到 ExecutionJournal\n\n## 关键设计决策\n- 4xx 认证/参数错误不重试，5xx/网络重试\n- Fallback 链深度限制 3 层\n- 断路器通过 ExecutionControlRegistry 管理",
+  "goal": "实现 LLM 调用的多层容错：指数退避重试、模型故障降级、速率限制自适应、断路器保护",
+  "tags": ["anthropic-review", "resilience", "fallback", "circuit-breaker"],
+  "acceptance_criteria": [
+    "指数退避+jitter重试（1s/2s/4s/8s，最多3次）",
+    "429速率限制时读取Retry-After头等待后重试",
+    "主模型故障时自动fallback到备用模型（最多3层）",
+    "断路器：连续失败5次暂停模型30秒",
+    "不可重试错误（401/400参数错误）立即失败不重试"
+  ],
+  "impact_scope": "Source/PuddingCore/Core/OpenAiLlmGateway.cs 新增 RetryEngine; Source/PuddingCore/Core/ 新增 CircuitBreaker; Source/PuddingRuntime/Services/IRuntimeLlmClient.cs 集成",
+  "entry_points": [
+    "Source/PuddingCore/Core/OpenAiLlmGateway.cs",
+    "Source/PuddingRuntime/Services/IRuntimeLlmClient.cs"
+  ],
+  "risk_notes": "重试增加延迟；fallback模型可能能力不足；断路器误触发可能阻止正常恢复",
+  "out_of_scope": "不实现多区域 fallback",
+  "doc_path": "Docs/07架构/03PuddingRuntime.md"
+}
