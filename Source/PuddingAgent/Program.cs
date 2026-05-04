@@ -20,8 +20,54 @@ using PuddingMemoryEngine;
 using PuddingAgent.P2P;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services;
+using Serilog;
+using Serilog.Events;
+
+// ── Serilog 结构化日志 ─────────────────────────────
+var aspnetcoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+var bootstrapConfiguration = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{aspnetcoreEnvironment}.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables()
+    .Build();
+
+var logDir = Path.Combine(AppContext.BaseDirectory, "data", "logs");
+Directory.CreateDirectory(logDir);
+Directory.CreateDirectory(Path.Combine(logDir, "error"));
+
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(bootstrapConfiguration)
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Enrich.WithMachineName()
+    .Enrich.WithThreadId()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.Map(
+        evt => evt.Level,
+        (level, wt) =>
+        {
+            if (level >= LogEventLevel.Error)
+            {
+                wt.File(
+                    Path.Combine(logDir, "error", "pudding-error-.log"),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 30,
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}");
+            }
+        })
+    .WriteTo.File(
+        Path.Combine(logDir, "pudding-.log"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 7,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
 
 // ── 端口 ─────────────────────────────────────────────
 builder.WebHost.UseUrls("http://0.0.0.0:8080");
@@ -323,7 +369,14 @@ app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 // ── Chat SPA fallback（根路径 → Chat，必须最后！）──────
 app.MapFallbackToFile("index.html");
 
-app.Run();
+try
+{
+    app.Run();
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 public sealed record ChatRequest
 {
