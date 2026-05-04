@@ -7,3 +7,6 @@
 [submodule "external/github.hyfree.GM"]
 	path = external/github.hyfree.GM
 	url = git@github.com:hyfree/github.hyfree.GM.git
+[submodule "Docs/IndepthCoding-Guide"]
+	path = Docs/IndepthCoding-Guide
+	url = git@github.com:richardy2012/IndepthCoding-Guide.git
