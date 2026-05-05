@@ -148,6 +148,9 @@ builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
 
 builder.Services.AddSingleton<Sm2JwtSigner>();
 builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
+builder.Services.AddSingleton<AgentTemplateProvider>();
+builder.Services.AddSingleton<IAgentTemplateProvider>(sp => sp.GetRequiredService<AgentTemplateProvider>());
+builder.Services.AddSingleton<IWorkspaceProfileProvider>(sp => sp.GetRequiredService<AgentTemplateProvider>());
 
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {
@@ -179,6 +182,8 @@ builder.Services.AddSingleton<SessionMemoryStore>();
 builder.Services.AddSingleton<WorkspaceMemoryStore>();
 builder.Services.AddSingleton<MemoryBoundaryService>();
 builder.Services.AddSingleton<MemoryEngine>();
+builder.Services.AddSingleton<JsonlSessionWriter>();
+builder.Services.AddSingleton<JsonlSessionReader>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
 builder.Services.AddSingleton<ExecutionControlRegistry>();
 builder.Services.AddSingleton<ExecutionJournal>();
@@ -252,6 +257,7 @@ builder.Services.AddSingleton<BootstrapStateService>(sp =>
 var app = builder.Build();
 
 var p2pDiscoveryService = app.Services.GetRequiredService<IP2pDiscoveryService>();
+var jsonlSessionWriter = app.Services.GetRequiredService<JsonlSessionWriter>();
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     _ = Task.Run(async () =>
@@ -269,6 +275,15 @@ app.Lifetime.ApplicationStarted.Register(() =>
 
 app.Lifetime.ApplicationStopping.Register(() =>
 {
+    try
+    {
+        jsonlSessionWriter.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "[Jsonl] Flush on ApplicationStopping failed.");
+    }
+
     _ = Task.Run(async () =>
     {
         try

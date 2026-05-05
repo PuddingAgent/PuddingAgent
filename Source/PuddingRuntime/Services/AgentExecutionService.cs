@@ -8,7 +8,6 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
-using PuddingPlatform.Data;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Skills;
 
@@ -44,8 +43,11 @@ public sealed class AgentExecutionService
     private readonly SkillPackageDownloadService _skillPackageDownloader;
     private readonly IReadOnlyList<IAgentLoopHook> _hooks;
     private readonly IKeyVaultService _keyVaultService;
+    private readonly IAgentTemplateProvider? _templateProvider;
+    private readonly IWorkspaceProfileProvider? _workspaceProfileProvider;
     private readonly IDbContextFactory<MemoryDbContext>? _memoryDbFactory;
-    private readonly IDbContextFactory<PlatformDbContext>? _platformDbFactory;
+    private readonly JsonlSessionWriter? _jsonlSessionWriter;
+    private readonly JsonlSessionReader? _jsonlSessionReader;
     private readonly ILogger<AgentExecutionService> _logger;
 
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories = new();
@@ -69,8 +71,11 @@ public sealed class AgentExecutionService
         IEnumerable<IAgentLoopHook> hooks,
         ILogger<AgentExecutionService> logger,
         IKeyVaultService? keyVaultService = null,
+        IAgentTemplateProvider? templateProvider = null,
+        IWorkspaceProfileProvider? workspaceProfileProvider = null,
         IDbContextFactory<MemoryDbContext>? memoryDbFactory = null,
-        IDbContextFactory<PlatformDbContext>? platformDbFactory = null)
+        JsonlSessionWriter? jsonlSessionWriter = null,
+        JsonlSessionReader? jsonlSessionReader = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -86,8 +91,11 @@ public sealed class AgentExecutionService
         _skillPackageDownloader  = skillPackageDownloader;
         _hooks               = hooks.ToArray();
         _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
+        _templateProvider    = templateProvider;
+        _workspaceProfileProvider = workspaceProfileProvider;
         _memoryDbFactory     = memoryDbFactory;
-        _platformDbFactory   = platformDbFactory;
+        _jsonlSessionWriter  = jsonlSessionWriter;
+        _jsonlSessionReader  = jsonlSessionReader;
         _logger              = logger;
     }
 
@@ -756,6 +764,7 @@ public sealed class AgentExecutionService
             var replyRaw = finalMessage.Length > 0 ? finalMessage.ToString() : "（Agent 未返回可展示文本）";
             var reply = await _keyVaultService.StripAsync(replyRaw, ct);
             history.Add(new ChatMessage(ChatRole.Assistant, reply));
+            TryEnqueueStreamJsonl(request, instance.AgentInstanceId, reply, usage);
 
             if (template.Memory?.EnableSessionMemory == true
              || template.Memory?.EnableWorkspaceMemory == true)
@@ -793,6 +802,62 @@ public sealed class AgentExecutionService
             _controlRegistry.Remove(request.SessionId);
             _skillPackageRegistry.Remove(instance.AgentInstanceId);
             MarkSessionExecutionCompleted(request.SessionId);
+        }
+    }
+
+    private void TryEnqueueStreamJsonl(
+        RuntimeDispatchRequest request,
+        string agentInstanceId,
+        string assistantReply,
+        TokenUsageDto? usage)
+    {
+        if (_jsonlSessionWriter is null)
+            return;
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var timestampPrefix = now.ToString("x");
+            var userMessageId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
+
+            _jsonlSessionWriter.Enqueue(request.SessionId, new JsonlEntry
+            {
+                Type = "user",
+                MessageId = userMessageId,
+                SessionId = request.SessionId,
+                ParentId = null,
+                Role = "user",
+                ContentType = "text",
+                Content = request.MessageText,
+                AgentId = agentInstanceId,
+                BranchType = "MAIN",
+                CreatedAt = now - 1,
+            });
+
+            if (!string.IsNullOrWhiteSpace(assistantReply))
+            {
+                _jsonlSessionWriter.Enqueue(request.SessionId, new JsonlEntry
+                {
+                    Type = "assistant",
+                    MessageId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}",
+                    SessionId = request.SessionId,
+                    ParentId = userMessageId,
+                    Role = "assistant",
+                    ContentType = "text",
+                    Content = assistantReply,
+                    UsageJson = usage is not null ? JsonSerializer.Serialize(usage) : null,
+                    AgentId = agentInstanceId,
+                    BranchType = "MAIN",
+                    CreatedAt = now,
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[AgentExec] JSONL enqueue failed session={Session}",
+                request.SessionId);
         }
     }
 
@@ -1035,25 +1100,76 @@ public sealed class AgentExecutionService
         int maxTokenBudget,
         CancellationToken ct)
     {
-        if (_memoryDbFactory is null)
-            return;
-
         try
         {
-            var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct);
-            if (dbHistory.Count == 0)
+            List<ChatMessage>? hydrated = null;
+
+            if (_memoryDbFactory is not null)
+            {
+                var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct);
+                if (dbHistory.Count > 0)
+                {
+                    hydrated = dbHistory;
+                }
+            }
+
+            if (hydrated is null && _jsonlSessionReader is not null)
+            {
+                var jsonlHistory = await BuildContextFromJsonlAsync(sessionId, maxTokenBudget, ct);
+                if (jsonlHistory.Count > 0)
+                {
+                    hydrated = jsonlHistory;
+                }
+            }
+
+            if (hydrated is null || hydrated.Count == 0)
                 return;
 
             history.Clear();
-            history.AddRange(dbHistory.Where(m => m.Role != ChatRole.System));
+            history.AddRange(hydrated.Where(m => m.Role != ChatRole.System));
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "[AgentExec] Build context from memory db failed; fallback to in-memory history. session={Session}",
+                "[AgentExec] Build context from db/jsonl failed; fallback to in-memory history. session={Session}",
                 sessionId);
         }
+    }
+
+    private async Task<List<ChatMessage>> BuildContextFromJsonlAsync(
+        string sessionId,
+        int maxTokenBudget,
+        CancellationToken ct)
+    {
+        if (_jsonlSessionReader is null)
+            return [];
+
+        var entries = await _jsonlSessionReader.ReadSessionAsync(sessionId, ct);
+        if (entries.Count == 0)
+            return [];
+
+        var selected = new List<ChatMessage>();
+        var estimatedTokens = 0;
+        for (var i = entries.Count - 1; i >= 0; i--)
+        {
+            var entry = entries[i];
+            var content = entry.Content ?? string.Empty;
+            var tokenEstimate = Math.Max(1, content.Length / 3);
+            if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > 2)
+                break;
+
+            estimatedTokens += tokenEstimate;
+            selected.Add(new ChatMessage(
+                ParseChatRole(entry.Role),
+                content,
+                ToolCallId: null,
+                ToolCalls: null,
+                ReasoningContent: entry.ThinkingJson));
+        }
+
+        selected.Reverse();
+        return selected;
     }
 
     /// <summary>
@@ -1080,43 +1196,18 @@ public sealed class AgentExecutionService
         string? bootstrapTemplate = null;
         string? displayNameOverride = null;
 
-        var canonicalTemplateId = agentTemplateId?.StartsWith("global:", StringComparison.OrdinalIgnoreCase) == true
-            ? agentTemplateId["global:".Length..]
-            : agentTemplateId;
-
-        if (!string.IsNullOrWhiteSpace(canonicalTemplateId) && _platformDbFactory is not null)
+        if (!string.IsNullOrWhiteSpace(agentTemplateId) && _templateProvider is not null)
         {
             try
             {
-                await using var platformDb = await _platformDbFactory.CreateDbContextAsync(ct);
-
-                var globalTemplate = await platformDb.GlobalAgentTemplates
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.TemplateId == canonicalTemplateId && t.IsEnabled, ct);
-                if (globalTemplate is not null)
+                var persona = await _templateProvider.GetPersonaAsync(agentTemplateId, workspaceId, ct);
+                if (persona is not null)
                 {
-                    personaPrompt = globalTemplate.PersonaPrompt;
-                    toolsDescription = globalTemplate.ToolsDescription;
-                    avatarEmoji = globalTemplate.AvatarEmoji;
-                    bootstrapTemplate = globalTemplate.BootstrapTemplate;
-                    displayNameOverride = globalTemplate.Name;
-                }
-
-                if (!string.IsNullOrWhiteSpace(workspaceId))
-                {
-                    var workspaceTemplate = await platformDb.WorkspaceAgentTemplates
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(
-                            t => t.WorkspaceId == workspaceId && t.TemplateId == canonicalTemplateId && t.IsEnabled,
-                            ct);
-                    if (workspaceTemplate is not null)
-                    {
-                        personaPrompt = workspaceTemplate.PersonaPrompt ?? personaPrompt;
-                        toolsDescription = workspaceTemplate.ToolsDescription ?? toolsDescription;
-                        avatarEmoji = workspaceTemplate.AvatarEmoji ?? avatarEmoji;
-                        bootstrapTemplate = workspaceTemplate.BootstrapTemplate ?? bootstrapTemplate;
-                        displayNameOverride = workspaceTemplate.Name ?? displayNameOverride;
-                    }
+                    personaPrompt = persona.PersonaPrompt;
+                    toolsDescription = persona.ToolsDescription;
+                    avatarEmoji = persona.AvatarEmoji;
+                    bootstrapTemplate = persona.BootstrapTemplate;
+                    displayNameOverride = persona.DisplayName;
                 }
             }
             catch (Exception ex)
@@ -1124,7 +1215,7 @@ public sealed class AgentExecutionService
                 _logger.LogWarning(
                     ex,
                     "[AgentExec] Load template persona fields failed; fallback to built-in template. templateId={TemplateId} workspace={Workspace}",
-                    canonicalTemplateId,
+                    agentTemplateId,
                     workspaceId);
             }
         }
@@ -1217,17 +1308,12 @@ public sealed class AgentExecutionService
 
     private async Task<string?> LoadWorkspaceUserProfileAsync(string? workspaceId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(workspaceId) || _platformDbFactory is null)
+        if (string.IsNullOrWhiteSpace(workspaceId) || _workspaceProfileProvider is null)
             return null;
 
         try
         {
-            await using var db = await _platformDbFactory.CreateDbContextAsync(ct);
-            return await db.Workspaces
-                .AsNoTracking()
-                .Where(w => w.WorkspaceId == workspaceId)
-                .Select(w => w.UserProfile)
-                .FirstOrDefaultAsync(ct);
+            return await _workspaceProfileProvider.GetWorkspaceUserProfileAsync(workspaceId, ct);
         }
         catch (Exception ex)
         {

@@ -106,8 +106,8 @@ const Welcome: React.FC = () => {
               <ApiOutlined
                 style={{
                   fontSize: 28,
-                  color: '#52c41a',
-                  background: '#f6ffed',
+                  color: token.colorSuccess,
+                  background: token.colorSuccessBg,
                   padding: 8,
                   borderRadius: token.borderRadius,
                 }}
@@ -129,8 +129,8 @@ const Welcome: React.FC = () => {
               <ClusterOutlined
                 style={{
                   fontSize: 28,
-                  color: '#faad14',
-                  background: '#fffbe6',
+                  color: token.colorWarning,
+                  background: token.colorWarningBg,
                   padding: 8,
                   borderRadius: token.borderRadius,
                 }}
@@ -153,8 +153,8 @@ const Welcome: React.FC = () => {
               <ThunderboltOutlined
                 style={{
                   fontSize: 28,
-                  color: '#ff4d4f',
-                  background: '#fff1f0',
+                  color: token.colorError,
+                  background: token.colorErrorBg,
                   padding: 8,
                   borderRadius: token.borderRadius,
                 }}
@@ -241,7 +241,7 @@ const Welcome: React.FC = () => {
                 onClick={() => (window.location.href = '/list')}
               >
                 <Space>
-                  <ClusterOutlined style={{ color: '#faad14' }} />
+                  <ClusterOutlined style={{ color: token.colorWarning }} />
                   <Text>场景列表</Text>
                 </Space>
               </ProCard>
@@ -252,7 +252,7 @@ const Welcome: React.FC = () => {
                 onClick={() => (window.location.href = '/list')}
               >
                 <Space>
-                  <BranchesOutlined style={{ color: '#52c41a' }} />
+                  <BranchesOutlined style={{ color: token.colorSuccess }} />
                   <Text>查看会话记录</Text>
                 </Space>
               </ProCard>

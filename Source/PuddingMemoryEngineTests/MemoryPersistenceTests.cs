@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingMemoryEngine;
@@ -335,6 +337,185 @@ public sealed class MemoryPersistenceTests
         Assert.IsNotEmpty(results);
     }
 
+    [TestMethod]
+    public async Task JsonlWriteRead_ShouldPersistAndRestore()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            var baseTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            await using var writer = new JsonlSessionWriter(baseDir: tempDir);
+            var reader = new JsonlSessionReader(baseDir: tempDir);
+
+            for (var i = 1; i <= 10; i++)
+            {
+                writer.Enqueue(sessionId, new JsonlEntry
+                {
+                    Type = i % 2 == 0 ? "assistant" : "user",
+                    MessageId = $"msg-{i}",
+                    SessionId = sessionId,
+                    Role = i % 2 == 0 ? "assistant" : "user",
+                    Content = $"content-{i}",
+                    CreatedAt = baseTimestamp + i,
+                });
+            }
+
+            await writer.FlushAsync();
+
+            var rows = await reader.ReadSessionAsync(sessionId);
+            Assert.HasCount(10, rows);
+            Assert.AreEqual("content-1", rows[0].Content);
+            Assert.AreEqual("content-10", rows[^1].Content);
+        }
+        finally
+        {
+            SafeDeleteDirectory(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task JsonlBatchFlush_ShouldPersistCompleteFile()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            var baseTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            await using var writer = new JsonlSessionWriter(baseDir: tempDir);
+            var reader = new JsonlSessionReader(baseDir: tempDir);
+
+            for (var i = 1; i <= 50; i++)
+            {
+                writer.Enqueue(sessionId, new JsonlEntry
+                {
+                    Type = "assistant",
+                    MessageId = $"batch-{i}",
+                    SessionId = sessionId,
+                    Role = "assistant",
+                    Content = $"batch-content-{i}",
+                    CreatedAt = baseTimestamp + i,
+                });
+            }
+
+            await writer.FlushAsync();
+
+            var rows = await reader.ReadSessionAsync(sessionId);
+            Assert.HasCount(50, rows);
+
+            var filePath = Path.Combine(tempDir, $"{sessionId}.jsonl");
+            var allLines = await File.ReadAllLinesAsync(filePath);
+            Assert.HasCount(50, allLines);
+        }
+        finally
+        {
+            SafeDeleteDirectory(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task JsonlConcurrentWrite_ShouldIsolateSessions()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            var baseTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var sessionIds = new[]
+            {
+                Guid.NewGuid().ToString("N"),
+                Guid.NewGuid().ToString("N"),
+                Guid.NewGuid().ToString("N"),
+            };
+
+            await using var writer = new JsonlSessionWriter(baseDir: tempDir);
+            var reader = new JsonlSessionReader(baseDir: tempDir);
+
+            await Parallel.ForEachAsync(sessionIds, async (sid, ct) =>
+            {
+                for (var i = 1; i <= 20; i++)
+                {
+                    writer.Enqueue(sid, new JsonlEntry
+                    {
+                        Type = "assistant",
+                        MessageId = $"{sid}-m{i}",
+                        SessionId = sid,
+                        Role = "assistant",
+                        Content = $"content-{i}",
+                        CreatedAt = baseTimestamp + i,
+                    });
+                }
+
+                await Task.CompletedTask;
+            });
+
+            await writer.FlushAsync();
+
+            foreach (var sid in sessionIds)
+            {
+                var rows = await reader.ReadSessionAsync(sid);
+                Assert.HasCount(20, rows);
+                Assert.IsTrue(rows.All(x => x.SessionId == sid));
+            }
+        }
+        finally
+        {
+            SafeDeleteDirectory(tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task JsonlMalformedSkip_ShouldContinueReading()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            var filePath = Path.Combine(tempDir, $"{sessionId}.jsonl");
+
+            var oldEntry = new JsonlEntry
+            {
+                Type = "user",
+                MessageId = "old",
+                SessionId = sessionId,
+                Role = "user",
+                Content = "old-content",
+                CreatedAt = 100,
+            };
+
+            var newEntry = new JsonlEntry
+            {
+                Type = "assistant",
+                MessageId = "new",
+                SessionId = sessionId,
+                Role = "assistant",
+                Content = "new-content",
+                CreatedAt = 200,
+            };
+
+            var lines = new[]
+            {
+                JsonSerializer.Serialize(newEntry, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }),
+                "{ malformed-json-line",
+                JsonSerializer.Serialize(oldEntry, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }),
+            };
+
+            await File.WriteAllLinesAsync(filePath, lines, Encoding.UTF8);
+
+            var reader = new JsonlSessionReader(baseDir: tempDir);
+            var rows = await reader.ReadSessionAsync(sessionId);
+
+            Assert.HasCount(2, rows);
+            Assert.AreEqual("old", rows[0].MessageId);
+            Assert.AreEqual("new", rows[1].MessageId);
+        }
+        finally
+        {
+            SafeDeleteDirectory(tempDir);
+        }
+    }
+
     private static async Task<TestScope> CreateScopeAsync()
     {
         var connection = new SqliteConnection("DataSource=:memory:");
@@ -349,6 +530,28 @@ public sealed class MemoryPersistenceTests
         await MemoryDbInitializer.InitializeAsync(factory);
 
         return new TestScope(connection, factory);
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "pudding-jsonl-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static void SafeDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // ignore cleanup exceptions in tests
+        }
     }
 
     private sealed class TestScope(SqliteConnection connection, IDbContextFactory<MemoryDbContext> factory) : IAsyncDisposable

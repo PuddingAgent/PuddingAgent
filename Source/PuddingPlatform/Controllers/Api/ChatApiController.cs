@@ -25,6 +25,7 @@ public class ChatApiController(
     MinioStorageService minio,
     IServiceScopeFactory scopeFactory,
     IDbContextFactory<MemoryDbContext> memoryDbFactory,
+    JsonlSessionWriter jsonlWriter,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     private static readonly Regex VaultPlaceholderRegex =
@@ -779,83 +780,140 @@ public class ChatApiController(
     {
         await using var memoryDb = await memoryDbFactory.CreateDbContextAsync(ct);
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await using var tx = await memoryDb.Database.BeginTransactionAsync(ct);
 
-        var session = await memoryDb.Sessions.FindAsync(new object[] { sessionId }, ct);
-        if (session is null)
+        try
         {
-            session = new SessionEntity
+
+            var session = await memoryDb.Sessions.FindAsync(new object[] { sessionId }, ct);
+            if (session is null)
             {
-                SessionId = sessionId,
-                WorkspaceId = workspaceId,
-                AgentId = string.Empty,
-                CreatedAt = now,
-                LastActivityAt = now,
-                MessageCount = string.IsNullOrWhiteSpace(agentReply) ? 1 : 2,
-            };
-            memoryDb.Sessions.Add(session);
-        }
-        else
-        {
-            session.LastActivityAt = now;
-            session.MessageCount += string.IsNullOrWhiteSpace(agentReply) ? 1 : 2;
-
-            // 若旧数据无 workspaceId，这里尽量回填当前上下文，便于后续按工作区检索。
-            if (string.IsNullOrWhiteSpace(session.WorkspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
-                session.WorkspaceId = workspaceId;
-        }
-
-        var maxSequence = await memoryDb.Messages
-            .Where(m => m.SessionId == sessionId)
-            .Select(m => (long?)m.Sequence)
-            .MaxAsync(ct) ?? 0;
-
-        // MessageId 采用“时间前缀 + 随机后缀”，便于肉眼排查排序。
-        var timestampPrefix = now.ToString("x");
-        var userMsgId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
-        var userContent = userText.Length > 4000 ? userText[..4000] : userText;
-
-        memoryDb.Messages.Add(new MessageEntity
-        {
-            MessageId = userMsgId,
-            SessionId = sessionId,
-            ParentId = null,
-            BranchType = "MAIN",
-            Sequence = maxSequence + 1,
-            Role = "user",
-            ContentType = "text",
-            Content = userContent,
-            CreatedAt = now - 1,
-        });
-
-        if (!string.IsNullOrWhiteSpace(agentReply))
-        {
-            var agentMsgId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
-            memoryDb.Messages.Add(new MessageEntity
+                session = new SessionEntity
+                {
+                    SessionId = sessionId,
+                    WorkspaceId = workspaceId,
+                    AgentId = string.Empty,
+                    CreatedAt = now,
+                    LastActivityAt = now,
+                    MessageCount = string.IsNullOrWhiteSpace(agentReply) ? 1 : 2,
+                };
+                memoryDb.Sessions.Add(session);
+            }
+            else
             {
-                MessageId = agentMsgId,
+                session.LastActivityAt = now;
+                session.MessageCount += string.IsNullOrWhiteSpace(agentReply) ? 1 : 2;
+
+                // 若旧数据无 workspaceId，这里尽量回填当前上下文，便于后续按工作区检索。
+                if (string.IsNullOrWhiteSpace(session.WorkspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
+                    session.WorkspaceId = workspaceId;
+            }
+
+            var maxSequence = await memoryDb.Messages
+                .Where(m => m.SessionId == sessionId)
+                .Select(m => (long?)m.Sequence)
+                .MaxAsync(ct) ?? 0;
+
+            // MessageId 采用“时间前缀 + 随机后缀”，便于肉眼排查排序。
+            var timestampPrefix = now.ToString("x");
+            var userMsgId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
+            var userContent = userText.Length > 4000 ? userText[..4000] : userText;
+
+            var userEntity = new MessageEntity
+            {
+                MessageId = userMsgId,
                 SessionId = sessionId,
-                ParentId = userMsgId,
+                ParentId = null,
                 BranchType = "MAIN",
-                Sequence = maxSequence + 2,
-                Role = "assistant",
+                Sequence = maxSequence + 1,
+                Role = "user",
                 ContentType = "text",
-                Content = agentReply,
-                UsageJson = usage is not null
-                    ? JsonSerializer.Serialize(usage)
-                    : null,
-                CreatedAt = now,
+                Content = userContent,
+                CreatedAt = now - 1,
+            };
+            memoryDb.Messages.Add(userEntity);
+            TryEnqueueJsonl(workspaceId, sessionId, new JsonlEntry
+            {
+                Type = "user",
+                MessageId = userEntity.MessageId,
+                SessionId = userEntity.SessionId,
+                ParentId = userEntity.ParentId,
+                Role = userEntity.Role,
+                ContentType = userEntity.ContentType,
+                Content = userEntity.Content,
+                AgentId = userEntity.AgentId,
+                BranchType = userEntity.BranchType,
+                CreatedAt = userEntity.CreatedAt,
             });
-        }
 
-        if (isNewSession)
+            if (!string.IsNullOrWhiteSpace(agentReply))
+            {
+                var agentMsgId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
+                var assistantEntity = new MessageEntity
+                {
+                    MessageId = agentMsgId,
+                    SessionId = sessionId,
+                    ParentId = userMsgId,
+                    BranchType = "MAIN",
+                    Sequence = maxSequence + 2,
+                    Role = "assistant",
+                    ContentType = "text",
+                    Content = agentReply,
+                    UsageJson = usage is not null
+                        ? JsonSerializer.Serialize(usage)
+                        : null,
+                    CreatedAt = now,
+                };
+                memoryDb.Messages.Add(assistantEntity);
+                TryEnqueueJsonl(workspaceId, sessionId, new JsonlEntry
+                {
+                    Type = "assistant",
+                    MessageId = assistantEntity.MessageId,
+                    SessionId = assistantEntity.SessionId,
+                    ParentId = assistantEntity.ParentId,
+                    Role = assistantEntity.Role,
+                    ContentType = assistantEntity.ContentType,
+                    Content = assistantEntity.Content,
+                    UsageJson = assistantEntity.UsageJson,
+                    AgentId = assistantEntity.AgentId,
+                    BranchType = assistantEntity.BranchType,
+                    CreatedAt = assistantEntity.CreatedAt,
+                });
+            }
+
+            if (isNewSession)
+            {
+                logger.LogDebug(
+                    "[Chat] Dual-write session initialized ws={WorkspaceId} session={SessionId}",
+                    workspaceId,
+                    sessionId);
+            }
+
+            await memoryDb.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        catch
         {
-            logger.LogDebug(
-                "[Chat] Dual-write session initialized ws={WorkspaceId} session={SessionId}",
-                workspaceId,
-                sessionId);
+            await tx.RollbackAsync(ct);
+            throw;
         }
+    }
 
-        await memoryDb.SaveChangesAsync(ct);
+    private void TryEnqueueJsonl(string workspaceId, string sessionId, JsonlEntry entry)
+    {
+        try
+        {
+            jsonlWriter.Enqueue(sessionId, entry);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "[Chat] JSONL enqueue failed ws={WorkspaceId} session={SessionId} messageId={MessageId}",
+                workspaceId,
+                sessionId,
+                entry.MessageId);
+        }
     }
 
     /// <summary>TokenUsageDto（内联定义，与前端对齐）。</summary>

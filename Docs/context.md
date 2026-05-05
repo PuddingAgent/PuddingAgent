@@ -20,6 +20,9 @@
 | 0505 | Chat-ContextMenu | GPT-5.3-Codex | GLM-5.1 | PASS_WITH_NOTES | P1-1 重复DTO已删；P1-2 Frozen=归档语义已注释说明；P2-6 前端过滤Frozen已加 |
 | 0505 | Session-Pagination | GPT-5.3-Codex | GLM-5.1 | PASS_WITH_NOTES | 3×P1：鉴权缺失/重复创建/异步竞态均已修复 |
 | 0505 | Memory-Phase1 | dahuang | Sonnet 4.6 | FAIL | 1×P0 性能断言反转(假阳性)+3×P1(事务缺失/Singleton DbContext/连接未关闭)+6×P2 |
+| 0505 | UI-1 (034~037) | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | any/硬编码颜色/emoji/间距<12/缩放1.035 |
+| 0505 | UI-1 (034~037) 修复 | DeepSeek-V4-Pro | Sonnet 4.6 | FAIL | P0: styles.ts:62 CSS值损坏 ext-primary) + P1: 头像fallback未用stringToColor |
+| 0505 | UI-1 (034~037) 二次修复 | DeepSeek-V4-Pro | — | PASS | P0+P1 已修复，编译通过 |
 | 0504 | GM-001~003 | GPT-5.3-Codex/DeepSeek | — | PASS | SM2/SM3/SM4国密集成完成 |
 | 0504 | E2E-Playwright | — | — | DEFERRED | task-002待办，前端Jest需修复@umijs/max/test |
 | 0504 | UI-Test | Lead(Browser) | GPT-5.3-Codex | PASS_WITH_FIXES | Docker启动修复+9页面测试，发现KeyVault 500/Runtime路径错/多页空白 |
@@ -30,3 +33,5 @@
 |------|---------|---------|------|------|
 | 0503 | Claude Code 架构评估 | 全局架构 | 架构.md 新增参考章节 + 3 个新任务卡 + 9 个文档修订 | [Docs/claude-reviews-claude/](claude-reviews-claude/) 作为子模块引入 |
 | 0504 | Anthropic Building Effective Agents 对比审查 | 全模块 Agent 模式 | 10 个新任务卡 (task-010~019)：3×P0 Eval-Opt/Routing/ACI + 4×P1 规划可见性/人机检查点/上下文压缩/PromptChaining + 3×P2 并行Voting/容错降级/抽象审计 | [Docs/context.md](context.md) 本记录 |
+| 0505 | 累计12+任务卡完成 + 记忆引擎方向 | 全局架构（记忆与会话数据层） | ADR-013 (Docs/07架构/13记忆与会话数据层.md) + 25 个新任务卡 (task-20260505-007~031) 分4个Phase：P0 基础持久化8个/P1 向量检索7个/P2 知识图谱+压缩7个/P2+ 退场清理3个。另 Agent 个性层6个 (task-20260505-001~006) 互补。 | 参考 OpenClaw 智能体设计模型，适配 Pudding 多 Agent 多场景架构 |
+| 0505 | Chat UI 评估与重设计 | Admin Chat 页面完整交互设计 | 设计方案 (Docs/Features/ChatUIRedesign.md) 含 3 方案对比 (Discord/ChatGPT/混合分层)+18 个新任务卡 (task-20260505-034~051)：Phase UI-1 基础重构4个P0 + BE-Chat 支撑3个P1 + Phase UI-2 交互增强4个P1 + Phase UI-3 Agent特性4个P1+ + Phase UI-4 高级功能3个P2。方案 C 混合分层推荐。 | 参考 Discord/WhatsApp/Slack/ChatGPT/Cursor 设计；依赖 ADR-013 消息树底座 |

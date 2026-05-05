@@ -170,6 +170,7 @@ Pudding 的设计深受以下项目和研究的启发：
 - **[Cursor](https://cursor.com/)** — AI 编码编辑器的产品体验
 - **[OpenHarness](https://github.com/anthropics/openharness)** — Harness 循环、Hook 系统、5 级安全边界
 - **[OpenClaw](https://github.com/anthropics/openclaw)** — 记忆系统、多渠道 Gateway 架构
+- **[OpenHanako](https://github.com/liliMozi/openhanako)** — 多层记忆编译管道(today/week/longterm/facts)、沙箱安全、插件热插拔
 - **[SuperPowers](https://github.com/anthropics/superpowers)** — 技能系统、TDD 铁律、子代理驱动开发
 - **[EVO MAP](https://github.com/nousresearch/evo-map)** — 经验胶囊概念、可移植知识打包
 - **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan 等) — 多 Agent 协作机制、信息漂移、共享 Board 研究

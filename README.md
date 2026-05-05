@@ -163,6 +163,7 @@ Pudding's design is deeply inspired by the following projects and research:
 - **[Cursor](https://cursor.com/)** — Product experience of AI-powered code editors
 - **[OpenHarness](https://github.com/anthropics/openharness)** — Harness loop, Hook system, 5-level security boundaries
 - **[OpenClaw](https://github.com/anthropics/openclaw)** — Memory system, multi-channel Gateway architecture
+- **[OpenHanako](https://github.com/liliMozi/openhanako)** — Multi-tier memory pipeline (today/week/longterm/facts), sandbox security, plugin hot-swap
 - **[SuperPowers](https://github.com/anthropics/superpowers)** — Skill system, TDD discipline, subagent-driven development
 - **[EVO MAP](https://github.com/nousresearch/evo-map)** — Experience Capsule concept, portable knowledge packaging
 - **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan et al.) — Multi-agent coordination mechanisms, information drift, shared Board research

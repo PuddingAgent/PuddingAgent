@@ -1,6 +1,33 @@
 import { injectGlobal } from 'antd-style';
 
 injectGlobal`
+  :root {
+    --misty-blue: #d4e0f0;
+    --warm-beige: #f5f0e8;
+    --soft-white: #fafaf7;
+    --pale-yellow-sunlight: #fef9e7;
+    --earth-brown: #5c4a3a;
+    --sky-soft: #e6f0fa;
+    --desaturated-green: #7a9a7e;
+    --text-primary: #1a1a2e;
+    --text-secondary: var(--earth-brown);
+    --accent-purple: #7c3aed;
+    --avatar-0: #f97316;
+    --avatar-1: #ef4444;
+    --avatar-2: #8b5cf6;
+    --avatar-3: #06b6d4;
+    --avatar-4: #22c55e;
+    --avatar-5: #eab308;
+    --avatar-6: #ec4899;
+    --avatar-7: #6366f1;
+    --avatar-8: #14b8a6;
+    --avatar-9: #f43f5e;
+  }
+
+  html, body, #root {
+    font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
   @keyframes fadeIn {
     from {
       opacity: 0.32;
@@ -38,10 +65,50 @@ injectGlobal`
       transform: scale(1);
     }
     50% {
-      transform: scale(1.035);
+      transform: scale(1.02);
     }
     100% {
       transform: scale(1);
+    }
+  }
+
+  @keyframes messageIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes stepIn {
+    from {
+      opacity: 0;
+      transform: translateX(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes thinkingPulse {
+    0%, 100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes completeFade {
+    from {
+      color: var(--earth-brown);
+    }
+    to {
+      color: var(--desaturated-green);
     }
   }
 

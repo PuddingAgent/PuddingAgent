@@ -48,6 +48,7 @@ import {
   Tag,
   Tabs,
   Typography,
+  theme,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import { history, useLocation, useParams } from '@umijs/max';
@@ -767,6 +768,7 @@ interface ChatMessage {
 
 /** 工具调用步骤卡片（内嵌在消息列表中）。 */
 const ToolTraceCard: React.FC<{ turns: TurnStep[] }> = ({ turns }) => {
+  const { token } = theme.useToken();
   // 只展示有工具调用的轮次，纯 LLM 推理轮不单独列出
   const toolTurns = turns.filter((t) => t.toolName);
   const totalRounds = turns.length;
@@ -776,8 +778,8 @@ const ToolTraceCard: React.FC<{ turns: TurnStep[] }> = ({ turns }) => {
   const items = toolTurns.map((t) => {
     const success = t.toolSuccess !== false;
     const icon = success
-      ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
-      : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+      ? <CheckCircleOutlined style={{ color: token.colorSuccess }} />
+      : <CloseCircleOutlined style={{ color: token.colorError }} />;
 
     let argsPreview = '';
     if (t.toolArgs) {
@@ -823,7 +825,7 @@ const ToolTraceCard: React.FC<{ turns: TurnStep[] }> = ({ turns }) => {
   return (
     <div style={{ maxWidth: '72%', marginBottom: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <ToolOutlined style={{ color: '#faad14', fontSize: 13 }} />
+        <ToolOutlined style={{ color: token.colorWarning, fontSize: 13 }} />
         <Text type="secondary" style={{ fontSize: 11 }}>
           Agent 思考过程 · {totalRounds} 轮推理 · {toolTurns.length} 次工具调用
         </Text>
@@ -831,7 +833,7 @@ const ToolTraceCard: React.FC<{ turns: TurnStep[] }> = ({ turns }) => {
       <Collapse
         size="small"
         ghost
-        style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 6, fontSize: 12 }}
+        style={{ background: token.colorWarningBg, border: `1px solid ${token.colorWarningBorder}`, borderRadius: 6, fontSize: 12 }}
         items={items}
       />
     </div>
@@ -839,6 +841,7 @@ const ToolTraceCard: React.FC<{ turns: TurnStep[] }> = ({ turns }) => {
 };
 
 const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const [agents, setAgents] = useState<WorkspaceAgentDto[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
@@ -929,9 +932,9 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '520px', background: '#fff', border: '1px solid #f0f0f0', borderRadius: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '520px', background: token.colorBgContainer, border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8 }}>
       {/* Toolbar */}
-      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '8px 16px', borderBottom: `1px solid ${token.colorBorderSecondary}`, display: 'flex', alignItems: 'center', gap: 12 }}>
         <Text type="secondary" style={{ flexShrink: 0 }}>对话 Agent：</Text>
         <Select
           style={{ width: 220 }}
@@ -955,7 +958,7 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {chatMessages.length === 0 && (
           <div style={{ textAlign: 'center', marginTop: 60 }}>
-            <MessageOutlined style={{ fontSize: 36, color: '#d9d9d9' }} />
+            <MessageOutlined style={{ fontSize: 36, color: token.colorBorderSecondary }} />
             <br />
             <Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
               选择 Agent 后开始对话
@@ -978,8 +981,8 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
                   maxWidth: '72%',
                   padding: '8px 12px',
                   borderRadius: 8,
-                  background: m.role === 'user' ? '#1677ff' : '#f5f5f5',
-                  color: m.role === 'user' ? '#fff' : '#000',
+                  background: m.role === 'user' ? token.colorPrimary : token.colorBgLayout,
+                  color: m.role === 'user' ? token.colorWhite : token.colorText,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                 }}
@@ -991,7 +994,7 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
         })}
         {sending && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f5f5f5' }}>
+            <div style={{ padding: '8px 12px', borderRadius: 8, background: token.colorBgLayout }}>
               <Spin size="small" /> <Text type="secondary" style={{ marginLeft: 8 }}>Agent 思考中…</Text>
             </div>
           </div>
@@ -1000,7 +1003,7 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       </div>
 
       {/* Input */}
-      <div style={{ padding: '8px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8 }}>
+      <div style={{ padding: '8px 16px', borderTop: `1px solid ${token.colorBorderSecondary}`, display: 'flex', gap: 8 }}>
         <Input.TextArea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
@@ -1564,6 +1567,7 @@ const WorkspaceDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
 
   const [workspace, setWorkspace] = useState<WorkspaceWithPermDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1802,7 +1806,7 @@ const WorkspaceDetailPage: React.FC = () => {
             key: 'overview',
             label: '概览',
             children: (
-              <Descriptions bordered column={2} style={{ background: '#fff', padding: 16 }}>
+              <Descriptions bordered column={2} style={{ background: token.colorBgContainer, padding: 16 }}>
                 <Descriptions.Item label="场景 ID">{workspace.workspaceId}</Descriptions.Item>
                 <Descriptions.Item label="状态">{statusBadge}</Descriptions.Item>
                 <Descriptions.Item label="名称">{workspace.name}</Descriptions.Item>

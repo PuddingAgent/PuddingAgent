@@ -44,34 +44,34 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-/** 根据文件扩展名映射图标组件 */
-function getFileIcon(fileName: string): React.ReactNode {
-  const name = fileName.toLowerCase();
-  if (name.endsWith('.zip')) return <FileZipOutlined style={{ fontSize: 20, color: '#faad14' }} />;
-  if (name.endsWith('.tar.gz') || name.endsWith('.tgz')) return <FileTextOutlined style={{ fontSize: 20, color: '#1677ff' }} />;
-  return <FileTextOutlined style={{ fontSize: 20, color: '#8c8c8c' }} />;
-}
-
-/** Upload 文件列表项渲染：图标 + 文件名 + 文件大小 */
-const fileItemRender: Parameters<typeof Upload>[0]['itemRender'] = (originNode, file) => {
-  const size = (file as any).size ?? (file.originFileObj as any)?.size;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-      {getFileIcon(file.name)}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {file.name}
-        </div>
-        {size != null && (
-          <Text type="secondary" style={{ fontSize: 11 }}>{formatBytes(size)}</Text>
-        )}
-      </div>
-    </div>
-  );
-};
-
 const SkillManagementPage: React.FC = () => {
   const { token } = theme.useToken();
+
+  /** 根据文件扩展名映射图标组件 */
+  const getFileIcon = (fileName: string): React.ReactNode => {
+    const name = fileName.toLowerCase();
+    if (name.endsWith('.zip')) return <FileZipOutlined style={{ fontSize: 20, color: token.colorWarning }} />;
+    if (name.endsWith('.tar.gz') || name.endsWith('.tgz')) return <FileTextOutlined style={{ fontSize: 20, color: token.colorInfo }} />;
+    return <FileTextOutlined style={{ fontSize: 20, color: token.colorBorder }} />;
+  };
+
+  /** Upload 文件列表项渲染：图标 + 文件名 + 文件大小 */
+  const fileItemRender: Parameters<typeof Upload>[0]['itemRender'] = (originNode, file) => {
+    const size = (file as any).size ?? (file.originFileObj as any)?.size;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+        {getFileIcon(file.name)}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {file.name}
+          </div>
+          {size != null && (
+            <Text type="secondary" style={{ fontSize: 11 }}>{formatBytes(size)}</Text>
+          )}
+        </div>
+      </div>
+    );
+  };
   const tableRef = useRef<ActionType | undefined>(undefined);
 
   // Create/Edit meta drawer
