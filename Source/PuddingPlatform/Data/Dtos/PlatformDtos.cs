@@ -170,7 +170,11 @@ public record GlobalAgentTemplateDto(
     bool IsEnabled,
     int SortOrder,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
+    DateTimeOffset UpdatedAt,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null
 );
 
 public record UpsertGlobalAgentTemplateRequest(
@@ -188,7 +192,11 @@ public record UpsertGlobalAgentTemplateRequest(
     List<string>? SelectedCapabilityIds,
     List<string>? SelectedSkillPackageIds,
     bool IsEnabled,
-    int SortOrder
+    int SortOrder,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null
 );
 
 // ─── Workspace Agent Template ─────────────────────────────────────
@@ -212,7 +220,11 @@ public record WorkspaceAgentTemplateDto(
     bool IsEnabled,
     int SortOrder,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
+    DateTimeOffset UpdatedAt,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null
 );
 
 public record UpsertWorkspaceAgentTemplateRequest(
@@ -231,7 +243,11 @@ public record UpsertWorkspaceAgentTemplateRequest(
     string? BaseGlobalTemplateId,
     List<string>? SelectedCapabilityIds,
     bool IsEnabled,
-    int SortOrder
+    int SortOrder,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null
 );
 
 // ─── App User ─────────────────────────────────────────────────────
@@ -346,7 +362,8 @@ public record WorkspaceWithPermDto(
     bool IsEnabled,
     bool IsFrozen,
     int MemberCount,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    string? UserProfile = null
 );
 
 public record CreateWorkspaceRequest(
@@ -355,7 +372,8 @@ public record CreateWorkspaceRequest(
     string Name,
     string? Description,
     string TeamAccessPolicy,
-    string CompanyAccessPolicy
+    string CompanyAccessPolicy,
+    string? UserProfile = null
 );
 
 public record UpdateWorkspaceRequest(
@@ -363,7 +381,8 @@ public record UpdateWorkspaceRequest(
     string? Description,
     string TeamAccessPolicy,
     string CompanyAccessPolicy,
-    bool IsEnabled
+    bool IsEnabled,
+    string? UserProfile = null
 );
 
 public record WorkspaceMemberDto(

@@ -32,6 +32,7 @@ export interface SessionRecord {
   status: SessionStatus;
   runtimeNodeId?: string;
   agentInstanceId?: string;
+  title?: string;
   createdAt: string;
   lastActiveAt: string;
 }
@@ -83,6 +84,34 @@ export async function listSessions(workspaceId?: string): Promise<SessionRecord[
 
 export async function getSession(sessionId: string): Promise<SessionRecord> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'GET' });
+}
+
+export async function createSession(
+  workspaceId: string,
+  agentTemplateId: string,
+  title?: string,
+): Promise<SessionRecord> {
+  return request('/api/sessions', {
+    method: 'POST',
+    data: { workspaceId, agentTemplateId, title },
+  });
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<SessionRecord> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/title`, {
+    method: 'PUT',
+    data: { title },
+  });
+}
+
+export async function archiveSession(sessionId: string): Promise<SessionRecord> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/archive`, {
+    method: 'POST',
+  });
 }
 
 // ─── Chat Message (history) API ────────────────────────────────
@@ -303,9 +332,13 @@ export interface GlobalAgentTemplateDto {
   templateId: string;
   name: string;
   description?: string;
+  avatarEmoji?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
+  personaPrompt?: string;
+  toolsDescription?: string;
+  bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
   maxContextTokens: number;
@@ -324,9 +357,13 @@ export interface UpsertGlobalAgentTemplateRequest {
   templateId: string;
   name: string;
   description?: string;
+  avatarEmoji?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
+  personaPrompt?: string;
+  toolsDescription?: string;
+  bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
   maxContextTokens: number;
@@ -346,9 +383,13 @@ export interface WorkspaceAgentTemplateDto {
   templateId: string;
   name: string;
   description?: string;
+  avatarEmoji?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
+  personaPrompt?: string;
+  toolsDescription?: string;
+  bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
   maxContextTokens: number;
@@ -367,9 +408,13 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   templateId: string;
   name: string;
   description?: string;
+  avatarEmoji?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
+  personaPrompt?: string;
+  toolsDescription?: string;
+  bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
   maxContextTokens: number;
@@ -721,6 +766,7 @@ export interface WorkspaceWithPermDto {
   teamName: string;
   name: string;
   description?: string;
+  userProfile?: string;
   teamAccessPolicy: WorkspaceAccessPolicy;
   companyAccessPolicy: WorkspaceAccessPolicy;
   isEnabled: boolean;
@@ -734,6 +780,7 @@ export interface CreateWorkspaceRequest {
   teamId: string;
   name: string;
   description?: string;
+  userProfile?: string;
   teamAccessPolicy: WorkspaceAccessPolicy;
   companyAccessPolicy: WorkspaceAccessPolicy;
 }
@@ -741,6 +788,7 @@ export interface CreateWorkspaceRequest {
 export interface UpdateWorkspaceRequest {
   name: string;
   description?: string;
+  userProfile?: string;
   teamAccessPolicy: WorkspaceAccessPolicy;
   companyAccessPolicy: WorkspaceAccessPolicy;
   isEnabled: boolean;
@@ -925,6 +973,7 @@ export interface WorkspaceAgentDto {
   name: string;
   description?: string;
   displayName?: string;
+  avatarEmoji?: string;
   avatarUrl?: string;
   sourceTemplateId?: string;
   systemPromptOverride?: string;
@@ -940,6 +989,7 @@ export interface CreateWorkspaceAgentRequest {
   name: string;
   description?: string;
   displayName?: string;
+  avatarEmoji?: string;
   avatarUrl?: string;
   sourceTemplateId?: string;
   systemPromptOverride?: string;
@@ -951,6 +1001,7 @@ export interface UpdateWorkspaceAgentRequest {
   name: string;
   description?: string;
   displayName?: string;
+  avatarEmoji?: string;
   avatarUrl?: string;
   sourceTemplateId?: string;
   systemPromptOverride?: string;

@@ -139,6 +139,26 @@ public sealed class InMemorySessionRepository : ISessionRepository
         Sessions[record.SessionId] = record;
     }
 
+    public async Task DeleteAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_redis is not null)
+        {
+            var s = await GetAsync(sessionId, ct);
+            if (s is null) return;
+            var batch = _redis.CreateBatch();
+            var t1 = batch.KeyDeleteAsync(SessionKey(sessionId));
+            var t2 = batch.SortedSetRemoveAsync(WsIndexKey(s.WorkspaceId), sessionId);
+            var t3 = batch.SortedSetRemoveAsync(ChIndexKey(s.ChannelId), sessionId);
+            var t4 = batch.SortedSetRemoveAsync(AllKey, sessionId);
+            batch.Execute();
+            await Task.WhenAll(t1, t2, t3, t4);
+        }
+        else
+        {
+            Sessions.TryRemove(sessionId, out _);
+        }
+    }
+
     private static string SessionKey(string id) => $"ctrl:session:{id}";
     private static string WsIndexKey(string ws) => $"ctrl:sessions:ws:{ws}";
     private static string ChIndexKey(string ch) => $"ctrl:sessions:ch:{ch}";

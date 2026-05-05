@@ -251,7 +251,7 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
 
 // ── 主页面 ────────────────────────────────────────────────────────
 const LlmResourcePoolPage: React.FC = () => {
-  const tableRef = useRef<ActionType>();
+  const tableRef = useRef<ActionType | null>(null);
   const [detailDrawer, setDetailDrawer] = useState(false);
   const [detailProvider, setDetailProvider] = useState<LlmProviderDetailDto | null>(null);
   const [providerDrawer, setProviderDrawer] = useState(false);

@@ -10,17 +10,15 @@
  * @doc https://umijs.org/docs/guides/proxy
  */
 export default {
-  // dev 环境代理 → PuddingAgent 统一后端（port 8080, V1 单进程架构）
+  // dev 环境代理 → 后端 API（默认 localhost:5000，可通过 PROXY_TARGET 环境变量覆盖）
   dev: {
     '/api/': {
-      target: 'http://localhost:8080',
+      target: process.env.PROXY_TARGET || 'http://localhost:5000',
       changeOrigin: true,
       secure: false,
     },
-    // dev 环境代理 → PuddingController（port 5000）
-    // 模拟 nginx 对 /ingress/ 的 pathRewrite：/ingress/foo → /api/foo
     '/ingress/': {
-      target: 'http://localhost:5000',
+      target: process.env.PROXY_TARGET || 'http://localhost:5000',
       changeOrigin: true,
       secure: false,
       pathRewrite: { '^/ingress/': '/api/' },

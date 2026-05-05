@@ -34,6 +34,7 @@ import {
   Button,
   Collapse,
   Descriptions,
+  Divider,
   Drawer,
   Empty,
   Form,
@@ -174,9 +175,13 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
     const tpl = globalTemplates.find((t) => t.templateId === templateId);
     if (!tpl) return;
     form.setFieldsValue({
+      avatarEmoji: tpl.avatarEmoji,
       role: tpl.role,
       systemPrompt: tpl.systemPrompt,
       userPromptTemplate: tpl.userPromptTemplate,
+      personaPrompt: tpl.personaPrompt,
+      toolsDescription: tpl.toolsDescription,
+      bootstrapTemplate: tpl.bootstrapTemplate,
       preferredProviderId: tpl.preferredProviderId,
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
@@ -358,6 +363,33 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
             rows={6}
             placeholder="覆盖继承模板的系统提示词，或直接填写…"
           />
+
+          <Divider orientation="left">个性设置</Divider>
+          <ProFormText
+            name="avatarEmoji"
+            label="头像 Emoji"
+            placeholder="如 🤖"
+            fieldProps={{ maxLength: 8 }}
+          />
+          <ProFormTextArea
+            name="personaPrompt"
+            label="人设 / 语气 / 边界（SOUL）"
+            rows={4}
+            placeholder="定义该 Agent 的表达风格、边界与约束"
+          />
+          <ProFormTextArea
+            name="toolsDescription"
+            label="工具使用约定（TOOLS）"
+            rows={4}
+            placeholder="约定何时调用工具、失败兜底与结果解释方式"
+          />
+          <ProFormTextArea
+            name="bootstrapTemplate"
+            label="首次引导模板（BOOTSTRAP）"
+            rows={6}
+            placeholder="定义首次对话的开场白与引导话术"
+          />
+
           <ProFormTextArea
             name="userPromptTemplate"
             label="用户 Prompt 模板"
@@ -871,6 +903,21 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
     setSessionId(undefined);
   };
 
+  const getAgentOptionLabel = (agent: WorkspaceAgentDto) => {
+    const agentName = agent.name?.trim() || 'Agent';
+    const avatarEmoji = agent.avatarEmoji?.trim();
+    if (avatarEmoji) {
+      return `${avatarEmoji} ${agentName}`;
+    }
+
+    return (
+      <Space size={6}>
+        <RobotOutlined />
+        <span>{agentName}</span>
+      </Space>
+    );
+  };
+
   // 全局 Ctrl+Enter 快捷键：监听 pudding:chat:send 自定义事件触发发送
   const handleSendRef = useRef(handleSend);
   handleSendRef.current = handleSend;
@@ -893,7 +940,7 @@ const ChatTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           value={selectedAgentId}
           onChange={(v) => { setSelectedAgentId(v); handleClearSession(); }}
           options={agents.filter((a) => !a.isFrozen && a.isEnabled).map((a) => ({
-            label: a.name, value: a.agentId,
+            label: getAgentOptionLabel(a), value: a.agentId,
           }))}
         />
         {sessionId && (
@@ -1628,6 +1675,7 @@ const WorkspaceDetailPage: React.FC = () => {
     editForm.setFieldsValue({
       name: workspace.name,
       description: workspace.description,
+      userProfile: workspace.userProfile,
       isEnabled: workspace.isEnabled,
     });
     setEditOpen(true);
@@ -1641,6 +1689,7 @@ const WorkspaceDetailPage: React.FC = () => {
       const request: UpdateWorkspaceRequest = {
         name: values.name,
         description: values.description,
+        userProfile: values.userProfile,
         isEnabled: values.isEnabled,
         teamAccessPolicy: workspace.teamAccessPolicy,
         companyAccessPolicy: workspace.companyAccessPolicy,
@@ -1931,6 +1980,13 @@ const WorkspaceDetailPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} maxLength={512} placeholder="可选描述" />
+          </Form.Item>
+          <Form.Item name="userProfile" label="用户画像">
+            <Input.TextArea
+              rows={6}
+              maxLength={2000}
+              placeholder="描述该场景下的用户偏好、背景、习惯..."
+            />
           </Form.Item>
           <Form.Item name="isEnabled" label="启用状态">
             <Select

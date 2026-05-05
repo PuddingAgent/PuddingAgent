@@ -66,6 +66,7 @@ public class WorkspaceApiController(PlatformDbContext db) : ControllerBase
             TeamEntityId        = team.Id,
             Name                = req.Name,
             Description         = req.Description,
+            UserProfile         = req.UserProfile,
             TeamAccessPolicy    = tap,
             CompanyAccessPolicy = cap,
             IsEnabled           = true,
@@ -99,6 +100,7 @@ public class WorkspaceApiController(PlatformDbContext db) : ControllerBase
 
         ws.Name                = req.Name;
         ws.Description         = req.Description;
+        ws.UserProfile         = req.UserProfile;
         ws.TeamAccessPolicy    = tap;
         ws.CompanyAccessPolicy = cap;
         ws.IsEnabled           = req.IsEnabled;
@@ -236,5 +238,6 @@ public class WorkspaceApiController(PlatformDbContext db) : ControllerBase
         w.IsEnabled,
         w.IsFrozen,
         w.Members?.Count ?? 0,
-        w.CreatedAt);
+        w.CreatedAt,
+        w.UserProfile);
 }

@@ -218,6 +218,7 @@ public class TeamApiController(PlatformDbContext db) : ControllerBase
             TeamEntityId = team.Id,
             Name = req.Name,
             Description = req.Description,
+            UserProfile = req.UserProfile,
             TeamAccessPolicy = tap,
             CompanyAccessPolicy = cap,
         };
@@ -262,6 +263,7 @@ public class TeamApiController(PlatformDbContext db) : ControllerBase
 
         ws.Name = req.Name;
         ws.Description = req.Description;
+        ws.UserProfile = req.UserProfile;
         ws.TeamAccessPolicy = tap;
         ws.CompanyAccessPolicy = cap;
         ws.IsEnabled = req.IsEnabled;
@@ -374,7 +376,7 @@ public class TeamApiController(PlatformDbContext db) : ControllerBase
         w.Name, w.Description,
         w.TeamAccessPolicy.ToString(), w.CompanyAccessPolicy.ToString(),
         w.IsEnabled, w.IsFrozen,
-        w.Members.Count, w.CreatedAt);
+        w.Members.Count, w.CreatedAt, w.UserProfile);
 
     private static WorkspaceMemberDto MapWsMemberToDto(WorkspaceMemberEntity m) => new(
         m.Id,

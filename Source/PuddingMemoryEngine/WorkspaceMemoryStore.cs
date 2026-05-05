@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using Microsoft.EntityFrameworkCore;
+using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Entities;
 
 namespace PuddingMemoryEngine;
 
@@ -8,18 +11,69 @@ namespace PuddingMemoryEngine;
 /// </summary>
 public sealed class WorkspaceMemoryStore
 {
+    private const string WorkspaceScope = "workspace";
+
     // key = workspaceId
-    private readonly ConcurrentDictionary<string, List<MemoryEntry>> _store = new();
+    private readonly ConcurrentDictionary<string, List<MemoryEntry>> _fallbackStore = new();
+    private readonly IDbContextFactory<MemoryDbContext>? _dbContextFactory;
+
+    /// <summary>
+    /// 创建 Workspace 记忆存储。
+    /// 当 <paramref name="dbContextFactory"/> 为空时，自动回退为原有纯内存实现。
+    /// </summary>
+    public WorkspaceMemoryStore(IDbContextFactory<MemoryDbContext>? dbContextFactory = null)
+    {
+        _dbContextFactory = dbContextFactory;
+    }
 
     /// <summary>写入或更新一条 Workspace 记忆。每个 Workspace 最多保留 <see cref="MaxEntriesPerWorkspace"/> 条。</summary>
     public void Write(string workspaceId, MemoryEntry entry)
     {
-        var list = _store.GetOrAdd(workspaceId, _ => []);
-        lock (list)
+        if (_dbContextFactory is null)
         {
-            list.Add(entry);
-            if (list.Count > MaxEntriesPerWorkspace)
-                list.RemoveAt(0);
+            var list = _fallbackStore.GetOrAdd(workspaceId, _ => []);
+            lock (list)
+            {
+                list.Add(entry);
+                if (list.Count > MaxEntriesPerWorkspace)
+                {
+                    list.RemoveAt(0);
+                }
+            }
+
+            return;
+        }
+
+        using var db = _dbContextFactory.CreateDbContext();
+        using var tx = db.Database.BeginTransaction();
+
+        try
+        {
+            db.Memories.Add(ToMemoryEntity(entry, workspaceId));
+            db.SaveChanges();
+
+            var scopedQuery = db.Memories.Where(x => x.Scope == WorkspaceScope && x.WorkspaceId == workspaceId);
+            var count = scopedQuery.Count();
+
+            if (count > MaxEntriesPerWorkspace)
+            {
+                var overflowCount = count - MaxEntriesPerWorkspace;
+                var overflowEntities = scopedQuery
+                    .OrderBy(x => x.CreatedAt)
+                    .ThenBy(x => x.MemoryId)
+                    .Take(overflowCount)
+                    .ToList();
+
+                db.Memories.RemoveRange(overflowEntities);
+                db.SaveChanges();
+            }
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
         }
     }
 
@@ -29,20 +83,92 @@ public sealed class WorkspaceMemoryStore
     /// </summary>
     public IReadOnlyList<MemoryEntry> Recall(string workspaceId, string? tag = null)
     {
-        if (!_store.TryGetValue(workspaceId, out var list)) return [];
-
-        lock (list)
+        if (_dbContextFactory is null)
         {
-            var snapshot = list.AsEnumerable().Reverse();
-            if (!string.IsNullOrEmpty(tag))
-                snapshot = snapshot.Where(e => e.Tag == tag);
-            return snapshot.ToArray();
+            if (!_fallbackStore.TryGetValue(workspaceId, out var list)) return [];
+
+            lock (list)
+            {
+                var snapshot = list.AsEnumerable().Reverse();
+                if (!string.IsNullOrEmpty(tag))
+                {
+                    snapshot = snapshot.Where(e => e.Tag == tag);
+                }
+
+                return snapshot.ToArray();
+            }
         }
+
+        using var db = _dbContextFactory.CreateDbContext();
+
+        var query = db.Memories
+            .AsNoTracking()
+            .Where(x => x.Scope == WorkspaceScope && x.WorkspaceId == workspaceId);
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            query = query.Where(x => x.Tag == tag);
+        }
+
+        var rows = query
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(MaxEntriesPerWorkspace)
+            .ToList();
+
+        return rows.Select(ToMemoryEntry).ToArray();
     }
 
     /// <summary>清除整个 Workspace 的记忆。</summary>
-    public void Clear(string workspaceId) => _store.TryRemove(workspaceId, out _);
+    public void Clear(string workspaceId)
+    {
+        if (_dbContextFactory is null)
+        {
+            _fallbackStore.TryRemove(workspaceId, out _);
+            return;
+        }
+
+        using var db = _dbContextFactory.CreateDbContext();
+        var rows = db.Memories.Where(x => x.Scope == WorkspaceScope && x.WorkspaceId == workspaceId).ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        db.Memories.RemoveRange(rows);
+        db.SaveChanges();
+    }
 
     /// <summary>每 Workspace 最大条目数，超过时滑动淘汰最旧条目。</summary>
     public int MaxEntriesPerWorkspace { get; init; } = 500;
+
+    private static MemoryEntity ToMemoryEntity(MemoryEntry entry, string workspaceId)
+    {
+        return new MemoryEntity
+        {
+            MemoryId = string.IsNullOrWhiteSpace(entry.EntryId) ? Guid.NewGuid().ToString("N") : entry.EntryId,
+            Scope = WorkspaceScope,
+            SessionId = entry.SessionId,
+            WorkspaceId = workspaceId,
+            AgentId = string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source,
+            Tag = string.IsNullOrWhiteSpace(entry.Tag) ? "general" : entry.Tag,
+            Content = entry.Content,
+            CreatedAt = entry.CreatedAt.ToUnixTimeMilliseconds(),
+            Metadata = null,
+        };
+    }
+
+    private static MemoryEntry ToMemoryEntry(MemoryEntity entity)
+    {
+        return new MemoryEntry
+        {
+            EntryId = entity.MemoryId,
+            SessionId = entity.SessionId,
+            WorkspaceId = entity.WorkspaceId,
+            Tag = entity.Tag,
+            Content = entity.Content,
+            Source = entity.AgentId ?? "memory-db",
+            CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(entity.CreatedAt),
+            Scope = MemoryScope.Workspace,
+        };
+    }
 }

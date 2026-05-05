@@ -39,6 +39,23 @@ public class WorkspaceAgentTemplateEntity
     /// <summary>用户 Prompt 模板</summary>
     public string? UserPromptTemplate { get; set; }
 
+    // ── 个性层（Persona）─────────────────────────────────────
+    /// <summary>人设与语气提示词（SOUL）。定义 Agent 的性格、边界、回复风格。</summary>
+    [MaxLength(8000)]
+    public string? PersonaPrompt { get; set; }
+
+    /// <summary>工具使用约定描述（TOOLS）。解释用户自定义工具的用途和用法。</summary>
+    [MaxLength(8000)]
+    public string? ToolsDescription { get; set; }
+
+    /// <summary>首次对话引导模板（BOOTSTRAP）。新会话首轮使用的问答模板。</summary>
+    [MaxLength(4000)]
+    public string? BootstrapTemplate { get; set; }
+
+    /// <summary>Agent 展示用 Emoji（如 🤖🧠🔧）。</summary>
+    [MaxLength(8)]
+    public string? AvatarEmoji { get; set; }
+
     /// <summary>首选服务商（Provider.ProviderId）</summary>
     [MaxLength(64)]
     public string? PreferredProviderId { get; set; }

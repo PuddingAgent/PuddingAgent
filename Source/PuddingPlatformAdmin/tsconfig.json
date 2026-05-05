@@ -9,7 +9,7 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitReturns": true,
-    "declaration": true,
+    "declaration": false,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "paths": {

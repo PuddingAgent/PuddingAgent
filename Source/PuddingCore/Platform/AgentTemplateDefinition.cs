@@ -23,6 +23,21 @@ public sealed record AgentTemplateDefinition
     /// <summary>系统提示词模板路径或内联文本。</summary>
     public string? SystemPrompt { get; init; }
 
+    /// <summary>展示名称（可选，默认回退 Name）。</summary>
+    public string? DisplayName { get; init; }
+
+    /// <summary>Agent 展示用 Emoji（如 🤖🧠🔧）。</summary>
+    public string? AvatarEmoji { get; init; }
+
+    /// <summary>人设与语气提示词（SOUL）。定义 Agent 的性格、边界、回复风格。</summary>
+    public string? PersonaPrompt { get; init; }
+
+    /// <summary>工具使用约定描述（TOOLS）。解释用户自定义工具的用途和用法。</summary>
+    public string? ToolsDescription { get; init; }
+
+    /// <summary>首次对话引导模板（BOOTSTRAP）。新会话首轮使用的问答模板。</summary>
+    public string? BootstrapTemplate { get; init; }
+
     /// <summary>声明的 Skill ID 列表。</summary>
     public IReadOnlyList<string> SkillIds { get; init; } = [];
 }

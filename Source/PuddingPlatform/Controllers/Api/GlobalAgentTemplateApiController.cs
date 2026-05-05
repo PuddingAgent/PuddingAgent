@@ -57,6 +57,10 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         entity.Role = req.Role;
         entity.SystemPrompt = req.SystemPrompt;
         entity.UserPromptTemplate = req.UserPromptTemplate;
+        entity.PersonaPrompt = req.PersonaPrompt;
+        entity.ToolsDescription = req.ToolsDescription;
+        entity.BootstrapTemplate = req.BootstrapTemplate;
+        entity.AvatarEmoji = req.AvatarEmoji;
         entity.PreferredProviderId = req.PreferredProviderId;
         entity.PreferredModelId = req.PreferredModelId;
         entity.MaxContextTokens = req.MaxContextTokens;
@@ -93,6 +97,10 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         Role = req.Role,
         SystemPrompt = req.SystemPrompt,
         UserPromptTemplate = req.UserPromptTemplate,
+        PersonaPrompt = req.PersonaPrompt,
+        ToolsDescription = req.ToolsDescription,
+        BootstrapTemplate = req.BootstrapTemplate,
+        AvatarEmoji = req.AvatarEmoji,
         PreferredProviderId = req.PreferredProviderId,
         PreferredModelId = req.PreferredModelId,
         MaxContextTokens = req.MaxContextTokens,
@@ -113,7 +121,8 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         t.ContainerImage, ParseStringList(t.SelectedCapabilityIdsJson),
         ParseStringList(t.SelectedSkillPackageIdsJson),
         t.IsBuiltIn, t.IsEnabled, t.SortOrder,
-        t.CreatedAt, t.UpdatedAt);
+        t.CreatedAt, t.UpdatedAt,
+        t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji);
 
     private static List<string> ParseStringList(string? json)
     {

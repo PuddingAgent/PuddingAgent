@@ -1,5 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Entities;
 
 namespace PuddingMemoryEngine;
 
@@ -143,4 +147,39 @@ public sealed class MemoryEngine
 
     /// <summary>Session 结束时清理 Session 级记忆。</summary>
     public void ClearSession(string sessionId) => _sessionStore.Clear(sessionId);
+
+    /// <summary>
+    /// 使用 FTS5 对消息内容执行全文搜索。
+    /// </summary>
+    /// <param name="db">记忆数据库上下文。</param>
+    /// <param name="query">FTS 查询表达式。</param>
+    /// <param name="topK">返回条数上限。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>命中的消息列表。</returns>
+    public async Task<IReadOnlyList<MessageEntity>> SearchMessagesAsync(
+        MemoryDbContext db,
+        string query,
+        int topK = 10,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        var normalizedTopK = Math.Clamp(topK, 1, 200);
+
+        var queryParameter = new SqliteParameter("@query", query.Trim());
+        var limitParameter = new SqliteParameter("@topK", normalizedTopK);
+
+        var rows = await db.Messages
+            .FromSqlRaw(
+                "SELECT m.* FROM Messages m JOIN Messages_fts fts ON m.rowid = fts.rowid WHERE Messages_fts MATCH @query ORDER BY bm25(Messages_fts) LIMIT @topK",
+                queryParameter,
+                limitParameter)
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        return rows;
+    }
 }

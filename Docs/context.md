@@ -17,7 +17,9 @@
 | 0504 | task-20260504-001 | DeepSeek-V4-Pro | — | PASS | 88个MSTEST0037警告→0，dotnet build clean |
 | 0504 | task-20260504-004 | GPT-5.3-Codex | — | PASS | LlmConfig.KeyVaultId替代ApiKey明文 |
 | 0504 | task-20260504-005 | DeepSeek-V4-Pro | — | PASS | HttpClient池化+ToolCalls+Cookie修复 |
-| 0504 | task-20260504-006 | GPT-5.3-Codex | — | PASS | _histories/_instances过期清理 |
+| 0505 | Chat-ContextMenu | GPT-5.3-Codex | GLM-5.1 | PASS_WITH_NOTES | P1-1 重复DTO已删；P1-2 Frozen=归档语义已注释说明；P2-6 前端过滤Frozen已加 |
+| 0505 | Session-Pagination | GPT-5.3-Codex | GLM-5.1 | PASS_WITH_NOTES | 3×P1：鉴权缺失/重复创建/异步竞态均已修复 |
+| 0505 | Memory-Phase1 | dahuang | Sonnet 4.6 | FAIL | 1×P0 性能断言反转(假阳性)+3×P1(事务缺失/Singleton DbContext/连接未关闭)+6×P2 |
 | 0504 | GM-001~003 | GPT-5.3-Codex/DeepSeek | — | PASS | SM2/SM3/SM4国密集成完成 |
 | 0504 | E2E-Playwright | — | — | DEFERRED | task-002待办，前端Jest需修复@umijs/max/test |
 | 0504 | UI-Test | Lead(Browser) | GPT-5.3-Codex | PASS_WITH_FIXES | Docker启动修复+9页面测试，发现KeyVault 500/Runtime路径错/多页空白 |

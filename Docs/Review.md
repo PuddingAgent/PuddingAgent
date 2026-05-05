@@ -11,3 +11,7 @@
 | 2026-05-03 | 全局视觉系统升级 — 深色主题 / Design Token / 品牌动效 (Task-UI-03) | **PASS_WITH_NOTES** | [QA-2026-05-03-VisualSystemUpgrade.md](QA/QA-2026-05-03-VisualSystemUpgrade.md) |
 | 2026-05-03 | UI/UX Phase 1 — Chat Shell 独立布局 / 登录品牌化 / 后台降噪 | **PASS_WITH_NOTES** | [QA-2026-05-03-UIUX-Phase1.md](QA/QA-2026-05-03-UIUX-Phase1.md) |
 | 2026-05-04 | 全仓库架构合规性 & 代码整洁度审查 (task-20260504-003) | **FAIL** | [QA-Architecture-Cleanliness-20260504.md](QA/QA-Architecture-Cleanliness-20260504.md) |
+| 2026-05-05 | Session 显式创建 & 消息游标分页 | **PASS_WITH_NOTES** | [QA-2026-05-05-SessionCreateAndPagination.md](QA/QA-2026-05-05-SessionCreateAndPagination.md) |
+| 2026-05-05 | MemoryEngine Phase 1 持久化改造（EF Core SQLite + FTS5）| **FAIL** | [QA-2026-05-05-MemoryEngine-Phase1-Persistence.md](QA/QA-2026-05-05-MemoryEngine-Phase1-Persistence.md) |
+| 2026-05-05 | MemoryEngine Phase 1 收尾 T1.3/1.6/1.8（双写+上下文窗口+回填） | **PASS_WITH_NOTES** | [QA-2026-05-05-MemoryEngine-Phase1-T1.3-1.6-1.8.md](QA/QA-2026-05-05-MemoryEngine-Phase1-T1.3-1.6-1.8.md) |
+| 2026-05-05 | Agent 个性与记忆系统后端（Persona/UserProfile/AgentMemory/分层提示词） | **FAIL** | [QA-2026-05-05-Agent-Persona-Memory.md](QA/QA-2026-05-05-Agent-Persona-Memory.md) |

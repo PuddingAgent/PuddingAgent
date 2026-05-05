@@ -14,6 +14,7 @@ import {
   Drawer,
   Form,
   Popconfirm,
+  Divider,
   Space,
   Tag,
   Badge,
@@ -57,7 +58,7 @@ const roleColorMap: Record<string, string> = {
 };
 
 const GlobalAgentTemplatePage: React.FC = () => {
-  const tableRef = useRef<ActionType>();
+  const tableRef = useRef<ActionType | null>(null);
   const [formDrawer, setFormDrawer] = useState(false);
   const [editItem, setEditItem] = useState<GlobalAgentTemplateDto | null>(null);
   const [form] = Form.useForm<UpsertGlobalAgentTemplateRequest>();
@@ -309,6 +310,33 @@ const GlobalAgentTemplatePage: React.FC = () => {
             rows={6}
             placeholder="输入 Agent 的角色定义和行为准则…"
           />
+
+          <Divider orientation="left">个性设置</Divider>
+          <ProFormText
+            name="avatarEmoji"
+            label="头像 Emoji"
+            placeholder="如 🤖"
+            fieldProps={{ maxLength: 8 }}
+          />
+          <ProFormTextArea
+            name="personaPrompt"
+            label="人设 / 语气 / 边界（SOUL）"
+            rows={4}
+            placeholder="定义该 Agent 的表达风格、价值观边界与行为准则"
+          />
+          <ProFormTextArea
+            name="toolsDescription"
+            label="工具使用约定（TOOLS）"
+            rows={4}
+            placeholder="约定何时调用工具、如何解释结果、失败时如何降级"
+          />
+          <ProFormTextArea
+            name="bootstrapTemplate"
+            label="首次引导模板（BOOTSTRAP）"
+            rows={6}
+            placeholder="定义首次对话的开场与引导模板"
+          />
+
           <ProFormTextArea
             name="userPromptTemplate"
             label="用户 Prompt 模板"

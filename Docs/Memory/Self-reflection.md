@@ -115,3 +115,14 @@
 3. finally 块清理 registry（`_controlRegistry`、`_skillPackageRegistry` 等）
 4. 前端 catch `AbortError` → 设置 status='success' 并显示"已停止生成"
 5. 不 rethrow OperationCanceledException
+
+## MSTest 比较断言参数顺序校验
+
+**经验**：使用 `Assert.IsLessThan` / `Assert.IsGreaterThan` 这类比较断言时，必须先确认参数顺序，避免“断言逻辑正确但调用顺序反了”的假失败。
+
+**原因**：不同测试框架的参数顺序不一致；在 MSTest 4 中，`Assert.IsLessThan` 的参数顺序并非直觉式“actual 在前”，误用会导致输出看似矛盾的失败信息。
+
+**改进方法**：
+1. 首次使用某断言前先看方法签名或 IDE 提示
+2. 写性能阈值断言时，优先保留详细失败消息（包含实际耗时）
+3. 断言改造后立即复跑对应测试，避免把“风格清理”变成“功能回归”

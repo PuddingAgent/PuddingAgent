@@ -18,6 +18,7 @@ public interface ISessionRepository
     Task<SessionRecord?> FindActiveAsync(string channelId, string ownerUserId, string workspaceId, string agentTemplateId, CancellationToken ct = default);
     Task<IReadOnlyList<SessionRecord>> QueryAsync(string? channelId = null, string? userId = null, string? workspaceId = null, CancellationToken ct = default);
     Task UpdateAsync(SessionRecord record, CancellationToken ct = default);
+    Task DeleteAsync(string sessionId, CancellationToken ct = default);
 }
 
 /// <summary>路由决策存储。</summary>

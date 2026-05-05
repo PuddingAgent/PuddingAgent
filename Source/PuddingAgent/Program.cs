@@ -17,6 +17,7 @@ using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Sandbox;
 using PuddingRuntime.Services.Skills;
 using PuddingMemoryEngine;
+using PuddingMemoryEngine.Data;
 using PuddingAgent.P2P;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services;
@@ -131,6 +132,8 @@ var connStr = builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=data/pudding_platform.db";
 var controllerConnStr = builder.Configuration.GetConnectionString("Controller")
     ?? "Data Source=data/pudding_controller.db";
+var memoryConnStr = builder.Configuration.GetConnectionString("Memory")
+    ?? "Data Source=data/pudding_memory.db";
 builder.Services.AddDbContext<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
@@ -149,6 +152,12 @@ builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {
     opt.UseSqlite(controllerConnStr);
+    opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+}, ServiceLifetime.Singleton);
+
+builder.Services.AddDbContextFactory<MemoryDbContext>(opt =>
+{
+    opt.UseSqlite(memoryConnStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 }, ServiceLifetime.Singleton);
 
@@ -285,6 +294,9 @@ using (var scope = app.Services.CreateScope())
         await controllerDb.Database.EnsureCreatedAsync();
     }
 
+    var memoryDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MemoryDbContext>>();
+    await MemoryDbInitializer.InitializeAsync(memoryDbFactory);
+
     var workspaceCatalog = scope.ServiceProvider.GetRequiredService<InMemoryWorkspaceCatalog>();
     await workspaceCatalog.LoadAsync();
 
@@ -384,3 +396,5 @@ public sealed record ChatRequest
     public string? SessionId { get; init; }
     public string? WorkspaceId { get; init; }
 }
+
+public partial class Program { }

@@ -50,6 +50,10 @@ public class WorkspaceEntity
     [MaxLength(512)]
     public string? Description { get; set; }
 
+    /// <summary>用户画像（USER）。描述该场景下的用户偏好、背景、习惯。</summary>
+    [MaxLength(8000)]
+    public string? UserProfile { get; set; }
+
     /// <summary>
     /// 团队成员默认访问策略。
     /// None = 仅显式白名单；ReadOnly/Write/Manage = 团队内所有人默认获得该权限。

@@ -12,6 +12,7 @@ import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import {
   Button,
   Drawer,
+  Divider,
   Form,
   Popconfirm,
   Space,
@@ -60,7 +61,7 @@ const roleColorMap: Record<string, string> = {
 };
 
 const WorkspaceAgentTemplatePage: React.FC = () => {
-  const tableRef = useRef<ActionType>();
+  const tableRef = useRef<ActionType | null>(null);
   const [filterWorkspaceId, setFilterWorkspaceId] = useState<string | undefined>();
   const [workspaces, setWorkspaces] = useState<WorkspaceDefinition[]>([]);
   const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
@@ -106,9 +107,13 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
     if (!tpl) return;
     // 用全局模板预填字段（用户可覆盖）
     form.setFieldsValue({
+      avatarEmoji: tpl.avatarEmoji,
       role: tpl.role,
       systemPrompt: tpl.systemPrompt,
       userPromptTemplate: tpl.userPromptTemplate,
+      personaPrompt: tpl.personaPrompt,
+      toolsDescription: tpl.toolsDescription,
+      bootstrapTemplate: tpl.bootstrapTemplate,
       preferredProviderId: tpl.preferredProviderId,
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
@@ -366,6 +371,33 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
             rows={6}
             placeholder="覆盖继承模板的系统提示词，或直接填写…"
           />
+
+          <Divider orientation="left">个性设置</Divider>
+          <ProFormText
+            name="avatarEmoji"
+            label="头像 Emoji"
+            placeholder="如 🤖"
+            fieldProps={{ maxLength: 8 }}
+          />
+          <ProFormTextArea
+            name="personaPrompt"
+            label="人设 / 语气 / 边界（SOUL）"
+            rows={4}
+            placeholder="定义该 Agent 的表达风格、边界与约束"
+          />
+          <ProFormTextArea
+            name="toolsDescription"
+            label="工具使用约定（TOOLS）"
+            rows={4}
+            placeholder="约定何时调用工具、失败兜底与结果解释方式"
+          />
+          <ProFormTextArea
+            name="bootstrapTemplate"
+            label="首次引导模板（BOOTSTRAP）"
+            rows={6}
+            placeholder="定义首次对话的开场白与引导话术"
+          />
+
           <ProFormTextArea
             name="userPromptTemplate"
             label="用户 Prompt 模板"

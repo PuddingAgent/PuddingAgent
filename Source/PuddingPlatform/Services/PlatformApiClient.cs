@@ -91,6 +91,33 @@ public sealed class PlatformApiClient
         return await resp.Content.ReadFromJsonAsync<SessionRecord>(ct);
     }
 
+    public async Task<SessionRecord?> CreateSessionAsync(
+        string workspaceId, string agentTemplateId, string? title = null, CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsJsonAsync("/api/session", new
+        {
+            workspaceId,
+            agentTemplateId,
+            title,
+        }, ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<SessionRecord>(ct);
+    }
+
+    public async Task DeleteSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        await _http.DeleteAsync($"/api/session/{Uri.EscapeDataString(sessionId)}", ct);
+    }
+
+    public async Task<SessionRecord?> UpdateSessionAsync(
+        string sessionId, UpdateSessionRequest req, CancellationToken ct = default)
+    {
+        var resp = await _http.PutAsJsonAsync(
+            $"/api/session/{Uri.EscapeDataString(sessionId)}", req, ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<SessionRecord>(ct);
+    }
+
     // ── Audit ──────────────────────────────────────────
 
     public async Task<List<AuditEventRecord>> GetAuditEventsAsync(
@@ -466,4 +493,10 @@ public sealed record WorkspaceWorkflowSummaryDto
 {
     public int BoundWorkflows { get; init; }
     public string? PotentialBlockerHint { get; init; }
+}
+
+public sealed record UpdateSessionRequest
+{
+    public string? Title { get; init; }
+    public SessionStatus? Status { get; init; }
 }

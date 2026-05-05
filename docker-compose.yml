@@ -32,7 +32,7 @@ services:
       P2P__Enabled: "true"
       P2P__Port:    "9527"
     ports:
-      - "8080:8080"
+      - "5000:8080"
       - "9527:9527/udp"
     volumes:
       - agent_data:/app/data

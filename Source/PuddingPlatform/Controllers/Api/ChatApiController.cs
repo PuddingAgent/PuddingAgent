@@ -6,6 +6,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Platform;
 using PuddingCode.Models;
+using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Entities;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
@@ -22,6 +24,7 @@ public class ChatApiController(
     PlatformApiClient apiClient,
     MinioStorageService minio,
     IServiceScopeFactory scopeFactory,
+    IDbContextFactory<MemoryDbContext> memoryDbFactory,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     private static readonly Regex VaultPlaceholderRegex =
@@ -731,9 +734,128 @@ public class ChatApiController(
         }
 
         await persistDb.SaveChangesAsync(ct);
+
+        try
+        {
+            await DualWriteToMemoryDbAsync(
+                workspaceId,
+                sessionId,
+                userText,
+                agentReply,
+                usage,
+                isNewSession,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            // 双写失败不应影响主流程（旧表仍是可回退的读路径）。
+            logger.LogWarning(
+                ex,
+                "[Chat] Dual-write to memory db failed ws={WorkspaceId} session={SessionId}; fallback to legacy chat_messages only.",
+                workspaceId,
+                sessionId);
+        }
+
         logger.LogInformation(
             "[Chat] Persisted messages session={SessionId} userLen={UserLen} replyLen={ReplyLen}",
             sessionId, userText.Length, agentReply.Length);
+    }
+
+    /// <summary>
+    /// 双写到 ADR-013 新消息库（Sessions/Messages）。
+    /// 说明：
+    /// 1) 旧表写入保持不变，双写仅作为增量能力；
+    /// 2) V1 暂按线性 MAIN 分支写入，ParentId 仅连接 user -> assistant；
+    /// 3) 双写异常在调用方捕获，保证不影响主业务返回。
+    /// </summary>
+    private async Task DualWriteToMemoryDbAsync(
+        string workspaceId,
+        string sessionId,
+        string userText,
+        string agentReply,
+        TokenUsageDto? usage,
+        bool isNewSession,
+        CancellationToken ct)
+    {
+        await using var memoryDb = await memoryDbFactory.CreateDbContextAsync(ct);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var session = await memoryDb.Sessions.FindAsync(new object[] { sessionId }, ct);
+        if (session is null)
+        {
+            session = new SessionEntity
+            {
+                SessionId = sessionId,
+                WorkspaceId = workspaceId,
+                AgentId = string.Empty,
+                CreatedAt = now,
+                LastActivityAt = now,
+                MessageCount = string.IsNullOrWhiteSpace(agentReply) ? 1 : 2,
+            };
+            memoryDb.Sessions.Add(session);
+        }
+        else
+        {
+            session.LastActivityAt = now;
+            session.MessageCount += string.IsNullOrWhiteSpace(agentReply) ? 1 : 2;
+
+            // 若旧数据无 workspaceId，这里尽量回填当前上下文，便于后续按工作区检索。
+            if (string.IsNullOrWhiteSpace(session.WorkspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
+                session.WorkspaceId = workspaceId;
+        }
+
+        var maxSequence = await memoryDb.Messages
+            .Where(m => m.SessionId == sessionId)
+            .Select(m => (long?)m.Sequence)
+            .MaxAsync(ct) ?? 0;
+
+        // MessageId 采用“时间前缀 + 随机后缀”，便于肉眼排查排序。
+        var timestampPrefix = now.ToString("x");
+        var userMsgId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
+        var userContent = userText.Length > 4000 ? userText[..4000] : userText;
+
+        memoryDb.Messages.Add(new MessageEntity
+        {
+            MessageId = userMsgId,
+            SessionId = sessionId,
+            ParentId = null,
+            BranchType = "MAIN",
+            Sequence = maxSequence + 1,
+            Role = "user",
+            ContentType = "text",
+            Content = userContent,
+            CreatedAt = now - 1,
+        });
+
+        if (!string.IsNullOrWhiteSpace(agentReply))
+        {
+            var agentMsgId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
+            memoryDb.Messages.Add(new MessageEntity
+            {
+                MessageId = agentMsgId,
+                SessionId = sessionId,
+                ParentId = userMsgId,
+                BranchType = "MAIN",
+                Sequence = maxSequence + 2,
+                Role = "assistant",
+                ContentType = "text",
+                Content = agentReply,
+                UsageJson = usage is not null
+                    ? JsonSerializer.Serialize(usage)
+                    : null,
+                CreatedAt = now,
+            });
+        }
+
+        if (isNewSession)
+        {
+            logger.LogDebug(
+                "[Chat] Dual-write session initialized ws={WorkspaceId} session={SessionId}",
+                workspaceId,
+                sessionId);
+        }
+
+        await memoryDb.SaveChangesAsync(ct);
     }
 
     /// <summary>TokenUsageDto（内联定义，与前端对齐）。</summary>
