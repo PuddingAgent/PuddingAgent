@@ -337,6 +337,25 @@ const GlobalAgentTemplatePage: React.FC = () => {
             placeholder="定义首次对话的开场与引导模板"
           />
 
+          <Divider orientation="left">记忆模型</Divider>
+          <ProFormText
+            name="memoryLlmEndpoint"
+            label="Memory LLM Endpoint"
+            placeholder="如 https://api.deepseek.com/v1"
+            extra="未配置时使用主聊天模型处理记忆"
+          />
+          <ProFormText.Password
+            name="memoryLlmApiKey"
+            label="Memory LLM ApiKey / KeyVault 引用"
+            placeholder="可留空，留空时回退主聊天模型"
+          />
+          <ProFormText
+            name="memoryLlmModelId"
+            label="Memory LLM ModelId"
+            placeholder="如 deepseek-chat"
+            extra="建议使用小模型降低记忆提取成本"
+          />
+
           <ProFormTextArea
             name="userPromptTemplate"
             label="用户 Prompt 模板"

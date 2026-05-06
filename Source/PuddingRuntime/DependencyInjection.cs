@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Abstractions;
 using PuddingMemoryEngine;
+using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 
@@ -21,6 +23,8 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<WorkspaceMemoryStore>();
         services.AddSingleton<MemoryBoundaryService>();
         services.AddSingleton<MemoryEngine>();
+        services.AddSingleton<IMemoryEngine>(sp => sp.GetRequiredService<MemoryEngine>());
+        services.AddSingleton<IMemoryIndexer, TagTreeIndexer>();
 
         // Agent Loop 护栏与执行控制
         services.AddSingleton<AgentExecutionGuardrails>();
@@ -33,6 +37,11 @@ public static class RuntimeServiceExtensions
 
         // LLM 客户端 — V1 直连（不经过 Controller 中转）
         services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
+        services.AddSingleton<IMemoryLlmClient, DirectMemoryLlmClient>();
+
+        // Agent 执行子服务（职责拆分）
+        services.AddSingleton<SystemPromptBuilder>();
+        services.AddSingleton<ContextWindowManager>();
 
         // Agent 执行服务
         services.AddSingleton<AgentExecutionService>();

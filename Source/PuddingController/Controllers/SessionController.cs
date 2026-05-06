@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
 using PuddingCode.Platform;
 using PuddingController.Services;
 
@@ -57,8 +56,7 @@ public class SessionController : ControllerBase
         return Ok(updated);
     }
 
-    /// <summary>POST /api/session — 显式创建新会话</summary>
-    [Authorize]
+    /// <summary>POST /api/session — 显式创建新会话（内部 API，由 PlatformApiClient 调用）</summary>
     [HttpPost]
     public async Task<ActionResult<SessionRecord>> Create(
         [FromBody] CreateSessionRequest req, CancellationToken ct)

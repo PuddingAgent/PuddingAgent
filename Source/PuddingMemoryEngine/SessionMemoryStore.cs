@@ -80,23 +80,63 @@ public sealed class SessionMemoryStore
         }
     }
 
-    /// <summary>读取指定 Session 的所有记忆（快照副本，顺序为写入顺序）。</summary>
-    public IReadOnlyList<MemoryEntry> Recall(string sessionId)
+    /// <summary>
+    /// 读取指定 Session 集合的记忆（支持当前 Session + 父 Session 的弱隔离召回）。
+    /// 若传入 <paramref name="agentId"/>，则按 Agent 强隔离过滤。
+    /// </summary>
+    public IReadOnlyList<MemoryEntry> Recall(IEnumerable<string> sessionIds, string? agentId)
     {
+        var normalizedSessionIds = sessionIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedSessionIds.Length == 0)
+        {
+            return [];
+        }
+
         if (_dbContextFactory is null)
         {
-            if (!_fallbackStore.TryGetValue(sessionId, out var list)) return [];
-            lock (list)
+            var merged = new List<MemoryEntry>();
+            foreach (var sessionId in normalizedSessionIds)
             {
-                return list.ToArray();
+                if (!_fallbackStore.TryGetValue(sessionId, out var list))
+                {
+                    continue;
+                }
+
+                lock (list)
+                {
+                    merged.AddRange(list);
+                }
             }
+
+            if (!string.IsNullOrWhiteSpace(agentId))
+            {
+                merged = merged
+                    .Where(x => string.Equals(x.AgentId, agentId, StringComparison.Ordinal))
+                    .ToList();
+            }
+
+            return merged
+                .OrderBy(x => x.CreatedAt)
+                .ToArray();
         }
 
         using var db = _dbContextFactory.CreateDbContext();
 
-        var rows = db.Memories
+        var query = db.Memories
             .AsNoTracking()
-            .Where(x => x.Scope == SessionScope && x.SessionId == sessionId)
+            .Where(x => x.Scope == SessionScope && x.SessionId != null && normalizedSessionIds.Contains(x.SessionId));
+
+        if (!string.IsNullOrWhiteSpace(agentId))
+        {
+            query = query.Where(x => x.AgentId == agentId);
+        }
+
+        var rows = query
             .OrderByDescending(x => x.CreatedAt)
             .Take(MaxEntriesPerSession)
             .ToList();
@@ -104,6 +144,10 @@ public sealed class SessionMemoryStore
         rows.Reverse();
         return rows.Select(ToMemoryEntry).ToArray();
     }
+
+    /// <summary>读取单个 Session 的所有记忆（兼容旧调用）。</summary>
+    public IReadOnlyList<MemoryEntry> Recall(string sessionId)
+        => Recall([sessionId], agentId: null);
 
     /// <summary>清除整个 Session 的记忆（Session 结束时调用）。</summary>
     public void Clear(string sessionId)
@@ -130,17 +174,22 @@ public sealed class SessionMemoryStore
 
     private static MemoryEntity ToMemoryEntity(MemoryEntry entry, string sessionId)
     {
+        var effectiveAgentId = string.IsNullOrWhiteSpace(entry.AgentId)
+            ? (string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source)
+            : entry.AgentId;
+
         return new MemoryEntity
         {
             MemoryId = string.IsNullOrWhiteSpace(entry.EntryId) ? Guid.NewGuid().ToString("N") : entry.EntryId,
             Scope = SessionScope,
             SessionId = sessionId,
+            ParentSessionId = entry.ParentSessionId,
             WorkspaceId = entry.WorkspaceId,
-            AgentId = string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source,
+            AgentId = effectiveAgentId,
             Tag = string.IsNullOrWhiteSpace(entry.Tag) ? "general" : entry.Tag,
             Content = entry.Content,
             CreatedAt = entry.CreatedAt.ToUnixTimeMilliseconds(),
-            Metadata = null,
+            Metadata = string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source,
         };
     }
 
@@ -150,10 +199,12 @@ public sealed class SessionMemoryStore
         {
             EntryId = entity.MemoryId,
             SessionId = entity.SessionId,
+            ParentSessionId = entity.ParentSessionId,
             WorkspaceId = entity.WorkspaceId,
+            AgentId = entity.AgentId,
             Tag = entity.Tag,
             Content = entity.Content,
-            Source = entity.AgentId ?? "memory-db",
+            Source = entity.Metadata ?? entity.AgentId ?? "memory-db",
             CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(entity.CreatedAt),
             Scope = MemoryScope.Session,
         };

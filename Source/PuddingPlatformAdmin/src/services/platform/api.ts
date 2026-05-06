@@ -341,6 +341,9 @@ export interface GlobalAgentTemplateDto {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
+  memoryLlmEndpoint?: string;
+  memoryLlmApiKey?: string;
+  memoryLlmModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -366,6 +369,9 @@ export interface UpsertGlobalAgentTemplateRequest {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
+  memoryLlmEndpoint?: string;
+  memoryLlmApiKey?: string;
+  memoryLlmModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -392,6 +398,9 @@ export interface WorkspaceAgentTemplateDto {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
+  memoryLlmEndpoint?: string;
+  memoryLlmApiKey?: string;
+  memoryLlmModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -417,6 +426,9 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
+  memoryLlmEndpoint?: string;
+  memoryLlmApiKey?: string;
+  memoryLlmModelId?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;

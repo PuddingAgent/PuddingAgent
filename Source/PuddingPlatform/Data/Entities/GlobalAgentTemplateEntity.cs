@@ -61,6 +61,18 @@ public class GlobalAgentTemplateEntity
     [MaxLength(128)]
     public string? PreferredModelId { get; set; }
 
+    /// <summary>记忆专用 LLM Endpoint（独立于主聊天模型）。null 时使用主模型。</summary>
+    [MaxLength(512)]
+    public string? MemoryLlmEndpoint { get; set; }
+
+    /// <summary>记忆专用 LLM ApiKey 或 KeyVault 引用。</summary>
+    [MaxLength(512)]
+    public string? MemoryLlmApiKey { get; set; }
+
+    /// <summary>记忆专用 LLM ModelId（建议使用轻量模型）。</summary>
+    [MaxLength(128)]
+    public string? MemoryLlmModelId { get; set; }
+
     /// <summary>最大上下文 token 数</summary>
     public int MaxContextTokens { get; set; } = 8192;
 

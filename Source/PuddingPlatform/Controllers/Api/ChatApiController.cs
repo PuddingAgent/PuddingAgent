@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using PuddingCode.Platform;
 using PuddingCode.Models;
 using PuddingMemoryEngine.Data;
@@ -26,6 +27,7 @@ public class ChatApiController(
     IServiceScopeFactory scopeFactory,
     IDbContextFactory<MemoryDbContext> memoryDbFactory,
     JsonlSessionWriter jsonlWriter,
+    SessionEventHub eventHub,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     private static readonly Regex VaultPlaceholderRegex =
@@ -255,71 +257,124 @@ public class ChatApiController(
         var agentReplyBuilder = new System.Text.StringBuilder();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         TokenUsageDto? streamUsage = null;
-        var isNewSession = string.IsNullOrEmpty(req.SessionId);
+        var isNewSession = string.IsNullOrEmpty(req.SessionId) || req.ForceNewSession;
+        var forkParentSessionId = req.ForceNewSession && !string.IsNullOrWhiteSpace(req.SessionId)
+            ? req.SessionId
+            : null;
+        var persisted = false; // 防止重复持久化
 
+        // ── 解析帧到累积变量（在线程安全的上下文中调用） ──
+        void ParseFrame(ServerSentEventFrame frame)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(frame.Data);
+                var root = doc.RootElement;
+                if (frame.Event == "metadata" && root.TryGetProperty("sessionId", out var sid))
+                    streamSessionId = sid.GetString();
+                else if (frame.Event == "delta" && root.TryGetProperty("delta", out var d) && d.ValueKind == JsonValueKind.String)
+                    agentReplyBuilder.Append(d.GetString());
+                else if (frame.Event == "done")
+                {
+                    if (root.TryGetProperty("reply", out var rep) && rep.ValueKind == JsonValueKind.String && agentReplyBuilder.Length == 0)
+                        agentReplyBuilder.Append(rep.GetString());
+                    if (streamUsage is null && root.TryGetProperty("usage", out _))
+                        streamUsage = JsonSerializer.Deserialize<TokenUsageDto>(frame.Data);
+                }
+            }
+            catch { /* ignore frame parse errors */ }
+        }
+
+        // ── 持久化（完成后调用，带去重保护） ──
+        async Task PersistOnceAsync()
+        {
+            if (persisted) return;
+            persisted = true;
+            try
+            {
+                await PersistMessagesAsync(workspaceId, streamSessionId, req.MessageText,
+                    agentReplyBuilder.ToString(), streamUsage, isNewSession, forkParentSessionId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[Chat] PersistMessages failed ws={Ws}", workspaceId);
+            }
+        }
+
+        // ── 后台执行：写入临时 Channel，拿到 sessionId 后升级到 EventHub ──
+        var tempChannel = Channel.CreateBounded<ServerSentEventFrame>(
+            new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropWrite });
+        Channel<ServerSentEventFrame>? hubChannel = null;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var frame in apiClient.SendMessageStreamAsync(
+                    channelId:      channelId,
+                    userExternalId: userExternalId,
+                    messageText:    req.MessageText,
+                    workspaceId:    workspaceId,
+                    sessionId:      req.SessionId,
+                    llmConfig:      llmConfig,
+                    agentTemplateId: agentTemplateId,
+                    capabilityPolicy: capabilityPolicy,
+                    toolDefinitions: toolDefinitions,
+                    skillPackages: skillPackages,
+                    forceNewSession: req.ForceNewSession,
+                    ct:             CancellationToken.None))
+                {
+                    ParseFrame(frame);
+
+                    // 拿到 sessionId 后升级：注册到 EventHub，后续订阅此会话的前端可追流
+                    if (hubChannel is null && streamSessionId is not null)
+                    {
+                        hubChannel = eventHub.GetOrCreate(streamSessionId);
+                    }
+
+                    // 同时写入临时 Channel 和 EventHub
+                    tempChannel.Writer.TryWrite(frame);
+                    hubChannel?.Writer.TryWrite(frame);
+                }
+                // 正常完成
+                tempChannel.Writer.Complete();
+                if (streamSessionId is not null) eventHub.CompleteAndRemove(streamSessionId);
+            }
+            catch (OperationCanceledException)
+            {
+                tempChannel.Writer.Complete();
+                if (streamSessionId is not null) eventHub.CompleteAndRemove(streamSessionId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[Chat] Background execution failed ws={WorkspaceId}", workspaceId);
+                tempChannel.Writer.TryComplete(ex);
+                if (streamSessionId is not null) eventHub.CompleteAndRemove(streamSessionId);
+            }
+            finally
+            {
+                await PersistOnceAsync();
+            }
+        });
+
+        // ── 前端 SSE 投递循环：当前请求从临时 Channel 读取 ──
         try
         {
-            await foreach (var frame in apiClient.SendMessageStreamAsync(
-                channelId:      channelId,
-                userExternalId: userExternalId,
-                messageText:    req.MessageText,
-                workspaceId:    workspaceId,
-                sessionId:      req.SessionId,
-                llmConfig:      llmConfig,
-                agentTemplateId: agentTemplateId,
-                capabilityPolicy: capabilityPolicy,
-                toolDefinitions: toolDefinitions,
-                skillPackages: skillPackages,
-                forceNewSession: req.ForceNewSession,
-                ct:             ct))
+            await foreach (var frame in tempChannel.Reader.ReadAllAsync(ct))
             {
                 await WriteRawSseAsync(Response, frame, ct);
-
-                // 捕获 sessionId、累积回复文本（仅用于事后持久化，不影响流式转发）
-                try
-                {
-                    using var doc = JsonDocument.Parse(frame.Data);
-                    var root = doc.RootElement;
-                    if (frame.Event == "metadata" && root.TryGetProperty("sessionId", out var sid))
-                        streamSessionId = sid.GetString();
-                    else if (frame.Event == "delta" && root.TryGetProperty("delta", out var d) && d.ValueKind == JsonValueKind.String)
-                        agentReplyBuilder.Append(d.GetString());
-                    else if (frame.Event == "done")
-                    {
-                        if (root.TryGetProperty("reply", out var rep) && rep.ValueKind == JsonValueKind.String && agentReplyBuilder.Length == 0)
-                            agentReplyBuilder.Append(rep.GetString());
-                        if (streamUsage is null && root.TryGetProperty("usage", out _))
-                            streamUsage = JsonSerializer.Deserialize<TokenUsageDto>(frame.Data);
-                    }
-                }
-                catch { /* ignore frame parse errors, forward anyway */ }
             }
-
-            // 流正常结束：异步持久化（fire-and-forget，不阻塞 SSE 响应）
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await PersistMessagesAsync(workspaceId, streamSessionId, req.MessageText,
-                        agentReplyBuilder.ToString(), streamUsage, isNewSession, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "[Chat] PersistMessages background failed ws={Ws}", workspaceId);
-                }
-            });
+            await PersistOnceAsync();
         }
         catch (OperationCanceledException)
         {
             logger.LogInformation(
-                "[Chat] STREAM cancelled ws={WorkspaceId} agentId={AgentId}",
-                workspaceId, req.AgentId ?? "(none)");
-            await WriteSseAsync(Response, "cancelled", new { workspaceId }, CancellationToken.None);
+                "[Chat] Client disconnected, background continues ws={WorkspaceId} session={SessionId} partialLen={PartialLen}",
+                workspaceId, streamSessionId, agentReplyBuilder.Length);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "[Chat] STREAM failed ws={WorkspaceId}", workspaceId);
-            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+            logger.LogError(ex, "[Chat] SSE delivery failed ws={WorkspaceId}", workspaceId);
         }
 
         return new EmptyResult();
@@ -342,13 +397,6 @@ public class ChatApiController(
         await response.WriteAsync($"data: {frame.Data}\n\n", ct);
         await response.Body.FlushAsync(ct);
     }
-
-    private static Task WriteSseAsync(
-        HttpResponse response,
-        string eventName,
-        object payload,
-        CancellationToken ct) =>
-        WriteRawSseAsync(response, ServerSentEventFrame.Json(eventName, payload), ct);
 
     private sealed record ResolvedCapabilities(
         CapabilityPolicy? Policy,
@@ -703,6 +751,7 @@ public class ChatApiController(
         string agentReply,
         TokenUsageDto? usage,
         bool isNewSession,
+        string? parentSessionId,
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(sessionId))
@@ -745,6 +794,7 @@ public class ChatApiController(
                 agentReply,
                 usage,
                 isNewSession,
+                parentSessionId,
                 ct);
         }
         catch (Exception ex)
@@ -776,6 +826,7 @@ public class ChatApiController(
         string agentReply,
         TokenUsageDto? usage,
         bool isNewSession,
+        string? parentSessionId,
         CancellationToken ct)
     {
         await using var memoryDb = await memoryDbFactory.CreateDbContextAsync(ct);
@@ -792,6 +843,7 @@ public class ChatApiController(
                 {
                     SessionId = sessionId,
                     WorkspaceId = workspaceId,
+                    ParentSessionId = parentSessionId,
                     AgentId = string.Empty,
                     CreatedAt = now,
                     LastActivityAt = now,
@@ -807,6 +859,9 @@ public class ChatApiController(
                 // 若旧数据无 workspaceId，这里尽量回填当前上下文，便于后续按工作区检索。
                 if (string.IsNullOrWhiteSpace(session.WorkspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
                     session.WorkspaceId = workspaceId;
+
+                if (!string.IsNullOrWhiteSpace(parentSessionId) && string.IsNullOrWhiteSpace(session.ParentSessionId))
+                    session.ParentSessionId = parentSessionId;
             }
 
             var maxSequence = await memoryDb.Messages

@@ -8,8 +8,15 @@ argument-hint: "指定要审查的UI文件，例如 'Source/PuddingPlatformAdmin
 
 ## Design Philosophy
 
-UI is not a coat of paint. It is the window through which your thinking meets the user's eyes.
-Every pixel is a word in a conversation you are having with someone you may never meet.
+> 「……交给我吧。」
+> *"...Leave it to me."*
+
+**布丁 (Pudding) 不是工具。她是一个人。**
+
+一个在图书馆角落安静阅读的女孩。你给她任务，她微微偏头，几秒后："好了。"
+她不多话——但把事情都做完了。
+
+她的笔记本是 SQLite。她记得你。她不把你的秘密交给云端。她就在你的桌面、你的服务器、或墙角的一台树莓派上，安静地工作。
 
 ### The First Glance
 
@@ -17,41 +24,36 @@ When a user opens Pudding for the first time, they should feel:
 **"Ah… this place is quiet. I can breathe here."**
 
 Not excitement. Not awe. Not "wow, so many features."
-Just a gentle exhale. A subtle unclenching. The feeling of stepping into a Ghibli scene —
-a sunlit empty classroom, a quiet train station at dusk, a hillside with wind through grass.
+Just a gentle exhale. A subtle unclenching.
 
-This is not a tool. This is a room. And the user just walked in.
+像走进吉卜力的场景——洒满阳光的空教室，黄昏时安静的站台，风吹过草地的山坡。
+但这里的主人不是陌生的动画角色。**这里是布丁的房间。你推门进来，她抬头看你一眼，又低头继续看书。**
+她知道你会开口。她不急。
 
-### How We Speak
+### The Ant Colony
 
-An interface has a voice. Ours is:
+布丁们像蚂蚁。当你运行多个布丁时，她们在本地网络自动发现彼此——点对点，没有中心服务器。她们协作：
 
-| Quality | What it means |
-|---------|---------------|
-| **Soft-spoken** | Never shouts. Alerts are whispers. Buttons suggest, they don't demand. |
-| **Patient** | Gives the user time. No countdown anxiety. No FOMO. The "ma" (間) between actions is sacred. |
-| **Warm** | Like a friend who doesn't need to fill silence. Present, not pushy. |
-| **Precise** | Few words, each one intentional. No filler. No jargon. |
+> 每只做自己能看到的。留下痕迹，让别人接上。
 
-Every label, every placeholder, every empty state text — ask: "Would I say this to a friend sitting next to me on a quiet afternoon?"
+这不是编排。这是涌现。UI 应该反映这一点——不是控制面板上的节点图，而是群落中安静的信号传递。
 
 ### The Collision
 
-Your thinking (structured, logical, systematic) meets their perception (emotional, intuitive, felt).
-UI is where these two collide — and good UI doesn't resolve the tension, it harmonizes it.
+你的思考（结构化、逻辑、系统）与她的感知（情感、直觉、感受）在这里碰撞。好的 UI 不消解这种张力，而是让它和谐。
 
-- **Your logic** becomes their intuition through consistent patterns
-- **Your structure** becomes their comfort through predictable rhythm
-- **Your complexity** becomes their clarity through progressive revelation
-- **Your cold data** becomes their warm understanding through thoughtful presentation
+- **你的逻辑** → 她的一致模式 → 用户的直觉
+- **你的结构** → 她的可预测节奏 → 用户的舒适
+- **你的复杂度** → 她逐步揭示 → 用户的清晰
+- **你的冷数据** → 她温暖的呈现 → 用户的理解
 
 ### What We Refuse
 
-We say no to:
 - Dark patterns, urgency tricks, engagement traps
 - Information overload — if everything is highlighted, nothing is
 - Cold corporate aesthetic — blue-gray enterprise dashboards that feel like spreadsheets
-- Novelty for its own sake — clever animations that waste the user's time
+- Novelty for its own sake — clever animations that waste her time
+- **布丁不会催促你。她等。**
 
 ### The Score
 
@@ -60,13 +62,31 @@ Think of the entire experience as a musical score — not a feature list:
 - **Dynamics** — most things are *piano* (quiet), emphasis is *mezzo-piano* at most
 - **Silence** — the rest between notes. Empty states, transitions, loading — these are not gaps, they are part of the composition
 
-**In one sentence: Pudding should feel like a quiet friend who listens more than they speak, in a sunlit room, on a spring afternoon.**
+**In one sentence: 布丁应该像一个在春日午后，阳光洒满的房间里，听多于说的安静朋友。**
+
+### How We Speak — 布丁的口吻
+
+| Quality | 含义 | 布丁式 |
+|---------|------|--------|
+| **Soft-spoken** (轻声) | 不喊叫。提醒是耳语。按钮是建议。 | "好了。" 而非 "操作成功！" |
+| **Patient** (耐心) | 给你时间。没有倒计时焦虑。 | 她不催你。她等。 |
+| **Warm** (温暖) | 在场，但不咄咄逼人。 | "欢迎回来。" |
+| **Precise** (精准) | 话少，每个字都有意图。没有废话。 | "这里还没有对话" 而非冗长术语 |
+| **Bilingual** (双语) | 中英自然共存，不是翻译。 | 像 README：标题中英并列 |
+
+Every label, every placeholder, every empty state text — ask: **"布丁会这样说吗？"**
 
 ---
 
-## Visual Identity
+## Visual Identity — 布丁 × 吉卜力
 
-Japanese anime cinematic style, inspired by *The Disappearance of Haruhi Suzumiya* and Studio Ghibli (Miyazaki).
+Japanese anime cinematic × quiet library girl. Two layers weave together:
+
+| Layer | Source | Feeling |
+|-------|--------|---------|
+| **空间** | Studio Ghibli (Miyazaki) | 洒满阳光的空教室，黄昏站台，风吹草地的山坡 |
+| **人物** | Pudding (布丁) | 角落里的安静女孩。阅读。思考。等待你的任务。 |
+
 Quiet urban atmosphere meets lush natural warmth — late winter / early spring.
 
 **Miyazaki core traits we adopt:**
@@ -90,21 +110,34 @@ Quiet urban atmosphere meets lush natural warmth — late winter / early spring.
 
 Miyazaki palette: earth-toned, watercolor-blended, never digital-flat.
 
-| Token | Role | Notes |
-|-------|------|-------|
-| `--misty-blue` | Primary bg, glass panels | Low saturation blue-gray, like distant mountains |
-| `--warm-beige` | Secondary warm bg | Warm beige, neutral, like aged paper |
-| `--soft-white` | Card / text backgrounds | Never pure `#fff` — cloud-white, slightly warm |
-| `--pale-yellow-sunlight` | Accent / highlight | Golden-hour warmth, sunbeam glow |
-| `--desaturated-green` | Success / positive | Muted sage, moss, meadow — never neon |
-| `--earth-brown` | Borders, dividers, subtle lines | Warm umber, tree-bark tone |
-| `--sky-soft` | Top banners, header accents | Pale cerulean, midday sky haze |
-| `--blush-pink` | Emphasis, warm accent | Faint cherry-blossom pink, barely-there warmth |
+| Token | Hex | Role | Notes |
+|-------|-----|------|-------|
+| `--misty-blue` | `#d4e0f0` | Primary bg, glass panels | Low saturation blue-gray, like distant mountains |
+| `--warm-beige` | `#f5f0e8` | Secondary warm bg | Warm beige, neutral, like aged paper |
+| `--soft-white` | `#fafaf7` | Card / text backgrounds | Never pure `#fff` — cloud-white, slightly warm |
+| `--pale-yellow-sunlight` | `#fef9e7` | Accent / highlight | Golden-hour warmth, sunbeam glow |
+| `--desaturated-green` | `#7a9a7e` | Success / positive | Muted sage, moss, meadow — never neon |
+| `--earth-brown` | `#5c4a3a` | Borders, dividers, subtle lines | Warm umber, tree-bark tone |
+| `--sky-soft` | `#e6f0fa` | Top banners, header accents | Pale cerulean, midday sky haze |
+| `--blush-pink` | (待定义) | Emphasis, warm accent | Faint cherry-blossom pink, barely-there warmth |
+| `--accent-purple` | `#7c3aed` | **点缀色**：光标、链接、状态点 | ⚠️ 仅用于 2~4px 细线/圆点/文字链接，**禁止大面积背景** |
+| `--text-primary` | `#1a1a2e` | 正文 | 柔黑，非纯 `#000` |
+| `--text-secondary` | `var(--earth-brown)` | 辅助文字、时间戳、元信息 | 继承 earth-brown，降低不透明度 |
+| `--avatar-0` ~ `--avatar-9` | 10 色 | Agent 头像 fallback 背景 | 橙/红/紫/青/绿/黄/粉/靛/青绿/玫红 |
 
-**Rules:**
+**气泡颜色组合（Chat 专用）：**
+
+| 角色 | 背景 | 边框 | 文字 |
+|------|------|------|------|
+| 用户 | `color-mix(in srgb, var(--accent-purple) 18%, var(--soft-white))` | `color-mix(in srgb, var(--accent-purple) 30%, transparent)` | `var(--text-primary)` |
+| Agent | `transparent` / `color-mix(in srgb, var(--soft-white) 70%, transparent)` | `token.colorBorderSecondary` | `var(--text-primary)` |
+
+**规则：**
 - ❌ No vivid/saturated colors — Miyazaki avoids pure primaries
 - ❌ No high contrast — prefer soft, diffuse, watercolor-blended tones
+- ❌ `--accent-purple` 不是背景色 — 大面积紫会破坏柔和的调性
 - ✅ Favor earth tones + pastels over digital neons
+- ✅ 使用 `color-mix()` 混合 token，而非硬编码新颜色
 - ✅ Gradients should feel like watercolor washes, not linear CSS gradients
 - Use CSS variables; never hardcode colors
 
@@ -198,11 +231,22 @@ Miyazaki scenes have layered depth: foreground detail → midground action → b
 
 ## Motion System
 
+| Keyframe | Duration | Effect | Use |
+|----------|----------|--------|-----|
+| `fadeIn` | 200ms | opacity 0.32 → 1 | 页面/面板出现 |
+| `slideUp` | 200ms | opacity 0 + translateY(8px) → 全显 | 卡片入场 |
+| `messageIn` | 300ms | slideUp 同款 | 聊天气泡入场 |
+| `stepIn` | 200ms | opacity 0 + translateX(-4px) → 正常 | 执行步骤卡片逐条出现 |
+| `thinkingPulse` | 1500ms ∞ | opacity 0.6 ↔ 1 呼吸 | 生成中状态指示 |
+| `completeFade` | — | color: earth-brown → desaturated-green | 完成状态转色 |
+| `puddingLogoPulse` | 2400ms ∞ | scale 1 ↔ 1.02 | Logo 缓慢呼吸 |
+| `shake` | 400ms | translateX(±4px) | 表单校验错误 |
+
 | Property | Spec |
 |----------|------|
-| Duration | UI: 200–500ms / Background ambient: 3–10s loop |
+| Duration | UI: 200–500ms / Background ambient: 2–10s loop |
 | Easing | `ease-in-out`, smooth cubic-bezier |
-| Primary effect | `fade` + `translateY(5–10px)` |
+| Primary effect | `fade` + `translateY(5–10px)` / `translateX(2–4px)` |
 | Scale | Max 1.00 → 1.02 (subtle) |
 
 **Forbidden:**
@@ -217,17 +261,17 @@ Miyazaki scenes have layered depth: foreground detail → midground action → b
 |-------|----------|
 | Hover | brightness +2~5% + soft shadow enhance |
 | Click | scale(0.98), brief (no ripple/bounce) |
-| Loading | breathing opacity pulse + "..." dots |
-| Typing | slow, human-like pace |
+| Loading | breathing opacity pulse (见 thinkingPulse) |
+| Typing | 流式文本逐字出现，自然节奏 |
 
 ### Background Motion
 
-Slow ambient loops, Miyazaki-inspired:
+Slow ambient loops, 布丁的房间里的细微动静：
 - **Cloud drift** — large soft clouds moving 0.5–2px/s horizontally
 - **Tree/leaf sway** — gentle 3–8s oscillation, ±1–3px
 - **Light shift** — subtle brightness pulse, 5–10s cycle, ±3%
 - **Wind lines** — thin horizontal strokes fading in/out, 8–15s loop
-- **Floating particles** — dust motes or pollen drifting slowly (like Ghibli "ma" — the space between)
+- **Floating particles** — dust motes or pollen drifting slowly (Ghibli "ma")
 
 Always subtle — if the user notices it immediately, it's too strong.
 
@@ -235,12 +279,13 @@ Always subtle — if the user notices it immediately, it's too strong.
 
 ## Interaction Rules
 
-- Chat messages appear with **fade + slight upward motion** — never instant pop-in
+- Chat messages appear with **fade + slight upward motion** (`messageIn`) — never instant pop-in
 - Smooth + inertia scrolling
-- Empty states: atmospheric bg + minimal poetic text, not blank
+- Empty states: atmospheric bg + minimal poetic text, not blank. 布丁的语气："这里还没有对话"、"开始和 Agent 对话吧"
 - Notifications: soft, non-intrusive; avoid alerts/harsh warnings
 - Focus on **emotional comfort** and **distraction-free conversation**
 - **"Ma" (間)** — embrace pauses and breathing room. Not every moment needs a response. Empty space between messages, gentle typing indicators, quiet transitions. This is the Ghibli art of the pause.
+- **她不会主动打断你。** 只有在你发出消息后，她才回应。
 
 ---
 

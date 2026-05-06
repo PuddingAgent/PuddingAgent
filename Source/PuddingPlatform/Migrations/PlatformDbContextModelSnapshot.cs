@@ -417,6 +417,18 @@ namespace PuddingPlatform.Migrations
                     b.Property<int>("MaxReplyTokens")
                         .HasColumnType("integer");
 
+                    b.Property<string>("MemoryLlmApiKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("MemoryLlmEndpoint")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("MemoryLlmModelId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -1040,6 +1052,18 @@ namespace PuddingPlatform.Migrations
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("MemoryLlmApiKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("MemoryLlmEndpoint")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("MemoryLlmModelId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<int>("MaxContextTokens")
                         .HasColumnType("integer");

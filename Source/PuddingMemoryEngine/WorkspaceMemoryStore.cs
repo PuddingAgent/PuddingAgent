@@ -81,15 +81,27 @@ public sealed class WorkspaceMemoryStore
     /// 读取指定 Workspace 的记忆，可按 tag 过滤。
     /// 返回快照副本，最新写入的排在最前面（逆序）。
     /// </summary>
-    public IReadOnlyList<MemoryEntry> Recall(string workspaceId, string? tag = null)
+    public IReadOnlyList<MemoryEntry> Recall(string? workspaceId, string? agentId, string? tag = null)
     {
+        if (string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return [];
+        }
+
+        var normalizedWorkspaceId = workspaceId.Trim();
+
         if (_dbContextFactory is null)
         {
-            if (!_fallbackStore.TryGetValue(workspaceId, out var list)) return [];
+            if (!_fallbackStore.TryGetValue(normalizedWorkspaceId, out var list)) return [];
 
             lock (list)
             {
                 var snapshot = list.AsEnumerable().Reverse();
+                if (!string.IsNullOrWhiteSpace(agentId))
+                {
+                    snapshot = snapshot.Where(e => string.Equals(e.AgentId, agentId, StringComparison.Ordinal));
+                }
+
                 if (!string.IsNullOrEmpty(tag))
                 {
                     snapshot = snapshot.Where(e => e.Tag == tag);
@@ -103,7 +115,12 @@ public sealed class WorkspaceMemoryStore
 
         var query = db.Memories
             .AsNoTracking()
-            .Where(x => x.Scope == WorkspaceScope && x.WorkspaceId == workspaceId);
+            .Where(x => x.Scope == WorkspaceScope && x.WorkspaceId == normalizedWorkspaceId);
+
+        if (!string.IsNullOrWhiteSpace(agentId))
+        {
+            query = query.Where(x => x.AgentId == agentId);
+        }
 
         if (!string.IsNullOrWhiteSpace(tag))
         {
@@ -117,6 +134,10 @@ public sealed class WorkspaceMemoryStore
 
         return rows.Select(ToMemoryEntry).ToArray();
     }
+
+    /// <summary>读取指定 Workspace 的记忆（兼容旧调用）。</summary>
+    public IReadOnlyList<MemoryEntry> Recall(string workspaceId, string? tag = null)
+        => Recall(workspaceId, agentId: null, tag);
 
     /// <summary>清除整个 Workspace 的记忆。</summary>
     public void Clear(string workspaceId)
@@ -143,17 +164,22 @@ public sealed class WorkspaceMemoryStore
 
     private static MemoryEntity ToMemoryEntity(MemoryEntry entry, string workspaceId)
     {
+        var effectiveAgentId = string.IsNullOrWhiteSpace(entry.AgentId)
+            ? (string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source)
+            : entry.AgentId;
+
         return new MemoryEntity
         {
             MemoryId = string.IsNullOrWhiteSpace(entry.EntryId) ? Guid.NewGuid().ToString("N") : entry.EntryId,
             Scope = WorkspaceScope,
             SessionId = entry.SessionId,
+            ParentSessionId = entry.ParentSessionId,
             WorkspaceId = workspaceId,
-            AgentId = string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source,
+            AgentId = effectiveAgentId,
             Tag = string.IsNullOrWhiteSpace(entry.Tag) ? "general" : entry.Tag,
             Content = entry.Content,
             CreatedAt = entry.CreatedAt.ToUnixTimeMilliseconds(),
-            Metadata = null,
+            Metadata = string.IsNullOrWhiteSpace(entry.Source) ? null : entry.Source,
         };
     }
 
@@ -163,10 +189,12 @@ public sealed class WorkspaceMemoryStore
         {
             EntryId = entity.MemoryId,
             SessionId = entity.SessionId,
+            ParentSessionId = entity.ParentSessionId,
             WorkspaceId = entity.WorkspaceId,
+            AgentId = entity.AgentId,
             Tag = entity.Tag,
             Content = entity.Content,
-            Source = entity.AgentId ?? "memory-db",
+            Source = entity.Metadata ?? entity.AgentId ?? "memory-db",
             CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(entity.CreatedAt),
             Scope = MemoryScope.Workspace,
         };

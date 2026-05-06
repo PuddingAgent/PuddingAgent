@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using PuddingCode.Abstractions;
+using PuddingCode.Agents;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
@@ -125,6 +126,7 @@ builder.Services.AddHttpClient<PlatformApiClient>(client =>
 // ── Workspace 业务层 ──────────────────────────────────
 builder.Services.AddScoped<WorkspaceBusinessService>();
 builder.Services.AddSingleton<MinioStorageService>();
+builder.Services.AddSingleton<SessionEventHub>();
 builder.Services.AddPuddingController();
 
 // ── EF Core / 数据库 ──────────────────────────────────
@@ -182,6 +184,8 @@ builder.Services.AddSingleton<SessionMemoryStore>();
 builder.Services.AddSingleton<WorkspaceMemoryStore>();
 builder.Services.AddSingleton<MemoryBoundaryService>();
 builder.Services.AddSingleton<MemoryEngine>();
+builder.Services.AddSingleton<IMemoryEngine>(sp => sp.GetRequiredService<MemoryEngine>());
+builder.Services.AddSingleton<IMemoryIndexer, TagTreeIndexer>();
 builder.Services.AddSingleton<JsonlSessionWriter>();
 builder.Services.AddSingleton<JsonlSessionReader>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
@@ -201,6 +205,42 @@ builder.Services.AddSingleton<IAgentSkill, HttpFetchSkill>();
 builder.Services.AddSingleton<SkillRuntime>();
 builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
+builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var endpoint = configuration["MemoryLlm:Endpoint"] ?? configuration["MEMORY_LLM_ENDPOINT"];
+    var apiKey = configuration["MemoryLlm:ApiKey"] ?? configuration["MEMORY_LLM_API_KEY"];
+    var modelId = configuration["MemoryLlm:ModelId"] ?? configuration["MEMORY_LLM_MODEL_ID"];
+
+    var hasDedicatedMemoryModel = !string.IsNullOrWhiteSpace(endpoint)
+                                  || !string.IsNullOrWhiteSpace(apiKey)
+                                  || !string.IsNullOrWhiteSpace(modelId);
+
+    var memoryConfig = hasDedicatedMemoryModel
+        ? new LlmConfig
+        {
+            Endpoint = endpoint,
+            ApiKey = apiKey,
+            ModelId = modelId,
+        }
+        : null;
+
+    return new DirectMemoryLlmClient(
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<ILogger<DirectMemoryLlmClient>>(),
+        sp.GetService<IRuntimeLlmClient>(),
+        memoryConfig);
+});
+builder.Services.AddSingleton<SystemPromptBuilder>();
+builder.Services.AddSingleton<ContextWindowManager>();
+// ── Agent Persona 文件读取器 ──
+builder.Services.AddSingleton(sp =>
+{
+    var dataDir = builder.Configuration["Pudding:AgentPersonaDir"]
+        ?? Path.Combine(AppContext.BaseDirectory, "data", "agents");
+    return new AgentPersonaFileProvider(dataDir,
+        sp.GetRequiredService<ILogger<AgentPersonaFileProvider>>());
+});
 builder.Services.AddSingleton<AgentExecutionService>();
 
 // ── P2P 发现（局域网 UDP 广播 + HTTP 探活）────────────────

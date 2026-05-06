@@ -1,12 +1,9 @@
-﻿using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
-using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Skills;
@@ -31,7 +28,7 @@ public sealed class AgentExecutionService
 
     private readonly AgentSessionManager _sessionManager;
     private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;
-    private readonly MemoryEngine _memory;
+    private readonly IMemoryEngine _memory;
     private readonly SandboxExecutor _sandbox;
     private readonly IRuntimeLlmClient _llmClient;
     private readonly SkillRuntime _skillRuntime;
@@ -42,23 +39,16 @@ public sealed class AgentExecutionService
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly SkillPackageDownloadService _skillPackageDownloader;
     private readonly IReadOnlyList<IAgentLoopHook> _hooks;
+    private readonly SystemPromptBuilder _promptBuilder;
+    private readonly ContextWindowManager _contextManager;
     private readonly IKeyVaultService _keyVaultService;
-    private readonly IAgentTemplateProvider? _templateProvider;
-    private readonly IWorkspaceProfileProvider? _workspaceProfileProvider;
-    private readonly IDbContextFactory<MemoryDbContext>? _memoryDbFactory;
     private readonly JsonlSessionWriter? _jsonlSessionWriter;
-    private readonly JsonlSessionReader? _jsonlSessionReader;
     private readonly ILogger<AgentExecutionService> _logger;
-
-    private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories = new();
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _historyLastAccessedAt = new();
-    private readonly ConcurrentDictionary<string, TimeSpan> _historyTimeouts = new();
-    private readonly ConcurrentDictionary<string, int> _activeExecutions = new();
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
         InMemoryRuntimeSessionStore runtimeSessionStore,
-        MemoryEngine memory,
+        IMemoryEngine memory,
         SandboxExecutor sandbox,
         IRuntimeLlmClient llmClient,
         SkillRuntime skillRuntime,
@@ -69,13 +59,11 @@ public sealed class AgentExecutionService
         AgentSkillPackageRegistry skillPackageRegistry,
         SkillPackageDownloadService skillPackageDownloader,
         IEnumerable<IAgentLoopHook> hooks,
+        SystemPromptBuilder promptBuilder,
+        ContextWindowManager contextManager,
         ILogger<AgentExecutionService> logger,
         IKeyVaultService? keyVaultService = null,
-        IAgentTemplateProvider? templateProvider = null,
-        IWorkspaceProfileProvider? workspaceProfileProvider = null,
-        IDbContextFactory<MemoryDbContext>? memoryDbFactory = null,
-        JsonlSessionWriter? jsonlSessionWriter = null,
-        JsonlSessionReader? jsonlSessionReader = null)
+        JsonlSessionWriter? jsonlSessionWriter = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -90,12 +78,10 @@ public sealed class AgentExecutionService
         _skillPackageRegistry    = skillPackageRegistry;
         _skillPackageDownloader  = skillPackageDownloader;
         _hooks               = hooks.ToArray();
+        _promptBuilder       = promptBuilder;
+        _contextManager      = contextManager;
         _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
-        _templateProvider    = templateProvider;
-        _workspaceProfileProvider = workspaceProfileProvider;
-        _memoryDbFactory     = memoryDbFactory;
         _jsonlSessionWriter  = jsonlSessionWriter;
-        _jsonlSessionReader  = jsonlSessionReader;
         _logger              = logger;
     }
 
@@ -124,12 +110,12 @@ public sealed class AgentExecutionService
         var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
         var sessionTimeout = ResolveSessionTimeout(template);
 
-        CleanupExpiredSessions(request.SessionId);
+        _contextManager.CleanupExpiredSessions(request.SessionId);
 
         // ── 获取/创建 Agent 实例 ──────────────────────────────────────
         var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId, sessionTimeout);
         _sessionManager.MarkRunning(request.SessionId);
-        TouchHistoryAccess(request.SessionId, sessionTimeout);
+        _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
 
         _runtimeSessionStore.GetOrCreate(
             request.SessionId, instance.AgentInstanceId,
@@ -145,14 +131,15 @@ public sealed class AgentExecutionService
         var ct = _controlRegistry.CreateLinkedToken(request.SessionId, external);
 
         // ── 构建对话历史 ─────────────────────────────────────────────
-        var history = _histories.GetOrAdd(request.SessionId, _ => []);
+        var history = _contextManager.GetOrCreateHistory(request.SessionId);
         if (history.Count == 0)
         {
-            var layeredSystemPrompt = await BuildLayeredSystemPromptAsync(
+            var layeredSystemPrompt = await _promptBuilder.BuildLayeredSystemPromptAsync(
                 template,
                 request.WorkspaceId,
                 request.SessionId,
                 request.AgentTemplateId,
+                request.MessageText,
                 effectiveCapability,
                 instance.AgentInstanceId,
                 forStreaming: false,
@@ -165,11 +152,12 @@ public sealed class AgentExecutionService
         {
             if (history[0].Role == ChatRole.System)
             {
-                var layeredSystemPrompt = await BuildLayeredSystemPromptAsync(
+                var layeredSystemPrompt = await _promptBuilder.BuildLayeredSystemPromptAsync(
                     template,
                     request.WorkspaceId,
                     request.SessionId,
                     request.AgentTemplateId,
+                    request.MessageText,
                     effectiveCapability,
                     instance.AgentInstanceId,
                     forStreaming: false,
@@ -210,7 +198,7 @@ public sealed class AgentExecutionService
 
         try
         {
-            MarkSessionExecuting(request.SessionId);
+            _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
 
             for (int round = 0; round < _guardrails.MaxRounds; round++)
@@ -595,23 +583,28 @@ public sealed class AgentExecutionService
                 _controlRegistry.Remove(request.SessionId);
             if (execState != AgentExecutionState.WaitingEvent)
                 _skillPackageRegistry.Remove(instance.AgentInstanceId);
-            MarkSessionExecutionCompleted(request.SessionId);
+            _contextManager.MarkSessionExecutionCompleted(request.SessionId);
         }
 
         // ── 记忆写回 ──────────────────────────────────────────────────
         if (template.Memory?.EnableSessionMemory == true
          || template.Memory?.EnableWorkspaceMemory == true)
         {
-            _memory.WriteBack(finalMessage, request.SessionId, request.WorkspaceId, instance.AgentInstanceId);
+            _memory.WriteBack(
+                finalMessage,
+                request.SessionId,
+                request.WorkspaceId,
+                instance.AgentInstanceId,
+                instance.AgentInstanceId);
         }
 
-        await TrimHistoryAsync(
+        await _contextManager.TrimHistoryAsync(
             request.SessionId,
             history,
             template.Runtime?.MaxContextTokens ?? 8192,
             preferDbContextWindow: false,
             ct);
-        TouchHistoryAccess(request.SessionId, sessionTimeout);
+        _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);
         _runtimeSessionStore.Touch(request.SessionId);
 
@@ -661,11 +654,11 @@ public sealed class AgentExecutionService
         var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
         var sessionTimeout = ResolveSessionTimeout(template);
 
-        CleanupExpiredSessions(request.SessionId);
+        _contextManager.CleanupExpiredSessions(request.SessionId);
 
         var instance = _sessionManager.GetOrCreate(request.SessionId, request.AgentTemplateId, sessionTimeout);
         _sessionManager.MarkRunning(request.SessionId);
-        TouchHistoryAccess(request.SessionId, sessionTimeout);
+        _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
 
         _runtimeSessionStore.GetOrCreate(
             request.SessionId, instance.AgentInstanceId,
@@ -678,18 +671,19 @@ public sealed class AgentExecutionService
 
         var ct = _controlRegistry.CreateLinkedToken(request.SessionId, external);
 
-        var history = _histories.GetOrAdd(request.SessionId, _ => []);
-        await TryHydrateStreamHistoryFromDbAsync(
+        var history = _contextManager.GetOrCreateHistory(request.SessionId);
+        await _contextManager.TryHydrateStreamHistoryFromDbAsync(
             request.SessionId,
             history,
             template.Runtime?.MaxContextTokens ?? 8000,
             ct);
 
-        var streamingSystemPrompt = await BuildLayeredSystemPromptAsync(
+        var streamingSystemPrompt = await _promptBuilder.BuildLayeredSystemPromptAsync(
             template,
             request.WorkspaceId,
             request.SessionId,
             request.AgentTemplateId,
+            request.MessageText,
             effectiveCapability,
             instance.AgentInstanceId,
             forStreaming: true,
@@ -722,7 +716,7 @@ public sealed class AgentExecutionService
 
         try
         {
-            MarkSessionExecuting(request.SessionId);
+            _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
 
             // Streaming chat intentionally does not expose function-call deltas to the UI.
@@ -769,16 +763,21 @@ public sealed class AgentExecutionService
             if (template.Memory?.EnableSessionMemory == true
              || template.Memory?.EnableWorkspaceMemory == true)
             {
-                _memory.WriteBack(reply, request.SessionId, request.WorkspaceId, instance.AgentInstanceId);
+                _memory.WriteBack(
+                    reply,
+                    request.SessionId,
+                    request.WorkspaceId,
+                    instance.AgentInstanceId,
+                    instance.AgentInstanceId);
             }
 
-            await TrimHistoryAsync(
+            await _contextManager.TrimHistoryAsync(
                 request.SessionId,
                 history,
                 template.Runtime?.MaxContextTokens ?? 8192,
                 preferDbContextWindow: true,
                 ct);
-            TouchHistoryAccess(request.SessionId, sessionTimeout);
+            _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);
             _runtimeSessionStore.Touch(request.SessionId);
 
@@ -801,7 +800,7 @@ public sealed class AgentExecutionService
 
             _controlRegistry.Remove(request.SessionId);
             _skillPackageRegistry.Remove(instance.AgentInstanceId);
-            MarkSessionExecutionCompleted(request.SessionId);
+            _contextManager.MarkSessionExecutionCompleted(request.SessionId);
         }
     }
 
@@ -940,390 +939,6 @@ public sealed class AgentExecutionService
 
     private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
         timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;
-
-    private void TouchHistoryAccess(string sessionId, TimeSpan sessionTimeout)
-    {
-        _historyLastAccessedAt[sessionId] = DateTimeOffset.UtcNow;
-        _historyTimeouts[sessionId] = NormalizeSessionTimeout(sessionTimeout);
-    }
-
-    private void CleanupExpiredSessions(string protectedSessionId)
-    {
-        CleanupExpiredHistories(protectedSessionId);
-
-        var expiredSessions = _sessionManager.CleanupExpired(
-            protectedSessionId,
-            shouldSkip: IsSessionExecuting);
-
-        if (expiredSessions.Count == 0)
-            return;
-
-        foreach (var sessionId in expiredSessions)
-        {
-            _histories.TryRemove(sessionId, out _);
-            _historyLastAccessedAt.TryRemove(sessionId, out _);
-            _historyTimeouts.TryRemove(sessionId, out _);
-
-            _runtimeSessionStore.Terminate(sessionId, "timeout");
-            _controlRegistry.Remove(sessionId);
-            _journal.ClearAnchor(sessionId);
-        }
-
-        _logger.LogInformation(
-            "[AgentExec] Cleanup removed {Count} expired sessions (protected={ProtectedSession})",
-            expiredSessions.Count,
-            protectedSessionId);
-    }
-
-    private void CleanupExpiredHistories(string protectedSessionId)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var removedCount = 0;
-
-        foreach (var pair in _historyLastAccessedAt)
-        {
-            var sessionId = pair.Key;
-            if (string.Equals(sessionId, protectedSessionId, StringComparison.Ordinal))
-                continue;
-
-            if (IsSessionExecuting(sessionId))
-                continue;
-
-            if (_sessionManager.IsWaitingEvent(sessionId))
-                continue;
-
-            var timeout = NormalizeSessionTimeout(_historyTimeouts.GetValueOrDefault(sessionId));
-            if (now - pair.Value <= timeout)
-                continue;
-
-            if (_histories.TryRemove(sessionId, out _))
-                removedCount++;
-
-            _historyLastAccessedAt.TryRemove(sessionId, out _);
-            _historyTimeouts.TryRemove(sessionId, out _);
-        }
-
-        if (removedCount > 0)
-        {
-            _logger.LogInformation(
-                "[AgentExec] Cleanup removed {Count} expired history entries (protected={ProtectedSession})",
-                removedCount,
-                protectedSessionId);
-        }
-    }
-
-    private void MarkSessionExecuting(string sessionId)
-    {
-        _activeExecutions.AddOrUpdate(sessionId, 1, static (_, current) => current + 1);
-    }
-
-    private void MarkSessionExecutionCompleted(string sessionId)
-    {
-        while (true)
-        {
-            if (!_activeExecutions.TryGetValue(sessionId, out var current))
-                return;
-
-            if (current <= 1)
-            {
-                _activeExecutions.TryRemove(sessionId, out _);
-                return;
-            }
-
-            if (_activeExecutions.TryUpdate(sessionId, current - 1, current))
-                return;
-        }
-    }
-
-    private bool IsSessionExecuting(string sessionId) =>
-        _activeExecutions.ContainsKey(sessionId);
-
-    /// <summary>
-    /// 从数据库构建会话上下文窗口（优先供 SSE 流式路径使用）。
-    /// V1：按 token 预算（默认 8000）从新到旧取候选，再按旧到新组装，跳过已压缩消息。
-    /// </summary>
-    private async Task<List<ChatMessage>> BuildContextFromDbAsync(
-        string sessionId,
-        int maxTokenBudget = 8000,
-        CancellationToken ct = default)
-    {
-        if (_memoryDbFactory is null)
-            return [];
-
-        await using var db = await _memoryDbFactory.CreateDbContextAsync(ct);
-        var entities = await db.Messages
-            .AsNoTracking()
-            .Where(m => m.SessionId == sessionId && m.CompactedBy == null)
-            .OrderByDescending(m => m.CreatedAt)
-            .Take(100)
-            .ToListAsync(ct);
-
-        var messages = new List<ChatMessage>(entities.Count);
-        var estimatedTokens = 0;
-
-        for (var i = entities.Count - 1; i >= 0; i--)
-        {
-            var entity = entities[i];
-            var content = entity.Content ?? string.Empty;
-
-            // 简化估算：约 1 token ≈ 3 字符（中英混排折中），最少按 1 token 计。
-            var tokenEstimate = Math.Max(1, content.Length / 3);
-            if (estimatedTokens + tokenEstimate > maxTokenBudget && messages.Count > 2)
-                break;
-
-            estimatedTokens += tokenEstimate;
-            messages.Add(new ChatMessage(
-                ParseChatRole(entity.Role),
-                content,
-                ToolCallId: null,
-                ToolCalls: null,
-                ReasoningContent: entity.ThinkingJson));
-        }
-
-        return messages;
-    }
-
-    private static ChatRole ParseChatRole(string role) => role switch
-    {
-        "assistant" => ChatRole.Assistant,
-        "system" => ChatRole.System,
-        "tool" => ChatRole.Tool,
-        _ => ChatRole.User,
-    };
-
-    /// <summary>
-    /// SSE 路径优先按数据库重建上下文；失败时保持现有内存历史不变。
-    /// </summary>
-    private async Task TryHydrateStreamHistoryFromDbAsync(
-        string sessionId,
-        List<ChatMessage> history,
-        int maxTokenBudget,
-        CancellationToken ct)
-    {
-        try
-        {
-            List<ChatMessage>? hydrated = null;
-
-            if (_memoryDbFactory is not null)
-            {
-                var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct);
-                if (dbHistory.Count > 0)
-                {
-                    hydrated = dbHistory;
-                }
-            }
-
-            if (hydrated is null && _jsonlSessionReader is not null)
-            {
-                var jsonlHistory = await BuildContextFromJsonlAsync(sessionId, maxTokenBudget, ct);
-                if (jsonlHistory.Count > 0)
-                {
-                    hydrated = jsonlHistory;
-                }
-            }
-
-            if (hydrated is null || hydrated.Count == 0)
-                return;
-
-            history.Clear();
-            history.AddRange(hydrated.Where(m => m.Role != ChatRole.System));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "[AgentExec] Build context from db/jsonl failed; fallback to in-memory history. session={Session}",
-                sessionId);
-        }
-    }
-
-    private async Task<List<ChatMessage>> BuildContextFromJsonlAsync(
-        string sessionId,
-        int maxTokenBudget,
-        CancellationToken ct)
-    {
-        if (_jsonlSessionReader is null)
-            return [];
-
-        var entries = await _jsonlSessionReader.ReadSessionAsync(sessionId, ct);
-        if (entries.Count == 0)
-            return [];
-
-        var selected = new List<ChatMessage>();
-        var estimatedTokens = 0;
-        for (var i = entries.Count - 1; i >= 0; i--)
-        {
-            var entry = entries[i];
-            var content = entry.Content ?? string.Empty;
-            var tokenEstimate = Math.Max(1, content.Length / 3);
-            if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > 2)
-                break;
-
-            estimatedTokens += tokenEstimate;
-            selected.Add(new ChatMessage(
-                ParseChatRole(entry.Role),
-                content,
-                ToolCallId: null,
-                ToolCalls: null,
-                ReasoningContent: entry.ThinkingJson));
-        }
-
-        selected.Reverse();
-        return selected;
-    }
-
-    /// <summary>
-    /// 分层构建系统提示词。
-    /// 层级：IDENTITY → SOUL → AGENTS → TOOLS → USER → MEMORY → RUNTIME
-    /// </summary>
-    private async Task<string> BuildLayeredSystemPromptAsync(
-        AgentTemplateDefinition template,
-        string? workspaceId,
-        string sessionId,
-        string? agentTemplateId,
-        CapabilityPolicy? capability,
-        string agentInstanceId,
-        bool forStreaming,
-        CancellationToken ct)
-    {
-        var sb = new StringBuilder();
-
-        // 优先从平台数据库读取模板 Persona/Tools/Identity 配置；
-        // 内置模板作为兜底来源，保证 Runtime 在 DB 不可用时仍可继续。
-        string? personaPrompt = null;
-        string? toolsDescription = null;
-        string? avatarEmoji = null;
-        string? bootstrapTemplate = null;
-        string? displayNameOverride = null;
-
-        if (!string.IsNullOrWhiteSpace(agentTemplateId) && _templateProvider is not null)
-        {
-            try
-            {
-                var persona = await _templateProvider.GetPersonaAsync(agentTemplateId, workspaceId, ct);
-                if (persona is not null)
-                {
-                    personaPrompt = persona.PersonaPrompt;
-                    toolsDescription = persona.ToolsDescription;
-                    avatarEmoji = persona.AvatarEmoji;
-                    bootstrapTemplate = persona.BootstrapTemplate;
-                    displayNameOverride = persona.DisplayName;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "[AgentExec] Load template persona fields failed; fallback to built-in template. templateId={TemplateId} workspace={Workspace}",
-                    agentTemplateId,
-                    workspaceId);
-            }
-        }
-
-        // ── 1. IDENTITY 层 ──
-        sb.AppendLine("--- LAYER: IDENTITY ---");
-        var displayName = string.IsNullOrWhiteSpace(displayNameOverride)
-            ? (string.IsNullOrWhiteSpace(template.DisplayName)
-            ? template.Name
-            : template.DisplayName)
-            : displayNameOverride;
-        if (!string.IsNullOrWhiteSpace(displayName))
-            sb.AppendLine($"Name: {displayName}");
-        var effectiveAvatar = string.IsNullOrWhiteSpace(avatarEmoji) ? template.AvatarEmoji : avatarEmoji;
-        if (!string.IsNullOrWhiteSpace(effectiveAvatar))
-            sb.AppendLine($"Avatar: {effectiveAvatar}");
-
-        // ── 2. SOUL 层 ──
-        sb.AppendLine("--- LAYER: SOUL ---");
-        var effectivePersona = string.IsNullOrWhiteSpace(personaPrompt) ? template.PersonaPrompt : personaPrompt;
-        if (!string.IsNullOrWhiteSpace(effectivePersona))
-            sb.AppendLine(effectivePersona);
-
-        // ── 3. AGENTS 层（SystemPrompt 向后兼容）──
-        sb.AppendLine("--- LAYER: AGENTS ---");
-        sb.AppendLine(template.SystemPrompt ?? "You are a helpful assistant.");
-        if (!string.IsNullOrWhiteSpace(bootstrapTemplate))
-        {
-            sb.AppendLine("Bootstrap:");
-            sb.AppendLine(bootstrapTemplate);
-        }
-
-        // ── 4. TOOLS 层 ──
-        sb.AppendLine("--- LAYER: TOOLS ---");
-        var effectiveToolsDescription = string.IsNullOrWhiteSpace(toolsDescription)
-            ? template.ToolsDescription
-            : toolsDescription;
-        if (!string.IsNullOrWhiteSpace(effectiveToolsDescription))
-            sb.AppendLine(effectiveToolsDescription);
-
-        var pkgs = _skillPackageRegistry.Get(agentInstanceId);
-        if (pkgs.Count > 0)
-        {
-            sb.AppendLine("Available Skill Packages:");
-            foreach (var pkg in pkgs)
-            {
-                sb.Append($"- **{pkg.Name}** (`/skills/{pkg.SkillPackageId}/`)");
-                if (!string.IsNullOrWhiteSpace(pkg.Description))
-                    sb.Append($": {pkg.Description}");
-                sb.AppendLine();
-            }
-        }
-
-        // ── 5. USER 层 ──
-        sb.AppendLine("--- LAYER: USER ---");
-        var userProfile = await LoadWorkspaceUserProfileAsync(workspaceId, ct);
-        if (!string.IsNullOrWhiteSpace(userProfile))
-            sb.AppendLine(userProfile);
-
-        // ── 6. MEMORY 层 ──
-        sb.AppendLine("--- LAYER: MEMORY ---");
-        if (template.Memory?.EnableSessionMemory == true
-         || template.Memory?.EnableWorkspaceMemory == true)
-        {
-            var memCtx = _memory.BuildMemoryContext(sessionId, workspaceId);
-            if (!string.IsNullOrWhiteSpace(memCtx))
-                sb.AppendLine(memCtx);
-        }
-
-        // ── 7. RUNTIME 层 ──
-        sb.AppendLine("--- LAYER: RUNTIME ---");
-        sb.AppendLine($"Date: {DateTimeOffset.Now:yyyy-MM-dd}");
-        sb.AppendLine($"Session: {sessionId}");
-
-        if (forStreaming)
-        {
-            sb.AppendLine("Respond directly to the user in Markdown.");
-            sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
-            sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
-            if (capability?.AllowedToolNames is { Count: > 0 })
-                sb.AppendLine("If a task requires tools, explain the limitation briefly instead of emitting tool-call JSON.");
-        }
-        else
-        {
-            sb.Append(_skillRuntime.BuildLoopInstructions(capability));
-        }
-
-        return sb.ToString();
-    }
-
-    private async Task<string?> LoadWorkspaceUserProfileAsync(string? workspaceId, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(workspaceId) || _workspaceProfileProvider is null)
-            return null;
-
-        try
-        {
-            return await _workspaceProfileProvider.GetWorkspaceUserProfileAsync(workspaceId, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "[AgentExec] Load workspace user profile failed; fallback to empty USER layer. workspace={Workspace}",
-                workspaceId);
-            return null;
-        }
-    }
 
     private static string ExtractInput(JsonElement? args)
     {
@@ -1517,52 +1132,6 @@ public sealed class AgentExecutionService
                     hook.GetType().Name);
             }
         }
-    }
-
-    private async Task TrimHistoryAsync(
-        string sessionId,
-        List<ChatMessage> history,
-        int maxTokenBudget,
-        bool preferDbContextWindow,
-        CancellationToken ct)
-    {
-        if (preferDbContextWindow && _memoryDbFactory is not null)
-        {
-            try
-            {
-                var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct);
-                if (dbHistory.Count > 0)
-                {
-                    var system = history.FirstOrDefault(m => m.Role == ChatRole.System);
-                    history.Clear();
-                    if (system is not null)
-                        history.Add(system);
-                    history.AddRange(dbHistory.Where(m => m.Role != ChatRole.System));
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "[AgentExec] TrimHistory db path failed; fallback to legacy trimming. session={Session}",
-                    sessionId);
-            }
-        }
-
-        TrimHistoryFallback(history, maxTokenBudget);
-    }
-
-    private static void TrimHistoryFallback(List<ChatMessage> history, int maxTokenBudget)
-    {
-        const int maxMessages = 40;
-        if (history.Count <= maxMessages + 1) return;
-
-        var system = history.FirstOrDefault(m => m.Role == ChatRole.System);
-        var recent = history.TakeLast(maxMessages).ToList();
-        history.Clear();
-        if (system is not null) history.Add(system);
-        history.AddRange(recent);
     }
 
     private static string Truncate(string s, int maxLen) =>

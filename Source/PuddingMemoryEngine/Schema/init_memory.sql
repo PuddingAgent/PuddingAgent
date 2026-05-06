@@ -4,6 +4,7 @@ PRAGMA synchronous=NORMAL;
 
 CREATE TABLE IF NOT EXISTS Sessions (
     SessionId       TEXT PRIMARY KEY,
+    ParentSessionId TEXT,
     WorkspaceId     TEXT NOT NULL,
     AgentId         TEXT NOT NULL,
     Title           TEXT,
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS Memories (
     MemoryId        TEXT PRIMARY KEY,
     Scope           TEXT NOT NULL DEFAULT 'session',
     SessionId       TEXT,
+    ParentSessionId TEXT,
     WorkspaceId     TEXT,
     AgentId         TEXT,
     Tag             TEXT NOT NULL DEFAULT 'general',

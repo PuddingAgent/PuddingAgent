@@ -15,6 +15,10 @@ public class SessionEntity
     [MaxLength(64)]
     public string WorkspaceId { get; set; } = string.Empty;
 
+    /// <summary>父 Session ID（分支会话关联主会话）。</summary>
+    [MaxLength(64)]
+    public string? ParentSessionId { get; set; }
+
     [MaxLength(64)]
     public string AgentId { get; set; } = string.Empty;
 

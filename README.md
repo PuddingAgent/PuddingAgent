@@ -9,15 +9,16 @@
   <sub>Hi. I'm Pudding. Your AI agent.</sub>
 </p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/version-v0.1.0-blue" alt="Version"/>
+  <img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"/>
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"/>
+</p>
 
-**A self-contained, P2P-capable AI agent that runs as a single binary. Double-click to start.**
-
-[中文说明](README_zh-CN.md)
-
-![Version](https://img.shields.io/badge/version-v0.1.0-blue)
-![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey)
-![License](https://img.shields.io/badge/license-Apache%202.0-green)
+<p align="center">
+  <strong>A self-contained, P2P-capable AI agent that runs as a single binary. Double-click to start.</strong><br/>
+  <sub><a href="README_zh-CN.md">中文说明</a></sub>
+</p>
 
 ---
 

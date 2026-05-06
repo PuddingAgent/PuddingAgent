@@ -83,6 +83,9 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         entity.AvatarEmoji = req.AvatarEmoji;
         entity.PreferredProviderId = req.PreferredProviderId;
         entity.PreferredModelId = req.PreferredModelId;
+        entity.MemoryLlmEndpoint = req.MemoryLlmEndpoint;
+        entity.MemoryLlmApiKey = req.MemoryLlmApiKey;
+        entity.MemoryLlmModelId = req.MemoryLlmModelId;
         entity.MaxContextTokens = req.MaxContextTokens;
         entity.MaxReplyTokens = req.MaxReplyTokens;
         entity.ContainerImage = req.ContainerImage;
@@ -125,6 +128,9 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         AvatarEmoji = req.AvatarEmoji,
         PreferredProviderId = req.PreferredProviderId,
         PreferredModelId = req.PreferredModelId,
+        MemoryLlmEndpoint = req.MemoryLlmEndpoint,
+        MemoryLlmApiKey = req.MemoryLlmApiKey,
+        MemoryLlmModelId = req.MemoryLlmModelId,
         MaxContextTokens = req.MaxContextTokens,
         MaxReplyTokens = req.MaxReplyTokens,
         ContainerImage = req.ContainerImage,
@@ -142,7 +148,8 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         t.ContainerImage,
         t.BaseGlobalTemplateId, ParseStringList(t.SelectedCapabilityIdsJson), t.IsEnabled, t.SortOrder,
         t.CreatedAt, t.UpdatedAt,
-        t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji);
+        t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji,
+        t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId);
 
     private static List<string> ParseStringList(string? json)
     {

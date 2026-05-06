@@ -24,6 +24,10 @@ public class MemoryEntity
     [MaxLength(64)]
     public string? AgentId { get; set; }
 
+    /// <summary>父 Session ID（分支 Session 关联主 Session，弱隔离键）。</summary>
+    [MaxLength(64)]
+    public string? ParentSessionId { get; set; }
+
     [MaxLength(64)]
     public string Tag { get; set; } = "general";
 

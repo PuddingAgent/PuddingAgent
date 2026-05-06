@@ -174,7 +174,10 @@ public record GlobalAgentTemplateDto(
     string? PersonaPrompt = null,
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
-    string? AvatarEmoji = null
+    string? AvatarEmoji = null,
+    string? MemoryLlmEndpoint = null,
+    string? MemoryLlmApiKey = null,
+    string? MemoryLlmModelId = null
 );
 
 public record UpsertGlobalAgentTemplateRequest(
@@ -196,7 +199,10 @@ public record UpsertGlobalAgentTemplateRequest(
     string? PersonaPrompt = null,
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
-    string? AvatarEmoji = null
+    string? AvatarEmoji = null,
+    string? MemoryLlmEndpoint = null,
+    string? MemoryLlmApiKey = null,
+    string? MemoryLlmModelId = null
 );
 
 // ─── Workspace Agent Template ─────────────────────────────────────
@@ -224,7 +230,10 @@ public record WorkspaceAgentTemplateDto(
     string? PersonaPrompt = null,
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
-    string? AvatarEmoji = null
+    string? AvatarEmoji = null,
+    string? MemoryLlmEndpoint = null,
+    string? MemoryLlmApiKey = null,
+    string? MemoryLlmModelId = null
 );
 
 public record UpsertWorkspaceAgentTemplateRequest(
@@ -247,7 +256,10 @@ public record UpsertWorkspaceAgentTemplateRequest(
     string? PersonaPrompt = null,
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
-    string? AvatarEmoji = null
+    string? AvatarEmoji = null,
+    string? MemoryLlmEndpoint = null,
+    string? MemoryLlmApiKey = null,
+    string? MemoryLlmModelId = null
 );
 
 // ─── App User ─────────────────────────────────────────────────────

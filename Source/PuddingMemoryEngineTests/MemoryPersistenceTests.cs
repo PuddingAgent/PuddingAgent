@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Abstractions;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
@@ -238,6 +239,171 @@ public sealed class MemoryPersistenceTests
     }
 
     [TestMethod]
+    public async Task BuildMemoryContext_ShouldRespectAgentIsolationAndParentSessionRecall()
+    {
+        await using var scope = await CreateScopeAsync();
+
+        var sessionStore = new SessionMemoryStore(scope.Factory);
+        var workspaceStore = new WorkspaceMemoryStore(scope.Factory);
+        var engine = new MemoryEngine(sessionStore, workspaceStore, new MemoryBoundaryService());
+
+        const string sessionId = "session-child";
+        const string parentSessionId = "session-parent";
+        const string workspaceId = "ws-isolation";
+        const string agentA = "agent-A";
+        const string agentB = "agent-B";
+
+        sessionStore.Write(sessionId, new MemoryEntry
+        {
+            SessionId = sessionId,
+            ParentSessionId = parentSessionId,
+            WorkspaceId = workspaceId,
+            AgentId = agentA,
+            Tag = "preference/editor",
+            Content = "当前分支偏好：开启自动保存",
+            Source = "test",
+            Scope = MemoryScope.Session,
+        });
+
+        sessionStore.Write(parentSessionId, new MemoryEntry
+        {
+            SessionId = parentSessionId,
+            WorkspaceId = workspaceId,
+            AgentId = agentA,
+            Tag = "project/decision",
+            Content = "主分支决策：优先使用 SQLite",
+            Source = "test",
+            Scope = MemoryScope.Session,
+        });
+
+        sessionStore.Write(sessionId, new MemoryEntry
+        {
+            SessionId = sessionId,
+            WorkspaceId = workspaceId,
+            AgentId = agentB,
+            Tag = "secret",
+            Content = "Agent B 的会话记忆",
+            Source = "test",
+            Scope = MemoryScope.Session,
+        });
+
+        workspaceStore.Write(workspaceId, new MemoryEntry
+        {
+            SessionId = sessionId,
+            WorkspaceId = workspaceId,
+            AgentId = agentA,
+            Tag = "preference/editor/font",
+            Content = "Consolas 14px",
+            Source = "test",
+            Scope = MemoryScope.Workspace,
+        });
+
+        workspaceStore.Write(workspaceId, new MemoryEntry
+        {
+            SessionId = sessionId,
+            WorkspaceId = workspaceId,
+            AgentId = agentB,
+            Tag = "preference/editor/theme",
+            Content = "Agent B 的主题偏好",
+            Source = "test",
+            Scope = MemoryScope.Workspace,
+        });
+
+        var memoryContext = engine.BuildMemoryContext(sessionId, workspaceId, agentA, parentSessionId);
+
+        Assert.IsNotNull(memoryContext);
+        StringAssert.Contains(memoryContext, "当前分支偏好：开启自动保存");
+        StringAssert.Contains(memoryContext, "主分支决策：优先使用 SQLite");
+        StringAssert.Contains(memoryContext, "Consolas 14px");
+        Assert.IsFalse(memoryContext.Contains("Agent B 的会话记忆", StringComparison.Ordinal));
+        Assert.IsFalse(memoryContext.Contains("Agent B 的主题偏好", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task TagTreeIndexer_ShouldSearchPrefixAndReturnChildren()
+    {
+        await using var scope = await CreateScopeAsync();
+        await using var db = await scope.Factory.CreateDbContextAsync();
+
+        const string workspaceId = "ws-tag-tree";
+        const string agentId = "agent-tree";
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        db.Memories.AddRange(
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = agentId,
+                Tag = "preference/editor/font",
+                Content = "Consolas 14px",
+                Importance = 0.9,
+                CreatedAt = now,
+            },
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = agentId,
+                Tag = "preference/editor/theme",
+                Content = "Dark+",
+                Importance = 0.8,
+                CreatedAt = now + 1,
+            },
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = agentId,
+                Tag = "preference/shell",
+                Content = "PowerShell",
+                Importance = 0.7,
+                CreatedAt = now + 2,
+            },
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = agentId,
+                Tag = "task/priority",
+                Content = "P0 first",
+                Importance = 0.6,
+                CreatedAt = now + 3,
+            },
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = "agent-other",
+                Tag = "preference/editor/font",
+                Content = "should be isolated",
+                Importance = 1.0,
+                CreatedAt = now + 4,
+            });
+
+        await db.SaveChangesAsync();
+
+        var indexer = new PuddingMemoryEngine.Data.TagTreeIndexer(scope.Factory);
+
+        var prefixHits = await indexer.SearchByTagPrefixAsync(workspaceId, agentId, "preference/editor", 20);
+        Assert.HasCount(2, prefixHits);
+        Assert.IsTrue(prefixHits.All(h => h.Tag.StartsWith("preference/editor", StringComparison.Ordinal)));
+
+        var preferenceChildren = await indexer.GetTagChildrenAsync(workspaceId, agentId, "preference");
+        Assert.IsTrue(preferenceChildren.Any(x => x.Tag == "preference/editor"));
+        Assert.IsTrue(preferenceChildren.Any(x => x.Tag == "preference/shell"));
+
+        var rootChildren = await indexer.GetTagChildrenAsync(workspaceId, agentId);
+        Assert.IsTrue(rootChildren.Any(x => x.Tag == "preference"));
+        Assert.IsTrue(rootChildren.Any(x => x.Tag == "task"));
+    }
+
+    [TestMethod]
     public async Task Fts5Search_ShouldRecallChineseKeyword()
     {
         await using var scope = await CreateScopeAsync();
@@ -283,6 +449,126 @@ public sealed class MemoryPersistenceTests
 
         Assert.IsNotEmpty(hits);
         Assert.IsTrue(hits.Any(x => (x.Content ?? string.Empty).Contains("深色主题", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task RecallWithIntentAsync_ShouldUseTagTreeAndTimeWindow()
+    {
+        await using var scope = await CreateScopeAsync();
+        await using var db = await scope.Factory.CreateDbContextAsync();
+
+        const string workspaceId = "ws-intent";
+        const string agentId = "agent-intent";
+        var now = DateTimeOffset.UtcNow;
+
+        db.Memories.AddRange(
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = agentId,
+                Tag = "project/gift/birthday",
+                Content = "最近结论：生日礼物优先皮具方案并保持预算 800 元以内",
+                Importance = 0.95,
+                Confidence = 0.9,
+                CreatedAt = now.AddDays(-2).ToUnixTimeMilliseconds(),
+            },
+            new MemoryEntity
+            {
+                MemoryId = Guid.NewGuid().ToString("N"),
+                Scope = "workspace",
+                WorkspaceId = workspaceId,
+                AgentId = agentId,
+                Tag = "project/gift/birthday",
+                Content = "旧方案：三个月前考虑过香薰礼盒",
+                Importance = 0.7,
+                Confidence = 0.8,
+                CreatedAt = now.AddDays(-120).ToUnixTimeMilliseconds(),
+            });
+        await db.SaveChangesAsync();
+
+        var memoryLlm = new StubMemoryLlmClient(
+            new MemoryQueryIntent
+            {
+                IntentType = "task_progress",
+                Entities = ["生日礼物", "皮具"],
+                TimeRange = "recent",
+                SearchQuery = "生日礼物 皮具 进度",
+                TagPrefix = "project/gift",
+            });
+
+        var engine = new MemoryEngine(
+            new SessionMemoryStore(scope.Factory),
+            new WorkspaceMemoryStore(scope.Factory),
+            new MemoryBoundaryService(),
+            scope.Factory,
+            new TagTreeIndexer(scope.Factory),
+            memoryLlm);
+
+        var result = await engine.RecallWithIntentAsync(
+            "生日礼物做到哪一步了？",
+            workspaceId,
+            agentId,
+            sessionId: "session-intent",
+            maxTokens: 2000);
+
+        Assert.IsNotNull(result);
+        StringAssert.Contains(result, "皮具方案");
+        Assert.IsFalse(result.Contains("三个月前", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task RecallWithIntentAsync_ShouldFallbackToFts5WhenIntentUnavailable()
+    {
+        await using var scope = await CreateScopeAsync();
+        await using var db = await scope.Factory.CreateDbContextAsync();
+
+        const string workspaceId = "ws-intent-fallback";
+        const string agentId = "agent-intent-fallback";
+        var sessionId = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = sessionId,
+            WorkspaceId = workspaceId,
+            AgentId = agentId,
+            CreatedAt = now,
+            LastActivityAt = now,
+        });
+
+        db.Messages.Add(new MessageEntity
+        {
+            MessageId = Guid.NewGuid().ToString("N"),
+            SessionId = sessionId,
+            Sequence = 1,
+            Role = "assistant",
+            Content = "用户偏好：深色主题 + 紧凑布局",
+            BranchType = "MAIN",
+            CreatedAt = now + 1,
+        });
+
+        await db.SaveChangesAsync();
+
+        var memoryLlm = new StubMemoryLlmClient(null);
+        var engine = new MemoryEngine(
+            new SessionMemoryStore(scope.Factory),
+            new WorkspaceMemoryStore(scope.Factory),
+            new MemoryBoundaryService(),
+            scope.Factory,
+            new TagTreeIndexer(scope.Factory),
+            memoryLlm);
+
+        var result = await engine.RecallWithIntentAsync(
+            "深色主题",
+            workspaceId,
+            agentId,
+            sessionId,
+            maxTokens: 2000);
+
+        Assert.IsNotNull(result);
+        StringAssert.Contains(result, "深色主题");
     }
 
     [TestMethod]
@@ -571,5 +857,17 @@ public sealed class MemoryPersistenceTests
 
         public Task<MemoryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new MemoryDbContext(options));
+    }
+
+    private sealed class StubMemoryLlmClient(MemoryQueryIntent? intent) : IMemoryLlmClient
+    {
+        public Task<MemoryClassification> ClassifyAsync(string messageText, CancellationToken ct = default)
+            => Task.FromResult(new MemoryClassification(false, 0.1, 0.1, null, null));
+
+        public Task<string?> SummarizeAsync(IReadOnlyList<string> memoryContents, CancellationToken ct = default)
+            => Task.FromResult<string?>(null);
+
+        public Task<MemoryQueryIntent?> ParseIntentAsync(string userMessage, CancellationToken ct = default)
+            => Task.FromResult(intent);
     }
 }

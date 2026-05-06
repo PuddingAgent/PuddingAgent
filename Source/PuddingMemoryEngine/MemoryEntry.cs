@@ -21,6 +21,12 @@ public sealed class MemoryEntry
     /// <summary>所属 WorkspaceId（Workspace 级记忆必填）。</summary>
     public string? WorkspaceId { get; init; }
 
+    /// <summary>所属 Agent 实例 ID（强隔离键）。</summary>
+    public string? AgentId { get; init; }
+
+    /// <summary>父 Session ID（用于分支会话回溯主会话）。</summary>
+    public string? ParentSessionId { get; init; }
+
     /// <summary>记忆标签/分类（如 "user_preference", "task_context"）。</summary>
     public string Tag { get; init; } = "general";
 

@@ -1,4 +1,4 @@
-﻿using PuddingMemoryEngine;
+﻿using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services;
 
@@ -12,13 +12,13 @@ public sealed class HeartbeatService : BackgroundService
 
     private readonly InMemoryRuntimeSessionStore _sessionStore;
     private readonly AgentSessionManager _agentSessionManager;
-    private readonly MemoryEngine _memory;
+    private readonly IMemoryEngine _memory;
     private readonly ILogger<HeartbeatService> _logger;
 
     public HeartbeatService(
         InMemoryRuntimeSessionStore sessionStore,
         AgentSessionManager agentSessionManager,
-        MemoryEngine memory,
+        IMemoryEngine memory,
         ILogger<HeartbeatService> logger)
     {
         _sessionStore = sessionStore;
