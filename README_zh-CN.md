@@ -1,4 +1,4 @@
-﻿# Pudding Agent
+# Pudding Agent
 
 <p align="center">
   <img src="me.png" alt="Pudding" width="200"/>
@@ -9,15 +9,16 @@
   <sub>Hi. I'm Pudding. Your AI agent.</sub>
 </p>
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/version-v0.1.0-blue" alt="Version"/>
+  <img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"/>
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"/>
+</p>
 
-**一个自包含、支持 P2P 组网的 AI 代理。下载、双击、开始对话。**
-
-[English README](README.md)
-
-![Version](https://img.shields.io/badge/version-v0.1.0-blue)
-![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey)
-![License](https://img.shields.io/badge/license-Apache%202.0-green)
+<p align="center">
+  <strong>一个自包含、支持 P2P 组网的 AI 代理。下载、双击、开始对话。</strong><br/>
+  <sub><a href="README.md">English README</a></sub>
+</p>
 
 ---
 
@@ -95,14 +96,14 @@ docker run -p 8080:8080 pudding-agent
 
 她的构建遵循一条规则：**用户零外部依赖。**
 
-| 组件 | 技术 |
-|---|---|
-| 运行时 | .NET (ASP.NET Core, 单文件发布) |
-| 数据库 | SQLite — 单文件，自动创建 |
-| 前端 | React, 打包嵌入后端 |
-| LLM | 直接调用 API（OpenAI 兼容） |
-| P2P 网络 | mDNS 发现 + HTTP/gRPC 直连 |
-| 记忆 | 本地持久化，私密安全 |
+| 组件       | 技术                              |
+| :--------- | :-------------------------------- |
+| 运行时     | .NET (ASP.NET Core, 单文件发布)   |
+| 数据库     | SQLite — 单文件，自动创建         |
+| 前端       | React, 打包嵌入后端               |
+| LLM        | 直接调用 API（OpenAI 兼容）       |
+| P2P 网络   | mDNS 发现 + HTTP/gRPC 直连        |
+| 记忆       | 本地持久化，私密安全              |
 
 ---
 
@@ -159,6 +160,8 @@ AI 的来临彻底改变了开源软件的游戏规则。过去，Linux、ffmpeg
 说到这个，**[EVO MAP](https://github.com/nousresearch/evo-map)** 这个项目很有意思——它提出的 **"经验胶囊"（Experience Capsule）** 概念是一个很酷的想法：就像哆啦 A 梦的"记忆面包"一样，将学到的知识打包成可移植、可复用的胶囊，供其他 Agent 消费。这正是激发 Pudding 记忆系统设计的灵感之一。
 
 这个项目诞生于我对各种 AI 工具开发的探索。在思路上，它参考了许多优秀项目和产品的想法——不是抄袭，而是站在先行者的肩膀上，思考"下一代 AI 代理应该是什么样的"。
+
+---
 
 ## 感谢
 
