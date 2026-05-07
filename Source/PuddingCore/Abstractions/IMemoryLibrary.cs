@@ -55,6 +55,9 @@ public interface IMemoryLibrary
     /// <summary>更新章节内容（同时更新 WordCount、UpdatedAt、触发 Book Version++）。</summary>
     Task<ChapterRecord> UpdateChapterContentAsync(string chapterId, string newContent, CancellationToken ct = default);
 
+    /// <summary>更新章节重要性（0-1）。</summary>
+    Task<ChapterRecord> UpdateChapterImportanceAsync(string chapterId, double importance, CancellationToken ct = default);
+
     /// <summary>列出书籍的所有章节（按 ChapterOrder 排序）。</summary>
     Task<IReadOnlyList<ChapterRecord>> ListChaptersAsync(string bookId, CancellationToken ct = default);
 
@@ -71,12 +74,35 @@ public interface IMemoryLibrary
     /// <summary>反向查询：哪些指针指向了指定的目标。</summary>
     Task<IReadOnlyList<PointerRecord>> ResolveBacklinksAsync(string targetType, string targetId, CancellationToken ct = default);
 
+    /// <summary>按 Title 精确查找书籍（用于去重），不更新 AccessCount。</summary>
+    Task<BookRecord?> FindBookByTitleAsync(string libraryId, string title, CancellationToken ct = default);
+
+    // ── 删除操作 ──
+
+    /// <summary>删除图书馆（级联删除所有 Book/Chapter/Pointer）。</summary>
+    Task<bool> DeleteLibraryAsync(string libraryId, CancellationToken ct = default);
+
+    /// <summary>删除书籍（级联删除所有 Chapter/Pointer/BookIndex）。</summary>
+    Task<bool> DeleteBookAsync(string bookId, CancellationToken ct = default);
+
+    /// <summary>删除章节（级联删除所有 Pointer）。</summary>
+    Task<bool> DeleteChapterAsync(string chapterId, CancellationToken ct = default);
+
+    /// <summary>删除指针引用。</summary>
+    Task<bool> DeletePointerAsync(string pointerId, CancellationToken ct = default);
+
     // ── 检索 ──
 
-    /// <summary>FTS5 全文搜索书籍。</summary>
+    /// <summary>FTS5 全文搜索书籍（BM25 排序，返回 RankedResult 含归一化分数）。</summary>
+    Task<IReadOnlyList<RankedResult>> SearchBooksFtsScoredAsync(string query, int topK = 20, CancellationToken ct = default);
+
+    /// <summary>FTS5 全文搜索章节（BM25 排序，返回 RankedResult 含归一化分数）。</summary>
+    Task<IReadOnlyList<RankedResult>> SearchChaptersFtsScoredAsync(string query, int topK = 20, CancellationToken ct = default);
+
+    /// <summary>FTS5 全文搜索书籍（仅返回 BookRecord，不含分数——保留向后兼容）。</summary>
     Task<IReadOnlyList<BookRecord>> SearchBooksFtsAsync(string query, int topK = 20, CancellationToken ct = default);
 
-    /// <summary>FTS5 全文搜索章节。</summary>
+    /// <summary>FTS5 全文搜索章节（仅返回 ChapterRecord，不含分数——保留向后兼容）。</summary>
     Task<IReadOnlyList<ChapterRecord>> SearchChaptersFtsAsync(string query, int topK = 20, CancellationToken ct = default);
 
     /// <summary>按 Tag 前缀搜索书籍。</summary>
@@ -84,6 +110,17 @@ public interface IMemoryLibrary
 
     /// <summary>获取 Tag 树子节点。</summary>
     Task<IReadOnlyList<TagTreeNode>> GetTagChildrenAsync(string? parentTag = null, CancellationToken ct = default);
+
+    // ── Phase 4: 向量检索 ──
+
+    /// <summary>嵌入向量搜索章节（余弦相似度）。仅搜索有 Embedding 的 Chapter。</summary>
+    Task<IReadOnlyList<RankedResult>> SearchChaptersByVectorAsync(float[] queryEmbedding, int topK = 20, CancellationToken ct = default);
+
+    /// <summary>融合检索：FTS5 + TagTree + Vector，RRF 合并排名。</summary>
+    Task<IReadOnlyList<RankedResult>> HybridSearchAsync(string query, float[]? queryEmbedding, int topK = 20, CancellationToken ct = default);
+
+    /// <summary>更新章节的嵌入向量。</summary>
+    Task<bool> UpdateChapterEmbeddingAsync(string chapterId, byte[] embedding, CancellationToken ct = default);
 
     // ── 分支 ──
 

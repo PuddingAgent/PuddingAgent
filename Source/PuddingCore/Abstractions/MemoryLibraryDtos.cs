@@ -92,6 +92,8 @@ public sealed record RankedResult
     public double Score { get; init; }
     /// <summary>"tag" | "fts5" | "vector" | "pointer"</summary>
     public string MatchSource { get; init; } = string.Empty;
+    /// <summary>是否触发了后台深度探索（本次查询结果可能需要下次查询补充）。</summary>
+    public bool IsPendingDeepExplore { get; init; }
 }
 
 /// <summary>经验写入结果。</summary>

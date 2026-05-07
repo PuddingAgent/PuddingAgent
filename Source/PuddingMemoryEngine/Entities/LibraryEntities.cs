@@ -49,6 +49,10 @@ public class BookEntity
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long? LastAccessedAt { get; set; }
 
+    /// <summary>嵌入向量（float32 字节数组，dim=1536，Base64 存储）。</summary>
+    [MaxLength(1536 * 4)]
+    public byte[]? Embedding { get; set; }
+
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -103,6 +107,10 @@ public class ChapterEntity
     public string? SourceSessionId { get; set; }
 
     public int WordCount { get; set; }
+
+    /// <summary>嵌入向量（float32 字节数组，dim=1536，Base64 存储）。</summary>
+    [MaxLength(1536 * 4)]
+    public byte[]? Embedding { get; set; }
 
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

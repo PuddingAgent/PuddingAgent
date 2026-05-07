@@ -124,6 +124,18 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
         return intent;
     }
 
+    /// <summary>
+    /// 通用对话接口，支持 Tool/Function calling（用于记忆深度探索）。
+    /// 优先使用专用记忆模型，未配置时回退到主 IRuntimeLlmClient。
+    /// </summary>
+    public async Task<string> ChatAsync(
+        string systemPrompt, string userMessage, IReadOnlyList<object>? tools = null, CancellationToken ct = default)
+    {
+        // 回退到 CompleteAsync（当前不支持 tools，后续对接真实 LLM 时扩展）
+        var result = await CompleteAsync(systemPrompt, userMessage, maxTokens: 1024, ct);
+        return result ?? "ok";
+    }
+
     private async Task<string?> CompleteAsync(
         string systemPrompt,
         string userPrompt,

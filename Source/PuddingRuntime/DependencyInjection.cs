@@ -41,6 +41,7 @@ public static class RuntimeServiceExtensions
 
         // Agent 执行子服务（职责拆分）
         services.AddSingleton<SystemPromptBuilder>();
+        services.AddSingleton<ContextPipeline>();
         services.AddSingleton<ContextWindowManager>();
 
         // Agent 执行服务

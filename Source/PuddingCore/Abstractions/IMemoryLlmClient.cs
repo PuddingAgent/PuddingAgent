@@ -21,6 +21,12 @@ public interface IMemoryLlmClient
     /// 解析用户消息的意图，提取用于记忆检索的查询参数。
     /// </summary>
     Task<MemoryQueryIntent?> ParseIntentAsync(string userMessage, CancellationToken ct = default);
+
+    /// <summary>
+    /// 通用对话接口，支持 Tool/Function calling（用于记忆深度探索）。
+    /// tools 为 null 或空时表示纯对话模式。
+    /// </summary>
+    Task<string> ChatAsync(string systemPrompt, string userMessage, IReadOnlyList<object>? tools = null, CancellationToken ct = default);
 }
 
 /// <summary>记忆分类结果。</summary>

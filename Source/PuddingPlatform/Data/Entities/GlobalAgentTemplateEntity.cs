@@ -73,6 +73,10 @@ public class GlobalAgentTemplateEntity
     [MaxLength(128)]
     public string? MemoryLlmModelId { get; set; }
 
+    /// <summary>记忆搜索模式：off | instant | deep</summary>
+    [MaxLength(16)]
+    public string MemorySearchMode { get; set; } = "deep";
+
     /// <summary>最大上下文 token 数</summary>
     public int MaxContextTokens { get; set; } = 8192;
 

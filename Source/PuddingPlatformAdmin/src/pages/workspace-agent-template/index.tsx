@@ -398,23 +398,33 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
             placeholder="定义首次对话的开场白与引导话术"
           />
 
-          <Divider orientation="left">记忆模型</Divider>
+          <Divider orientation="left">潜意识模型（记忆探索）</Divider>
           <ProFormText
             name="memoryLlmEndpoint"
-            label="Memory LLM Endpoint"
+            label="潜意识模型 Endpoint"
             placeholder="如 https://api.deepseek.com/v1"
             extra="未配置时使用主聊天模型处理记忆"
           />
           <ProFormText.Password
             name="memoryLlmApiKey"
-            label="Memory LLM ApiKey / KeyVault 引用"
+            label="潜意识模型 ApiKey"
             placeholder="可留空，留空时回退主聊天模型"
           />
           <ProFormText
             name="memoryLlmModelId"
-            label="Memory LLM ModelId"
+            label="潜意识模型 ModelId"
             placeholder="如 deepseek-chat"
-            extra="建议使用小模型降低记忆提取成本"
+            extra="强烈建议：DeepSeek/Haiku 等轻量模型。用于记忆深度探索，比主模型慢但决定整场对话的上下文方向。"
+          />
+          <ProFormSelect
+            name="memorySearchMode"
+            label="记忆搜索模式"
+            options={[
+              { label: '关闭（仅关键词+标签检索）', value: 'off' },
+              { label: '即时（关键词+标签+后台异步探索）', value: 'instant' },
+              { label: '深度（同步探索，首次冷启动≤60s，上下文最精准）', value: 'deep' },
+            ]}
+            initialValue="deep"
           />
 
           <ProFormTextArea

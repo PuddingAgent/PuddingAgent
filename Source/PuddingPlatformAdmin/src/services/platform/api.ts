@@ -344,6 +344,7 @@ export interface GlobalAgentTemplateDto {
   memoryLlmEndpoint?: string;
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
+  memorySearchMode?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -372,6 +373,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   memoryLlmEndpoint?: string;
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
+  memorySearchMode?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -401,6 +403,7 @@ export interface WorkspaceAgentTemplateDto {
   memoryLlmEndpoint?: string;
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
+  memorySearchMode?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -429,6 +432,7 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   memoryLlmEndpoint?: string;
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
+  memorySearchMode?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;

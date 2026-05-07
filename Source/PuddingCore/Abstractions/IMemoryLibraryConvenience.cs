@@ -42,4 +42,19 @@ public interface IMemoryLibraryConvenience
 
     /// <summary>获取 Tag 树根节点（"图书馆→技术→数据库→MySQL" 的顶层分类）。</summary>
     Task<IReadOnlyList<TagTreeNode>> GetTagRootsAsync(CancellationToken ct = default);
+
+    // ── 深度探索（异步 LLM 导航）──
+
+    /// <summary>
+    /// 启动后台异步深度探索。当 SmartSearchAsync 检测到结果歧义时触发。
+    /// LLM 通过 TagTree 逐层导航，找到最相关的 Book/Chapter。
+    /// 结果写入内部缓存，下一轮查询通过 GetPendingExplorations 注入。
+    /// </summary>
+    Task StartDeepExploreAsync(string query, CancellationToken ct = default);
+
+    /// <summary>
+    /// 获取上次查询触发的深度探索结果（如有）。
+    /// 返回后清空对应缓存。
+    /// </summary>
+    IReadOnlyList<RankedResult> GetPendingExplorations(string query);
 }

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
+using PuddingCode.Services;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
@@ -793,8 +794,9 @@ public sealed class MemoryPersistenceTests
             var rows = await reader.ReadSessionAsync(sessionId);
 
             Assert.HasCount(2, rows);
-            Assert.AreEqual("old", rows[0].MessageId);
-            Assert.AreEqual("new", rows[1].MessageId);
+            // 文件行顺序：newEntry → malformed → oldEntry，跳过 malformed 后顺序为 [new, old]
+            Assert.AreEqual("new", rows[0].MessageId);
+            Assert.AreEqual("old", rows[1].MessageId);
         }
         finally
         {
@@ -869,5 +871,8 @@ public sealed class MemoryPersistenceTests
 
         public Task<MemoryQueryIntent?> ParseIntentAsync(string userMessage, CancellationToken ct = default)
             => Task.FromResult(intent);
+
+        public Task<string> ChatAsync(string systemPrompt, string userMessage, IReadOnlyList<object>? tools = null, CancellationToken ct = default)
+            => Task.FromResult("ok");
     }
 }

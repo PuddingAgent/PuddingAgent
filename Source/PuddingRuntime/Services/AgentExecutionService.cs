@@ -40,7 +40,7 @@ public sealed class AgentExecutionService
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly SkillPackageDownloadService _skillPackageDownloader;
     private readonly IReadOnlyList<IAgentLoopHook> _hooks;
-    private readonly SystemPromptBuilder _promptBuilder;
+    private readonly ContextPipeline _contextPipeline;
     private readonly ContextWindowManager _contextManager;
     private readonly IKeyVaultService _keyVaultService;
     private readonly JsonlSessionWriter? _jsonlSessionWriter;
@@ -60,7 +60,7 @@ public sealed class AgentExecutionService
         AgentSkillPackageRegistry skillPackageRegistry,
         SkillPackageDownloadService skillPackageDownloader,
         IEnumerable<IAgentLoopHook> hooks,
-        SystemPromptBuilder promptBuilder,
+        ContextPipeline contextPipeline,
         ContextWindowManager contextManager,
         ILogger<AgentExecutionService> logger,
         IKeyVaultService? keyVaultService = null,
@@ -79,7 +79,7 @@ public sealed class AgentExecutionService
         _skillPackageRegistry    = skillPackageRegistry;
         _skillPackageDownloader  = skillPackageDownloader;
         _hooks               = hooks.ToArray();
-        _promptBuilder       = promptBuilder;
+        _contextPipeline     = contextPipeline;
         _contextManager      = contextManager;
         _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
         _jsonlSessionWriter  = jsonlSessionWriter;
@@ -135,36 +135,40 @@ public sealed class AgentExecutionService
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
         if (history.Count == 0)
         {
-            var layeredSystemPrompt = await _promptBuilder.BuildLayeredSystemPromptAsync(
-                template,
-                request.WorkspaceId,
-                request.SessionId,
-                request.AgentTemplateId,
-                request.MessageText,
-                effectiveCapability,
-                instance.AgentInstanceId,
-                forStreaming: false,
-                ct);
-            history.Add(new ChatMessage(ChatRole.System,
-                layeredSystemPrompt));
+            var systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+            {
+                Template = template,
+                WorkspaceId = request.WorkspaceId ?? string.Empty,
+                SessionId = request.SessionId,
+                AgentTemplateId = request.AgentTemplateId,
+                UserMessage = request.MessageText,
+                Capability = effectiveCapability,
+                AgentInstanceId = instance.AgentInstanceId,
+                ForStreaming = false,
+                IsFirstMessage = true,
+                SessionHistory = Array.Empty<ChatMessage>(),
+            }, ct);
+            history.Add(new ChatMessage(ChatRole.System, systemPrompt));
         }
         else if (template.Memory?.EnableSessionMemory == true
               || template.Memory?.EnableWorkspaceMemory == true)
         {
             if (history[0].Role == ChatRole.System)
             {
-                var layeredSystemPrompt = await _promptBuilder.BuildLayeredSystemPromptAsync(
-                    template,
-                    request.WorkspaceId,
-                    request.SessionId,
-                    request.AgentTemplateId,
-                    request.MessageText,
-                    effectiveCapability,
-                    instance.AgentInstanceId,
-                    forStreaming: false,
-                    ct);
-                history[0] = new ChatMessage(ChatRole.System,
-                    layeredSystemPrompt);
+                var systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+                {
+                    Template = template,
+                    WorkspaceId = request.WorkspaceId ?? string.Empty,
+                    SessionId = request.SessionId,
+                    AgentTemplateId = request.AgentTemplateId,
+                    UserMessage = request.MessageText,
+                    Capability = effectiveCapability,
+                    AgentInstanceId = instance.AgentInstanceId,
+                    ForStreaming = false,
+                    IsFirstMessage = false,
+                    SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
+                }, ct);
+                history[0] = new ChatMessage(ChatRole.System, systemPrompt);
             }
         }
         history.Add(new ChatMessage(ChatRole.User, request.MessageText));
@@ -679,16 +683,19 @@ public sealed class AgentExecutionService
             template.Runtime?.MaxContextTokens ?? 8000,
             ct);
 
-        var streamingSystemPrompt = await _promptBuilder.BuildLayeredSystemPromptAsync(
-            template,
-            request.WorkspaceId,
-            request.SessionId,
-            request.AgentTemplateId,
-            request.MessageText,
-            effectiveCapability,
-            instance.AgentInstanceId,
-            forStreaming: true,
-            ct);
+        var streamingSystemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+        {
+            Template = template,
+            WorkspaceId = request.WorkspaceId ?? string.Empty,
+            SessionId = request.SessionId,
+            AgentTemplateId = request.AgentTemplateId,
+            UserMessage = request.MessageText,
+            Capability = effectiveCapability,
+            AgentInstanceId = instance.AgentInstanceId,
+            ForStreaming = true,
+            IsFirstMessage = history.Count == 0,
+            SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
+        }, ct);
 
         if (history.Count == 0 || history[0].Role != ChatRole.System)
         {

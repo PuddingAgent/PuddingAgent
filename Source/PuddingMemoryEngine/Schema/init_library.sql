@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS Chapters (
 CREATE INDEX IF NOT EXISTS IX_Chapters_Book_Order
     ON Chapters(BookId, ChapterOrder);
 
+-- Phase 4: 嵌入向量列（兼容已有数据库）
+ALTER TABLE Books ADD COLUMN Embedding BLOB;
+ALTER TABLE Chapters ADD COLUMN Embedding BLOB;
+
 -- 2.5 Pointers 表
 CREATE TABLE IF NOT EXISTS Pointers (
     PointerId     TEXT PRIMARY KEY,

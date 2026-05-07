@@ -194,7 +194,10 @@ builder.Services.AddSingleton<MemoryEngine>();
 builder.Services.AddSingleton<IMemoryEngine>(sp => sp.GetRequiredService<MemoryEngine>());
 builder.Services.AddSingleton<IMemoryIndexer, TagTreeIndexer>();
 builder.Services.AddSingleton<IMemoryLibrary, MemoryLibrary>();
-builder.Services.AddSingleton<IMemoryLibraryConvenience, MemoryLibraryConvenience>();
+builder.Services.AddSingleton<IMemoryLibraryConvenience>(sp =>
+    new MemoryLibraryConvenience(
+        sp.GetRequiredService<IMemoryLibrary>(),
+        sp.GetService<IMemoryLlmClient>()));
 builder.Services.AddSingleton<JsonlSessionWriter>();
 builder.Services.AddSingleton<JsonlSessionReader>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
@@ -213,7 +216,9 @@ builder.Services.AddSingleton<IAgentSkill, PythonSkill>();
 builder.Services.AddSingleton<IAgentSkill, HttpFetchSkill>();
 builder.Services.AddSingleton<SkillRuntime>();
 builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
+builder.Services.AddSingleton<IAgentLoopHook, EmbeddingGenerationHook>();
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
+builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -241,6 +246,7 @@ builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
         memoryConfig);
 });
 builder.Services.AddSingleton<SystemPromptBuilder>();
+builder.Services.AddSingleton<ContextPipeline>();
 builder.Services.AddSingleton<ContextWindowManager>();
 // ── Agent Persona 文件读取器 ──
 builder.Services.AddSingleton(sp =>

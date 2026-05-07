@@ -16,6 +16,7 @@ public sealed class SystemPromptBuilder
     private readonly IAgentTemplateProvider? _templateProvider;
     private readonly IWorkspaceProfileProvider? _workspaceProfileProvider;
     private readonly IMemoryEngine _memory;
+    private readonly IMemoryLibraryConvenience? _libraryConvenience;
     private readonly SkillRuntime _skillRuntime;
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly AgentPersonaFileProvider? _personaFileProvider;
@@ -28,7 +29,8 @@ public sealed class SystemPromptBuilder
         ILogger<SystemPromptBuilder> logger,
         IAgentTemplateProvider? templateProvider = null,
         IWorkspaceProfileProvider? workspaceProfileProvider = null,
-        AgentPersonaFileProvider? personaFileProvider = null)
+        AgentPersonaFileProvider? personaFileProvider = null,
+        IMemoryLibraryConvenience? libraryConvenience = null)
     {
         _memory = memory;
         _skillRuntime = skillRuntime;
@@ -37,6 +39,7 @@ public sealed class SystemPromptBuilder
         _templateProvider = templateProvider;
         _workspaceProfileProvider = workspaceProfileProvider;
         _personaFileProvider = personaFileProvider;
+        _libraryConvenience = libraryConvenience;
     }
 
     /// <summary>
@@ -172,6 +175,21 @@ public sealed class SystemPromptBuilder
 
         // ── 6. MEMORY 层 ──
         sb.AppendLine("--- LAYER: MEMORY ---");
+
+        // 检查深度探索结果（上次查询触发的异步 LLM 探索）
+        if (_libraryConvenience is not null)
+        {
+            var deepResults = _libraryConvenience.GetPendingExplorations(userMessage);
+            if (deepResults.Count > 0)
+            {
+                sb.AppendLine("[RECALLED FROM DEEP EXPLORE]");
+                foreach (var dr in deepResults)
+                {
+                    sb.AppendLine($"- {dr.BookTitle}: {dr.Snippet}");
+                }
+                sb.AppendLine();
+            }
+        }
         if (template.Memory?.EnableSessionMemory == true
          || template.Memory?.EnableWorkspaceMemory == true)
         {
