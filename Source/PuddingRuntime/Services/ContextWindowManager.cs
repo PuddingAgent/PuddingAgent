@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
+using PuddingCode.Services;
 using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
 

@@ -23,7 +23,6 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
-    <ProjectReference Include="..\..\external\github.hyfree.GM\github.hyfree.GM\github.hyfree.GM.csproj" />
   </ItemGroup>
 
 </Project>

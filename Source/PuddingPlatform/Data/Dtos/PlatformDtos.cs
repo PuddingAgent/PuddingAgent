@@ -555,3 +555,52 @@ public record AdminChatResponse(
     IReadOnlyList<TurnStepDto>? TurnSteps
 );
 
+// ── KeyVault ───────────────────────────────────────────────────────
+
+public record CreateKeyVaultSecretRequest(
+    string Name,
+    string Value,
+    string? Description,
+    string? Category,
+    IReadOnlyList<string>? Tags
+);
+
+public record UpdateKeyVaultSecretRequest(
+    string Name,
+    string? Value,
+    string? Description,
+    string? Category,
+    IReadOnlyList<string>? Tags
+);
+
+public record KeyVaultSecretDto(
+    long Id,
+    string KeyVaultId,
+    string Name,
+    string? Description,
+    string Category,
+    IReadOnlyList<string> Tags,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt
+);
+
+public record KeyVaultSecretDetailDto(
+    long Id,
+    string KeyVaultId,
+    string Name,
+    string? Description,
+    string Category,
+    IReadOnlyList<string> Tags,
+    string? Value,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt
+);
+
+public record KeyVaultTextTransformRequest(
+    string Text
+);
+
+public record KeyVaultTextTransformResponse(
+    string Text
+);
+
