@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <None Include="Schema\init_memory.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Schema\init_library.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -167,6 +167,12 @@ builder.Services.AddDbContextFactory<MemoryDbContext>(opt =>
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 }, ServiceLifetime.Singleton);
 
+builder.Services.AddDbContextFactory<MemoryLibraryDbContext>(opt =>
+{
+    opt.UseSqlite(memoryConnStr);
+    opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+}, ServiceLifetime.Singleton);
+
 // ── Session（用于 Auth API 的轻量登录态）──────────────
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
@@ -187,6 +193,8 @@ builder.Services.AddSingleton<MemoryBoundaryService>();
 builder.Services.AddSingleton<MemoryEngine>();
 builder.Services.AddSingleton<IMemoryEngine>(sp => sp.GetRequiredService<MemoryEngine>());
 builder.Services.AddSingleton<IMemoryIndexer, TagTreeIndexer>();
+builder.Services.AddSingleton<IMemoryLibrary, MemoryLibrary>();
+builder.Services.AddSingleton<IMemoryLibraryConvenience, MemoryLibraryConvenience>();
 builder.Services.AddSingleton<JsonlSessionWriter>();
 builder.Services.AddSingleton<JsonlSessionReader>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
@@ -352,6 +360,9 @@ using (var scope = app.Services.CreateScope())
 
     var memoryDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MemoryDbContext>>();
     await MemoryDbInitializer.InitializeAsync(memoryDbFactory);
+
+    var libraryDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MemoryLibraryDbContext>>();
+    await MemoryLibraryDbInitializer.InitializeAsync(libraryDbFactory);
 
     var workspaceCatalog = scope.ServiceProvider.GetRequiredService<InMemoryWorkspaceCatalog>();
     await workspaceCatalog.LoadAsync();
