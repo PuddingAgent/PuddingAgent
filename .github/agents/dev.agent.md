@@ -2,7 +2,7 @@
 name: dev
 description: "核心开发 Agent：使用 GPT-5.3-Codex 处理中等复杂度的核心逻辑、1-2 模块改动和中等风险实现。架构级 / 跨 3+ 模块 / 不可逆变更请升级 super-dev。"
 argument-hint: "任务ID 或功能描述，例如 'TASK-042' 或 '实现密码模块的导出功能'"
-model: GPT-5.3-Codex (copilot)
+model: deepseek-v4-pro (gcmp.deepseek)
 tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'todo']
 handoffs:
   - label: EscalateToSuperDev

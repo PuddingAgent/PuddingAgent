@@ -2,7 +2,7 @@
 name: lightweight-developer
 description: "轻量开发 Agent： 处理简单代码、小型功能、样板代码和低风险修复；复杂改动升级给核心开发 dev。"
 argument-hint: "简单开发任务或任务ID，例如 '修复一个表单校验问题'、'实现简单 CRUD 页面' 或 'TASK-105'"
-model: MiniMax-M2.7 (gcmp.minimax)
+model: deepseek-v4-flash (gcmp.deepseek)
 tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'todo']
 handoffs:
   - label: EscalateToDev

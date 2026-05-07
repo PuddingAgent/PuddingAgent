@@ -44,8 +44,8 @@
 | 3 | @explore | **Claude Haiku 4.5** | x0.33 | 只读代码/日志探索，**量大管饱固定费率** |
 | 4 | @architect | **Claude Opus 4.7** | **15x** | 战略架构决策，新方向/新模式设计（**极低频，非逐任务触发**） |
 | 5 | @super-dev | **GPT-5.5** | **7.5x** | 复杂实现（跨模块、核心算法），已有架构设计覆盖时直接实施 |
-| 6 | @dev | **GPT-5.3-Codex / Claude Sonnet 4.6** | x1 | 1-2 模块中等复杂度开发，Lead 按场景选择模型 |
-| 7 | @lightweight-developer | **DeepSeek-V4-Pro (按量计费)** | 按量 | 简单功能、低风险修复、样板代码（**占比 ~50%，推理换速度**） |
+| 6 | @dev | **DeepSeek-V4-Pro (按量计费)** | 按量 | 1-2 模块中等复杂度开发，Lead 按场景选择模型 |
+| 7 | @lightweight-developer | **DeepSeek-V4-flash (按量计费)** | 按量 | 简单功能、低风险修复、样板代码（**占比 ~50%，推理换速度**） |
 | 8 | @qa | **多模型交错 (Codex / Sonnet 4.6 / GLM-5.1)** | 混合 | 独立审阅，Lead 交错调度不同模型杜绝自审偏见 |
 | 9 | @security-reviewer | **GLM-5.1 (按量计费)** | 按量 | 安全漏洞识别、密码学合规检查（注释/解释力强） |
 | 10 | @integration-debugger | **DeepSeek-V4-Pro (按量计费)** | 按量 | 跨模块故障复现与根因定位 |
