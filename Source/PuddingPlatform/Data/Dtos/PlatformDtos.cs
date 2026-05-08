@@ -178,7 +178,8 @@ public record GlobalAgentTemplateDto(
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
-    string? MemorySearchMode = null
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null
 );
 
 public record UpsertGlobalAgentTemplateRequest(
@@ -204,7 +205,8 @@ public record UpsertGlobalAgentTemplateRequest(
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
-    string? MemorySearchMode = null
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null
 );
 
 // ─── Workspace Agent Template ─────────────────────────────────────
@@ -236,7 +238,8 @@ public record WorkspaceAgentTemplateDto(
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
-    string? MemorySearchMode = null
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null
 );
 
 public record UpsertWorkspaceAgentTemplateRequest(
@@ -263,7 +266,8 @@ public record UpsertWorkspaceAgentTemplateRequest(
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
-    string? MemorySearchMode = null
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null
 );
 
 // ─── App User ─────────────────────────────────────────────────────

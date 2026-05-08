@@ -98,7 +98,7 @@ public sealed class RuntimeDispatcher
             _logger.LogError(
                 "[RuntimeDispatch] stream failed status={Status} endpoint={Endpoint} body={Body}",
                 (int)response.StatusCode, endpoint, errorBody);
-            yield return ServerSentEventFrame.Json("error", new { message = $"Runtime stream failed: {errorBody}" });
+            yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"Runtime stream failed: {errorBody}" });
             yield break;
         }
 

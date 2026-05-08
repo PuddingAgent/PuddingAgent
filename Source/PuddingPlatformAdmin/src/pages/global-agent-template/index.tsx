@@ -366,6 +366,18 @@ const GlobalAgentTemplatePage: React.FC = () => {
             initialValue="deep"
           />
 
+          <Divider orientation="left">推理设置</Divider>
+          <ProFormSelect
+            name="reasoningEffort"
+            label="推理深度"
+            options={[
+              { label: '跟随模型默认', value: '' },
+              { label: '低（快速响应）', value: 'low' },
+              { label: '中（平衡）', value: 'medium' },
+              { label: '高（深度思考）', value: 'high' },
+            ]}
+          />
+
           <ProFormTextArea
             name="userPromptTemplate"
             label="用户 Prompt 模板"

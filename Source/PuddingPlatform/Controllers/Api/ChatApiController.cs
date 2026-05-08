@@ -94,6 +94,7 @@ public class ChatApiController(
                         KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
                         ApiKey = string.IsNullOrWhiteSpace(keyVaultId) ? provider.ApiKey : null,
+                        ReasoningEffort = await ResolveReasoningEffortAsync(db, workspaceId, agentTemplateId, ct),
                     };
                     logger.LogInformation(
                         "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
@@ -226,6 +227,7 @@ public class ChatApiController(
                         KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
                         ApiKey = string.IsNullOrWhiteSpace(keyVaultId) ? provider.ApiKey : null,
+                        ReasoningEffort = await ResolveReasoningEffortAsync(db, workspaceId, agentTemplateId, ct),
                     };
                     logger.LogInformation(
                         "[Chat] STREAM LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
@@ -979,4 +981,30 @@ public class ChatApiController(
         int TotalTokens = 0,
         int ContextWindowTokens = 4096
     );
+
+    /// <summary>
+    /// 从模板（工作区优先，全局兜底）解析 ReasoningEffort。
+    /// </summary>
+    private static async Task<string?> ResolveReasoningEffortAsync(
+        PlatformDbContext db,
+        string workspaceId,
+        string? templateId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(templateId))
+            return null;
+
+        var (rawId, globalId) = NormalizeTemplateId(templateId);
+
+        var wsTemplate = await db.WorkspaceAgentTemplates.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.WorkspaceId == workspaceId
+                                   && (t.TemplateId == rawId || t.TemplateId == globalId)
+                                   && t.IsEnabled, ct);
+        if (wsTemplate?.ReasoningEffort is not null)
+            return wsTemplate.ReasoningEffort;
+
+        var globalTemplate = await db.GlobalAgentTemplates.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TemplateId == globalId && t.IsEnabled, ct);
+        return globalTemplate?.ReasoningEffort;
+    }
 }

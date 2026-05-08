@@ -108,19 +108,25 @@ public sealed class ControllerRoutedLlmClient(
 
         await foreach (var frame in ReadSseFramesAsync(response, ct))
         {
-            if (frame.Event == "delta")
+            if (frame.Event == SseEventTypes.Delta)
             {
                 var delta = JsonSerializer.Deserialize<StreamDelta>(frame.Data, JsonOptions);
                 if (delta is not null)
                     yield return delta;
             }
-            else if (frame.Event == "usage")
+            else if (frame.Event == SseEventTypes.Thinking)
+            {
+                var thinking = JsonSerializer.Deserialize<StreamDelta>(frame.Data, JsonOptions);
+                if (thinking is not null)
+                    yield return thinking;
+            }
+            else if (frame.Event == SseEventTypes.Usage)
             {
                 var usage = JsonSerializer.Deserialize<TokenUsageDto>(frame.Data, JsonOptions);
                 if (usage is not null)
                     yield return new StreamDelta { Usage = usage };
             }
-            else if (frame.Event == "error")
+            else if (frame.Event == SseEventTypes.Error)
             {
                 throw new HttpRequestException($"Controller LLM stream error: {frame.Data}");
             }

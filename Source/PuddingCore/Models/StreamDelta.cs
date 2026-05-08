@@ -27,3 +27,12 @@ public sealed record StreamDelta
     /// <summary>Token usage payload, usually emitted by the final streaming chunk.</summary>
     public TokenUsageDto? Usage { get; init; }
 }
+
+/// <summary>流式工具调用累积器——将多个 StreamDelta 的工具调用片段拼接为完整调用。</summary>
+public sealed class AccumulatedToolCall
+{
+    public int Index { get; set; }
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Arguments { get; set; } = "";
+}

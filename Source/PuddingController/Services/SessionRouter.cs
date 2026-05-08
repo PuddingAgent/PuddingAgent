@@ -274,7 +274,7 @@ public sealed class SessionRouter
         if (workspace is null)
         {
             var failure = $"Workspace not found: {workspaceId}";
-            yield return ServerSentEventFrame.Json("error", new { message = failure });
+            yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = failure });
             yield break;
         }
 
@@ -307,7 +307,7 @@ public sealed class SessionRouter
                 Detail = authDecision.DenialReason,
             }, ct);
 
-            yield return ServerSentEventFrame.Json("error", new { message = $"Permission denied: {authDecision.DenialReason}" });
+            yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"Permission denied: {authDecision.DenialReason}" });
             yield break;
         }
 
@@ -366,7 +366,7 @@ public sealed class SessionRouter
             Detail = $"stream routeDecisionId={routeDecision.RouteDecisionId}"
         }, ct);
 
-        yield return ServerSentEventFrame.Json("metadata", new
+        yield return ServerSentEventFrame.Json(SseEventTypes.Metadata, new
         {
             messageId,
             sessionId = session.SessionId,

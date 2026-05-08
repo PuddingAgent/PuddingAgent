@@ -345,6 +345,7 @@ export interface GlobalAgentTemplateDto {
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
+  reasoningEffort?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -374,6 +375,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
+  reasoningEffort?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -404,6 +406,7 @@ export interface WorkspaceAgentTemplateDto {
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
+  reasoningEffort?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -433,6 +436,7 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   memoryLlmApiKey?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
+  reasoningEffort?: string;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -1230,6 +1234,7 @@ export interface AdminChatRequest {
   sessionId?: string;
   agentId?: string;
   forceNewSession?: boolean;
+  reasoningEffort?: string;
 }
 
 export interface TokenUsageDto {

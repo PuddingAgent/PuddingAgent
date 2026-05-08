@@ -187,6 +187,7 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
       maxReplyTokens: tpl.maxReplyTokens,
+      reasoningEffort: tpl.reasoningEffort,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
@@ -389,6 +390,18 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
             label="首次引导模板（BOOTSTRAP）"
             rows={6}
             placeholder="定义首次对话的开场白与引导话术"
+          />
+
+          <Divider orientation="left">推理设置</Divider>
+          <ProFormSelect
+            name="reasoningEffort"
+            label="推理深度"
+            options={[
+              { label: '跟随模型默认', value: '' },
+              { label: '低（快速响应）', value: 'low' },
+              { label: '中（平衡）', value: 'medium' },
+              { label: '高（深度思考）', value: 'high' },
+            ]}
           />
 
           <ProFormTextArea

@@ -6,4 +6,6 @@ public sealed record LlmOptions(
     string ApiKey,
     string Model,
     double? Temperature = null,
-    int? MaxTokens = null);
+    int? MaxTokens = null,
+    string? ReasoningEffort = null,
+    bool? EnableThinking = null);

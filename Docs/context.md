@@ -7,6 +7,13 @@
 
 | 日期 | 任务ID | 开发模型 | QA模型 | 结果 | 备注 |
 |------|--------|---------|--------|------|------|
+| 0508 | ADR-014-E | DeepSeek-V4-Pro | — | BUILD_PASS | dotnet build 0 error, MemoryTests 47/47 PASS, WebApiTests 15 failures pre-existing |
+> 同时，这也是工作的交接记录，用于帮助明天的你在遗忘的情况下，快速回忆起今天的工作内容和决策过程。
+
+## QA 交错调度
+
+| 日期 | 任务ID | 开发模型 | QA模型 | 结果 | 备注 |
+|------|--------|---------|--------|------|------|
 | 0503 | UIUX-Phase1 | GitHub Copilot | GLM-5.1 | PASS_WITH_NOTES | P1 重试/重新生成残留已修复 |
 | 0503 | Menu-WorkspaceMgmt | DeepSeek-V4-Pro | Sonnet 4.6 | PASS_WITH_NOTES | 其他 locale 缺失 menu.workspace (P2) |
 | 0503 | T-001 | GPT-5.3-Codex | Sonnet 4.6 | FAIL | P1 AbortError 未清理流式状态 |

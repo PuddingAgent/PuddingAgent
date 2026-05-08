@@ -98,14 +98,18 @@ public sealed class LlmProxyController(
                 ct))
             {
                 if (delta.Usage is not null)
-                    await WriteSseAsync(Response, "usage", delta.Usage, ct);
+                    await WriteSseAsync(Response, SseEventTypes.Usage, delta.Usage, ct);
 
+                // 思维链增量单独发 thinking 事件
+                if (delta.ReasoningDelta is not null)
+                    await WriteSseAsync(Response, SseEventTypes.Thinking, delta, ct);
+
+                // 文本增量 / 工具调用增量
                 if (delta.ContentDelta is not null
-                    || delta.ReasoningDelta is not null
                     || delta.ToolCallIndex is not null
                     || delta.FinishReason is not null)
                 {
-                    await WriteSseAsync(Response, "delta", delta, ct);
+                    await WriteSseAsync(Response, SseEventTypes.Delta, delta, ct);
                 }
             }
         }
@@ -121,7 +125,7 @@ public sealed class LlmProxyController(
                 ex,
                 "[LlmProxy] STREAM error ws={Ws} session={Session}",
                 request.WorkspaceId, request.SessionId);
-            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+            await WriteSseAsync(Response, SseEventTypes.Error, new { message = ex.Message }, CancellationToken.None);
         }
     }
 

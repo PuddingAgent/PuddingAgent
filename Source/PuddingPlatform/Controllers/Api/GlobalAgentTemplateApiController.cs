@@ -67,6 +67,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         entity.MemoryLlmApiKey = req.MemoryLlmApiKey;
         entity.MemoryLlmModelId = req.MemoryLlmModelId;
         entity.MemorySearchMode = req.MemorySearchMode ?? "deep";
+        entity.ReasoningEffort = req.ReasoningEffort;
         entity.MaxContextTokens = req.MaxContextTokens;
         entity.MaxReplyTokens = req.MaxReplyTokens;
         entity.ContainerImage = req.ContainerImage;
@@ -111,6 +112,7 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         MemoryLlmApiKey = req.MemoryLlmApiKey,
         MemoryLlmModelId = req.MemoryLlmModelId,
         MemorySearchMode = req.MemorySearchMode ?? "deep",
+        ReasoningEffort = req.ReasoningEffort,
         MaxContextTokens = req.MaxContextTokens,
         MaxReplyTokens = req.MaxReplyTokens,
         ContainerImage = req.ContainerImage,
@@ -131,7 +133,8 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         t.IsBuiltIn, t.IsEnabled, t.SortOrder,
         t.CreatedAt, t.UpdatedAt,
         t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji,
-        t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId, t.MemorySearchMode);
+        t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId, t.MemorySearchMode,
+        t.ReasoningEffort);
 
     private static List<string> ParseStringList(string? json)
     {

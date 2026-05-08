@@ -49,13 +49,22 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var url = $"{endpoint.TrimEnd('/')}/chat/completions";
 
-        var requestBody = new
-        {
-            model,
-            messages = messages.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content }).ToArray(),
-            temperature = 0.7,
-            max_tokens = 2048
-        };
+        object requestBody = effectiveConfig?.ReasoningEffort is not null
+            ? new
+            {
+                model,
+                messages = messages.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content }).ToArray(),
+                temperature = 0.7,
+                max_tokens = 2048,
+                reasoning_effort = effectiveConfig.ReasoningEffort
+            }
+            : new
+            {
+                model,
+                messages = messages.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content }).ToArray(),
+                temperature = 0.7,
+                max_tokens = 2048
+            };
 
         using var httpClient = _httpClientFactory.CreateClient("DirectLlm");
         var json = JsonSerializer.Serialize(requestBody);
@@ -132,7 +141,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var gateway = new OpenAiLlmGateway(
             _httpClientFactory.CreateClient("DirectLlm"),
-            new LlmOptions(endpoint, apiKey, model));
+            new LlmOptions(endpoint, apiKey, model, ReasoningEffort: effectiveConfig?.ReasoningEffort));
         var toolSpecs = (tools ?? []).Select(t => (ITool)new ProxyTool(t)).ToList();
 
         await foreach (var delta in gateway.ChatStreamAsync(messages, toolSpecs, ct))

@@ -80,6 +80,10 @@ public class WorkspaceAgentTemplateEntity
     [MaxLength(16)]
     public string MemorySearchMode { get; set; } = "deep";
 
+    /// <summary>推理深度："low" | "medium" | "high"，null 表示跟随模型默认</summary>
+    [MaxLength(16)]
+    public string? ReasoningEffort { get; set; }
+
     /// <summary>最大上下文 token 数</summary>
     public int MaxContextTokens { get; set; } = 8192;
 

@@ -66,19 +66,22 @@ public sealed class ContextPipeline
     }
 
     /// <summary>
-    /// 组装完整上下文，返回拼接好的系统提示词。
+    /// 组装完整上下文，返回拼接好的系统提示词与各层 Token 占比快照。
     /// 按 7 层模型逐层构建，每层受 Token 预算约束，超预算时触发压缩。
     /// </summary>
-    public async Task<string> AssembleAsync(ContextRequest request, CancellationToken ct)
+    public async Task<ContextAssemblyResult> AssembleAsync(ContextRequest request, CancellationToken ct)
     {
         var totalBudget = request.Template.Runtime?.MaxContextTokens ?? 8000;
         var sb = new StringBuilder();
         var usedBudget = 0;
+        var layers = new List<ContextLayerSnapshot>();
 
         // ── L0: 静态上下文（IDENTITY/SOUL/AGENTS）— Session 内不变，利用 KV-cache ──
         var staticCtx = await GetOrBuildStaticLayerAsync(request, ct);
+        var staticTokens = EstimateTokens(staticCtx);
         AppendLayer(sb, staticCtx);
-        usedBudget += EstimateTokens(staticCtx);
+        usedBudget += staticTokens;
+        layers.Add(new ContextLayerSnapshot("静态上下文", staticTokens, (double)staticTokens / totalBudget * 100));
 
         // ── 计算可用预算 ──
         var availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 500);
@@ -94,18 +97,23 @@ public sealed class ContextPipeline
         var toolsCtx = await GetOrBuildToolsLayerAsync(request, ct);
         var toolsBudget = (int)(availableBudget * 0.05);
         var toolsTrimmed = TrimToTokenBudget(toolsCtx, toolsBudget);
+        var toolsTokens = EstimateTokens(toolsTrimmed);
         AppendLayer(sb, toolsTrimmed);
-        usedBudget += EstimateTokens(toolsTrimmed);
+        usedBudget += toolsTokens;
+        layers.Add(new ContextLayerSnapshot("动态工具", toolsTokens, (double)toolsTokens / totalBudget * 100));
 
         // ── L2: 动态 Skills（5%）──
         var skillsCtx = BuildSkillsLayer(request);
         var skillsBudget = (int)(availableBudget * 0.05);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
+        var skillsTokens = EstimateTokens(skillsTrimmed);
         AppendLayer(sb, skillsTrimmed);
-        usedBudget += EstimateTokens(skillsTrimmed);
+        usedBudget += skillsTokens;
+        layers.Add(new ContextLayerSnapshot("动态技能", skillsTokens, (double)skillsTokens / totalBudget * 100));
 
         // ── L3: 用户偏好（输出）──
         AppendLayer(sb, userProfile);
+        layers.Add(new ContextLayerSnapshot("用户偏好", userProfileTokens, (double)userProfileTokens / totalBudget * 100));
 
         // ── L4: 重要记忆（10%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
@@ -114,29 +122,37 @@ public sealed class ContextPipeline
             ? (int)(availableBudget * 0.05)
             : (int)(availableBudget * 0.10);
         var pinnedTrimmed = TrimToTokenBudget(pinnedCtx, pinnedBudget);
+        var pinnedTokens = EstimateTokens(pinnedTrimmed);
         AppendLayer(sb, pinnedTrimmed);
-        usedBudget += EstimateTokens(pinnedTrimmed);
+        usedBudget += pinnedTokens;
+        layers.Add(new ContextLayerSnapshot("重要记忆", pinnedTokens, (double)pinnedTokens / totalBudget * 100));
 
         // ── L5: 近期历史（40%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
         var recentBudget = (int)(availableBudget * 0.40);
         var recentCtx = BuildRecentHistoryLayer(request, compactionLevel, recentBudget);
+        var recentTokens = EstimateTokens(recentCtx);
         AppendLayer(sb, recentCtx);
-        usedBudget += EstimateTokens(recentCtx);
+        usedBudget += recentTokens;
+        layers.Add(new ContextLayerSnapshot("近期历史", recentTokens, (double)recentTokens / totalBudget * 100));
 
         // ── L6: 召回记忆（25%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
         var recalledBudget = (int)(availableBudget * 0.25);
         var recalledCtx = await BuildRecalledMemoryLayerAsync(request, ct, compactionLevel);
         var recalledTrimmed = TrimToTokenBudget(recalledCtx, recalledBudget);
+        var recalledTokens = EstimateTokens(recalledTrimmed);
         AppendLayer(sb, recalledTrimmed);
-        usedBudget += EstimateTokens(recalledTrimmed);
+        usedBudget += recalledTokens;
+        layers.Add(new ContextLayerSnapshot("召回记忆", recalledTokens, (double)recalledTokens / totalBudget * 100));
 
         // ── L7: 当前消息（15%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 100);
         var currentMsgBudget = (int)(availableBudget * 0.15);
         var currentMsg = BuildCurrentMessageLayer(request, currentMsgBudget);
+        var currentMsgTokens = EstimateTokens(currentMsg);
         AppendLayer(sb, currentMsg);
+        layers.Add(new ContextLayerSnapshot("当前消息", currentMsgTokens, (double)currentMsgTokens / totalBudget * 100));
 
         // ── 压缩指令（如触发）──
         if (compactionLevel >= ContextCompactionLevel.Aggressive)
@@ -146,7 +162,10 @@ public sealed class ContextPipeline
         }
 
         // ── RUNTIME 层（日期、Session、流式指令等）──
+        var runtimeLen = sb.Length;
         AppendRuntimeLayer(sb, request);
+        var runtimeTokens = EstimateTokens(sb.ToString()) - EstimateTokens(sb.ToString(0, runtimeLen));
+        layers.Add(new ContextLayerSnapshot("运行时指令", Math.Max(0, runtimeTokens), (double)Math.Max(0, runtimeTokens) / totalBudget * 100));
 
         // ── 压缩后附注 ──
         if (compactionLevel >= ContextCompactionLevel.Aggressive)
@@ -159,7 +178,7 @@ public sealed class ContextPipeline
             "[ContextPipeline] Assembled context session={Session} totalBudget={Total} usedEstimate={Used} level={Level} len={Len}",
             request.SessionId, totalBudget, usedBudget, compactionLevel, result.Length);
 
-        return result;
+        return new ContextAssemblyResult(result, totalBudget, usedBudget, layers.AsReadOnly());
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -767,3 +786,16 @@ internal sealed class DynamicToolsCache
     public string Content { get; init; } = string.Empty;
     public DateTimeOffset CreatedAt { get; init; }
 }
+
+/// <summary>上下文组装结果——包含系统提示词和分层 Token 统计。</summary>
+public sealed record ContextAssemblyResult(
+    string SystemPrompt,
+    int TotalBudget,
+    int UsedTokens,
+    IReadOnlyList<ContextLayerSnapshot> Layers);
+
+/// <summary>单层上下文 Token 快照。</summary>
+public sealed record ContextLayerSnapshot(
+    string LayerName,
+    int EstimatedTokens,
+    double Percentage);

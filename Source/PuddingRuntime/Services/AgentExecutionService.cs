@@ -44,6 +44,8 @@ public sealed class AgentExecutionService
     private readonly ContextWindowManager _contextManager;
     private readonly IKeyVaultService _keyVaultService;
     private readonly JsonlSessionWriter? _jsonlSessionWriter;
+    private readonly ITerminalProcessManager _terminalManager;
+    private readonly IMemoryLibraryConvenience? _libraryConvenience;
     private readonly ILogger<AgentExecutionService> _logger;
 
     public AgentExecutionService(
@@ -64,7 +66,9 @@ public sealed class AgentExecutionService
         ContextWindowManager contextManager,
         ILogger<AgentExecutionService> logger,
         IKeyVaultService? keyVaultService = null,
-        JsonlSessionWriter? jsonlSessionWriter = null)
+        JsonlSessionWriter? jsonlSessionWriter = null,
+        ITerminalProcessManager? terminalManager = null,
+        IMemoryLibraryConvenience? libraryConvenience = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -83,6 +87,8 @@ public sealed class AgentExecutionService
         _contextManager      = contextManager;
         _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
         _jsonlSessionWriter  = jsonlSessionWriter;
+        _terminalManager     = terminalManager ?? NoOpTerminalProcessManager.Instance;
+        _libraryConvenience  = libraryConvenience;
         _logger              = logger;
     }
 
@@ -148,7 +154,7 @@ public sealed class AgentExecutionService
                 IsFirstMessage = true,
                 SessionHistory = Array.Empty<ChatMessage>(),
             }, ct);
-            history.Add(new ChatMessage(ChatRole.System, systemPrompt));
+            history.Add(new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt));
         }
         else if (template.Memory?.EnableSessionMemory == true
               || template.Memory?.EnableWorkspaceMemory == true)
@@ -168,7 +174,7 @@ public sealed class AgentExecutionService
                     IsFirstMessage = false,
                     SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
                 }, ct);
-                history[0] = new ChatMessage(ChatRole.System, systemPrompt);
+                history[0] = new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt);
             }
         }
         history.Add(new ChatMessage(ChatRole.User, request.MessageText));
@@ -185,6 +191,9 @@ public sealed class AgentExecutionService
         };
 
         var effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
+        // 若上游 LlmConfig 未设置 ReasoningEffort，从模板定义继承
+        if (effectiveLlmConfig?.ReasoningEffort is null && template.ReasoningEffort is not null)
+            effectiveLlmConfig = (effectiveLlmConfig ?? new LlmConfig()) with { ReasoningEffort = template.ReasoningEffort };
 
         string             finalMessage   = "(no response)";
         var                stopReason     = AgentLoopStopReason.MaxRoundsReached;
@@ -699,11 +708,11 @@ public sealed class AgentExecutionService
 
         if (history.Count == 0 || history[0].Role != ChatRole.System)
         {
-            history.Insert(0, new ChatMessage(ChatRole.System, streamingSystemPrompt));
+            history.Insert(0, new ChatMessage(ChatRole.System, streamingSystemPrompt.SystemPrompt));
         }
         else
         {
-            history[0] = new ChatMessage(ChatRole.System, streamingSystemPrompt);
+            history[0] = new ChatMessage(ChatRole.System, streamingSystemPrompt.SystemPrompt);
         }
 
         history.Add(new ChatMessage(ChatRole.User, request.MessageText));
@@ -715,57 +724,168 @@ public sealed class AgentExecutionService
             WorkspaceId     = request.WorkspaceId,
             AgentTemplateId = request.AgentTemplateId,
             UserMessage     = request.MessageText,
-            MaxRounds       = 1,
+            MaxRounds       = request.MaxRounds > 0 ? request.MaxRounds : 5,
         };
 
         var effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
-        var finalMessage = new StringBuilder();
-        TokenUsageDto? usage = null;
+        // 若上游 LlmConfig 未设置 ReasoningEffort，从模板定义继承
+        if (effectiveLlmConfig?.ReasoningEffort is null && template.ReasoningEffort is not null)
+            effectiveLlmConfig = (effectiveLlmConfig ?? new LlmConfig()) with { ReasoningEffort = template.ReasoningEffort };
+
+        // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
+        var availableSkillNames = _skillRuntime.GetAvailableSkills(effectiveCapability)
+            .Select(s => s.SkillId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var llmTools = request.ToolDefinitions is { Count: > 0 }
+            ? request.ToolDefinitions
+                .Where(t => availableSkillNames.Contains(t.Name))
+                .ToList()
+            : _skillRuntime.BuildLlmTools(effectiveCapability);
 
         try
         {
             _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
 
-            // Streaming chat intentionally does not expose function-call deltas to the UI.
-            // Tool execution remains available on the synchronous structured loop path.
-            var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
-            await foreach (var delta in _llmClient.ChatStreamAsync(
-                request.WorkspaceId,
-                request.SessionId,
-                request.AgentTemplateId,
-                injectedHistory,
-                tools: null,
-                llmConfig: effectiveLlmConfig,
-                ct: ct))
+            // ── 流式 mini Agent Loop（默认最多 5 轮）─────────────────
+            var maxRounds = request.MaxRounds > 0 ? request.MaxRounds : 5;
+            var reply = "(no response)";
+            TokenUsageDto? usage = null;
+
+            for (int round = 0; round < maxRounds; round++)
             {
-                if (delta.Usage is not null)
+                // 发送 context 帧（仅第1轮）
+                if (round == 0)
                 {
-                    usage = delta.Usage;
-                    yield return ServerSentEventFrame.Json("usage", usage);
+                    var contextFrame = BuildStreamContextFrame(history, template, effectiveCapability);
+                    yield return ServerSentEventFrame.Json(SseEventTypes.Context, contextFrame);
                 }
 
-                if (!string.IsNullOrEmpty(delta.ContentDelta))
-                {
-                    var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
-                    finalMessage.Append(safeDelta);
-                    yield return ServerSentEventFrame.Json("delta", new { delta = safeDelta });
-                }
+                var hasToolCalls = false;
+                var accumulatedToolCalls = new List<AccumulatedToolCall>();
+                var replyBuf = new StringBuilder();
 
-                if (delta.ToolCallIndex is not null)
+                var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
+                await foreach (var delta in _llmClient.ChatStreamAsync(
+                    request.WorkspaceId,
+                    request.SessionId,
+                    request.AgentTemplateId,
+                    injectedHistory,
+                    tools: llmTools,
+                    llmConfig: effectiveLlmConfig,
+                    ct: ct))
                 {
-                    yield return ServerSentEventFrame.Json("step", new
+                    // 思维链增量 → thinking 事件
+                    if (!string.IsNullOrEmpty(delta.ReasoningDelta))
+                        yield return ServerSentEventFrame.Json(SseEventTypes.Thinking,
+                            new { delta = delta.ReasoningDelta });
+
+                    // 文本增量 → delta 事件
+                    if (!string.IsNullOrEmpty(delta.ContentDelta))
                     {
-                        status = "TOOL_CALL_DELTA",
-                        message = "模型请求工具调用；当前流式 UI 路径仅展示自然语言回复。",
-                        toolCallIndex = delta.ToolCallIndex,
-                    });
+                        var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
+                        replyBuf.Append(safeDelta);
+                        yield return ServerSentEventFrame.Json(SseEventTypes.Delta,
+                            new { delta = safeDelta });
+                    }
+
+                    // 工具调用增量 → 累积
+                    if (delta.ToolCallIndex != null)
+                    {
+                        AccumulateToolCall(accumulatedToolCalls, delta);
+                        hasToolCalls = true;
+                    }
+
+                    if (delta.Usage is not null)
+                        usage = delta.Usage;
                 }
+
+                // 发送 usage
+                if (usage is not null)
+                    yield return ServerSentEventFrame.Json(SseEventTypes.Usage, usage);
+
+                // 无工具调用 → 终止循环，replyBuf 即为最终回复
+                if (!hasToolCalls)
+                {
+                    reply = replyBuf.Length > 0
+                        ? await _keyVaultService.StripAsync(replyBuf.ToString(), ct)
+                        : "（Agent 未返回可展示文本）";
+                    history.Add(new ChatMessage(ChatRole.Assistant, reply));
+                    break;
+                }
+
+                // 有工具调用 → 构建 Assistant 消息 + 发送 tool_call/tool_result 帧
+                var assistantToolCalls = accumulatedToolCalls
+                    .Select(tc => new ToolCall(tc.Id, tc.Name, tc.Arguments))
+                    .ToList();
+                var assistantContent = replyBuf.Length > 0
+                    ? await _keyVaultService.StripAsync(replyBuf.ToString(), ct)
+                    : null;
+                history.Add(new ChatMessage(ChatRole.Assistant, assistantContent,
+                    ToolCalls: assistantToolCalls));
+
+                // 逐个工具调用：发送 tool_call → 执行 → 发送 tool_result
+                foreach (var tc in accumulatedToolCalls)
+                {
+                    yield return ServerSentEventFrame.Json(SseEventTypes.ToolCall,
+                        new { name = tc.Name, arguments = tc.Arguments });
+
+                    var injectedArgsJson = await _keyVaultService.InjectAsync(tc.Arguments, ct);
+                    var result = await _skillRuntime.InvokeAsync(
+                        tc.Name,
+                        new SkillInvokeRequest
+                        {
+                            AgentInstanceId = instance.AgentInstanceId,
+                            WorkspaceId = request.WorkspaceId ?? string.Empty,
+                            SessionId = request.SessionId,
+                            Input = ExtractInputFromJson(injectedArgsJson),
+                            Parameters = ExtractParametersFromJson(injectedArgsJson),
+                        },
+                        effectiveCapability,
+                        ct);
+
+                    yield return ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
+                    {
+                        name = tc.Name,
+                        exitCode = result.ExitCode,
+                        output = result.Output,
+                        error = result.Error,
+                    });
+
+                    // ── terminal_execute 特殊处理：订阅进程输出流 ──
+                    if (tc.Name is "terminal_execute" && result.Success)
+                    {
+                        var pid = result.Output.Trim();
+                        var terminalOutput = new StringBuilder();
+                        await foreach (var line in _terminalManager.SubscribeAsync(pid, ct))
+                        {
+                            terminalOutput.AppendLine(line);
+                            yield return ServerSentEventFrame.Json(SseEventTypes.Terminal,
+                                new { pid, stream = "stdout", data = line });
+                        }
+                        var finalInfo = _terminalManager.ListProcesses(request.SessionId)
+                            .FirstOrDefault(p => p.ProcessId == pid);
+                        yield return ServerSentEventFrame.Json(SseEventTypes.Terminal,
+                            new { pid, type = "exit", exitCode = finalInfo?.ExitCode });
+
+                        // 工具结果追加到历史（携带完整输出摘要）
+                        var terminalPayload = $"Tool 'terminal_execute' exited with code={finalInfo?.ExitCode}. Output:\n{Truncate(terminalOutput.ToString(), 2000)}";
+                        var safeTerminalPayload = await _keyVaultService.StripAsync(terminalPayload, ct);
+                        history.Add(new ChatMessage(ChatRole.Tool, safeTerminalPayload, ToolCallId: tc.Id));
+                        continue;
+                    }
+
+                    // 工具结果追加到历史（非 terminal 工具）
+                    var toolPayloadRaw = result.Success
+                        ? $"Tool '{tc.Name}' succeeded (exit={result.ExitCode}):\n{result.Output}"
+                        : $"Tool '{tc.Name}' failed (exit={result.ExitCode}):\n{result.Error}";
+                    var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
+                    history.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id));
+                }
+                // 下一轮 LLM 调用，模型可根据工具结果继续生成
             }
 
-            var replyRaw = finalMessage.Length > 0 ? finalMessage.ToString() : "（Agent 未返回可展示文本）";
-            var reply = await _keyVaultService.StripAsync(replyRaw, ct);
-            history.Add(new ChatMessage(ChatRole.Assistant, reply));
+            // ── 后处理：记忆写入 + JSONL + 历史裁剪 ─────────────────
             TryEnqueueStreamJsonl(request, instance.AgentInstanceId, reply, usage);
 
             if (template.Memory?.EnableSessionMemory == true
@@ -777,6 +897,26 @@ public sealed class AgentExecutionService
                     request.WorkspaceId,
                     instance.AgentInstanceId,
                     instance.AgentInstanceId);
+            }
+
+            // 终端执行记录持久化到记忆图书馆（fire-and-forget）
+            if (_libraryConvenience is not null)
+            {
+                var terminalProcesses = _terminalManager.ListProcesses(request.SessionId);
+                foreach (var tp in terminalProcesses.Where(p => p.Status != TerminalProcessStatus.Running))
+                {
+                    var summary = tp.Command.Length > 500 ? tp.Command[..500] : tp.Command;
+                    _ = _libraryConvenience.UpsertExperienceAsync(
+                        request.WorkspaceId ?? string.Empty,
+                        new ExperiencePackage
+                        {
+                            Title = $"终端执行: {summary}",
+                            Content = $"[终端执行记录]\n命令: {tp.Command}\n工作目录: {tp.WorkingDir}\n退出码: {tp.ExitCode}\n状态: {tp.Status}\n时间: {tp.StartedAt:O}",
+                            SuggestedTags = ["终端/执行记录"],
+                            SourceSessionId = request.SessionId,
+                        },
+                        CancellationToken.None);
+                }
             }
 
             await _contextManager.TrimHistoryAsync(
@@ -796,7 +936,7 @@ public sealed class AgentExecutionService
                 "[AgentExec] STREAM end session={Session} replyLen={Len} usage={Usage}",
                 request.SessionId, reply.Length, usage?.TotalTokens);
 
-            yield return ServerSentEventFrame.Json("done", new { reply, usage });
+            yield return ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage });
         }
         finally
         {
@@ -972,6 +1112,42 @@ public sealed class AgentExecutionService
             .Where(p => p.Value.ValueKind == JsonValueKind.String)
             .ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty,
                 StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 将流式 LLM 返回的 StreamDelta 工具调用片段累积为完整的 AccumulatedToolCall。
+    /// 按 ToolCallIndex 分组，Name/Id 取自首次出现的 chunk，Arguments 逐步拼接。
+    /// </summary>
+    private static void AccumulateToolCall(List<AccumulatedToolCall> list, StreamDelta delta)
+    {
+        var idx = delta.ToolCallIndex!.Value;
+        // 扩容到所需索引
+        while (list.Count <= idx)
+            list.Add(new AccumulatedToolCall { Index = list.Count });
+
+        var tc = list[idx];
+        if (delta.ToolCallId is not null)
+            tc.Id = delta.ToolCallId;
+        if (delta.ToolCallNameDelta is not null)
+            tc.Name += delta.ToolCallNameDelta;
+        if (delta.ToolCallArgsDelta is not null)
+            tc.Arguments += delta.ToolCallArgsDelta;
+    }
+
+    /// <summary>
+    /// 构建流式 context 帧——向客户端报告当前上下文层占比和系统提示摘要。
+    /// </summary>
+    private object BuildStreamContextFrame(IReadOnlyList<ChatMessage> history,
+        AgentTemplateDefinition? template, CapabilityPolicy? capability)
+    {
+        var systemMsg = history.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "";
+        return new
+        {
+            messageCount = history.Count,
+            systemPromptLength = systemMsg.Length,
+            templateId = template?.TemplateId ?? "",
+            capability = capability?.ToString() ?? "",
+        };
     }
 
     private static string ExtractInputFromJson(string? argumentsJson)

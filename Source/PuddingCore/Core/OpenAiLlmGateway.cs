@@ -223,6 +223,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             requestObj["temperature"] = options.Temperature.Value;
         if (options.MaxTokens.HasValue)
             requestObj["max_tokens"] = options.MaxTokens.Value;
+        if (options.ReasoningEffort is not null)
+            requestObj["reasoning_effort"] = options.ReasoningEffort;
 
         if (tools.Count > 0)
         {

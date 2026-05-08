@@ -120,6 +120,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       maxReplyTokens: tpl.maxReplyTokens,
       containerImage: tpl.containerImage,
       selectedCapabilityIds: tpl.selectedCapabilityIds,
+      reasoningEffort: tpl.reasoningEffort,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
