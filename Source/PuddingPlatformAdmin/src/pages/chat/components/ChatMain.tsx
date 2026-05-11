@@ -3,6 +3,7 @@ import {
   MenuUnfoldOutlined,
   RobotOutlined,
   SettingOutlined,
+  BugOutlined,
   SmileOutlined,
   BarChartOutlined,
   ThunderboltOutlined,
@@ -14,12 +15,13 @@ import {
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
 import { Avatar, Button, Divider, Select, Space, Tooltip } from 'antd';
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
 import type { ChatTurn } from '../types';
 import { getAgentName, stringToColor } from '../hooks/useChatState';
 import InputArea from './InputArea';
 import MessageList from './MessageList';
+import DevPanel, { type DevRawEvent } from './DevPanel';
 import type { WorkspaceAgentDto, WorkspaceWithPermDto } from '@/services/platform/api';
 
 interface ChatMainProps {
@@ -101,6 +103,17 @@ const renderAgentOption = (a: WorkspaceAgentDto) => {
   );
 };
 
+type TurnSnapshot = {
+  reasoningCount: number;
+  stepCount: number;
+  answerLen: number;
+  status: string;
+  usageTotal: number;
+};
+
+const DEV_MODE_KEY = 'pudding-dev-mode';
+const MAX_DEV_EVENTS = 500;
+
 const ChatMain: React.FC<ChatMainProps> = ({
   sidebarOpen, onToggleSidebar,
   workspaceId, workspaceLoading, wsOpts, onWorkspaceChange,
@@ -114,6 +127,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
   messageListRef, listEndRef,
 }) => {
   const { styles } = useChatStyles();
+  const [devMode, setDevMode] = useState<boolean>(() => localStorage.getItem(DEV_MODE_KEY) === '1');
+  const [rawEvents, setRawEvents] = useState<DevRawEvent[]>([]);
+  const [inferredSessionId, setInferredSessionId] = useState<string | null>(null);
+  const turnSnapshotRef = useRef<Map<string, TurnSnapshot>>(new Map());
 
   const dropdownRender = useCallback((menu: React.ReactNode) => (
     <>
@@ -122,6 +139,139 @@ const ChatMain: React.FC<ChatMainProps> = ({
       <Button type="link" block size="small" onClick={onCreateWorkspace}>+ 新建工作空间</Button>
     </>
   ), [onCreateWorkspace]);
+
+  useEffect(() => {
+    localStorage.setItem(DEV_MODE_KEY, devMode ? '1' : '0');
+  }, [devMode]);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setInferredSessionId(null);
+      return;
+    }
+
+    let alive = true;
+    const token = localStorage.getItem('pudding_token');
+    if (!token) return;
+
+    const loadSession = async () => {
+      try {
+        const resp = await fetch(`/api/sessions?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!resp.ok || !alive) return;
+        const sessions = await resp.json() as Array<{ sessionId: string }>;
+        if (alive && Array.isArray(sessions) && sessions.length > 0) {
+          setInferredSessionId(sessions[0]?.sessionId ?? null);
+        }
+      } catch {
+        // no-op：开发者面板容错，不影响主聊天流程
+      }
+    };
+
+    void loadSession();
+  }, [workspaceId, turns.length]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const nextSnapshot = new Map<string, TurnSnapshot>();
+    const appended: DevRawEvent[] = [];
+
+    for (const turn of turns) {
+      const prev = turnSnapshotRef.current.get(turn.turnId);
+      const current: TurnSnapshot = {
+        reasoningCount: turn.assistant.reasoningBlocks.length,
+        stepCount: turn.assistant.stepCards.length,
+        answerLen: turn.assistant.answerMarkdown.length,
+        status: turn.assistant.status,
+        usageTotal: turn.assistant.usage?.totalTokens ?? 0,
+      };
+
+      if (!prev) {
+        if (turn.assistant.reasoningBlocks.length > 0) {
+          appended.push(...turn.assistant.reasoningBlocks.map((x) => ({
+            id: `evt-${turn.turnId}-thinking-${x.id}`,
+            timestamp: now,
+            event: 'thinking',
+            payload: x.text,
+          })));
+        }
+        if (turn.assistant.stepCards.length > 0) {
+          appended.push(...turn.assistant.stepCards.map((x) => ({
+            id: `evt-${turn.turnId}-step-${x.id}`,
+            timestamp: x.timestamp || now,
+            event: 'step',
+            payload: `[${x.status}] ${x.message}`,
+          })));
+        }
+      } else {
+        if (current.reasoningCount > prev.reasoningCount) {
+          const newBlocks = turn.assistant.reasoningBlocks.slice(prev.reasoningCount);
+          appended.push(...newBlocks.map((x) => ({
+            id: `evt-${turn.turnId}-thinking-${x.id}`,
+            timestamp: now,
+            event: 'thinking',
+            payload: x.text,
+          })));
+        }
+
+        if (current.stepCount > prev.stepCount) {
+          const newCards = turn.assistant.stepCards.slice(prev.stepCount);
+          appended.push(...newCards.map((x) => ({
+            id: `evt-${turn.turnId}-step-${x.id}`,
+            timestamp: x.timestamp || now,
+            event: 'step',
+            payload: `[${x.status}] ${x.message}`,
+          })));
+        }
+
+        if (current.answerLen > prev.answerLen) {
+          const delta = turn.assistant.answerMarkdown.slice(prev.answerLen);
+          if (delta.trim()) {
+            appended.push({
+              id: `evt-${turn.turnId}-delta-${current.answerLen}`,
+              timestamp: now,
+              event: 'delta',
+              payload: delta,
+            });
+          }
+        }
+
+        if (current.usageTotal > 0 && current.usageTotal !== prev.usageTotal) {
+          appended.push({
+            id: `evt-${turn.turnId}-usage-${current.usageTotal}`,
+            timestamp: now,
+            event: 'usage',
+            payload: `totalTokens=${current.usageTotal}`,
+          });
+        }
+
+        if (current.status !== prev.status) {
+          const ev = current.status === 'success'
+            ? 'done'
+            : current.status === 'error'
+              ? 'error'
+              : current.status === 'cancelled'
+                ? 'cancelled'
+                : 'status';
+          appended.push({
+            id: `evt-${turn.turnId}-status-${current.status}-${now}`,
+            timestamp: now,
+            event: ev,
+            payload: current.status,
+          });
+        }
+      }
+
+      nextSnapshot.set(turn.turnId, current);
+    }
+
+    turnSnapshotRef.current = nextSnapshot;
+    if (appended.length > 0) {
+      setRawEvents((prev) => [...prev, ...appended].slice(-MAX_DEV_EVENTS));
+    }
+  }, [turns]);
 
   return (
     <div className={styles.mainArea}>
@@ -175,43 +325,64 @@ const ChatMain: React.FC<ChatMainProps> = ({
         <Tooltip title="控制台">
           <Button type="text" size="small" icon={<SettingOutlined />} onClick={() => history.push('/workspace')} />
         </Tooltip>
+        <Tooltip title="开发者模式">
+          <Button
+            type="text"
+            size="small"
+            icon={<BugOutlined />}
+            onClick={() => setDevMode(!devMode)}
+            className={devMode ? styles.devModeActive : ''}
+          />
+        </Tooltip>
       </div>
 
       {/* Chat Body */}
       <div className={styles.chatBody}>
-        <MessageList
-          turns={turns}
-          agentId={agentId}
-          selectedAgent={selectedAgent}
-          error={error}
-          historyLoading={historyLoading}
-          loadingMore={loadingMore}
-          hasMoreMessages={hasMoreMessages}
-          onClearError={onClearError}
-          onLoadMore={onLoadMore}
-          formatTime={formatTime}
-          getStepTone={getStepTone}
-          onDeleteTurn={onDeleteTurn}
-          onToggleReasoning={onToggleReasoning}
-          onContextMenu={onContextMenu}
-          onRerunTurn={onRerunTurn}
-          onPinTurn={onPinTurn}
-          messageListRef={messageListRef}
-          listEndRef={listEndRef}
-        />
-        <InputArea
-          inputValue={inputValue}
-          onInputChange={onInputChange}
-          onKeyDown={onKeyDown}
-          loading={loading}
-          onSend={onSend}
-          onStop={onStop}
-          onExport={onExport}
-          disabled={disabled}
-          tLimit={tLimit}
-          tUsed={tUsed}
-          tPct={tPct}
-        />
+        <div className={devMode ? styles.chatBodyWithDev : styles.chatBodyMain}>
+          <div className={styles.chatBodyMain}>
+            <MessageList
+              turns={turns}
+              agentId={agentId}
+              selectedAgent={selectedAgent}
+              error={error}
+              historyLoading={historyLoading}
+              loadingMore={loadingMore}
+              hasMoreMessages={hasMoreMessages}
+              onClearError={onClearError}
+              onLoadMore={onLoadMore}
+              formatTime={formatTime}
+              getStepTone={getStepTone}
+              onDeleteTurn={onDeleteTurn}
+              onToggleReasoning={onToggleReasoning}
+              onContextMenu={onContextMenu}
+              onRerunTurn={onRerunTurn}
+              onPinTurn={onPinTurn}
+              messageListRef={messageListRef}
+              listEndRef={listEndRef}
+            />
+            <InputArea
+              inputValue={inputValue}
+              onInputChange={onInputChange}
+              onKeyDown={onKeyDown}
+              loading={loading}
+              onSend={onSend}
+              onStop={onStop}
+              onExport={onExport}
+              disabled={disabled}
+              tLimit={tLimit}
+              tUsed={tUsed}
+              tPct={tPct}
+            />
+          </div>
+
+          {devMode && (
+            <DevPanel
+              workspaceId={workspaceId}
+              sessionId={inferredSessionId}
+              rawEvents={rawEvents}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

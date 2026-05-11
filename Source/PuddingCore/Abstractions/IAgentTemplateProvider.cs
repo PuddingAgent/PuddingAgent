@@ -15,4 +15,8 @@ public sealed record AgentTemplatePersona
     public string? ToolsDescription { get; init; }
     public string? BootstrapTemplate { get; init; }
     public string? AvatarEmoji { get; init; }
+    public string? MemorySearchMode { get; init; }
+    public string? MemoryLlmEndpoint { get; init; }
+    public string? MemoryLlmApiKey { get; init; }
+    public string? MemoryLlmModelId { get; init; }
 }

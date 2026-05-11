@@ -188,6 +188,10 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
       maxContextTokens: tpl.maxContextTokens,
       maxReplyTokens: tpl.maxReplyTokens,
       reasoningEffort: tpl.reasoningEffort,
+      memoryLlmEndpoint: tpl.memoryLlmEndpoint,
+      memoryLlmApiKey: tpl.memoryLlmApiKey,
+      memoryLlmModelId: tpl.memoryLlmModelId,
+      memorySearchMode: tpl.memorySearchMode,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
   };
@@ -427,6 +431,36 @@ const AgentTemplatesTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) =
             placeholder="不选则使用服务商默认"
             fieldProps={{ loading: loadingModels, allowClear: true }}
           />
+
+          <Divider orientation="left">潜意识模型（记忆探索）</Divider>
+          <ProFormText
+            name="memoryLlmEndpoint"
+            label="潜意识模型 Endpoint"
+            placeholder="如 https://api.deepseek.com/v1"
+            extra="未配置时使用主聊天模型处理记忆"
+          />
+          <ProFormText.Password
+            name="memoryLlmApiKey"
+            label="潜意识模型 ApiKey"
+            placeholder="可留空，留空时回退主聊天模型"
+          />
+          <ProFormText
+            name="memoryLlmModelId"
+            label="潜意识模型 ModelId"
+            placeholder="如 deepseek-chat"
+            extra="强烈建议使用轻量模型（DeepSeek/Haiku等），避免消耗主模型配额"
+          />
+          <ProFormSelect
+            name="memorySearchMode"
+            label="记忆搜索模式"
+            options={[
+              { label: '关闭（仅关键词+标签检索）', value: 'off' },
+              { label: '即时（关键词+标签+后台异步探索）', value: 'instant' },
+              { label: '深度（同步探索，首次冷启动≤60s，上下文最精准）', value: 'deep' },
+            ]}
+            initialValue="deep"
+          />
+
           <Space size="large">
             <ProFormDigit name="maxContextTokens" label="上下文 tokens" min={1024} />
             <ProFormDigit name="maxReplyTokens" label="最大回复 tokens" min={128} />

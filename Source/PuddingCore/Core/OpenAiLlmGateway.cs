@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PlatformLlmOptions = PuddingCode.Platform.Options.LlmOptions;
 
 namespace PuddingCode.Core;
 
@@ -14,6 +15,26 @@ namespace PuddingCode.Core;
 /// </summary>
 public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) : ILlmGateway
 {
+    private string? _thinkingMode = NormalizeThinkingMode(options.EnableThinking switch
+    {
+        true => "enabled",
+        false => "disabled",
+        _ => null
+    });
+
+    public OpenAiLlmGateway(HttpClient httpClient, PlatformLlmOptions options)
+        : this(httpClient, new LlmOptions(
+            options.Endpoint,
+            options.ApiKey,
+            options.Model,
+            options.Temperature,
+            options.MaxTokens,
+            options.ReasoningEffort,
+            EnableThinking: null))
+    {
+        _thinkingMode = NormalizeThinkingMode(options.ThinkingMode);
+    }
+
     private readonly string _chatEndpoint = NormalizeChatEndpoint(options.Endpoint);
 
     // ──────── Non-streaming ────────
@@ -225,6 +246,13 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             requestObj["max_tokens"] = options.MaxTokens.Value;
         if (options.ReasoningEffort is not null)
             requestObj["reasoning_effort"] = options.ReasoningEffort;
+        if (!string.IsNullOrWhiteSpace(_thinkingMode))
+        {
+            requestObj["thinking"] = new JsonObject
+            {
+                ["type"] = _thinkingMode
+            };
+        }
 
         if (tools.Count > 0)
         {
@@ -322,5 +350,14 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         {
             return null;
         }
+    }
+
+    private static string? NormalizeThinkingMode(string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode))
+            return null;
+
+        var normalized = mode.Trim().ToLowerInvariant();
+        return normalized is "auto" or "enabled" or "disabled" ? normalized : null;
     }
 }

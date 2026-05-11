@@ -8,6 +8,8 @@
 | 日期 | 任务ID | 开发模型 | QA模型 | 结果 | 备注 |
 |------|--------|---------|--------|------|------|
 | 0508 | ADR-014-E | DeepSeek-V4-Pro | — | BUILD_PASS | dotnet build 0 error, MemoryTests 47/47 PASS, WebApiTests 15 failures pre-existing |
+| 0510 | Subconscious-Phase1 | GPT-5.3-Codex | Sonnet 4.6 | PASS_WITH_NOTES | P1-1 OnCompletedAsync阻塞SSE done/P1-2 DI重复注册，均已修复 |
+| 0510 | Subconscious-Phase2 | GPT-5.3-Codex | DeepSeek-V4-Pro | PASS_WITH_NOTES | P1 IMemoryLibrary死代码/P1 DI冗余/P2 Token=0硬编码，不阻断联调 |
 > 同时，这也是工作的交接记录，用于帮助明天的你在遗忘的情况下，快速回忆起今天的工作内容和决策过程。
 
 ## QA 交错调度
@@ -42,3 +44,4 @@
 | 0504 | Anthropic Building Effective Agents 对比审查 | 全模块 Agent 模式 | 10 个新任务卡 (task-010~019)：3×P0 Eval-Opt/Routing/ACI + 4×P1 规划可见性/人机检查点/上下文压缩/PromptChaining + 3×P2 并行Voting/容错降级/抽象审计 | [Docs/context.md](context.md) 本记录 |
 | 0505 | 累计12+任务卡完成 + 记忆引擎方向 | 全局架构（记忆与会话数据层） | ADR-013 (Docs/07架构/13记忆与会话数据层.md) + 25 个新任务卡 (task-20260505-007~031) 分4个Phase：P0 基础持久化8个/P1 向量检索7个/P2 知识图谱+压缩7个/P2+ 退场清理3个。另 Agent 个性层6个 (task-20260505-001~006) 互补。 | 参考 OpenClaw 智能体设计模型，适配 Pudding 多 Agent 多场景架构 |
 | 0505 | Chat UI 评估与重设计 | Admin Chat 页面完整交互设计 | 设计方案 (Docs/Features/ChatUIRedesign.md) 含 3 方案对比 (Discord/ChatGPT/混合分层)+18 个新任务卡 (task-20260505-034~051)：Phase UI-1 基础重构4个P0 + BE-Chat 支撑3个P1 + Phase UI-2 交互增强4个P1 + Phase UI-3 Agent特性4个P1+ + Phase UI-4 高级功能3个P2。方案 C 混合分层推荐。 | 参考 Discord/WhatsApp/Slack/ChatGPT/Cursor 设计；依赖 ADR-013 消息树底座 |
+| 0510 | 潜意识 LLM 子代理系统架构设计 | 记忆全链路（Runtime→MemoryEngine→MemoryLibrary→Admin UI） | ADR-015 (Docs/07架构/15潜意识LLM子代理系统ADR.md) 含 5 个 ADR 决策：编排层架在现有双轨之上/Channel队列+BackgroundService/三层MemorySearchMode调度/潜意识LLM路由/5Phase实施路线。新增接口 ISubconsciousOrchestrator、SubconsciousConsolidationHook、SubconsciousWorkerService、MemoryFacts/Preferences 表、MemoryManagementController、Admin 记忆图书馆管理页面+自测试套件。 | 满足 A(新架构模式)+B(跨3+模块数据变更)。复用现有 IMemoryLibrary/IMemoryEngine/IAgentLoopHook，不推翻重写。参考 Claude Code CLI 子代理 + OpenClaw 架构。

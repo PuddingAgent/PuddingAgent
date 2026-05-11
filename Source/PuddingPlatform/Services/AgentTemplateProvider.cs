@@ -41,6 +41,10 @@ public sealed class AgentTemplateProvider(
             ToolsDescription = global.ToolsDescription,
             BootstrapTemplate = global.BootstrapTemplate,
             AvatarEmoji = global.AvatarEmoji,
+            MemorySearchMode = global.MemorySearchMode,
+            MemoryLlmEndpoint = global.MemoryLlmEndpoint,
+            MemoryLlmApiKey = global.MemoryLlmApiKey,
+            MemoryLlmModelId = global.MemoryLlmModelId,
         };
 
         if (string.IsNullOrWhiteSpace(workspaceId))
@@ -62,6 +66,10 @@ public sealed class AgentTemplateProvider(
             ToolsDescription = wsTemplate.ToolsDescription ?? persona.ToolsDescription,
             BootstrapTemplate = wsTemplate.BootstrapTemplate ?? persona.BootstrapTemplate,
             AvatarEmoji = wsTemplate.AvatarEmoji ?? persona.AvatarEmoji,
+            MemorySearchMode = wsTemplate.MemorySearchMode ?? persona.MemorySearchMode,
+            MemoryLlmEndpoint = wsTemplate.MemoryLlmEndpoint ?? persona.MemoryLlmEndpoint,
+            MemoryLlmApiKey = wsTemplate.MemoryLlmApiKey ?? persona.MemoryLlmApiKey,
+            MemoryLlmModelId = wsTemplate.MemoryLlmModelId ?? persona.MemoryLlmModelId,
         };
     }
 

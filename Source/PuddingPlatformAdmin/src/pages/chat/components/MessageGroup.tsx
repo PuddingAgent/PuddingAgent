@@ -2,7 +2,7 @@
 import { CopyOutlined, DeleteOutlined, PushpinOutlined, ReloadOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Space, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
-import React from 'react';
+import React, { useState } from 'react';
 import { useChatStyles } from '../styles';
 import type { ChatTurn } from '../types';
 import { assistantStatusLabel } from '../types';
@@ -43,6 +43,14 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
 }) => {
   const { styles, cx } = useChatStyles();
   const { assistant, userMessage } = turn;
+  const [collapsedThinkingCards, setCollapsedThinkingCards] = useState<Record<string, boolean>>({});
+
+  const toggleThinkingCard = (cardId: string) => {
+    setCollapsedThinkingCards((prev) => ({
+      ...prev,
+      [cardId]: !prev[cardId],
+    }));
+  };
 
   const isLegacyAssistant = assistant.renderMode === 'legacy' && assistant.reasoningBlocks.length === 0 && assistant.stepCards.length === 0;
   const showUserBubble = Boolean(userMessage.text.trim()) || assistant.renderMode === 'structured';
@@ -132,22 +140,17 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                 <div className={styles.turnBody}>
                   {assistant.reasoningBlocks.length > 0 && (
                     <div className={styles.reasoningPanel}>
-                      <div className={styles.reasoningHeader}>思维链</div>
-                      {assistant.reasoningBlocks.map((block) => (
-                        <div key={block.id} className={styles.reasoningBlock}>
-                          <div
-                            className={styles.reasoningToggle}
-                            onClick={() => onToggleReasoning(turn.turnId, block.id)}
-                          >
-                            {block.collapsed ? '展开' : '收起'}
-                          </div>
-                          {block.collapsed ? (
-                            <div className={styles.reasoningSummary}>{block.text.slice(0, 80)}{block.text.length > 80 ? '…' : ''}</div>
-                          ) : (
-                            <div className={styles.reasoningText}>{block.text}</div>
-                          )}
+                      <div
+                        className={styles.reasoningHeader}
+                        onClick={() => onToggleReasoning(turn.turnId, '_all')}
+                      >
+                        💭 思维链
+                      </div>
+                      {!assistant._reasoningCollapsed && (
+                        <div className={styles.reasoningStream}>
+                          {assistant.reasoningBlocks.map((block) => block.text).join('')}
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
 
@@ -155,6 +158,8 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                     <div className={styles.stepCardList}>
                       <div className={styles.stepCardLine} />
                       {assistant.stepCards.map((card, cardIdx) => {
+                        const isThinkingCard = card.status === 'thinking';
+                        const isCollapsed = collapsedThinkingCards[card.id] === true;
                         const tone = getStepTone(card.status);
                         return (
                           <div
@@ -162,6 +167,7 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                             className={cx(
                               styles.stepCard,
                               styles.stepCardAnimated,
+                              isThinkingCard && styles.thinkingStepCard,
                               tone === 'success' && styles.stepCardSuccess,
                               tone === 'error' && styles.stepCardError,
                               tone === 'executing' && styles.stepCardExecuting,
@@ -169,11 +175,18 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                             style={{ animationDelay: `${cardIdx * 100}ms` }}
                           >
                             <span className={styles.stepCardDot} />
-                            <div className={styles.stepCardTitle}>
-                              <span className={cx(styles.stepCardStatus, card.status === 'success' && styles.stepCardCompleteIcon)}>{card.status || 'step'}</span>
+                            <div
+                              className={cx(styles.stepCardTitle, isThinkingCard && styles.thinkingStepHeader)}
+                              onClick={isThinkingCard ? () => toggleThinkingCard(card.id) : undefined}
+                            >
+                              <span className={cx(styles.stepCardStatus, card.status === 'success' && styles.stepCardCompleteIcon)}>
+                                {isThinkingCard ? '💭 思考过程:' : (card.status || 'step')}
+                              </span>
                               <span className={styles.stepCardTime}>{formatTime(card.timestamp)}</span>
                             </div>
-                            <div className={styles.stepCardMessage}>{card.message}</div>
+                            {!isCollapsed && (
+                              <div className={cx(styles.stepCardMessage, isThinkingCard && styles.thinkingStepMessage)}>{card.message}</div>
+                            )}
                           </div>
                         );
                       })}

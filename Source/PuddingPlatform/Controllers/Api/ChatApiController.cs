@@ -431,6 +431,7 @@ public class ChatApiController(
         // 工作区模板：优先用原始 ID 匹配（支持 workspace 自定义模板），
         // 再退一步用去前缀 ID 匹配（兼容直接传 templateId 字符串的场景）。
         var workspaceTemplate = await db.WorkspaceAgentTemplates.AsNoTracking()
+            .Select(t => new { t.WorkspaceId, t.TemplateId, t.IsEnabled, t.AllowFileWrite, t.AllowShellExecution, t.AllowNetworkAccess, t.AllowedToolNamesJson, t.Role, t.SelectedCapabilityIdsJson })
             .FirstOrDefaultAsync(t => t.WorkspaceId == workspaceId
                                    && (t.TemplateId == rawId || t.TemplateId == globalId)
                                    && t.IsEnabled, ct);

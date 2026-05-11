@@ -19,9 +19,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS:  "8080"
-      LLM_API_KEY:  ${LLM_API_KEY}
-      LLM_ENDPOINT: ${LLM_ENDPOINT:-https://api.openai.com/v1}
-      LLM_MODEL:    ${LLM_MODEL:-gpt-4o-mini}
+      PUDDING_LOG_LEVEL: ${PUDDING_LOG_LEVEL:-Debug}
+      LLM_API_KEY:  ${LLM_API_KEY:-tp-c4tygz42vwumgqiae0l9ymt7m4s4czzoioxeum3dg7gze1hm}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-https://token-plan-cn.xiaomimimo.com/v1}
+      LLM_MODEL:    ${LLM_MODEL:-mimo-v2.5-pro}
+      MEMORY_LLM_ENDPOINT: ${MEMORY_LLM_ENDPOINT:-https://token-plan-cn.xiaomimimo.com/v1}
+      MEMORY_LLM_API_KEY:  ${MEMORY_LLM_API_KEY:-tp-c4tygz42vwumgqiae0l9ymt7m4s4czzoioxeum3dg7gze1hm}
+      MEMORY_LLM_MODEL_ID: ${MEMORY_LLM_MODEL_ID:-mimo-v2.5}
       Jwt__Key:        ${JWT_KEY:-Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!}
       Jwt__Issuer:     ${JWT_ISSUER:-pudding-platform}
       Jwt__Audience:   ${JWT_AUDIENCE:-pudding-admin}
@@ -35,8 +39,5 @@ services:
       - "5000:8080"
       - "9527:9527/udp"
     volumes:
-      - agent_data:/app/data
+      - ./data:/app/data
     restart: unless-stopped
-
-volumes:
-  agent_data:

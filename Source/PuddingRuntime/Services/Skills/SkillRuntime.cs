@@ -199,6 +199,15 @@ public sealed partial class SkillRuntime
                 ],
                 ["url"]);
 
+        if (skillId.Equals("search_memory", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("query", "string", "Search keywords or question for memory retrieval"),
+                    new ToolParameter("book", "string", "Optional book hint such as 用户档案 or 用户偏好"),
+                    new ToolParameter("workspaceId", "string", "Optional workspace id for deeper memory exploration"),
+                ],
+                ["query"]);
+
         return new ToolParameterSchema(
             [new ToolParameter("input", "string", "Tool input payload")],
             ["input"]);

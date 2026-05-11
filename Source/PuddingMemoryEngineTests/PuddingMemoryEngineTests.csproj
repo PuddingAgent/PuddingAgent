@@ -10,10 +10,12 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <PackageReference Include="Moq" Version="4.20.72" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+    <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
   </ItemGroup>
 
 </Project>

@@ -40,9 +40,15 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         CancellationToken ct = default)
     {
         var effectiveConfig = await ResolveLlmConfigAsync(llmConfig, ct);
-        var endpoint = effectiveConfig?.Endpoint ?? "https://api.openai.com/v1";
-        var apiKey = effectiveConfig?.ApiKey ?? "";
-        var model = effectiveConfig?.ModelId ?? "gpt-4o-mini";
+        var endpoint = effectiveConfig?.Endpoint
+            ?? Environment.GetEnvironmentVariable("LLM_ENDPOINT")
+            ?? "https://api.openai.com/v1";
+        var apiKey = effectiveConfig?.ApiKey
+            ?? Environment.GetEnvironmentVariable("LLM_API_KEY")
+            ?? "";
+        var model = effectiveConfig?.ModelId
+            ?? Environment.GetEnvironmentVariable("LLM_MODEL")
+            ?? "gpt-4o-mini";
 
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("LLM_API_KEY not configured.");
@@ -66,15 +72,18 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 max_tokens = 2048
             };
 
-        using var httpClient = _httpClientFactory.CreateClient("DirectLlm");
+        using var httpClient = new HttpClient();
         var json = JsonSerializer.Serialize(requestBody);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-        content.Headers.Add("Authorization", $"Bearer {apiKey}");
+        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("Authorization", $"Bearer {apiKey}");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _logger.LogInformation("[DirectLlm] REQUEST model={Model} url={Url} msgCount={Count}", model, url, messages.Count);
 
-        var response = await httpClient.PostAsync(url, content, ct);
+        var response = await httpClient.SendAsync(request, ct);
         sw.Stop();
 
         if (!response.IsSuccessStatusCode)
@@ -128,20 +137,26 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var effectiveConfig = await ResolveLlmConfigAsync(llmConfig, ct);
-        var endpoint = effectiveConfig?.Endpoint ?? "https://api.openai.com/v1";
-        var apiKey = effectiveConfig?.ApiKey ?? "";
-        var model = effectiveConfig?.ModelId ?? "gpt-4o-mini";
+        var endpoint = effectiveConfig?.Endpoint ?? GetEndpointFromEnvironment() ?? "https://api.openai.com/v1";
+        var apiKey = effectiveConfig?.ApiKey ?? GetApiKeyFromEnvironment() ?? "";
+        var model = effectiveConfig?.ModelId ?? GetModelFromEnvironment() ?? "gpt-4o-mini";
+        var thinkingMode = ResolveThinkingModeFromJson();
 
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("LLM_API_KEY not configured.");
 
         _logger.LogInformation(
-            "[DirectLlm] STREAM model={Model} endpoint={Endpoint} msgCount={Count}",
-            model, endpoint, messages.Count);
+            "[DirectLlm] STREAM model={Model} endpoint={Endpoint} msgCount={Count} thinkingMode={ThinkingMode}",
+            model, endpoint, messages.Count, thinkingMode ?? "(null)");
 
         var gateway = new OpenAiLlmGateway(
             _httpClientFactory.CreateClient("DirectLlm"),
-            new LlmOptions(endpoint, apiKey, model, ReasoningEffort: effectiveConfig?.ReasoningEffort));
+            new PuddingCode.Platform.Options.LlmOptions(
+                endpoint,
+                apiKey,
+                model,
+                ReasoningEffort: effectiveConfig?.ReasoningEffort,
+                ThinkingMode: thinkingMode));
         var toolSpecs = (tools ?? []).Select(t => (ITool)new ProxyTool(t)).ToList();
 
         await foreach (var delta in gateway.ChatStreamAsync(messages, toolSpecs, ct))
@@ -187,6 +202,24 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             return config;
 
         return config with { ApiKey = apiKey };
+    }
+
+    /// <summary>环境变量最终回退（KeyVault 清理后仍可工作）。</summary>
+    public static string? GetApiKeyFromEnvironment()
+        => PuddingConfigLoader.ResolveConscious().ApiKey;
+    public static string? GetEndpointFromEnvironment()
+        => PuddingConfigLoader.ResolveConscious().Endpoint;
+    public static string? GetModelFromEnvironment()
+        => PuddingConfigLoader.ResolveConscious().Model;
+
+    private static string? ResolveThinkingModeFromJson()
+    {
+        var mode = PuddingConfigLoader.Load()?.Llm?.Conscious?.ThinkingMode;
+        if (string.IsNullOrWhiteSpace(mode))
+            return null;
+
+        var normalized = mode.Trim().ToLowerInvariant();
+        return normalized is "auto" or "enabled" or "disabled" ? normalized : null;
     }
 
     private sealed class ProxyTool(LlmToolDefinition dto) : ITool

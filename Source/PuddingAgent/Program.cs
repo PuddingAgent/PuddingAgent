@@ -16,15 +16,20 @@ using PuddingController.Services;
 using PuddingRuntime;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
+using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Sandbox;
 using PuddingRuntime.Services.Skills;
+using PuddingRuntime.Services.SubAgents;
+using PuddingRuntime.Services.Tools;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Services;
 using PuddingAgent.P2P;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services;
 using Serilog;
 using Serilog.Events;
+using System.Threading.Channels;
 
 // ── Serilog 结构化日志 ─────────────────────────────
 var aspnetcoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
@@ -39,9 +44,13 @@ var logDir = Path.Combine(AppContext.BaseDirectory, "data", "logs");
 Directory.CreateDirectory(logDir);
 Directory.CreateDirectory(Path.Combine(logDir, "error"));
 
+// PUDDING_LOG_LEVEL 环境变量控制日志级别（默认 Information；设为 Debug 可诊断管线细节）
+var logLevel = Environment.GetEnvironmentVariable("PUDDING_LOG_LEVEL") ?? "Information";
+var minLevel = logLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase) ? LogEventLevel.Debug : LogEventLevel.Information;
+
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(bootstrapConfiguration)
-    .MinimumLevel.Information()
+    .MinimumLevel.Is(minLevel)
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
@@ -154,6 +163,8 @@ builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
 builder.Services.AddSingleton<AgentTemplateProvider>();
 builder.Services.AddSingleton<IAgentTemplateProvider>(sp => sp.GetRequiredService<AgentTemplateProvider>());
 builder.Services.AddSingleton<IWorkspaceProfileProvider>(sp => sp.GetRequiredService<AgentTemplateProvider>());
+builder.Services.AddSingleton<AgentLLMConfigResolver>();
+builder.Services.AddSingleton<ILLMConfigResolver>(sp => sp.GetRequiredService<AgentLLMConfigResolver>());
 
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {
@@ -198,6 +209,8 @@ builder.Services.AddSingleton<IMemoryLibraryConvenience>(sp =>
     new MemoryLibraryConvenience(
         sp.GetRequiredService<IMemoryLibrary>(),
         sp.GetService<IMemoryLlmClient>()));
+builder.Services.AddSingleton<MemoryRecallService>();
+builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<MemoryRecallService>());
 builder.Services.AddSingleton<JsonlSessionWriter>();
 builder.Services.AddSingleton<JsonlSessionReader>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
@@ -215,10 +228,33 @@ builder.Services.AddSingleton<IAgentSkill, WriteFileSkill>();
 builder.Services.AddSingleton<IAgentSkill, PythonSkill>();
 builder.Services.AddSingleton<IAgentSkill, HttpFetchSkill>();
 builder.Services.AddSingleton<IAgentSkill, TerminalSkill>();
+builder.Services.AddSingleton<MemoryExplorerSubAgent>();
+builder.Services.AddSingleton<MemoryLibraryTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<MemoryLibraryTool>());
+builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<MemoryLibraryTool>());
 builder.Services.AddSingleton<SkillRuntime>();
 builder.Services.AddSingleton<ITerminalProcessManager, TerminalProcessManager>();
 builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
 builder.Services.AddSingleton<IAgentLoopHook, EmbeddingGenerationHook>();
+
+// ── 潜意识记忆系统（阶段 2：LLM 抽取与后台整合）────────────────
+var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(
+    new UnboundedChannelOptions
+    {
+        SingleReader = true,
+        SingleWriter = false,
+    });
+builder.Services.AddSingleton(subconsciousChannel);
+builder.Services.AddSingleton<ISubconsciousOrchestrator, SubconsciousOrchestrator>();
+builder.Services.AddSingleton<SubconsciousConsolidationHook>();
+builder.Services.AddSingleton<IAgentLoopHook>(sp => sp.GetRequiredService<SubconsciousConsolidationHook>());
+builder.Services.AddHostedService<SubconsciousWorkerService>();
+
+// ── 流式事件总线（可观测性基础设施）────────────────────────────
+builder.Services.AddSingleton<StreamingEventBus>();
+builder.Services.AddSingleton<IStreamingEventBus>(sp => sp.GetRequiredService<StreamingEventBus>());
+builder.Services.AddSingleton<SseEventForwarder>();
+
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
@@ -248,6 +284,7 @@ builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
         memoryConfig);
 });
 builder.Services.AddSingleton<SystemPromptBuilder>();
+builder.Services.AddSingleton<ContextAssemblyStore>();
 builder.Services.AddSingleton<ContextPipeline>();
 builder.Services.AddSingleton<ContextWindowManager>();
 // ── Agent Persona 文件读取器 ──
@@ -311,6 +348,9 @@ builder.Configuration.AddJsonFile(stateFilePath, optional: true, reloadOnChange:
 builder.Services.AddSingleton<BootstrapStateService>(sp =>
     new BootstrapStateService(stateFilePath, sp.GetRequiredService<IConfiguration>()));
 
+// ── JSON 配置种子服务 ─────────────────────────────
+builder.Services.AddScoped<JsonConfigSeedService>();
+
 var app = builder.Build();
 
 var p2pDiscoveryService = app.Services.GetRequiredService<IP2pDiscoveryService>();
@@ -360,6 +400,35 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     await db.Database.MigrateAsync();
 
+    // ── 幂等补列：实体已新增但尚未生成迁移的列，启动时通过 ALTER TABLE 兜底
+    //   仿照 MemoryLibraryDbInitializer 的"duplicate column name" 异常吞噬模式。
+    //   一旦后续生成正式迁移，这些 ALTER 仍然安全（已存在则忽略）。
+    var pendingColumnDdl = new[]
+    {
+        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';",
+        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;",
+        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';",
+        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;",
+    };
+    foreach (var ddl in pendingColumnDdl)
+    {
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(ddl);
+            app.Logger.LogInformation("[Schema] 已补列：{Ddl}", ddl);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (
+            ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        {
+            // 幂等：列已存在，忽略
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "[Schema] 幂等补列失败（将继续启动）：{Ddl}", ddl);
+        }
+    }
+
     var controllerDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ControllerDbContext>>();
     await using (var controllerDb = await controllerDbFactory.CreateDbContextAsync())
     {
@@ -377,6 +446,10 @@ using (var scope = app.Services.CreateScope())
 
     var runtimeDispatcher = scope.ServiceProvider.GetRequiredService<RuntimeDispatcher>();
     runtimeDispatcher.SetFallbackEndpoint(runtimeEndpoint);
+
+    // ── JSON 配置种子（幂等 Upsert）──────────────────
+    var configSeed = scope.ServiceProvider.GetRequiredService<JsonConfigSeedService>();
+    await configSeed.SeedAsync();
 }
 
 // ── 错误处理 ─────────────────────────────────────────
@@ -412,8 +485,95 @@ app.MapControllerRoute(
     pattern: "platform/{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
 
-// ── 健康检查 ─────────────────────────────────────────
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
+// ── 健康检查（含版本/Hash）─────────────────────────
+app.MapGet("/health", () =>
+{
+    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+    var version = assembly.GetName().Version?.ToString() ?? "0.0.0";
+    // 散列 Runtime + MemoryEngine 程序集（覆盖最常变更的业务逻辑）
+    string? imageHash = null;
+    string? buildTime = null;
+    try
+    {
+        var dlls = new[] { "PuddingRuntime.dll", "PuddingMemoryEngine.dll" };
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        foreach (var dll in dlls)
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, dll);
+            if (File.Exists(path))
+            {
+                using var stream = File.OpenRead(path);
+                var hash = sha.ComputeHash(stream); // 累积散列
+                buildTime = File.GetLastWriteTimeUtc(path).ToString("o");
+            }
+        }
+        imageHash = Convert.ToHexString(sha.Hash!) [^8..];
+    }
+    catch { imageHash = "unknown"; }
+
+    return Results.Ok(new
+    {
+        status = "healthy",
+        version,
+        imageHash,
+        buildTime = buildTime ?? "unknown",
+        timestamp = DateTimeOffset.UtcNow
+    });
+});
+
+// ── 潜意识 LLM 状态（可观测性）──────────────────────
+app.MapGet("/health/subconscious", async (
+    IDbContextFactory<PuddingMemoryEngine.Data.MemoryDbContext> dbFactory,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("HealthCheck");
+    try
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var recentJobs = await db.SubconsciousJobLogs
+            .AsNoTracking()
+            .OrderByDescending(j => j.CreatedAt)
+            .Take(10)
+            .Select(j => new
+            {
+                j.JobId,
+                j.SessionId,
+                j.Status,
+                j.FactsExtracted,
+                j.FactsMerged,
+                j.FactsDiscarded,
+                j.ElapsedMs,
+                j.LlmModelId,
+                j.ErrorMessage,
+                j.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        var totalFacts = await db.MemoryFacts.CountAsync(f => f.Status == "active", ct);
+        var totalPrefs = await db.MemoryPreferences.CountAsync(ct);
+
+        return Results.Ok(new
+        {
+            recentJobs,
+            summary = new
+            {
+                totalJobs = recentJobs.Count,
+                successCount = recentJobs.Count(j => j.Status == "completed"),
+                failCount = recentJobs.Count(j => j.Status == "failed"),
+                totalFacts,
+                totalPreferences = totalPrefs
+            },
+            timestamp = DateTimeOffset.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[HealthCheck] Subconscious status query failed");
+        return Results.Ok(new { status = "unavailable", error = ex.Message });
+    }
+});
 
 // ── Chat API ─────────────────────────────────────────
 app.MapPost("/api/chat", async (

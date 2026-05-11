@@ -29,7 +29,7 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
     }
 
     public Task<TerminalProcessInfo> StartAsync(
-        string sessionId, string command, string workingDir, CancellationToken ct)
+        string sessionId, string command, string workingDir, CancellationToken ct = default)
     {
         var processId = Guid.NewGuid().ToString("N")[..12];
         var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions

@@ -18,10 +18,12 @@ COPY Source/PuddingGateway/PuddingGateway.csproj     Source/PuddingGateway/
 
 RUN dotnet restore Source/PuddingAgent/PuddingAgent.csproj
 
-# 复制全部源码
+# 复制全部源码（CACHE_BUST 强制每次重新复制）
+ARG CACHE_BUST
 COPY Source/ Source/
 
-# 发布
+# 发布（CACHE_BUST 强制每次重编）
+ARG CACHE_BUST=0
 RUN dotnet publish Source/PuddingAgent/PuddingAgent.csproj \
     -c Release -o /app \
     --nologo

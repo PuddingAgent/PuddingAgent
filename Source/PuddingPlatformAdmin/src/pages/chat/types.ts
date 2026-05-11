@@ -29,6 +29,7 @@ export interface ChatTurn {
     id: string;
     status: AssistantStatus;
     reasoningBlocks: ReasoningBlock[];
+    _reasoningCollapsed?: boolean;
     stepCards: StepCard[];
     answerMarkdown: string;
     isStreaming: boolean;

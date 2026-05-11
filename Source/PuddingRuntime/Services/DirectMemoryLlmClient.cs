@@ -49,7 +49,7 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
             "Classify this message for long-term memory. Keep output concise JSON only.\n" +
             "Message:\n" + messageText;
 
-        var raw = await CompleteAsync(systemPrompt, userPrompt, 220, ct);
+        var raw = await CompleteAsync(systemPrompt, userPrompt, 220, null, ct);
         if (string.IsNullOrWhiteSpace(raw))
         {
             return new MemoryClassification(false, 0.1, 0.2, null, null);
@@ -93,7 +93,7 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
             sb.AppendLine($"- {item}");
         }
 
-        var raw = await CompleteAsync(systemPrompt, sb.ToString(), 300, ct);
+        var raw = await CompleteAsync(systemPrompt, sb.ToString(), 300, null, ct);
         return string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
     }
 
@@ -109,7 +109,7 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
             "{\"intentType\":\"task_progress|preference|past_conversation|factual|general\",\"entities\":[\"...\"],\"timeRange\":\"recent|recent_month|months_ago|any\",\"searchQuery\":\"...\",\"tagPrefix\":\"...\"}.";
 
         var userPrompt = "Message:\n" + userMessage.Trim();
-        var raw = await CompleteAsync(systemPrompt, userPrompt, 180, ct);
+        var raw = await CompleteAsync(systemPrompt, userPrompt, 180, null, ct);
         if (string.IsNullOrWhiteSpace(raw))
         {
             return null;
@@ -131,22 +131,50 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
     public async Task<string> ChatAsync(
         string systemPrompt, string userMessage, IReadOnlyList<object>? tools = null, CancellationToken ct = default)
     {
-        // 回退到 CompleteAsync（当前不支持 tools，后续对接真实 LLM 时扩展）
-        var result = await CompleteAsync(systemPrompt, userMessage, maxTokens: 1024, ct);
+        var result = await ChatWithConfigAsync(systemPrompt, userMessage, null, tools, ct);
         return result ?? "ok";
+    }
+
+    public async Task<string> ChatWithConfigAsync(
+        string systemPrompt,
+        string userMessage,
+        MemoryLlmConfig? memoryLlmConfig,
+        IReadOnlyList<object>? tools = null,
+        CancellationToken ct = default)
+    {
+        var dedicatedConfig = ResolveDedicatedConfig(memoryLlmConfig);
+
+        if (dedicatedConfig is not null && !string.IsNullOrWhiteSpace(dedicatedConfig.ApiKey))
+        {
+            try
+            {
+                if (tools is { Count: > 0 })
+                    return await CompleteByDedicatedModelWithToolsAsync(systemPrompt, userMessage, tools, dedicatedConfig, ct);
+                return await CompleteByDedicatedModelAsync(systemPrompt, userMessage, 1024, dedicatedConfig, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[MemoryLlm] Dedicated memory model failed, fallback to runtime model.");
+            }
+        }
+
+        return await CompleteAsync(systemPrompt, userMessage, maxTokens: 1024, memoryLlmConfig, ct) ?? "ok";
     }
 
     private async Task<string?> CompleteAsync(
         string systemPrompt,
         string userPrompt,
         int maxTokens,
+        MemoryLlmConfig? overrideConfig,
         CancellationToken ct)
     {
-        if (_memoryConfig is not null && !string.IsNullOrWhiteSpace(_memoryConfig.ApiKey))
+        var dedicatedConfig = ResolveDedicatedConfig(overrideConfig);
+
+        if (dedicatedConfig is not null && !string.IsNullOrWhiteSpace(dedicatedConfig.ApiKey))
         {
             try
             {
-                return await CompleteByDedicatedModelAsync(systemPrompt, userPrompt, maxTokens, ct);
+                return await CompleteByDedicatedModelAsync(systemPrompt, userPrompt, maxTokens, dedicatedConfig, ct);
             }
             catch (Exception ex)
             {
@@ -179,11 +207,12 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
         string systemPrompt,
         string userPrompt,
         int maxTokens,
+        LlmConfig dedicatedConfig,
         CancellationToken ct)
     {
-        var endpoint = _memoryConfig?.Endpoint?.TrimEnd('/') ?? "https://api.openai.com/v1";
-        var model = _memoryConfig?.ModelId ?? "gpt-4o-mini";
-        var apiKey = _memoryConfig?.ApiKey ?? string.Empty;
+        var endpoint = dedicatedConfig.Endpoint?.TrimEnd('/') ?? "https://api.openai.com/v1";
+        var model = dedicatedConfig.ModelId ?? "gpt-4o-mini";
+        var apiKey = dedicatedConfig.ApiKey ?? string.Empty;
 
         var requestBody = new
         {
@@ -194,29 +223,146 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
                 new { role = "user", content = userPrompt },
             },
             temperature = 0.1,
-            max_tokens = Math.Clamp(maxTokens, 64, 1200),
+            max_completion_tokens = Math.Clamp(maxTokens, 64, 1600),
+            thinking = new { type = "disabled" },
         };
 
-        using var client = _httpClientFactory.CreateClient("DirectLlm");
+        using var httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromSeconds(60);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}/chat/completions")
         {
             Content = JsonContent.Create(requestBody, options: JsonOptions),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-        using var response = await client.SendAsync(request, ct);
+        _logger.LogDebug(
+            "[MemoryLlm] Sending request endpoint={Endpoint} model={Model} sysLen={SysLen} userLen={UserLen} maxTokens={MaxTokens}",
+            endpoint, model, systemPrompt.Length, userPrompt.Length, maxTokens);
+
+        using var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
-        var text = body.TryGetProperty("choices", out var choices)
-                   && choices.ValueKind == JsonValueKind.Array
-                   && choices.GetArrayLength() > 0
-                   && choices[0].TryGetProperty("message", out var msg)
-                   && msg.TryGetProperty("content", out var content)
-            ? content.GetString()
+
+        string? text = null;
+
+        // 1. 标准 content
+        if (body.TryGetProperty("choices", out var choices)
+            && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0
+            && choices[0].TryGetProperty("message", out var msg)
+            && msg.TryGetProperty("content", out var content)
+            && content.ValueKind == JsonValueKind.String)
+        {
+            text = content.GetString();
+        }
+
+        // 2. 兜底：thinking 模型的 reasoning_content
+        if (string.IsNullOrWhiteSpace(text)
+            && body.TryGetProperty("choices", out choices)
+            && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0
+            && choices[0].TryGetProperty("message", out var msgFallback)
+            && msgFallback.TryGetProperty("reasoning_content", out var reasoning)
+            && reasoning.ValueKind == JsonValueKind.String)
+        {
+            text = reasoning.GetString();
+            _logger.LogDebug("[MemoryLlm] Used reasoning_content len={Len}", text?.Length ?? 0);
+        }
+
+        // 3. 最终兜底日志
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogWarning("[MemoryLlm] Response body has no content field. body preview: {Body}",
+                body.GetRawText().Length > 500 ? body.GetRawText()[..500] : body.GetRawText());
+        }
+
+        var usageTokens = body.TryGetProperty("usage", out var usage)
+                          && usage.TryGetProperty("total_tokens", out var total)
+            ? (int?)total.GetInt32()
             : null;
 
+        _logger.LogDebug(
+            "[MemoryLlm] Response received model={Model} textLen={TextLen} tokens={Tokens}",
+            model, text?.Length ?? 0, usageTokens);
+
         return text;
+    }
+
+    /// <summary>
+    /// 带 Tool/Function Calling 的 Memory LLM 调用。
+    /// 直接构建 OpenAI 兼容的 tool_choice 请求，返回原始 JSON 字符串供调用方解析 tool_calls。
+    /// </summary>
+    private async Task<string> CompleteByDedicatedModelWithToolsAsync(
+        string systemPrompt,
+        string userPrompt,
+        IReadOnlyList<object> tools,
+        LlmConfig dedicatedConfig,
+        CancellationToken ct)
+    {
+        var endpoint = dedicatedConfig.Endpoint?.TrimEnd('/') ?? "https://api.openai.com/v1";
+        var model = dedicatedConfig.ModelId ?? "gpt-4o-mini";
+        var apiKey = dedicatedConfig.ApiKey ?? string.Empty;
+
+        var requestBody = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt },
+            },
+            temperature = 0.1,
+            max_completion_tokens = 1024,
+            thinking = new { type = "disabled" },
+            tools,
+            tool_choice = "auto",
+        };
+
+        using var httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromSeconds(60);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}/chat/completions")
+        {
+            Content = JsonContent.Create(requestBody, options: JsonOptions),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        _logger.LogDebug(
+            "[MemoryLlm] Sending tool request endpoint={Endpoint} model={Model} sysLen={SysLen} userLen={UserLen}",
+            endpoint, model, systemPrompt.Length, userPrompt.Length);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+
+        var rawJson = await response.Content.ReadAsStringAsync(ct);
+
+        // 验证格式：检查是否有 tool_calls
+        using var doc = JsonDocument.Parse(rawJson);
+        var hasToolCalls = doc.RootElement.TryGetProperty("choices", out var choices)
+            && choices[0].TryGetProperty("message", out var msg)
+            && msg.TryGetProperty("tool_calls", out _);
+
+        _logger.LogDebug(
+            "[MemoryLlm] Tool response model={Model} hasToolCalls={HasTools} textLen={Len}",
+            model, hasToolCalls, rawJson.Length);
+
+        return rawJson;
+    }
+
+    private LlmConfig? ResolveDedicatedConfig(MemoryLlmConfig? overrideConfig)
+    {
+        if (overrideConfig is not null
+            && (!string.IsNullOrWhiteSpace(overrideConfig.Endpoint)
+                || !string.IsNullOrWhiteSpace(overrideConfig.ApiKey)
+                || !string.IsNullOrWhiteSpace(overrideConfig.ModelId)))
+        {
+            return new LlmConfig
+            {
+                Endpoint = overrideConfig.Endpoint,
+                ApiKey = overrideConfig.ApiKey,
+                ModelId = overrideConfig.ModelId,
+            };
+        }
+
+        return _memoryConfig;
     }
 
     private static bool TryParseClassification(string raw, out MemoryClassification classification)

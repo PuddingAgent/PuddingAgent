@@ -78,6 +78,7 @@ const getStepTone = (status?: string): 'executing' | 'success' | 'error' => {
   const key = (status || '').toLowerCase();
   if (key.includes('error') || key.includes('fail') || key.includes('cancel')) return 'error';
   if (key.includes('done') || key.includes('success') || key.includes('complete')) return 'success';
+  if (key.includes('tool_call')) return 'executing';
   return 'executing';
 };
 
@@ -229,6 +230,58 @@ export function useChatState(): UseChatStateReturn {
             ...turn.assistant, status: 'streaming' as const, isStreaming: true,
             renderMode: 'structured' as const,
             answerMarkdown: turn.assistant.answerMarkdown + ev.delta,
+          },
+        };
+      }
+      if (ev.type === 'thinking') {
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant, status: 'thinking' as const, renderMode: 'structured' as const,
+            reasoningBlocks: [...turn.assistant.reasoningBlocks, { id: createId(), text: ev.delta, collapsed: true }],
+          },
+        };
+      }
+      if (ev.type === 'tool_call') {
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant, renderMode: 'structured' as const,
+            stepCards: [...turn.assistant.stepCards, {
+              id: createId(),
+              status: 'tool_call',
+              message: `🔧 调用工具: ${ev.name}\n参数: ${ev.arguments}`,
+              timestamp: Date.now(),
+            }],
+          },
+        };
+      }
+      if (ev.type === 'tool_result') {
+        const exitLabel = ev.exitCode === 0 ? '✓' : '✗';
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant, renderMode: 'structured' as const,
+            stepCards: [...turn.assistant.stepCards, {
+              id: createId(),
+              status: ev.exitCode === 0 ? 'success' : 'error',
+              message: `🔧 ${ev.name} ${exitLabel}\n${ev.output || ev.error || '(empty)'}`,
+              timestamp: Date.now(),
+            }],
+          },
+        };
+      }
+      if (ev.type === 'subconscious_step') {
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant, renderMode: 'structured' as const,
+            stepCards: [...turn.assistant.stepCards, {
+              id: createId(),
+              status: ev.status === 'done' ? 'done' : 'thinking',
+              message: `🧠 ${ev.message}`,
+              timestamp: Date.now(),
+            }],
           },
         };
       }

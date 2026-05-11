@@ -20,7 +20,8 @@ public class Program
                 .WithIterationCount(5)
                 .WithWarmupCount(3));
 
-        BenchmarkRunner.Run<MemoryLibraryBenchmarks>(config, args);
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
+            .Run(args, config);
     }
 }
 

@@ -1,4 +1,4 @@
-import { request } from '@umijs/max';
+﻿import { request } from '@umijs/max';
 
 // ─── 类型定义（与 C# 模型对齐）───────────────────────────────────
 
@@ -1271,11 +1271,15 @@ export interface AdminChatResponse {
 export type AdminChatStreamEvent =
   | { type: 'metadata'; messageId: string; sessionId: string; routeDecisionId?: string }
   | { type: 'delta'; delta: string }
+  | { type: 'thinking'; delta: string }
+  | { type: 'tool_call'; name: string; arguments: string }
+  | { type: 'tool_result'; name: string; exitCode: number; output: string; error?: string }
   | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
   | { type: 'usage'; usage: TokenUsageDto }
   | { type: 'done'; reply?: string; usage?: TokenUsageDto }
   | { type: 'error'; message: string }
-  | { type: 'cancelled'; message?: string };
+  | { type: 'cancelled'; message?: string }
+  | { type: 'subconscious_step'; status: 'loading' | 'thinking' | 'done'; message: string; [key: string]: unknown };
 
 // ─── Chat API ─────────────────────────────────────────────────
 
@@ -1342,6 +1346,18 @@ export async function sendAdminChatMessageStream(
       onEvent({ type: 'metadata', ...payload });
     } else if (eventName === 'delta') {
       onEvent({ type: 'delta', delta: payload.delta ?? payload.contentDelta ?? '' });
+    } else if (eventName === 'thinking') {
+      onEvent({ type: 'thinking', delta: payload.delta ?? payload.content ?? '' });
+    } else if (eventName === 'tool_call') {
+      onEvent({ type: 'tool_call', name: payload.name, arguments: payload.arguments });
+    } else if (eventName === 'tool_result') {
+      onEvent({ type: 'tool_result', name: payload.name, exitCode: payload.exitCode, output: payload.output, error: payload.error });
+    } else if (eventName === 'subconscious.load') {
+      onEvent({ type: 'subconscious_step', status: 'loading', message: `加载了 ${payload.factsCount ?? payload.count ?? 0} 条记忆` });
+    } else if (eventName === 'subconscious.think') {
+      onEvent({ type: 'subconscious_step', status: 'thinking', message: payload.status ?? '正在检索记忆...' });
+    } else if (eventName === 'subconscious.done') {
+      onEvent({ type: 'subconscious_step', status: 'done', message: `记忆检索完成` });
     } else if (eventName === 'step') {
       onEvent({ type: 'step', ...payload });
     } else if (eventName === 'usage') {

@@ -120,3 +120,61 @@ CREATE TRIGGER IF NOT EXISTS trg_Messages_au AFTER UPDATE ON Messages BEGIN
   INSERT INTO Messages_fts(Messages_fts, rowid, Content) VALUES('delete', old.rowid, old.Content);
   INSERT INTO Messages_fts(rowid, Content) VALUES (new.rowid, new.Content);
 END;
+
+CREATE TABLE IF NOT EXISTS MemoryFacts (
+    FactId           TEXT PRIMARY KEY,
+    WorkspaceId      TEXT NOT NULL,
+    Statement        TEXT NOT NULL,
+    Confidence       REAL NOT NULL DEFAULT 0.8,
+    Category         TEXT NOT NULL DEFAULT 'general',
+    SourceSessionId  TEXT,
+    SourceMessageId  TEXT,
+    Tags             TEXT,
+    Embedding        BLOB,
+    Status           TEXT NOT NULL DEFAULT 'active',
+    MergedInto       TEXT,
+    AccessCount      INTEGER NOT NULL DEFAULT 0,
+    CreatedAt        INTEGER NOT NULL,
+    UpdatedAt        INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_MemoryFacts_Workspace_Category
+    ON MemoryFacts(WorkspaceId, Category);
+CREATE INDEX IF NOT EXISTS IX_MemoryFacts_SourceSession
+    ON MemoryFacts(SourceSessionId);
+
+CREATE TABLE IF NOT EXISTS MemoryPreferences (
+    PreferenceId     TEXT PRIMARY KEY,
+    WorkspaceId      TEXT NOT NULL,
+    Category         TEXT NOT NULL,
+    Key              TEXT NOT NULL,
+    Value            TEXT NOT NULL,
+    SourceSessionId  TEXT,
+    SourceMessageId  TEXT,
+    CreatedAt        INTEGER NOT NULL,
+    UpdatedAt        INTEGER NOT NULL,
+    UNIQUE(WorkspaceId, Category, Key)
+);
+
+CREATE INDEX IF NOT EXISTS IX_MemoryPreferences_Workspace
+    ON MemoryPreferences(WorkspaceId, Category);
+
+CREATE TABLE IF NOT EXISTS SubconsciousJobLogs (
+    JobId             TEXT PRIMARY KEY,
+    SessionId         TEXT NOT NULL,
+    Status            TEXT NOT NULL DEFAULT 'pending',
+    FactsExtracted    INTEGER NOT NULL DEFAULT 0,
+    FactsMerged       INTEGER NOT NULL DEFAULT 0,
+    FactsDiscarded    INTEGER NOT NULL DEFAULT 0,
+    ChaptersCreated   INTEGER NOT NULL DEFAULT 0,
+    LlmTokensUsed     INTEGER NOT NULL DEFAULT 0,
+    LlmModelId        TEXT,
+    ElapsedMs         INTEGER NOT NULL DEFAULT 0,
+    ErrorMessage      TEXT,
+    StartedAt         INTEGER,
+    CompletedAt       INTEGER,
+    CreatedAt         INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_SubconsciousJobLogs_Session
+    ON SubconsciousJobLogs(SessionId);

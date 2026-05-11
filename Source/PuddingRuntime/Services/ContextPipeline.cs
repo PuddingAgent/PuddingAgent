@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntime.Services;
@@ -20,12 +21,15 @@ public sealed class ContextPipeline
     private readonly SkillRuntime _skillRuntime;
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly IMemoryLibraryConvenience? _libraryConvenience;
+    private readonly IMemoryRecallService? _recallService;
+    private readonly ISubconsciousOrchestrator? _orchestrator;
     private readonly IAgentTemplateProvider? _templateProvider;
     private readonly IWorkspaceProfileProvider? _workspaceProfileProvider;
     private readonly AgentPersonaFileProvider? _personaFileProvider;
     private readonly SystemPromptBuilder _promptBuilder;
     private readonly IMemoryCache _memCache;
     private readonly ILogger<ContextPipeline> _logger;
+    private readonly ContextAssemblyStore _contextAssemblyStore;
 
     // 静态层缓存：sessionId → StaticContextCache
     private readonly ConcurrentDictionary<string, StaticContextCache> _staticCache = new();
@@ -47,8 +51,11 @@ public sealed class ContextPipeline
         AgentSkillPackageRegistry skillPackageRegistry,
         SystemPromptBuilder promptBuilder,
         IMemoryCache memCache,
+        ContextAssemblyStore contextAssemblyStore,
         ILogger<ContextPipeline> logger,
         IMemoryLibraryConvenience? libraryConvenience = null,
+        IMemoryRecallService? recallService = null,
+        ISubconsciousOrchestrator? orchestrator = null,
         IAgentTemplateProvider? templateProvider = null,
         IWorkspaceProfileProvider? workspaceProfileProvider = null,
         AgentPersonaFileProvider? personaFileProvider = null)
@@ -58,8 +65,11 @@ public sealed class ContextPipeline
         _skillPackageRegistry = skillPackageRegistry;
         _promptBuilder = promptBuilder;
         _memCache = memCache;
+        _contextAssemblyStore = contextAssemblyStore;
         _logger = logger;
         _libraryConvenience = libraryConvenience;
+        _recallService = recallService;
+        _orchestrator = orchestrator;
         _templateProvider = templateProvider;
         _workspaceProfileProvider = workspaceProfileProvider;
         _personaFileProvider = personaFileProvider;
@@ -75,6 +85,7 @@ public sealed class ContextPipeline
         var sb = new StringBuilder();
         var usedBudget = 0;
         var layers = new List<ContextLayerSnapshot>();
+        var layerInfos = new List<ContextLayerInfo>();
 
         // ── L0: 静态上下文（IDENTITY/SOUL/AGENTS）— Session 内不变，利用 KV-cache ──
         var staticCtx = await GetOrBuildStaticLayerAsync(request, ct);
@@ -82,6 +93,12 @@ public sealed class ContextPipeline
         AppendLayer(sb, staticCtx);
         usedBudget += staticTokens;
         layers.Add(new ContextLayerSnapshot("静态上下文", staticTokens, (double)staticTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L0-STATIC",
+            TokenCount = staticTokens,
+            ContentPreview = BuildPreview(staticCtx),
+        });
 
         // ── 计算可用预算 ──
         var availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 500);
@@ -101,6 +118,12 @@ public sealed class ContextPipeline
         AppendLayer(sb, toolsTrimmed);
         usedBudget += toolsTokens;
         layers.Add(new ContextLayerSnapshot("动态工具", toolsTokens, (double)toolsTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L1-TOOLS",
+            TokenCount = toolsTokens,
+            ContentPreview = BuildPreview(toolsTrimmed),
+        });
 
         // ── L2: 动态 Skills（5%）──
         var skillsCtx = BuildSkillsLayer(request);
@@ -110,10 +133,22 @@ public sealed class ContextPipeline
         AppendLayer(sb, skillsTrimmed);
         usedBudget += skillsTokens;
         layers.Add(new ContextLayerSnapshot("动态技能", skillsTokens, (double)skillsTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L2-SKILLS",
+            TokenCount = skillsTokens,
+            ContentPreview = BuildPreview(skillsTrimmed),
+        });
 
         // ── L3: 用户偏好（输出）──
         AppendLayer(sb, userProfile);
         layers.Add(new ContextLayerSnapshot("用户偏好", userProfileTokens, (double)userProfileTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L3-USER",
+            TokenCount = userProfileTokens,
+            ContentPreview = BuildPreview(userProfile),
+        });
 
         // ── L4: 重要记忆（10%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
@@ -126,6 +161,12 @@ public sealed class ContextPipeline
         AppendLayer(sb, pinnedTrimmed);
         usedBudget += pinnedTokens;
         layers.Add(new ContextLayerSnapshot("重要记忆", pinnedTokens, (double)pinnedTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L4-PINNED",
+            TokenCount = pinnedTokens,
+            ContentPreview = BuildPreview(pinnedTrimmed),
+        });
 
         // ── L5: 近期历史（40%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
@@ -135,6 +176,12 @@ public sealed class ContextPipeline
         AppendLayer(sb, recentCtx);
         usedBudget += recentTokens;
         layers.Add(new ContextLayerSnapshot("近期历史", recentTokens, (double)recentTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L5-RECENT",
+            TokenCount = recentTokens,
+            ContentPreview = BuildPreview(recentCtx),
+        });
 
         // ── L6: 召回记忆（25%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
@@ -145,6 +192,12 @@ public sealed class ContextPipeline
         AppendLayer(sb, recalledTrimmed);
         usedBudget += recalledTokens;
         layers.Add(new ContextLayerSnapshot("召回记忆", recalledTokens, (double)recalledTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L6-RECALLED",
+            TokenCount = recalledTokens,
+            ContentPreview = BuildPreview(recalledTrimmed),
+        });
 
         // ── L7: 当前消息（15%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 100);
@@ -153,6 +206,12 @@ public sealed class ContextPipeline
         var currentMsgTokens = EstimateTokens(currentMsg);
         AppendLayer(sb, currentMsg);
         layers.Add(new ContextLayerSnapshot("当前消息", currentMsgTokens, (double)currentMsgTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L7-CURRENT",
+            TokenCount = currentMsgTokens,
+            ContentPreview = BuildPreview(currentMsg),
+        });
 
         // ── 压缩指令（如触发）──
         if (compactionLevel >= ContextCompactionLevel.Aggressive)
@@ -166,6 +225,12 @@ public sealed class ContextPipeline
         AppendRuntimeLayer(sb, request);
         var runtimeTokens = EstimateTokens(sb.ToString()) - EstimateTokens(sb.ToString(0, runtimeLen));
         layers.Add(new ContextLayerSnapshot("运行时指令", Math.Max(0, runtimeTokens), (double)Math.Max(0, runtimeTokens) / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L8-RUNTIME",
+            TokenCount = Math.Max(0, runtimeTokens),
+            ContentPreview = BuildPreview(sb.ToString(runtimeLen, sb.Length - runtimeLen)),
+        });
 
         // ── 压缩后附注 ──
         if (compactionLevel >= ContextCompactionLevel.Aggressive)
@@ -174,6 +239,16 @@ public sealed class ContextPipeline
         }
 
         var result = sb.ToString();
+        var estimatedTotalTokens = layerInfos.Sum(x => x.TokenCount);
+
+        _contextAssemblyStore.Set(new ContextAssemblySnapshot
+        {
+            SessionId = request.SessionId,
+            AssembledAt = DateTimeOffset.UtcNow,
+            Layers = layerInfos,
+            TotalTokens = estimatedTotalTokens,
+        });
+
         _logger.LogDebug(
             "[ContextPipeline] Assembled context session={Session} totalBudget={Total} usedEstimate={Used} level={Level} len={Len}",
             request.SessionId, totalBudget, usedBudget, compactionLevel, result.Length);
@@ -329,6 +404,9 @@ public sealed class ContextPipeline
             sb.AppendLine("Standard built-in tools available (read_file, grep, bash, file_search, etc.)");
         }
 
+        sb.AppendLine("Memory tool hint: use `search_memory` when you need to recall user facts from memory library.");
+        sb.AppendLine("Books are organized by category: 用户档案、用户偏好、对话摘要、计划与任务.");
+
         return Task.FromResult(sb.ToString());
     }
 
@@ -406,6 +484,11 @@ public sealed class ContextPipeline
                 "important critical key",
                 topK: 5,
                 ct);
+
+            _logger.LogDebug(
+                "[ContextPipeline:Pinned] workspace={Workspace} results={Count} cache={Cached}",
+                request.WorkspaceId, results.Count, cached is not null);
+
             if (results.Count > 0)
             {
                 sb.AppendLine("[IMPORTANT MEMORIES]");
@@ -537,6 +620,124 @@ public sealed class ContextPipeline
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: RECALLED ---");
 
+        // 读取模板记忆检索模式：deep（多轮 LLM 检索）/ instant（快速路径）
+        var memorySearchMode = "deep";
+        if (_templateProvider is not null && !string.IsNullOrWhiteSpace(request.AgentTemplateId))
+        {
+            try
+            {
+                var persona = await _templateProvider.GetPersonaAsync(
+                    request.AgentTemplateId,
+                    request.WorkspaceId,
+                    ct);
+
+                if (!string.IsNullOrWhiteSpace(persona?.MemorySearchMode))
+                    memorySearchMode = persona.MemorySearchMode!.Trim().ToLowerInvariant();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "[ContextPipeline:L6] Load MemorySearchMode failed template={Template} workspace={Workspace}, fallback deep",
+                    request.AgentTemplateId,
+                    request.WorkspaceId);
+            }
+        }
+
+        if (memorySearchMode is not ("deep" or "instant"))
+            memorySearchMode = "deep";
+
+        if (memorySearchMode == "deep" && _orchestrator is not null)
+        {
+            var deepSw = System.Diagnostics.Stopwatch.StartNew();
+            SubconsciousOrchestrator.ClearCurrentRecallDiagnostics();
+
+            try
+            {
+                // 等待最近的 Consolidation 完成后再进行 deep recall
+                // （避免 Book 还未写入 Library 就开始搜索）
+                await Task.Delay(5000, ct);
+                var maxTokens = compactionLevel >= ContextCompactionLevel.Aggressive ? 1000 : 2000;
+                var recallText = await _orchestrator.RecallAugmentedAsync(
+                    request.UserMessage,
+                    request.WorkspaceId,
+                    request.AgentInstanceId,
+                    request.SessionId,
+                    maxTokens,
+                    ct);
+
+                deepSw.Stop();
+
+                var diag = SubconsciousOrchestrator.CurrentRecallDiagnostics;
+                _logger.LogDebug(
+                    "[ContextPipeline:L6] mode=deep rounds={Rounds} totalQueries={TotalQueries} foundItemsCount={FoundItemsCount} totalLatency={TotalLatency}ms",
+                    diag?.Rounds ?? 0,
+                    diag?.TotalQueries ?? 0,
+                    diag?.FoundItemsCount ?? 0,
+                    diag?.TotalLatencyMs ?? deepSw.ElapsedMilliseconds);
+
+                if (!string.IsNullOrWhiteSpace(recallText))
+                {
+                    sb.AppendLine("[RECALLED MEMORIES]");
+                    sb.AppendLine(recallText.Trim());
+                    return sb.ToString();
+                }
+
+                // deep recall 无结果 → fallback 到 instant 路径（MemoryRecallService 直接查 MemoryFacts）
+                _logger.LogDebug("[ContextPipeline:L6] deep recall returned null, falling back to instant");
+                // 继续走下方的 instant 路径（不在此处 return）
+            }
+            catch (Exception ex)
+            {
+                deepSw.Stop();
+                _logger.LogWarning(
+                    ex,
+                    "[ContextPipeline:L6] deep recall failed workspace={Workspace} session={Session}, fallback instant",
+                    request.WorkspaceId,
+                    request.SessionId);
+            }
+            finally
+            {
+                SubconsciousOrchestrator.ClearCurrentRecallDiagnostics();
+            }
+        }
+
+        // 主路径：IMemoryRecallService 融合多路召回
+        if (_recallService is not null && !string.IsNullOrWhiteSpace(request.WorkspaceId))
+        {
+            try
+            {
+                var recall = await _recallService.RecallAsync(
+                    request.UserMessage,
+                    request.WorkspaceId,
+                    recentContext: null,
+                    topK: compactionLevel >= ContextCompactionLevel.Aggressive ? 5 : 10,
+                    ct);
+
+                _logger.LogDebug(
+                    "[ContextPipeline:Recalled] recallService workspace={Workspace} lib={Lib} facts={Facts} merged={Merged}",
+                    request.WorkspaceId, recall.HitStats.LibraryHits, recall.HitStats.FactsHits, recall.Items.Count);
+
+                if (recall.Items.Count > 0)
+                {
+                    sb.AppendLine("[RECALLED MEMORIES]");
+                    foreach (var r in recall.Items)
+                    {
+                        var snippet = r.Snippet.Length > 300 ? r.Snippet[..300] : r.Snippet;
+                        sb.AppendLine($"- [{r.Source}] (score:{r.RelevanceScore:F2}): {snippet}");
+                    }
+                    return sb.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[ContextPipeline:L6] mode=instant MemoryRecallService failed workspace={Workspace}, fallback",
+                    request.WorkspaceId);
+            }
+        }
+
+        // 回退路径：SmartSearchAsync
         if (_libraryConvenience is null || string.IsNullOrWhiteSpace(request.WorkspaceId))
         {
             sb.AppendLine("(No memory library available.)");
@@ -549,6 +750,13 @@ public sealed class ContextPipeline
                 request.UserMessage,
                 topK: compactionLevel >= ContextCompactionLevel.Aggressive ? 5 : 10,
                 ct);
+
+            _logger.LogDebug(
+                "[ContextPipeline:L6] mode=instant workspace={Workspace} query={Query} results={Count} compaction={Compaction}",
+                request.WorkspaceId,
+                request.UserMessage?.Length > 60 ? request.UserMessage[..60] : request.UserMessage,
+                results.Count,
+                compactionLevel);
 
             if (results.Count == 0)
             {
@@ -613,11 +821,15 @@ public sealed class ContextPipeline
             sb.AppendLine("Respond directly to the user in Markdown.");
             sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
             sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
+            sb.AppendLine("你有访问用户记忆图书馆的能力。当需要回忆用户信息时，使用 search_memory 工具。");
+            sb.AppendLine("记忆图书馆按类别组织：用户档案、用户偏好、对话摘要、计划与任务。");
             if (request.Capability?.AllowedToolNames is { Count: > 0 })
                 sb.AppendLine("If a task requires tools, explain the limitation briefly instead of emitting tool-call JSON.");
         }
         else
         {
+            sb.AppendLine("你有访问用户记忆图书馆的能力。当需要回忆用户信息时，使用 search_memory 工具。");
+            sb.AppendLine("记忆图书馆按类别组织：用户档案、用户偏好、对话摘要、计划与任务。");
             sb.Append(_skillRuntime.BuildLoopInstructions(request.Capability));
         }
     }
@@ -729,6 +941,15 @@ public sealed class ContextPipeline
     private static bool IsExpired(DateTimeOffset createdAt)
     {
         return DateTimeOffset.UtcNow - createdAt > MemCacheExpiration;
+    }
+
+    private static string BuildPreview(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return string.Empty;
+
+        var normalized = content.Replace("\r", " ").Replace("\n", " ").Trim();
+        return normalized.Length <= 200 ? normalized : normalized[..200];
     }
 
     private static void AppendLayer(StringBuilder sb, string content)

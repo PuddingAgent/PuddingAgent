@@ -1,9 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Abstractions;
+using PuddingCode.Platform;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
+using PuddingRuntime.Services.Background;
+using System.Threading.Channels;
 
 namespace PuddingRuntime;
 
@@ -35,9 +39,23 @@ public static class RuntimeServiceExtensions
         // Agent Loop Hooks
         services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
 
+        // 潜意识后台整合基础设施
+        var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+            });
+        services.AddSingleton(subconsciousChannel);
+        services.AddSingleton<ISubconsciousOrchestrator, SubconsciousOrchestrator>();
+        services.AddSingleton<SubconsciousConsolidationHook>();
+        services.AddSingleton<IAgentLoopHook>(sp => sp.GetRequiredService<SubconsciousConsolidationHook>());
+        services.AddHostedService<SubconsciousWorkerService>();
+
         // LLM 客户端 — V1 直连（不经过 Controller 中转）
         services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
         services.AddSingleton<IMemoryLlmClient, DirectMemoryLlmClient>();
+        services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 
         // Agent 执行子服务（职责拆分）
         services.AddSingleton<SystemPromptBuilder>();

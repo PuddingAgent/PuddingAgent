@@ -1,3 +1,5 @@
+using PuddingCode.Platform;
+
 namespace PuddingCode.Abstractions;
 
 /// <summary>
@@ -27,6 +29,18 @@ public interface IMemoryLlmClient
     /// tools 为 null 或空时表示纯对话模式。
     /// </summary>
     Task<string> ChatAsync(string systemPrompt, string userMessage, IReadOnlyList<object>? tools = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// 通用对话接口（带可选记忆模型覆盖配置）。
+    /// 默认实现会忽略 memoryLlmConfig 并回退到 ChatAsync，避免破坏已有实现。
+    /// </summary>
+    Task<string> ChatWithConfigAsync(
+        string systemPrompt,
+        string userMessage,
+        MemoryLlmConfig? memoryLlmConfig,
+        IReadOnlyList<object>? tools = null,
+        CancellationToken ct = default)
+        => ChatAsync(systemPrompt, userMessage, tools, ct);
 }
 
 /// <summary>记忆分类结果。</summary>

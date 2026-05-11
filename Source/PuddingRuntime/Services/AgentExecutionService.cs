@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Abstractions;
@@ -7,6 +8,7 @@ using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
+using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntime.Services;
@@ -46,6 +48,9 @@ public sealed class AgentExecutionService
     private readonly JsonlSessionWriter? _jsonlSessionWriter;
     private readonly ITerminalProcessManager _terminalManager;
     private readonly IMemoryLibraryConvenience? _libraryConvenience;
+    private readonly Channel<ConsolidationJob>? _subconsciousJobChannel;
+    private readonly bool _hasSubconsciousHook;
+    private readonly IStreamingEventBus? _eventBus;
     private readonly ILogger<AgentExecutionService> _logger;
 
     public AgentExecutionService(
@@ -68,7 +73,9 @@ public sealed class AgentExecutionService
         IKeyVaultService? keyVaultService = null,
         JsonlSessionWriter? jsonlSessionWriter = null,
         ITerminalProcessManager? terminalManager = null,
-        IMemoryLibraryConvenience? libraryConvenience = null)
+        IMemoryLibraryConvenience? libraryConvenience = null,
+        Channel<ConsolidationJob>? subconsciousJobChannel = null,
+        IStreamingEventBus? eventBus = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -89,6 +96,9 @@ public sealed class AgentExecutionService
         _jsonlSessionWriter  = jsonlSessionWriter;
         _terminalManager     = terminalManager ?? NoOpTerminalProcessManager.Instance;
         _libraryConvenience  = libraryConvenience;
+        _subconsciousJobChannel = subconsciousJobChannel;
+        _hasSubconsciousHook = _hooks.Any(h => h is SubconsciousConsolidationHook);
+        _eventBus            = eventBus;
         _logger              = logger;
     }
 
@@ -623,6 +633,7 @@ public sealed class AgentExecutionService
         _runtimeSessionStore.Touch(request.SessionId);
 
         await FireHooksAsync(h => h.OnLoopCompleteAsync(loopCtx, finalMessage, stopReason, ct));
+        TryEnqueueSubconsciousConsolidationFallback(request, instance.AgentInstanceId, finalMessage);
 
         _logger.LogInformation(
             "[AgentExec] End session={Session} state={State} reason={Reason} replyLen={Len}",
@@ -777,8 +788,15 @@ public sealed class AgentExecutionService
                 {
                     // 思维链增量 → thinking 事件
                     if (!string.IsNullOrEmpty(delta.ReasoningDelta))
+                    {
                         yield return ServerSentEventFrame.Json(SseEventTypes.Thinking,
                             new { delta = delta.ReasoningDelta });
+                        _ = _eventBus?.EmitAsync(new StreamingEvent
+                        {
+                            Type = StreamingEventTypes.AgentThinking,
+                            Data = new { delta = delta.ReasoningDelta }
+                        }, ct);
+                    }
 
                     // 文本增量 → delta 事件
                     if (!string.IsNullOrEmpty(delta.ContentDelta))
@@ -787,6 +805,11 @@ public sealed class AgentExecutionService
                         replyBuf.Append(safeDelta);
                         yield return ServerSentEventFrame.Json(SseEventTypes.Delta,
                             new { delta = safeDelta });
+                        _ = _eventBus?.EmitAsync(new StreamingEvent
+                        {
+                            Type = StreamingEventTypes.AgentDelta,
+                            Data = new { delta = safeDelta }
+                        }, ct);
                     }
 
                     // 工具调用增量 → 累积
@@ -830,6 +853,12 @@ public sealed class AgentExecutionService
                     yield return ServerSentEventFrame.Json(SseEventTypes.ToolCall,
                         new { name = tc.Name, arguments = tc.Arguments });
 
+                    _ = _eventBus?.EmitAsync(new StreamingEvent
+                    {
+                        Type = StreamingEventTypes.AgentToolCall,
+                        Data = new { name = tc.Name, arguments = tc.Arguments }
+                    }, ct);
+
                     var injectedArgsJson = await _keyVaultService.InjectAsync(tc.Arguments, ct);
                     var result = await _skillRuntime.InvokeAsync(
                         tc.Name,
@@ -851,6 +880,12 @@ public sealed class AgentExecutionService
                         output = result.Output,
                         error = result.Error,
                     });
+
+                    _ = _eventBus?.EmitAsync(new StreamingEvent
+                    {
+                        Type = StreamingEventTypes.AgentToolResult,
+                        Data = new { name = tc.Name, exitCode = result.ExitCode, output = result.Output, error = result.Error }
+                    }, ct);
 
                     // ── terminal_execute 特殊处理：订阅进程输出流 ──
                     if (tc.Name is "terminal_execute" && result.Success)
@@ -931,6 +966,7 @@ public sealed class AgentExecutionService
 
             await FireHooksAsync(h => h.OnCompletedAsync(loopCtx, reply, ct));
             await FireHooksAsync(h => h.OnLoopCompleteAsync(loopCtx, reply, AgentLoopStopReason.Done, ct));
+            TryEnqueueSubconsciousConsolidationFallback(request, instance.AgentInstanceId, reply);
 
             _logger.LogInformation(
                 "[AgentExec] STREAM end session={Session} replyLen={Len} usage={Usage}",
@@ -1320,4 +1356,42 @@ public sealed class AgentExecutionService
 
     private static string Truncate(string s, int maxLen) =>
         s.Length <= maxLen ? s : s[..maxLen] + "…";
+
+    /// <summary>
+    /// 潜意识任务兜底触发：当 Hook 管线未注册时，直接在执行服务末尾投递后台任务。
+    /// 该路径为 fire-and-forget，不阻塞 SSE/主循环。
+    /// </summary>
+    private void TryEnqueueSubconsciousConsolidationFallback(
+        RuntimeDispatchRequest request,
+        string agentInstanceId,
+        string reply)
+    {
+        if (_hasSubconsciousHook || _subconsciousJobChannel is null)
+            return;
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var job = new ConsolidationJob
+                {
+                    SessionId = request.SessionId,
+                    WorkspaceId = request.WorkspaceId,
+                    AgentId = agentInstanceId,
+                    AgentTemplateId = request.AgentTemplateId,
+                    LastUserMessage = request.MessageText,
+                    LastAssistantReply = reply,
+                };
+
+                _subconsciousJobChannel.Writer.TryWrite(job);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "[Subconscious] Fallback enqueue ignored session={Session}",
+                    request.SessionId);
+            }
+        });
+    }
 }
