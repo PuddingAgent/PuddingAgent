@@ -93,7 +93,6 @@ export const useChatStyles = createStyles(({ token }) => ({
   },
   reasoningToggle: { color: token.colorPrimary, cursor: 'pointer', fontSize: 12, userSelect: 'none' as const },
   reasoningText: { whiteSpace: 'pre-wrap' as const, color: token.colorTextSecondary, fontSize: 13, lineHeight: 1.6, marginTop: 6 },
-  reasoningStream: { whiteSpace: 'pre-wrap' as const, color: token.colorTextSecondary, fontSize: 13, lineHeight: 1.6, padding: '8px 10px', maxHeight: 300, overflowY: 'auto' as const },
   reasoningSummary: { fontSize: 12, color: 'var(--earth-brown)', opacity: 0.5, overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis', maxWidth: '100%' },
   stepCardList: { display: 'flex', flexDirection: 'column' as const, gap: 12, position: 'relative' as const, paddingLeft: 12 },
   stepCardLine: { position: 'absolute' as const, left: 5, top: 4, bottom: 4, width: 2, borderRadius: 2, background: token.colorBorderSecondary },
@@ -283,5 +282,138 @@ export const useChatStyles = createStyles(({ token }) => ({
     wordBreak: 'break-word' as const,
     fontSize: 12,
     lineHeight: 1.5,
+  },
+  /* ── Stateful Motion: thinking, searching, memory, tool, error, success ── */
+  '@keyframes neuralPulse': {
+    '0%, 100%': { opacity: 0.4, transform: 'scale(1)' },
+    '50%': { opacity: 0.8, transform: 'scale(1.02)' },
+  },
+  '@keyframes particleFlow': {
+    '0%': { backgroundPosition: '0% 50%' },
+    '100%': { backgroundPosition: '200% 50%' },
+  },
+  '@keyframes tokenStream': {
+    '0%': { opacity: 0, transform: 'translateY(4px)' },
+    '100%': { opacity: 1, transform: 'translateY(0)' },
+  },
+  '@keyframes waveScan': {
+    '0%': { backgroundPosition: '-200% 50%' },
+    '100%': { backgroundPosition: '200% 50%' },
+  },
+  '@keyframes breathe': {
+    '0%, 100%': { opacity: 0.6, transform: 'scale(0.98)' },
+    '50%': { opacity: 1, transform: 'scale(1)' },
+  },
+  '@keyframes ambientFloat': {
+    '0%, 100%': { transform: 'translateY(0)' },
+    '50%': { transform: 'translateY(-6px)' },
+  },
+  '@keyframes glitchShake': {
+    '0%, 100%': { transform: 'translateX(0)' },
+    '10%': { transform: 'translateX(-2px)' },
+    '30%': { transform: 'translateX(2px)' },
+    '50%': { transform: 'translateX(-1px)' },
+    '70%': { transform: 'translateX(1px)' },
+  },
+  '@keyframes softDiffuse': {
+    '0%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
+    '50%': { boxShadow: '0 0 20px 4px rgba(124,58,237,0.12)' },
+    '100%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
+  },
+
+  /* ── Ambient particles background ── */
+  ambientLayer: {
+    position: 'absolute' as const, inset: 0, pointerEvents: 'none' as const,
+    background: 'radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.04) 0%, transparent 60%), radial-gradient(ellipse at 80% 100%, rgba(59,130,246,0.03) 0%, transparent 50%)',
+    zIndex: 0,
+  },
+
+  /* ── Thinking state ── */
+  agentThinking: {
+    animation: 'neuralPulse 2.5s ease-in-out infinite',
+    position: 'relative' as const,
+    '&::before': {
+      content: '""', position: 'absolute' as const, inset: -1, borderRadius: 10,
+      background: 'linear-gradient(90deg, transparent, rgba(124,58,237,0.1), transparent)',
+      backgroundSize: '200% 100%',
+      animation: 'particleFlow 3s linear infinite',
+    },
+  },
+
+  /* ── Token streaming ── */
+  tokenStreaming: {
+    animation: 'tokenStream 0.2s ease-out',
+    opacity: 1,
+  },
+
+  /* ── Searching / Tool running ── */
+  agentSearching: {
+    position: 'relative' as const,
+    '&::after': {
+      content: '""', position: 'absolute' as const, bottom: 0, left: 0, height: 2, width: '100%',
+      background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.4), transparent)',
+      backgroundSize: '200% 100%',
+      animation: 'waveScan 1.5s linear infinite',
+    },
+  },
+
+  /* ── Memory recall ── */
+  agentRecall: {
+    animation: 'softDiffuse 2s ease-in-out infinite',
+  },
+
+  /* ── Error ── */
+  agentError: {
+    animation: 'glitchShake 0.4s ease-in-out',
+    borderLeft: '3px solid #ff4d4f',
+  },
+
+  /* ── Success ── */
+  agentSuccess: {
+    animation: 'softDiffuse 1s ease-in-out 1',
+  },
+
+  /* ── Breathing message card ── */
+  breathingCard: {
+    animation: 'breathe 4s ease-in-out infinite',
+    transition: 'all 0.3s ease',
+  },
+
+  /* ── Progressive disclosure ── */
+  progressiveReveal: {
+    overflow: 'hidden' as const,
+    animation: 'revealDown 0.4s ease-out',
+  },
+  '@keyframes revealDown': {
+    '0%': { maxHeight: 0, opacity: 0 },
+    '100%': { maxHeight: 2000, opacity: 1 },
+  },
+
+  /* ── Reasoning stream (agent thinking chain) ── */
+  reasoningStream: {
+    whiteSpace: 'pre-wrap' as const,
+    color: 'color-mix(in srgb, var(--accent-purple) 60%, var(--text-secondary))',
+    fontSize: 12, lineHeight: 1.5, padding: '8px 10px',
+    maxHeight: 300, overflowY: 'auto' as const,
+    fontStyle: 'italic',
+    borderLeft: '2px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 30%, transparent)',
+    marginTop: 4,
+    animation: 'tokenStream 0.3s ease-out',
+  },
+
+  /* ── First-token loading ── */
+  firstTokenLoading: {
+    display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+    animation: 'breathe 2s ease-in-out infinite',
+  },
+  pulseDot: {
+    width: 8, height: 8, borderRadius: '50%',
+    background: 'var(--accent-purple)',
+    animation: 'neuralPulse 1.5s ease-in-out infinite',
+  },
+  pulseLabel: {
+    fontSize: 13, color: 'color-mix(in srgb, var(--accent-purple) 50%, var(--text-secondary))',
+    fontStyle: 'italic',
   },
 }));

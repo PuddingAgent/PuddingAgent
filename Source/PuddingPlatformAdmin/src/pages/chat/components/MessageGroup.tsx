@@ -138,8 +138,18 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
               <div className={styles.turnContainer}>
                 <div className={styles.turnTimeline} />
                 <div className={styles.turnBody}>
+                  {/* ── 首 Token 等待 Loading ── */}
+                  {assistant.isStreaming &&
+                    assistant.reasoningBlocks.length === 0 &&
+                    assistant.stepCards.length === 0 &&
+                    !assistant.answerMarkdown && (
+                    <div className={styles.firstTokenLoading}>
+                      <div className={styles.pulseDot} />
+                      <span className={styles.pulseLabel}>Agent 正在思考...</span>
+                    </div>
+                  )}
                   {assistant.reasoningBlocks.length > 0 && (
-                    <div className={styles.reasoningPanel}>
+                    <div className={cx(styles.reasoningPanel, assistant.isStreaming && styles.agentRecall)}>
                       <div
                         className={styles.reasoningHeader}
                         onClick={() => onToggleReasoning(turn.turnId, '_all')}
@@ -194,7 +204,14 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                   )}
 
                   <div
-                    className={styles.assistantAnswer}
+                    className={cx(
+                      styles.assistantAnswer,
+                      assistant.status === 'thinking' && styles.agentThinking,
+                      assistant.status === 'streaming' && styles.tokenStreaming,
+                      assistant.status === 'executing' && styles.agentSearching,
+                      assistant.status === 'error' && styles.agentError,
+                      assistant.status === 'success' && styles.agentSuccess,
+                    )}
                     onContextMenu={(e) => onContextMenu(e, turn.turnId, 'assistant')}
                   >
                     <MessageItem markdownText={assistant.answerMarkdown} isStreaming={assistant.isStreaming} />
