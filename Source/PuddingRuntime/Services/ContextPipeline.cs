@@ -654,9 +654,6 @@ public sealed class ContextPipeline
 
             try
             {
-                // 等待最近的 Consolidation 完成后再进行 deep recall
-                // （避免 Book 还未写入 Library 就开始搜索）
-                await Task.Delay(5000, ct);
                 var maxTokens = compactionLevel >= ContextCompactionLevel.Aggressive ? 1000 : 2000;
                 var recallText = await _orchestrator.RecallAugmentedAsync(
                     request.UserMessage,

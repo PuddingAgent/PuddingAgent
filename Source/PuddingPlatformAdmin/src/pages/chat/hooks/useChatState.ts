@@ -592,6 +592,7 @@ export function useChatState(): UseChatStateReturn {
   const sendMessage = useCallback(async (text: string) => {
     if (!text || loading || !workspaceId || !agentId) return;
     setError(null);
+    const perfStart = performance.now();
     const now = Date.now();
     const turnId = createId();
     const uid = createId();
@@ -611,6 +612,11 @@ export function useChatState(): UseChatStateReturn {
       }, (ev) => {
         if (ev.type === 'metadata') {
           sessionIdRef.current = ev.sessionId; setSelectedSessionId(ev.sessionId); forceNewSessionRef.current = false;
+          const ttfm = (performance.now() - perfStart).toFixed(0);
+          console.log(`[Perf] Time to first metadata: ${ttfm}ms`);
+        }
+        if (ev.type === 'delta' || ev.type === 'thinking' || ev.type === 'tool_call') {
+          if (!perfStart) { /* first content token */ }
         }
         if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
         if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);

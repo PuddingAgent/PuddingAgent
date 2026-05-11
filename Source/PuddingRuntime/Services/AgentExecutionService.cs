@@ -696,13 +696,21 @@ public sealed class AgentExecutionService
 
         var ct = _controlRegistry.CreateLinkedToken(request.SessionId, external);
 
+        // ── 全管道性能诊断 ──
+        var perfTotalSw = System.Diagnostics.Stopwatch.StartNew();
+        var perfHistorySw = System.Diagnostics.Stopwatch.StartNew();
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
         await _contextManager.TryHydrateStreamHistoryFromDbAsync(
             request.SessionId,
             history,
             template.Runtime?.MaxContextTokens ?? 8000,
             ct);
+        perfHistorySw.Stop();
+        _logger.LogInformation(
+            "[AgentExec:Perf] History loaded session={Session} elapsed={Ms}ms count={Count}",
+            request.SessionId, perfHistorySw.ElapsedMilliseconds, history.Count);
 
+        var perfContextSw = System.Diagnostics.Stopwatch.StartNew();
         var streamingSystemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
         {
             Template = template,
@@ -716,6 +724,10 @@ public sealed class AgentExecutionService
             IsFirstMessage = history.Count == 0,
             SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
         }, ct);
+        perfContextSw.Stop();
+        _logger.LogInformation(
+            "[AgentExec:Perf] Context assembled session={Session} elapsed={Ms}ms promptLen={Len}",
+            request.SessionId, perfContextSw.ElapsedMilliseconds, streamingSystemPrompt.SystemPrompt.Length);
 
         if (history.Count == 0 || history[0].Role != ChatRole.System)
         {
@@ -768,6 +780,11 @@ public sealed class AgentExecutionService
                 // 发送 context 帧（仅第1轮）
                 if (round == 0)
                 {
+                    perfTotalSw.Stop();
+                    _logger.LogInformation(
+                        "[AgentExec:Perf] FIRST_TOKEN session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms",
+                        request.SessionId, perfTotalSw.ElapsedMilliseconds,
+                        perfHistorySw.ElapsedMilliseconds, perfContextSw.ElapsedMilliseconds);
                     var contextFrame = BuildStreamContextFrame(history, template, effectiveCapability);
                     yield return ServerSentEventFrame.Json(SseEventTypes.Context, contextFrame);
                 }
