@@ -1,3 +1,5 @@
+using PuddingCode.Models;
+
 namespace PuddingRuntime.Services.Skills;
 
 /// <summary>
@@ -12,6 +14,9 @@ public interface IAgentSkill
     string Description { get; }
     /// <summary>若 true，则需要 CapabilityPolicy.AllowShellExecution = true 方可使用。</summary>
     bool RequiresShellExecution { get; }
+
+    /// <summary>工具权限等级。Low=自动授权, Medium=需agent配置, High=需用户确认</summary>
+    ToolPermissionLevel PermissionLevel { get; }
 
     Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default);
 }

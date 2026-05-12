@@ -6,14 +6,14 @@ namespace PuddingRuntime.Services.AgentLoop;
 /// </summary>
 public sealed record AgentExecutionGuardrails
 {
-    /// <summary>最大迭代轮次（每轮 = 一次 LLM 调用）。默认 10。</summary>
-    public int MaxRounds { get; init; } = 10;
+    /// <summary>最大迭代轮次（每轮 = 一次 LLM 调用）。默认 200。</summary>
+    public int MaxRounds { get; init; } = 200;
 
-    /// <summary>整体执行的最大允许总耗时。超出后强制停止。默认 2 分钟。</summary>
-    public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromMinutes(2);
+    /// <summary>整体执行的最大允许总耗时。超出后强制停止。默认 20 分钟。</summary>
+    public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromMinutes(20);
 
-    /// <summary>整次执行内工具调用总次数上限。默认 20。</summary>
-    public int MaxToolCallsTotal { get; init; } = 20;
+    /// <summary>整次执行内工具调用总次数上限。默认 100。</summary>
+    public int MaxToolCallsTotal { get; init; } = 100;
 
     /// <summary>
     /// 相同工具 + 相同参数哈希在连续轮次中最多允许重复的次数。

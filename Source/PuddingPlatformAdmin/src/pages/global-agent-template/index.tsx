@@ -92,7 +92,18 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const openCreate = () => {
     setEditItem(null);
     form.resetFields();
-    form.setFieldsValue({ role: 'Service', isEnabled: true, sortOrder: 100, maxContextTokens: 8192, maxReplyTokens: 2048, selectedCapabilityIds: [], selectedSkillPackageIds: [] });
+    form.setFieldsValue({
+      role: 'Service',
+      isEnabled: true,
+      sortOrder: 100,
+      maxRounds: 200,
+      maxElapsedSeconds: 1200,
+      maxToolCallsTotal: 100,
+      maxContextTokens: 8192,
+      maxReplyTokens: 2048,
+      selectedCapabilityIds: [],
+      selectedSkillPackageIds: [],
+    });
     setModels([]);
     setFormDrawer(true);
   };
@@ -187,6 +198,17 @@ const GlobalAgentTemplatePage: React.FC = () => {
       title: '上下文',
       width: 110,
       render: (_, r) => <Tag>{(r.maxContextTokens / 1000).toFixed(0)}K tokens</Tag>,
+    },
+    {
+      title: '执行护栏',
+      width: 200,
+      render: (_, r) => (
+        <Space size={4}>
+          <Tag>{r.maxRounds ?? 200}R</Tag>
+          <Tag>{Math.round((r.maxElapsedSeconds ?? 1200) / 60)}min</Tag>
+          <Tag>{r.maxToolCallsTotal ?? 100}T</Tag>
+        </Space>
+      ),
     },
     {
       title: '容器镜像',
@@ -377,6 +399,13 @@ const GlobalAgentTemplatePage: React.FC = () => {
               { label: '高（深度思考）', value: 'high' },
             ]}
           />
+
+          <Divider orientation="left">执行护栏</Divider>
+          <Space size="large">
+            <ProFormDigit name="maxRounds" label="最大轮次" min={1} max={1000} initialValue={200} />
+            <ProFormDigit name="maxElapsedSeconds" label="最大耗时(秒)" min={10} max={7200} initialValue={1200} />
+            <ProFormDigit name="maxToolCallsTotal" label="最大工具调用" min={1} max={500} initialValue={100} />
+          </Space>
 
           <ProFormTextArea
             name="userPromptTemplate"

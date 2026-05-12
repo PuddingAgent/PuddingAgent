@@ -1,3 +1,4 @@
+using PuddingCode.Models;
 using PuddingRuntime.Services.Sandbox;
 
 namespace PuddingRuntime.Services.Skills;
@@ -26,6 +27,7 @@ public sealed class PythonSkill : ContainerSkillBase
         "Execute Python 3 code inside the agent's isolated Docker container. " +
         "Returns stdout and stderr. Ideal for data analysis, math, text processing, and scripting.";
     public override bool RequiresShellExecution => true;
+    public override ToolPermissionLevel PermissionLevel => ToolPermissionLevel.Medium;
 
     public override async Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default)
     {

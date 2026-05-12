@@ -68,6 +68,9 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         entity.MemoryLlmModelId = req.MemoryLlmModelId;
         entity.MemorySearchMode = req.MemorySearchMode ?? "deep";
         entity.ReasoningEffort = req.ReasoningEffort;
+        entity.MaxRounds = req.MaxRounds ?? 200;
+        entity.MaxElapsedSeconds = req.MaxElapsedSeconds ?? 1200;
+        entity.MaxToolCallsTotal = req.MaxToolCallsTotal ?? 100;
         entity.MaxContextTokens = req.MaxContextTokens;
         entity.MaxReplyTokens = req.MaxReplyTokens;
         entity.ContainerImage = req.ContainerImage;
@@ -113,6 +116,9 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         MemoryLlmModelId = req.MemoryLlmModelId,
         MemorySearchMode = req.MemorySearchMode ?? "deep",
         ReasoningEffort = req.ReasoningEffort,
+        MaxRounds = req.MaxRounds ?? 200,
+        MaxElapsedSeconds = req.MaxElapsedSeconds ?? 1200,
+        MaxToolCallsTotal = req.MaxToolCallsTotal ?? 100,
         MaxContextTokens = req.MaxContextTokens,
         MaxReplyTokens = req.MaxReplyTokens,
         ContainerImage = req.ContainerImage,
@@ -134,7 +140,8 @@ public class GlobalAgentTemplateApiController(PlatformDbContext db) : Controller
         t.CreatedAt, t.UpdatedAt,
         t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji,
         t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId, t.MemorySearchMode,
-        t.ReasoningEffort);
+        t.ReasoningEffort,
+        t.MaxRounds, t.MaxElapsedSeconds, t.MaxToolCallsTotal);
 
     private static List<string> ParseStringList(string? json)
     {

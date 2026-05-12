@@ -1,29 +1,31 @@
-using PuddingCode.Platform;
-using PuddingRuntime.Services;
+using PuddingCode.Abstractions;
+using PuddingCode.Models;
 
 namespace PuddingAgent.Services;
 
 /// <summary>
 /// Cron 定时任务调度服务 — 基于 Cron 表达式触发定时任务，
-/// 将预设 prompt 发送给 Agent Runtime 执行。
+/// 通过 IInternalEventBus 发布 "cron.trigger" 事件，由 EventDispatcher 路由到 Agent 执行。
 /// 
 /// 支持 5 字段 Cron 格式：分 时 日 月 周
-/// 支持通配符 * 和数字，不支持 / 步长和 , 列表。
+/// 支持通配符 * 和数字，不支持 / 步长。
+/// 
+/// ADR-016 V2: 不再直接调用 AgentExecutionService，改为事件驱动解耦。
 /// </summary>
 public sealed class CronSchedulerService : BackgroundService
 {
     private readonly IConfiguration _configuration;
-    private readonly AgentExecutionService _executionService;
+    private readonly IInternalEventBus _eventBus;
     private readonly ILogger<CronSchedulerService> _logger;
     private readonly List<CronJob> _jobs = [];
 
     public CronSchedulerService(
         IConfiguration configuration,
-        AgentExecutionService executionService,
+        IInternalEventBus eventBus,
         ILogger<CronSchedulerService> logger)
     {
         _configuration = configuration;
-        _executionService = executionService;
+        _eventBus = eventBus;
         _logger = logger;
     }
 
@@ -91,11 +93,18 @@ public sealed class CronSchedulerService : BackgroundService
                 continue;
             }
 
+            var isolation = ParseIsolation(cfg.Isolation);
+            var priority = ParsePriority(cfg.Priority);
+
             _jobs.Add(new CronJob
             {
                 Name = cfg.Name,
                 Cron = cfg.Cron,
                 Prompt = cfg.Prompt ?? "",
+                WorkspaceId = cfg.WorkspaceId ?? "default",
+                AgentId = cfg.AgentId,
+                Isolation = isolation,
+                Priority = priority,
                 Minute = ParseField(fields[0], 0, 59),
                 Hour = ParseField(fields[1], 0, 23),
                 DayOfMonth = ParseField(fields[2], 1, 31),
@@ -104,6 +113,19 @@ public sealed class CronSchedulerService : BackgroundService
             });
         }
     }
+
+    private static EventIsolationMode ParseIsolation(string? value) => value?.ToLowerInvariant() switch
+    {
+        "mainline" => EventIsolationMode.Mainline,
+        _ => EventIsolationMode.Isolated,
+    };
+
+    private static EventPriorityLevel ParsePriority(string? value) => value?.ToLowerInvariant() switch
+    {
+        "urgent" => EventPriorityLevel.Urgent,
+        "important" => EventPriorityLevel.Important,
+        _ => EventPriorityLevel.Normal,
+    };
 
     /// <summary>
     /// 判断当前时间是否匹配 Cron 表达式。
@@ -128,29 +150,46 @@ public sealed class CronSchedulerService : BackgroundService
         job.LastFiredMinute = new DateTime(DateTime.Now.Year, DateTime.Now.Month,
             DateTime.Now.Day, DateTime.Now.Hour, DateTime.Now.Minute, 0);
 
-        _logger.LogInformation("[Cron] 触发任务: {Name} prompt=\"{Prompt}\"", job.Name, job.Prompt);
+        _logger.LogInformation("[Cron] 触发任务: {Name} prompt=\"{Prompt}\" isolation={Isolation} priority={Priority}",
+            job.Name, job.Prompt, job.Isolation, job.Priority);
 
         try
         {
             var sessionId = $"cron-{job.Name}-{DateTime.Now:yyyyMMddHHmm}";
-            var dispatchRequest = new RuntimeDispatchRequest
+            var evt = new InternalEvent
             {
+                Type = "cron.trigger",
+                Priority = job.Priority,
+                Isolation = job.Isolation,
+                Source = new EventSource
+                {
+                    SourceType = "cron",
+                    SourceId = job.Name,
+                },
                 SessionId = sessionId,
-                WorkspaceId = "default",
-                AgentTemplateId = "workspace-service-agent",
-                MessageText = job.Prompt,
+                WorkspaceId = job.WorkspaceId,
+                AgentId = job.AgentId,
+                Payload = new CronTriggerPayload
+                {
+                    Prompt = job.Prompt,
+                    JobName = job.Name,
+                },
+                Metadata = new Dictionary<string, string>
+                {
+                    ["cron.expression"] = job.Cron,
+                    ["cron.job_name"] = job.Name,
+                },
             };
 
-            var result = await _executionService.ExecuteAsync(dispatchRequest, ct);
+            await _eventBus.PublishAsync(evt, ct);
 
             _logger.LogInformation(
-                "[Cron] 任务完成: {Name} session={SessionId} success={Success} reply=\"{Reply}\"",
-                job.Name, sessionId, result.IsSuccess,
-                (result.ReplyText ?? result.ErrorMessage ?? "")[..Math.Min(200, (result.ReplyText ?? result.ErrorMessage ?? "").Length)]);
+                "[Cron] 事件已发布: {Name} session={SessionId} isolation={Isolation}",
+                job.Name, sessionId, job.Isolation);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Cron] 任务执行失败: {Name}", job.Name);
+            _logger.LogError(ex, "[Cron] 事件发布失败: {Name}", job.Name);
         }
     }
 
@@ -188,6 +227,18 @@ public sealed class CronSchedulerService : BackgroundService
         public HashSet<int> Month { get; init; } = [];
         public HashSet<int> DayOfWeek { get; init; } = [];
         public DateTime? LastFiredMinute { get; set; }
+
+        /// <summary>目标 Workspace（默认 "default"）</summary>
+        public string WorkspaceId { get; init; } = "default";
+
+        /// <summary>目标 Agent ID（可选，不指定则工作区默认 Agent）</summary>
+        public string? AgentId { get; init; }
+
+        /// <summary>隔离模式（默认 Isolated，Cron 任务不污染主会话）</summary>
+        public EventIsolationMode Isolation { get; init; } = EventIsolationMode.Isolated;
+
+        /// <summary>优先级（默认 Normal）</summary>
+        public EventPriorityLevel Priority { get; init; } = EventPriorityLevel.Normal;
     }
 
     private sealed class CronJobConfig
@@ -195,5 +246,26 @@ public sealed class CronSchedulerService : BackgroundService
         public string? Name { get; set; }
         public string? Cron { get; set; }
         public string? Prompt { get; set; }
+
+        /// <summary>WorkspaceId（可选，默认 "default"）</summary>
+        public string? WorkspaceId { get; set; }
+
+        /// <summary>AgentId（可选）</summary>
+        public string? AgentId { get; set; }
+
+        /// <summary>隔离模式：mainline / isolated（默认 isolated）</summary>
+        public string? Isolation { get; set; }
+
+        /// <summary>优先级：normal / important / urgent（默认 normal）</summary>
+        public string? Priority { get; set; }
+    }
+
+    /// <summary>
+    /// Cron 触发事件负载。
+    /// </summary>
+    public sealed record CronTriggerPayload
+    {
+        public string Prompt { get; init; } = "";
+        public string JobName { get; init; } = "";
     }
 }

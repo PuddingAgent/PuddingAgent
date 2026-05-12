@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using PuddingCode.Models;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -29,6 +30,7 @@ public sealed class HttpFetchSkill : IAgentSkill
         "Parameters: 'url' (required), 'method' (GET/POST, default GET), " +
         "'body' (request body for POST, optional), 'content_type' (default application/json).";
     public bool RequiresShellExecution => false;
+    public ToolPermissionLevel PermissionLevel => ToolPermissionLevel.Medium;
 
     public async Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default)
     {

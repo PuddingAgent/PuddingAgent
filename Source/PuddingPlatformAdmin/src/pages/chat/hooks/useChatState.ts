@@ -25,7 +25,7 @@ import {
 import type { AssistantStatus, ChatTurn, ReasoningBlock, SessionGroup } from '../types';
 import { assistantStatusLabel } from '../types';
 
-const DEFAULT_CONTEXT_WINDOW = 4096;
+const DEFAULT_CONTEXT_WINDOW = 65536;
 const MESSAGE_PAGE_SIZE = 20;
 
 export const stringToColor = (str: string) => {

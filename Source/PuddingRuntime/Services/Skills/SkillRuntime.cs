@@ -39,10 +39,21 @@ public sealed partial class SkillRuntime
     }
 
     /// <summary>返回满足能力策略的可用 Skill 列表。</summary>
-    public IReadOnlyList<IAgentSkill> GetAvailableSkills(CapabilityPolicy? policy) =>
-        _skills.Values
-            .Where(s => !s.RequiresShellExecution || (policy?.AllowShellExecution == true))
-            .ToList();
+    public IReadOnlyList<IAgentSkill> GetAvailableSkills(CapabilityPolicy? policy, AgentTemplateDefinition? template = null)
+    {
+        var skills = _skills.Values
+            .Where(s => !s.RequiresShellExecution || (policy?.AllowShellExecution == true));
+
+        // 如果 template 有 AllowedSkillIds，则只返回白名单中的技能
+        if (template?.AllowedSkillIds?.Count > 0)
+            skills = skills.Where(s => template.AllowedSkillIds.Contains(s.SkillId, StringComparer.OrdinalIgnoreCase));
+
+        return skills.ToList();
+    }
+
+    /// <summary>按 SkillId 获取 Skill 实例，不存在返回 null。</summary>
+    public IAgentSkill? TryGetSkill(string skillId) =>
+        _skills.TryGetValue(skillId, out var skill) ? skill : null;
 
     /// <summary>构造传给 LLM 的 function tools 定义。</summary>
     public IReadOnlyList<LlmToolDefinition> BuildLlmTools(CapabilityPolicy? policy)
@@ -207,6 +218,87 @@ public sealed partial class SkillRuntime
                     new ToolParameter("workspaceId", "string", "Optional workspace id for deeper memory exploration"),
                 ],
                 ["query"]);
+
+        if (skillId.Equals("save_memory", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("action", "string", "操作类型：upsert（写入/更新）或 delete（删除）"),
+                    new ToolParameter("type", "string", "内容类型：fact（事实）、preference（偏好）、summary（摘要）、chapter（章节内容）"),
+                    new ToolParameter("book", "string", "目标 Book 名称（可选，默认自动匹配）"),
+                    new ToolParameter("content", "string", "正文内容（fact/summary/chapter 需要）"),
+                    new ToolParameter("key", "string", "偏好键名（preference 类型需要）"),
+                    new ToolParameter("value", "string", "偏好值（preference 类型需要）"),
+                    new ToolParameter("title", "string", "章节标题（chapter 类型需要）"),
+                    new ToolParameter("source_ref", "string", "溯源引用：session_id 或外部 URL（可选）"),
+                    new ToolParameter("source_label", "string", "溯源标签，如 '原始会话'、'参考文档'（可选）"),
+                ],
+                ["action", "type"]);
+
+        if (skillId.Equals("manage_memory", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("action", "string", "操作：list_books, create_book, list_chapters, add_chapter, update_chapter, delete_book, add_pointer, list_pointers"),
+                    new ToolParameter("book_id", "string", "目标 BookId（操作特定 Book/Chapter 时需要）"),
+                    new ToolParameter("library_id", "string", "Library ID（可选，默认自动查找）"),
+                    new ToolParameter("title", "string", "Book/Chapter 标题"),
+                    new ToolParameter("content", "string", "Chapter 正文内容"),
+                    new ToolParameter("summary", "string", "Book 摘要"),
+                    new ToolParameter("chapter_id", "string", "目标 ChapterId"),
+                    new ToolParameter("tags", "string", "逗号分隔的标签（创建 Book 时）"),
+                    new ToolParameter("chapter_order", "number", "章节排序序号"),
+                ],
+                ["action"]);
+
+        if (skillId.Equals("grep_memory", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("action", "string", "操作：search（全文检索）、in_book（Book内检索）、list_books（列出Books）、toc（目录/章节列表）"),
+                    new ToolParameter("query", "string", "搜索查询（search/in_book 需要）"),
+                    new ToolParameter("mode", "string", "搜索模式：fts5（默认，基于全文索引）或 regex（正则匹配）"),
+                    new ToolParameter("book", "string", "限定 Book 名称（in_book 需要）"),
+                    new ToolParameter("top_k", "number", "返回条目数上限，默认 10"),
+                ],
+                ["action"]);
+
+        if (skillId.Equals("event_subscribe", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("operation", "string", "操作类型: subscribe / unsubscribe / list"),
+                    new ToolParameter("event_type_patterns", "string", "事件类型模式，逗号分隔，支持通配符如 mqtt.sensor.*, cron.*"),
+                    new ToolParameter("subscription_id", "string", "取消订阅时需要提供的订阅ID"),
+                    new ToolParameter("filter_expression", "string", "可选的过滤表达式，如 priority>=5"),
+                ],
+                ["operation"]);
+
+        if (skillId.Equals("search_files", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("pattern", "string", "Glob pattern like *.cs or **/*.json. Ends with / to list directory."),
+                    new ToolParameter("recursive", "string", "Search recursively: true/false"),
+                    new ToolParameter("directory", "string", "Root directory to search in"),
+                    new ToolParameter("max_results", "string", "Maximum number of results to return"),
+                ],
+                ["pattern"]);
+
+        if (skillId.Equals("search_codebase", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("query", "string", "Text or regex to search for in files"),
+                    new ToolParameter("pattern", "string", "File glob pattern to filter files. Default: *.cs;*.ts;*.vue;*.py;*.js;*.json;*.md;*.yaml;*.yml;*.sql"),
+                    new ToolParameter("case_sensitive", "string", "Case sensitive search: true/false"),
+                    new ToolParameter("max_results", "string", "Maximum matching lines to return"),
+                ],
+                ["query"]);
+
+        if (skillId.Equals("manage_tasks", StringComparison.OrdinalIgnoreCase))
+            return new ToolParameterSchema(
+                [
+                    new ToolParameter("operation", "string", "Operation: create / update_status / list / delete"),
+                    new ToolParameter("task_id", "string", "Task ID (required for update/delete)"),
+                    new ToolParameter("title", "string", "Task title (required for create)"),
+                    new ToolParameter("status", "string", "Task status: pending / in-progress / completed"),
+                ],
+                ["operation"]);
 
         return new ToolParameterSchema(
             [new ToolParameter("input", "string", "Tool input payload")],

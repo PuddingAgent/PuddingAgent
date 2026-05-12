@@ -81,7 +81,7 @@ public sealed class ContextPipeline
     /// </summary>
     public async Task<ContextAssemblyResult> AssembleAsync(ContextRequest request, CancellationToken ct)
     {
-        var totalBudget = request.Template.Runtime?.MaxContextTokens ?? 8000;
+        var totalBudget = request.Template.Runtime?.MaxContextTokens ?? 65536;
         var sb = new StringBuilder();
         var usedBudget = 0;
         var layers = new List<ContextLayerSnapshot>();
@@ -818,15 +818,14 @@ public sealed class ContextPipeline
             sb.AppendLine("Respond directly to the user in Markdown.");
             sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
             sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
-            sb.AppendLine("你有访问用户记忆图书馆的能力。当需要回忆用户信息时，使用 search_memory 工具。");
-            sb.AppendLine("记忆图书馆按类别组织：用户档案、用户偏好、对话摘要、计划与任务。");
+            sb.AppendLine("你有访问用户记忆图书馆的能力。可用工具：search_memory（检索）、save_memory（写入/更新记忆）、grep_memory（全文检索/列出Books/目录）、manage_memory（管理Books/章节/指针）。");
+            sb.AppendLine("当需要主动记住用户信息时，使用 save_memory。当需要列出或管理记忆结构时，使用 grep_memory 或 manage_memory。");
             if (request.Capability?.AllowedToolNames is { Count: > 0 })
                 sb.AppendLine("If a task requires tools, explain the limitation briefly instead of emitting tool-call JSON.");
         }
         else
         {
-            sb.AppendLine("你有访问用户记忆图书馆的能力。当需要回忆用户信息时，使用 search_memory 工具。");
-            sb.AppendLine("记忆图书馆按类别组织：用户档案、用户偏好、对话摘要、计划与任务。");
+            sb.AppendLine("你有访问用户记忆图书馆的能力。可用工具：search_memory（检索）、save_memory（写入/更新记忆）、grep_memory（全文检索/列出Books/目录）、manage_memory（管理Books/章节/指针）。");
             sb.Append(_skillRuntime.BuildLoopInstructions(request.Capability));
         }
     }

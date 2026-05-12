@@ -1,3 +1,4 @@
+using PuddingCode.Models;
 using PuddingRuntime.Services.Sandbox;
 
 namespace PuddingRuntime.Services.Skills;
@@ -29,6 +30,7 @@ public abstract class ContainerSkillBase : IAgentSkill
     public abstract string Name { get; }
     public abstract string Description { get; }
     public abstract bool RequiresShellExecution { get; }
+    public abstract ToolPermissionLevel PermissionLevel { get; }
 
     public abstract Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default);
 

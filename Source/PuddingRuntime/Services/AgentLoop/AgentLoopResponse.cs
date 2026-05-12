@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace PuddingRuntime.Services.AgentLoop;
 
@@ -53,9 +54,11 @@ public sealed class AgentLoopResponse
         }
         catch { /* 解析失败，进入降级逻辑 */ }
 
-        // 降级：通过关键词判断是否已完成
-        var isDone = json.Contains("\"DONE\"", StringComparison.OrdinalIgnoreCase)
-                  || json.Contains("DONE", StringComparison.Ordinal);
+        // 降级：仅当出现 status=DONE 时才判定完成，避免普通文本误触发
+        var isDone = Regex.IsMatch(
+            json,
+            "\"status\"\\s*:\\s*\"DONE\"",
+            RegexOptions.IgnoreCase);
         return new AgentLoopResponse { Status = isDone ? "DONE" : "CONTINUE", Message = text };
     }
 

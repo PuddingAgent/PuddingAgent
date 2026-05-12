@@ -41,6 +41,9 @@ public sealed record AgentTemplateDefinition
     /// <summary>声明的 Skill ID 列表。</summary>
     public IReadOnlyList<string> SkillIds { get; init; } = [];
 
+    /// <summary>允许的工具 SkillId 白名单。为空表示全部允许。</summary>
+    public List<string>? AllowedSkillIds { get; set; }
+
     /// <summary>推理深度："low" | "medium" | "high"，null 表示跟随模型默认</summary>
     public string? ReasoningEffort { get; init; }
 }

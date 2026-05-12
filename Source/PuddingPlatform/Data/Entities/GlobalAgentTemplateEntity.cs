@@ -81,6 +81,15 @@ public class GlobalAgentTemplateEntity
     [MaxLength(16)]
     public string? ReasoningEffort { get; set; }
 
+    /// <summary>Agent Loop 最大轮次</summary>
+    public int MaxRounds { get; set; } = 200;
+
+    /// <summary>Agent Loop 最大总耗时（秒）</summary>
+    public int MaxElapsedSeconds { get; set; } = 1200;
+
+    /// <summary>Agent Loop 最大工具调用次数</summary>
+    public int MaxToolCallsTotal { get; set; } = 100;
+
     /// <summary>最大上下文 token 数</summary>
     public int MaxContextTokens { get; set; } = 8192;
 

@@ -126,6 +126,8 @@ public sealed class AgentExecutionService
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
         var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
         var sessionTimeout = ResolveSessionTimeout(template);
+        // TODO(platform-template-guardrails): 从 AgentTemplate（Global/Workspace）读取 MaxRounds/MaxElapsedSeconds/MaxToolCallsTotal，
+        // 并覆盖注入 AgentExecutionGuardrails；当前阶段仅支持在模板侧存储配置，不参与 Runtime 执行。
 
         _contextManager.CleanupExpiredSessions(request.SessionId);
 
@@ -253,7 +255,7 @@ public sealed class AgentExecutionService
 
                 // ── LLM 调用 ──────────────────────────────────────────
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                var availableSkillNames = _skillRuntime.GetAvailableSkills(effectiveCapability)
+                var availableSkillNames = _skillRuntime.GetAvailableSkills(effectiveCapability, template)
                     .Select(s => s.SkillId)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var llmTools = request.ToolDefinitions is { Count: > 0 }
@@ -267,7 +269,7 @@ public sealed class AgentExecutionService
                     request.WorkspaceId, request.SessionId,
                     request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
                 if (llmResp.Usage is not null)
-                    usage = llmResp.Usage;
+                    usage = llmResp.Usage with { ContextWindowTokens = template.Runtime?.MaxContextTokens ?? 65536 };
                 llmSw.Stop();
 
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
@@ -314,18 +316,34 @@ public sealed class AgentExecutionService
                         totalToolCalls++;
                         await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, call.Name, safeToolArgs, ct));
 
-                        var skillResult = await _skillRuntime.InvokeAsync(
-                            call.Name,
-                            new SkillInvokeRequest
+                        // 权限检查：High 权限工具需要用户确认
+                        var skill = _skillRuntime.TryGetSkill(call.Name);
+                        SkillResult skillResult;
+                        if (skill is not null && !await CheckToolPermissionAsync(skill, request.SessionId, ct))
+                        {
+                            skillResult = new SkillResult
                             {
-                                AgentInstanceId = instance.AgentInstanceId,
-                                WorkspaceId = request.WorkspaceId,
-                                SessionId = request.SessionId,
-                                Input = ExtractInputFromJson(injectedArgsJson),
-                                Parameters = ExtractParametersFromJson(injectedArgsJson),
-                            },
-                            effectiveCapability,
-                            ct);
+                                Success = false,
+                                Output = "",
+                                Error = $"Tool '{call.Name}' requires user confirmation (High permission). Execution denied.",
+                                ExitCode = 1,
+                            };
+                        }
+                        else
+                        {
+                            skillResult = await _skillRuntime.InvokeAsync(
+                                call.Name,
+                                new SkillInvokeRequest
+                                {
+                                    AgentInstanceId = instance.AgentInstanceId,
+                                    WorkspaceId = request.WorkspaceId,
+                                    SessionId = request.SessionId,
+                                    Input = ExtractInputFromJson(injectedArgsJson),
+                                    Parameters = ExtractParametersFromJson(injectedArgsJson),
+                                },
+                                effectiveCapability,
+                                ct);
+                        }
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
 
@@ -756,7 +774,7 @@ public sealed class AgentExecutionService
             effectiveLlmConfig = (effectiveLlmConfig ?? new LlmConfig()) with { ReasoningEffort = template.ReasoningEffort };
 
         // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
-        var availableSkillNames = _skillRuntime.GetAvailableSkills(effectiveCapability)
+        var availableSkillNames = _skillRuntime.GetAvailableSkills(effectiveCapability, template)
             .Select(s => s.SkillId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var llmTools = request.ToolDefinitions is { Count: > 0 }
@@ -989,7 +1007,11 @@ public sealed class AgentExecutionService
                 "[AgentExec] STREAM end session={Session} replyLen={Len} usage={Usage}",
                 request.SessionId, reply.Length, usage?.TotalTokens);
 
-            yield return ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage });
+            var contextWindowTokens = template.Runtime?.MaxContextTokens ?? 65536;
+            var finalUsage = usage is not null
+                ? usage with { ContextWindowTokens = contextWindowTokens }
+                : new TokenUsageDto { ContextWindowTokens = contextWindowTokens };
+            yield return ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage = finalUsage });
         }
         finally
         {
@@ -1373,6 +1395,39 @@ public sealed class AgentExecutionService
 
     private static string Truncate(string s, int maxLen) =>
         s.Length <= maxLen ? s : s[..maxLen] + "…";
+
+    /// <summary>
+    /// 检查工具权限。High 权限需要用户确认。
+    /// 返回 true 表示可以继续执行，false 表示被阻止。
+    /// V1: High 权限直接拒绝并记录日志；V2: 等待用户通过前端确认。
+    /// </summary>
+    private async Task<bool> CheckToolPermissionAsync(IAgentSkill skill, string sessionId, CancellationToken ct)
+    {
+        if (skill.PermissionLevel != ToolPermissionLevel.High)
+            return true;
+
+        _logger.LogWarning("[Permission] High-risk tool '{SkillId}' needs user confirmation for session {SessionId}",
+            skill.SkillId, sessionId);
+
+        // 流式路径：发送权限请求事件到前端
+        if (_eventBus is not null)
+        {
+            await _eventBus.EmitAsync(new StreamingEvent
+            {
+                Type = "agent.permission_required",
+                Data = new
+                {
+                    tool = skill.SkillId,
+                    permission = "high",
+                    message = $"Agent 请求执行高危操作: {skill.Name}。是否允许？",
+                },
+            }, ct);
+        }
+
+        // V1: 简化处理 — 记录日志，返回 false 阻止执行
+        // V2: 等待用户通过前端确认（实现许可 token 机制）
+        return false;
+    }
 
     /// <summary>
     /// 潜意识任务兜底触发：当 Hook 管线未注册时，直接在执行服务末尾投递后台任务。

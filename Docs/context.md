@@ -10,6 +10,7 @@
 | 0508 | ADR-014-E | DeepSeek-V4-Pro | — | BUILD_PASS | dotnet build 0 error, MemoryTests 47/47 PASS, WebApiTests 15 failures pre-existing |
 | 0510 | Subconscious-Phase1 | GPT-5.3-Codex | Sonnet 4.6 | PASS_WITH_NOTES | P1-1 OnCompletedAsync阻塞SSE done/P1-2 DI重复注册，均已修复 |
 | 0510 | Subconscious-Phase2 | GPT-5.3-Codex | DeepSeek-V4-Pro | PASS_WITH_NOTES | P1 IMemoryLibrary死代码/P1 DI冗余/P2 Token=0硬编码，不阻断联调 |
+| 0512 | Fix-MemoryTools-Schema | GPT-5.3-Codex | Gemini 3.1 Pro | PASS | P2 SkillRuntime硬编码与Tool.Parameters微小差异，无功能性影响 |
 > 同时，这也是工作的交接记录，用于帮助明天的你在遗忘的情况下，快速回忆起今天的工作内容和决策过程。
 
 ## QA 交错调度

@@ -44,6 +44,7 @@ public sealed class MemoryLibraryTool : ITool, IAgentSkill
 
     /// <summary>Skill 是否需要 Shell 权限（本工具不需要）。</summary>
     public bool RequiresShellExecution => false;
+    public ToolPermissionLevel PermissionLevel => ToolPermissionLevel.Low;
 
     /// <summary>参数定义（JSON schema 简化表示）。</summary>
     public ToolParameterSchema Parameters => new(

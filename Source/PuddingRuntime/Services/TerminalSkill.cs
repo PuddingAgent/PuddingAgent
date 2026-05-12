@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PuddingCode.Abstractions;
+using PuddingCode.Models;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntime.Services;
@@ -23,6 +24,7 @@ public sealed class TerminalSkill : IAgentSkill
         "参数：command（必填，完整命令行）、cwd（可选，工作目录，默认 /workspace）。" +
         "返回进程 PID，输出通过 SSE 实时推送。";
     public bool RequiresShellExecution => true;
+    public ToolPermissionLevel PermissionLevel => ToolPermissionLevel.High;
 
     public TerminalSkill(ITerminalProcessManager processManager, ILogger<TerminalSkill> logger)
     {

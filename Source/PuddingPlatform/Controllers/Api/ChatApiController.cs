@@ -980,7 +980,7 @@ public class ChatApiController(
         int PromptTokens = 0,
         int CompletionTokens = 0,
         int TotalTokens = 0,
-        int ContextWindowTokens = 4096
+        int? ContextWindowTokens = null
     );
 
     /// <summary>

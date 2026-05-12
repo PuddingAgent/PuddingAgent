@@ -346,6 +346,9 @@ export interface GlobalAgentTemplateDto {
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
+  maxRounds?: number;
+  maxElapsedSeconds?: number;
+  maxToolCallsTotal?: number;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;
@@ -376,6 +379,9 @@ export interface UpsertGlobalAgentTemplateRequest {
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
+  maxRounds?: number;
+  maxElapsedSeconds?: number;
+  maxToolCallsTotal?: number;
   maxContextTokens: number;
   maxReplyTokens: number;
   containerImage?: string;

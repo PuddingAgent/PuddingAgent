@@ -179,7 +179,10 @@ public record GlobalAgentTemplateDto(
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
     string? MemorySearchMode = null,
-    string? ReasoningEffort = null
+    string? ReasoningEffort = null,
+    int MaxRounds = 200,
+    int MaxElapsedSeconds = 1200,
+    int MaxToolCallsTotal = 100
 );
 
 public record UpsertGlobalAgentTemplateRequest(
@@ -206,7 +209,10 @@ public record UpsertGlobalAgentTemplateRequest(
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
     string? MemorySearchMode = null,
-    string? ReasoningEffort = null
+    string? ReasoningEffort = null,
+    int? MaxRounds = null,
+    int? MaxElapsedSeconds = null,
+    int? MaxToolCallsTotal = null
 );
 
 // ─── Workspace Agent Template ─────────────────────────────────────

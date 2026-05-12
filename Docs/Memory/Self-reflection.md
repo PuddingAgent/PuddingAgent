@@ -1,4 +1,4 @@
-# 经验沉淀
+﻿# 经验沉淀
 
 ## 前端功能移除：全面检查引用链
 
@@ -126,3 +126,14 @@
 1. 首次使用某断言前先看方法签名或 IDE 提示
 2. 写性能阈值断言时，优先保留详细失败消息（包含实际耗时）
 3. 断言改造后立即复跑对应测试，避免把“风格清理”变成“功能回归”
+
+## 工具参数 schema 的两条传递路径
+- **根因**：Capabilities 表 → ChatApiController.ResolveCapabilitiesAsync → ToolDefinitions 路径未包含记忆工具；回退路径 SkillRuntime.BuildDefaultParameters 返回通用 {input} schema。
+- **经验/最佳实践**：新增 Agent Skill 时必须确保两条路径同步——
+  1. 在 SkillRuntime.BuildDefaultParameters 中添加专用参数 schema（作为兜底）
+  2. 在 Capabilities 表中注册对应的 Capability 记录
+  3. 可通过 Program.cs 幂等种子或 EF Migration 完成数据库侧注册
+
+## Capabilities 种子不在 JSON config 覆盖范围
+- **根因**：JsonConfigSeedService 只种子 Providers/AgentTemplates/Workspaces，不覆盖 Capabilities 表。
+- **经验**：新增工具能力时不能假设 Agent 模板配置会自动包含它。需在 Capabilities 表中显式注册。

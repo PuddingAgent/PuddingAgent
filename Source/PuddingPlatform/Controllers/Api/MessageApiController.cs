@@ -39,7 +39,7 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
         int PromptTokens,
         int CompletionTokens,
         int TotalTokens,
-        int ContextWindowTokens
+        int? ContextWindowTokens = null
     );
 
     public record MessageListResponse(

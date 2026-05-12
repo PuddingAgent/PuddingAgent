@@ -17,6 +17,7 @@ using PuddingRuntime;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
+using PuddingRuntime.Services.Events;
 using PuddingRuntime.Services.Sandbox;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.SubAgents;
@@ -228,10 +229,37 @@ builder.Services.AddSingleton<IAgentSkill, WriteFileSkill>();
 builder.Services.AddSingleton<IAgentSkill, PythonSkill>();
 builder.Services.AddSingleton<IAgentSkill, HttpFetchSkill>();
 builder.Services.AddSingleton<IAgentSkill, TerminalSkill>();
+builder.Services.AddSingleton<SearchFilesTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<SearchFilesTool>());
+builder.Services.AddSingleton<SearchCodebaseTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<SearchCodebaseTool>());
+builder.Services.AddSingleton<TaskManagerTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<TaskManagerTool>());
 builder.Services.AddSingleton<MemoryExplorerSubAgent>();
 builder.Services.AddSingleton<MemoryLibraryTool>();
 builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<MemoryLibraryTool>());
 builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<MemoryLibraryTool>());
+
+// ── 记忆增强 Tools（P0：save / manage / grep）──────────
+builder.Services.AddSingleton<SaveMemoryTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<SaveMemoryTool>());
+builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<SaveMemoryTool>());
+
+builder.Services.AddSingleton<ManageMemoryTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<ManageMemoryTool>());
+builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<ManageMemoryTool>());
+
+builder.Services.AddSingleton<GrepMemoryTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<GrepMemoryTool>());
+builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<GrepMemoryTool>());
+
+builder.Services.AddSingleton<QuerySessionsTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<QuerySessionsTool>());
+builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<QuerySessionsTool>());
+
+// ── 会话历史查询服务 (Repository → Service 分层) ────
+builder.Services.AddScoped<IChatHistoryService, ChatHistoryService>();
+
 builder.Services.AddSingleton<SkillRuntime>();
 builder.Services.AddSingleton<ITerminalProcessManager, TerminalProcessManager>();
 builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
@@ -254,6 +282,20 @@ builder.Services.AddHostedService<SubconsciousWorkerService>();
 builder.Services.AddSingleton<StreamingEventBus>();
 builder.Services.AddSingleton<IStreamingEventBus>(sp => sp.GetRequiredService<StreamingEventBus>());
 builder.Services.AddSingleton<SseEventForwarder>();
+
+// ── 内部事件系统（ADR-016：统一事件总线 + 优先级队列 + 中断）────────
+builder.Services.AddSingleton<EventPreprocessor>();
+builder.Services.AddSingleton<IEventPreprocessor>(sp => sp.GetRequiredService<EventPreprocessor>());
+builder.Services.AddSingleton<PriorityEventQueue>();
+builder.Services.AddSingleton<IPriorityEventQueue>(sp => sp.GetRequiredService<PriorityEventQueue>());
+builder.Services.AddSingleton<InternalEventBus>();
+builder.Services.AddSingleton<IInternalEventBus>(sp => sp.GetRequiredService<InternalEventBus>());
+builder.Services.AddSingleton<AgentCheckpointService>();
+builder.Services.AddSingleton<IAgentCheckpointService>(sp => sp.GetRequiredService<AgentCheckpointService>());
+builder.Services.AddSingleton<EventSubscriptionTool>();
+builder.Services.AddSingleton<IEventSubscriptionTool>(sp => sp.GetRequiredService<EventSubscriptionTool>());
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<EventSubscriptionTool>());
+builder.Services.AddHostedService<EventDispatcher>();
 
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
@@ -409,6 +451,12 @@ using (var scope = app.Services.CreateScope())
         "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;",
         "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';",
         "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;",
+        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;",
+        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;",
+        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;",
+        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;",
+        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;",
+        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;",
     };
     foreach (var ddl in pendingColumnDdl)
     {
@@ -426,6 +474,34 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             app.Logger.LogWarning(ex, "[Schema] 幂等补列失败（将继续启动）：{Ddl}", ddl);
+        }
+    }
+
+    // ── 幂等种子：记忆工具 Capabilities（启动时幂等插入，正式迁移来之前兜底）
+    var now = DateTimeOffset.UtcNow;
+    var memoryCaps = new (string CapabilityId, string Name, string ToolName, string Description, string ToolDescription, int SortOrder)[]
+    {
+        ("cap-search-memory", "搜索记忆", "search_memory", "允许 Agent 使用 search_memory 工具搜索记忆图书馆中的事实和偏好", "Search the user's memory library for related facts, preferences, and knowledge.", 60),
+        ("cap-save-memory", "保存记忆", "save_memory", "允许 Agent 使用 save_memory 工具主动写入事实、偏好、摘要到记忆图书馆", "Save or update a fact, preference, summary, or chapter into the user's memory library.", 70),
+        ("cap-manage-memory", "管理记忆图书馆", "manage_memory", "允许 Agent 使用 manage_memory 工具管理记忆图书馆结构（Book/Chapter/指针CRUD）", "Manage memory library structure: create/list/update/delete books, chapters, and pointers.", 80),
+        ("cap-grep-memory", "全文检索记忆", "grep_memory", "允许 Agent 使用 grep_memory 工具执行全文搜索、Book内检索、目录浏览", "Full-text search across the memory library with FTS5, in-book search, and table-of-contents listing.", 90),
+    };
+    foreach (var (capId, name, toolName, desc, toolDesc, sortOrder) in memoryCaps)
+    {
+        try
+        {
+            var exists = await db.Capabilities.AnyAsync(c => c.CapabilityId == capId);
+            if (!exists)
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "INSERT INTO Capabilities (CapabilityId, Name, ToolName, Description, ToolDescription, RequiresShellExecution, RequiresFileWrite, RequiresNetworkAccess, IsEnabled, SortOrder, CreatedAt, UpdatedAt) VALUES ({0}, {1}, {2}, {3}, {4}, 0, 0, 0, 1, {5}, {6}, {7})",
+                    capId, name, toolName, desc, toolDesc, sortOrder, now, now);
+                app.Logger.LogInformation("[Seed] 已插入 Capability: {CapId}", capId);
+            }
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "[Seed] 幂等插入 Capability 失败（继续启动）: {CapId}", capId);
         }
     }
 
