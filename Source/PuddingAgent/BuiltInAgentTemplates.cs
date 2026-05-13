@@ -19,12 +19,7 @@ public static class BuiltInAgentTemplates
             AllowShellExecution = false,
             AllowNetworkAccess = false,
         },
-        Runtime = new RuntimeProfile
-        {
-            MaxContextTokens = 8192,
-            MaxTurnsPerSession = 100,
-            SessionTimeout = TimeSpan.FromHours(1),
-        },
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,
@@ -47,12 +42,7 @@ public static class BuiltInAgentTemplates
             AllowNetworkAccess = false,
             AllowedToolNames = ["bash", "file_read", "file_write"],
         },
-        Runtime = new RuntimeProfile
-        {
-            MaxContextTokens = 16384,
-            MaxTurnsPerSession = 200,
-            SessionTimeout = TimeSpan.FromHours(2),
-        },
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,
@@ -75,12 +65,7 @@ public static class BuiltInAgentTemplates
             AllowNetworkAccess = false,
             AllowedToolNames = ["bash", "file_read", "file_write"],
         },
-        Runtime = new RuntimeProfile
-        {
-            MaxContextTokens = 16384,
-            MaxTurnsPerSession = 200,
-            SessionTimeout = TimeSpan.FromHours(2),
-        },
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,
@@ -102,12 +87,7 @@ public static class BuiltInAgentTemplates
             AllowShellExecution = false,
             AllowNetworkAccess = false,
         },
-        Runtime = new RuntimeProfile
-        {
-            MaxContextTokens = 4096,
-            MaxTurnsPerSession = 50,
-            SessionTimeout = TimeSpan.FromMinutes(30),
-        },
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,

@@ -152,7 +152,7 @@ public sealed class JsonAgentTemplate
     public string? ReasoningEffort { get; set; }
 
     [JsonPropertyName("maxContextTokens")]
-    public int MaxContextTokens { get; set; } = 65536;
+    public int MaxContextTokens { get; set; } = 1048576;
 
     [JsonPropertyName("maxReplyTokens")]
     public int MaxReplyTokens { get; set; } = 16384;

@@ -1,10 +1,17 @@
-// ── InputArea：底部输入区域（输入框 + 发送/停止 + 导出 + 命令面板）────
-import { DownloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
-import { Button, Input, Tooltip } from 'antd';
+// ── InputArea：输入区（工具栏 → 输入行 → 状态栏）────
+import { DownloadOutlined, PaperClipOutlined, SendOutlined, SettingOutlined, StopOutlined } from '@ant-design/icons';
+import { Button, Input, Select, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
-import TokenBar from './TokenBar';
 import CommandPalette, { COMMANDS, type Command } from './CommandPalette';
+import StatusBarTokenIndicator from './StatusBarTokenIndicator';
+import ThinkingIntensityIndicator from './ThinkingIntensityIndicator';
+import ProviderBalanceIndicator from './ProviderBalanceIndicator';
+import TokenStatsIndicator from './TokenStatsIndicator';
+import AspLspIndicator from './AspLspIndicator';
+import IndexIndicator from './IndexIndicator';
+import SubconsciousLlmIndicator from './SubconsciousLlmIndicator';
+import VoiceInputButton from './VoiceInputButton';
 
 interface InputAreaProps {
   inputValue: string;
@@ -18,11 +25,12 @@ interface InputAreaProps {
   tLimit: number;
   tUsed: number;
   tPct: number;
+  status: 'idle' | 'streaming';
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport,
-  disabled, tLimit, tUsed, tPct,
+  disabled, tLimit, tUsed, tPct, status,
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -125,8 +133,21 @@ const InputArea: React.FC<InputAreaProps> = ({
         onSelect={handleCommandSelect}
         onClose={handleClosePalette}
       />
-      <TokenBar tLimit={tLimit} tUsed={tUsed} tPct={tPct} />
+      {/* ── 工具栏（附件 | 思考强度 | 设置 | 导出 — 均占位）── */}
+      <div className={styles.toolbar}>
+        <Tooltip title="上传附件（即将开放）"><Button size="small" type="text" icon={<PaperClipOutlined />} disabled /></Tooltip>
+        <Tooltip title="思考强度（即将开放）">
+          <Select size="small" variant="borderless" disabled value="auto" style={{ width: 72, fontSize: 12 }}
+            options={[{ value: 'auto', label: '自动' }, { value: 'low', label: '低' }, { value: 'high', label: '高' }]} />
+        </Tooltip>
+        <div className={styles.toolbarSpacer} />
+        <Tooltip title="导出对话"><Button size="small" type="text" icon={<DownloadOutlined />} onClick={onExport} /></Tooltip>
+        <Tooltip title="Agent 设置（即将开放）"><Button size="small" type="text" icon={<SettingOutlined />} disabled /></Tooltip>
+      </div>
+
+      {/* ── 输入行：语音 + 输入框 + 发送 ── */}
       <div className={styles.inputArea}>
+        <VoiceInputButton disabled={disabled} />
         <Input.TextArea
           ref={textAreaRef as any}
           value={inputValue}
@@ -137,7 +158,6 @@ const InputArea: React.FC<InputAreaProps> = ({
           autoSize={{ minRows: 1, maxRows: 5 }}
           className={styles.input}
         />
-        {loading && <span className={styles.inputCursor} />}
         <Button
           type={loading ? 'default' : 'primary'}
           danger={loading}
@@ -147,9 +167,23 @@ const InputArea: React.FC<InputAreaProps> = ({
         >
           {loading ? '停止' : '发送'}
         </Button>
-        <Tooltip title="导出">
-          <Button icon={<DownloadOutlined />} onClick={onExport} />
-        </Tooltip>
+      </div>
+
+      {/* ── 状态栏：Token 指示器 | 思考强度 | 余额 | 消耗 | ASP/LSP | 索引 | 潜意识 ── */}
+      <div className={styles.statusBar}>
+        <StatusBarTokenIndicator tLimit={tLimit} tUsed={tUsed} tPct={tPct} status={status} loaded={tLimit > 0} />
+        <span className={styles.statusDivider}>|</span>
+        <ThinkingIntensityIndicator intensity="auto" />
+        <span className={styles.statusDivider}>|</span>
+        <ProviderBalanceIndicator provider="DeepSeek" />
+        <span className={styles.statusDivider}>|</span>
+        <TokenStatsIndicator />
+        <span className={styles.statusDivider}>|</span>
+        <AspLspIndicator aspActive={true} lspActive={false} />
+        <span className={styles.statusDivider}>|</span>
+        <IndexIndicator active={false} statusText="全文索引待启动" />
+        <span className={styles.statusDivider}>|</span>
+        <SubconsciousLlmIndicator active={false} statusText="潜意识 LLM 待机" />
       </div>
     </div>
   );

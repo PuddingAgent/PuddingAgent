@@ -98,7 +98,7 @@ public sealed record RuntimeDispatchRequest
     public IReadOnlyList<LlmToolDefinition>? ToolDefinitions { get; init; }
     /// <summary>Agent 模板关联的 Skill 包列表（含预签名下载 URL）。Runtime 启动容器时下载并挂载至 /skills/。</summary>
     public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
-    /// <summary>流式路径最大 Agent Loop 轮数，默认 5。0 或负数表示使用默认值。</summary>
+    /// <summary>Agent Loop 最大轮数。与 AgentExecutionGuardrails.MaxRounds(默认200) 保持一致。0 或负数表示使用护栏默认值。</summary>
     public int MaxRounds { get; init; }
 }
 

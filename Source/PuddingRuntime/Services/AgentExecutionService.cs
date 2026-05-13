@@ -271,11 +271,25 @@ public sealed class AgentExecutionService
                     : _skillRuntime.BuildLlmTools(effectiveCapability);
 
                 var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
-                var llmResp = await _llmClient.ChatAsync(
-                    request.WorkspaceId, request.SessionId,
-                    request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
+                LlmResponse llmResp;
+                try
+                {
+                    llmResp = await _llmClient.ChatAsync(
+                        request.WorkspaceId, request.SessionId,
+                        request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[AgentExec] LLM API error round={Round} session={Session}", round + 1, request.SessionId);
+                    history.Add(new ChatMessage(ChatRole.Tool,
+                        $"⚠️ LLM API call failed: {ex.Message}\n" +
+                        "The previous tool result may contain content the model cannot process. " +
+                        "Please summarize the tool output in your own words and try a different approach.",
+                        ToolCallId: "llm-error"));
+                    continue;
+                }
                 if (llmResp.Usage is not null)
-                    usage = llmResp.Usage with { ContextWindowTokens = template.Runtime?.MaxContextTokens ?? 65536 };
+                    usage = llmResp.Usage with { ContextWindowTokens = template.Runtime?.MaxContextTokens ?? 0 };
                 llmSw.Stop();
 
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
@@ -354,8 +368,11 @@ public sealed class AgentExecutionService
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
 
                         var toolPayloadRaw = skillResult.Success
-                            ? $"Tool '{call.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
-                            : $"Tool '{call.Name}' failed (exit={skillResult.ExitCode}):\n{skillResult.Error}";
+                            ? $"✅ Tool '{call.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
+                            : $"❌ Tool '{call.Name}' FAILED (exit={skillResult.ExitCode})\n" +
+                              $"   Error: {skillResult.Error}\n" +
+                              $"   💡 Suggestion: Check the tool's parameter constraints (paths must be within workspace, commands must use valid syntax, etc.). " +
+                              $"If the tool has access restrictions, try an alternative approach or use a different tool.";
                         var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
 
                         var safeToolError = string.IsNullOrWhiteSpace(skillResult.Error)
@@ -549,8 +566,10 @@ public sealed class AgentExecutionService
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
 
                     var toolMsgRaw = skillResult.Success
-                        ? $"Tool '{toolName}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
-                        : $"Tool '{toolName}' failed (exit={skillResult.ExitCode}):\n{skillResult.Error}";
+                        ? $"✅ Tool '{toolName}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
+                        : $"❌ Tool '{toolName}' FAILED (exit={skillResult.ExitCode})\n" +
+                          $"   Error: {skillResult.Error}\n" +
+                          $"   💡 Suggestion: Try an alternative approach or use a different tool if this one has access restrictions.";
                     var toolMsg = await _keyVaultService.StripAsync(toolMsgRaw, ct);
                     history.Add(new ChatMessage(ChatRole.User, toolMsg));
                 }
@@ -820,13 +839,39 @@ public sealed class AgentExecutionService
             _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
 
-            // ── 流式 mini Agent Loop（默认最多 5 轮）─────────────────
-            var maxRounds = request.MaxRounds > 0 ? request.MaxRounds : 5;
+            // ── 流式 Agent Loop（与同步路径共享护栏参数）──────
+            var maxRounds = request.MaxRounds > 0
+                ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
+                : _guardrails.MaxRounds;
             var reply = "(no response)";
             TokenUsageDto? usage = null;
+            var hasExecutedAnyTool = false;
+            var lastToolResult = "(未执行任何工具)";
+            var consecutiveShortReplies = 0;
+            var totalToolCalls = 0;
 
             for (int round = 0; round < maxRounds; round++)
             {
+                // ── 检查点：取消 / 最大耗时 / 最大工具调用 ──
+                if (ct.IsCancellationRequested)
+                {
+                    _logger.LogInformation("[AgentExec:Stream] Cancelled session={Session}", request.SessionId);
+                    yield return ServerSentEventFrame.Json(SseEventTypes.Cancelled, new { message = "已取消" });
+                    break;
+                }
+                if (perfTotalSw.Elapsed > _guardrails.MaxElapsed)
+                {
+                    _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", _guardrails.MaxElapsed);
+                    yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"执行超时 ({_guardrails.MaxElapsed.TotalSeconds}s)" });
+                    break;
+                }
+                if (totalToolCalls >= _guardrails.MaxToolCallsTotal)
+                {
+                    _logger.LogWarning("[AgentExec:Stream] MaxToolCallsTotal={Max} reached", _guardrails.MaxToolCallsTotal);
+                    yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"工具调用次数已达上限 ({_guardrails.MaxToolCallsTotal})" });
+                    break;
+                }
+
                 // 发送 context 帧（仅第1轮）
                 if (round == 0)
                 {
@@ -845,51 +890,81 @@ public sealed class AgentExecutionService
                 var reasoningBuf = new StringBuilder();
 
                 var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
-                await foreach (var delta in _llmClient.ChatStreamAsync(
+                var llmEnumerator = _llmClient.ChatStreamAsync(
                     request.WorkspaceId,
                     request.SessionId,
                     request.AgentTemplateId,
                     injectedHistory,
                     tools: llmTools,
                     llmConfig: effectiveLlmConfig,
-                    ct: ct))
+                    ct: ct).GetAsyncEnumerator(ct);
+                Exception? llmException = null;
+                try
                 {
-                    // 思维链增量 → thinking 事件
-                    if (!string.IsNullOrEmpty(delta.ReasoningDelta))
+                    while (true)
                     {
-                        reasoningBuf.Append(delta.ReasoningDelta);
-                        yield return ServerSentEventFrame.Json(SseEventTypes.Thinking,
-                            new { delta = delta.ReasoningDelta });
-                        _ = _eventBus?.EmitAsync(new StreamingEvent
+                        StreamDelta delta;
+                        try
                         {
-                            Type = StreamingEventTypes.AgentThinking,
-                            Data = new { delta = delta.ReasoningDelta }
-                        }, ct);
-                    }
-
-                    // 文本增量 → delta 事件
-                    if (!string.IsNullOrEmpty(delta.ContentDelta))
-                    {
-                        var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
-                        replyBuf.Append(safeDelta);
-                        yield return ServerSentEventFrame.Json(SseEventTypes.Delta,
-                            new { delta = safeDelta });
-                        _ = _eventBus?.EmitAsync(new StreamingEvent
+                            if (!await llmEnumerator.MoveNextAsync())
+                                break;
+                            delta = llmEnumerator.Current;
+                        }
+                        catch (Exception ex)
                         {
-                            Type = StreamingEventTypes.AgentDelta,
-                            Data = new { delta = safeDelta }
-                        }, ct);
-                    }
+                            llmException = ex;
+                            break;
+                        }
 
-                    // 工具调用增量 → 累积
-                    if (delta.ToolCallIndex != null)
-                    {
-                        AccumulateToolCall(accumulatedToolCalls, delta);
-                        hasToolCalls = true;
-                    }
+                        // 思维链增量 → thinking 事件
+                        if (!string.IsNullOrEmpty(delta.ReasoningDelta))
+                        {
+                            reasoningBuf.Append(delta.ReasoningDelta);
+                            yield return ServerSentEventFrame.Json(SseEventTypes.Thinking,
+                                new { delta = delta.ReasoningDelta });
+                            _ = _eventBus?.EmitAsync(new StreamingEvent
+                            {
+                                Type = StreamingEventTypes.AgentThinking,
+                                Data = new { delta = delta.ReasoningDelta }
+                            }, ct);
+                        }
 
-                    if (delta.Usage is not null)
-                        usage = delta.Usage;
+                        // 文本增量 → delta 事件
+                        if (!string.IsNullOrEmpty(delta.ContentDelta))
+                        {
+                            var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
+                            replyBuf.Append(safeDelta);
+                            yield return ServerSentEventFrame.Json(SseEventTypes.Delta,
+                                new { delta = safeDelta });
+                            _ = _eventBus?.EmitAsync(new StreamingEvent
+                            {
+                                Type = StreamingEventTypes.AgentDelta,
+                                Data = new { delta = safeDelta }
+                            }, ct);
+                        }
+
+                        // 工具调用增量 → 累积
+                        if (delta.ToolCallIndex != null)
+                        {
+                            AccumulateToolCall(accumulatedToolCalls, delta);
+                            hasToolCalls = true;
+                        }
+
+                        if (delta.Usage is not null)
+                            usage = delta.Usage;
+                    }
+                }
+                finally
+                {
+                    await llmEnumerator.DisposeAsync();
+                }
+
+                // LLM API 出错 → 发送 error 事件后继续下一轮
+                if (llmException != null)
+                {
+                    _logger.LogError(llmException, "[AgentExec] LLM API error in streaming loop, round={Round}", round);
+                    yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"LLM 调用失败: {llmException.Message}" });
+                    continue;
                 }
 
                 // 发送 usage
@@ -902,6 +977,22 @@ public sealed class AgentExecutionService
                     reply = replyBuf.Length > 0
                         ? await _keyVaultService.StripAsync(replyBuf.ToString(), ct)
                         : "（Agent 未返回可展示文本）";
+
+                    // 极短回复保护：如果已执行过工具但回复太短且未到达最后轮，继续Loop给LLM机会补充
+                    if (hasExecutedAnyTool && reply.Length < 30 && round < maxRounds - 1)
+                    {
+                        consecutiveShortReplies++;
+                        if (consecutiveShortReplies <= 2)
+                        {
+                            _logger.LogWarning("[AgentExec] Short reply={Len} chars, retrying round={Round}",
+                                reply.Length, round);
+                            history.Add(new ChatMessage(ChatRole.User,
+                                $"[SYSTEM] Your response was very short ({reply.Length} chars). " +
+                                "Please provide a complete, helpful response summarizing the tool results."));
+                            continue;
+                        }
+                    }
+
                     var assistantReasoningContent = reasoningBuf.Length > 0
                         ? reasoningBuf.ToString()
                         : null;
@@ -909,6 +1000,7 @@ public sealed class AgentExecutionService
                         ReasoningContent: assistantReasoningContent));
                     break;
                 }
+                consecutiveShortReplies = 0;
 
                 // 有工具调用 → 构建 Assistant 消息 + 发送 tool_call/tool_result 帧
                 var assistantToolCalls = accumulatedToolCalls
@@ -946,6 +1038,12 @@ public sealed class AgentExecutionService
                         },
                         effectiveCapability,
                         ct);
+
+                    hasExecutedAnyTool = true;
+                    totalToolCalls++;
+                    lastToolResult = result.Success
+                        ? $"已完成: {(result.Output?.Length > 0 ? Truncate(result.Output!, 200) : "(空输出)")}"
+                        : $"执行失败: {(result.Error?.Length > 0 ? Truncate(result.Error!, 200) : "(未知错误)")}";
 
                     yield return ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
                     {
@@ -986,8 +1084,10 @@ public sealed class AgentExecutionService
 
                     // 工具结果追加到历史（非 terminal 工具）
                     var toolPayloadRaw = result.Success
-                        ? $"Tool '{tc.Name}' succeeded (exit={result.ExitCode}):\n{result.Output}"
-                        : $"Tool '{tc.Name}' failed (exit={result.ExitCode}):\n{result.Error}";
+                        ? $"✅ Tool '{tc.Name}' succeeded (exit={result.ExitCode}):\n{result.Output}"
+                        : $"❌ Tool '{tc.Name}' FAILED (exit={result.ExitCode})\n" +
+                          $"   Error: {result.Error}\n" +
+                          $"   💡 Suggestion: Check the command syntax, permissions, and path constraints. Try an alternative approach.";
                     var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
                     history.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id));
                 }
@@ -1069,10 +1169,15 @@ public sealed class AgentExecutionService
                 });
             }
 
-            var contextWindowTokens = template.Runtime?.MaxContextTokens ?? 65536;
+            var contextWindowTokens = template.Runtime?.MaxContextTokens ?? 0;
             var finalUsage = usage is not null
                 ? usage with { ContextWindowTokens = contextWindowTokens }
                 : new TokenUsageDto { ContextWindowTokens = contextWindowTokens };
+            // 如果 LLM 未产生有效回复，但工具已执行，用最后工具结果作为回复
+            if (reply == "(no response)" && hasExecutedAnyTool)
+            {
+                reply = lastToolResult;
+            }
             yield return ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage = finalUsage });
         }
         finally

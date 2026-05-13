@@ -388,6 +388,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               tLimit={tLimit}
               tUsed={tUsed}
               tPct={tPct}
+              status={loading ? 'streaming' : 'idle'}
             />
           </div>
 

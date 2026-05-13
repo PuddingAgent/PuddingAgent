@@ -81,7 +81,7 @@ public sealed class ContextPipeline
     /// </summary>
     public async Task<ContextAssemblyResult> AssembleAsync(ContextRequest request, CancellationToken ct)
     {
-        var totalBudget = request.Template.Runtime?.MaxContextTokens ?? 65536;
+        var totalBudget = request.Template.Runtime?.MaxContextTokens ?? 0;
         var sb = new StringBuilder();
         var usedBudget = 0;
         var layers = new List<ContextLayerSnapshot>();

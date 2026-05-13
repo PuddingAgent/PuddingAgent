@@ -40,16 +40,18 @@ const MessageList: React.FC<MessageListProps> = ({
   messageListRef, listEndRef,
 }) => {
   const { styles } = useChatStyles();
-  const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const prevTurnCountRef = useRef(turns.length);
-  const isUserScrollingRef = useRef(false);
+  // ── 滚动跟随状态机（ref 避免 React 异步渲染时机问题）──
+  const followRef = useRef(true);            // true=FOLLOWING, false=FREE
+  const userInitiatedScrollRef = useRef(false);
 
   // 检查是否在底部
   const checkAtBottom = useCallback(() => {
     const el = messageListRef.current;
     if (!el) return true;
-    const threshold = 60;
+    const threshold = 80; // px，容忍度
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
   }, [messageListRef]);
 
@@ -57,54 +59,78 @@ const MessageList: React.FC<MessageListProps> = ({
   const scrollToBottom = useCallback((smooth = true) => {
     listEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
     setUnreadCount(0);
-    setIsAtBottom(true);
   }, [listEndRef]);
 
-  // 监听滚动事件
+  // 用户滚动事件处理：即时更新 ref（不等 state），state 仅用于按钮显隐
   const handleScroll = useCallback(() => {
     const atBottom = checkAtBottom();
-    setIsAtBottom(atBottom);
-    if (atBottom) setUnreadCount(0);
+    followRef.current = atBottom;
+    if (atBottom) {
+      setUnreadCount(0);
+      setShowScrollButton(false);
+    } else {
+      setShowScrollButton(true);
+    }
   }, [checkAtBottom]);
 
-  // 会话切换时保存/恢复滚动位置
+  // 用户主动操作 → 强制进入 FOLLOWING 模式
+  const forceFollow = useCallback(() => {
+    followRef.current = true;
+    scrollToBottom(true);
+    setTimeout(() => { followRef.current = true; }, 500);
+  }, [scrollToBottom]);
+
+  // 会话切换时保存/恢复滚动位置 + 绑定 scroll 事件
   useEffect(() => {
     const el = messageListRef.current;
     if (!el) return;
     const key = agentId ?? '__no_agent__';
-    // 恢复之前保存的滚动位置
     const saved = sessionScrollMap.get(key);
     if (saved !== undefined && turns.length > 0) {
       requestAnimationFrame(() => { el.scrollTop = saved; });
     }
+    // 切换会话时，检查当前位置决定初始跟随状态
+    followRef.current = checkAtBottom();
     el.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
-      // 保存当前滚动位置
       sessionScrollMap.set(key, el.scrollTop);
       el.removeEventListener('scroll', handleScroll);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId]);
 
-  // 新消息到达时的处理
+  // 新 turn 到达时的处理：用户发送消息后强制 FOLLOWING
   useEffect(() => {
     const newCount = turns.length - prevTurnCountRef.current;
     if (newCount > 0 && turns.length > prevTurnCountRef.current) {
-      if (isAtBottom) {
-        requestAnimationFrame(() => scrollToBottom(false));
-      } else {
-        setUnreadCount(prev => prev + newCount);
-      }
+      followRef.current = true;
+      requestAnimationFrame(() => scrollToBottom(false));
     }
     prevTurnCountRef.current = turns.length;
-  }, [turns.length, isAtBottom, scrollToBottom]);
+  }, [turns.length, scrollToBottom]);
 
-  // 点击未读按钮
+  // Streaming 内容增长时：用 ResizeObserver 监听最后一个 turn 的 DOM 变化
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+
+    const lastTurn = el.querySelector('[data-turn-last="true"]');
+    if (!lastTurn) return;
+
+    const observer = new ResizeObserver(() => {
+      if (followRef.current) {
+        listEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }
+    });
+    observer.observe(lastTurn);
+
+    return () => observer.disconnect();
+  }, [turns.length, listEndRef, messageListRef]);
+
+  // 点击未读按钮 → 强制 FOLLOWING
   const handleUnreadClick = useCallback(() => {
-    isUserScrollingRef.current = true;
-    scrollToBottom(true);
-    setTimeout(() => { isUserScrollingRef.current = false; }, 500);
-  }, [scrollToBottom]);
+    forceFollow();
+  }, [forceFollow]);
 
   return (
     <div className={styles.messageList} ref={messageListRef} style={{ position: 'relative' }}>
@@ -132,27 +158,33 @@ const MessageList: React.FC<MessageListProps> = ({
           加载更多历史消息
         </div>
       )}
-      {turns.map((turn, idx) => (
-        <MessageGroup
-          key={turn.turnId}
-          turn={turn}
-          turns={turns}
-          isLatest={idx === turns.length - 1}
-          selectedAgent={selectedAgent}
-          formatTime={formatTime}
-          getStepTone={getStepTone}
-          onDeleteTurn={onDeleteTurn}
-          onToggleReasoning={onToggleReasoning}
-          onContextMenu={onContextMenu}
-          onRerunTurn={onRerunTurn}
-          onPinTurn={onPinTurn}
-        />
-      ))}
+      {turns.map((turn, idx) => {
+        const isLast = idx === turns.length - 1;
+        const groupElem = (
+          <MessageGroup
+            key={turn.turnId}
+            turn={turn}
+            turns={turns}
+            isLatest={isLast}
+            selectedAgent={selectedAgent}
+            formatTime={formatTime}
+            getStepTone={getStepTone}
+            onDeleteTurn={onDeleteTurn}
+            onToggleReasoning={onToggleReasoning}
+            onContextMenu={onContextMenu}
+            onRerunTurn={onRerunTurn}
+            onPinTurn={onPinTurn}
+          />
+        );
+        return isLast
+          ? <div key={turn.turnId} data-turn-last="true">{groupElem}</div>
+          : groupElem;
+      })}
       {error && (
         <Alert type="error" message={error} closable onClose={onClearError} className={styles.errorAlert} />
       )}
       {/* 未读提示按钮 */}
-      {!isAtBottom && unreadCount > 0 && (
+      {showScrollButton && (
         <div style={{
           position: 'sticky', bottom: 16, display: 'flex', justifyContent: 'flex-end',
           paddingRight: 8, zIndex: 10, pointerEvents: 'none',
@@ -167,7 +199,7 @@ const MessageList: React.FC<MessageListProps> = ({
               pointerEvents: 'auto', fontWeight: 500, fontSize: 13,
             }}
           >
-            {unreadCount} 条新消息 ↓
+            回到底部 ↓
           </Button>
         </div>
       )}

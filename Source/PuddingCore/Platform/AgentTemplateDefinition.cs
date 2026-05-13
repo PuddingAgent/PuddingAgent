@@ -68,7 +68,7 @@ public sealed record CapabilityPolicy
 public sealed record RuntimeProfile
 {
     public string? PreferredModel { get; init; }
-    public int MaxContextTokens { get; init; } = 8192;
+    public int? MaxContextTokens { get; init; }
     public int MaxTurnsPerSession { get; init; } = 100;
     public TimeSpan SessionTimeout { get; init; } = TimeSpan.FromHours(1);
 }

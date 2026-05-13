@@ -15,7 +15,9 @@ const TokenBar: React.FC<TokenBarProps> = ({ tLimit, tUsed, tPct }) => {
     <div className={styles.tokenIndicator}>
       <span className={styles.sendingText}>Tokens</span>
       <Progress className={styles.tokenProgress} percent={tPct} size="small" />
-      <span className={styles.sendingText}>{tUsed}/{tLimit}</span>
+      <span className={styles.sendingText}>
+        {tLimit > 0 ? `${tUsed}/${tLimit}` : '未配置'}
+      </span>
     </div>
   );
 };

@@ -25,7 +25,6 @@ import {
 import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup } from '../types';
 import { assistantStatusLabel } from '../types';
 
-const DEFAULT_CONTEXT_WINDOW = 65536;
 const MESSAGE_PAGE_SIZE = 20;
 
 export const stringToColor = (str: string) => {
@@ -780,9 +779,9 @@ export function useChatState(): UseChatStateReturn {
     disabled: !a.isEnabled || a.isFrozen,
   }));
   const groups = groupSessions(sessions);
-  const tLimit = latestUsage?.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW;
+  const tLimit = latestUsage?.contextWindowTokens ?? 0;
   const tUsed = latestUsage?.totalTokens ?? 0;
-  const tPct = Math.min(100, Math.round((tUsed / tLimit) * 100));
+  const tPct = tLimit > 0 ? Math.min(100, Math.round((tUsed / tLimit) * 100)) : 0;
 
   return {
     workspaces, workspaceId, workspaceLoading, setWorkspaceId, setWorkspaces,
