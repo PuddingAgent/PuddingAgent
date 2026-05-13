@@ -76,4 +76,73 @@ public sealed class BashSkill : ContainerSkillBase
     }
 
     private static string Short(string id) => id.Length >= 12 ? id[..12] : id;
+
+    /// <summary>
+    /// 宿主机模式：优先用 bash -c，回退到 cmd /c 执行命令。
+    /// 限制：30秒超时，单次执行。
+    /// </summary>
+    private static SkillResult ExecuteBashHostMode(string command, CancellationToken ct)
+    {
+        // 优先尝试 bash（WSL / Git Bash），回退到 cmd
+        var (fileName, args) = DetectShell();
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = args.Replace("{cmd}", command),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        using var proc = Process.Start(psi);
+        if (proc is null)
+            return Fail("Failed to start shell process on host.");
+
+        if (!proc.WaitForExit(30000))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            return Fail("Bash execution timed out after 30 seconds.");
+        }
+
+        var stdout = proc.StandardOutput.ReadToEnd().TrimEnd();
+        var stderr = proc.StandardError.ReadToEnd().TrimEnd();
+        var output = (stdout + (stderr.Length > 0 ? "\n[stderr]: " + stderr : "")).TrimEnd();
+
+        return new SkillResult
+        {
+            Success  = proc.ExitCode == 0,
+            Output   = output,
+            ExitCode = proc.ExitCode,
+            Error    = proc.ExitCode != 0 ? $"exit code {proc.ExitCode}" : null,
+        };
+    }
+
+    /// <summary>
+    /// 检测可用 shell：bash > cmd。
+    /// </summary>
+    private static (string fileName, string args) DetectShell()
+    {
+        // 简单检测：如果 bash 在 PATH 中可用则使用
+        try
+        {
+            var check = new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "where" : "which",
+                Arguments = "bash",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = Process.Start(check);
+            p?.WaitForExit(3000);
+            if (p?.ExitCode == 0)
+                return ("bash", "-c \"{cmd}\"");
+        }
+        catch { /* fall through */ }
+
+        return OperatingSystem.IsWindows()
+            ? ("cmd.exe", "/c {cmd}")
+            : ("sh", "-c \"{cmd}\"");
+    }
 }

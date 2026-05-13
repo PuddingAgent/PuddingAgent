@@ -40,6 +40,10 @@ public sealed class AgentSessionManager
         else
             _sessionTimeouts.TryAdd(sessionId, DefaultSessionTimeout);
 
+        // 为每个 Agent 实例创建独立工作目录
+        var agentWorkDir = Path.Combine(AppContext.BaseDirectory, "data", "agents", agentTemplateId);
+        try { Directory.CreateDirectory(agentWorkDir); } catch { /* best effort */ }
+
         return instance;
     }
 

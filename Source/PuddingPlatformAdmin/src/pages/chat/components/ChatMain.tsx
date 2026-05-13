@@ -43,6 +43,8 @@ interface ChatMainProps {
   onAgentChange: (v: string | undefined) => void;
   // new workspace
   onCreateWorkspace: () => void;
+  // session
+  selectedSessionId: string | null;
   // chat
   turns: ChatTurn[];
   historyLoading: boolean;
@@ -119,6 +121,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   workspaceId, workspaceLoading, wsOpts, onWorkspaceChange,
   agents, agentId, agentLoading, agOpts, selectedAgent, onAgentChange,
   onCreateWorkspace,
+  selectedSessionId,
   turns, historyLoading, loadingMore, hasMoreMessages, error, onClearError, onLoadMore,
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport, disabled,
   tLimit, tUsed, tPct,
@@ -180,25 +183,28 @@ const ChatMain: React.FC<ChatMainProps> = ({
 
     for (const turn of turns) {
       const prev = turnSnapshotRef.current.get(turn.turnId);
+      const items = turn.assistant.timelineItems ?? [];
+      const thinkingCount = items.filter(i => i.type === 'thinking').length;
+      const stepCount = items.filter(i => i.type !== 'thinking').length;
       const current: TurnSnapshot = {
-        reasoningCount: turn.assistant.reasoningBlocks.length,
-        stepCount: turn.assistant.stepCards.length,
+        reasoningCount: thinkingCount,
+        stepCount,
         answerLen: turn.assistant.answerMarkdown.length,
         status: turn.assistant.status,
         usageTotal: turn.assistant.usage?.totalTokens ?? 0,
       };
 
       if (!prev) {
-        if (turn.assistant.reasoningBlocks.length > 0) {
-          appended.push(...turn.assistant.reasoningBlocks.map((x) => ({
+        if (thinkingCount > 0) {
+          appended.push(...items.filter(i => i.type === 'thinking').map((x) => ({
             id: `evt-${turn.turnId}-thinking-${x.id}`,
             timestamp: now,
             event: 'thinking',
             payload: x.text,
           })));
         }
-        if (turn.assistant.stepCards.length > 0) {
-          appended.push(...turn.assistant.stepCards.map((x) => ({
+        if (stepCount > 0) {
+          appended.push(...items.filter(i => i.type !== 'thinking').map((x) => ({
             id: `evt-${turn.turnId}-step-${x.id}`,
             timestamp: x.timestamp || now,
             event: 'step',
@@ -207,7 +213,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
         }
       } else {
         if (current.reasoningCount > prev.reasoningCount) {
-          const newBlocks = turn.assistant.reasoningBlocks.slice(prev.reasoningCount);
+          const newBlocks = items.filter(i => i.type === 'thinking').slice(prev.reasoningCount);
           appended.push(...newBlocks.map((x) => ({
             id: `evt-${turn.turnId}-thinking-${x.id}`,
             timestamp: now,
@@ -217,7 +223,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
         }
 
         if (current.stepCount > prev.stepCount) {
-          const newCards = turn.assistant.stepCards.slice(prev.stepCount);
+          const newCards = items.filter(i => i.type !== 'thinking').slice(prev.stepCount);
           appended.push(...newCards.map((x) => ({
             id: `evt-${turn.turnId}-step-${x.id}`,
             timestamp: x.timestamp || now,
@@ -310,6 +316,16 @@ const ChatMain: React.FC<ChatMainProps> = ({
             return a ? renderAgentOption(a) : option.label;
           }}
         />
+        {(inferredSessionId ?? selectedSessionId) && (
+          <Tooltip title="点击复制 Session ID">
+            <span
+              onClick={() => { navigator.clipboard.writeText((inferredSessionId ?? selectedSessionId)!); }}
+              style={{ cursor: 'pointer', fontSize: 11, color: 'var(--earth-brown)', opacity: 0.6, marginLeft: 8, fontFamily: 'monospace', userSelect: 'all' }}
+            >
+              {(inferredSessionId ?? selectedSessionId)!.slice(0, 8)}...
+            </span>
+          </Tooltip>
+        )}
         <div className={styles.headerSpacer} />
         {selectedAgent && (
           <Tooltip title={getAgentName(selectedAgent)}>

@@ -231,6 +231,8 @@ public sealed partial class SkillRuntime
                     new ToolParameter("title", "string", "章节标题（chapter 类型需要）"),
                     new ToolParameter("source_ref", "string", "溯源引用：session_id 或外部 URL（可选）"),
                     new ToolParameter("source_label", "string", "溯源标签，如 '原始会话'、'参考文档'（可选）"),
+                    new ToolParameter("source_reference", "string", "引用来源：内部会话文件路径如 data/logs/sessions/2026-05-13/xxx.md，或外部URL"),
+                    new ToolParameter("reference_type", "string", "引用类型：internal（内部）/ external（外部）/ none（无）"),
                 ],
                 ["action", "type"]);
 
@@ -246,6 +248,8 @@ public sealed partial class SkillRuntime
                     new ToolParameter("chapter_id", "string", "目标 ChapterId"),
                     new ToolParameter("tags", "string", "逗号分隔的标签（创建 Book 时）"),
                     new ToolParameter("chapter_order", "number", "章节排序序号"),
+                    new ToolParameter("source_reference", "string", "引用来源：内部会话文件路径或外部URL"),
+                    new ToolParameter("reference_type", "string", "引用类型：internal（内部）/ external（外部）/ none（无）"),
                 ],
                 ["action"]);
 

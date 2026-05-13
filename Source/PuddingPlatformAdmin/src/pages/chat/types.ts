@@ -4,17 +4,19 @@ import type { TokenUsageDto, WorkspaceAgentDto, WorkspaceWithPermDto } from '@/s
 export type MessageStatus = 'sending' | 'success' | 'error';
 export type AssistantStatus = 'thinking' | 'executing' | 'streaming' | 'success' | 'error' | 'cancelled';
 
-export interface ReasoningBlock {
+/** 统一时间线条目：思考 / 工具调用 / 工具结果 / 潜意识步骤 */
+export interface TimelineItem {
   id: string;
-  text: string;
-  collapsed: boolean;
-}
-
-export interface StepCard {
-  id: string;
-  status: string;
-  message: string;
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'subconscious_step';
+  text?: string;
+  status?: string;
+  name?: string;
+  arguments?: string;
+  output?: string;
+  exitCode?: number;
+  message?: string;
   timestamp: number;
+  collapsed: boolean;
 }
 
 export interface ChatTurn {
@@ -28,9 +30,8 @@ export interface ChatTurn {
   assistant: {
     id: string;
     status: AssistantStatus;
-    reasoningBlocks: ReasoningBlock[];
-    _reasoningCollapsed?: boolean;
-    stepCards: StepCard[];
+    /** 统一时间线：按 Agent 实际执行顺序排列 */
+    timelineItems: TimelineItem[];
     answerMarkdown: string;
     isStreaming: boolean;
     usage?: TokenUsageDto;

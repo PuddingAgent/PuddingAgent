@@ -117,6 +117,14 @@ public class ChapterEntity
 
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long UpdatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    /// <summary>来源引用（内部文件路径或外部URL，用于核实）</summary>
+    [MaxLength(1024)]
+    public string? SourceReference { get; set; }
+
+    /// <summary>引用类型：internal（会话记录）/ external（外部URL）/ none</summary>
+    [MaxLength(32)]
+    public string? ReferenceType { get; set; }
 }
 
 /// <summary>指针——章节之间的交叉引用。</summary>

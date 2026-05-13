@@ -77,6 +77,23 @@ Log.Logger = new LoggerConfiguration()
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 7,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    // ── Session 级日志（按 sessionId 分目录，按天滚动）─
+    .WriteTo.Map(
+        "SessionId",
+        (sessionId, wt) =>
+        {
+            var sid = sessionId as string;
+            if (!string.IsNullOrEmpty(sid))
+            {
+                var sessionLogDir = Path.Combine(logDir, "sessions", sid);
+                Directory.CreateDirectory(sessionLogDir);
+                wt.File(
+                    Path.Combine(sessionLogDir, "session-.log"),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 30,
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}");
+            }
+        })
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -325,6 +342,8 @@ builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
         sp.GetService<IRuntimeLlmClient>(),
         memoryConfig);
 });
+// ── 启动环境信息（每次程序启动采集一次）──
+builder.Services.AddSingleton(new StartupEnvironmentInfo());
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<ContextAssemblyStore>();
 builder.Services.AddSingleton<ContextPipeline>();
@@ -337,6 +356,7 @@ builder.Services.AddSingleton(sp =>
     return new AgentPersonaFileProvider(dataDir,
         sp.GetRequiredService<ILogger<AgentPersonaFileProvider>>());
 });
+builder.Services.AddSingleton<SessionArchiver>();
 builder.Services.AddSingleton<AgentExecutionService>();
 
 // ── P2P 发现（局域网 UDP 广播 + HTTP 探活）────────────────

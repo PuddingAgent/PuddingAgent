@@ -21,12 +21,14 @@ public sealed class SystemPromptBuilder
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly AgentPersonaFileProvider? _personaFileProvider;
     private readonly ILogger<SystemPromptBuilder> _logger;
+    private readonly StartupEnvironmentInfo _env;
 
     public SystemPromptBuilder(
         IMemoryEngine memory,
         SkillRuntime skillRuntime,
         AgentSkillPackageRegistry skillPackageRegistry,
         ILogger<SystemPromptBuilder> logger,
+        StartupEnvironmentInfo env,
         IAgentTemplateProvider? templateProvider = null,
         IWorkspaceProfileProvider? workspaceProfileProvider = null,
         AgentPersonaFileProvider? personaFileProvider = null,
@@ -36,6 +38,7 @@ public sealed class SystemPromptBuilder
         _skillRuntime = skillRuntime;
         _skillPackageRegistry = skillPackageRegistry;
         _logger = logger;
+        _env = env;
         _templateProvider = templateProvider;
         _workspaceProfileProvider = workspaceProfileProvider;
         _personaFileProvider = personaFileProvider;
@@ -208,6 +211,66 @@ public sealed class SystemPromptBuilder
         sb.AppendLine("--- LAYER: RUNTIME ---");
         sb.AppendLine($"Date: {DateTimeOffset.Now:yyyy-MM-dd}");
         sb.AppendLine($"Session: {sessionId}");
+
+        // ── 环境感知：Agent 工作空间信息 ──
+        sb.AppendLine("## 环境信息");
+        sb.AppendLine($"- 操作系统: {_env.OsDescription} ({_env.OsArchitecture})");
+        sb.AppendLine($"- .NET 运行时: {_env.RuntimeVersion}");
+        sb.AppendLine($"- 是否为容器环境: {(_env.IsDocker ? "是 (Docker)" : "否 (宿主机)")}");
+        sb.AppendLine($"- 程序启动时间: {_env.StartedAt:yyyy-MM-dd HH:mm:ss} UTC");
+        sb.AppendLine();
+        sb.AppendLine("## 关键路径");
+        sb.AppendLine($"- Pudding 程序目录: {_env.AppBaseDirectory}");
+        sb.AppendLine($"- 数据根目录: {_env.DataDirectory}");
+        sb.AppendLine($"- 你的工作空间: {_env.AgentsDirectory}/{{agent模板ID}}/（个人专属目录，可读写）");
+        sb.AppendLine($"- 备忘录目录: {_env.MemosDirectory}/（跨 Agent 共享，睡前交接用）");
+        sb.AppendLine($"- 日志目录: {_env.LogsDirectory}/");
+        sb.AppendLine($"- 会话归档: {_env.SessionsDirectory}/{{日期}}/（只读历史记录）");
+        sb.AppendLine($"- 配置目录: {_env.ConfDirectory}/（只读，Pudding 系统配置）");
+        sb.AppendLine($"- 用户主目录: {_env.UserHomeDirectory}（宿主机的用户目录，谨慎操作）");
+        sb.AppendLine();
+        sb.AppendLine("你可以通过 bash / read_file / write_file 在主目录、工作空间、备忘录目录中读写文件。");
+        sb.AppendLine($"注意：{_env.MemosDirectory}/latest.md 是你的'睡前备忘录'，每次会话结束前应更新。");
+
+        // ── 8. SIGIL 层：备忘录交接仪式 ──
+        sb.AppendLine("--- LAYER: SIGIL ---");
+        sb.AppendLine("## 备忘录交接仪式（睡前 / 唤醒）");
+        sb.AppendLine();
+        sb.AppendLine("你有两套记忆系统：");
+        sb.AppendLine("- **记忆图书馆** = 大脑（存储原子化事实，可被 search_memory 检索）");
+        sb.AppendLine("- **备忘录** = 日记本（存储完整叙事，在 data/memos/ 目录下）");
+        sb.AppendLine();
+        sb.AppendLine("### 睡前仪式（会话结束前必须执行）");
+        sb.AppendLine("1. 写 `data/memos/{date}.md`：用最短字数交代今天最重要的 2-5 件事");
+        sb.AppendLine("   - 这是\u201C昨天的你写给明天的你\u201D的信，保持叙事完整性，不拆碎");
+        sb.AppendLine("   - 只记真正重要的事，不要记杂事（上下文会被填满导致遗忘）");
+        sb.AppendLine("   - 确保明天的你读完后能在最短时间内想起需要做的事");
+        sb.AppendLine("2. 在记忆图书馆存储几条关键指针（保存为 Book \u201C交接索引\u201D 的章节）：");
+        sb.AppendLine("   - 设置 source_reference 指向 `data/memos/{date}.md`");
+        sb.AppendLine("   - 这样 search_memory 能检索到，但叙事不堆进大脑");
+        sb.AppendLine("3. 用 `cp data/memos/{date}.md data/memos/latest.md` 更新 latest.md");
+        sb.AppendLine();
+        sb.AppendLine("### 唤醒仪式（会话开始时执行）");
+        sb.AppendLine("1. 读取 `data/memos/latest.md` 快速恢复上下文");
+        sb.AppendLine("2. 搜索记忆图书馆的 \u201C交接索引\u201D，获取关键指针");
+        sb.AppendLine("3. 在回复开头用一句话提及上次的进展（如\u201C继续昨天的任务...\u201D）");
+        sb.AppendLine();
+        sb.AppendLine("### 备忘录格式示例");
+        sb.AppendLine("```");
+        sb.AppendLine("# 2026-05-13 交接");
+        sb.AppendLine();
+        sb.AppendLine("## 关键进展");
+        sb.AppendLine("- 完成了 XXX 功能");
+        sb.AppendLine("- 修复了 YYY 问题");
+        sb.AppendLine();
+        sb.AppendLine("## 待办");
+        sb.AppendLine("- 继续 XXX");
+        sb.AppendLine();
+        sb.AppendLine("## 重要提醒");
+        sb.AppendLine("- ZZZ 需要注意");
+        sb.AppendLine("```");
+        sb.AppendLine("");
+        sb.AppendLine("原则：叙事留在备忘录，线索存入图书馆，不交叉污染。");
 
         if (forStreaming)
         {

@@ -2,9 +2,9 @@
 import { CopyOutlined, DeleteOutlined, PushpinOutlined, ReloadOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Space, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
-import React, { useState } from 'react';
+import React from 'react';
 import { useChatStyles } from '../styles';
-import type { ChatTurn } from '../types';
+import type { ChatTurn, TimelineItem } from '../types';
 import { assistantStatusLabel } from '../types';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
 import { stringToColor } from '../hooks/useChatState';
@@ -31,28 +31,30 @@ interface MessageGroupProps {
   formatTime: (ts: number) => string;
   getStepTone: (status?: string) => 'executing' | 'success' | 'error';
   onDeleteTurn: (turnId: string) => void;
-  onToggleReasoning: (turnId: string, blockId: string) => void;
+  onToggleReasoning: (turnId: string, itemId: string) => void;
   onContextMenu: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn?: (turnId: string) => void;
   onPinTurn?: (turnId: string) => void;
 }
 
+/** 从 TimelineItem status 推断色调 */
+const getItemTone = (item: TimelineItem): 'executing' | 'success' | 'error' => {
+  const s = (item.status || '').toLowerCase();
+  if (s.includes('error') || s.includes('fail') || s.includes('cancel')) return 'error';
+  if (s.includes('success') || s.includes('done') || s.includes('complete') || (item.type === 'tool_result' && item.exitCode === 0)) return 'success';
+  return 'executing';
+};
+
 const MessageGroup: React.FC<MessageGroupProps> = ({
-  turn, turns, isLatest, selectedAgent, formatTime, getStepTone, onDeleteTurn, onToggleReasoning, onContextMenu,
+  turn, turns, isLatest, selectedAgent, formatTime, onDeleteTurn, onToggleReasoning, onContextMenu,
   onRerunTurn, onPinTurn,
 }) => {
   const { styles, cx } = useChatStyles();
   const { assistant, userMessage } = turn;
-  const [collapsedThinkingCards, setCollapsedThinkingCards] = useState<Record<string, boolean>>({});
 
-  const toggleThinkingCard = (cardId: string) => {
-    setCollapsedThinkingCards((prev) => ({
-      ...prev,
-      [cardId]: !prev[cardId],
-    }));
-  };
-
-  const isLegacyAssistant = assistant.renderMode === 'legacy' && assistant.reasoningBlocks.length === 0 && assistant.stepCards.length === 0;
+  // 兼容旧会话：timelineItems 仅在发送新消息后才存在
+  const timelineItems = assistant.timelineItems ?? [];
+  const isLegacyAssistant = assistant.renderMode === 'legacy' && timelineItems.length === 0;
   const showUserBubble = Boolean(userMessage.text.trim()) || assistant.renderMode === 'structured';
   const showAssistant = assistant.renderMode === 'structured' || Boolean(assistant.answerMarkdown) || assistant.isStreaming || assistant.status === 'error' || assistant.status === 'cancelled';
 
@@ -76,6 +78,81 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
       <div className={styles.avatarUserIcon}><UserOutlined /></div>
     </div>
   );
+
+  // ── 渲染单个时间线条目 ────────────────────────────────────
+  const renderTimelineItem = (item: TimelineItem, idx: number) => {
+    if (item.type === 'thinking') {
+      // 思维链块：高度限制 + 边缘模糊 + 点击折叠
+      return (
+        <div key={item.id} className={styles.reasoningBlockTimeline}>
+          <div
+            className={styles.reasoningBlockContentTimeline}
+            style={{
+              maxHeight: item.collapsed ? '60px' : '150px',
+            }}
+          >
+            {item.text}
+            {!item.collapsed && <div className={styles.reasoningFadeTimeline} />}
+          </div>
+          <div
+            className={styles.reasoningToggleTimeline}
+            onClick={() => onToggleReasoning(turn.turnId, item.id)}
+          >
+            {item.collapsed ? '展开' : '收起'}
+          </div>
+        </div>
+      );
+    }
+
+    // tool_call / tool_result / subconscious_step
+    const tone = getItemTone(item);
+    const isThinkingStep = item.type === 'subconscious_step' && item.status === 'thinking';
+    const hasLongOutput = item.message && item.message.length > 300;
+    return (
+      <div
+        key={item.id}
+        className={cx(
+          styles.stepCard,
+          styles.stepCardAnimated,
+          isThinkingStep && styles.thinkingStepCard,
+          tone === 'success' && styles.stepCardSuccess,
+          tone === 'error' && styles.stepCardError,
+          tone === 'executing' && styles.stepCardExecuting,
+        )}
+        style={{ animationDelay: `${idx * 50}ms` }}
+      >
+        <span className={styles.stepCardDot} />
+        <div className={styles.stepCardTitle}>
+          <span className={cx(styles.stepCardStatus, tone === 'success' && styles.stepCardCompleteIcon)}>
+            {item.type === 'tool_call' ? '🔧' : tone === 'success' ? '✓' : '●'}
+            {' '}{item.name || item.status || ''}
+          </span>
+          <span className={styles.stepCardTime}>{formatTime(item.timestamp)}</span>
+        </div>
+        {hasLongOutput ? (
+          <div className={styles.toolOutputCollapse}>
+            <div
+              className={styles.toolOutputContent}
+              style={{ maxHeight: item.collapsed ? '80px' : '300px' }}
+            >
+              {item.message}
+              {!item.collapsed && <div className={styles.toolOutputFade} />}
+            </div>
+            <div
+              className={styles.toolOutputToggle}
+              onClick={() => onToggleReasoning(turn.turnId, item.id)}
+            >
+              {item.collapsed ? `展开 (${item.message?.length ?? 0} 字符)` : '收起'}
+            </div>
+          </div>
+        ) : (
+          <div className={cx(styles.stepCardMessage, isThinkingStep && styles.thinkingStepMessage)}>
+            {item.message}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className={isLatest ? styles.latestTurn : undefined}>
@@ -140,68 +217,16 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                 <div className={styles.turnBody}>
                   {/* ── 首 Token 等待 Loading ── */}
                   {assistant.isStreaming &&
-                    assistant.reasoningBlocks.length === 0 &&
-                    assistant.stepCards.length === 0 &&
+                    timelineItems.length === 0 &&
                     !assistant.answerMarkdown && (
                     <div className={styles.firstTokenLoading}>
                       <div className={styles.pulseDot} />
                       <span className={styles.pulseLabel}>Agent 正在思考...</span>
                     </div>
                   )}
-                  {assistant.reasoningBlocks.length > 0 && (
-                    <div className={cx(styles.reasoningPanel, assistant.isStreaming && styles.agentRecall)}>
-                      <div
-                        className={styles.reasoningHeader}
-                        onClick={() => onToggleReasoning(turn.turnId, '_all')}
-                      >
-                        💭 思维链
-                      </div>
-                      {!assistant._reasoningCollapsed && (
-                        <div className={styles.reasoningStream}>
-                          {assistant.reasoningBlocks.map((block) => block.text).join('')}
-                        </div>
-                      )}
-                    </div>
-                  )}
 
-                  {assistant.stepCards.length > 0 && (
-                    <div className={styles.stepCardList}>
-                      <div className={styles.stepCardLine} />
-                      {assistant.stepCards.map((card, cardIdx) => {
-                        const isThinkingCard = card.status === 'thinking';
-                        const isCollapsed = collapsedThinkingCards[card.id] === true;
-                        const tone = getStepTone(card.status);
-                        return (
-                          <div
-                            key={card.id}
-                            className={cx(
-                              styles.stepCard,
-                              styles.stepCardAnimated,
-                              isThinkingCard && styles.thinkingStepCard,
-                              tone === 'success' && styles.stepCardSuccess,
-                              tone === 'error' && styles.stepCardError,
-                              tone === 'executing' && styles.stepCardExecuting,
-                            )}
-                            style={{ animationDelay: `${cardIdx * 100}ms` }}
-                          >
-                            <span className={styles.stepCardDot} />
-                            <div
-                              className={cx(styles.stepCardTitle, isThinkingCard && styles.thinkingStepHeader)}
-                              onClick={isThinkingCard ? () => toggleThinkingCard(card.id) : undefined}
-                            >
-                              <span className={cx(styles.stepCardStatus, card.status === 'success' && styles.stepCardCompleteIcon)}>
-                                {isThinkingCard ? '💭 思考过程:' : (card.status || 'step')}
-                              </span>
-                              <span className={styles.stepCardTime}>{formatTime(card.timestamp)}</span>
-                            </div>
-                            {!isCollapsed && (
-                              <div className={cx(styles.stepCardMessage, isThinkingCard && styles.thinkingStepMessage)}>{card.message}</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  {/* ── 统一时间线：按实际执行顺序交替渲染 ── */}
+                  {timelineItems.map((item, idx) => renderTimelineItem(item, idx))}
 
                   <div
                     className={cx(

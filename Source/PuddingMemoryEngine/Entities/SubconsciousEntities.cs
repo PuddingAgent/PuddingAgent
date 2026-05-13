@@ -45,6 +45,14 @@ public class MemoryFactEntity
 
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long UpdatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    /// <summary>外部引用 URL 或内部会话记录路径，用于核实事实</summary>
+    [MaxLength(1024)]
+    public string? SourceReference { get; set; }
+
+    /// <summary>引用类型：internal（会话记录）/ external（外部URL）/ none</summary>
+    [MaxLength(32)]
+    public string? ReferenceType { get; set; }
 }
 
 /// <summary>
@@ -78,6 +86,14 @@ public class MemoryPreferenceEntity
 
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long UpdatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    /// <summary>外部引用 URL 或内部会话记录路径，用于核实偏好来源</summary>
+    [MaxLength(1024)]
+    public string? SourceReference { get; set; }
+
+    /// <summary>引用类型：internal（会话记录）/ external（外部URL）/ none</summary>
+    [MaxLength(32)]
+    public string? ReferenceType { get; set; }
 }
 
 /// <summary>

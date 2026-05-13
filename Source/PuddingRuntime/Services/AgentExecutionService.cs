@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +10,7 @@ using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Skills;
+using Serilog.Context;
 
 namespace PuddingRuntime.Services;
 
@@ -51,6 +52,7 @@ public sealed class AgentExecutionService
     private readonly Channel<ConsolidationJob>? _subconsciousJobChannel;
     private readonly bool _hasSubconsciousHook;
     private readonly IStreamingEventBus? _eventBus;
+    private readonly SessionArchiver? _sessionArchiver;
     private readonly ILogger<AgentExecutionService> _logger;
 
     public AgentExecutionService(
@@ -75,7 +77,8 @@ public sealed class AgentExecutionService
         ITerminalProcessManager? terminalManager = null,
         IMemoryLibraryConvenience? libraryConvenience = null,
         Channel<ConsolidationJob>? subconsciousJobChannel = null,
-        IStreamingEventBus? eventBus = null)
+        IStreamingEventBus? eventBus = null,
+        SessionArchiver? sessionArchiver = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -99,6 +102,7 @@ public sealed class AgentExecutionService
         _subconsciousJobChannel = subconsciousJobChannel;
         _hasSubconsciousHook = _hooks.Any(h => h is SubconsciousConsolidationHook);
         _eventBus            = eventBus;
+        _sessionArchiver     = sessionArchiver;
         _logger              = logger;
     }
 
@@ -114,6 +118,8 @@ public sealed class AgentExecutionService
             "[AgentExec] session={Session} template={Template} msgLen={Len} hasLlmConfig={HasCfg}",
             request.SessionId, request.AgentTemplateId,
             request.MessageText.Length, request.LlmConfig is not null);
+
+        using var logScope = LogContext.PushProperty("SessionId", request.SessionId);
 
         // 前端给全局模板附加了 "global:" 前缀（用于在 UI 中区分工作区模板），
         // Runtime 侧查内置模板时需剥除前缀后再匹配。
@@ -378,7 +384,8 @@ public sealed class AgentExecutionService
                     continue;
                 }
 
-                history.Add(new ChatMessage(ChatRole.Assistant, rawText));
+                history.Add(new ChatMessage(ChatRole.Assistant, rawText,
+                    ReasoningContent: llmResp.ReasoningContent));
 
                 var loopResp = AgentLoopResponse.Parse(rawText);
                 finalMessage = loopResp.Message ?? rawText;
@@ -657,6 +664,29 @@ public sealed class AgentExecutionService
             "[AgentExec] End session={Session} state={State} reason={Reason} replyLen={Len}",
             request.SessionId, execState, stopReason, finalMessage.Length);
 
+        // 异步归档会话（不阻塞主流程）
+        var archiver = _sessionArchiver;
+        if (archiver is not null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var msgs = history.Select(h => (
+                        Role: h.Role.ToString(),
+                        Content: h.Content ?? "",
+                        Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    )).ToList();
+                    await archiver.ArchiveAsync(request.SessionId, request.WorkspaceId ?? "default",
+                        template?.DisplayName ?? request.AgentTemplateId, msgs, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[AgentExec] Session archive failed");
+                }
+            });
+        }
+
         var isSuccess = execState is AgentExecutionState.Completed or AgentExecutionState.WaitingEvent;
         return new RuntimeDispatchResult
         {
@@ -686,6 +716,8 @@ public sealed class AgentExecutionService
             "[AgentExec] STREAM session={Session} template={Template} msgLen={Len} hasLlmConfig={HasCfg}",
             request.SessionId, request.AgentTemplateId,
             request.MessageText.Length, request.LlmConfig is not null);
+
+        using var logScope = LogContext.PushProperty("SessionId", request.SessionId);
 
         const string globalPrefix = "global:";
         var canonicalTemplateId = request.AgentTemplateId.StartsWith(globalPrefix, StringComparison.OrdinalIgnoreCase)
@@ -810,6 +842,7 @@ public sealed class AgentExecutionService
                 var hasToolCalls = false;
                 var accumulatedToolCalls = new List<AccumulatedToolCall>();
                 var replyBuf = new StringBuilder();
+                var reasoningBuf = new StringBuilder();
 
                 var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
                 await foreach (var delta in _llmClient.ChatStreamAsync(
@@ -824,6 +857,7 @@ public sealed class AgentExecutionService
                     // 思维链增量 → thinking 事件
                     if (!string.IsNullOrEmpty(delta.ReasoningDelta))
                     {
+                        reasoningBuf.Append(delta.ReasoningDelta);
                         yield return ServerSentEventFrame.Json(SseEventTypes.Thinking,
                             new { delta = delta.ReasoningDelta });
                         _ = _eventBus?.EmitAsync(new StreamingEvent
@@ -868,7 +902,11 @@ public sealed class AgentExecutionService
                     reply = replyBuf.Length > 0
                         ? await _keyVaultService.StripAsync(replyBuf.ToString(), ct)
                         : "（Agent 未返回可展示文本）";
-                    history.Add(new ChatMessage(ChatRole.Assistant, reply));
+                    var assistantReasoningContent = reasoningBuf.Length > 0
+                        ? reasoningBuf.ToString()
+                        : null;
+                    history.Add(new ChatMessage(ChatRole.Assistant, reply,
+                        ReasoningContent: assistantReasoningContent));
                     break;
                 }
 
@@ -880,7 +918,8 @@ public sealed class AgentExecutionService
                     ? await _keyVaultService.StripAsync(replyBuf.ToString(), ct)
                     : null;
                 history.Add(new ChatMessage(ChatRole.Assistant, assistantContent,
-                    ToolCalls: assistantToolCalls));
+                    ToolCalls: assistantToolCalls,
+                    ReasoningContent: reasoningBuf.Length > 0 ? reasoningBuf.ToString() : null));
 
                 // 逐个工具调用：发送 tool_call → 执行 → 发送 tool_result
                 foreach (var tc in accumulatedToolCalls)
@@ -1006,6 +1045,29 @@ public sealed class AgentExecutionService
             _logger.LogInformation(
                 "[AgentExec] STREAM end session={Session} replyLen={Len} usage={Usage}",
                 request.SessionId, reply.Length, usage?.TotalTokens);
+
+            // 异步归档会话（不阻塞主流程）
+            var archiver = _sessionArchiver;
+            if (archiver is not null)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var msgs = history.Select(h => (
+                            Role: h.Role.ToString(),
+                            Content: h.Content ?? "",
+                            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        )).ToList();
+                        await archiver.ArchiveAsync(request.SessionId, request.WorkspaceId ?? "default",
+                            template?.DisplayName ?? request.AgentTemplateId, msgs, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[AgentExec] Stream session archive failed");
+                    }
+                });
+            }
 
             var contextWindowTokens = template.Runtime?.MaxContextTokens ?? 65536;
             var finalUsage = usage is not null

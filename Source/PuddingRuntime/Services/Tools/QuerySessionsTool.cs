@@ -24,7 +24,7 @@ public sealed class QuerySessionsTool : ITool, IAgentSkill
     public string SkillId => "query_sessions";
     public bool RequiresShellExecution => false;
     public ToolPermissionLevel PermissionLevel => ToolPermissionLevel.Medium;
-    public string Description => "查询原始会话记录。action: messages（指定会话消息，分页）| recent（最近消息）。记录是完整的，记忆图书馆基于此整理。";
+    public string Description => "查询原始会话的完整对话记录。支持两种模式：1) messages：指定 session_id 查询该会话的所有消息（分页）；2) recent：查询最近的消息。原始记录也归档在 data/logs/sessions/{date}/{sessionId}.md，可通过 read_file 直接读取。";
 
     public ToolParameterSchema Parameters => new(
         [

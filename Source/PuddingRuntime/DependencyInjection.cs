@@ -62,6 +62,9 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<ContextPipeline>();
         services.AddSingleton<ContextWindowManager>();
 
+        // 会话归档
+        services.AddSingleton<SessionArchiver>();
+
         // Agent 执行服务
         services.AddSingleton<AgentExecutionService>();
 

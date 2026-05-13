@@ -94,6 +94,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         selectedAgent={props.selectedAgent}
         onAgentChange={props.onAgentChange}
         onCreateWorkspace={props.onCreateWorkspace}
+        selectedSessionId={props.selectedSessionId}
         turns={props.turns}
         historyLoading={props.historyLoading}
         loadingMore={props.loadingMore}

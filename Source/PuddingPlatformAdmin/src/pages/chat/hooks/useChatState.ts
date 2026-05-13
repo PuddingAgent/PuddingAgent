@@ -22,7 +22,7 @@ import {
   type WorkspaceAgentDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import type { AssistantStatus, ChatTurn, ReasoningBlock, SessionGroup } from '../types';
+import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup } from '../types';
 import { assistantStatusLabel } from '../types';
 
 const DEFAULT_CONTEXT_WINDOW = 65536;
@@ -62,7 +62,7 @@ const createAssistant = (
   status: AssistantStatus,
   isStreaming: boolean,
 ): ChatTurn['assistant'] => ({
-  id, status, reasoningBlocks: [], stepCards: [], answerMarkdown: '', isStreaming, renderMode,
+  id, status, timelineItems: [], answerMarkdown: '', isStreaming, renderMode,
 });
 
 const normalizeUsage = (usage?: TokenUsageDto): TokenUsageDto | undefined => (
@@ -234,11 +234,29 @@ export function useChatState(): UseChatStateReturn {
         };
       }
       if (ev.type === 'thinking') {
+        const items = turn.assistant.timelineItems ?? [];
+        // 合并连续 thinking delta：如果最后一个条目也是 thinking，追加而非新建
+        const last = items.length > 0 ? items[items.length - 1] : null;
+        if (last?.type === 'thinking') {
+          return {
+            ...turn,
+            assistant: {
+              ...turn.assistant, status: 'thinking' as const, renderMode: 'structured' as const,
+              timelineItems: [
+                ...items.slice(0, -1),
+                { ...last, text: (last.text ?? '') + ev.delta },
+              ],
+            },
+          };
+        }
         return {
           ...turn,
           assistant: {
             ...turn.assistant, status: 'thinking' as const, renderMode: 'structured' as const,
-            reasoningBlocks: [...turn.assistant.reasoningBlocks, { id: createId(), text: ev.delta, collapsed: true }],
+            timelineItems: [...items, {
+              id: createId(), type: 'thinking' as const, text: ev.delta,
+              timestamp: Date.now(), collapsed: true,
+            }],
           },
         };
       }
@@ -247,11 +265,11 @@ export function useChatState(): UseChatStateReturn {
           ...turn,
           assistant: {
             ...turn.assistant, renderMode: 'structured' as const,
-            stepCards: [...turn.assistant.stepCards, {
-              id: createId(),
-              status: 'tool_call',
+            timelineItems: [...(turn.assistant.timelineItems ?? []), {
+              id: createId(), type: 'tool_call' as const,
+              status: 'tool_call', name: ev.name, arguments: ev.arguments,
               message: `🔧 调用工具: ${ev.name}\n参数: ${ev.arguments}`,
-              timestamp: Date.now(),
+              timestamp: Date.now(), collapsed: false,
             }],
           },
         };
@@ -262,11 +280,12 @@ export function useChatState(): UseChatStateReturn {
           ...turn,
           assistant: {
             ...turn.assistant, renderMode: 'structured' as const,
-            stepCards: [...turn.assistant.stepCards, {
-              id: createId(),
+            timelineItems: [...(turn.assistant.timelineItems ?? []), {
+              id: createId(), type: 'tool_result' as const,
               status: ev.exitCode === 0 ? 'success' : 'error',
+              name: ev.name, output: ev.output, exitCode: ev.exitCode,
               message: `🔧 ${ev.name} ${exitLabel}\n${ev.output || ev.error || '(empty)'}`,
-              timestamp: Date.now(),
+              timestamp: Date.now(), collapsed: false,
             }],
           },
         };
@@ -276,11 +295,11 @@ export function useChatState(): UseChatStateReturn {
           ...turn,
           assistant: {
             ...turn.assistant, renderMode: 'structured' as const,
-            stepCards: [...turn.assistant.stepCards, {
-              id: createId(),
+            timelineItems: [...(turn.assistant.timelineItems ?? []), {
+              id: createId(), type: 'subconscious_step' as const,
               status: ev.status === 'done' ? 'done' : 'thinking',
               message: `🧠 ${ev.message}`,
-              timestamp: Date.now(),
+              timestamp: Date.now(), collapsed: false,
             }],
           },
         };
@@ -290,11 +309,28 @@ export function useChatState(): UseChatStateReturn {
         const message = getStepMessage(ev);
         const now = Date.now();
         if (isReasoningStep(status)) {
+          const items = turn.assistant.timelineItems ?? [];
+          const last = items.length > 0 ? items[items.length - 1] : null;
+          if (last?.type === 'thinking') {
+            return {
+              ...turn,
+              assistant: {
+                ...turn.assistant, status: 'thinking' as const, renderMode: 'structured' as const,
+                timelineItems: [
+                  ...items.slice(0, -1),
+                  { ...last, text: (last.text ?? '') + '\n' + message },
+                ],
+              },
+            };
+          }
           return {
             ...turn,
             assistant: {
               ...turn.assistant, status: 'thinking' as const, renderMode: 'structured' as const,
-              reasoningBlocks: [...turn.assistant.reasoningBlocks, { id: createId(), text: message, collapsed: true }],
+              timelineItems: [...items, {
+                id: createId(), type: 'thinking' as const, text: message,
+                timestamp: now, collapsed: true,
+              }],
             },
           };
         }
@@ -304,7 +340,10 @@ export function useChatState(): UseChatStateReturn {
             ...turn.assistant,
             status: getStepTone(status) === 'error' ? 'error' : 'executing',
             renderMode: 'structured' as const,
-            stepCards: [...turn.assistant.stepCards, { id: createId(), status, message, timestamp: now }],
+            timelineItems: [...(turn.assistant.timelineItems ?? []), {
+              id: createId(), type: 'subconscious_step' as const,
+              status, message, timestamp: now, collapsed: false,
+            }],
           },
         };
       }
@@ -326,9 +365,12 @@ export function useChatState(): UseChatStateReturn {
           ...turn,
           assistant: {
             ...turn.assistant, status: 'cancelled' as const, isStreaming: false,
-            stepCards: ev.message
-              ? [...turn.assistant.stepCards, { id: createId(), status: 'cancelled', message: ev.message, timestamp: Date.now() }]
-              : turn.assistant.stepCards,
+            timelineItems: ev.message
+              ? [...(turn.assistant.timelineItems ?? []), {
+                  id: createId(), type: 'subconscious_step' as const,
+                  status: 'cancelled', message: ev.message, timestamp: Date.now(), collapsed: false,
+                }]
+              : (turn.assistant.timelineItems ?? []),
           },
         };
       }
@@ -337,7 +379,10 @@ export function useChatState(): UseChatStateReturn {
           ...turn,
           assistant: {
             ...turn.assistant, status: 'error' as const, isStreaming: false,
-            stepCards: [...turn.assistant.stepCards, { id: createId(), status: 'error', message: ev.message || '请求失败', timestamp: Date.now() }],
+            timelineItems: [...(turn.assistant.timelineItems ?? []), {
+              id: createId(), type: 'subconscious_step' as const,
+              status: 'error', message: ev.message || '请求失败', timestamp: Date.now(), collapsed: false,
+            }],
           },
         };
       }
@@ -359,8 +404,9 @@ export function useChatState(): UseChatStateReturn {
         pendingUserIndex = mapped.length - 1;
         continue;
       }
-      const reasoningBlocks: ReasoningBlock[] = (item.thinking || []).map((t, idx) => ({
-        id: `hist-reason-${item.id}-${idx}`, text: t.text, collapsed: true,
+      const thinkingItems: TimelineItem[] = (item.thinking || []).map((t: { text: string }, idx: number) => ({
+        id: `hist-think-${item.id}-${idx}`, type: 'thinking' as const, text: t.text,
+        timestamp: item.createdAt, collapsed: true,
       }));
       let targetIndex = pendingUserIndex;
       if (targetIndex === null) {
@@ -378,8 +424,8 @@ export function useChatState(): UseChatStateReturn {
           status: 'success', isStreaming: false,
           usage: normalizeUsage(item.usage),
           answerMarkdown: item.content,
-          reasoningBlocks,
-          renderMode: reasoningBlocks.length > 0 ? 'structured' : 'legacy',
+          timelineItems: thinkingItems,
+          renderMode: thinkingItems.length > 0 ? 'structured' : 'legacy',
         },
       };
       pendingUserIndex = null;
@@ -692,8 +738,11 @@ export function useChatState(): UseChatStateReturn {
     const md = turns.map(t => {
       const blocks: string[] = [];
       if (t.userMessage.text.trim()) blocks.push(`## User · ${dayjs(t.userMessage.timestamp).format('YYYY-MM-DD HH:mm:ss')}\n\n${t.userMessage.text}`);
-      if (t.assistant.reasoningBlocks.length > 0) blocks.push(`## Reasoning\n\n${t.assistant.reasoningBlocks.map((r: { text: string }) => `- ${r.text}`).join('\n')}`);
-      if (t.assistant.stepCards.length > 0) blocks.push(`## Steps\n\n${t.assistant.stepCards.map((s: { status: string; message: string }) => `- [${s.status}] ${s.message}`).join('\n')}`);
+      const items = t.assistant.timelineItems ?? [];
+      const thinking = items.filter(i => i.type === 'thinking');
+      const steps = items.filter(i => i.type !== 'thinking');
+      if (thinking.length > 0) blocks.push(`## Reasoning\n\n${thinking.map(i => `- ${i.text}`).join('\n')}`);
+      if (steps.length > 0) blocks.push(`## Steps\n\n${steps.map(i => `- [${i.status}] ${i.message}`).join('\n')}`);
       blocks.push(`## Agent · ${dayjs(t.userMessage.timestamp).format('YYYY-MM-DD HH:mm:ss')}\n\n${t.assistant.answerMarkdown}`);
       return blocks.join('\n\n');
     }).join('\n\n---\n\n');
@@ -709,14 +758,14 @@ export function useChatState(): UseChatStateReturn {
     setTurns(p => p.filter(t => t.turnId !== turnId));
   }, []);
 
-  const onToggleReasoning = useCallback((turnId: string, blockId: string) => {
+  const onToggleReasoning = useCallback((turnId: string, itemId: string) => {
     setTurns(prev => prev.map(t =>
       t.turnId === turnId ? {
         ...t,
         assistant: {
           ...t.assistant,
-          reasoningBlocks: t.assistant.reasoningBlocks.map((rb: { id: string; text: string; collapsed: boolean }) =>
-            rb.id === blockId ? { ...rb, collapsed: !rb.collapsed } : rb
+          timelineItems: (t.assistant.timelineItems ?? []).map(item =>
+            item.id === itemId ? { ...item, collapsed: !item.collapsed } : item
           ),
         },
       } : t
