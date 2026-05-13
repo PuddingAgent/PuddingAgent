@@ -8,8 +8,8 @@ import {
   ProFormDigit,
 } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { Button, Drawer, Form, Popconfirm, Space, Badge, message, Tag, Typography } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Drawer, Form, Popconfirm, Radio, Row, Space, Badge, message, Tag, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined, PlusOutlined, AppstoreOutlined, TableOutlined, ApiOutlined } from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import {
   listCapabilities,
@@ -22,8 +22,32 @@ import {
 
 const { Text } = Typography;
 
+/** 能力分类颜色：蓝=Query、青=Tool、紫=Memory、橙=Execute、红=Security、绿=Local */
+const getCategoryColor = (toolName: string): string => {
+  const lower = toolName.toLowerCase();
+  if (lower.includes('memory') || lower.includes('memo') || lower.includes('recall') || lower.includes('grep_memory') || lower.includes('save_memory') || lower.includes('manage_memory')) return '#7c3aed'; // Memory → 紫
+  if (lower.includes('query') || lower.includes('search') || lower.includes('find') || lower.includes('list')) return '#3b82f6'; // Query → 蓝
+  if (lower.includes('execute') || lower.includes('run') || lower.includes('shell') || lower.includes('bash') || lower.includes('terminal')) return '#f97316'; // Execute → 橙
+  if (lower.includes('security') || lower.includes('auth') || lower.includes('vault') || lower.includes('key')) return '#ef4444'; // Security → 红
+  if (lower.includes('local') || lower.includes('file') || lower.includes('read') || lower.includes('write')) return '#22c55e'; // Local → 绿
+  return '#22d3ee'; // 其余 Tool → 青
+};
+
+const getCategoryLabel = (toolName: string): string => {
+  const lower = toolName.toLowerCase();
+  if (lower.includes('memory') || lower.includes('memo') || lower.includes('recall') || lower.includes('grep_memory') || lower.includes('save_memory') || lower.includes('manage_memory')) return 'Memory';
+  if (lower.includes('query') || lower.includes('search') || lower.includes('find') || lower.includes('list')) return 'Query';
+  if (lower.includes('execute') || lower.includes('run') || lower.includes('shell') || lower.includes('bash') || lower.includes('terminal')) return 'Execute';
+  if (lower.includes('security') || lower.includes('auth') || lower.includes('vault') || lower.includes('key')) return 'Security';
+  if (lower.includes('local') || lower.includes('file') || lower.includes('read') || lower.includes('write')) return 'Local';
+  return 'Tool';
+};
+
+type ViewMode = 'card' | 'table';
+
 const CapabilityManagementPage: React.FC = () => {
   const tableRef = useRef<ActionType | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<ViewMode>('card');
   const [formDrawer, setFormDrawer] = useState(false);
   const [editItem, setEditItem] = useState<CapabilityDto | null>(null);
   const [form] = Form.useForm<UpsertCapabilityRequest>();
@@ -126,21 +150,122 @@ const CapabilityManagementPage: React.FC = () => {
 
   return (
     <PageContainer title="能力管理" subTitle="注册并管理可供 Agent 模板选择的能力（工具）">
-      <ProTable<CapabilityDto>
-        actionRef={tableRef}
-        rowKey="id"
-        columns={columns}
-        request={async () => {
-          const data = await listCapabilities();
-          return { data, success: true };
-        }}
-        search={false}
-        toolBarRender={() => [
-          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            创建能力
-          </Button>,
-        ]}
-      />
+      {viewMode === 'card' ? (
+        <ProTable<CapabilityDto>
+          actionRef={tableRef}
+          rowKey="id"
+          columns={[]}
+          request={async () => {
+            const data = await listCapabilities();
+            return { data, success: true };
+          }}
+          search={false}
+          toolBarRender={() => [
+            <Radio.Group
+              key="viewToggle"
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+              size="small"
+              style={{ marginRight: 8 }}
+            >
+              <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+              <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+            </Radio.Group>,
+            <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              创建能力
+            </Button>,
+          ]}
+          tableRender={(_, tableProps) => {
+            const items = (tableProps?.dataSource ?? []) as CapabilityDto[];
+            return (
+              <Row gutter={[16, 16]} style={{ padding: '0 0 16px' }}>
+                {items.map((item) => {
+                  const catColor = getCategoryColor(item.toolName);
+                  const catLabel = getCategoryLabel(item.toolName);
+                  return (
+                    <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
+                      <Card
+                        hoverable
+                        size="small"
+                        style={{
+                          borderRadius: 14,
+                          borderLeft: `4px solid ${catColor}`,
+                          background: 'rgba(250,250,247,0.78)',
+                          backdropFilter: 'blur(8px)',
+                          boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
+                        }}
+                        bodyStyle={{ padding: '16px' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                          <Space>
+                            <ApiOutlined style={{ color: catColor, fontSize: 18 }} />
+                            <div>
+                              <Text strong style={{ fontSize: 15, display: 'block' }}>{item.name}</Text>
+                              <Text code style={{ fontSize: 11 }}>{item.toolName}</Text>
+                            </div>
+                          </Space>
+                          <Tag color={catColor} style={{ fontSize: 11 }}>{catLabel}</Tag>
+                        </div>
+
+                        {item.description && (
+                          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                            {item.description.length > 50 ? `${item.description.slice(0, 50)}…` : item.description}
+                          </Text>
+                        )}
+
+                        <Space size={4} wrap style={{ marginBottom: 8 }}>
+                          {item.requiresShellExecution && <Tag color="volcano" style={{ fontSize: 10 }}>Shell</Tag>}
+                          {item.requiresFileWrite && <Tag color="blue" style={{ fontSize: 10 }}>FileWrite</Tag>}
+                          {item.requiresNetworkAccess && <Tag color="purple" style={{ fontSize: 10 }}>Network</Tag>}
+                        </Space>
+
+                        <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10, display: 'flex', gap: 4 }}>
+                          <Badge status={item.isEnabled ? 'processing' : 'default'} text={item.isEnabled ? '启用' : '停用'} />
+                          <div style={{ flex: 1 }} />
+                          <Button size="small" icon={<EditOutlined />} type="text" onClick={() => openEdit(item)} />
+                          <Popconfirm title="确认删除该能力？" onConfirm={() => handleDelete(item.capabilityId)}>
+                            <Button size="small" danger icon={<DeleteOutlined />} type="text" />
+                          </Popconfirm>
+                        </div>
+                      </Card>
+                    </Col>
+                  );
+                })}
+              </Row>
+            );
+          }}
+        />
+      ) : (
+        <ProTable<CapabilityDto>
+          actionRef={tableRef}
+          rowKey="id"
+          columns={columns}
+          request={async () => {
+            const data = await listCapabilities();
+            return { data, success: true };
+          }}
+          search={false}
+          toolBarRender={() => [
+            <Radio.Group
+              key="viewToggle"
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+              size="small"
+              style={{ marginRight: 8 }}
+            >
+              <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+              <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+            </Radio.Group>,
+            <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              创建能力
+            </Button>,
+          ]}
+        />
+      )}
 
       <Drawer
         title={editItem ? '编辑能力' : '创建能力'}

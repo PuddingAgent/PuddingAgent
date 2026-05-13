@@ -584,4 +584,318 @@ export const useChatStyles = createStyles(({ token }) => ({
     fontSize: 13, color: 'color-mix(in srgb, var(--accent-purple) 50%, var(--text-secondary))',
     fontStyle: 'italic',
   },
+
+  // ── Agent Console dock（紧凑三行：工具栏 → 输入 → 状态栏）─────
+  consoleDock: {
+    position: 'sticky' as const,
+    bottom: 0,
+    background: 'var(--glass-surface, rgba(250,250,247,0.72))',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderTop: '1px solid var(--glass-border, rgba(124,58,237,0.18))',
+    borderRadius: '12px 12px 0 0',
+    padding: '6px 12px 4px',
+    zIndex: 10,
+  },
+  consoleInner: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+  },
+  consoleTextarea: {
+    flex: 1,
+    border: 'none',
+    background: 'transparent',
+    resize: 'none' as const,
+    fontSize: 14,
+    lineHeight: 1.6,
+    outline: 'none',
+    transition: 'box-shadow 200ms ease',
+    '&:focus': {
+      boxShadow: '0 2px 0 0 var(--accent-purple, #7c3aed)',
+    },
+  },
+  consoleTextareaSending: {
+    animation: 'sendWave 400ms ease-out',
+  },
+  '@keyframes sendWave': {
+    '0%': { boxShadow: '0 0 0 0 rgba(124,58,237,0.3)' },
+    '100%': { boxShadow: '0 0 0 12px rgba(124,58,237,0)' },
+  },
+  // ── IDE 风格状态栏（始终可见，紧凑单行）──────────────
+  consoleStatusBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '1px 4px 2px',
+    fontSize: 10,
+    color: 'var(--earth-brown)',
+    opacity: 0.7,
+    flexWrap: 'wrap' as const,
+    minHeight: 20,
+    background: 'linear-gradient(to right, rgba(124,58,237,0.03), transparent 40%)',
+    borderTop: '1px solid rgba(124,58,237,0.08)',
+    borderRadius: '0 0 4px 4px',
+    userSelect: 'none' as const,
+  },
+  consoleStatusBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 10,
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+  },
+  consoleStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    flexShrink: 0,
+    transition: 'background 0.4s ease',
+  },
+
+  // ── Runtime Timeline 样式 ──────────────────────────────────
+  timeline: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+    position: 'relative' as const,
+    paddingLeft: 16,
+    animation: 'fadeIn 200ms ease-out',
+    '&::before': {
+      content: '""',
+      position: 'absolute' as const,
+      left: 4,
+      top: 0,
+      bottom: 0,
+      width: 2,
+      background: 'var(--neural-line, rgba(124,58,237,0.18))',
+      borderRadius: 1,
+    },
+  },
+  timelineUserMsg: {
+    fontSize: 14,
+    color: 'var(--text-primary)',
+    padding: '4px 0 8px',
+    position: 'relative' as const,
+    '&::before': {
+      content: '""',
+      position: 'absolute' as const,
+      left: -14,
+      top: 10,
+      width: 6,
+      height: 6,
+      borderRadius: '50%',
+      background: 'var(--accent-purple, #7c3aed)',
+      opacity: 0.5,
+      zIndex: 1,
+    },
+  },
+  timelineUserLabel: {
+    display: 'inline-block',
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    opacity: 0.6,
+    marginBottom: 2,
+    marginRight: 8,
+  },
+  timelineNode: {
+    position: 'relative' as const,
+    padding: '6px 0 6px 12px',
+    '&::before': {
+      content: '""',
+      position: 'absolute' as const,
+      left: -14,
+      top: 10,
+      width: 8,
+      height: 8,
+      borderRadius: '50%',
+      border: '2px solid var(--neural-line, rgba(124,58,237,0.18))',
+      background: 'var(--warm-beige)',
+      zIndex: 1,
+    },
+  },
+  timelineNodeThinking: {
+    opacity: 0.65,
+    fontStyle: 'italic',
+    fontSize: 12,
+    borderLeft: '2px solid var(--memory-glow, #A78BFA)',
+  },
+  timelineNodeTool: {
+    borderLeft: '2px solid var(--tool-signal, #22D3EE)',
+  },
+  timelineNodeToolRunning: {
+    borderLeft: '2px solid var(--tool-signal, #22D3EE)',
+    '&::before': {
+      animation: 'signalFlow 2s linear infinite',
+      background: 'var(--tool-signal, #22D3EE)',
+      boxShadow: '0 0 6px var(--tool-signal, #22D3EE)',
+      backgroundSize: '200% 100%',
+    },
+  },
+  timelineNodeToolDone: {
+    borderLeftColor: 'var(--success-signal, #22C55E)',
+  },
+  timelineNodeToolFailed: {
+    borderLeftColor: 'var(--error-signal, #EF4444)',
+  },
+  timelineNodeAnswer: {
+    borderLeft: 'none',
+    padding: '8px 0 8px 0',
+    marginLeft: -12,
+  },
+  timelineAnswerBlock: {
+    background: 'color-mix(in srgb, var(--soft-white) 85%, transparent)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid color-mix(in srgb, var(--earth-brown) 8%, transparent)',
+    borderRadius: 12,
+    padding: '14px 18px',
+    fontSize: 15,
+    lineHeight: 1.7,
+    color: 'var(--text-primary)',
+  },
+  /* ── 块级凝聚：新内容块 fade-in + 光晕扩散 ── */
+  blockCondensing: {
+    animation: 'blockCondense 360ms ease-out',
+  },
+  /* ── 单字符 fade-in（120ms opacity 0→1）── */
+  charFadeIn: {
+    animation: 'charFade 120ms ease-out',
+  },
+  '@keyframes charFade': {
+    '0%': { opacity: 0 },
+    '100%': { opacity: 1 },
+  },
+  /* ── Settle：流式结束后的收敛动画 ── */
+  answerSettled: {
+    animation: 'glowSettle 800ms ease-out',
+  },
+  /* ── 流式输出中段落间呼吸节奏 ── */
+  streamingBreathe: {
+    animation: 'streamBreathe 2.4s ease-in-out infinite',
+  },
+  '@keyframes streamBreathe': {
+    '0%, 100%': { opacity: 1 },
+    '50%': { opacity: 0.92 },
+  },
+  /* ── 操作按钮 settle 淡入 ── */
+  actionButtonsSettled: {
+    opacity: '1 !important' as unknown as number,
+    transform: 'translateY(0) !important' as unknown as string,
+    pointerEvents: 'auto !important' as unknown as React.CSSProperties['pointerEvents'],
+    transition: 'opacity 400ms ease-out, transform 400ms ease-out',
+  },
+
+  /* ── Runtime 状态机视觉映射（P1-2）────────────────────── */
+  runtimeStateThinking: {
+    borderLeft: '3px solid var(--memory-glow, #A78BFA)',
+    background: 'color-mix(in srgb, var(--memory-glow) 4%, transparent)',
+  },
+  runtimeStateMemory: {
+    borderLeft: '3px solid var(--memory-glow, #A78BFA)',
+    animation: 'softDiffuse 2s ease-in-out infinite',
+  },
+  runtimeStateTool: {
+    borderLeft: '3px solid var(--tool-signal, #22D3EE)',
+  },
+  runtimeStateToolRunning: {
+    borderLeft: '3px solid var(--tool-signal, #22D3EE)',
+    '&::before': {
+      content: '""',
+      position: 'absolute' as const,
+      left: -3,
+      top: 0,
+      bottom: 0,
+      width: 3,
+      background: 'linear-gradient(180deg, transparent, var(--tool-signal, #22D3EE), transparent)',
+      backgroundSize: '100% 200%',
+      animation: 'signalFlow 1.5s linear infinite',
+    },
+  },
+  runtimeStateStreaming: {
+    borderLeft: '3px solid var(--accent-purple, #7c3aed)',
+  },
+  runtimeStateSuccess: {
+    borderLeftColor: 'var(--success-signal, #22C55E)',
+    transition: 'border-left-color 400ms ease',
+  },
+  runtimeStateError: {
+    borderLeftColor: 'var(--error-signal, #EF4444)',
+  },
+  /* ── 状态文案颜色映射 ── */
+  statusTextThinking: { color: 'var(--memory-glow, #A78BFA)' },
+  statusTextMemory: { color: 'var(--memory-glow, #A78BFA)' },
+  statusTextTool: { color: 'var(--tool-signal, #22D3EE)' },
+  statusTextStreaming: { color: 'var(--accent-purple, #7c3aed)' },
+  statusTextSuccess: { color: 'var(--success-signal, #22C55E)' },
+  statusTextError: { color: 'var(--error-signal, #EF4444)' },
+  timelineNodeAppear: {
+    animation: 'nodeAppear 300ms ease-out',
+  },
+  collapsedSummary: {
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    opacity: 0.55,
+    cursor: 'pointer',
+    transition: 'opacity 150ms',
+    '&:hover': { opacity: 0.85 },
+  },
+  thinkingSummaryText: {
+    fontSize: 12,
+    color: 'var(--text-muted)',
+    fontStyle: 'italic',
+    opacity: 0.65,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    maxWidth: '100%',
+    cursor: 'pointer',
+  },
+  thinkingExpandedText: {
+    fontSize: 12,
+    color: 'var(--text-muted)',
+    fontStyle: 'italic',
+    lineHeight: 1.5,
+    padding: '6px 8px',
+    background: 'color-mix(in srgb, var(--memory-glow) 6%, transparent)',
+    borderRadius: 6,
+    marginTop: 4,
+    maxHeight: 200,
+    overflowY: 'auto' as const,
+  },
+  toolSummaryRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 12,
+  },
+  toolSummaryName: {
+    fontWeight: 600,
+    color: 'var(--tool-signal, #22D3EE)',
+  },
+  toolSummaryStatus: {
+    fontSize: 11,
+    opacity: 0.7,
+  },
+  toolSummaryDuration: {
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    opacity: 0.6,
+    marginLeft: 'auto',
+  },
+  toolSummaryResult: {
+    fontSize: 11,
+    color: 'var(--success-signal, #22C55E)',
+    opacity: 0.8,
+  },
+  toolRetryBtn: {
+    fontSize: 11,
+    color: 'var(--error-signal, #EF4444)',
+    cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    ':hover': { textDecoration: 'underline' },
+  },
 }));
+

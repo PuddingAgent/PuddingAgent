@@ -10,9 +10,13 @@ import {
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import {
   Button,
+  Card,
+  Col,
   Drawer,
   Form,
   Popconfirm,
+  Radio,
+  Row,
   Space,
   Badge,
   Input,
@@ -22,7 +26,7 @@ import {
   Tag,
   theme,
 } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, DownloadOutlined, FileZipOutlined, FileTextOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, DownloadOutlined, FileZipOutlined, FileTextOutlined, AppstoreOutlined, TableOutlined } from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import type { UploadFile } from 'antd';
 import {
@@ -73,6 +77,7 @@ const SkillManagementPage: React.FC = () => {
     );
   };
   const tableRef = useRef<ActionType | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
   // Create/Edit meta drawer
   const [formDrawer, setFormDrawer] = useState(false);
@@ -236,21 +241,120 @@ const SkillManagementPage: React.FC = () => {
       title="SKILL 管理"
       subTitle="上传并管理可供 Agent 模板选择的技能包（.zip / .tar.gz）"
     >
-      <ProTable<SkillPackageDto>
-        actionRef={tableRef}
-        rowKey="id"
-        columns={columns}
-        request={async () => {
-          const data = await listSkillPackages();
-          return { data, success: true };
-        }}
-        search={false}
-        toolBarRender={() => [
-          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            上传 SKILL
-          </Button>,
-        ]}
-      />
+      {viewMode === 'card' ? (
+        <ProTable<SkillPackageDto>
+          actionRef={tableRef}
+          rowKey="id"
+          columns={[]}
+          request={async () => {
+            const data = await listSkillPackages();
+            return { data, success: true };
+          }}
+          search={false}
+          toolBarRender={() => [
+            <Radio.Group
+              key="viewToggle"
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+              size="small"
+              style={{ marginRight: 8 }}
+            >
+              <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+              <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+            </Radio.Group>,
+            <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              上传 SKILL
+            </Button>,
+          ]}
+          tableRender={(_, tableProps) => {
+            const items = (tableProps?.dataSource ?? []) as SkillPackageDto[];
+            return (
+              <Row gutter={[16, 16]} style={{ padding: '0 0 16px' }}>
+                {items.map((item) => (
+                  <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
+                    <Card
+                      hoverable
+                      size="small"
+                      style={{
+                        borderRadius: 14,
+                        borderLeft: '4px solid #22d3ee',
+                        background: 'rgba(250,250,247,0.78)',
+                        backdropFilter: 'blur(8px)',
+                        boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
+                      }}
+                      bodyStyle={{ padding: '16px' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <Space>
+                          {getFileIcon(item.fileName)}
+                          <div>
+                            <Text strong style={{ fontSize: 15, display: 'block' }}>{item.name}</Text>
+                            <Text code style={{ fontSize: 11 }}>{item.skillPackageId}</Text>
+                          </div>
+                        </Space>
+                        <Tag color="blue" style={{ fontSize: 11 }}>v{item.version}</Tag>
+                      </div>
+
+                      {item.description && (
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                          {item.description.length > 50 ? `${item.description.slice(0, 50)}…` : item.description}
+                        </Text>
+                      )}
+
+                      <div style={{ marginBottom: 8 }}>
+                        <Space direction="vertical" size={0}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>{item.fileName}</Text>
+                          <Text type="secondary" style={{ fontSize: 10 }}>{formatBytes(item.fileSizeBytes)}</Text>
+                        </Space>
+                      </div>
+
+                      <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10, display: 'flex', gap: 4 }}>
+                        <Badge status={item.isEnabled ? 'processing' : 'default'} text={item.isEnabled ? '启用' : '停用'} />
+                        <div style={{ flex: 1 }} />
+                        <Button size="small" icon={<EditOutlined />} type="text" onClick={() => openEdit(item)} title="编辑信息" />
+                        <Button size="small" icon={<DownloadOutlined />} type="text" onClick={() => handleDownload(item.skillPackageId)} title="下载" />
+                        <Popconfirm title="确认删除该 SKILL 包？" onConfirm={() => handleDelete(item.skillPackageId)}>
+                          <Button size="small" danger icon={<DeleteOutlined />} type="text" />
+                        </Popconfirm>
+                      </div>
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
+            );
+          }}
+        />
+      ) : (
+        <ProTable<SkillPackageDto>
+          actionRef={tableRef}
+          rowKey="id"
+          columns={columns}
+          request={async () => {
+            const data = await listSkillPackages();
+            return { data, success: true };
+          }}
+          search={false}
+          toolBarRender={() => [
+            <Radio.Group
+              key="viewToggle"
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+              size="small"
+              style={{ marginRight: 8 }}
+            >
+              <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+              <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+            </Radio.Group>,
+            <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              上传 SKILL
+            </Button>,
+          ]}
+        />
+      )}
 
       {/* Create / Edit meta Drawer */}
       <Drawer

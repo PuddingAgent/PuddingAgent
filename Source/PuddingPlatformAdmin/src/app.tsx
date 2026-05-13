@@ -118,7 +118,7 @@ const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = ({ child
       algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
       token: {
         colorPrimary: '#7c3aed',
-        colorBgLayout: isDark ? '#1f1a17' : '#f5f5f4',
+        colorBgLayout: isDark ? '#0B1020' : '#F5F0E8',
         borderRadius: 8,
         borderRadiusLG: 8,
         borderRadiusXL: 16,

@@ -22,6 +22,19 @@ injectGlobal`
     --avatar-7: #6366f1;
     --avatar-8: #14b8a6;
     --avatar-9: #f43f5e;
+
+    /* Runtime 语义色 */
+    --runtime-bg: #F5F0E8;
+    --runtime-bg-deep: #EDE5D9;
+    --glass-surface: rgba(250,250,247,0.72);
+    --glass-border: rgba(124,58,237,0.18);
+    --neural-line: rgba(124,58,237,0.18);
+    --memory-glow: #A78BFA;
+    --tool-signal: #22D3EE;
+    --success-signal: #22C55E;
+    --warning-signal: #F97316;
+    --error-signal: #EF4444;
+    --text-muted: #5C4A3A;
   }
 
   html, body, #root {
@@ -112,6 +125,56 @@ injectGlobal`
     }
   }
 
+  @keyframes softBreath {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  @keyframes neuralPulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(167,139,250,0.12); }
+    50% { box-shadow: 0 0 12px rgba(167,139,250,0.24); }
+  }
+
+  @keyframes signalFlow {
+    from { background-position: 0% 50%; }
+    to { background-position: 200% 50%; }
+  }
+
+  @keyframes nodeAppear {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes blockCondense {
+    from { opacity: 0; transform: translateY(4px); filter: blur(2px); }
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+
+  @keyframes glowSettle {
+    0% { box-shadow: 0 0 20px rgba(167,139,250,0.15); }
+    100% { box-shadow: 0 0 0px rgba(167,139,250,0); }
+  }
+
+  /* 页面进入 — Runtime 品牌页（chat/login/bootstrap） */
+  @keyframes pageEnterRuntime {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* 页面进入 — 后台页（快速） */
+  @keyframes pageEnterAdmin {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .runtime-page-enter {
+    animation: pageEnterRuntime 200ms ease-out;
+  }
+
+  .admin-page-enter {
+    animation: pageEnterAdmin 120ms ease-out;
+  }
+
   .colorWeak {
     filter: invert(80%);
   }
@@ -187,6 +250,42 @@ injectGlobal`
     .ant-table-thead > tr > th > span,
     .ant-table-tbody > tr > td > span {
       display: block;
+    }
+  }
+
+  [data-pudding-theme='dark'] {
+    --runtime-bg: #070A12;
+    --runtime-bg-deep: #0B1020;
+    --glass-surface: rgba(17,24,39,0.68);
+    --glass-border: rgba(167,139,250,0.22);
+    --neural-line: rgba(167,139,250,0.24);
+    --memory-glow: #A78BFA;
+    --tool-signal: #22D3EE;
+    --success-signal: #4ADE80;
+    --warning-signal: #FB923C;
+    --error-signal: #F87171;
+    --text-primary: #E6EAF2;
+    --text-muted: #94A3B8;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .ant-pro-layout .ant-pro-layout-content,
+    .ant-pro-page-container {
+      animation: none;
+      opacity: 1;
+    }
+
+    .ant-pro-global-header-logo img,
+    .ant-pro-top-nav-header-logo img,
+    .ant-pro-sider-logo img,
+    .ant-pro-layout-logo img {
+      animation: none;
     }
   }
 `;

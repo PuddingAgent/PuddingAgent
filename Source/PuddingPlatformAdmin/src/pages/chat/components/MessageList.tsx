@@ -6,6 +6,8 @@ import { useChatStyles } from '../styles';
 import type { ChatTurn } from '../types';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
 import MessageGroup from './MessageGroup';
+import AmbientParticles from './AmbientParticles';
+import GlobeSphere from './GlobeSphere';
 
 const { Title, Text } = Typography;
 
@@ -135,14 +137,46 @@ const MessageList: React.FC<MessageListProps> = ({
   return (
     <div className={styles.messageList} ref={messageListRef} style={{ position: 'relative' }}>
       {!agentId && !error && (
-        <div className={styles.onboardingState}>
+        <div className={styles.onboardingState} style={{ position: 'relative' }}>
+          <AmbientParticles count={20} opacity={[0.2, 0.4]} />
           <img src="/admin/assets/images/logo.png" alt="Pudding" className={styles.onboardingLogo} />
           <Title level={2} className={styles.onboardingTitle}>你好，我是布丁</Title>
           <Text className={styles.onboardingSubtitle}>选择一个工作空间和 Agent，然后把任务交给我。</Text>
         </div>
       )}
       {agentId && turns.length === 0 && !error && !historyLoading && (
-        <div className={styles.emptyState}>开始和 Agent 对话吧</div>
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', gap: 16, padding: '48px 24px', position: 'relative',
+        }}>
+          <AmbientParticles count={20} opacity={[0.2, 0.4]} />
+          {/* 3D 粒子球体 — 在文字上方 */}
+          <div style={{ zIndex: 1, marginBottom: 8 }}>
+            <GlobeSphere size={280} />
+          </div>
+          <Title level={2} style={{ margin: 0, fontSize: 22, fontWeight: 600, color: 'var(--text-primary)', zIndex: 1 }}>
+            Pudding Runtime Ready
+          </Title>
+          <Text style={{ color: 'var(--text-muted)', fontSize: 14, textAlign: 'center', maxWidth: 320, zIndex: 1 }}>
+            一个本地 AI Agent 正在安静等待意图
+          </Text>
+          <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['分析代码任务', '整理会议记录', '检索记忆'].map((suggestion) => (
+              <div key={suggestion} style={{
+                padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
+                background: 'color-mix(in srgb, var(--accent-purple) 8%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--accent-purple) 18%, transparent)',
+                fontSize: 13, color: 'var(--text-muted)',
+                transition: 'all 150ms',
+              }}
+                onMouseEnter={(e) => { (e.target as HTMLDivElement).style.background = 'color-mix(in srgb, var(--accent-purple) 16%, transparent)'; }}
+                onMouseLeave={(e) => { (e.target as HTMLDivElement).style.background = 'color-mix(in srgb, var(--accent-purple) 8%, transparent)'; }}
+              >
+                ○ {suggestion}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       {historyLoading && (
         <div className={styles.historyLoading}><Spin /></div>

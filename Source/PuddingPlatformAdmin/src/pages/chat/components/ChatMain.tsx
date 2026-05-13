@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
 import type { ChatTurn } from '../types';
 import { getAgentName, stringToColor } from '../hooks/useChatState';
-import InputArea from './InputArea';
+import InputArea, { type ChatStatus } from './InputArea';
 import MessageList from './MessageList';
 import DevPanel, { type DevRawEvent } from './DevPanel';
 import type { WorkspaceAgentDto, WorkspaceWithPermDto } from '@/services/platform/api';
@@ -135,6 +135,24 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const [inferredSessionId, setInferredSessionId] = useState<string | null>(null);
   const turnSnapshotRef = useRef<Map<string, TurnSnapshot>>(new Map());
 
+  /** 根据当前 turns 和 loading 推导 Agent Console 状态文案 */
+  const chatStatus: ChatStatus = React.useMemo(() => {
+    if (!loading && turns.length === 0) return 'idle';
+    // 用户正在输入内容但未发送
+    if (!loading && inputValue.trim().length > 0) return 'composing';
+    const lastTurn = turns[turns.length - 1];
+    if (loading) {
+      const st = lastTurn?.assistant.status;
+      if (st === 'thinking') return 'thinking';
+      if (st === 'executing') return 'tool_executing';
+      return 'streaming';
+    }
+    // 非 loading 状态，检查最后一轮结果
+    const st = lastTurn?.assistant.status;
+    if (st === 'error' || st === 'cancelled') return 'error';
+    return 'completed';
+  }, [loading, turns, inputValue]);
+
   const dropdownRender = useCallback((menu: React.ReactNode) => (
     <>
       {menu}
@@ -200,7 +218,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
             id: `evt-${turn.turnId}-thinking-${x.id}`,
             timestamp: now,
             event: 'thinking',
-            payload: x.text,
+            payload: x.text ?? "",
           })));
         }
         if (stepCount > 0) {
@@ -218,7 +236,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
             id: `evt-${turn.turnId}-thinking-${x.id}`,
             timestamp: now,
             event: 'thinking',
-            payload: x.text,
+            payload: x.text ?? "",
           })));
         }
 
@@ -388,7 +406,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               tLimit={tLimit}
               tUsed={tUsed}
               tPct={tPct}
-              status={loading ? 'streaming' : 'idle'}
+              status={chatStatus}
             />
           </div>
 

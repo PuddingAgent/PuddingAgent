@@ -28,6 +28,7 @@
 | 0504 | task-20260504-004 | GPT-5.3-Codex | — | PASS | LlmConfig.KeyVaultId替代ApiKey明文 |
 | 0504 | task-20260504-005 | DeepSeek-V4-Pro | — | PASS | HttpClient池化+ToolCalls+Cookie修复 |
 | 0505 | Chat-ContextMenu | GPT-5.3-Codex | GLM-5.1 | PASS_WITH_NOTES | P1-1 重复DTO已删；P1-2 Frozen=归档语义已注释说明；P2-6 前端过滤Frozen已加 |
+| 0513 | RuntimeSpace-UI-P0-P3 | DeepSeek-V4-Pro/Flash | DeepSeek-V4-Pro | PASS_WITH_NOTES | P1 重复列已删+P2 死代码/硬编码，20文件全量改造通过 |
 | 0505 | Session-Pagination | GPT-5.3-Codex | GLM-5.1 | PASS_WITH_NOTES | 3×P1：鉴权缺失/重复创建/异步竞态均已修复 |
 | 0505 | Memory-Phase1 | dahuang | Sonnet 4.6 | FAIL | 1×P0 性能断言反转(假阳性)+3×P1(事务缺失/Singleton DbContext/连接未关闭)+6×P2 |
 | 0505 | UI-1 (034~037) | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | any/硬编码颜色/emoji/间距<12/缩放1.035 |

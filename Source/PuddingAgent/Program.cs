@@ -28,6 +28,7 @@ using PuddingMemoryEngine.Services;
 using PuddingAgent.P2P;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services;
+using PuddingAgent.Services.Events;
 using Serilog;
 using Serilog.Events;
 using System.Threading.Channels;
@@ -300,18 +301,33 @@ builder.Services.AddSingleton<StreamingEventBus>();
 builder.Services.AddSingleton<IStreamingEventBus>(sp => sp.GetRequiredService<StreamingEventBus>());
 builder.Services.AddSingleton<SseEventForwarder>();
 
-// ── 内部事件系统（ADR-016：统一事件总线 + 优先级队列 + 中断）────────
+// ── 内部事件系统（ADR-016 V3：纯管道架构）─────────────────────
+// 事件系统只依赖 IEventHandler 接口，不感知 Cron/Connector/Agent 等外部系统。
+
+// 核心管道组件
 builder.Services.AddSingleton<EventPreprocessor>();
 builder.Services.AddSingleton<IEventPreprocessor>(sp => sp.GetRequiredService<EventPreprocessor>());
 builder.Services.AddSingleton<PriorityEventQueue>();
 builder.Services.AddSingleton<IPriorityEventQueue>(sp => sp.GetRequiredService<PriorityEventQueue>());
+
+// 事件总线（进程内 pub/sub）
 builder.Services.AddSingleton<InternalEventBus>();
 builder.Services.AddSingleton<IInternalEventBus>(sp => sp.GetRequiredService<InternalEventBus>());
+
+// 检查点与订阅管理
 builder.Services.AddSingleton<AgentCheckpointService>();
 builder.Services.AddSingleton<IAgentCheckpointService>(sp => sp.GetRequiredService<AgentCheckpointService>());
 builder.Services.AddSingleton<EventSubscriptionTool>();
 builder.Services.AddSingleton<IEventSubscriptionTool>(sp => sp.GetRequiredService<EventSubscriptionTool>());
 builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<EventSubscriptionTool>());
+
+// IEventHandler 消费者 — 事件系统的唯一边界
+builder.Services.AddSingleton<IEventHandler, AgentEventHandler>();
+
+// 入站桥：IInternalEventBus → Preprocessor → PriorityQueue 管道入口
+builder.Services.AddHostedService<EventIngressBridge>();
+
+// 分发器：PriorityQueue 出队 → IEventHandler.HandleAsync()
 builder.Services.AddHostedService<EventDispatcher>();
 
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();

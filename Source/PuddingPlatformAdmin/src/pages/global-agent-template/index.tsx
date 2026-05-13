@@ -11,18 +11,30 @@ import {
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import {
   Button,
+  Card,
+  Col,
   Drawer,
   Form,
   Popconfirm,
   Divider,
+  Row,
   Space,
   Tag,
   Badge,
   Typography,
   message,
   Alert,
+  Radio,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  LockOutlined,
+  AppstoreOutlined,
+  TableOutlined,
+  RobotOutlined,
+} from '@ant-design/icons';
 import React, { useRef, useState, useEffect } from 'react';
 import {
   listGlobalAgentTemplates,
@@ -57,8 +69,24 @@ const roleColorMap: Record<string, string> = {
   Custom: 'purple',
 };
 
+/** 记忆搜索模式颜色映射 */
+const memoryModeColorMap: Record<string, string> = {
+  off: 'default',
+  instant: 'blue',
+  deep: 'purple',
+};
+
+const memoryModeLabelMap: Record<string, string> = {
+  off: '关闭',
+  instant: '即时',
+  deep: '深度',
+};
+
+type ViewMode = 'card' | 'table';
+
 const GlobalAgentTemplatePage: React.FC = () => {
   const tableRef = useRef<ActionType | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('card');
   const [formDrawer, setFormDrawer] = useState(false);
   const [editItem, setEditItem] = useState<GlobalAgentTemplateDto | null>(null);
   const [form] = Form.useForm<UpsertGlobalAgentTemplateRequest>();
@@ -261,23 +289,135 @@ const GlobalAgentTemplatePage: React.FC = () => {
     },
   ];
 
+  // 卡片视图：角色名、模型、记忆模式（颜色Tag）、工具能力数、风险级别
+  // 卡片左边线用角色颜色
+  const renderCards = () => (
+    <ProTable<GlobalAgentTemplateDto>
+      actionRef={tableRef}
+      rowKey="id"
+      columns={[]}
+      request={async () => {
+        const data = await listGlobalAgentTemplates();
+        return { data, success: true };
+      }}
+      search={false}
+      toolBarRender={() => [
+        <Radio.Group
+          key="viewToggle"
+          value={viewMode}
+          onChange={(e) => setViewMode(e.target.value)}
+          optionType="button"
+          buttonStyle="solid"
+          size="small"
+          style={{ marginRight: 8 }}
+        >
+          <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+          <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+        </Radio.Group>,
+        <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          创建模板
+        </Button>,
+      ]}
+      tableRender={(_, tableProps) => {
+        const items = (tableProps?.dataSource ?? []) as GlobalAgentTemplateDto[];
+        return (
+          <Row gutter={[16, 16]} style={{ padding: '0 0 16px' }}>
+            {items.map((item) => {
+              const roleColor = roleColorMap[item.role] ?? 'default';
+              const capCount = item.selectedCapabilityIds?.length ?? 0;
+              const skillCount = item.selectedSkillPackageIds?.length ?? 0;
+              const memMode = item.memorySearchMode || 'deep';
+              const memColor = memoryModeColorMap[memMode] || 'default';
+              const memLabel = memoryModeLabelMap[memMode] || memMode;
+              return (
+                <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
+                  <Card
+                    hoverable
+                    size="small"
+                    style={{
+                      borderRadius: 14,
+                      borderLeft: `4px solid ${roleColor === 'blue' ? '#3b82f6' : roleColor === 'green' ? '#22c55e' : roleColor === 'orange' ? '#f97316' : '#7c3aed'}`,
+                      background: 'rgba(250,250,247,0.78)',
+                      backdropFilter: 'blur(8px)',
+                      boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
+                    }}
+                    bodyStyle={{ padding: '16px' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <Space>
+                        <Text style={{ fontSize: 18 }}>{item.avatarEmoji || '🤖'}</Text>
+                        <Text strong style={{ fontSize: 15 }}>{item.name}</Text>
+                        {item.isBuiltIn && <Tag color="gold" icon={<LockOutlined />} style={{ fontSize: 10 }}>内置</Tag>}
+                      </Space>
+                      <Tag color={roleColor}>{item.role}</Tag>
+                    </div>
+
+                    <Space size={4} wrap style={{ marginBottom: 8 }}>
+                      {item.preferredModelId ? (
+                        <Tag color="geekblue" style={{ fontSize: 11 }}>{item.preferredModelId}</Tag>
+                      ) : (
+                        <Tag style={{ fontSize: 11 }}>平台默认</Tag>
+                      )}
+                      <Tag color={memColor} style={{ fontSize: 11 }}>记忆: {memLabel}</Tag>
+                      <Tag style={{ fontSize: 11 }}>{capCount} 工具</Tag>
+                      <Tag style={{ fontSize: 11 }}>{skillCount} SKILL</Tag>
+                      <Tag style={{ fontSize: 11 }}>{(item.maxContextTokens / 1000).toFixed(0)}K</Tag>
+                    </Space>
+
+                    <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10, display: 'flex', gap: 4 }}>
+                      <Badge status={item.isEnabled ? 'processing' : 'default'} text={item.isEnabled ? '启用' : '停用'} />
+                      <div style={{ flex: 1 }} />
+                      <Button size="small" icon={<EditOutlined />} type="text" onClick={() => openEdit(item)} />
+                      {!item.isBuiltIn && (
+                        <Popconfirm title="确认删除该模板？" onConfirm={() => handleDelete(item.templateId)}>
+                          <Button size="small" danger icon={<DeleteOutlined />} type="text" />
+                        </Popconfirm>
+                      )}
+                    </div>
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
+        );
+      }}
+    />
+  );
+
   return (
-    <PageContainer title="全局 Agent 模板" subTitle="配置系统内置的 Agent 提示词与首选模型">
-      <ProTable<GlobalAgentTemplateDto>
-        actionRef={tableRef}
-        rowKey="id"
-        columns={columns}
-        request={async () => {
-          const data = await listGlobalAgentTemplates();
-          return { data, success: true };
-        }}
-        search={false}
-        toolBarRender={() => [
-          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            创建模板
-          </Button>,
-        ]}
-      />
+    <PageContainer
+      title="全局 Agent 模板"
+      subTitle="配置系统内置的 Agent 提示词与首选模型"
+    >
+      {viewMode === 'card' ? renderCards() : (
+        <ProTable<GlobalAgentTemplateDto>
+          actionRef={tableRef}
+          rowKey="id"
+          columns={columns}
+          request={async () => {
+            const data = await listGlobalAgentTemplates();
+            return { data, success: true };
+          }}
+          search={false}
+          toolBarRender={() => [
+            <Radio.Group
+              key="viewToggle"
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+              size="small"
+              style={{ marginRight: 8 }}
+            >
+              <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+              <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+            </Radio.Group>,
+            <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              创建模板
+            </Button>,
+          ]}
+        />
+      )}
 
       <Drawer
         title={editItem ? '编辑 Agent 模板' : '创建 Agent 模板'}

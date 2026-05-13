@@ -181,6 +181,8 @@ Pudding 的设计深受以下项目和研究的启发：
 - **[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)** (Anthropic) — Agent 设计模式指南
 - **[AutoGPT](https://github.com/Significant-Gravitas/AutoGPT)** / **[BabyAGI](https://github.com/yoheinakajima/babyagi)** — 早期自主 Agent 的先驱探索
 - **[LangChain](https://github.com/langchain-ai/langchain)** / **[CrewAI](https://github.com/crewAIInc/crewAI)** — Agent 框架的工程实践
+- **[DeepSeek-TUI](https://github.com/Hmbown/deepseek-tui)** — 优雅的终端用户交互界面设计参考
+- **[DeepSeek-TUI 官网](https://deepseek-tui.com/zh)** — 终端交互体验的实践案例
 
 以及所有在 AI Agent 领域探索的开源贡献者和研究者。
 

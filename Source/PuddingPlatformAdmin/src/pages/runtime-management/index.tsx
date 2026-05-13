@@ -118,6 +118,25 @@ export default function RuntimeManagementPage() {
     }
   };
 
+  // ── 注入健康呼吸动画 keyframe ──
+  useEffect(() => {
+    const styleId = 'pudding-node-health-keyframes';
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      @keyframes healthBreathe {
+        0%, 100% { opacity: 0.5; transform: scale(0.9); }
+        50% { opacity: 1; transform: scale(1.05); }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      const el = document.getElementById(styleId);
+      if (el) el.remove();
+    };
+  }, []);
+
   useEffect(() => {
     void fetchNodes();
     // 每 10 秒自动刷新
@@ -184,8 +203,15 @@ export default function RuntimeManagementPage() {
   // ── 统计数据 ─────────────────────────────────────────────
   const onlineCount = nodes.filter((n) => n.status === 'Online').length;
   const offlineCount = nodes.filter((n) => n.status === 'Offline').length;
+  const degradedCount = nodes.filter((n) => n.status === 'Degraded').length;
   const frozenCount = nodes.filter((n) => n.isFrozen).length;
   const totalSessions = nodes.reduce((sum, n) => sum + n.activeSessionCount, 0);
+
+  // 心跳间隔计算
+  const getHeartbeatSeconds = (node: RuntimeNodeInfo): number => {
+    const diffMs = Date.now() - new Date(node.lastHeartbeat).getTime();
+    return Math.round(diffMs / 1000);
+  };
 
   const statCardStyle = {
     background: token.colorBgContainer,
@@ -193,6 +219,34 @@ export default function RuntimeManagementPage() {
     padding: '16px 24px',
     boxShadow: token.boxShadowSecondary,
     border: `1px solid ${token.colorBorderSecondary}`,
+  };
+
+  // ── 节点健康点样式 ──────────────────────────────────────
+  const healthDotBase: React.CSSProperties = {
+    width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
+  };
+  const healthDotOnline: React.CSSProperties = {
+    ...healthDotBase,
+    background: 'var(--success-signal, #22C55E)',
+    boxShadow: '0 0 8px var(--success-signal, #22C55E)',
+  };
+  const healthDotDegraded: React.CSSProperties = {
+    ...healthDotBase,
+    background: 'var(--warning-signal, #F97316)',
+    boxShadow: '0 0 8px var(--warning-signal, #F97316)',
+    animation: 'healthBreathe 2s ease-in-out infinite',
+  };
+  const healthDotOffline: React.CSSProperties = {
+    ...healthDotBase,
+    background: 'var(--error-signal, #EF4444)',
+    opacity: 0.4,
+  };
+
+  const getHealthDotStyle = (node: RuntimeNodeInfo): React.CSSProperties => {
+    if (node.isFrozen) return { ...healthDotBase, background: '#9CA3AF', border: '2px solid #6B7280' };
+    if (node.status === 'Online') return healthDotOnline;
+    if (node.status === 'Degraded') return healthDotDegraded;
+    return healthDotOffline;
   };
 
   // ── 表格列 ────────────────────────────────────────────────
@@ -304,13 +358,17 @@ export default function RuntimeManagementPage() {
             </a>
           </Popconfirm>
         ) : (
-          <a
+          <Tooltip
             key="freeze"
-            style={{ color: token.colorWarning }}
-            onClick={() => openFreezeModal(record.nodeId)}
+            title="冻结后该嵌入式节点将拒绝所有原生能力调用，会话将被强制断开"
           >
-            <LockOutlined /> 冻结
-          </a>
+            <a
+              style={{ color: token.colorWarning }}
+              onClick={() => openFreezeModal(record.nodeId)}
+            >
+              <LockOutlined /> 冻结
+            </a>
+          </Tooltip>
         ),
       ],
     },
@@ -357,7 +415,7 @@ export default function RuntimeManagementPage() {
           </Button>,
         ]}
       >
-        {/* 顶部统计 */}
+        {/* ── Node Health Summary：节点健康概览 ── */}
         <div
           style={{
             display: 'grid',
@@ -366,33 +424,120 @@ export default function RuntimeManagementPage() {
             marginBottom: 16,
           }}
         >
-          <div
-            style={statCardStyle}
-          >
+          <div style={statCardStyle}>
             <Statistic title="总节点数" value={nodes.length} prefix={<CloudServerOutlined />} />
           </div>
-          <div
-            style={statCardStyle}
-          >
-            <Statistic title="在线节点" value={onlineCount} valueStyle={{ color: token.colorSuccess }} />
+          <div style={statCardStyle}>
+            <Statistic title="在线节点" value={onlineCount} valueStyle={{ color: 'var(--success-signal, #22C55E)' }} />
           </div>
-          <div
-            style={statCardStyle}
-          >
+          <div style={statCardStyle}>
             <Statistic
-              title="离线节点"
-              value={offlineCount}
-              valueStyle={{ color: offlineCount > 0 ? token.colorError : undefined }}
+              title="降级 / 离线"
+              value={`${degradedCount} / ${offlineCount}`}
+              valueStyle={{ color: offlineCount + degradedCount > 0 ? 'var(--warning-signal, #F97316)' : undefined }}
             />
           </div>
-          <div
-            style={statCardStyle}
-          >
+          <div style={statCardStyle}>
             <Statistic title="活跃会话总数" value={totalSessions} />
           </div>
         </div>
 
-        {/* 节点表格 */}
+        {/* ── Node Health 可视化卡片（无表格时的图形化视图）── */}
+        {nodes.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap' as const,
+              gap: 12,
+              marginBottom: 20,
+              padding: '16px 20px',
+              background: token.colorBgContainer,
+              borderRadius: token.borderRadiusLG,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              boxShadow: token.boxShadowSecondary,
+              position: 'relative' as const,
+            }}
+          >
+            {/* 连线：纯 CSS border 连接的简单拓扑 */}
+            <div
+              style={{
+                position: 'absolute' as const,
+                top: '50%',
+                left: 40,
+                right: 40,
+                height: 1,
+                background: 'var(--neural-line, rgba(124,58,237,0.12))',
+                zIndex: 0,
+                pointerEvents: 'none' as const,
+              }}
+            />
+
+            {nodes.map((node) => {
+              const hbSeconds = getHeartbeatSeconds(node);
+              const healthLabel = node.isFrozen
+                ? '已冻结'
+                : node.status === 'Online'
+                  ? `online · 心跳 ${hbSeconds}s`
+                  : node.status === 'Degraded'
+                    ? '降级'
+                    : '离线';
+
+              return (
+                <div
+                  key={node.nodeId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 14px',
+                    background: token.colorFillQuaternary,
+                    borderRadius: token.borderRadius,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    zIndex: 1,
+                    transition: 'box-shadow 200ms',
+                    cursor: 'default',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = '0 0 12px rgba(124,58,237,0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  {/* 健康点 */}
+                  <span style={getHealthDotStyle(node)} />
+                  {/* 节点信息 */}
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 2 }}>
+                    <Text style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.2 }}>
+                      {node.nodeId.length > 16 ? node.nodeId.slice(0, 16) + '…' : node.nodeId}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        color:
+                          node.isFrozen ? token.colorTextQuaternary :
+                          node.status === 'Online' ? 'var(--success-signal, #22C55E)' :
+                          node.status === 'Degraded' ? 'var(--warning-signal, #F97316)' :
+                          'var(--error-signal, #EF4444)',
+                      }}
+                    >
+                      {node.isFrozen && <LockOutlined style={{ marginRight: 3, fontSize: 10 }} />}
+                      {healthLabel}
+                    </Text>
+                  </div>
+                  {/* 活跃会话 */}
+                  {node.activeSessionCount > 0 && (
+                    <Tag style={{ marginLeft: 'auto', fontSize: 10 }} color="blue">
+                      {node.activeSessionCount} 会话
+                    </Tag>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── 节点表格 ── */}
         <ProTable<RuntimeNodeInfo>
           rowKey="nodeId"
           columns={columns}

@@ -137,3 +137,7 @@
 ## Capabilities 种子不在 JSON config 覆盖范围
 - **根因**：JsonConfigSeedService 只种子 Providers/AgentTemplates/Workspaces，不覆盖 Capabilities 表。
 - **经验**：新增工具能力时不能假设 Agent 模板配置会自动包含它。需在 Capabilities 表中显式注册。
+
+## 文件编辑工具：同一文件修改必须串行
+- **根因**：并行对同一路径执行删除/新增或补丁操作会出现路径冲突，且无法保证应用顺序。
+- **经验/最佳实践**：批量工具只用于互不相关的文件；同一文件的多段修改应合并为单个 patch，或按“删除旧文件 → 创建新文件 → 校验”的顺序串行执行。

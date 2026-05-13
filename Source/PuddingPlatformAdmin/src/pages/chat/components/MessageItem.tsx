@@ -1,4 +1,4 @@
-// ── MessageItem：Markdown 渲染 + 代码块 ─────────────────────
+// ── MessageItem：轻量 Markdown 文本块（用于 Timeline Answer 和旧版兼容）──
 import { CopyOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import Prism from 'prismjs';
@@ -22,7 +22,7 @@ const CodeBlock: React.FC<{ code: string; className?: string }> = ({ code, class
   );
 };
 
-// ── MessageItem：渲染 Markdown 内容 ─────────────────────────
+// ── MessageItem：渲染 Markdown 为轻量文本块 ─────────────────
 interface MessageItemProps {
   markdownText: string;
   isStreaming?: boolean;

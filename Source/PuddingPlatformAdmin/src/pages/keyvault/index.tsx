@@ -1,7 +1,26 @@
 import { PageContainer, ProForm, ProFormText, ProFormTextArea, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { Button, Drawer, Form, Popconfirm, Space, Tag, Typography, message } from 'antd';
-import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  Button,
+  Drawer,
+  Form,
+  Modal,
+  Space,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from 'antd';
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons';
 import React, { useRef, useState } from 'react';
 import {
   createKeyVaultSecret,
@@ -34,6 +53,17 @@ const KeyVaultPage: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<KeyVaultSecretDto | null>(null);
   const [form] = Form.useForm<KeyVaultFormValues>();
+  /** 当前已显示的密钥项 ID 集合（点击后揭示） */
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+
+  const toggleReveal = (keyVaultId: string) => {
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(keyVaultId)) next.delete(keyVaultId);
+      else next.add(keyVaultId);
+      return next;
+    });
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -74,7 +104,6 @@ const KeyVaultPage: React.FC = () => {
         message.error('请填写密钥值');
         return;
       }
-
       await createKeyVaultSecret({
         ...payload,
         value: values.value,
@@ -86,10 +115,37 @@ const KeyVaultPage: React.FC = () => {
     tableRef.current?.reload();
   };
 
-  const handleDelete = async (record: KeyVaultSecretDto) => {
-    await deleteKeyVaultSecret(record.keyVaultId);
-    message.success('密钥已删除');
-    tableRef.current?.reload();
+  /** 删除：危险操作，使用 Modal.confirm 二次确认 */
+  const handleDelete = (record: KeyVaultSecretDto) => {
+    Modal.confirm({
+      title: `确认删除密钥「${record.name}」？`,
+      icon: <DeleteOutlined />,
+      content: (
+        <Typography.Text type="danger">
+          此操作不可恢复。删除后所有引用 <Typography.Text code>{`{{vault:${record.name}}}`}</Typography.Text> 的配置将失效。
+        </Typography.Text>
+      ),
+      okText: '确认删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        await deleteKeyVaultSecret(record.keyVaultId);
+        message.success('密钥已删除');
+        tableRef.current?.reload();
+      },
+    });
+  };
+
+  /** 轮换密钥：警告操作，需二次确认 */
+  const handleRotate = (record: KeyVaultSecretDto) => {
+    Modal.confirm({
+      title: `轮换密钥「${record.name}」？`,
+      icon: <ReloadOutlined />,
+      content: '请准备好新密钥值。轮换后将立即生效，旧值将被替换。',
+      okText: '进入编辑',
+      cancelText: '取消',
+      onOk: () => openEdit(record),
+    });
   };
 
   const handleCopyPlaceholder = async (record: KeyVaultSecretDto) => {
@@ -107,51 +163,102 @@ const KeyVaultPage: React.FC = () => {
       title: '名称',
       dataIndex: 'name',
       width: 180,
-      render: (_, record) => <Text code>{record.name}</Text>,
+      render: (_, record) => (
+        <Space>
+          <SafetyCertificateOutlined style={{ color: '#7c3aed', fontSize: 14 }} />
+          <Typography.Text code>{record.name}</Typography.Text>
+        </Space>
+      ),
     },
     {
       title: '描述',
       dataIndex: 'description',
       ellipsis: true,
-      render: (_, record) => <Text type="secondary">{record.description || '—'}</Text>,
+      render: (_, record) => <Typography.Text type="secondary">{record.description || '—'}</Typography.Text>,
     },
     {
       title: '分类',
       dataIndex: 'category',
-      width: 120,
-      render: (_, record) => <Tag color="blue">{record.category || 'general'}</Tag>,
+      width: 100,
+      render: (_, record) => <Tag color={record.category === 'api' ? 'red' : record.category === 'token' ? 'orange' : 'blue'}>{record.category || 'general'}</Tag>,
+    },
+    {
+      title: '密钥值',
+      width: 200,
+      render: (_, record) => {
+        const isRevealed = revealedIds.has(record.keyVaultId);
+        return (
+          <Tooltip title={isRevealed ? '点击隐藏' : '点击显示'}>
+            <Button
+              type="text"
+              size="small"
+              icon={isRevealed ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+              onClick={() => toggleReveal(record.keyVaultId)}
+              style={{ fontFamily: 'monospace', fontSize: 13, color: isRevealed ? '#a78bfa' : '#6b7280' }}
+            >
+              {isRevealed ? '•••• 已揭示' : '••••••••'}
+            </Button>
+          </Tooltip>
+        );
+      },
     },
     {
       title: '占位符',
-      width: 220,
+      width: 200,
       render: (_, record) => (
         <Space>
-          <Text code>{`{{vault:${record.name}}}`}</Text>
-          <Button
-            size="small"
-            icon={<CopyOutlined />}
-            onClick={() => handleCopyPlaceholder(record)}
-          >
-            复制
-          </Button>
+          <Typography.Text code style={{ fontSize: 12 }}>{`{{vault:${record.name}}}`}</Typography.Text>
+          <Tooltip title="复制占位符">
+            <Button size="small" icon={<CopyOutlined />} onClick={() => handleCopyPlaceholder(record)} type="text" />
+          </Tooltip>
         </Space>
       ),
     },
     {
+      title: '标签',
+      width: 150,
+      ellipsis: true,
+      render: (_, record) =>
+        record.tags?.length ? (
+          <Space size={2} wrap>
+            {record.tags.map((t) => (
+              <Tag key={t} color="purple" style={{ fontSize: 10 }}>{t}</Tag>
+            ))}
+          </Space>
+        ) : <Typography.Text type="secondary">—</Typography.Text>,
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
-      width: 180,
+      width: 170,
       render: (_, record) => new Date(record.createdAt).toLocaleString('zh-CN'),
     },
     {
       title: '操作',
-      width: 140,
+      width: 230,
       render: (_, record) => (
         <Space size={4}>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="确认删除该密钥？" onConfirm={() => handleDelete(record)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          <Tooltip title="编辑元数据">
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} type="text" />
+          </Tooltip>
+          <Tooltip title="轮换密钥（需确认）">
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={() => handleRotate(record)}
+              type="text"
+              style={{ color: '#f97316' }}
+            />
+          </Tooltip>
+          <Tooltip title="删除密钥（危险操作）">
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleDelete(record)}
+              type="text"
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -161,6 +268,7 @@ const KeyVaultPage: React.FC = () => {
     <PageContainer
       title="KeyVault 密钥保管箱"
       subTitle="安全存储 API Key / Token；列表不展示明文，使用 {{vault:name}} 占位符引用"
+      style={{ background: '#1a1a1e', minHeight: '100%' }}
     >
       <ProTable<KeyVaultSecretDto>
         actionRef={tableRef}
@@ -176,6 +284,9 @@ const KeyVaultPage: React.FC = () => {
             新建密钥
           </Button>,
         ]}
+        cardBordered
+        style={{ background: 'transparent' }}
+        tableStyle={{ background: 'transparent' }}
       />
 
       <Drawer
