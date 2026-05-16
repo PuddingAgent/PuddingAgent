@@ -18,8 +18,12 @@ public static class BuiltInAgentTemplates
             AllowFileWrite = false,
             AllowShellExecution = false,
             AllowNetworkAccess = false,
+            DefaultToolNames = ["memory_library", "save_memory", "manage_memory", "grep_memory",
+                "query_sessions", "http_fetch", "file_read", "search_files", "search_codebase",
+                "spawn_sub_agent", "task_manager", "event_subscribe"],
+            RequiresGrantToolNames = [],
         },
-        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 },
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,
@@ -40,9 +44,12 @@ public static class BuiltInAgentTemplates
             AllowFileWrite = true,
             AllowShellExecution = true,
             AllowNetworkAccess = false,
-            AllowedToolNames = ["bash", "file_read", "file_write"],
+            DefaultToolNames = ["memory_library", "save_memory", "manage_memory", "grep_memory",
+                "query_sessions", "http_fetch", "file_read", "search_files", "search_codebase",
+                "spawn_sub_agent", "task_manager", "event_subscribe"],
+            RequiresGrantToolNames = ["bash", "python", "file_write"],
         },
-        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 },
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,
@@ -63,9 +70,12 @@ public static class BuiltInAgentTemplates
             AllowFileWrite = true,
             AllowShellExecution = true,
             AllowNetworkAccess = false,
-            AllowedToolNames = ["bash", "file_read", "file_write"],
+            DefaultToolNames = ["memory_library", "save_memory", "grep_memory",
+                "query_sessions", "http_fetch", "file_read", "search_files", "search_codebase",
+                "spawn_sub_agent", "task_manager", "event_subscribe"],
+            RequiresGrantToolNames = ["bash", "python", "file_write"],
         },
-        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 },
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,
@@ -86,8 +96,11 @@ public static class BuiltInAgentTemplates
             AllowFileWrite = false,
             AllowShellExecution = false,
             AllowNetworkAccess = false,
+            DefaultToolNames = ["memory_library", "grep_memory", "query_sessions", "file_read",
+                "search_files", "search_codebase", "event_subscribe"],
+            RequiresGrantToolNames = [],
         },
-        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
+        Runtime = new RuntimeProfile { MaxContextTokens = 1048576 },
         Memory = new MemoryPolicy
         {
             EnableSessionMemory = true,

@@ -7,5 +7,6 @@ public sealed record ChatMessage(
     ChatRole Role,
     string? Content,
     string? ToolCallId = null,
+    string? ToolName = null,
     IReadOnlyList<ToolCall>? ToolCalls = null,
     string? ReasoningContent = null);

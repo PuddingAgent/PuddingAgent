@@ -308,6 +308,9 @@ public class ChatApiController(
         var tempChannel = Channel.CreateBounded<ServerSentEventFrame>(
             new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropWrite });
         Channel<ServerSentEventFrame>? hubChannel = null;
+        int bgFrameCount = 0;
+
+        logger.LogInformation("[Chat:SSE] Background task starting ws={Workspace}", workspaceId);
 
         _ = Task.Run(async () =>
         {
@@ -328,31 +331,96 @@ public class ChatApiController(
                     ct:             CancellationToken.None))
                 {
                     ParseFrame(frame);
+                    bgFrameCount++;
 
-                    // 拿到 sessionId 后升级：注册到 EventHub，后续订阅此会话的前端可追流
                     if (hubChannel is null && streamSessionId is not null)
                     {
                         hubChannel = eventHub.GetOrCreate(streamSessionId);
+                        logger.LogInformation("[Chat:SSE] Hub channel created session={Session}", streamSessionId);
                     }
 
-                    // 同时写入临时 Channel 和 EventHub
                     tempChannel.Writer.TryWrite(frame);
                     hubChannel?.Writer.TryWrite(frame);
                 }
-                // 正常完成
-                tempChannel.Writer.Complete();
-                if (streamSessionId is not null) eventHub.CompleteAndRemove(streamSessionId);
+                logger.LogInformation("[Chat:SSE] Background API stream ended session={Session} frames={Count}",
+                    streamSessionId, bgFrameCount);
+                // 正常完成：不销毁 Channel — 异步子代理可能后续产生事件
+                // 将 SSM Channel 的后续帧持续转发到 tempChannel
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        int ssmForwardCount = 0;
+                        var ssm = HttpContext.RequestServices.GetService<PuddingCode.Abstractions.ISessionStateManager>();
+                        if (ssm is null || streamSessionId is null)
+                        {
+                            logger.LogWarning("[Chat:SSE] SSM or sessionId null for forward ssmExists={HasSsm} session={Session}", ssm is not null, streamSessionId);
+                            tempChannel.Writer.TryComplete();
+                            return;
+                        }
+                        logger.LogInformation("[Chat:SSE] Starting SSM forward session={Session}", streamSessionId);
+                        var reader = ssm.Subscribe(streamSessionId);
+                        if (reader is null)
+                        {
+                            logger.LogWarning("[Chat:SSE] SSM Subscribe returned null session={Session}", streamSessionId);
+                            tempChannel.Writer.TryComplete();
+                            return;
+                        }
+                        await foreach (var frame in reader.ReadAllAsync(CancellationToken.None))
+                        {
+                            ssmForwardCount++;
+                            if (!tempChannel.Writer.TryWrite(frame))
+                            {
+                                logger.LogWarning("[Chat:SSE] SSM forward write failed session={Session} frame={Count} type={Type}",
+                                    streamSessionId, ssmForwardCount, frame.Event);
+                                break;
+                            }
+                        }
+                        logger.LogInformation("[Chat:SSE] SSM forward ended session={Session} forwarded={Count}",
+                            streamSessionId, ssmForwardCount);
+                    }
+                    catch (Exception ssmEx)
+                    {
+                        logger.LogWarning(ssmEx, "[Chat:SSE] SSM forward exception session={Session}", streamSessionId);
+                    }
+                    finally
+                    {
+                        tempChannel.Writer.TryComplete();
+                    }
+                });
             }
             catch (OperationCanceledException)
             {
-                tempChannel.Writer.Complete();
-                if (streamSessionId is not null) eventHub.CompleteAndRemove(streamSessionId);
+                logger.LogWarning("[Chat:SSE] Background cancelled session={Session}", streamSessionId);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var ssm = HttpContext.RequestServices.GetService<PuddingCode.Abstractions.ISessionStateManager>();
+                        if (ssm is not null && streamSessionId is not null)
+                        {
+                            var reader = ssm.Subscribe(streamSessionId);
+                            if (reader is not null)
+                            {
+                                int forwardCount = 0;
+                                await foreach (var frame in reader.ReadAllAsync(CancellationToken.None))
+                                {
+                                    forwardCount++;
+                                    if (!tempChannel.Writer.TryWrite(frame)) break;
+                                }
+                                logger.LogInformation("[Chat:SSE] Cancelled SSM forward ended session={Session} forwarded={Count}",
+                                    streamSessionId, forwardCount);
+                            }
+                        }
+                    }
+                    catch (Exception ssmEx) { logger.LogWarning(ssmEx, "[Chat:SSE] Cancelled SSM forward failed"); }
+                    finally { tempChannel.Writer.TryComplete(); }
+                });
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "[Chat] Background execution failed ws={WorkspaceId}", workspaceId);
                 tempChannel.Writer.TryComplete(ex);
-                if (streamSessionId is not null) eventHub.CompleteAndRemove(streamSessionId);
             }
             finally
             {
@@ -360,12 +428,22 @@ public class ChatApiController(
             }
         });
 
-        // ── 前端 SSE 投递循环：当前请求从临时 Channel 读取 ──
+        // ── 前端 SSE 投递循环：持续读取，直到 Channel 完成或会话关闭 ──
         try
         {
-            await foreach (var frame in tempChannel.Reader.ReadAllAsync(ct))
+            using var keepAliveCts = new CancellationTokenSource();
+            // 使用独立 CTS：不因 HTTP 客户端断开而取消投递循环
+            // 当 tempChannel 完成时自然退出 ReadAllAsync
+            await foreach (var frame in tempChannel.Reader.ReadAllAsync(keepAliveCts.Token))
             {
-                await WriteRawSseAsync(Response, frame, ct);
+                try
+                {
+                    await WriteRawSseAsync(Response, frame, keepAliveCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // 客户端断开写入失败，继续读取（不退出循环）
+                }
             }
             await PersistOnceAsync();
         }
@@ -483,6 +561,10 @@ public class ChatApiController(
                     AllowShellExecution = true,
                     AllowNetworkAccess = false,
                     AllowedToolNames = ["bash", "file_read", "file_write"],
+                    DefaultToolNames = ["file_read", "memory_library", "grep_memory",
+                        "query_sessions", "http_fetch", "search_files", "search_codebase",
+                        "spawn_sub_agent", "task_manager"],
+                    RequiresGrantToolNames = ["bash", "python", "file_write"],
                 },
                 [
                     new LlmToolDefinition
@@ -663,9 +745,23 @@ public class ChatApiController(
 
         var isTaskRole = role.Equals("Task", StringComparison.OrdinalIgnoreCase);
 
-        // 兼容历史模板：过去无能力字段时，Task 默认应可使用 bash
         if (isTaskRole && tools.Count == 0)
             tools.UnionWith(["bash", "file_read", "file_write"]);
+
+        // V2 两级权限：从 selectedCapabilities 拆分 DefaultToolNames / RequiresGrantToolNames
+        var defaultTools = new List<string>();
+        var grantTools = new List<string>();
+
+        foreach (var cap in selectedCapabilities ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(cap.ToolName)) continue;
+            var toolName = cap.ToolName.Trim();
+
+            if (cap.RequiresShellExecution || cap.RequiresFileWrite)
+                grantTools.Add(toolName);
+            else
+                defaultTools.Add(toolName);
+        }
 
         return new CapabilityPolicy
         {
@@ -673,6 +769,8 @@ public class ChatApiController(
             AllowShellExecution = allowShellExecution || selectedAllowShell || isTaskRole,
             AllowNetworkAccess = allowNetworkAccess || selectedAllowNetwork,
             AllowedToolNames = tools.ToList(),
+            DefaultToolNames = defaultTools,
+            RequiresGrantToolNames = grantTools,
         };
     }
 

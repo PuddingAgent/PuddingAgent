@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Core;
@@ -13,19 +14,25 @@ namespace PuddingRuntime.Services;
 /// <summary>
 /// Runtime 直接调用 LLM API（OpenAI 兼容），不经过 Controller 中转。
 /// V1 简化版：直接从 LlmConfig 读取端点与密钥。
+/// 
+/// 注意：ChatAsync 直接构建 JSON request body；
+///       ChatStreamAsync 委托给 OpenAiLlmGateway（后者正确序列化 tools）。
 /// </summary>
 public sealed class DirectLlmClient : IRuntimeLlmClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILlmConfigService _llmConfigService;
     private readonly ILogger<DirectLlmClient> _logger;
     private readonly IKeyVaultService? _keyVaultService;
 
     public DirectLlmClient(
         IHttpClientFactory httpClientFactory,
+        ILlmConfigService llmConfigService,
         ILogger<DirectLlmClient> logger,
         IKeyVaultService? keyVaultService = null)
     {
         _httpClientFactory = httpClientFactory;
+        _llmConfigService = llmConfigService;
         _logger = logger;
         _keyVaultService = keyVaultService;
     }
@@ -41,13 +48,13 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     {
         var effectiveConfig = await ResolveLlmConfigAsync(llmConfig, ct);
         var endpoint = effectiveConfig?.Endpoint
-            ?? Environment.GetEnvironmentVariable("LLM_ENDPOINT")
+            ?? _llmConfigService.GetDefault()?.Endpoint
             ?? "https://api.openai.com/v1";
         var apiKey = effectiveConfig?.ApiKey
-            ?? Environment.GetEnvironmentVariable("LLM_API_KEY")
+            ?? _llmConfigService.GetDefault()?.ApiKey
             ?? "";
         var model = effectiveConfig?.ModelId
-            ?? Environment.GetEnvironmentVariable("LLM_MODEL")
+            ?? _llmConfigService.GetDefault()?.ModelId
             ?? "gpt-4o-mini";
 
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -55,22 +62,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var url = $"{endpoint.TrimEnd('/')}/chat/completions";
 
-        object requestBody = effectiveConfig?.ReasoningEffort is not null
-            ? new
-            {
-                model,
-                messages = messages.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content }).ToArray(),
-                temperature = 0.7,
-                max_tokens = 2048,
-                reasoning_effort = effectiveConfig.ReasoningEffort
-            }
-            : new
-            {
-                model,
-                messages = messages.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content }).ToArray(),
-                temperature = 0.7,
-                max_tokens = 2048
-            };
+        object requestBody = BuildRequestBody(model, messages, tools, effectiveConfig?.ReasoningEffort);
 
         using var httpClient = new HttpClient();
         var json = JsonSerializer.Serialize(requestBody);
@@ -114,6 +106,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var toolCalls = body.TryGetProperty("choices", out var tcChoices) && tcChoices.GetArrayLength() > 0
             ? tcChoices[0].TryGetProperty("message", out var tcMsg) && tcMsg.TryGetProperty("tool_calls", out var tcArr)
+                && tcArr.ValueKind == JsonValueKind.Array
                 ? tcArr.EnumerateArray().Select(tc => new ToolCall(
                     tc.TryGetProperty("id", out var tcid) ? tcid.GetString() ?? "" : "",
                     tc.TryGetProperty("function", out var tcfn) && tcfn.TryGetProperty("name", out var tcname)
@@ -220,6 +213,127 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var normalized = mode.Trim().ToLowerInvariant();
         return normalized is "auto" or "enabled" or "disabled" ? normalized : null;
+    }
+
+    /// <summary>构建 OpenAI 兼容 API 请求体，包含 tools 字段。</summary>
+    private static object BuildRequestBody(
+        string model,
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools,
+        string? reasoningEffort)
+    {
+        // 使用 JsonObject 动态构造，tools 为空时不包含该字段
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["temperature"] = 0.7,
+            ["max_tokens"] = 2048,
+        };
+
+        var msgArr = new JsonArray();
+        foreach (var m in messages)
+        {
+            var msgObj = new JsonObject
+            {
+                ["role"] = m.Role.ToString().ToLowerInvariant(),
+            };
+            if (m.Content is not null)
+                msgObj["content"] = m.Content;
+
+            // 工具调用结果：tool role 需要 tool_call_id 和 name
+            if (m.Role == ChatRole.Tool)
+            {
+                if (m.ToolCallId is not null)
+                    msgObj["tool_call_id"] = m.ToolCallId;
+                if (m.ToolName is not null)
+                    msgObj["name"] = m.ToolName;
+            }
+
+            // Assistant 消息可带 reasoning_content（mimio/DeepSeek 需要回传，即使为 null 也传空字符串）
+            if (m.Role == ChatRole.Assistant)
+            {
+                msgObj["reasoning_content"] = m.ReasoningContent ?? "";
+            }
+
+            // Assistant 消息可带 tool_calls
+            if (m.ToolCalls is { Count: > 0 })
+            {
+                var tcArr = new JsonArray();
+                foreach (var tc in m.ToolCalls)
+                {
+                    tcArr.Add(new JsonObject
+                    {
+                        ["id"] = tc.Id,
+                        ["type"] = "function",
+                        ["function"] = new JsonObject
+                        {
+                            ["name"] = tc.Name,
+                            ["arguments"] = tc.ArgumentsJson,
+                        },
+                    });
+                }
+                msgObj["tool_calls"] = tcArr;
+            }
+
+            msgArr.Add(msgObj);
+        }
+        body["messages"] = msgArr;
+
+        if (reasoningEffort is { Length: > 0 })
+            body["reasoning_effort"] = reasoningEffort;
+
+        if (tools is { Count: > 0 })
+        {
+            var toolsArr = new JsonArray();
+            foreach (var t in tools)
+            {
+                toolsArr.Add(new JsonObject
+                {
+                    ["type"] = "function",
+                    ["function"] = new JsonObject
+                    {
+                        ["name"] = t.Name,
+                        ["description"] = t.Description,
+                        ["parameters"] = SerializeParameters(t.Parameters),
+                    },
+                });
+            }
+            body["tools"] = toolsArr;
+        }
+
+        return body;
+    }
+
+    /// <summary>将 ToolParameterSchema 转为 JSON schema 格式。</summary>
+    private static JsonObject SerializeParameters(ToolParameterSchema sch)
+    {
+        var obj = new JsonObject
+        {
+            ["type"] = "object",
+        };
+
+        if (sch.Properties is { Count: > 0 })
+        {
+            var props = new JsonObject();
+            foreach (var prop in sch.Properties)
+            {
+                props[prop.Name] = new JsonObject
+                {
+                    ["type"] = prop.Type ?? "string",
+                    ["description"] = prop.Description ?? "",
+                };
+            }
+            obj["properties"] = props;
+        }
+
+        if (sch.Required is { Count: > 0 })
+        {
+            var required = new JsonArray();
+            foreach (var r in sch.Required) required.Add(r);
+            obj["required"] = required;
+        }
+
+        return obj;
     }
 
     private sealed class ProxyTool(LlmToolDefinition dto) : ITool

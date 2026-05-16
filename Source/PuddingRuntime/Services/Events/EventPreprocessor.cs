@@ -61,6 +61,7 @@ public class EventPreprocessor : IEventPreprocessor
                 Source = raw.Source,
                 WorkspaceId = raw.WorkspaceId,
                 AgentId = raw.AgentId,
+                SessionId = raw.SessionId,
                 Payload = raw.Payload,
                 Timestamp = raw.Timestamp,
                 MergeCount = 1,

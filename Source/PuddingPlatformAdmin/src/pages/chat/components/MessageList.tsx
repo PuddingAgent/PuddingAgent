@@ -1,9 +1,9 @@
 // ── MessageList：消息列表容器 ───────────────────────────────
 import { Alert, Button, Spin, Typography } from 'antd';
-import { ArrowDownOutlined } from '@ant-design/icons';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowDownOutlined, RobotOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
-import type { ChatTurn } from '../types';
+import type { ChatTurn, SubAgentCardMap, SubAgentCard as SubAgentCardType } from '../types';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
 import MessageGroup from './MessageGroup';
 import AmbientParticles from './AmbientParticles';
@@ -30,16 +30,65 @@ interface MessageListProps {
   onPinTurn?: (turnId: string) => void;
   messageListRef: React.RefObject<HTMLDivElement | null>;
   listEndRef: React.RefObject<HTMLDivElement | null>;
+  subAgentCards?: SubAgentCardMap;
 }
 
 /** 保存各会话的滚动位置 */
 const sessionScrollMap = new Map<string, number>();
 
+/** 子代理独立卡片 */
+const SubAgentCard: React.FC<{ card: SubAgentCardType }> = ({ card }) => {
+  const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+    spawning: { icon: <LoadingOutlined spin />, color: '#faad14', label: '创建中' },
+    running: { icon: <LoadingOutlined spin />, color: '#1890ff', label: '运行中' },
+    completed: { icon: <CheckCircleOutlined />, color: '#52c41a', label: '已完成' },
+    failed: { icon: <CloseCircleOutlined />, color: '#ff4d4f', label: '失败' },
+  };
+  const sc = statusConfig[card.status] || statusConfig.spawning;
+  return (
+    <div style={{
+      margin: '12px 16px 12px 48px',
+      padding: 12,
+      borderRadius: 10,
+      border: '1px solid var(--ant-color-border-secondary, #e8e8e8)',
+      borderLeft: `4px solid ${sc.color}`,
+      background: 'var(--ant-color-bg-elevated, #fafafa)',
+      fontSize: 13,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <RobotOutlined style={{ color: sc.color }} />
+        <Text strong style={{ color: sc.color }}>子代理</Text>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          {card.subSessionId?.slice(-12) || '?'}
+        </Text>
+        <span style={{ color: sc.color }}>{sc.icon}</span>
+        <Text type="secondary" style={{ fontSize: 12 }}>{sc.label}</Text>
+      </div>
+      {card.taskSummary && (
+        <Text type="secondary" style={{ fontSize: 12 }}>任务：{card.taskSummary}</Text>
+      )}
+      {card.output && (
+        <div style={{
+          marginTop: 8, padding: '8px 12px',
+          background: 'var(--ant-color-bg-container, #fff)',
+          borderRadius: 6, border: '1px solid var(--ant-color-border-secondary, #e8e8e8)',
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          maxHeight: 200, overflowY: 'auto',
+          fontSize: 12, lineHeight: 1.6,
+          color: 'var(--ant-color-text, #333)',
+        }}>
+          {card.output}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MessageList: React.FC<MessageListProps> = ({
   turns, agentId, selectedAgent, error, historyLoading, loadingMore, hasMoreMessages,
   onClearError, onLoadMore, formatTime, getStepTone, onDeleteTurn, onToggleReasoning, onContextMenu,
   onRerunTurn, onPinTurn,
-  messageListRef, listEndRef,
+  messageListRef, listEndRef, subAgentCards,
 }) => {
   const { styles } = useChatStyles();
   const [unreadCount, setUnreadCount] = useState(0);
@@ -214,6 +263,10 @@ const MessageList: React.FC<MessageListProps> = ({
           ? <div key={turn.turnId} data-turn-last="true">{groupElem}</div>
           : groupElem;
       })}
+      {/* 子代理卡片 */}
+      {subAgentCards && Object.values(subAgentCards).map(card => (
+        <SubAgentCard key={card.turnId} card={card} />
+      ))}
       {error && (
         <Alert type="error" message={error} closable onClose={onClearError} className={styles.errorAlert} />
       )}

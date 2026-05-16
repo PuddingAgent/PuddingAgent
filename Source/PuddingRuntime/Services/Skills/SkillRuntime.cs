@@ -38,15 +38,51 @@ public sealed partial class SkillRuntime
         _logger  = logger;
     }
 
-    /// <summary>返回满足能力策略的可用 Skill 列表。</summary>
+    /// <summary>
+    /// 返回满足能力策略的可用 Skill 列表。
+    /// V2 两级权限：
+    ///   · Low (auto)     — 始终可用，不依赖 policy
+    ///   · Medium         — 需在 policy.DefaultToolNames 中（默认授权）
+    ///   · High           — 需在 policy.RequiresGrantToolNames 中（显式授权）
+    /// V1 兼容：AllowedToolNames 不为空时作为全局白名单。
+    /// </summary>
     public IReadOnlyList<IAgentSkill> GetAvailableSkills(CapabilityPolicy? policy, AgentTemplateDefinition? template = null)
     {
-        var skills = _skills.Values
-            .Where(s => !s.RequiresShellExecution || (policy?.AllowShellExecution == true));
+        var skills = _skills.Values;
 
-        // 如果 template 有 AllowedSkillIds，则只返回白名单中的技能
+        // Template 级别的 SkillId 白名单（最高优先级）
         if (template?.AllowedSkillIds?.Count > 0)
             skills = skills.Where(s => template.AllowedSkillIds.Contains(s.SkillId, StringComparer.OrdinalIgnoreCase));
+
+        // Low 权限工具始终可用（子代理、只读等）
+        var lowSkills = skills.Where(s => s.PermissionLevel == ToolPermissionLevel.Low).ToList();
+
+        // V1 兼容：AllowedToolNames 为全局白名单 — 但 Low 权限绕过
+        if (policy?.AllowedToolNames.Count > 0)
+        {
+            var whiteSet = new HashSet<string>(policy.AllowedToolNames, StringComparer.OrdinalIgnoreCase);
+            var filtered = skills.Where(s =>
+                whiteSet.Contains(s.SkillId) || s.PermissionLevel == ToolPermissionLevel.Low);
+            return filtered.ToList();
+        }
+
+        // V2 两级权限：根据 PermissionLevel 分级
+        var effectiveSet = policy?.GetAllEffectiveToolNames()
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        skills = skills.Where(s =>
+        {
+            // Low: 始终可用
+            if (s.PermissionLevel == ToolPermissionLevel.Low)
+                return true;
+
+            // High: 需要在 RequiresGrantToolNames 中
+            if (s.PermissionLevel == ToolPermissionLevel.High)
+                return policy?.RequiresGrantToolNames.Contains(s.SkillId, StringComparer.OrdinalIgnoreCase) == true;
+
+            // Medium (default): 需要在 effective set 中
+            return effectiveSet.Contains(s.SkillId);
+        });
 
         return skills.ToList();
     }

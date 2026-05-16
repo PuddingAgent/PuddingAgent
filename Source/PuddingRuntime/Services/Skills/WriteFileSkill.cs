@@ -31,7 +31,7 @@ public sealed class WriteFileSkill : ContainerSkillBase
         "Create or overwrite a file in the agent's isolated container filesystem. " +
         "Provide 'path' (file path) and 'content' (text to write) as arguments.";
     public override bool RequiresShellExecution => true;
-    public override ToolPermissionLevel PermissionLevel => ToolPermissionLevel.Medium;
+    public override ToolPermissionLevel PermissionLevel => ToolPermissionLevel.High;
 
     public override async Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default)
     {

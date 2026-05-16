@@ -210,6 +210,9 @@ public class EventDispatcher : BackgroundService
                 _ => EventPriorityLevel.Normal,
             },
             Source = new EventSource { SourceType = qe.SourceType ?? "unknown", SourceId = qe.SourceId },
+            SessionId = qe.SessionId,
+            WorkspaceId = qe.WorkspaceId ?? "default",
+            AgentId = qe.AgentId,
             Payload = payload,
             Timestamp = qe.CreatedAt,
         };

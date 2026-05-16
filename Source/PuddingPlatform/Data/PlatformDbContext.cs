@@ -33,6 +33,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // 聊天消息持久化
     public DbSet<ChatMessageEntity> ChatMessages => Set<ChatMessageEntity>();
 
+    // 会话事件日志（ADR-016）
+    public DbSet<SessionEventLogEntity> SessionEventLogs => Set<SessionEventLogEntity>();
+
+    // 子代理状态追踪（ADR-016）
+    public DbSet<SessionSubAgentEntity> SessionSubAgents => Set<SessionSubAgentEntity>();
+
     // KeyVault 密钥保管箱
     public DbSet<KeyVaultEntity> KeyVaults => Set<KeyVaultEntity>();
 
@@ -223,6 +229,23 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         {
             e.HasIndex(m => m.SessionId);
             e.HasIndex(m => new { m.SessionId, m.CreatedAt });
+        });
+
+        // ── SessionEventLog (ADR-016) ─────────────────────────
+        modelBuilder.Entity<SessionEventLogEntity>(e =>
+        {
+            e.ToTable("session_event_log");
+            e.HasIndex(e => new { e.SessionId, e.SequenceNum }).IsUnique();
+            e.HasIndex(e => new { e.WorkspaceId, e.RecordedAt });
+            e.Property(e => e.Data).HasColumnType("TEXT");
+        });
+
+        // ── SessionSubAgent (ADR-016) ─────────────────────────
+        modelBuilder.Entity<SessionSubAgentEntity>(e =>
+        {
+            e.ToTable("session_sub_agents");
+            e.HasIndex(e => e.SubSessionId).IsUnique();
+            e.HasIndex(e => new { e.ParentSessionId, e.Status });
         });
 
         // ── KeyVault ──────────────────────────────────────────

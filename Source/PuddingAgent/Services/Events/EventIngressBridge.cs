@@ -61,6 +61,7 @@ public class EventIngressBridge : IHostedService
                 Source = evt.Source,
                 WorkspaceId = evt.WorkspaceId,
                 AgentId = evt.AgentId,
+                SessionId = evt.SessionId,
                 Payload = evt.Payload,
                 Timestamp = evt.Timestamp,
                 Metadata = evt.Metadata,

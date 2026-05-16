@@ -277,6 +277,7 @@ public sealed class SystemPromptBuilder
             sb.AppendLine("Respond directly to the user in Markdown.");
             sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
             sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
+            sb.AppendLine("For short inline values like paths, filenames, commands, or variable names, use inline `backticks` instead of fenced code blocks.");
             if (capability?.AllowedToolNames is { Count: > 0 })
                 sb.AppendLine("If a task requires tools, explain the limitation briefly instead of emitting tool-call JSON.");
         }

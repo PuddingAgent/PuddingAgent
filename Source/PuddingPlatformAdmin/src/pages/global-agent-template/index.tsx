@@ -12,6 +12,7 @@ import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import {
   Button,
   Card,
+  Checkbox,
   Col,
   Drawer,
   Form,
@@ -20,6 +21,7 @@ import {
   Row,
   Space,
   Tag,
+  Transfer,
   Badge,
   Typography,
   message,
@@ -35,7 +37,7 @@ import {
   TableOutlined,
   RobotOutlined,
 } from '@ant-design/icons';
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   listGlobalAgentTemplates,
   createGlobalAgentTemplate,
@@ -95,12 +97,41 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
   const [skillPackages, setSkillPackages] = useState<SkillPackageDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [data, setData] = useState<GlobalAgentTemplateDto[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Transfer 组件目标 keys（高权限能力 + SKILL 包）
+  const [grantTargetKeys, setGrantTargetKeys] = useState<string[]>([]);
+  const [skillTargetKeys, setSkillTargetKeys] = useState<string[]>([]);
+
+  // 默认能力 ID 列表（始终预设，不展示在 Transfer 中）
+  const defaultCapIds = React.useMemo(
+    () => capabilities.filter((c) => !c.requiresShellExecution && !c.requiresFileWrite).map((c) => c.capabilityId),
+    [capabilities],
+  );
+
+  // 高权限能力 ID 列表
+  const grantCapabilities = React.useMemo(
+    () => capabilities.filter((c) => c.requiresShellExecution || c.requiresFileWrite),
+    [capabilities],
+  );
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await listGlobalAgentTemplates();
+      setData(result);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     listLlmProviders().then(setProviders).catch(() => {});
     listCapabilities(true).then(setCapabilities).catch(() => {});
     listSkillPackages(true).then(setSkillPackages).catch(() => {});
-  }, []);
+    fetchData();
+  }, [fetchData]);
 
   const handleProviderChange = async (providerId: string) => {
     form.setFieldValue('preferredModelId', undefined);
@@ -120,6 +151,8 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const openCreate = () => {
     setEditItem(null);
     form.resetFields();
+    setGrantTargetKeys([]);
+    setSkillTargetKeys([]);
     form.setFieldsValue({
       role: 'Service',
       isEnabled: true,
@@ -129,7 +162,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
       maxToolCallsTotal: 100,
       maxContextTokens: 8192,
       maxReplyTokens: 2048,
-      selectedCapabilityIds: [],
+      selectedCapabilityIds: defaultCapIds,
       selectedSkillPackageIds: [],
     });
     setModels([]);
@@ -145,6 +178,12 @@ const GlobalAgentTemplatePage: React.FC = () => {
       setModels([]);
     }
     form.setFieldsValue(item);
+    // 同步 Transfer 组件 — 从 selectedCapabilityIds 中提取高权限部分
+    const grantIds = (item.selectedCapabilityIds ?? []).filter((id) =>
+      grantCapabilities.some((gc) => gc.capabilityId === id),
+    );
+    setGrantTargetKeys(grantIds);
+    setSkillTargetKeys(item.selectedSkillPackageIds ?? []);
     setFormDrawer(true);
   };
 
@@ -159,12 +198,14 @@ const GlobalAgentTemplatePage: React.FC = () => {
     }
     setFormDrawer(false);
     tableRef.current?.reload();
+    fetchData();
   };
 
   const handleDelete = async (templateId: string) => {
     await deleteGlobalAgentTemplate(templateId);
     message.success('模板已删除');
     tableRef.current?.reload();
+    fetchData();
   };
 
   const columns: ProColumns<GlobalAgentTemplateDto>[] = [
@@ -292,96 +333,82 @@ const GlobalAgentTemplatePage: React.FC = () => {
   // 卡片视图：角色名、模型、记忆模式（颜色Tag）、工具能力数、风险级别
   // 卡片左边线用角色颜色
   const renderCards = () => (
-    <ProTable<GlobalAgentTemplateDto>
-      actionRef={tableRef}
-      rowKey="id"
-      columns={[]}
-      request={async () => {
-        const data = await listGlobalAgentTemplates();
-        return { data, success: true };
-      }}
-      search={false}
-      toolBarRender={() => [
-        <Radio.Group
-          key="viewToggle"
-          value={viewMode}
-          onChange={(e) => setViewMode(e.target.value)}
-          optionType="button"
-          buttonStyle="solid"
-          size="small"
-          style={{ marginRight: 8 }}
-        >
-          <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
-          <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
-        </Radio.Group>,
-        <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          创建模板
-        </Button>,
-      ]}
-      tableRender={(_, tableProps) => {
-        const items = (tableProps?.dataSource ?? []) as GlobalAgentTemplateDto[];
+    <Row gutter={[16, 16]} style={{ padding: '0 0 16px' }}>
+      {data.map((item) => {
+        const roleColor = roleColorMap[item.role] ?? 'default';
+        const capCount = item.selectedCapabilityIds?.length ?? 0;
+        const skillCount = item.selectedSkillPackageIds?.length ?? 0;
+        const memMode = item.memorySearchMode || 'deep';
+        const memColor = memoryModeColorMap[memMode] || 'default';
+        const memLabel = memoryModeLabelMap[memMode] || memMode;
         return (
-          <Row gutter={[16, 16]} style={{ padding: '0 0 16px' }}>
-            {items.map((item) => {
-              const roleColor = roleColorMap[item.role] ?? 'default';
-              const capCount = item.selectedCapabilityIds?.length ?? 0;
-              const skillCount = item.selectedSkillPackageIds?.length ?? 0;
-              const memMode = item.memorySearchMode || 'deep';
-              const memColor = memoryModeColorMap[memMode] || 'default';
-              const memLabel = memoryModeLabelMap[memMode] || memMode;
-              return (
-                <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
-                  <Card
-                    hoverable
-                    size="small"
-                    style={{
-                      borderRadius: 14,
-                      borderLeft: `4px solid ${roleColor === 'blue' ? '#3b82f6' : roleColor === 'green' ? '#22c55e' : roleColor === 'orange' ? '#f97316' : '#7c3aed'}`,
-                      background: 'rgba(250,250,247,0.78)',
-                      backdropFilter: 'blur(8px)',
-                      boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
-                    }}
-                    bodyStyle={{ padding: '16px' }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                      <Space>
-                        <Text style={{ fontSize: 18 }}>{item.avatarEmoji || '🤖'}</Text>
-                        <Text strong style={{ fontSize: 15 }}>{item.name}</Text>
-                        {item.isBuiltIn && <Tag color="gold" icon={<LockOutlined />} style={{ fontSize: 10 }}>内置</Tag>}
-                      </Space>
-                      <Tag color={roleColor}>{item.role}</Tag>
-                    </div>
+          <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
+            <Card
+              hoverable
+              size="small"
+              style={{
+                borderRadius: 14,
+                borderLeft: `4px solid ${roleColor === 'blue' ? '#3b82f6' : roleColor === 'green' ? '#22c55e' : roleColor === 'orange' ? '#f97316' : '#7c3aed'}`,
+                background: 'rgba(250,250,247,0.78)',
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
+              }}
+              bodyStyle={{ padding: '16px' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <Space>
+                  <Text style={{ fontSize: 18 }}>{item.avatarEmoji || '🤖'}</Text>
+                  <Text strong style={{ fontSize: 15 }}>{item.name}</Text>
+                  {item.isBuiltIn && <Tag color="gold" icon={<LockOutlined />} style={{ fontSize: 10 }}>内置</Tag>}
+                </Space>
+                <Tag color={roleColor}>{item.role}</Tag>
+              </div>
 
-                    <Space size={4} wrap style={{ marginBottom: 8 }}>
-                      {item.preferredModelId ? (
-                        <Tag color="geekblue" style={{ fontSize: 11 }}>{item.preferredModelId}</Tag>
-                      ) : (
-                        <Tag style={{ fontSize: 11 }}>平台默认</Tag>
-                      )}
-                      <Tag color={memColor} style={{ fontSize: 11 }}>记忆: {memLabel}</Tag>
-                      <Tag style={{ fontSize: 11 }}>{capCount} 工具</Tag>
-                      <Tag style={{ fontSize: 11 }}>{skillCount} SKILL</Tag>
-                      <Tag style={{ fontSize: 11 }}>{(item.maxContextTokens / 1000).toFixed(0)}K</Tag>
-                    </Space>
+              <Space size={4} wrap style={{ marginBottom: 8 }}>
+                {item.preferredModelId ? (
+                  <Tag color="geekblue" style={{ fontSize: 11 }}>{item.preferredModelId}</Tag>
+                ) : (
+                  <Tag style={{ fontSize: 11 }}>平台默认</Tag>
+                )}
+                <Tag color={memColor} style={{ fontSize: 11 }}>记忆: {memLabel}</Tag>
+                <Tag style={{ fontSize: 11 }}>{capCount} 工具</Tag>
+                <Tag style={{ fontSize: 11 }}>{skillCount} SKILL</Tag>
+                <Tag style={{ fontSize: 11 }}>{(item.maxContextTokens / 1000).toFixed(0)}K</Tag>
+              </Space>
 
-                    <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10, display: 'flex', gap: 4 }}>
-                      <Badge status={item.isEnabled ? 'processing' : 'default'} text={item.isEnabled ? '启用' : '停用'} />
-                      <div style={{ flex: 1 }} />
-                      <Button size="small" icon={<EditOutlined />} type="text" onClick={() => openEdit(item)} />
-                      {!item.isBuiltIn && (
-                        <Popconfirm title="确认删除该模板？" onConfirm={() => handleDelete(item.templateId)}>
-                          <Button size="small" danger icon={<DeleteOutlined />} type="text" />
-                        </Popconfirm>
-                      )}
-                    </div>
-                  </Card>
-                </Col>
-              );
-            })}
-          </Row>
+              <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10, display: 'flex', gap: 4 }}>
+                <Badge status={item.isEnabled ? 'processing' : 'default'} text={item.isEnabled ? '启用' : '停用'} />
+                <div style={{ flex: 1 }} />
+                <Button size="small" icon={<EditOutlined />} type="text" onClick={() => openEdit(item)} />
+                {!item.isBuiltIn && (
+                  <Popconfirm title="确认删除该模板？" onConfirm={() => handleDelete(item.templateId)}>
+                    <Button size="small" danger icon={<DeleteOutlined />} type="text" />
+                  </Popconfirm>
+                )}
+              </div>
+            </Card>
+          </Col>
         );
-      }}
-    />
+      })}
+    </Row>
+  );
+
+  const toolbar = (
+    <Space>
+      <Radio.Group
+        value={viewMode}
+        onChange={(e) => setViewMode(e.target.value)}
+        optionType="button"
+        buttonStyle="solid"
+        size="small"
+      >
+        <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
+        <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
+      </Radio.Group>
+      <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+        创建模板
+      </Button>
+    </Space>
   );
 
   return (
@@ -389,7 +416,12 @@ const GlobalAgentTemplatePage: React.FC = () => {
       title="全局 Agent 模板"
       subTitle="配置系统内置的 Agent 提示词与首选模型"
     >
-      {viewMode === 'card' ? renderCards() : (
+      {viewMode === 'card' ? (
+        <>
+          <div style={{ marginBottom: 16 }}>{toolbar}</div>
+          {loading ? <div style={{ textAlign: 'center', padding: 40 }}>加载中...</div> : renderCards()}
+        </>
+      ) : (
         <ProTable<GlobalAgentTemplateDto>
           actionRef={tableRef}
           rowKey="id"
@@ -450,21 +482,96 @@ const GlobalAgentTemplatePage: React.FC = () => {
           <ProFormSelect name="role" label="角色类型" options={ROLES} rules={[{ required: true }]} />
           <ProFormTextArea name="description" label="描述" rows={2} />
 
-          <ProFormSelect
-            name="selectedCapabilityIds"
-            label="能力选择（多选）"
-            mode="multiple"
-            options={capabilities.map((c) => ({ label: `${c.name} (${c.toolName})`, value: c.capabilityId }))}
-            placeholder="选择能力后，Runtime 会在上下文注入对应工具"
-          />
+          {/* ── 默认能力（预设勾选，只读展示）── */}
+          <Form.Item label="默认能力" help="始终可用，无需授权（只读、记忆、子代理等）">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {capabilities
+                .filter((c) => !c.requiresShellExecution && !c.requiresFileWrite)
+                .map((c) => (
+                  <Tag key={c.capabilityId} color="green" style={{ fontSize: 11, opacity: 0.85 }}>
+                    {c.name}
+                  </Tag>
+                ))}
+            </div>
+          </Form.Item>
 
-          <ProFormSelect
-            name="selectedSkillPackageIds"
-            label="SKILL 包选择（多选）"
-            mode="multiple"
-            options={skillPackages.map((s) => ({ label: `${s.name} v${s.version}`, value: s.skillPackageId }))}
-            placeholder="选择 SKILL 后，Runtime 会下载并挂载到容器内"
-          />
+          {/* ── 高权限能力（Transfer 穿梭框 + 搜索）── */}
+          <Form.Item
+            label="高权限能力"
+            help="需要显式授权：Shell 执行、文件写入、Python 等（右侧为已授权）"
+          >
+            <Transfer
+              dataSource={grantCapabilities.map((c) => ({
+                key: c.capabilityId,
+                title: c.name,
+                description: c.toolName,
+              }))}
+              titles={['可选', '已授权']}
+              targetKeys={grantTargetKeys}
+              onChange={(nextKeys) => {
+                setGrantTargetKeys(nextKeys as string[]);
+                // 合并默认能力 + 高权限能力 → selectedCapabilityIds
+                const merged = [...defaultCapIds, ...(nextKeys as string[])];
+                form.setFieldsValue({ selectedCapabilityIds: merged });
+              }}
+              showSearch
+              filterOption={(inputValue, item) =>
+                item.title.toLowerCase().includes(inputValue.toLowerCase()) ||
+                (item.description ?? '').toLowerCase().includes(inputValue.toLowerCase())
+              }
+              render={(item) => (
+                <span>
+                  {item.title}
+                  <span style={{ fontSize: 10, color: '#888', marginLeft: 6 }}>{item.description}</span>
+                </span>
+              )}
+              listStyle={{ width: 240, height: 280 }}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+
+          {/* ── SKILL 包选择（Transfer + 搜索）── */}
+          <Form.Item label="SKILL 包选择" help="选择 Agent 可用的 Skill 包（右侧为已选）">
+            <Transfer
+              dataSource={skillPackages.map((s) => ({
+                key: s.skillPackageId,
+                title: s.name,
+                description: `v${s.version}`,
+              }))}
+              titles={['可选', '已选']}
+              targetKeys={skillTargetKeys}
+              onChange={(nextKeys) => {
+                setSkillTargetKeys(nextKeys as string[]);
+                form.setFieldsValue({ selectedSkillPackageIds: nextKeys as string[] });
+              }}
+              showSearch
+              filterOption={(inputValue, item) =>
+                item.title.toLowerCase().includes(inputValue.toLowerCase()) ||
+                (item.description ?? '').toLowerCase().includes(inputValue.toLowerCase())
+              }
+              render={(item) => (
+                <span>
+                  {item.title}
+                  <Tag style={{ fontSize: 10, marginLeft: 4 }}>v{item.description}</Tag>
+                </span>
+              )}
+              listStyle={{ width: 240, height: 240 }}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+
+          {/* ── SKILL 包选择 ── */}
+          <Form.Item label="SKILL 包选择（多选）">
+            <Form.Item name="selectedSkillPackageIds" noStyle>
+              <Checkbox.Group style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+                {skillPackages.map((s) => (
+                  <Checkbox key={s.skillPackageId} value={s.skillPackageId} style={{ marginRight: 0, fontSize: 12 }}>
+                    {s.name} <Tag style={{ fontSize: 10, marginLeft: 4 }}>v{s.version}</Tag>
+                  </Checkbox>
+                ))}
+              </Checkbox.Group>
+            </Form.Item>
+          </Form.Item>
 
           <ProFormTextArea
             name="systemPrompt"

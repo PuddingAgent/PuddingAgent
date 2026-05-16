@@ -61,7 +61,33 @@ public sealed record CapabilityPolicy
     public bool AllowShellExecution { get; init; }
     public bool AllowFileWrite { get; init; }
     public bool AllowNetworkAccess { get; init; }
+
+    /// <summary>
+    /// [V1 遗留] 全局白名单 — 若不为空，只允许此列表中的工具执行。
+    /// V2 中由 DefaultToolNames + RequiresGrantToolNames 联合决定。
+    /// SkillRuntime 读取时优先使用新字段。
+    /// </summary>
     public IReadOnlyList<string> AllowedToolNames { get; init; } = [];
+
+    /// <summary>
+    /// V2: 默认工具 — 始终可用（只读、记忆、子代理等低风险能力）。
+    /// 在管理界面"默认能力"区域展示。
+    /// </summary>
+    public IReadOnlyList<string> DefaultToolNames { get; init; } = [];
+
+    /// <summary>
+    /// V2: 需要显式授权的高权限工具（Shell、文件写入、Python 等）。
+    /// Agent 不可自动获取，需在模板配置中显式勾选。
+    /// 在管理界面"高权限能力"区域展示。
+    /// </summary>
+    public IReadOnlyList<string> RequiresGrantToolNames { get; init; } = [];
+
+    /// <summary>
+    /// V2 便利方法：合并两列表得出全部可用工具名。
+    /// </summary>
+    public HashSet<string> GetAllEffectiveToolNames() =>
+        DefaultToolNames.Concat(RequiresGrantToolNames)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>Agent 运行画像。</summary>

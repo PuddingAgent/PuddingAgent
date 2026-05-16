@@ -142,6 +142,7 @@ const ChatPage: React.FC = () => {
           onPinTurn={handlePinTurn}
           messageListRef={chat.messageListRef}
           listEndRef={chat.listEndRef}
+          subAgentCards={chat.subAgentCards}
         />
 
         <Modal

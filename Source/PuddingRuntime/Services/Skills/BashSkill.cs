@@ -28,7 +28,7 @@ public sealed class BashSkill : ContainerSkillBase
         "Execute a bash shell command inside the agent's isolated Docker container. " +
         "Returns stdout and stderr. Use for file operations, code execution, data processing, etc.";
     public override bool RequiresShellExecution => true;
-    public override ToolPermissionLevel PermissionLevel => ToolPermissionLevel.Medium;
+    public override ToolPermissionLevel PermissionLevel => ToolPermissionLevel.High;
 
     public override async Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default)
     {

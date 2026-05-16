@@ -332,6 +332,176 @@ namespace PuddingPlatform.Migrations
                             ToolName = "http_fetch",
                             ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"The full HTTP/HTTPS URL to request\"},\"method\":{\"type\":\"string\",\"description\":\"HTTP method: GET or POST (default: GET)\"},\"body\":{\"type\":\"string\",\"description\":\"Request body for POST requests (optional)\"}},\"required\":[\"url\"]}",
                             UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CapabilityId = "cap-spawn-sub-agent",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "派生子代理执行独立任务。子代理拥有独立上下文窗口。",
+                            IsEnabled = true,
+                            Name = "派生子代理",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 60,
+                            ToolDescription = "Spawn a sub-agent to execute a task independently with its own context window.",
+                            ToolName = "spawn_sub_agent",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"task\":{\"type\":\"string\",\"description\":\"子代理要执行的任务描述\"},\"agent_template\":{\"type\":\"string\",\"description\":\"Agent 模板ID\"},\"sync\":{\"type\":\"boolean\",\"description\":\"同步等待(默认)或异步执行\"}},\"required\":[\"task\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CapabilityId = "cap-memory-library",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "查询记忆图书馆，召回与当前上下文相关的记忆片段。",
+                            IsEnabled = true,
+                            Name = "记忆图书馆",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 70,
+                            ToolDescription = "Query the memory library to recall relevant past context.",
+                            ToolName = "memory_library",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"自然语言查询\"},\"book\":{\"type\":\"string\",\"description\":\"可选：限定记忆本名称\"}},\"required\":[\"query\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CapabilityId = "cap-save-memory",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "将当前对话中的重要信息保存到记忆图书馆供未来召回。",
+                            IsEnabled = true,
+                            Name = "保存记忆",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 80,
+                            ToolDescription = "Save important information from the current conversation to the memory library.",
+                            ToolName = "save_memory",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"memory_content\":{\"type\":\"string\",\"description\":\"要保存的记忆内容\"},\"memory_type\":{\"type\":\"string\",\"description\":\"记忆类型：short / long\"}},\"required\":[\"memory_content\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 9,
+                            CapabilityId = "cap-manage-memory",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "管理记忆条目：浏览、搜索、标记重要度、清理过期记忆。",
+                            IsEnabled = true,
+                            Name = "记忆管理",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 85,
+                            ToolDescription = "Manage memory entries: browse, search, mark importance, clean stale memories.",
+                            ToolName = "manage_memory",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"操作: list/search/mark/clean\"},\"keyword\":{\"type\":\"string\",\"description\":\"搜索或标记关键词\"}},\"required\":[\"action\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 10,
+                            CapabilityId = "cap-grep-memory",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "全文搜索记忆库，快速定位包含关键词的记忆条目。",
+                            IsEnabled = true,
+                            Name = "记忆搜索",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 90,
+                            ToolDescription = "Full-text search the memory store for entries containing specific keywords.",
+                            ToolName = "grep_memory",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"keyword\":{\"type\":\"string\",\"description\":\"搜索关键词\"}},\"required\":[\"keyword\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 11,
+                            CapabilityId = "cap-query-sessions",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "查询历史会话的完整对话记录。支持分页和时间游标。",
+                            IsEnabled = true,
+                            Name = "查询会话记录",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 95,
+                            ToolDescription = "Query complete conversation records from historical sessions with pagination.",
+                            ToolName = "query_sessions",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"description\":\"messages 或 recent\"},\"session_id\":{\"type\":\"string\"},\"limit\":{\"type\":\"number\"}},\"required\":[\"action\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 12,
+                            CapabilityId = "cap-search-files",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "在沙箱容器文件系统中按名称或内容搜索文件。",
+                            IsEnabled = true,
+                            Name = "文件搜索",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 100,
+                            ToolDescription = "Search for files by name or content within the sandbox container filesystem.",
+                            ToolName = "search_files",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"pattern\":{\"type\":\"string\",\"description\":\"文件名或内容模式\"},\"path\":{\"type\":\"string\",\"description\":\"搜索起始目录\"}},\"required\":[\"pattern\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 13,
+                            CapabilityId = "cap-search-codebase",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "在代码库中语义搜索相关代码片段、函数和类定义。",
+                            IsEnabled = true,
+                            Name = "代码库搜索",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 105,
+                            ToolDescription = "Semantically search the codebase for relevant code snippets, functions, and class definitions.",
+                            ToolName = "search_codebase",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"代码语义搜索查询\"},\"language\":{\"type\":\"string\"}},\"required\":[\"query\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 14,
+                            CapabilityId = "cap-task-manager",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "管理 Agent 内部任务列表：创建、更新状态、列出、删除。",
+                            IsEnabled = true,
+                            Name = "任务管理",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 110,
+                            ToolDescription = "Manage the agent's internal task list: create, update status, list, delete.",
+                            ToolName = "manage_tasks",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"description\":\"操作: create/update_status/list/delete\"},\"title\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"required\":[\"operation\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        },
+                        new
+                        {
+                            Id = 15,
+                            CapabilityId = "cap-event-subscribe",
+                            CreatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Description = "管理 Agent 事件订阅：订阅/取消订阅事件类型，列出当前订阅。",
+                            IsEnabled = true,
+                            Name = "事件订阅管理",
+                            RequiresFileWrite = false,
+                            RequiresNetworkAccess = false,
+                            RequiresShellExecution = false,
+                            SortOrder = 115,
+                            ToolDescription = "Manage agent event subscriptions: subscribe/unsubscribe event types, list active subscriptions.",
+                            ToolName = "event_subscribe",
+                            ToolParametersJson = "{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"description\":\"subscribe/unsubscribe/list\"},\"event_types\":{\"type\":\"string\",\"description\":\"逗号分隔的事件类型\"}},\"required\":[\"operation\"]}",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         });
                 });
 

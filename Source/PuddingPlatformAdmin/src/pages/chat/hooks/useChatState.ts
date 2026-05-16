@@ -22,7 +22,7 @@ import {
   type WorkspaceAgentDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup } from '../types';
+import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup, SubAgentCardMap, SubAgentCard } from '../types';
 import { assistantStatusLabel } from '../types';
 
 const MESSAGE_PAGE_SIZE = 20;
@@ -52,6 +52,16 @@ export const groupSessions = (raw: { sessionId: string; title: string; timestamp
     label, items: groups[label]!.sort((a,b) => b.timestamp - a.timestamp),
   }));
 };
+
+/** 从 subagent.* 事件的 data 字段中提取 delta 文本 */
+function tryExtractDelta(ev: { data?: string; delta?: string }): string | null {
+  if (ev.delta) return ev.delta;
+  if (ev.data) {
+    try { const d = JSON.parse(ev.data); return d?.delta ?? null; }
+    catch { return null; }
+  }
+  return null;
+}
 
 const createId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -128,6 +138,8 @@ export interface UseChatStateReturn {
   error: string | null;
   setError: (v: string | null) => void;
   latestUsage: TokenUsageDto | undefined;
+  // sub-agent
+  subAgentCards: SubAgentCardMap;
   // token
   tLimit: number;
   tUsed: number;
@@ -188,6 +200,7 @@ export function useChatState(): UseChatStateReturn {
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [subAgentCards, setSubAgentCards] = useState<SubAgentCardMap>({});
   const [historyLoading, setHistoryLoading] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [oldestMessageCursor, setOldestMessageCursor] = useState<number | null>(null);
@@ -302,6 +315,58 @@ export function useChatState(): UseChatStateReturn {
             }],
           },
         };
+      }
+      // 子代理流式事件：写入独立 SubAgentCard，不再合并到父代理 timeline
+      if (ev.type.startsWith('subagent.')) {
+        const mappedType = ev.type.substring('subagent.'.length);
+        const saData = ev as any;
+        const subAgentId = saData.sub_agent_id || saData.id || 'sub';
+        if (!subAgentId || subAgentId === 'sub') return turn;
+        const cardId = `sa-${subAgentId}`;
+
+        // 子代理 delta → 追加到独立卡片 output
+        if (mappedType === 'delta') {
+          const innerText = tryExtractDelta(saData);
+          if (!innerText) return turn;
+          setSubAgentCards(prev => {
+            const existing = prev[cardId];
+            if (existing) {
+              return { ...prev, [cardId]: { ...existing, output: (existing.output ?? '') + innerText } };
+            }
+            return { ...prev, [cardId]: {
+              turnId: cardId, subSessionId: subAgentId,
+              taskSummary: saData.template || '子代理', status: 'running',
+              spawnedAt: Date.now(), output: innerText,
+            }};
+          });
+          return turn;
+        }
+        // 子代理 spawned → 创建卡片
+        if (mappedType === 'spawned') {
+          setSubAgentCards(prev => ({
+            ...prev, [cardId]: {
+              turnId: cardId, subSessionId: subAgentId,
+              templateId: saData.template, modelId: saData.model,
+              taskSummary: '处理中...',
+              status: 'running', spawnedAt: Date.now(),
+            },
+          }));
+          return turn;
+        }
+        // 子代理 completed → 更新卡片
+        if (mappedType === 'completed') {
+          setSubAgentCards(prev => {
+            const existing = prev[cardId];
+            if (!existing) return prev;
+            return { ...prev, [cardId]: {
+              ...existing, status: saData.success ? 'completed' : 'failed',
+              completedAt: Date.now(), success: !!saData.success,
+              output: existing.output || saData.result_summary || '',
+            }};
+          });
+          return turn;
+        }
+        return turn;
       }
       if (ev.type === 'step') {
         const status = String(ev.status || 'executing');
@@ -660,6 +725,13 @@ export function useChatState(): UseChatStateReturn {
           const ttfm = (performance.now() - perfStart).toFixed(0);
           console.log(`[Perf] Time to first metadata: ${ttfm}ms`);
         }
+        // ── 诊断日志：SSE 事件接收 ──
+        if (ev.type === 'done') {
+          console.log(`[Chat:SSE] Received DONE frame, keeping connection alive for async events`);
+        }
+        if (ev.type === 'subagent.spawned' || ev.type === 'subagent.completed') {
+          console.log(`[Chat:SSE] SubAgent event: ${ev.type}`, (ev as any).sub_agent_id, (ev as any).success);
+        }
         if (ev.type === 'delta' || ev.type === 'thinking' || ev.type === 'tool_call') {
           if (!perfStart) { /* first content token */ }
         }
@@ -791,6 +863,7 @@ export function useChatState(): UseChatStateReturn {
     turns, historyLoading, hasMoreMessages, loadingMore,
     inputValue, setInputValue, loading, error, setError,
     latestUsage, tLimit, tUsed, tPct,
+    subAgentCards,
     createSceneOpen, setCreateSceneOpen, createSceneLoading, createSceneForm,
     renameModalOpen, setRenameModalOpen, renameTitle, setRenameTitle, renameSessionId,
     handleSelectSession, handleDeleteSession, handleArchiveSession,

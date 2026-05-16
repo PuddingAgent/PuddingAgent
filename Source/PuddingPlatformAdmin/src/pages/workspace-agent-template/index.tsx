@@ -11,6 +11,8 @@ import {
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import {
   Button,
+  Card,
+  Checkbox,
   Drawer,
   Divider,
   Form,
@@ -358,13 +360,48 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
           <ProFormSelect name="role" label="角色类型" options={ROLES} rules={[{ required: true }]} />
           <ProFormTextArea name="description" label="描述" rows={2} />
 
-          <ProFormSelect
-            name="selectedCapabilityIds"
-            label="能力选择（多选）"
-            mode="multiple"
-            options={capabilities.map((c) => ({ label: `${c.name} (${c.toolName})`, value: c.capabilityId }))}
-            placeholder="选择能力后，Runtime 会在上下文注入对应工具"
-          />
+          {/* ── 能力选择（两区：默认能力 / 高权限能力）── */}
+          <Form.Item
+            label="能力选择"
+            help="默认能力始终可用；高权限能力需显式勾选授权（Shell、文件写入、Python 等）"
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <Card
+                size="small"
+                title={<span style={{ fontSize: 12, color: '#22c55e' }}>🟢 默认能力（只读、记忆、子代理）</span>}
+                styles={{ body: { padding: '8px 12px', background: 'rgba(34,197,94,0.03)' } }}
+              >
+                <Form.Item name="selectedCapabilityIds" noStyle>
+                  <Checkbox.Group style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px' }}>
+                    {capabilities
+                      .filter((c) => !c.requiresShellExecution && !c.requiresFileWrite)
+                      .map((c) => (
+                        <Checkbox key={c.capabilityId} value={c.capabilityId} style={{ marginRight: 0, fontSize: 12 }}>
+                          {c.name}
+                        </Checkbox>
+                      ))}
+                  </Checkbox.Group>
+                </Form.Item>
+              </Card>
+              <Card
+                size="small"
+                title={<span style={{ fontSize: 12, color: '#ef4444' }}>🔴 高权限能力（需授权）</span>}
+                styles={{ body: { padding: '8px 12px', background: 'rgba(239,68,68,0.03)' } }}
+              >
+                <Form.Item name="selectedCapabilityIds" noStyle>
+                  <Checkbox.Group style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px' }}>
+                    {capabilities
+                      .filter((c) => c.requiresShellExecution || c.requiresFileWrite)
+                      .map((c) => (
+                        <Checkbox key={c.capabilityId} value={c.capabilityId} style={{ marginRight: 0, fontSize: 12 }}>
+                          {c.name}
+                        </Checkbox>
+                      ))}
+                  </Checkbox.Group>
+                </Form.Item>
+              </Card>
+            </div>
+          </Form.Item>
 
           <ProFormTextArea
             name="systemPrompt"

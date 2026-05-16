@@ -382,30 +382,41 @@ public sealed class ContextPipeline
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: TOOLS ---");
 
-        var pkgs = _skillPackageRegistry.Get(request.AgentInstanceId);
-        if (pkgs.Count > 0)
+        // 通过 SkillRuntime 获取当前 Capability 下的实际工具列表
+        var availableSkills = _skillRuntime.GetAvailableSkills(request.Capability);
+        var skillsList = availableSkills.ToList();
+
+        if (skillsList.Count > 0)
         {
-            sb.AppendLine("Available tools via packages:");
-            foreach (var pkg in pkgs)
+            sb.AppendLine("Available tools (use via function calling):");
+            var defaultSkills = skillsList.Where(s => s.PermissionLevel == ToolPermissionLevel.Low).ToList();
+            var mediumSkills = skillsList.Where(s => s.PermissionLevel == ToolPermissionLevel.Medium).ToList();
+            var highSkills = skillsList.Where(s => s.PermissionLevel == ToolPermissionLevel.High).ToList();
+
+            if (defaultSkills.Count > 0)
             {
-                sb.Append($"- **{pkg.Name}**");
-                if (!string.IsNullOrWhiteSpace(pkg.Description))
-                    sb.Append($": {pkg.Description}");
-                sb.AppendLine();
+                sb.Append("  [内置] ");
+                sb.AppendLine(string.Join(", ", defaultSkills.Select(s => $"`{s.SkillId}`")));
             }
-            // find-tool 兜底：确保至少暴露 5 个工具
-            if (pkgs.Count < 5)
+            if (mediumSkills.Count > 0)
             {
-                sb.AppendLine("(Minimal tool set; additional built-in tools: read_file, grep, bash, file_search, etc.)");
+                sb.Append("  [默认授权] ");
+                sb.AppendLine(string.Join(", ", mediumSkills.Select(s => $"`{s.SkillId}`")));
             }
+            if (highSkills.Count > 0)
+            {
+                sb.Append("  [需显式授权] ");
+                sb.AppendLine(string.Join(", ", highSkills.Select(s => $"`{s.SkillId}`")));
+            }
+            sb.AppendLine($"Total: {skillsList.Count} tools available.");
         }
         else
         {
-            sb.AppendLine("Standard built-in tools available (read_file, grep, bash, file_search, etc.)");
+            sb.AppendLine("(No tools available with current capability policy.)");
         }
 
-        sb.AppendLine("Memory tool hint: use `search_memory` when you need to recall user facts from memory library.");
-        sb.AppendLine("Books are organized by category: 用户档案、用户偏好、对话摘要、计划与任务.");
+        sb.AppendLine("Memory tool hint: use `memory_library` when you need to recall user facts from memory library.");
+        sb.AppendLine("Sub-agent tool: use `spawn_sub_agent` to delegate complex or independent tasks to a child agent.");
 
         return Task.FromResult(sb.ToString());
     }
@@ -419,22 +430,36 @@ public sealed class ContextPipeline
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: SKILLS ---");
 
+        // 通过 SkillRuntime 获取当前可用 Skills
+        var availableSkills = _skillRuntime.GetAvailableSkills(request.Capability);
+
+        // 区分 Skill 包和内置 Skill
         var pkgs = _skillPackageRegistry.Get(request.AgentInstanceId);
-        if (pkgs.Count > 0)
+
+        if (availableSkills.Count > 0)
         {
-            sb.AppendLine("Available Skill Packages:");
-            foreach (var pkg in pkgs)
+            sb.AppendLine("Active agent skills:");
+            foreach (var skill in availableSkills)
             {
-                sb.Append($"- **{pkg.Name}** (`/skills/{pkg.SkillPackageId}/`)");
-                if (!string.IsNullOrWhiteSpace(pkg.Description))
-                    sb.Append($": {pkg.Description}");
-                sb.AppendLine();
+                var level = skill.PermissionLevel switch
+                {
+                    ToolPermissionLevel.Low => "auto",
+                    ToolPermissionLevel.High => "granted",
+                    _ => "default",
+                };
+                sb.AppendLine($"- `{skill.SkillId}` [{level}]: {skill.Description}");
             }
         }
-        else
+
+        if (pkgs.Count > 0)
         {
-            sb.AppendLine("(No additional skill packages loaded.)");
+            sb.AppendLine("Additional skill packages loaded:");
+            foreach (var pkg in pkgs)
+                sb.AppendLine($"- {pkg.Name} (v{pkg.Version}): {pkg.Description ?? ""}");
         }
+
+        if (availableSkills.Count == 0 && pkgs.Count == 0)
+            sb.AppendLine("(No skills or skill packages loaded.)");
 
         return sb.ToString();
     }
@@ -818,6 +843,7 @@ public sealed class ContextPipeline
             sb.AppendLine("Respond directly to the user in Markdown.");
             sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
             sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
+            sb.AppendLine("For short inline values like paths, filenames, commands, or variable names, use inline `backticks` instead of fenced code blocks.");
             sb.AppendLine("你有访问用户记忆图书馆的能力。可用工具：search_memory（检索）、save_memory（写入/更新记忆）、grep_memory（全文检索/列出Books/目录）、manage_memory（管理Books/章节/指针）。");
             sb.AppendLine("当需要主动记住用户信息时，使用 save_memory。当需要列出或管理记忆结构时，使用 grep_memory 或 manage_memory。");
             if (request.Capability?.AllowedToolNames is { Count: > 0 })

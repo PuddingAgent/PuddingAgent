@@ -83,6 +83,7 @@ public sealed record RawEvent
     public EventSource Source { get; init; } = new();
     public string WorkspaceId { get; init; } = "default";
     public string? AgentId { get; init; }
+    public string? SessionId { get; init; }
     public object? Payload { get; init; }
     public long Timestamp { get; init; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     public Dictionary<string, string>? Metadata { get; init; }
@@ -98,6 +99,7 @@ public sealed record ProcessedEvent
     public EventSource Source { get; init; } = new();
     public string WorkspaceId { get; init; } = "default";
     public string? AgentId { get; init; }
+    public string? SessionId { get; init; }
     public object? Payload { get; init; }
     public long Timestamp { get; init; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -117,6 +119,9 @@ public sealed record QueuedEvent
     public string EventType { get; init; } = "";
     public string? SourceType { get; init; }
     public string? SourceId { get; init; }
+    public string? SessionId { get; init; }
+    public string? WorkspaceId { get; init; }
+    public string? AgentId { get; init; }
     public string Payload { get; init; } = "{}";
     public string Status { get; init; } = "pending";
     public long CreatedAt { get; init; }

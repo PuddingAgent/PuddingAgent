@@ -17,7 +17,7 @@ import { history } from '@umijs/max';
 import { Avatar, Button, Divider, Select, Space, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
-import type { ChatTurn } from '../types';
+import type { ChatTurn, SubAgentCardMap } from '../types';
 import { getAgentName, stringToColor } from '../hooks/useChatState';
 import InputArea, { type ChatStatus } from './InputArea';
 import MessageList from './MessageList';
@@ -47,6 +47,7 @@ interface ChatMainProps {
   selectedSessionId: string | null;
   // chat
   turns: ChatTurn[];
+  subAgentCards: SubAgentCardMap;
   historyLoading: boolean;
   loadingMore: boolean;
   hasMoreMessages: boolean;
@@ -127,7 +128,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   tLimit, tUsed, tPct,
   formatTime, getStepTone, onDeleteTurn, onToggleReasoning, onContextMenu,
   onRerunTurn, onPinTurn,
-  messageListRef, listEndRef,
+  messageListRef, listEndRef, subAgentCards,
 }) => {
   const { styles } = useChatStyles();
   const [devMode, setDevMode] = useState<boolean>(() => localStorage.getItem(DEV_MODE_KEY) === '1');
@@ -376,6 +377,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
           <div className={styles.chatBodyMain}>
             <MessageList
               turns={turns}
+              subAgentCards={subAgentCards}
               agentId={agentId}
               selectedAgent={selectedAgent}
               error={error}
@@ -407,6 +409,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               tUsed={tUsed}
               tPct={tPct}
               status={chatStatus}
+              sessionId={inferredSessionId ?? selectedSessionId}
             />
           </div>
 

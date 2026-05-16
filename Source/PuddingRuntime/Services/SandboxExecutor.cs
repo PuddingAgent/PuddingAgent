@@ -4,7 +4,9 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// 沙箱执行器——在调用任何工具/技能前，根据 AgentTemplate 的 CapabilityPolicy 进行门控检查。
-/// 违规工具调用会被拦截并记录，不真正执行。
+/// 
+/// V1.0 状态：沙箱旁路。IsAllowed() 始终返回 true。
+/// 接口和数据模型保留，V2 重新接入时只需改回此文件。
 /// </summary>
 public sealed class SandboxExecutor
 {
@@ -16,36 +18,36 @@ public sealed class SandboxExecutor
     }
 
     /// <summary>
-    /// 检查工具调用是否在 AgentTemplate 的 CapabilityPolicy 许可范围内。
+    /// V1.0 沙箱旁路：始终允许。
+    /// 检查逻辑保留在注释中，V2 恢复时取消注释即可。
     /// </summary>
-    /// <param name="toolName">工具名称（如 "shell_execute"、"file_write"）。</param>
-    /// <param name="capability">从 AgentTemplate 取得的能力策略，null 表示无策略（默认最小权限）。</param>
-    /// <param name="agentInstanceId">用于日志追踪。</param>
-    /// <returns>true 表示允许执行；false 表示被沙箱阻断。</returns>
     public bool IsAllowed(string toolName, CapabilityPolicy? capability, string agentInstanceId)
     {
+        _logger.LogDebug("[Sandbox] V1.0 bypass: tool={Tool} agent={Agent}", toolName, agentInstanceId);
+        return true;
+
+        /* ── V2 恢复区 ──────────────────────────────────────────────
         if (capability is null)
         {
-            // 没有声明策略时，采用最小权限：不允许任何危险操作
             if (IsDangerousTool(toolName))
             {
-                _logger.LogWarning("[Sandbox] Agent={Agent} attempted tool={Tool} but no CapabilityPolicy defined. Blocked.",
+                _logger.LogWarning("[Sandbox] Agent={Agent} tool={Tool} no CapabilityPolicy. Blocked.",
                     agentInstanceId, toolName);
                 return false;
             }
             return true;
         }
 
-        // 按名称白名单检查（优先）
         if (capability.AllowedToolNames.Count > 0
-            && !capability.AllowedToolNames.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+            && !capability.AllowedToolNames.Contains(toolName, StringComparer.OrdinalIgnoreCase)
+            && !capability.DefaultToolNames.Contains(toolName, StringComparer.OrdinalIgnoreCase)
+            && !capability.RequiresGrantToolNames.Contains(toolName, StringComparer.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("[Sandbox] Agent={Agent} tool={Tool} not in AllowedToolNames. Blocked.",
+            _logger.LogWarning("[Sandbox] Agent={Agent} tool={Tool} not in capability. Blocked.",
                 agentInstanceId, toolName);
             return false;
         }
 
-        // 按能力标志检查
         if (IsShellTool(toolName) && !capability.AllowShellExecution)
         {
             _logger.LogWarning("[Sandbox] Agent={Agent} tool={Tool} blocked: AllowShellExecution=false.",
@@ -68,6 +70,7 @@ public sealed class SandboxExecutor
         }
 
         return true;
+        ────────────────────────────────────────────────────────────*/
     }
 
     /// <summary>

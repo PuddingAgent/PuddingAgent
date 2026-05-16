@@ -54,6 +54,8 @@ public sealed class AgentExecutionService
     private readonly IStreamingEventBus? _eventBus;
     private readonly SessionArchiver? _sessionArchiver;
     private readonly ILogger<AgentExecutionService> _logger;
+    private readonly ILlmResolver? _llmResolver; // 可选：为子代理等无 LlmConfig 场景兜底
+    private readonly ISessionStateManager? _ssm;  // ADR-016：会话状态层
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -78,7 +80,9 @@ public sealed class AgentExecutionService
         IMemoryLibraryConvenience? libraryConvenience = null,
         Channel<ConsolidationJob>? subconsciousJobChannel = null,
         IStreamingEventBus? eventBus = null,
-        SessionArchiver? sessionArchiver = null)
+        SessionArchiver? sessionArchiver = null,
+        ILlmResolver? llmResolver = null,
+        ISessionStateManager? ssm = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -104,6 +108,8 @@ public sealed class AgentExecutionService
         _eventBus            = eventBus;
         _sessionArchiver     = sessionArchiver;
         _logger              = logger;
+        _llmResolver         = llmResolver;
+        _ssm                 = ssm;  // ADR-016
     }
 
     /// <summary>
@@ -130,7 +136,7 @@ public sealed class AgentExecutionService
 
         var template = BuiltInAgentTemplates.FindById(canonicalTemplateId)
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
-        var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
+        var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
         // TODO(platform-template-guardrails): 从 AgentTemplate（Global/Workspace）读取 MaxRounds/MaxElapsedSeconds/MaxToolCallsTotal，
         // 并覆盖注入 AgentExecutionGuardrails；当前阶段仅支持在模板侧存储配置，不参与 Runtime 执行。
@@ -198,6 +204,10 @@ public sealed class AgentExecutionService
         history.Add(new ChatMessage(ChatRole.User, request.MessageText));
 
         // ── 初始化 Loop 上下文 ────────────────────────────────────────
+        var maxRounds = request.MaxRounds > 0
+            ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
+            : _guardrails.MaxRounds;
+
         var loopCtx = new AgentLoopContext
         {
             SessionId       = request.SessionId,
@@ -205,7 +215,7 @@ public sealed class AgentExecutionService
             WorkspaceId     = request.WorkspaceId,
             AgentTemplateId = request.AgentTemplateId,
             UserMessage     = request.MessageText,
-            MaxRounds       = _guardrails.MaxRounds,
+            MaxRounds       = maxRounds,
         };
 
         var effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
@@ -233,7 +243,7 @@ public sealed class AgentExecutionService
             _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
 
-            for (int round = 0; round < _guardrails.MaxRounds; round++)
+            for (int round = 0; round < maxRounds; round++)
             {
                 // ── 检查点 A：取消 / 冻结 ─────────────────────────────
                 if (ct.IsCancellationRequested || _controlRegistry.IsFrozen(request.SessionId))
@@ -268,7 +278,19 @@ public sealed class AgentExecutionService
                     ? request.ToolDefinitions
                         .Where(t => availableSkillNames.Contains(t.Name))
                         .ToList()
-                    : _skillRuntime.BuildLlmTools(effectiveCapability);
+                    : _skillRuntime.BuildLlmTools(effectiveCapability).ToList();
+
+                // 合并 SkillRuntime 中 DB 未覆盖的工具（如 spawn_sub_agent）
+                var dbToolNames = llmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var runtimeTools = _skillRuntime.BuildLlmTools(effectiveCapability);
+                foreach (var rt in runtimeTools)
+                {
+                    if (!dbToolNames.Contains(rt.Name))
+                    {
+                        llmTools.Add(rt);
+                        _logger.LogDebug("[AgentExec] Merged runtime tool: {Tool}", rt.Name);
+                    }
+                }
 
                 var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
                 LlmResponse llmResp;
@@ -295,7 +317,7 @@ public sealed class AgentExecutionService
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
                 _logger.LogInformation(
                     "[AgentExec] LLM round={Round}/{Max} session={Session} elapsed={Ms}ms",
-                    round + 1, _guardrails.MaxRounds, request.SessionId, llmSw.ElapsedMilliseconds);
+                    round + 1, maxRounds, request.SessionId, llmSw.ElapsedMilliseconds);
 
                 // 优先走 function-call 闭环：Assistant(tool_calls) -> Tool(result) -> 下一轮
                 if (llmResp.ToolCalls is { Count: > 0 })
@@ -605,7 +627,7 @@ public sealed class AgentExecutionService
                 });
 
                 // 最后一轮 CONTINUE → MaxRoundsReached
-                if (round == _guardrails.MaxRounds - 1)
+                if (round == maxRounds - 1)
                 {
                     _logger.LogWarning(
                         "[AgentExec] MaxRounds={Max} reached session={Session}",
@@ -745,7 +767,7 @@ public sealed class AgentExecutionService
 
         var template = BuiltInAgentTemplates.FindById(canonicalTemplateId)
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
-        var effectiveCapability = request.CapabilityPolicy ?? template.Capability;
+        var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
 
         _contextManager.CleanupExpiredSessions(request.SessionId);
@@ -832,12 +854,32 @@ public sealed class AgentExecutionService
             ? request.ToolDefinitions
                 .Where(t => availableSkillNames.Contains(t.Name))
                 .ToList()
-            : _skillRuntime.BuildLlmTools(effectiveCapability);
+            : _skillRuntime.BuildLlmTools(effectiveCapability).ToList();
+
+        // 合并 SkillRuntime 中 DB 未覆盖的工具
+        var dbToolNames2 = llmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var runtimeTools2 = _skillRuntime.BuildLlmTools(effectiveCapability);
+        foreach (var rt in runtimeTools2)
+        {
+            if (!dbToolNames2.Contains(rt.Name))
+            {
+                llmTools.Add(rt);
+                _logger.LogDebug("[AgentExec] Stream merged runtime tool: {Tool}", rt.Name);
+            }
+        }
 
         try
         {
             _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
+
+            // ADR-016：将每一帧推送到 SessionStateManager（持久化 + 实时 Channel）
+            // fire-and-forget，不阻塞流式管道；AppendAsync 内部 TryWrite Channel 非阻塞
+            async void Append(ServerSentEventFrame frame)
+            {
+                try { if (_ssm is not null) await _ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", frame, CancellationToken.None); }
+                catch (Exception ex) { _logger.LogWarning(ex, "[AgentExec:SSM] AppendAsync failed session={Session}", request.SessionId); }
+            }
 
             // ── 流式 Agent Loop（与同步路径共享护栏参数）──────
             var maxRounds = request.MaxRounds > 0
@@ -856,19 +898,25 @@ public sealed class AgentExecutionService
                 if (ct.IsCancellationRequested)
                 {
                     _logger.LogInformation("[AgentExec:Stream] Cancelled session={Session}", request.SessionId);
-                    yield return ServerSentEventFrame.Json(SseEventTypes.Cancelled, new { message = "已取消" });
+                    var cancelledFrame = ServerSentEventFrame.Json(SseEventTypes.Cancelled, new { message = "已取消" });
+                    Append(cancelledFrame);
+                    yield return cancelledFrame;
                     break;
                 }
                 if (perfTotalSw.Elapsed > _guardrails.MaxElapsed)
                 {
                     _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", _guardrails.MaxElapsed);
-                    yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"执行超时 ({_guardrails.MaxElapsed.TotalSeconds}s)" });
+                    var timeoutFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"执行超时 ({_guardrails.MaxElapsed.TotalSeconds}s)" });
+                    Append(timeoutFrame);
+                    yield return timeoutFrame;
                     break;
                 }
                 if (totalToolCalls >= _guardrails.MaxToolCallsTotal)
                 {
                     _logger.LogWarning("[AgentExec:Stream] MaxToolCallsTotal={Max} reached", _guardrails.MaxToolCallsTotal);
-                    yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"工具调用次数已达上限 ({_guardrails.MaxToolCallsTotal})" });
+                    var maxToolFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"工具调用次数已达上限 ({_guardrails.MaxToolCallsTotal})" });
+                    Append(maxToolFrame);
+                    yield return maxToolFrame;
                     break;
                 }
 
@@ -880,6 +928,8 @@ public sealed class AgentExecutionService
                         "[AgentExec:Perf] FIRST_TOKEN session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms",
                         request.SessionId, perfTotalSw.ElapsedMilliseconds,
                         perfHistorySw.ElapsedMilliseconds, perfContextSw.ElapsedMilliseconds);
+                    _logger.LogDebug("[Diag] Stream round={Round} session={Session} tools={ToolCount} maxRounds={MaxRounds}",
+                        round, request.SessionId, llmTools.Count, maxRounds);
                     var contextFrame = BuildStreamContextFrame(history, template, effectiveCapability);
                     yield return ServerSentEventFrame.Json(SseEventTypes.Context, contextFrame);
                 }
@@ -920,8 +970,10 @@ public sealed class AgentExecutionService
                         if (!string.IsNullOrEmpty(delta.ReasoningDelta))
                         {
                             reasoningBuf.Append(delta.ReasoningDelta);
-                            yield return ServerSentEventFrame.Json(SseEventTypes.Thinking,
+                            var thinkingFrame = ServerSentEventFrame.Json(SseEventTypes.Thinking,
                                 new { delta = delta.ReasoningDelta });
+                            Append(thinkingFrame);
+                            yield return thinkingFrame;
                             _ = _eventBus?.EmitAsync(new StreamingEvent
                             {
                                 Type = StreamingEventTypes.AgentThinking,
@@ -934,8 +986,10 @@ public sealed class AgentExecutionService
                         {
                             var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
                             replyBuf.Append(safeDelta);
-                            yield return ServerSentEventFrame.Json(SseEventTypes.Delta,
+                            var deltaFrame = ServerSentEventFrame.Json(SseEventTypes.Delta,
                                 new { delta = safeDelta });
+                            Append(deltaFrame);
+                            yield return deltaFrame;
                             _ = _eventBus?.EmitAsync(new StreamingEvent
                             {
                                 Type = StreamingEventTypes.AgentDelta,
@@ -963,13 +1017,19 @@ public sealed class AgentExecutionService
                 if (llmException != null)
                 {
                     _logger.LogError(llmException, "[AgentExec] LLM API error in streaming loop, round={Round}", round);
-                    yield return ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"LLM 调用失败: {llmException.Message}" });
+                    var errFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"LLM 调用失败: {llmException.Message}" });
+                    Append(errFrame);
+                    yield return errFrame;
                     continue;
                 }
 
                 // 发送 usage
                 if (usage is not null)
-                    yield return ServerSentEventFrame.Json(SseEventTypes.Usage, usage);
+                {
+                    var usageFrame = ServerSentEventFrame.Json(SseEventTypes.Usage, usage);
+                    Append(usageFrame);
+                    yield return usageFrame;
+                }
 
                 // 无工具调用 → 终止循环，replyBuf 即为最终回复
                 if (!hasToolCalls)
@@ -1003,6 +1063,9 @@ public sealed class AgentExecutionService
                 consecutiveShortReplies = 0;
 
                 // 有工具调用 → 构建 Assistant 消息 + 发送 tool_call/tool_result 帧
+                _logger.LogDebug("[Diag] Tool calls found session={Session} round={Round} count={Count} names={Names}",
+                    request.SessionId, round, accumulatedToolCalls.Count,
+                    string.Join(",", accumulatedToolCalls.Select(t => t.Name)));
                 var assistantToolCalls = accumulatedToolCalls
                     .Select(tc => new ToolCall(tc.Id, tc.Name, tc.Arguments))
                     .ToList();
@@ -1016,8 +1079,10 @@ public sealed class AgentExecutionService
                 // 逐个工具调用：发送 tool_call → 执行 → 发送 tool_result
                 foreach (var tc in accumulatedToolCalls)
                 {
-                    yield return ServerSentEventFrame.Json(SseEventTypes.ToolCall,
+                    var toolCallFrame = ServerSentEventFrame.Json(SseEventTypes.ToolCall,
                         new { name = tc.Name, arguments = tc.Arguments });
+                    Append(toolCallFrame);
+                    yield return toolCallFrame;
 
                     _ = _eventBus?.EmitAsync(new StreamingEvent
                     {
@@ -1045,13 +1110,15 @@ public sealed class AgentExecutionService
                         ? $"已完成: {(result.Output?.Length > 0 ? Truncate(result.Output!, 200) : "(空输出)")}"
                         : $"执行失败: {(result.Error?.Length > 0 ? Truncate(result.Error!, 200) : "(未知错误)")}";
 
-                    yield return ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
+                    var toolResultFrame = ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
                     {
                         name = tc.Name,
                         exitCode = result.ExitCode,
                         output = result.Output,
                         error = result.Error,
                     });
+                    Append(toolResultFrame);
+                    yield return toolResultFrame;
 
                     _ = _eventBus?.EmitAsync(new StreamingEvent
                     {
@@ -1178,7 +1245,11 @@ public sealed class AgentExecutionService
             {
                 reply = lastToolResult;
             }
-            yield return ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage = finalUsage });
+            _logger.LogDebug("[Diag] Stream done session={Session} replyLen={Len} totalToolCalls={Ttc}",
+                request.SessionId, reply.Length, totalToolCalls);
+            var doneFrame = ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage = finalUsage });
+            Append(doneFrame);
+            yield return doneFrame;
         }
         finally
         {
@@ -1471,7 +1542,14 @@ public sealed class AgentExecutionService
     private async Task<LlmConfig?> ResolveLlmConfigAsync(LlmConfig? config, CancellationToken ct)
     {
         if (config is null)
+        {
+            // 兜底：通过 ILlmResolver 从 DB 注册表或 .env 获取默认配置
+            if (_llmResolver is not null)
+                return await _llmResolver.ResolveDefaultAsync(ct);
+
+            _logger.LogWarning("[AgentExec] No LlmConfig and no ILlmResolver available.");
             return null;
+        }
 
         var apiKey = config.ApiKey;
 
@@ -1558,6 +1636,32 @@ public sealed class AgentExecutionService
                     hook.GetType().Name);
             }
         }
+    }
+
+    /// <summary>
+    /// 合并 DB 策略与代码模板策略。DB 为主（覆盖布尔标志），
+    /// 但 DefaultToolNames / RequiresGrantToolNames 合并两源，不丢失代码内置的默认工具。
+    /// 若无 DB 策略，直接使用模板策略。
+    /// </summary>
+    private static CapabilityPolicy MergeCapability(CapabilityPolicy? db, CapabilityPolicy? template)
+    {
+        if (db is null) return template ?? new CapabilityPolicy();
+        if (template is null) return db;
+
+        var defaultTools = new HashSet<string>(db.DefaultToolNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var t in template.DefaultToolNames) defaultTools.Add(t);
+        var grantTools = new HashSet<string>(db.RequiresGrantToolNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var t in template.RequiresGrantToolNames) grantTools.Add(t);
+
+        return new CapabilityPolicy
+        {
+            AllowShellExecution = db.AllowShellExecution || template.AllowShellExecution,
+            AllowFileWrite = db.AllowFileWrite || template.AllowFileWrite,
+            AllowNetworkAccess = db.AllowNetworkAccess || template.AllowNetworkAccess,
+            AllowedToolNames = db.AllowedToolNames.Count > 0 ? db.AllowedToolNames : template.AllowedToolNames,
+            DefaultToolNames = defaultTools.ToList(),
+            RequiresGrantToolNames = grantTools.ToList(),
+        };
     }
 
     private static string Truncate(string s, int maxLen) =>

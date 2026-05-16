@@ -98,6 +98,13 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+
+// EF Core 10: AddDbContextFactory 的 Singleton factory 消费 Scoped DbContextOptions
+// 需要关闭 scope validation。
+if (aspnetcoreEnvironment == "Development")
+{
+    builder.Host.UseDefaultServiceProvider(o => o.ValidateScopes = false);
+}
 builder.Host.UseSerilog();
 
 // ── 端口 ─────────────────────────────────────────────
@@ -156,6 +163,10 @@ builder.Services.AddHttpClient<PlatformApiClient>(client =>
 builder.Services.AddScoped<WorkspaceBusinessService>();
 builder.Services.AddSingleton<MinioStorageService>();
 builder.Services.AddSingleton<SessionEventHub>();
+builder.Services.AddSingleton<SessionStateManager>();
+builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
+builder.Services.AddSingleton<SubAgentManager>();
+builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
 builder.Services.AddPuddingController();
 
 // ── EF Core / 数据库 ──────────────────────────────────
@@ -169,13 +180,13 @@ builder.Services.AddDbContext<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-}, ServiceLifetime.Singleton);
+});
 
 builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-}, ServiceLifetime.Singleton);
+});
 
 builder.Services.AddSingleton<Sm2JwtSigner>();
 builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
@@ -253,6 +264,9 @@ builder.Services.AddSingleton<SearchCodebaseTool>();
 builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<SearchCodebaseTool>());
 builder.Services.AddSingleton<TaskManagerTool>();
 builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<TaskManagerTool>());
+builder.Services.AddSingleton<SubAgentTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<SubAgentTool>());
+builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<SubAgentTool>());
 builder.Services.AddSingleton<MemoryExplorerSubAgent>();
 builder.Services.AddSingleton<MemoryLibraryTool>();
 builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<MemoryLibraryTool>());
@@ -274,6 +288,10 @@ builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<GrepMemoryTool>
 builder.Services.AddSingleton<QuerySessionsTool>();
 builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<QuerySessionsTool>());
 builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<QuerySessionsTool>());
+
+// ── 子代理管理工具（ADR-016 扩展）──────────────────────
+builder.Services.AddSingleton<QuerySubAgentsTool>();
+builder.Services.AddSingleton<IAgentSkill>(sp => sp.GetRequiredService<QuerySubAgentsTool>());
 
 // ── 会话历史查询服务 (Repository → Service 分层) ────
 builder.Services.AddScoped<IChatHistoryService, ChatHistoryService>();
@@ -332,33 +350,25 @@ builder.Services.AddHostedService<EventDispatcher>();
 
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
+
+// ── 统一 LLM 配置服务（JSON 文件，唯一来源）──────────
+var llmConfigPath = Path.Combine(AppContext.BaseDirectory, "data", "llm", "config.json");
+var llmConfigService = new JsonLlmConfigService(llmConfigPath);
+builder.Services.AddSingleton<ILlmConfigService>(llmConfigService);
+
+// Memory LLM client — 通过统一服务获取配置
 builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
 {
-    var configuration = sp.GetRequiredService<IConfiguration>();
-    var endpoint = configuration["MemoryLlm:Endpoint"] ?? configuration["MEMORY_LLM_ENDPOINT"];
-    var apiKey = configuration["MemoryLlm:ApiKey"] ?? configuration["MEMORY_LLM_API_KEY"];
-    var modelId = configuration["MemoryLlm:ModelId"] ?? configuration["MEMORY_LLM_MODEL_ID"];
-
-    var hasDedicatedMemoryModel = !string.IsNullOrWhiteSpace(endpoint)
-                                  || !string.IsNullOrWhiteSpace(apiKey)
-                                  || !string.IsNullOrWhiteSpace(modelId);
-
-    var memoryConfig = hasDedicatedMemoryModel
-        ? new LlmConfig
-        {
-            Endpoint = endpoint,
-            ApiKey = apiKey,
-            ModelId = modelId,
-        }
-        : null;
-
+    var svc = sp.GetRequiredService<ILlmConfigService>();
+    var memCfg = svc.GetMemoryConfig();
     return new DirectMemoryLlmClient(
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<ILogger<DirectMemoryLlmClient>>(),
         sp.GetService<IRuntimeLlmClient>(),
-        memoryConfig);
+        memCfg);
 });
-// ── 启动环境信息（每次程序启动采集一次）──
+
+// ── 启动环境信息 ──
 builder.Services.AddSingleton(new StartupEnvironmentInfo());
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<ContextAssemblyStore>();
@@ -385,11 +395,15 @@ builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<Web
 // ── Cron 定时任务调度 ──────────────────────────────
 builder.Services.AddHostedService<CronSchedulerService>();
 
-// ── LLM 配置 ─────────────────────────────────────────
-var llmEndpoint = builder.Configuration["LLM_ENDPOINT"] ?? "https://api.openai.com/v1";
-var llmApiKey = builder.Configuration["LLM_API_KEY"] ?? "";
-var llmModel = builder.Configuration["LLM_MODEL"] ?? "gpt-4o-mini";
-var runtimeEndpoint = builder.Configuration["Pudding:RuntimeEndpoint"] ?? "http://localhost:8080";
+// ILlmConfigService 已注册（见上方），同时注册 ILlmResolver 兼容旧接口
+builder.Services.AddSingleton<ILlmResolver>(sp =>
+{
+    // DbLlmResolver 的 DB 同步能力保留（启动时将 JSON 同步到 DB）
+    return new DbLlmResolver(
+        sp.GetRequiredService<IDbContextFactory<PlatformDbContext>>(),
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<ILogger<DbLlmResolver>>());
+});
 
 builder.Services.AddHttpClient("DirectLlm", client =>
 {
@@ -513,6 +527,59 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // ── ADR-016：幂等建表 — session_event_log / session_sub_agents
+    // sqlite不支持IF NOT EXISTS修改列, 开发阶段直接重建
+    var pendingTableDdl = new[]
+    {
+        @"DROP TABLE IF EXISTS session_event_log;",
+        @"DROP TABLE IF EXISTS session_sub_agents;",
+
+        // session_event_log — 会话事件日志（append-only）
+        @"CREATE TABLE IF NOT EXISTS session_event_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id      TEXT    NOT NULL,
+            workspace_id    TEXT    NOT NULL,
+            sequence_num    INTEGER NOT NULL,
+            event_type      TEXT    NOT NULL,
+            data            TEXT    NOT NULL,
+            recorded_at     TEXT    NOT NULL,
+            UNIQUE(session_id, sequence_num)
+        );",
+        @"CREATE INDEX IF NOT EXISTS idx_sel_session_seq ON session_event_log(session_id, sequence_num);",
+        @"CREATE INDEX IF NOT EXISTS idx_sel_workspace_time ON session_event_log(workspace_id, recorded_at);",
+
+        // session_sub_agents — 子代理状态追踪
+        @"CREATE TABLE IF NOT EXISTS session_sub_agents (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_session_id   TEXT    NOT NULL,
+            parent_agent_id     TEXT,
+            sub_session_id      TEXT    NOT NULL UNIQUE,
+            status              TEXT    NOT NULL DEFAULT 'running',
+            template_id         TEXT,
+            model_id            TEXT,
+            task_summary        TEXT    NOT NULL,
+            spawned_at          TEXT    NOT NULL,
+            completed_at        TEXT,
+            success             INTEGER,
+            reply_summary       TEXT,
+            error_summary       TEXT,
+            full_result_json    TEXT
+        );",
+        @"CREATE INDEX IF NOT EXISTS idx_ssa_parent ON session_sub_agents(parent_session_id, status);",
+        @"CREATE INDEX IF NOT EXISTS idx_ssa_sub ON session_sub_agents(sub_session_id);",
+    };
+    foreach (var ddl in pendingTableDdl)
+    {
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(ddl);
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "[Schema] ADR-016 建表失败（将继续启动）：{Ddl}", ddl[..Math.Min(ddl.Length, 80)]);
+        }
+    }
+
     // ── 幂等种子：记忆工具 Capabilities（启动时幂等插入，正式迁移来之前兜底）
     var now = DateTimeOffset.UtcNow;
     var memoryCaps = new (string CapabilityId, string Name, string ToolName, string Description, string ToolDescription, int SortOrder)[]
@@ -557,7 +624,7 @@ using (var scope = app.Services.CreateScope())
     await workspaceCatalog.LoadAsync();
 
     var runtimeDispatcher = scope.ServiceProvider.GetRequiredService<RuntimeDispatcher>();
-    runtimeDispatcher.SetFallbackEndpoint(runtimeEndpoint);
+    runtimeDispatcher.SetFallbackEndpoint("http://localhost:8080");
 
     // ── JSON 配置种子（幂等 Upsert）──────────────────
     var configSeed = scope.ServiceProvider.GetRequiredService<JsonConfigSeedService>();
@@ -704,12 +771,7 @@ app.MapPost("/api/chat", async (
         WorkspaceId = request.WorkspaceId ?? "default",
         AgentTemplateId = "workspace-service-agent",
         MessageText = request.Message,
-        LlmConfig = new LlmConfig
-        {
-            Endpoint = llmEndpoint,
-            ApiKey = llmApiKey,
-            ModelId = llmModel,
-        },
+        LlmConfig = llmConfigService.GetDefault() ?? new LlmConfig(),
     };
 
     var result = await executor.ExecuteAsync(dispatchRequest, ct);

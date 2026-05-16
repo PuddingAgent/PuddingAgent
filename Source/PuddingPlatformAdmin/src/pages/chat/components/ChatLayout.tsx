@@ -3,7 +3,7 @@ import React from 'react';
 import { useChatStyles } from '../styles';
 import ChatMain from './ChatMain';
 import SessionSidebar from './SessionSidebar';
-import type { ChatTurn, SessionGroup } from '../types';
+import type { ChatTurn, SessionGroup, SubAgentCardMap } from '../types';
 import type { WorkspaceAgentDto, WorkspaceWithPermDto } from '@/services/platform/api';
 
 interface ChatLayoutProps {
@@ -59,6 +59,7 @@ interface ChatLayoutProps {
   onPinTurn: (turnId: string) => void;
   messageListRef: React.RefObject<HTMLDivElement | null>;
   listEndRef: React.RefObject<HTMLDivElement | null>;
+  subAgentCards: SubAgentCardMap;
 }
 
 const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
@@ -122,6 +123,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onPinTurn={props.onPinTurn}
         messageListRef={props.messageListRef}
         listEndRef={props.listEndRef}
+        subAgentCards={props.subAgentCards}
       />
     </div>
   );

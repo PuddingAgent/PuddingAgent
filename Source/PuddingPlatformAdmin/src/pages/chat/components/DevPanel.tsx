@@ -1,6 +1,6 @@
 import { request } from '@umijs/max';
 import { Collapse, Empty, Progress, Spin, Tabs, Tag, Timeline, Typography } from 'antd';
-import { CheckCircleOutlined, LoadingOutlined, ExclamationCircleOutlined, BulbOutlined, ThunderboltOutlined, CodeOutlined, DatabaseOutlined, SettingOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, LoadingOutlined, ExclamationCircleOutlined, BulbOutlined, ThunderboltOutlined, CodeOutlined, DatabaseOutlined, SettingOutlined, SendOutlined, SyncOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useChatStyles } from '../styles';

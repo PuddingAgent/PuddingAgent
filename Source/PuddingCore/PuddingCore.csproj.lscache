@@ -1,0 +1,381 @@
+version=1
+
+# This file caches language service data to improve the performance of C# Dev Kit.
+# It is not intended for manual editing. It can safely be deleted and will be
+# regenerated automatically. For more information, see https://aka.ms/lscache
+#
+# To control where cache files are stored, use the following VS Code setting:
+#   "dotnet.projectsystem.cacheInProjectFolder": true
+
+[project]
+language=C#
+primary
+lastDtbSucceeded
+
+[properties]
+AssemblyName=PuddingCore
+CommandLineArgsForDesignTimeEvaluation=-langversion:14.0 -define:TRACE
+CompilerGeneratedFilesOutputPath=
+MaxSupportedLangVersion=14.0
+ProjectAssetsFile=<PATH>obj/project.assets.json
+RootNamespace=PuddingCore
+RunAnalyzers=
+RunAnalyzersDuringLiveAnalysis=
+SolutionPath=<PATH>../../PuddingAgentNetwork.slnx
+TargetFrameworkIdentifier=.NETCoreApp
+TargetPath=<PATH>bin/Debug/net10.0/PuddingCore.dll
+TargetRefPath=<PATH>obj/Debug/net10.0/ref/PuddingCore.dll
+TemporaryDependencyNodeTargetIdentifier=net10.0
+
+[commandLineArguments]
+/noconfig
+/unsafe-
+/checked-
+/nowarn:1701,1702,1701,1702,8002
+/fullpaths
+/nostdlib+
+/errorreport:prompt
+/warn:10
+/define:TRACE;DEBUG;NET;NET10_0;NETCOREAPP;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NET9_0_OR_GREATER;NET10_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER
+/highentropyva+
+/nullable:enable
+/features:"InterceptorsNamespaces=;Microsoft.Extensions.Validation.Generated"
+/debug+
+/debug:portable
+/filealign:512
+/optimize-
+/out:obj\Debug\net10.0\PuddingCore.dll
+/refout:obj\Debug\net10.0\refint\PuddingCore.dll
+/target:library
+/warnaserror-
+/utf8output
+/deterministic+
+/langversion:14.0
+/warnaserror+:NU1605,SYSLIB0011
+
+[sourceFiles]
+Abstractions/
+ IAgentCheckpointService.cs
+ IAgentHook.cs
+ IAgentOrchestrator.cs
+ IAgentTemplateProvider.cs
+ ICentralLockManager.cs
+ IChatHistoryService.cs
+ IContractManager.cs
+ ICoordinationEventBus.cs
+ IEmbeddingService.cs
+ IEventHandler.cs
+ IEventPreprocessor.cs
+ IEventSubscriptionTool.cs
+ IGitSnapshot.cs
+ IHistoryCompressor.cs
+ IInternalEventBus.cs
+ IKeyVaultService.cs
+ ILeaderElection.cs
+ ILLMConfigResolver.cs
+ ILlmConfigService.cs
+ ILlmGateway.cs
+ ILlmResolver.cs
+ IMemoryEngine.cs
+ IMemoryIndexer.cs
+ IMemoryLibrary.cs
+ IMemoryLibraryConvenience.cs
+ IMemoryLlmClient.cs
+ IMemoryRecallService.cs
+ IOutputDistiller.cs
+ IP2pDiscoveryService.cs
+ IPriorityEventQueue.cs
+ ISessionStateManager.cs
+ IStreamingEventBus.cs
+ ISubAgentManager.cs
+ ISubconsciousOrchestrator.cs
+ ISwarmMessageHub.cs
+ ISwarmOrchestrator.cs
+ ISwarmTransport.cs
+ ITerminalProcessManager.cs
+ ITool.cs
+ IToolRegistry.cs
+ IWorkerManager.cs
+ IWorkspaceProfileProvider.cs
+ JsonLlmConfigService.cs
+ MemoryLibraryDtos.cs
+ PermissionResult.cs
+Agents/AgentPersonaFileProvider.cs
+Core/
+ AgentOrchestrator.cs
+ ContextBudgetManager.cs
+ DefaultDistiller.cs
+ GitSnapshotService.cs
+ OpenAiLlmGateway.cs
+ PermissionGuard.cs
+ PromptTemplateLoader.cs
+ ToolRegistry.cs
+Models/
+ AgentEvent.cs
+ ChatMessage.cs
+ Contract.cs
+ CoordinationEventModels.cs
+ CoordinationLockModels.cs
+ InternalEvent.cs
+ LlmOptions.cs
+ LlmResponse.cs
+ ProjectContext.cs
+ StreamDelta.cs
+ SwarmEvents.cs
+ SwarmMessage.cs
+ SwarmMessagePriority.cs
+ SwarmNode.cs
+ SwarmSessionState.cs
+ SwarmTask.cs
+ SwarmTaskStatus.cs
+ TokenUsageDto.cs
+ ToolCall.cs
+ ToolParameterSchema.cs
+ ToolPermissionLevel.cs
+ WorkerInfo.cs
+ WorkerRole.cs
+ WorkerScope.cs
+obj/Debug/net10.0/
+ .NETCoreApp,Version=v10.0.AssemblyAttributes.cs
+ PuddingCore.AssemblyInfo.cs
+ PuddingCore.GlobalUsings.g.cs
+Platform/
+ AgentTemplateDefinition.cs
+ AuthAndApproval.cs
+ BuiltInAgentTemplates.cs
+ EmbeddedHostModels.cs
+ IGateway.cs
+ IPlatformServices.cs
+ IPuddingConnector.cs
+ KnowledgeContracts.cs
+ LlmOptions.cs
+ LlmProxyContracts.cs
+ MessageContracts.cs
+ PuddingEnvelope.cs
+ RouteAndAudit.cs
+ RuntimeModels.cs
+ SessionEventTypes.cs
+ SessionRecord.cs
+ SseEventTypes.cs
+ StreamingContracts.cs
+ SubconsciousDtos.cs
+ WorkspaceDefinition.cs
+Services/JsonlSession.cs
+Skills/
+ AgentRole.cs
+ BuiltIn/
+  AppLauncherSkills.cs
+  EnvironmentSkills.cs
+  FileManagementSkills.cs
+  IntrospectionSkills.cs
+ ISkillRegistry.cs
+ PuddingSkillAttribute.cs
+ SkillEntry.cs
+ SkillParamAttribute.cs
+ SkillRegistry.cs
+ SkillTool.cs
+Swarm/
+ CentralLockManager.cs
+ ContractManager.cs
+ ContractValidator.cs
+ FileSwarmTransport.cs
+ InMemoryCoordinationEventBus.cs
+ ScopedFileTool.cs
+ SwarmMessageHub.cs
+ SwarmOrchestrator.cs
+ SwarmSessionStore.cs
+ WorkerManager.cs
+Tools/
+ FileTool.cs
+ ShellTool.cs
+
+[metadataReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/10.0.5/ref/net10.0/
+ Microsoft.CSharp.dll
+ Microsoft.VisualBasic.Core.dll
+ Microsoft.VisualBasic.dll
+ Microsoft.Win32.Primitives.dll
+ Microsoft.Win32.Registry.dll
+ mscorlib.dll
+ netstandard.dll
+ System.AppContext.dll
+ System.Buffers.dll
+ System.Collections.Concurrent.dll
+ System.Collections.dll
+ System.Collections.Immutable.dll
+ System.Collections.NonGeneric.dll
+ System.Collections.Specialized.dll
+ System.ComponentModel.Annotations.dll
+ System.ComponentModel.DataAnnotations.dll
+ System.ComponentModel.dll
+ System.ComponentModel.EventBasedAsync.dll
+ System.ComponentModel.Primitives.dll
+ System.ComponentModel.TypeConverter.dll
+ System.Configuration.dll
+ System.Console.dll
+ System.Core.dll
+ System.Data.Common.dll
+ System.Data.DataSetExtensions.dll
+ System.Data.dll
+ System.Diagnostics.Contracts.dll
+ System.Diagnostics.Debug.dll
+ System.Diagnostics.DiagnosticSource.dll
+ System.Diagnostics.FileVersionInfo.dll
+ System.Diagnostics.Process.dll
+ System.Diagnostics.StackTrace.dll
+ System.Diagnostics.TextWriterTraceListener.dll
+ System.Diagnostics.Tools.dll
+ System.Diagnostics.TraceSource.dll
+ System.Diagnostics.Tracing.dll
+ System.dll
+ System.Drawing.dll
+ System.Drawing.Primitives.dll
+ System.Dynamic.Runtime.dll
+ System.Formats.Asn1.dll
+ System.Formats.Tar.dll
+ System.Globalization.Calendars.dll
+ System.Globalization.dll
+ System.Globalization.Extensions.dll
+ System.IO.Compression.Brotli.dll
+ System.IO.Compression.dll
+ System.IO.Compression.FileSystem.dll
+ System.IO.Compression.ZipFile.dll
+ System.IO.dll
+ System.IO.FileSystem.AccessControl.dll
+ System.IO.FileSystem.dll
+ System.IO.FileSystem.DriveInfo.dll
+ System.IO.FileSystem.Primitives.dll
+ System.IO.FileSystem.Watcher.dll
+ System.IO.IsolatedStorage.dll
+ System.IO.MemoryMappedFiles.dll
+ System.IO.Pipelines.dll
+ System.IO.Pipes.AccessControl.dll
+ System.IO.Pipes.dll
+ System.IO.UnmanagedMemoryStream.dll
+ System.Linq.AsyncEnumerable.dll
+ System.Linq.dll
+ System.Linq.Expressions.dll
+ System.Linq.Parallel.dll
+ System.Linq.Queryable.dll
+ System.Memory.dll
+ System.Net.dll
+ System.Net.Http.dll
+ System.Net.Http.Json.dll
+ System.Net.HttpListener.dll
+ System.Net.Mail.dll
+ System.Net.NameResolution.dll
+ System.Net.NetworkInformation.dll
+ System.Net.Ping.dll
+ System.Net.Primitives.dll
+ System.Net.Quic.dll
+ System.Net.Requests.dll
+ System.Net.Security.dll
+ System.Net.ServerSentEvents.dll
+ System.Net.ServicePoint.dll
+ System.Net.Sockets.dll
+ System.Net.WebClient.dll
+ System.Net.WebHeaderCollection.dll
+ System.Net.WebProxy.dll
+ System.Net.WebSockets.Client.dll
+ System.Net.WebSockets.dll
+ System.Numerics.dll
+ System.Numerics.Vectors.dll
+ System.ObjectModel.dll
+ System.Reflection.DispatchProxy.dll
+ System.Reflection.dll
+ System.Reflection.Emit.dll
+ System.Reflection.Emit.ILGeneration.dll
+ System.Reflection.Emit.Lightweight.dll
+ System.Reflection.Extensions.dll
+ System.Reflection.Metadata.dll
+ System.Reflection.Primitives.dll
+ System.Reflection.TypeExtensions.dll
+ System.Resources.Reader.dll
+ System.Resources.ResourceManager.dll
+ System.Resources.Writer.dll
+ System.Runtime.CompilerServices.Unsafe.dll
+ System.Runtime.CompilerServices.VisualC.dll
+ System.Runtime.dll
+ System.Runtime.Extensions.dll
+ System.Runtime.Handles.dll
+ System.Runtime.InteropServices.dll
+ System.Runtime.InteropServices.JavaScript.dll
+ System.Runtime.InteropServices.RuntimeInformation.dll
+ System.Runtime.Intrinsics.dll
+ System.Runtime.Loader.dll
+ System.Runtime.Numerics.dll
+ System.Runtime.Serialization.dll
+ System.Runtime.Serialization.Formatters.dll
+ System.Runtime.Serialization.Json.dll
+ System.Runtime.Serialization.Primitives.dll
+ System.Runtime.Serialization.Xml.dll
+ System.Security.AccessControl.dll
+ System.Security.Claims.dll
+ System.Security.Cryptography.Algorithms.dll
+ System.Security.Cryptography.Cng.dll
+ System.Security.Cryptography.Csp.dll
+ System.Security.Cryptography.dll
+ System.Security.Cryptography.Encoding.dll
+ System.Security.Cryptography.OpenSsl.dll
+ System.Security.Cryptography.Primitives.dll
+ System.Security.Cryptography.X509Certificates.dll
+ System.Security.dll
+ System.Security.Principal.dll
+ System.Security.Principal.Windows.dll
+ System.Security.SecureString.dll
+ System.ServiceModel.Web.dll
+ System.ServiceProcess.dll
+ System.Text.Encoding.CodePages.dll
+ System.Text.Encoding.dll
+ System.Text.Encoding.Extensions.dll
+ System.Text.Encodings.Web.dll
+ System.Text.Json.dll
+ System.Text.RegularExpressions.dll
+ System.Threading.AccessControl.dll
+ System.Threading.Channels.dll
+ System.Threading.dll
+ System.Threading.Overlapped.dll
+ System.Threading.Tasks.Dataflow.dll
+ System.Threading.Tasks.dll
+ System.Threading.Tasks.Extensions.dll
+ System.Threading.Tasks.Parallel.dll
+ System.Threading.Thread.dll
+ System.Threading.ThreadPool.dll
+ System.Threading.Timer.dll
+ System.Transactions.dll
+ System.Transactions.Local.dll
+ System.ValueTuple.dll
+ System.Web.dll
+ System.Web.HttpUtility.dll
+ System.Windows.dll
+ System.Xml.dll
+ System.Xml.Linq.dll
+ System.Xml.ReaderWriter.dll
+ System.Xml.Serialization.dll
+ System.Xml.XDocument.dll
+ System.Xml.XmlDocument.dll
+ System.Xml.XmlSerializer.dll
+ System.Xml.XPath.dll
+ System.Xml.XPath.XDocument.dll
+ WindowsBase.dll
+<NUGET>/
+ cliwrap/3.9.0/lib/net9.0/CliWrap.dll
+ microsoft.extensions.dependencyinjection.abstractions/9.0.0/lib/net9.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll
+ microsoft.extensions.logging.abstractions/9.0.0/lib/net9.0/Microsoft.Extensions.Logging.Abstractions.dll
+
+[analyzerReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/10.0.5/analyzers/dotnet/cs/
+ Microsoft.Interop.ComInterfaceGenerator.dll
+ Microsoft.Interop.JavaScript.JSImportGenerator.dll
+ Microsoft.Interop.LibraryImportGenerator.dll
+ Microsoft.Interop.SourceGeneration.dll
+ System.Text.Json.SourceGeneration.dll
+ System.Text.RegularExpressions.Generator.dll
+<DOTNET>/sdk/10.0.201/Sdks/Microsoft.NET.Sdk/analyzers/
+ Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
+ Microsoft.CodeAnalysis.NetAnalyzers.dll
+<NUGET>/microsoft.extensions.logging.abstractions/9.0.0/analyzers/dotnet/roslyn4.4/cs/Microsoft.Extensions.Logging.Generators.dll
+
+[analyzerConfigFiles]
+<DOTNET>/sdk/10.0.201/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_10_default.globalconfig
+obj/Debug/net10.0/PuddingCore.GeneratedMSBuildEditorConfig.editorconfig

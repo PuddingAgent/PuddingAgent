@@ -11,6 +11,7 @@ import TokenStatsIndicator from './TokenStatsIndicator';
 import AspLspIndicator from './AspLspIndicator';
 import IndexIndicator from './IndexIndicator';
 import SubconsciousLlmIndicator from './SubconsciousLlmIndicator';
+import SubAgentIndicator from './SubAgentIndicator';
 import VoiceInputButton from './VoiceInputButton';
 
 /** Agent Console 的聊天状态（映射到自然语言文案） */
@@ -40,11 +41,12 @@ interface InputAreaProps {
   tUsed: number;
   tPct: number;
   status: ChatStatus;
+  sessionId?: string | null;
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport,
-  disabled, tLimit, tUsed, tPct, status,
+  disabled, tLimit, tUsed, tPct, status, sessionId,
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -220,6 +222,8 @@ const InputArea: React.FC<InputAreaProps> = ({
           <IndexIndicator active={false} statusText="全文索引待启动" />
           <span className={styles.statusDivider}>|</span>
           <SubconsciousLlmIndicator active={false} statusText="潜意识 LLM 待机" />
+          <span className={styles.statusDivider}>|</span>
+          <SubAgentIndicator sessionId={sessionId} />
         </div>
       </div>
     </div>

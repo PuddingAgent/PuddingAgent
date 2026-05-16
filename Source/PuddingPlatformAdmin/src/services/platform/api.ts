@@ -1233,6 +1233,72 @@ export async function deleteWorkspaceChannel(workspaceId: string, channelId: str
   return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/channels/${encodeURIComponent(channelId)}`, { method: 'DELETE' });
 }
 
+// ─── Sub-Agent API (ADR-016) ──────────────────────────────────────
+
+export interface SubAgentStatusDto {
+  subSessionId: string;
+  status: string;       // 'running' | 'completed' | 'failed'
+  templateId?: string;
+  modelId?: string;
+  taskSummary: string;
+  spawnedAt: string;
+  completedAt?: string;
+  resultSummary?: string;
+  success?: boolean;
+}
+
+export interface SubAgentStatsDto {
+  total: number;
+  running: number;
+  completed: number;
+  failed: number;
+  lastCompletedId?: string;
+  lastFailedId?: string;
+}
+
+/** 获取会话的所有子代理状态 */
+export async function getSessionSubAgents(sessionId: string): Promise<SubAgentStatusDto[]> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/sub-agents`, { method: 'GET' });
+}
+
+/** SSE 订阅会话事件流（含 subagent.spawned / subagent.completed） */
+export function subscribeSessionEvents(
+  sessionId: string,
+  onEvent: (ev: AdminChatStreamEvent) => void,
+  signal?: AbortSignal,
+): void {
+  const url = `/api/sessions/${encodeURIComponent(sessionId)}/events/stream`;
+  const token = localStorage.getItem('pudding_token');
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  fetch(url, { headers, signal })
+    .then(async (resp) => {
+      if (!resp.ok || !resp.body) return;
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+          else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              onEvent({ type: eventType as any, ...data });
+            } catch { /* skip malformed */ }
+          }
+        }
+      }
+    })
+    .catch(() => { /* connection closed */ });
+}
+
 // ─── Chat types ───────────────────────────────────────────────
 
 export interface AdminChatRequest {
