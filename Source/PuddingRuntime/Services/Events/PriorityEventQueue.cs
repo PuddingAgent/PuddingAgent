@@ -105,6 +105,12 @@ public class PriorityEventQueue : IPriorityEventQueue
         }
     }
 
+    /// <summary>诊断用：返回队列总数</summary>
+    public int CountTotal()
+    {
+        lock (_lock) { return _urgentQueue.Count + _importantQueue.Count + _normalQueue.Count; }
+    }
+
     public Task UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default)
     {
         _logger.LogInformation("[PriorityEventQueue] Status updated: {Id} → {Status} err={Error}",

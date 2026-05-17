@@ -22,7 +22,7 @@ import {
   type WorkspaceAgentDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup, SubAgentCardMap, SubAgentCard } from '../types';
+import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup, SubAgentCardMap, SubAgentCard, ChatSource } from '../types';
 import { assistantStatusLabel } from '../types';
 
 const MESSAGE_PAGE_SIZE = 20;
@@ -217,6 +217,8 @@ export function useChatState(): UseChatStateReturn {
   const historyAbortRef = useRef<AbortController | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
+  const completedTurnsRef = useRef<Set<string>>(new Set());
+  const latestTurnIdRef = useRef<string | null>(null);
 
   const [createSceneOpen, setCreateSceneOpen] = useState(false);
   const [createSceneLoading, setCreateSceneLoading] = useState(false);
@@ -236,12 +238,23 @@ export function useChatState(): UseChatStateReturn {
       }
       if (ev.type === 'delta') {
         if (!ev.delta) return turn;
+        // 去重：如果 delta 与已有末尾重叠，截去重叠前缀
+        const current = turn.assistant.answerMarkdown;
+        let delta = ev.delta;
+        const maxOverlap = Math.min(current.length, delta.length, 10);
+        for (let n = maxOverlap; n > 0; n--) {
+          if (current.endsWith(delta.substring(0, n))) {
+            delta = delta.substring(n);
+            break;
+          }
+        }
+        if (!delta) return turn;
         return {
           ...turn,
           assistant: {
             ...turn.assistant, status: 'streaming' as const, isStreaming: true,
             renderMode: 'structured' as const,
-            answerMarkdown: turn.assistant.answerMarkdown + ev.delta,
+            answerMarkdown: current + delta,
           },
         };
       }
@@ -415,6 +428,7 @@ export function useChatState(): UseChatStateReturn {
         return { ...turn, assistant: { ...turn.assistant, usage: normalizeUsage(ev.usage) } };
       }
       if (ev.type === 'done') {
+        completedTurnsRef.current.add(turnId);
         return {
           ...turn,
           assistant: {
@@ -722,8 +736,24 @@ export function useChatState(): UseChatStateReturn {
       }, (ev) => {
         if (ev.type === 'metadata') {
           sessionIdRef.current = ev.sessionId; setSelectedSessionId(ev.sessionId); forceNewSessionRef.current = false;
+          latestTurnIdRef.current = turnId;
           const ttfm = (performance.now() - perfStart).toFixed(0);
-          console.log(`[Perf] Time to first metadata: ${ttfm}ms`);
+          console.log(`[Perf] Time to first metadata: ${ttfm}ms session=${ev.sessionId}`);
+
+          // 推断消息来源
+          const sourceMeta = (ev as any).sourceId || (ev as any).source_type;
+          if (sourceMeta) {
+            const source: ChatSource = {
+              sourceId: (ev as any).sourceId || 'agent',
+              sourceType: (ev as any).source_type || 'agent',
+              displayName: (ev as any).source_name || 'AI 助手',
+              avatarEmoji: (ev as any).source_type === 'websocket' ? '🔌' :
+                           (ev as any).source_type === 'webhook' ? '🪝' :
+                           (ev as any).source_type === 'email' ? '📧' : '🤖',
+              avatarColor: stringToColor((ev as any).sourceId || 'agent'),
+            };
+            setTurns(p => p.map(t => t.turnId === turnId ? { ...t, source } : t));
+          }
         }
         // ── 诊断日志：SSE 事件接收 ──
         if (ev.type === 'done') {

@@ -178,6 +178,15 @@ public sealed class WebhookConnector : IPuddingConnector
         Interlocked.Increment(ref _messagesReceived);
         _lastReceiveTime = DateTimeOffset.UtcNow;
 
+        var metadata = headers ?? [];
+        if (!metadata.ContainsKey("source_type")) metadata["source_type"] = "webhook";
+        if (!metadata.ContainsKey("source_id")) metadata["source_id"] = channelId;
+        if (!metadata.ContainsKey("source_name")) metadata["source_name"] = "webhook";
+
+        var correlationId = metadata.TryGetValue("X-Session-Id", out var sid) && !string.IsNullOrWhiteSpace(sid)
+            ? sid
+            : null;
+
         var envelope = new PuddingIngressEnvelope
         {
             ChannelId = channelId,
@@ -185,7 +194,8 @@ public sealed class WebhookConnector : IPuddingConnector
             UserExternalId = $"webhook:{channelId}",
             MessageText = body,
             MessageType = "webhook_event",
-            Metadata = headers ?? [],
+            CorrelationId = correlationId,
+            Metadata = metadata,
         };
 
         if (_context?.OnEventReceived != null)

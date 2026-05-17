@@ -12,7 +12,7 @@ namespace PuddingAgent.Services.Events;
 /// AgentEventHandler — 事件系统到 Agent 执行引擎的桥接层。
 /// 
 /// 实现 IEventHandler，将 InternalEvent 转换为 RuntimeDispatchRequest，
-/// 调用 AgentExecutionService.ExecuteAsync 执行。
+/// 调用 AgentExecutionService.ExecuteStreamAsync 执行。
 /// 
 /// 不是事件系统的一部分 — 它是事件系统的消费者。
 /// 
@@ -77,20 +77,18 @@ public class AgentEventHandler : IEventHandler
                 return true; // 不可执行的事件 → 沉没
             }
 
-            // CancellationToken.None — 事件驱动执行不绑定 HTTP 请求生命周期
-            var result = await _executionService.ExecuteAsync(request, CancellationToken.None);
-
-            if (result.IsSuccess)
+            var success = await ExecuteMainEventStreamAsync(evt, request, CancellationToken.None);
+            if (success)
             {
                 _logger.LogInformation(
                     "[AgentEventHandler] Event completed id={Id} type={Type} session={Session}",
-                    evt.EventId, evt.Type, result.SessionId);
+                    evt.EventId, evt.Type, request.SessionId);
                 return true;
             }
 
             _logger.LogWarning(
-                "[AgentEventHandler] Event failed id={Id} type={Type} error={Error}",
-                evt.EventId, evt.Type, result.ErrorMessage);
+                "[AgentEventHandler] Event failed id={Id} type={Type} session={Session}",
+                evt.EventId, evt.Type, request.SessionId);
             return false;
         }
         catch (OperationCanceledException)
@@ -105,6 +103,60 @@ public class AgentEventHandler : IEventHandler
                 "[AgentEventHandler] Event exception id={Id} type={Type}", evt.EventId, evt.Type);
             return false;
         }
+    }
+
+    /// <summary>
+    /// 主事件链路：统一走 ExecuteStreamAsync。
+    /// 注意：ExecuteStreamAsync 内部已负责将帧写入 ISessionStateManager，
+    /// 此处只消费帧用于判定执行成功/失败，避免双写。
+    /// </summary>
+    private async Task<bool> ExecuteMainEventStreamAsync(
+        InternalEvent evt,
+        RuntimeDispatchRequest request,
+        CancellationToken ct)
+    {
+        var frameCount = 0;
+        var deltaCount = 0;
+        string? lastEvent = null;
+        bool seenDone = false;
+        bool seenError = false;
+        bool seenCancelled = false;
+
+        await foreach (var frame in _executionService.ExecuteStreamAsync(request, ct))
+        {
+            frameCount++;
+            lastEvent = frame.Event;
+
+            if (frame.Event == "delta")
+                deltaCount++;
+
+            if (frame.Event == "done")
+                seenDone = true;
+            else if (frame.Event == "error")
+                seenError = true;
+            else if (frame.Event == "cancelled")
+                seenCancelled = true;
+
+            if (frameCount <= 3 || frame.Event is "done" or "error" or "cancelled")
+            {
+                _logger.LogDebug(
+                    "[AgentEventHandler] Main stream frame eventId={EventId} session={Session} idx={Idx} type={Type}",
+                    evt.EventId, request.SessionId, frameCount, frame.Event);
+            }
+        }
+
+        _logger.LogInformation(
+            "[AgentEventHandler] Main stream finished eventId={EventId} session={Session} frames={Frames} deltas={Deltas} last={Last} done={Done} error={Err} cancelled={Cancelled}",
+            evt.EventId,
+            request.SessionId,
+            frameCount,
+            deltaCount,
+            lastEvent ?? "(none)",
+            seenDone,
+            seenError,
+            seenCancelled);
+
+        return seenDone && !seenError && !seenCancelled;
     }
 
     /// <summary>
@@ -321,6 +373,10 @@ public class AgentEventHandler : IEventHandler
                 messageText = promptEl2.GetString()!;
             else if (je.TryGetProperty("message", out var msgEl) && msgEl.ValueKind == JsonValueKind.String)
                 messageText = msgEl.GetString()!;
+            else if (je.TryGetProperty("messageText", out var msgTextEl) && msgTextEl.ValueKind == JsonValueKind.String)
+                messageText = msgTextEl.GetString()!;
+            else if (je.TryGetProperty("content", out var contentEl) && contentEl.ValueKind == JsonValueKind.String)
+                messageText = contentEl.GetString()!;
             else
                 messageText = $"[系统事件] {evt.Type}";
         }

@@ -69,6 +69,7 @@ TestDtos.cs
 
 [metadataReferences]
 ../
+ ../external/github.hyfree.GM/github.hyfree.GM/obj/Debug/net10.0/ref/github.hyfree.GM.dll
  PuddingAgent/obj/Debug/net10.0/ref/PuddingAgent.dll
  PuddingController/obj/Debug/net10.0/ref/PuddingController.dll
  PuddingCore/obj/Debug/net10.0/ref/PuddingCore.dll
@@ -388,6 +389,7 @@ TestDtos.cs
 <NUGET>/
  azure.core/1.47.1/lib/net8.0/Azure.Core.dll
  azure.identity/1.14.2/lib/net8.0/Azure.Identity.dll
+ bouncycastle.cryptography/2.6.2/lib/net6.0/BouncyCastle.Cryptography.dll
  cliwrap/3.9.0/lib/net9.0/CliWrap.dll
  communitytoolkit.highperformance/8.4.0/lib/net8.0/CommunityToolkit.HighPerformance.dll
  flurl.http/4.0.2/lib/net6.0/Flurl.Http.dll

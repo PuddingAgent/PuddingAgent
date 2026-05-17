@@ -15,12 +15,14 @@ COPY Source/PuddingAgent/PuddingAgent.csproj         Source/PuddingAgent/
 COPY Source/PuddingPlatform/PuddingPlatform.csproj   Source/PuddingPlatform/
 COPY Source/PuddingController/PuddingController.csproj Source/PuddingController/
 COPY Source/PuddingGateway/PuddingGateway.csproj     Source/PuddingGateway/
+COPY external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj external/github.hyfree.GM/github.hyfree.GM/
 
 RUN dotnet restore Source/PuddingAgent/PuddingAgent.csproj
 
 # 复制全部源码（CACHE_BUST 强制每次重新复制）
 ARG CACHE_BUST
 COPY Source/ Source/
+COPY external/ external/
 
 # 发布（CACHE_BUST 强制每次重编）
 ARG CACHE_BUST=0

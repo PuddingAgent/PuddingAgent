@@ -74,9 +74,12 @@ public class EventIngressBridge : IHostedService
                 await _queue.EnqueueAsync(pe, evt.Priority);
             }
 
-            _logger.LogDebug(
-                "[EventIngressBridge] Routed to queue: id={Id} type={Type} pri={Pri}",
-                evt.EventId, evt.Type, evt.Priority);
+            // 诊断：入站事件摘要（含 payload 前 120 字符）
+            var payloadPreview = evt.Payload?.ToString()?.Replace("\n", "\\n");
+            if (payloadPreview?.Length > 120) payloadPreview = payloadPreview[..120] + "...";
+            _logger.LogInformation(
+                "[EventIngressBridge] Routed id={Id} type={Type} pri={Pri} src={Src} session={Session} payloadPreview={Payload}",
+                evt.EventId, evt.Type, evt.Priority, evt.Source?.SourceType ?? "?", evt.SessionId, payloadPreview ?? "(null)");
         }
         catch (Exception ex)
         {

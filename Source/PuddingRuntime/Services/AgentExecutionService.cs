@@ -110,6 +110,9 @@ public sealed class AgentExecutionService
         _logger              = logger;
         _llmResolver         = llmResolver;
         _ssm                 = ssm;  // ADR-016
+
+        if (_ssm is null)
+            _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
     }
 
     /// <summary>
@@ -877,8 +880,18 @@ public sealed class AgentExecutionService
             // fire-and-forget，不阻塞流式管道；AppendAsync 内部 TryWrite Channel 非阻塞
             async void Append(ServerSentEventFrame frame)
             {
-                try { if (_ssm is not null) await _ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", frame, CancellationToken.None); }
-                catch (Exception ex) { _logger.LogWarning(ex, "[AgentExec:SSM] AppendAsync failed session={Session}", request.SessionId); }
+                try
+                {
+                    if (_ssm is not null)
+                    {
+                        await _ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", frame, CancellationToken.None);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[AgentExec:Append] SSM null, cannot push frame type={Type} session={Session}", frame.Event, request.SessionId);
+                    }
+                }
+                catch (Exception ex) { _logger.LogWarning(ex, "[AgentExec:Append] AppendAsync failed session={Session}", request.SessionId); }
             }
 
             // ── 流式 Agent Loop（与同步路径共享护栏参数）──────
@@ -894,6 +907,10 @@ public sealed class AgentExecutionService
 
             for (int round = 0; round < maxRounds; round++)
             {
+                var roundSw = System.Diagnostics.Stopwatch.StartNew();
+                int roundDeltaFrames = 0;
+                int roundThinkingFrames = 0;
+
                 // ── 检查点：取消 / 最大耗时 / 最大工具调用 ──
                 if (ct.IsCancellationRequested)
                 {
@@ -969,6 +986,7 @@ public sealed class AgentExecutionService
                         // 思维链增量 → thinking 事件
                         if (!string.IsNullOrEmpty(delta.ReasoningDelta))
                         {
+                            roundThinkingFrames++;
                             reasoningBuf.Append(delta.ReasoningDelta);
                             var thinkingFrame = ServerSentEventFrame.Json(SseEventTypes.Thinking,
                                 new { delta = delta.ReasoningDelta });
@@ -984,6 +1002,7 @@ public sealed class AgentExecutionService
                         // 文本增量 → delta 事件
                         if (!string.IsNullOrEmpty(delta.ContentDelta))
                         {
+                            roundDeltaFrames++;
                             var safeDelta = await _keyVaultService.StripAsync(delta.ContentDelta, ct);
                             replyBuf.Append(safeDelta);
                             var deltaFrame = ServerSentEventFrame.Json(SseEventTypes.Delta,
@@ -1061,6 +1080,11 @@ public sealed class AgentExecutionService
                     break;
                 }
                 consecutiveShortReplies = 0;
+
+                // 诊断：轮次帧统计
+                _logger.LogInformation(
+                    "[AgentExec:Stream:Round] session={Session} round={Round} deltaFrames={Deltas} thinkingFrames={Think} toolCalls={Tools} elapsedMs={Ms}",
+                    request.SessionId, round, roundDeltaFrames, roundThinkingFrames, accumulatedToolCalls.Count, roundSw.ElapsedMilliseconds);
 
                 // 有工具调用 → 构建 Assistant 消息 + 发送 tool_call/tool_result 帧
                 _logger.LogDebug("[Diag] Tool calls found session={Session} round={Round} count={Count} names={Names}",

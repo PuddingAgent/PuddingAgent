@@ -309,6 +309,7 @@ public class ChatApiController(
             new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropWrite });
         Channel<ServerSentEventFrame>? hubChannel = null;
         int bgFrameCount = 0;
+        int sseSeqNum = 0; // 前端 SSE 投递序列号
 
         logger.LogInformation("[Chat:SSE] Background task starting ws={Workspace}", workspaceId);
 
@@ -332,6 +333,12 @@ public class ChatApiController(
                 {
                     ParseFrame(frame);
                     bgFrameCount++;
+
+                    if (frame.Event == "delta")
+                    {
+                        var preview = frame.Data?.Length > 40 ? frame.Data[..40] : frame.Data ?? "";
+                        logger.LogDebug("[Chat:SSE:D] bgFrame={N} event=delta preview={P}", bgFrameCount, preview);
+                    }
 
                     if (hubChannel is null && streamSessionId is not null)
                     {

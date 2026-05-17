@@ -392,6 +392,111 @@ builder.Services.AddSingleton<IP2pDiscoveryService, MdnsDiscoveryService>();
 builder.Services.AddSingleton<WebhookConnector>();
 builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<WebhookConnector>());
 
+// ── HTTP 连接器（最小入站协议）──────────────────────
+builder.Services.AddSingleton<HttpConnector>();
+builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<HttpConnector>());
+
+// ── WebSocket 连接器 ───────────────────────────────
+builder.Services.AddSingleton<WebSocketConnector>();
+builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<WebSocketConnector>());
+
+// ── MQTT 连接器（最小协议）──────────────────────────
+builder.Services.AddSingleton<MqttConnector>();
+builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<MqttConnector>());
+
+// ── 网关鉴权（SM2 + 白名单）────────────────────────
+builder.Services.AddSingleton<GatewayAuthService>();
+
+// ── ConnectorHost（统一管理所有连接器）────────────
+builder.Services.AddSingleton<ConnectorHost>(sp =>
+{
+    var host = new ConnectorHost(
+        onEventReceived: async (envelope, ct) =>
+        {
+            // 将连接器事件推入 IInternalEventBus → EventIngressBridge → AgentEventHandler
+            var bus = sp.GetRequiredService<PuddingCode.Abstractions.IInternalEventBus>();
+            var sessionId = envelope.CorrelationId ?? $"connector-session-{Guid.NewGuid():N}"[..26];
+            var messageType = string.IsNullOrWhiteSpace(envelope.MessageType) ? "message" : envelope.MessageType;
+            var eventType = ConnectorGatewayContracts.BuildEventType(envelope.ChannelType, messageType);
+            var payload = new ConnectorInboundPayload
+            {
+                ChannelId = envelope.ChannelId,
+                ChannelType = envelope.ChannelType,
+                UserExternalId = envelope.UserExternalId,
+                MessageText = envelope.MessageText,
+                MessageType = envelope.MessageType,
+                CorrelationId = sessionId,
+                Metadata = envelope.Metadata,
+            };
+
+            var traceId = envelope.Metadata.TryGetValue("trace_id", out var t) && !string.IsNullOrWhiteSpace(t)
+                ? t
+                : envelope.EnvelopeId;
+
+            var ie = new PuddingCode.Models.InternalEvent
+            {
+                EventId = envelope.EnvelopeId,
+                Type = eventType,
+                Source = new PuddingCode.Models.EventSource { SourceType = envelope.ChannelType, SourceId = envelope.ChannelId },
+                SessionId = sessionId,
+                WorkspaceId = "default",
+                Payload = System.Text.Json.JsonSerializer.SerializeToElement(payload),
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Priority = PuddingCode.Models.EventPriorityLevel.Normal,
+            };
+
+            var spLogger = sp.GetRequiredService<ILogger<Program>>();
+            spLogger.LogInformation(
+                "[Program:ConnectorIngress] eventId={EventId} traceId={TraceId} eventType={EventType} channelType={ChannelType} channelId={ChannelId} sessionId={SessionId} envelopeId={EnvelopeId}",
+                ie.EventId,
+                traceId,
+                eventType,
+                envelope.ChannelType,
+                envelope.ChannelId,
+                sessionId,
+                envelope.EnvelopeId);
+
+            await bus.PublishAsync(ie, ct);
+
+            // 仅 websocket 通道启用 SSM→WS 转发；其他协议仅通过会话层观察。
+            if (!string.Equals(envelope.ChannelType, "websocket", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // 将 WebSocket 连接 ID 的 session 订阅到 SSM，后续 SSE 帧转发到 WebSocket
+            var ssm2 = sp.GetService<PuddingCode.Abstractions.ISessionStateManager>();
+            if (ssm2 is not null)
+            {
+                var wsConnector = sp.GetRequiredService<WebSocketConnector>();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // 等待 Agent 创建 session 并开始推流
+                        await Task.Delay(2000, ct);
+                        spLogger.LogWarning("[Program:SSM→WS] Subscribing session={Sid} conn={Conn} eventType={EventType}", sessionId, envelope.ChannelId, eventType);
+                        var reader = ssm2.Subscribe(sessionId);
+                        if (reader is null) { spLogger.LogWarning("[Program:SSM→WS] Subscribe returned null"); return; }
+                        spLogger.LogWarning("[Program:SSM→WS] Forward start conn={Conn} session={Sid}", envelope.ChannelId, sessionId);
+                        await foreach (var frame in reader.ReadAllAsync(CancellationToken.None))
+                        {
+                            var wsMsg = new PuddingCode.Platform.ConnectorMessage
+                            {
+                                Target = envelope.ChannelId,
+                                Content = System.Text.Json.JsonSerializer.Serialize(new { type = "sse", @event = frame.Event, data = frame.Data }),
+                            };
+                            try { await wsConnector.SendAsync(wsMsg, CancellationToken.None); }
+                            catch { break; }
+                        }
+                        spLogger.LogWarning("[Program:SSM→WS] Forward end conn={Conn} session={Sid}", envelope.ChannelId, sessionId);
+                    }
+                    catch (Exception fex) { spLogger.LogWarning(fex, "[Program:SSM→WS] Forward error"); }
+                });
+            }
+        },
+        sp.GetRequiredService<ILogger<ConnectorHost>>());
+    return host;
+});
+
 // ── Cron 定时任务调度 ──────────────────────────────
 builder.Services.AddHostedService<CronSchedulerService>();
 
@@ -458,6 +563,25 @@ app.Lifetime.ApplicationStarted.Register(() =>
         catch (Exception ex)
         {
             app.Logger.LogError(ex, "[P2P] Discovery 启动失败。");
+        }
+        Serilog.Log.Warning("[Program] P2P done, about to start ConnectorHost...");
+        try
+        {
+            // 启动 ConnectorHost：注册所有 IPuddingConnector
+            var progLogger = app.Services.GetRequiredService<ILogger<Program>>();
+            progLogger.LogWarning("[Program] Starting ConnectorHost via DI logger...");
+            var connectorHost = app.Services.GetRequiredService<ConnectorHost>();
+            progLogger.LogWarning("[Program] ConnectorHost resolved, getting connectors...");
+            var connectors = app.Services.GetServices<IPuddingConnector>().ToList();
+            progLogger.LogWarning("[Program] Got {Count} connectors, registering...", connectors.Count);
+            foreach (var c in connectors)
+                connectorHost.Register(c);
+            await connectorHost.StartAllAsync();
+            progLogger.LogWarning("[Program] ConnectorHost started with {Count} connectors", connectors.Count);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[Program] ConnectorHost 启动失败。");
         }
     });
 });
@@ -642,6 +766,12 @@ app.UseCors("AdminSpa");
 
 // ── Routing ──────────────────────────────────────────
 app.UseRouting();
+
+// ── WebSocket ────────────────────────────────────────
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(30),
+});
 
 // ── Auth ─────────────────────────────────────────────
 app.UseAuthentication();

@@ -56,10 +56,13 @@ TemporaryDependencyNodeTargetIdentifier=net10.0
 
 [sourceFiles]
 BuiltInAgentTemplates.cs
-Connectors/WebhookConnector.cs
+Connectors/
+ WebhookConnector.cs
+ WebSocketConnector.cs
 Controllers/
  P2pController.cs
  WebhookController.cs
+ WebSocketController.cs
 obj/Debug/net10.0/
  .NETCoreApp,Version=v10.0.AssemblyAttributes.cs
  PuddingAgent.AssemblyInfo.cs
@@ -67,13 +70,16 @@ obj/Debug/net10.0/
 P2P/MdnsDiscoveryService.cs
 Program.cs
 Services/
+ ConnectorHost.cs
  CronSchedulerService.cs
  Events/
   AgentEventHandler.cs
   EventIngressBridge.cs
+ GatewayAuthService.cs
 
 [metadataReferences]
 ../
+ ../external/github.hyfree.GM/github.hyfree.GM/obj/Debug/net10.0/ref/github.hyfree.GM.dll
  PuddingController/obj/Debug/net10.0/ref/PuddingController.dll
  PuddingCore/obj/Debug/net10.0/ref/PuddingCore.dll
  PuddingGateway/obj/Debug/net10.0/ref/PuddingGateway.dll
@@ -392,6 +398,7 @@ Services/
 <NUGET>/
  azure.core/1.47.1/lib/net8.0/Azure.Core.dll
  azure.identity/1.14.2/lib/net8.0/Azure.Identity.dll
+ bouncycastle.cryptography/2.6.2/lib/net6.0/BouncyCastle.Cryptography.dll
  cliwrap/3.9.0/lib/net9.0/CliWrap.dll
  communitytoolkit.highperformance/8.4.0/lib/net8.0/CommunityToolkit.HighPerformance.dll
  microsoft.aspnetcore.authentication.jwtbearer/10.0.0/lib/net10.0/Microsoft.AspNetCore.Authentication.JwtBearer.dll

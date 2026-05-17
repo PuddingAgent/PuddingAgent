@@ -111,8 +111,8 @@ public sealed class SessionStateManager : ISessionStateManager
                 }));
 
         var pushed = channel.Writer.TryWrite(frame);
-
-        _logger.LogDebug("[SSM] Push channel session={Session} type={EventType} seq={Seq} ok={Ok}", sessionId, frame.Event, seq, pushed);
+        if (frame.Event == "delta" || frame.Event == "done" || frame.Event == "metadata")
+            _logger.LogWarning("[SSM] Push channel session={Session} type={EventType} seq={Seq} ok={Ok}", sessionId, frame.Event, seq, pushed);
 
         // 3. 如有 done/error/cancelled 帧 → 标记流式完成
         if (frame.Event is "done" or "error" or "cancelled")

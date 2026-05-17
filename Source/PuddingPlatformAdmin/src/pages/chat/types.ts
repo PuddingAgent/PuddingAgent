@@ -21,6 +21,8 @@ export interface TimelineItem {
 
 export interface ChatTurn {
   turnId: string;
+  /** 消息来源（agent / websocket / webhook / email / mqtt） */
+  source?: ChatSource;
   userMessage: {
     id: string;
     text: string;
@@ -48,6 +50,15 @@ export interface SessionItem {
   sessionId: string;
   title: string;
   timestamp: number;
+}
+
+/** 消息来源描述（头像 + 名称 + 渠道） */
+export interface ChatSource {
+  sourceId: string;
+  sourceType: 'agent' | 'websocket' | 'webhook' | 'email' | 'mqtt';
+  displayName: string;
+  avatarEmoji: string;
+  avatarColor: string;
 }
 
 export const assistantStatusLabel: Record<AssistantStatus, string> = {

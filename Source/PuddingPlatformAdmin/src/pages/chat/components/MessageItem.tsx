@@ -9,20 +9,65 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { useChatStyles } from '../styles';
 
-// ── Markdown 预处理：确保 GFM 表格可正确解析 ───────────────
-// 问题：LLM 可能在表格单元格内使用 fenced code block，GFM 表格不支持跨行单元格
-// 策略：将所有 fenced code block 转为 inline code（单行）或 <br/> 连接的 inline code（多行）
-// 注意：如需保留独立代码块高亮，LLM 应使用缩进代码块（4空格）代替 fenced 语法
+// ── Markdown 预处理：修复 GFM 表格渲染问题 ─────────────────
+// 问题1：LLM 在表格单元格内生成 fenced code block，跨行破坏 GFM 表结构
+// 问题2：标题 `##` 后紧接表格行（无空行），ReactMarkdown 把表格当标题内容
+// 问题3：标题和表格混在同一行 `## | 测试项 | ...`
 const preprocessMarkdown = (md: string): string => {
-  return md.replace(
-    /```[^\n]*\n([\s\S]*?)\n```/g,
-    (_full: string, content: string) => {
-      const lines = content.trim().split('\n').map((l: string) => l.trim()).filter(Boolean);
-      if (lines.length === 1) return '`' + lines[0] + '`';
-      // 多行 → 用 <br/> 连接各行为 inline code
-      return lines.map((l: string) => '`' + l + '`').join('<br/>');
-    },
-  );
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 情况3：heading 行内混杂表格（## | 测试项 | 结果 |）→ 拆分为 heading + 空行 + 表格头
+    const headingMatch = /^(#{1,6}\s+)(.*)$/.exec(trimmed);
+    if (headingMatch && headingMatch[2].includes('|')) {
+      const prefix = headingMatch[1];  // "## "
+      const rest = headingMatch[2];    // "| 测试项 | ..." 或 "测试结果 | 测试项 | ..."
+      const pipeIdx = rest.indexOf('|');
+      const headingText = rest.substring(0, pipeIdx).trim();
+      const tablePart = rest.substring(pipeIdx).trim();
+      if (headingText) {
+        out.push(prefix + headingText);
+        out.push('');  // 空行分隔
+        out.push(tablePart);  // 表格头
+        i++;
+        continue;
+      }
+      // heading 文本为空（如 "## | 测试项 |"），保留 ## 作为通用标题
+      out.push(prefix + '测试结果');
+      out.push('');
+      out.push(tablePart);
+      i++;
+      continue;
+    }
+
+    // 表格行（| ... | 或 |---|）→ 合并 code block 续行
+    if (/^\|.*\|$/.test(trimmed) || /^\|[-:| ]+\|$/.test(trimmed)) {
+      const parts: string[] = [line];
+      i++;
+      while (i < lines.length) {
+        const nl = lines[i].trim();
+        if (/^\|/.test(nl)) break;       // 新表格行
+        if (nl === '') { i++; break; }   // 空行 → 表格结束
+        parts.push(lines[i]);            // code block 续行
+        i++;
+      }
+      const joined = parts.join(' ');
+      const fixed = joined.replace(/```[^\n`]*\s*/g, '`').replace(/\s*```/g, '`');
+      // 如果前一行是 heading（无空行分隔），补空行
+      if (out.length > 0 && /^#{1,6}\s/.test(out[out.length - 1].trim())) {
+        out.push('');
+      }
+      out.push(fixed);
+    } else {
+      out.push(line);
+      i++;
+    }
+  }
+  return out.join('\n');
 };
 
 // ── 内部 CodeBlock 组件 ──────────────────────────────────────

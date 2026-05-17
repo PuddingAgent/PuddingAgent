@@ -13,18 +13,18 @@ primary
 lastDtbSucceeded
 
 [properties]
-AssemblyName=PuddingGateway
+AssemblyName=PuddingWsTest
 CommandLineArgsForDesignTimeEvaluation=-langversion:14.0 -define:TRACE
 CompilerGeneratedFilesOutputPath=
 MaxSupportedLangVersion=14.0
 ProjectAssetsFile=<PATH>obj/project.assets.json
-RootNamespace=PuddingGateway
+RootNamespace=PuddingWsTest
 RunAnalyzers=
 RunAnalyzersDuringLiveAnalysis=
 SolutionPath=<PATH>../../PuddingAgentNetwork.slnx
 TargetFrameworkIdentifier=.NETCoreApp
-TargetPath=<PATH>bin/Debug/net10.0/PuddingGateway.dll
-TargetRefPath=<PATH>obj/Debug/net10.0/ref/PuddingGateway.dll
+TargetPath=<PATH>bin/Debug/net10.0/PuddingWsTest.dll
+TargetRefPath=<PATH>obj/Debug/net10.0/ref/PuddingWsTest.dll
 TemporaryDependencyNodeTargetIdentifier=net10.0
 
 [commandLineArguments]
@@ -44,9 +44,9 @@ TemporaryDependencyNodeTargetIdentifier=net10.0
 /debug:portable
 /filealign:512
 /optimize-
-/out:obj\Debug\net10.0\PuddingGateway.dll
-/refout:obj\Debug\net10.0\refint\PuddingGateway.dll
-/target:library
+/out:obj\Debug\net10.0\PuddingWsTest.dll
+/refout:obj\Debug\net10.0\refint\PuddingWsTest.dll
+/target:exe
 /warnaserror-
 /utf8output
 /deterministic+
@@ -54,19 +54,14 @@ TemporaryDependencyNodeTargetIdentifier=net10.0
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
-Adapters/
- CliGatewayAdapter.cs
- EmailGatewayAdapter.cs
- WebChatGatewayAdapter.cs
-GatewayAdapterHost.cs
-Models/ConnectionIdentity.cs
+AutoTest.cs
 obj/Debug/net10.0/
  .NETCoreApp,Version=v10.0.AssemblyAttributes.cs
- PuddingGateway.AssemblyInfo.cs
- PuddingGateway.GlobalUsings.g.cs
+ PuddingWsTest.AssemblyInfo.cs
+ PuddingWsTest.GlobalUsings.g.cs
+Program.cs
 
 [metadataReferences]
-../PuddingCore/obj/Debug/net10.0/ref/PuddingCore.dll
 <DOTNET>/packs/Microsoft.NETCore.App.Ref/10.0.5/ref/net10.0/
  Microsoft.CSharp.dll
  Microsoft.VisualBasic.Core.dll
@@ -235,10 +230,6 @@ obj/Debug/net10.0/
  System.Xml.XPath.dll
  System.Xml.XPath.XDocument.dll
  WindowsBase.dll
-<NUGET>/
- cliwrap/3.9.0/lib/net9.0/CliWrap.dll
- microsoft.extensions.dependencyinjection.abstractions/9.0.0/lib/net9.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll
- microsoft.extensions.logging.abstractions/9.0.0/lib/net9.0/Microsoft.Extensions.Logging.Abstractions.dll
 
 [analyzerReferences]
 <DOTNET>/packs/Microsoft.NETCore.App.Ref/10.0.5/analyzers/dotnet/cs/
@@ -251,8 +242,7 @@ obj/Debug/net10.0/
 <DOTNET>/sdk/10.0.201/Sdks/Microsoft.NET.Sdk/analyzers/
  Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
  Microsoft.CodeAnalysis.NetAnalyzers.dll
-<NUGET>/microsoft.extensions.logging.abstractions/9.0.0/analyzers/dotnet/roslyn4.4/cs/Microsoft.Extensions.Logging.Generators.dll
 
 [analyzerConfigFiles]
 <DOTNET>/sdk/10.0.201/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_10_default.globalconfig
-obj/Debug/net10.0/PuddingGateway.GeneratedMSBuildEditorConfig.editorconfig
+obj/Debug/net10.0/PuddingWsTest.GeneratedMSBuildEditorConfig.editorconfig

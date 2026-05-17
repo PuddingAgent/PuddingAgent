@@ -1,19 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
 using PuddingAgent.Connectors;
-using PuddingCode.Platform;
-using PuddingRuntime.Services;
 
 namespace PuddingAgent.Controllers;
 
 /// <summary>
 /// Webhook 接收端点 — 接收外部系统的 HTTP POST 事件，
-/// 验证 HMAC-SHA256 签名后路由到 Agent Runtime 执行。
+/// 验证 HMAC-SHA256 签名后投递到连接器网关事件链路。
 /// </summary>
 [ApiController]
 [Route("webhook")]
 public sealed class WebhookController(
     WebhookConnector webhookConnector,
-    AgentExecutionService executionService,
     ILogger<WebhookController> logger) : ControllerBase
 {
     /// <summary>
@@ -53,29 +50,24 @@ public sealed class WebhookController(
             return Unauthorized(new { error = "Signature verification failed" });
         }
 
-        // 构造 RuntimeDispatchRequest 发送给 AgentExecutionService
-        var sessionId = $"webhook-{channelId}-{Guid.NewGuid():N}"[..20];
-        var dispatchRequest = new RuntimeDispatchRequest
-        {
-            SessionId = sessionId,
-            WorkspaceId = "default",
-            AgentTemplateId = "workspace-service-agent",
-            MessageText = body,
-        };
-
-        var result = await executionService.ExecuteAsync(dispatchRequest, ct);
+        var sessionHint = metadata.TryGetValue("X-Session-Id", out var sid) && !string.IsNullOrWhiteSpace(sid)
+            ? sid
+            : $"webhook-{channelId}-{Guid.NewGuid():N}"[..20];
 
         logger.LogInformation(
-            "[Webhook] channel={ChannelId} session={SessionId} success={Success}",
-            channelId, sessionId, result.IsSuccess);
+            "[Webhook] accepted channel={ChannelId} sessionHint={SessionId}",
+            channelId, sessionHint);
 
-        return Ok(new
+        return Accepted(new
         {
             accepted = true,
             channelId,
-            sessionId = result.SessionId,
-            reply = result.ReplyText ?? result.ErrorMessage ?? "(empty)",
-            isSuccess = result.IsSuccess,
+            sessionId = sessionHint,
+            observe = new
+            {
+                sse = $"/platform/api/chat/sessions/{sessionHint}/stream",
+                history = $"/platform/api/chat/sessions/{sessionHint}/history",
+            }
         });
     }
 }

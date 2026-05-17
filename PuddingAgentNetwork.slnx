@@ -14,5 +14,8 @@
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />
     <Project Path="Source/PuddingWebApiTests/PuddingWebApiTests.csproj" Id="78289515-7caa-47b2-b209-900edeaeb8bf" />
   </Folder>
+  <Folder Name="/TestScripts/">
+    <Project Path="TestScripts/PuddingWsTest/PuddingWsTest.csproj" />
+  </Folder>
   <Project Path="Docs/Docs.shproj" Id="405d8746-dcfa-4492-8b75-ae58b99dea44" />
 </Solution>

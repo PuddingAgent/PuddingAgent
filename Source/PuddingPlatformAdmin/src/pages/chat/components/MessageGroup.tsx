@@ -224,6 +224,24 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
       {/* ═══════════ Runtime Timeline（新结构）═══════════ */}
       {!isLegacyAssistant && showAssistant && (
         <>
+          {/* ── 来源标识（多渠道头像+名称）── */}
+          {turn.source && turn.source.sourceType !== 'agent' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6,
+              padding: '4px 8px', borderRadius: 6, fontSize: 12,
+              background: 'var(--ant-color-bg-elevated)',
+            }}>
+              <span style={{
+                width: 20, height: 20, borderRadius: 10, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                background: turn.source.avatarColor, fontSize: 12,
+              }}>
+                {turn.source.avatarEmoji}
+              </span>
+              <Text type="secondary" style={{ fontSize: 12 }}>{turn.source.displayName}</Text>
+            </div>
+          )}
+
           {/* ── 用户消息：保持原有头像+右对齐气泡风格 ── */}
           {showUserBubble && (
             <div className={cx(styles.avatarGroup, styles.userAvatarGroup)}>

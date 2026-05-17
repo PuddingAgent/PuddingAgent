@@ -47,6 +47,9 @@ public class EventDispatcher : BackgroundService
             _logger.LogInformation("[EventDispatcher]   Handler: pattern={Pattern} interrupts={Interrupts}",
                 h.EventTypePattern, h.SupportsInterruption);
 
+        // 诊断：每 30 秒输出队列统计
+        _ = PeriodicStatsAsync(stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -67,9 +70,10 @@ public class EventDispatcher : BackgroundService
 
                 if (matchedHandlers.Count == 0)
                 {
+                    var registeredPatterns = string.Join(", ", _handlers.Select(h => h.EventTypePattern));
                     _logger.LogWarning(
-                        "[EventDispatcher] No handler for event id={Id} type={Type}. Marking completed (silent drop).",
-                        qe.Id, qe.EventType);
+                        "[EventDispatcher] No handler for event id={Id} type={Type}. Registered patterns: [{Patterns}]. Silent drop.",
+                        qe.Id, qe.EventType, registeredPatterns);
                     await _queue.UpdateStatusAsync(qe.Id, "completed", ct: stoppingToken);
                     continue;
                 }
@@ -147,6 +151,24 @@ public class EventDispatcher : BackgroundService
         }
 
         _logger.LogInformation("[EventDispatcher] Stopped.");
+    }
+
+    /// <summary>诊断：每 30 秒输出队列水位统计</summary>
+    private async Task PeriodicStatsAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+                var stats = await _queue.GetStatsAsync(ct);
+                _logger.LogInformation(
+                    "[EventDispatcher:Stats] Queue U={Urgent} I={Important} N={Normal} Processing={Processing}",
+                    stats.UrgentPending, stats.ImportantPending, stats.NormalPending, stats.Processing);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { _logger.LogDebug(ex, "[EventDispatcher:Stats] Stats collection failed"); }
+        }
     }
 
     /// <summary>根据事件类型匹配所有 handler。</summary>

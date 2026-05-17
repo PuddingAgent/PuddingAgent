@@ -23,10 +23,19 @@ public class AuthApiController(IConfiguration config, PlatformDbContext db, Sm2J
 {
     /// <summary>POST /api/login/account</summary>
     [HttpPost("login/account")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
+    public async Task<IActionResult> Login(
+        [FromBody] LoginRequest request,
+        [FromServices] ILogger<AuthApiController> logger,
+        CancellationToken ct)
     {
+        logger.LogWarning("[Auth:Login] Received Username={Username} PasswordLen={PwdLen} Type={Type}",
+            request.Username ?? "(null)", request.Password?.Length ?? 0, request.Type ?? "(null)");
+
         var user = await db.AppUsers
             .FirstOrDefaultAsync(u => u.UserId == request.Username || u.Email == request.Username, ct);
+
+        logger.LogWarning("[Auth:Login] User found={Found} UserId={UserId} IsEnabled={Enabled}",
+            user is not null, user?.UserId, user?.IsEnabled);
 
         if (user is null || !user.IsEnabled || !PasswordHasher.Verify(request.Password, user.PasswordHash))
             return Ok(new { status = "error", type = "account", currentAuthority = "guest" });
