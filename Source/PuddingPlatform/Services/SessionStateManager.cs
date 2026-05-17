@@ -82,7 +82,7 @@ public sealed class SessionStateManager : ISessionStateManager
         lock (seqLock)
         {
             var maxSeq = db.SessionEventLogs
-                .Where(e => e.SessionId == sessionId)
+                .Where(wqe => wqe.SessionId == sessionId)
                 .Max(e => (long?)e.SequenceNum) ?? 0;
             seq = maxSeq + 1;
 

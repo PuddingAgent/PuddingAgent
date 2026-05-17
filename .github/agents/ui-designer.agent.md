@@ -2,7 +2,7 @@
 name: ui-designer
 description: "首席 UI/UX 设计顾问 Agent：评估界面交互风格、维持界面一致性、改善产品 UI 和 UX 体验。"
 argument-hint: "UI 设计任务，例如 '评审项目列表页交互' 或 '设计 Agent 对话界面' 或 '暗色模式配色方案'"
-model: Gemini-3.1-Pro-Preview (copilot)
+model: DeepSeek-V4-Pro (gcmp.deepseek)
 tools: ['vscode', 'read', 'search', 'edit', 'agent']
 handoffs:
   - label: HandoffToDev

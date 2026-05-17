@@ -2,7 +2,7 @@
 name: crypto-evaluation-expert
 description: "安全合规审查 Agent：依据安全规范与最佳实践，检查代码设计的安全性、数据保护与合规性。"
 argument-hint: "审查目标，例如 '检查代码安全性是否符合规范'、'检查代码安全性是否符合规范' 或 '检查代码安全性是否符合规范'"
-model: Kimi-K2.6 (gcmp.moonshot)
+model: DeepSeek-V4-Pro (gcmp.deepseek)
 tools: ['vscode', 'read', 'search', 'agent']
 handoffs:
   - label: HandoffToArchitect

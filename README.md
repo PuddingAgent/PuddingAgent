@@ -162,7 +162,7 @@ Pudding's design is deeply inspired by the following projects and research:
 
 - **[Claude Code](https://github.com/anthropics/claude-code)** (Anthropic) — Tool interface design, permission pipeline, Coordinator/Worker patterns
 - **[Hermes-Agent](https://github.com/NousResearch/hermes-agent)** (Nous Research) — Self-registering plugin architecture, memory provider pattern, multi-platform routing
-- **[OpenCode](https://github.com/anthropics/opencode)** — Bottleneck analysis of structured code understanding
+- **[OpenCode](https://github.com/anomalyco/opencode)** — Bottleneck analysis of structured code understanding
 - **[Cursor](https://cursor.com/)** — Product experience of AI-powered code editors
 - **[OpenHarness](https://github.com/anthropics/openharness)** — Harness loop, Hook system, 5-level security boundaries
 - **[OpenClaw](https://github.com/anthropics/openclaw)** — Memory system, multi-channel Gateway architecture

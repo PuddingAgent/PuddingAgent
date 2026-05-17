@@ -2,7 +2,7 @@
 name: explore
 description: "代码探索 Agent：搜索代码库、日志目录、收集背景信息、分析依赖关系、回答代码结构与运行线索问题。"
 argument-hint: "探索目标，例如 '密码模块的入口和依赖关系'、'所有使用 NPOI 的文件' 或 '从 Logs 目录中找出异常线索'"
-model: deepseek-v4-flash (gcmp.deepseek)
+model: DeepSeek-V4-Flash (gcmp.deepseek)
 tools: ['read', 'search', 'vscode']
 handoffs:
   - label: HandoffToLead

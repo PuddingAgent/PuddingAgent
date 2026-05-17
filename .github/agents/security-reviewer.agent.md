@@ -2,7 +2,7 @@
 name: security-reviewer
 description: "安全审查 Agent：识别安全漏洞、提出安全改进建议、检查密码学合规性。"
 argument-hint: "代码审查请求，例如 '审查代码安全风险|检查数据保护' 或 '审查代码安全风险|检查数据保护'"
-model: GLM-5.1 (按量计费) (gcmp.zhipu)
+model: DeepSeek-V4-Pro (gcmp.deepseek)
 tools: ['read', 'search', 'vscode']
 handoffs:
   - label: HandoffToDev

@@ -273,15 +273,17 @@ NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 
 ## 阶段 5: QA 门禁
 
-### 双 QA 分流（禁止同模型自审）
+### QA 审阅
 
-| 开发模型 | QA 审阅模型 |
-|---------|------------|
-| @dev (Codex) | @qa-sonnet (Sonnet) |
-| @lightweight-developer (MiniMax) | @qa (Codex) |
-| @super-dev (Claude Opus) | @qa (Codex) |
+> **禁止开发者自审** — QA 由 `@qa` 独立执行。
 
-二审：GLM-5.1。安全敏感追加 `@security-reviewer`。密评追加 `@crypto-evaluation-expert`。
+| 开发者 | QA 审阅 |
+|---------|---------|
+| @dev | @qa |
+| @lightweight-developer | @qa |
+| @super-dev | @qa |
+
+安全敏感追加 `@security-reviewer`。密评追加 `@crypto-evaluation-expert`。
 
 ### QA 操作
 

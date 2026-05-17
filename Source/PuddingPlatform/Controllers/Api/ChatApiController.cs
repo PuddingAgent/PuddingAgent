@@ -35,8 +35,10 @@ public class ChatApiController(
         new(@"^\{\{vault:(?<name>[a-zA-Z0-9._-]+)\}\}$", RegexOptions.Compiled);
 
     // POST /api/workspaces/{workspaceId}/chat/message
+    // T-102: 改为 fire-and-forget — 立即返回 { messageId, sessionId }，不再等待完整执行结果。
+    // 所有流式帧通过 SessionEventsController 的持久 SSE 通道（SSM/EventHub）推送给前端。
     [HttpPost("message")]
-    public async Task<ActionResult<AdminChatResponse>> SendMessage(
+    public async Task<IActionResult> SendMessage(
         string workspaceId, [FromBody] AdminChatRequest req, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -133,46 +135,110 @@ public class ChatApiController(
                 capabilityPolicy?.AllowShellExecution == true);
         }
 
-        var result = await apiClient.SendMessageAsync(
-            channelId:      channelId,
-            userExternalId: userExternalId,
-            messageText:    req.MessageText,
-            workspaceId:    workspaceId,
-            sessionId:      req.SessionId,
-            llmConfig:      llmConfig,
-            agentTemplateId: agentTemplateId,
-            capabilityPolicy: capabilityPolicy,
-            toolDefinitions: toolDefinitions,
-            skillPackages: skillPackages,
-            forceNewSession: req.ForceNewSession,
-            ct:             ct);
+        // T-102: 通过流式接口获取第一个 metadata 帧提取 sessionId/messageId，
+        // 然后 fire-and-forget 将剩余帧写入 SSM (EventHub)，立即返回 IDs 给前端。
+        string? streamSessionId = req.SessionId;
+        string? streamMessageId = null;
+        var framesWritten = 0;
 
-        sw.Stop();
-        if (result is null)
+        // 启动后台执行 — 获取第一个 metadata 帧后返回，剩余帧推入 SSM
+        _ = Task.Run(async () =>
         {
-            logger.LogError(
-                "[Chat] Controller unreachable ws={WorkspaceId} elapsed={Elapsed}ms",
-                workspaceId, sw.ElapsedMilliseconds);
-            return StatusCode(502, new { message = "Controller 服务未响应，请确认服务运行状态" });
+            try
+            {
+                await foreach (var frame in apiClient.SendMessageStreamAsync(
+                    channelId:      channelId,
+                    userExternalId: userExternalId,
+                    messageText:    req.MessageText,
+                    workspaceId:    workspaceId,
+                    sessionId:      req.SessionId,
+                    llmConfig:      llmConfig,
+                    agentTemplateId: agentTemplateId,
+                    capabilityPolicy: capabilityPolicy,
+                    toolDefinitions: toolDefinitions,
+                    skillPackages: skillPackages,
+                    forceNewSession: req.ForceNewSession,
+                    ct:             CancellationToken.None))
+                {
+                    // 提取 metadata 帧中的 IDs
+                    if (frame.Event == "metadata")
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(frame.Data);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("sessionId", out var sid))
+                                streamSessionId = sid.GetString();
+                            if (root.TryGetProperty("messageId", out var mid))
+                                streamMessageId = mid.GetString();
+                        }
+                        catch { /* ignore parse errors */ }
+                    }
+
+                    // 写入 SSM EventHub
+                    if (streamSessionId is not null)
+                    {
+                        var hub = eventHub.GetOrCreate(streamSessionId);
+                        hub.Writer.TryWrite(frame);
+                        framesWritten++;
+                    }
+                }
+
+                logger.LogInformation(
+                    "[Chat:FireAndForget] Stream completed ws={Workspace} session={Session} framesWritten={Frames}",
+                    workspaceId, streamSessionId, framesWritten);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "[Chat:FireAndForget] Background stream failed ws={Workspace} session={Session}",
+                    workspaceId, streamSessionId);
+            }
+        });
+
+        // 等待首个 metadata 帧到达（带超时）
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        try
+        {
+            while (streamMessageId is null && streamSessionId is null)
+            {
+                await Task.Delay(100, linkedCts.Token);
+                // streamSessionId 可能从 request 中已有
+                if (req.SessionId is not null && streamSessionId is null)
+                    streamSessionId = req.SessionId;
+            }
+
+            // 再等一等 messageId（metadata 帧可能延迟）
+            var waitStart = System.Diagnostics.Stopwatch.StartNew();
+            while (streamMessageId is null && waitStart.ElapsedMilliseconds < 3000)
+            {
+                await Task.Delay(100, linkedCts.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning(
+                "[Chat:FireAndForget] Timeout waiting for metadata ws={Workspace} session={Session}",
+                workspaceId, streamSessionId);
         }
 
-        if (result.IsSuccess)
-            logger.LogInformation(
-                "[Chat] OK ws={WorkspaceId} msgId={MessageId} elapsed={Elapsed}ms",
-                workspaceId, result.MessageId, sw.ElapsedMilliseconds);
-        else
-            logger.LogWarning(
-                "[Chat] FAILED ws={WorkspaceId} msgId={MessageId} elapsed={Elapsed}ms error={Error}",
-                workspaceId, result.MessageId, sw.ElapsedMilliseconds, result.ErrorMessage);
+        sw.Stop();
 
-        return Ok(new AdminChatResponse(
-            result.MessageId,
-            result.SessionId,
-            result.Reply,
-            result.IsSuccess,
-            result.ErrorMessage,
-                result.Usage,
-            result.TurnSteps));
+        // P0-2 修复: metadata 帧获取失败时返回 500，防止前端 loading 永久悬挂
+        if (streamMessageId is null || streamSessionId is null)
+        {
+            logger.LogError(
+                "[Chat:FireAndForget] Failed to get metadata ws={Workspace} msgId={MessageId} session={Session} elapsed={Elapsed}ms",
+                workspaceId, streamMessageId, streamSessionId, sw.ElapsedMilliseconds);
+            return StatusCode(500, new { message = "AI 服务响应超时，请稍后重试" });
+        }
+
+        logger.LogInformation(
+            "[Chat:FireAndForget] Returned ws={Workspace} msgId={MessageId} sessionId={SessionId} elapsed={Elapsed}ms",
+            workspaceId, streamMessageId, streamSessionId, sw.ElapsedMilliseconds);
+
+        return Ok(new { messageId = streamMessageId, sessionId = streamSessionId });
     }
 
     // POST /api/workspaces/{workspaceId}/chat/message/stream

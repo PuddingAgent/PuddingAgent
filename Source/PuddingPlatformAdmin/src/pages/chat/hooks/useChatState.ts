@@ -14,7 +14,9 @@ import {
   listWorkspaceAgents,
   listWorkspaces,
   renameSession,
+  sendChatMessage,
   sendAdminChatMessageStream,
+  subscribeSessionEvents,
   type AdminChatStreamEvent,
   type MessageListResponse,
   type SessionRecord,
@@ -26,6 +28,14 @@ import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup, SubAgentCar
 import { assistantStatusLabel } from '../types';
 
 const MESSAGE_PAGE_SIZE = 20;
+const SESSION_EVENT_PAGE_SIZE = 50;
+
+interface SessionEventPageResponse {
+  events?: unknown[];
+  Events?: unknown[];
+  hasMore?: boolean;
+  HasMore?: boolean;
+}
 
 export const stringToColor = (str: string) => {
   let hash = 0;
@@ -219,6 +229,12 @@ export function useChatState(): UseChatStateReturn {
   const listEndRef = useRef<HTMLDivElement>(null);
   const completedTurnsRef = useRef<Set<string>>(new Set());
   const latestTurnIdRef = useRef<string | null>(null);
+  const messageIdToTurnIdRef = useRef<Map<string, string>>(new Map());
+  const lastSequenceNumRef = useRef<number>(0);
+  const sessionEventsAbortRef = useRef<AbortController | null>(null);
+  const sessionEventsPollTimerRef = useRef<number | null>(null);
+  const sessionEventsReconnectTimerRef = useRef<number | null>(null);
+  const sseSessionIdRef = useRef<string | null>(null);
 
   const [createSceneOpen, setCreateSceneOpen] = useState(false);
   const [createSceneLoading, setCreateSceneLoading] = useState(false);
@@ -229,12 +245,241 @@ export function useChatState(): UseChatStateReturn {
 
   const selectedAgent = agents.find(a => a.agentId === agentId);
 
+  const clearSessionEventTimers = useCallback(() => {
+    if (sessionEventsPollTimerRef.current != null) {
+      window.clearInterval(sessionEventsPollTimerRef.current);
+      sessionEventsPollTimerRef.current = null;
+    }
+    if (sessionEventsReconnectTimerRef.current != null) {
+      window.clearTimeout(sessionEventsReconnectTimerRef.current);
+      sessionEventsReconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const stopSessionEventStream = useCallback(() => {
+    clearSessionEventTimers();
+    sessionEventsAbortRef.current?.abort();
+    sessionEventsAbortRef.current = null;
+    sseSessionIdRef.current = null;
+  }, [clearSessionEventTimers]);
+
+  const updateLastSequence = useCallback((ev: unknown) => {
+    if (!ev || typeof ev !== 'object') return;
+    const raw = (ev as Record<string, unknown>).sequenceNum;
+    if (raw === undefined || raw === null) return;
+    const seq = typeof raw === 'number' ? raw : Number(raw);
+    if (Number.isFinite(seq) && seq > lastSequenceNumRef.current) {
+      lastSequenceNumRef.current = seq;
+    }
+  }, []);
+
+  const normalizeSessionEvent = useCallback((raw: unknown): (AdminChatStreamEvent & { sequenceNum?: number }) | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+
+    const rawSeq = obj.sequenceNum ?? obj.SequenceNum;
+    const sequenceNum = rawSeq == null ? undefined : Number(rawSeq);
+
+    let payload: Record<string, unknown> = {};
+    const rawPayload = obj.payload ?? obj.Payload;
+    if (rawPayload && typeof rawPayload === 'object') {
+      payload = rawPayload as Record<string, unknown>;
+    } else if (typeof rawPayload === 'string' && rawPayload.trim()) {
+      try { payload = JSON.parse(rawPayload) as Record<string, unknown>; } catch { payload = {}; }
+    }
+
+    const rawDataJson = obj.dataJson ?? obj.DataJson;
+    if (Object.keys(payload).length === 0 && typeof rawDataJson === 'string' && rawDataJson.trim()) {
+      try { payload = JSON.parse(rawDataJson) as Record<string, unknown>; } catch { payload = {}; }
+    }
+
+    const type = String(
+      obj.type
+      ?? obj.eventType
+      ?? obj.EventType
+      ?? payload.type
+      ?? '',
+    ).trim();
+    if (!type) return null;
+
+    return {
+      ...(payload as AdminChatStreamEvent),
+      type: type as AdminChatStreamEvent['type'],
+      ...(Number.isFinite(sequenceNum) ? { sequenceNum } : {}),
+    };
+  }, []);
+
+  const listSessionEventsPage = useCallback(async (
+    sessionId: string,
+    from: number,
+    limit = SESSION_EVENT_PAGE_SIZE,
+    signal?: AbortSignal,
+  ): Promise<SessionEventPageResponse> => {
+    const token = localStorage.getItem('pudding_token');
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const url = `/api/sessions/${encodeURIComponent(sessionId)}/events?from=${encodeURIComponent(String(from))}&limit=${encodeURIComponent(String(limit))}`;
+    const resp = await fetch(url, { method: 'GET', headers, signal });
+    if (!resp.ok) {
+      throw new Error(`listSessionEvents failed: ${resp.status}`);
+    }
+    return (await resp.json()) as SessionEventPageResponse;
+  }, []);
+
+  const resolveEventTurnId = useCallback((ev: AdminChatStreamEvent): string | null => {
+    const anyEv = ev as Record<string, unknown>;
+    const directTurnId = typeof anyEv.turnId === 'string' ? anyEv.turnId : null;
+    if (directTurnId) return directTurnId;
+    const messageId = typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
+    if (messageId) {
+      const mapped = messageIdToTurnIdRef.current.get(messageId);
+      if (mapped) return mapped;
+    }
+    return latestTurnIdRef.current;
+  }, []);
+
+  const applySessionEvent = useCallback((ev: AdminChatStreamEvent) => {
+    updateLastSequence(ev);
+
+    const anyEv = ev as Record<string, unknown>;
+    const messageId = typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
+    if (messageId && latestTurnIdRef.current) {
+      messageIdToTurnIdRef.current.set(messageId, latestTurnIdRef.current);
+    }
+
+    if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
+    if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
+
+    // T-102: 持久 SSE 已合并为单一通道 — 不再过滤 delta/thinking/tool_call/tool_result。
+    // 所有事件统一路由到 mapEventToTurn 处理。
+
+    // T-102: 终端事件管理 loading 状态
+    if (ev.type === 'session.closed') {
+      setLoading(false);
+      return;
+    }
+    if (ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
+      setLoading(false);
+    }
+
+    const targetTurnId = resolveEventTurnId(ev);
+    if (!targetTurnId) return;
+    mapEventToTurn(targetTurnId, ev);
+  }, [mapEventToTurn, resolveEventTurnId, updateLastSequence]);
+
+  const replayMissedSessionEvents = useCallback(async (sessionId: string, signal?: AbortSignal) => {
+    let from = Math.max(0, lastSequenceNumRef.current + 1);
+    let hasMore = true;
+    while (hasMore) {
+      const page = await listSessionEventsPage(sessionId, from, SESSION_EVENT_PAGE_SIZE, signal);
+      const list = (Array.isArray(page.events) ? page.events : Array.isArray(page.Events) ? page.Events : []) as unknown[];
+      if (list.length === 0) break;
+
+      for (const item of list) {
+        const normalized = normalizeSessionEvent(item);
+        if (!normalized) continue;
+        const seq = normalized.sequenceNum;
+        if (typeof seq === 'number' && Number.isFinite(seq) && seq <= lastSequenceNumRef.current) continue;
+        applySessionEvent(normalized);
+      }
+
+      const maxSeqInPage = list
+        .map((x) => {
+          if (!x || typeof x !== 'object') return Number.NaN;
+          const v = (x as Record<string, unknown>).sequenceNum ?? (x as Record<string, unknown>).SequenceNum;
+          return Number(v);
+        })
+        .filter((x) => Number.isFinite(x))
+        .reduce((m, x) => Math.max(m, x), Number.NaN);
+
+      if (Number.isFinite(maxSeqInPage)) {
+        from = Math.max(from, Number(maxSeqInPage) + 1);
+      } else {
+        hasMore = false;
+      }
+
+      hasMore = hasMore && Boolean(page.hasMore ?? page.HasMore);
+    }
+  }, [applySessionEvent, listSessionEventsPage, normalizeSessionEvent]);
+
+  const startSessionEventStream = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    stopSessionEventStream();
+    sseSessionIdRef.current = sessionId;
+
+    const ctrl = new AbortController();
+    sessionEventsAbortRef.current = ctrl;
+
+    const scheduleReconnect = () => {
+      if (sessionEventsReconnectTimerRef.current != null) return;
+      sessionEventsReconnectTimerRef.current = window.setTimeout(async () => {
+        sessionEventsReconnectTimerRef.current = null;
+        if (sseSessionIdRef.current !== sessionId) return;
+        try {
+          await replayMissedSessionEvents(sessionId);
+        } catch {
+          // 网络波动期间忽略，等待下次补偿
+        }
+        if (sseSessionIdRef.current === sessionId) {
+          startSessionEventStream(sessionId);
+        }
+      }, 1200);
+    };
+
+    const onOnline = () => {
+      scheduleReconnect();
+    };
+
+    window.addEventListener('online', onOnline);
+
+    // 周期性补偿：即使连接静默断开，也可通过历史分页追上缺口。
+    sessionEventsPollTimerRef.current = window.setInterval(async () => {
+      if (sseSessionIdRef.current !== sessionId || ctrl.signal.aborted) return;
+      try {
+        await replayMissedSessionEvents(sessionId, ctrl.signal);
+      } catch {
+        // 下次轮询重试
+      }
+    }, 8000);
+
+    try {
+      subscribeSessionEvents(sessionId, (ev) => {
+        if (ctrl.signal.aborted || sseSessionIdRef.current !== sessionId) return;
+        applySessionEvent(ev);
+      }, ctrl.signal);
+    } catch {
+      scheduleReconnect();
+    }
+
+    const originalAbort = ctrl.abort.bind(ctrl);
+    ctrl.abort = () => {
+      window.removeEventListener('online', onOnline);
+      originalAbort();
+    };
+  }, [applySessionEvent, replayMissedSessionEvents, stopSessionEventStream]);
+
   // ── mapEventToTurn ──────────────────────────────────────────
   const mapEventToTurn = useCallback((turnId: string, ev: AdminChatStreamEvent) => {
     setTurns((prev) => prev.map((turn) => {
       if (turn.turnId !== turnId) return turn;
       if (ev.type === 'metadata') {
-        return { ...turn, userMessage: { ...turn.userMessage, status: 'success' as const } };
+        // T-102: 从 metadata 帧推断消息来源（持久 SSE 通道）
+        const anyMeta = ev as Record<string, unknown>;
+        const sourceMeta = anyMeta.sourceId || anyMeta.source_type;
+        const source: ChatSource | undefined = sourceMeta ? {
+          sourceId: String(anyMeta.sourceId || 'agent'),
+          sourceType: (anyMeta.source_type as ChatSource['sourceType']) || 'agent',
+          displayName: String(anyMeta.source_name || 'AI 助手'),
+          avatarEmoji: (anyMeta.source_type === 'websocket' ? '🔌' as const :
+                       anyMeta.source_type === 'webhook' ? '🪝' as const :
+                       anyMeta.source_type === 'email' ? '📧' as const : '🤖' as const),
+          avatarColor: stringToColor(String(anyMeta.sourceId || 'agent')),
+        } : undefined;
+        return {
+          ...turn,
+          source: source || turn.source,
+          userMessage: { ...turn.userMessage, status: 'success' as const },
+        };
       }
       if (ev.type === 'delta') {
         if (!ev.delta) return turn;
@@ -515,8 +760,12 @@ export function useChatState(): UseChatStateReturn {
   const resetConversation = useCallback(async (nextWorkspaceId?: string, nextAgentId?: string) => {
     if (creatingSession) return;
     abortRef.current?.abort(); abortRef.current = null;
+    stopSessionEventStream();
     setTurns([]); setError(null); setLatestUsage(undefined); setLoading(false);
     setHasMoreMessages(false); setOldestMessageCursor(null);
+    lastSequenceNumRef.current = 0;
+    latestTurnIdRef.current = null;
+    messageIdToTurnIdRef.current.clear();
     const targetWorkspaceId = nextWorkspaceId ?? workspaceId;
     const targetAgentId = nextAgentId ?? agentId;
     if (!targetWorkspaceId || !targetAgentId) return;
@@ -535,7 +784,7 @@ export function useChatState(): UseChatStateReturn {
     } finally {
       setCreatingSession(false);
     }
-  }, [workspaceId, agentId, agents, creatingSession, messageApi]);
+  }, [workspaceId, agentId, agents, creatingSession, messageApi, stopSessionEventStream]);
 
   // ── Effects: load workspaces ───────────────────────────────
   useEffect(() => {
@@ -608,14 +857,27 @@ export function useChatState(): UseChatStateReturn {
     listEndRef.current?.scrollIntoView({ block: 'end' });
   }, [turns.length]);
 
+  // 记录最新 turn，供持久 SSE 的异步事件路由使用。
+  useEffect(() => {
+    if (turns.length === 0) {
+      latestTurnIdRef.current = null;
+      return;
+    }
+    latestTurnIdRef.current = turns[turns.length - 1].turnId;
+  }, [turns.length]);
+
   // ── handleSelectSession ────────────────────────────────────
   const handleSelectSession = useCallback(async (sid: string) => {
     if (sid === selectedSessionId) return;
     historyAbortRef.current?.abort();
     abortRef.current?.abort();
+    stopSessionEventStream();
     setSelectedSessionId(sid);
     sessionIdRef.current = sid;
     forceNewSessionRef.current = false;
+    lastSequenceNumRef.current = 0;
+    messageIdToTurnIdRef.current.clear();
+    latestTurnIdRef.current = null;
     setTurns([]);
     setHasMoreMessages(false);
     setOldestMessageCursor(null);
@@ -634,7 +896,19 @@ export function useChatState(): UseChatStateReturn {
       if (historyAbortRef.current === ctrl) historyAbortRef.current = null;
       setHistoryLoading(false);
     }
-  }, [selectedSessionId, toTurnsFromHistory, messageApi]);
+  }, [selectedSessionId, toTurnsFromHistory, messageApi, stopSessionEventStream]);
+
+  // 持久 SSE：跟随当前会话生命周期自动切换。
+  useEffect(() => {
+    if (!selectedSessionId) {
+      stopSessionEventStream();
+      return;
+    }
+    startSessionEventStream(selectedSessionId);
+    return () => {
+      stopSessionEventStream();
+    };
+  }, [selectedSessionId, startSessionEventStream, stopSessionEventStream]);
 
   // ── loadMoreMessages ───────────────────────────────────────
   const loadMoreMessages = useCallback(async () => {
@@ -673,12 +947,15 @@ export function useChatState(): UseChatStateReturn {
       messageApi.success('会话已删除');
       setSessions(prev => prev.filter(s => s.sessionId !== sid));
       if (selectedSessionId === sid) {
+        stopSessionEventStream();
         setSelectedSessionId(null);
         setTurns([]);
         sessionIdRef.current = undefined;
+        lastSequenceNumRef.current = 0;
+        messageIdToTurnIdRef.current.clear();
       }
     } catch { messageApi.error('删除失败'); }
-  }, [selectedSessionId, messageApi]);
+  }, [selectedSessionId, messageApi, stopSessionEventStream]);
 
   // ── handleArchiveSession ───────────────────────────────────
   const handleArchiveSession = useCallback(async (sid: string) => {
@@ -687,12 +964,15 @@ export function useChatState(): UseChatStateReturn {
       messageApi.success('会话已归档');
       setSessions(prev => prev.filter(s => s.sessionId !== sid));
       if (selectedSessionId === sid) {
+        stopSessionEventStream();
         setSelectedSessionId(null);
         setTurns([]);
         sessionIdRef.current = undefined;
+        lastSequenceNumRef.current = 0;
+        messageIdToTurnIdRef.current.clear();
       }
     } catch { messageApi.error('归档失败'); }
-  }, [selectedSessionId, messageApi]);
+  }, [selectedSessionId, messageApi, stopSessionEventStream]);
 
   // ── handleRenameStart / handleRenameSubmit ─────────────────
   const handleRenameStart = useCallback((sid: string, title: string) => {
@@ -713,6 +993,9 @@ export function useChatState(): UseChatStateReturn {
   }, [renameSessionId, renameTitle, messageApi]);
 
   // ── sendMessage ────────────────────────────────────────────
+  // T-102: 重构为 fire-and-forget POST + 持久 SSE。
+  // 旧流程: sendAdminChatMessageStream(POST/SSE) → onEvent 回调 → mapEventToTurn
+  // 新流程: sendChatMessage(POST) → 获取 messageId+sessionId → 持久 SSE 自动推送所有帧 → mapEventToTurn
   const sendMessage = useCallback(async (text: string) => {
     if (!text || loading || !workspaceId || !agentId) return;
     setError(null);
@@ -727,48 +1010,39 @@ export function useChatState(): UseChatStateReturn {
       assistant: createAssistant(aid, 'structured', 'thinking', true),
     }]);
     const ctrl = new AbortController(); abortRef.current = ctrl; setLoading(true);
+
+    // 注册当前 turn 为最新，供持久 SSE 事件路由
+    latestTurnIdRef.current = turnId;
+
     try {
-      await sendAdminChatMessageStream(workspaceId, {
+      // T-102: 非流式 POST — 立即返回 { messageId, sessionId }
+      const { messageId, sessionId: returnedSessionId } = await sendChatMessage(workspaceId, {
         messageText: text,
         sessionId: sessionIdRef.current,
         agentId,
         forceNewSession: forceNewSessionRef.current,
-      }, (ev) => {
-        if (ev.type === 'metadata') {
-          sessionIdRef.current = ev.sessionId; setSelectedSessionId(ev.sessionId); forceNewSessionRef.current = false;
-          latestTurnIdRef.current = turnId;
-          const ttfm = (performance.now() - perfStart).toFixed(0);
-          console.log(`[Perf] Time to first metadata: ${ttfm}ms session=${ev.sessionId}`);
-
-          // 推断消息来源
-          const sourceMeta = (ev as any).sourceId || (ev as any).source_type;
-          if (sourceMeta) {
-            const source: ChatSource = {
-              sourceId: (ev as any).sourceId || 'agent',
-              sourceType: (ev as any).source_type || 'agent',
-              displayName: (ev as any).source_name || 'AI 助手',
-              avatarEmoji: (ev as any).source_type === 'websocket' ? '🔌' :
-                           (ev as any).source_type === 'webhook' ? '🪝' :
-                           (ev as any).source_type === 'email' ? '📧' : '🤖',
-              avatarColor: stringToColor((ev as any).sourceId || 'agent'),
-            };
-            setTurns(p => p.map(t => t.turnId === turnId ? { ...t, source } : t));
-          }
-        }
-        // ── 诊断日志：SSE 事件接收 ──
-        if (ev.type === 'done') {
-          console.log(`[Chat:SSE] Received DONE frame, keeping connection alive for async events`);
-        }
-        if (ev.type === 'subagent.spawned' || ev.type === 'subagent.completed') {
-          console.log(`[Chat:SSE] SubAgent event: ${ev.type}`, (ev as any).sub_agent_id, (ev as any).success);
-        }
-        if (ev.type === 'delta' || ev.type === 'thinking' || ev.type === 'tool_call') {
-          if (!perfStart) { /* first content token */ }
-        }
-        if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
-        if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
-        mapEventToTurn(turnId, ev);
       }, ctrl.signal);
+
+      // 更新 sessionId 并绑定 messageId→turnId 映射
+      sessionIdRef.current = returnedSessionId;
+      setSelectedSessionId(returnedSessionId);
+      forceNewSessionRef.current = false;
+      messageIdToTurnIdRef.current.set(messageId, turnId);
+
+      // 标记用户消息已送达
+      setTurns(p => p.map(t =>
+        t.turnId === turnId
+          ? { ...t, userMessage: { ...t.userMessage, status: 'success' as const } }
+          : t,
+      ));
+
+      const ttfm = (performance.now() - perfStart).toFixed(0);
+      console.log(`[Perf:SSM] POST returned in ${ttfm}ms msgId=${messageId} session=${returnedSessionId}`);
+
+      // 主动拉取已生成的事件，减少首帧等待延迟
+      try {
+        await replayMissedSessionEvents(returnedSessionId, ctrl.signal);
+      } catch { /* 网络波动，SSE 会重连补偿 */ }
     } catch (e: unknown) {
       if (e instanceof Error && e.name === 'AbortError') {
         setTurns(p => p.map(t => t.turnId === turnId ? { ...t, assistant: { ...t.assistant, status: 'cancelled' as const, isStreaming: false } } : t));
@@ -776,11 +1050,12 @@ export function useChatState(): UseChatStateReturn {
         setError(e instanceof Error ? e.message : '请求失败');
         setTurns(p => p.map(t => t.turnId === turnId ? { ...t, assistant: { ...t.assistant, status: 'error' as const, isStreaming: false } } : t));
       }
+      setLoading(false);
     } finally {
       if (abortRef.current === ctrl) abortRef.current = null;
-      setLoading(false);
+      // T-102: loading 由持久 SSE 的 done/error/cancelled 事件管理，不在此处关闭
     }
-  }, [loading, workspaceId, agentId, mapEventToTurn]);
+  }, [loading, workspaceId, agentId, replayMissedSessionEvents]);
 
   // ── handleKeyDown ──────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -793,11 +1068,38 @@ export function useChatState(): UseChatStateReturn {
       void sendMessage(t);
       return;
     }
-    // Enter: 发送
+    // Enter: 发送 / 中止生成
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (loading) {
+        // P0-1 修复: POST 快速返回后 abortRef 已为 null，需改为关闭 SSE + 标记取消
         abortRef.current?.abort();
+        stopSessionEventStream();
+        setLoading(false);
+        // 将最新 assistant 消息标记为已取消
+        setTurns(prev => {
+          if (prev.length === 0) return prev;
+          const last = prev[prev.length - 1];
+          if (last.assistant.isStreaming || last.assistant.status === 'thinking' || last.assistant.status === 'streaming' || last.assistant.status === 'executing') {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                assistant: {
+                  ...last.assistant,
+                  status: 'cancelled' as const,
+                  isStreaming: false,
+                  answerMarkdown: (last.assistant.answerMarkdown || '') + '\n\n[已取消]',
+                },
+              },
+            ];
+          }
+          return prev;
+        });
+        // 重新建立 SSE 连接以接收后续消息事件
+        if (selectedSessionId) {
+          startSessionEventStream(selectedSessionId);
+        }
       } else {
         const t = inputValue.trim();
         if (!t) return;
@@ -814,7 +1116,7 @@ export function useChatState(): UseChatStateReturn {
         setInputValue(lastTurn.userMessage.text);
       }
     }
-  }, [loading, inputValue, sendMessage, turns]);
+  }, [loading, inputValue, sendMessage, turns, stopSessionEventStream, startSessionEventStream, selectedSessionId]);
 
   // ── global Ctrl+Enter ──────────────────────────────────────
   const sendMessageRef = useRef(sendMessage);

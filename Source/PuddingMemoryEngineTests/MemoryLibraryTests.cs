@@ -943,6 +943,7 @@ public sealed class MemoryLibraryTests
             skillRuntime,
             skillRegistry,
             NullLogger<SystemPromptBuilder>.Instance,
+            new StartupEnvironmentInfo(),
             mockTemplateProvider.Object,
             mockWorkspaceProfile.Object,
             personaFileProvider: null,

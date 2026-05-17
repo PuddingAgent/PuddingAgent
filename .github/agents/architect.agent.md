@@ -2,7 +2,7 @@
 name: architect
 description: "架构顾问 Agent：架构决策、Map.yaml 维护、影响面评估、技术选型。"
 argument-hint: "架构问题或设计评审请求，例如 '评估新增模块对现有架构的影响' 或 'Agent P2P 通信方案'"
-model: GPT-5.5 (copilot)
+model: DeepSeek-V4-Pro (gcmp.deepseek)
 tools: ['vscode', 'read', 'search', 'agent']
 handoffs:
   - label: HandoffToExplore

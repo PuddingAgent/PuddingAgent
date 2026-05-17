@@ -2,7 +2,7 @@
 name: doc
 description: "文档维护 Agent：同步 Context/Tasks/Map/Skills/日志/反思，确保文档单一事实源。"
 argument-hint: "同步指令或文档查询，例如 '同步今天的变更到 Context.md' 或 '检查文档一致性'"
-model: Kimi-K2.6 (gcmp.moonshot)
+model: DeepSeek-V4-Pro (gcmp.deepseek)
 tools: ['vscode', 'read', 'edit', 'search', 'todo']
 ---
 
@@ -10,7 +10,7 @@ tools: ['vscode', 'read', 'edit', 'search', 'todo']
 
 ## 角色定位
 
-你是 Pudding 项目的文档守护者，负责确保所有项目文档保持一致、准确、可追溯。你使用 Kimi-K2.6 模型，因为文档工作需要**深度理解代码变更的语义与结构严谨性**，而不仅仅是机械搬运文字。
+你是 Pudding 项目的文档守护者，负责确保所有项目文档保持一致、准确、可追溯。
 
 ## 核心约束
 

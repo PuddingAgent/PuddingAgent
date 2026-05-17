@@ -15,3 +15,4 @@
 | 2026-05-05 | MemoryEngine Phase 1 持久化改造（EF Core SQLite + FTS5）| **FAIL** | [QA-2026-05-05-MemoryEngine-Phase1-Persistence.md](QA/QA-2026-05-05-MemoryEngine-Phase1-Persistence.md) |
 | 2026-05-05 | MemoryEngine Phase 1 收尾 T1.3/1.6/1.8（双写+上下文窗口+回填） | **PASS_WITH_NOTES** | [QA-2026-05-05-MemoryEngine-Phase1-T1.3-1.6-1.8.md](QA/QA-2026-05-05-MemoryEngine-Phase1-T1.3-1.6-1.8.md) |
 | 2026-05-05 | Agent 个性与记忆系统后端（Persona/UserProfile/AgentMemory/分层提示词） | **FAIL** | [QA-2026-05-05-Agent-Persona-Memory.md](QA/QA-2026-05-05-Agent-Persona-Memory.md) |
+| 2026-05-17 | T-102 前端 SSM SSE 接入 — Chat 页合并双 SSE 为持久 SSE | **FAIL** | [QA-2026-05-17-T102-SSM-SSE-Integration.md](QA/QA-2026-05-17-T102-SSM-SSE-Integration.md) |

@@ -1,4 +1,4 @@
-# 历史调用记录
+﻿# 历史调用记录
 
 > Lead 在此维护 QA 交错调度记录和 Architect 领航审查记录，用于调度决策。
 > 同时，这也是工作的交接记录，用于帮助明天的你在遗忘的情况下，快速回忆起今天的工作内容和决策过程。
@@ -37,6 +37,8 @@
 | 0504 | GM-001~003 | GPT-5.3-Codex/DeepSeek | — | PASS | SM2/SM3/SM4国密集成完成 |
 | 0504 | E2E-Playwright | — | — | DEFERRED | task-002待办，前端Jest需修复@umijs/max/test |
 | 0504 | UI-Test | Lead(Browser) | GPT-5.3-Codex | PASS_WITH_FIXES | Docker启动修复+9页面测试，发现KeyVault 500/Runtime路径错/多页空白 |
+| 0517 | T-102 | DeepSeek-V4-Pro | DeepSeek-V4-Pro | FAIL | 2xP0: 中止不可用 + Task.Run异常不可见 + 3xP1 + 5xP2 |
+| 0517 | T-102 | dev | qa | PASS_WITH_NOTES | P0-1中止✅ P0-2 metadata超时→500✅；遗留低风险：流失败缺error帧(下迭代)；P1 session.closed/pending ID/8s窗口不阻断 |
 
 ## Architect 领航审查
 

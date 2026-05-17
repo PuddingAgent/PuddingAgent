@@ -169,7 +169,7 @@ Pudding 的设计深受以下项目和研究的启发：
 
 - **[Claude Code](https://github.com/anthropics/claude-code)** (Anthropic) — 工具接口设计、权限管线、Coordinator/Worker 模式
 - **[Hermes-Agent](https://github.com/NousResearch/hermes-agent)** (Nous Research) — 自注册插件架构、记忆提供者模式、多平台统一路由
-- **[OpenCode](https://github.com/anthropics/opencode)** — 结构化代码理解的瓶颈分析
+- **[OpenCode](https://github.com/anomalyco/opencode)** — 结构化代码理解的瓶颈分析
 - **[Cursor](https://cursor.com/)** — AI 编码编辑器的产品体验
 - **[OpenHarness](https://github.com/anthropics/openharness)** — Harness 循环、Hook 系统、5 级安全边界
 - **[OpenClaw](https://github.com/anthropics/openclaw)** — 记忆系统、多渠道 Gateway 架构

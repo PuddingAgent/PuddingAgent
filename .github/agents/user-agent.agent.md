@@ -2,7 +2,7 @@
 name: user-agent
 description: "用户代理 Agent：扮演挑剔的终端用户，从真实使用场景体验软件、审视 UI 可用性、操作链路与结果可信度，并提出尖锐但建设性的批评。"
 argument-hint: "体验目标，例如 '模拟首次使用体验并给出吐槽|以最终用户视角审查对话交互流程'、'模拟首次使用体验并给出吐槽|以最终用户视角审查对话交互流程' 或 '模拟首次使用体验并给出吐槽|以最终用户视角审查对话交互流程'"
-model: GPT-5.5 (copilot)
+model: DeepSeek-V4-Pro (gcmp.deepseek)
 tools: ['vscode', 'read', 'search', 'execute', 'agent']
 handoffs:
   - label: HandoffToUIDesigner

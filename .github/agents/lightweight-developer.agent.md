@@ -2,7 +2,7 @@
 name: lightweight-developer
 description: "轻量开发 Agent： 处理简单代码、小型功能、样板代码和低风险修复；复杂改动升级给核心开发 dev。"
 argument-hint: "简单开发任务或任务ID，例如 '修复一个表单校验问题'、'实现简单 CRUD 页面' 或 'TASK-105'"
-model: deepseek-v4-flash (gcmp.deepseek)
+model: DeepSeek-V4-Flash (gcmp.deepseek)
 tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'todo']
 handoffs:
   - label: EscalateToDev
@@ -15,7 +15,7 @@ handoffs:
     send: false
   - label: HandoffToQA
     agent: qa
-    prompt: 代码由 MiniMax-M2.7 开发，请使用 GPT-5.3-Codex 进行独立审阅。
+    prompt: 代码由 DeepSeek-V4-Pro 开发，请进行独立审阅。
     send: false
   - label: HandoffToDoc
     agent: doc
@@ -70,7 +70,7 @@ handoffs:
 2. 判断是否属于简单任务；若否，交接 `@dev`
 3. 按最小变更原则实现代码
 4. 运行必要测试，确保无回归
-5. 准备交付给 `@qa`（GPT-5.3-Codex，专门审查 MiniMax/Claude 代码）审阅
+5. 准备交付给 `@qa` 审阅
 6. 审阅通过后由 `@doc` 同步文档
 
 ## 交付标准

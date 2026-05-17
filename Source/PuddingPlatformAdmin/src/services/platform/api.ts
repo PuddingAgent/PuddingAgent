@@ -1351,7 +1351,16 @@ export type AdminChatStreamEvent =
   | { type: 'done'; reply?: string; usage?: TokenUsageDto }
   | { type: 'error'; message: string }
   | { type: 'cancelled'; message?: string }
-  | { type: 'subconscious_step'; status: 'loading' | 'thinking' | 'done'; message: string; [key: string]: unknown };
+  | { type: 'subconscious_step'; status: 'loading' | 'thinking' | 'done'; message: string; [key: string]: unknown }
+  // T-102: 子代理事件（ADR-016）
+  | { type: 'subagent.spawned'; sub_agent_id: string; template?: string; model?: string; task?: string; [key: string]: unknown }
+  | { type: 'subagent.delta'; sub_agent_id?: string; delta?: string; data?: string; [key: string]: unknown }
+  | { type: 'subagent.thinking'; sub_agent_id?: string; delta?: string; [key: string]: unknown }
+  | { type: 'subagent.tool_call'; sub_agent_id?: string; name?: string; arguments?: string; [key: string]: unknown }
+  | { type: 'subagent.tool_result'; sub_agent_id?: string; name?: string; exitCode?: number; output?: string; error?: string; [key: string]: unknown }
+  | { type: 'subagent.completed'; sub_agent_id: string; success?: boolean; reply?: string; error?: string; result_summary?: string; [key: string]: unknown }
+  // T-102: 会话关闭事件（ADR-016）
+  | { type: 'session.closed'; sessionId: string };
 
 // ─── Chat API ─────────────────────────────────────────────────
 
@@ -1361,6 +1370,19 @@ export async function sendAdminChatMessage(
   return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
     method: 'POST', data: req,
   });
+}
+
+/** T-102: 非流式消息提交 — POST 返回 { messageId, sessionId }，帧通过持久 SSE 接收 */
+export async function sendChatMessage(
+  workspaceId: string,
+  req: AdminChatRequest,
+  signal?: AbortSignal,
+): Promise<{ messageId: string; sessionId: string }> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
+    method: 'POST',
+    data: req,
+    signal,
+  }) as Promise<{ messageId: string; sessionId: string }>;
 }
 
 export async function sendAdminChatMessageStream(
