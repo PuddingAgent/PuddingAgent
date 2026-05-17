@@ -1341,7 +1341,7 @@ export interface AdminChatResponse {
 }
 
 export type AdminChatStreamEvent =
-  | { type: 'metadata'; messageId: string; sessionId: string; routeDecisionId?: string }
+  | { type: 'metadata'; messageId: string; sessionId: string; routeDecisionId?: string; source_type?: string; source_id?: string; source_name?: string }
   | { type: 'delta'; delta: string }
   | { type: 'thinking'; delta: string }
   | { type: 'tool_call'; name: string; arguments: string }

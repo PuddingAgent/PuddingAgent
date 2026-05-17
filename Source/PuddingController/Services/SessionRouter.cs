@@ -371,6 +371,9 @@ public sealed class SessionRouter
             messageId,
             sessionId = session.SessionId,
             routeDecisionId = routeDecision.RouteDecisionId,
+            source_type = request.Metadata?.GetValueOrDefault("source_type"),
+            source_id = request.Metadata?.GetValueOrDefault("source_id"),
+            source_name = request.Metadata?.GetValueOrDefault("source_name"),
         });
 
         var dispatchRequest = new RuntimeDispatchRequest

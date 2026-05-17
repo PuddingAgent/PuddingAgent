@@ -39,6 +39,7 @@
 | 0504 | UI-Test | Lead(Browser) | GPT-5.3-Codex | PASS_WITH_FIXES | Docker启动修复+9页面测试，发现KeyVault 500/Runtime路径错/多页空白 |
 | 0517 | T-102 | DeepSeek-V4-Pro | DeepSeek-V4-Pro | FAIL | 2xP0: 中止不可用 + Task.Run异常不可见 + 3xP1 + 5xP2 |
 | 0517 | T-102 | dev | qa | PASS_WITH_NOTES | P0-1中止✅ P0-2 metadata超时→500✅；遗留低风险：流失败缺error帧(下迭代)；P1 session.closed/pending ID/8s窗口不阻断 |
+| 0517 | T-103 | DeepSeek-V4-Pro | DeepSeek-V4-Pro | PASS_WITH_NOTES | 3xP2 命名兼容+metadata持久化 |
 
 ## Architect 领航审查
 

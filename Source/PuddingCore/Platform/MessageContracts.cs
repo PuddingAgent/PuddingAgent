@@ -64,6 +64,8 @@ public sealed record MessageIngressRequest
     public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
     /// <summary>强制新建会话（跳过 FindActive 复用逻辑），用于"新对话"场景。</summary>
     public bool ForceNewSession { get; init; }
+    /// <summary>来源元数据——由连接器（WebSocket/Webhook/MQTT 等）在 PuddingIngressEnvelope 中设置，透传至 SessionRouter metadata 帧供前端渲染来源图标/标签。</summary>
+    public Dictionary<string, string>? Metadata { get; init; }
 }
 
 /// <summary>消息入口响应。</summary>

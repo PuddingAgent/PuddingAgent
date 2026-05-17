@@ -464,16 +464,18 @@ export function useChatState(): UseChatStateReturn {
       if (turn.turnId !== turnId) return turn;
       if (ev.type === 'metadata') {
         // T-102: 从 metadata 帧推断消息来源（持久 SSE 通道）
+        // T-103: 兼容两种命名——SessionRouter 帧输出 source_id(source_name) snake_case，
+        // WebSocket connector metadata 使用 sourceId camelCase。
         const anyMeta = ev as Record<string, unknown>;
-        const sourceMeta = anyMeta.sourceId || anyMeta.source_type;
+        const sourceMeta = anyMeta.source_id || anyMeta.sourceId || anyMeta.source_type;
         const source: ChatSource | undefined = sourceMeta ? {
-          sourceId: String(anyMeta.sourceId || 'agent'),
+          sourceId: String(anyMeta.source_id || anyMeta.sourceId || 'agent'),
           sourceType: (anyMeta.source_type as ChatSource['sourceType']) || 'agent',
           displayName: String(anyMeta.source_name || 'AI 助手'),
           avatarEmoji: (anyMeta.source_type === 'websocket' ? '🔌' as const :
                        anyMeta.source_type === 'webhook' ? '🪝' as const :
                        anyMeta.source_type === 'email' ? '📧' as const : '🤖' as const),
-          avatarColor: stringToColor(String(anyMeta.sourceId || 'agent')),
+          avatarColor: stringToColor(String(anyMeta.source_id || anyMeta.sourceId || 'agent')),
         } : undefined;
         return {
           ...turn,
