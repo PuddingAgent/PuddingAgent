@@ -657,12 +657,8 @@ using (var scope = app.Services.CreateScope())
     }
 
     // ── ADR-016：幂等建表 — session_event_log / session_sub_agents
-    // sqlite不支持IF NOT EXISTS修改列, 开发阶段直接重建
     var pendingTableDdl = new[]
     {
-        @"DROP TABLE IF EXISTS session_event_log;",
-        @"DROP TABLE IF EXISTS session_sub_agents;",
-
         // session_event_log — 会话事件日志（append-only）
         @"CREATE TABLE IF NOT EXISTS session_event_log (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -738,6 +734,35 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             app.Logger.LogWarning(ex, "[Schema] ADR-016 建表失败（将继续启动）：{Ddl}", ddl[..Math.Min(ddl.Length, 80)]);
+        }
+    }
+
+    var pendingSessionEventTraceColumnDdl = new[]
+    {
+        "ALTER TABLE session_event_log ADD COLUMN trace_id TEXT NULL;",
+        "ALTER TABLE session_event_log ADD COLUMN correlation_id TEXT NULL;",
+        "ALTER TABLE session_event_log ADD COLUMN execution_id TEXT NULL;",
+        "ALTER TABLE session_event_log ADD COLUMN parent_execution_id TEXT NULL;",
+        "ALTER TABLE session_event_log ADD COLUMN sub_agent_id TEXT NULL;",
+        "ALTER TABLE session_event_log ADD COLUMN component TEXT NULL;",
+        "ALTER TABLE session_event_log ADD COLUMN operation TEXT NULL;",
+    };
+    foreach (var ddl in pendingSessionEventTraceColumnDdl)
+    {
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(ddl);
+            app.Logger.LogInformation("[Schema] 已补会话事件追踪列：{Ddl}", ddl);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (
+            ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        {
+            // 幂等：列已存在，忽略
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "[Schema] 会话事件追踪列补齐失败（将继续启动）：{Ddl}", ddl);
         }
     }
 
