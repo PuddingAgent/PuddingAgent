@@ -36,11 +36,10 @@ WORKDIR /app
 COPY --from=dotnet-build /app .
 # Admin SPA 由宿主机预编译（pnpm build），直接 COPY 产物
 COPY Source/PuddingPlatformAdmin/dist /app/wwwroot/admin/
-# Agent Persona 模板文件（内置示例）
-COPY Source/PuddingAgent/data/agents/ /app/default-agents/
-
+# 默认 data 模板。运行时只复制缺失文件到 /app/data，不覆盖用户配置。
+COPY Source/PuddingAgent/default-data/ /app/default-data/
 ENV ASPNETCORE_HTTP_PORTS=8080
-ENV Pudding__AgentPersonaDir=/app/default-agents
+ENV PUDDING_DATA_ROOT=/app/data
 
 EXPOSE 8080
 

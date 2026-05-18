@@ -311,26 +311,25 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var endpoint = FirstNonBlank(
             effectiveRequestConfig?.Endpoint,
-            defaultConfig?.Endpoint,
-            GetEndpointFromEnvironment(),
-            "https://api.openai.com/v1")!;
+            defaultConfig?.Endpoint);
         var apiKey = FirstNonBlank(
             effectiveRequestConfig?.ApiKey,
-            defaultConfig?.ApiKey,
-            GetApiKeyFromEnvironment(),
-            string.Empty)!;
+            defaultConfig?.ApiKey);
         var model = FirstNonBlank(
             effectiveRequestConfig?.ModelId,
-            defaultConfig?.ModelId,
-            GetModelFromEnvironment(),
-            "gpt-4o-mini")!;
+            defaultConfig?.ModelId);
         var reasoningEffort = FirstNonBlank(
             effectiveRequestConfig?.ReasoningEffort,
             defaultConfig?.ReasoningEffort);
-        var thinkingMode = ResolveThinkingModeFromJson();
+        var thinkingMode = (string?)null;
+
+        if (string.IsNullOrWhiteSpace(endpoint))
+            throw new InvalidOperationException("LLM endpoint not configured in file-backed LLM config.");
+        if (string.IsNullOrWhiteSpace(model))
+            throw new InvalidOperationException("LLM model not configured in file-backed LLM config.");
 
         if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("LLM_API_KEY not configured.");
+            throw new InvalidOperationException("LLM API key not configured in file-backed LLM config.");
 
         return new ResolvedGatewayConfig(
             endpoint,
@@ -443,24 +442,6 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
     private static string? FirstNonBlank(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-
-    /// <summary>环境变量最终回退（KeyVault 清理后仍可工作）。</summary>
-    public static string? GetApiKeyFromEnvironment()
-        => PuddingConfigLoader.ResolveConscious().ApiKey;
-    public static string? GetEndpointFromEnvironment()
-        => PuddingConfigLoader.ResolveConscious().Endpoint;
-    public static string? GetModelFromEnvironment()
-        => PuddingConfigLoader.ResolveConscious().Model;
-
-    private static string? ResolveThinkingModeFromJson()
-    {
-        var mode = PuddingConfigLoader.Load()?.Llm?.Conscious?.ThinkingMode;
-        if (string.IsNullOrWhiteSpace(mode))
-            return null;
-
-        var normalized = mode.Trim().ToLowerInvariant();
-        return normalized is "auto" or "enabled" or "disabled" ? normalized : null;
-    }
 
     private sealed record ResolvedGatewayConfig(
         string Endpoint,

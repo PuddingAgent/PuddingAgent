@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -37,6 +38,12 @@ using System.Threading.Channels;
 
 // ── Serilog 结构化日志 ─────────────────────────────
 var aspnetcoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+var dataRoot = Environment.GetEnvironmentVariable("PUDDING_DATA_ROOT")
+    ?? Path.Combine(AppContext.BaseDirectory, "data");
+var dataPaths = PuddingDataPaths.FromRoot(dataRoot);
+EnsureDefaultData(dataPaths.DataRoot, Path.Combine(AppContext.BaseDirectory, "default-data"));
+EnsureRuntimeDirectories(dataPaths);
+
 var bootstrapConfiguration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -44,8 +51,7 @@ var bootstrapConfiguration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
-var logDir = Path.Combine(AppContext.BaseDirectory, "data", "logs");
-Directory.CreateDirectory(logDir);
+var logDir = dataPaths.LogsRoot;
 Directory.CreateDirectory(Path.Combine(logDir, "error"));
 
 // PUDDING_LOG_LEVEL 环境变量控制日志级别（默认 Information；设为 Debug 可诊断管线细节）
@@ -100,6 +106,7 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSingleton(dataPaths);
 
 // EF Core 10: AddDbContextFactory 的 Singleton factory 消费 Scoped DbContextOptions
 // 需要关闭 scope validation。
@@ -176,11 +183,11 @@ builder.Services.AddPuddingController();
 
 // ── EF Core / 数据库 ──────────────────────────────────
 var connStr = builder.Configuration.GetConnectionString("Default")
-    ?? "Data Source=data/pudding_platform.db";
+    ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_platform.db")}";
 var controllerConnStr = builder.Configuration.GetConnectionString("Controller")
-    ?? "Data Source=data/pudding_controller.db";
+    ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_controller.db")}";
 var memoryConnStr = builder.Configuration.GetConnectionString("Memory")
-    ?? "Data Source=data/pudding_memory.db";
+    ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_memory.db")}";
 builder.Services.AddDbContext<PlatformDbContext>(opt =>
 {
     opt.UseSqlite(connStr);
@@ -356,9 +363,12 @@ builder.Services.AddHostedService<EventDispatcher>();
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 
-// ── 统一 LLM 配置服务（JSON 文件，唯一来源）──────────
-var llmConfigPath = Path.Combine(AppContext.BaseDirectory, "data", "llm", "config.json");
-var llmConfigService = new JsonLlmConfigService(llmConfigPath);
+// ── 统一 LLM 配置服务（data/config/llm.providers.json，唯一来源）──────────
+var fileConfigLoader = new PuddingFileConfigLoader(dataPaths);
+var llmProvidersConfig = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
+var llmConfigService = new PuddingFileLlmConfigService(llmProvidersConfig);
+builder.Services.AddSingleton(fileConfigLoader);
+builder.Services.AddSingleton(llmProvidersConfig);
 builder.Services.AddSingleton<ILlmConfigService>(llmConfigService);
 
 // Memory LLM client — 通过统一服务获取配置
@@ -383,7 +393,7 @@ builder.Services.AddSingleton<ContextWindowManager>();
 builder.Services.AddSingleton(sp =>
 {
     var dataDir = builder.Configuration["Pudding:AgentPersonaDir"]
-        ?? Path.Combine(AppContext.BaseDirectory, "data", "agents");
+        ?? dataPaths.AgentTemplatesRoot;
     return new AgentPersonaFileProvider(dataDir,
         sp.GetRequiredService<ILogger<AgentPersonaFileProvider>>());
 });
@@ -1023,6 +1033,53 @@ try
 finally
 {
     Log.CloseAndFlush();
+}
+
+static void EnsureDefaultData(string dataRoot, string defaultDataRoot)
+{
+    Directory.CreateDirectory(dataRoot);
+
+    if (!Directory.Exists(defaultDataRoot))
+        return;
+
+    CopyMissingFiles(defaultDataRoot, dataRoot);
+}
+
+static void CopyMissingFiles(string sourceRoot, string targetRoot)
+{
+    foreach (var directory in Directory.EnumerateDirectories(sourceRoot, "*", SearchOption.AllDirectories))
+    {
+        var relative = Path.GetRelativePath(sourceRoot, directory);
+        Directory.CreateDirectory(Path.Combine(targetRoot, relative));
+    }
+
+    foreach (var file in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+    {
+        var relative = Path.GetRelativePath(sourceRoot, file);
+        var target = Path.Combine(targetRoot, relative);
+        if (File.Exists(target))
+            continue;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.Copy(file, target);
+    }
+}
+
+static void EnsureRuntimeDirectories(PuddingDataPaths paths)
+{
+    Directory.CreateDirectory(paths.ConfigRoot);
+    Directory.CreateDirectory(paths.AgentTemplatesRoot);
+    Directory.CreateDirectory(paths.AgentInstancesRoot);
+    Directory.CreateDirectory(paths.WorkspacesRoot);
+    Directory.CreateDirectory(paths.SystemLogsRoot);
+    Directory.CreateDirectory(paths.DiagnosticsLogsRoot);
+    Directory.CreateDirectory(paths.SessionLogsRoot);
+    Directory.CreateDirectory(paths.RuntimeTracesRoot);
+    Directory.CreateDirectory(paths.EventQueueRoot);
+    Directory.CreateDirectory(paths.MemoryRoot);
+    Directory.CreateDirectory(paths.DatabasesRoot);
+    Directory.CreateDirectory(paths.BackupsRoot);
+    Directory.CreateDirectory(paths.TempRoot);
 }
 
 public sealed record ChatRequest

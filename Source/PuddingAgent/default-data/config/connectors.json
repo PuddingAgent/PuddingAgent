@@ -1,0 +1,9 @@
+{
+  "http": { "enabled": true },
+  "websocket": { "enabled": true },
+  "mqtt": { "enabled": false },
+  "p2p": {
+    "enabled": true,
+    "port": 9527
+  }
+}

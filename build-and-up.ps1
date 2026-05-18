@@ -7,10 +7,10 @@
 #   .\build-and-up.ps1 -Restart         # 仅重建镜像并重启（不重新编译）
 #   .\build-and-up.ps1 -NoCache         # 禁用 Docker 构建缓存
 #
-# 环境变量（可选，也可通过 .env 或 docker-compose.yml 传入）：
-#   LLM_API_KEY  — LLM API 密钥（必须）
-#   LLM_ENDPOINT — LLM API 端点，默认 https://api.openai.com/v1
-#   LLM_MODEL    — 模型名，默认 gpt-4o-mini
+# 配置文件：
+#   data/config/llm.providers.json — LLM 服务商、模型与 profile 配置
+#   data/config/system.json        — 系统运行配置
+#   data/config/security.json      — 本地安全配置
 
 param(
     [switch]$BuildOnly,
@@ -31,10 +31,24 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) { Fail $ErrorMsg }
 }
 
-# ── 0. 检查 .env（可选）───────────────────────────────────
-if (-not (Test-Path "$Root\.env")) {
-    Write-Host "[i] 未找到 .env 文件，将使用默认值" -ForegroundColor Yellow
-    Write-Host "    至少需要设置 LLM_API_KEY 环境变量" -ForegroundColor Yellow
+# ── 0. 检查 JSON 配置源 ───────────────────────────────────
+$configDir = "$Root\data\config"
+$defaultConfigDir = "$Root\Source\PuddingAgent\default-data\config"
+if (-not (Test-Path "$configDir")) {
+    New-Item -ItemType Directory -Path "$configDir" -Force | Out-Null
+}
+
+foreach ($name in @("llm.providers.json", "system.json", "security.json", "connectors.json")) {
+    $target = Join-Path $configDir $name
+    $source = Join-Path $defaultConfigDir $name
+    if ((-not (Test-Path $target)) -and (Test-Path $source)) {
+        Copy-Item -Path $source -Destination $target
+        Write-Host "[i] 已创建默认配置 data/config/$name" -ForegroundColor Yellow
+    }
+}
+
+if (-not (Test-Path "$configDir\llm.providers.json")) {
+    Fail "缺少 data/config/llm.providers.json，无法解析 LLM 服务商和模型配置"
 }
 
 # ── 1. 编译 Admin 前端（pnpm，产物 dist/，Docker 直接 COPY）──

@@ -1,0 +1,43 @@
+{
+  "defaultProviderId": "fake",
+  "defaultModelId": "fake-chat",
+  "providers": [
+    {
+      "providerId": "fake",
+      "name": "Fake LLM",
+      "protocol": "openai",
+      "baseUrl": "http://localhost:8080/__fake_llm/v1",
+      "apiKey": "local-dev-only",
+      "isEnabled": true,
+      "models": [
+        {
+          "modelId": "fake-chat",
+          "name": "Fake Chat",
+          "maxContextTokens": 65536,
+          "maxOutputTokens": 4096,
+          "capabilityTags": ["text", "function-calling", "streaming"],
+          "isDefault": true,
+          "sortOrder": 1
+        }
+      ]
+    }
+  ],
+  "profiles": {
+    "default-conscious": {
+      "providerId": "fake",
+      "modelId": "fake-chat",
+      "reasoningEffort": "medium",
+      "thinkingMode": "disabled"
+    },
+    "default-subconscious": {
+      "providerId": "fake",
+      "modelId": "fake-chat",
+      "reasoningEffort": "low",
+      "thinkingMode": "disabled"
+    }
+  },
+  "roles": {
+    "conscious": "default-conscious",
+    "subconscious": "default-subconscious"
+  }
+}
