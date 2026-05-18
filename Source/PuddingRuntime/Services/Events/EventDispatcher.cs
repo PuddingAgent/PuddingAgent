@@ -1,5 +1,6 @@
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -23,6 +24,8 @@ public class EventDispatcher : BackgroundService
     private readonly IPriorityEventQueue _queue;
     private readonly IEnumerable<IEventHandler> _handlers;
     private readonly ILogger<EventDispatcher> _logger;
+    private readonly IRuntimeActivitySink _activitySink;
+    private readonly IRuntimeTraceAccessor _traceAccessor;
 
     // 匹配缓存：eventType → handler 索引列表
     // 编译正则以加速高频匹配
@@ -31,11 +34,15 @@ public class EventDispatcher : BackgroundService
     public EventDispatcher(
         IPriorityEventQueue queue,
         IEnumerable<IEventHandler> handlers,
-        ILogger<EventDispatcher> logger)
+        ILogger<EventDispatcher> logger,
+        IRuntimeActivitySink activitySink,
+        IRuntimeTraceAccessor traceAccessor)
     {
         _queue = queue;
         _handlers = handlers;
         _logger = logger;
+        _activitySink = activitySink;
+        _traceAccessor = traceAccessor;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -66,6 +73,9 @@ public class EventDispatcher : BackgroundService
                     "[EventDispatcher] Dequeued id={Id} type={Type} pri={Priority} retry={Retry}",
                     qe.Id, qe.EventType, qe.Priority, qe.RetryCount);
 
+                var trace = ResolveTrace(qe);
+                await RecordActivityAsync(trace, "dequeue", RuntimeActivityStatuses.Succeeded, qe, null, stoppingToken);
+
                 var matchedHandlers = MatchHandlers(qe.EventType);
 
                 if (matchedHandlers.Count == 0)
@@ -75,11 +85,13 @@ public class EventDispatcher : BackgroundService
                         "[EventDispatcher] No handler for event id={Id} type={Type}. Registered patterns: [{Patterns}]. Silent drop.",
                         qe.Id, qe.EventType, registeredPatterns);
                     await _queue.UpdateStatusAsync(qe.Id, "completed", ct: stoppingToken);
+                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Deferred, qe, "No matching handler", stoppingToken);
                     continue;
                 }
 
                 // 反序列化负载为 InternalEvent
                 var internalEvent = DeserializeEvent(qe);
+                _traceAccessor.Current = internalEvent.Trace ?? trace;
 
                 // 并行分发给所有匹配的 handler
                 var results = await Task.WhenAll(
@@ -93,6 +105,8 @@ public class EventDispatcher : BackgroundService
                     _logger.LogInformation(
                         "[EventDispatcher] Completed id={Id} type={Type} handlers={Count}",
                         qe.Id, qe.EventType, matchedHandlers.Count);
+                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Succeeded, qe,
+                        $"Handled by {matchedHandlers.Count} handler(s)", stoppingToken);
                 }
                 else if (qe.RetryCount < 3)
                 {
@@ -107,6 +121,8 @@ public class EventDispatcher : BackgroundService
                     await _queue.UpdateStatusAsync(qe.Id, "retrying",
                         $"Retry {newRetry}/3, next in {delaySec}s",
                         ct: stoppingToken);
+                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Retried, qe,
+                        $"Retry {newRetry}/3 in {delaySec}s", stoppingToken);
 
                     // 延迟后重新入队（Phase 5 优化：直接更新同条记录而非重新入队）
                     _ = Task.Run(async () =>
@@ -120,6 +136,7 @@ public class EventDispatcher : BackgroundService
                             Source = new EventSource { SourceType = qe.SourceType ?? "retry", SourceId = qe.SourceId },
                             Payload = JsonSerializer.Deserialize<object>(qe.Payload),
                             Timestamp = qe.CreatedAt,
+                            Trace = qe.Trace,
                         };
                         // Increase priority slightly on retry to avoid starvation
                         await _queue.EnqueueAsync(
@@ -138,6 +155,8 @@ public class EventDispatcher : BackgroundService
                         qe.Id, qe.EventType);
                     await _queue.UpdateStatusAsync(qe.Id, "dead_letter",
                         "Max retries (3) exhausted", ct: stoppingToken);
+                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Failed, qe,
+                        "Max retries exhausted", stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -237,6 +256,46 @@ public class EventDispatcher : BackgroundService
             AgentId = qe.AgentId,
             Payload = payload,
             Timestamp = qe.CreatedAt,
+            Trace = qe.Trace,
         };
+    }
+
+    private RuntimeTraceContext ResolveTrace(QueuedEvent qe)
+    {
+        var trace = qe.Trace
+            ?? _traceAccessor.Current
+            ?? RuntimeTraceContext.CreateNew(
+                sessionId: qe.SessionId,
+                workspaceId: qe.WorkspaceId,
+                eventId: qe.Id);
+
+        trace = trace.WithEvent(qe.Id);
+        _traceAccessor.Current = trace;
+        return trace;
+    }
+
+    private Task RecordActivityAsync(
+        RuntimeTraceContext trace,
+        string operation,
+        string status,
+        QueuedEvent qe,
+        string? summary,
+        CancellationToken ct)
+    {
+        return _activitySink.RecordAsync(new RuntimeActivity
+        {
+            Trace = trace,
+            Component = RuntimeActivityComponents.EventDispatcher,
+            Operation = operation,
+            Status = status,
+            Summary = summary,
+            Metadata = new Dictionary<string, string>
+            {
+                ["eventId"] = qe.Id,
+                ["eventType"] = qe.EventType,
+                ["priority"] = qe.Priority.ToString(),
+                ["retryCount"] = qe.RetryCount.ToString(),
+            },
+        }, ct);
     }
 }

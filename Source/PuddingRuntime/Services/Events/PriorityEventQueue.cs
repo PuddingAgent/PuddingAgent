@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 
 namespace PuddingRuntime.Services.Events;
 
@@ -14,6 +15,8 @@ namespace PuddingRuntime.Services.Events;
 public class PriorityEventQueue : IPriorityEventQueue
 {
     private readonly ILogger<PriorityEventQueue> _logger;
+    private readonly IRuntimeActivitySink _activitySink;
+    private readonly IRuntimeTraceAccessor _traceAccessor;
 
     // Phase 2: 内存队列占位（后续替换为 SQLite）
     private readonly Queue<QueuedEvent> _urgentQueue = new();
@@ -21,14 +24,29 @@ public class PriorityEventQueue : IPriorityEventQueue
     private readonly Queue<QueuedEvent> _normalQueue = new();
     private readonly object _lock = new();
 
-    public PriorityEventQueue(ILogger<PriorityEventQueue> logger)
+    public PriorityEventQueue(
+        ILogger<PriorityEventQueue> logger,
+        IRuntimeActivitySink activitySink,
+        IRuntimeTraceAccessor traceAccessor)
     {
         _logger = logger;
+        _activitySink = activitySink;
+        _traceAccessor = traceAccessor;
         _logger.LogInformation("[PriorityEventQueue] Initialized: Phase 2 in-memory mode");
     }
 
-    public Task<string> EnqueueAsync(ProcessedEvent evt, EventPriorityLevel priority, CancellationToken ct = default)
+    public async Task<string> EnqueueAsync(ProcessedEvent evt, EventPriorityLevel priority, CancellationToken ct = default)
     {
+        var trace = evt.Trace
+            ?? _traceAccessor.Current
+            ?? RuntimeTraceContext.CreateNew(
+                sessionId: evt.SessionId,
+                workspaceId: evt.WorkspaceId,
+                eventId: evt.EventId,
+                connectorId: evt.Source.ConnectorId);
+        trace = trace.WithEvent(evt.EventId);
+        _traceAccessor.Current = trace;
+
         var qe = new QueuedEvent
         {
             Id = evt.EventId,
@@ -42,6 +60,7 @@ public class PriorityEventQueue : IPriorityEventQueue
             Payload = System.Text.Json.JsonSerializer.Serialize(evt.Payload ?? new { }),
             Status = "pending",
             CreatedAt = evt.Timestamp,
+            Trace = trace,
         };
 
         lock (_lock)
@@ -63,7 +82,22 @@ public class PriorityEventQueue : IPriorityEventQueue
         _logger.LogDebug("[PriorityEventQueue] Enqueued {Id} type={Type} priority={Priority}",
             qe.Id, qe.EventType, qe.Priority);
 
-        return Task.FromResult(qe.Id);
+        await _activitySink.RecordAsync(new RuntimeActivity
+        {
+            Trace = trace,
+            Component = RuntimeActivityComponents.EventQueue,
+            Operation = "enqueue",
+            Status = RuntimeActivityStatuses.Succeeded,
+            Summary = $"Enqueued event {qe.EventType}",
+            Metadata = new Dictionary<string, string>
+            {
+                ["eventId"] = qe.Id,
+                ["eventType"] = qe.EventType,
+                ["priority"] = qe.Priority.ToString(),
+            },
+        }, ct);
+
+        return qe.Id;
     }
 
     public Task<QueuedEvent?> DequeueAsync(CancellationToken ct = default)

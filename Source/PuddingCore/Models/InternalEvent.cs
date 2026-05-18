@@ -1,3 +1,5 @@
+using PuddingCode.Observability;
+
 namespace PuddingCode.Models;
 
 /// <summary>
@@ -71,6 +73,9 @@ public sealed record InternalEvent
 
     /// <summary>扩展元数据</summary>
     public Dictionary<string, string>? Metadata { get; init; }
+
+    /// <summary>运行时追踪上下文。</summary>
+    public RuntimeTraceContext? Trace { get; init; }
 }
 
 /// <summary>
@@ -87,6 +92,7 @@ public sealed record RawEvent
     public object? Payload { get; init; }
     public long Timestamp { get; init; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     public Dictionary<string, string>? Metadata { get; init; }
+    public RuntimeTraceContext? Trace { get; init; }
 }
 
 /// <summary>
@@ -107,6 +113,8 @@ public sealed record ProcessedEvent
     public List<string>? MergedRawEventIds { get; init; }
 
     public int MergeCount { get; init; } = 1;
+
+    public RuntimeTraceContext? Trace { get; init; }
 }
 
 /// <summary>
@@ -129,6 +137,7 @@ public sealed record QueuedEvent
     public long? CompletedAt { get; init; }
     public int RetryCount { get; init; }
     public string? ErrorMessage { get; init; }
+    public RuntimeTraceContext? Trace { get; init; }
 }
 
 /// <summary>

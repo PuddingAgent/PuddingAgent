@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using Microsoft.Extensions.Logging;
 
 namespace PuddingRuntime.Services.Events;
@@ -12,16 +13,24 @@ namespace PuddingRuntime.Services.Events;
 public class InternalEventBus : IInternalEventBus
 {
     private readonly ILogger<InternalEventBus> _logger;
+    private readonly IRuntimeActivitySink _activitySink;
+    private readonly IRuntimeTraceAccessor _traceAccessor;
     private readonly ConcurrentDictionary<string, List<SubscriptionEntry>> _subscriptions = new();
     private readonly object _lock = new();
 
-    public InternalEventBus(ILogger<InternalEventBus> logger)
+    public InternalEventBus(
+        ILogger<InternalEventBus> logger,
+        IRuntimeActivitySink activitySink,
+        IRuntimeTraceAccessor traceAccessor)
     {
         _logger = logger;
+        _activitySink = activitySink;
+        _traceAccessor = traceAccessor;
     }
 
-    public Task PublishAsync(InternalEvent evt, CancellationToken ct = default)
+    public async Task PublishAsync(InternalEvent evt, CancellationToken ct = default)
     {
+        var trace = ResolveTrace(evt);
         var matchedHandlers = new List<Func<InternalEvent, Task>>();
 
         lock (_lock)
@@ -41,11 +50,20 @@ public class InternalEventBus : IInternalEventBus
         if (matchedHandlers.Count == 0)
         {
             _logger.LogDebug("[InternalEventBus] No subscribers for event type={Type}", evt.Type);
-            return Task.CompletedTask;
+            await RecordActivityAsync(trace, "publish", RuntimeActivityStatuses.Deferred, evt, "No subscribers", ct);
+            return;
         }
 
         _logger.LogDebug("[InternalEventBus] Publishing {Type} to {Count} subscriber(s)",
             evt.Type, matchedHandlers.Count);
+
+        await RecordActivityAsync(
+            trace,
+            "publish",
+            RuntimeActivityStatuses.Succeeded,
+            evt,
+            $"Published to {matchedHandlers.Count} subscriber(s)",
+            ct);
 
         // Fire and forget handlers (Phase 3: 后续考虑有序/串行执行)
         foreach (var handler in matchedHandlers)
@@ -59,11 +77,16 @@ public class InternalEventBus : IInternalEventBus
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "[InternalEventBus] Handler error for event type={Type}", evt.Type);
+                    await RecordActivityAsync(
+                        trace,
+                        "handler",
+                        RuntimeActivityStatuses.Failed,
+                        evt,
+                        ex.Message,
+                        CancellationToken.None);
                 }
             }, ct);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task<IEventSubscriptionHandle> SubscribeAsync(
@@ -119,6 +142,45 @@ public class InternalEventBus : IInternalEventBus
     {
         var regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace("\\*", ".*") + "$";
         return System.Text.RegularExpressions.Regex.IsMatch(eventType, regexPattern);
+    }
+
+    private RuntimeTraceContext ResolveTrace(InternalEvent evt)
+    {
+        var trace = evt.Trace
+            ?? _traceAccessor.Current
+            ?? RuntimeTraceContext.CreateNew(
+                sessionId: evt.SessionId,
+                workspaceId: evt.WorkspaceId,
+                eventId: evt.EventId,
+                connectorId: evt.Source.ConnectorId);
+
+        trace = trace.WithEvent(evt.EventId);
+        _traceAccessor.Current = trace;
+        return trace;
+    }
+
+    private Task RecordActivityAsync(
+        RuntimeTraceContext trace,
+        string operation,
+        string status,
+        InternalEvent evt,
+        string? summary,
+        CancellationToken ct)
+    {
+        return _activitySink.RecordAsync(new RuntimeActivity
+        {
+            Trace = trace,
+            Component = RuntimeActivityComponents.EventDispatcher,
+            Operation = $"event_bus.{operation}",
+            Status = status,
+            Summary = summary,
+            Metadata = new Dictionary<string, string>
+            {
+                ["eventType"] = evt.Type,
+                ["eventId"] = evt.EventId,
+                ["sourceType"] = evt.Source.SourceType,
+            },
+        }, ct);
     }
 
     private sealed record SubscriptionEntry(Func<InternalEvent, Task> Handler, SubscriptionHandle Handle)

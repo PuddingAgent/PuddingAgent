@@ -65,6 +65,7 @@ public class EventPreprocessor : IEventPreprocessor
                 Payload = raw.Payload,
                 Timestamp = raw.Timestamp,
                 MergeCount = 1,
+                Trace = raw.Trace,
             });
         }
 
