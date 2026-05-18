@@ -42,11 +42,16 @@ interface InputAreaProps {
   tPct: number;
   status: ChatStatus;
   sessionId?: string | null;
+  // cache stats
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
+  cacheHitRate?: number;
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport,
   disabled, tLimit, tUsed, tPct, status, sessionId,
+  cacheHitTokens, cacheMissTokens, cacheHitRate,
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -209,7 +214,8 @@ const InputArea: React.FC<InputAreaProps> = ({
             <span>{statusText}</span>
           </span>
           <span className={styles.statusDivider}>|</span>
-          <StatusBarTokenIndicator tLimit={tLimit} tUsed={tUsed} tPct={tPct} status={status === 'streaming' || status === 'thinking' ? 'streaming' : 'idle'} loaded={tLimit > 0} />
+          <StatusBarTokenIndicator tLimit={tLimit} tUsed={tUsed} tPct={tPct} status={status === 'streaming' || status === 'thinking' ? 'streaming' : 'idle'} loaded={tLimit > 0}
+            cacheHitTokens={cacheHitTokens} cacheMissTokens={cacheMissTokens} cacheHitRate={cacheHitRate} />
           <span className={styles.statusDivider}>|</span>
           <ThinkingIntensityIndicator intensity="auto" />
           <span className={styles.statusDivider}>|</span>

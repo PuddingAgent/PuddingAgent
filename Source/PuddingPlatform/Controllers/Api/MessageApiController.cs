@@ -39,7 +39,9 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
         int PromptTokens,
         int CompletionTokens,
         int TotalTokens,
-        int? ContextWindowTokens = null
+        int? ContextWindowTokens = null,
+        int? PromptCacheHitTokens = null,
+        int? PromptCacheMissTokens = null
     );
 
     public record MessageListResponse(
@@ -92,6 +94,81 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
             : (long?)null;
 
         return Ok(new MessageListResponse(dtos, hasMore, oldestCreatedAt));
+    }
+
+    // ── GET: 会话 Token 统计（含缓存命中率）──────────────────
+
+    /// <summary>
+    /// GET /api/sessions/{sessionId}/token-stats
+    /// 返回会话中所有消息的 Token 用量明细及聚合数据（含缓存命中/未命中）。
+    /// </summary>
+    [HttpGet("token-stats")]
+    public async Task<IActionResult> GetTokenStats(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        var messages = await db.ChatMessages
+            .AsNoTracking()
+            .Where(m => m.SessionId == sessionId && m.UsageJson != null)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new { m.Id, m.UsageJson })
+            .ToListAsync(ct);
+
+        var usageList = new List<object>();
+        long totalPrompt = 0, totalCompletion = 0, totalCacheHit = 0, totalCacheMiss = 0;
+
+        foreach (var m in messages)
+        {
+            TokenUsageDto? usage = null;
+            if (!string.IsNullOrWhiteSpace(m.UsageJson))
+            {
+                try
+                {
+                    usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson);
+                }
+                catch { /* ignore */ }
+            }
+
+            if (usage is null) continue;
+
+            usageList.Add(new
+            {
+                messageId = m.Id.ToString(),
+                usage = new
+                {
+                    promptTokens = usage.PromptTokens,
+                    completionTokens = usage.CompletionTokens,
+                    totalTokens = usage.TotalTokens,
+                    contextWindowTokens = usage.ContextWindowTokens,
+                    promptCacheHitTokens = usage.PromptCacheHitTokens,
+                    promptCacheMissTokens = usage.PromptCacheMissTokens,
+                }
+            });
+
+            totalPrompt += usage.PromptTokens;
+            totalCompletion += usage.CompletionTokens;
+            totalCacheHit += usage.PromptCacheHitTokens ?? 0;
+            totalCacheMiss += usage.PromptCacheMissTokens ?? 0;
+        }
+
+        var totalCacheTokens = totalCacheHit + totalCacheMiss;
+        var cacheHitRate = totalCacheTokens > 0
+            ? (double)totalCacheHit / totalCacheTokens
+            : 0.0;
+
+        return Ok(new
+        {
+            sessionId,
+            messages = usageList,
+            aggregates = new
+            {
+                totalPromptTokens = totalPrompt,
+                totalCompletionTokens = totalCompletion,
+                totalCacheHitTokens = totalCacheHit,
+                totalCacheMissTokens = totalCacheMiss,
+                cacheHitRate = Math.Round(cacheHitRate, 4),
+            }
+        });
     }
 
     // ── Mapping ─────────────────────────────────────────────────

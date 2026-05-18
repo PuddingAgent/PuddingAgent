@@ -42,6 +42,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // KeyVault 密钥保管箱
     public DbSet<KeyVaultEntity> KeyVaults => Set<KeyVaultEntity>();
 
+    // Token 使用统计（ADR-018 缓存可观测性）
+    public DbSet<TokenUsageStatsEntity> TokenUsageStats => Set<TokenUsageStatsEntity>();
+
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -78,6 +81,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(m => new { m.ProviderId, m.ModelId }).IsUnique();
             e.Property(m => m.InputPricePer1MTokens).HasColumnType("decimal(18,6)");
             e.Property(m => m.OutputPricePer1MTokens).HasColumnType("decimal(18,6)");
+            e.Property(m => m.CacheHitPricePer1MTokens).HasColumnType("decimal(18,6)");
         });
 
         // ── SkillPackage ──────────────────────────────────────────────
@@ -224,6 +228,14 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
              .HasForeignKey(c => c.WorkspaceEntityId)
              .OnDelete(DeleteBehavior.Cascade);
         });
+        // ── TokenUsageStats (ADR-018) ─────────────────────────
+        modelBuilder.Entity<TokenUsageStatsEntity>(e =>
+        {
+            e.ToTable("TokenUsageStats", "platform");
+            e.HasIndex(s => new { s.YearMonth, s.ProviderId, s.ModelId }).IsUnique();
+            e.Property(s => s.TotalCost).HasColumnType("decimal(18,6)");
+        });
+
         // ── ChatMessage ───────────────────────────────────────
         modelBuilder.Entity<ChatMessageEntity>(e =>
         {

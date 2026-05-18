@@ -133,6 +133,9 @@ const ChatPage: React.FC = () => {
           tLimit={chat.tLimit}
           tUsed={chat.tUsed}
           tPct={chat.tPct}
+          cacheHitTokens={chat.sessionCacheHitTokens}
+          cacheMissTokens={chat.sessionCacheMissTokens}
+          cacheHitRate={chat.cacheHitRate}
           formatTime={chat.formatTime}
           getStepTone={chat.getStepTone}
           onDeleteTurn={chat.onDeleteTurn}

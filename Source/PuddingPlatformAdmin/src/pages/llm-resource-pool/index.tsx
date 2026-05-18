@@ -96,6 +96,7 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
       sortOrder: 100,
       maxContextTokens: 8192,
       maxOutputTokens: 2048,
+      cacheHitPricePer1MTokens: 0,
       isDefault: false,
       isDeprecated: false,
     });
@@ -167,6 +168,15 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
       render: (_, r) => `$${r.outputPricePer1MTokens.toFixed(4)}`,
     },
     {
+      title: '缓存命中价格 ($/1M)',
+      dataIndex: 'cacheHitPricePer1MTokens',
+      width: 150,
+      render: (_, r) =>
+        r.cacheHitPricePer1MTokens > 0
+          ? `$${r.cacheHitPricePer1MTokens.toFixed(4)}`
+          : <Text type="secondary">同输入价格</Text>,
+    },
+    {
       title: '能力标签',
       dataIndex: 'capabilityTags',
       width: 220,
@@ -232,6 +242,10 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
             fieldProps={{ precision: 6 }} />
           <ProFormDigit name="outputPricePer1MTokens" label="输出价格 ($/1M tokens)"
             fieldProps={{ precision: 6 }} />
+          <ProFormDigit name="cacheHitPricePer1MTokens" label="缓存命中价格 ($/1M tokens)"
+            fieldProps={{ precision: 6 }}
+            tooltip="缓存命中的 prompt tokens 计费单价（USD/百万tokens），0 表示与输入价格相同"
+            placeholder="0" />
           <ProFormSelect
             name="capabilityTags"
             label="能力标签"

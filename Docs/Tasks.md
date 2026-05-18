@@ -1,6 +1,6 @@
 ﻿# Pudding Agent — 任务看板
 
-最后更新：2026-05-03（Task-UI-02 全栈流式改造完成）
+最后更新：2026-05-18（Phase 5 上下文缓存可观测性归档）
 
 ## 项目定位
 
@@ -87,3 +87,22 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 - ~~task33-embedded-runtime-host~~ — 嵌入式 Runtime
 - ~~task34-event-bus-and-subscription~~ — RabbitMQ 事件总线
 - ~~task35-workspace-cockpit~~ — 协作驾驶舱
+
+## Phase 5：上下文缓存可观测性（ADR-018，2026-05-18 归档）
+
+| 优先级 | 任务卡 ID | 标题 | 状态 | 关联 ADR |
+|--------|-----------|------|------|----------|
+| P0 | T-CACHE-001 | TokenUsageDto 新增 PromptCacheHitTokens / PromptCacheMissTokens | ✅ done | ADR-018-B |
+| P0 | T-CACHE-002 | DirectLlmClient.ChatAsync() 解析 cache tokens | ✅ done | ADR-018-A |
+| P0 | T-CACHE-003 | LlmModelEntity 新增 CacheHitPricePer1MTokens + EF 迁移 | ✅ done | ADR-018-C |
+| P0 | T-CACHE-004 | 新增 TokenUsageStatsEntity + EF 迁移 | ✅ done | ADR-018-F |
+| P0 | T-CACHE-005 | ChatApiController fire-and-forget 增量更新统计表 | ✅ done | ADR-018-A |
+| P0 | T-CACHE-006 | 管理后台模型表单新增缓存价格字段 | ✅ done | ADR-018-C |
+| P1 | T-CACHE-007 | StatusBarTokenIndicator 双层圆环改造 | ✅ done | ADR-018-D |
+| P1 | T-CACHE-008 | useChatState 新增 mainSessionId + 缓存统计累加 | ✅ done | ADR-018-E |
+| P1 | T-CACHE-009 | TokenStatsIndicator 数据接入 | ✅ done | ADR-018-D |
+| P1 | T-CACHE-010 | ChatPage 集成主会话逻辑 | ✅ done | ADR-018-E |
+| P1 | T-CACHE-011 | GET /api/sessions/{id}/token-stats API | ✅ done | ADR-018-D |
+| P2 | T-CACHE-012 | StatsApiController 新增 GET /api/stats/tokens/monthly | ✅ done | ADR-018-F |
+| P2 | T-CACHE-013 | Admin Token 统计页面 (pages/stats/tokens/) | ✅ done | ADR-018-F |
+| P2 | T-CACHE-014 | 路由配置 /stats/tokens | ✅ done | ADR-018-F |

@@ -58,6 +58,7 @@ public class LlmModelApiController(PlatformDbContext db) : ControllerBase
             MaxOutputTokens = req.MaxOutputTokens,
             InputPricePer1MTokens = req.InputPricePer1MTokens,
             OutputPricePer1MTokens = req.OutputPricePer1MTokens,
+            CacheHitPricePer1MTokens = req.CacheHitPricePer1MTokens,
             CapabilityTagsJson = JsonSerializer.Serialize(req.CapabilityTags ?? []),
             IsDeprecated = req.IsDeprecated,
             IsDefault = req.IsDefault,
@@ -85,6 +86,7 @@ public class LlmModelApiController(PlatformDbContext db) : ControllerBase
         entity.MaxOutputTokens = req.MaxOutputTokens;
         entity.InputPricePer1MTokens = req.InputPricePer1MTokens;
         entity.OutputPricePer1MTokens = req.OutputPricePer1MTokens;
+        entity.CacheHitPricePer1MTokens = req.CacheHitPricePer1MTokens;
         entity.CapabilityTagsJson = JsonSerializer.Serialize(req.CapabilityTags ?? []);
         entity.IsDeprecated = req.IsDeprecated;
         entity.IsDefault = req.IsDefault;
@@ -129,6 +131,7 @@ public class LlmModelApiController(PlatformDbContext db) : ControllerBase
         }
         return new(m.Id, m.ProviderId, m.ModelId, m.Name, m.Description,
             m.MaxContextTokens, m.MaxOutputTokens, m.InputPricePer1MTokens, m.OutputPricePer1MTokens,
+            m.CacheHitPricePer1MTokens,
             tags, m.IsDeprecated, m.IsDefault, m.SortOrder, m.CreatedAt, m.UpdatedAt);
     }
 }

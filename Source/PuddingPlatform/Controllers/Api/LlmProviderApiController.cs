@@ -178,6 +178,7 @@ public class LlmProviderApiController(PlatformDbContext db) : ControllerBase
         var tags = TryParseStringList(m.CapabilityTagsJson);
         return new(m.Id, m.ProviderId, m.ModelId, m.Name, m.Description,
             m.MaxContextTokens, m.MaxOutputTokens, m.InputPricePer1MTokens, m.OutputPricePer1MTokens,
+            m.CacheHitPricePer1MTokens,
             tags, m.IsDeprecated, m.IsDefault, m.SortOrder, m.CreatedAt, m.UpdatedAt);
     }
 

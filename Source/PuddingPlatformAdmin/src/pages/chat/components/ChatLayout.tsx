@@ -50,6 +50,9 @@ interface ChatLayoutProps {
   tLimit: number;
   tUsed: number;
   tPct: number;
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
+  cacheHitRate?: number;
   formatTime: (ts: number) => string;
   getStepTone: (status?: string) => 'executing' | 'success' | 'error';
   onDeleteTurn: (turnId: string) => void;
@@ -114,6 +117,9 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         tLimit={props.tLimit}
         tUsed={props.tUsed}
         tPct={props.tPct}
+        cacheHitTokens={props.cacheHitTokens}
+        cacheMissTokens={props.cacheMissTokens}
+        cacheHitRate={props.cacheHitRate}
         formatTime={props.formatTime}
         getStepTone={props.getStepTone}
         onDeleteTurn={props.onDeleteTurn}

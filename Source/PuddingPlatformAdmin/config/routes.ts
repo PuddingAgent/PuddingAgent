@@ -57,6 +57,12 @@ export default [
     component: './llm-resource-pool',
   },
   {
+    path: '/stats/tokens',
+    name: 'tokenStats',
+    icon: 'barChart',
+    component: './stats/tokens',
+  },
+  {
     path: '/global-agent-template',
     name: 'globalAgentTemplate',
     icon: 'robot',

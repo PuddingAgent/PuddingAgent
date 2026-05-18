@@ -15,7 +15,6 @@ import {
   listWorkspaces,
   renameSession,
   sendChatMessage,
-  sendAdminChatMessageStream,
   subscribeSessionEvents,
   type AdminChatStreamEvent,
   type MessageListResponse,
@@ -85,7 +84,14 @@ const createAssistant = (
 });
 
 const normalizeUsage = (usage?: TokenUsageDto): TokenUsageDto | undefined => (
-  usage ? { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, totalTokens: usage.totalTokens, contextWindowTokens: usage.contextWindowTokens } : undefined
+  usage ? {
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
+    contextWindowTokens: usage.contextWindowTokens,
+    promptCacheHitTokens: usage.promptCacheHitTokens,
+    promptCacheMissTokens: usage.promptCacheMissTokens,
+  } : undefined
 );
 
 const isReasoningStep = (status?: string) => {
@@ -154,6 +160,12 @@ export interface UseChatStateReturn {
   tLimit: number;
   tUsed: number;
   tPct: number;
+  // cache
+  mainSessionId: string | null;
+  sessionCacheHitTokens: number;
+  sessionCacheMissTokens: number;
+  cacheHitRate: number;
+  handleSetMainSession: (sessionId: string) => void;
   // modals
   createSceneOpen: boolean;
   setCreateSceneOpen: (v: boolean) => void;
@@ -221,6 +233,11 @@ export function useChatState(): UseChatStateReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latestUsage, setLatestUsage] = useState<TokenUsageDto | undefined>();
+  const [mainSessionId, setMainSessionId] = useState<string | null>(() => {
+    try { return localStorage.getItem(`pudding:mainSession:${workspaceId}`); } catch { return null; }
+  });
+  const [sessionCacheHitTokens, setSessionCacheHitTokens] = useState(0);
+  const [sessionCacheMissTokens, setSessionCacheMissTokens] = useState(0);
   const sessionIdRef = useRef<string | undefined>(undefined);
   const forceNewSessionRef = useRef<boolean>(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -349,6 +366,19 @@ export function useChatState(): UseChatStateReturn {
 
     if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
     if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
+
+    // T-CACHE-008: Accumulate cache hit/miss for the main session
+    if (ev.type === 'done' && ev.usage) {
+      const hitTokens = ev.usage.promptCacheHitTokens || 0;
+      const missTokens = ev.usage.promptCacheMissTokens || 0;
+      if (hitTokens > 0 || missTokens > 0) {
+        const currentStreamSessionId = sseSessionIdRef.current;
+        if (currentStreamSessionId === mainSessionId || (!mainSessionId && currentStreamSessionId === selectedSessionId)) {
+          setSessionCacheHitTokens(prev => prev + hitTokens);
+          setSessionCacheMissTokens(prev => prev + missTokens);
+        }
+      }
+    }
 
     // T-102: 持久 SSE 已合并为单一通道 — 不再过滤 delta/thinking/tool_call/tool_result。
     // 所有事件统一路由到 mapEventToTurn 处理。
@@ -900,6 +930,14 @@ export function useChatState(): UseChatStateReturn {
     }
   }, [selectedSessionId, toTurnsFromHistory, messageApi, stopSessionEventStream]);
 
+  // ── handleSetMainSession ──────────────────────────────────
+  const handleSetMainSession = useCallback((sessionId: string) => {
+    setMainSessionId(sessionId);
+    setSessionCacheHitTokens(0);
+    setSessionCacheMissTokens(0);
+    try { localStorage.setItem(`pudding:mainSession:${workspaceId}`, sessionId); } catch { /* ignore */ }
+  }, [workspaceId]);
+
   // 持久 SSE：跟随当前会话生命周期自动切换。
   useEffect(() => {
     if (!selectedSessionId) {
@@ -995,9 +1033,7 @@ export function useChatState(): UseChatStateReturn {
   }, [renameSessionId, renameTitle, messageApi]);
 
   // ── sendMessage ────────────────────────────────────────────
-  // T-102: 重构为 fire-and-forget POST + 持久 SSE。
-  // 旧流程: sendAdminChatMessageStream(POST/SSE) → onEvent 回调 → mapEventToTurn
-  // 新流程: sendChatMessage(POST) → 获取 messageId+sessionId → 持久 SSE 自动推送所有帧 → mapEventToTurn
+  // T-102: fire-and-forget POST + 持久 SSE 方案。
   const sendMessage = useCallback(async (text: string) => {
     if (!text || loading || !workspaceId || !agentId) return;
     setError(null);
@@ -1189,6 +1225,11 @@ export function useChatState(): UseChatStateReturn {
   const tUsed = latestUsage?.totalTokens ?? 0;
   const tPct = tLimit > 0 ? Math.min(100, Math.round((tUsed / tLimit) * 100)) : 0;
 
+  const cacheTotalTokens = sessionCacheHitTokens + sessionCacheMissTokens;
+  const cacheHitRate = cacheTotalTokens > 0
+    ? Math.round((sessionCacheHitTokens / cacheTotalTokens) * 100)
+    : (cacheTotalTokens === 0 && sessionCacheHitTokens === 0 && sessionCacheMissTokens === 0 ? -1 : 0);
+
   return {
     workspaces, workspaceId, workspaceLoading, setWorkspaceId, setWorkspaces,
     agents, agentId, agentLoading, setAgentId, selectedAgent,
@@ -1197,6 +1238,7 @@ export function useChatState(): UseChatStateReturn {
     turns, historyLoading, hasMoreMessages, loadingMore,
     inputValue, setInputValue, loading, error, setError,
     latestUsage, tLimit, tUsed, tPct,
+    mainSessionId, sessionCacheHitTokens, sessionCacheMissTokens, cacheHitRate, handleSetMainSession,
     subAgentCards,
     createSceneOpen, setCreateSceneOpen, createSceneLoading, createSceneForm,
     renameModalOpen, setRenameModalOpen, renameTitle, setRenameTitle, renameSessionId,

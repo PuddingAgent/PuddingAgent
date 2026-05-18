@@ -38,6 +38,9 @@ public class LlmModelEntity
     /// <summary>输出价格（每百万 tokens，USD）</summary>
     public decimal OutputPricePer1MTokens { get; set; }
 
+    /// <summary>缓存命中价格（每百万 tokens，USD）</summary>
+    public decimal CacheHitPricePer1MTokens { get; set; } = 0m;
+
     /// <summary>
     /// 能力标签（JSON 数组存储），如 ["vision","function-calling","json-mode"]
     /// </summary>

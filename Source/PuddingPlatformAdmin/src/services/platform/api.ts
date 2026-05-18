@@ -192,6 +192,7 @@ export interface LlmModelDto {
   maxOutputTokens: number;
   inputPricePer1MTokens: number;
   outputPricePer1MTokens: number;
+  cacheHitPricePer1MTokens: number;
   capabilityTags: string[];
   isDeprecated: boolean;
   isDefault: boolean;
@@ -218,6 +219,7 @@ export interface UpsertLlmModelRequest {
   maxOutputTokens: number;
   inputPricePer1MTokens: number;
   outputPricePer1MTokens: number;
+  cacheHitPricePer1MTokens?: number;
   capabilityTags?: string[];
   isDeprecated: boolean;
   isDefault: boolean;
@@ -1314,6 +1316,8 @@ export interface TokenUsageDto {
   completionTokens?: number;
   totalTokens?: number;
   contextWindowTokens?: number;
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
 }
 
 /** 单轮工具调用步骤摘要（对应后端 TurnStepDto）。 */
@@ -1385,99 +1389,6 @@ export async function sendChatMessage(
   }) as Promise<{ messageId: string; sessionId: string }>;
 }
 
-export async function sendAdminChatMessageStream(
-  workspaceId: string,
-  req: AdminChatRequest,
-  onEvent: (event: AdminChatStreamEvent) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = localStorage.getItem('pudding_token');
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const response = await fetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message/stream`,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(req),
-      signal,
-    },
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `请求失败 (${response.status})`);
-  }
-
-  if (!response.body) {
-    throw new Error('浏览器不支持流式响应读取。');
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  const flushFrame = (rawFrame: string) => {
-    const lines = rawFrame.split(/\r?\n/);
-    const eventLine = lines.find((line) => line.startsWith('event:'));
-    const dataLines = lines.filter((line) => line.startsWith('data:'));
-    const eventName = eventLine?.slice('event:'.length).trim();
-    const dataText = dataLines.map((line) => line.slice('data:'.length).trimStart()).join('\n');
-
-    if (!eventName) return;
-
-    let payload: any = {};
-    if (dataText) {
-      try {
-        payload = JSON.parse(dataText);
-      } catch {
-        payload = { message: dataText };
-      }
-    }
-
-    if (eventName === 'metadata') {
-      onEvent({ type: 'metadata', ...payload });
-    } else if (eventName === 'delta') {
-      onEvent({ type: 'delta', delta: payload.delta ?? payload.contentDelta ?? '' });
-    } else if (eventName === 'thinking') {
-      onEvent({ type: 'thinking', delta: payload.delta ?? payload.content ?? '' });
-    } else if (eventName === 'tool_call') {
-      onEvent({ type: 'tool_call', name: payload.name, arguments: payload.arguments });
-    } else if (eventName === 'tool_result') {
-      onEvent({ type: 'tool_result', name: payload.name, exitCode: payload.exitCode, output: payload.output, error: payload.error });
-    } else if (eventName === 'subconscious.load') {
-      onEvent({ type: 'subconscious_step', status: 'loading', message: `加载了 ${payload.factsCount ?? payload.count ?? 0} 条记忆` });
-    } else if (eventName === 'subconscious.think') {
-      onEvent({ type: 'subconscious_step', status: 'thinking', message: payload.status ?? '正在检索记忆...' });
-    } else if (eventName === 'subconscious.done') {
-      onEvent({ type: 'subconscious_step', status: 'done', message: `记忆检索完成` });
-    } else if (eventName === 'step') {
-      onEvent({ type: 'step', ...payload });
-    } else if (eventName === 'usage') {
-      onEvent({ type: 'usage', usage: payload });
-    } else if (eventName === 'done') {
-      onEvent({ type: 'done', ...payload });
-    } else if (eventName === 'cancelled') {
-      onEvent({ type: 'cancelled', ...payload });
-    } else if (eventName === 'error') {
-      onEvent({ type: 'error', message: payload.message ?? dataText ?? '流式响应错误' });
-    }
-  };
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const frames = buffer.split(/\r?\n\r?\n/);
-    buffer = frames.pop() ?? '';
-    frames.forEach(flushFrame);
-  }
-
-  buffer += decoder.decode();
-  if (buffer.trim()) flushFrame(buffer);
-}
 
 // ─── P2P Peer Discovery API ────────────────────────────────────
 

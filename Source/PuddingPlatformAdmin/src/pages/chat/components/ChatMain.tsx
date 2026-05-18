@@ -67,6 +67,10 @@ interface ChatMainProps {
   tLimit: number;
   tUsed: number;
   tPct: number;
+  // cache
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
+  cacheHitRate?: number;
   // message rendering
   formatTime: (ts: number) => string;
   getStepTone: (status?: string) => 'executing' | 'success' | 'error';
@@ -126,6 +130,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   turns, historyLoading, loadingMore, hasMoreMessages, error, onClearError, onLoadMore,
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport, disabled,
   tLimit, tUsed, tPct,
+  cacheHitTokens, cacheMissTokens, cacheHitRate,
   formatTime, getStepTone, onDeleteTurn, onToggleReasoning, onContextMenu,
   onRerunTurn, onPinTurn,
   messageListRef, listEndRef, subAgentCards,
@@ -410,6 +415,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
               tPct={tPct}
               status={chatStatus}
               sessionId={inferredSessionId ?? selectedSessionId}
+              cacheHitTokens={cacheHitTokens}
+              cacheMissTokens={cacheMissTokens}
+              cacheHitRate={cacheHitRate}
             />
           </div>
 

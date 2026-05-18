@@ -101,6 +101,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 PromptTokens = usageEl.TryGetProperty("prompt_tokens", out var prompt) ? prompt.GetInt32() : null,
                 CompletionTokens = usageEl.TryGetProperty("completion_tokens", out var completion) ? completion.GetInt32() : null,
                 TotalTokens = usageEl.TryGetProperty("total_tokens", out var total) ? total.GetInt32() : null,
+                PromptCacheHitTokens = usageEl.TryGetProperty("prompt_cache_hit_tokens", out var ch) ? ch.GetInt32() : null,
+                PromptCacheMissTokens = usageEl.TryGetProperty("prompt_cache_miss_tokens", out var cm) ? cm.GetInt32() : null,
             }
             : null;
 
