@@ -40,7 +40,12 @@
 | 0517 | T-102 | DeepSeek-V4-Pro | DeepSeek-V4-Pro | FAIL | 2xP0: 中止不可用 + Task.Run异常不可见 + 3xP1 + 5xP2 |
 | 0517 | T-102 | dev | qa | PASS_WITH_NOTES | P0-1中止✅ P0-2 metadata超时→500✅；遗留低风险：流失败缺error帧(下迭代)；P1 session.closed/pending ID/8s窗口不阻断 |
 | 0517 | T-CACHE-P0~P2 | Lead+dev+lw-dev | qa | FAIL | P0-1 done帧反序列化错误(TokenUsageStats全0)已修复；P1-2无缓存区分/P2-3缓存环显示条件已修复；遗留P1-1 TokenUsageDto重复定义/P2-2裸fetch/P2-4流式路径待确认 |
+| 0518 | T-CACHE-FIX | Lead | — | PASS | P2-4 OpenAiLlmGateway.ParseUsage新增DeepSeek/OpenAI双格式缓存解析；P1-1 MessageApiController消除重复定义统一引用Core TokenUsageDto；P2-2 stats/tokens裸fetch封装为getMonthlyTokenStats/getSessionTokenStats；全方案dotnet build 0错误
 | 0518 | T-104 | dev | lead(自审纯删除) | PASS | 纯删除7项死代码+前端残留，0 error build，无残留引用 |
+| 0518 | T-200 | lead | qa | PASS_WITH_NOTES | P2: workspace Channel 无清理 / 无单元测试 |
+| 0518 | T-202 | lead | qa | PASS | P2: 双写冗余，功能无害 |
+| 0518 | T-203 | dev | qa | PASS | — |
+| 0518 | T-201 | dev | qa | PASS_WITH_NOTES | P0: JSON camelCase命名已修复；P1遗留: 重连逻辑待补充 |
 
 ## Architect 领航审查
 | 0517 | T-103 | DeepSeek-V4-Pro | DeepSeek-V4-Pro | PASS_WITH_NOTES | 3xP2 命名兼容+metadata持久化 |

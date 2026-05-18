@@ -1,0 +1,212 @@
+﻿  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  PuddingCore -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\bin\Debug\net10.0\PuddingCore.dll
+  PuddingMemoryEngine -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\bin\Debug\net10.0\PuddingMemoryEngine.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Controllers\Api\AuthApiController.cs(40,71): warning CS8604: “bool PasswordHasher.Verify(string password, string storedHash)”中的形参“password”可能传入 null 引用实参。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Services\DbLlmResolver.cs(76,13): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Services\DbLlmResolver.cs(118,13): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Controllers\Api\ChatApiController.cs(28,40): warning CS9113: 参数“memoryDbFactory”未读。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Controllers\Api\ChatApiController.cs(29,24): warning CS9113: 参数“jsonlWriter”未读。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Controllers\Api\KeyVaultController.cs(33,28): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Controllers\Api\KeyVaultController.cs(93,28): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\Controllers\Api\ChatApiController.cs(97,25): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\PuddingPlatform.csproj]
+  PuddingPlatform -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\bin\Debug\net10.0\PuddingPlatform.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectLlmClient.cs(53,38): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectLlmClient.cs(54,47): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\QuerySessionsTool.cs(43,54): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectMemoryLlmClient.cs(147,71): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectMemoryLlmClient.cs(153,24): warning CS8603: 可能返回 null 引用。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectLlmClient.cs(136,38): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectMemoryLlmClient.cs(173,71): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectLlmClient.cs(169,22): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectLlmClient.cs(196,35): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectLlmClient.cs(199,30): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectMemoryLlmClient.cs(215,22): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectMemoryLlmClient.cs(303,22): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\DirectMemoryLlmClient.cs(360,17): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(364,43): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(419,60): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(218,31): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(303,25): warning CS8604: “Task<LlmResponse> IRuntimeLlmClient.ChatAsync(string workspaceId, string sessionId, string agentTemplateId, IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition>? tools = null, LlmConfig? llmConfig = null, CancellationToken ct = default(CancellationToken))”中的形参“workspaceId”可能传入 null 引用实参。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(196,62): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(209,55): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(220,60): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(231,60): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(247,66): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(251,61): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(261,60): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(272,66): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(278,59): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(286,66): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(59,43): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(60,41): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Tools\MemoryTools.cs(61,45): warning CS8625: 无法将 null 字面量转换为非 null 的引用类型。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Skills\PythonSkill.cs(105,17): warning CS8602: 解引用可能出现空引用。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Skills\PythonSkill.cs(97,20): warning CS0168: 声明了变量“stdout”，但从未使用过 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Skills\PythonSkill.cs(97,28): warning CS0168: 声明了变量“stderr”，但从未使用过 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Skills\PythonSkill.cs(98,17): warning CS0168: 声明了变量“exitCode”，但从未使用过 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\Skills\SubAgentTool.cs(288,35): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(841,31): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(961,21): warning CS8604: “IAsyncEnumerable<StreamDelta> IRuntimeLlmClient.ChatStreamAsync(string workspaceId, string sessionId, string agentTemplateId, IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition>? tools = null, LlmConfig? llmConfig = null, CancellationToken ct = default(CancellationToken))”中的形参“workspaceId”可能传入 null 引用实参。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(1156,35): warning CS8602: 解引用可能出现空引用。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(1578,22): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(1614,35): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\Services\AgentExecutionService.cs(1617,30): warning CS0618: “LlmConfig.ApiKey”已过时:“请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\PuddingRuntime.csproj]
+  PuddingRuntime -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\bin\Debug\net10.0\PuddingRuntime.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(29,9): warning MSTEST0037: 使用“Assert.AreEqual”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(282,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(268,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(296,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(366,9): warning MSTEST0037: 使用“Assert.Contains”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(378,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(432,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(463,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(473,9): warning MSTEST0037: 使用“Assert.IsEmpty”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(487,9): warning MSTEST0037: 使用“Assert.IsEmpty”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(507,9): warning MSTEST0037: 使用“Assert.HasCount”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(534,9): warning MSTEST0037: 使用“Assert.HasCount”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(546,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(547,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(548,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(549,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(550,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(551,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(552,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(553,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(554,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(555,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(556,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(557,9): warning MSTEST0032: 查看或移除断言，因为已知其条件始终为 true (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0032) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(567,9): warning MSTEST0037: 使用“Assert.HasCount”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(587,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(649,9): warning MSTEST0037: 使用“Assert.IsLessThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(672,9): warning MSTEST0037: 使用“Assert.IsGreaterThan”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(690,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(711,9): warning MSTEST0037: 使用“Assert.HasCount”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(728,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(794,13): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(824,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(827,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs(845,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj]
+  PuddingMemoryEngineTests -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\bin\Debug\net10.0\PuddingMemoryEngineTests.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\bin\Debug\net10.0\PuddingMemoryEngineTests.dll (.NETCoreApp,Version=v10.0)的测试运行
+总共 1 个测试文件与指定模式相匹配。
+已为 E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\bin\Debug\net10.0\PuddingMemoryEngineTests.dll 启用测试并行化(Workers: 8，Scope: MethodLevel)
+  已通过 CreateLibrary_ShouldSucceed [1 s]
+  已通过 CreateBook_ShouldSucceed [1 s]
+  已通过 CreateBook_WithTagPaths_ShouldCreateIndexes [1 s]
+  已通过 ListLibraries_ShouldReturnByWorkspace [1 s]
+  已通过 GetBookReadOnly_ShouldNotIncrementAccessCount [1 s]
+  已通过 ListBooks_ShouldReturnByLibrary [1 s]
+  已通过 UpdateBook_ShouldApplyChanges [449 ms]
+  已通过 ArchiveBook_ShouldChangeStatus [1 s]
+  已通过 AddChapter_ShouldSucceed [327 ms]
+  已通过 ListChapters_ShouldReturnByBook [42 ms]
+  已通过 UpdateChapterContent_ShouldUpdate [48 ms]
+  已通过 CreatePointer_ShouldSucceed [52 ms]
+  已通过 GetPointers_ShouldReturnByChapter [73 ms]
+  已通过 ResolveBacklinks_ShouldFindReferences [68 ms]
+  失败 SearchChaptersFts_ShouldFindByContent [68 ms]
+  错误消息:
+   测试方法 PuddingMemoryEngineTests.MemoryLibraryTests。SearchChaptersFts_ShouldFindByContent 引发了异常: 
+System.InvalidOperationException: The data is NULL at ordinal 9. This method can't be called on NULL values. Check using IsDBNull before calling.
+  堆栈跟踪:
+     at Microsoft.Data.Sqlite.SqliteValueReader.GetInt64(Int32 ordinal)
+   at Microsoft.Data.Sqlite.SqliteDataReader.GetInt64(Int32 ordinal)
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchChaptersFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 481
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchChaptersFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 494
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchChaptersFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 494
+   at PuddingMemoryEngineTests.MemoryLibraryTests.SearchChaptersFts_ShouldFindByContent() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs:line 281
+   at PuddingMemoryEngineTests.MemoryLibraryTests.SearchChaptersFts_ShouldFindByContent() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs:line 283
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407
+
+  失败 SearchBooksFts_ShouldFindByTitle [82 ms]
+  错误消息:
+   测试方法 PuddingMemoryEngineTests.MemoryLibraryTests。SearchBooksFts_ShouldFindByTitle 引发了异常: 
+System.InvalidOperationException: The data is NULL at ordinal 8. This method can't be called on NULL values. Check using IsDBNull before calling.
+  堆栈跟踪:
+     at Microsoft.Data.Sqlite.SqliteValueReader.GetInt64(Int32 ordinal)
+   at Microsoft.Data.Sqlite.SqliteDataReader.GetInt64(Int32 ordinal)
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchBooksFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 399
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchBooksFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 411
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchBooksFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 411
+   at PuddingMemoryEngineTests.MemoryLibraryTests.SearchBooksFts_ShouldFindByTitle() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs:line 267
+   at PuddingMemoryEngineTests.MemoryLibraryTests.SearchBooksFts_ShouldFindByTitle() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs:line 269
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407
+
+  已通过 BranchBook_ShouldCreateBranch [52 ms]
+  已通过 GetOrCreateBook_ShouldDeduplicate [25 ms]
+  失败 UpsertExperience_ShouldCreateBookAndChapter [42 ms]
+  错误消息:
+   测试方法 PuddingMemoryEngineTests.MemoryLibraryTests。UpsertExperience_ShouldCreateBookAndChapter 引发了异常: 
+System.InvalidOperationException: The data is NULL at ordinal 8. This method can't be called on NULL values. Check using IsDBNull before calling.
+  堆栈跟踪:
+     at Microsoft.Data.Sqlite.SqliteValueReader.GetInt64(Int32 ordinal)
+   at Microsoft.Data.Sqlite.SqliteDataReader.GetInt64(Int32 ordinal)
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchBooksFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 399
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchBooksFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 411
+   at PuddingMemoryEngine.Data.MemoryLibrary.SearchBooksFtsAsync(String query, Int32 topK, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibrary.cs:line 411
+   at PuddingMemoryEngine.Data.MemoryLibraryConvenience.AutoDiscoverPointersAsync(String chapterId, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibraryConvenience.cs:line 364
+   at PuddingMemoryEngine.Data.MemoryLibraryConvenience.UpsertExperienceAsync(String workspaceId, ExperiencePackage experience, CancellationToken ct) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\Data\MemoryLibraryConvenience.cs:line 104
+   at PuddingMemoryEngineTests.MemoryLibraryTests.UpsertExperience_ShouldCreateBookAndChapter() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs:line 362
+   at PuddingMemoryEngineTests.MemoryLibraryTests.UpsertExperience_ShouldCreateBookAndChapter() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngineTests\MemoryLibraryTests.cs:line 366
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407
+
+  已通过 GetBook_ShouldIncrementAccessCount [1 s]
+  已通过 ListBranches_ShouldReturnByBook [68 ms]
+  已通过 AppendChapter_ShouldAutoOrder [28 ms]
+  已通过 HybridSearch_EmptyQuery_ShouldReturnEmpty [15 ms]
+  已通过 VectorSimilarity_ShouldReturnOneForSame [1 ms]
+  已通过 VectorSimilarity_ShouldReturnZeroForOrthogonal [< 1 ms]
+  已通过 BytesToFloats_RoundTrip_ShouldPreserve [< 1 ms]
+  已通过 SseEventTypes_ShouldDefineAll12Events [1 ms]
+  已通过 MergeBranch_ShouldMarkMergedInto [68 ms]
+  已通过 SmartSearch_ShouldFindByKeyword [53 ms]
+  已通过 SearchBooksByTag_ShouldFindByPrefix [103 ms]
+  已通过 SearchByVector_NullEmbedding_ShouldSkip [30 ms]
+  已通过 SearchByVector_ShouldFindSemanticMatch [40 ms]
+  已通过 ChapterEmbedding_ShouldPersistAndRetrieve [23 ms]
+  已通过 HybridSearch_ShouldFuseMultipleSources [38 ms]
+  已通过 ContextAssemblyResult_ShouldContainLayers [< 1 ms]
+  已通过 ContextAssemblyResult_ShouldEstimateTokens [2 ms]
+  已通过 TerminalProcess_ShouldStartAndReturnPid [50 ms]
+  已通过 TerminalProcess_ShouldStreamOutput [55 ms]
+  已通过 ContextPipeline_ShouldDetectTopicSwitch [131 ms]
+  已通过 ContextPipeline_ShouldRespectTokenBudget [192 ms]
+  已通过 ContextPipeline_ShouldTriggerAggressiveCompaction [183 ms]
+  已通过 ContextPipeline_ShouldCacheStaticLayer [197 ms]
+  已通过 ContextPipeline_ShouldAssembleAll7Layers [202 ms]
+  已通过 ContextPipeline_ShouldTriggerGentleCompaction [187 ms]
+  已通过 TerminalSecurity_ShouldBlockNonWhitelistedCommands [14 ms]
+  已通过 TerminalSecurity_ShouldDetectDangerousPatterns [22 ms]
+  已通过 TerminalSecurity_ShouldAllowWhitelistedCommands [25 ms]
+  已通过 MemoryCrud_ShouldSupportTagAndSupersededFiltering [179 ms]
+  已通过 SessionCrud_ShouldCreateReadUpdateDelete [204 ms]
+  已通过 TerminalProcess_ShouldKillProcess [363 ms]
+  已通过 MessageBranchType_ShouldFilterMainAndRetry [220 ms]
+  已通过 MessageTree_ShouldTraceFromLeafToRoot [255 ms]
+  已通过 BuildMemoryContext_ShouldRespectAgentIsolationAndParentSessionRecall [231 ms]
+  已通过 TagTreeIndexer_ShouldSearchPrefixAndReturnChildren [58 ms]
+  已通过 RecallWithIntentAsync_ShouldUseTagTreeAndTimeWindow [61 ms]
+  已通过 Fts5Search_ShouldRecallChineseKeyword [95 ms]
+  已通过 RecallWithIntentAsync_ShouldFallbackToFts5WhenIntentUnavailable [69 ms]
+  已通过 PerformanceBenchmark_ShouldMeetPhase1Threshold [55 ms]
+  已通过 JsonlWriteRead_ShouldPersistAndRestore [57 ms]
+  已通过 JsonlMalformedSkip_ShouldContinueReading [17 ms]
+  已通过 JsonlBatchFlush_ShouldPersistCompleteFile [63 ms]
+  已通过 JsonlConcurrentWrite_ShouldIsolateSessions [33 ms]
+  已通过 TerminalProcess_ShouldListRunning [523 ms]
+  已通过 TerminalProcess_ShouldReapExited [1 s]
+
+dotnet : 测试运行失败。
+At line:1 char:1
++ dotnet test Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests. ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (测试运行失败。:String) [], RemoteExcepti 
+   on
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+测试总数: 64
+     通过数: 61
+     失败数: 3
+总时间: 3.6087 秒

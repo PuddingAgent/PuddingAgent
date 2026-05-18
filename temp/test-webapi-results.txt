@@ -1,0 +1,428 @@
+﻿  正在确定要还原的项目…
+  已还原 E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\PuddingWebApiTests.csproj (用时 1.86 秒)。
+  8 个项目(共 9 个)是最新的，无法还原。
+  github.hyfree.GM -> E:\github\AgentNetworkPlan\PuddingAgent\external\github.hyfree.GM\github.hyfree.GM\bin\Debug\net10.0\github.hyfree.GM.dll
+  PuddingCore -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\bin\Debug\net10.0\PuddingCore.dll
+  PuddingGateway -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingGateway\bin\Debug\net10.0\PuddingGateway.dll
+  PuddingMemoryEngine -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingMemoryEngine\bin\Debug\net10.0\PuddingMemoryEngine.dll
+  PuddingController -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingController\bin\Debug\net10.0\PuddingController.dll
+  PuddingPlatform -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatform\bin\Debug\net10.0\PuddingPlatform.dll
+  PuddingRuntime -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntime\bin\Debug\net10.0\PuddingRuntime.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Connectors\MqttConnector.cs(70,31): warning CS0618: “MqttApplicationMessage.Payload”已过时:“Use PayloadSegment instead. This property will be removed in a future release.” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\PuddingAgent.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Connectors\WebSocketConnector.cs(151,31): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\PuddingAgent.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Connectors\WebSocketConnector.cs(159,36): warning CS8601: 可能的 null 引用赋值。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\PuddingAgent.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Connectors\WebSocketConnector.cs(167,17): warning CS8602: 解引用可能出现空引用。 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\PuddingAgent.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Connectors\HttpConnector.cs(15,18): warning CS0649: 从未对字段“HttpConnector._messagesSent”赋值，字段将一直保持其默认值 0 [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\PuddingAgent.csproj]
+  PuddingAgent -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\bin\Debug\net10.0\PuddingAgent.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs(106,46): warning CS0067: 从不使用事件“CustomWebApplicationFactory.NoOpP2pDiscoveryService.PeerLost” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\PuddingWebApiTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs(104,46): warning CS0067: 从不使用事件“CustomWebApplicationFactory.NoOpP2pDiscoveryService.PeerDiscovered” [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\PuddingWebApiTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\MessageApiControllerTests.cs(76,9): warning MSTEST0037: 使用“Assert.IsEmpty”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\PuddingWebApiTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\MessageApiControllerTests.cs(61,9): warning MSTEST0037: 使用“Assert.IsEmpty”而不是“Assert.AreEqual” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\PuddingWebApiTests.csproj]
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs(92,9): warning MSTEST0037: 使用“Assert.IsGreaterThanOrEqualTo”而不是“Assert.IsTrue” (https://learn.microsoft.com/dotnet/core/testing/mstest-analyzers/mstest0037) [E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\PuddingWebApiTests.csproj]
+  PuddingWebApiTests -> E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\PuddingWebApiTests.dll
+E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\PuddingWebApiTests.dll (.NETCoreApp,Version=v10.0)的测试运行
+总共 1 个测试文件与指定模式相匹配。
+  失败 ListMessages_Returns200_WithPagination [970 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.MessageApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.MessageApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\MessageApiControllerTests.cs:line 37
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 ListMessages_EmptySession_ReturnsEmptyList [9 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.MessageApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.MessageApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\MessageApiControllerTests.cs:line 37
+   at InvokeStub_MessageApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 ListMessages_LimitExceedsMax_ClampsToMax [9 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.MessageApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.MessageApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\MessageApiControllerTests.cs:line 37
+   at InvokeStub_MessageApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 CreateSession_Returns201_WithValidData [11 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 CreateSession_Returns400_WhenMissingRequiredFields [16 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 CreateSession_Returns401_WithoutAuth [8 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 ListSessions_Returns200_WithItems [6 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 ListSessions_ExcludesFrozen [8 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 GetSession_Returns200_WithCorrectData [8 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 GetSession_Returns404_WhenNotFound [9 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 RenameSession_Returns200_WithUpdatedTitle [8 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 ArchiveSession_Returns200_WithFrozenStatus [8 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 DeleteSession_Returns204 [18 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 GetSession_Returns404_AfterDelete [9 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  失败 DeleteSession_IsIdempotent [12 ms]
+  错误消息:
+   初始化方法 PuddingWebApiTests.SessionApiControllerTests.TestInit 引发异常。System.IO.FileNotFoundException: LLM config file not found: E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\bin\Debug\net10.0\data\llm\config.json. Create data/llm/config.json with provider and model definitions.。
+  堆栈跟踪:
+     at PuddingCode.Abstractions.JsonLlmConfigService.Load() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 150
+   at PuddingCode.Abstractions.JsonLlmConfigService..ctor(String filePath) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingCore\Abstractions\JsonLlmConfigService.cs:line 29
+   at Program.<Main>$(String[] args) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingAgent\Program.cs:line 356
+   at Program.<Main>(String[] args)
+   at InvokeStub_Program.<Main>(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+--- End of stack trace from previous location ---
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.HostingListener.CreateHost()
+   at Microsoft.Extensions.Hosting.HostFactoryResolver.<>c__DisplayClass10_0.<ResolveHostFactory>b__0(String[] args)
+   at Microsoft.AspNetCore.Mvc.Testing.DeferredHostBuilder.Build()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateHost(IHostBuilder builder)
+   at PuddingWebApiTests.CustomWebApplicationFactory.CreateHost(IHostBuilder builder) in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\CustomWebApplicationFactory.cs:line 71
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.ConfigureHostBuilder(IHostBuilder hostBuilder)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.StartServer()
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateDefaultClient(Uri baseAddress, DelegatingHandler[] handlers)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient(WebApplicationFactoryClientOptions options)
+   at Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory`1.CreateClient()
+   at PuddingWebApiTests.SessionApiControllerTests.TestInit() in E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingWebApiTests\SessionApiControllerTests.cs:line 37
+   at InvokeStub_SessionApiControllerTests.TestInit(Object, Object, IntPtr*)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+  已通过 TestMethod1 [< 1 ms]
+
+dotnet : 测试运行失败。
+At line:1 char:1
++ dotnet test Source/PuddingWebApiTests/PuddingWebApiTests.csproj --nol ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (测试运行失败。:String) [], RemoteExcepti 
+   on
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+测试总数: 16
+     通过数: 1
+     失败数: 15
+总时间: 1.9095 秒

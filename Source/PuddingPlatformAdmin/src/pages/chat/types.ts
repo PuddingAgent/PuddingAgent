@@ -43,7 +43,7 @@ export interface ChatTurn {
 
 export interface SessionGroup {
   label: string;
-  items: { sessionId: string; title: string; timestamp: number }[];
+  items: { sessionId: string; title: string; timestamp: number; unreadCount?: number }[];
 }
 
 export interface SessionItem {

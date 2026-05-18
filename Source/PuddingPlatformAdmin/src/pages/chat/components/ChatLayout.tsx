@@ -19,6 +19,8 @@ interface ChatLayoutProps {
   onRenameStart: (sid: string, title: string) => void;
   onArchiveSession: (sid: string) => void;
   onDeleteSession: (sid: string) => void;
+  /** T-201: 会话未读计数 */
+  unreadCounts?: Record<string, number>;
   // main (delegated to ChatMain)
   workspaces: WorkspaceWithPermDto[];
   workspaceId: string | undefined;
@@ -82,6 +84,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onRenameStart={props.onRenameStart}
         onArchiveSession={props.onArchiveSession}
         onDeleteSession={props.onDeleteSession}
+        unreadCounts={props.unreadCounts}
       />
       <ChatMain
         sidebarOpen={props.sidebarOpen}

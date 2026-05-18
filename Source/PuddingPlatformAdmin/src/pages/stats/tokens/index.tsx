@@ -18,6 +18,10 @@ import {
   ApiOutlined,
 } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
+import {
+  getMonthlyTokenStats,
+  type MonthlyTokenStatsResponse,
+} from '@/services/platform/api';
 import dayjs from 'dayjs';
 
 interface TokenStatRow {
@@ -30,37 +34,6 @@ interface TokenStatRow {
   cacheHitRate: number;
   totalCost: number;
   requestCount: number;
-}
-
-interface MonthlyStatsResponse {
-  yearMonth: string;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  totalCacheHitTokens: number;
-  totalCacheMissTokens: number;
-  cacheHitRate: number;
-  totalCost: number;
-  totalRequests: number;
-  byProvider: {
-    providerId: string;
-    promptTokens: number;
-    completionTokens: number;
-    cacheHitTokens: number;
-    cacheMissTokens: number;
-    cacheHitRate: number;
-    totalCost: number;
-    requestCount: number;
-    models: {
-      modelId: string;
-      promptTokens: number;
-      completionTokens: number;
-      cacheHitTokens: number;
-      cacheMissTokens: number;
-      cacheHitRate: number;
-      totalCost: number;
-      requestCount: number;
-    }[];
-  }[];
 }
 
 const fmtTokens = (n: number): string => {
@@ -76,20 +49,13 @@ const fmtRate = (rate: number): string => `${(rate * 100).toFixed(1)}%`;
 const TokenStatsPage: React.FC = () => {
   const [yearMonth, setYearMonth] = useState<string>(dayjs().format('YYYY-MM'));
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<MonthlyStatsResponse | null>(null);
+  const [data, setData] = useState<MonthlyTokenStatsResponse | null>(null);
   const [flatRows, setFlatRows] = useState<TokenStatRow[]>([]);
 
   const fetchStats = useCallback(async (ym: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/stats/tokens/monthly?yearMonth=${ym}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` },
-      });
-      if (!res.ok) {
-        message.error('获取统计数据失败');
-        return;
-      }
-      const json: MonthlyStatsResponse = await res.json();
+      const json = await getMonthlyTokenStats(ym);
       setData(json);
 
       // 展开为平铺列表

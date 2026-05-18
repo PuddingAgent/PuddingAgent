@@ -49,9 +49,8 @@ public class WorkspaceNotificationsController : ControllerBase
         {
             await foreach (var notification in reader.ReadAllAsync(ct))
             {
-                var data = System.Text.Json.JsonSerializer.Serialize(notification);
-                await WriteSseAsync(Response,
-                    new ServerSentEventFrame(notification.Type, data), ct);
+                var frame = ServerSentEventFrame.Json(notification.Type, notification);
+                await WriteSseAsync(Response, frame, ct);
             }
         }
         catch (OperationCanceledException)

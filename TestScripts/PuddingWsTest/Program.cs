@@ -25,8 +25,8 @@ public class Program
         // Auto test mode
         if (args.Length > 0 && args[0] == "--auto")
         {
-            await AutoTest.RunAsync(args.Skip(1).ToArray());
-            return;
+            int exitCode = await AutoTest.RunAsync(args.Skip(1).ToArray());
+            Environment.Exit(exitCode);
         }
 
         Console.OutputEncoding = Encoding.UTF8;

@@ -1,5 +1,5 @@
 // ── 聊天页状态管理 Hook ──────────────────────────────────────
-import { App, Form } from 'antd';
+import { App, Form, notification } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -16,11 +16,13 @@ import {
   renameSession,
   sendChatMessage,
   subscribeSessionEvents,
+  subscribeWorkspaceNotifications,
   type AdminChatStreamEvent,
   type MessageListResponse,
   type SessionRecord,
   type TokenUsageDto,
   type WorkspaceAgentDto,
+  type WorkspaceNotification,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup, SubAgentCardMap, SubAgentCard, ChatSource } from '../types';
@@ -156,6 +158,11 @@ export interface UseChatStateReturn {
   latestUsage: TokenUsageDto | undefined;
   // sub-agent
   subAgentCards: SubAgentCardMap;
+  // T-201: workspace notifications
+  sessionUnreadCounts: Record<string, number>;
+  startWorkspaceNotificationStream: (workspaceId: string) => void;
+  stopWorkspaceNotificationStream: () => void;
+  clearSessionUnread: (sessionId: string) => void;
   // token
   tLimit: number;
   tUsed: number;
@@ -253,6 +260,12 @@ export function useChatState(): UseChatStateReturn {
   const sessionEventsReconnectTimerRef = useRef<number | null>(null);
   const sseSessionIdRef = useRef<string | null>(null);
 
+  // T-201: 工作区通知 SSE（独立于会话 SSE）
+  const [sessionUnreadCounts, setSessionUnreadCounts] = useState<Record<string, number>>({});
+  const workspaceNotifyAbortRef = useRef<AbortController | null>(null);
+  const workspaceNotifyReconnectRef = useRef<number | null>(null);
+  const workspaceNotifyWsIdRef = useRef<string | null>(null);
+
   const [createSceneOpen, setCreateSceneOpen] = useState(false);
   const [createSceneLoading, setCreateSceneLoading] = useState(false);
   const [createSceneForm] = Form.useForm<{ name: string }>();
@@ -279,6 +292,16 @@ export function useChatState(): UseChatStateReturn {
     sessionEventsAbortRef.current = null;
     sseSessionIdRef.current = null;
   }, [clearSessionEventTimers]);
+
+  // T-201: 清空会话未读标记
+  const clearSessionUnread = useCallback((sessionId: string) => {
+    setSessionUnreadCounts(prev => {
+      if (!prev[sessionId]) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, []);
 
   const updateLastSequence = useCallback((ev: unknown) => {
     if (!ev || typeof ev !== 'object') return;
@@ -354,139 +377,6 @@ export function useChatState(): UseChatStateReturn {
     }
     return latestTurnIdRef.current;
   }, []);
-
-  const applySessionEvent = useCallback((ev: AdminChatStreamEvent) => {
-    updateLastSequence(ev);
-
-    const anyEv = ev as Record<string, unknown>;
-    const messageId = typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
-    if (messageId && latestTurnIdRef.current) {
-      messageIdToTurnIdRef.current.set(messageId, latestTurnIdRef.current);
-    }
-
-    if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
-    if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
-
-    // T-CACHE-008: Accumulate cache hit/miss for the main session
-    if (ev.type === 'done' && ev.usage) {
-      const hitTokens = ev.usage.promptCacheHitTokens || 0;
-      const missTokens = ev.usage.promptCacheMissTokens || 0;
-      if (hitTokens > 0 || missTokens > 0) {
-        const currentStreamSessionId = sseSessionIdRef.current;
-        if (currentStreamSessionId === mainSessionId || (!mainSessionId && currentStreamSessionId === selectedSessionId)) {
-          setSessionCacheHitTokens(prev => prev + hitTokens);
-          setSessionCacheMissTokens(prev => prev + missTokens);
-        }
-      }
-    }
-
-    // T-102: 持久 SSE 已合并为单一通道 — 不再过滤 delta/thinking/tool_call/tool_result。
-    // 所有事件统一路由到 mapEventToTurn 处理。
-
-    // T-102: 终端事件管理 loading 状态
-    if (ev.type === 'session.closed') {
-      setLoading(false);
-      return;
-    }
-    if (ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
-      setLoading(false);
-    }
-
-    const targetTurnId = resolveEventTurnId(ev);
-    if (!targetTurnId) return;
-    mapEventToTurn(targetTurnId, ev);
-  }, [mapEventToTurn, resolveEventTurnId, updateLastSequence]);
-
-  const replayMissedSessionEvents = useCallback(async (sessionId: string, signal?: AbortSignal) => {
-    let from = Math.max(0, lastSequenceNumRef.current + 1);
-    let hasMore = true;
-    while (hasMore) {
-      const page = await listSessionEventsPage(sessionId, from, SESSION_EVENT_PAGE_SIZE, signal);
-      const list = (Array.isArray(page.events) ? page.events : Array.isArray(page.Events) ? page.Events : []) as unknown[];
-      if (list.length === 0) break;
-
-      for (const item of list) {
-        const normalized = normalizeSessionEvent(item);
-        if (!normalized) continue;
-        const seq = normalized.sequenceNum;
-        if (typeof seq === 'number' && Number.isFinite(seq) && seq <= lastSequenceNumRef.current) continue;
-        applySessionEvent(normalized);
-      }
-
-      const maxSeqInPage = list
-        .map((x) => {
-          if (!x || typeof x !== 'object') return Number.NaN;
-          const v = (x as Record<string, unknown>).sequenceNum ?? (x as Record<string, unknown>).SequenceNum;
-          return Number(v);
-        })
-        .filter((x) => Number.isFinite(x))
-        .reduce((m, x) => Math.max(m, x), Number.NaN);
-
-      if (Number.isFinite(maxSeqInPage)) {
-        from = Math.max(from, Number(maxSeqInPage) + 1);
-      } else {
-        hasMore = false;
-      }
-
-      hasMore = hasMore && Boolean(page.hasMore ?? page.HasMore);
-    }
-  }, [applySessionEvent, listSessionEventsPage, normalizeSessionEvent]);
-
-  const startSessionEventStream = useCallback((sessionId: string) => {
-    if (!sessionId) return;
-    stopSessionEventStream();
-    sseSessionIdRef.current = sessionId;
-
-    const ctrl = new AbortController();
-    sessionEventsAbortRef.current = ctrl;
-
-    const scheduleReconnect = () => {
-      if (sessionEventsReconnectTimerRef.current != null) return;
-      sessionEventsReconnectTimerRef.current = window.setTimeout(async () => {
-        sessionEventsReconnectTimerRef.current = null;
-        if (sseSessionIdRef.current !== sessionId) return;
-        try {
-          await replayMissedSessionEvents(sessionId);
-        } catch {
-          // 网络波动期间忽略，等待下次补偿
-        }
-        if (sseSessionIdRef.current === sessionId) {
-          startSessionEventStream(sessionId);
-        }
-      }, 1200);
-    };
-
-    const onOnline = () => {
-      scheduleReconnect();
-    };
-
-    window.addEventListener('online', onOnline);
-
-    // 周期性补偿：即使连接静默断开，也可通过历史分页追上缺口。
-    sessionEventsPollTimerRef.current = window.setInterval(async () => {
-      if (sseSessionIdRef.current !== sessionId || ctrl.signal.aborted) return;
-      try {
-        await replayMissedSessionEvents(sessionId, ctrl.signal);
-      } catch {
-        // 下次轮询重试
-      }
-    }, 8000);
-
-    try {
-      subscribeSessionEvents(sessionId, (ev) => {
-        if (ctrl.signal.aborted || sseSessionIdRef.current !== sessionId) return;
-        applySessionEvent(ev);
-      }, ctrl.signal);
-    } catch {
-      scheduleReconnect();
-    }
-
-    const originalAbort = ctrl.abort.bind(ctrl);
-    ctrl.abort = () => {
-      window.removeEventListener('online', onOnline);
-      originalAbort();
-    };
-  }, [applySessionEvent, replayMissedSessionEvents, stopSessionEventStream]);
 
   // ── mapEventToTurn ──────────────────────────────────────────
   const mapEventToTurn = useCallback((turnId: string, ev: AdminChatStreamEvent) => {
@@ -745,6 +635,139 @@ export function useChatState(): UseChatStateReturn {
     }));
   }, []);
 
+  const applySessionEvent = useCallback((ev: AdminChatStreamEvent) => {
+    updateLastSequence(ev);
+
+    const anyEv = ev as Record<string, unknown>;
+    const messageId = typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
+    if (messageId && latestTurnIdRef.current) {
+      messageIdToTurnIdRef.current.set(messageId, latestTurnIdRef.current);
+    }
+
+    if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
+    if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
+
+    // T-CACHE-008: Accumulate cache hit/miss for the main session
+    if (ev.type === 'done' && ev.usage) {
+      const hitTokens = ev.usage.promptCacheHitTokens || 0;
+      const missTokens = ev.usage.promptCacheMissTokens || 0;
+      if (hitTokens > 0 || missTokens > 0) {
+        const currentStreamSessionId = sseSessionIdRef.current;
+        if (currentStreamSessionId === mainSessionId || (!mainSessionId && currentStreamSessionId === selectedSessionId)) {
+          setSessionCacheHitTokens(prev => prev + hitTokens);
+          setSessionCacheMissTokens(prev => prev + missTokens);
+        }
+      }
+    }
+
+    // T-102: 持久 SSE 已合并为单一通道 — 不再过滤 delta/thinking/tool_call/tool_result。
+    // 所有事件统一路由到 mapEventToTurn 处理。
+
+    // T-102: 终端事件管理 loading 状态
+    if (ev.type === 'session.closed') {
+      setLoading(false);
+      return;
+    }
+    if (ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
+      setLoading(false);
+    }
+
+    const targetTurnId = resolveEventTurnId(ev);
+    if (!targetTurnId) return;
+    mapEventToTurn(targetTurnId, ev);
+  }, [mapEventToTurn, resolveEventTurnId, updateLastSequence]);
+
+  const replayMissedSessionEvents = useCallback(async (sessionId: string, signal?: AbortSignal) => {
+    let from = Math.max(0, lastSequenceNumRef.current + 1);
+    let hasMore = true;
+    while (hasMore) {
+      const page = await listSessionEventsPage(sessionId, from, SESSION_EVENT_PAGE_SIZE, signal);
+      const list = (Array.isArray(page.events) ? page.events : Array.isArray(page.Events) ? page.Events : []) as unknown[];
+      if (list.length === 0) break;
+
+      for (const item of list) {
+        const normalized = normalizeSessionEvent(item);
+        if (!normalized) continue;
+        const seq = normalized.sequenceNum;
+        if (typeof seq === 'number' && Number.isFinite(seq) && seq <= lastSequenceNumRef.current) continue;
+        applySessionEvent(normalized);
+      }
+
+      const maxSeqInPage = list
+        .map((x) => {
+          if (!x || typeof x !== 'object') return Number.NaN;
+          const v = (x as Record<string, unknown>).sequenceNum ?? (x as Record<string, unknown>).SequenceNum;
+          return Number(v);
+        })
+        .filter((x) => Number.isFinite(x))
+        .reduce((m, x) => Math.max(m, x), Number.NaN);
+
+      if (Number.isFinite(maxSeqInPage)) {
+        from = Math.max(from, Number(maxSeqInPage) + 1);
+      } else {
+        hasMore = false;
+      }
+
+      hasMore = hasMore && Boolean(page.hasMore ?? page.HasMore);
+    }
+  }, [applySessionEvent, listSessionEventsPage, normalizeSessionEvent]);
+
+  const startSessionEventStream = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    stopSessionEventStream();
+    sseSessionIdRef.current = sessionId;
+
+    const ctrl = new AbortController();
+    sessionEventsAbortRef.current = ctrl;
+
+    const scheduleReconnect = () => {
+      if (sessionEventsReconnectTimerRef.current != null) return;
+      sessionEventsReconnectTimerRef.current = window.setTimeout(async () => {
+        sessionEventsReconnectTimerRef.current = null;
+        if (sseSessionIdRef.current !== sessionId) return;
+        try {
+          await replayMissedSessionEvents(sessionId);
+        } catch {
+          // 网络波动期间忽略，等待下次补偿
+        }
+        if (sseSessionIdRef.current === sessionId) {
+          startSessionEventStream(sessionId);
+        }
+      }, 1200);
+    };
+
+    const onOnline = () => {
+      scheduleReconnect();
+    };
+
+    window.addEventListener('online', onOnline);
+
+    // 周期性补偿：即使连接静默断开，也可通过历史分页追上缺口。
+    sessionEventsPollTimerRef.current = window.setInterval(async () => {
+      if (sseSessionIdRef.current !== sessionId || ctrl.signal.aborted) return;
+      try {
+        await replayMissedSessionEvents(sessionId, ctrl.signal);
+      } catch {
+        // 下次轮询重试
+      }
+    }, 8000);
+
+    try {
+      subscribeSessionEvents(sessionId, (ev) => {
+        if (ctrl.signal.aborted || sseSessionIdRef.current !== sessionId) return;
+        applySessionEvent(ev);
+      }, ctrl.signal);
+    } catch {
+      scheduleReconnect();
+    }
+
+    const originalAbort = ctrl.abort.bind(ctrl);
+    ctrl.abort = () => {
+      window.removeEventListener('online', onOnline);
+      originalAbort();
+    };
+  }, [applySessionEvent, replayMissedSessionEvents, stopSessionEventStream]);
+
   // ── toTurnsFromHistory ─────────────────────────────────────
   const toTurnsFromHistory = useCallback((res: MessageListResponse): ChatTurn[] => {
     const mapped: ChatTurn[] = [];
@@ -884,6 +907,61 @@ export function useChatState(): UseChatStateReturn {
 
   useEffect(() => { refreshSessions(); }, [refreshSessions, turns.length]);
 
+  // T-201: 停止工作区通知 SSE
+  const stopWorkspaceNotificationStream = useCallback(() => {
+    if (workspaceNotifyReconnectRef.current != null) {
+      window.clearTimeout(workspaceNotifyReconnectRef.current);
+      workspaceNotifyReconnectRef.current = null;
+    }
+    workspaceNotifyAbortRef.current?.abort();
+    workspaceNotifyAbortRef.current = null;
+    workspaceNotifyWsIdRef.current = null;
+  }, []);
+
+  // T-201: 启动工作区通知 SSE（独立于会话 SSE）
+  const startWorkspaceNotificationStream = useCallback((workspaceId: string) => {
+    if (!workspaceId) return;
+    stopWorkspaceNotificationStream();
+    workspaceNotifyWsIdRef.current = workspaceId;
+
+    const ctrl = new AbortController();
+    workspaceNotifyAbortRef.current = ctrl;
+
+    const scheduleReconnect = () => {
+      if (workspaceNotifyReconnectRef.current != null) return;
+      workspaceNotifyReconnectRef.current = window.setTimeout(() => {
+        workspaceNotifyReconnectRef.current = null;
+        if (workspaceNotifyWsIdRef.current !== workspaceId) return;
+        startWorkspaceNotificationStream(workspaceId);
+      }, 5000);
+    };
+
+    subscribeWorkspaceNotifications(workspaceId, (ev: WorkspaceNotification) => {
+      if (ctrl.signal.aborted || workspaceNotifyWsIdRef.current !== workspaceId) return;
+
+      // 子代理完成 → 对应 sessionId 未读计数+1 + Toast
+      if (ev.type === 'notification.sub_agent_completed') {
+        setSessionUnreadCounts(prev => ({
+          ...prev,
+          [ev.sessionId]: (prev[ev.sessionId] || 0) + 1,
+        }));
+        notification.info({
+          message: '子代理完成',
+          description: ev.sessionTitle
+            ? `会话「${ev.sessionTitle}」的子代理任务已完成`
+            : `会话 ${ev.sessionId} 的子代理任务已完成`,
+          placement: 'bottomRight',
+          duration: 4,
+        });
+      }
+
+      // 新会话创建通知 → 刷新会话列表
+      if (ev.type === 'notification.session_created') {
+        refreshSessions();
+      }
+    }, ctrl.signal);
+  }, [stopWorkspaceNotificationStream, refreshSessions]);
+
   // ── auto scroll ────────────────────────────────────────────
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ block: 'end' });
@@ -901,6 +979,7 @@ export function useChatState(): UseChatStateReturn {
   // ── handleSelectSession ────────────────────────────────────
   const handleSelectSession = useCallback(async (sid: string) => {
     if (sid === selectedSessionId) return;
+    clearSessionUnread(sid);
     historyAbortRef.current?.abort();
     abortRef.current?.abort();
     stopSessionEventStream();
@@ -928,7 +1007,7 @@ export function useChatState(): UseChatStateReturn {
       if (historyAbortRef.current === ctrl) historyAbortRef.current = null;
       setHistoryLoading(false);
     }
-  }, [selectedSessionId, toTurnsFromHistory, messageApi, stopSessionEventStream]);
+  }, [selectedSessionId, toTurnsFromHistory, messageApi, stopSessionEventStream, clearSessionUnread]);
 
   // ── handleSetMainSession ──────────────────────────────────
   const handleSetMainSession = useCallback((sessionId: string) => {
@@ -1220,7 +1299,13 @@ export function useChatState(): UseChatStateReturn {
     label: getAgentName(a),
     disabled: !a.isEnabled || a.isFrozen,
   }));
-  const groups = groupSessions(sessions);
+  const groups = groupSessions(sessions).map(g => ({
+    ...g,
+    items: g.items.map(s => ({
+      ...s,
+      unreadCount: sessionUnreadCounts[s.sessionId] || undefined,
+    })),
+  }));
   const tLimit = latestUsage?.contextWindowTokens ?? 0;
   const tUsed = latestUsage?.totalTokens ?? 0;
   const tPct = tLimit > 0 ? Math.min(100, Math.round((tUsed / tLimit) * 100)) : 0;
@@ -1240,6 +1325,7 @@ export function useChatState(): UseChatStateReturn {
     latestUsage, tLimit, tUsed, tPct,
     mainSessionId, sessionCacheHitTokens, sessionCacheMissTokens, cacheHitRate, handleSetMainSession,
     subAgentCards,
+    sessionUnreadCounts, startWorkspaceNotificationStream, stopWorkspaceNotificationStream, clearSessionUnread,
     createSceneOpen, setCreateSceneOpen, createSceneLoading, createSceneForm,
     renameModalOpen, setRenameModalOpen, renameTitle, setRenameTitle, renameSessionId,
     handleSelectSession, handleDeleteSession, handleArchiveSession,

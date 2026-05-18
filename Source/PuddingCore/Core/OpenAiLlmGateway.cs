@@ -332,11 +332,33 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     {
         if (usage is null) return null;
 
+        // DeepSeek 格式：prompt_cache_hit_tokens / prompt_cache_miss_tokens 直接在 usage 下
+        var cacheHit = ReadInt(usage, "prompt_cache_hit_tokens");
+        var cacheMiss = ReadInt(usage, "prompt_cache_miss_tokens");
+
+        // OpenAI 格式：prompt_tokens_details.cached_tokens 作为 fallback
+        if (cacheHit is null && cacheMiss is null)
+        {
+            var details = usage["prompt_tokens_details"];
+            if (details is not null)
+            {
+                var cached = ReadInt(details, "cached_tokens");
+                if (cached.HasValue)
+                {
+                    var totalPrompt = ReadInt(usage, "prompt_tokens") ?? 0;
+                    cacheHit = cached.Value;
+                    cacheMiss = totalPrompt - cached.Value;
+                }
+            }
+        }
+
         return new TokenUsageDto
         {
             PromptTokens = ReadInt(usage, "prompt_tokens"),
             CompletionTokens = ReadInt(usage, "completion_tokens"),
             TotalTokens = ReadInt(usage, "total_tokens"),
+            PromptCacheHitTokens = cacheHit,
+            PromptCacheMissTokens = cacheMiss,
         };
     }
 

@@ -1,6 +1,6 @@
 // ── ChatPage 壳：路由入口，组装布局 + 模态框 ────────────────
 import { App, ConfigProvider, Form, Input, Modal } from 'antd';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createWorkspace,
   listTeams,
@@ -13,6 +13,16 @@ import { useChatState } from './hooks/useChatState';
 const ChatPage: React.FC = () => {
   const chat = useChatState();
   const [createLoading, setCreateLoading] = useState(false);
+
+  // T-201: 工作区通知 SSE — 页面级，跟随 workspaceId 自动启停
+  useEffect(() => {
+    if (chat.workspaceId) {
+      chat.startWorkspaceNotificationStream(chat.workspaceId);
+    }
+    return () => {
+      chat.stopWorkspaceNotificationStream();
+    };
+  }, [chat.workspaceId, chat.startWorkspaceNotificationStream, chat.stopWorkspaceNotificationStream]);
 
   // ── 右键菜单状态 ──────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, turnId: '', role: 'user' });
@@ -103,6 +113,7 @@ const ChatPage: React.FC = () => {
           onRenameStart={chat.handleRenameStart}
           onArchiveSession={chat.handleArchiveSession}
           onDeleteSession={chat.handleDeleteSession}
+          unreadCounts={chat.sessionUnreadCounts}
           workspaces={chat.workspaces}
           workspaceId={chat.workspaceId}
           workspaceLoading={chat.workspaceLoading}

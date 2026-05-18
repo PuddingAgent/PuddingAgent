@@ -1301,6 +1301,55 @@ export function subscribeSessionEvents(
     .catch(() => { /* connection closed */ });
 }
 
+// ─── Workspace Notifications SSE ─────────────────────────────
+
+/** 工作区通知事件（页面级，独立于会话 SSE） */
+export interface WorkspaceNotification {
+  type: string;           // 'notification.sub_agent_completed' 等
+  sessionId: string;
+  workspaceId: string;
+  agentId?: string;
+  sessionTitle?: string;
+  data?: Record<string, unknown>;
+  timestamp: string;
+}
+
+/** SSE 订阅工作区通知流 */
+export function subscribeWorkspaceNotifications(
+  workspaceId: string,
+  onNotification: (event: WorkspaceNotification) => void,
+  signal?: AbortSignal,
+): void {
+  const url = `/api/workspaces/${encodeURIComponent(workspaceId)}/notifications/stream`;
+  const token = localStorage.getItem('pudding_token');
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  fetch(url, { headers, signal })
+    .then(async (resp) => {
+      if (!resp.ok || !resp.body) return;
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              onNotification(data as WorkspaceNotification);
+            } catch { /* skip malformed */ }
+          }
+        }
+      }
+    })
+    .catch(() => { /* connection closed */ });
+}
+
 // ─── Chat types ───────────────────────────────────────────────
 
 export interface AdminChatRequest {
@@ -1479,5 +1528,61 @@ export async function unfreezeRuntimeNode(nodeId: string): Promise<void> {
     method: 'POST',
     data: { reason: 'admin unfreeze', operatorId: 'admin' },
   });
+}
+
+// ─── Token Stats API (ADR-018) ───────────────────────────────────
+
+export interface MonthlyTokenStatsResponse {
+  yearMonth: string;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalCacheHitTokens: number;
+  totalCacheMissTokens: number;
+  cacheHitRate: number;
+  totalCost: number;
+  totalRequests: number;
+  byProvider: MonthlyProviderStats[];
+}
+
+export interface MonthlyProviderStats {
+  providerId: string;
+  promptTokens: number;
+  completionTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+  cacheHitRate: number;
+  totalCost: number;
+  requestCount: number;
+  models: MonthlyModelStats[];
+}
+
+export interface MonthlyModelStats {
+  modelId: string;
+  promptTokens: number;
+  completionTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+  cacheHitRate: number;
+  totalCost: number;
+  requestCount: number;
+}
+
+/** 获取月度 Token 统计（ADR-018 StatsApiController） */
+export async function getMonthlyTokenStats(
+  yearMonth: string,
+  providerId?: string,
+  modelId?: string,
+): Promise<MonthlyTokenStatsResponse> {
+  const params = new URLSearchParams({ yearMonth });
+  if (providerId) params.set('providerId', providerId);
+  if (modelId) params.set('modelId', modelId);
+  return request(`/api/stats/tokens/monthly?${params.toString()}`, { method: 'GET' });
+}
+
+/** 获取会话 Token 使用明细（ADR-018 MessageApiController token-stats） */
+export async function getSessionTokenStats(
+  sessionId: string,
+): Promise<{ sessionId: string; messages: any[]; aggregates: any }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/token-stats`, { method: 'GET' });
 }
 

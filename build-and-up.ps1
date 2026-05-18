@@ -56,6 +56,29 @@ if (-not $Restart) {
     } "Admin 前端编译失败"
     Ok "Admin 前端编译通过"
 
+    # 清理旧的前端构建产物，避免哈希冲突（Docker COPY dist/ 会提供正确的文件）
+    Step "清理旧 wwwroot 产物"
+    $wwwrootDir = "$Root\Source\PuddingAgent\wwwroot"
+    if (Test-Path $wwwrootDir) {
+        Remove-Item -Path "$wwwrootDir\*" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    # 生成根 index.html — 重定向到 /admin/（Umi base=/admin/）
+    $indexContent = @'
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="0;url=/admin/">
+    <title>Pudding</title>
+</head>
+<body>
+    <p>Redirecting to <a href="/admin/">Pudding Admin</a>...</p>
+</body>
+</html>
+'@
+    Set-Content -Path "$wwwrootDir\index.html" -Value $indexContent -Encoding UTF8
+    Ok "wwwroot 已清理，index.html 已生成"
+
     Step "编译 PuddingAgent"
     Invoke-Native {
         dotnet build "$Root\Source\PuddingAgent\PuddingAgent.csproj" -c Release --nologo

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Models;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -33,15 +34,6 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
     public record ThinkingChunkDto(
         string Text,
         long Timestamp
-    );
-
-    public record TokenUsageDto(
-        int PromptTokens,
-        int CompletionTokens,
-        int TotalTokens,
-        int? ContextWindowTokens = null,
-        int? PromptCacheHitTokens = null,
-        int? PromptCacheMissTokens = null
     );
 
     public record MessageListResponse(
@@ -145,10 +137,10 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
                 }
             });
 
-            totalPrompt += usage.PromptTokens;
-            totalCompletion += usage.CompletionTokens;
-            totalCacheHit += usage.PromptCacheHitTokens ?? 0;
-            totalCacheMiss += usage.PromptCacheMissTokens ?? 0;
+            totalPrompt += (long)(usage.PromptTokens ?? 0);
+            totalCompletion += (long)(usage.CompletionTokens ?? 0);
+            totalCacheHit += (long)(usage.PromptCacheHitTokens ?? 0);
+            totalCacheMiss += (long)(usage.PromptCacheMissTokens ?? 0);
         }
 
         var totalCacheTokens = totalCacheHit + totalCacheMiss;

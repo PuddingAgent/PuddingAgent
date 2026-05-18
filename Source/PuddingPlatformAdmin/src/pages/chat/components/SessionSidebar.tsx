@@ -1,4 +1,4 @@
-// ── SessionSidebar：左侧会话列表 ────────────────────────────
+﻿// ── SessionSidebar：左侧会话列表 ────────────────────────────
 import {
   DeleteOutlined,
   EditOutlined,
@@ -8,7 +8,7 @@ import {
   MessageOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Input, Modal, Spin, Tooltip } from 'antd';
+import { Button, Dropdown, Input, Modal, Spin, Tooltip, Badge } from 'antd';
 import React, { useState } from 'react';
 import { useChatStyles } from '../styles';
 import type { SessionGroup } from '../types';
@@ -25,11 +25,14 @@ interface SessionSidebarProps {
   onRenameStart: (sid: string, title: string) => void;
   onArchiveSession: (sid: string) => void;
   onDeleteSession: (sid: string) => void;
+  /** T-201: 会话未读计数 */
+  unreadCounts?: Record<string, number>;
 }
 
 const SessionSidebar: React.FC<SessionSidebarProps> = ({
   sidebarOpen, onToggleSidebar, sessionsLoading, groups, selectedSessionId,
   creatingSession, onNewSession, onSelectSession, onRenameStart, onArchiveSession, onDeleteSession,
+  unreadCounts,
 }) => {
   const { styles, cx } = useChatStyles();
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,7 +105,25 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
           return (
           <React.Fragment key={g.label}>
             <div className={styles.groupLabel}>{g.label}</div>
-            {g.items.map(s => (
+            {g.items.map(s => {
+              const unread = unreadCounts?.[s.sessionId];
+              const itemNode = (
+                <div
+                  className={cx(
+                    styles.sessionItem,
+                    s.sessionId === selectedSessionId && styles.sessionItemActive,
+                    isArchived && styles.sessionItemArchived,
+                  )}
+                  onClick={() => onSelectSession(s.sessionId)}
+                >
+                  <MessageOutlined style={{ fontSize: 14, flexShrink: 0 }} />
+                  <span className={styles.sessionTitle}>{s.title}</span>
+                </div>
+              );
+              const wrapped = unread && unread > 0
+                ? <Badge key={s.sessionId} count={unread} size="small" offset={[-4, 4]}>{itemNode}</Badge>
+                : itemNode;
+              return (
               <Dropdown
                 key={s.sessionId}
                 trigger={['contextMenu']}
@@ -118,19 +139,9 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
                   ],
                 }}
               >
-                <div
-                  className={cx(
-                    styles.sessionItem,
-                    s.sessionId === selectedSessionId && styles.sessionItemActive,
-                    isArchived && styles.sessionItemArchived,
-                  )}
-                  onClick={() => onSelectSession(s.sessionId)}
-                >
-                  <MessageOutlined style={{ fontSize: 14, flexShrink: 0 }} />
-                  <span className={styles.sessionTitle}>{s.title}</span>
-                </div>
+                {wrapped}
               </Dropdown>
-            ))}
+            );})}
           </React.Fragment>
         );})}
       </div>
