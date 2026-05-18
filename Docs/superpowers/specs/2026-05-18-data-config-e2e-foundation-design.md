@@ -27,6 +27,9 @@ End-to-end testing is similarly weak. The admin frontend has a Playwright depend
 5. Standardize all mutable runtime state under a single Docker-mounted `data` directory.
 6. Add deterministic E2E automation that can run locally and in CI without real LLM calls.
 7. Add a frontend debug mode that exposes runtime state and makes E2E assertions robust.
+8. Support multiple LLM providers, with each provider exposing multiple models.
+9. Allow every agent instance to bind separate conscious and subconscious LLM profiles.
+10. Give every agent instance its own workspace directory and private configuration directory.
 
 ## Non-Goals
 
@@ -54,21 +57,30 @@ data/
     llm.providers.json
     security.json
     connectors.json
-  agents/
-    {agentId}/
+  agent-templates/
+    {templateId}/
       manifest.json
       SOUL.md
       AGENTS.md
       TOOLS.md
       BOOTSTRAP.md
       MEMORY.md
+  agents/
+    {agentInstanceId}/
+      manifest.json
+      config/
+        llm.json
+        capabilities.json
+        memory.json
+      workspace/
+      state/
+      logs/
   workspaces/
     {workspaceId}/
       manifest.json
       agents/
         {agentInstanceId}/
-          manifest.json
-          workspace/
+          ref.json
   logs/
     system/
     diagnostics/
@@ -119,7 +131,7 @@ Owns non-secret host/runtime settings:
 
 ### `data/config/llm.providers.json`
 
-Owns providers, models, and role defaults:
+Owns providers, models, role defaults, and reusable LLM profiles. A provider may expose many models, and an agent may bind different models for conscious execution and subconscious memory work:
 
 ```json
 {
@@ -146,24 +158,44 @@ Owns providers, models, and role defaults:
       ]
     }
   ],
-  "roles": {
-    "conscious": {
+  "profiles": {
+    "default-conscious": {
       "providerId": "fake",
       "modelId": "fake-chat",
       "reasoningEffort": "medium",
       "thinkingMode": "disabled"
     },
-    "memory": {
+    "default-subconscious": {
       "providerId": "fake",
       "modelId": "fake-chat",
       "reasoningEffort": "low",
       "thinkingMode": "disabled"
     }
+  },
+  "roles": {
+    "conscious": "default-conscious",
+    "subconscious": "default-subconscious"
   }
 }
 ```
 
 The application must not fall back to `LLM_API_KEY`, `LLM_ENDPOINT`, `LLM_MODEL`, `MEMORY_LLM_API_KEY`, `MEMORY_LLM_ENDPOINT`, or `MEMORY_LLM_MODEL_ID` after this migration. Missing or invalid JSON should fail startup with an actionable error.
+
+Provider/model resolution rules:
+
+1. Resolve agent instance LLM binding from `data/agents/{agentInstanceId}/config/llm.json`.
+2. If missing, resolve template defaults from `data/agent-templates/{templateId}/manifest.json`.
+3. If missing, resolve role defaults from `data/config/llm.providers.json.roles`.
+4. Resolve profile to provider and model.
+5. Validate provider is enabled and the selected model belongs to that provider.
+6. Fail fast with a visible diagnostic event if the binding cannot be resolved.
+
+The terms are intentionally explicit:
+
+- **Conscious LLM:** the main chat/tool execution model used by the agent loop.
+- **Subconscious LLM:** the memory consolidation, summarization, reflection, and background processing model.
+- **Provider:** an OpenAI-compatible, Anthropic-compatible, local, or future protocol endpoint.
+- **Model:** a named model belonging to exactly one provider entry in the config.
 
 ### `data/config/security.json`
 
@@ -202,20 +234,28 @@ Owns connector enablement and local ports:
 }
 ```
 
-## Agent File Model
+## Agent Template and Instance File Model
 
-Each agent has a directory under `data/agents/{agentId}`.
+Pudding supports multiple agents, so the file model separates reusable templates from concrete agent instances:
 
-### `manifest.json`
+- `data/agent-templates/{templateId}` defines reusable identity, defaults, and Markdown behavior files.
+- `data/agents/{agentInstanceId}` defines one concrete agent instance, its LLM bindings, workspace, private config, state, and logs.
+- `data/workspaces/{workspaceId}/agents/{agentInstanceId}/ref.json` links workspace membership to the concrete agent instance.
+
+This avoids duplicating persona files for every instance while still giving each active agent its own editable configuration and workspace.
+
+### Template `manifest.json`
 
 ```json
 {
-  "agentId": "general-assistant",
+  "templateId": "general-assistant",
   "name": "Pudding",
   "description": "General assistant",
   "role": "Service",
-  "preferredProviderId": "fake",
-  "preferredModelId": "fake-chat",
+  "defaultLlmProfiles": {
+    "conscious": "default-conscious",
+    "subconscious": "default-subconscious"
+  },
   "memorySearchMode": "deep",
   "reasoningEffort": "medium",
   "maxContextTokens": 65536,
@@ -229,6 +269,65 @@ Each agent has a directory under `data/agents/{agentId}`.
 }
 ```
 
+### Agent Instance `manifest.json`
+
+```json
+{
+  "agentInstanceId": "default.general-assistant-001",
+  "templateId": "general-assistant",
+  "workspaceId": "default",
+  "displayName": "Pudding",
+  "description": "Default workspace assistant",
+  "isEnabled": true,
+  "paths": {
+    "config": "config",
+    "workspace": "workspace",
+    "state": "state",
+    "logs": "logs"
+  }
+}
+```
+
+### Agent Instance `config/llm.json`
+
+```json
+{
+  "conscious": {
+    "profileId": "default-conscious",
+    "providerId": "fake",
+    "modelId": "fake-chat",
+    "reasoningEffort": "medium",
+    "thinkingMode": "disabled",
+    "maxContextTokens": 65536,
+    "maxReplyTokens": 4096
+  },
+  "subconscious": {
+    "profileId": "default-subconscious",
+    "providerId": "fake",
+    "modelId": "fake-chat",
+    "reasoningEffort": "low",
+    "thinkingMode": "disabled",
+    "maxContextTokens": 65536,
+    "maxReplyTokens": 2048
+  }
+}
+```
+
+Agent instance LLM bindings may reference profile IDs and may override provider/model fields. Overrides must still validate against `llm.providers.json`.
+
+### Workspace Agent Reference
+
+`data/workspaces/{workspaceId}/agents/{agentInstanceId}/ref.json` links a workspace to a concrete agent instance:
+
+```json
+{
+  "agentInstanceId": "default.general-assistant-001",
+  "workspaceId": "default",
+  "agentPath": "../../../agents/default.general-assistant-001",
+  "isEnabled": true
+}
+```
+
 ### Markdown Files
 
 - `SOUL.md`: identity, personality, values, conversational stance.
@@ -237,7 +336,17 @@ Each agent has a directory under `data/agents/{agentId}`.
 - `BOOTSTRAP.md`: initial interaction guidance.
 - `MEMORY.md`: memory behavior, personal data rules, consolidation rules.
 
-`AgentPersonaFileProvider` should evolve into `AgentProfileProvider`, reading `manifest.json` plus Markdown files. Existing DB-backed template fields remain as derived cache during the migration, not the canonical source.
+`AgentPersonaFileProvider` should evolve into `AgentProfileProvider`, reading template `manifest.json`, instance `manifest.json`, instance `config/*.json`, and Markdown files. Existing DB-backed template fields remain as derived cache during the migration, not the canonical source.
+
+Resolution precedence:
+
+1. Agent instance `config/*.json`.
+2. Agent instance `manifest.json`.
+3. Agent template `manifest.json`.
+4. Agent template Markdown files.
+5. Packaged defaults.
+
+The database should store the resolved projection for query speed and admin listing, including selected conscious/subconscious provider/model IDs and source file paths.
 
 ## Startup and Migration
 
@@ -250,6 +359,7 @@ Startup should run in this order:
 5. Migrate old paths non-destructively:
    - `data/conf/pudding-config.json` into `data/config/system.json` and `data/config/llm.providers.json`.
    - `data/llm/config.json` into `data/config/llm.providers.json`.
+   - legacy `data/agents/{templateId}` directories into `data/agent-templates/{templateId}` when they contain only template-level Markdown files.
    - session JSONL/log files into `data/logs/sessions`.
 6. Seed database indexes from file source.
 7. Start runtime services.
@@ -392,7 +502,9 @@ Every E2E chat run should be diagnosable from persisted runtime data:
 ### Phase 3: Agent File Profiles
 
 - Add `AgentProfileProvider`.
-- Read `manifest.json` plus Markdown files.
+- Read template `manifest.json`, instance `manifest.json`, instance `config/*.json`, and Markdown files.
+- Add per-agent workspace/config/state/log directory creation.
+- Add conscious/subconscious LLM binding resolution per agent instance.
 - Seed DB from file profile.
 - Add reload endpoint or file watcher later if needed.
 
@@ -436,7 +548,10 @@ Every E2E chat run should be diagnosable from persisted runtime data:
 - No application LLM behavior depends on `.env` or LLM environment variables.
 - `data/config/*.json` is sufficient to boot the Docker stack.
 - `build-and-up.ps1` no longer asks for `.env`.
-- Agent identity and behavior can be inspected in `data/agents/{agentId}`.
+- Provider/model definitions support multiple providers and multiple models per provider.
+- Each agent instance can bind separate conscious and subconscious LLM profiles.
+- Agent template identity and behavior can be inspected in `data/agent-templates/{templateId}`.
+- Agent instance workspace and private config can be inspected in `data/agents/{agentInstanceId}`.
 - Docker uses a single `./data:/app/data` mutable mount.
 - E2E can start a clean stack, run chat, verify diagnostics, and shut down.
 - Frontend debug mode exposes trace/session state for Playwright and human debugging.
