@@ -45,6 +45,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Token 使用统计（ADR-018 缓存可观测性）
     public DbSet<TokenUsageStatsEntity> TokenUsageStats => Set<TokenUsageStatsEntity>();
 
+    // 运行时活动诊断（Runtime observability foundation）
+    public DbSet<RuntimeActivityEntity> RuntimeActivities => Set<RuntimeActivityEntity>();
+
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -234,6 +237,19 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.ToTable("TokenUsageStats", "platform");
             e.HasIndex(s => new { s.YearMonth, s.ProviderId, s.ModelId }).IsUnique();
             e.Property(s => s.TotalCost).HasColumnType("decimal(18,6)");
+        });
+
+        // ── RuntimeActivity (observability foundation) ──────────
+        modelBuilder.Entity<RuntimeActivityEntity>(e =>
+        {
+            e.ToTable("runtime_activity");
+            e.HasIndex(a => a.ActivityId).IsUnique();
+            e.HasIndex(a => a.TraceId);
+            e.HasIndex(a => a.SessionId);
+            e.HasIndex(a => a.ExecutionId);
+            e.HasIndex(a => a.Component);
+            e.HasIndex(a => a.StartedAtUtc);
+            e.Property(a => a.MetadataJson).HasColumnType("TEXT");
         });
 
         // ── ChatMessage ───────────────────────────────────────

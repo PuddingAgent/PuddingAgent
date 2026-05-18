@@ -6,6 +6,7 @@ using System.Text;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
@@ -18,6 +19,7 @@ using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Events;
+using PuddingRuntime.Services.Observability;
 using PuddingRuntime.Services.Sandbox;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.SubAgents;
@@ -167,6 +169,9 @@ builder.Services.AddSingleton<SessionStateManager>();
 builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
+builder.Services.AddSingleton<IRuntimeTraceAccessor, AmbientRuntimeTraceAccessor>();
+builder.Services.AddSingleton<RuntimeActivitySink>();
+builder.Services.AddSingleton<IRuntimeActivitySink>(sp => sp.GetRequiredService<RuntimeActivitySink>());
 builder.Services.AddPuddingController();
 
 // ── EF Core / 数据库 ──────────────────────────────────
@@ -691,6 +696,38 @@ using (var scope = app.Services.CreateScope())
         );",
         @"CREATE INDEX IF NOT EXISTS idx_ssa_parent ON session_sub_agents(parent_session_id, status);",
         @"CREATE INDEX IF NOT EXISTS idx_ssa_sub ON session_sub_agents(sub_session_id);",
+
+        // runtime_activity — 运行时活动诊断日志
+        @"CREATE TABLE IF NOT EXISTS runtime_activity (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_id         TEXT    NOT NULL UNIQUE,
+            trace_id            TEXT    NOT NULL,
+            correlation_id      TEXT    NOT NULL,
+            session_id          TEXT,
+            workspace_id        TEXT,
+            execution_id        TEXT,
+            parent_execution_id TEXT,
+            sub_agent_id        TEXT,
+            event_id            TEXT,
+            connector_id        TEXT,
+            user_id             TEXT,
+            component           TEXT    NOT NULL,
+            operation           TEXT    NOT NULL,
+            status              TEXT    NOT NULL,
+            started_at_utc      TEXT    NOT NULL,
+            ended_at_utc        TEXT,
+            duration_ms         INTEGER,
+            severity            TEXT    NOT NULL DEFAULT 'info',
+            summary             TEXT,
+            metadata_json       TEXT,
+            error_code          TEXT,
+            error_message       TEXT
+        );",
+        @"CREATE INDEX IF NOT EXISTS idx_ra_trace ON runtime_activity(trace_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_ra_session ON runtime_activity(session_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_ra_execution ON runtime_activity(execution_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_ra_component ON runtime_activity(component);",
+        @"CREATE INDEX IF NOT EXISTS idx_ra_started ON runtime_activity(started_at_utc);",
     };
     foreach (var ddl in pendingTableDdl)
     {
