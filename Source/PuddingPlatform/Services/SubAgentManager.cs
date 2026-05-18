@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services;
@@ -18,17 +19,23 @@ public sealed class SubAgentManager : ISubAgentManager
     private readonly IServiceProvider _services;
     private readonly IInternalEventBus _eventBus;
     private readonly ILogger<SubAgentManager> _logger;
+    private readonly IRuntimeActivitySink _activitySink;
+    private readonly IRuntimeTraceAccessor _traceAccessor;
 
     public SubAgentManager(
         ISessionStateManager ssm,
         IServiceProvider services,
         IInternalEventBus eventBus,
-        ILogger<SubAgentManager> logger)
+        ILogger<SubAgentManager> logger,
+        IRuntimeActivitySink activitySink,
+        IRuntimeTraceAccessor traceAccessor)
     {
         _ssm = ssm;
         _services = services;
         _eventBus = eventBus;
         _logger = logger;
+        _activitySink = activitySink;
+        _traceAccessor = traceAccessor;
     }
 
     // ════════════════════════════════════════════════════════
@@ -41,6 +48,7 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var spawnedAt = DateTimeOffset.UtcNow;
+        var trace = ResolveTrace(request, subSessionId);
 
         _logger.LogInformation(
             "[SubAgentMgr] Spawn async parent={Parent} sub={Sub} template={Template} task={Task}",
@@ -61,6 +69,13 @@ public sealed class SubAgentManager : ISubAgentManager
             SpawnedAt = spawnedAt,
         }, ct);
 
+        await RecordActivityAsync(
+            trace,
+            "spawn",
+            RuntimeActivityStatuses.Started,
+            $"Spawned sub-agent {subSessionId}",
+            ct);
+
         // 2. 推送 SubAgentSpawned 帧到父会话
         _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
             ServerSentEventFrame.Json(SessionEventTypes.SubAgentSpawned, new
@@ -71,7 +86,7 @@ public sealed class SubAgentManager : ISubAgentManager
                 task_summary = request.TaskDescription.Length > 200
                     ? request.TaskDescription[..200] + "..."
                     : request.TaskDescription,
-            }), CancellationToken.None);
+            }), CancellationToken.None, trace, RuntimeActivityComponents.SubAgent, "sub_agent.spawned");
 
         // execution service resolved dynamically below
 
@@ -115,7 +130,15 @@ public sealed class SubAgentManager : ISubAgentManager
                     AgentId = request.ParentAgentId,
                     Payload = new { sub_agent_id = subSessionId, success, reply = replyText, error = errorMsg },
                     Metadata = new Dictionary<string, string> { ["parent_session"] = request.ParentSessionId, ["parent_agent"] = request.ParentAgentId ?? "" },
+                    Trace = trace,
                 }, CancellationToken.None);
+
+                await RecordActivityAsync(
+                    trace,
+                    "complete",
+                    success ? RuntimeActivityStatuses.Succeeded : RuntimeActivityStatuses.Failed,
+                    success ? $"Sub-agent {subSessionId} completed" : errorMsg,
+                    CancellationToken.None);
 
                 _logger.LogInformation("[SubAgentMgr] Async completed sub={Sub} parent={Parent} success={Success}",
                     subSessionId, request.ParentSessionId, success);
@@ -127,6 +150,12 @@ public sealed class SubAgentManager : ISubAgentManager
                 { Success = false, Error = ex.Message, CompletedAt = DateTimeOffset.UtcNow }, CancellationToken.None);
                 _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
                     ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new { sub_agent_id = subSessionId, success = false, error = ex.Message }),
+                    CancellationToken.None, trace, RuntimeActivityComponents.SubAgent, "sub_agent.failed");
+                await RecordActivityAsync(
+                    trace,
+                    "complete",
+                    RuntimeActivityStatuses.Failed,
+                    ex.Message,
                     CancellationToken.None);
             }
         }, CancellationToken.None);
@@ -143,11 +172,20 @@ public sealed class SubAgentManager : ISubAgentManager
         CancellationToken ct = default)
     {
         var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
+        var trace = ResolveTrace(request, subSessionId);
 
         _logger.LogInformation("[SubAgentMgr] Execute sync parent={Parent} sub={Sub} template={Template}",
             request.ParentSessionId, subSessionId, request.TemplateId);
 
+        await RecordActivityAsync(trace, "execute_sync", RuntimeActivityStatuses.Started,
+            $"Executing sync sub-agent {subSessionId}", ct);
+
         var r = await DispatchChildAgentAsync(subSessionId, request);
+
+        await RecordActivityAsync(trace, "execute_sync",
+            r.IsSuccess ? RuntimeActivityStatuses.Succeeded : RuntimeActivityStatuses.Failed,
+            r.IsSuccess ? $"Sync sub-agent {subSessionId} completed" : r.ErrorMessage,
+            ct);
 
         return new SubAgentExecuteResult
         {
@@ -168,6 +206,17 @@ public sealed class SubAgentManager : ISubAgentManager
                 Success = false,
                 Error = "Cancelled by parent",
                 CompletedAt = DateTimeOffset.UtcNow,
+            }, ct);
+            await _activitySink.RecordAsync(new RuntimeActivity
+            {
+                Trace = RuntimeTraceContext.CreateNew(
+                    sessionId: parentSessionId,
+                    workspaceId: null,
+                    executionId: sa.SubSessionId),
+                Component = RuntimeActivityComponents.SubAgent,
+                Operation = "cancel",
+                Status = RuntimeActivityStatuses.Cancelled,
+                Summary = $"Cancelled sub-agent {sa.SubSessionId}",
             }, ct);
         }
 
@@ -264,6 +313,7 @@ public sealed class SubAgentManager : ISubAgentManager
         reqType.GetProperty("AgentTemplateId")?.SetValue(childReq, request.TemplateId);
         reqType.GetProperty("MessageText")?.SetValue(childReq, request.TaskDescription);
         reqType.GetProperty("CapabilityPolicy")?.SetValue(childReq, request.CapabilityPolicy);
+        reqType.GetProperty("LlmConfig")?.SetValue(childReq, request.LlmConfig);
         reqType.GetProperty("MaxRounds")?.SetValue(childReq, request.MaxRounds);
 
         var execType = Type.GetType("PuddingRuntime.Services.AgentExecutionService, PuddingRuntime")
@@ -274,5 +324,39 @@ public sealed class SubAgentManager : ISubAgentManager
             ?? throw new InvalidOperationException("AgentExecutionService not registered");
 
         return (Task<dynamic>)execMethod.Invoke(execSvc, [childReq, CancellationToken.None])!;
+    }
+
+    private RuntimeTraceContext ResolveTrace(SubAgentSpawnRequest request, string subSessionId)
+    {
+        var parent = _traceAccessor.Current
+            ?? RuntimeTraceContext.CreateNew(
+                sessionId: request.ParentSessionId,
+                workspaceId: request.WorkspaceId,
+                userId: request.ParentAgentId);
+
+        var trace = parent.CreateChildExecution(
+            sessionId: subSessionId,
+            executionId: subSessionId,
+            subAgentId: subSessionId);
+
+        _traceAccessor.Current = trace;
+        return trace;
+    }
+
+    private Task RecordActivityAsync(
+        RuntimeTraceContext trace,
+        string operation,
+        string status,
+        string? summary,
+        CancellationToken ct)
+    {
+        return _activitySink.RecordAsync(new RuntimeActivity
+        {
+            Trace = trace,
+            Component = RuntimeActivityComponents.SubAgent,
+            Operation = operation,
+            Status = status,
+            Summary = summary,
+        }, ct);
     }
 }

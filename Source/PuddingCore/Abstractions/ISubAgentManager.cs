@@ -89,6 +89,7 @@ public sealed record SubAgentSpawnRequest
     public required string TaskDescription { get; init; }
     public string TemplateId { get; init; } = "workspace-task-agent";
     public string? ModelId { get; init; }
+    public LlmConfig? LlmConfig { get; init; }
     public int MaxRounds { get; init; } = 10;
     public CapabilityPolicy? CapabilityPolicy { get; init; }
 }

@@ -72,9 +72,8 @@ public sealed class SubAgentTool : ITool, IAgentSkill
     public async Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default)
     {
         var executionService = _services.GetRequiredService<AgentExecutionService>();
-        var eventBus = _services.GetRequiredService<IInternalEventBus>();
+        var subAgentManager = _services.GetRequiredService<ISubAgentManager>();
         var streamingBus = _services.GetService<IStreamingEventBus>();
-        var ssm = _services.GetService<PuddingCode.Abstractions.ISessionStateManager>(); // ADR-016
 
         var json = TryParseJson(request.Input);
 
@@ -203,137 +202,27 @@ public sealed class SubAgentTool : ITool, IAgentSkill
                 return new SkillResult { Success = false, Output = output.Trim(), Error = "子代理未生成文本回复", ExitCode = 1 };
         }
 
-        // ADR-016：追踪异步子代理创建
-        var spawnedAt = DateTimeOffset.UtcNow;
-        if (ssm is not null)
+        var spawnResult = await subAgentManager.SpawnAsync(new SubAgentSpawnRequest
         {
-            _logger.LogDebug("[Diag] SubAgent spawning async parent={Parent} sub={Sub} template={Template} model={Model} task={Task}",
-                request.SessionId, childRequest.SessionId, template.TemplateId, childLlmConfig?.ModelId ?? "default",
-                task!.Length > 200 ? task[..200] + "..." : task);
-
-            await ssm.TrackSubAgentStartAsync(request.SessionId, new PuddingCode.Abstractions.SubAgentSpawnInfo
-            {
-                SubSessionId = childRequest.SessionId,
-                ParentSessionId = request.SessionId,
-                ParentAgentId = request.AgentInstanceId,
-                TemplateId = template.TemplateId,
-                ModelId = childLlmConfig?.ModelId,
-                TaskSummary = task!.Length > 200 ? task[..200] + "..." : task,
-                SpawnedAt = spawnedAt,
-            }, CancellationToken.None);
-
-            // 向父会话事件日志推送 SubAgentSpawned 帧
-            var spawnedFrame = ServerSentEventFrame.Json(SessionEventTypes.SubAgentSpawned, new
-            {
-                sub_agent_id = childRequest.SessionId,
-                template = template.TemplateId,
-                model = childLlmConfig?.ModelId ?? "默认",
-                task_summary = task!.Length > 200 ? task[..200] + "..." : task,
-            });
-            _ = ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", spawnedFrame, CancellationToken.None);
-        }
-
-        // 异步：fire-and-forget，完成后通过事件通知
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                // 诊断日志：子代理开始执行
-                if (ssm is not null)
-                {
-                    _ = ssm.AppendAsync(childRequest.SessionId, request.WorkspaceId ?? "",
-                        ServerSentEventFrame.Json(SessionEventTypes.Metadata, new
-                        {
-                            sessionId = childRequest.SessionId,
-                            parentSessionId = request.SessionId,
-                            status = "execution_started",
-                        }), CancellationToken.None);
-                }
-
-                var result = await executionService.ExecuteAsync(childRequest, CancellationToken.None);
-
-                // ADR-016：追踪子代理完成 + 向父会话推送 SubAgentCompleted 帧
-                var completedAt = DateTimeOffset.UtcNow;
-                _logger.LogDebug("[Diag] SubAgent completed async parent={Parent} sub={Sub} success={Success} replyLen={Len} elapsed={Elapsed}ms",
-                    request.SessionId, childRequest.SessionId, result.IsSuccess,
-                    result.ReplyText?.Length ?? 0, (completedAt - spawnedAt).TotalMilliseconds);
-
-                if (ssm is not null)
-                {
-                    _ = ssm.TrackSubAgentCompleteAsync(childRequest.SessionId, new PuddingCode.Abstractions.SubAgentResult
-                    {
-                        Success = result.IsSuccess,
-                        Reply = result.ReplyText,
-                        Error = result.ErrorMessage,
-                        Usage = result.Usage,
-                        CompletedAt = completedAt,
-                    }, CancellationToken.None);
-
-                    _ = ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "",
-                        ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new
-                        {
-                            sub_agent_id = childRequest.SessionId,
-                            success = result.IsSuccess,
-                            reply = result.ReplyText,
-                            error = result.ErrorMessage,
-                        }), CancellationToken.None);
-                }
-
-                // 发布事件通知父代理
-                await eventBus.PublishAsync(new InternalEvent
-                {
-                    Type = "agent.sub_completed",
-                    Priority = EventPriorityLevel.Normal,
-                    Source = new EventSource { SourceType = "subagent", SourceId = childRequest.SessionId },
-                    WorkspaceId = request.WorkspaceId,
-                    SessionId = request.SessionId, // 父代理 session
-                    AgentId = request.AgentInstanceId,
-                    Payload = new
-                    {
-                        sub_agent_id = childRequest.SessionId,
-                        success = result.IsSuccess,
-                        reply = result.ReplyText,
-                        error = result.ErrorMessage,
-                    },
-                    Metadata = new Dictionary<string, string>
-                    {
-                        ["parent_session"] = request.SessionId,
-                        ["parent_agent"] = request.AgentInstanceId,
-                    },
-                }, CancellationToken.None);
-
-                _logger.LogInformation(
-                    "[SubAgent] Async completed sub={SubAgent} parent={Parent} success={Success}",
-                    childRequest.SessionId, request.SessionId, result.IsSuccess);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "[SubAgent] Async failed sub={SubAgent} parent={Parent}",
-                    childRequest.SessionId, request.SessionId);
-
-                // 诊断日志：子代理执行异常
-                if (ssm is not null)
-                {
-                    _ = ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "",
-                        ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new
-                        {
-                            sub_agent_id = childRequest.SessionId,
-                            success = false,
-                            error = ex.Message,
-                        }), CancellationToken.None);
-                }
-            }
-        }, CancellationToken.None);
+            ParentSessionId = request.SessionId,
+            ParentAgentId = request.AgentInstanceId,
+            WorkspaceId = request.WorkspaceId ?? "",
+            TaskDescription = task!,
+            TemplateId = template.TemplateId,
+            ModelId = childLlmConfig?.ModelId ?? modelId,
+            LlmConfig = childLlmConfig,
+            MaxRounds = 10,
+            CapabilityPolicy = childCapability,
+        }, ct);
 
         _logger.LogInformation(
             "[SubAgent] Async spawned sub={SubAgent} parent={Parent}",
-            childRequest.SessionId, request.SessionId);
+            spawnResult.SubSessionId, request.SessionId);
 
         return Success(
-            $"异步子代理已创建。sub_agent_id = {childRequest.SessionId}。" +
+            $"异步子代理已创建。sub_agent_id = {spawnResult.SubSessionId}。" +
             $"完成后将通过 'agent.sub_completed' 事件通知。",
-            new { sub_agent_id = childRequest.SessionId, async = true, status = "running" });
+            new { sub_agent_id = spawnResult.SubSessionId, async = true, status = "running" });
     }
 
     /// <summary>

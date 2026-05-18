@@ -315,6 +315,15 @@ public sealed class SessionStateManager : ISessionStateManager
             return;
         }
 
+        if (entity.Status is "completed" or "failed" or "cancelled" or "timed_out")
+        {
+            _logger.LogInformation(
+                "[SSM] Ignoring duplicate terminal sub-agent state sub={Sub} status={Status}",
+                subSessionId,
+                entity.Status);
+            return;
+        }
+
         entity.Status = result.Success ? "completed" : "failed";
         entity.CompletedAt = result.CompletedAt.ToString("O");
         entity.Success = result.Success;
