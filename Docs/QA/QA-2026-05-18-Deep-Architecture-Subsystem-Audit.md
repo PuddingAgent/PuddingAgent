@@ -1,34 +1,31 @@
 # PuddingAgent 深入架构子系统审计报告
 
 审计日期：2026-05-18  
-审计范围：上下文合成引擎、LLM 执行引擎、会话层、潜意识 LLM、记忆图书馆、事件系统、子代理系统、网关与连接器  
-审计方式：直接阅读 `Source/` 代码路径，重点评估执行链路、状态一致性、持久化、失败隔离、安全边界和可演进性。
+审计范围：上下文合成引擎、LLM 执行引擎、会话层、潜意识 LLM、记忆图书馆、事件系统、子代理系统、网关和连接器。  
+审计目标：识别当前架构中的一致性、可靠性、可恢复性、安全边界和扩展性风险，并提出可执行的改进顺序。
 
-## 总体结论
+## 1. 总体判断
 
-当前架构已经具备“单进程 Agent 平台”的核心骨架：`PuddingAgent` 作为宿主，聚合 Runtime、Platform API、MemoryEngine、Connector、P2P、事件系统与前端静态资源。上下文合成、Agent loop、会话事件日志、潜意识记忆、子代理和连接器都有实际实现，不只是文档设计。
+当前项目已经形成了较完整的 agent runtime 架构：请求进入连接器或平台 API 后，经过事件系统、会话状态、执行引擎、上下文合成、记忆检索与子代理协作，最终回流到会话事件流和外部连接器。整体方向是合理的，但目前存在几个系统性问题：
 
-主要问题不在能力缺失，而在 **多套迁移中间态并存**：
+1. 会话事件和子代理状态的持久化边界不稳，启动期 DDL 存在破坏性删除。
+2. 会话流式输出有两套并行机制，导致 Chat API 路径和事件/连接器路径行为不等价。
+3. 子代理系统存在重复实现和重复发布状态的风险。
+4. 事件系统接口承诺持久队列，但实现仍是内存队列。
+5. LLM 同步路径与流式路径配置不一致，且同步路径绕过统一网关。
+6. 上下文合成、潜意识召回和记忆图书馆已经具备方向，但 token 预算、历史摘要、FTS 读取和候选集裁剪仍偏脆弱。
 
-- 会话流式层同时存在新 `SessionStateManager` 和旧 `SessionEventHub`。
-- 子代理有 `SubAgentTool` 与 `SubAgentManager` 两套执行入口。
-- 事件队列接口声明持久化，实际仍是内存队列。
-- 启动初始化中仍有 destructive DDL。
-- LLM 同步/流式路径实现不一致。
-- 记忆图书馆检索依赖 `SELECT * + ordinal`，对 schema 演进脆弱。
+这些问题会在长会话、多 connector、多 agent 并发、重启恢复和生产安全边界下放大。建议先修复 P0 级一致性和数据保留问题，再推进 P1 级可靠性与扩展性改造。
 
-当前建议优先级：先修正数据丢失和状态一致性，再优化上下文与记忆质量。
+## 2. 关键发现
 
-## P0 风险
+### P0：启动时会丢失会话事件和子代理状态
 
-### 1. 启动时清空会话事件和子代理状态
+涉及文件：
 
-位置：
+- `Source/PuddingAgent/Program.cs:656`
 
-- `Source/PuddingAgent/Program.cs`
-- 启动初始化中的 `pendingTableDdl`
-
-当前代码在启动时执行：
+观察到 `pendingTableDdl` 中包含：
 
 ```sql
 DROP TABLE IF EXISTS session_event_log;
@@ -37,356 +34,229 @@ DROP TABLE IF EXISTS session_sub_agents;
 
 影响：
 
-- 破坏 `SessionStateManager` “append-only SQLite 事件日志”的设计目标。
-- 每次重启都会丢失历史 SSE frame、会话重放数据和子代理追踪。
-- 前端历史恢复、异步子代理完成通知、诊断日志都不可靠。
+- `session_event_log` 按设计应承担 append-only 会话事件日志职责，启动期删除会破坏审计、回放、恢复和前端断线重连语义。
+- `session_sub_agents` 保存子代理追踪状态，启动删除会导致子代理历史和运行状态丢失。
+- 这会使会话层、事件系统和子代理系统的持久化承诺失效。
 
-改进建议：
+建议：
 
-1. 立即移除启动期 `DROP TABLE`。
-2. 使用 EF Core migration 或 `CREATE TABLE IF NOT EXISTS`。
-3. 给 `session_event_log` 和 `session_sub_agents` 加 migration regression test，验证重启后数据仍存在。
+1. 立即移除启动期 destructive DDL。
+2. 使用 EF migration 或显式 `CREATE TABLE IF NOT EXISTS` 维护 schema。
+3. 对所有启动期 schema 变更加保护测试，禁止出现 `DROP TABLE IF EXISTS session_event_log`、`DROP TABLE IF EXISTS session_sub_agents`。
+4. 如果确实需要开发环境重建表，应放入单独的开发工具命令，不能在应用启动路径执行。
 
-### 2. 会话层存在两套流式通道
+### P0：会话流式层存在两套通道
 
 涉及文件：
 
+- `Source/PuddingPlatform/Controllers/Api/ChatApiController.cs:30`
+- `Source/PuddingPlatform/Controllers/Api/ChatApiController.cs:180`
+- `Source/PuddingRuntime/Services/AgentExecutionService.cs:880`
 - `Source/PuddingPlatform/Services/SessionStateManager.cs`
-- `Source/PuddingPlatform/Services/SessionEventHub.cs`
-- `Source/PuddingPlatform/Controllers/Api/ChatApiController.cs`
-- `Source/PuddingRuntime/Services/AgentExecutionService.cs`
+- `Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs`
 
-观察：
+当前状态：
 
-- 新架构目标是 `ISessionStateManager.AppendAsync` 统一持久化和实时推送。
-- `AgentExecutionService.ExecuteStreamAsync` 已经写入 SSM。
-- `ChatApiController` 仍注入并写入 `SessionEventHub`。
+- `ChatApiController` 仍直接依赖旧的 `SessionEventHub`。
+- `AgentExecutionService.ExecuteStreamAsync` 走 `ISessionStateManager` 写入流式事件。
+- `SessionEventsController` 又围绕 `ISessionStateManager` 提供事件读取和 SSE。
 
 影响：
 
-- Chat API 路径与 connector/event 路径行为不一致。
-- 某些 frame 只进入旧 hub，不进入 append-only 日志。
-- 前端重连和历史分页依赖 SSM 时可能拿不到完整流。
+- Chat API 路径与连接器/事件系统路径可能产生不同的 session event。
+- 客户端如果订阅 SSM 事件流，可能看不到 `ChatApiController` 旧 hub 路径完整事件。
+- 执行引擎、控制器和 SSM 的职责边界不清，后续引入断线续传、回放、checkpoint 会变困难。
 
-改进建议：
+建议：
 
-1. `ChatApiController` 改为只写 `ISessionStateManager`。
-2. `SessionEventHub` 降级为兼容适配器，禁止新业务代码直接依赖。
-3. 建立 contract test：同一条消息通过 Chat API、HTTP connector、WebSocket connector 进入后，最终都能在 `GetEventsAsync` 中重放完整 frame。
+1. 将 `ISessionStateManager.AppendAsync` 定为唯一会话事件写入入口。
+2. `ChatApiController` 不再直接写 `SessionEventHub`，改为调用统一执行服务并订阅/返回 SSM frame。
+3. `AgentExecutionService` 只负责生成标准 frame，不直接承担多种 UI/connector 适配。
+4. 旧 `SessionEventHub` 进入兼容层或删除计划，避免新增路径继续依赖它。
 
-### 3. 子代理系统存在重复执行入口和重复通知风险
+### P0：子代理系统重复实现，存在重复完成通知风险
 
 涉及文件：
 
-- `Source/PuddingRuntime/Services/Skills/SubAgentTool.cs`
-- `Source/PuddingPlatform/Services/SubAgentManager.cs`
-- `Source/PuddingAgent/Services/Events/AgentEventHandler.cs`
-- `Source/PuddingPlatform/Services/SessionStateManager.cs`
+- `Source/PuddingRuntime/Services/Skills/SubAgentTool.cs:77`
+- `Source/PuddingPlatform/Services/SubAgentManager.cs:15`
+- `Source/PuddingRuntime/Services/Skills/SubAgentTool.cs:263`
+- `Source/PuddingRuntime/Services/Skills/SubAgentTool.cs:272`
+- `Source/PuddingRuntime/Services/Skills/SubAgentTool.cs:283`
+- `Source/PuddingRuntime/Services/SubAgents/MemoryExplorerSubAgent.cs`
+- `Source/PuddingRuntime/Services/Tools/QuerySubAgentsTool.cs`
 
-观察：
+当前状态：
 
-- `SubAgentTool` 直接解析参数、创建 child request、调用 `AgentExecutionService`。
-- `SubAgentManager` 也负责 spawn、track、dispatch、publish completion。
-- 异步完成后会同时：
-  - `TrackSubAgentCompleteAsync`
-  - `AppendAsync(SubAgentCompleted)`
-  - `PublishAsync(agent.sub_completed)`
-  - `AgentEventHandler` 再次追加父代理通知 frame
+- `SubAgentTool` 自己实现 spawn、上下文组装、执行、完成跟踪和事件发布。
+- `SubAgentManager` 也实现子代理追踪、创建、状态更新和事件发布。
+- 完成路径中可能同时调用 `TrackSubAgentCompleteAsync`、`AppendAsync(SubAgentCompleted)` 和 `PublishAsync(agent.sub_completed)`。
 
 影响：
 
-- 前端可能收到重复 `subagent.completed`。
-- 父代理可能被重复唤醒。
-- 取消、超时、失败状态难以统一。
-- 未来扩展远程子代理或 P2P 子代理时会增加分叉。
+- 子代理状态可能重复完成、重复通知或状态顺序不稳定。
+- 子代理能力扩展时需要同时理解 tool 和 manager 两套逻辑。
+- 后续做取消、超时、重试、资源限制和权限隔离时缺少单一控制面。
 
-改进建议：
+建议：
 
-1. 只保留 `ISubAgentManager` 作为权威入口。
-2. `spawn_sub_agent` 工具仅调用 Manager，不直接调用 `AgentExecutionService`。
-3. 子代理完成事件只由 Manager 写一次 SSM；事件系统只负责“是否唤醒父代理”。
-4. 为 async 子代理增加幂等 completion key，避免重复完成事件。
+1. 保留 `ISubAgentManager` 作为唯一权威入口。
+2. `spawn_sub_agent` tool 只做参数校验和调用 manager，不直接执行子代理生命周期。
+3. 子代理完成、失败、取消、超时统一由 manager 写 SSM 并发布内部事件。
+4. `QuerySubAgentsTool` 只读 manager/SSM 状态，避免另建状态源。
 
-## P1 风险
-
-### 4. 事件系统接口目标与实现不一致
+### P1：事件系统接口声明持久队列，但实现是内存队列
 
 涉及文件：
 
-- `Source/PuddingCore/Abstractions/IPriorityEventQueue.cs`
-- `Source/PuddingRuntime/Services/Events/PriorityEventQueue.cs`
+- `Source/PuddingRuntime/Services/Events/IPriorityEventQueue.cs:7`
+- `Source/PuddingRuntime/Services/Events/PriorityEventQueue.cs:18`
+- `Source/PuddingRuntime/Services/Events/PriorityEventQueue.cs:114`
+- `Source/PuddingRuntime/Services/Events/InternalEventBus.cs`
+- `Source/PuddingRuntime/Services/Events/EventPreprocessor.cs`
 - `Source/PuddingRuntime/Services/Events/EventDispatcher.cs`
 - `Source/PuddingAgent/Services/Events/EventIngressBridge.cs`
+- `Source/PuddingAgent/Services/Events/AgentEventHandler.cs`
 
-观察：
+当前状态：
 
-- 接口注释写明“SQLite 持久化，进程重启不丢事件”。
-- 当前实现是三个内存 `Queue<QueuedEvent>`。
-- `UpdateStatusAsync` 只记录日志，没有持久状态。
-- 重试通过 `Task.Run + Delay + 重新入队` 实现。
+- 接口注释描述 SQLite 持久化优先级队列。
+- 实现使用内存 `Queue<T>`。
+- `UpdateStatusAsync` 仅记录日志，没有真实持久状态更新。
 
 影响：
 
-- 进程重启会丢事件。
-- handler 执行中崩溃无法恢复。
-- dead letter 只存在日志里，无法被后台 UI 或诊断 API 查询。
-- 事件队列无法支撑 connector、cron、P2P 的可靠交付。
+- 进程重启会丢失未处理事件。
+- 无法可靠支持 lease、retry、dead-letter、幂等处理和 backpressure。
+- connector 入口与 agent event handler 之间缺少可恢复缓冲。
 
-改进建议：
+建议：
 
-1. 实现 SQLite `event_queue` 表，字段包括 `id/type/priority/payload/status/retry_count/available_at/locked_until/error`。
-2. `DequeueAsync` 使用 lease 语义，避免多 worker 重复消费。
-3. `UpdateStatusAsync` 真正更新状态。
-4. 为 `dead_letter` 提供查询 API 和重放操作。
+1. 新增 SQLite-backed event queue 实现，保留内存实现仅用于测试。
+2. event record 至少包含 `event_id`、`source`、`type`、`priority`、`payload`、`status`、`attempts`、`available_at`、`lease_until`、`created_at`、`updated_at`。
+3. `DequeueAsync` 应获取 lease，处理失败后按 retry 策略回队列，超过阈值进入 dead-letter。
+4. 对外接口文档与实际实现保持一致，避免接口承诺和运行时行为分裂。
 
-### 5. LLM 执行引擎同步和流式路径不一致
+### P1：LLM 执行引擎同步与流式路径不一致
 
 涉及文件：
 
-- `Source/PuddingRuntime/Services/DirectLlmClient.cs`
-- `Source/PuddingCore/Core/OpenAiLlmGateway.cs`
 - `Source/PuddingRuntime/Services/AgentExecutionService.cs`
+- `Source/PuddingRuntime/Services/DirectLlmClient.cs:67`
+- `Source/PuddingRuntime/Services/DirectLlmClient.cs:148`
+- `Source/PuddingRuntime/Services/DirectLlmClient.cs:231`
+- `Source/PuddingRuntime/Services/DirectMemoryLlmClient.cs`
+- `Source/PuddingCore/Core/OpenAiLlmGateway.cs`
 
-观察：
+当前状态：
 
-- `ChatAsync` 自己构造 OpenAI-compatible JSON，并直接 `new HttpClient()`。
-- `ChatStreamAsync` 委托 `OpenAiLlmGateway`，使用 `IHttpClientFactory`。
+- `DirectLlmClient.ChatAsync` 内部直接 `new HttpClient()`。
+- 流式路径使用 `IHttpClientFactory` 和 `OpenAiLlmGateway`。
 - 同步路径硬编码 `temperature=0.7`、`max_tokens=2048`。
-- 工具序列化、reasoning/thinking 参数在两条路径中不完全一致。
 
 影响：
 
-- 同模型在同步与流式下行为可能不同。
-- 连接池、超时、重试策略无法统一。
-- 后续支持多 provider 会出现更多条件分支。
+- 同步和流式行为可能不同，包括模型参数、超时、重试、代理、日志和错误处理。
+- 连接管理绕过 `IHttpClientFactory`，不利于统一 timeout、diagnostics 和 handler 生命周期。
+- prompt template 或 runtime config 无法完整控制 LLM 参数。
 
-改进建议：
+建议：
 
-1. 同步和流式都统一走 `OpenAiLlmGateway` 或新的 `OpenAiCompatibleClient`。
-2. `LlmConfig` 增加 generation config：temperature、max output tokens、tool choice、thinking mode。
-3. 删除 `DirectLlmClient.ChatAsync` 中的裸 `new HttpClient()`。
-4. 增加 LLM request snapshot 测试，验证 sync/stream 的消息、tools、reasoning 参数一致。
+1. 同步与流式统一通过 `OpenAiLlmGateway` 或同等级 gateway 接口。
+2. 所有模型参数进入 `LlmConfig` 或模板运行时配置，禁止执行路径硬编码。
+3. 对 gateway 建立 contract tests：非流式、流式、错误响应、取消、超时、工具调用 frame。
+4. `DirectMemoryLlmClient` 与普通 LLM client 共用基础 gateway 能力，只在 prompt/schema 层区分。
 
-### 6. 上下文合成引擎有完整模型，但预算和摘要仍偏粗糙
+### P1：上下文合成引擎方向合理，但预算和历史摘要过粗
 
 涉及文件：
 
-- `Source/PuddingRuntime/Services/ContextPipeline.cs`
+- `Source/PuddingRuntime/Services/ContextPipeline.cs:82`
+- `Source/PuddingRuntime/Services/ContextPipeline.cs:628`
+- `Source/PuddingRuntime/Services/ContextPipeline.cs:934`
 - `Source/PuddingRuntime/Services/ContextWindowManager.cs`
-- `Source/PuddingRuntime/Services/SystemPromptBuilder.cs`
 
-正向信号：
+当前状态：
 
-- 已按层构建上下文：STATIC、TOOLS、SKILLS、USER、PINNED、RECENT、RECALLED、CURRENT、RUNTIME。
-- 静态层和工具层有缓存设计。
-- 支持 deep/instant memory recall。
-- `ContextAssemblyStore` 可记录上下文快照。
+- `ContextPipeline.AssembleAsync` 已形成系统提示、Persona、工作区、历史、记忆、子代理结果等分层结构。
+- token 估算使用字符数 `/4`。
+- 旧历史摘要存在占位式描述，例如偏泛化的 general discussion。
 
-问题：
+影响：
 
-- token 估算是字符数 `/4`，对中文、代码、工具 schema 都不准确。
-- `SummarizeOlderHistory` 只是统计 user/assistant 数量，并输出泛化主题。
-- 历史截断策略和模型真实上下文窗口脱节。
-- 静态缓存 key 只看 session/template，Persona 文件或 DB 模板变化后可能不刷新。
+- token 预算在中文、多语言、代码块和 tool payload 下误差较大。
+- 长会话中历史摘要质量不足，会让模型失去关键约束和决策上下文。
+- 记忆、子代理结果和当前任务之间缺少明确的优先级与压缩策略。
 
-改进建议：
+建议：
 
-1. 引入 provider-aware token estimator，至少按 OpenAI-compatible tokenizer 和中文 fallback 分开。
-2. 把旧历史摘要做成持久化 `SessionSummary`，由后台压缩任务生成。
-3. 给每个 context layer 加 `source_version`，模板、persona、工具 schema 变化时自动失效。
-4. 增加 context budget test：给定模板、工具数、历史数，断言最终上下文不超过预算。
+1. 引入 provider-aware token estimator，至少按当前模型族封装估算器接口。
+2. 持久化 session summary，按 turns/checkpoints 增量更新，而不是临时生成粗摘要。
+3. 上下文分层应有明确预算：system/persona、current user intent、recent turns、retrieved memory、workspace facts、sub-agent outputs。
+4. 增加 golden tests，覆盖长会话、中文、代码块、多 memory hit、子代理输出过长等场景。
 
-### 7. 潜意识 LLM 召回策略会随记忆增长线性变慢
+### P1：潜意识 LLM deep recall 读取全库候选，规模不稳定
 
 涉及文件：
 
-- `Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs`
+- `Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs:400`
+- `Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs:422`
+- `Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs:428`
 - `Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs`
 - `Source/PuddingRuntime/Services/Background/SubconsciousConsolidationHook.cs`
 - `Source/PuddingMemoryEngine/Services/MemoryRecallService.cs`
 
-正向信号：
+当前状态：
 
-- 主对话完成后通过 Hook 投递后台 consolidation job。
-- Worker 串行消费，避免并发写入过度冲突。
-- consolidation 失败会写 job log。
-- 支持 facts、preferences、library structured books 三条记忆写入路径。
-
-问题：
-
-- deep recall 当前读取最多 200 条 facts 和 100 条 preferences，然后交给 LLM 全量判断相关性。
-- `SummarizeSessionAsync` 和 `SearchMemoriesAsync` 仍是阶段占位。
-- LLM JSON 抽取靠 `ExtractJson` 截取，不够稳定。
-- memory LLM 客户端也存在裸 `new HttpClient()`。
-
-改进建议：
-
-1. deep recall 改为两阶段：先 FTS/vector/tag 候选召回，再 LLM rerank/compile。
-2. consolidation job 增加状态：queued/running/completed/failed/retryable。
-3. 对 LLM JSON 输出使用 schema/response_format 或强约束解析器。
-4. 将 memory LLM 的 HTTP 调用统一纳入 `IHttpClientFactory`。
-
-### 8. 记忆图书馆检索对 schema 演进脆弱
-
-涉及文件：
-
-- `Source/PuddingMemoryEngine/Data/MemoryLibrary.cs`
-- `Source/PuddingMemoryEngine/Data/MemoryLibraryConvenience.cs`
-- `Source/PuddingMemoryEngine/Services/MemoryRecallService.cs`
-
-问题：
-
-- `SearchBooksFtsAsync` 使用 `SELECT b.*` 后按 ordinal 读取。
-- `SearchChaptersFtsAsync` 使用 `SELECT c.*` 后按 ordinal 读取。
-- 字段追加或 nullable 字段会导致读取错位或 NULL 崩溃。
-- 上一轮验证中 MemoryEngine 测试已有 FTS NULL 读取失败。
-
-改进建议：
-
-1. 所有 FTS SQL 改为显式列清单。
-2. nullable 字段统一 `IsDBNull`。
-3. Book/Chapter DTO mapping 只通过命名列或 EF projection。
-4. 为 FTS 搜索增加空字段、追加 embedding 字段、旧数据库迁移三类回归测试。
-
-### 9. 网关与连接器处于新旧接口并存状态
-
-涉及文件：
-
-- `Source/PuddingAgent/Services/ConnectorHost.cs`
-- `Source/PuddingAgent/Connectors/*.cs`
-- `Source/PuddingGateway/GatewayAdapterHost.cs`
-- `Source/PuddingCore/Platform/IPuddingConnector.cs`
-- `Source/PuddingCore/Platform/IGateway.cs`
-
-观察：
-
-- 新接口是 `IPuddingConnector`，支持 receive/send/manage/stream。
-- 旧接口是 `IPuddingGatewayAdapter`，仍保留 `GatewayAdapterHost`。
-- WebSocket、Webhook、HTTP、MQTT 已走新 connector。
-- connector ingress 标准化逻辑写在 `Program.cs` 中。
+- deep recall 描述为让 LLM 读取所有事实和偏好。
+- 实现中 active facts `Take(200)`，preferences `Take(100)`。
+- 候选集主要依赖数量截断，而非查询相关性、时间衰减、标签或图关系。
 
 影响：
 
-- 新旧术语混用，贡献者难以判断应扩展 Connector 还是 GatewayAdapter。
-- `Program.cs` 承担协议路由、eventType 构造、SSM-to-WS 转发。
-- WebSocket 转发用延迟 2 秒订阅 session，属于时序脆弱点。
+- 记忆量增长后召回成本和质量不可控。
+- 重要但不在前 N 条的记忆可能被忽略。
+- LLM 被迫承担过多检索职责，导致成本、延迟和稳定性变差。
 
-改进建议：
+建议：
 
-1. 明确 `GatewayAdapterHost` 为 legacy，并迁移/删除旧 adapter。
-2. 抽出 `ConnectorIngressService`，从 `Program.cs` 移走 envelope → event 的转换。
-3. WebSocket 绑定应在 session 创建/metadata frame 时建立，不应依赖固定 delay。
-4. 所有 connector ingress 都应产出统一 `ConnectionIdentity` 和 trace id。
+1. deep recall 改为两阶段：先用 FTS/vector/tag/graph relation 取候选，再让 LLM rerank/compile。
+2. 为潜意识任务定义预算：最大候选数、最大 token、最大耗时、最大写入条数。
+3. 将 consolidation、recall、preference extraction 的输入输出 schema 固定化，减少 prompt 漂移。
+4. 建立评估集：同一用户事实、冲突偏好、过期记忆、跨会话召回。
 
-## P2 风险
+### P1：记忆图书馆 FTS Schema 读取脆弱
 
-### 10. 安全边界不一致
+涉及文件：
 
-观察：
+- `Source/PuddingMemoryEngine/Data/MemoryLibrary.cs:374`
+- `Source/PuddingMemoryEngine/Data/MemoryLibrary.cs:453`
+- `Source/PuddingMemoryEngine/Data/MemoryLibraryConvenience.cs`
 
-- `SessionEventsController.GetSubAgents` 标记 `[AllowAnonymous]`。
-- WebSocket connector 内部只记录 auth frame，真实鉴权依赖外层传入。
-- HTTP connector 默认允许 `http:anonymous`。
-- Webhook 如果没有 signature header，会跳过验证逻辑中的失败路径，因为当前只在 header 非空时调用 `VerifySignature`。
+当前状态：
 
-改进建议：
-
-1. 除 bootstrap/auth 外，所有诊断和子代理状态接口默认 `[Authorize]`。
-2. connector ingress 必须携带 `ConnectionIdentity`，匿名能力只允许 dev mode。
-3. Webhook 在启用签名验证时，无签名也必须拒绝。
-4. 将 connector 权限映射到 workspace/channel policy。
-
-### 11. CancellationToken 和 fire-and-forget 使用过多
-
-涉及模式：
-
-- `CancellationToken.None`
-- `_ = Task.Run(...)`
-- `async void Append(...)`
+- FTS 查询使用 `SELECT b.*`、`SELECT c.*`。
+- 读取逻辑按 ordinal 获取字段。
+- nullable 字段读取保护不足。
 
 影响：
 
-- 请求取消后后台任务仍继续执行。
-- 失败只能靠日志发现。
-- shutdown 时可能丢帧或丢 job。
+- 表结构追加字段或列顺序变化时，读取会崩溃或错位。
+- NULL 字段会触发运行时异常。
+- 已观察到 `MemoryLibrary.SearchBooksFtsAsync` / `SearchChaptersFtsAsync` 相关测试失败，风险不是理论问题。
 
-改进建议：
+建议：
 
-1. 引入 `IBackgroundTaskQueue`，统一托管 fire-and-forget。
-2. 所有后台任务记录 task id、session id、错误状态。
-3. `ApplicationStopping` 时 drain 关键队列。
+1. FTS 查询改为显式列清单，不使用 `SELECT *`。
+2. 所有 nullable 字段读取前使用 `IsDBNull`。
+3. 为 book/chapter FTS 增加回归测试，覆盖 NULL、列追加、空结果、中文查询。
+4. 将 row mapping 抽成单一函数，避免普通查询和 FTS 查询各自维护 ordinal。
 
-## 子系统逐项评估
+### P1：网关和连接器入口过度集中在组合根
 
-| 子系统 | 当前成熟度 | 主要问题 | 优先级 |
-| --- | --- | --- | --- |
-| 上下文合成引擎 | B | token 估算粗糙，旧历史摘要占位，缓存失效不足 | P1 |
-| LLM 执行引擎 | B- | sync/stream 分叉，裸 HttpClient，参数硬编码 | P1 |
-| 会话层 | C+ | SSM 与旧 Hub 并存，启动清表 | P0 |
-| 潜意识 LLM | B- | deep recall 全量读 facts，部分 API 占位 | P1 |
-| 记忆图书馆 | B- | FTS ordinal 读取脆弱，测试已失败 | P1 |
-| 事件系统 | C | 队列非持久，状态更新空实现 | P1 |
-| 子代理系统 | C+ | 两套入口，重复通知，取消不完整 | P0 |
-| 网关连接器 | B- | 新旧接口并存，ingress 写在 Program | P1 |
+涉及文件：
 
-## 建议整改顺序
-
-### 第一阶段：数据和状态一致性
-
-1. 移除启动期 `DROP TABLE`。
-2. 统一 Chat API、connector、event path 到 `ISessionStateManager`。
-3. 将 `SessionEventHub` 降为 legacy adapter。
-4. 修复 `GetSubAgents` 匿名访问。
-
-### 第二阶段：子代理和事件系统收敛
-
-1. `spawn_sub_agent` 只调用 `ISubAgentManager`。
-2. 子代理完成只写一次 SSM。
-3. 实现 SQLite 持久事件队列。
-4. 增加 dead letter 查询和 retry API。
-
-### 第三阶段：LLM 和上下文可测试化
-
-1. 合并 sync/stream LLM client。
-2. 引入真实 token estimator。
-3. 建立 context assembly snapshot tests。
-4. 将 generation config 从硬编码迁到模板/模型配置。
-
-### 第四阶段：记忆系统质量提升
-
-1. 修复 FTS 显式列和 nullable mapping。
-2. deep recall 改为候选召回 + LLM rerank。
-3. consolidation job 增加 retry/backoff。
-4. memory LLM 输出使用 schema 化 JSON。
-
-### 第五阶段：连接器产品化
-
-1. 抽出 `ConnectorIngressService`。
-2. 删除或标记 legacy gateway adapter。
-3. connector ingress 统一身份、trace、workspace/channel policy。
-4. 为 WebSocket、HTTP、Webhook、MQTT 增加端到端 contract tests。
-
-## 关键审计文件清单
-
-- `Source/PuddingRuntime/Services/ContextPipeline.cs`
-- `Source/PuddingRuntime/Services/ContextWindowManager.cs`
-- `Source/PuddingRuntime/Services/AgentExecutionService.cs`
-- `Source/PuddingRuntime/Services/DirectLlmClient.cs`
-- `Source/PuddingRuntime/Services/DirectMemoryLlmClient.cs`
-- `Source/PuddingPlatform/Services/SessionStateManager.cs`
-- `Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs`
-- `Source/PuddingPlatform/Controllers/Api/ChatApiController.cs`
-- `Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs`
-- `Source/PuddingMemoryEngine/Services/MemoryRecallService.cs`
-- `Source/PuddingMemoryEngine/Data/MemoryLibrary.cs`
-- `Source/PuddingMemoryEngine/Data/MemoryLibraryConvenience.cs`
-- `Source/PuddingRuntime/Services/Events/InternalEventBus.cs`
-- `Source/PuddingRuntime/Services/Events/PriorityEventQueue.cs`
-- `Source/PuddingRuntime/Services/Events/EventDispatcher.cs`
-- `Source/PuddingAgent/Services/Events/EventIngressBridge.cs`
-- `Source/PuddingAgent/Services/Events/AgentEventHandler.cs`
-- `Source/PuddingRuntime/Services/Skills/SubAgentTool.cs`
-- `Source/PuddingPlatform/Services/SubAgentManager.cs`
+- `Source/PuddingAgent/Program.cs:430`
 - `Source/PuddingAgent/Services/ConnectorHost.cs`
 - `Source/PuddingAgent/Connectors/WebSocketConnector.cs`
 - `Source/PuddingAgent/Connectors/WebhookConnector.cs`
@@ -394,16 +264,241 @@ DROP TABLE IF EXISTS session_sub_agents;
 - `Source/PuddingAgent/Connectors/MqttConnector.cs`
 - `Source/PuddingGateway/GatewayAdapterHost.cs`
 
-## 最终建议
+当前状态：
 
-当前不要继续优先扩展新功能。应先处理架构一致性问题，尤其是会话层、子代理和事件队列。这三处是 Agent 平台的状态中枢，一旦不一致，前端展示、后台任务、连接器和记忆系统都会被放大影响。
+- connector ingress 到事件系统、WebSocket SSM 转发、延迟订阅等逻辑集中在 `Program.cs`。
+- 连接器负责协议适配，但 envelope 标准化、sessionId、eventType、traceId 和 identity 归属不够集中。
 
-最小可执行整改包：
+影响：
 
-1. 修掉启动清表。
-2. 让所有 frame 只通过 SSM 写入。
-3. 让所有子代理只通过 Manager 派生。
-4. 修复 MemoryLibrary FTS mapping。
-5. 将 `npm run tsc` 和 MemoryEngine tests 恢复为绿色。
+- 新增 connector 时容易复制分发逻辑。
+- trace、身份、重放和错误处理难以统一。
+- 组合根承担业务编排，测试难度较高。
 
-完成这组后，再投入上下文质量、潜意识召回和 connector 产品化，收益会更稳定。
+建议：
+
+1. 抽出 `ConnectorIngressService`。
+2. 该服务负责协议 envelope 标准化、identity 绑定、sessionId 解析、traceId 生成、事件类型映射和 SSM 转发。
+3. connector 只负责协议收发，不能直接决定业务事件落点。
+4. 为 HTTP/WebSocket/MQTT/Webhook 建立统一 ingress contract tests。
+
+### P2：安全边界缺口
+
+涉及文件：
+
+- `Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs:93`
+- `Source/PuddingAgent/Connectors/WebSocketConnector.cs:75`
+- `Source/PuddingAgent/Connectors/HttpConnector.cs:79`
+
+当前状态：
+
+- `SessionEventsController.GetSubAgents` 标记为 `[AllowAnonymous]`。
+- `WebSocketConnector` 接收 `authenticatedUser` 参数并记录 auth frame，但 connector 内部不是统一认证边界。
+- `HttpConnector` 存在 anonymous fallback。
+
+影响：
+
+- 会话和子代理元数据可能被匿名访问。
+- connector identity 与业务事件之间缺少统一强约束。
+- 生产环境与开发环境的匿名行为容易混淆。
+
+建议：
+
+1. 统一 connector identity 模型，事件系统只接受带 identity 的 envelope。
+2. 匿名访问仅允许开发模式，并通过配置显式开启。
+3. Session/sub-agent 查询接口默认要求认证和 session ownership 检查。
+4. 安全相关接口补最小权限测试。
+
+## 3. 子系统评估
+
+### 上下文合成引擎
+
+优势：
+
+- 已经存在中心化 `ContextPipeline`，说明系统有意避免各执行路径自行拼 prompt。
+- 有 `ContextWindowManager`，具备上下文预算意识。
+- 能把 persona、workspace、history、memory、sub-agent outputs 组合到执行上下文。
+
+主要不足：
+
+- token 估算过粗。
+- 历史压缩不是稳定持久能力。
+- 多来源上下文的优先级和截断策略需要更明确。
+
+改进重点：
+
+- 将 token 估算、摘要、记忆选择从大 pipeline 中拆成可测试组件。
+- 建立长上下文 golden tests，固定输出结构和裁剪行为。
+
+### LLM 执行引擎
+
+优势：
+
+- 已经区分同步和流式能力。
+- 流式路径开始接入统一 gateway 和 frame 输出。
+- 执行服务能够与会话事件流、上下文和工具系统连接。
+
+主要不足：
+
+- 同步路径绕过 gateway。
+- 参数散落和硬编码。
+- 执行引擎承担了过多会话写入细节。
+
+改进重点：
+
+- 统一 gateway。
+- 执行结果标准化为 frame/event。
+- 将 session append、connector fanout 从执行核心中剥离到上层编排。
+
+### 会话层
+
+优势：
+
+- `SessionStateManager` 是正确的架构方向，能承载事件日志、SSE、子代理追踪和恢复。
+- `SessionEventsController` 已经围绕 session event stream 暴露 API。
+
+主要不足：
+
+- 和旧 `SessionEventHub` 并存。
+- 启动期删除 session 表。
+- session ownership 和匿名访问边界需要收紧。
+
+改进重点：
+
+- SSM 成为唯一状态源。
+- 事件日志 append-only。
+- 所有会话读写加 identity 和 ownership 校验。
+
+### 潜意识 LLM
+
+优势：
+
+- 已有后台 worker、consolidation hook、recall service 和 orchestrator。
+- 架构上已经把在线对话和后台记忆整理分开。
+
+主要不足：
+
+- recall 候选裁剪依赖粗暴数量截断。
+- LLM 承担过多全库扫描和归纳职责。
+- 缺少可量化的召回质量评估。
+
+改进重点：
+
+- retrieval first，LLM rerank second。
+- 建立 recall/consolidation 评估集。
+- 给后台任务加入预算、幂等键和失败恢复。
+
+### 记忆图书馆
+
+优势：
+
+- 已有 book/chapter/fact/preference 等较丰富的记忆结构。
+- FTS 能力已经接入。
+- convenience 层降低了调用复杂度。
+
+主要不足：
+
+- FTS 查询 mapping 对 schema 变化敏感。
+- NULL 读取保护不足。
+- 记忆图谱关系和召回策略还没有充分成为主路径能力。
+
+改进重点：
+
+- 先修 FTS 稳定性。
+- 再强化 graph relation、tag、temporal decay 和 semantic score 的统一排序。
+
+### 事件系统
+
+优势：
+
+- 已经有 event bus、preprocessor、dispatcher、priority queue 的分层雏形。
+- connector ingress 能进入统一事件系统。
+
+主要不足：
+
+- 队列实现与接口承诺不一致。
+- 缺少持久化、lease、retry、dead-letter。
+- Program 组合根中仍有较多业务事件编排。
+
+改进重点：
+
+- 将队列持久化。
+- 事件 envelope 标准化。
+- 建立端到端事件恢复测试：入队、重启、继续派发。
+
+### 子代理系统
+
+优势：
+
+- 已有 spawn tool、sub-agent manager、memory explorer 和查询工具。
+- 子代理已经能与 session event 和内部事件系统集成。
+
+主要不足：
+
+- lifecycle 控制面重复。
+- 状态发布重复。
+- 缺少统一取消、超时、权限和资源预算。
+
+改进重点：
+
+- 单一 manager。
+- 明确状态机：created、running、completed、failed、cancelled、timed_out。
+- 每个状态转换只允许一个组件写入。
+
+### 网关和连接器
+
+优势：
+
+- connector 类型覆盖 WebSocket、Webhook、HTTP、MQTT。
+- gateway adapter host 提供进一步外部集成空间。
+
+主要不足：
+
+- ingress 编排过度集中在 `Program.cs`。
+- connector identity 和事件 envelope 没有被强约束。
+- 多 connector 共享行为缺少 contract tests。
+
+改进重点：
+
+- 抽 `ConnectorIngressService`。
+- connector 只做协议适配。
+- 统一认证、trace、session 映射和错误返回。
+
+## 4. 建议改进顺序
+
+1. 移除启动期 `DROP TABLE`，补 migration 或 `CREATE TABLE IF NOT EXISTS`，确保会话事件和子代理状态不再被启动流程删除。
+2. 统一会话事件写入层，废弃业务路径里的 `SessionEventHub` 直接写入，所有 session frame 通过 `ISessionStateManager.AppendAsync`。
+3. 合并子代理执行入口，保留 `ISubAgentManager` 作为唯一生命周期控制面。
+4. 将事件队列从内存实现升级为 SQLite 持久队列，补 lease、retry、dead-letter。
+5. 统一 LLM sync/stream gateway，消除 `new HttpClient()` 和硬编码模型参数。
+6. 修复 `MemoryLibrary` FTS 显式列与 nullable 读取，并补回归测试。
+7. 将 `ContextPipeline` 的 token 估算、历史摘要和来源预算做成独立、可测试组件。
+8. 将 connector ingress 从 `Program.cs` 拆出，补 identity、trace、重放和 contract tests。
+9. 将潜意识 recall 改为 retrieval + rerank 架构，并建立小型评估集。
+10. 收紧 session/sub-agent API 安全边界，匿名能力仅允许开发模式显式开启。
+
+## 5. 可转化任务清单
+
+建议将整改拆成以下工程任务：
+
+1. `P0/session-ddl-safety`：移除启动期 destructive DDL，补 schema migration 和保护测试。
+2. `P0/session-event-unification`：统一 SSM 写入路径，迁移 `ChatApiController`。
+3. `P0/sub-agent-lifecycle-owner`：让 `ISubAgentManager` 成为唯一子代理生命周期入口。
+4. `P1/persistent-event-queue`：实现 SQLite priority event queue。
+5. `P1/llm-gateway-unification`：统一 DirectLlmClient 同步与流式路径。
+6. `P1/memory-library-fts-hardening`：修复 FTS 显式列和 nullable mapping。
+7. `P1/context-pipeline-budgeting`：引入 token estimator、持久摘要和 golden tests。
+8. `P1/connector-ingress-service`：抽出 connector ingress 编排服务。
+9. `P1/subconscious-recall-ranking`：deep recall 改为候选检索加 LLM rerank。
+10. `P2/session-security-hardening`：收紧匿名接口和 session ownership 校验。
+
+## 6. 验证状态
+
+本报告基于静态代码审查和先前局部测试结果形成。先前验证结果显示：
+
+- `dotnet test PuddingAgentNetwork.slnx --no-restore --nologo`：120 秒超时。
+- `dotnet test Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore --nologo --logger "console;verbosity=minimal"`：120 秒超时。
+- `dotnet test Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj --no-restore --nologo --logger "console;verbosity=minimal"`：失败，61 通过，3 失败，失败集中在 FTS 查询读取。
+- `npm run tsc` in `Source\PuddingPlatformAdmin`：失败，存在 3 个 TypeScript 错误。
+
+本报告未修改业务代码，只新增审计文档。后续进入修复阶段前，应先确认当前工作区已有未提交改动的归属，避免误改用户正在进行的工作。
