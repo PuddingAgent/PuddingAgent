@@ -127,6 +127,7 @@ public sealed record QueuedEvent
     public string EventType { get; init; } = "";
     public string? SourceType { get; init; }
     public string? SourceId { get; init; }
+    public string? ConnectorId { get; init; }
     public string? SessionId { get; init; }
     public string? WorkspaceId { get; init; }
     public string? AgentId { get; init; }

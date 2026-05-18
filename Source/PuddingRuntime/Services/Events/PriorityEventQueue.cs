@@ -1,7 +1,12 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
+using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
+using System.Text.Json;
 
 namespace PuddingRuntime.Services.Events;
 
@@ -14,25 +19,26 @@ namespace PuddingRuntime.Services.Events;
 /// </summary>
 public class PriorityEventQueue : IPriorityEventQueue
 {
+    private const int MaxRetries = 3;
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(5);
+
     private readonly ILogger<PriorityEventQueue> _logger;
     private readonly IRuntimeActivitySink _activitySink;
     private readonly IRuntimeTraceAccessor _traceAccessor;
-
-    // Phase 2: 内存队列占位（后续替换为 SQLite）
-    private readonly Queue<QueuedEvent> _urgentQueue = new();
-    private readonly Queue<QueuedEvent> _importantQueue = new();
-    private readonly Queue<QueuedEvent> _normalQueue = new();
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly object _lock = new();
 
     public PriorityEventQueue(
         ILogger<PriorityEventQueue> logger,
         IRuntimeActivitySink activitySink,
-        IRuntimeTraceAccessor traceAccessor)
+        IRuntimeTraceAccessor traceAccessor,
+        IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
         _activitySink = activitySink;
         _traceAccessor = traceAccessor;
-        _logger.LogInformation("[PriorityEventQueue] Initialized: Phase 2 in-memory mode");
+        _scopeFactory = scopeFactory;
+        _logger.LogInformation("[PriorityEventQueue] Initialized: SQLite-backed mode");
     }
 
     public async Task<string> EnqueueAsync(ProcessedEvent evt, EventPriorityLevel priority, CancellationToken ct = default)
@@ -47,40 +53,78 @@ public class PriorityEventQueue : IPriorityEventQueue
         trace = trace.WithEvent(evt.EventId);
         _traceAccessor.Current = trace;
 
-        var qe = new QueuedEvent
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var entity = new EventQueueEntity
         {
-            Id = evt.EventId,
+            EventId = evt.EventId,
             Priority = (int)priority,
             EventType = evt.Type,
             SourceType = evt.Source.SourceType,
             SourceId = evt.Source.SourceId,
+            ConnectorId = evt.Source.ConnectorId,
             SessionId = evt.SessionId,
             WorkspaceId = evt.WorkspaceId,
             AgentId = evt.AgentId,
-            Payload = System.Text.Json.JsonSerializer.Serialize(evt.Payload ?? new { }),
+            Payload = JsonSerializer.Serialize(evt.Payload ?? new { }),
             Status = "pending",
-            CreatedAt = evt.Timestamp,
-            Trace = trace,
+            AvailableAt = now,
+            CreatedAt = evt.Timestamp > 0 ? evt.Timestamp : now,
+            UpdatedAt = now,
+            TraceId = trace.TraceId,
+            CorrelationId = trace.CorrelationId,
+            ExecutionId = trace.ExecutionId,
+            ParentExecutionId = trace.ParentExecutionId,
+            SubAgentId = trace.SubAgentId,
+            UserId = trace.UserId,
         };
 
-        lock (_lock)
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var existing = await db.EventQueue.FirstOrDefaultAsync(q => q.EventId == evt.EventId, ct);
+        if (existing is null)
         {
-            switch (priority)
-            {
-                case EventPriorityLevel.Urgent:
-                    _urgentQueue.Enqueue(qe);
-                    break;
-                case EventPriorityLevel.Important:
-                    _importantQueue.Enqueue(qe);
-                    break;
-                default:
-                    _normalQueue.Enqueue(qe);
-                    break;
-            }
+            db.EventQueue.Add(entity);
+        }
+        else if (existing.Status is "completed" or "dead_letter")
+        {
+            existing.Priority = entity.Priority;
+            existing.EventType = entity.EventType;
+            existing.SourceType = entity.SourceType;
+            existing.SourceId = entity.SourceId;
+            existing.ConnectorId = entity.ConnectorId;
+            existing.SessionId = entity.SessionId;
+            existing.WorkspaceId = entity.WorkspaceId;
+            existing.AgentId = entity.AgentId;
+            existing.Payload = entity.Payload;
+            existing.Status = "pending";
+            existing.RetryCount = 0;
+            existing.AvailableAt = now;
+            existing.LeaseUntil = null;
+            existing.StartedAt = null;
+            existing.CompletedAt = null;
+            existing.ErrorMessage = null;
+            existing.UpdatedAt = now;
+            existing.TraceId = entity.TraceId;
+            existing.CorrelationId = entity.CorrelationId;
+            existing.ExecutionId = entity.ExecutionId;
+            existing.ParentExecutionId = entity.ParentExecutionId;
+            existing.SubAgentId = entity.SubAgentId;
+            existing.UserId = entity.UserId;
+        }
+        else
+        {
+            _logger.LogInformation(
+                "[PriorityEventQueue] Duplicate active event ignored id={Id} status={Status}",
+                evt.EventId,
+                existing.Status);
+            return existing.EventId;
         }
 
+        await db.SaveChangesAsync(ct);
+
         _logger.LogDebug("[PriorityEventQueue] Enqueued {Id} type={Type} priority={Priority}",
-            qe.Id, qe.EventType, qe.Priority);
+            entity.EventId, entity.EventType, entity.Priority);
 
         await _activitySink.RecordAsync(new RuntimeActivity
         {
@@ -88,67 +132,190 @@ public class PriorityEventQueue : IPriorityEventQueue
             Component = RuntimeActivityComponents.EventQueue,
             Operation = "enqueue",
             Status = RuntimeActivityStatuses.Succeeded,
-            Summary = $"Enqueued event {qe.EventType}",
+            Summary = $"Enqueued event {entity.EventType}",
             Metadata = new Dictionary<string, string>
             {
-                ["eventId"] = qe.Id,
-                ["eventType"] = qe.EventType,
-                ["priority"] = qe.Priority.ToString(),
+                ["eventId"] = entity.EventId,
+                ["eventType"] = entity.EventType,
+                ["priority"] = entity.Priority.ToString(),
             },
         }, ct);
 
-        return qe.Id;
+        return entity.EventId;
     }
 
-    public Task<QueuedEvent?> DequeueAsync(CancellationToken ct = default)
+    public async Task<QueuedEvent?> DequeueAsync(CancellationToken ct = default)
     {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var leaseUntil = DateTimeOffset.UtcNow.Add(LeaseDuration).ToUnixTimeMilliseconds();
+
         lock (_lock)
         {
-            if (_urgentQueue.Count > 0)
-                return Task.FromResult<QueuedEvent?>(_urgentQueue.Dequeue());
-            if (_importantQueue.Count > 0)
-                return Task.FromResult<QueuedEvent?>(_importantQueue.Dequeue());
-            if (_normalQueue.Count > 0)
-                return Task.FromResult<QueuedEvent?>(_normalQueue.Dequeue());
+            var entity = db.EventQueue
+                .Where(q => (q.Status == "pending" || q.Status == "retrying")
+                    && q.AvailableAt <= now
+                    && (q.LeaseUntil == null || q.LeaseUntil <= now))
+                .OrderByDescending(q => q.Priority)
+                .ThenBy(q => q.CreatedAt)
+                .FirstOrDefault();
+
+            if (entity is null)
+                return null;
+
+            entity.Status = "processing";
+            entity.StartedAt ??= now;
+            entity.LeaseUntil = leaseUntil;
+            entity.UpdatedAt = now;
+            db.SaveChanges();
+
+            return ToQueuedEvent(entity);
         }
-        return Task.FromResult<QueuedEvent?>(null);
     }
 
-    public Task<QueuedEvent?> PeekAsync(CancellationToken ct = default)
+    public async Task<QueuedEvent?> PeekAsync(CancellationToken ct = default)
     {
-        lock (_lock)
-        {
-            if (_urgentQueue.Count > 0) return Task.FromResult<QueuedEvent?>(_urgentQueue.Peek());
-            if (_importantQueue.Count > 0) return Task.FromResult<QueuedEvent?>(_importantQueue.Peek());
-            if (_normalQueue.Count > 0) return Task.FromResult<QueuedEvent?>(_normalQueue.Peek());
-        }
-        return Task.FromResult<QueuedEvent?>(null);
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var entity = await db.EventQueue
+            .AsNoTracking()
+            .Where(q => (q.Status == "pending" || q.Status == "retrying")
+                && q.AvailableAt <= now
+                && (q.LeaseUntil == null || q.LeaseUntil <= now))
+            .OrderByDescending(q => q.Priority)
+            .ThenBy(q => q.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        return entity is null ? null : ToQueuedEvent(entity);
     }
 
-    public Task<QueueStats> GetStatsAsync(CancellationToken ct = default)
+    public async Task<QueueStats> GetStatsAsync(CancellationToken ct = default)
     {
-        lock (_lock)
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var active = await db.EventQueue
+            .AsNoTracking()
+            .Where(q => q.Status == "pending" || q.Status == "retrying" || q.Status == "processing")
+            .GroupBy(q => new { q.Status, q.Priority })
+            .Select(g => new { g.Key.Status, g.Key.Priority, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return new QueueStats
         {
-            return Task.FromResult(new QueueStats
-            {
-                NormalPending = _normalQueue.Count,
-                ImportantPending = _importantQueue.Count,
-                UrgentPending = _urgentQueue.Count,
-                Processing = 0,
-            });
-        }
+            NormalPending = active.Where(x => (x.Status is "pending" or "retrying") && x.Priority < 5).Sum(x => x.Count),
+            ImportantPending = active.Where(x => (x.Status is "pending" or "retrying") && x.Priority >= 5 && x.Priority < 10).Sum(x => x.Count),
+            UrgentPending = active.Where(x => (x.Status is "pending" or "retrying") && x.Priority >= 10).Sum(x => x.Count),
+            Processing = active.Where(x => x.Status == "processing").Sum(x => x.Count),
+        };
     }
 
     /// <summary>诊断用：返回队列总数</summary>
     public int CountTotal()
     {
-        lock (_lock) { return _urgentQueue.Count + _importantQueue.Count + _normalQueue.Count; }
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        return db.EventQueue.Count(q => q.Status == "pending" || q.Status == "retrying");
     }
 
-    public Task UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default)
+    public async Task UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default)
     {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var entity = await db.EventQueue.FirstOrDefaultAsync(q => q.EventId == eventId, ct);
+        if (entity is null)
+        {
+            _logger.LogWarning("[PriorityEventQueue] Status update ignored, event not found: {Id}", eventId);
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        entity.UpdatedAt = now;
+        entity.ErrorMessage = errorMessage;
+
+        switch (status)
+        {
+            case "completed":
+                entity.Status = "completed";
+                entity.CompletedAt = now;
+                entity.LeaseUntil = null;
+                break;
+            case "retrying":
+                entity.RetryCount++;
+                if (entity.RetryCount >= MaxRetries)
+                {
+                    entity.Status = "dead_letter";
+                    entity.CompletedAt = now;
+                    entity.LeaseUntil = null;
+                    entity.ErrorMessage = errorMessage ?? "Max retries exhausted";
+                }
+                else
+                {
+                    entity.Status = "retrying";
+                    entity.AvailableAt = DateTimeOffset.UtcNow
+                        .AddSeconds(Math.Pow(2, entity.RetryCount) * 10)
+                        .ToUnixTimeMilliseconds();
+                    entity.LeaseUntil = null;
+                }
+                break;
+            case "dead_letter":
+                entity.Status = "dead_letter";
+                entity.CompletedAt = now;
+                entity.LeaseUntil = null;
+                break;
+            default:
+                entity.Status = status;
+                break;
+        }
+
+        await db.SaveChangesAsync(ct);
+
         _logger.LogInformation("[PriorityEventQueue] Status updated: {Id} → {Status} err={Error}",
-            eventId, status, errorMessage ?? "none");
-        return Task.CompletedTask;
+            eventId, entity.Status, errorMessage ?? "none");
+    }
+
+    private static QueuedEvent ToQueuedEvent(EventQueueEntity entity)
+    {
+        RuntimeTraceContext? trace = null;
+        if (!string.IsNullOrWhiteSpace(entity.TraceId) && !string.IsNullOrWhiteSpace(entity.CorrelationId))
+        {
+            trace = new RuntimeTraceContext
+            {
+                TraceId = entity.TraceId,
+                CorrelationId = entity.CorrelationId,
+                SessionId = entity.SessionId,
+                WorkspaceId = entity.WorkspaceId,
+                ExecutionId = entity.ExecutionId,
+                ParentExecutionId = entity.ParentExecutionId,
+                SubAgentId = entity.SubAgentId,
+                EventId = entity.EventId,
+                ConnectorId = entity.ConnectorId,
+                UserId = entity.UserId,
+            };
+        }
+
+        return new QueuedEvent
+        {
+            Id = entity.EventId,
+            Priority = entity.Priority,
+            EventType = entity.EventType,
+            SourceType = entity.SourceType,
+            SourceId = entity.SourceId,
+            ConnectorId = entity.ConnectorId,
+            SessionId = entity.SessionId,
+            WorkspaceId = entity.WorkspaceId,
+            AgentId = entity.AgentId,
+            Payload = entity.Payload,
+            Status = entity.Status,
+            CreatedAt = entity.CreatedAt,
+            StartedAt = entity.StartedAt,
+            CompletedAt = entity.CompletedAt,
+            RetryCount = entity.RetryCount,
+            ErrorMessage = entity.ErrorMessage,
+            Trace = trace,
+        };
     }
 }

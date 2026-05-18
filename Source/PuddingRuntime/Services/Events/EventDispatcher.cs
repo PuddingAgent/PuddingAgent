@@ -110,42 +110,17 @@ public class EventDispatcher : BackgroundService
                 }
                 else if (qe.RetryCount < 3)
                 {
-                    // 指数退避重入队
-                    var newRetry = qe.RetryCount + 1;
-                    var delaySec = Math.Pow(2, newRetry) * 10;
+                    var nextRetry = qe.RetryCount + 1;
+                    var delaySec = Math.Pow(2, nextRetry) * 10;
                     _logger.LogWarning(
                         "[EventDispatcher] Retry id={Id} type={Type} attempt={Retry} delay={Delay}s",
-                        qe.Id, qe.EventType, newRetry, delaySec);
+                        qe.Id, qe.EventType, nextRetry, delaySec);
 
-                    // 更新重试计数（通过队列接口）
                     await _queue.UpdateStatusAsync(qe.Id, "retrying",
-                        $"Retry {newRetry}/3, next in {delaySec}s",
+                        $"Retry {nextRetry}/3, next in {delaySec}s",
                         ct: stoppingToken);
                     await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Retried, qe,
-                        $"Retry {newRetry}/3 in {delaySec}s", stoppingToken);
-
-                    // 延迟后重新入队（Phase 5 优化：直接更新同条记录而非重新入队）
-                    _ = Task.Run(async () =>
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(delaySec), stoppingToken);
-                        // 目前通过降级方式：重新构造 ProcessedEvent 入队
-                        var retryEvt = new ProcessedEvent
-                        {
-                            EventId = qe.Id,
-                            Type = qe.EventType,
-                            Source = new EventSource { SourceType = qe.SourceType ?? "retry", SourceId = qe.SourceId },
-                            Payload = JsonSerializer.Deserialize<object>(qe.Payload),
-                            Timestamp = qe.CreatedAt,
-                            Trace = qe.Trace,
-                        };
-                        // Increase priority slightly on retry to avoid starvation
-                        await _queue.EnqueueAsync(
-                            retryEvt,
-                            qe.Priority >= 10 ? EventPriorityLevel.Urgent
-                                : qe.Priority >= 5 ? EventPriorityLevel.Important
-                                : EventPriorityLevel.Normal,
-                            stoppingToken);
-                    }, stoppingToken);
+                        $"Retry {nextRetry}/3 in {delaySec}s", stoppingToken);
                 }
                 else
                 {
@@ -250,7 +225,12 @@ public class EventDispatcher : BackgroundService
                 >= 5 => EventPriorityLevel.Important,
                 _ => EventPriorityLevel.Normal,
             },
-            Source = new EventSource { SourceType = qe.SourceType ?? "unknown", SourceId = qe.SourceId },
+            Source = new EventSource
+            {
+                SourceType = qe.SourceType ?? "unknown",
+                SourceId = qe.SourceId,
+                ConnectorId = qe.ConnectorId,
+            },
             SessionId = qe.SessionId,
             WorkspaceId = qe.WorkspaceId ?? "default",
             AgentId = qe.AgentId,

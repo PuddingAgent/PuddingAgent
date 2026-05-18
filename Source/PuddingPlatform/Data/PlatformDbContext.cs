@@ -48,6 +48,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // 运行时活动诊断（Runtime observability foundation）
     public DbSet<RuntimeActivityEntity> RuntimeActivities => Set<RuntimeActivityEntity>();
 
+    // 内部事件持久队列
+    public DbSet<EventQueueEntity> EventQueue => Set<EventQueueEntity>();
+
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -250,6 +253,18 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(a => a.Component);
             e.HasIndex(a => a.StartedAtUtc);
             e.Property(a => a.MetadataJson).HasColumnType("TEXT");
+        });
+
+        // ── EventQueue ───────────────────────────────────────
+        modelBuilder.Entity<EventQueueEntity>(e =>
+        {
+            e.ToTable("event_queue");
+            e.HasIndex(q => q.EventId).IsUnique();
+            e.HasIndex(q => new { q.Status, q.AvailableAt, q.Priority, q.CreatedAt });
+            e.HasIndex(q => q.TraceId);
+            e.HasIndex(q => q.SessionId);
+            e.HasIndex(q => q.WorkspaceId);
+            e.Property(q => q.Payload).HasColumnType("TEXT");
         });
 
         // ── ChatMessage ───────────────────────────────────────

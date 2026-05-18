@@ -724,6 +724,40 @@ using (var scope = app.Services.CreateScope())
         @"CREATE INDEX IF NOT EXISTS idx_ra_execution ON runtime_activity(execution_id);",
         @"CREATE INDEX IF NOT EXISTS idx_ra_component ON runtime_activity(component);",
         @"CREATE INDEX IF NOT EXISTS idx_ra_started ON runtime_activity(started_at_utc);",
+
+        // event_queue — 内部事件持久队列
+        @"CREATE TABLE IF NOT EXISTS event_queue (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id            TEXT    NOT NULL UNIQUE,
+            priority            INTEGER NOT NULL,
+            event_type          TEXT    NOT NULL,
+            source_type         TEXT,
+            source_id           TEXT,
+            connector_id        TEXT,
+            session_id          TEXT,
+            workspace_id        TEXT,
+            agent_id            TEXT,
+            payload             TEXT    NOT NULL,
+            status              TEXT    NOT NULL DEFAULT 'pending',
+            retry_count         INTEGER NOT NULL DEFAULT 0,
+            available_at        INTEGER NOT NULL,
+            lease_until         INTEGER,
+            started_at          INTEGER,
+            completed_at        INTEGER,
+            created_at          INTEGER NOT NULL,
+            updated_at          INTEGER NOT NULL,
+            error_message       TEXT,
+            trace_id            TEXT,
+            correlation_id      TEXT,
+            execution_id        TEXT,
+            parent_execution_id TEXT,
+            sub_agent_id        TEXT,
+            user_id             TEXT
+        );",
+        @"CREATE INDEX IF NOT EXISTS idx_eq_dequeue ON event_queue(status, available_at, priority, created_at);",
+        @"CREATE INDEX IF NOT EXISTS idx_eq_trace ON event_queue(trace_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_eq_session ON event_queue(session_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_eq_workspace ON event_queue(workspace_id);",
     };
     foreach (var ddl in pendingTableDdl)
     {
