@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Abstractions;
@@ -32,7 +33,10 @@ public interface ISessionStateManager
     Task<long> AppendAsync(
         string sessionId, string workspaceId,
         ServerSentEventFrame frame,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        RuntimeTraceContext? trace = null,
+        string? component = null,
+        string? operation = null);
 
     // ════════════════════════════════════════════════════════
     // 历史加载（分页/游标）

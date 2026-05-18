@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -25,6 +26,8 @@ public sealed class SessionStateManager : ISessionStateManager
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SessionStateManager> _logger;
+    private readonly IRuntimeActivitySink _activitySink;
+    private readonly IRuntimeTraceAccessor _traceAccessor;
 
     // 会话 Channel（sessionId → Channel）
     private readonly ConcurrentDictionary<string, Channel<ServerSentEventFrame>> _sessionChannels = new();
@@ -43,10 +46,14 @@ public sealed class SessionStateManager : ISessionStateManager
 
     public SessionStateManager(
         IServiceScopeFactory scopeFactory,
-        ILogger<SessionStateManager> logger)
+        ILogger<SessionStateManager> logger,
+        IRuntimeActivitySink activitySink,
+        IRuntimeTraceAccessor traceAccessor)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _activitySink = activitySink;
+        _traceAccessor = traceAccessor;
     }
 
     private async Task<T> UseDbAsync<T>(Func<PlatformDbContext, Task<T>> action)
@@ -70,9 +77,17 @@ public sealed class SessionStateManager : ISessionStateManager
     public async Task<long> AppendAsync(
         string sessionId, string workspaceId,
         ServerSentEventFrame frame,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        RuntimeTraceContext? trace = null,
+        string? component = null,
+        string? operation = null)
     {
         var recordedAt = DateTimeOffset.UtcNow.ToString("O");
+        var effectiveTrace = trace
+            ?? _traceAccessor.Current?.WithSession(sessionId, workspaceId)
+            ?? RuntimeTraceContext.CreateNew(sessionId: sessionId, workspaceId: workspaceId);
+        var effectiveComponent = component ?? RuntimeActivityComponents.SessionState;
+        var effectiveOperation = operation ?? $"append:{frame.Event}";
         long seq;
 
         // 1. 持久化到 SQLite
@@ -94,6 +109,13 @@ public sealed class SessionStateManager : ISessionStateManager
                 EventType = frame.Event,
                 Data = frame.Data,
                 RecordedAt = recordedAt,
+                TraceId = effectiveTrace.TraceId,
+                CorrelationId = effectiveTrace.CorrelationId,
+                ExecutionId = effectiveTrace.ExecutionId,
+                ParentExecutionId = effectiveTrace.ParentExecutionId,
+                SubAgentId = effectiveTrace.SubAgentId,
+                Component = effectiveComponent,
+                Operation = effectiveOperation,
             };
             db.SessionEventLogs.Add(entity);
         }
@@ -121,6 +143,23 @@ public sealed class SessionStateManager : ISessionStateManager
             _logger.LogDebug("[SSM] Stream complete session={Session} event={Event} error={IsErr}", sessionId, frame.Event, isErr);
             await MarkStreamCompleteAsync(sessionId, ct);
         }
+
+        await _activitySink.RecordAsync(new RuntimeActivity
+        {
+            Trace = effectiveTrace,
+            Component = RuntimeActivityComponents.SessionState,
+            Operation = effectiveOperation,
+            Status = RuntimeActivityStatuses.Succeeded,
+            StartedAtUtc = DateTimeOffset.Parse(recordedAt),
+            EndedAtUtc = DateTimeOffset.UtcNow,
+            Summary = $"Appended session event {frame.Event}",
+            Metadata = new Dictionary<string, string>
+            {
+                ["sequence"] = seq.ToString(),
+                ["eventType"] = frame.Event,
+                ["sourceComponent"] = effectiveComponent,
+            },
+        }, ct);
 
         return seq;
     }
