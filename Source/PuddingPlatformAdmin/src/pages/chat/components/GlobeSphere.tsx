@@ -42,15 +42,17 @@ interface ProjectedParticle {
   readonly kind: GlobeKind;
 }
 
-const LAND_PARTICLE_COUNT = 850;
-const OCEAN_PARTICLE_COUNT = 1050;
-const COAST_PARTICLE_COUNT = 420;
+const LAND_PARTICLE_COUNT = 320;
+const OCEAN_PARTICLE_COUNT = 420;
+const COAST_PARTICLE_COUNT = 140;
 const MAX_SAMPLE_ATTEMPTS = 90000;
 const TILT = (23.5 * Math.PI) / 180;
 const SPRING = 0.11;
 const DAMPING = 0.82;
 const REPEL_FORCE = 3000;
 const REPEL_RADIUS = 120;
+const TARGET_FPS = 30;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
 const PREPARED_LAND_POLYGONS: readonly PreparedLandPolygon[] = EARTH_LAND_POLYGONS.map((polygon) => {
   const lons = polygon.ring.map(([lon]) => lon);
@@ -213,7 +215,7 @@ const GlobeSphere: React.FC<GlobeSphereProps> = ({ size = 300, className, style 
     const context = canvas.getContext('2d');
     if (!context) return undefined;
 
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
     const width = size;
     const height = size;
     const centerX = width / 2;
@@ -246,38 +248,25 @@ const GlobeSphere: React.FC<GlobeSphereProps> = ({ size = 300, className, style 
     const drawParticle = (particle: ProjectedParticle, landColor: [number, number, number], oceanColor: [number, number, number]) => {
       const isOcean = particle.kind === 'ocean';
       const [red, green, blue] = isOcean ? oceanColor : landColor;
-      const radiusScale = particle.kind === 'coast' ? 2.05 : isOcean ? 1.55 : 1.75;
+      const radiusScale = particle.kind === 'coast' ? 1.7 : isOcean ? 1.25 : 1.4;
       const alpha = particle.kind === 'coast' ? particle.alpha : particle.alpha;
-      const core = context.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, radiusScale);
-
-      core.addColorStop(0, `rgba(${red},${green},${blue},${alpha})`);
-      core.addColorStop(0.6, `rgba(${red},${green},${blue},${alpha * 0.32})`);
-      core.addColorStop(1, `rgba(${red},${green},${blue},0)`);
       context.beginPath();
       context.arc(particle.x, particle.y, radiusScale, 0, Math.PI * 2);
-      context.fillStyle = core;
-      context.fill();
-
-      const glow = context.createRadialGradient(
-        particle.x,
-        particle.y,
-        radiusScale * 0.5,
-        particle.x,
-        particle.y,
-        radiusScale * 3.5,
-      );
-      glow.addColorStop(0, `rgba(${red},${green},${blue},${alpha * 0.16})`);
-      glow.addColorStop(1, `rgba(${red},${green},${blue},0)`);
-      context.beginPath();
-      context.arc(particle.x, particle.y, radiusScale * 3.5, 0, Math.PI * 2);
-      context.fillStyle = glow;
+      context.fillStyle = `rgba(${red},${green},${blue},${alpha})`;
       context.fill();
     };
 
     let animationFrame = 0;
     const startTime = performance.now();
+    let lastFrameTime = startTime;
 
     const render = (now: number) => {
+      if (!reduceMotion && now - lastFrameTime < FRAME_INTERVAL) {
+        animationFrame = requestAnimationFrame(render);
+        return;
+      }
+      lastFrameTime = now;
+
       const rotationY = reduceMotion ? 0.55 : (now - startTime) * 0.00022;
       const landColor = parseCssColor('--memory-glow', [167, 139, 250]);
       const oceanColor = parseCssColor('--tool-signal', [34, 211, 238]);

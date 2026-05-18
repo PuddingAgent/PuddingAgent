@@ -30,6 +30,9 @@ interface Particle {
   hue: number;
 }
 
+const TARGET_FPS = 24;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;
+
 const AmbientParticles: React.FC<AmbientParticlesProps> = ({
   count = 36,
   speed = [4000, 6000],
@@ -59,7 +62,7 @@ const AmbientParticles: React.FC<AmbientParticlesProps> = ({
       const rect = canvas.parentElement?.getBoundingClientRect();
       w = rect?.width ?? window.innerWidth;
       h = rect?.height ?? window.innerHeight;
-      dpr = window.devicePixelRatio || 1;
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
@@ -109,8 +112,15 @@ const AmbientParticles: React.FC<AmbientParticlesProps> = ({
     initParticles();
 
     let startTime = performance.now();
+    let lastFrameTime = startTime;
 
     const animate = (now: number) => {
+      if (now - lastFrameTime < FRAME_INTERVAL) {
+        animFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      lastFrameTime = now;
+
       const elapsed = now - startTime;
       ctx.clearRect(0, 0, w, h);
 
@@ -126,16 +136,10 @@ const AmbientParticles: React.FC<AmbientParticlesProps> = ({
         const g = (p.hue >> 8) & 0xff;
         const b = p.hue & 0xff;
 
-        // 大光晕粒子：径向渐变模拟 glow
-        const glowSize = p.radius * 3;
-        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowSize);
-        gradient.addColorStop(0, `rgba(${r},${g},${b},${p.alpha})`);
-        gradient.addColorStop(0.3, `rgba(${r},${g},${b},${p.alpha * 0.5})`);
-        gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
-
+        const glowSize = p.radius * 2;
         ctx.beginPath();
         ctx.arc(p.x, p.y, glowSize, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
+        ctx.fillStyle = `rgba(${r},${g},${b},${p.alpha * 0.45})`;
         ctx.fill();
       }
 
