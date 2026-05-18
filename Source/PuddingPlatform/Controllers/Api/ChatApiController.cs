@@ -4,8 +4,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
 using PuddingCode.Services;
@@ -27,7 +29,8 @@ public class ChatApiController(
     IServiceScopeFactory scopeFactory,
     IDbContextFactory<MemoryDbContext> memoryDbFactory,
     JsonlSessionWriter jsonlWriter,
-    SessionEventHub eventHub,
+    ISessionStateManager ssm,
+    IRuntimeTraceAccessor traceAccessor,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     private static readonly Regex VaultPlaceholderRegex =
@@ -41,9 +44,15 @@ public class ChatApiController(
         string workspaceId, [FromBody] AdminChatRequest req, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        var trace = RuntimeTraceContext.CreateNew(
+            sessionId: req.SessionId,
+            workspaceId: workspaceId,
+            userId: User.Identity?.Name ?? "admin");
+        traceAccessor.Current = trace;
+
         logger.LogInformation(
-            "[Chat] REQUEST ws={WorkspaceId} agentId={AgentId} msgLen={MsgLen}",
-            workspaceId, req.AgentId ?? "(none)", req.MessageText?.Length ?? 0);
+            "[Chat] REQUEST trace={TraceId} ws={WorkspaceId} agentId={AgentId} msgLen={MsgLen}",
+            trace.TraceId, workspaceId, req.AgentId ?? "(none)", req.MessageText?.Length ?? 0);
 
         // 验证 workspace 存在
         var ws = await db.Workspaces.AsNoTracking()
@@ -177,8 +186,15 @@ public class ChatApiController(
                     // 写入 SSM EventHub
                     if (streamSessionId is not null)
                     {
-                        var hub = eventHub.GetOrCreate(streamSessionId);
-                        hub.Writer.TryWrite(frame);
+                        var frameTrace = trace.WithSession(streamSessionId, workspaceId);
+                        await ssm.AppendAsync(
+                            streamSessionId,
+                            workspaceId,
+                            frame,
+                            CancellationToken.None,
+                            frameTrace,
+                            RuntimeActivityComponents.AgentExecution,
+                            $"chat.stream.{frame.Event}");
                         framesWritten++;
                     }
 
