@@ -23,6 +23,112 @@ Pudding Agent 是一个单进程、零外部依赖、支持 P2P 组网的 AI 代
 python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pudding
 ```
 
+## 架构增强剩余任务（2026-05-18）
+
+行动指南：[19架构基础设施增强下一步ADR](07架构/19架构基础设施增强下一步ADR.md)
+
+### P0：配置与目录基础设施
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-CONFIG-001 | 全仓库移除 `.env` / LLM 环境变量作为配置来源 | 代码扫描清单、替换方案、兼容期策略 |
+| ARCH-CONFIG-002 | 统一 `data/config/*.json` 配置加载入口 | `system.json`、`llm.providers.json`、`security.json`、`connectors.json` 的 schema 校验与错误报告 |
+| ARCH-CONFIG-003 | 支持多 LLM 服务商、多模型、多 profile | provider/model/profile/role 解析链路，覆盖显意识 LLM 与潜意识 LLM |
+| ARCH-CONFIG-004 | Agent 专属文件配置目录落地 | `data/agents/{agentInstanceId}/config/*.json|yaml` 与 `soul.md`、`persona.md`、`tools.md` 文件约定 |
+| ARCH-CONFIG-005 | Agent 模板目录落地 | `data/agent-templates/{templateId}/manifest.json` 与 Markdown 行为文件 |
+| ARCH-CONFIG-006 | 旧配置迁移工具 | 从 `data/conf/*`、`data/llm/*`、数据库 Agent 配置迁移到新目录 |
+| ARCH-CONFIG-007 | 配置管理 API 与 Admin UI | 可查看、校验、编辑系统配置、LLM 服务商、模型、Agent 配置 |
+
+### P0：事件系统
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-EVENT-001 | 事件 envelope 标准化 | 统一 `eventId`、`traceId`、`correlationId`、`causationId`、`source`、`timestamp` |
+| ARCH-EVENT-002 | 事件 schema 注册与版本管理 | 事件类型目录、schema 校验、兼容性规则 |
+| ARCH-EVENT-003 | 持久化事件队列 | `data/runtime/events` 存储、ack、retry、dead-letter |
+| ARCH-EVENT-004 | 事件回放与诊断 | 按 session/agent/trace 回放事件流 |
+| ARCH-EVENT-005 | 事件系统可观测性 UI | 事件时间线、失败事件、重试次数、消费者状态 |
+
+### P0：LLM 执行引擎
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-EXEC-001 | 统一 LLM Gateway 协议边界 | Runtime 只依赖统一 gateway，不散落 provider 协议细节 |
+| ARCH-EXEC-002 | 显意识/潜意识 LLM profile 路由 | 每个 Agent 可独立选择 conscious/subconscious profile |
+| ARCH-EXEC-003 | 执行生命周期状态机 | queued、assembling_context、calling_llm、tool_calling、completed、failed、cancelled |
+| ARCH-EXEC-004 | 超时、取消、重试、熔断策略 | provider/model 级别策略配置与执行记录 |
+| ARCH-EXEC-005 | Tool call 审计链路 | tool 请求、参数、审批、输出、错误、耗时统一记录 |
+| ARCH-EXEC-006 | 本地 Fake LLM 测试基座稳定化 | OpenAI 兼容非流式/流式/工具调用响应，供 E2E 和开发默认使用 |
+
+### P0：会话层
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-SESSION-001 | Session State Machine 明确化 | 会话、消息、流式帧、工具调用、子代理状态转换表 |
+| ARCH-SESSION-002 | SQLite + JSONL 双写会话日志 | `data/logs/sessions/{sessionId}.jsonl` 与数据库一致性策略 |
+| ARCH-SESSION-003 | 会话恢复与重放 | 从 JSONL 恢复 UI 状态、执行状态、调试上下文 |
+| ARCH-SESSION-004 | 会话级 trace 聚合 | 同一 session 下 LLM、工具、事件、子代理、记忆调用统一关联 |
+| ARCH-SESSION-005 | 会话诊断页面 | 状态机视图、事件视图、执行耗时、错误链路 |
+
+### P0：子代理系统
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-SUBAGENT-001 | 子代理 workspace 隔离规范 | `data/workspaces/{workspaceId}/agents/{agentInstanceId}` 目录与权限边界 |
+| ARCH-SUBAGENT-002 | 子代理实例配置文件化 | 不再只依赖数据库，配置可读、可 diff、可备份 |
+| ARCH-SUBAGENT-003 | 子代理生命周期管理 | spawn、running、waiting、completed、failed、cancelled 状态与事件 |
+| ARCH-SUBAGENT-004 | 子代理结果归档 | 输入、输出、工具调用、文件变更、LLM profile 记录 |
+| ARCH-SUBAGENT-005 | 子代理可观测性 UI | 主代理与子代理调用树、时间线、结果摘要 |
+
+### P1：记忆图书馆与潜意识 LLM
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-MEM-001 | 记忆图书馆目录规范 | `data/memory/books`、`data/memory/graphs`、索引与备份目录 |
+| ARCH-MEM-002 | 潜意识 LLM 执行日志 | 抽取、检索、总结、写入的输入输出与耗时 |
+| ARCH-MEM-003 | 记忆写入事件化 | 记忆抽取、候选、确认、落库全部进入事件系统 |
+| ARCH-MEM-004 | 记忆诊断 UI | 命中来源、相似度、上下文注入位置、失败原因 |
+
+### P1：网关与连接器
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-GATEWAY-001 | 连接器配置文件化 | HTTP/WebSocket/MQTT/Webhook 连接器配置进入 `data/config/connectors.json` |
+| ARCH-GATEWAY-002 | 连接器消息事件化 | 入站、出站、失败、重试消息统一进入事件系统 |
+| ARCH-GATEWAY-003 | 连接器诊断增强 | 当前连接数、吞吐、错误、最后消息、重放入口 |
+| ARCH-GATEWAY-004 | 网关安全边界 | token、签名、来源限制、速率限制配置化 |
+
+### P1：可观测性
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-OBS-001 | 全局 trace/correlation 贯穿 | HTTP、Session、Runtime、Event、Tool、SubAgent、Memory 全链路 |
+| ARCH-OBS-002 | 结构化日志目录规划 | `data/logs/system`、`diagnostics`、`sessions`、`agents`、`connectors` |
+| ARCH-OBS-003 | Runtime activity 持久化 | 活动记录可查询、可过滤、可关联 session/agent |
+| ARCH-OBS-004 | Admin 诊断驾驶舱 | 组件状态、执行顺序、耗时、失败点、最近事件 |
+| ARCH-OBS-005 | 日志脱敏与密钥保护 | API Key、token、用户敏感内容脱敏策略 |
+
+### P1：端到端测试与调试模式
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-E2E-001 | 修复/稳定 Web API 测试发现与运行 | `PuddingWebApiTests` 可稳定 list/run tests |
+| ARCH-E2E-002 | 外部 E2E 测试框架 | Playwright 或 Python 浏览器自动化脚本，覆盖登录、建会话、发消息、流式响应 |
+| ARCH-E2E-003 | Docker E2E 测试 | `build-and-up.ps1` 后自动健康检查与核心路径验证 |
+| ARCH-E2E-004 | 前端调试模式 | URL flag 或配置开关开启 debug panel、mock action、trace overlay |
+| ARCH-E2E-005 | 前端自动化测试钩子 | 稳定 test id、debug API、状态快照导出 |
+| ARCH-E2E-006 | E2E 测试数据种子 | 默认 workspace、agent、LLM fake provider、session seed |
+| ARCH-E2E-007 | CI 测试分层 | unit、integration、web api、browser e2e 分层执行 |
+
+### P2：运维与文档
+
+| 任务 ID | 标题 | 交付物 |
+|--------|------|--------|
+| ARCH-OPS-001 | `data` 目录备份/还原工具 | 一键备份、恢复、清理临时数据 |
+| ARCH-OPS-002 | 配置示例与注释文档 | 多 provider、多模型、多 Agent 示例 |
+| ARCH-OPS-003 | 本地开发 Runbook | 裸进程、Docker、Fake LLM、真实 provider 切换说明 |
+| ARCH-OPS-004 | 架构决策索引 | ADR、QA、spec、plan 与任务 ID 的映射 |
+
 ### V1 任务 一览（已全部完成）
 
 | 优先级 | 层级 | 任务卡 ID | 标题 | 状态 |

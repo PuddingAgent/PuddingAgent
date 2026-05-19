@@ -38,6 +38,7 @@ public sealed record EventSource
 
 /// <summary>
 /// 统一的内部事件模型。贯穿 Connector → Preprocessor → Queue → Dispatcher → Handler 全链路。
+/// ADR-019-C: 标准化 envelope 字段（SchemaVersion / CausationId / TraceId / CorrelationId）。
 /// </summary>
 public sealed record InternalEvent
 {
@@ -46,6 +47,12 @@ public sealed record InternalEvent
 
     /// <summary>事件类型，命名规范 {category}.{operation}，如 cron.trigger / mqtt.sensor.motion</summary>
     public string Type { get; init; } = "";
+
+    /// <summary>事件 schema 版本（ADR-019-C）</summary>
+    public int SchemaVersion { get; init; } = 1;
+
+    /// <summary>父事件 ID，构建因果链（ADR-019-C）</summary>
+    public string? CausationId { get; init; }
 
     /// <summary>优先级</summary>
     public EventPriorityLevel Priority { get; init; } = EventPriorityLevel.Normal;
@@ -68,13 +75,23 @@ public sealed record InternalEvent
     /// <summary>事件负载（任意 JSON 可序列化对象）</summary>
     public object? Payload { get; init; }
 
-    /// <summary>创建时间（Unix ms）</summary>
-    public long Timestamp { get; init; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    /// <summary>创建时间（UTC）</summary>
+    public DateTime TimestampUtc { get; init; } = DateTime.UtcNow;
+
+    /// <summary>创建时间（Unix ms），向后兼容属性</summary>
+    public long Timestamp => new DateTimeOffset(TimestampUtc).ToUnixTimeMilliseconds();
 
     /// <summary>扩展元数据</summary>
     public Dictionary<string, string>? Metadata { get; init; }
 
-    /// <summary>运行时追踪上下文。</summary>
+    /// <summary>分布式追踪 ID（从 Trace 提升到顶层，ADR-019-C）</summary>
+    public string? TraceId { get; init; }
+
+    /// <summary>关联 ID（从 Trace 提升到顶层，ADR-019-C）</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>运行时追踪上下文（保留向后兼容）。创建事件时若设置 Trace，
+    /// 调用方应同步设置 TraceId / CorrelationId。</summary>
     public RuntimeTraceContext? Trace { get; init; }
 }
 
@@ -124,6 +141,8 @@ public sealed record QueuedEvent
 {
     public string Id { get; init; } = "";
     public int Priority { get; init; }
+    public int SchemaVersion { get; init; } = 1;
+    public string? CausationId { get; init; }
     public string EventType { get; init; } = "";
     public string? SourceType { get; init; }
     public string? SourceId { get; init; }

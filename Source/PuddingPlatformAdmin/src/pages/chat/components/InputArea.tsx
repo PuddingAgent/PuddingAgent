@@ -1,6 +1,6 @@
 // ── InputArea：Agent Console（玻璃 dock → 工具栏 → 输入行 → 状态栏）────
-import { DownloadOutlined, PaperClipOutlined, PictureOutlined, SendOutlined, SettingOutlined, StopOutlined } from '@ant-design/icons';
-import { Button, Input, Select, Tooltip } from 'antd';
+import { DownOutlined, DownloadOutlined, PaperClipOutlined, PictureOutlined, SendOutlined, SettingOutlined, StopOutlined } from '@ant-design/icons';
+import { Button, Input, Popover, Select, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
 import CommandPalette, { COMMANDS, type Command } from './CommandPalette';
@@ -19,13 +19,13 @@ export type ChatStatus = 'idle' | 'composing' | 'thinking' | 'tool_executing' | 
 
 /** chatState → 自然语言状态文案 */
 const STATUS_LABEL: Record<ChatStatus, string> = {
-  idle: 'Runtime 就绪',
-  composing: '正在输入意图',
-  thinking: '正在组织思路',
-  tool_executing: '正在调用工具',
-  streaming: '正在生成回答',
+  idle: '就绪',
+  composing: '输入中',
+  thinking: '正在整理上下文…',
+  tool_executing: '正在调用工具…',
+  streaming: '正在生成回复…',
   completed: '已完成',
-  error: '执行受阻',
+  error: '出错了，可重试',
 };
 
 interface InputAreaProps {
@@ -59,6 +59,8 @@ const InputArea: React.FC<InputAreaProps> = ({
   const [selectedIdx, setSelectedIdx] = useState(0);
   /** 发送时能量波动画触发器 */
   const [sendingFlash, setSendingFlash] = useState(false);
+  /** 技术指标 Popover 显隐 */
+  const [showMoreStatus, setShowMoreStatus] = useState(false);
 
   /** 当前文本中最后一个 / 后的内容（用于过滤命令）。仅在开头或空格后触发。 */
   const slashFilterText = React.useMemo(() => {
@@ -155,6 +157,21 @@ const InputArea: React.FC<InputAreaProps> = ({
 
   const statusText = STATUS_LABEL[status] ?? STATUS_LABEL.idle;
 
+  /** "更多"Popover 内容：技术指标列表 */
+  const moreStatusContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 0', minWidth: 220 }}>
+      <StatusBarTokenIndicator tLimit={tLimit} tUsed={tUsed} tPct={tPct} status={status === 'streaming' || status === 'thinking' ? 'streaming' : 'idle'} loaded={tLimit > 0}
+        cacheHitTokens={cacheHitTokens} cacheMissTokens={cacheMissTokens} cacheHitRate={cacheHitRate} />
+      <ThinkingIntensityIndicator intensity="auto" />
+      <ProviderBalanceIndicator provider="DeepSeek" />
+      <TokenStatsIndicator />
+      <AspLspIndicator aspActive={true} lspActive={false} />
+      <IndexIndicator active={false} statusText="全文索引待启动" />
+      <SubconsciousLlmIndicator active={false} statusText="潜意识 LLM 待机" />
+      <SubAgentIndicator sessionId={sessionId} />
+    </div>
+  );
+
   return (
     <div className={styles.consoleDock}>
       <div className={styles.consoleInner}>
@@ -185,7 +202,7 @@ const InputArea: React.FC<InputAreaProps> = ({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={loading ? 'Agent 正在生成回复…' : '交给我吧。Enter 发送，Shift+Enter 换行'}
+            placeholder={loading ? '正在生成回复…' : '输入你的问题或任务…'}
             disabled={disabled}
             autoSize={{ minRows: 1, maxRows: 5 }}
             className={`${styles.input} ${styles.consoleTextarea} ${sendingFlash ? styles.consoleTextareaSending : ''}`}
@@ -201,7 +218,7 @@ const InputArea: React.FC<InputAreaProps> = ({
           </Button>
         </div>
 
-        {/* ── 状态栏（IDE 风格窄条，始终可见）── */}
+        {/* ── 状态栏：简约克制，默认仅显示状态胶囊 + "更多"入口 ── */}
         <div className={styles.consoleStatusBar}>
           {/* 状态指示点 + 文案 */}
           <span className={styles.consoleStatusBadge}>
@@ -214,22 +231,18 @@ const InputArea: React.FC<InputAreaProps> = ({
             <span>{statusText}</span>
           </span>
           <span className={styles.statusDivider}>|</span>
-          <StatusBarTokenIndicator tLimit={tLimit} tUsed={tUsed} tPct={tPct} status={status === 'streaming' || status === 'thinking' ? 'streaming' : 'idle'} loaded={tLimit > 0}
-            cacheHitTokens={cacheHitTokens} cacheMissTokens={cacheMissTokens} cacheHitRate={cacheHitRate} />
-          <span className={styles.statusDivider}>|</span>
-          <ThinkingIntensityIndicator intensity="auto" />
-          <span className={styles.statusDivider}>|</span>
-          <ProviderBalanceIndicator provider="DeepSeek" />
-          <span className={styles.statusDivider}>|</span>
-          <TokenStatsIndicator />
-          <span className={styles.statusDivider}>|</span>
-          <AspLspIndicator aspActive={true} lspActive={false} />
-          <span className={styles.statusDivider}>|</span>
-          <IndexIndicator active={false} statusText="全文索引待启动" />
-          <span className={styles.statusDivider}>|</span>
-          <SubconsciousLlmIndicator active={false} statusText="潜意识 LLM 待机" />
-          <span className={styles.statusDivider}>|</span>
-          <SubAgentIndicator sessionId={sessionId} />
+          {/* 更多按钮：点击弹出技术指标列表 */}
+          <Popover
+            content={moreStatusContent}
+            trigger="click"
+            open={showMoreStatus}
+            onOpenChange={setShowMoreStatus}
+            placement="topRight"
+          >
+            <span style={{ cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', gap: 2, opacity: 0.5 }}>
+              更多 <DownOutlined style={{ fontSize: 8 }} />
+            </span>
+          </Popover>
         </div>
       </div>
     </div>

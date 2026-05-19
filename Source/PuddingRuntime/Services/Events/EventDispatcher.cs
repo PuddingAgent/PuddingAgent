@@ -1,4 +1,5 @@
 using PuddingCode.Abstractions;
+using PuddingCode.Events;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using Microsoft.Extensions.Hosting;
@@ -91,6 +92,31 @@ public class EventDispatcher : BackgroundService
 
                 // 反序列化负载为 InternalEvent
                 var internalEvent = DeserializeEvent(qe);
+
+                // Schema 版本兼容性检查（ARCH-EVENT-002）
+                var currentVersion = EventSchemaRegistry.GetSchemaVersion(internalEvent.Type);
+                var compatResult = EventSchemaRegistry.CheckCompatibility(
+                    internalEvent.Type, internalEvent.SchemaVersion, currentVersion);
+
+                if (!compatResult.IsCompatible)
+                {
+                    _logger.LogError(
+                        "[EventDispatcher] Schema incompatible id={Id} type={Type} eventVersion={EventVer} registryVersion={RegVer} reason={Reason}",
+                        qe.Id, qe.EventType, internalEvent.SchemaVersion, currentVersion, compatResult.BreakingChangeDescription);
+                    await _queue.UpdateStatusAsync(qe.Id, "dead_letter",
+                        $"Schema incompatible: {compatResult.BreakingChangeDescription}", ct: stoppingToken);
+                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Failed, qe,
+                        $"Schema incompatible: {compatResult.BreakingChangeDescription}", stoppingToken);
+                    continue;
+                }
+
+                if (internalEvent.SchemaVersion < currentVersion)
+                {
+                    _logger.LogWarning(
+                        "[EventDispatcher] Schema version downgrade id={Id} type={Type} eventVersion={EventVer} registryVersion={RegVer}",
+                        qe.Id, qe.EventType, internalEvent.SchemaVersion, currentVersion);
+                }
+
                 _traceAccessor.Current = internalEvent.Trace ?? trace;
 
                 // 并行分发给所有匹配的 handler
@@ -108,30 +134,29 @@ public class EventDispatcher : BackgroundService
                     await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Succeeded, qe,
                         $"Handled by {matchedHandlers.Count} handler(s)", stoppingToken);
                 }
-                else if (qe.RetryCount < 3)
-                {
-                    var nextRetry = qe.RetryCount + 1;
-                    var delaySec = Math.Pow(2, nextRetry) * 10;
-                    _logger.LogWarning(
-                        "[EventDispatcher] Retry id={Id} type={Type} attempt={Retry} delay={Delay}s",
-                        qe.Id, qe.EventType, nextRetry, delaySec);
-
-                    await _queue.UpdateStatusAsync(qe.Id, "retrying",
-                        $"Retry {nextRetry}/3, next in {delaySec}s",
-                        ct: stoppingToken);
-                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Retried, qe,
-                        $"Retry {nextRetry}/3 in {delaySec}s", stoppingToken);
-                }
                 else
                 {
-                    // 死信
-                    _logger.LogError(
-                        "[EventDispatcher] Dead letter id={Id} type={Type} retriesExhausted",
-                        qe.Id, qe.EventType);
-                    await _queue.UpdateStatusAsync(qe.Id, "dead_letter",
-                        "Max retries (3) exhausted", ct: stoppingToken);
-                    await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Failed, qe,
-                        "Max retries exhausted", stoppingToken);
+                    // 队列层做最终裁决：retrying 可能在内部因 retry_count 超限转为 dead_letter
+                    var finalStatus = await _queue.UpdateStatusAsync(qe.Id, "retrying",
+                        $"Handler(s) failed for event type {qe.EventType}",
+                        ct: stoppingToken);
+
+                    if (finalStatus == "dead_letter")
+                    {
+                        _logger.LogError(
+                            "[EventDispatcher] Dead letter id={Id} type={Type} retriesExhausted",
+                            qe.Id, qe.EventType);
+                        await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Failed, qe,
+                            "Max retries exhausted", stoppingToken);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "[EventDispatcher] Retrying id={Id} type={Type} status={Status}",
+                            qe.Id, qe.EventType, finalStatus);
+                        await RecordActivityAsync(trace, "dispatch", RuntimeActivityStatuses.Retried, qe,
+                            $"Retrying (queue status={finalStatus})", stoppingToken);
+                    }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -219,6 +244,8 @@ public class EventDispatcher : BackgroundService
         {
             EventId = qe.Id,
             Type = qe.EventType,
+            SchemaVersion = qe.SchemaVersion > 0 ? qe.SchemaVersion : 1,
+            CausationId = qe.CausationId,
             Priority = qe.Priority switch
             {
                 >= 10 => EventPriorityLevel.Urgent,
@@ -235,7 +262,9 @@ public class EventDispatcher : BackgroundService
             WorkspaceId = qe.WorkspaceId ?? "default",
             AgentId = qe.AgentId,
             Payload = payload,
-            Timestamp = qe.CreatedAt,
+            TimestampUtc = DateTimeOffset.FromUnixTimeMilliseconds(qe.CreatedAt).UtcDateTime,
+            TraceId = qe.Trace?.TraceId,
+            CorrelationId = qe.Trace?.CorrelationId,
             Trace = qe.Trace,
         };
     }

@@ -66,6 +66,12 @@ public sealed class EventQueueEntity
     [MaxLength(1024), Column("error_message")]
     public string? ErrorMessage { get; set; }
 
+    [Column("schema_version")]
+    public int SchemaVersion { get; set; } = 1;
+
+    [MaxLength(64), Column("causation_id")]
+    public string? CausationId { get; set; }
+
     [MaxLength(64), Column("trace_id")]
     public string? TraceId { get; set; }
 

@@ -9,6 +9,12 @@
       "baseUrl": "http://localhost:8080/__fake_llm/v1",
       "apiKey": "local-dev-only",
       "isEnabled": true,
+      "requestTimeoutSeconds": 120,
+      "streamTimeoutSeconds": 300,
+      "maxRetries": 2,
+      "retryDelaySeconds": 1,
+      "circuitBreakerFailureThreshold": 5,
+      "circuitBreakerRecoverySeconds": 60,
       "models": [
         {
           "modelId": "fake-chat",

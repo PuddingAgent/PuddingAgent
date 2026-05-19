@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Events;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -123,13 +124,17 @@ public sealed class SubAgentManager : ISubAgentManager
 
                 await _eventBus.PublishAsync(new InternalEvent
                 {
-                    Type = "agent.sub_completed", Priority = EventPriorityLevel.Normal,
+                    Type = "agent.sub_completed",
+                    SchemaVersion = EventSchemaRegistry.GetSchemaVersion("agent.sub_completed"),
+                    Priority = EventPriorityLevel.Normal,
                     Source = new EventSource { SourceType = "subagent", SourceId = subSessionId },
                     WorkspaceId = request.WorkspaceId,
                     SessionId = request.ParentSessionId,
                     AgentId = request.ParentAgentId,
                     Payload = new { sub_agent_id = subSessionId, success, reply = replyText, error = errorMsg },
                     Metadata = new Dictionary<string, string> { ["parent_session"] = request.ParentSessionId, ["parent_agent"] = request.ParentAgentId ?? "" },
+                    TraceId = trace.TraceId,
+                    CorrelationId = trace.CorrelationId,
                     Trace = trace,
                 }, CancellationToken.None);
 

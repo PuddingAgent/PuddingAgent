@@ -2,6 +2,23 @@ using System.Text.Json.Serialization;
 
 namespace PuddingCode.Configuration;
 
+/// <summary>
+/// 结构化配置加载结果 — 包含成功标志、配置数据、验证错误列表。
+/// 验证错误不抛异常，由调用方决定如何处理。
+/// </summary>
+public sealed record ConfigLoadResult<T>
+{
+    public bool Success { get; init; }
+    public T? Config { get; init; }
+    public List<string> Errors { get; init; } = [];
+
+    public static ConfigLoadResult<T> Ok(T config) => new() { Success = true, Config = config };
+
+    public static ConfigLoadResult<T> Fail(List<string> errors) => new() { Success = false, Errors = errors };
+
+    public static ConfigLoadResult<T> Fail(string error) => new() { Success = false, Errors = [error] };
+}
+
 public sealed record PuddingSystemConfig
 {
     public string Environment { get; init; } = "production";
@@ -56,18 +73,39 @@ public sealed record PuddingLlmProviderConfig
     public string? ApiKeyRef { get; init; }
     public bool IsEnabled { get; init; } = true;
     public List<PuddingLlmModelConfig> Models { get; init; } = [];
+
+    // ── 超时策略 ──────────────────────────────────────
+    /// <summary>非流式请求超时秒数（默认 120）</summary>
+    public int? RequestTimeoutSeconds { get; init; }
+    /// <summary>流式请求超时秒数（默认 300）</summary>
+    public int? StreamTimeoutSeconds { get; init; }
+
+    // ── 重试策略 ──────────────────────────────────────
+    /// <summary>最大重试次数（默认 2，仅对瞬态错误）</summary>
+    public int? MaxRetries { get; init; }
+    /// <summary>重试间隔秒数（默认 1）</summary>
+    public int? RetryDelaySeconds { get; init; }
+
+    // ── 熔断策略 ──────────────────────────────────────
+    /// <summary>连续失败阈值（默认 5，达到后熔断）</summary>
+    public int? CircuitBreakerFailureThreshold { get; init; }
+    /// <summary>熔断恢复等待秒数（默认 60）</summary>
+    public int? CircuitBreakerRecoverySeconds { get; init; }
 }
 
 public sealed record PuddingLlmModelConfig
 {
     public string ModelId { get; init; } = "";
     public string Name { get; init; } = "";
-    public int MaxContextTokens { get; init; }
-    public int MaxOutputTokens { get; init; }
+    public int? MaxContextTokens { get; init; }
+    public int? MaxOutputTokens { get; init; }
     public List<string> CapabilityTags { get; init; } = [];
     public bool IsDefault { get; init; }
     public bool IsDeprecated { get; init; }
     public int SortOrder { get; init; }
+    public string? ReasoningEffort { get; init; }
+    public decimal? PricePer1MInputTokens { get; init; }
+    public decimal? PricePer1MOutputTokens { get; init; }
 }
 
 public sealed record PuddingLlmProfileConfig
@@ -78,6 +116,8 @@ public sealed record PuddingLlmProfileConfig
     public string? ThinkingMode { get; init; }
     public int? MaxContextTokens { get; init; }
     public int? MaxReplyTokens { get; init; }
+    public string? SystemPrompt { get; init; }
+    public float? Temperature { get; init; }
 }
 
 public sealed record PuddingLlmRoleConfig

@@ -28,6 +28,9 @@ public interface ILlmConfigService
     /// <summary>获取 memory/潜意识 LLM 的独立配置（若配置了独立 endpoint/key）。</summary>
     LlmConfig? GetMemoryConfig();
 
+    /// <summary>获取指定 provider 的超时/重试/熔断策略配置。</summary>
+    LlmProviderStrategy? GetProviderStrategy(string providerId);
+
     /// <summary>重新从 JSON 文件加载配置（热重载）。</summary>
     void Reload();
 }
@@ -54,4 +57,27 @@ public sealed record LlmModelInfo
     public bool IsDefault { get; init; }
     public bool IsDeprecated { get; init; }
     public int SortOrder { get; init; }
+}
+
+/// <summary>
+/// LLM Provider 超时/重试/熔断策略配置。
+/// 所有字段均可为 null，null 时使用内置默认值。
+/// </summary>
+public sealed record LlmProviderStrategy
+{
+    public static readonly LlmProviderStrategy Default = new();
+
+    public int? RequestTimeoutSeconds { get; init; }
+    public int? StreamTimeoutSeconds { get; init; }
+    public int? MaxRetries { get; init; }
+    public int? RetryDelaySeconds { get; init; }
+    public int? CircuitBreakerFailureThreshold { get; init; }
+    public int? CircuitBreakerRecoverySeconds { get; init; }
+
+    public int EffectiveRequestTimeoutSeconds => RequestTimeoutSeconds ?? 120;
+    public int EffectiveStreamTimeoutSeconds => StreamTimeoutSeconds ?? 300;
+    public int EffectiveMaxRetries => MaxRetries ?? 2;
+    public int EffectiveRetryDelaySeconds => RetryDelaySeconds ?? 1;
+    public int EffectiveCircuitBreakerFailureThreshold => CircuitBreakerFailureThreshold ?? 5;
+    public int EffectiveCircuitBreakerRecoverySeconds => CircuitBreakerRecoverySeconds ?? 60;
 }

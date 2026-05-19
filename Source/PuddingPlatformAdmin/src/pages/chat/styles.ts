@@ -61,14 +61,13 @@ export const useChatStyles = createStyles(({ token }) => ({
   userRow: { justifyContent: 'flex-end' },
   agentRow: { justifyContent: 'flex-start' },
   bubble: { width: 'fit-content' as const, maxWidth: 'min(76%, 820px)', padding: '12px 16px', borderRadius: 8, lineHeight: 1.6, wordBreak: 'break-word' as const, whiteSpace: 'pre-wrap' as const, border: '1px solid transparent', background: 'transparent', transition: 'background 200ms ease-in-out, box-shadow 200ms ease-in-out', '&:hover': { background: 'color-mix(in srgb, var(--soft-white) 50%, transparent)', boxShadow: '0 1px 6px rgba(0,0,0,0.04)' } },
-  userBubble: { maxWidth: 'min(68%, 680px)', background: 'color-mix(in srgb, var(--accent-purple) 18%, var(--soft-white))', color: 'var(--text-primary)', borderBottomRightRadius: 4, borderBottomLeftRadius: 8, border: '1px solid', borderColor: 'color-mix(in srgb, var(--accent-purple) 30%, transparent)', '&:hover': { background: 'color-mix(in srgb, var(--accent-purple) 24%, var(--soft-white))' } },
-  agentBubble: { maxWidth: 'min(76%, 820px)', background: 'transparent', color: 'var(--text-primary)', border: '1px solid', borderColor: token.colorBorderSecondary, borderRadius: 8, borderBottomLeftRadius: 4, '&:hover': { background: 'color-mix(in srgb, var(--soft-white) 50%, transparent)', backdropFilter: 'blur(12px)' } },
+  userBubble: { maxWidth: 'min(68%, 680px)', background: 'color-mix(in srgb, var(--accent-purple) 10%, var(--soft-white))', color: 'var(--text-primary)', borderBottomRightRadius: 4, borderBottomLeftRadius: 8, border: '1px solid', borderColor: 'color-mix(in srgb, var(--accent-purple) 18%, transparent)', '&:hover': { background: 'color-mix(in srgb, var(--accent-purple) 14%, var(--soft-white))' } },
+  agentBubble: { maxWidth: 'min(76%, 820px)', background: 'transparent', color: 'var(--text-primary)', border: '1px solid', borderColor: token.colorBorderSecondary, borderRadius: 8, borderBottomLeftRadius: 4, '&:hover': { background: 'color-mix(in srgb, var(--soft-white) 50%, transparent)' } },
   assistantAnswer: {
     maxWidth: 'min(82%, 880px)',
-    background: 'color-mix(in srgb, var(--soft-white) 70%, transparent)',
-    backdropFilter: 'blur(16px)',
+    background: 'var(--soft-white)',
     color: 'var(--text-primary)',
-    border: '1px solid', borderColor: token.colorBorderSecondary,
+    border: '1px solid', borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
     borderRadius: 8,
     borderBottomLeftRadius: 4,
     padding: '12px 16px',
@@ -98,8 +97,8 @@ export const useChatStyles = createStyles(({ token }) => ({
   stepCardLine: { position: 'absolute' as const, left: 5, top: 4, bottom: 4, width: 2, borderRadius: 2, background: token.colorBorderSecondary },
   stepCard: { position: 'relative' as const, background: token.colorFillQuaternary, borderRadius: token.borderRadius, border: '1px solid', borderColor: 'color-mix(in srgb, var(--earth-brown) 15%, transparent)', borderLeftWidth: 4, padding: '8px 10px' },
   stepCardDot: { position: 'absolute' as const, left: -11, top: 14, width: 8, height: 8, borderRadius: '50%', background: token.colorBorder, border: `1px solid ${token.colorBgContainer}` },
-  stepCardExecuting: { borderLeftColor: token.colorInfo },
-  stepCardSuccess: { borderLeftColor: token.colorSuccess },
+  stepCardExecuting: { borderLeftColor: 'var(--earth-brown)' },
+  stepCardSuccess: { borderLeftColor: 'color-mix(in srgb, var(--earth-brown) 40%, transparent)' },
   stepCardError: { borderLeftColor: token.colorError },
   stepCardTitle: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4, fontSize: 13 },
   stepCardStatus: { color: token.colorTextSecondary, fontSize: 12, fontWeight: 600, textTransform: 'uppercase' as const },
@@ -404,23 +403,14 @@ export const useChatStyles = createStyles(({ token }) => ({
     '100%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
   },
 
-  /* ── Ambient particles background ── */
+  /* ── Ambient particles background (disabled for visual calm) ── */
   ambientLayer: {
-    position: 'absolute' as const, inset: 0, pointerEvents: 'none' as const,
-    background: 'radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.04) 0%, transparent 60%), radial-gradient(ellipse at 80% 100%, rgba(59,130,246,0.03) 0%, transparent 50%)',
-    zIndex: 0,
+    display: 'none',
   },
 
-  /* ── Thinking state ── */
+  /* ── Thinking state (animations removed for visual calm; @keyframes preserved) ── */
   agentThinking: {
-    animation: 'neuralPulse 2.5s ease-in-out infinite',
     position: 'relative' as const,
-    '&::before': {
-      content: '""', position: 'absolute' as const, inset: -1, borderRadius: 10,
-      background: 'linear-gradient(90deg, transparent, rgba(124,58,237,0.1), transparent)',
-      backgroundSize: '200% 100%',
-      animation: 'particleFlow 3s linear infinite',
-    },
   },
 
   /* ── Token streaming ── */
@@ -429,20 +419,13 @@ export const useChatStyles = createStyles(({ token }) => ({
     opacity: 1,
   },
 
-  /* ── Searching / Tool running ── */
+  /* ── Searching / Tool running (wave-scan animation removed for visual calm) ── */
   agentSearching: {
     position: 'relative' as const,
-    '&::after': {
-      content: '""', position: 'absolute' as const, bottom: 0, left: 0, height: 2, width: '100%',
-      background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.4), transparent)',
-      backgroundSize: '200% 100%',
-      animation: 'waveScan 1.5s linear infinite',
-    },
   },
 
-  /* ── Memory recall ── */
+  /* ── Memory recall (animation removed for visual calm; @keyframes preserved) ── */
   agentRecall: {
-    animation: 'softDiffuse 2s ease-in-out infinite',
   },
 
   /* ── Error ── */
@@ -456,9 +439,8 @@ export const useChatStyles = createStyles(({ token }) => ({
     animation: 'softDiffuse 1s ease-in-out 1',
   },
 
-  /* ── Breathing message card ── */
+  /* ── Breathing message card (animation removed for visual calm; @keyframes preserved) ── */
   breathingCard: {
-    animation: 'breathe 4s ease-in-out infinite',
     transition: 'all 0.3s ease',
   },
 
@@ -570,15 +552,13 @@ export const useChatStyles = createStyles(({ token }) => ({
   popupProgressBar: { height: '100%', borderRadius: 2, transition: 'width 0.5s ease' },
   popupWarning: { color: '#f97316', fontSize: 11, marginTop: 4, padding: '6px 8px', background: 'rgba(249,115,22,0.1)', borderRadius: 6 },
 
-  /* ── First-token loading ── */
+  /* ── First-token loading (animation removed for visual calm; @keyframes preserved) ── */
   firstTokenLoading: {
     display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
-    animation: 'breathe 2s ease-in-out infinite',
   },
   pulseDot: {
     width: 8, height: 8, borderRadius: '50%',
     background: 'var(--accent-purple)',
-    animation: 'neuralPulse 1.5s ease-in-out infinite',
   },
   pulseLabel: {
     fontSize: 13, color: 'color-mix(in srgb, var(--accent-purple) 50%, var(--text-secondary))',
@@ -633,7 +613,7 @@ export const useChatStyles = createStyles(({ token }) => ({
     opacity: 0.7,
     flexWrap: 'wrap' as const,
     minHeight: 20,
-    background: 'linear-gradient(to right, rgba(124,58,237,0.03), transparent 40%)',
+    background: 'transparent',
     borderTop: '1px solid rgba(124,58,237,0.08)',
     borderRadius: '0 0 4px 4px',
     userSelect: 'none' as const,
@@ -669,7 +649,7 @@ export const useChatStyles = createStyles(({ token }) => ({
       top: 0,
       bottom: 0,
       width: 2,
-      background: 'var(--neural-line, rgba(124,58,237,0.18))',
+      background: 'var(--earth-brown, rgba(120,100,80,0.10))',
       borderRadius: 1,
     },
   },
@@ -725,11 +705,11 @@ export const useChatStyles = createStyles(({ token }) => ({
     borderLeft: '2px solid var(--tool-signal, #22D3EE)',
   },
   timelineNodeToolRunning: {
-    borderLeft: '2px solid var(--tool-signal, #22D3EE)',
+    borderLeft: '2px solid var(--earth-brown)',
     '&::before': {
       animation: 'signalFlow 2s linear infinite',
-      background: 'var(--tool-signal, #22D3EE)',
-      boxShadow: '0 0 6px var(--tool-signal, #22D3EE)',
+      background: 'var(--earth-brown)',
+      boxShadow: '0 0 6px color-mix(in srgb, var(--misty-blue) 40%, transparent)',
       backgroundSize: '200% 100%',
     },
   },
@@ -745,9 +725,8 @@ export const useChatStyles = createStyles(({ token }) => ({
     marginLeft: -12,
   },
   timelineAnswerBlock: {
-    background: 'color-mix(in srgb, var(--soft-white) 85%, transparent)',
-    backdropFilter: 'blur(12px)',
-    border: '1px solid color-mix(in srgb, var(--earth-brown) 8%, transparent)',
+    background: 'var(--soft-white)',
+    border: '1px solid color-mix(in srgb, var(--earth-brown) 6%, transparent)',
     borderRadius: 12,
     padding: '14px 18px',
     fontSize: 15,
@@ -770,9 +749,8 @@ export const useChatStyles = createStyles(({ token }) => ({
   answerSettled: {
     animation: 'glowSettle 800ms ease-out',
   },
-  /* ── 流式输出中段落间呼吸节奏 ── */
+  /* ── 流式输出中段落间呼吸节奏 (animation removed for visual calm; @keyframes preserved) ── */
   streamingBreathe: {
-    animation: 'streamBreathe 2.4s ease-in-out infinite',
   },
   '@keyframes streamBreathe': {
     '0%, 100%': { opacity: 1 },
@@ -788,11 +766,11 @@ export const useChatStyles = createStyles(({ token }) => ({
 
   /* ── Runtime 状态机视觉映射（P1-2）────────────────────── */
   runtimeStateThinking: {
-    borderLeft: '3px solid var(--memory-glow, #A78BFA)',
-    background: 'color-mix(in srgb, var(--memory-glow) 4%, transparent)',
+    borderLeft: '2px solid var(--memory-glow, #A78BFA)',
+    background: 'color-mix(in srgb, var(--memory-glow) 2%, transparent)',
   },
   runtimeStateMemory: {
-    borderLeft: '3px solid var(--memory-glow, #A78BFA)',
+    borderLeft: '2px solid var(--memory-glow, #A78BFA)',
     animation: 'softDiffuse 2s ease-in-out infinite',
   },
   runtimeStateTool: {
@@ -823,8 +801,8 @@ export const useChatStyles = createStyles(({ token }) => ({
     borderLeftColor: 'var(--error-signal, #EF4444)',
   },
   /* ── 状态文案颜色映射 ── */
-  statusTextThinking: { color: 'var(--memory-glow, #A78BFA)' },
-  statusTextMemory: { color: 'var(--memory-glow, #A78BFA)' },
+  statusTextThinking: { color: 'var(--earth-brown)' },
+  statusTextMemory: { color: 'var(--earth-brown)' },
   statusTextTool: { color: 'var(--tool-signal, #22D3EE)' },
   statusTextStreaming: { color: 'var(--accent-purple, #7c3aed)' },
   statusTextSuccess: { color: 'var(--success-signal, #22C55E)' },
@@ -897,5 +875,49 @@ export const useChatStyles = createStyles(({ token }) => ({
     padding: 0,
     ':hover': { textDecoration: 'underline' },
   },
+
+  /* ── P0：折叠状态下的单一主状态行 ── */
+  mainStatusLine: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '6px 12px', fontSize: 13,
+    color: 'var(--earth-brown)', opacity: 0.7,
+  },
+  mainStatusDot: {
+    width: 6, height: 6, borderRadius: '50%',
+    background: 'var(--accent-purple)', opacity: 0.5,
+  },
+  mainStatusDotActive: {
+    animation: 'pulseDotActive 1.5s ease-in-out infinite',
+  },
+  '@keyframes pulseDotActive': {
+    '0%, 100%': { opacity: 0.3 },
+    '50%': { opacity: 0.8 },
+  },
+  /** 完成后摘要行 */
+  completionSummary: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '4px 12px', fontSize: 12,
+    color: 'var(--earth-brown)', opacity: 0.5,
+  },
+  viewProcessLink: {
+    cursor: 'pointer', color: 'var(--accent-purple)',
+    fontSize: 12, userSelect: 'none' as const,
+    '&:hover': { opacity: 0.8 },
+  },
+  collapseProcessLink: {
+    cursor: 'pointer', color: 'var(--accent-purple)',
+    fontSize: 12, userSelect: 'none' as const,
+    padding: '0 0 4px 0',
+    '&:hover': { opacity: 0.8 },
+  },
+
+  /* ── 无障碍：prefers-reduced-motion 支持 ── */
+  '@media (prefers-reduced-motion: reduce)': {
+    '*, *::before, *::after': {
+      animationDuration: '0.01ms !important',
+      animationIterationCount: '1 !important',
+      transitionDuration: '0.01ms !important',
+    } as unknown as React.CSSProperties,
+  } as unknown as React.CSSProperties,
 }));
 

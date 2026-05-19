@@ -1,5 +1,7 @@
 using PuddingCode.Abstractions;
+using PuddingCode.Events;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 
 namespace PuddingAgent.Services;
 
@@ -156,9 +158,14 @@ public sealed class CronSchedulerService : BackgroundService
         try
         {
             var sessionId = $"cron-{job.Name}-{DateTime.Now:yyyyMMddHHmm}";
+            var trace = RuntimeTraceContext.CreateNew(
+                sessionId: sessionId,
+                workspaceId: job.WorkspaceId,
+                eventId: null);
             var evt = new InternalEvent
             {
                 Type = "cron.trigger",
+                SchemaVersion = EventSchemaRegistry.GetSchemaVersion("cron.trigger"),
                 Priority = job.Priority,
                 Isolation = job.Isolation,
                 Source = new EventSource
@@ -179,6 +186,9 @@ public sealed class CronSchedulerService : BackgroundService
                     ["cron.expression"] = job.Cron,
                     ["cron.job_name"] = job.Name,
                 },
+                TraceId = trace.TraceId,
+                CorrelationId = trace.CorrelationId,
+                Trace = trace,
             };
 
             await _eventBus.PublishAsync(evt, ct);

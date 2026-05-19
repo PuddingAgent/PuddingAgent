@@ -18,3 +18,4 @@
 | 2026-05-17 | T-102 前端 SSM SSE 接入 — Chat 页合并双 SSE 为持久 SSE | **FAIL** | [QA-2026-05-17-T102-SSM-SSE-Integration.md](QA/QA-2026-05-17-T102-SSM-SSE-Integration.md) |
 | 2026-05-18 | T-CACHE-001~014 上下文缓存可观测性 — 全栈数据管道+前端指示器+Admin统计 | **FAIL→PASS** | context.md (QA-0517-T-CACHE-P0~P2) |
 | 2026-05-18 | T-201 前端工作区通知消费 | **FAIL** | [QA-2026-05-18-T201.md](QA/QA-2026-05-18-T201.md) |
+| 2026-05-18 | P1 复审：PriorityEventQueue 僵尸回收 + retry/dead-letter 统一 + LoadJsonAsync 异常收敛 | **PASS_WITH_NOTES** | [QA-2026-05-18-P1-Retry-Zombie-ConfigLoader-Rescreen.md](QA/QA-2026-05-18-P1-Retry-Zombie-ConfigLoader-Rescreen.md) |

@@ -1,0 +1,19 @@
+{
+  "templateId": "general-assistant",
+  "name": "通用助手",
+  "description": "默认通用 AI 助手，具备对话、工具调用、记忆和子代理能力",
+  "role": "Service",
+  "defaultLlmProfiles": {
+    "conscious": "default-conscious",
+    "subconscious": "default-subconscious"
+  },
+  "memorySearchMode": "deep",
+  "maxContextTokens": 131072,
+  "maxReplyTokens": 4096,
+  "isBuiltIn": true,
+  "isEnabled": true,
+  "capabilities": {
+    "allowTools": true,
+    "allowedToolIds": []
+  }
+}

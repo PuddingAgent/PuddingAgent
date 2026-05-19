@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
@@ -10,6 +11,7 @@ using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Skills;
+using PuddingCode.Observability;
 using Serilog.Context;
 
 namespace PuddingRuntime.Services;
@@ -56,6 +58,7 @@ public sealed class AgentExecutionService
     private readonly ILogger<AgentExecutionService> _logger;
     private readonly ILlmResolver? _llmResolver; // 可选：为子代理等无 LlmConfig 场景兜底
     private readonly ISessionStateManager? _ssm;  // ADR-016：会话状态层
+    private readonly IRuntimeActivitySink? _activitySink;
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -82,7 +85,8 @@ public sealed class AgentExecutionService
         IStreamingEventBus? eventBus = null,
         SessionArchiver? sessionArchiver = null,
         ILlmResolver? llmResolver = null,
-        ISessionStateManager? ssm = null)
+        ISessionStateManager? ssm = null,
+        IRuntimeActivitySink? activitySink = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -110,6 +114,7 @@ public sealed class AgentExecutionService
         _logger              = logger;
         _llmResolver         = llmResolver;
         _ssm                 = ssm;  // ADR-016
+        _activitySink        = activitySink;
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -144,6 +149,31 @@ public sealed class AgentExecutionService
         // TODO(platform-template-guardrails): 从 AgentTemplate（Global/Workspace）读取 MaxRounds/MaxElapsedSeconds/MaxToolCallsTotal，
         // 并覆盖注入 AgentExecutionGuardrails；当前阶段仅支持在模板侧存储配置，不参与 Runtime 执行。
 
+        var execTrace = RuntimeTraceContext.CreateNew(
+            sessionId: request.SessionId,
+            workspaceId: request.WorkspaceId);
+        var execStartedAt = DateTimeOffset.UtcNow;
+        var maxRoundsForActivity = request.MaxRounds > 0
+            ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
+            : _guardrails.MaxRounds;
+        await RecordActivityAsync(
+            execTrace,
+            component: RuntimeActivityComponents.AgentExecution,
+            operation: "execute",
+            status: RuntimeActivityStatuses.Started,
+            execStartedAt,
+            endedAt: null,
+            durationMs: null,
+            summary: "Agent execution started.",
+            metadata: new Dictionary<string, string>
+            {
+                ["agent_template_id"] = request.AgentTemplateId,
+                ["session_id"] = request.SessionId,
+                ["max_rounds"] = maxRoundsForActivity.ToString(),
+            },
+            error: null,
+            ct: CancellationToken.None);
+
         _contextManager.CleanupExpiredSessions(request.SessionId);
 
         // ── 获取/创建 Agent 实例 ──────────────────────────────────────
@@ -168,27 +198,12 @@ public sealed class AgentExecutionService
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
         if (history.Count == 0)
         {
-            var systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+            var ctxAssembleStartedAt = DateTimeOffset.UtcNow;
+            var ctxAssembleSw = System.Diagnostics.Stopwatch.StartNew();
+            ContextAssemblyResult systemPrompt;
+            try
             {
-                Template = template,
-                WorkspaceId = request.WorkspaceId ?? string.Empty,
-                SessionId = request.SessionId,
-                AgentTemplateId = request.AgentTemplateId,
-                UserMessage = request.MessageText,
-                Capability = effectiveCapability,
-                AgentInstanceId = instance.AgentInstanceId,
-                ForStreaming = false,
-                IsFirstMessage = true,
-                SessionHistory = Array.Empty<ChatMessage>(),
-            }, ct);
-            history.Add(new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt));
-        }
-        else if (template.Memory?.EnableSessionMemory == true
-              || template.Memory?.EnableWorkspaceMemory == true)
-        {
-            if (history[0].Role == ChatRole.System)
-            {
-                var systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+                systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
                 {
                     Template = template,
                     WorkspaceId = request.WorkspaceId ?? string.Empty,
@@ -198,9 +213,118 @@ public sealed class AgentExecutionService
                     Capability = effectiveCapability,
                     AgentInstanceId = instance.AgentInstanceId,
                     ForStreaming = false,
-                    IsFirstMessage = false,
-                    SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
+                    IsFirstMessage = true,
+                    SessionHistory = Array.Empty<ChatMessage>(),
                 }, ct);
+                ctxAssembleSw.Stop();
+                await RecordActivityAsync(
+                    execTrace,
+                    component: RuntimeActivityComponents.ContextPipeline,
+                    operation: "assemble_context",
+                    status: RuntimeActivityStatuses.Succeeded,
+                    ctxAssembleStartedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: ctxAssembleSw.ElapsedMilliseconds,
+                    summary: "Context pipeline assembled system prompt.",
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["agent_template_id"] = request.AgentTemplateId,
+                        ["session_id"] = request.SessionId,
+                        ["is_first_message"] = "true",
+                        ["estimated_bytes"] = (systemPrompt.SystemPrompt?.Length ?? 0).ToString(),
+                    },
+                    error: null,
+                    ct: CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                ctxAssembleSw.Stop();
+                await RecordActivityAsync(
+                    execTrace,
+                    component: RuntimeActivityComponents.ContextPipeline,
+                    operation: "assemble_context",
+                    status: RuntimeActivityStatuses.Failed,
+                    ctxAssembleStartedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: ctxAssembleSw.ElapsedMilliseconds,
+                    summary: "Context pipeline assembly failed.",
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["agent_template_id"] = request.AgentTemplateId,
+                        ["session_id"] = request.SessionId,
+                        ["is_first_message"] = "true",
+                    },
+                    error: ex,
+                    ct: CancellationToken.None);
+                throw;
+            }
+            history.Add(new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt));
+        }
+        else if (template.Memory?.EnableSessionMemory == true
+              || template.Memory?.EnableWorkspaceMemory == true)
+        {
+            if (history[0].Role == ChatRole.System)
+            {
+                var ctxReAssembleStartedAt = DateTimeOffset.UtcNow;
+                var ctxReAssembleSw = System.Diagnostics.Stopwatch.StartNew();
+                ContextAssemblyResult systemPrompt;
+                try
+                {
+                    systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+                    {
+                        Template = template,
+                        WorkspaceId = request.WorkspaceId ?? string.Empty,
+                        SessionId = request.SessionId,
+                        AgentTemplateId = request.AgentTemplateId,
+                        UserMessage = request.MessageText,
+                        Capability = effectiveCapability,
+                        AgentInstanceId = instance.AgentInstanceId,
+                        ForStreaming = false,
+                        IsFirstMessage = false,
+                        SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
+                    }, ct);
+                    ctxReAssembleSw.Stop();
+                    await RecordActivityAsync(
+                        execTrace,
+                        component: RuntimeActivityComponents.ContextPipeline,
+                        operation: "assemble_context",
+                        status: RuntimeActivityStatuses.Succeeded,
+                        ctxReAssembleStartedAt,
+                        endedAt: DateTimeOffset.UtcNow,
+                        durationMs: ctxReAssembleSw.ElapsedMilliseconds,
+                        summary: "Context pipeline re-assembled with memory.",
+                        metadata: new Dictionary<string, string>
+                        {
+                            ["agent_template_id"] = request.AgentTemplateId,
+                            ["session_id"] = request.SessionId,
+                            ["is_first_message"] = "false",
+                            ["estimated_bytes"] = (systemPrompt.SystemPrompt?.Length ?? 0).ToString(),
+                        },
+                        error: null,
+                        ct: CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    ctxReAssembleSw.Stop();
+                    await RecordActivityAsync(
+                        execTrace,
+                        component: RuntimeActivityComponents.ContextPipeline,
+                        operation: "assemble_context",
+                        status: RuntimeActivityStatuses.Failed,
+                        ctxReAssembleStartedAt,
+                        endedAt: DateTimeOffset.UtcNow,
+                        durationMs: ctxReAssembleSw.ElapsedMilliseconds,
+                        summary: "Context pipeline re-assembly failed.",
+                        metadata: new Dictionary<string, string>
+                        {
+                            ["agent_template_id"] = request.AgentTemplateId,
+                            ["session_id"] = request.SessionId,
+                            ["is_first_message"] = "false",
+                        },
+                        error: ex,
+                        ct: CancellationToken.None);
+                    throw;
+                }
                 history[0] = new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt);
             }
         }
@@ -376,18 +500,106 @@ public sealed class AgentExecutionService
                         }
                         else
                         {
-                            skillResult = await _skillRuntime.InvokeAsync(
-                                call.Name,
-                                new SkillInvokeRequest
+                            var toolStartedAt = DateTimeOffset.UtcNow;
+                            var toolSw = System.Diagnostics.Stopwatch.StartNew();
+                            try
+                            {
+                                skillResult = await _skillRuntime.InvokeAsync(
+                                    call.Name,
+                                    new SkillInvokeRequest
+                                    {
+                                        AgentInstanceId = instance.AgentInstanceId,
+                                        WorkspaceId = request.WorkspaceId,
+                                        SessionId = request.SessionId,
+                                        Input = ExtractInputFromJson(injectedArgsJson),
+                                        Parameters = ExtractParametersFromJson(injectedArgsJson),
+                                    },
+                                    effectiveCapability,
+                                    ct);
+                                toolSw.Stop();
+                                var toolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
+                                if (skillResult.Success)
                                 {
-                                    AgentInstanceId = instance.AgentInstanceId,
-                                    WorkspaceId = request.WorkspaceId,
-                                    SessionId = request.SessionId,
-                                    Input = ExtractInputFromJson(injectedArgsJson),
-                                    Parameters = ExtractParametersFromJson(injectedArgsJson),
-                                },
-                                effectiveCapability,
-                                ct);
+                                    await RecordActivityAsync(
+                                        execTrace,
+                                        component: RuntimeActivityComponents.ToolRunner,
+                                        operation: "execute_tool",
+                                        status: RuntimeActivityStatuses.Succeeded,
+                                        toolStartedAt,
+                                        endedAt: DateTimeOffset.UtcNow,
+                                        durationMs: toolSw.ElapsedMilliseconds,
+                                        summary: $"Tool '{call.Name}' executed successfully.",
+                                        metadata: new Dictionary<string, string>
+                                        {
+                                            ["tool_name"] = call.Name,
+                                            ["tool_args_hash"] = toolArgsHash,
+                                            ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                            ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
+                                            ["tool_output_length"] = (skillResult.Output?.Length ?? 0).ToString(),
+                                            ["session_id"] = request.SessionId,
+                                        },
+                                        error: null,
+                                        ct: CancellationToken.None);
+                                }
+                                else
+                                {
+                                    await RecordActivityAsync(
+                                        execTrace,
+                                        component: RuntimeActivityComponents.ToolRunner,
+                                        operation: "execute_tool",
+                                        status: RuntimeActivityStatuses.Failed,
+                                        toolStartedAt,
+                                        endedAt: DateTimeOffset.UtcNow,
+                                        durationMs: toolSw.ElapsedMilliseconds,
+                                        summary: $"Tool '{call.Name}' execution failed.",
+                                        metadata: new Dictionary<string, string>
+                                        {
+                                            ["tool_name"] = call.Name,
+                                            ["tool_args_hash"] = toolArgsHash,
+                                            ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                            ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
+                                            ["error_code"] = "tool_failed",
+                                            ["error_message"] = Truncate(skillResult.Error ?? "", 500),
+                                            ["session_id"] = request.SessionId,
+                                        },
+                                        error: new Exception(skillResult.Error),
+                                        ct: CancellationToken.None);
+                                }
+                                _logger.LogInformation(
+                                    "[AgentExec:ToolAudit] Tool={ToolName} Success={Success} DurationMs={DurationMs} ArgsHash={ArgsHash} OutputLen={OutputLen} Session={SessionId}",
+                                    call.Name, skillResult.Success, toolSw.ElapsedMilliseconds, toolArgsHash,
+                                    skillResult.Output?.Length ?? 0, request.SessionId);
+                            }
+                            catch (Exception ex)
+                            {
+                                toolSw.Stop();
+                                var toolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
+                                await RecordActivityAsync(
+                                    execTrace,
+                                    component: RuntimeActivityComponents.ToolRunner,
+                                    operation: "execute_tool",
+                                    status: RuntimeActivityStatuses.Failed,
+                                    toolStartedAt,
+                                    endedAt: DateTimeOffset.UtcNow,
+                                    durationMs: toolSw.ElapsedMilliseconds,
+                                    summary: $"Tool '{call.Name}' threw exception.",
+                                    metadata: new Dictionary<string, string>
+                                    {
+                                        ["tool_name"] = call.Name,
+                                        ["tool_args_hash"] = toolArgsHash,
+                                        ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                        ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
+                                        ["error_code"] = ex.GetType().Name,
+                                        ["error_message"] = Truncate(ex.Message, 500),
+                                        ["session_id"] = request.SessionId,
+                                    },
+                                    error: ex,
+                                    ct: CancellationToken.None);
+                                _logger.LogError(ex,
+                                    "[AgentExec:ToolAudit] Tool={ToolName} Exception DurationMs={DurationMs} ArgsHash={ArgsHash} Session={SessionId}",
+                                    call.Name, toolSw.ElapsedMilliseconds, toolArgsHash, request.SessionId);
+                                throw;
+                            }
                         }
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
@@ -571,17 +783,106 @@ public sealed class AgentExecutionService
                         "[AgentExec] ToolCall tool={Tool} round={Round} agent={Agent}",
                         toolName, round + 1, instance.AgentInstanceId);
 
-                    var skillResult = await _skillRuntime.InvokeAsync(
-                        toolName,
-                        new SkillInvokeRequest
+                    var toolStartedAt2 = DateTimeOffset.UtcNow;
+                    var toolSw2 = System.Diagnostics.Stopwatch.StartNew();
+                    SkillResult skillResult;
+                    try
+                    {
+                        skillResult = await _skillRuntime.InvokeAsync(
+                            toolName,
+                            new SkillInvokeRequest
+                            {
+                                AgentInstanceId = instance.AgentInstanceId,
+                                WorkspaceId     = request.WorkspaceId,
+                                SessionId       = request.SessionId,
+                                Input           = ExtractInputFromJson(injectedArgsJson),
+                                Parameters      = ExtractParametersFromJson(injectedArgsJson),
+                            },
+                            effectiveCapability, ct);
+                        toolSw2.Stop();
+                        var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
+                        if (skillResult.Success)
                         {
-                            AgentInstanceId = instance.AgentInstanceId,
-                            WorkspaceId     = request.WorkspaceId,
-                            SessionId       = request.SessionId,
-                            Input           = ExtractInputFromJson(injectedArgsJson),
-                            Parameters      = ExtractParametersFromJson(injectedArgsJson),
-                        },
-                        effectiveCapability, ct);
+                            await RecordActivityAsync(
+                                execTrace,
+                                component: RuntimeActivityComponents.ToolRunner,
+                                operation: "execute_tool",
+                                status: RuntimeActivityStatuses.Succeeded,
+                                toolStartedAt2,
+                                endedAt: DateTimeOffset.UtcNow,
+                                durationMs: toolSw2.ElapsedMilliseconds,
+                                summary: $"Tool '{toolName}' executed successfully.",
+                                metadata: new Dictionary<string, string>
+                                {
+                                    ["tool_name"] = toolName,
+                                    ["tool_args_hash"] = toolArgsHash2,
+                                    ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                    ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
+                                    ["tool_output_length"] = (skillResult.Output?.Length ?? 0).ToString(),
+                                    ["session_id"] = request.SessionId,
+                                },
+                                error: null,
+                                ct: CancellationToken.None);
+                        }
+                        else
+                        {
+                            await RecordActivityAsync(
+                                execTrace,
+                                component: RuntimeActivityComponents.ToolRunner,
+                                operation: "execute_tool",
+                                status: RuntimeActivityStatuses.Failed,
+                                toolStartedAt2,
+                                endedAt: DateTimeOffset.UtcNow,
+                                durationMs: toolSw2.ElapsedMilliseconds,
+                                summary: $"Tool '{toolName}' execution failed.",
+                                metadata: new Dictionary<string, string>
+                                {
+                                    ["tool_name"] = toolName,
+                                    ["tool_args_hash"] = toolArgsHash2,
+                                    ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                    ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
+                                    ["error_code"] = "tool_failed",
+                                    ["error_message"] = Truncate(skillResult.Error ?? "", 500),
+                                    ["session_id"] = request.SessionId,
+                                },
+                                error: new Exception(skillResult.Error),
+                                ct: CancellationToken.None);
+                        }
+                        _logger.LogInformation(
+                            "[AgentExec:ToolAudit] Tool={ToolName} Success={Success} DurationMs={DurationMs} ArgsHash={ArgsHash} OutputLen={OutputLen} Session={SessionId}",
+                            toolName, skillResult.Success, toolSw2.ElapsedMilliseconds, toolArgsHash2,
+                            skillResult.Output?.Length ?? 0, request.SessionId);
+                    }
+                    catch (Exception ex)
+                    {
+                        toolSw2.Stop();
+                        var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
+                        await RecordActivityAsync(
+                            execTrace,
+                            component: RuntimeActivityComponents.ToolRunner,
+                            operation: "execute_tool",
+                            status: RuntimeActivityStatuses.Failed,
+                            toolStartedAt2,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: toolSw2.ElapsedMilliseconds,
+                            summary: $"Tool '{toolName}' threw exception.",
+                            metadata: new Dictionary<string, string>
+                            {
+                                ["tool_name"] = toolName,
+                                ["tool_args_hash"] = toolArgsHash2,
+                                ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
+                                ["error_code"] = ex.GetType().Name,
+                                ["error_message"] = Truncate(ex.Message, 500),
+                                ["session_id"] = request.SessionId,
+                            },
+                            error: ex,
+                            ct: CancellationToken.None);
+                        _logger.LogError(ex,
+                            "[AgentExec:ToolAudit] Tool={ToolName} Exception DurationMs={DurationMs} ArgsHash={ArgsHash} Session={SessionId}",
+                            toolName, toolSw2.ElapsedMilliseconds, toolArgsHash2, request.SessionId);
+                        throw;
+                    }
 
                     toolSuccess = skillResult.Success;
                     toolError   = string.IsNullOrWhiteSpace(skillResult.Error)
@@ -707,6 +1008,45 @@ public sealed class AgentExecutionService
         _logger.LogInformation(
             "[AgentExec] End session={Session} state={State} reason={Reason} replyLen={Len}",
             request.SessionId, execState, stopReason, finalMessage.Length);
+
+        // ── 记录终端状态 Activity ───────────────────────────────────
+        totalSw.Stop();
+        var terminalStatus = execState switch
+        {
+            AgentExecutionState.Completed => RuntimeActivityStatuses.Succeeded,
+            AgentExecutionState.WaitingEvent => RuntimeActivityStatuses.Deferred,
+            AgentExecutionState.Cancelled => RuntimeActivityStatuses.Cancelled,
+            _ => RuntimeActivityStatuses.Failed,
+        };
+        var terminalMetadata = new Dictionary<string, string>
+        {
+            ["agent_template_id"] = request.AgentTemplateId,
+            ["session_id"] = request.SessionId,
+            ["total_rounds"] = (_journal.GetTurns(request.SessionId).Count - journalStartCount).ToString(),
+            ["total_tool_calls"] = totalToolCalls.ToString(),
+            ["total_elapsed_ms"] = totalSw.ElapsedMilliseconds.ToString(),
+            ["stop_reason"] = stopReason.ToString(),
+        };
+        if (usage is not null)
+        {
+            terminalMetadata["total_tokens"] = usage.TotalTokens?.ToString() ?? "0";
+            terminalMetadata["prompt_tokens"] = usage.PromptTokens?.ToString() ?? "0";
+            terminalMetadata["completion_tokens"] = usage.CompletionTokens?.ToString() ?? "0";
+        }
+        await RecordActivityAsync(
+            execTrace,
+            component: RuntimeActivityComponents.AgentExecution,
+            operation: "execute",
+            status: terminalStatus,
+            execStartedAt,
+            endedAt: DateTimeOffset.UtcNow,
+            durationMs: totalSw.ElapsedMilliseconds,
+            summary: $"Agent execution terminated with state: {execState}",
+            metadata: terminalMetadata,
+            error: terminalStatus == RuntimeActivityStatuses.Failed
+                ? new Exception($"Execution {execState}: {stopReason}")
+                : null,
+            ct: CancellationToken.None);
 
         // 异步归档会话（不阻塞主流程）
         var archiver = _sessionArchiver;
@@ -1416,6 +1756,50 @@ public sealed class AgentExecutionService
 
     // ── 私有辅助 ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// 将 RuntimeActivity 记录到可观测性管道。当 _activitySink 为 null 时静默跳过。
+    /// 异常会被吞掉（不阻断主执行链），但会记录警告日志。
+    /// </summary>
+    private async Task RecordActivityAsync(
+        RuntimeTraceContext? trace,
+        string component,
+        string operation,
+        string status,
+        DateTimeOffset startedAt,
+        DateTimeOffset? endedAt,
+        long? durationMs,
+        string? summary,
+        IReadOnlyDictionary<string, string>? metadata,
+        Exception? error,
+        CancellationToken ct)
+    {
+        if (_activitySink is null) return;
+
+        try
+        {
+            await _activitySink.RecordAsync(new RuntimeActivity
+            {
+                Trace = trace ?? RuntimeTraceContext.CreateNew(),
+                Component = component,
+                Operation = operation,
+                Status = status,
+                StartedAtUtc = startedAt,
+                EndedAtUtc = endedAt,
+                DurationMs = durationMs,
+                Severity = error is null ? "info" : "error",
+                Summary = summary,
+                Metadata = metadata ?? new Dictionary<string, string>(),
+                ErrorCode = error?.GetType().Name,
+                ErrorMessage = error?.Message,
+            }, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AgentExec:Activity] Record failed component={Comp} op={Op}", component, operation);
+        }
+    }
+
     private static TimeSpan ResolveSessionTimeout(AgentTemplateDefinition template)
     {
         var configured = template.Runtime?.SessionTimeout ?? TimeSpan.Zero;
@@ -1691,6 +2075,13 @@ public sealed class AgentExecutionService
     private static string Truncate(string s, int maxLen) =>
         s.Length <= maxLen ? s : s[..maxLen] + "…";
 
+    /// <summary>计算字符串的 SHA256 哈希（小写十六进制），用于审计日志中脱敏参数。</summary>
+    private static string ComputeSha256Hash(string input)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexStringLower(hash);
+    }
+
     /// <summary>
     /// 检查工具权限。High 权限需要用户确认。
     /// 返回 true 表示可以继续执行，false 表示被阻止。
@@ -1719,9 +2110,55 @@ public sealed class AgentExecutionService
             }, ct);
         }
 
-        // V1: 简化处理 — 记录日志，返回 false 阻止执行
-        // V2: 等待用户通过前端确认（实现许可 token 机制）
-        return false;
+        // 记录审批请求 activity
+        var permStartedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            await RecordActivityAsync(
+                trace: null,
+                component: RuntimeActivityComponents.ToolRunner,
+                operation: "approve_tool",
+                status: RuntimeActivityStatuses.Started,
+                startedAt: permStartedAt,
+                endedAt: null,
+                durationMs: null,
+                summary: $"Tool permission check for '{skill.SkillId}' (High).",
+                metadata: new Dictionary<string, string>
+                {
+                    ["tool_name"] = skill.SkillId,
+                    ["permission_level"] = "High",
+                    ["session_id"] = sessionId,
+                },
+                error: null,
+                ct: CancellationToken.None);
+
+            // V1: 简化处理 — 记录日志，返回 false 阻止执行
+            // V2: 等待用户通过前端确认（实现许可 token 机制）
+            await RecordActivityAsync(
+                trace: null,
+                component: RuntimeActivityComponents.ToolRunner,
+                operation: "approve_tool",
+                status: RuntimeActivityStatuses.Failed,
+                startedAt: permStartedAt,
+                endedAt: DateTimeOffset.UtcNow,
+                durationMs: (long)(DateTimeOffset.UtcNow - permStartedAt).TotalMilliseconds,
+                summary: $"Tool '{skill.SkillId}' denied — High permission requires user confirmation.",
+                metadata: new Dictionary<string, string>
+                {
+                    ["tool_name"] = skill.SkillId,
+                    ["permission_level"] = "High",
+                    ["approval_result"] = "denied",
+                    ["session_id"] = sessionId,
+                },
+                error: null,
+                ct: CancellationToken.None);
+            return false;
+        }
+        catch
+        {
+            // Activity 记录失败不阻断权限判定
+            return false;
+        }
     }
 
     /// <summary>

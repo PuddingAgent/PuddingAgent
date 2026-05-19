@@ -31,6 +31,17 @@ public class InternalEventBus : IInternalEventBus
     public async Task PublishAsync(InternalEvent evt, CancellationToken ct = default)
     {
         var trace = ResolveTrace(evt);
+
+        // ADR-019-C: 确保 envelope 的 TraceId / CorrelationId 从 Trace 同步到顶层
+        if (evt.TraceId is null || evt.CorrelationId is null)
+        {
+            evt = evt with
+            {
+                TraceId = evt.TraceId ?? trace?.TraceId,
+                CorrelationId = evt.CorrelationId ?? trace?.CorrelationId,
+            };
+        }
+
         var matchedHandlers = new List<Func<InternalEvent, Task>>();
 
         lock (_lock)

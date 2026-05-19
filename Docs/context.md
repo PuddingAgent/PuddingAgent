@@ -7,6 +7,8 @@
 
 | 日期 | 任务ID | 开发模型 | QA模型 | 结果 | 备注 |
 |------|--------|---------|--------|------|------|
+| 0518 | EXEC-001/EVENT-003/CONFIG-001~003 | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | 3xP1: 僵尸事件不回收/retry语义不一致/LoadJsonAsync不捕获异常 |
+| 0518 | EXEC-001/EVENT-003/CONFIG-001~003 (修复) | DeepSeek-V4-Pro | GPT-5.3-Codex | PASS_WITH_NOTES | P1全部修复；P2遗留：事件系统缺少回归测试(lease过期回收/dead-letter场景) |
 | 0508 | ADR-014-E | DeepSeek-V4-Pro | — | BUILD_PASS | dotnet build 0 error, MemoryTests 47/47 PASS, WebApiTests 15 failures pre-existing |
 | 0510 | Subconscious-Phase1 | GPT-5.3-Codex | Sonnet 4.6 | PASS_WITH_NOTES | P1-1 OnCompletedAsync阻塞SSE done/P1-2 DI重复注册，均已修复 |
 | 0510 | Subconscious-Phase2 | GPT-5.3-Codex | DeepSeek-V4-Pro | PASS_WITH_NOTES | P1 IMemoryLibrary死代码/P1 DI冗余/P2 Token=0硬编码，不阻断联调 |
@@ -46,6 +48,10 @@
 | 0518 | T-202 | lead | qa | PASS | P2: 双写冗余，功能无害 |
 | 0518 | T-203 | dev | qa | PASS | — |
 | 0518 | T-201 | dev | qa | PASS_WITH_NOTES | P0: JSON camelCase命名已修复；P1遗留: 重连逻辑待补充 |
+| 0518 | Chat-P0-CleanFolding | dev | qa | PASS | P0可信度清洗+Timeline折叠: sanitizeDisplayText, 默认主状态行, 5xP2改进建议(展开态清洗/重复计数/opacity 0.5→0.55) |
+| 0518 | Chat-P1-VisualNoise | dev | qa | PASS | P1视觉降噪: 14处样式变更, 关闭10种动画触发, 答案卡glass→paper, 紫色18%→10%, 状态色降饱和, prefers-reduced-motion |
+| 0518 | Chat-P2-InputRestructure | dev | qa | PASS | P2输入区重构: STATUS_LABEL去内部词, placeholder简约化, 状态栏收敛为“状态胶囊+更多”, 8个技术指标进Popover |
+| 0518 | P1-Rescreen-EventQueue-ConfigLoader | dev | qa | PASS_WITH_NOTES | 3项P1修复均通过；新增P2：事件系统专项回归测试缺失 |
 
 ## Architect 领航审查
 | 0517 | T-103 | DeepSeek-V4-Pro | DeepSeek-V4-Pro | PASS_WITH_NOTES | 3xP2 命名兼容+metadata持久化 |

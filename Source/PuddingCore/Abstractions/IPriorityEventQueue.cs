@@ -32,6 +32,7 @@ public interface IPriorityEventQueue
 
     /// <summary>
     /// 更新队列条目状态（用于标记处理完成/失败）。
+    /// 返回最终生效的状态字符串（如 "retrying" 可能在内部转为 "dead_letter"）。
     /// </summary>
-    Task UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default);
+    Task<string> UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default);
 }

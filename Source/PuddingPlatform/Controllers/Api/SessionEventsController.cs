@@ -51,6 +51,31 @@ public class SessionEventsController : ControllerBase
     }
 
     /// <summary>
+    /// 重放会话事件 — 从指定序列号开始完整重建会话状态。
+    /// GET /api/sessions/{sessionId}/replay?from={seq}&limit={N}
+    /// 包含事件列表、当前会话状态和子代理列表。
+    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §5
+    /// </summary>
+    [HttpGet("{sessionId}/replay")]
+    public async Task<ActionResult<SessionReplayResult>> Replay(
+        string sessionId,
+        [FromQuery] long? from,
+        [FromQuery] int limit = 200,
+        CancellationToken ct = default)
+    {
+        if (limit < 1 || limit > 500)
+            return BadRequest(new { message = "limit 必须在 1-500 之间" });
+
+        var result = await _ssm.ReplaySessionAsync(sessionId, from, limit, ct);
+
+        _logger.LogDebug(
+            "[SessionEvents] GET replay session={Session} from={From} limit={Limit} events={EventCount} total={Total} hasMore={HasMore}",
+            sessionId, from, limit, result.Events.Count, result.TotalEventCount, result.HasMore);
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// 实时订阅会话事件（SSE）。
     /// GET /api/sessions/{sessionId}/events/stream
     /// </summary>
@@ -115,6 +140,39 @@ public class SessionEventsController : ControllerBase
             state = state.ToString(),
             runningSubAgents,
         });
+    }
+
+    /// <summary>
+    /// 获取 SQLite 与 JSONL 双写一致性检查报告。
+    /// GET /api/sessions/{sessionId}/consistency
+    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// </summary>
+    [HttpGet("{sessionId}/consistency")]
+    public async Task<ActionResult<SessionConsistencyReport>> GetConsistency(
+        string sessionId, CancellationToken ct)
+    {
+        var report = await _ssm.CheckConsistencyAsync(sessionId, ct);
+        _logger.LogDebug(
+            "[SessionEvents] GET consistency session={Session} consistent={Consistent} diff={Diff}",
+            sessionId, report.IsConsistent, report.Difference);
+        return Ok(report);
+    }
+
+    /// <summary>
+    /// 获取会话级 Trace 聚合报告。
+    /// GET /api/sessions/{sessionId}/trace-report
+    /// 包含 traceId 列表、组件时序、LLM 调用、工具调用、子代理调用树及 token 总量。
+    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// </summary>
+    [HttpGet("{sessionId}/trace-report")]
+    public async Task<ActionResult<SessionTraceReport>> GetTraceReport(
+        string sessionId, CancellationToken ct)
+    {
+        var report = await _ssm.GetTraceReportAsync(sessionId, ct);
+        _logger.LogDebug(
+            "[SessionEvents] GET trace-report session={Session} traces={TraceCount} llmCalls={LlmCount} toolCalls={ToolCount} subAgents={SubCount} durationMs={DurationMs} tokens={Tokens}",
+            sessionId, report.TraceIds.Count, report.LlmCalls.Count, report.ToolCalls.Count, report.SubAgents.Count, report.TotalDurationMs, report.TotalTokens);
+        return Ok(report);
     }
 
     /// <summary>

@@ -33,11 +33,26 @@ const getItemTone = (item: TimelineItem): 'executing' | 'success' | 'error' => {
   return 'executing';
 };
 
-/** 生成思考摘要：取 thinking text 的前 60 字 */
+/** P0-可信度：清洗内部变量泄漏，返回安全文本或空字符串 */
+const sanitizeDisplayText = (text?: string): string => {
+  if (!text) return '';
+  let cleaned = text
+    .replace(/\bundefined\b/gi, '')
+    .replace(/\bnull\b/gi, '')
+    .replace(/\bNaN\b/gi, '')
+    .trim();
+  // 如果清洗后只剩下标点/空白，返回空
+  if (!cleaned || /^[\s，,。.！!？?：:；;、·]+$/.test(cleaned)) return '';
+  // 去除连续多余空格
+  cleaned = cleaned.replace(/\s{2,}/g, ' ');
+  return cleaned;
+};
+
+/** 生成思考摘要：先清洗再取 thinking text 的前 60 字 */
 const makeThinkingSummary = (text?: string): string => {
-  if (!text) return '正在组织思路';
-  const trimmed = text.replace(/\s+/g, ' ').trim();
-  return trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
+  const safe = sanitizeDisplayText(text);
+  if (!safe) return '正在整理上下文…';
+  return safe.length > 60 ? safe.slice(0, 60) + '…' : safe;
 };
 
 /** 生成工具状态文本 */
@@ -45,6 +60,35 @@ const getToolStatusText = (tone: 'executing' | 'success' | 'error'): string => {
   if (tone === 'executing') return '执行中';
   if (tone === 'error') return '失败';
   return '完成';
+};
+
+/** P0：将运行时状态映射为单一人话主状态 */
+const getMainStatusText = (state: string): string => {
+  const map: Record<string, string> = {
+    thinking: '正在整理上下文…',
+    tool_executing: '正在调用工具…',
+    streaming: '正在生成回复…',
+    success: '已完成',
+    error: '出错了，可重试',
+    cancelled: '已取消',
+    idle: '就绪',
+  };
+  return map[state] || '处理中…';
+};
+
+/** P0：完成后生成过程摘要行 */
+const getCompletionSummary = (items: TimelineItem[]): string | null => {
+  if (!items || items.length === 0) return null;
+  const parts: string[] = [];
+  const thinkingCount = items.filter(i => i.type === 'thinking').length;
+  const toolSuccessCount = items.filter(i =>
+    (i.type === 'tool_call' || i.type === 'tool_result') &&
+    (i.status?.toLowerCase().includes('success') || i.status?.toLowerCase().includes('done'))
+  ).length;
+  if (thinkingCount > 0) parts.push(`已思考 ${thinkingCount} 步`);
+  if (toolSuccessCount > 0) parts.push(`已调用 ${toolSuccessCount} 个工具`);
+  if (parts.length === 0) parts.push('已完成');
+  return parts.join(' · ');
 };
 
 const MessageGroup: React.FC<MessageGroupProps> = ({
@@ -61,6 +105,7 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
   });
 
   const timelineItems = assistant.timelineItems ?? [];
+  const [processExpanded, setProcessExpanded] = React.useState(false);
   const isLegacyAssistant = assistant.renderMode === 'legacy' && timelineItems.length === 0;
   const showUserBubble = Boolean(userMessage.text.trim()) || assistant.renderMode === 'structured';
   const showAssistant = assistant.renderMode === 'structured' || Boolean(assistant.answerMarkdown) || assistant.isStreaming || assistant.status === 'error' || assistant.status === 'cancelled';
@@ -123,9 +168,11 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
     const isRunning = tone === 'executing';
     const toolName = item.name || item.status || '工具调用';
     const statusText = getToolStatusText(tone);
-    const messagePreview = item.message?.length && item.message.length > 200
-      ? item.message.slice(0, 200) + '…'
-      : item.message;
+    const messagePreview = sanitizeDisplayText(
+      item.message?.length && item.message.length > 200
+        ? item.message.slice(0, 200) + '…'
+        : item.message
+    );
 
     const statusLabelClass = isRunning ? styles.statusTextTool : tone === 'error' ? styles.statusTextError : styles.statusTextSuccess;
 
@@ -159,7 +206,7 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
         )}
 
         {/* 成功完成且有短输出时显示摘要 */}
-        {tone === 'success' && messagePreview && messagePreview !== item.message && (
+        {tone === 'success' && messagePreview && messagePreview !== sanitizeDisplayText(item.message) && (
           <div className={styles.collapsedSummary} onClick={() => onToggleReasoning(turn.turnId, item.id)}>
             {messagePreview}
           </div>
@@ -271,7 +318,7 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
           {/* ── Agent Runtime Timeline ── */}
           <div className={styles.timeline} aria-label="Runtime Timeline" aria-live="polite">
 
-          {/* ── 首 Token 等待 Loading ── */}
+          {/* ── 首 Token 等待 Loading（始终可见）── */}
           {assistant.isStreaming && timelineItems.length === 0 && !assistant.answerMarkdown && (
             <div className={styles.timelineNode} style={{ borderLeft: '2px solid var(--memory-glow, #A78BFA)', paddingLeft: 12 }}>
               <div className={styles.firstTokenLoading}>
@@ -281,8 +328,35 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
             </div>
           )}
 
-          {/* ── Thinking / Tool 节点序列 ── */}
-          {timelineItems.map((item, idx) => renderTimelineItem(item, idx))}
+          {/* ── P0 默认折叠：单行主状态（替代 Thinking/Tool 节点序列）── */}
+          {!processExpanded && runtimeState !== 'idle' && (
+            <div className={styles.mainStatusLine}>
+              {(runtimeState === 'thinking' || runtimeState === 'tool_executing' || runtimeState === 'streaming') && (
+                <span className={cx(styles.mainStatusDot, styles.mainStatusDotActive)} />
+              )}
+              <span>{getMainStatusText(runtimeState)}</span>
+              {runtimeState === 'success' && getCompletionSummary(timelineItems) && (
+                <>
+                  <span className={styles.completionSummary}>
+                    {getCompletionSummary(timelineItems)}
+                  </span>
+                  <span className={styles.viewProcessLink} onClick={() => setProcessExpanded(true)}>
+                    查看过程
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── P0 展开态：完整 Timeline 节点序列 ── */}
+          {processExpanded && (
+            <>
+              <div className={styles.collapseProcessLink} onClick={() => setProcessExpanded(false)}>
+                收起过程 ▲
+              </div>
+              {timelineItems.map((item, idx) => renderTimelineItem(item, idx))}
+            </>
+          )}
 
           {/* ── Final Answer：块级凝聚输出（块级缓冲 + blockCondense 动画）── */}
           {(displayText || assistant.answerMarkdown) && (
@@ -338,8 +412,8 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
             </Tooltip>
           </Space>
 
-          {/* ── Token 用量 ── */}
-          {assistant.usage?.totalTokens ? (
+          {/* ── Token 用量（仅展开时显示）── */}
+          {processExpanded && assistant.usage?.totalTokens ? (
             <div style={{ paddingLeft: 28, fontSize: 11, color: 'var(--text-muted)', opacity: 0.5 }}>
               {assistant.usage.totalTokens.toLocaleString()} tokens
             </div>

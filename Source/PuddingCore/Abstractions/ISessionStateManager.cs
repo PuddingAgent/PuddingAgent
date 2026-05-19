@@ -103,6 +103,21 @@ public interface ISessionStateManager
     Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default);
 
     // ════════════════════════════════════════════════════════
+    // 会话重放（ARCH-SESSION-003）
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 从指定序列号开始重放会话事件，用于前端完整重建会话状态。
+    /// fromSequenceNum=null 表示从第一条事件开始。
+    /// 同时返回当前会话状态和子代理列表。
+    /// </summary>
+    Task<SessionReplayResult> ReplaySessionAsync(
+        string sessionId,
+        long? fromSequenceNum = null,
+        int limit = 200,
+        CancellationToken ct = default);
+
+    // ════════════════════════════════════════════════════════
     // 生命周期标记
     // ════════════════════════════════════════════════════════
 
@@ -117,6 +132,26 @@ public interface ISessionStateManager
     /// 启动 Channel 清理倒计时（TTL 后可销毁）。
     /// </summary>
     Task MarkSessionClosedAsync(string sessionId, CancellationToken ct = default);
+
+    // ════════════════════════════════════════════════════════
+    // 一致性检查（ARCH-SESSION-002）
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 检查 SQLite 事件日志与 JSONL 文件的一致性。
+    /// 比较 SQLite 中的事件计数与 JSONL 文件中的行数，返回差异报告。
+    /// </summary>
+    Task<SessionConsistencyReport> CheckConsistencyAsync(string sessionId, CancellationToken ct = default);
+
+    // ════════════════════════════════════════════════════════
+    // Trace 聚合（ARCH-SESSION-004）
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 获取会话级 Trace 聚合报告。
+    /// 从 session_event_log 中查询该会话的所有事件，按 traceId 和 component 聚合。
+    /// </summary>
+    Task<SessionTraceReport> GetTraceReportAsync(string sessionId, CancellationToken ct = default);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -198,6 +233,20 @@ public sealed record SubAgentResult
     public required DateTimeOffset CompletedAt { get; init; }
 }
 
+/// <summary>
+/// 会话重放结果 — 包含从指定序列号开始的事件、当前会话状态和子代理列表。
+/// 用于前端从任意点完整重建会话状态（ARCH-SESSION-003）。
+/// </summary>
+public sealed record SessionReplayResult
+{
+    public required string SessionId { get; init; }
+    public required string CurrentState { get; init; }
+    public required IReadOnlyList<SessionEventEntry> Events { get; init; }
+    public long TotalEventCount { get; init; }
+    public bool HasMore { get; init; }
+    public required IReadOnlyList<SubAgentStatus> SubAgents { get; init; }
+}
+
 /// <summary>子代理当前状态（查询用）。</summary>
 public sealed record SubAgentStatus
 {
@@ -210,4 +259,80 @@ public sealed record SubAgentStatus
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ResultSummary { get; init; }
     public bool? Success { get; init; }
+}
+
+// ════════════════════════════════════════════════════════════
+// ARCH-SESSION-002: 双写一致性
+// ════════════════════════════════════════════════════════════
+
+/// <summary>
+/// SQLite 与 JSONL 双写一致性检查报告。
+/// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+/// </summary>
+public sealed record SessionConsistencyReport
+{
+    public required string SessionId { get; init; }
+    public long SqliteEventCount { get; init; }
+    public long JsonlLineCount { get; init; }
+    public bool IsConsistent { get; init; }
+    public long Difference { get; init; }
+    public string? Details { get; init; }
+}
+
+// ════════════════════════════════════════════════════════════
+// ARCH-SESSION-004: Trace 聚合
+// ════════════════════════════════════════════════════════════
+
+/// <summary>
+/// 会话级 Trace 聚合报告。
+/// 从 session_event_log 查询该会话的所有事件，按 traceId 和 component 聚合。
+/// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+/// </summary>
+public sealed record SessionTraceReport
+{
+    public required string SessionId { get; init; }
+    public required IReadOnlyList<string> TraceIds { get; init; }
+    public required IReadOnlyList<ComponentTimelineEntry> ComponentTimeline { get; init; }
+    public required IReadOnlyList<LlmCallEntry> LlmCalls { get; init; }
+    public required IReadOnlyList<ToolCallEntry> ToolCalls { get; init; }
+    public required IReadOnlyList<SubAgentTraceEntry> SubAgents { get; init; }
+    public long TotalDurationMs { get; init; }
+    public long TotalTokens { get; init; }
+}
+
+/// <summary>按组件分组的事件时序条目。</summary>
+public sealed record ComponentTimelineEntry
+{
+    public required string Component { get; init; }
+    public required string Operation { get; init; }
+    public required string Status { get; init; }
+    public required DateTimeOffset StartedAt { get; init; }
+    public long? DurationMs { get; init; }
+}
+
+/// <summary>LLM 调用聚合条目。</summary>
+public sealed record LlmCallEntry
+{
+    public string? Model { get; init; }
+    public string? Endpoint { get; init; }
+    public long? InputTokens { get; init; }
+    public long? OutputTokens { get; init; }
+    public long? DurationMs { get; init; }
+}
+
+/// <summary>工具调用聚合条目。</summary>
+public sealed record ToolCallEntry
+{
+    public required string ToolName { get; init; }
+    public bool Success { get; init; }
+    public long? DurationMs { get; init; }
+}
+
+/// <summary>子代理 Trace 条目（含父子关系）。</summary>
+public sealed record SubAgentTraceEntry
+{
+    public required string SubAgentId { get; init; }
+    public required string Status { get; init; }
+    public long? DurationMs { get; init; }
+    public string? ParentExecutionId { get; init; }
 }

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -21,6 +22,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IKeyVaultService? _keyVaultService;
     private readonly IRuntimeActivitySink? _activitySink;
     private readonly IRuntimeTraceAccessor? _traceAccessor;
+    private readonly ConcurrentDictionary<string, CircuitBreakerState> _circuitBreakers = new();
 
     public DirectLlmClient(
         IHttpClientFactory httpClientFactory,
@@ -53,14 +55,16 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var sw = Stopwatch.StartNew();
+        var strategy = config.Strategy;
 
         _logger.LogInformation(
-            "[DirectLlm] REQUEST model={Model} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode}",
+            "[DirectLlm] REQUEST model={Model} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode} provider={Provider}",
             config.Model,
             config.Endpoint,
             messages.Count,
             toolSpecs.Count,
-            config.ThinkingMode ?? "(null)");
+            config.ThinkingMode ?? "(null)",
+            config.ProviderId);
 
         await RecordActivityAsync(
             trace,
@@ -74,35 +78,32 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             error: null,
             ct);
 
-        try
+        // ── 熔断检查 ──────────────────────────────────────
+        var circuit = _circuitBreakers.GetOrAdd(config.ProviderId, _ => new CircuitBreakerState());
+        var circuitRejected = false;
+        DateTimeOffset recoveryTime = default;
+        lock (circuit)
         {
-            var result = await gateway.ChatAsync(messages, toolSpecs, ct);
-            sw.Stop();
-
-            _logger.LogInformation(
-                "[DirectLlm] OK contentLen={Len} elapsed={Elapsed}ms promptTokens={PromptTokens} completionTokens={CompletionTokens}",
-                result.Content?.Length ?? 0,
-                sw.ElapsedMilliseconds,
-                result.Usage?.PromptTokens,
-                result.Usage?.CompletionTokens);
-
-            await RecordActivityAsync(
-                trace,
-                operation: "chat",
-                status: RuntimeActivityStatuses.Succeeded,
-                startedAt,
-                endedAt: DateTimeOffset.UtcNow,
-                durationMs: sw.ElapsedMilliseconds,
-                summary: "Direct LLM chat request completed.",
-                metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count, result.Usage),
-                error: null,
-                CancellationToken.None);
-
-            return result;
+            if (circuit.State == CircuitState.Open)
+            {
+                if (DateTimeOffset.UtcNow < circuit.RecoveryTime)
+                {
+                    circuitRejected = true;
+                    recoveryTime = circuit.RecoveryTime;
+                }
+                else
+                {
+                    circuit.TransitionToHalfOpen();
+                    _logger.LogInformation("[DirectLlm] CIRCUIT_HALF_OPEN provider={Provider}", config.ProviderId);
+                }
+            }
         }
-        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+
+        if (circuitRejected)
         {
             sw.Stop();
+            _logger.LogWarning("[DirectLlm] CIRCUIT_OPEN provider={Provider} recovery={RecoveryTime}",
+                config.ProviderId, recoveryTime);
             await RecordActivityAsync(
                 trace,
                 operation: "chat",
@@ -110,29 +111,148 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 startedAt,
                 endedAt: DateTimeOffset.UtcNow,
                 durationMs: sw.ElapsedMilliseconds,
-                summary: "Direct LLM chat request cancelled.",
+                summary: $"Circuit breaker open for provider '{config.ProviderId}'.",
                 metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
-                error: ex,
+                error: null,
                 CancellationToken.None);
-            throw;
+            throw new CircuitBreakerOpenException(config.ProviderId, recoveryTime);
         }
-        catch (Exception ex)
+
+        // ── 重试循环 ──────────────────────────────────────
+        var maxRetries = strategy.EffectiveMaxRetries;
+        var retryDelay = TimeSpan.FromSeconds(strategy.EffectiveRetryDelaySeconds);
+        var timeoutSeconds = strategy.EffectiveRequestTimeoutSeconds;
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
-            sw.Stop();
-            _logger.LogError(ex, "[DirectLlm] ERROR elapsed={Elapsed}ms", sw.ElapsedMilliseconds);
-            await RecordActivityAsync(
-                trace,
-                operation: "chat",
-                status: RuntimeActivityStatuses.Failed,
-                startedAt,
-                endedAt: DateTimeOffset.UtcNow,
-                durationMs: sw.ElapsedMilliseconds,
-                summary: "Direct LLM chat request failed.",
-                metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
-                error: ex,
-                CancellationToken.None);
-            throw;
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+            CancellationToken effectiveCt = linkedCts.Token;
+
+            try
+            {
+                var result = await gateway.ChatAsync(messages, toolSpecs, effectiveCt);
+                sw.Stop();
+
+                // 成功 → 重置熔断
+                lock (circuit) { circuit.RecordSuccess(); }
+
+                _logger.LogInformation(
+                    "[DirectLlm] OK contentLen={Len} elapsed={Elapsed}ms promptTokens={PromptTokens} completionTokens={CompletionTokens}",
+                    result.Content?.Length ?? 0,
+                    sw.ElapsedMilliseconds,
+                    result.Usage?.PromptTokens,
+                    result.Usage?.CompletionTokens);
+
+                await RecordActivityAsync(
+                    trace,
+                    operation: "chat",
+                    status: RuntimeActivityStatuses.Succeeded,
+                    startedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: sw.ElapsedMilliseconds,
+                    summary: "Direct LLM chat request completed.",
+                    metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count, result.Usage),
+                    error: null,
+                    CancellationToken.None);
+
+                return result;
+            }
+            catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+            {
+                // 外部取消 — 不重试
+                sw.Stop();
+                await RecordActivityAsync(
+                    trace,
+                    operation: "chat",
+                    status: RuntimeActivityStatuses.Cancelled,
+                    startedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: sw.ElapsedMilliseconds,
+                    summary: "Direct LLM chat request cancelled.",
+                    metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                    error: ex,
+                    CancellationToken.None);
+                throw;
+            }
+            catch (Exception ex) when (IsTransientError(ex, timeoutCts.IsCancellationRequested))
+            {
+                // 瞬态错误 → 记录熔断失败
+                var isTimeout = timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested;
+                lock (circuit)
+                {
+                    circuit.RecordFailure(
+                        strategy.EffectiveCircuitBreakerFailureThreshold,
+                        strategy.EffectiveCircuitBreakerRecoverySeconds);
+                }
+
+                if (attempt < maxRetries)
+                {
+                    _logger.LogWarning(ex,
+                        "[DirectLlm] RETRY attempt={Attempt}/{Max} provider={Provider}",
+                        attempt + 1, maxRetries, config.ProviderId);
+
+                    await RecordActivityAsync(
+                        trace,
+                        operation: "chat",
+                        status: RuntimeActivityStatuses.Retried,
+                        startedAt,
+                        endedAt: DateTimeOffset.UtcNow,
+                        durationMs: sw.ElapsedMilliseconds,
+                        summary: $"LLM call retry {attempt + 1}/{maxRetries}.",
+                        metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                        error: ex,
+                        CancellationToken.None);
+
+                    await Task.Delay(retryDelay, ct);
+                    continue;
+                }
+
+                // 重试耗尽
+                sw.Stop();
+                var errorCode = isTimeout ? "timeout" : ex.GetType().Name;
+                _logger.LogError(ex, "[DirectLlm] FAILED provider={Provider} elapsed={Elapsed}ms errorCode={ErrorCode}",
+                    config.ProviderId, sw.ElapsedMilliseconds, errorCode);
+
+                await RecordActivityAsync(
+                    trace,
+                    operation: "chat",
+                    status: RuntimeActivityStatuses.Failed,
+                    startedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: sw.ElapsedMilliseconds,
+                    summary: $"LLM call failed after {maxRetries} retries.",
+                    metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                    error: ex,
+                    CancellationToken.None);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // 非瞬态错误（如 HTTP 4xx）→ 不重试
+                sw.Stop();
+                lock (circuit) { circuit.RecordSuccess(); } // 4xx 不是 provider 故障
+
+                _logger.LogError(ex, "[DirectLlm] NON_RETRYABLE provider={Provider} elapsed={Elapsed}ms",
+                    config.ProviderId, sw.ElapsedMilliseconds);
+
+                await RecordActivityAsync(
+                    trace,
+                    operation: "chat",
+                    status: RuntimeActivityStatuses.Failed,
+                    startedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: sw.ElapsedMilliseconds,
+                    summary: "Direct LLM chat request failed (non-retryable).",
+                    metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                    error: ex,
+                    CancellationToken.None);
+                throw;
+            }
         }
+
+        // 理论上不会到这里（循环内必定抛出或返回）
+        throw new InvalidOperationException("Retry loop exhausted unexpectedly.");
     }
 
     public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
@@ -150,14 +270,22 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var sw = Stopwatch.StartNew();
+        var strategy = config.Strategy;
+
+        // 流式超时：整个流生命周期
+        using var streamTimeoutCts = new CancellationTokenSource(
+            TimeSpan.FromSeconds(strategy.EffectiveStreamTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, streamTimeoutCts.Token);
+        var effectiveCt = linkedCts.Token;
 
         _logger.LogInformation(
-            "[DirectLlm] STREAM model={Model} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode}",
+            "[DirectLlm] STREAM model={Model} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode} provider={Provider}",
             config.Model,
             config.Endpoint,
             messages.Count,
             toolSpecs.Count,
-            config.ThinkingMode ?? "(null)");
+            config.ThinkingMode ?? "(null)",
+            config.ProviderId);
 
         await RecordActivityAsync(
             trace,
@@ -172,7 +300,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             ct);
 
         var terminalRecorded = false;
-        var enumerator = gateway.ChatStreamAsync(messages, toolSpecs, ct).GetAsyncEnumerator(ct);
+        var enumerator = gateway.ChatStreamAsync(messages, toolSpecs, effectiveCt).GetAsyncEnumerator(effectiveCt);
 
         try
         {
@@ -198,6 +326,25 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         endedAt: DateTimeOffset.UtcNow,
                         durationMs: sw.ElapsedMilliseconds,
                         summary: "Direct LLM streaming request cancelled.",
+                        metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                        error: ex,
+                        CancellationToken.None);
+                    throw;
+                }
+                catch (OperationCanceledException ex) when (streamTimeoutCts.IsCancellationRequested)
+                {
+                    terminalRecorded = true;
+                    sw.Stop();
+                    _logger.LogError(ex, "[DirectLlm] STREAM TIMEOUT provider={Provider} elapsed={Elapsed}ms",
+                        config.ProviderId, sw.ElapsedMilliseconds);
+                    await RecordActivityAsync(
+                        trace,
+                        operation: "chat_stream",
+                        status: RuntimeActivityStatuses.Failed,
+                        startedAt,
+                        endedAt: DateTimeOffset.UtcNow,
+                        durationMs: sw.ElapsedMilliseconds,
+                        summary: "Direct LLM streaming timeout.",
                         metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                         error: ex,
                         CancellationToken.None);
@@ -331,12 +478,27 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("LLM API key not configured in file-backed LLM config.");
 
+        // 通过 endpoint 匹配 provider，获取策略配置
+        var providerId = "unknown";
+        LlmProviderStrategy strategy = LlmProviderStrategy.Default;
+        foreach (var p in _llmConfigService.GetEnabledProviders())
+        {
+            if (endpoint.StartsWith(p.BaseUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                providerId = p.ProviderId;
+                strategy = _llmConfigService.GetProviderStrategy(p.ProviderId) ?? LlmProviderStrategy.Default;
+                break;
+            }
+        }
+
         return new ResolvedGatewayConfig(
             endpoint,
             apiKey,
             model,
             reasoningEffort,
-            thinkingMode);
+            thinkingMode,
+            providerId,
+            strategy);
     }
 
     private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config)
@@ -443,12 +605,75 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private static string? FirstNonBlank(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 
+    /// <summary>
+    /// 判断是否为可重试的瞬态错误（HTTP 5xx、timeout、网络错误）。
+    /// HTTP 4xx（认证失败、rate limit 等）不可重试。
+    /// </summary>
+    private static bool IsTransientError(Exception ex, bool isTimeout)
+    {
+        return ex switch
+        {
+            HttpRequestException hrex => (int?)hrex.StatusCode >= 500,
+            OperationCanceledException => isTimeout, // timeout 可重试，外部取消不可重试
+            _ => true, // 其他未知网络错误视为瞬态
+        };
+    }
+
+    // ── Circuit Breaker Types ──────────────────────────────────────
+
+    private enum CircuitState { Closed, Open, HalfOpen }
+
+    private sealed class CircuitBreakerState
+    {
+        public CircuitState State { get; private set; } = CircuitState.Closed;
+        public int FailureCount { get; private set; }
+        public DateTimeOffset LastFailureTime { get; private set; }
+        public DateTimeOffset RecoveryTime { get; private set; }
+
+        public void RecordFailure(int failureThreshold, int recoverySeconds)
+        {
+            FailureCount++;
+            LastFailureTime = DateTimeOffset.UtcNow;
+            if (FailureCount >= failureThreshold)
+            {
+                State = CircuitState.Open;
+                RecoveryTime = DateTimeOffset.UtcNow.AddSeconds(recoverySeconds);
+            }
+        }
+
+        public void RecordSuccess()
+        {
+            State = CircuitState.Closed;
+            FailureCount = 0;
+        }
+
+        public void TransitionToHalfOpen()
+        {
+            State = CircuitState.HalfOpen;
+        }
+    }
+
+    private sealed class CircuitBreakerOpenException : InvalidOperationException
+    {
+        public string ProviderId { get; }
+        public DateTimeOffset RecoveryTime { get; }
+
+        public CircuitBreakerOpenException(string providerId, DateTimeOffset recoveryTime)
+            : base($"Circuit breaker is open for provider '{providerId}'. Recovery expected at {recoveryTime:O}.")
+        {
+            ProviderId = providerId;
+            RecoveryTime = recoveryTime;
+        }
+    }
+
     private sealed record ResolvedGatewayConfig(
         string Endpoint,
         string ApiKey,
         string Model,
         string? ReasoningEffort,
-        string? ThinkingMode);
+        string? ThinkingMode,
+        string ProviderId,
+        LlmProviderStrategy Strategy);
 
     private sealed class ProxyTool(LlmToolDefinition dto) : ITool
     {

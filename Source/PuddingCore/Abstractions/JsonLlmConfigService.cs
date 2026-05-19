@@ -122,6 +122,24 @@ public class JsonLlmConfigService : ILlmConfigService
         };
     }
 
+    public LlmProviderStrategy? GetProviderStrategy(string providerId)
+    {
+        var data = GetData();
+        var provider = data.Providers.FirstOrDefault(p =>
+            p.ProviderId.Equals(providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null) return null;
+
+        return new LlmProviderStrategy
+        {
+            RequestTimeoutSeconds = provider.RequestTimeoutSeconds,
+            StreamTimeoutSeconds = provider.StreamTimeoutSeconds,
+            MaxRetries = provider.MaxRetries,
+            RetryDelaySeconds = provider.RetryDelaySeconds,
+            CircuitBreakerFailureThreshold = provider.CircuitBreakerFailureThreshold,
+            CircuitBreakerRecoverySeconds = provider.CircuitBreakerRecoverySeconds,
+        };
+    }
+
     public void Reload()
     {
         lock (_lock)
@@ -177,6 +195,13 @@ internal sealed record LlmProviderEntry
     public string BaseUrl { get; init; } = "";
     public string ApiKey { get; init; } = "";
     public bool IsEnabled { get; init; } = true;
+
+    public int? RequestTimeoutSeconds { get; init; }
+    public int? StreamTimeoutSeconds { get; init; }
+    public int? MaxRetries { get; init; }
+    public int? RetryDelaySeconds { get; init; }
+    public int? CircuitBreakerFailureThreshold { get; init; }
+    public int? CircuitBreakerRecoverySeconds { get; init; }
 }
 
 internal sealed record LlmModelEntry

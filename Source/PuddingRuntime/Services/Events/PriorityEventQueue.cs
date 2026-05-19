@@ -76,6 +76,7 @@ public class PriorityEventQueue : IPriorityEventQueue
             ParentExecutionId = trace.ParentExecutionId,
             SubAgentId = trace.SubAgentId,
             UserId = trace.UserId,
+            // SchemaVersion / CausationId 从 ProcessedEvent 暂缺，待 ProcessedEvent 标准化后填充
         };
 
         using var scope = _scopeFactory.CreateScope();
@@ -111,6 +112,8 @@ public class PriorityEventQueue : IPriorityEventQueue
             existing.ParentExecutionId = entity.ParentExecutionId;
             existing.SubAgentId = entity.SubAgentId;
             existing.UserId = entity.UserId;
+            existing.SchemaVersion = entity.SchemaVersion;
+            existing.CausationId = entity.CausationId;
         }
         else
         {
@@ -154,7 +157,7 @@ public class PriorityEventQueue : IPriorityEventQueue
         lock (_lock)
         {
             var entity = db.EventQueue
-                .Where(q => (q.Status == "pending" || q.Status == "retrying")
+                .Where(q => (q.Status == "pending" || q.Status == "retrying" || q.Status == "processing")
                     && q.AvailableAt <= now
                     && (q.LeaseUntil == null || q.LeaseUntil <= now))
                 .OrderByDescending(q => q.Priority)
@@ -164,9 +167,22 @@ public class PriorityEventQueue : IPriorityEventQueue
             if (entity is null)
                 return null;
 
-            entity.Status = "processing";
-            entity.StartedAt ??= now;
-            entity.LeaseUntil = leaseUntil;
+            if (entity.Status == "processing")
+            {
+                // 回收僵尸事件：消费者崩溃导致 processing 但 lease 已过期
+                entity.Status = "processing";  // 保持 processing 状态
+                entity.LeaseUntil = leaseUntil; // 立即赋予新 lease
+                // RetryCount 不递增（这不是重试，是恢复）
+                _logger.LogWarning("[PriorityEventQueue] Reclaimed zombie event id={Id} type={Type}",
+                    entity.EventId, entity.EventType);
+            }
+            else
+            {
+                entity.Status = "processing";
+                entity.StartedAt ??= now;
+                entity.LeaseUntil = leaseUntil;
+                // 如果原状态是 retrying，RetryCount 已在上次失败时递增，此处不重复递增
+            }
             entity.UpdatedAt = now;
             db.SaveChanges();
 
@@ -221,7 +237,8 @@ public class PriorityEventQueue : IPriorityEventQueue
         return db.EventQueue.Count(q => q.Status == "pending" || q.Status == "retrying");
     }
 
-    public async Task UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default)
+    /// <summary>更新事件状态，返回最终生效的状态字符串（retrying 可能转为 dead_letter）。</summary>
+    public async Task<string> UpdateStatusAsync(string eventId, string status, string? errorMessage = null, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -229,7 +246,7 @@ public class PriorityEventQueue : IPriorityEventQueue
         if (entity is null)
         {
             _logger.LogWarning("[PriorityEventQueue] Status update ignored, event not found: {Id}", eventId);
-            return;
+            return "not_found";
         }
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -255,8 +272,10 @@ public class PriorityEventQueue : IPriorityEventQueue
                 else
                 {
                     entity.Status = "retrying";
+                    // 指数退避：min(2^retryCount * 10, 300) 秒
+                    var backoffSeconds = Math.Min(Math.Pow(2, entity.RetryCount) * 10, 300);
                     entity.AvailableAt = DateTimeOffset.UtcNow
-                        .AddSeconds(Math.Pow(2, entity.RetryCount) * 10)
+                        .AddSeconds(backoffSeconds)
                         .ToUnixTimeMilliseconds();
                     entity.LeaseUntil = null;
                 }
@@ -275,6 +294,8 @@ public class PriorityEventQueue : IPriorityEventQueue
 
         _logger.LogInformation("[PriorityEventQueue] Status updated: {Id} → {Status} err={Error}",
             eventId, entity.Status, errorMessage ?? "none");
+
+        return entity.Status;
     }
 
     private static QueuedEvent ToQueuedEvent(EventQueueEntity entity)
@@ -301,6 +322,8 @@ public class PriorityEventQueue : IPriorityEventQueue
         {
             Id = entity.EventId,
             Priority = entity.Priority,
+            SchemaVersion = entity.SchemaVersion,
+            CausationId = entity.CausationId,
             EventType = entity.EventType,
             SourceType = entity.SourceType,
             SourceId = entity.SourceId,

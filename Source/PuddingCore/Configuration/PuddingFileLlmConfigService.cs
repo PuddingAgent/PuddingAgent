@@ -43,8 +43,8 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
                 ModelId = m.ModelId,
                 ProviderId = p.ProviderId,
                 Name = m.Name,
-                MaxContextTokens = m.MaxContextTokens,
-                MaxOutputTokens = m.MaxOutputTokens,
+                MaxContextTokens = m.MaxContextTokens ?? 0,
+                MaxOutputTokens = m.MaxOutputTokens ?? 0,
                 IsDefault = m.IsDefault,
                 IsDeprecated = m.IsDeprecated,
                 SortOrder = m.SortOrder,
@@ -79,6 +79,24 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
         var config = GetConfig();
         return ResolveProfile(config.Roles.Subconscious)
             ?? GetDefault();
+    }
+
+    public LlmProviderStrategy? GetProviderStrategy(string providerId)
+    {
+        var config = GetConfig();
+        var provider = config.Providers.FirstOrDefault(p =>
+            string.Equals(p.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null) return null;
+
+        return new LlmProviderStrategy
+        {
+            RequestTimeoutSeconds = provider.RequestTimeoutSeconds,
+            StreamTimeoutSeconds = provider.StreamTimeoutSeconds,
+            MaxRetries = provider.MaxRetries,
+            RetryDelaySeconds = provider.RetryDelaySeconds,
+            CircuitBreakerFailureThreshold = provider.CircuitBreakerFailureThreshold,
+            CircuitBreakerRecoverySeconds = provider.CircuitBreakerRecoverySeconds,
+        };
     }
 
     public void Reload()

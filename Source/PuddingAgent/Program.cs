@@ -43,6 +43,7 @@ var dataRoot = Environment.GetEnvironmentVariable("PUDDING_DATA_ROOT")
 var dataPaths = PuddingDataPaths.FromRoot(dataRoot);
 EnsureDefaultData(dataPaths.DataRoot, Path.Combine(AppContext.BaseDirectory, "default-data"));
 EnsureRuntimeDirectories(dataPaths);
+EnsureDefaultAgentInstance(dataPaths);
 
 var bootstrapConfiguration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
@@ -365,7 +366,14 @@ builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 
 // ── 统一 LLM 配置服务（data/config/llm.providers.json，唯一来源）──────────
 var fileConfigLoader = new PuddingFileConfigLoader(dataPaths);
-var llmProvidersConfig = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
+var llmLoadResult = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
+if (!llmLoadResult.Success)
+{
+    var errorSummary = string.Join("\n  - ", llmLoadResult.Errors);
+    throw new InvalidOperationException(
+        $"LLM providers config validation failed:\n  - {errorSummary}");
+}
+var llmProvidersConfig = llmLoadResult.Config!;
 var llmConfigService = new PuddingFileLlmConfigService(llmProvidersConfig);
 builder.Services.AddSingleton(fileConfigLoader);
 builder.Services.AddSingleton(llmProvidersConfig);
@@ -456,8 +464,11 @@ builder.Services.AddSingleton<ConnectorHost>(sp =>
                 SessionId = sessionId,
                 WorkspaceId = "default",
                 Payload = System.Text.Json.JsonSerializer.SerializeToElement(payload),
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                TimestampUtc = DateTime.UtcNow,
                 Priority = PuddingCode.Models.EventPriorityLevel.Normal,
+                TraceId = traceId,
+                CorrelationId = sessionId,
+                CausationId = null, // PuddingIngressEnvelope 尚未标准化，暂无 CausationId
             };
 
             var spLogger = sp.GetRequiredService<ILogger<Program>>();
@@ -1043,6 +1054,14 @@ static void EnsureDefaultData(string dataRoot, string defaultDataRoot)
         return;
 
     CopyMissingFiles(defaultDataRoot, dataRoot);
+
+    // 将 default-data/templates/ 映射到 data/agent-templates/
+    var templatesSource = Path.Combine(defaultDataRoot, "templates");
+    var templatesTarget = Path.Combine(dataRoot, "agent-templates");
+    if (Directory.Exists(templatesSource))
+    {
+        CopyMissingFiles(templatesSource, templatesTarget);
+    }
 }
 
 static void CopyMissingFiles(string sourceRoot, string targetRoot)
@@ -1080,6 +1099,58 @@ static void EnsureRuntimeDirectories(PuddingDataPaths paths)
     Directory.CreateDirectory(paths.DatabasesRoot);
     Directory.CreateDirectory(paths.BackupsRoot);
     Directory.CreateDirectory(paths.TempRoot);
+}
+
+/// <summary>
+/// 确保默认 Agent 实例存在（幂等：已存在则跳过）。
+/// </summary>
+static void EnsureDefaultAgentInstance(PuddingDataPaths paths)
+{
+    var instanceId = "default.general-assistant-001";
+    var manifestPath = Path.Combine(paths.AgentInstanceRoot(instanceId), "manifest.json");
+    if (File.Exists(manifestPath))
+        return;
+
+    Log.Information("[Bootstrap] 创建默认 Agent 实例: {InstanceId}", instanceId);
+
+    // manifest.json
+    var manifestDir = Path.GetDirectoryName(manifestPath)!;
+    Directory.CreateDirectory(manifestDir);
+    var manifest = """
+    {
+      "agentInstanceId": "default.general-assistant-001",
+      "templateId": "general-assistant",
+      "displayName": "布丁",
+      "workspaceId": "default",
+      "isEnabled": true
+    }
+    """;
+    File.WriteAllText(manifestPath, manifest);
+
+    // config/llm.json
+    var configDir = paths.AgentInstanceConfigRoot(instanceId);
+    Directory.CreateDirectory(configDir);
+    var llmConfig = """
+    {
+      "conscious": {
+        "profileId": "default-conscious"
+      },
+      "subconscious": {
+        "profileId": "default-subconscious"
+      }
+    }
+    """;
+    File.WriteAllText(Path.Combine(configDir, "llm.json"), llmConfig);
+
+    // config/memory.json
+    var memoryConfig = """
+    {
+      "maxFacts": 1000,
+      "maxPreferences": 200,
+      "recallMode": "auto"
+    }
+    """;
+    File.WriteAllText(Path.Combine(configDir, "memory.json"), memoryConfig);
 }
 
 public sealed record ChatRequest

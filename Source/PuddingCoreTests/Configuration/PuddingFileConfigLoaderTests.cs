@@ -87,8 +87,10 @@ public sealed class PuddingFileConfigLoaderTests
 
         var loader = new PuddingFileConfigLoader(paths);
 
-        var config = await loader.LoadLlmProvidersAsync();
+        var result = await loader.LoadLlmProvidersAsync();
 
+        Assert.IsTrue(result.Success);
+        var config = result.Config!;
         Assert.HasCount(2, config.Providers);
         Assert.AreEqual("mimo", config.Profiles["default-conscious"].ProviderId);
         Assert.AreEqual("mimo-v2.5", config.Profiles["default-subconscious"].ModelId);
@@ -139,19 +141,137 @@ public sealed class PuddingFileConfigLoaderTests
 
         var loader = new PuddingFileConfigLoader(paths);
 
-        InvalidOperationException? ex = null;
-        try
-        {
-            await loader.LoadLlmProvidersAsync();
-        }
-        catch (InvalidOperationException caught)
-        {
-            ex = caught;
-        }
+        var result = await loader.LoadLlmProvidersAsync();
 
-        Assert.IsNotNull(ex);
-        StringAssert.Contains(ex.Message, "roles.subconscious");
-        StringAssert.Contains(ex.Message, "missing-subconscious");
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Errors.Any(e =>
+            e.Contains("roles.subconscious") && e.Contains("missing-subconscious")));
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_Fails_When_Duplicate_Provider()
+    {
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "dup",
+                  "name": "Provider A",
+                  "protocol": "openai",
+                  "baseUrl": "https://a.example.com/v1",
+                  "models": [
+                    { "modelId": "model-a", "name": "Model A" }
+                  ]
+                },
+                {
+                  "providerId": "dup",
+                  "name": "Provider B",
+                  "protocol": "openai",
+                  "baseUrl": "https://b.example.com/v1",
+                  "models": [
+                    { "modelId": "model-b", "name": "Model B" }
+                  ]
+                }
+              ],
+              "profiles": {
+                "default-conscious": {
+                  "providerId": "dup",
+                  "modelId": "model-a"
+                }
+              },
+              "roles": {
+                "conscious": "default-conscious",
+                "subconscious": "default-conscious"
+              }
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Errors.Any(e => e.Contains("duplicate providerId")));
+    }
+
+    [TestMethod]
+    public async Task LoadSystemAsync_Loads_Valid_System_Config()
+    {
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("system.json"), """
+            {
+              "environment": "development",
+              "http": { "port": 5000 },
+              "logging": { "level": "Debug" },
+              "runtime": { "maxAgentRounds": 100 }
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadSystemAsync();
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("development", result.Config!.Environment);
+        Assert.AreEqual(5000, result.Config.Http.Port);
+    }
+
+    [TestMethod]
+    public async Task LoadSecurityAsync_Loads_Valid_Security_Config()
+    {
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("security.json"), """
+            {
+              "jwt": {
+                "issuer": "pudding-platform",
+                "audience": "pudding-admin",
+                "expiryHours": 8,
+                "key": "test-key-32bytes-long-minimum!"
+              },
+              "keyVault": {
+                "mode": "local-file",
+                "masterKeyRef": "local"
+              }
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadSecurityAsync();
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("pudding-platform", result.Config!.Jwt.Issuer);
+    }
+
+    [TestMethod]
+    public async Task LoadConnectorsAsync_Loads_Valid_Connectors_Config()
+    {
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("connectors.json"), """
+            {
+              "http": { "enabled": true },
+              "websocket": { "enabled": true },
+              "mqtt": { "enabled": false },
+              "p2p": { "enabled": true, "port": 9527 }
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadConnectorsAsync();
+
+        Assert.IsTrue(result.Success);
+        Assert.IsTrue(result.Config!.Http.Enabled);
+        Assert.IsFalse(result.Config.Mqtt.Enabled);
     }
 
     private sealed class TempDirectory : IDisposable

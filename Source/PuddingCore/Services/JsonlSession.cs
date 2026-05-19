@@ -54,6 +54,33 @@ public class JsonlSessionWriter : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 将事件帧追加写入 JSONL 文件（用于双写一致性策略）。
+    /// 写入顺序：SQLite 成功后再调用此方法；失败不阻断主路径。
+    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
+    /// </summary>
+    public void WriteEventLine(string sessionId, string eventType, string data, long sequenceNum, string recordedAt)
+    {
+        var filePath = Path.Combine(_baseDir, $"{sessionId}.jsonl");
+        var entry = new { type = "event", eventType, data, sequenceNum, recordedAt };
+        var line = System.Text.Json.JsonSerializer.Serialize(entry, _jsonOptions);
+        var sessionLock = _fileLocks.GetOrAdd(sessionId, _ => new object());
+        lock (sessionLock)
+        {
+            File.AppendAllText(filePath, line + Environment.NewLine, Encoding.UTF8);
+        }
+    }
+
+    /// <summary>
+    /// 获取指定会话的 JSONL 文件行数（用于一致性检查）。
+    /// </summary>
+    public int GetLineCount(string sessionId)
+    {
+        var filePath = Path.Combine(_baseDir, $"{sessionId}.jsonl");
+        if (!File.Exists(filePath)) return 0;
+        return File.ReadLines(filePath).Count();
+    }
+
     /// <summary>同步写入模式下无需刷新，空操作。</summary>
     public Task FlushAsync(CancellationToken ct = default)
     {
