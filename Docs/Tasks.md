@@ -129,6 +129,22 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 | ARCH-OPS-003 | 本地开发 Runbook | 裸进程、Docker、Fake LLM、真实 provider 切换说明 |
 | ARCH-OPS-004 | 架构决策索引 | ADR、QA、spec、plan 与任务 ID 的映射 |
 
+### P0/P1：架构基础设施硬化（ADR-022）
+
+行动指南：[22架构基础设施硬化与行动路线ADR](07架构/22架构基础设施硬化与行动路线ADR.md)
+实施计划：[2026-05-19-architecture-foundation-hardening-roadmap](superpowers/plans/2026-05-19-architecture-foundation-hardening-roadmap.md)
+
+| 优先级 | 任务 ID | 标题 | 交付物 |
+|--------|---------|------|--------|
+| P0 | ARCH-HARDEN-001 | JSON/JSONL 序列化契约硬化 | `PuddingJsonContracts`、JSONL 单行测试、run archive 往返测试 |
+| P0 | ARCH-HARDEN-002 | 子代理 run terminal 单写入者 | `CompleteRunAsync` 幂等结果、terminal 不覆盖、Manager/Execution 职责分离 |
+| P0 | ARCH-HARDEN-003 | EventSchema scope 化 | `EventSchemaScope`、Internal/SessionFrame 分层、重复 key 测试 |
+| P1 | ARCH-HARDEN-004 | 诊断 API DTO 稳定化 | SubAgentRun/Event diagnostics DTO、分页校验、脱敏摘要 |
+| P1 | ARCH-HARDEN-005 | Workspace Guard 权限执行接入 | `IAgentWorkspaceGuard`、FileTool/ShellTool/SubAgentTool 权限拦截 |
+| P1 | ARCH-HARDEN-006 | Trace report token usage 兼容解析 | 多命名风格 usage parser、trace-report token 聚合测试 |
+| P1 | ARCH-HARDEN-007 | E2E 基线准备 | WebApiTests 输出隔离、Docker healthcheck、浏览器 smoke |
+| P2 | ARCH-HARDEN-008 | QA 与文档收口 | QA 报告、Tasks 状态更新、残余风险清单 |
+
 ### V1 任务 一览（已全部完成）
 
 | 优先级 | 层级 | 任务卡 ID | 标题 | 状态 |

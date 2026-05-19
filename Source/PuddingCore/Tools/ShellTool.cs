@@ -1,7 +1,9 @@
 using System.Text.Json;
 using CliWrap;
 using CliWrap.Buffered;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Agents;
 using PuddingCode.Core;
 using PuddingCode.Models;
 
@@ -13,16 +15,25 @@ public sealed class ShellTool : ITool
 
     private readonly ProjectContext? _project;
     private readonly PermissionGuard? _guard;
+    private readonly IAgentWorkspaceGuard? _workspaceGuard;
+    private readonly ILogger<ShellTool>? _logger;
     private readonly IOutputDistiller _distiller;
+    private readonly string _ownerAgentId;
 
     public ShellTool(
         ProjectContext? project = null,
         PermissionGuard? guard = null,
-        IOutputDistiller? distiller = null)
+        IAgentWorkspaceGuard? workspaceGuard = null,
+        ILogger<ShellTool>? logger = null,
+        IOutputDistiller? distiller = null,
+        string ownerAgentId = "spirit")
     {
         _project = project;
         _guard = guard;
+        _workspaceGuard = workspaceGuard;
+        _logger = logger;
         _distiller = distiller ?? new DefaultDistiller();
+        _ownerAgentId = ownerAgentId;
     }
 
     public string Name => "shell";
@@ -40,6 +51,20 @@ public sealed class ShellTool : ITool
         var args = JsonSerializer.Deserialize<ShellToolArgs>(argumentsJson, s_jsonOptions);
         if (args?.Command is null) return "Error: command is required";
 
+        // ── Workspace guard: tool permission check ──
+        if (_workspaceGuard is not null)
+        {
+            var toolDecision = _workspaceGuard.CanExecuteTool(_ownerAgentId, Name);
+            if (!toolDecision.Allowed)
+            {
+                _logger?.LogWarning(
+                    "ShellTool execution denied for agent {AgentId}: {Reason} (rule: {Rule})",
+                    _ownerAgentId, toolDecision.Reason, toolDecision.MatchedRule);
+                throw new UnauthorizedAccessException(
+                    $"Shell tool execution denied by workspace guard: {toolDecision.Reason}");
+            }
+        }
+
         // ── Permission check (Task 11) ──
         if (_guard is not null)
         {
@@ -48,12 +73,27 @@ public sealed class ShellTool : ITool
                 return perm.DenialReason ?? "Permission denied.";
         }
 
-        var isWindows = OperatingSystem.IsWindows();
-        var shell = isWindows ? "cmd.exe" : "/bin/sh";
-        var prefix = isWindows ? "/c" : "-c";
         var workDir = args.WorkingDirectory
                       ?? _project?.RootPath
                       ?? Environment.CurrentDirectory;
+
+        // ── Workspace guard: working directory check ──
+        if (_workspaceGuard is not null && _project is not null)
+        {
+            var dirDecision = _workspaceGuard.CanRead(_ownerAgentId, _project.RootPath, workDir);
+            if (!dirDecision.Allowed)
+            {
+                _logger?.LogWarning(
+                    "ShellTool working directory denied for agent {AgentId} path {Path}: {Reason} (rule: {Rule})",
+                    _ownerAgentId, workDir, dirDecision.Reason, dirDecision.MatchedRule);
+                throw new UnauthorizedAccessException(
+                    $"Shell working directory denied by workspace guard: {dirDecision.Reason}");
+            }
+        }
+
+        var isWindows = OperatingSystem.IsWindows();
+        var shell = isWindows ? "cmd.exe" : "/bin/sh";
+        var prefix = isWindows ? "/c" : "-c";
 
         try
         {

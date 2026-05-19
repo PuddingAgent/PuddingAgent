@@ -72,7 +72,7 @@ public sealed class AgentProfileProvider
     /// <summary>
     /// 从模板目录加载 permissions.json；如果文件不存在，返回默认权限（禁止写 config/databases）。
     /// </summary>
-    private async Task<SubAgentPermissions> LoadPermissionsOrDefaultAsync(string templateRoot, CancellationToken ct)
+    internal async Task<SubAgentPermissions> LoadPermissionsOrDefaultAsync(string templateRoot, CancellationToken ct)
     {
         var permissionsPath = Path.Combine(templateRoot, "permissions.json");
         if (!File.Exists(permissionsPath))

@@ -693,6 +693,7 @@ public sealed class SessionStateManager : ISessionStateManager
             .ToList();
 
         // LLM 调用：从 usage 事件解析 token 信息
+        // ARCH-HARDEN-006：usage 解析支持多种字段命名风格
         var llmCalls = new List<LlmCallEntry>();
         foreach (var e in events.Where(ev => ev.EventType == "usage"))
         {
@@ -700,12 +701,14 @@ public sealed class SessionStateManager : ISessionStateManager
             {
                 using var doc = JsonDocument.Parse(e.Data);
                 var root = doc.RootElement;
+                var (promptTokens, completionTokens, _) = ParseTokenUsage(root);
+
                 llmCalls.Add(new LlmCallEntry
                 {
                     Model = root.TryGetProperty("model", out var m) ? m.GetString() : null,
                     Endpoint = root.TryGetProperty("endpoint", out var ep) ? ep.GetString() : null,
-                    InputTokens = root.TryGetProperty("inputTokens", out var it) ? it.GetInt64() : null,
-                    OutputTokens = root.TryGetProperty("outputTokens", out var ot) ? ot.GetInt64() : null,
+                    InputTokens = promptTokens > 0 ? promptTokens : null,
+                    OutputTokens = completionTokens > 0 ? completionTokens : null,
                     DurationMs = root.TryGetProperty("durationMs", out var d) ? d.GetInt64() : null,
                 });
             }
@@ -814,5 +817,58 @@ public sealed class SessionStateManager : ISessionStateManager
             TotalDurationMs = totalDurationMs,
             TotalTokens = totalTokens,
         };
+    }
+
+    /// <summary>
+    /// 兼容解析 token usage payload，支持多种字段命名风格：
+    ///   - promptTokens / completionTokens / totalTokens (camelCase)
+    ///   - PromptTokens / CompletionTokens / TotalTokens (PascalCase)
+    ///   - inputTokens / outputTokens / totalTokens (alternative)
+    /// 返回 (promptTokens, completionTokens, totalTokens)，解析失败返回 (0,0,0)。
+    /// ARCH-HARDEN-006：Trace Report Token Usage 兼容解析。
+    /// </summary>
+    private static (long prompt, long completion, long total) ParseTokenUsage(object? usagePayload)
+    {
+        if (usagePayload is null)
+            return (0, 0, 0);
+
+        if (usagePayload is not JsonElement root)
+            return (0, 0, 0);
+
+        // 尝试多种命名风格的 prompt/input tokens
+        long prompt = TryGetInt64(root, "promptTokens")
+            ?? TryGetInt64(root, "PromptTokens")
+            ?? TryGetInt64(root, "inputTokens")
+            ?? TryGetInt64(root, "InputTokens")
+            ?? 0;
+
+        // 尝试多种命名风格的 completion/output tokens
+        long completion = TryGetInt64(root, "completionTokens")
+            ?? TryGetInt64(root, "CompletionTokens")
+            ?? TryGetInt64(root, "outputTokens")
+            ?? TryGetInt64(root, "OutputTokens")
+            ?? 0;
+
+        // 尝试多种命名风格的 total tokens
+        long total = TryGetInt64(root, "totalTokens")
+            ?? TryGetInt64(root, "TotalTokens")
+            ?? TryGetInt64(root, "total_tokens")
+            ?? prompt + completion;
+
+        return (prompt, completion, total);
+    }
+
+    /// <summary>从 JsonElement 安全读取 Int64 属性，不存在或类型不匹配返回 null。</summary>
+    private static long? TryGetInt64(JsonElement element, string propertyName)
+    {
+        if (element.TryGetProperty(propertyName, out var prop))
+        {
+            if (prop.ValueKind == JsonValueKind.Number)
+            {
+                try { return prop.GetInt64(); }
+                catch { return null; }
+            }
+        }
+        return null;
     }
 }

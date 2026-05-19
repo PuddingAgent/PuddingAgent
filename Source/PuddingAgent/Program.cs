@@ -258,6 +258,8 @@ builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<
 builder.Services.AddSingleton<JsonlSessionWriter>();
 builder.Services.AddSingleton<JsonlSessionReader>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
+builder.Services.AddSingleton<AgentProfileProvider>();
+builder.Services.AddSingleton<IAgentWorkspaceGuard, AgentWorkspaceGuard>();
 builder.Services.AddSingleton<ExecutionControlRegistry>();
 builder.Services.AddSingleton<ExecutionJournal>();
 builder.Services.AddSingleton<CompletionPolicy>();

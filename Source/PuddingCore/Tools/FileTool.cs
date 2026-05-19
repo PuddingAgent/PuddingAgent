@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Agents;
 using PuddingCode.Core;
 using PuddingCode.Models;
 
@@ -11,7 +13,9 @@ public sealed class FileTool : ITool
 
     private readonly ProjectContext? _project;
     private readonly PermissionGuard? _guard;
+    private readonly IAgentWorkspaceGuard? _workspaceGuard;
     private readonly ICentralLockManager? _lockManager;
+    private readonly ILogger<FileTool>? _logger;
     private readonly string _ownerAgentId;
     private readonly string _ownerAgentName;
     private readonly string _ownerRole;
@@ -19,14 +23,18 @@ public sealed class FileTool : ITool
     public FileTool(
         ProjectContext? project = null,
         PermissionGuard? guard = null,
+        IAgentWorkspaceGuard? workspaceGuard = null,
         ICentralLockManager? lockManager = null,
+        ILogger<FileTool>? logger = null,
         string ownerAgentId = "spirit",
         string ownerAgentName = "Spirit",
         string ownerRole = "spirit")
     {
         _project = project;
         _guard = guard;
+        _workspaceGuard = workspaceGuard;
         _lockManager = lockManager;
+        _logger = logger;
         _ownerAgentId = ownerAgentId;
         _ownerAgentName = ownerAgentName;
         _ownerRole = ownerRole;
@@ -78,6 +86,20 @@ public sealed class FileTool : ITool
             }
         }
 
+        // Workspace guard check
+        if (_workspaceGuard is not null && _project is not null)
+        {
+            var decision = _workspaceGuard.CanRead(_ownerAgentId, _project.RootPath, path);
+            if (!decision.Allowed)
+            {
+                _logger?.LogWarning(
+                    "FileTool read denied for agent {AgentId} path {Path}: {Reason} (rule: {Rule})",
+                    _ownerAgentId, path, decision.Reason, decision.MatchedRule);
+                throw new UnauthorizedAccessException(
+                    $"File read denied by workspace guard: {decision.Reason}");
+            }
+        }
+
         // Permission check
         if (_guard is not null)
         {
@@ -112,6 +134,20 @@ public sealed class FileTool : ITool
             lockId = acquire.LockId;
         }
 
+        // Workspace guard check
+        if (_workspaceGuard is not null && _project is not null)
+        {
+            var decision = _workspaceGuard.CanWrite(_ownerAgentId, _project.RootPath, path);
+            if (!decision.Allowed)
+            {
+                _logger?.LogWarning(
+                    "FileTool write denied for agent {AgentId} path {Path}: {Reason} (rule: {Rule})",
+                    _ownerAgentId, path, decision.Reason, decision.MatchedRule);
+                throw new UnauthorizedAccessException(
+                    $"File write denied by workspace guard: {decision.Reason}");
+            }
+        }
+
         // Permission check
         if (_guard is not null)
         {
@@ -137,6 +173,20 @@ public sealed class FileTool : ITool
 
     private string ListDirectory(string path)
     {
+        // Workspace guard check
+        if (_workspaceGuard is not null && _project is not null)
+        {
+            var decision = _workspaceGuard.CanRead(_ownerAgentId, _project.RootPath, path);
+            if (!decision.Allowed)
+            {
+                _logger?.LogWarning(
+                    "FileTool list denied for agent {AgentId} path {Path}: {Reason} (rule: {Rule})",
+                    _ownerAgentId, path, decision.Reason, decision.MatchedRule);
+                throw new UnauthorizedAccessException(
+                    $"Directory list denied by workspace guard: {decision.Reason}");
+            }
+        }
+
         // Permission check
         if (_guard is not null)
         {

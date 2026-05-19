@@ -2338,6 +2338,7 @@ public sealed class AgentExecutionService
 
     /// <summary>
     /// 完成子代理运行归档并发出 subagent.run.completed / subagent.run.failed 事件。
+    /// AgentExecutionService 是 terminal 状态的唯一写入者。
     /// </summary>
     private async Task TryCompleteSubAgentRunAsync(
         string? runId,
@@ -2354,7 +2355,7 @@ public sealed class AgentExecutionService
             return;
 
         var status = success ? "completed" : "failed";
-        await _subAgentRunStore.CompleteRunAsync(runId, new SubAgentRunCompletion
+        var result = await _subAgentRunStore.CompleteRunAsync(runId, new SubAgentRunCompletion
         {
             Status = status,
             Output = output,
@@ -2364,7 +2365,15 @@ public sealed class AgentExecutionService
             TotalDurationMs = totalDurationMs,
         }, ct);
 
-        // 发出最终事件
+        if (result != SubAgentRunTerminalWriteResult.Applied)
+        {
+            _logger.LogWarning(
+                "[AgentExec:SubAgent] CompleteRunAsync returned {Result} for runId={RunId} sub={Sub} — skipping event emission",
+                result, runId, subSessionId);
+            return;
+        }
+
+        // 发出最终事件（仅在 Applied 时）
         var eventType = success ? "subagent.run.completed" : "subagent.run.failed";
         await _subAgentRunStore.AppendEventAsync(runId, eventType, new
         {

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Serialization;
 using PuddingCode.SubAgents;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -19,12 +20,6 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<FileSubAgentRunStore> _logger;
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
 
     public FileSubAgentRunStore(
         PuddingDataPaths paths,
@@ -58,7 +53,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         };
 
         // 写 run.json
-        var runJson = JsonSerializer.Serialize(manifest, JsonOptions);
+        var runJson = JsonSerializer.Serialize(manifest, PuddingJsonContracts.PrettyJson);
         await File.WriteAllTextAsync(Path.Combine(archivePath, "run.json"), runJson, ct);
 
         // 写 input.json
@@ -68,7 +63,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             parentSessionId = request.ParentSessionId,
             workspaceId = request.WorkspaceId,
         };
-        var inputJson = JsonSerializer.Serialize(input, JsonOptions);
+        var inputJson = JsonSerializer.Serialize(input, PuddingJsonContracts.PrettyJson);
         await File.WriteAllTextAsync(Path.Combine(archivePath, "input.json"), inputJson, ct);
 
         _logger.LogInformation(
@@ -95,7 +90,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             eventType,
             timestamp = DateTimeOffset.UtcNow.ToString("O"),
             payload,
-        }, JsonOptions);
+        }, PuddingJsonContracts.JsonLines);
 
         await File.AppendAllTextAsync(Path.Combine(runDir, "events.jsonl"), line + Environment.NewLine, ct);
     }
@@ -106,32 +101,42 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var runDir = ResolveRunDir(runId);
         if (runDir is null) return;
 
-        var line = JsonSerializer.Serialize(entry, JsonOptions);
+        var line = JsonSerializer.Serialize(entry, PuddingJsonContracts.JsonLines);
         await File.AppendAllTextAsync(Path.Combine(runDir, "tools.jsonl"), line + Environment.NewLine, ct);
     }
 
     /// <inheritdoc />
-    public async Task CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default)
+    public async Task<SubAgentRunTerminalWriteResult> CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default)
     {
         var runDir = ResolveRunDir(runId);
         if (runDir is null)
         {
             _logger.LogWarning("[FileSubAgentRunStore] CompleteRunAsync: run dir not found for runId={RunId}", runId);
-            return;
+            return SubAgentRunTerminalWriteResult.NotFound;
         }
 
         var runJsonPath = Path.Combine(runDir, "run.json");
         if (!File.Exists(runJsonPath))
         {
             _logger.LogWarning("[FileSubAgentRunStore] CompleteRunAsync: run.json not found for runId={RunId}", runId);
-            return;
+            return SubAgentRunTerminalWriteResult.NotFound;
         }
 
-        // 读 run.json，更新 status / completedAt
+        // 读 run.json，检查当前 Status — 幂等性保护
         var json = await File.ReadAllTextAsync(runJsonPath, ct);
-        var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(json, JsonOptions);
-        if (manifest is null) return;
+        var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(json, PuddingJsonContracts.PrettyJson);
+        if (manifest is null) return SubAgentRunTerminalWriteResult.NotFound;
 
+        // 如果已经是 terminal 状态，返回 AlreadyTerminal
+        if (manifest.Status is "completed" or "failed" or "cancelled")
+        {
+            _logger.LogWarning(
+                "[FileSubAgentRunStore] CompleteRunAsync: run already terminal runId={RunId} currentStatus={CurrentStatus} requestedStatus={RequestedStatus}",
+                runId, manifest.Status, completion.Status);
+            return SubAgentRunTerminalWriteResult.AlreadyTerminal;
+        }
+
+        // 只有 running 状态才更新为 terminal
         var completedAt = DateTimeOffset.UtcNow;
         var updated = manifest with
         {
@@ -139,7 +144,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             CompletedAt = completedAt,
         };
 
-        var updatedJson = JsonSerializer.Serialize(updated, JsonOptions);
+        var updatedJson = JsonSerializer.Serialize(updated, PuddingJsonContracts.PrettyJson);
         await File.WriteAllTextAsync(runJsonPath, updatedJson, ct);
 
         // 写 output.md
@@ -155,7 +160,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             {
                 timestamp = completedAt.ToString("O"),
                 error = completion.ErrorMessage,
-            }, JsonOptions);
+            }, PuddingJsonContracts.JsonLines);
             await File.AppendAllTextAsync(Path.Combine(runDir, "errors.jsonl"), errorLine + Environment.NewLine, ct);
         }
 
@@ -167,6 +172,8 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         await UpdateDbIndexAsync(runId, completion.Status, completedAt.ToString("O"),
             completion.ErrorMessage, completion.TotalRounds, completion.TotalToolCalls,
             completion.TotalDurationMs, ct);
+
+        return SubAgentRunTerminalWriteResult.Applied;
     }
 
     /// <inheritdoc />
@@ -180,10 +187,10 @@ public class FileSubAgentRunStore : ISubAgentRunStore
 
         // 读 run.json
         var json = await File.ReadAllTextAsync(runJsonPath, ct);
-        var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(json, JsonOptions);
+        var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(json, PuddingJsonContracts.PrettyJson);
         if (manifest is null) return null;
 
-        // 读 events.jsonl
+        // 读 events.jsonl（逐行反序列化，单行失败时记录 warning 并跳过）
         var events = new List<object>();
         var eventsPath = Path.Combine(runDir, "events.jsonl");
         if (File.Exists(eventsPath))
@@ -193,13 +200,21 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             {
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    var obj = JsonSerializer.Deserialize<object>(line, JsonOptions);
-                    if (obj is not null) events.Add(obj);
+                    try
+                    {
+                        var obj = JsonSerializer.Deserialize<object>(line, PuddingJsonContracts.JsonLines);
+                        if (obj is not null) events.Add(obj);
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "[FileSubAgentRunStore] Skipping malformed JSONL line in {Path}", eventsPath);
+                    }
                 }
             }
         }
 
-        // 读 tools.jsonl
+        // 读 tools.jsonl（逐行反序列化，单行失败时记录 warning 并跳过）
         var tools = new List<SubAgentToolAuditEntry>();
         var toolsPath = Path.Combine(runDir, "tools.jsonl");
         if (File.Exists(toolsPath))
@@ -209,8 +224,16 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             {
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    var entry = JsonSerializer.Deserialize<SubAgentToolAuditEntry>(line, JsonOptions);
-                    if (entry is not null) tools.Add(entry);
+                    try
+                    {
+                        var entry = JsonSerializer.Deserialize<SubAgentToolAuditEntry>(line, PuddingJsonContracts.JsonLines);
+                        if (entry is not null) tools.Add(entry);
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "[FileSubAgentRunStore] Skipping malformed JSONL line in {Path}", toolsPath);
+                    }
                 }
             }
         }

@@ -170,14 +170,18 @@ public sealed class SubAgentManager : ISubAgentManager
                 }, CancellationToken.None);
 
                 // 完成运行归档（ADR-021）
+                // 注意：AgentExecutionService 是 terminal 状态的唯一写入者，
+                // SubAgentManager 写入为兼容旧路径，幂等保护确保不重复写入。
                 if (_runIdMap.TryRemove(subSessionId, out var completedRunId))
                 {
-                    await _runStore.CompleteRunAsync(completedRunId, new SubAgentRunCompletion
+                    var writeResult = await _runStore.CompleteRunAsync(completedRunId, new SubAgentRunCompletion
                     {
                         Status = success ? "completed" : "failed",
                         Output = replyText,
                         ErrorMessage = errorMsg,
                     }, CancellationToken.None);
+                    if (writeResult != SubAgentRunTerminalWriteResult.Applied)
+                        _logger.LogWarning("[SubAgentMgr] CompleteRunAsync returned {Result} for runId={RunId}", writeResult, completedRunId);
                 }
                 else
                 {
@@ -231,14 +235,16 @@ public sealed class SubAgentManager : ISubAgentManager
             {
                 _logger.LogError(ex, "[SubAgentMgr] Async failed sub={Sub} parent={Parent}", subSessionId, request.ParentSessionId);
 
-                // 异常路径也完成运行归档
+                // 异常路径也完成运行归档（幂等保护）
                 if (_runIdMap.TryRemove(subSessionId, out var failedRunId))
                 {
-                    await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
+                    var writeResult = await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
                     {
                         Status = "failed",
                         ErrorMessage = ex.Message,
                     }, CancellationToken.None);
+                    if (writeResult != SubAgentRunTerminalWriteResult.Applied)
+                        _logger.LogWarning("[SubAgentMgr] CompleteRunAsync(exception) returned {Result} for runId={RunId}", writeResult, failedRunId);
                 }
 
                 // 发布 subagent.run.failed 事件
@@ -325,14 +331,16 @@ public sealed class SubAgentManager : ISubAgentManager
                 CompletedAt = DateTimeOffset.UtcNow,
             }, ct);
 
-            // 完成运行归档（ADR-021）
+            // 完成运行归档（ADR-021，幂等保护）
             if (_runIdMap.TryRemove(sa.SubSessionId, out var cancelledRunId))
             {
-                await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
+                var writeResult = await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
                 {
                     Status = "cancelled",
                     ErrorMessage = "Cancelled by parent",
                 }, ct);
+                if (writeResult != SubAgentRunTerminalWriteResult.Applied)
+                    _logger.LogWarning("[SubAgentMgr] CompleteRunAsync(cancel) returned {Result} for runId={RunId}", writeResult, cancelledRunId);
             }
 
             // 发布 subagent.run.cancelled 事件

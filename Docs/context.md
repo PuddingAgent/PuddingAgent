@@ -8,7 +8,10 @@
 | 日期 | 任务ID | 开发模型 | QA模型 | 结果 | 备注 |
 |------|--------|---------|--------|------|------|
 | 0518 | EXEC-001/EVENT-003/CONFIG-001~003 | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | 3xP1: 僵尸事件不回收/retry语义不一致/LoadJsonAsync不捕获异常 |
-| 0518 | EXEC-001/EVENT-003/CONFIG-001~003 (修复) | DeepSeek-V4-Pro | GPT-5.3-Codex | PASS_WITH_NOTES | P1全部修复；P2遗留：事件系统缺少回归测试(lease过期回收/dead-letter场景) |
+| 0519 | ADR-021 subagent workspace+run archive | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | 3xP1: subagent.run事件泄露/DB表无DDL/run双创建 |
+| 0518 | EXEC-001/EVENT-003/CONFIG-001~003 (修复) | DeepSeek-V4-Pro | GPT-5.3-Codex | PASS_WITH_NOTES | P1全部修复；P2遗留：事件系统缺少回归测试 |
+| 0519 | ADR-021 subagent workspace+run archive | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | 3xP1: subagent.run事件泄露/DB表无DDL/run双创建 |
+| 0519 | ADR-021 (P1修复) | DeepSeek-V4-Pro | — | FIXED | P1黑名单过滤/DDL/统一run创建入口，baf2f67 |
 | 0508 | ADR-014-E | DeepSeek-V4-Pro | — | BUILD_PASS | dotnet build 0 error, MemoryTests 47/47 PASS, WebApiTests 15 failures pre-existing |
 | 0510 | Subconscious-Phase1 | GPT-5.3-Codex | Sonnet 4.6 | PASS_WITH_NOTES | P1-1 OnCompletedAsync阻塞SSE done/P1-2 DI重复注册，均已修复 |
 | 0510 | Subconscious-Phase2 | GPT-5.3-Codex | DeepSeek-V4-Pro | PASS_WITH_NOTES | P1 IMemoryLibrary死代码/P1 DI冗余/P2 Token=0硬编码，不阻断联调 |

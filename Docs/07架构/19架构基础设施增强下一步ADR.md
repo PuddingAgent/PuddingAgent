@@ -506,4 +506,5 @@ data/workspaces/{workspaceId}/agents/{agentInstanceId}/
 |-----------|------|------|
 | `21f6057` | 2026-05-19 | feat: strengthen runtime config events and session observability（19 项 P0 任务完成） |
 | `c79d983` | 2026-05-19 | feat: subagent workspace run archive with isolation and diagnostics（4 项子代理任务，ADR-021） |
+| `baf2f67` | 2026-05-19 | fix: isolate subagent.run events, add sub_agent_runs DDL, prevent dual run creation（QA P1 修复） |
 

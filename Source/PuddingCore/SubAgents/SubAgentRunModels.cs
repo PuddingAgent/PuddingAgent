@@ -1,5 +1,18 @@
 namespace PuddingCode.SubAgents;
 
+/// <summary>
+/// CompleteRunAsync 幂等写入结果 — 确保 terminal 状态只被写入一次。
+/// </summary>
+public enum SubAgentRunTerminalWriteResult
+{
+    /// <summary>terminal 状态已成功写入。</summary>
+    Applied,
+    /// <summary>run 已是 terminal 状态（completed/failed/cancelled），跳过写入。</summary>
+    AlreadyTerminal,
+    /// <summary>run 未找到。</summary>
+    NotFound
+}
+
 // run.json 的 manifest
 public sealed record SubAgentRunManifest
 {

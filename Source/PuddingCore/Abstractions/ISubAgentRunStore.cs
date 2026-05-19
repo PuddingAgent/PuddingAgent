@@ -12,6 +12,6 @@ public interface ISubAgentRunStore
     Task<SubAgentRunHandle> CreateRunAsync(SubAgentRunCreateRequest request, CancellationToken ct = default);
     Task AppendEventAsync(string runId, string eventType, object payload, CancellationToken ct = default);
     Task AppendToolAuditAsync(string runId, SubAgentToolAuditEntry entry, CancellationToken ct = default);
-    Task CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default);
+    Task<SubAgentRunTerminalWriteResult> CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default);
     Task<SubAgentRunArchive?> GetRunArchiveAsync(string runId, CancellationToken ct = default);
 }
