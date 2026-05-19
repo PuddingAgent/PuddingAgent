@@ -1,7 +1,7 @@
 # 19 架构基础设施增强下一步 ADR
 
-> 状态：**in-progress**
-> 日期：2026-05-18
+> 状态：**in-progress**（Phase 1-4 基础骨架已完成，Git: `21f6057`）
+> 日期：2026-05-18 / 最后更新：2026-05-19
 > 范围：配置与目录、事件系统、执行引擎、会话层、子代理、可观测性、E2E 测试
 > 关联：[18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[QA-2026-05-18-Architecture-Audit](../QA/QA-2026-05-18-Architecture-Audit.md)、[Tasks](../Tasks.md)
 
@@ -495,4 +495,10 @@ data/workspaces/{workspaceId}/agents/{agentInstanceId}/
 
 - ✅ done: 19/44
 - 🔲 pending: 25/44
+
+### Git 里程碑
+
+| Tag/Commit | 日期 | 说明 |
+|-----------|------|------|
+| `21f6057` | 2026-05-19 | feat: strengthen runtime config events and session observability（19 项 P0 任务完成） |
 

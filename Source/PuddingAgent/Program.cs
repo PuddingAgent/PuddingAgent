@@ -177,6 +177,7 @@ builder.Services.AddSingleton<SessionStateManager>();
 builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
+builder.Services.AddSingleton<ISubAgentRunStore, FileSubAgentRunStore>();
 builder.Services.AddSingleton<IRuntimeTraceAccessor, AmbientRuntimeTraceAccessor>();
 builder.Services.AddSingleton<RuntimeActivitySink>();
 builder.Services.AddSingleton<IRuntimeActivitySink>(sp => sp.GetRequiredService<RuntimeActivitySink>());

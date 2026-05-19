@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PuddingCode.Configuration;
+using PuddingCode.SubAgents;
 
 namespace PuddingCode.Agents;
 
@@ -37,6 +38,9 @@ public sealed class AgentProfileProvider
             ? await ReadRequiredJsonAsync<AgentInstanceLlmConfig>(llmPath, ct)
             : new AgentInstanceLlmConfig();
 
+        // 加载权限配置 — 如果模板目录存在 permissions.json 则加载，否则返回默认权限（禁止写 config/databases）
+        var permissions = await LoadPermissionsOrDefaultAsync(templateRoot, ct);
+
         var sourcePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["instance.manifest"] = instancePath,
@@ -60,8 +64,31 @@ public sealed class AgentProfileProvider
             Template = template,
             LlmConfig = llmConfig,
             Markdown = markdown,
+            Permissions = permissions,
             SourcePaths = sourcePaths,
         };
+    }
+
+    /// <summary>
+    /// 从模板目录加载 permissions.json；如果文件不存在，返回默认权限（禁止写 config/databases）。
+    /// </summary>
+    private async Task<SubAgentPermissions> LoadPermissionsOrDefaultAsync(string templateRoot, CancellationToken ct)
+    {
+        var permissionsPath = Path.Combine(templateRoot, "permissions.json");
+        if (!File.Exists(permissionsPath))
+            return new SubAgentPermissions();
+
+        try
+        {
+            await using var stream = File.OpenRead(permissionsPath);
+            var permissions = await JsonSerializer.DeserializeAsync<SubAgentPermissions>(stream, JsonOptions, ct);
+            return permissions ?? new SubAgentPermissions();
+        }
+        catch
+        {
+            // 权限文件损坏或格式错误时返回默认权限，不阻断 agent 加载
+            return new SubAgentPermissions();
+        }
     }
 
     private static async Task<T> ReadRequiredJsonAsync<T>(string path, CancellationToken ct)
@@ -95,6 +122,7 @@ public sealed record AgentFileProfile
     public required AgentTemplateManifest Template { get; init; }
     public required AgentInstanceLlmConfig LlmConfig { get; init; }
     public required AgentProfileMarkdown Markdown { get; init; }
+    public required SubAgentPermissions Permissions { get; init; }
     public required IReadOnlyDictionary<string, string> SourcePaths { get; init; }
 }
 

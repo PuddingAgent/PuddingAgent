@@ -7,6 +7,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Services;
+using PuddingCode.SubAgents;
 using PuddingMemoryEngine.Data;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
@@ -59,6 +60,7 @@ public sealed class AgentExecutionService
     private readonly ILlmResolver? _llmResolver; // 可选：为子代理等无 LlmConfig 场景兜底
     private readonly ISessionStateManager? _ssm;  // ADR-016：会话状态层
     private readonly IRuntimeActivitySink? _activitySink;
+    private readonly ISubAgentRunStore? _subAgentRunStore; // ADR-021：子代理运行归档
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -86,7 +88,8 @@ public sealed class AgentExecutionService
         SessionArchiver? sessionArchiver = null,
         ILlmResolver? llmResolver = null,
         ISessionStateManager? ssm = null,
-        IRuntimeActivitySink? activitySink = null)
+        IRuntimeActivitySink? activitySink = null,
+        ISubAgentRunStore? subAgentRunStore = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -115,6 +118,7 @@ public sealed class AgentExecutionService
         _llmResolver         = llmResolver;
         _ssm                 = ssm;  // ADR-016
         _activitySink        = activitySink;
+        _subAgentRunStore    = subAgentRunStore; // ADR-021
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -185,6 +189,10 @@ public sealed class AgentExecutionService
             request.SessionId, instance.AgentInstanceId,
             request.WorkspaceId, request.AgentTemplateId);
 
+        // ── 子代理运行归档（ADR-021）───────────────────────────────
+        var subAgentRunId = await TryCreateSubAgentRunAndEmitStartedAsync(
+            request, instance.AgentInstanceId, CancellationToken.None);
+
         // ── 注册并预下载 Skill 包────────────────────────────────────
         var skillPackages = request.SkillPackages ?? [];
         _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
@@ -235,6 +243,9 @@ public sealed class AgentExecutionService
                     },
                     error: null,
                     ct: CancellationToken.None);
+
+                // 子代理上下文装配完毕事件（ADR-021）
+                await TryEmitContextAssembledAsync(subAgentRunId, request.SessionId, ct);
             }
             catch (Exception ex)
             {
@@ -302,6 +313,9 @@ public sealed class AgentExecutionService
                         },
                         error: null,
                         ct: CancellationToken.None);
+
+                // 子代理上下文重新装配完毕事件（ADR-021）
+                await TryEmitContextAssembledAsync(subAgentRunId, request.SessionId, ct);
                 }
                 catch (Exception ex)
                 {
@@ -948,6 +962,11 @@ public sealed class AgentExecutionService
             execState  = AgentExecutionState.Cancelled;
             _logger.LogInformation("[AgentExec] Cancelled session={Session}", request.SessionId);
             await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
+
+            // 完成子代理运行归档（ADR-021）
+            await TryCompleteSubAgentRunAsync(
+                subAgentRunId, request.SessionId, false,
+                finalMessage, "Cancelled", 0, totalToolCalls, totalSw.ElapsedMilliseconds, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -956,6 +975,11 @@ public sealed class AgentExecutionService
             _logger.LogError(ex, "[AgentExec] Error session={Session}", request.SessionId);
             await FireHooksAsync(h => h.OnLoopErrorAsync(loopCtx, ex, default));
             await FireHooksAsync(h => h.OnFailedAsync(loopCtx, ex.Message, ex, default));
+
+            // 完成子代理运行归档（ADR-021）
+            await TryCompleteSubAgentRunAsync(
+                subAgentRunId, request.SessionId, false,
+                finalMessage, ex.Message, 0, totalToolCalls, totalSw.ElapsedMilliseconds, CancellationToken.None);
 
             return new RuntimeDispatchResult
             {
@@ -1071,7 +1095,15 @@ public sealed class AgentExecutionService
             });
         }
 
-        var isSuccess = execState is AgentExecutionState.Completed or AgentExecutionState.WaitingEvent;
+        // 完成子代理运行归档（ADR-021）
+        var newTurnCount = _journal.GetTurns(request.SessionId).Count - journalStartCount;
+        var executeIsSuccess = execState is AgentExecutionState.Completed or AgentExecutionState.WaitingEvent;
+        await TryCompleteSubAgentRunAsync(
+            subAgentRunId, request.SessionId, executeIsSuccess,
+            finalMessage, executeIsSuccess ? null : $"Execution ended with state={execState}",
+            newTurnCount, totalToolCalls, totalSw.ElapsedMilliseconds, CancellationToken.None);
+
+        var isSuccess = executeIsSuccess;
         return new RuntimeDispatchResult
         {
             SessionId       = request.SessionId,
@@ -1123,6 +1155,10 @@ public sealed class AgentExecutionService
             request.SessionId, instance.AgentInstanceId,
             request.WorkspaceId, request.AgentTemplateId);
 
+        // ── 子代理运行归档（ADR-021）───────────────────────────────
+        var streamSubAgentRunId = await TryCreateSubAgentRunAndEmitStartedAsync(
+            request, instance.AgentInstanceId, CancellationToken.None);
+
         var skillPackages = request.SkillPackages ?? [];
         _skillPackageRegistry.Register(instance.AgentInstanceId, skillPackages);
         if (skillPackages.Count > 0)
@@ -1162,6 +1198,9 @@ public sealed class AgentExecutionService
         _logger.LogInformation(
             "[AgentExec:Perf] Context assembled session={Session} elapsed={Ms}ms promptLen={Len}",
             request.SessionId, perfContextSw.ElapsedMilliseconds, streamingSystemPrompt.SystemPrompt.Length);
+
+        // 子代理上下文装配完毕事件（ADR-021）
+        await TryEmitContextAssembledAsync(streamSubAgentRunId, request.SessionId, ct);
 
         if (history.Count == 0 || history[0].Role != ChatRole.System)
         {
@@ -1611,6 +1650,14 @@ public sealed class AgentExecutionService
             }
             _logger.LogDebug("[Diag] Stream done session={Session} replyLen={Len} totalToolCalls={Ttc}",
                 request.SessionId, reply.Length, totalToolCalls);
+
+            // 完成子代理运行归档（ADR-021）
+            var streamSuccess = reply != "(no response)" || hasExecutedAnyTool;
+            await TryCompleteSubAgentRunAsync(
+                streamSubAgentRunId, request.SessionId, streamSuccess,
+                reply, streamSuccess ? null : "No response generated",
+                0, totalToolCalls, perfTotalSw.ElapsedMilliseconds, CancellationToken.None);
+
             var doneFrame = ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage = finalUsage });
             Append(doneFrame);
             yield return doneFrame;
@@ -2197,5 +2244,116 @@ public sealed class AgentExecutionService
                     request.SessionId);
             }
         });
+    }
+
+    // ════════════════════════════════════════════════════════
+    // 子代理运行归档辅助方法（ADR-021）
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>判断会话 ID 是否属于子代理（包含 "-sub-" 前缀）。</summary>
+    private static bool IsSubAgentSession(string sessionId) =>
+        sessionId.Contains("-sub-", StringComparison.Ordinal);
+
+    /// <summary>从子代理会话 ID 提取父会话 ID。</summary>
+    private static string? ExtractParentSessionId(string subSessionId)
+    {
+        var idx = subSessionId.IndexOf("-sub-", StringComparison.Ordinal);
+        return idx > 0 ? subSessionId[..idx] : null;
+    }
+
+    /// <summary>
+    /// 为子代理会话创建运行归档并发出 subagent.run.started 事件。
+    /// 纯 fire-and-forget，不阻断主执行路径。
+    /// </summary>
+    private async Task<string?> TryCreateSubAgentRunAndEmitStartedAsync(
+        RuntimeDispatchRequest request,
+        string agentInstanceId,
+        CancellationToken ct)
+    {
+        if (_subAgentRunStore is null || !IsSubAgentSession(request.SessionId))
+            return null;
+
+        var parentSessionId = ExtractParentSessionId(request.SessionId) ?? request.SessionId;
+        var runHandle = await _subAgentRunStore.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = parentSessionId,
+            SubSessionId = request.SessionId,
+            WorkspaceId = request.WorkspaceId ?? string.Empty,
+            AgentInstanceId = agentInstanceId,
+            TemplateId = request.AgentTemplateId,
+            Task = request.MessageText,
+        }, ct);
+
+        // 发出 subagent.run.started
+        await _subAgentRunStore.AppendEventAsync(runHandle.RunId, "subagent.run.started", new
+        {
+            parent_session_id = parentSessionId,
+            sub_agent_id = request.SessionId,
+        }, ct);
+
+        _logger.LogInformation(
+            "[AgentExec:SubAgent] Run created + started runId={RunId} sub={Sub} parent={Parent}",
+            runHandle.RunId, request.SessionId, parentSessionId);
+
+        return runHandle.RunId;
+    }
+
+    /// <summary>
+    /// 发出 subagent.run.context_assembled 事件（如果存在 runId）。
+    /// </summary>
+    private async Task TryEmitContextAssembledAsync(string? runId, string subSessionId, CancellationToken ct)
+    {
+        if (_subAgentRunStore is null || runId is null)
+            return;
+
+        await _subAgentRunStore.AppendEventAsync(runId, "subagent.run.context_assembled", new
+        {
+            parent_session_id = ExtractParentSessionId(subSessionId) ?? subSessionId,
+            sub_agent_id = subSessionId,
+        }, ct);
+    }
+
+    /// <summary>
+    /// 完成子代理运行归档并发出 subagent.run.completed / subagent.run.failed 事件。
+    /// </summary>
+    private async Task TryCompleteSubAgentRunAsync(
+        string? runId,
+        string subSessionId,
+        bool success,
+        string? output,
+        string? errorMessage,
+        int totalRounds,
+        int totalToolCalls,
+        long totalDurationMs,
+        CancellationToken ct)
+    {
+        if (_subAgentRunStore is null || runId is null)
+            return;
+
+        var status = success ? "completed" : "failed";
+        await _subAgentRunStore.CompleteRunAsync(runId, new SubAgentRunCompletion
+        {
+            Status = status,
+            Output = output,
+            ErrorMessage = errorMessage,
+            TotalRounds = totalRounds,
+            TotalToolCalls = totalToolCalls,
+            TotalDurationMs = totalDurationMs,
+        }, ct);
+
+        // 发出最终事件
+        var eventType = success ? "subagent.run.completed" : "subagent.run.failed";
+        await _subAgentRunStore.AppendEventAsync(runId, eventType, new
+        {
+            parent_session_id = ExtractParentSessionId(subSessionId) ?? subSessionId,
+            sub_agent_id = subSessionId,
+            success,
+            reply = output,
+            error = errorMessage,
+        }, ct);
+
+        _logger.LogInformation(
+            "[AgentExec:SubAgent] Run completed runId={RunId} sub={Sub} status={Status} rounds={Rounds} tools={Tools}",
+            runId, subSessionId, status, totalRounds, totalToolCalls);
     }
 }

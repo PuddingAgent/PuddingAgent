@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -5,6 +6,7 @@ using PuddingCode.Events;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
+using PuddingCode.SubAgents;
 
 namespace PuddingPlatform.Services;
 
@@ -19,6 +21,7 @@ public sealed class SubAgentManager : ISubAgentManager
     private readonly ISessionStateManager _ssm;
     private readonly IServiceProvider _services;
     private readonly IInternalEventBus _eventBus;
+    private readonly ISubAgentRunStore _runStore;
     private readonly ILogger<SubAgentManager> _logger;
     private readonly IRuntimeActivitySink _activitySink;
     private readonly IRuntimeTraceAccessor _traceAccessor;
@@ -27,6 +30,7 @@ public sealed class SubAgentManager : ISubAgentManager
         ISessionStateManager ssm,
         IServiceProvider services,
         IInternalEventBus eventBus,
+        ISubAgentRunStore runStore,
         ILogger<SubAgentManager> logger,
         IRuntimeActivitySink activitySink,
         IRuntimeTraceAccessor traceAccessor)
@@ -34,10 +38,14 @@ public sealed class SubAgentManager : ISubAgentManager
         _ssm = ssm;
         _services = services;
         _eventBus = eventBus;
+        _runStore = runStore;
         _logger = logger;
         _activitySink = activitySink;
         _traceAccessor = traceAccessor;
     }
+
+    /// <summary>子代理 subSessionId → runId 的内存映射（供异步完成回调使用）。</summary>
+    private readonly ConcurrentDictionary<string, string> _runIdMap = new();
 
     // ════════════════════════════════════════════════════════
     // 子代理执行
@@ -70,6 +78,55 @@ public sealed class SubAgentManager : ISubAgentManager
             SpawnedAt = spawnedAt,
         }, ct);
 
+        // 2. 创建子代理运行归档（ADR-021）
+        var runHandle = await _runStore.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = request.ParentSessionId,
+            SubSessionId = subSessionId,
+            WorkspaceId = request.WorkspaceId,
+            AgentInstanceId = request.ParentAgentId ?? subSessionId,
+            TemplateId = request.TemplateId,
+            Task = request.TaskDescription,
+        }, ct);
+
+        // 将 runId 存入内存映射（供完成回调使用）
+        _runIdMap[subSessionId] = runHandle.RunId;
+
+        // 3. 发布内部事件 subagent.run.created（替代旧的 agent.sub_completed styled 事件）
+        await _eventBus.PublishAsync(new InternalEvent
+        {
+            Type = "subagent.run.created",
+            SchemaVersion = EventSchemaRegistry.GetSchemaVersion("subagent.run.created"),
+            Priority = EventPriorityLevel.Normal,
+            Source = new EventSource { SourceType = "subagent", SourceId = subSessionId },
+            WorkspaceId = request.WorkspaceId,
+            SessionId = request.ParentSessionId,
+            AgentId = request.ParentAgentId,
+            Payload = new
+            {
+                sub_agent_id = subSessionId,
+                template = request.TemplateId,
+                task = request.TaskDescription.Length > 200
+                    ? request.TaskDescription[..200] + "..."
+                    : request.TaskDescription,
+                run_id = runHandle.RunId,
+            },
+            Metadata = new Dictionary<string, string>
+            {
+                ["parent_session"] = request.ParentSessionId,
+                ["parent_agent"] = request.ParentAgentId ?? "",
+                ["run_id"] = runHandle.RunId,
+            },
+            TraceId = trace.TraceId,
+            CorrelationId = trace.CorrelationId,
+            Trace = trace,
+        }, ct);
+
+        var runId = runHandle.RunId;
+        _logger.LogInformation(
+            "[SubAgentMgr] Run archive created runId={RunId} sub={Sub} path={Path}",
+            runId, subSessionId, runHandle.ArchivePath);
+
         await RecordActivityAsync(
             trace,
             "spawn",
@@ -77,7 +134,7 @@ public sealed class SubAgentManager : ISubAgentManager
             $"Spawned sub-agent {subSessionId}",
             ct);
 
-        // 2. 推送 SubAgentSpawned 帧到父会话
+        // 4. 推送 SubAgentSpawned 帧到父会话
         _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
             ServerSentEventFrame.Json(SessionEventTypes.SubAgentSpawned, new
             {
@@ -106,13 +163,28 @@ public sealed class SubAgentManager : ISubAgentManager
                 await _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
                 {
                     Success = success,
-
                     Reply = replyText,
                     Error = errorMsg,
                     Usage = usage,
                     CompletedAt = completedAt,
                 }, CancellationToken.None);
 
+                // 完成运行归档（ADR-021）
+                if (_runIdMap.TryRemove(subSessionId, out var completedRunId))
+                {
+                    await _runStore.CompleteRunAsync(completedRunId, new SubAgentRunCompletion
+                    {
+                        Status = success ? "completed" : "failed",
+                        Output = replyText,
+                        ErrorMessage = errorMsg,
+                    }, CancellationToken.None);
+                }
+                else
+                {
+                    _logger.LogWarning("[SubAgentMgr] No runId found for sub={Sub}, skip archive completion", subSessionId);
+                }
+
+                // SSE 帧保持不变（前端 UI 仍用 subagent.completed）
                 _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
                     ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new
                     {
@@ -122,17 +194,24 @@ public sealed class SubAgentManager : ISubAgentManager
                         error = errorMsg,
                     }), CancellationToken.None);
 
+                // 发布内部事件 subagent.run.completed / subagent.run.failed
+                var completedEventType = success ? "subagent.run.completed" : "subagent.run.failed";
                 await _eventBus.PublishAsync(new InternalEvent
                 {
-                    Type = "agent.sub_completed",
-                    SchemaVersion = EventSchemaRegistry.GetSchemaVersion("agent.sub_completed"),
+                    Type = completedEventType,
+                    SchemaVersion = EventSchemaRegistry.GetSchemaVersion(completedEventType),
                     Priority = EventPriorityLevel.Normal,
                     Source = new EventSource { SourceType = "subagent", SourceId = subSessionId },
                     WorkspaceId = request.WorkspaceId,
                     SessionId = request.ParentSessionId,
                     AgentId = request.ParentAgentId,
                     Payload = new { sub_agent_id = subSessionId, success, reply = replyText, error = errorMsg },
-                    Metadata = new Dictionary<string, string> { ["parent_session"] = request.ParentSessionId, ["parent_agent"] = request.ParentAgentId ?? "" },
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["parent_session"] = request.ParentSessionId,
+                        ["parent_agent"] = request.ParentAgentId ?? "",
+                        ["run_id"] = completedRunId ?? "",
+                    },
                     TraceId = trace.TraceId,
                     CorrelationId = trace.CorrelationId,
                     Trace = trace,
@@ -151,6 +230,39 @@ public sealed class SubAgentManager : ISubAgentManager
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[SubAgentMgr] Async failed sub={Sub} parent={Parent}", subSessionId, request.ParentSessionId);
+
+                // 异常路径也完成运行归档
+                if (_runIdMap.TryRemove(subSessionId, out var failedRunId))
+                {
+                    await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
+                    {
+                        Status = "failed",
+                        ErrorMessage = ex.Message,
+                    }, CancellationToken.None);
+                }
+
+                // 发布 subagent.run.failed 事件
+                await _eventBus.PublishAsync(new InternalEvent
+                {
+                    Type = "subagent.run.failed",
+                    SchemaVersion = EventSchemaRegistry.GetSchemaVersion("subagent.run.failed"),
+                    Priority = EventPriorityLevel.Normal,
+                    Source = new EventSource { SourceType = "subagent", SourceId = subSessionId },
+                    WorkspaceId = request.WorkspaceId,
+                    SessionId = request.ParentSessionId,
+                    AgentId = request.ParentAgentId,
+                    Payload = new { sub_agent_id = subSessionId, error = ex.Message },
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["parent_session"] = request.ParentSessionId,
+                        ["parent_agent"] = request.ParentAgentId ?? "",
+                        ["run_id"] = failedRunId ?? "",
+                    },
+                    TraceId = trace.TraceId,
+                    CorrelationId = trace.CorrelationId,
+                    Trace = trace,
+                }, CancellationToken.None);
+
                 _ = _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
                 { Success = false, Error = ex.Message, CompletedAt = DateTimeOffset.UtcNow }, CancellationToken.None);
                 _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
@@ -212,6 +324,34 @@ public sealed class SubAgentManager : ISubAgentManager
                 Error = "Cancelled by parent",
                 CompletedAt = DateTimeOffset.UtcNow,
             }, ct);
+
+            // 完成运行归档（ADR-021）
+            if (_runIdMap.TryRemove(sa.SubSessionId, out var cancelledRunId))
+            {
+                await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
+                {
+                    Status = "cancelled",
+                    ErrorMessage = "Cancelled by parent",
+                }, ct);
+            }
+
+            // 发布 subagent.run.cancelled 事件
+            await _eventBus.PublishAsync(new InternalEvent
+            {
+                Type = "subagent.run.cancelled",
+                SchemaVersion = EventSchemaRegistry.GetSchemaVersion("subagent.run.cancelled"),
+                Priority = EventPriorityLevel.Normal,
+                Source = new EventSource { SourceType = "subagent", SourceId = sa.SubSessionId },
+                WorkspaceId = null,
+                SessionId = parentSessionId,
+                Payload = new { sub_agent_id = sa.SubSessionId, reason = "Cancelled by parent" },
+                Metadata = new Dictionary<string, string>
+                {
+                    ["parent_session"] = parentSessionId,
+                    ["run_id"] = cancelledRunId ?? "",
+                },
+            }, ct);
+
             await _activitySink.RecordAsync(new RuntimeActivity
             {
                 Trace = RuntimeTraceContext.CreateNew(

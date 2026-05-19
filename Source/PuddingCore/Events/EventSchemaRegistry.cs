@@ -198,6 +198,10 @@ public static class EventSchemaRegistry
         // ════════════════════════════════════════════════════
         yield return new EventSchemaDefinition("subagent.run.created", 1, "subagent",
             "子代理已创建", ["parent_session_id", "sub_agent_id", "template"]);
+        yield return new EventSchemaDefinition("subagent.run.started", 1, "subagent",
+            "子代理开始执行", ["parent_session_id", "sub_agent_id"]);
+        yield return new EventSchemaDefinition("subagent.run.context_assembled", 1, "subagent",
+            "子代理上下文已装配", ["parent_session_id", "sub_agent_id"]);
         yield return new EventSchemaDefinition("subagent.run.completed", 1, "subagent",
             "子代理已完成", ["parent_session_id", "sub_agent_id", "success"], ["reply", "error"]);
         yield return new EventSchemaDefinition("subagent.run.failed", 1, "subagent",

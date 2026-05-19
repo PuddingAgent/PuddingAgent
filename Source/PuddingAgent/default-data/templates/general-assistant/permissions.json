@@ -1,0 +1,14 @@
+{
+  "filesystem": {
+    "read": ["workspace/**", "shared/context/**"],
+    "write": ["workspace/**"],
+    "deny": ["../**", "data/config/**", "data/databases/**", "data/logs/**"]
+  },
+  "tools": {
+    "allow": ["memory.search", "file.read", "file.write"],
+    "deny": ["shell.execute", "config.write"]
+  },
+  "network": {
+    "allow": false
+  }
+}

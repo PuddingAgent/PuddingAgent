@@ -58,6 +58,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<WorkspaceSkillEntity> WorkspaceSkills => Set<WorkspaceSkillEntity>();
     public DbSet<WorkspaceChannelEntity> WorkspaceChannels => Set<WorkspaceChannelEntity>();
 
+    // 子代理运行归档索引（ADR-021）
+    public DbSet<SubAgentRunEntity> SubAgentRuns => Set<SubAgentRunEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -299,6 +302,16 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.Property(k => k.Name).HasMaxLength(128);
             e.Property(k => k.Description).HasMaxLength(1024);
             e.Property(k => k.Category).HasMaxLength(64);
+        });
+
+        // ── SubAgentRun（ADR-021：运行归档 DB 索引）──────────────
+        modelBuilder.Entity<SubAgentRunEntity>(e =>
+        {
+            e.ToTable("sub_agent_runs");
+            e.HasIndex(r => r.RunId).IsUnique();
+            e.HasIndex(r => r.ParentSessionId);
+            e.HasIndex(r => r.WorkspaceId);
+            e.HasIndex(r => r.Status);
         });
 
         // ── Seed：内置 OpenAI Provider + 常用模型 ────────────────────

@@ -67,4 +67,12 @@ public sealed record PuddingDataPaths
 
     public string WorkspaceAgentRefFile(string workspaceId, string agentInstanceId) =>
         Path.Combine(WorkspaceAgentRoot(workspaceId, agentInstanceId), "ref.json");
+
+    // 子代理单次运行归档根
+    public string SubAgentRunRoot(string workspaceId, string agentInstanceId, string runId) =>
+        Path.Combine(WorkspaceAgentRoot(workspaceId, agentInstanceId), "runs", runId);
+
+    // 子代理权限配置
+    public string WorkspaceAgentPermissionsFile(string workspaceId, string agentInstanceId) =>
+        Path.Combine(WorkspaceAgentRoot(workspaceId, agentInstanceId), "permissions.json");
 }
