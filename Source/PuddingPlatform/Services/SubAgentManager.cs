@@ -441,6 +441,16 @@ public sealed class SubAgentManager : ISubAgentManager
         };
     }
 
+    /// <summary>
+    /// 查询 subSessionId 对应的 runId（避免 AgentExecutionService 重复创建 run archive）。
+    /// 异步子代理在 SpawnAsync 中已创建 run，同步子代理则返回 null 由调用方创建。
+    /// </summary>
+    public string? TryGetRunId(string subSessionId)
+    {
+        _runIdMap.TryGetValue(subSessionId, out var runId);
+        return runId;
+    }
+
     // ════════════════════════════════════════════════════════
     // 跨模块调用（反射，PuddingPlatform 不引用 PuddingRuntime）
     // ════════════════════════════════════════════════════════

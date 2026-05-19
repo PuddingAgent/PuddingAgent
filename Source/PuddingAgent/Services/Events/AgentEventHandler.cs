@@ -56,6 +56,10 @@ public class AgentEventHandler : IEventHandler
             "[AgentEventHandler] Handling event id={Id} type={Type} pri={Priority} isolation={Isolation}",
             evt.EventId, evt.Type, evt.Priority, evt.Isolation);
 
+        // 内部诊断事件不触发 Agent 执行（subagent.run.* 由 AgentExecutionService 内部处理）
+        if (evt.Type.StartsWith("subagent.run."))
+            return false;
+
         try
         {
             // ── agent.sub_completed：异步子代理结果注入父代理上下文 ──

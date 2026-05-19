@@ -74,6 +74,16 @@ public interface ISubAgentManager
     /// <summary>子代理统计信息（总数、完成/失败/运行中各多少）。</summary>
     Task<SubAgentStats> GetStatsAsync(
         string parentSessionId, CancellationToken ct = default);
+
+    // ════════════════════════════════════════════════════════
+    // Run ID 映射（避免双创建）
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 查询 subSessionId 对应的 runId（如果已在 SpawnAsync 中创建）。
+    /// 返回 null 表示尚未创建，调用方应自行创建。
+    /// </summary>
+    string? TryGetRunId(string subSessionId);
 }
 
 // ════════════════════════════════════════════════════════

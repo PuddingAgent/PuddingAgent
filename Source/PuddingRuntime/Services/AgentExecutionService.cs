@@ -61,6 +61,7 @@ public sealed class AgentExecutionService
     private readonly ISessionStateManager? _ssm;  // ADR-016：会话状态层
     private readonly IRuntimeActivitySink? _activitySink;
     private readonly ISubAgentRunStore? _subAgentRunStore; // ADR-021：子代理运行归档
+    private readonly ISubAgentManager? _subAgentManager;   // ADR-021：避免 run 双创建
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -89,7 +90,8 @@ public sealed class AgentExecutionService
         ILlmResolver? llmResolver = null,
         ISessionStateManager? ssm = null,
         IRuntimeActivitySink? activitySink = null,
-        ISubAgentRunStore? subAgentRunStore = null)
+        ISubAgentRunStore? subAgentRunStore = null,
+        ISubAgentManager? subAgentManager = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -118,7 +120,8 @@ public sealed class AgentExecutionService
         _llmResolver         = llmResolver;
         _ssm                 = ssm;  // ADR-016
         _activitySink        = activitySink;
-        _subAgentRunStore    = subAgentRunStore; // ADR-021
+        _subAgentRunStore    = subAgentRunStore;
+        _subAgentManager     = subAgentManager; // ADR-021
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -2274,6 +2277,26 @@ public sealed class AgentExecutionService
             return null;
 
         var parentSessionId = ExtractParentSessionId(request.SessionId) ?? request.SessionId;
+
+        // 异步子代理路径：SubAgentManager.SpawnAsync 已创建 run，跳过重复创建
+        var existingRunId = _subAgentManager?.TryGetRunId(request.SessionId);
+        if (existingRunId != null)
+        {
+            // run 已存在，只补发 subagent.run.started 事件
+            await _subAgentRunStore.AppendEventAsync(existingRunId, "subagent.run.started", new
+            {
+                parent_session_id = parentSessionId,
+                sub_agent_id = request.SessionId,
+            }, ct);
+
+            _logger.LogInformation(
+                "[AgentExec:SubAgent] Run already exists (async spawn) runId={RunId} sub={Sub}",
+                existingRunId, request.SessionId);
+
+            return existingRunId;
+        }
+
+        // 同步子代理路径：此处首次创建 run
         var runHandle = await _subAgentRunStore.CreateRunAsync(new SubAgentRunCreateRequest
         {
             ParentSessionId = parentSessionId,

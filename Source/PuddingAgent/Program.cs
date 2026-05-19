@@ -780,6 +780,30 @@ using (var scope = app.Services.CreateScope())
         @"CREATE INDEX IF NOT EXISTS idx_eq_trace ON event_queue(trace_id);",
         @"CREATE INDEX IF NOT EXISTS idx_eq_session ON event_queue(session_id);",
         @"CREATE INDEX IF NOT EXISTS idx_eq_workspace ON event_queue(workspace_id);",
+
+        // sub_agent_runs — 子代理运行归档（ADR-021）
+        @"CREATE TABLE IF NOT EXISTS sub_agent_runs (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id              TEXT    NOT NULL UNIQUE,
+            parent_session_id   TEXT    NOT NULL,
+            sub_session_id      TEXT    NOT NULL,
+            workspace_id        TEXT    NOT NULL,
+            agent_instance_id   TEXT    NOT NULL,
+            template_id         TEXT    NOT NULL,
+            status              TEXT    NOT NULL DEFAULT 'running',
+            started_at          TEXT    NOT NULL,
+            completed_at        TEXT,
+            archive_path        TEXT    NOT NULL,
+            trace_id            TEXT,
+            correlation_id      TEXT,
+            error_message       TEXT,
+            total_rounds        INTEGER NOT NULL DEFAULT 0,
+            total_tool_calls    INTEGER NOT NULL DEFAULT 0,
+            total_duration_ms   INTEGER NOT NULL DEFAULT 0
+        );",
+        @"CREATE INDEX IF NOT EXISTS idx_sub_agent_runs_parent ON sub_agent_runs(parent_session_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_sub_agent_runs_workspace ON sub_agent_runs(workspace_id);",
+        @"CREATE INDEX IF NOT EXISTS idx_sub_agent_runs_status ON sub_agent_runs(status);",
     };
     foreach (var ddl in pendingTableDdl)
     {

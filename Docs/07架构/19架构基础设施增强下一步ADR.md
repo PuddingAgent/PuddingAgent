@@ -469,7 +469,11 @@ data/workspaces/{workspaceId}/agents/{agentInstanceId}/
 
 | 任务 ID | 标题 | 状态 | QA | 备注 |
 |--------|------|------|-----|------|
-| ARCH-SUBAGENT-001~005 | 子代理（5 项） | 🔲 pending | — | — |
+| ARCH-SUBAGENT-001 | 子代理 workspace 隔离规范 | ✅ done | — | `WorkspaceAgentRoot` + `SubAgentRunRoot` + `permissions.json` |
+| ARCH-SUBAGENT-002 | 子代理实例配置文件化 | ✅ done | — | `FileSubAgentRunStore` + `run.json`/`input.json` archive |
+| ARCH-SUBAGENT-003 | 子代理生命周期管理 | ✅ done | — | `subagent.run.*` 内部事件 + `SubAgentManager` 集成 |
+| ARCH-SUBAGENT-004 | 子代理结果归档 | ✅ done | — | `events.jsonl`/`tools.jsonl`/`output.md`/`errors.jsonl` |
+| ARCH-SUBAGENT-005 | 子代理可观测性 UI | 🔲 pending | — | 前端任务，待 UI 阶段 |
 
 ### Phase 6：E2E 测试与调试
 
@@ -493,12 +497,13 @@ data/workspaces/{workspaceId}/agents/{agentInstanceId}/
 
 ### 统计
 
-- ✅ done: 19/44
-- 🔲 pending: 25/44
+- ✅ done: 23/44
+- 🔲 pending: 21/44
 
 ### Git 里程碑
 
 | Tag/Commit | 日期 | 说明 |
 |-----------|------|------|
 | `21f6057` | 2026-05-19 | feat: strengthen runtime config events and session observability（19 项 P0 任务完成） |
+| `c79d983` | 2026-05-19 | feat: subagent workspace run archive with isolation and diagnostics（4 项子代理任务，ADR-021） |
 

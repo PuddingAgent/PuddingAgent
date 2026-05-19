@@ -1,7 +1,8 @@
 # 21 子代理工作空间与运行归档 ADR
 
-> 状态：**in-progress**
+> 状态：**done**（Phase A-D 完成，Phase E Admin UI 待后续 UI 阶段）
 > 日期：2026-05-19
+> Git: `c79d983`
 > 范围：子代理系统、workspace 隔离、Agent 文件配置、运行归档、可观测性、重放
 > 前置：[19架构基础设施增强下一步ADR](19架构基础设施增强下一步ADR.md)、[20会话状态机与事件规范ADR](20会话状态机与事件规范ADR.md)
 > 审阅：[QA-2026-05-19-Architecture-Foundation-Review](../QA/QA-2026-05-19-Architecture-Foundation-Review.md)
