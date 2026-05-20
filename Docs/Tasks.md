@@ -1,6 +1,6 @@
 ﻿# Pudding Agent — 任务看板
 
-最后更新：2026-05-20（ADR-024 核心架构组件边界与执行引擎拆分）
+最后更新：2026-05-20（ADR-026 ADR-025 验收阻塞修复与执行闭环方案）
 
 ## 项目定位
 
@@ -148,6 +148,25 @@ QA：[QA-2026-05-20-Core-Architecture-Boundaries](../QA/QA-2026-05-20-Core-Archi
 | ARCH-CORE-008 | AgentExecutionService 瘦身 | ✅ done |
 | ARCH-CORE-009 | ADR-023 Timeline Metadata 兼容 | ✅ done |
 | ARCH-CORE-010 | QA 与文档收口 | ✅ done |
+
+### ADR-026 ADR-025 验收阻塞修复与执行闭环（2026-05-20）
+
+行动指南：[26ADR-025验收阻塞修复与执行闭环方案](07架构/26ADR-025验收阻塞修复与执行闭环方案.md)
+QA：[QA-2026-05-20-ADR-026-Closure](../QA/QA-2026-05-20-ADR-026-Closure.md)
+
+| 优先级 | 任务 ID | 标题 | 状态 |
+|--------|---------|------|------|
+| P0 | ADR26-001 | 修复 diagnostics 前端 TS 契约错误 | ✅ done |
+| P0 | ADR26-002 | 增加诊断 DTO 序列化 contract tests | ✅ done |
+| P0 | ADR26-003 | Streaming LLM 经 `ILlmInvocationService.InvokeStreamAsync` | ✅ done |
+| P0 | ADR26-004 | Tool 调用经 `IToolInvocationService.InvokeAsync` | ✅ done |
+| P0 | ADR26-005 | Sub-Agent 调用经 `ISubAgentInvocationService.InvokeAsync` | ✅ done (DI registered; direct calls not in AgentExecutionService) |
+| P0 | ADR26-006 | Session output 经 `ISessionOutputWriter.WriteFrameAsync` | ✅ done |
+| P0 | ADR26-007 | LLM provider/profile/model/role 真实解析 | ✅ done (`ILlmProfileResolver` implemented) |
+| P1 | ADR26-008 | Debug API 写入 sessionId/traceId/messageId | ✅ done |
+| P1 | ADR26-009 | Playwright evidence test 断言后端证据链 | ✅ done |
+| P1 | ADR26-010 | Docker smoke 增加 evidence API 检查 | ⏳ deferred (需运行中服务) |
+| P1 | ADR26-011 | QA 报告与 ADR 状态收口 | ✅ done |
 
 ### P2：运维与文档
 
