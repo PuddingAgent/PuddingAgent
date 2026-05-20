@@ -5,8 +5,9 @@ using PuddingCode.Runtime;
 namespace PuddingRuntime.Services;
 
 /// <summary>
-/// LLM Profile 解析器 — 过渡实现：将 profile 解析为 direct provider 的 LlmConfig。
-/// 后续配置目录治理完成后，从 workspace/agent 配置文件中读取 provider/profile/model。
+/// LLM Profile 解析器 — 将 provider/profile/model/role 解析为完整配置。
+/// 过渡实现：所有请求走 direct provider，但 provider/profile/model/role 全部记录。
+/// 后续配置目录治理完成后，从 workspace/agent 配置文件中读取真实 provider/profile。
 /// </summary>
 public sealed class LlmProfileResolver : ILlmProfileResolver
 {
@@ -17,7 +18,7 @@ public sealed class LlmProfileResolver : ILlmProfileResolver
         _logger = logger;
     }
 
-    public Task<LlmConfig> ResolveAsync(
+    public Task<ResolvedLlmInvocationProfile> ResolveAsync(
         string workspaceId,
         string agentInstanceId,
         LlmInvocationProfile profile,
@@ -27,12 +28,29 @@ public sealed class LlmProfileResolver : ILlmProfileResolver
             "[LlmProfileResolver] Resolve workspace={WorkspaceId} agent={AgentInstanceId} provider={ProviderId} profile={ProfileId} model={ModelId} role={Role}",
             workspaceId, agentInstanceId, profile.ProviderId, profile.ProfileId, profile.ModelId, profile.Role);
 
-        // 过渡实现：所有请求走 direct provider，ModelId 直接传给 LlmConfig
+        // 过渡实现：所有请求走 direct provider，完整记录 provider/profile/model/role
         var llmConfig = new LlmConfig
         {
             ModelId = profile.ModelId,
         };
 
-        return Task.FromResult(llmConfig);
+        var resolved = new ResolvedLlmInvocationProfile
+        {
+            ProviderId = profile.ProviderId,
+            ProfileId = profile.ProfileId,
+            ModelId = profile.ModelId,
+            Role = profile.Role,
+            Config = llmConfig,
+            Metadata = new Dictionary<string, string>
+            {
+                ["provider_id"] = profile.ProviderId,
+                ["profile_id"] = profile.ProfileId,
+                ["model_id"] = profile.ModelId,
+                ["role"] = profile.Role,
+                ["resolver"] = "legacy.direct",
+            },
+        };
+
+        return Task.FromResult(resolved);
     }
 }

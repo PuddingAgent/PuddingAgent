@@ -484,8 +484,8 @@ public sealed class AgentExecutionService
                             AgentTemplateId = request.AgentTemplateId,
                             Profile = new PuddingCode.Runtime.LlmInvocationProfile
                             {
-                                ProviderId = "direct",
-                                ProfileId = "conscious.default",
+                                ProviderId = "legacy.direct",
+                                ProfileId = "legacy.default",
                                 ModelId = effectiveLlmConfig?.ModelId ?? "default",
                             },
                             Messages = injectedHistory,
@@ -1479,8 +1479,8 @@ public sealed class AgentExecutionService
                         AgentTemplateId = request.AgentTemplateId,
                         Profile = new PuddingCode.Runtime.LlmInvocationProfile
                         {
-                            ProviderId = "direct",
-                            ProfileId = "conscious.default",
+                            ProviderId = "legacy.direct",
+                            ProfileId = "legacy.default",
                             ModelId = effectiveLlmConfig?.ModelId ?? "default",
                         },
                         Messages = injectedHistory,

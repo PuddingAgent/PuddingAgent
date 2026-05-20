@@ -35,15 +35,22 @@ public sealed class LlmInvocationService : ILlmInvocationService
 
         try
         {
-            LlmConfig llmConfig;
+            ResolvedLlmInvocationProfile resolved;
             if (_profileResolver is not null)
             {
-                llmConfig = await _profileResolver.ResolveAsync(
+                resolved = await _profileResolver.ResolveAsync(
                     request.WorkspaceId, request.AgentInstanceId, request.Profile, ct);
             }
             else
             {
-                llmConfig = new LlmConfig { ModelId = request.Profile.ModelId };
+                resolved = new ResolvedLlmInvocationProfile
+                {
+                    ProviderId = request.Profile.ProviderId,
+                    ProfileId = request.Profile.ProfileId,
+                    ModelId = request.Profile.ModelId,
+                    Role = request.Profile.Role,
+                    Config = new LlmConfig { ModelId = request.Profile.ModelId },
+                };
             }
 
             var response = await _llmClient.ChatAsync(
@@ -52,7 +59,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 request.AgentTemplateId,
                 request.Messages,
                 request.Tools.Count > 0 ? request.Tools : null,
-                llmConfig,
+                resolved.Config,
                 ct);
 
             return new LlmInvocationResult
@@ -61,8 +68,8 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 ReplyText = response.Content,
                 ToolCalls = response.ToolCalls ?? Array.Empty<ToolCall>(),
                 Usage = response.Usage,
-                ProviderId = request.Profile.ProviderId,
-                ModelId = request.Profile.ModelId,
+                ProviderId = resolved.ProviderId,
+                ModelId = resolved.ModelId,
             };
         }
         catch (Exception ex)
@@ -80,15 +87,22 @@ public sealed class LlmInvocationService : ILlmInvocationService
         LlmInvocationRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        LlmConfig llmConfig;
+        ResolvedLlmInvocationProfile resolved;
         if (_profileResolver is not null)
         {
-            llmConfig = await _profileResolver.ResolveAsync(
+            resolved = await _profileResolver.ResolveAsync(
                 request.WorkspaceId, request.AgentInstanceId, request.Profile, ct);
         }
         else
         {
-            llmConfig = new LlmConfig { ModelId = request.Profile.ModelId };
+            resolved = new ResolvedLlmInvocationProfile
+            {
+                ProviderId = request.Profile.ProviderId,
+                ProfileId = request.Profile.ProfileId,
+                ModelId = request.Profile.ModelId,
+                Role = request.Profile.Role,
+                Config = new LlmConfig { ModelId = request.Profile.ModelId },
+            };
         }
 
         await foreach (var delta in _llmClient.ChatStreamAsync(
@@ -97,7 +111,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
             request.AgentTemplateId,
             request.Messages,
             request.Tools.Count > 0 ? request.Tools : null,
-            llmConfig,
+            resolved.Config,
             ct))
         {
             yield return delta;

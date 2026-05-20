@@ -53,10 +53,21 @@ public interface ILlmInvocationService
     IAsyncEnumerable<StreamDelta> InvokeStreamAsync(LlmInvocationRequest request, CancellationToken ct = default);
 }
 
+/// <summary>LLM Profile 解析结果 — provider/profile/model/role 完整记录。</summary>
+public sealed record ResolvedLlmInvocationProfile
+{
+    public required string ProviderId { get; init; }
+    public required string ProfileId { get; init; }
+    public required string ModelId { get; init; }
+    public required string Role { get; init; }
+    public required LlmConfig Config { get; init; }
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+}
+
 /// <summary>LLM Profile 解析器 — 将 provider/profile/model/role 解析为可调用的 LlmConfig。</summary>
 public interface ILlmProfileResolver
 {
-    Task<LlmConfig> ResolveAsync(
+    Task<ResolvedLlmInvocationProfile> ResolveAsync(
         string workspaceId,
         string agentInstanceId,
         LlmInvocationProfile profile,
