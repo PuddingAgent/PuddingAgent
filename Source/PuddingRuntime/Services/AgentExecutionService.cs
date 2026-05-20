@@ -65,6 +65,9 @@ public sealed class AgentExecutionService
     private readonly IRuntimeActivitySink? _activitySink;
     private readonly ISubAgentRunStore? _subAgentRunStore; // ADR-021：子代理运行归档
     private readonly ISubAgentManager? _subAgentManager;   // ADR-021：避免 run 双创建
+    private readonly IToolInvocationService? _toolInvocationService;       // ADR-026：工具调用 facade
+    private readonly ISubAgentInvocationService? _subAgentInvocationService; // ADR-026：子代理调用 facade
+    private readonly ISessionOutputWriter? _sessionOutputWriter;           // ADR-026：会话输出 facade
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -96,7 +99,10 @@ public sealed class AgentExecutionService
         ISessionStateManager? ssm = null,
         IRuntimeActivitySink? activitySink = null,
         ISubAgentRunStore? subAgentRunStore = null,
-        ISubAgentManager? subAgentManager = null)
+        ISubAgentManager? subAgentManager = null,
+        IToolInvocationService? toolInvocationService = null,
+        ISubAgentInvocationService? subAgentInvocationService = null,
+        ISessionOutputWriter? sessionOutputWriter = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -129,6 +135,9 @@ public sealed class AgentExecutionService
         _activitySink        = activitySink;
         _subAgentRunStore    = subAgentRunStore;
         _subAgentManager     = subAgentManager; // ADR-021
+        _toolInvocationService     = toolInvocationService;       // ADR-026
+        _subAgentInvocationService = subAgentInvocationService; // ADR-026
+        _sessionOutputWriter       = sessionOutputWriter;           // ADR-026
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -582,18 +591,42 @@ public sealed class AgentExecutionService
                             var toolSw = System.Diagnostics.Stopwatch.StartNew();
                             try
                             {
-                                skillResult = await _skillRuntime.InvokeAsync(
-                                    call.Name,
-                                    new SkillInvokeRequest
+                                if (_toolInvocationService is not null)
+                                {
+                                    var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest
                                     {
-                                        AgentInstanceId = instance.AgentInstanceId,
                                         WorkspaceId = request.WorkspaceId,
                                         SessionId = request.SessionId,
-                                        Input = ExtractInputFromJson(injectedArgsJson),
-                                        Parameters = ExtractParametersFromJson(injectedArgsJson),
-                                    },
-                                    effectiveCapability,
-                                    ct);
+                                        AgentInstanceId = instance.AgentInstanceId,
+                                        ToolCallId = call.Id,
+                                        ToolName = call.Name,
+                                        ArgumentsJson = injectedArgsJson,
+                                        Trace = execTrace,
+                                    }, ct);
+                                    skillResult = new SkillResult
+                                    {
+                                        Success = toolResult.Success,
+                                        Output = toolResult.Output ?? "",
+                                        Error = toolResult.Error,
+                                        ExitCode = toolResult.Success ? 0 : 1,
+                                    };
+                                }
+                                else
+                                {
+                                    // ADR-026 legacy fallback: 直连 SkillRuntime
+                                    skillResult = await _skillRuntime.InvokeAsync(
+                                        call.Name,
+                                        new SkillInvokeRequest
+                                        {
+                                            AgentInstanceId = instance.AgentInstanceId,
+                                            WorkspaceId = request.WorkspaceId,
+                                            SessionId = request.SessionId,
+                                            Input = ExtractInputFromJson(injectedArgsJson),
+                                            Parameters = ExtractParametersFromJson(injectedArgsJson),
+                                        },
+                                        effectiveCapability,
+                                        ct);
+                                }
                                 toolSw.Stop();
                                 var toolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
                                 if (skillResult.Success)
@@ -866,17 +899,40 @@ public sealed class AgentExecutionService
                     SkillResult skillResult;
                     try
                     {
-                        skillResult = await _skillRuntime.InvokeAsync(
-                            toolName,
-                            new SkillInvokeRequest
+                        if (_toolInvocationService is not null)
+                        {
+                            var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest
                             {
+                                WorkspaceId = request.WorkspaceId,
+                                SessionId = request.SessionId,
                                 AgentInstanceId = instance.AgentInstanceId,
-                                WorkspaceId     = request.WorkspaceId,
-                                SessionId       = request.SessionId,
-                                Input           = ExtractInputFromJson(injectedArgsJson),
-                                Parameters      = ExtractParametersFromJson(injectedArgsJson),
-                            },
-                            effectiveCapability, ct);
+                                ToolCallId = toolName, // CONTINUE 路径没有独立 toolCallId
+                                ToolName = toolName,
+                                ArgumentsJson = injectedArgsJson,
+                                Trace = execTrace,
+                            }, ct);
+                            skillResult = new SkillResult
+                            {
+                                Success = toolResult.Success,
+                                Output = toolResult.Output ?? "",
+                                Error = toolResult.Error,
+                                ExitCode = toolResult.Success ? 0 : 1,
+                            };
+                        }
+                        else
+                        {
+                            skillResult = await _skillRuntime.InvokeAsync(
+                                toolName,
+                                new SkillInvokeRequest
+                                {
+                                    AgentInstanceId = instance.AgentInstanceId,
+                                    WorkspaceId     = request.WorkspaceId,
+                                    SessionId       = request.SessionId,
+                                    Input           = ExtractInputFromJson(injectedArgsJson),
+                                    Parameters      = ExtractParametersFromJson(injectedArgsJson),
+                                },
+                                effectiveCapability, ct);
+                        }
                         toolSw2.Stop();
                         var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
                         if (skillResult.Success)
@@ -1325,13 +1381,20 @@ public sealed class AgentExecutionService
             {
                 try
                 {
-                    if (_ssm is not null)
+                    if (_sessionOutputWriter is not null)
                     {
+                        await _sessionOutputWriter.WriteFrameAsync(
+                            request.SessionId, request.WorkspaceId ?? "", frame, trace: null, CancellationToken.None);
+                    }
+                    else if (_ssm is not null)
+                    {
+                        // ADR-026 legacy fallback: SSM 直连
+                        _logger.LogWarning("[AgentExec:Append] SessionOutputWriter not wired, falling back to SSM direct — session={Session}", request.SessionId);
                         await _ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", frame, CancellationToken.None);
                     }
                     else
                     {
-                        _logger.LogWarning("[AgentExec:Append] SSM null, cannot push frame type={Type} session={Session}", frame.Event, request.SessionId);
+                        _logger.LogWarning("[AgentExec:Append] No output writer available, cannot push frame type={Type} session={Session}", frame.Event, request.SessionId);
                     }
                 }
                 catch (Exception ex) { _logger.LogWarning(ex, "[AgentExec:Append] AppendAsync failed session={Session}", request.SessionId); }
@@ -1400,14 +1463,38 @@ public sealed class AgentExecutionService
                 var reasoningBuf = new StringBuilder();
 
                 var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
-                var llmEnumerator = _llmClient.ChatStreamAsync(
-                    request.WorkspaceId,
-                    request.SessionId,
-                    request.AgentTemplateId,
-                    injectedHistory,
-                    tools: llmTools,
-                    llmConfig: effectiveLlmConfig,
-                    ct: ct).GetAsyncEnumerator(ct);
+                IAsyncEnumerator<StreamDelta> llmEnumerator;
+                if (_llmInvocationService is not null)
+                {
+                    llmEnumerator = _llmInvocationService.InvokeStreamAsync(new PuddingCode.Runtime.LlmInvocationRequest
+                    {
+                        WorkspaceId = request.WorkspaceId,
+                        SessionId = request.SessionId,
+                        AgentInstanceId = instance.AgentInstanceId,
+                        AgentTemplateId = request.AgentTemplateId,
+                        Profile = new PuddingCode.Runtime.LlmInvocationProfile
+                        {
+                            ProviderId = "direct",
+                            ProfileId = "conscious.default",
+                            ModelId = effectiveLlmConfig?.ModelId ?? "default",
+                        },
+                        Messages = injectedHistory,
+                        Tools = llmTools,
+                    }, ct).GetAsyncEnumerator(ct);
+                }
+                else
+                {
+                    // ADR-026 legacy fallback: 直连 LLM 客户端
+                    _logger.LogWarning("[AgentExec:Stream] LlmInvocationService not wired, falling back to direct LLM client — session={Session}", request.SessionId);
+                    llmEnumerator = _llmClient.ChatStreamAsync(
+                        request.WorkspaceId,
+                        request.SessionId,
+                        request.AgentTemplateId,
+                        injectedHistory,
+                        tools: llmTools,
+                        llmConfig: effectiveLlmConfig,
+                        ct: ct).GetAsyncEnumerator(ct);
+                }
                 Exception? llmException = null;
                 try
                 {
@@ -1558,18 +1645,42 @@ public sealed class AgentExecutionService
                     }, ct);
 
                     var injectedArgsJson = await _keyVaultService.InjectAsync(tc.Arguments, ct);
-                    var result = await _skillRuntime.InvokeAsync(
-                        tc.Name,
-                        new SkillInvokeRequest
+                    SkillResult result;
+                    if (_toolInvocationService is not null)
+                    {
+                        var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest
                         {
-                            AgentInstanceId = instance.AgentInstanceId,
                             WorkspaceId = request.WorkspaceId ?? string.Empty,
                             SessionId = request.SessionId,
-                            Input = ExtractInputFromJson(injectedArgsJson),
-                            Parameters = ExtractParametersFromJson(injectedArgsJson),
-                        },
-                        effectiveCapability,
-                        ct);
+                            AgentInstanceId = instance.AgentInstanceId,
+                            ToolCallId = tc.Id,
+                            ToolName = tc.Name,
+                            ArgumentsJson = injectedArgsJson,
+                            Trace = null, // Streaming local function scope
+                        }, ct);
+                        result = new SkillResult
+                        {
+                            Success = toolResult.Success,
+                            Output = toolResult.Output ?? "",
+                            Error = toolResult.Error,
+                            ExitCode = toolResult.Success ? 0 : 1,
+                        };
+                    }
+                    else
+                    {
+                        result = await _skillRuntime.InvokeAsync(
+                            tc.Name,
+                            new SkillInvokeRequest
+                            {
+                                AgentInstanceId = instance.AgentInstanceId,
+                                WorkspaceId = request.WorkspaceId ?? string.Empty,
+                                SessionId = request.SessionId,
+                                Input = ExtractInputFromJson(injectedArgsJson),
+                                Parameters = ExtractParametersFromJson(injectedArgsJson),
+                            },
+                            effectiveCapability,
+                            ct);
+                    }
 
                     hasExecutedAnyTool = true;
                     totalToolCalls++;
