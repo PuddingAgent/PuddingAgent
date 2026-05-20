@@ -13,6 +13,8 @@
 | 0519 | ADR-021 subagent workspace+run archive | DeepSeek-V4-Pro | GPT-5.3-Codex | FAIL | 3xP1: subagent.run事件泄露/DB表无DDL/run双创建 |
 | 0519 | ADR-021 (P1修复) | DeepSeek-V4-Pro | — | FIXED | P1黑名单过滤/DDL/统一run创建入口，baf2f67 |
 | 0520 | ADR-023 observability closed loop + E2E baseline | DeepSeek-V4-Pro | — | DONE | Timeline聚合/诊断UI/DebugMode/Playwright E2E/Docker Smoke，`67226a7` |
+| 0520 | ADR-024~027 runtime facades + E2E evidence | DeepSeek-V4-Pro | — | PARTIAL | ADR-027 partially-implemented，Playwright pending live run |
+| 0520 | ADR-028 memory library infra refactor | DeepSeek-V4-Pro | — | DONE | Phases 1-6 complete，6 commits，~1800+ insertions |
 | 0508 | ADR-014-E | DeepSeek-V4-Pro | — | BUILD_PASS | dotnet build 0 error, MemoryTests 47/47 PASS, WebApiTests 15 failures pre-existing |
 | 0510 | Subconscious-Phase1 | GPT-5.3-Codex | Sonnet 4.6 | PASS_WITH_NOTES | P1-1 OnCompletedAsync阻塞SSE done/P1-2 DI重复注册，均已修复 |
 | 0510 | Subconscious-Phase2 | GPT-5.3-Codex | DeepSeek-V4-Pro | PASS_WITH_NOTES | P1 IMemoryLibrary死代码/P1 DI冗余/P2 Token=0硬编码，不阻断联调 |
