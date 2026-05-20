@@ -1275,6 +1275,11 @@ public sealed class AgentExecutionService
             request.SessionId, instance.AgentInstanceId,
             request.WorkspaceId, request.AgentTemplateId);
 
+        // ── Streaming trace context ─────────────────────────────────
+        var streamTrace = RuntimeTraceContext.CreateNew(
+            sessionId: request.SessionId,
+            workspaceId: request.WorkspaceId);
+
         // ── 子代理运行归档（ADR-021）───────────────────────────────
         var streamSubAgentRunId = await TryCreateSubAgentRunAndEmitStartedAsync(
             request, instance.AgentInstanceId, CancellationToken.None);
@@ -1837,7 +1842,7 @@ public sealed class AgentExecutionService
             {
                 reply,
                 usage = finalUsage,
-                traceId = execTrace.TraceId,
+                traceId = streamTrace.TraceId,
                 sessionId = request.SessionId,
             });
             Append(doneFrame);
