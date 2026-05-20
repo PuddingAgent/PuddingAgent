@@ -169,23 +169,16 @@ public sealed class SubAgentManager : ISubAgentManager
                     CompletedAt = completedAt,
                 }, CancellationToken.None);
 
-                // 完成运行归档（ADR-021）
-                // 注意：AgentExecutionService 是 terminal 状态的唯一写入者，
-                // SubAgentManager 写入为兼容旧路径，幂等保护确保不重复写入。
-                if (_runIdMap.TryRemove(subSessionId, out var completedRunId))
+                // AgentExecutionService 是 execution terminal 状态的唯一写入者；
+                // Manager 只清理 subSessionId -> runId 映射，并保留 run_id 供事件诊断。
+                string? completedRunId = null;
+                if (_runIdMap.TryRemove(subSessionId, out var removedRunId))
                 {
-                    var writeResult = await _runStore.CompleteRunAsync(completedRunId, new SubAgentRunCompletion
-                    {
-                        Status = success ? "completed" : "failed",
-                        Output = replyText,
-                        ErrorMessage = errorMsg,
-                    }, CancellationToken.None);
-                    if (writeResult != SubAgentRunTerminalWriteResult.Applied)
-                        _logger.LogWarning("[SubAgentMgr] CompleteRunAsync returned {Result} for runId={RunId}", writeResult, completedRunId);
+                    completedRunId = removedRunId;
                 }
                 else
                 {
-                    _logger.LogWarning("[SubAgentMgr] No runId found for sub={Sub}, skip archive completion", subSessionId);
+                    _logger.LogWarning("[SubAgentMgr] No runId found for sub={Sub} during async completion cleanup", subSessionId);
                 }
 
                 // SSE 帧保持不变（前端 UI 仍用 subagent.completed）

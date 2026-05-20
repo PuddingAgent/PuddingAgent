@@ -133,6 +133,12 @@ Pudding Agent 已启动！
 停止：
   docker compose down
 "@ -ForegroundColor Yellow
+
+    # Run healthcheck if requested
+    if ($RunHealthcheck -or $AutoE2E) {
+        Write-Host "Running healthcheck..." -ForegroundColor Cyan
+        & "$Root\Tests\e2e\healthcheck.ps1" -Port 8080
+    }
 } else {
     Write-Host "`n仅编译模式，跳过 Docker 部署。" -ForegroundColor Yellow
     Write-Host "手动运行：dotnet run --project Source/PuddingAgent`n"

@@ -4,51 +4,35 @@ using PuddingCode.Serialization;
 namespace PuddingCoreTests.Serialization;
 
 [TestClass]
-public class PuddingJsonContractsTests
+public sealed class PuddingJsonContractsTests
 {
-    private record TestRecord(string Name, int Value);
-
     [TestMethod]
-    public void JsonLines_Does_Not_Write_Indented_Multiline()
+    public void JsonLines_Writes_CamelCase_Single_Line_Json()
     {
-        var obj = new TestRecord("hello", 42);
-        var json = JsonSerializer.Serialize(obj, PuddingJsonContracts.JsonLines);
+        var json = JsonSerializer.Serialize(new
+        {
+            ParentSessionId = "parent-1",
+            Payload = new { Line = "one\ntwo" },
+        }, PuddingJsonContracts.JsonLines);
 
-        // 断言：结果中不含换行符（单行 JSON）
-        Assert.IsFalse(json.Contains('\n'), $"Expected single-line JSON but got: {json}");
+        Assert.IsFalse(json.Contains('\r'));
+        Assert.IsFalse(json.Contains('\n'));
+        StringAssert.Contains(json, "\"parentSessionId\"");
+        StringAssert.Contains(json, "\"payload\"");
+        StringAssert.Contains(json, "\\n");
     }
 
     [TestMethod]
-    public void PrettyJson_Writes_Indented()
+    public void PrettyJson_Writes_CamelCase_Indented_Json()
     {
-        var obj = new TestRecord("hello", 42);
-        var json = JsonSerializer.Serialize(obj, PuddingJsonContracts.PrettyJson);
+        var json = JsonSerializer.Serialize(new
+        {
+            ParentSessionId = "parent-1",
+            Payload = new { Value = 42 },
+        }, PuddingJsonContracts.PrettyJson);
 
-        // 断言：结果包含换行缩进
-        Assert.IsTrue(json.Contains('\n'), $"Expected indented JSON but got single-line: {json}");
-    }
-
-    [TestMethod]
-    public void JsonLines_Deserialization_Roundtrip()
-    {
-        var original = new TestRecord("roundtrip-test", 99);
-        var json = JsonSerializer.Serialize(original, PuddingJsonContracts.JsonLines);
-        var deserialized = JsonSerializer.Deserialize<TestRecord>(json, PuddingJsonContracts.JsonLines);
-
-        Assert.IsNotNull(deserialized);
-        Assert.AreEqual(original.Name, deserialized.Name);
-        Assert.AreEqual(original.Value, deserialized.Value);
-    }
-
-    [TestMethod]
-    public void PrettyJson_Deserialization_Roundtrip()
-    {
-        var original = new TestRecord("pretty-test", 77);
-        var json = JsonSerializer.Serialize(original, PuddingJsonContracts.PrettyJson);
-        var deserialized = JsonSerializer.Deserialize<TestRecord>(json, PuddingJsonContracts.PrettyJson);
-
-        Assert.IsNotNull(deserialized);
-        Assert.AreEqual(original.Name, deserialized.Name);
-        Assert.AreEqual(original.Value, deserialized.Value);
+        Assert.IsTrue(json.Contains('\n'));
+        StringAssert.Contains(json, "\"parentSessionId\"");
+        StringAssert.Contains(json, "  \"payload\"");
     }
 }

@@ -12,6 +12,7 @@
   <Folder Name="/Tests/">
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />
+    <Project Path="Source/PuddingPlatformTests/PuddingPlatformTests.csproj" />
     <Project Path="Source/PuddingWebApiTests/PuddingWebApiTests.csproj" Id="78289515-7caa-47b2-b209-900edeaeb8bf" />
   </Folder>
   <Folder Name="/TestScripts/">
