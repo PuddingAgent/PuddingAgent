@@ -38,7 +38,7 @@ test.describe('Chat Smoke', () => {
     const messages = page.locator('[data-testid^="chat-message-"]');
     await expect(messages.first()).toBeVisible({ timeout: 10000 });
     
-    // 9. ADR-026: Verify debug API returns non-null session/trace
+    // 9. ADR-027: Verify debug API returns non-null session/trace (strong assert)
     const sessionId = await page.evaluate(() => {
       const debug = (window as any).__PUDDING_DEBUG__;
       return debug?.getLastSessionId() || null;
@@ -50,17 +50,24 @@ test.describe('Chat Smoke', () => {
       const debug = (window as any).__PUDDING_DEBUG__;
       return debug?.getLastTraceId() || null;
     });
+    expect(traceId).toBeTruthy();
     console.log('Trace ID:', traceId);
 
-    // 10. ADR-026: Verify evidence API via page request
-    if (traceId) {
-      const evidenceResp = await page.request.get(
-        `/api/diagnostics/runtime/evidence/${encodeURIComponent(traceId)}`
-      );
-      expect(evidenceResp.ok()).toBeTruthy();
-      const evidence = await evidenceResp.json();
-      expect(evidence.timeline).toBeDefined();
-      console.log('Evidence timeline items:', evidence.timeline?.length);
-    }
+    // 10. ADR-027: Verify evidence API (correct route + component assertions)
+    const evidenceResp = await page.request.get(
+      `/api/diagnostics/e2e/evidence/${encodeURIComponent(traceId!)}`
+    );
+    expect(evidenceResp.ok()).toBeTruthy();
+    const evidence = await evidenceResp.json();
+    expect(Array.isArray(evidence.timeline)).toBeTruthy();
+    expect(evidence.timeline.length).toBeGreaterThan(0);
+
+    const components: string[] = evidence.timeline.map((x: any) => x.component).filter(Boolean);
+    expect(components).toContain('agent_execution');
+    const hasLlmComponent = components.some((c: string) =>
+      c === 'llm_gateway' || c === 'llm_invocation' || c === 'direct_llm'
+    );
+    expect(hasLlmComponent).toBeTruthy();
+    console.log('Evidence timeline items:', evidence.timeline.length, 'components:', components);
   });
 });
