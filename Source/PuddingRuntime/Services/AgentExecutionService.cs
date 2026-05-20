@@ -613,7 +613,7 @@ public sealed class AgentExecutionService
                                 }
                                 else
                                 {
-                                    // ADR-026 legacy fallback: 直连 SkillRuntime
+                                    // ADR-027 legacy fallback for tests only (SkillRuntime)
                                     skillResult = await _skillRuntime.InvokeAsync(
                                         call.Name,
                                         new SkillInvokeRequest
@@ -1393,7 +1393,7 @@ public sealed class AgentExecutionService
                     }
                     else if (_ssm is not null)
                     {
-                        // ADR-026 legacy fallback: SSM 直连
+                        // ADR-027 legacy fallback for tests only (SSM)
                         _logger.LogWarning("[AgentExec:Append] SessionOutputWriter not wired, falling back to SSM direct — session={Session}", request.SessionId);
                         await _ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", frame, CancellationToken.None);
                     }
@@ -1489,7 +1489,7 @@ public sealed class AgentExecutionService
                 }
                 else
                 {
-                    // ADR-026 legacy fallback: 直连 LLM 客户端
+                    // ADR-027 legacy fallback for tests only (LLM client)
                     _logger.LogWarning("[AgentExec:Stream] LlmInvocationService not wired, falling back to direct LLM client — session={Session}", request.SessionId);
                     llmEnumerator = _llmClient.ChatStreamAsync(
                         request.WorkspaceId,

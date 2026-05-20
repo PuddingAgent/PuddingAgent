@@ -225,7 +225,7 @@ public sealed class SubAgentTool : ITool, IAgentSkill
         }
         else if (subAgentManager is not null)
         {
-            // ADR-027 legacy fallback for tests only
+            // ADR-027 legacy fallback for tests only (SubAgentManager)
             spawnResult = await subAgentManager.SpawnAsync(new SubAgentSpawnRequest
             {
                 ParentSessionId = request.SessionId,
