@@ -63,6 +63,8 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<SystemPromptBuilder>();
         services.AddSingleton<ContextPipeline>();
         services.AddSingleton<IContextAssemblyService, ContextAssemblyService>();
+        services.AddSingleton<IToolInvocationService, ToolInvocationService>();
+        services.AddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
         services.AddSingleton<ContextWindowManager>();
 
         // 会话归档

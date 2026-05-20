@@ -186,6 +186,7 @@ builder.Services.AddSingleton<RuntimeActivitySink>();
 builder.Services.AddSingleton<IRuntimeActivitySink>(sp => sp.GetRequiredService<RuntimeActivitySink>());
 builder.Services.AddSingleton<IDiagnosticRedactor, DiagnosticRedactor>();
 builder.Services.AddSingleton<IExecutionLifecycleRecorder, RuntimeActivityExecutionLifecycleRecorder>();
+builder.Services.AddSingleton<ISessionOutputWriter, SessionOutputWriter>();
 builder.Services.AddScoped<RuntimeTimelineQueryService>();
 builder.Services.AddPuddingController();
 
