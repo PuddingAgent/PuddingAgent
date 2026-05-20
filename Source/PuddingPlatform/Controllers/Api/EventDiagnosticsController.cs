@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Diagnostics;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -109,11 +110,11 @@ public sealed class EventDiagnosticsController : ControllerBase
             "[EventDiagnostics] Stats total={TotalCount} statusGroups={StatusGroups} componentGroups={ComponentGroups}",
             totalCount, byStatus.Count, byComponent.Count);
 
-        return Ok(new
+        return Ok(new EventStatsDto
         {
-            totalCount,
-            byStatus,
-            byComponent,
+            TotalCount = totalCount,
+            ByStatus = byStatus.Select(s => new EventStatusCountDto { Status = s.status, Count = s.count }).ToList(),
+            ByComponent = byComponent.Select(c => new EventComponentCountDto { Component = c.component, Count = c.count }).ToList(),
         });
     }
 
