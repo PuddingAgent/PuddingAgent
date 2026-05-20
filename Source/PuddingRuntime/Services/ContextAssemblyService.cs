@@ -24,10 +24,10 @@ public sealed class ContextAssemblyService : IContextAssemblyService
     public async Task<PuddingCode.Runtime.ContextAssemblyResult> AssembleAsync(ContextAssemblyRequest request, CancellationToken ct = default)
     {
         _logger.LogDebug(
-            "[ContextAssembly] Assemble session={SessionId} agent={AgentTemplateId} maxTokens={MaxTokens}",
-            request.SessionId, request.AgentTemplateId, request.MaxContextTokens);
+            "[ContextAssembly] Assemble session={SessionId} agent={AgentTemplateId} maxTokens={MaxTokens} streaming={Streaming} first={First}",
+            request.SessionId, request.AgentTemplateId, request.MaxContextTokens, request.ForStreaming, request.IsFirstMessage);
 
-        // 适配到现有 ContextPipeline 的输入格式
+        // 适配到现有 ContextPipeline 的输入格式，传递真实会话语义
         var contextRequest = new ContextRequest
         {
             WorkspaceId = request.WorkspaceId,
@@ -35,16 +35,16 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             AgentTemplateId = request.AgentTemplateId,
             UserMessage = request.UserMessage,
             AgentInstanceId = request.AgentInstanceId,
-            ForStreaming = false,
-            IsFirstMessage = true,
-            SessionHistory = Array.Empty<ChatMessage>(),
+            ForStreaming = request.ForStreaming,
+            IsFirstMessage = request.IsFirstMessage,
+            SessionHistory = request.SessionHistory,
         };
 
         var pipelineResult = await _pipeline.AssembleAsync(contextRequest, ct);
 
         // 转换为新契约格式
         var layers = pipelineResult.Layers
-            .Select(l => new ContextLayerSummary
+            .Select(l => new PuddingCode.Runtime.ContextLayerSummary
             {
                 Layer = l.LayerName,
                 EstimatedTokens = l.EstimatedTokens,
@@ -52,10 +52,12 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             })
             .ToList();
 
+        // 返回完整消息列表：System prompt + 用户消息
         var messages = new List<ChatMessage>
         {
             new(ChatRole.System, pipelineResult.SystemPrompt)
         };
+        messages.Add(new ChatMessage(ChatRole.User, request.UserMessage));
 
         return new PuddingCode.Runtime.ContextAssemblyResult
         {

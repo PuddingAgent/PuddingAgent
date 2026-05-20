@@ -67,27 +67,17 @@ export type SubAgentRunSummary = {
 
 /** 子代理运行详情 */
 export type SubAgentRunDetail = {
-  runId: string;
-  parentSessionId: string;
-  subSessionId: string;
-  workspaceId: string;
-  agentInstanceId: string;
-  templateId: string;
-  status: string;
-  startedAt: string;
-  completedAt?: string;
-  totalDurationMs: number;
-  totalRounds: number;
-  totalToolCalls: number;
-  errorMessage?: string;
+  summary: SubAgentRunSummary;
   task?: string;
   output?: string;
-  eventsCount?: number;
-  toolCalls?: unknown[];
+  llmProfiles?: string;
+  trace?: string;
+  eventCount: number;
+  toolCallCount: number;
 };
 
 /** 事件统计 */
 export type EventStats = {
-  byStatus: Record<string, number>;
-  byComponent: Record<string, number>;
+  byStatus: { status: string; count: number }[];
+  byComponent: { component: string; count: number }[];
 };

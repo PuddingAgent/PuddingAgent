@@ -74,12 +74,21 @@ public sealed class RuntimeContractTests
             SessionId = "session_1",
             AgentInstanceId = "agent_1",
             AgentTemplateId = "general-assistant",
-            ProfileId = "conscious.default",
+            Profile = new LlmInvocationProfile
+            {
+                ProviderId = "openai",
+                ProfileId = "conscious.default",
+                ModelId = "gpt-4o",
+            },
             Messages = Array.Empty<ChatMessage>(),
         };
 
         Assert.IsNotNull(request.Tools);
         Assert.AreEqual(0, request.Tools.Count);
+        Assert.AreEqual("openai", request.Profile.ProviderId);
+        Assert.AreEqual("conscious.default", request.Profile.ProfileId);
+        Assert.AreEqual("gpt-4o", request.Profile.ModelId);
+        Assert.AreEqual("conscious", request.Profile.Role);
     }
 
     [TestMethod]
@@ -109,15 +118,18 @@ public sealed class RuntimeContractTests
             UserMessage = "hello",
             LlmProfileId = "profile",
             MaxContextTokens = 8192,
+            ForStreaming = true,
+            IsFirstMessage = false,
+            SessionHistory = new List<ChatMessage> { new(ChatRole.User, "previous") },
         };
 
         Assert.AreEqual("ws", request.WorkspaceId);
         Assert.AreEqual("sess", request.SessionId);
-        Assert.AreEqual("agent", request.AgentInstanceId);
-        Assert.AreEqual("tmpl", request.AgentTemplateId);
         Assert.AreEqual("hello", request.UserMessage);
-        Assert.AreEqual("profile", request.LlmProfileId);
         Assert.AreEqual(8192, request.MaxContextTokens);
+        Assert.IsTrue(request.ForStreaming);
+        Assert.IsFalse(request.IsFirstMessage);
+        Assert.AreEqual(1, request.SessionHistory.Count);
     }
 
     [TestMethod]

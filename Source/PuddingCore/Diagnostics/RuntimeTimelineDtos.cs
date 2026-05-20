@@ -15,6 +15,8 @@ public sealed record RuntimeTimelineQueryDto
     public string? Status { get; init; }
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 100;
+    /// <summary>排序方向：asc = 正序（执行顺序），desc = 倒序（最新在前）。默认 desc。</summary>
+    public string SortOrder { get; init; } = "desc";
 }
 
 /// <summary>

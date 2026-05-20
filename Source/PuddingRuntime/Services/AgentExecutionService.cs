@@ -473,7 +473,12 @@ public sealed class AgentExecutionService
                             SessionId = request.SessionId,
                             AgentInstanceId = instance.AgentInstanceId,
                             AgentTemplateId = request.AgentTemplateId,
-                            ProfileId = effectiveLlmConfig?.ModelId ?? "default",
+                            Profile = new PuddingCode.Runtime.LlmInvocationProfile
+                            {
+                                ProviderId = "direct",
+                                ProfileId = "conscious.default",
+                                ModelId = effectiveLlmConfig?.ModelId ?? "default",
+                            },
                             Messages = injectedHistory,
                             Tools = llmTools,
                         }, ct);

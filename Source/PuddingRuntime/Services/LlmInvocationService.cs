@@ -24,14 +24,15 @@ public sealed class LlmInvocationService : ILlmInvocationService
     public async Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
     {
         _logger.LogDebug(
-            "[LlmInvocation] Invoke session={SessionId} profile={ProfileId} msgCount={MsgCount} toolCount={ToolCount}",
-            request.SessionId, request.ProfileId, request.Messages.Count, request.Tools.Count);
+            "[LlmInvocation] Invoke session={SessionId} provider={ProviderId} profile={ProfileId} model={ModelId} msgCount={MsgCount} toolCount={ToolCount}",
+            request.SessionId, request.Profile.ProviderId, request.Profile.ProfileId, request.Profile.ModelId,
+            request.Messages.Count, request.Tools.Count);
 
         try
         {
             var llmConfig = new LlmConfig
             {
-                ModelId = request.ProfileId,
+                ModelId = request.Profile.ModelId,
             };
 
             var response = await _llmClient.ChatAsync(
@@ -49,8 +50,8 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 ReplyText = response.Content,
                 ToolCalls = response.ToolCalls ?? Array.Empty<ToolCall>(),
                 Usage = response.Usage,
-                ProviderId = "direct",
-                ModelId = request.ProfileId,
+                ProviderId = request.Profile.ProviderId,
+                ModelId = request.Profile.ModelId,
             };
         }
         catch (Exception ex)
@@ -70,7 +71,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
     {
         var llmConfig = new LlmConfig
         {
-            ModelId = request.ProfileId,
+            ModelId = request.Profile.ModelId,
         };
 
         await foreach (var delta in _llmClient.ChatStreamAsync(

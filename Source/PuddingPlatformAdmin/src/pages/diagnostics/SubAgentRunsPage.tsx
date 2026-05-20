@@ -226,37 +226,37 @@ const SubAgentRunsPage: React.FC = () => {
             style={{ background: '#fafafa' }}
           >
             <Descriptions.Item label="Run ID">
-              <Text copyable>{detailData.runId}</Text>
+              <Text copyable>{detailData.summary.runId}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag color={statusColor[detailData.status] || 'default'} data-testid={`status-badge-${detailData.status}`}>
-                {detailData.status}
+              <Tag color={statusColor[detailData.summary.status] || 'default'} data-testid={`status-badge-${detailData.summary.status}`}>
+                {detailData.summary.status}
               </Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="耗时">{fmtDuration(detailData.totalDurationMs)}</Descriptions.Item>
+            <Descriptions.Item label="耗时">{fmtDuration(detailData.summary.totalDurationMs)}</Descriptions.Item>
             <Descriptions.Item label="父会话">
-              <Text copyable={{ text: detailData.parentSessionId }}>
-                {detailData.parentSessionId?.slice(0, 12)}...
+              <Text copyable={{ text: detailData.summary.parentSessionId }}>
+                {detailData.summary.parentSessionId?.slice(0, 12)}...
               </Text>
             </Descriptions.Item>
             <Descriptions.Item label="子会话">
-              <Text copyable={{ text: detailData.subSessionId }}>
-                {detailData.subSessionId?.slice(0, 12)}...
+              <Text copyable={{ text: detailData.summary.subSessionId }}>
+                {detailData.summary.subSessionId?.slice(0, 12)}...
               </Text>
             </Descriptions.Item>
-            <Descriptions.Item label="工作区">{detailData.workspaceId}</Descriptions.Item>
-            <Descriptions.Item label="模板">{detailData.templateId}</Descriptions.Item>
-            <Descriptions.Item label="Agent 实例">{detailData.agentInstanceId}</Descriptions.Item>
-            <Descriptions.Item label="轮次">{detailData.totalRounds}</Descriptions.Item>
-            <Descriptions.Item label="开始时间">{fmtTime(detailData.startedAt)}</Descriptions.Item>
+            <Descriptions.Item label="工作区">{detailData.summary.workspaceId}</Descriptions.Item>
+            <Descriptions.Item label="模板">{detailData.summary.templateId}</Descriptions.Item>
+            <Descriptions.Item label="Agent 实例">{detailData.summary.agentInstanceId}</Descriptions.Item>
+            <Descriptions.Item label="轮次">{detailData.summary.totalRounds}</Descriptions.Item>
+            <Descriptions.Item label="开始时间">{fmtTime(detailData.summary.startedAt)}</Descriptions.Item>
             <Descriptions.Item label="完成时间">
-              {detailData.completedAt ? fmtTime(detailData.completedAt) : '-'}
+              {detailData.summary.completedAt ? fmtTime(detailData.summary.completedAt) : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="事件数">{detailData.eventsCount ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="工具调用">{detailData.totalToolCalls}</Descriptions.Item>
-            {detailData.errorMessage && (
+            <Descriptions.Item label="事件数">{detailData.eventCount}</Descriptions.Item>
+            <Descriptions.Item label="工具调用">{detailData.toolCallCount}</Descriptions.Item>
+            {detailData.summary.errorMessage && (
               <Descriptions.Item label="错误信息">
-                <Text type="danger">{detailData.errorMessage}</Text>
+                <Text type="danger">{detailData.summary.errorMessage}</Text>
               </Descriptions.Item>
             )}
             {detailData.task && (

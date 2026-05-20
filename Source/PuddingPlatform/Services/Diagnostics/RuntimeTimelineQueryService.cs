@@ -67,9 +67,10 @@ public class RuntimeTimelineQueryService
             items.AddRange(subAgentRuns);
         }
 
-        // 按 StartedAtUtc 降序排序 + 分页
-        var sorted = items
-            .OrderByDescending(i => i.StartedAtUtc)
+        // 按 StartedAtUtc 排序 + 分页
+        var sorted = (query.SortOrder == "asc"
+            ? items.OrderBy(i => i.StartedAtUtc)
+            : items.OrderByDescending(i => i.StartedAtUtc))
             .ToList();
 
         var total = sorted.Count;

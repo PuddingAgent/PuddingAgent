@@ -130,7 +130,7 @@ const DiagnosticsPage: React.FC = () => {
             >
               <Statistic
                 title="运行时时间线"
-                value={eventStats ? Object.values(eventStats.byStatus).reduce((a, b) => a + b, 0) : 0}
+                value={eventStats ? eventStats.byStatus.reduce((a, b) => a + b.count, 0) : 0}
                 prefix={<ClockCircleOutlined />}
                 suffix="条记录"
               />
