@@ -233,4 +233,41 @@ public sealed class RuntimeContractTests
         Assert.IsNull(result.ReplyText);
         Assert.AreEqual(0, result.ToolCalls.Count);
     }
+
+    [TestMethod]
+    public void LifecycleMetadata_Has_Stable_Metadata_Keys()
+    {
+        var record = new ExecutionLifecycleRecord
+        {
+            ExecutionId = "exec_meta",
+            TraceId = "trace_meta",
+            WorkspaceId = "default",
+            SessionId = "session",
+            AgentInstanceId = "agent",
+            Component = "llm_gateway",
+            Operation = "chat",
+            Status = "succeeded",
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            Metadata = new Dictionary<string, string>
+            {
+                [LifecycleMetadataKeys.ProfileId] = "conscious.default",
+                [LifecycleMetadataKeys.ProviderId] = "openai",
+                [LifecycleMetadataKeys.ModelId] = "gpt-4o",
+                [LifecycleMetadataKeys.ContextTokensEstimated] = "1200",
+                [LifecycleMetadataKeys.ContextLayerCount] = "5",
+                [LifecycleMetadataKeys.ToolName] = "read_file",
+                [LifecycleMetadataKeys.ToolArgsHash] = "abc123",
+                [LifecycleMetadataKeys.SubAgentRunId] = "run_001",
+            },
+        };
+
+        Assert.AreEqual("conscious.default", record.Metadata[LifecycleMetadataKeys.ProfileId]);
+        Assert.AreEqual("openai", record.Metadata[LifecycleMetadataKeys.ProviderId]);
+        Assert.AreEqual("gpt-4o", record.Metadata[LifecycleMetadataKeys.ModelId]);
+        Assert.AreEqual("1200", record.Metadata[LifecycleMetadataKeys.ContextTokensEstimated]);
+        Assert.AreEqual("5", record.Metadata[LifecycleMetadataKeys.ContextLayerCount]);
+        Assert.AreEqual("read_file", record.Metadata[LifecycleMetadataKeys.ToolName]);
+        Assert.AreEqual("abc123", record.Metadata[LifecycleMetadataKeys.ToolArgsHash]);
+        Assert.AreEqual("run_001", record.Metadata[LifecycleMetadataKeys.SubAgentRunId]);
+    }
 }

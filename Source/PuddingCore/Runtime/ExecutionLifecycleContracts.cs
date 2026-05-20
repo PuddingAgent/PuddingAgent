@@ -2,6 +2,19 @@ using PuddingCode.Observability;
 
 namespace PuddingCode.Runtime;
 
+/// <summary>执行生命周期 Metadata 键名常量，确保 timeline 和诊断兼容。</summary>
+public static class LifecycleMetadataKeys
+{
+    public const string ProfileId = "profile_id";
+    public const string ProviderId = "provider_id";
+    public const string ModelId = "model_id";
+    public const string ContextTokensEstimated = "context_tokens_estimated";
+    public const string ContextLayerCount = "context_layer_count";
+    public const string ToolName = "tool_name";
+    public const string ToolArgsHash = "tool_args_hash";
+    public const string SubAgentRunId = "subagent_run_id";
+}
+
 /// <summary>执行生命周期记录，作为 Runtime 的统一语言。</summary>
 public sealed record ExecutionLifecycleRecord
 {
