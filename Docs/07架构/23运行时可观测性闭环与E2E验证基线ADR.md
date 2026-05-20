@@ -1,7 +1,8 @@
 # 23 运行时可观测性闭环与 E2E 验证基线 ADR
 
-> 状态：**in-progress**
+> 状态：**done**（Phase 1-5 完成）
 > 日期：2026-05-20
+> Git: `67226a7`
 > 范围：Runtime timeline、诊断 API、Admin 可观测性、前端 debug mode、Playwright E2E、Docker smoke
 > 前置：[19架构基础设施增强下一步ADR](19架构基础设施增强下一步ADR.md)、[20会话状态机与事件规范ADR](20会话状态机与事件规范ADR.md)、[21子代理工作空间与运行归档ADR](21子代理工作空间与运行归档ADR.md)、[22架构基础设施硬化与行动路线ADR](22架构基础设施硬化与行动路线ADR.md)
 
