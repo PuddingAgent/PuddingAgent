@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntime.Services.Skills;
@@ -72,7 +73,8 @@ public sealed class SubAgentTool : ITool, IAgentSkill
     public async Task<SkillResult> ExecuteAsync(SkillInvokeRequest request, CancellationToken ct = default)
     {
         var executionService = _services.GetRequiredService<AgentExecutionService>();
-        var subAgentManager = _services.GetRequiredService<ISubAgentManager>();
+        var subAgentManager = _services.GetService<ISubAgentManager>(); // legacy fallback
+        var subAgentInvocation = _services.GetService<ISubAgentInvocationService>();
         var streamingBus = _services.GetService<IStreamingEventBus>();
 
         var json = TryParseJson(request.Input);
@@ -202,18 +204,45 @@ public sealed class SubAgentTool : ITool, IAgentSkill
                 return new SkillResult { Success = false, Output = output.Trim(), Error = "子代理未生成文本回复", ExitCode = 1 };
         }
 
-        var spawnResult = await subAgentManager.SpawnAsync(new SubAgentSpawnRequest
+        SubAgentSpawnResult spawnResult;
+        if (subAgentInvocation is not null)
         {
-            ParentSessionId = request.SessionId,
-            ParentAgentId = request.AgentInstanceId,
-            WorkspaceId = request.WorkspaceId ?? "",
-            TaskDescription = task!,
-            TemplateId = template.TemplateId,
-            ModelId = childLlmConfig?.ModelId ?? modelId,
-            LlmConfig = childLlmConfig,
-            MaxRounds = 10,
-            CapabilityPolicy = childCapability,
-        }, ct);
+            var invocationResult = await subAgentInvocation.InvokeAsync(new SubAgentInvocationRequest
+            {
+                ParentSessionId = request.SessionId,
+                ParentAgentInstanceId = request.AgentInstanceId,
+                WorkspaceId = request.WorkspaceId ?? "",
+                TemplateId = template.TemplateId,
+                Task = task!,
+                IsAsync = true,
+            }, ct);
+            spawnResult = new SubAgentSpawnResult
+            {
+                SubSessionId = invocationResult.SubSessionId,
+                Success = invocationResult.Status != "failed",
+                Error = invocationResult.Error,
+            };
+        }
+        else if (subAgentManager is not null)
+        {
+            // ADR-027 legacy fallback for tests only
+            spawnResult = await subAgentManager.SpawnAsync(new SubAgentSpawnRequest
+            {
+                ParentSessionId = request.SessionId,
+                ParentAgentId = request.AgentInstanceId,
+                WorkspaceId = request.WorkspaceId ?? "",
+                TaskDescription = task!,
+                TemplateId = template.TemplateId,
+                ModelId = childLlmConfig?.ModelId ?? modelId,
+                LlmConfig = childLlmConfig,
+                MaxRounds = 10,
+                CapabilityPolicy = childCapability,
+            }, ct);
+        }
+        else
+        {
+            return new SkillResult { Success = false, Output = "", Error = "Sub-agent service not registered", ExitCode = 1 };
+        }
 
         _logger.LogInformation(
             "[SubAgent] Async spawned sub={SubAgent} parent={Parent}",
