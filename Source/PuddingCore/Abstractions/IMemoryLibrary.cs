@@ -130,6 +130,29 @@ public interface IMemoryLibrary
     Task<IReadOnlyList<SourceReferenceRecord>> GetSourceReferencesAsync(
         string ownerType, string ownerId, CancellationToken ct = default);
 
+    // ── ADR-028 Phase 3: TreeNode ──
+
+    /// <summary>获取树节点子节点。</summary>
+    Task<IReadOnlyList<TreeNodeRecord>> GetTreeChildrenAsync(
+        string workspaceId, string libraryId, string? parentNodeId,
+        CancellationToken ct = default);
+
+    /// <summary>创建树节点。</summary>
+    Task<TreeNodeRecord> CreateTreeNodeAsync(
+        string workspaceId, string libraryId, string? parentNodeId,
+        string name, string? summary = null, string nodeType = "category",
+        CancellationToken ct = default);
+
+    /// <summary>将 Book 挂载到 TreeNode。</summary>
+    Task<BookTreeMountRecord> MountBookAsync(
+        string bookId, string nodeId, int weight = 1,
+        CancellationToken ct = default);
+
+    /// <summary>确保默认系统 Books 存在（懒创建）。</summary>
+    Task EnsureDefaultBooksAsync(
+        string workspaceId, string libraryId,
+        CancellationToken ct = default);
+
     /// <summary>按 Tag 前缀搜索书籍。</summary>
     Task<IReadOnlyList<BookRecord>> SearchBooksByTagAsync(string tagPrefix, int topK = 20, CancellationToken ct = default);
 

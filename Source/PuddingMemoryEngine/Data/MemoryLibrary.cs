@@ -985,6 +985,106 @@ public sealed class MemoryLibrary : IMemoryLibrary
         return entities.Select(ToRecord).ToList();
     }
 
+    // ── ADR-028 Phase 3: TreeNode ──────────────────────────────────────
+
+    public async Task<IReadOnlyList<TreeNodeRecord>> GetTreeChildrenAsync(
+        string workspaceId, string libraryId, string? parentNodeId,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var entities = await db.MemoryTreeNodes.AsNoTracking()
+            .Where(n => n.WorkspaceId == workspaceId
+                     && n.LibraryId == libraryId
+                     && n.ParentNodeId == parentNodeId
+                     && n.Status == "active")
+            .OrderBy(n => n.SortOrder)
+            .ThenBy(n => n.Name)
+            .ToListAsync(ct);
+        return entities.Select(ToRecord).ToList();
+    }
+
+    public async Task<TreeNodeRecord> CreateTreeNodeAsync(
+        string workspaceId, string libraryId, string? parentNodeId,
+        string name, string? summary = null, string nodeType = "category",
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // 计算 Path
+        var parentPath = "/";
+        if (!string.IsNullOrEmpty(parentNodeId))
+        {
+            var parent = await db.MemoryTreeNodes.AsNoTracking()
+                .FirstOrDefaultAsync(n => n.NodeId == parentNodeId, ct);
+            if (parent is not null) parentPath = parent.Path.EndsWith('/') ? parent.Path : parent.Path + "/";
+        }
+        var path = parentPath + name;
+
+        var entity = new MemoryTreeNodeEntity
+        {
+            NodeId = Guid.NewGuid().ToString("N"),
+            WorkspaceId = workspaceId,
+            LibraryId = libraryId,
+            ParentNodeId = parentNodeId,
+            Path = path,
+            Name = name,
+            Summary = summary,
+            NodeType = nodeType,
+            Status = "active",
+            SortOrder = 0,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        db.MemoryTreeNodes.Add(entity);
+        await db.SaveChangesAsync(ct);
+        return ToRecord(entity);
+    }
+
+    public async Task<BookTreeMountRecord> MountBookAsync(
+        string bookId, string nodeId, int weight = 1,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var entity = new BookTreeMountEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            BookId = bookId,
+            NodeId = nodeId,
+            Weight = weight,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        };
+        db.BookTreeMounts.Add(entity);
+        await db.SaveChangesAsync(ct);
+        return ToRecord(entity);
+    }
+
+    /// <summary>
+    /// 懒创建默认系统 Books。不覆盖已存在的 Book。
+    /// 默认 books: 航海日志、用户档案、用户偏好、决策记录、经验教训、交接索引
+    /// </summary>
+    public async Task EnsureDefaultBooksAsync(
+        string workspaceId, string libraryId,
+        CancellationToken ct = default)
+    {
+        var defaults = new (string Title, string Summary)[]
+        {
+            ("航海日志", "重要事件和任务进展，不记录流水账"),
+            ("用户档案", "稳定个人事实——姓名、角色、技能、背景"),
+            ("用户偏好", "偏好、习惯、风格、沟通方式"),
+            ("决策记录", "架构、产品、技术选型等关键决策"),
+            ("经验教训", "故障、踩坑、复盘、最佳实践"),
+            ("交接索引", "指向 memo、session、run archive 的轻量索引"),
+        };
+
+        foreach (var (title, summary) in defaults)
+        {
+            var existing = await FindBookByTitleAsync(libraryId, title, ct);
+            if (existing is null)
+                await CreateBookAsync(libraryId, title, summary, ct: ct);
+        }
+    }
+
     // ── 私有辅助 ───────────────────────────────────────────────────────
 
     /// <summary>级联删除 Book 及其所有 Chapter/Pointer/BookIndex。</summary>
@@ -1052,6 +1152,14 @@ public sealed class MemoryLibrary : IMemoryLibrary
     private static SourceReferenceRecord ToRecord(SourceReferenceEntity e) => new(
         e.SourceReferenceId, e.WorkspaceId, e.OwnerType, e.OwnerId,
         e.TargetType, e.TargetId, e.TargetRange, e.Label, e.Description, e.CreatedAt);
+
+    private static TreeNodeRecord ToRecord(MemoryTreeNodeEntity e) => new(
+        e.NodeId, e.WorkspaceId, e.LibraryId, e.ParentNodeId,
+        e.Path, e.Name, e.Summary, e.NodeType, e.Status,
+        e.SortOrder, e.CreatedAt, e.UpdatedAt);
+
+    private static BookTreeMountRecord ToRecord(BookTreeMountEntity e) => new(
+        e.Id, e.BookId, e.NodeId, e.Weight, e.CreatedAt);
 
     /// <summary>
     /// 转义 FTS5 查询：先按空格分词，再对每个词做双引号短语包装，用空格连接。

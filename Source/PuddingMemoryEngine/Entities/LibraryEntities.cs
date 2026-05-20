@@ -215,3 +215,57 @@ public class SourceReferenceEntity
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 }
+
+/// <summary>记忆树节点——长期目录模型。ADR-028 Phase 3。</summary>
+public class MemoryTreeNodeEntity
+{
+    [Key]
+    [MaxLength(32)]
+    public string NodeId { get; set; } = Guid.NewGuid().ToString("N");
+
+    [MaxLength(64)]
+    public string WorkspaceId { get; set; } = string.Empty;
+
+    [MaxLength(32)]
+    public string LibraryId { get; set; } = string.Empty;
+
+    [MaxLength(32)]
+    public string? ParentNodeId { get; set; }
+
+    [MaxLength(500)]
+    public string Path { get; set; } = string.Empty;
+
+    [MaxLength(200)]
+    public string Name { get; set; } = string.Empty;
+
+    public string? Summary { get; set; }
+
+    [MaxLength(32)]
+    public string NodeType { get; set; } = "category";
+
+    [MaxLength(32)]
+    public string Status { get; set; } = "active";
+
+    public int SortOrder { get; set; }
+
+    public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    public long UpdatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+}
+
+/// <summary>Book 挂载到 TreeNode 的关系。ADR-028 Phase 3。</summary>
+public class BookTreeMountEntity
+{
+    [Key]
+    [MaxLength(32)]
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    [MaxLength(32)]
+    public string BookId { get; set; } = string.Empty;
+
+    [MaxLength(32)]
+    public string NodeId { get; set; } = string.Empty;
+
+    public int Weight { get; set; } = 1;
+
+    public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+}

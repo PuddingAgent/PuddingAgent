@@ -18,6 +18,8 @@ public class MemoryLibraryDbContext : DbContext
     public DbSet<PointerEntity> Pointers => Set<PointerEntity>();
     public DbSet<BranchEntity> Branches => Set<BranchEntity>();
     public DbSet<SourceReferenceEntity> SourceReferences => Set<SourceReferenceEntity>();
+    public DbSet<MemoryTreeNodeEntity> MemoryTreeNodes => Set<MemoryTreeNodeEntity>();
+    public DbSet<BookTreeMountEntity> BookTreeMounts => Set<BookTreeMountEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -77,6 +79,23 @@ public class MemoryLibraryDbContext : DbContext
             entity.HasKey(e => e.SourceReferenceId);
             entity.HasIndex(e => new { e.OwnerType, e.OwnerId });
             entity.HasIndex(e => new { e.WorkspaceId, e.TargetType, e.TargetId });
+        });
+
+        modelBuilder.Entity<MemoryTreeNodeEntity>(entity =>
+        {
+            entity.ToTable("MemoryTreeNodes");
+            entity.HasKey(e => e.NodeId);
+            entity.HasIndex(e => new { e.WorkspaceId, e.LibraryId });
+            entity.HasIndex(e => e.ParentNodeId);
+            entity.HasIndex(e => e.Path);
+        });
+
+        modelBuilder.Entity<BookTreeMountEntity>(entity =>
+        {
+            entity.ToTable("BookTreeMounts");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.BookId);
+            entity.HasIndex(e => e.NodeId);
         });
     }
 }
