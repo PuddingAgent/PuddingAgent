@@ -15,15 +15,18 @@ namespace PuddingMemoryEngine.Services;
 public sealed class MemoryRecallService : IMemoryRecallService
 {
     private readonly IMemoryLibraryConvenience _library;
+    private readonly IMemoryLibrary _memoryLibrary;
     private readonly IDbContextFactory<MemoryDbContext> _dbFactory;
     private readonly ILogger<MemoryRecallService> _logger;
 
     public MemoryRecallService(
         IMemoryLibraryConvenience library,
+        IMemoryLibrary memoryLibrary,
         IDbContextFactory<MemoryDbContext> dbFactory,
         ILogger<MemoryRecallService> logger)
     {
         _library = library;
+        _memoryLibrary = memoryLibrary;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -41,8 +44,8 @@ public sealed class MemoryRecallService : IMemoryRecallService
             "[Recall] Start workspace={Workspace} queryLen={QueryLen} topK={TopK}",
             workspaceId, query.Length, topK);
 
-        // ── 第 1 路：Library FTS5 + Tag ──
-        var libraryTask = _library.SmartSearchAsync(query, topK * 2, ct);
+        // ── 第 1 路：Library FTS5（scoped by workspace）──
+        var libraryTask = _memoryLibrary.SearchChaptersFtsScopedAsync(workspaceId, query, topK * 2, ct);
 
         // ── 第 2 路：MemoryFacts 模糊匹配 ──
         var factsTask = SearchFactsAsync(query, workspaceId, topK * 2, ct);

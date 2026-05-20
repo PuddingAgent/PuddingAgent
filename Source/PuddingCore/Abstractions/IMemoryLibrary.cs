@@ -49,6 +49,13 @@ public interface IMemoryLibrary
         int chapterOrder = 0, string? sourceSessionId = null,
         CancellationToken ct = default);
 
+    /// <summary>为书籍添加章节（含来源引用）。ADR-028 Phase 1。</summary>
+    Task<ChapterRecord> AddChapterWithSourceAsync(
+        string bookId, string title, string content,
+        int chapterOrder = 0, string? sourceSessionId = null,
+        string? sourceReference = null, string? referenceType = null,
+        CancellationToken ct = default);
+
     /// <summary>获取单个章节。</summary>
     Task<ChapterRecord?> GetChapterAsync(string chapterId, CancellationToken ct = default);
 
@@ -104,6 +111,14 @@ public interface IMemoryLibrary
 
     /// <summary>FTS5 全文搜索章节（仅返回 ChapterRecord，不含分数——保留向后兼容）。</summary>
     Task<IReadOnlyList<ChapterRecord>> SearchChaptersFtsAsync(string query, int topK = 20, CancellationToken ct = default);
+
+    /// <summary>FTS5 全文搜索章节（workspace scoped，仅返回当前 workspace 的结果）。ADR-028 Phase 1。</summary>
+    Task<IReadOnlyList<RankedResult>> SearchChaptersFtsScopedAsync(
+        string workspaceId, string query, int topK = 20, CancellationToken ct = default);
+
+    /// <summary>列出 Workspace 下所有图书馆的书籍。ADR-028 Phase 1。</summary>
+    Task<IReadOnlyList<BookRecord>> ListBooksScopedAsync(
+        string workspaceId, int limit = 50, CancellationToken ct = default);
 
     /// <summary>按 Tag 前缀搜索书籍。</summary>
     Task<IReadOnlyList<BookRecord>> SearchBooksByTagAsync(string tagPrefix, int topK = 20, CancellationToken ct = default);

@@ -46,6 +46,7 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
             new("source_label", "string", "溯源标签，如 '原始会话'、'参考文档'（可选）"),
             new("source_reference", "string", "引用来源：内部会话文件路径如 data/logs/sessions/2026-05-13/xxx.md，或外部URL"),
             new("reference_type", "string", "引用类型：internal（内部）/ external（外部）/ none（无）"),
+            new("workspace_id", "string", "Workspace ID（可选，默认 'default'）——ADR-028 Phase 1"),
         ],
         ["action", "type"]);
 
@@ -60,6 +61,12 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
         var key = root.GetString("key", null);
         var value = root.GetString("value", null);
         var title = root.GetString("title", type);
+        var workspaceId = root.GetString("workspace_id", "default");
+        var sourceRef = root.GetString("source_reference", null);
+        var refType = root.GetString("reference_type", null);
+
+        if (workspaceId == "default")
+            _logger.LogWarning("[SaveMemory] workspace_id not provided, falling back to 'default' (ADR-028 Phase 1)");
 
         try
         {
@@ -89,10 +96,12 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
                     "preference" => 0.9,
                     "summary" => 0.5,
                     _ => 0.5
-                }
+                },
+                SourceReference = sourceRef,
+                ReferenceType = refType
             };
 
-            var result = await _library.UpsertExperienceAsync("default", package, ct);
+            var result = await _library.UpsertExperienceAsync(workspaceId, package, ct);
             _logger.LogInformation("[SaveMemory] {Action} type={Type} book={Book}", action, type, result.Book.Title);
 
             return JsonSerializer.Serialize(new
@@ -166,6 +175,9 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
             new("chapter_id", "string", "目标 ChapterId"),
             new("tags", "string", "逗号分隔的标签（创建 Book 时）"),
             new("chapter_order", "number", "章节排序序号"),
+            new("source_reference", "string", "来源引用指针字符串（如 session:abc123）——ADR-028 Phase 1"),
+            new("reference_type", "string", "引用类型：internal/external/none——ADR-028 Phase 1"),
+            new("workspace_id", "string", "Workspace ID（可选，默认 'default'）——ADR-028 Phase 1"),
         ],
         ["action"]);
 
@@ -174,6 +186,10 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
         using var doc = JsonDocument.Parse(argumentsJson);
         var root = doc.RootElement;
         var action = root.GetString("action", "list_books");
+        var workspaceId = root.GetString("workspace_id", "default");
+
+        if (workspaceId == "default")
+            _logger.LogWarning("[ManageMemory] workspace_id not provided, falling back to 'default' (ADR-028 Phase 1)");
 
         try
         {
@@ -181,24 +197,20 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
             {
                 case "list_books":
                 {
-                    var libs = await _lib.ListLibrariesAsync("default", ct);
-                    if (libs.Count == 0)
-                        return JsonSerializer.Serialize(new { status = "ok", books = Array.Empty<object>() });
-
-                    var books = await _lib.ListBooksAsync(libs[0].LibraryId, 100, ct);
+                    var books = await _lib.ListBooksScopedAsync(workspaceId, 100, ct);
                     var list = books.Select(b => new { b.BookId, b.Title, b.Summary, b.Status });
-                    return JsonSerializer.Serialize(new { status = "ok", action, books = list });
+                    return JsonSerializer.Serialize(new { status = "ok", action, workspaceId, books = list });
                 }
 
                 case "create_book":
                 {
-                    var libs = await _lib.ListLibrariesAsync("default", ct);
+                    var libs = await _lib.ListLibrariesAsync(workspaceId, ct);
                     var libId = root.GetString("library_id", null);
                     if (string.IsNullOrEmpty(libId))
                     {
                         if (libs.Count == 0)
                         {
-                            var newLib = await _lib.CreateLibraryAsync("default", "默认图书馆", null, ct);
+                            var newLib = await _lib.CreateLibraryAsync(workspaceId, "默认图书馆", null, ct);
                             libId = newLib.LibraryId;
                         }
                         else libId = libs[0].LibraryId;
@@ -211,7 +223,7 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
                         .Select(t => t.Trim()).ToList();
 
                     var book = await _lib.CreateBookAsync(libId, title, summary, tagList, ct);
-                    _logger.LogInformation("[ManageMemory] Created book={Title} id={Id}", title, book.BookId);
+                    _logger.LogInformation("[ManageMemory] Created book={Title} id={Id} workspace={WsId}", title, book.BookId, workspaceId);
                     return JsonSerializer.Serialize(new { status = "ok", action, bookId = book.BookId, title = book.Title });
                 }
 
@@ -234,10 +246,13 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
 
                     var title = root.GetString("title", "未命名章节");
                     var content = root.GetString("content", "");
+                    var sourceRef = root.GetString("source_reference", null);
+                    var refType = root.GetString("reference_type", null);
                     var chapters = await _lib.ListChaptersAsync(bookId, ct);
                     var order = chapters.Count;
 
-                    var chapter = await _lib.AddChapterAsync(bookId, title, content, order, null, ct);
+                    var chapter = await _lib.AddChapterWithSourceAsync(bookId, title, content, order,
+                        null, sourceRef, refType, ct);
                     _logger.LogInformation("[ManageMemory] Added chapter={Title} to book={BookId}", title, bookId);
                     return JsonSerializer.Serialize(new { status = "ok", action, chapterId = chapter.ChapterId, title = chapter.Title });
                 }
@@ -351,6 +366,7 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
             new("mode", "string", "搜索模式：fts5（默认，基于全文索引）或 regex（正则匹配章节内容）"),
             new("book", "string", "限定 Book 名称（in_book 需要）"),
             new("top_k", "number", "返回条目数上限，默认 10"),
+            new("workspace_id", "string", "Workspace ID（可选，默认 'default'）——ADR-028 Phase 1"),
         ],
         ["action"]);
 
@@ -363,6 +379,10 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
         var mode = root.GetString("mode", "fts5");
         var book = root.GetString("book", null);
         var topK = root.GetInt32("top_k", 10);
+        var workspaceId = root.GetString("workspace_id", "default");
+
+        if (workspaceId == "default")
+            _logger.LogWarning("[GrepMemory] workspace_id not provided, falling back to 'default' (ADR-028 Phase 1)");
 
         try
         {
@@ -372,20 +392,26 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
                 {
                     if (mode == "regex")
                     {
-                        return await RegexSearchAsync(query, book, topK, ct);
+                        return await RegexSearchAsync(query, book, topK, workspaceId, ct);
                     }
-                    var results = await _library.SmartSearchAsync(query, topK, ct);
+                    // ADR-028 Phase 1: prefer scoped search
+                    var results = await _memLib.SearchChaptersFtsScopedAsync(workspaceId, query, topK, ct);
+                    if (results.Count == 0)
+                    {
+                        // fallback to convenience layer for tag/pointer expansion
+                        results = (await _library.SmartSearchAsync(query, topK, ct)).ToList();
+                    }
                     var list = results.Select(r => new
                     {
                         r.BookTitle, r.Snippet, r.Score,
                         source = $"{r.BookTitle} (score:{r.Score:F2})"
                     });
-                    return JsonSerializer.Serialize(new { status = "ok", action, query, mode, count = results.Count, results = list });
+                    return JsonSerializer.Serialize(new { status = "ok", action, query, mode, workspaceId, count = results.Count, results = list });
                 }
 
                 case "regex":
                 {
-                    return await RegexSearchAsync(query, book, topK, ct);
+                    return await RegexSearchAsync(query, book, topK, workspaceId, ct);
                 }
 
                 case "in_book":
@@ -393,25 +419,21 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
                     if (string.IsNullOrEmpty(book))
                         return JsonSerializer.Serialize(new { status = "error", message = "book is required for in_book action" });
 
-                    // FTS5 搜索 + post-filter by book title
-                    var results = await _library.SmartSearchAsync(query, topK * 2, ct);
+                    // scoped FTS search + post-filter by book title
+                    var results = await _memLib.SearchChaptersFtsScopedAsync(workspaceId, query, topK * 2, ct);
                     var filtered = results
                         .Where(r => string.Equals(r.BookTitle, book, StringComparison.OrdinalIgnoreCase))
                         .Take(topK)
                         .Select(r => new { r.BookTitle, r.Snippet, r.Score })
                         .ToList();
-                    return JsonSerializer.Serialize(new { status = "ok", action, query, book, count = filtered.Count, results = filtered });
+                    return JsonSerializer.Serialize(new { status = "ok", action, query, book, workspaceId, count = filtered.Count, results = filtered });
                 }
 
                 case "list_books":
                 {
-                    var libs = await _memLib.ListLibrariesAsync("default", ct);
-                    if (libs.Count == 0)
-                        return JsonSerializer.Serialize(new { status = "ok", books = Array.Empty<object>() });
-
-                    var books = await _memLib.ListBooksAsync(libs[0].LibraryId, 100, ct);
+                    var books = await _memLib.ListBooksScopedAsync(workspaceId, 100, ct);
                     var list = books.Select(b => new { b.BookId, b.Title, b.Summary, b.Status });
-                    return JsonSerializer.Serialize(new { status = "ok", action, count = books.Count, books = list });
+                    return JsonSerializer.Serialize(new { status = "ok", action, workspaceId, count = books.Count, books = list });
                 }
 
                 case "toc":
@@ -419,19 +441,15 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
                     var bookId = root.GetString("book_id", null);
                     if (string.IsNullOrEmpty(bookId))
                     {
-                        // List books with chapter counts
-                        var libs = await _memLib.ListLibrariesAsync("default", ct);
-                        if (libs.Count == 0)
-                            return JsonSerializer.Serialize(new { status = "ok", toc = Array.Empty<object>() });
-
-                        var books = await _memLib.ListBooksAsync(libs[0].LibraryId, 100, ct);
+                        // List books with chapter counts, scoped by workspace
+                        var books = await _memLib.ListBooksScopedAsync(workspaceId, 100, ct);
                         var tocList = new List<object>();
                         foreach (var b in books)
                         {
                             var chs = await _memLib.ListChaptersAsync(b.BookId, ct);
                             tocList.Add(new { b.BookId, b.Title, chapterCount = chs.Count });
                         }
-                        return JsonSerializer.Serialize(new { status = "ok", action, toc = tocList });
+                        return JsonSerializer.Serialize(new { status = "ok", action, workspaceId, toc = tocList });
                     }
                     else
                     {
@@ -453,7 +471,7 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
     }
 
     /// <summary>正则检索：遍历所有 Book → 遍历每个 Chapter 内容 → Regex 匹配 → 返回命中。</summary>
-    private async Task<string> RegexSearchAsync(string pattern, string? bookFilter, int topK, CancellationToken ct)
+    private async Task<string> RegexSearchAsync(string pattern, string? bookFilter, int topK, string workspaceId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(pattern))
             return JsonSerializer.Serialize(new { status = "error", message = "query is required for regex mode" });
@@ -464,48 +482,43 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
 
         var hits = new List<object>();
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var libs = await _memLib.ListLibrariesAsync("default", ct);
+        var books = await _memLib.ListBooksScopedAsync(workspaceId, 200, ct);
 
-        foreach (var lib in libs)
+        foreach (var b in books)
         {
-            var books = await _memLib.ListBooksAsync(lib.LibraryId, 200, ct);
-            foreach (var b in books)
+            if (!string.IsNullOrWhiteSpace(bookFilter)
+                && !b.Title.Contains(bookFilter, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var chapters = await _memLib.ListChaptersAsync(b.BookId, ct);
+            foreach (var ch in chapters)
             {
-                if (!string.IsNullOrWhiteSpace(bookFilter)
-                    && !b.Title.Contains(bookFilter, StringComparison.OrdinalIgnoreCase))
-                    continue;
+                ct.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(ch.Content)) continue;
 
-                var chapters = await _memLib.ListChaptersAsync(b.BookId, ct);
-                foreach (var ch in chapters)
+                var matches = regex.Matches(ch.Content);
+                if (matches.Count == 0) continue;
+
+                // 取每个匹配周围的上下文（前后 40 字符）
+                foreach (Match m in matches)
                 {
-                    ct.ThrowIfCancellationRequested();
-                    if (string.IsNullOrWhiteSpace(ch.Content)) continue;
+                    var start = Math.Max(0, m.Index - 40);
+                    var len = Math.Min(ch.Content.Length - start, m.Length + 80);
+                    var snippet = ch.Content.Substring(start, len);
+                    if (start > 0) snippet = "…" + snippet;
+                    if (start + len < ch.Content.Length) snippet += "…";
 
-                    var matches = regex.Matches(ch.Content);
-                    if (matches.Count == 0) continue;
-
-                    // 取每个匹配周围的上下文（前后 40 字符）
-                    foreach (Match m in matches)
+                    hits.Add(new
                     {
-                        var start = Math.Max(0, m.Index - 40);
-                        var len = Math.Min(ch.Content.Length - start, m.Length + 80);
-                        var snippet = ch.Content.Substring(start, len);
-                        if (start > 0) snippet = "…" + snippet;
-                        if (start + len < ch.Content.Length) snippet += "…";
+                        book = b.Title,
+                        bookId = b.BookId,
+                        chapter = ch.Title,
+                        chapterId = ch.ChapterId,
+                        match = m.Value,
+                        snippet,
+                        position = m.Index,
+                    });
 
-                        hits.Add(new
-                        {
-                            book = b.Title,
-                            bookId = b.BookId,
-                            chapter = ch.Title,
-                            chapterId = ch.ChapterId,
-                            match = m.Value,
-                            snippet,
-                            position = m.Index,
-                        });
-
-                        if (hits.Count >= topK) break;
-                    }
                     if (hits.Count >= topK) break;
                 }
                 if (hits.Count >= topK) break;

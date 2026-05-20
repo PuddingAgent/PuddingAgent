@@ -34,7 +34,9 @@ public sealed record ChapterRecord(
     string? SourceSessionId,
     int WordCount,
     long CreatedAt,
-    long UpdatedAt);
+    long UpdatedAt,
+    string? SourceReference = null,
+    string? ReferenceType = null);
 
 /// <summary>指针记录。</summary>
 public sealed record PointerRecord(
@@ -73,6 +75,12 @@ public sealed record ExperiencePackage
     /// <summary>来源会话 ID（用于回溯完整现场）。</summary>
     public string? SourceSessionId { get; init; }
 
+    /// <summary>来源引用指针字符串（如 session:abc123、url:https://...）。</summary>
+    public string? SourceReference { get; init; }
+
+    /// <summary>引用类型：none | session | session_event | session_slice | url | file | memo。</summary>
+    public string? ReferenceType { get; init; }
+
     /// <summary>重要性（0-1）。</summary>
     public double Importance { get; init; } = 0.5;
 
@@ -100,3 +108,101 @@ public sealed record RankedResult
 public sealed record ExperienceWriteResult(
     BookRecord Book,
     ChapterRecord Chapter);
+
+// ═══════════════════════════════════════════════════════════════
+// ADR-028 Phase 1-3: 新增 DTO
+// ═══════════════════════════════════════════════════════════════
+
+/// <summary>来源引用记录——一等溯源数据结构。</summary>
+public sealed record SourceReferenceRecord(
+    string SourceReferenceId,
+    string WorkspaceId,
+    string OwnerType,
+    string OwnerId,
+    string TargetType,
+    string TargetId,
+    string? TargetRange,
+    string? Label,
+    string? Description,
+    long CreatedAt);
+
+/// <summary>来源引用创建请求。</summary>
+public sealed record SourceReferenceCreateRequest(
+    string WorkspaceId,
+    string OwnerType,
+    string OwnerId,
+    string TargetType,
+    string TargetId,
+    string? TargetRange = null,
+    string? Label = null,
+    string? Description = null);
+
+/// <summary>来源引用解析状态。</summary>
+public enum SourceResolveStatus
+{
+    Resolved,
+    Missing,
+    Unauthorized,
+    Unsupported
+}
+
+/// <summary>来源引用摘要（轻量，用于 UI 和 prompt 注入）。</summary>
+public sealed record SourceReferenceSummary(
+    string TargetType,
+    string TargetId,
+    string? Label,
+    SourceResolveStatus ResolveStatus);
+
+/// <summary>树节点记录。</summary>
+public sealed record TreeNodeRecord(
+    string NodeId,
+    string WorkspaceId,
+    string LibraryId,
+    string? ParentNodeId,
+    string Path,
+    string Name,
+    string? Summary,
+    string NodeType,
+    string Status,
+    int SortOrder,
+    long CreatedAt,
+    long UpdatedAt);
+
+/// <summary>Book 挂载到 TreeNode 的记录。</summary>
+public sealed record BookTreeMountRecord(
+    string Id,
+    string BookId,
+    string NodeId,
+    int Weight,
+    long CreatedAt);
+
+/// <summary>记忆摄入请求（Librarian 入口）。</summary>
+public sealed record MemoryIngestionRequest(
+    string WorkspaceId,
+    string LibraryId,
+    ExperiencePackage Experience,
+    string? TargetBookTitle = null,
+    string? TargetChapterId = null);
+
+/// <summary>记忆树操作类型。</summary>
+public enum MemoryTreeOperationType
+{
+    CreateNode,
+    MountBook,
+    MoveBook,
+    RenameNode,
+    MergeNode,
+    ArchiveNode,
+    AddPointer
+}
+
+/// <summary>记忆树操作（Librarian 输出，Core 执行）。</summary>
+public sealed record MemoryTreeOperation(
+    MemoryTreeOperationType OperationType,
+    string WorkspaceId,
+    string LibraryId,
+    string? NodeId = null,
+    string? ParentNodeId = null,
+    string? Name = null,
+    string? BookId = null,
+    int Weight = 1);

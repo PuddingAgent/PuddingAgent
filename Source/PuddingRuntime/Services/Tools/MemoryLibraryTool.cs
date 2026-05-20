@@ -20,15 +20,18 @@ public sealed class MemoryLibraryTool : ITool, IAgentSkill
     };
 
     private readonly IMemoryLibraryConvenience _libraryConvenience;
+    private readonly IMemoryLibrary _memoryLibrary;
     private readonly MemoryExplorerSubAgent _memoryExplorerSubAgent;
     private readonly ILogger<MemoryLibraryTool> _logger;
 
     public MemoryLibraryTool(
         IMemoryLibraryConvenience libraryConvenience,
+        IMemoryLibrary memoryLibrary,
         MemoryExplorerSubAgent memoryExplorerSubAgent,
         ILogger<MemoryLibraryTool> logger)
     {
         _libraryConvenience = libraryConvenience;
+        _memoryLibrary = memoryLibrary;
         _memoryExplorerSubAgent = memoryExplorerSubAgent;
         _logger = logger;
     }
@@ -134,7 +137,13 @@ public sealed class MemoryLibraryTool : ITool, IAgentSkill
             string.IsNullOrWhiteSpace(book) ? "-" : book,
             query);
 
-        var results = await _libraryConvenience.SmartSearchAsync(query, topK: 8, ct);
+        var results = string.IsNullOrWhiteSpace(workspaceId)
+            ? (await _libraryConvenience.SmartSearchAsync(query, topK: 8, ct)).ToList()
+            : (await _memoryLibrary.SearchChaptersFtsScopedAsync(workspaceId, query, topK: 8, ct)).ToList();
+
+        // Fallback: if scoped search returns nothing, try convenience layer
+        if (results.Count == 0 && !string.IsNullOrWhiteSpace(workspaceId))
+            results = (await _libraryConvenience.SmartSearchAsync(query, topK: 8, ct)).ToList();
 
         if (!string.IsNullOrWhiteSpace(book))
         {
