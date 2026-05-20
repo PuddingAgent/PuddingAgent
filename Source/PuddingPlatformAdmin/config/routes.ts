@@ -111,6 +111,16 @@ export default [
     component: './session',
   },
   {
+    path: '/diagnostics',
+    name: 'diagnostics',
+    icon: 'bug',
+    routes: [
+      { path: '/diagnostics', component: './diagnostics/DiagnosticsPage', name: 'overview' },
+      { path: '/diagnostics/timeline', component: './diagnostics/RuntimeTimelinePage', name: 'timeline' },
+      { path: '/diagnostics/subagent-runs', component: './diagnostics/SubAgentRunsPage', name: 'subagent-runs' },
+    ],
+  },
+  {
     path: '/runtime-management',
     name: 'runtimeManagement',
     icon: 'cloudServer',

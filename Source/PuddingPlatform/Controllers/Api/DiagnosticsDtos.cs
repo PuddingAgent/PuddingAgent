@@ -1,25 +1,6 @@
-namespace PuddingPlatform.Controllers.Api;
+using PuddingCode.Diagnostics;
 
-/// <summary>
-/// 子代理运行摘要 DTO — 用于分页列表。
-/// 对应 SubAgentRunEntity 的脱敏视图。
-/// </summary>
-public sealed record SubAgentRunSummaryDto
-{
-    public required string RunId { get; init; }
-    public required string ParentSessionId { get; init; }
-    public required string SubSessionId { get; init; }
-    public required string WorkspaceId { get; init; }
-    public required string AgentInstanceId { get; init; }
-    public required string TemplateId { get; init; }
-    public required string Status { get; init; }
-    public required string StartedAt { get; init; }
-    public string? CompletedAt { get; init; }
-    public long TotalDurationMs { get; init; }
-    public int TotalRounds { get; init; }
-    public int TotalToolCalls { get; init; }
-    public string? ErrorMessage { get; init; }
-}
+namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
 /// 子代理运行详情 DTO — 包含 Manifest + 输出 + 事件/工具计数。

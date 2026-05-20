@@ -76,6 +76,7 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
           className={styles.sidebarNewBtn}
           onClick={onNewSession}
           disabled={creatingSession}
+          data-testid="chat-new-session"
         >
           新对话
         </Button>
@@ -115,6 +116,7 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
                     isArchived && styles.sessionItemArchived,
                   )}
                   onClick={() => onSelectSession(s.sessionId)}
+                  data-testid={`chat-session-${s.sessionId}`}
                 >
                   <MessageOutlined style={{ fontSize: 14, flexShrink: 0 }} />
                   <span className={styles.sessionTitle}>{s.title}</span>

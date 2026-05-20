@@ -184,7 +184,7 @@ const MessageList: React.FC<MessageListProps> = ({
   }, [forceFollow]);
 
   return (
-    <div className={styles.messageList} ref={messageListRef} style={{ position: 'relative' }}>
+    <div className={styles.messageList} ref={messageListRef} style={{ position: 'relative' }} data-testid="chat-message-list">
       {!agentId && !error && (
         <div className={styles.onboardingState} style={{ position: 'relative' }}>
           <AmbientParticles count={8} opacity={[0.15, 0.28]} />

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
+using PuddingCode.Diagnostics;
 using PuddingCode.SubAgents;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;

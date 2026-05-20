@@ -206,6 +206,7 @@ const InputArea: React.FC<InputAreaProps> = ({
             disabled={disabled}
             autoSize={{ minRows: 1, maxRows: 5 }}
             className={`${styles.input} ${styles.consoleTextarea} ${sendingFlash ? styles.consoleTextareaSending : ''}`}
+            data-testid="chat-input"
           />
           <Button
             type={loading ? 'default' : 'primary'}
@@ -213,6 +214,7 @@ const InputArea: React.FC<InputAreaProps> = ({
             icon={loading ? <StopOutlined /> : <SendOutlined />}
             onClick={loading ? onStop : handleSendWithWave}
             disabled={loading ? false : (!inputValue.trim() || disabled)}
+            data-testid="chat-send"
           >
             {loading ? '停止' : '发送'}
           </Button>

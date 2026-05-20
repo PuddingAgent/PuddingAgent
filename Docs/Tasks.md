@@ -120,6 +120,16 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 | ARCH-E2E-006 | E2E 测试数据种子 | 默认 workspace、agent、LLM fake provider、session seed |
 | ARCH-E2E-007 | CI 测试分层 | unit、integration、web api、browser e2e 分层执行 |
 
+### ADR-023 可观测性闭环与E2E基线（2026-05-20）
+
+| 任务 ID | 标题 | 状态 |
+|--------|------|------|
+| ARCH-OBS-001 | 诊断 DTO + Timeline 聚合后端 | ✅ done |
+| ARCH-OBS-002 | Admin Diagnostics 第一版 UI | ✅ done |
+| ARCH-OBS-003 | 前端 Debug Mode | ✅ done |
+| ARCH-OBS-004 | Playwright E2E 基线 | ✅ done |
+| ARCH-OBS-005 | Docker Smoke + QA 收口 | ✅ done |
+
 ### P2：运维与文档
 
 | 任务 ID | 标题 | 交付物 |

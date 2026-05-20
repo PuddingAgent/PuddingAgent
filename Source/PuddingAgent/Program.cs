@@ -6,12 +6,14 @@ using System.Text;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
+using PuddingCode.Diagnostics;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Diagnostics;
 using PuddingController;
 using PuddingController.Data;
 using PuddingController.Services;
@@ -181,6 +183,8 @@ builder.Services.AddSingleton<ISubAgentRunStore, FileSubAgentRunStore>();
 builder.Services.AddSingleton<IRuntimeTraceAccessor, AmbientRuntimeTraceAccessor>();
 builder.Services.AddSingleton<RuntimeActivitySink>();
 builder.Services.AddSingleton<IRuntimeActivitySink>(sp => sp.GetRequiredService<RuntimeActivitySink>());
+builder.Services.AddSingleton<IDiagnosticRedactor, DiagnosticRedactor>();
+builder.Services.AddScoped<RuntimeTimelineQueryService>();
 builder.Services.AddPuddingController();
 
 // ── EF Core / 数据库 ──────────────────────────────────

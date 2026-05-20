@@ -16,6 +16,7 @@ import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/api';
 import defaultSettings, { DARK_NAV_THEME } from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { registerDebugApi } from '@/utils/debug';
 import '@ant-design/v5-patch-for-react-19';
 import './global.style';
 
@@ -101,6 +102,23 @@ const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = ({ child
       document.documentElement.setAttribute('data-pudding-theme', isDark ? 'dark' : 'light');
     }
   }, [isDark]);
+
+  // 注册 debug API（仅在 ?debug=1 时启用）
+  useEffect(() => {
+    registerDebugApi({
+      getSessionState: (_sessionId) => {
+        // 占位，后续接入真实 session 状态
+        return null;
+      },
+      getLastTraceId: () => sessionStorage.getItem('pudding_last_trace_id'),
+      getLastSessionId: () => sessionStorage.getItem('pudding_last_session_id'),
+      exportTimeline: () => null,
+      clearDebugEvents: () => {
+        sessionStorage.removeItem('pudding_last_trace_id');
+        sessionStorage.removeItem('pudding_last_session_id');
+      },
+    });
+  }, []);
 
   const contextValue = useMemo<ThemeModeContextValue>(
     () => ({

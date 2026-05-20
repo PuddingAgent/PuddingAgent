@@ -239,7 +239,7 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
   };
 
   return (
-    <div>
+    <div data-testid={`chat-message-${turn.turnId}`}>
       {/* ═══════════ 旧版兼容：legacy 模式保持原样 ═══════════ */}
       {isLegacyAssistant && showAssistant && (
         <div className={styles.avatarGroup}>
