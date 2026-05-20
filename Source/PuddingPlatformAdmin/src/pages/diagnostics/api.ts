@@ -2,6 +2,7 @@
 import { request } from '@umijs/max';
 import type {
   PagedTimelineResult,
+  RuntimeTimelineItem,
   ComponentHealthItem,
   PagedResult,
   SubAgentRunSummary,
@@ -23,7 +24,7 @@ export async function getRuntimeTimeline(params: {
 
 /** 获取指定会话的时间线 */
 export async function getSessionTimeline(sessionId: string) {
-  return request<PagedTimelineResult>(`/api/diagnostics/sessions/${encodeURIComponent(sessionId)}/timeline`);
+  return request<RuntimeTimelineItem[]>(`/api/diagnostics/sessions/${encodeURIComponent(sessionId)}/timeline`);
 }
 
 /** 获取组件健康状态列表 */

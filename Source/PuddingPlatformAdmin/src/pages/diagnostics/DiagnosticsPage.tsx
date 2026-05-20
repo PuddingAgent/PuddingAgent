@@ -232,7 +232,7 @@ const DiagnosticsPage: React.FC = () => {
             <Row gutter={[16, 16]}>
               <Col xs={24} md={12}>
                 <Card size="small" title="按状态分布">
-                  {Object.entries(eventStats.byStatus).map(([status, count]) => (
+                  {eventStats.byStatus.map(({ status, count }) => (
                     <Row key={status} style={{ marginBottom: 8 }}>
                       <Col span={16}>
                         <Tag color={status === 'succeeded' ? 'green' : status === 'failed' ? 'red' : 'blue'}>
@@ -248,7 +248,7 @@ const DiagnosticsPage: React.FC = () => {
               </Col>
               <Col xs={24} md={12}>
                 <Card size="small" title="按组件分布">
-                  {Object.entries(eventStats.byComponent).slice(0, 10).map(([component, count]) => (
+                  {eventStats.byComponent.slice(0, 10).map(({ component, count }) => (
                     <Row key={component} style={{ marginBottom: 8 }}>
                       <Col span={16}>
                         <Text ellipsis style={{ maxWidth: 150 }}>{component}</Text>
