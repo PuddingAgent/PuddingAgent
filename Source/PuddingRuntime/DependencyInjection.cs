@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
@@ -60,6 +61,7 @@ public static class RuntimeServiceExtensions
         // Agent 执行子服务（职责拆分）
         services.AddSingleton<SystemPromptBuilder>();
         services.AddSingleton<ContextPipeline>();
+        services.AddSingleton<IContextAssemblyService, ContextAssemblyService>();
         services.AddSingleton<ContextWindowManager>();
 
         // 会话归档

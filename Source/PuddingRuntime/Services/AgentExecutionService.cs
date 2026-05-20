@@ -13,6 +13,7 @@ using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Skills;
 using PuddingCode.Observability;
+using PuddingCode.Runtime;
 using Serilog.Context;
 
 namespace PuddingRuntime.Services;
@@ -47,6 +48,7 @@ public sealed class AgentExecutionService
     private readonly SkillPackageDownloadService _skillPackageDownloader;
     private readonly IReadOnlyList<IAgentLoopHook> _hooks;
     private readonly ContextPipeline _contextPipeline;
+    private readonly IContextAssemblyService? _contextAssemblyService;
     private readonly ContextWindowManager _contextManager;
     private readonly IKeyVaultService _keyVaultService;
     private readonly JsonlSessionWriter? _jsonlSessionWriter;
@@ -80,6 +82,7 @@ public sealed class AgentExecutionService
         ContextPipeline contextPipeline,
         ContextWindowManager contextManager,
         ILogger<AgentExecutionService> logger,
+        IContextAssemblyService? contextAssemblyService = null,
         IKeyVaultService? keyVaultService = null,
         JsonlSessionWriter? jsonlSessionWriter = null,
         ITerminalProcessManager? terminalManager = null,
@@ -107,6 +110,7 @@ public sealed class AgentExecutionService
         _skillPackageDownloader  = skillPackageDownloader;
         _hooks               = hooks.ToArray();
         _contextPipeline     = contextPipeline;
+        _contextAssemblyService = contextAssemblyService;
         _contextManager      = contextManager;
         _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
         _jsonlSessionWriter  = jsonlSessionWriter;
@@ -211,22 +215,40 @@ public sealed class AgentExecutionService
         {
             var ctxAssembleStartedAt = DateTimeOffset.UtcNow;
             var ctxAssembleSw = System.Diagnostics.Stopwatch.StartNew();
-            ContextAssemblyResult systemPrompt;
+            string systemPromptText;
             try
             {
-                systemPrompt = await _contextPipeline.AssembleAsync(new ContextRequest
+                if (_contextAssemblyService is not null)
                 {
-                    Template = template,
-                    WorkspaceId = request.WorkspaceId ?? string.Empty,
-                    SessionId = request.SessionId,
-                    AgentTemplateId = request.AgentTemplateId,
-                    UserMessage = request.MessageText,
-                    Capability = effectiveCapability,
-                    AgentInstanceId = instance.AgentInstanceId,
-                    ForStreaming = false,
-                    IsFirstMessage = true,
-                    SessionHistory = Array.Empty<ChatMessage>(),
-                }, ct);
+                    var facadeResult = await _contextAssemblyService.AssembleAsync(new PuddingCode.Runtime.ContextAssemblyRequest
+                    {
+                        WorkspaceId = request.WorkspaceId ?? string.Empty,
+                        SessionId = request.SessionId,
+                        AgentInstanceId = instance.AgentInstanceId,
+                        AgentTemplateId = request.AgentTemplateId,
+                        UserMessage = request.MessageText,
+                        LlmProfileId = request.LlmConfig?.ModelId ?? "default",
+                        MaxContextTokens = 8192,
+                    }, ct);
+                    systemPromptText = facadeResult.Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? string.Empty;
+                }
+                else
+                {
+                    var pipelineResult = await _contextPipeline.AssembleAsync(new ContextRequest
+                    {
+                        Template = template,
+                        WorkspaceId = request.WorkspaceId ?? string.Empty,
+                        SessionId = request.SessionId,
+                        AgentTemplateId = request.AgentTemplateId,
+                        UserMessage = request.MessageText,
+                        Capability = effectiveCapability,
+                        AgentInstanceId = instance.AgentInstanceId,
+                        ForStreaming = false,
+                        IsFirstMessage = true,
+                        SessionHistory = Array.Empty<ChatMessage>(),
+                    }, ct);
+                    systemPromptText = pipelineResult.SystemPrompt;
+                }
                 ctxAssembleSw.Stop();
                 await RecordActivityAsync(
                     execTrace,
@@ -242,7 +264,7 @@ public sealed class AgentExecutionService
                         ["agent_template_id"] = request.AgentTemplateId,
                         ["session_id"] = request.SessionId,
                         ["is_first_message"] = "true",
-                        ["estimated_bytes"] = (systemPrompt.SystemPrompt?.Length ?? 0).ToString(),
+                        ["estimated_bytes"] = (systemPromptText?.Length ?? 0).ToString(),
                     },
                     error: null,
                     ct: CancellationToken.None);
@@ -272,7 +294,7 @@ public sealed class AgentExecutionService
                     ct: CancellationToken.None);
                 throw;
             }
-            history.Add(new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt));
+            history.Add(new ChatMessage(ChatRole.System, systemPromptText));
         }
         else if (template.Memory?.EnableSessionMemory == true
               || template.Memory?.EnableWorkspaceMemory == true)
