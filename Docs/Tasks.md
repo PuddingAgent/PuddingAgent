@@ -1,6 +1,6 @@
 ﻿# Pudding Agent — 任务看板
 
-最后更新：2026-05-18（Phase 5 上下文缓存可观测性归档）
+最后更新：2026-05-20（ADR-024 核心架构组件边界与执行引擎拆分）
 
 ## 项目定位
 
@@ -129,6 +129,25 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 | ARCH-OBS-003 | 前端 Debug Mode | ✅ done |
 | ARCH-OBS-004 | Playwright E2E 基线 | ✅ done |
 | ARCH-OBS-005 | Docker Smoke + QA 收口 | ✅ done |
+
+### ADR-024 核心架构组件边界与执行引擎拆分（2026-05-20）
+
+行动指南：[24核心架构组件边界与执行引擎拆分ADR](07架构/24核心架构组件边界与执行引擎拆分ADR.md)
+实施计划：[2026-05-20-core-architecture-boundaries-refactor-plan](superpowers/plans/2026-05-20-core-architecture-boundaries-refactor-plan.md)
+QA：[QA-2026-05-20-Core-Architecture-Boundaries](../QA/QA-2026-05-20-Core-Architecture-Boundaries.md)
+
+| 任务 ID | 标题 | 状态 |
+|--------|------|------|
+| ARCH-CORE-001 | Core Runtime Contracts (6 接口 + DTO) | ✅ done |
+| ARCH-CORE-002 | Lifecycle Recorder 适配 RuntimeActivity | ✅ done |
+| ARCH-CORE-003 | Context Assembly Facade | ✅ done |
+| ARCH-CORE-004 | LLM Invocation Facade (非流式路径迁移) | ✅ done |
+| ARCH-CORE-005 | Tool Invocation Facade | ✅ done |
+| ARCH-CORE-006 | Sub-Agent Invocation Facade | ✅ done |
+| ARCH-CORE-007 | Session Output Writer | ✅ done |
+| ARCH-CORE-008 | AgentExecutionService 瘦身 | ✅ done |
+| ARCH-CORE-009 | ADR-023 Timeline Metadata 兼容 | ✅ done |
+| ARCH-CORE-010 | QA 与文档收口 | ✅ done |
 
 ### P2：运维与文档
 
