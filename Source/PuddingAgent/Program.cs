@@ -10,6 +10,7 @@ using PuddingCode.Diagnostics;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
@@ -184,6 +185,7 @@ builder.Services.AddSingleton<IRuntimeTraceAccessor, AmbientRuntimeTraceAccessor
 builder.Services.AddSingleton<RuntimeActivitySink>();
 builder.Services.AddSingleton<IRuntimeActivitySink>(sp => sp.GetRequiredService<RuntimeActivitySink>());
 builder.Services.AddSingleton<IDiagnosticRedactor, DiagnosticRedactor>();
+builder.Services.AddSingleton<IExecutionLifecycleRecorder, RuntimeActivityExecutionLifecycleRecorder>();
 builder.Services.AddScoped<RuntimeTimelineQueryService>();
 builder.Services.AddPuddingController();
 
