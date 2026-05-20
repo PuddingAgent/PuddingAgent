@@ -1,18 +1,17 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Chat Smoke', () => {
-  test('should login and send a message', async ({ page }) => {
-    // 1. Open the app
-    await page.goto('/');
+  test('should login, send message, and verify evidence chain', async ({ page }) => {
+    // 1. Open the app with debug mode
+    await page.goto('/?debug=1');
     
     // 2. Wait for redirect to login
     await page.waitForURL(/\/admin\/user\/login/);
     
-    // 3. Fill in bootstrap password (bootstrap default: 空或test)
-    // Note: 根据实际登录页调整
+    // 3. Fill in bootstrap password
     const passwordInput = page.locator('input[type="password"]');
     if (await passwordInput.isVisible()) {
-      await passwordInput.fill('admin123'); // 根据实际默认密码调整
+      await passwordInput.fill('admin123');
       await page.locator('button[type="submit"]').click();
     }
     
@@ -39,15 +38,29 @@ test.describe('Chat Smoke', () => {
     const messages = page.locator('[data-testid^="chat-message-"]');
     await expect(messages.first()).toBeVisible({ timeout: 10000 });
     
-    // 9. Collect trace/session ID from debug API if available
+    // 9. ADR-026: Verify debug API returns non-null session/trace
+    const sessionId = await page.evaluate(() => {
+      const debug = (window as any).__PUDDING_DEBUG__;
+      return debug?.getLastSessionId() || null;
+    });
+    expect(sessionId).toBeTruthy();
+    console.log('Session ID:', sessionId);
+
     const traceId = await page.evaluate(() => {
       const debug = (window as any).__PUDDING_DEBUG__;
       return debug?.getLastTraceId() || null;
     });
     console.log('Trace ID:', traceId);
-    console.log('Session ID:', await page.evaluate(() => {
-      const debug = (window as any).__PUDDING_DEBUG__;
-      return debug?.getLastSessionId() || null;
-    }));
+
+    // 10. ADR-026: Verify evidence API via page request
+    if (traceId) {
+      const evidenceResp = await page.request.get(
+        `/api/diagnostics/runtime/evidence/${encodeURIComponent(traceId)}`
+      );
+      expect(evidenceResp.ok()).toBeTruthy();
+      const evidence = await evidenceResp.json();
+      expect(evidence.timeline).toBeDefined();
+      console.log('Evidence timeline items:', evidence.timeline?.length);
+    }
   });
 });

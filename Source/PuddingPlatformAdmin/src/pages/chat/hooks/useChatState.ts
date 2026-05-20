@@ -27,6 +27,7 @@ import {
 } from '@/services/platform/api';
 import type { AssistantStatus, ChatTurn, TimelineItem, SessionGroup, SubAgentCardMap, SubAgentCard, ChatSource } from '../types';
 import { assistantStatusLabel } from '../types';
+import { writeDebugSessionState, writeDebugTrace } from '@/utils/debug';
 
 const MESSAGE_PAGE_SIZE = 20;
 const SESSION_EVENT_PAGE_SIZE = 50;
@@ -596,6 +597,11 @@ export function useChatState(): UseChatStateReturn {
       }
       if (ev.type === 'done') {
         completedTurnsRef.current.add(turnId);
+        // ADR-026: debug mode 写入 trace（从 metadata/traceId 提取）
+        const anyDone = ev as Record<string, unknown>;
+        if (anyDone.traceId && typeof anyDone.traceId === 'string') {
+          writeDebugTrace(anyDone.traceId);
+        }
         return {
           ...turn,
           assistant: {
@@ -1145,6 +1151,9 @@ export function useChatState(): UseChatStateReturn {
       setSelectedSessionId(returnedSessionId);
       forceNewSessionRef.current = false;
       messageIdToTurnIdRef.current.set(messageId, turnId);
+
+      // ADR-026: debug mode 写入 sessionId/messageId
+      writeDebugSessionState(returnedSessionId, messageId);
 
       // 标记用户消息已送达
       setTurns(p => p.map(t =>

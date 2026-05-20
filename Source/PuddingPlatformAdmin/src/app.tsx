@@ -107,15 +107,16 @@ const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     registerDebugApi({
       getSessionState: (_sessionId) => {
-        // 占位，后续接入真实 session 状态
         return null;
       },
       getLastTraceId: () => sessionStorage.getItem('pudding_last_trace_id'),
       getLastSessionId: () => sessionStorage.getItem('pudding_last_session_id'),
+      getLastMessageId: () => sessionStorage.getItem('pudding_last_message_id'),
       exportTimeline: () => null,
       clearDebugEvents: () => {
         sessionStorage.removeItem('pudding_last_trace_id');
         sessionStorage.removeItem('pudding_last_session_id');
+        sessionStorage.removeItem('pudding_last_message_id');
       },
     });
   }, []);
