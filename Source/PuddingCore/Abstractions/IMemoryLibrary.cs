@@ -120,6 +120,16 @@ public interface IMemoryLibrary
     Task<IReadOnlyList<BookRecord>> ListBooksScopedAsync(
         string workspaceId, int limit = 50, CancellationToken ct = default);
 
+    // ── ADR-028 Phase 2: SourceReference ──
+
+    /// <summary>创建来源引用记录。</summary>
+    Task<SourceReferenceRecord> AddSourceReferenceAsync(
+        SourceReferenceCreateRequest request, CancellationToken ct = default);
+
+    /// <summary>获取指定 owner 的所有来源引用。</summary>
+    Task<IReadOnlyList<SourceReferenceRecord>> GetSourceReferencesAsync(
+        string ownerType, string ownerId, CancellationToken ct = default);
+
     /// <summary>按 Tag 前缀搜索书籍。</summary>
     Task<IReadOnlyList<BookRecord>> SearchBooksByTagAsync(string tagPrefix, int topK = 20, CancellationToken ct = default);
 

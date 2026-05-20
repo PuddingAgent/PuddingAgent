@@ -950,6 +950,41 @@ public sealed class MemoryLibrary : IMemoryLibrary
         return entities.Select(ToRecord).ToList();
     }
 
+    // ── ADR-028 Phase 2: SourceReference ───────────────────────────────
+
+    public async Task<SourceReferenceRecord> AddSourceReferenceAsync(
+        SourceReferenceCreateRequest request, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var entity = new SourceReferenceEntity
+        {
+            SourceReferenceId = Guid.NewGuid().ToString("N"),
+            WorkspaceId = request.WorkspaceId,
+            OwnerType = request.OwnerType,
+            OwnerId = request.OwnerId,
+            TargetType = request.TargetType,
+            TargetId = request.TargetId,
+            TargetRange = request.TargetRange,
+            Label = request.Label,
+            Description = request.Description,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        };
+        db.SourceReferences.Add(entity);
+        await db.SaveChangesAsync(ct);
+        return ToRecord(entity);
+    }
+
+    public async Task<IReadOnlyList<SourceReferenceRecord>> GetSourceReferencesAsync(
+        string ownerType, string ownerId, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var entities = await db.SourceReferences.AsNoTracking()
+            .Where(s => s.OwnerType == ownerType && s.OwnerId == ownerId)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync(ct);
+        return entities.Select(ToRecord).ToList();
+    }
+
     // ── 私有辅助 ───────────────────────────────────────────────────────
 
     /// <summary>级联删除 Book 及其所有 Chapter/Pointer/BookIndex。</summary>
@@ -1013,6 +1048,10 @@ public sealed class MemoryLibrary : IMemoryLibrary
     private static BranchRecord ToRecord(BranchEntity e) => new(
         e.BranchId, e.BookId, e.BranchName, e.Description,
         e.CreatedBy, e.MergedInto, e.IsDefault, e.CreatedAt);
+
+    private static SourceReferenceRecord ToRecord(SourceReferenceEntity e) => new(
+        e.SourceReferenceId, e.WorkspaceId, e.OwnerType, e.OwnerId,
+        e.TargetType, e.TargetId, e.TargetRange, e.Label, e.Description, e.CreatedAt);
 
     /// <summary>
     /// 转义 FTS5 查询：先按空格分词，再对每个词做双引号短语包装，用空格连接。

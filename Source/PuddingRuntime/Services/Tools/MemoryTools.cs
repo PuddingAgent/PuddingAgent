@@ -104,6 +104,21 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
             var result = await _library.UpsertExperienceAsync(workspaceId, package, ct);
             _logger.LogInformation("[SaveMemory] {Action} type={Type} book={Book}", action, type, result.Book.Title);
 
+            // ADR-028 Phase 2: 写入 SourceReference
+            if (!string.IsNullOrEmpty(sourceRef) && !string.IsNullOrEmpty(refType))
+            {
+                try
+                {
+                    await _memLib.AddSourceReferenceAsync(new SourceReferenceCreateRequest(
+                        workspaceId, "chapter", result.Chapter.ChapterId, refType, sourceRef,
+                        Label: $"{type}: {result.Book.Title}"), ct);
+                }
+                catch (Exception srEx)
+                {
+                    _logger.LogWarning(srEx, "[SaveMemory] Failed to write SourceReference for chapter={ChapterId}", result.Chapter.ChapterId);
+                }
+            }
+
             return JsonSerializer.Serialize(new
             {
                 status = "ok",

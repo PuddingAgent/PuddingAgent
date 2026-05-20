@@ -181,3 +181,37 @@ public class BranchEntity
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 }
+
+/// <summary>来源引用——一等溯源数据结构。ADR-028 Phase 2。</summary>
+public class SourceReferenceEntity
+{
+    [Key]
+    [MaxLength(32)]
+    public string SourceReferenceId { get; set; } = Guid.NewGuid().ToString("N");
+
+    [MaxLength(64)]
+    public string WorkspaceId { get; set; } = string.Empty;
+
+    [MaxLength(32)]
+    public string OwnerType { get; set; } = string.Empty;
+
+    [MaxLength(32)]
+    public string OwnerId { get; set; } = string.Empty;
+
+    [MaxLength(32)]
+    public string TargetType { get; set; } = string.Empty;
+
+    [MaxLength(256)]
+    public string TargetId { get; set; } = string.Empty;
+
+    [MaxLength(256)]
+    public string? TargetRange { get; set; }
+
+    [MaxLength(200)]
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    /// <summary>Unix 时间戳（毫秒）。</summary>
+    public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+}
