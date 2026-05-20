@@ -55,6 +55,7 @@ public static class RuntimeServiceExtensions
 
         // LLM 客户端 — V1 直连（不经过 Controller 中转）
         services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
+        services.AddSingleton<ILlmInvocationService, LlmInvocationService>();
         services.AddSingleton<IMemoryLlmClient, DirectMemoryLlmClient>();
         services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 

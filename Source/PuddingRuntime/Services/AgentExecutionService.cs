@@ -39,6 +39,7 @@ public sealed class AgentExecutionService
     private readonly IMemoryEngine _memory;
     private readonly SandboxExecutor _sandbox;
     private readonly IRuntimeLlmClient _llmClient;
+    private readonly ILlmInvocationService? _llmInvocationService;
     private readonly SkillRuntime _skillRuntime;
     private readonly AgentExecutionGuardrails _guardrails;
     private readonly ExecutionControlRegistry _controlRegistry;
@@ -83,6 +84,7 @@ public sealed class AgentExecutionService
         ContextWindowManager contextManager,
         ILogger<AgentExecutionService> logger,
         IContextAssemblyService? contextAssemblyService = null,
+        ILlmInvocationService? llmInvocationService = null,
         IKeyVaultService? keyVaultService = null,
         JsonlSessionWriter? jsonlSessionWriter = null,
         ITerminalProcessManager? terminalManager = null,
@@ -101,6 +103,7 @@ public sealed class AgentExecutionService
         _memory              = memory;
         _sandbox             = sandbox;
         _llmClient           = llmClient;
+        _llmInvocationService = llmInvocationService;
         _skillRuntime        = skillRuntime;
         _guardrails          = guardrails;
         _controlRegistry     = controlRegistry;
@@ -462,9 +465,40 @@ public sealed class AgentExecutionService
                 LlmResponse llmResp;
                 try
                 {
-                    llmResp = await _llmClient.ChatAsync(
-                        request.WorkspaceId, request.SessionId,
-                        request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
+                    if (_llmInvocationService is not null)
+                    {
+                        var facadeResult = await _llmInvocationService.InvokeAsync(new PuddingCode.Runtime.LlmInvocationRequest
+                        {
+                            WorkspaceId = request.WorkspaceId,
+                            SessionId = request.SessionId,
+                            AgentInstanceId = instance.AgentInstanceId,
+                            AgentTemplateId = request.AgentTemplateId,
+                            ProfileId = effectiveLlmConfig?.ModelId ?? "default",
+                            Messages = injectedHistory,
+                            Tools = llmTools,
+                        }, ct);
+
+                        if (!facadeResult.Success)
+                        {
+                            _logger.LogError(
+                                "[AgentExec] LLM facade error round={Round} session={Session} error={Error}",
+                                round + 1, request.SessionId, facadeResult.Error);
+                            history.Add(new ChatMessage(ChatRole.Tool,
+                                $"⚠️ LLM API call failed: {facadeResult.Error}\n" +
+                                "The previous tool result may contain content the model cannot process. " +
+                                "Please summarize the tool output in your own words and try a different approach.",
+                                ToolCallId: "llm-error"));
+                            continue;
+                        }
+
+                        llmResp = new LlmResponse(facadeResult.ReplyText, facadeResult.ToolCalls, Usage: facadeResult.Usage);
+                    }
+                    else
+                    {
+                        llmResp = await _llmClient.ChatAsync(
+                            request.WorkspaceId, request.SessionId,
+                            request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
+                    }
                 }
                 catch (Exception ex)
                 {
