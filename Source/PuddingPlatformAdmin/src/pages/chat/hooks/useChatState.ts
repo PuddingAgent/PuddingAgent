@@ -597,11 +597,8 @@ export function useChatState(): UseChatStateReturn {
       }
       if (ev.type === 'done') {
         completedTurnsRef.current.add(turnId);
-        // ADR-026: debug mode 写入 trace（从 metadata/traceId 提取）
-        const anyDone = ev as Record<string, unknown>;
-        if (anyDone.traceId && typeof anyDone.traceId === 'string') {
-          writeDebugTrace(anyDone.traceId);
-        }
+        // ADR-027: debug mode 写入 traceId（来自后端 done frame）
+        if (ev.traceId) writeDebugTrace(ev.traceId);
         return {
           ...turn,
           assistant: {

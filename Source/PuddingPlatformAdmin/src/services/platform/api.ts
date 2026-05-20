@@ -1401,7 +1401,7 @@ export type AdminChatStreamEvent =
   | { type: 'tool_result'; name: string; exitCode: number; output: string; error?: string }
   | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
   | { type: 'usage'; usage: TokenUsageDto }
-  | { type: 'done'; reply?: string; usage?: TokenUsageDto }
+  | { type: 'done'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string }
   | { type: 'error'; message: string }
   | { type: 'cancelled'; message?: string }
   | { type: 'subconscious_step'; status: 'loading' | 'thinking' | 'done'; message: string; [key: string]: unknown }

@@ -1833,7 +1833,13 @@ public sealed class AgentExecutionService
                 reply, streamSuccess ? null : "No response generated",
                 0, totalToolCalls, perfTotalSw.ElapsedMilliseconds, CancellationToken.None);
 
-            var doneFrame = ServerSentEventFrame.Json(SseEventTypes.Done, new { reply, usage = finalUsage });
+            var doneFrame = ServerSentEventFrame.Json(SseEventTypes.Done, new
+            {
+                reply,
+                usage = finalUsage,
+                traceId = execTrace.TraceId,
+                sessionId = request.SessionId,
+            });
             Append(doneFrame);
             yield return doneFrame;
         }
