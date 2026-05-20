@@ -52,3 +52,13 @@ public interface ILlmInvocationService
     Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default);
     IAsyncEnumerable<StreamDelta> InvokeStreamAsync(LlmInvocationRequest request, CancellationToken ct = default);
 }
+
+/// <summary>LLM Profile 解析器 — 将 provider/profile/model/role 解析为可调用的 LlmConfig。</summary>
+public interface ILlmProfileResolver
+{
+    Task<LlmConfig> ResolveAsync(
+        string workspaceId,
+        string agentInstanceId,
+        LlmInvocationProfile profile,
+        CancellationToken ct = default);
+}

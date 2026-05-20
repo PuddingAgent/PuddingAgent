@@ -13,12 +13,17 @@ namespace PuddingRuntime.Services;
 public sealed class LlmInvocationService : ILlmInvocationService
 {
     private readonly IRuntimeLlmClient _llmClient;
+    private readonly ILlmProfileResolver? _profileResolver;
     private readonly ILogger<LlmInvocationService> _logger;
 
-    public LlmInvocationService(IRuntimeLlmClient llmClient, ILogger<LlmInvocationService> logger)
+    public LlmInvocationService(
+        IRuntimeLlmClient llmClient,
+        ILogger<LlmInvocationService> logger,
+        ILlmProfileResolver? profileResolver = null)
     {
         _llmClient = llmClient;
         _logger = logger;
+        _profileResolver = profileResolver;
     }
 
     public async Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
@@ -30,10 +35,16 @@ public sealed class LlmInvocationService : ILlmInvocationService
 
         try
         {
-            var llmConfig = new LlmConfig
+            LlmConfig llmConfig;
+            if (_profileResolver is not null)
             {
-                ModelId = request.Profile.ModelId,
-            };
+                llmConfig = await _profileResolver.ResolveAsync(
+                    request.WorkspaceId, request.AgentInstanceId, request.Profile, ct);
+            }
+            else
+            {
+                llmConfig = new LlmConfig { ModelId = request.Profile.ModelId };
+            }
 
             var response = await _llmClient.ChatAsync(
                 request.WorkspaceId,
@@ -69,10 +80,16 @@ public sealed class LlmInvocationService : ILlmInvocationService
         LlmInvocationRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var llmConfig = new LlmConfig
+        LlmConfig llmConfig;
+        if (_profileResolver is not null)
         {
-            ModelId = request.Profile.ModelId,
-        };
+            llmConfig = await _profileResolver.ResolveAsync(
+                request.WorkspaceId, request.AgentInstanceId, request.Profile, ct);
+        }
+        else
+        {
+            llmConfig = new LlmConfig { ModelId = request.Profile.ModelId };
+        }
 
         await foreach (var delta in _llmClient.ChatStreamAsync(
             request.WorkspaceId,
