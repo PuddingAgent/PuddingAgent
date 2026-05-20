@@ -177,7 +177,7 @@ QA：[QA-2026-05-20-ADR-026-Closure](../QA/QA-2026-05-20-ADR-026-Closure.md)
 | P0 | ADR27-001 | 回滚 ADR-026 误验收状态 | ✅ done |
 | P0 | ADR27-002 | 后端 done frame 携带 traceId | ✅ done |
 | P0 | ADR27-003 | 前端 debug trace 写入稳定化 | ✅ done |
-| P0 | ADR27-004 | Playwright evidence 强断言 | ✅ done |
+| P0 | ADR27-004 | Playwright evidence 强断言 | ✅ done (code fixed, pending live run) |
 | P0 | ADR27-005 | SubAgentTool 接入 `ISubAgentInvocationService` | ✅ done |
 | P0 | ADR27-006 | LLM resolver 返回 resolved profile | ✅ done |
 | P1 | ADR27-007 | fallback 标记和静态检查 | ✅ done |

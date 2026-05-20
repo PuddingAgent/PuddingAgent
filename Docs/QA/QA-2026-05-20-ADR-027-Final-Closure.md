@@ -44,7 +44,7 @@ dotnet build PuddingAgentNetwork.slnx --no-restore --nologo
 
 ## 残余风险
 
-1. **LLM resolver 仍是 legacy.direct**：provider/profile 未参与真实多服务商配置选择。需后续配置目录治理任务升级。
-2. **全量前端 TS 未清零**：chat 模块有 202 pre-existing errors，与本 ADR 无关。
-3. **E2E 未在运行中服务上执行**：Playwright 测试代码已更正但未在真实服务上跑。需 `build-and-up.ps1` + `npm run` 后验证。
-4. **`external/github.hyfree.GM`** 卫生项未混入本轮。
+1. **LLM resolver 仍是 legacy.direct**：provider/profile 未参与真实多服务商配置选择。
+2. **Playwright 未在运行中服务通过**：需 `build-and-up.ps1` 启动后重跑 `npx playwright test specs/chat-smoke.spec.ts --reporter=line`。
+3. **全量前端 TS 未清零**：chat 模块有 ~200 pre-existing errors。
+4. **`external/github.hyfree.GM`** 卫生项未混入。
