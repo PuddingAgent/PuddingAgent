@@ -1,6 +1,6 @@
 ﻿# Pudding Agent — 任务看板
 
-最后更新：2026-05-20（ADR-026 ADR-025 验收阻塞修复与执行闭环方案）
+最后更新：2026-05-20（ADR-027 ADR-026 终验阻塞修复与证据链强制闭环方案）
 
 ## 项目定位
 
@@ -160,13 +160,29 @@ QA：[QA-2026-05-20-ADR-026-Closure](../QA/QA-2026-05-20-ADR-026-Closure.md)
 | P0 | ADR26-002 | 增加诊断 DTO 序列化 contract tests | ✅ done |
 | P0 | ADR26-003 | Streaming LLM 经 `ILlmInvocationService.InvokeStreamAsync` | ✅ done |
 | P0 | ADR26-004 | Tool 调用经 `IToolInvocationService.InvokeAsync` | ✅ done |
-| P0 | ADR26-005 | Sub-Agent 调用经 `ISubAgentInvocationService.InvokeAsync` | ✅ done (DI registered; direct calls not in AgentExecutionService) |
+| P0 | ADR26-005 | Sub-Agent 调用经 `ISubAgentInvocationService.InvokeAsync` | ⚠️ partial（SubAgentTool 仍需接入 facade） |
 | P0 | ADR26-006 | Session output 经 `ISessionOutputWriter.WriteFrameAsync` | ✅ done |
-| P0 | ADR26-007 | LLM provider/profile/model/role 真实解析 | ✅ done (`ILlmProfileResolver` implemented) |
+| P0 | ADR26-007 | LLM provider/profile/model/role 真实解析 | ⚠️ partial（resolver 仍需接入真实配置解析） |
 | P1 | ADR26-008 | Debug API 写入 sessionId/traceId/messageId | ✅ done |
-| P1 | ADR26-009 | Playwright evidence test 断言后端证据链 | ✅ done |
+| P1 | ADR26-009 | Playwright evidence test 断言后端证据链 | ❌ blocked（traceId 未强断言，evidence 路由错误） |
 | P1 | ADR26-010 | Docker smoke 增加 evidence API 检查 | ⏳ deferred (需运行中服务) |
 | P1 | ADR26-011 | QA 报告与 ADR 状态收口 | ✅ done |
+
+### ADR-027 ADR-026 终验阻塞修复与证据链强制闭环（2026-05-20）
+
+行动指南：[27ADR-026终验阻塞修复与证据链强制闭环方案](07架构/27ADR-026终验阻塞修复与证据链强制闭环方案.md)
+
+| 优先级 | 任务 ID | 标题 | 状态 |
+|--------|---------|------|------|
+| P0 | ADR27-001 | 回滚 ADR-026 误验收状态 | ✅ done |
+| P0 | ADR27-002 | 后端 done frame 携带 traceId | 🔲 pending |
+| P0 | ADR27-003 | 前端 debug trace 写入稳定化 | 🔲 pending |
+| P0 | ADR27-004 | Playwright evidence 强断言 | 🔲 pending |
+| P0 | ADR27-005 | SubAgentTool 接入 `ISubAgentInvocationService` | 🔲 pending |
+| P0 | ADR27-006 | LLM resolver 返回 resolved profile | 🔲 pending |
+| P1 | ADR27-007 | fallback 标记和静态检查 | 🔲 pending |
+| P1 | ADR27-008 | 最终 QA 报告 | 🔲 pending |
+| P1 | ADR27-009 | Tasks/ADR 状态收口 | 🔲 pending |
 
 ### P2：运维与文档
 
