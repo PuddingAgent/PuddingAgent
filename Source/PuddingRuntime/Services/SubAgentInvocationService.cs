@@ -29,9 +29,14 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         var spawnRequest = new SubAgentSpawnRequest
         {
             ParentSessionId = request.ParentSessionId,
+            ParentAgentId = request.ParentAgentId,
             WorkspaceId = request.WorkspaceId,
             TaskDescription = request.Task,
             TemplateId = request.TemplateId,
+            ModelId = request.ModelId,
+            LlmConfig = request.LlmConfig,
+            MaxRounds = request.MaxRounds ?? 10,
+            CapabilityPolicy = request.CapabilityPolicy,
         };
 
         if (request.IsAsync)

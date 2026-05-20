@@ -8,7 +8,11 @@ test.describe('Chat Smoke', () => {
     // 2. Wait for redirect to login
     await page.waitForURL(/\/admin\/user\/login/);
     
-    // 3. Fill in bootstrap password
+    // 3. Fill in login credentials
+    const usernameInput = page.locator('input[type="text"], input[name="username"], #username');
+    if (await usernameInput.isVisible()) {
+      await usernameInput.fill('admin');
+    }
     const passwordInput = page.locator('input[type="password"]');
     if (await passwordInput.isVisible()) {
       await passwordInput.fill('admin123');

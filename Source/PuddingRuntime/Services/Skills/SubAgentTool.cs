@@ -211,10 +211,15 @@ public sealed class SubAgentTool : ITool, IAgentSkill
             {
                 ParentSessionId = request.SessionId,
                 ParentAgentInstanceId = request.AgentInstanceId,
+                ParentAgentId = request.AgentInstanceId,
                 WorkspaceId = request.WorkspaceId ?? "",
                 TemplateId = template.TemplateId,
                 Task = task!,
                 IsAsync = true,
+                ModelId = childLlmConfig?.ModelId ?? modelId,
+                LlmConfig = childLlmConfig,
+                MaxRounds = 10,
+                CapabilityPolicy = childCapability,
             }, ct);
             spawnResult = new SubAgentSpawnResult
             {

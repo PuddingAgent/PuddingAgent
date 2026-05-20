@@ -1,4 +1,5 @@
 using PuddingCode.Observability;
+using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
 
@@ -8,9 +9,15 @@ public sealed record SubAgentInvocationRequest
     public required string ParentSessionId { get; init; }
     public required string WorkspaceId { get; init; }
     public required string ParentAgentInstanceId { get; init; }
+    /// <summary>子代理父 Agent ID（映射到 SubAgentSpawnRequest.ParentAgentId）。</summary>
+    public string? ParentAgentId { get; init; }
     public required string TemplateId { get; init; }
     public required string Task { get; init; }
     public bool IsAsync { get; init; }
+    public string? ModelId { get; init; }
+    public LlmConfig? LlmConfig { get; init; }
+    public int? MaxRounds { get; init; }
+    public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
 }
 

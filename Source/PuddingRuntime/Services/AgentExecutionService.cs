@@ -509,6 +509,7 @@ public sealed class AgentExecutionService
                     }
                     else
                     {
+                        // ADR-027 legacy fallback for tests only (LLM client)
                         llmResp = await _llmClient.ChatAsync(
                             request.WorkspaceId, request.SessionId,
                             request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
@@ -921,6 +922,7 @@ public sealed class AgentExecutionService
                         }
                         else
                         {
+                            // ADR-027 legacy fallback for tests only (SkillRuntime)
                             skillResult = await _skillRuntime.InvokeAsync(
                                 toolName,
                                 new SkillInvokeRequest
@@ -1673,6 +1675,7 @@ public sealed class AgentExecutionService
                     }
                     else
                     {
+                        // ADR-027 legacy fallback for tests only (SkillRuntime streaming)
                         result = await _skillRuntime.InvokeAsync(
                             tc.Name,
                             new SkillInvokeRequest
