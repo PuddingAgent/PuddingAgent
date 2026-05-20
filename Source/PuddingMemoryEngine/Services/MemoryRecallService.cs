@@ -82,6 +82,9 @@ public sealed class MemoryRecallService : IMemoryRecallService
             Source = "library",
             SourceId = l.BookId,
             RelevanceScore = l.Score,
+            BookId = l.BookId,
+            ChapterId = l.ChapterId,
+            TreePath = l.BookTitle,
         }).ToList());
 
         AddRrf(factResults, weight: 0.8);

@@ -260,6 +260,7 @@ builder.Services.AddSingleton<IMemoryLibraryConvenience>(sp =>
     new MemoryLibraryConvenience(
         sp.GetRequiredService<IMemoryLibrary>(),
         sp.GetService<IMemoryLlmClient>()));
+builder.Services.AddSingleton<IMemoryLibrarian, MemoryLibrarian>();
 builder.Services.AddSingleton<MemoryRecallService>();
 builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<MemoryRecallService>());
 builder.Services.AddSingleton<JsonlSessionWriter>();

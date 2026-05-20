@@ -49,13 +49,20 @@ public sealed record MemoryRecallResult
     public long ElapsedMs { get; init; }
 }
 
-/// <summary>单条记忆片段。</summary>
+/// <summary>单条记忆片段。ADR-028 Phase 5 扩展。</summary>
 public sealed record RecalledMemory
 {
     public required string Snippet { get; init; }
     public double RelevanceScore { get; init; }
     public string Source { get; init; } = "unknown"; // "library" | "fact" | "preference"
     public string? SourceId { get; init; }
+
+    // ADR-028 Phase 5: 增强溯源元数据
+    public string? BookId { get; init; }
+    public string? ChapterId { get; init; }
+    public string? TreePath { get; init; }
+    public IReadOnlyList<SourceReferenceSummary> Sources { get; init; } = Array.Empty<SourceReferenceSummary>();
+    public bool NeedsVerification { get; init; }
 }
 
 /// <summary>各路召回命中统计。</summary>

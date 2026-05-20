@@ -316,6 +316,22 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                                 job.WorkspaceId,
                                 bookTitle,
                                 writeResult.Book.BookId);
+
+                            // ADR-028 Phase 6: 写入 SourceReference（session 粒度溯源）
+                            try
+                            {
+                                await _memoryLibrary.AddSourceReferenceAsync(
+                                    new SourceReferenceCreateRequest(
+                                        job.WorkspaceId, "chapter", writeResult.Chapter.ChapterId,
+                                        "session", $"session:{job.SessionId}",
+                                        Label: $"潜意识提取: {bookTitle}"), ct);
+                            }
+                            catch (Exception srEx)
+                            {
+                                _logger.LogDebug(srEx,
+                                    "[Subconscious] SourceReference write skipped for chapter={ChapterId}",
+                                    writeResult.Chapter.ChapterId);
+                            }
                         }
                     }
                 }
