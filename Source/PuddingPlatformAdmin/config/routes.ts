@@ -111,6 +111,12 @@ export default [
     component: './session',
   },
   {
+    path: '/memory-library',
+    name: 'memoryLibrary',
+    icon: 'database',
+    component: './memory-library',
+  },
+  {
     path: '/diagnostics',
     name: 'diagnostics',
     icon: 'bug',

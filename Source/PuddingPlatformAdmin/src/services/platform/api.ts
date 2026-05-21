@@ -1586,3 +1586,60 @@ export async function getSessionTokenStats(
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/token-stats`, { method: 'GET' });
 }
 
+// ─── Memory Library Admin API (ADR-030) ──────────────────────────
+
+export async function getMemoryLibraryOverview(workspaceId: string): Promise<{
+  workspaceId: string;
+  libraryCount: number;
+  bookCount: number;
+  treeNodeCount: number;
+}> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/overview`);
+}
+
+export async function listMemoryLibraries(workspaceId: string): Promise<
+  { libraryId: string; workspaceId: string; name: string; description?: string; createdAt: number; updatedAt: number }[]
+> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/libraries`);
+}
+
+export async function getMemoryLibraryTree(
+  workspaceId: string,
+  libraryId: string,
+): Promise<
+  { id: string; parentId: string | null; type: string; title: string; summary?: string; status: string; bookId?: string; children: any[] }[]
+> {
+  return request(`/api/admin/memory-library/libraries/${encodeURIComponent(libraryId)}/tree`, {
+    params: { workspaceId },
+  });
+}
+
+export async function getMemoryBookPage(
+  workspaceId: string,
+  bookId: string,
+): Promise<{
+  workspaceId: string;
+  libraryId: string;
+  bookId: string;
+  title: string;
+  summary?: string;
+  status: string;
+  chapters: { chapterId: string; bookId: string; title: string; content: string; contentType: string; importance: number; createdAt: number; updatedAt: number }[];
+}> {
+  return request(`/api/admin/memory-library/books/${encodeURIComponent(bookId)}`, {
+    params: { workspaceId },
+  });
+}
+
+export async function searchMemoryLibrary(
+  workspaceId: string,
+  query: string,
+  topK = 20,
+): Promise<
+  { bookId: string; chapterId: string; bookTitle: string; snippet: string; score: number }[]
+> {
+  return request('/api/admin/memory-library/search', {
+    params: { workspaceId, query, topK },
+  });
+}
+
