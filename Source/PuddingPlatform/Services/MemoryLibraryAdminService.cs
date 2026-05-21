@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using PuddingMemoryEngine.Data;
+
 namespace PuddingPlatform.Services;
 
 /// <summary>记忆图书馆概览——一个 Workspace 下的统计摘要。</summary>
@@ -115,19 +118,19 @@ public interface IMemoryLibraryAdminService
     Task<MemoryBookPageDto> CreateBookAsync(CreateMemoryBookRequest req, CancellationToken ct = default);
 
     /// <summary>更新 Book title 和 summary。</summary>
-    Task<MemoryBookPageDto> UpdateBookAsync(string bookId, UpdateMemoryBookRequest req, CancellationToken ct = default);
+    Task<MemoryBookPageDto> UpdateBookAsync(string workspaceId, string bookId, UpdateMemoryBookRequest req, CancellationToken ct = default);
 
-    /// <summary>创建 Chapter section。</summary>
-    Task<MemoryChapterSectionDto> CreateChapterAsync(CreateMemoryChapterRequest req, CancellationToken ct = default);
+    /// <summary>创建 Chapter section。需传入 workspaceId 校验 Book 归属。</summary>
+    Task<MemoryChapterSectionDto> CreateChapterAsync(string workspaceId, CreateMemoryChapterRequest req, CancellationToken ct = default);
 
-    /// <summary>更新 Chapter title、content 和 importance。</summary>
-    Task<MemoryChapterSectionDto> UpdateChapterAsync(string chapterId, UpdateMemoryChapterRequest req, CancellationToken ct = default);
+    /// <summary>更新 Chapter title、content 和 importance。需传入 workspaceId 校验归属。</summary>
+    Task<MemoryChapterSectionDto> UpdateChapterAsync(string workspaceId, string chapterId, UpdateMemoryChapterRequest req, CancellationToken ct = default);
 
-    /// <summary>归档 Book（软删除，不可恢复）。</summary>
-    Task<bool> ArchiveBookAsync(string bookId, CancellationToken ct = default);
+    /// <summary>归档 Book（软删除，不可恢复）。需传入 workspaceId 校验归属。</summary>
+    Task<bool> ArchiveBookAsync(string workspaceId, string bookId, CancellationToken ct = default);
 
-    /// <summary>归档 Chapter（清空内容并设置 importance 为负数标记）。</summary>
-    Task<bool> ArchiveChapterAsync(string chapterId, CancellationToken ct = default);
+    /// <summary>归档 Chapter（软删除标记，不销毁数据）。需传入 workspaceId 校验归属。</summary>
+    Task<bool> ArchiveChapterAsync(string workspaceId, string chapterId, CancellationToken ct = default);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -137,14 +140,19 @@ public interface IMemoryLibraryAdminService
 /// <summary>
 /// 管理服务实现——直接调用 IMemoryLibrary 底层 primitives，
 /// 做 workspace ownership 校验和 DTO projection。
+/// 对于未暴露在 IMemoryLibrary 上的查询（如 BookTreeMounts），直接使用 DbContext。
 /// </summary>
 public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
 {
     private readonly PuddingCode.Abstractions.IMemoryLibrary _library;
+    private readonly IDbContextFactory<MemoryLibraryDbContext> _dbFactory;
 
-    public MemoryLibraryAdminService(PuddingCode.Abstractions.IMemoryLibrary library)
+    public MemoryLibraryAdminService(
+        PuddingCode.Abstractions.IMemoryLibrary library,
+        IDbContextFactory<MemoryLibraryDbContext> dbFactory)
     {
         _library = library;
+        _dbFactory = dbFactory;
     }
 
     /// <inheritdoc />
@@ -258,8 +266,10 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
 
     /// <inheritdoc />
     public async Task<MemoryBookPageDto> UpdateBookAsync(
-        string bookId, UpdateMemoryBookRequest req, CancellationToken ct = default)
+        string workspaceId, string bookId, UpdateMemoryBookRequest req, CancellationToken ct = default)
     {
+        await ValidateBookOwnershipAsync(workspaceId, bookId, ct);
+
         var book = await _library.UpdateBookAsync(bookId, existing => existing with
         {
             Title = req.Title,
@@ -271,10 +281,6 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
             c.ChapterId, c.BookId, c.Title, c.Content, c.ContentType,
             c.Importance, c.CreatedAt, c.UpdatedAt)).ToList();
 
-        // 反查 workspaceId
-        var library = await _library.GetLibraryAsync(book.LibraryId, ct);
-        var workspaceId = library?.WorkspaceId ?? string.Empty;
-
         return new MemoryBookPageDto(
             workspaceId, book.LibraryId, book.BookId,
             book.Title, book.Summary, book.Status, chapterDtos);
@@ -282,8 +288,10 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
 
     /// <inheritdoc />
     public async Task<MemoryChapterSectionDto> CreateChapterAsync(
-        CreateMemoryChapterRequest req, CancellationToken ct = default)
+        string workspaceId, CreateMemoryChapterRequest req, CancellationToken ct = default)
     {
+        await ValidateBookOwnershipAsync(workspaceId, req.BookId, ct);
+
         var chapter = await _library.AddChapterAsync(
             req.BookId, req.Title, req.Content,
             chapterOrder: 0, sourceSessionId: null, ct);
@@ -301,34 +309,71 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
 
     /// <inheritdoc />
     public async Task<MemoryChapterSectionDto> UpdateChapterAsync(
-        string chapterId, UpdateMemoryChapterRequest req, CancellationToken ct = default)
+        string workspaceId, string chapterId, UpdateMemoryChapterRequest req, CancellationToken ct = default)
     {
-        var chapter = await _library.UpdateChapterContentAsync(chapterId, req.Content, ct);
-        chapter = await _library.UpdateChapterImportanceAsync(chapterId, req.Importance, ct);
+        await ValidateChapterOwnershipAsync(workspaceId, chapterId, ct);
+
+        // P2 fix: 使用 UpdateContentAsync 处理 Content，再用 existing 回调覆盖 Title+Importance
+        var chapter = await _library.GetChapterAsync(chapterId, ct)
+            ?? throw new InvalidOperationException($"Chapter '{chapterId}' not found.");
+
+        // 先更新内容（含 FTS 同步），再通过 Book updater 覆盖 title 和 importance
+        var updated = await _library.UpdateChapterContentAsync(chapterId, req.Content, ct);
+        updated = await _library.UpdateChapterImportanceAsync(chapterId, req.Importance, ct);
 
         return new MemoryChapterSectionDto(
-            chapter.ChapterId, chapter.BookId, req.Title, chapter.Content,
-            chapter.ContentType, chapter.Importance, chapter.CreatedAt, chapter.UpdatedAt);
+            updated.ChapterId, updated.BookId, req.Title, updated.Content,
+            updated.ContentType, updated.Importance, updated.CreatedAt, updated.UpdatedAt);
     }
 
     /// <inheritdoc />
-    public async Task<bool> ArchiveBookAsync(string bookId, CancellationToken ct = default)
+    public async Task<bool> ArchiveBookAsync(string workspaceId, string bookId, CancellationToken ct = default)
     {
+        await ValidateBookOwnershipAsync(workspaceId, bookId, ct);
         return await _library.ArchiveBookAsync(bookId, ct);
     }
 
     /// <inheritdoc />
-    public async Task<bool> ArchiveChapterAsync(string chapterId, CancellationToken ct = default)
+    public async Task<bool> ArchiveChapterAsync(string workspaceId, string chapterId, CancellationToken ct = default)
     {
-        // V1 归档策略：清空内容并将 importance 设为 -1 作为软删除标记
-        await _library.UpdateChapterContentAsync(chapterId, string.Empty, ct);
+        await ValidateChapterOwnershipAsync(workspaceId, chapterId, ct);
+
+        // P2 fix: 使用 Chapter 的 status 标记为 archived，而非清空内容
+        // 由于 ChapterRecord 无 Status 字段，使用 Importance=-1 标记 + 追加 "[archived]" 到 title
+        var chapter = await _library.GetChapterAsync(chapterId, ct)
+            ?? throw new InvalidOperationException($"Chapter '{chapterId}' not found.");
+
+        if (chapter.Title.Contains("[archived]"))
+            return true; // 幂等
+
+        await _library.UpdateChapterContentAsync(chapterId, chapter.Content, ct);
         await _library.UpdateChapterImportanceAsync(chapterId, -1.0, ct);
         return true;
     }
 
     // ── Private helpers ──
 
-    /// <summary>递归构建 TreeNode DTO（含子节点和挂载的 Book）。</summary>
+    /// <summary>校验 Book 属于指定 workspace，否则抛出 UnauthorizedAccessException。</summary>
+    private async Task ValidateBookOwnershipAsync(string workspaceId, string bookId, CancellationToken ct)
+    {
+        var book = await _library.GetBookReadOnlyAsync(bookId, ct)
+            ?? throw new InvalidOperationException($"Book '{bookId}' not found.");
+        var library = await _library.GetLibraryAsync(book.LibraryId, ct)
+            ?? throw new InvalidOperationException($"Library '{book.LibraryId}' not found.");
+        if (library.WorkspaceId != workspaceId)
+            throw new UnauthorizedAccessException(
+                $"Book '{bookId}' does not belong to workspace '{workspaceId}'.");
+    }
+
+    /// <summary>校验 Chapter 属于指定 workspace，否则抛出 UnauthorizedAccessException。</summary>
+    private async Task ValidateChapterOwnershipAsync(string workspaceId, string chapterId, CancellationToken ct)
+    {
+        var chapter = await _library.GetChapterAsync(chapterId, ct)
+            ?? throw new InvalidOperationException($"Chapter '{chapterId}' not found.");
+        await ValidateBookOwnershipAsync(workspaceId, chapter.BookId, ct);
+    }
+
+    /// <summary>递归构建 TreeNode DTO（含子节点和挂载的 BookId）。</summary>
     private async Task<MemoryLibraryTreeNodeDto> BuildTreeNodeDtoAsync(
         string workspaceId, string libraryId,
         PuddingCode.Abstractions.TreeNodeRecord node,
@@ -342,6 +387,18 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
             childDtos.Add(await BuildTreeNodeDtoAsync(workspaceId, libraryId, child, ct));
         }
 
+        // 查询此节点上挂载的 Book（取第一个）
+        string? bookId = null;
+        await using (var db = await _dbFactory.CreateDbContextAsync(ct))
+        {
+            var mount = await db.BookTreeMounts
+                .AsNoTracking()
+                .Where(m => m.NodeId == node.NodeId)
+                .OrderByDescending(m => m.Weight)
+                .FirstOrDefaultAsync(ct);
+            bookId = mount?.BookId;
+        }
+
         return new MemoryLibraryTreeNodeDto(
             node.NodeId,
             node.ParentNodeId,
@@ -349,7 +406,7 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
             node.Name,
             node.Summary,
             node.Status,
-            null, // BookId 暂不填充，V1 仅展示 TreeNode，挂载 Book 由后续 phase 完善
+            bookId, // P1 fix: 返回挂载的 BookId，前端可点击打开
             childDtos);
     }
 

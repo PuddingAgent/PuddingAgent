@@ -152,13 +152,23 @@ public sealed class MemoryLibraryAdminController : ControllerBase
     /// <summary>更新 Book title 和 summary。</summary>
     [HttpPut("books/{bookId}")]
     public async Task<ActionResult<MemoryBookPageDto>> UpdateBook(
-        string bookId, [FromBody] UpdateMemoryBookRequest req, CancellationToken ct)
+        [FromQuery] string workspaceId, string bookId,
+        [FromBody] UpdateMemoryBookRequest req, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(workspaceId))
+            return BadRequest(new { error = "workspaceId is required." });
         if (string.IsNullOrWhiteSpace(req.Title))
             return BadRequest(new { error = "title is required." });
 
-        var page = await _admin.UpdateBookAsync(bookId, req, ct);
-        return Ok(page);
+        try
+        {
+            var page = await _admin.UpdateBookAsync(workspaceId, bookId, req, ct);
+            return Ok(page);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { error = ex.Message });
+        }
     }
 
     /// <summary>创建 Chapter section。</summary>
@@ -169,35 +179,108 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.Title))
             return BadRequest(new { error = "title is required." });
 
-        var chapter = await _admin.CreateChapterAsync(req, ct);
+        // 从 Book 反查 workspaceId 用于校验
+        var book = await _library.GetBookReadOnlyAsync(req.BookId, ct);
+        if (book is null)
+            return NotFound(new { error = $"Book '{req.BookId}' not found." });
+        var library = await _library.GetLibraryAsync(book.LibraryId, ct);
+        if (library is null)
+            return NotFound(new { error = $"Library not found for book '{req.BookId}'." });
+
+        var chapter = await _admin.CreateChapterAsync(library.WorkspaceId, req, ct);
         return CreatedAtAction(nameof(CreateChapter), new { chapterId = chapter.ChapterId }, chapter);
     }
 
     /// <summary>更新 Chapter title、content 和 importance。</summary>
     [HttpPut("chapters/{chapterId}")]
     public async Task<ActionResult<MemoryChapterSectionDto>> UpdateChapter(
-        string chapterId, [FromBody] UpdateMemoryChapterRequest req, CancellationToken ct)
+        [FromQuery] string workspaceId, string chapterId,
+        [FromBody] UpdateMemoryChapterRequest req, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(workspaceId))
+            return BadRequest(new { error = "workspaceId is required." });
         if (string.IsNullOrWhiteSpace(req.Title))
             return BadRequest(new { error = "title is required." });
 
-        var chapter = await _admin.UpdateChapterAsync(chapterId, req, ct);
-        return Ok(chapter);
+        try
+        {
+            var chapter = await _admin.UpdateChapterAsync(workspaceId, chapterId, req, ct);
+            return Ok(chapter);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { error = ex.Message });
+        }
     }
 
     /// <summary>归档 Book（软删除）。</summary>
     [HttpPost("books/{bookId}/archive")]
-    public async Task<ActionResult> ArchiveBook(string bookId, CancellationToken ct)
+    public async Task<ActionResult> ArchiveBook(
+        [FromQuery] string workspaceId, string bookId, CancellationToken ct)
     {
-        var ok = await _admin.ArchiveBookAsync(bookId, ct);
-        return ok ? Ok(new { status = "archived" }) : NotFound(new { error = "Book not found." });
+        if (string.IsNullOrWhiteSpace(workspaceId))
+            return BadRequest(new { error = "workspaceId is required." });
+
+        try
+        {
+            var ok = await _admin.ArchiveBookAsync(workspaceId, bookId, ct);
+            return ok ? Ok(new { status = "archived" }) : NotFound(new { error = "Book not found." });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { error = ex.Message });
+        }
     }
 
-    /// <summary>归档 Chapter（软删除，清空内容并标记 importance=-1）。</summary>
+    /// <summary>归档 Chapter（软删除，标记 importance=-1）。</summary>
     [HttpPost("chapters/{chapterId}/archive")]
-    public async Task<ActionResult> ArchiveChapter(string chapterId, CancellationToken ct)
+    public async Task<ActionResult> ArchiveChapter(
+        [FromQuery] string workspaceId, string chapterId, CancellationToken ct)
     {
-        await _admin.ArchiveChapterAsync(chapterId, ct);
-        return Ok(new { status = "archived" });
+        if (string.IsNullOrWhiteSpace(workspaceId))
+            return BadRequest(new { error = "workspaceId is required." });
+
+        try
+        {
+            await _admin.ArchiveChapterAsync(workspaceId, chapterId, ct);
+            return Ok(new { status = "archived" });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { error = ex.Message });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Sources & Pointers
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>获取指定 owner（chapter/book）的来源引用列表。</summary>
+    [HttpGet("sources")]
+    public async Task<ActionResult<IReadOnlyList<SourceReferenceRecord>>> GetSources(
+        [FromQuery] string ownerType, [FromQuery] string ownerId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(ownerType) || string.IsNullOrWhiteSpace(ownerId))
+            return BadRequest(new { error = "ownerType and ownerId are required." });
+
+        var sources = await _library.GetSourceReferencesAsync(ownerType, ownerId, ct);
+        return Ok(sources);
+    }
+
+    /// <summary>获取指向指定实体的指针（backlinks + outgoing）。</summary>
+    [HttpGet("pointers")]
+    public async Task<ActionResult<object>> GetPointers(
+        [FromQuery] string workspaceId,
+        [FromQuery] string sourceType,
+        [FromQuery] string sourceId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(sourceType) || string.IsNullOrWhiteSpace(sourceId))
+            return BadRequest(new { error = "workspaceId, sourceType, and sourceId are required." });
+
+        var outgoing = await _library.GetPointersBySourceAsync(workspaceId, sourceType, sourceId, ct);
+        var backlinks = await _library.ResolveBacklinksAsync(sourceType, sourceId, ct);
+
+        return Ok(new { outgoing, backlinks });
     }
 }

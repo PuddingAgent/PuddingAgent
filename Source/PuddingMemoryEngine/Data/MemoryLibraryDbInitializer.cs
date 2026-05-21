@@ -51,24 +51,54 @@ public static class MemoryLibraryDbInitializer
         }
     }
 
-    /// <summary>按 ; 拆分 SQL 语句，跳过空白和注释块。</summary>
+    /// <summary>
+    /// 按顶级 ; 拆分 SQL 语句。复合语句（CREATE TRIGGER ... BEGIN ... END）作为整体不被拆分。
+    /// ADR-029 fix: 原 split-on-semicolon-line 会错误拆分触发器的 VALUES(...) 和 END 中间部分。
+    /// </summary>
     private static List<string> SplitSqlStatements(string sql)
     {
         var statements = new List<string>();
+        var depth = 0; // 跟踪 BEGIN..END 嵌套层级
         var current = new System.Text.StringBuilder();
-        foreach (var line in sql.Split('\n'))
+        foreach (var ch in sql)
         {
-            var trimmed = line.Trim();
-            // 保留整行（含注释），交给 SQLite 自己处理
-            current.AppendLine(line);
-            if (trimmed.EndsWith(';') && !trimmed.StartsWith("--"))
+            current.Append(ch);
+            if (ch == ';' && depth == 0)
             {
-                statements.Add(current.ToString());
+                var stmt = current.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(stmt) && !stmt.StartsWith("--"))
+                    statements.Add(stmt);
                 current.Clear();
             }
+            // 追踪 BEGIN/END 边界（不区分大小写，简单状态机）
+            else if (depth == 0 && CurrentEndsWith(current, "BEGIN"))
+            {
+                depth = 1;
+            }
+            else if (depth > 0 && CurrentEndsWith(current, "END"))
+            {
+                depth--;
+            }
+            else if (depth > 0 && CurrentEndsWith(current, "BEGIN"))
+            {
+                depth++;
+            }
         }
-        if (current.Length > 0)
-            statements.Add(current.ToString());
+        var tail = current.ToString().Trim();
+        if (!string.IsNullOrWhiteSpace(tail))
+            statements.Add(tail);
         return statements;
+    }
+
+    private static bool CurrentEndsWith(System.Text.StringBuilder sb, string suffix)
+    {
+        if (sb.Length < suffix.Length) return false;
+        for (int i = 0; i < suffix.Length; i++)
+        {
+            var sbChar = char.ToUpperInvariant(sb[sb.Length - suffix.Length + i]);
+            var sfxChar = char.ToUpperInvariant(suffix[i]);
+            if (sbChar != sfxChar) return false;
+        }
+        return true;
     }
 }

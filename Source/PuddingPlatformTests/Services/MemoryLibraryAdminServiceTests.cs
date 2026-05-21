@@ -164,7 +164,7 @@ public sealed class MemoryLibraryAdminServiceTests
         }
 
         var library = new MemoryLibrary(factory);
-        var service = new MemoryLibraryAdminService(library);
+        var service = new MemoryLibraryAdminService(library, factory);
 
         return new AdminTestScope(connection, factory, library, service);
     }

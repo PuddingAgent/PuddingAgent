@@ -20,6 +20,8 @@ import {
   createMemoryChapter,
   archiveMemoryBook,
   archiveMemoryChapter,
+  listMemorySources,
+  listMemoryPointers,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import type {
@@ -64,6 +66,10 @@ const MemoryLibraryPage: React.FC = () => {
   const [newBookForm] = Form.useForm();
   const [editBookForm] = Form.useForm();
   const [newChapterForm] = Form.useForm();
+
+  // Sources & pointers for Inspector
+  const [sources, setSources] = useState<any[]>([]);
+  const [pointers, setPointers] = useState<{ outgoing: any[]; backlinks: any[] }>({ outgoing: [], backlinks: [] });
 
   // ── Load workspaces on mount ───────────────────────────────────
   useEffect(() => {
@@ -149,6 +155,8 @@ const MemoryLibraryPage: React.FC = () => {
   const handleTreeSelect = useCallback((node: MemoryLibraryTreeNodeDto) => {
     setSelectedNode(node);
     setSearchVisible(false);
+    setSources([]);
+    setPointers({ outgoing: [], backlinks: [] });
 
     // If node has a mounted Book, load it
     if (node.bookId && selectedWorkspaceId) {
@@ -157,9 +165,27 @@ const MemoryLibraryPage: React.FC = () => {
         .then(setBookPage)
         .catch(() => setError('无法加载 Book 页'))
         .finally(() => setBookLoading(false));
+
+      // 加载来源引用
+      listMemorySources('book', node.bookId)
+        .then(setSources)
+        .catch(() => {});
+      // 加载指针
+      listMemoryPointers(selectedWorkspaceId, 'book', node.bookId)
+        .then(setPointers)
+        .catch(() => {});
     } else {
       setBookPage(null);
       setBookLoading(false);
+      if (selectedWorkspaceId) {
+        // 加载 TreeNode 的来源和指针
+        listMemorySources('tree_node', node.id)
+          .then(setSources)
+          .catch(() => {});
+        listMemoryPointers(selectedWorkspaceId, 'tree_node', node.id)
+          .then(setPointers)
+          .catch(() => {});
+      }
     }
   }, [selectedWorkspaceId]);
 
@@ -239,10 +265,10 @@ const MemoryLibraryPage: React.FC = () => {
   }, [selectedWorkspaceId, selectedLibraryId, selectedNode?.id, newBookForm]);
 
   const handleEditBook = useCallback(async (values: any) => {
-    if (!bookPage) return;
+    if (!bookPage || !selectedWorkspaceId) return;
     setEditLoading(true);
     try {
-      const result = await updateMemoryBook(bookPage.bookId, { title: values.title, summary: values.summary });
+      const result = await updateMemoryBook(selectedWorkspaceId, bookPage.bookId, { title: values.title, summary: values.summary });
       setBookPage(result);
       setEditBookModalOpen(false);
       message.success('已更新');
@@ -251,7 +277,7 @@ const MemoryLibraryPage: React.FC = () => {
     } finally {
       setEditLoading(false);
     }
-  }, [bookPage]);
+  }, [bookPage, selectedWorkspaceId]);
 
   const handleCreateChapter = useCallback(async (values: any) => {
     if (!bookPage) return;
@@ -277,22 +303,23 @@ const MemoryLibraryPage: React.FC = () => {
   }, [bookPage, selectedWorkspaceId, newChapterForm]);
 
   const handleArchiveBook = useCallback(async () => {
-    if (!bookPage) return;
+    if (!bookPage || !selectedWorkspaceId) return;
     try {
-      await archiveMemoryBook(bookPage.bookId);
+      await archiveMemoryBook(selectedWorkspaceId, bookPage.bookId);
       message.success('Book 已归档');
       setBookPage(null);
       handleRefresh();
     } catch {
       message.error('归档失败');
     }
-  }, [bookPage, handleRefresh]);
+  }, [bookPage, selectedWorkspaceId, handleRefresh]);
 
   const handleArchiveChapter = useCallback(async (chapterId: string) => {
+    if (!selectedWorkspaceId) return;
     try {
-      await archiveMemoryChapter(chapterId);
+      await archiveMemoryChapter(selectedWorkspaceId, chapterId);
       message.success('章节已归档');
-      if (bookPage && selectedWorkspaceId) {
+      if (bookPage) {
         getMemoryBookPage(selectedWorkspaceId, bookPage.bookId).then(setBookPage).catch(() => {});
       }
     } catch {
@@ -403,6 +430,13 @@ const MemoryLibraryPage: React.FC = () => {
               nodeTitle={selectedNode?.title}
               nodeType={selectedNode?.type}
               nodeId={selectedNode?.id ?? bookPage?.bookId}
+              sources={sources}
+              pointers={pointers.outgoing.concat(pointers.backlinks).map((p: any) => ({
+                pointerId: p.pointerId,
+                targetType: p.targetType,
+                targetId: p.targetId,
+                label: p.targetLabel,
+              }))}
             />
           </div>
         </div>

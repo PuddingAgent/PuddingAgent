@@ -1667,11 +1667,12 @@ export async function createMemoryBook(req: {
 }
 
 export async function updateMemoryBook(
+  workspaceId: string,
   bookId: string,
   req: { title: string; summary?: string },
 ): Promise<any> {
   return request(`/api/admin/memory-library/books/${encodeURIComponent(bookId)}`, {
-    method: 'PUT', data: req,
+    method: 'PUT', data: req, params: { workspaceId },
   });
 }
 
@@ -1685,23 +1686,48 @@ export async function createMemoryChapter(req: {
 }
 
 export async function updateMemoryChapter(
+  workspaceId: string,
   chapterId: string,
   req: { title: string; content: string; importance: number },
 ): Promise<any> {
   return request(`/api/admin/memory-library/chapters/${encodeURIComponent(chapterId)}`, {
-    method: 'PUT', data: req,
+    method: 'PUT', data: req, params: { workspaceId },
   });
 }
 
-export async function archiveMemoryBook(bookId: string): Promise<any> {
+export async function archiveMemoryBook(workspaceId: string, bookId: string): Promise<any> {
   return request(`/api/admin/memory-library/books/${encodeURIComponent(bookId)}/archive`, {
-    method: 'POST',
+    method: 'POST', params: { workspaceId },
   });
 }
 
-export async function archiveMemoryChapter(chapterId: string): Promise<any> {
+export async function archiveMemoryChapter(workspaceId: string, chapterId: string): Promise<any> {
   return request(`/api/admin/memory-library/chapters/${encodeURIComponent(chapterId)}/archive`, {
-    method: 'POST',
+    method: 'POST', params: { workspaceId },
+  });
+}
+
+// ─── Memory Library Sources & Pointers ──────────────────────────
+
+export async function listMemorySources(
+  ownerType: string,
+  ownerId: string,
+): Promise<{ sourceReferenceId: string; ownerType: string; ownerId: string; targetType: string; targetId: string; targetRange?: string; label?: string; createdAt: number }[]> {
+  return request('/api/admin/memory-library/sources', {
+    params: { ownerType, ownerId },
+  });
+}
+
+export async function listMemoryPointers(
+  workspaceId: string,
+  sourceType: string,
+  sourceId: string,
+): Promise<{
+  outgoing: { pointerId: string; targetType: string; targetId: string; targetLabel?: string; description?: string }[];
+  backlinks: { pointerId: string; targetType: string; targetId: string; targetLabel?: string; description?: string }[];
+}> {
+  return request('/api/admin/memory-library/pointers', {
+    params: { workspaceId, sourceType, sourceId },
   });
 }
 
