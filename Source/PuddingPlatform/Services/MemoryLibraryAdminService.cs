@@ -48,6 +48,43 @@ public sealed record MemorySearchResultDto(
     double Score);
 
 // ═══════════════════════════════════════════════════════════════
+// Write DTOs (ADR-030 Phase 3: Guarded Editing)
+// ═══════════════════════════════════════════════════════════════
+
+/// <summary>创建树节点请求。</summary>
+public sealed record CreateMemoryTreeNodeRequest(
+    string WorkspaceId,
+    string LibraryId,
+    string? ParentNodeId,
+    string Name,
+    string? Summary,
+    string NodeType);
+
+/// <summary>创建 Book 请求（可选挂载到 TreeNode）。</summary>
+public sealed record CreateMemoryBookRequest(
+    string WorkspaceId,
+    string LibraryId,
+    string? NodeId,
+    string Title,
+    string? Summary);
+
+/// <summary>更新 Book 元信息请求。</summary>
+public sealed record UpdateMemoryBookRequest(string Title, string? Summary);
+
+/// <summary>创建 Chapter 请求。</summary>
+public sealed record CreateMemoryChapterRequest(
+    string BookId,
+    string Title,
+    string Content,
+    double Importance);
+
+/// <summary>更新 Chapter 请求。</summary>
+public sealed record UpdateMemoryChapterRequest(
+    string Title,
+    string Content,
+    double Importance);
+
+// ═══════════════════════════════════════════════════════════════
 // Interface
 // ═══════════════════════════════════════════════════════════════
 
@@ -68,6 +105,29 @@ public interface IMemoryLibraryAdminService
 
     /// <summary>workspace scoped FTS 全文搜索。</summary>
     Task<IReadOnlyList<MemorySearchResultDto>> SearchAsync(string workspaceId, string query, int topK, CancellationToken ct = default);
+
+    // ── Write (Guarded Editing) ─────────────────────────────────────
+
+    /// <summary>创建树节点（directory page）。工作区归属通过 libraryId 校验。</summary>
+    Task<MemoryLibraryTreeNodeDto> CreateTreeNodeAsync(CreateMemoryTreeNodeRequest req, CancellationToken ct = default);
+
+    /// <summary>创建 Book page，可选挂载到指定 TreeNode。</summary>
+    Task<MemoryBookPageDto> CreateBookAsync(CreateMemoryBookRequest req, CancellationToken ct = default);
+
+    /// <summary>更新 Book title 和 summary。</summary>
+    Task<MemoryBookPageDto> UpdateBookAsync(string bookId, UpdateMemoryBookRequest req, CancellationToken ct = default);
+
+    /// <summary>创建 Chapter section。</summary>
+    Task<MemoryChapterSectionDto> CreateChapterAsync(CreateMemoryChapterRequest req, CancellationToken ct = default);
+
+    /// <summary>更新 Chapter title、content 和 importance。</summary>
+    Task<MemoryChapterSectionDto> UpdateChapterAsync(string chapterId, UpdateMemoryChapterRequest req, CancellationToken ct = default);
+
+    /// <summary>归档 Book（软删除，不可恢复）。</summary>
+    Task<bool> ArchiveBookAsync(string bookId, CancellationToken ct = default);
+
+    /// <summary>归档 Chapter（清空内容并设置 importance 为负数标记）。</summary>
+    Task<bool> ArchiveChapterAsync(string chapterId, CancellationToken ct = default);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -160,6 +220,110 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
             r.BookTitle,
             r.Snippet,
             r.Score)).ToList();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Write (Guarded Editing)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public async Task<MemoryLibraryTreeNodeDto> CreateTreeNodeAsync(
+        CreateMemoryTreeNodeRequest req, CancellationToken ct = default)
+    {
+        var node = await _library.CreateTreeNodeAsync(
+            req.WorkspaceId, req.LibraryId, req.ParentNodeId,
+            req.Name, req.Summary, req.NodeType, ct);
+
+        return new MemoryLibraryTreeNodeDto(
+            node.NodeId, node.ParentNodeId, node.NodeType,
+            node.Name, node.Summary, node.Status, null, []);
+    }
+
+    /// <inheritdoc />
+    public async Task<MemoryBookPageDto> CreateBookAsync(
+        CreateMemoryBookRequest req, CancellationToken ct = default)
+    {
+        var book = await _library.CreateBookAsync(req.LibraryId, req.Title, req.Summary ?? string.Empty, null, ct);
+
+        // 如果指定了 TreeNode，挂载 Book
+        if (!string.IsNullOrWhiteSpace(req.NodeId))
+        {
+            await _library.MountBookAsync(book.BookId, req.NodeId, weight: 1, ct: ct);
+        }
+
+        return new MemoryBookPageDto(
+            req.WorkspaceId, req.LibraryId, book.BookId,
+            book.Title, book.Summary, book.Status, []);
+    }
+
+    /// <inheritdoc />
+    public async Task<MemoryBookPageDto> UpdateBookAsync(
+        string bookId, UpdateMemoryBookRequest req, CancellationToken ct = default)
+    {
+        var book = await _library.UpdateBookAsync(bookId, existing => existing with
+        {
+            Title = req.Title,
+            Summary = req.Summary ?? existing.Summary,
+        }, ct);
+
+        var chapters = await _library.ListChaptersAsync(bookId, ct);
+        var chapterDtos = chapters.Select(c => new MemoryChapterSectionDto(
+            c.ChapterId, c.BookId, c.Title, c.Content, c.ContentType,
+            c.Importance, c.CreatedAt, c.UpdatedAt)).ToList();
+
+        // 反查 workspaceId
+        var library = await _library.GetLibraryAsync(book.LibraryId, ct);
+        var workspaceId = library?.WorkspaceId ?? string.Empty;
+
+        return new MemoryBookPageDto(
+            workspaceId, book.LibraryId, book.BookId,
+            book.Title, book.Summary, book.Status, chapterDtos);
+    }
+
+    /// <inheritdoc />
+    public async Task<MemoryChapterSectionDto> CreateChapterAsync(
+        CreateMemoryChapterRequest req, CancellationToken ct = default)
+    {
+        var chapter = await _library.AddChapterAsync(
+            req.BookId, req.Title, req.Content,
+            chapterOrder: 0, sourceSessionId: null, ct);
+
+        if (req.Importance != 0.5)
+        {
+            chapter = await _library.UpdateChapterImportanceAsync(
+                chapter.ChapterId, req.Importance, ct);
+        }
+
+        return new MemoryChapterSectionDto(
+            chapter.ChapterId, chapter.BookId, chapter.Title, chapter.Content,
+            chapter.ContentType, chapter.Importance, chapter.CreatedAt, chapter.UpdatedAt);
+    }
+
+    /// <inheritdoc />
+    public async Task<MemoryChapterSectionDto> UpdateChapterAsync(
+        string chapterId, UpdateMemoryChapterRequest req, CancellationToken ct = default)
+    {
+        var chapter = await _library.UpdateChapterContentAsync(chapterId, req.Content, ct);
+        chapter = await _library.UpdateChapterImportanceAsync(chapterId, req.Importance, ct);
+
+        return new MemoryChapterSectionDto(
+            chapter.ChapterId, chapter.BookId, req.Title, chapter.Content,
+            chapter.ContentType, chapter.Importance, chapter.CreatedAt, chapter.UpdatedAt);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> ArchiveBookAsync(string bookId, CancellationToken ct = default)
+    {
+        return await _library.ArchiveBookAsync(bookId, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> ArchiveChapterAsync(string chapterId, CancellationToken ct = default)
+    {
+        // V1 归档策略：清空内容并将 importance 设为 -1 作为软删除标记
+        await _library.UpdateChapterContentAsync(chapterId, string.Empty, ct);
+        await _library.UpdateChapterImportanceAsync(chapterId, -1.0, ct);
+        return true;
     }
 
     // ── Private helpers ──

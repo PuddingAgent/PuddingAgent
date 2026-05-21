@@ -1,6 +1,12 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { Select, Input, Button, Alert, Space, Typography } from 'antd';
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Select, Input, Button, Alert, Space, Typography, Modal, Form, Popconfirm, message } from 'antd';
+import {
+  ReloadOutlined,
+  SearchOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+} from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   listWorkspaces,
@@ -8,6 +14,12 @@ import {
   getMemoryLibraryTree,
   getMemoryBookPage,
   searchMemoryLibrary,
+  createMemoryTreeNode,
+  createMemoryBook,
+  updateMemoryBook,
+  createMemoryChapter,
+  archiveMemoryBook,
+  archiveMemoryChapter,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import type {
@@ -41,6 +53,17 @@ const MemoryLibraryPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MemorySearchResultDto[]>([]);
   const [searchVisible, setSearchVisible] = useState(false);
+
+  // Edit state
+  const [newPageModalOpen, setNewPageModalOpen] = useState(false);
+  const [newBookModalOpen, setNewBookModalOpen] = useState(false);
+  const [editBookModalOpen, setEditBookModalOpen] = useState(false);
+  const [newChapterModalOpen, setNewChapterModalOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [newPageForm] = Form.useForm();
+  const [newBookForm] = Form.useForm();
+  const [editBookForm] = Form.useForm();
+  const [newChapterForm] = Form.useForm();
 
   // ── Load workspaces on mount ───────────────────────────────────
   useEffect(() => {
@@ -167,6 +190,116 @@ const MemoryLibraryPage: React.FC = () => {
       .finally(() => setBookLoading(false));
   }, [selectedWorkspaceId]);
 
+  // ── Edit handlers ─────────────────────────────────────────────
+  const handleCreatePage = useCallback(async (values: any) => {
+    if (!selectedWorkspaceId || !selectedLibraryId) return;
+    setEditLoading(true);
+    try {
+      await createMemoryTreeNode({
+        workspaceId: selectedWorkspaceId,
+        libraryId: selectedLibraryId,
+        parentNodeId: selectedNode?.id,
+        name: values.name,
+        summary: values.summary,
+        nodeType: values.nodeType || 'category',
+      });
+      message.success('页面已创建');
+      setNewPageModalOpen(false);
+      newPageForm.resetFields();
+      handleRefresh();
+    } catch {
+      message.error('创建失败');
+    } finally {
+      setEditLoading(false);
+    }
+  }, [selectedWorkspaceId, selectedLibraryId, selectedNode?.id, newPageForm, handleRefresh]);
+
+  const handleCreateBook = useCallback(async (values: any) => {
+    if (!selectedWorkspaceId || !selectedLibraryId) return;
+    setEditLoading(true);
+    try {
+      const result = await createMemoryBook({
+        workspaceId: selectedWorkspaceId,
+        libraryId: selectedLibraryId,
+        nodeId: selectedNode?.id,
+        title: values.title,
+        summary: values.summary,
+      });
+      message.success('Book 已创建');
+      setNewBookModalOpen(false);
+      newBookForm.resetFields();
+      if (result?.bookId && selectedWorkspaceId) {
+        getMemoryBookPage(selectedWorkspaceId, result.bookId).then(setBookPage).catch(() => {});
+      }
+    } catch {
+      message.error('创建失败');
+    } finally {
+      setEditLoading(false);
+    }
+  }, [selectedWorkspaceId, selectedLibraryId, selectedNode?.id, newBookForm]);
+
+  const handleEditBook = useCallback(async (values: any) => {
+    if (!bookPage) return;
+    setEditLoading(true);
+    try {
+      const result = await updateMemoryBook(bookPage.bookId, { title: values.title, summary: values.summary });
+      setBookPage(result);
+      setEditBookModalOpen(false);
+      message.success('已更新');
+    } catch {
+      message.error('更新失败');
+    } finally {
+      setEditLoading(false);
+    }
+  }, [bookPage]);
+
+  const handleCreateChapter = useCallback(async (values: any) => {
+    if (!bookPage) return;
+    setEditLoading(true);
+    try {
+      await createMemoryChapter({
+        bookId: bookPage.bookId,
+        title: values.title,
+        content: values.content,
+        importance: values.importance ?? 0.5,
+      });
+      message.success('章节已添加');
+      setNewChapterModalOpen(false);
+      newChapterForm.resetFields();
+      if (selectedWorkspaceId) {
+        getMemoryBookPage(selectedWorkspaceId, bookPage.bookId).then(setBookPage).catch(() => {});
+      }
+    } catch {
+      message.error('添加失败');
+    } finally {
+      setEditLoading(false);
+    }
+  }, [bookPage, selectedWorkspaceId, newChapterForm]);
+
+  const handleArchiveBook = useCallback(async () => {
+    if (!bookPage) return;
+    try {
+      await archiveMemoryBook(bookPage.bookId);
+      message.success('Book 已归档');
+      setBookPage(null);
+      handleRefresh();
+    } catch {
+      message.error('归档失败');
+    }
+  }, [bookPage, handleRefresh]);
+
+  const handleArchiveChapter = useCallback(async (chapterId: string) => {
+    try {
+      await archiveMemoryChapter(chapterId);
+      message.success('章节已归档');
+      if (bookPage && selectedWorkspaceId) {
+        getMemoryBookPage(selectedWorkspaceId, bookPage.bookId).then(setBookPage).catch(() => {});
+      }
+    } catch {
+      message.error('归档失败');
+    }
+  }, [bookPage, selectedWorkspaceId]);
+
   // ── Render ────────────────────────────────────────────────────
   const workspaceOptions = workspaces.map((w) => ({
     label: w.name,
@@ -206,6 +339,12 @@ const MemoryLibraryPage: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} disabled={!selectedLibraryId}>
             刷新
           </Button>
+          <Button icon={<PlusOutlined />} onClick={() => setNewPageModalOpen(true)} disabled={!selectedLibraryId}>
+            新建 Page
+          </Button>
+          <Button icon={<PlusOutlined />} onClick={() => setNewBookModalOpen(true)} disabled={!selectedLibraryId}>
+            新建 Book
+          </Button>
           <Space style={{ marginLeft: 'auto' }}>
             <Text type="secondary">
               {selectedNode ? `已选中: ${selectedNode.title}` : bookPage ? `浏览: ${bookPage.title}` : '未选中节点'}
@@ -234,12 +373,25 @@ const MemoryLibraryPage: React.FC = () => {
 
           {/* Center: Page Editor */}
           <div className="memory-page-editor-panel">
+            {bookPage && (
+              <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+                <Button size="small" icon={<EditOutlined />} onClick={() => {
+                  editBookForm.setFieldsValue({ title: bookPage.title, summary: bookPage.summary });
+                  setEditBookModalOpen(true);
+                }}>编辑信息</Button>
+                <Button size="small" icon={<PlusOutlined />} onClick={() => setNewChapterModalOpen(true)}>添加章节</Button>
+                <Popconfirm title="归档后将不可见，确认归档？" onConfirm={handleArchiveBook}>
+                  <Button size="small" danger icon={<DeleteOutlined />}>归档 Book</Button>
+                </Popconfirm>
+              </div>
+            )}
             <MemoryPageEditor
               loading={bookLoading}
               book={bookPage ?? undefined}
               nodeTitle={selectedNode?.title}
               nodeSummary={selectedNode?.summary}
               nodeType={selectedNode?.type}
+              onArchiveChapter={handleArchiveChapter}
             />
           </div>
 
@@ -255,6 +407,86 @@ const MemoryLibraryPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Modals ──────────────────────────────────────────── */}
+      <Modal
+        title="新建 Page"
+        open={newPageModalOpen}
+        onCancel={() => setNewPageModalOpen(false)}
+        onOk={() => newPageForm.submit()}
+        confirmLoading={editLoading}
+      >
+        <Form form={newPageForm} layout="vertical" onFinish={handleCreatePage}>
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+            <Input placeholder="页面名称" />
+          </Form.Item>
+          <Form.Item name="summary" label="摘要">
+            <Input.TextArea rows={3} placeholder="页面摘要" />
+          </Form.Item>
+          <Form.Item name="nodeType" label="类型" initialValue="category">
+            <Select options={[
+              { label: '分类', value: 'category' },
+              { label: '主题', value: 'topic' },
+              { label: '系统', value: 'system' },
+              { label: '书架', value: 'shelf' },
+            ]} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新建 Book"
+        open={newBookModalOpen}
+        onCancel={() => setNewBookModalOpen(false)}
+        onOk={() => newBookForm.submit()}
+        confirmLoading={editLoading}
+      >
+        <Form form={newBookForm} layout="vertical" onFinish={handleCreateBook}>
+          <Form.Item name="title" label="标题" rules={[{ required: true }]}>
+            <Input placeholder="Book 标题" />
+          </Form.Item>
+          <Form.Item name="summary" label="摘要">
+            <Input.TextArea rows={3} placeholder="Book 摘要" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="编辑 Book 信息"
+        open={editBookModalOpen}
+        onCancel={() => setEditBookModalOpen(false)}
+        onOk={() => editBookForm.submit()}
+        confirmLoading={editLoading}
+      >
+        <Form form={editBookForm} layout="vertical" onFinish={handleEditBook}>
+          <Form.Item name="title" label="标题" rules={[{ required: true }]}>
+            <Input placeholder="Book 标题" />
+          </Form.Item>
+          <Form.Item name="summary" label="摘要">
+            <Input.TextArea rows={3} placeholder="Book 摘要" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="添加章节"
+        open={newChapterModalOpen}
+        onCancel={() => setNewChapterModalOpen(false)}
+        onOk={() => newChapterForm.submit()}
+        confirmLoading={editLoading}
+      >
+        <Form form={newChapterForm} layout="vertical" onFinish={handleCreateChapter}>
+          <Form.Item name="title" label="章节标题" rules={[{ required: true }]}>
+            <Input placeholder="章节标题" />
+          </Form.Item>
+          <Form.Item name="content" label="内容" rules={[{ required: true }]}>
+            <Input.TextArea rows={6} placeholder="章节内容" />
+          </Form.Item>
+          <Form.Item name="importance" label="重要性 (0-1)" initialValue={0.5}>
+            <Input type="number" min={0} max={1} step={0.1} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </PageContainer>
   );
 };

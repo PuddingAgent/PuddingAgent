@@ -1643,3 +1643,65 @@ export async function searchMemoryLibrary(
   });
 }
 
+// ─── Memory Library Write API ──────────────────────────────────
+
+export async function createMemoryTreeNode(req: {
+  workspaceId: string;
+  libraryId: string;
+  parentNodeId?: string;
+  name: string;
+  summary?: string;
+  nodeType: string;
+}): Promise<any> {
+  return request('/api/admin/memory-library/tree-nodes', { method: 'POST', data: req });
+}
+
+export async function createMemoryBook(req: {
+  workspaceId: string;
+  libraryId: string;
+  nodeId?: string;
+  title: string;
+  summary?: string;
+}): Promise<any> {
+  return request('/api/admin/memory-library/books', { method: 'POST', data: req });
+}
+
+export async function updateMemoryBook(
+  bookId: string,
+  req: { title: string; summary?: string },
+): Promise<any> {
+  return request(`/api/admin/memory-library/books/${encodeURIComponent(bookId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function createMemoryChapter(req: {
+  bookId: string;
+  title: string;
+  content: string;
+  importance: number;
+}): Promise<any> {
+  return request('/api/admin/memory-library/chapters', { method: 'POST', data: req });
+}
+
+export async function updateMemoryChapter(
+  chapterId: string,
+  req: { title: string; content: string; importance: number },
+): Promise<any> {
+  return request(`/api/admin/memory-library/chapters/${encodeURIComponent(chapterId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
+export async function archiveMemoryBook(bookId: string): Promise<any> {
+  return request(`/api/admin/memory-library/books/${encodeURIComponent(bookId)}/archive`, {
+    method: 'POST',
+  });
+}
+
+export async function archiveMemoryChapter(chapterId: string): Promise<any> {
+  return request(`/api/admin/memory-library/chapters/${encodeURIComponent(chapterId)}/archive`, {
+    method: 'POST',
+  });
+}
+

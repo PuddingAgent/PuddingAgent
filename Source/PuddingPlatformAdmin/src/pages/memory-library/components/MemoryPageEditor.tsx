@@ -1,5 +1,5 @@
-import { Typography, Tag, Spin, Empty, Divider, Space } from 'antd';
-import { BookOutlined, FileTextOutlined } from '@ant-design/icons';
+import { Typography, Tag, Spin, Empty, Divider, Space, Popconfirm, Button } from 'antd';
+import { BookOutlined, FileTextOutlined, DeleteOutlined } from '@ant-design/icons';
 import React from 'react';
 import type { MemoryBookPageDto } from '../types';
 
@@ -12,6 +12,8 @@ interface MemoryPageEditorProps {
   nodeTitle?: string;
   nodeSummary?: string;
   nodeType?: string;
+  /** 归档章节回调。 */
+  onArchiveChapter?: (chapterId: string) => void;
 }
 
 const MemoryPageEditor: React.FC<MemoryPageEditorProps> = ({
@@ -20,6 +22,7 @@ const MemoryPageEditor: React.FC<MemoryPageEditorProps> = ({
   nodeTitle,
   nodeSummary,
   nodeType,
+  onArchiveChapter,
 }) => {
   if (loading) {
     return (
@@ -65,6 +68,15 @@ const MemoryPageEditor: React.FC<MemoryPageEditorProps> = ({
                 <Tag>{ch.contentType}</Tag>
                 <span>重要性: {ch.importance.toFixed(2)}</span>
               </Space>
+              {onArchiveChapter && (
+                <div style={{ marginTop: 4 }}>
+                  <Popconfirm title="归档此章节？" onConfirm={() => onArchiveChapter(ch.chapterId)}>
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />}>
+                      归档
+                    </Button>
+                  </Popconfirm>
+                </div>
+              )}
             </div>
           ))
         )}
