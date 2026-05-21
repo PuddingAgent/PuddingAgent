@@ -1,15 +1,25 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { Select, Input, Button, Spin, Alert, Space, Typography } from 'antd';
-import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
+import { Select, Input, Button, Alert, Space, Typography } from 'antd';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   listWorkspaces,
   listMemoryLibraries,
   getMemoryLibraryTree,
+  getMemoryBookPage,
+  searchMemoryLibrary,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import type { MemoryLibraryTreeNodeDto, LibraryRecord } from './types';
+import type {
+  MemoryLibraryTreeNodeDto,
+  LibraryRecord,
+  MemoryBookPageDto,
+  MemorySearchResultDto,
+} from './types';
 import MemoryPageTree from './components/MemoryPageTree';
+import MemoryPageEditor from './components/MemoryPageEditor';
+import MemoryInspector from './components/MemoryInspector';
+import MemorySearchResults from './components/MemorySearchResults';
 import './styles.less';
 
 const { Text } = Typography;
@@ -24,6 +34,13 @@ const MemoryLibraryPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<MemoryLibraryTreeNodeDto | null>(null);
+  const [bookPage, setBookPage] = useState<MemoryBookPageDto | null>(null);
+  const [bookLoading, setBookLoading] = useState(false);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<MemorySearchResultDto[]>([]);
+  const [searchVisible, setSearchVisible] = useState(false);
 
   // ── Load workspaces on mount ───────────────────────────────────
   useEffect(() => {
@@ -67,6 +84,7 @@ const MemoryLibraryPage: React.FC = () => {
       .then((nodes: MemoryLibraryTreeNodeDto[]) => {
         setTreeData(nodes);
         setSelectedNode(null);
+        setBookPage(null);
       })
       .catch(() => setError('无法加载记忆树'))
       .finally(() => setLoading(false));
@@ -77,12 +95,17 @@ const MemoryLibraryPage: React.FC = () => {
     setSelectedWorkspaceId(value);
     setSelectedLibraryId(undefined);
     setSelectedNode(null);
+    setBookPage(null);
     setTreeData([]);
+    setSearchVisible(false);
+    setSearchResults([]);
+    setSearchQuery('');
   }, []);
 
   const handleLibraryChange = useCallback((value: string) => {
     setSelectedLibraryId(value);
     setSelectedNode(null);
+    setBookPage(null);
     setTreeData([]);
   }, []);
 
@@ -90,7 +113,11 @@ const MemoryLibraryPage: React.FC = () => {
     if (selectedWorkspaceId && selectedLibraryId) {
       setLoading(true);
       getMemoryLibraryTree(selectedWorkspaceId, selectedLibraryId)
-        .then(setTreeData)
+        .then((nodes) => {
+          setTreeData(nodes);
+          setSelectedNode(null);
+          setBookPage(null);
+        })
         .catch(() => setError('刷新失败'))
         .finally(() => setLoading(false));
     }
@@ -98,7 +125,47 @@ const MemoryLibraryPage: React.FC = () => {
 
   const handleTreeSelect = useCallback((node: MemoryLibraryTreeNodeDto) => {
     setSelectedNode(node);
-  }, []);
+    setSearchVisible(false);
+
+    // If node has a mounted Book, load it
+    if (node.bookId && selectedWorkspaceId) {
+      setBookLoading(true);
+      getMemoryBookPage(selectedWorkspaceId, node.bookId)
+        .then(setBookPage)
+        .catch(() => setError('无法加载 Book 页'))
+        .finally(() => setBookLoading(false));
+    } else {
+      setBookPage(null);
+      setBookLoading(false);
+    }
+  }, [selectedWorkspaceId]);
+
+  const handleSearch = useCallback((value: string) => {
+    setSearchQuery(value);
+    if (!value.trim()) {
+      setSearchVisible(false);
+      setSearchResults([]);
+      return;
+    }
+    if (!selectedWorkspaceId) return;
+    setSearchVisible(true);
+    searchMemoryLibrary(selectedWorkspaceId, value, 20)
+      .then(setSearchResults)
+      .catch(() => setError('搜索失败'));
+  }, [selectedWorkspaceId]);
+
+  const handleSearchResultSelect = useCallback((bookId: string, _chapterId: string) => {
+    if (!selectedWorkspaceId) return;
+    setSearchVisible(false);
+    setBookLoading(true);
+    getMemoryBookPage(selectedWorkspaceId, bookId)
+      .then((page) => {
+        setBookPage(page);
+        setSelectedNode(null); // clear tree selection when viewing search result
+      })
+      .catch(() => setError('无法加载搜索结果'))
+      .finally(() => setBookLoading(false));
+  }, [selectedWorkspaceId]);
 
   // ── Render ────────────────────────────────────────────────────
   const workspaceOptions = workspaces.map((w) => ({
@@ -127,12 +194,21 @@ const MemoryLibraryPage: React.FC = () => {
               options={libraries.map((l) => ({ label: l.name, value: l.libraryId }))}
             />
           )}
+          <Input.Search
+            className="search-input"
+            placeholder="搜索当前工作区记忆..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onSearch={handleSearch}
+            allowClear
+            enterButton={<SearchOutlined />}
+          />
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} disabled={!selectedLibraryId}>
             刷新
           </Button>
           <Space style={{ marginLeft: 'auto' }}>
             <Text type="secondary">
-              {selectedNode ? `已选中: ${selectedNode.title}` : '未选中节点'}
+              {selectedNode ? `已选中: ${selectedNode.title}` : bookPage ? `浏览: ${bookPage.title}` : '未选中节点'}
             </Text>
           </Space>
         </div>
@@ -142,35 +218,40 @@ const MemoryLibraryPage: React.FC = () => {
           {/* Left: Page Tree */}
           <div className="memory-page-tree-panel">
             {error ? (
-              <Alert message={error} type="error" showIcon style={{ marginBottom: 12 }} />
+              <Alert message={error} type="error" showIcon closable onClose={() => setError(null)} style={{ marginBottom: 12 }} />
             ) : null}
-            <MemoryPageTree
-              loading={loading}
-              data={treeData}
-              selectedKey={selectedNode?.id}
-              onSelect={handleTreeSelect}
-            />
+            {searchVisible ? (
+              <MemorySearchResults results={searchResults} onSelect={handleSearchResultSelect} />
+            ) : (
+              <MemoryPageTree
+                loading={loading}
+                data={treeData}
+                selectedKey={selectedNode?.id}
+                onSelect={handleTreeSelect}
+              />
+            )}
           </div>
 
           {/* Center: Page Editor */}
           <div className="memory-page-editor-panel">
-            {selectedNode ? (
-              <div>
-                <Typography.Title level={3}>{selectedNode.title}</Typography.Title>
-                {selectedNode.summary && <Text type="secondary">{selectedNode.summary}</Text>}
-              </div>
-            ) : (
-              <div className="editor-empty">
-                请从左侧记忆树中选择一个节点
-              </div>
-            )}
+            <MemoryPageEditor
+              loading={bookLoading}
+              book={bookPage ?? undefined}
+              nodeTitle={selectedNode?.title}
+              nodeSummary={selectedNode?.summary}
+              nodeType={selectedNode?.type}
+            />
           </div>
 
           {/* Right: Inspector */}
           <div className="memory-inspector-panel">
-            <div className="inspector-empty">
-              选择节点后查看属性和来源
-            </div>
+            <MemoryInspector
+              loading={bookLoading}
+              book={bookPage ?? undefined}
+              nodeTitle={selectedNode?.title}
+              nodeType={selectedNode?.type}
+              nodeId={selectedNode?.id ?? bookPage?.bookId}
+            />
           </div>
         </div>
       </div>
