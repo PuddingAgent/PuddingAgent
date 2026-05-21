@@ -261,6 +261,7 @@ builder.Services.AddSingleton<IMemoryLibraryConvenience>(sp =>
         sp.GetRequiredService<IMemoryLibrary>(),
         sp.GetService<IMemoryLlmClient>()));
 builder.Services.AddSingleton<IMemoryLibrarian, MemoryLibrarian>();
+builder.Services.AddScoped<PuddingPlatform.Services.IMemoryLibraryAdminService, PuddingPlatform.Services.MemoryLibraryAdminService>();
 builder.Services.AddSingleton<MemoryRecallService>();
 builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<MemoryRecallService>());
 builder.Services.AddSingleton<JsonlSessionWriter>();
