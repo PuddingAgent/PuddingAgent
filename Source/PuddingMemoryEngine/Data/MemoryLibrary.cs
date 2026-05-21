@@ -329,33 +329,6 @@ public sealed class MemoryLibrary : IMemoryLibrary
         return ToRecord(entity);
     }
 
-    /// <summary>泛化指针创建。ADR-029。</summary>
-    public async Task<PointerRecord> CreatePointerAsync(
-        string workspaceId, string sourceType, string sourceId,
-        string targetType, string targetId,
-        string? label = null, string? description = null, CancellationToken ct = default)
-    {
-        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
-        string? chapterId = sourceType == "chapter" ? sourceId : null;
-        var entity = new PointerEntity
-        {
-            PointerId = Guid.NewGuid().ToString("N"),
-            WorkspaceId = workspaceId,
-            SourceType = sourceType,
-            SourceId = sourceId,
-            ChapterId = chapterId ?? "",
-            TargetType = targetType,
-            TargetId = targetId,
-            TargetLabel = label,
-            Description = description,
-            Relevance = 5,
-            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-        };
-        db.Pointers.Add(entity);
-        await db.SaveChangesAsync(ct);
-        return ToRecord(entity);
-    }
-
     /// <summary>旧兼容 API：按 ChapterId 查询。</summary>
     public async Task<IReadOnlyList<PointerRecord>> GetPointersAsync(
         string chapterId, CancellationToken ct = default)
@@ -370,7 +343,7 @@ public sealed class MemoryLibrary : IMemoryLibrary
     }
 
     /// <summary>泛化指针查询。ADR-029。</summary>
-    public async Task<IReadOnlyList<PointerRecord>> GetPointersAsync(
+    public async Task<IReadOnlyList<PointerRecord>> GetPointersBySourceAsync(
         string sourceType, string sourceId, CancellationToken ct = default)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
