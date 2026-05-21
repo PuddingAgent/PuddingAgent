@@ -144,7 +144,7 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
         try
         {
             // ADR-029: 注入 Runtime WorkspaceId，不依赖 LLM 参数
-            var argumentsJson = SerializeWithWorkspace(request);
+            var argumentsJson = MemoryToolHelper.SerializeWithWorkspace(request);
             var result = await ExecuteAsync(argumentsJson, ct);
             return new SkillResult { Success = true, Output = result };
         }
@@ -152,18 +152,6 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
         {
             return new SkillResult { Success = false, Output = "", Error = ex.Message, ExitCode = 1 };
         }
-    }
-
-    private static string SerializeWithWorkspace(SkillInvokeRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.WorkspaceId))
-            return JsonSerializer.Serialize(request.Parameters);
-
-        var merged = new Dictionary<string, object>();
-        foreach (var kv in request.Parameters)
-            merged[kv.Key] = kv.Value;
-        merged["workspace_id"] = request.WorkspaceId;
-        return JsonSerializer.Serialize(merged);
     }
 }
 
@@ -351,7 +339,7 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
         try
         {
             // ADR-029: 注入 Runtime WorkspaceId
-            var argumentsJson = SerializeWithWorkspace(request);
+            var argumentsJson = MemoryToolHelper.SerializeWithWorkspace(request);
             var result = ExecuteAsync(argumentsJson, ct).GetAwaiter().GetResult();
             return Task.FromResult(new SkillResult { Success = true, Output = result });
         }
@@ -359,18 +347,6 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
         {
             return Task.FromResult(new SkillResult { Success = false, Output = "", Error = ex.Message, ExitCode = 1 });
         }
-    }
-
-    private static string SerializeWithWorkspace(SkillInvokeRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.WorkspaceId))
-            return JsonSerializer.Serialize(request.Parameters);
-
-        var merged = new Dictionary<string, object>();
-        foreach (var kv in request.Parameters)
-            merged[kv.Key] = kv.Value;
-        merged["workspace_id"] = request.WorkspaceId;
-        return JsonSerializer.Serialize(merged);
     }
 }
 
@@ -586,7 +562,7 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
         try
         {
             // ADR-029: 注入 Runtime WorkspaceId
-            var argumentsJson = SerializeWithWorkspace(request);
+            var argumentsJson = MemoryToolHelper.SerializeWithWorkspace(request);
             var result = ExecuteAsync(argumentsJson, ct).GetAwaiter().GetResult();
             return Task.FromResult(new SkillResult { Success = true, Output = result });
         }
@@ -594,18 +570,6 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
         {
             return Task.FromResult(new SkillResult { Success = false, Output = "", Error = ex.Message, ExitCode = 1 });
         }
-    }
-
-    private static string SerializeWithWorkspace(SkillInvokeRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.WorkspaceId))
-            return JsonSerializer.Serialize(request.Parameters);
-
-        var merged = new Dictionary<string, object>();
-        foreach (var kv in request.Parameters)
-            merged[kv.Key] = kv.Value;
-        merged["workspace_id"] = request.WorkspaceId;
-        return JsonSerializer.Serialize(merged);
     }
 }
 

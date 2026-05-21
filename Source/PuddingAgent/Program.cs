@@ -894,7 +894,8 @@ using (var scope = app.Services.CreateScope())
     await MemoryDbInitializer.InitializeAsync(memoryDbFactory);
 
     var libraryDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MemoryLibraryDbContext>>();
-    await MemoryLibraryDbInitializer.InitializeAsync(libraryDbFactory);
+    var initLogger = scope.ServiceProvider.GetService<ILogger<MemoryLibraryDbContext>>();
+    await MemoryLibraryDbInitializer.InitializeAsync(libraryDbFactory, initLogger);
 
     var workspaceCatalog = scope.ServiceProvider.GetRequiredService<InMemoryWorkspaceCatalog>();
     await workspaceCatalog.LoadAsync();

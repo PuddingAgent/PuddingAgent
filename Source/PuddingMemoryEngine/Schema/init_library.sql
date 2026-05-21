@@ -72,14 +72,29 @@ ALTER TABLE Chapters ADD COLUMN Embedding BLOB;
 ALTER TABLE Chapters ADD COLUMN SourceReference TEXT;
 ALTER TABLE Chapters ADD COLUMN ReferenceType TEXT;
 
+-- 2.5 Pointers 表 (ADR-029: 定义在前，ALTER 紧跟其后)
+CREATE TABLE IF NOT EXISTS Pointers (
+    PointerId     TEXT PRIMARY KEY,
+    ChapterId     TEXT NOT NULL REFERENCES Chapters(ChapterId) ON DELETE CASCADE,
+    TargetType    TEXT NOT NULL,
+    TargetId      TEXT NOT NULL,
+    TargetLabel   TEXT,
+    Description   TEXT,
+    Relevance     INTEGER NOT NULL DEFAULT 5,
+    CreatedAt     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_Pointers_ChapterId
+    ON Pointers(ChapterId);
+CREATE INDEX IF NOT EXISTS IX_Pointers_TargetType_TargetId
+    ON Pointers(TargetType, TargetId);
+
 -- ADR-028 Phase 3: Pointer 泛化列
 ALTER TABLE Pointers ADD COLUMN WorkspaceId TEXT;
 ALTER TABLE Pointers ADD COLUMN SourceType TEXT;
 ALTER TABLE Pointers ADD COLUMN SourceId TEXT;
 CREATE INDEX IF NOT EXISTS IX_Pointers_WorkspaceId ON Pointers(WorkspaceId);
 CREATE INDEX IF NOT EXISTS IX_Pointers_SourceType_SourceId ON Pointers(SourceType, SourceId);
-
--- ADR-028 Phase 2: SourceReferences 表
 CREATE TABLE IF NOT EXISTS SourceReferences (
     SourceReferenceId TEXT PRIMARY KEY,
     WorkspaceId       TEXT NOT NULL,
@@ -124,23 +139,6 @@ CREATE TABLE IF NOT EXISTS BookTreeMounts (
 );
 CREATE INDEX IF NOT EXISTS IX_BookTreeMounts_BookId ON BookTreeMounts(BookId);
 CREATE INDEX IF NOT EXISTS IX_BookTreeMounts_NodeId ON BookTreeMounts(NodeId);
-
--- 2.5 Pointers 表
-CREATE TABLE IF NOT EXISTS Pointers (
-    PointerId     TEXT PRIMARY KEY,
-    ChapterId     TEXT NOT NULL REFERENCES Chapters(ChapterId) ON DELETE CASCADE,
-    TargetType    TEXT NOT NULL,
-    TargetId      TEXT NOT NULL,
-    TargetLabel   TEXT,
-    Description   TEXT,
-    Relevance     INTEGER NOT NULL DEFAULT 5,
-    CreatedAt     INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS IX_Pointers_ChapterId
-    ON Pointers(ChapterId);
-CREATE INDEX IF NOT EXISTS IX_Pointers_TargetType_TargetId
-    ON Pointers(TargetType, TargetId);
 
 -- 2.6 Branches 表
 CREATE TABLE IF NOT EXISTS Branches (

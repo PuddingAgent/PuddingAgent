@@ -269,6 +269,7 @@ public sealed partial class SkillRuntime
                     new ToolParameter("source_label", "string", "溯源标签，如 '原始会话'、'参考文档'（可选）"),
                     new ToolParameter("source_reference", "string", "引用来源：内部会话文件路径如 data/logs/sessions/2026-05-13/xxx.md，或外部URL"),
                     new ToolParameter("reference_type", "string", "引用类型：internal（内部）/ external（外部）/ none（无）"),
+                    new ToolParameter("workspace_id", "string", "Workspace ID（Runtime 自动注入当前活跃 workspace）——ADR-029"),
                 ],
                 ["action", "type"]);
 
@@ -286,6 +287,7 @@ public sealed partial class SkillRuntime
                     new ToolParameter("chapter_order", "number", "章节排序序号"),
                     new ToolParameter("source_reference", "string", "引用来源：内部会话文件路径或外部URL"),
                     new ToolParameter("reference_type", "string", "引用类型：internal（内部）/ external（外部）/ none（无）"),
+                    new ToolParameter("workspace_id", "string", "Workspace ID（Runtime 自动注入当前活跃 workspace）——ADR-029"),
                 ],
                 ["action"]);
 
@@ -297,6 +299,7 @@ public sealed partial class SkillRuntime
                     new ToolParameter("mode", "string", "搜索模式：fts5（默认，基于全文索引）或 regex（正则匹配）"),
                     new ToolParameter("book", "string", "限定 Book 名称（in_book 需要）"),
                     new ToolParameter("top_k", "number", "返回条目数上限，默认 10"),
+                    new ToolParameter("workspace_id", "string", "Workspace ID（Runtime 自动注入当前活跃 workspace）——ADR-029"),
                 ],
                 ["action"]);
 

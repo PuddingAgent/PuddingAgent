@@ -1010,7 +1010,7 @@ public sealed class MemoryLibraryTests
     /// 创建测试 Scope——使用 SQLite InMemory 数据库。
     /// enableFts5=true 时额外创建 FTS5 虚拟表和触发器以支持全文搜索测试。
     /// </summary>
-    private static async Task<LibraryTestScope> CreateLibraryScopeAsync(bool enableFts5 = false)
+    internal static async Task<LibraryTestScope> CreateLibraryScopeAsync(bool enableFts5 = false)
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         await connection.OpenAsync();
@@ -1070,7 +1070,7 @@ public sealed class MemoryLibraryTests
         }
     }
 
-    private sealed class LibraryTestScope : IAsyncDisposable
+    internal sealed class LibraryTestScope : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
 
