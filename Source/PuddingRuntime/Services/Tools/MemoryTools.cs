@@ -143,7 +143,8 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
     {
         try
         {
-            var argumentsJson = JsonSerializer.Serialize(request.Parameters);
+            // ADR-029: 注入 Runtime WorkspaceId，不依赖 LLM 参数
+            var argumentsJson = SerializeWithWorkspace(request);
             var result = await ExecuteAsync(argumentsJson, ct);
             return new SkillResult { Success = true, Output = result };
         }
@@ -151,6 +152,18 @@ public sealed class SaveMemoryTool : ITool, IAgentSkill
         {
             return new SkillResult { Success = false, Output = "", Error = ex.Message, ExitCode = 1 };
         }
+    }
+
+    private static string SerializeWithWorkspace(SkillInvokeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.WorkspaceId))
+            return JsonSerializer.Serialize(request.Parameters);
+
+        var merged = new Dictionary<string, object>();
+        foreach (var kv in request.Parameters)
+            merged[kv.Key] = kv.Value;
+        merged["workspace_id"] = request.WorkspaceId;
+        return JsonSerializer.Serialize(merged);
     }
 }
 
@@ -337,7 +350,8 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
     {
         try
         {
-            var argumentsJson = JsonSerializer.Serialize(request.Parameters);
+            // ADR-029: 注入 Runtime WorkspaceId
+            var argumentsJson = SerializeWithWorkspace(request);
             var result = ExecuteAsync(argumentsJson, ct).GetAwaiter().GetResult();
             return Task.FromResult(new SkillResult { Success = true, Output = result });
         }
@@ -345,6 +359,18 @@ public sealed class ManageMemoryTool : ITool, IAgentSkill
         {
             return Task.FromResult(new SkillResult { Success = false, Output = "", Error = ex.Message, ExitCode = 1 });
         }
+    }
+
+    private static string SerializeWithWorkspace(SkillInvokeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.WorkspaceId))
+            return JsonSerializer.Serialize(request.Parameters);
+
+        var merged = new Dictionary<string, object>();
+        foreach (var kv in request.Parameters)
+            merged[kv.Key] = kv.Value;
+        merged["workspace_id"] = request.WorkspaceId;
+        return JsonSerializer.Serialize(merged);
     }
 }
 
@@ -409,13 +435,10 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
                     {
                         return await RegexSearchAsync(query, book, topK, workspaceId, ct);
                     }
-                    // ADR-028 Phase 1: prefer scoped search
+                    // ADR-029: 仅使用 scoped 搜索，不回退到 unscoped path
                     var results = await _memLib.SearchChaptersFtsScopedAsync(workspaceId, query, topK, ct);
                     if (results.Count == 0)
-                    {
-                        // fallback to convenience layer for tag/pointer expansion
-                        results = (await _library.SmartSearchAsync(query, topK, ct)).ToList();
-                    }
+                        _logger.LogDebug("[GrepMemory] no scoped hits workspace={WorkspaceId} query={Query}", workspaceId, query);
                     var list = results.Select(r => new
                     {
                         r.BookTitle, r.Snippet, r.Score,
@@ -562,7 +585,8 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
     {
         try
         {
-            var argumentsJson = JsonSerializer.Serialize(request.Parameters);
+            // ADR-029: 注入 Runtime WorkspaceId
+            var argumentsJson = SerializeWithWorkspace(request);
             var result = ExecuteAsync(argumentsJson, ct).GetAwaiter().GetResult();
             return Task.FromResult(new SkillResult { Success = true, Output = result });
         }
@@ -570,6 +594,18 @@ public sealed class GrepMemoryTool : ITool, IAgentSkill
         {
             return Task.FromResult(new SkillResult { Success = false, Output = "", Error = ex.Message, ExitCode = 1 });
         }
+    }
+
+    private static string SerializeWithWorkspace(SkillInvokeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.WorkspaceId))
+            return JsonSerializer.Serialize(request.Parameters);
+
+        var merged = new Dictionary<string, object>();
+        foreach (var kv in request.Parameters)
+            merged[kv.Key] = kv.Value;
+        merged["workspace_id"] = request.WorkspaceId;
+        return JsonSerializer.Serialize(merged);
     }
 }
 

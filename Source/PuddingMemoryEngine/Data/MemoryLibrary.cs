@@ -402,8 +402,11 @@ public sealed class MemoryLibrary : IMemoryLibrary
             await conn.OpenAsync(ct);
 
         // FTS5 搜索返回 BookId + rank，再 Join 主表获取完整记录
+        // 显式列选择，避免 ALTER TABLE 追加列导致 ordinal 漂移
         var sql = """
-            SELECT b.* FROM Books_fts f
+            SELECT b.BookId, b.LibraryId, b.Title, b.Summary, b.Status, b.Version,
+                   b.AccessCount, b.LastAccessedAt, b.CreatedAt, b.UpdatedAt
+            FROM Books_fts f
             JOIN Books b ON b.BookId = f.BookId
             WHERE Books_fts MATCH @query
             ORDER BY rank
@@ -422,13 +425,13 @@ public sealed class MemoryLibrary : IMemoryLibrary
                 reader.GetString(0),   // BookId
                 reader.GetString(1),   // LibraryId
                 reader.GetString(2),   // Title
-                reader.GetString(3),   // Summary
+                reader.IsDBNull(3) ? string.Empty : reader.GetString(3),  // Summary (可空)
                 reader.GetString(4),   // Status
                 reader.GetInt32(5),    // Version
                 reader.GetInt32(6),    // AccessCount
                 reader.IsDBNull(7) ? null : reader.GetInt64(7),  // LastAccessedAt
                 reader.GetInt64(8),    // CreatedAt
-                reader.GetInt64(9)));  // UpdatedAt（ordinal 10 是 ALTER TABLE 追加的 Embedding BLOB）
+                reader.GetInt64(9)));  // UpdatedAt
         }
         return results;
     }
@@ -484,8 +487,12 @@ public sealed class MemoryLibrary : IMemoryLibrary
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync(ct);
 
+        // 显式列选择，包含 ADR-028 新增 SourceReference/ReferenceType
         var sql = """
-            SELECT c.* FROM Chapters_fts f
+            SELECT c.ChapterId, c.BookId, c.Title, c.ChapterOrder, c.Content,
+                   c.ContentType, c.Importance, c.SourceSessionId, c.WordCount,
+                   c.CreatedAt, c.UpdatedAt, c.SourceReference, c.ReferenceType
+            FROM Chapters_fts f
             JOIN Chapters c ON c.ChapterId = f.ChapterId
             WHERE Chapters_fts MATCH @query
             ORDER BY rank
@@ -511,7 +518,9 @@ public sealed class MemoryLibrary : IMemoryLibrary
                 reader.IsDBNull(7) ? null : reader.GetString(7),  // SourceSessionId
                 reader.GetInt32(8),    // WordCount
                 reader.GetInt64(9),    // CreatedAt
-                reader.GetInt64(10)));  // UpdatedAt（ordinal 11 是 ALTER TABLE 追加的 Embedding BLOB）
+                reader.GetInt64(10),   // UpdatedAt
+                reader.IsDBNull(11) ? null : reader.GetString(11),  // SourceReference
+                reader.IsDBNull(12) ? null : reader.GetString(12)));  // ReferenceType
         }
         return results;
     }
