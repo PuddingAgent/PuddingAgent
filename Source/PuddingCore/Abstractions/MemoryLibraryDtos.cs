@@ -38,7 +38,7 @@ public sealed record ChapterRecord(
     string? SourceReference = null,
     string? ReferenceType = null);
 
-/// <summary>指针记录。</summary>
+/// <summary>指针记录。ADR-029: 泛化为通用指针。</summary>
 public sealed record PointerRecord(
     string PointerId,
     string ChapterId,
@@ -47,7 +47,10 @@ public sealed record PointerRecord(
     string? TargetLabel,
     string? Description,
     int Relevance,
-    long CreatedAt);
+    long CreatedAt,
+    string? WorkspaceId = null,
+    string? SourceType = null,
+    string? SourceId = null);
 
 /// <summary>分支记录。</summary>
 public sealed record BranchRecord(

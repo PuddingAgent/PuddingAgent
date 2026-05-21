@@ -70,13 +70,23 @@ public interface IMemoryLibrary
 
     // ── Pointer ──
 
-    /// <summary>创建指针引用。</summary>
+    /// <summary>创建指针引用（旧兼容 API——保留）。</summary>
     Task<PointerRecord> CreatePointerAsync(
         string chapterId, string targetType, string targetId,
         string? label = null, string? description = null, CancellationToken ct = default);
 
-    /// <summary>获取章节的所有指针。</summary>
+    /// <summary>创建泛化指针。ADR-029。</summary>
+    Task<PointerRecord> CreatePointerAsync(
+        string workspaceId, string sourceType, string sourceId,
+        string targetType, string targetId,
+        string? label = null, string? description = null, CancellationToken ct = default);
+
+    /// <summary>获取章节的所有指针（旧兼容 API——保留）。</summary>
     Task<IReadOnlyList<PointerRecord>> GetPointersAsync(string chapterId, CancellationToken ct = default);
+
+    /// <summary>获取通用指针。ADR-029。</summary>
+    Task<IReadOnlyList<PointerRecord>> GetPointersAsync(
+        string sourceType, string sourceId, CancellationToken ct = default);
 
     /// <summary>反向查询：哪些指针指向了指定的目标。</summary>
     Task<IReadOnlyList<PointerRecord>> ResolveBacklinksAsync(string targetType, string targetId, CancellationToken ct = default);

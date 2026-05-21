@@ -9,16 +9,13 @@ namespace PuddingMemoryEngine.Services;
 /// </summary>
 public sealed class MemoryLibrarian : IMemoryLibrarian
 {
-    private readonly IMemoryLibraryConvenience _convenience;
     private readonly IMemoryLibrary _library;
     private readonly ILogger<MemoryLibrarian> _logger;
 
     public MemoryLibrarian(
-        IMemoryLibraryConvenience convenience,
         IMemoryLibrary library,
         ILogger<MemoryLibrarian> logger)
     {
-        _convenience = convenience;
         _library = library;
         _logger = logger;
     }
@@ -30,41 +27,60 @@ public sealed class MemoryLibrarian : IMemoryLibrarian
         _logger.LogDebug("[Librarian] Ingest workspace={Workspace} title={Title}",
             request.WorkspaceId, request.Experience.Title);
 
-        // 委托现有 Convenience 层完成写入（渐进迁移，后续将逻辑内联到此）
-        var result = await _convenience.UpsertExperienceAsync(
-            request.WorkspaceId, request.Experience, ct);
+        // ADR-029: 直接调用 IMemoryLibrary primitives，不再委托 Convenience
+        // Step 1: 确保 Library 存在
+        var libs = await _library.ListLibrariesAsync(request.WorkspaceId, ct);
+        string libraryId;
+        if (libs.Count > 0)
+            libraryId = libs[0].LibraryId;
+        else
+            libraryId = (await _library.CreateLibraryAsync(request.WorkspaceId, "默认图书馆", null, ct)).LibraryId;
 
-        // 如果 Experience 携带来源信息，写入 SourceReference
+        // Step 2: 查找或创建 Book
+        var bookTitle = request.TargetBookTitle ?? request.Experience.Title;
+        var book = await _library.FindBookByTitleAsync(libraryId, bookTitle, ct);
+        if (book is null)
+            book = await _library.CreateBookAsync(libraryId, bookTitle,
+                request.Experience.Content.Length > 200 ? request.Experience.Content[..200] : request.Experience.Content,
+                request.Experience.SuggestedTags, ct);
+
+        // Step 3: 追加 Chapter
+        var chapters = await _library.ListChaptersAsync(book.BookId, ct);
+        var order = chapters.Count;
+        var chapter = await _library.AddChapterWithSourceAsync(
+            book.BookId, request.Experience.Title, request.Experience.Content,
+            order, request.Experience.SourceSessionId,
+            request.Experience.SourceReference, request.Experience.ReferenceType ?? "none", ct);
+
+        // Step 4: 写入 SourceReference
         if (!string.IsNullOrEmpty(request.Experience.SourceReference)
             && !string.IsNullOrEmpty(request.Experience.ReferenceType))
         {
             try
             {
                 await _library.AddSourceReferenceAsync(new SourceReferenceCreateRequest(
-                    request.WorkspaceId, "chapter", result.Chapter.ChapterId,
+                    request.WorkspaceId, "chapter", chapter.ChapterId,
                     request.Experience.ReferenceType, request.Experience.SourceReference,
                     Label: request.Experience.Title), ct);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[Librarian] Failed to write SourceReference for chapter={ChapterId}",
-                    result.Chapter.ChapterId);
+                    chapter.ChapterId);
             }
         }
 
-        // 确保默认 books 存在
+        // Step 5: 确保默认 books 存在
         try
         {
-            await _library.EnsureDefaultBooksAsync(request.WorkspaceId,
-                result.Book.LibraryId, ct);
+            await _library.EnsureDefaultBooksAsync(request.WorkspaceId, libraryId, ct);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[Librarian] Default books seed skipped for library={LibId}",
-                result.Book.LibraryId);
+            _logger.LogDebug(ex, "[Librarian] Default books seed skipped for library={LibId}", libraryId);
         }
 
-        return result;
+        return new ExperienceWriteResult(book, chapter);
     }
 
     public async Task<IReadOnlyList<MemoryTreeOperation>> PlanTreeMaintenanceAsync(

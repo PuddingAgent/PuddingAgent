@@ -127,13 +127,26 @@ public class ChapterEntity
     public string? ReferenceType { get; set; }
 }
 
-/// <summary>指针——章节之间的交叉引用。</summary>
+/// <summary>指针——章节之间的交叉引用。ADR-029: 泛化为通用指针。</summary>
 public class PointerEntity
 {
     [Key]
     [MaxLength(32)]
     public string PointerId { get; set; } = Guid.NewGuid().ToString("N");
 
+    /// <summary>ADR-029: workspace 隔离。</summary>
+    [MaxLength(64)]
+    public string? WorkspaceId { get; set; }
+
+    /// <summary>ADR-029: 来源类型（chapter|book|tree_node）。</summary>
+    [MaxLength(32)]
+    public string? SourceType { get; set; }
+
+    /// <summary>ADR-029: 来源 ID。</summary>
+    [MaxLength(32)]
+    public string? SourceId { get; set; }
+
+    /// <summary>兼容旧 API 的 ChapterId 字段。</summary>
     [MaxLength(32)]
     public string ChapterId { get; set; } = string.Empty;
 

@@ -1,8 +1,8 @@
 # 29 ADR-028 记忆图书馆基础设施重构方案
 
-> 状态：**implemented**（Phases 1-6 完成，Phases 5-6 召回格式化与事件队列对齐为渐进优化）
+> 状态：**partially-implemented**（基础结构已部分落地；workspace scope、schema 初始化、Pointer 泛化、Librarian 分层、source-aware recall 和测试验收由 ADR-029 收敛）
 > 日期：2026-05-20
-> 实施：6 commits (e4f7809..00ef5db)，共 6 phases，约 1800+ insertions
+> 纠偏：ADR-029 (2026-05-21)，P0/P1 修复已实施
 > 范围：PuddingMemoryEngine、IMemoryLibrary、MemoryRecallService、SubconsciousOrchestrator、Memory Tools、ContextPipeline L6
 > 前置：[12记忆图书馆基础设施](12记忆图书馆基础设施.md)、[13记忆与会话数据层](13记忆与会话数据层.md)、[15潜意识LLM子代理系统ADR](15潜意识LLM子代理系统ADR.md)、[28ADR-027Hook事件潜意识学习闭环ADR](28ADR-027Hook事件潜意识学习闭环ADR.md)、[task38-subconscious-memory-engine](../Tasks/task38-subconscious-memory-engine.md)、[task42-hook-event-subconscious-learning](../Tasks/task42-hook-event-subconscious-learning.md)
 

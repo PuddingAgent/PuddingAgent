@@ -26,26 +26,26 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
     private readonly IEmbeddingService? _embeddingService;
     private readonly ILogger<SubconsciousOrchestrator> _logger;
     private readonly IDbContextFactory<MemoryDbContext> _memoryDbContextFactory;
-    private readonly IMemoryLibraryConvenience? _libraryConvenience;
+    private readonly IMemoryLibrarian _memoryLibrarian;
     private readonly IStreamingEventBus? _eventBus;
 
     public SubconsciousOrchestrator(
         IMemoryLibrary memoryLibrary,
         IMemoryEngine memoryEngine,
         IMemoryLlmClient memoryLlmClient,
+        IMemoryLibrarian memoryLibrarian,
         ILogger<SubconsciousOrchestrator> logger,
         IDbContextFactory<MemoryDbContext> memoryDbContextFactory,
-        IMemoryLibraryConvenience? libraryConvenience = null,
         IEmbeddingService? embeddingService = null,
         IStreamingEventBus? eventBus = null)
     {
         _memoryLibrary = memoryLibrary;
         _memoryEngine = memoryEngine;
         _memoryLlmClient = memoryLlmClient;
+        _memoryLibrarian = memoryLibrarian;
         _embeddingService = embeddingService;
         _logger = logger;
         _memoryDbContextFactory = memoryDbContextFactory;
-        _libraryConvenience = libraryConvenience;
         _eventBus = eventBus;
     }
 
@@ -291,55 +291,37 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 _logger.LogDebug(ex, "[Subconscious] UNIQUE constraint ignored (duplicate preference/fact)");
             }
 
-            // 同步写入 IMemoryLibrary，使召回路径（ContextPipeline L4/L6）可检索到这些事实
-            if (_libraryConvenience is not null)
+            // ADR-029: 经 IMemoryLibrarian 写入 Library，不再直接调用 Convenience
+            try
             {
-                try
+                var structuredBooks = BuildStructuredBookExperiences(summary);
+                if (structuredBooks.Count > 0)
                 {
-                    var structuredBooks = BuildStructuredBookExperiences(summary);
-                    if (structuredBooks.Count > 0)
+                    _logger.LogDebug(
+                        "[Subconscious] Syncing structured books to Library workspace={Workspace} books={BookCount}",
+                        job.WorkspaceId,
+                        structuredBooks.Count);
+
+                    foreach (var (bookTitle, experience) in structuredBooks)
                     {
+                        var ingestionRequest = new MemoryIngestionRequest(
+                            job.WorkspaceId, "", experience with { SourceSessionId = job.SessionId },
+                            TargetBookTitle: bookTitle);
+
+                        var writeResult = await _memoryLibrarian.IngestExperienceAsync(ingestionRequest, ct);
+
                         _logger.LogDebug(
-                            "[Subconscious] Syncing structured books to Library workspace={Workspace} books={BookCount}",
+                            "[Subconscious] Library sync done workspace={Workspace} book={BookTitle} bookId={BookId}",
                             job.WorkspaceId,
-                            structuredBooks.Count);
-
-                        foreach (var (bookTitle, experience) in structuredBooks)
-                        {
-                            var writeResult = await _libraryConvenience.UpsertExperienceAsync(
-                                job.WorkspaceId,
-                                experience with { SourceSessionId = job.SessionId },
-                                ct);
-
-                            _logger.LogDebug(
-                                "[Subconscious] Library sync done workspace={Workspace} book={BookTitle} bookId={BookId}",
-                                job.WorkspaceId,
-                                bookTitle,
-                                writeResult.Book.BookId);
-
-                            // ADR-028 Phase 6: 写入 SourceReference（session 粒度溯源）
-                            try
-                            {
-                                await _memoryLibrary.AddSourceReferenceAsync(
-                                    new SourceReferenceCreateRequest(
-                                        job.WorkspaceId, "chapter", writeResult.Chapter.ChapterId,
-                                        "session", $"session:{job.SessionId}",
-                                        Label: $"潜意识提取: {bookTitle}"), ct);
-                            }
-                            catch (Exception srEx)
-                            {
-                                _logger.LogDebug(srEx,
-                                    "[Subconscious] SourceReference write skipped for chapter={ChapterId}",
-                                    writeResult.Chapter.ChapterId);
-                            }
-                        }
+                            bookTitle,
+                            writeResult.Book.BookId);
                     }
                 }
-                catch (Exception libEx)
-                {
-                    _logger.LogWarning(libEx,
-                        "[Subconscious] Sync to MemoryLibrary failed session={SessionId}", job.SessionId);
-                }
+            }
+            catch (Exception libEx)
+            {
+                _logger.LogWarning(libEx,
+                    "[Subconscious] Sync to MemoryLibrary failed session={SessionId}", job.SessionId);
             }
 
             log.Status = "completed";

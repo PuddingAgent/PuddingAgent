@@ -283,14 +283,39 @@ public sealed class MemoryLibrary : IMemoryLibrary
 
     // ── Pointer ────────────────────────────────────────────────────────
 
+    /// <summary>旧兼容 API：双写 ChapterId + SourceType/SourceId。</summary>
     public async Task<PointerRecord> CreatePointerAsync(
         string chapterId, string targetType, string targetId,
         string? label = null, string? description = null, CancellationToken ct = default)
     {
+        // ADR-029: 通过 chapter -> book -> library 反查 workspaceId
+        string? workspaceId = null;
+        try
+        {
+            await using var lookupDb = await _dbContextFactory.CreateDbContextAsync(ct);
+            var chapter = await lookupDb.Chapters.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.ChapterId == chapterId, ct);
+            if (chapter is not null)
+            {
+                var book = await lookupDb.Books.AsNoTracking()
+                    .FirstOrDefaultAsync(b => b.BookId == chapter.BookId, ct);
+                if (book is not null)
+                {
+                    var lib = await lookupDb.Libraries.AsNoTracking()
+                        .FirstOrDefaultAsync(l => l.LibraryId == book.LibraryId, ct);
+                    workspaceId = lib?.WorkspaceId;
+                }
+            }
+        }
+        catch { /* workspaceId fallback nullable */ }
+
         await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
         var entity = new PointerEntity
         {
             PointerId = Guid.NewGuid().ToString("N"),
+            WorkspaceId = workspaceId,
+            SourceType = "chapter",
+            SourceId = chapterId,
             ChapterId = chapterId,
             TargetType = targetType,
             TargetId = targetId,
@@ -304,12 +329,53 @@ public sealed class MemoryLibrary : IMemoryLibrary
         return ToRecord(entity);
     }
 
+    /// <summary>泛化指针创建。ADR-029。</summary>
+    public async Task<PointerRecord> CreatePointerAsync(
+        string workspaceId, string sourceType, string sourceId,
+        string targetType, string targetId,
+        string? label = null, string? description = null, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        string? chapterId = sourceType == "chapter" ? sourceId : null;
+        var entity = new PointerEntity
+        {
+            PointerId = Guid.NewGuid().ToString("N"),
+            WorkspaceId = workspaceId,
+            SourceType = sourceType,
+            SourceId = sourceId,
+            ChapterId = chapterId ?? "",
+            TargetType = targetType,
+            TargetId = targetId,
+            TargetLabel = label,
+            Description = description,
+            Relevance = 5,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        };
+        db.Pointers.Add(entity);
+        await db.SaveChangesAsync(ct);
+        return ToRecord(entity);
+    }
+
+    /// <summary>旧兼容 API：按 ChapterId 查询。</summary>
     public async Task<IReadOnlyList<PointerRecord>> GetPointersAsync(
         string chapterId, CancellationToken ct = default)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
         var entities = await db.Pointers.AsNoTracking()
-            .Where(p => p.ChapterId == chapterId)
+            .Where(p => p.ChapterId == chapterId
+                     || (p.SourceType == "chapter" && p.SourceId == chapterId))
+            .OrderByDescending(p => p.Relevance)
+            .ToListAsync(ct);
+        return entities.Select(ToRecord).ToList();
+    }
+
+    /// <summary>泛化指针查询。ADR-029。</summary>
+    public async Task<IReadOnlyList<PointerRecord>> GetPointersAsync(
+        string sourceType, string sourceId, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var entities = await db.Pointers.AsNoTracking()
+            .Where(p => p.SourceType == sourceType && p.SourceId == sourceId)
             .OrderByDescending(p => p.Relevance)
             .ToListAsync(ct);
         return entities.Select(ToRecord).ToList();
@@ -1152,7 +1218,8 @@ public sealed class MemoryLibrary : IMemoryLibrary
 
     private static PointerRecord ToRecord(PointerEntity e) => new(
         e.PointerId, e.ChapterId, e.TargetType, e.TargetId,
-        e.TargetLabel, e.Description, e.Relevance, e.CreatedAt);
+        e.TargetLabel, e.Description, e.Relevance, e.CreatedAt,
+        e.WorkspaceId, e.SourceType, e.SourceId);
 
     private static BranchRecord ToRecord(BranchEntity e) => new(
         e.BranchId, e.BookId, e.BranchName, e.Description,
