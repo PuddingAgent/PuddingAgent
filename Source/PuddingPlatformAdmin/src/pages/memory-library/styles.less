@@ -1,0 +1,75 @@
+// ═══════════════════════════════════════════════════════════════
+// Memory Library Page — Minimal "数据工作台" layout (ADR-030-F)
+// ═══════════════════════════════════════════════════════════════
+
+.memory-library-page {
+  height: 100%;
+
+  .memory-library-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+
+    .workspace-select {
+      min-width: 200px;
+    }
+
+    .search-input {
+      width: 300px;
+    }
+  }
+
+  .memory-library-content {
+    display: flex;
+    height: calc(100% - 49px);
+    overflow: hidden;
+
+    .memory-page-tree-panel {
+      width: 300px;
+      flex-shrink: 0;
+      border-right: 1px solid #f0f0f0;
+      overflow-y: auto;
+      padding: 12px;
+
+      .tree-empty {
+        padding: 24px;
+        color: #999;
+        text-align: center;
+      }
+    }
+
+    .memory-page-editor-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      max-width: 900px;
+
+      .editor-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: #999;
+        font-size: 14px;
+      }
+    }
+
+    .memory-inspector-panel {
+      width: 360px;
+      flex-shrink: 0;
+      border-left: 1px solid #f0f0f0;
+      overflow-y: auto;
+      padding: 16px;
+
+      .inspector-empty {
+        padding: 24px;
+        color: #999;
+        text-align: center;
+      }
+    }
+  }
+}
