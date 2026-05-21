@@ -1203,7 +1203,7 @@ public sealed class MemoryLibrary : IMemoryLibrary
     // ── 静态映射方法 ───────────────────────────────────────────────────
 
     private static LibraryRecord ToRecord(LibraryEntity e) => new(
-        e.LibraryId, e.WorkspaceId, e.Name, e.Description, e.CreatedAt, e.UpdatedAt);
+        e.LibraryId, e.WorkspaceId, e.Name, e.Description, e.CreatedAt, e.UpdatedAt, e.AgentId);
 
     private static BookRecord ToRecord(BookEntity e) => new(
         e.BookId, e.LibraryId, e.Title, e.Summary, e.Status, e.Version,

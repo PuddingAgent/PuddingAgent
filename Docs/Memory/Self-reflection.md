@@ -151,3 +151,8 @@
   - P2 最后收敛入口：状态栏从 10+ 图标收敛为状态胶囊+"更多"
 - **错误做法**：一次性大改多个文件导致回滚困难；先做能看见的视觉效果而忽略用户信任问题
 - **关键决策**：保留全部 @keyframes 定义和原有组件 import，只改触发条件和展示方式，确保回滚成本极低
+
+## SQLite 幂等补列：先查列再 ALTER
+
+- **根因**：直接执行 `ALTER TABLE ADD COLUMN` 再吞 `duplicate column` 异常，虽然功能幂等，但 EF Core 会先记录 Error 级 `Failed executing DbCommand`，污染部署日志。
+- **经验/最佳实践**：启动期补列应先用 `PRAGMA table_info` 判断列是否存在；仅缺列时执行 ALTER。若同文件同时引用 Serilog 与 Microsoft.Extensions.Logging，辅助方法参数需使用全限定 `Microsoft.Extensions.Logging.ILogger`，避免同名类型歧义。

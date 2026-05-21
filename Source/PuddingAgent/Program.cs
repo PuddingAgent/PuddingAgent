@@ -654,39 +654,25 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     await db.Database.MigrateAsync();
 
-    // ── 幂等补列：实体已新增但尚未生成迁移的列，启动时通过 ALTER TABLE 兜底
-    //   仿照 MemoryLibraryDbInitializer 的"duplicate column name" 异常吞噬模式。
-    //   一旦后续生成正式迁移，这些 ALTER 仍然安全（已存在则忽略）。
-    var pendingColumnDdl = new[]
+    // ── 幂等补列：实体已新增但尚未生成迁移的列，启动时通过 ALTER TABLE 兜底。
+    //   先查列再 ALTER，避免 EF Core 对“duplicate column name”记录 Error 级日志污染启动日志。
+    //   一旦后续生成正式迁移，这些 ALTER 仍然安全（已存在则跳过）。
+    var pendingColumns = new[]
     {
-        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';",
-        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;",
-        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';",
-        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;",
-        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;",
-        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;",
-        "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;",
-        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;",
-        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;",
-        "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;",
+        (Table: "GlobalAgentTemplates", Column: "MemorySearchMode", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';"),
+        (Table: "GlobalAgentTemplates", Column: "ReasoningEffort", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;"),
+        (Table: "WorkspaceAgentTemplates", Column: "MemorySearchMode", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';"),
+        (Table: "WorkspaceAgentTemplates", Column: "ReasoningEffort", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;"),
+        (Table: "GlobalAgentTemplates", Column: "MaxRounds", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;"),
+        (Table: "GlobalAgentTemplates", Column: "MaxElapsedSeconds", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;"),
+        (Table: "GlobalAgentTemplates", Column: "MaxToolCallsTotal", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;"),
+        (Table: "WorkspaceAgentTemplates", Column: "MaxRounds", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;"),
+        (Table: "WorkspaceAgentTemplates", Column: "MaxElapsedSeconds", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;"),
+        (Table: "WorkspaceAgentTemplates", Column: "MaxToolCallsTotal", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;"),
     };
-    foreach (var ddl in pendingColumnDdl)
+    foreach (var column in pendingColumns)
     {
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync(ddl);
-            app.Logger.LogInformation("[Schema] 已补列：{Ddl}", ddl);
-        }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (
-            ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-        {
-            // 幂等：列已存在，忽略
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogWarning(ex, "[Schema] 幂等补列失败（将继续启动）：{Ddl}", ddl);
-        }
+        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补列");
     }
 
     // ── ADR-016：幂等建表 — session_event_log / session_sub_agents
@@ -780,6 +766,8 @@ using (var scope = app.Services.CreateScope())
             created_at          INTEGER NOT NULL,
             updated_at          INTEGER NOT NULL,
             error_message       TEXT,
+            schema_version      INTEGER NOT NULL DEFAULT 1,
+            causation_id        TEXT,
             trace_id            TEXT,
             correlation_id      TEXT,
             execution_id        TEXT,
@@ -828,33 +816,35 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    var pendingSessionEventTraceColumnDdl = new[]
+    var pendingEventQueueColumns = new[]
     {
-        "ALTER TABLE session_event_log ADD COLUMN trace_id TEXT NULL;",
-        "ALTER TABLE session_event_log ADD COLUMN correlation_id TEXT NULL;",
-        "ALTER TABLE session_event_log ADD COLUMN execution_id TEXT NULL;",
-        "ALTER TABLE session_event_log ADD COLUMN parent_execution_id TEXT NULL;",
-        "ALTER TABLE session_event_log ADD COLUMN sub_agent_id TEXT NULL;",
-        "ALTER TABLE session_event_log ADD COLUMN component TEXT NULL;",
-        "ALTER TABLE session_event_log ADD COLUMN operation TEXT NULL;",
+        (Table: "event_queue", Column: "schema_version", Ddl: "ALTER TABLE event_queue ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1;"),
+        (Table: "event_queue", Column: "causation_id", Ddl: "ALTER TABLE event_queue ADD COLUMN causation_id TEXT NULL;"),
+        (Table: "event_queue", Column: "trace_id", Ddl: "ALTER TABLE event_queue ADD COLUMN trace_id TEXT NULL;"),
+        (Table: "event_queue", Column: "correlation_id", Ddl: "ALTER TABLE event_queue ADD COLUMN correlation_id TEXT NULL;"),
+        (Table: "event_queue", Column: "execution_id", Ddl: "ALTER TABLE event_queue ADD COLUMN execution_id TEXT NULL;"),
+        (Table: "event_queue", Column: "parent_execution_id", Ddl: "ALTER TABLE event_queue ADD COLUMN parent_execution_id TEXT NULL;"),
+        (Table: "event_queue", Column: "sub_agent_id", Ddl: "ALTER TABLE event_queue ADD COLUMN sub_agent_id TEXT NULL;"),
+        (Table: "event_queue", Column: "user_id", Ddl: "ALTER TABLE event_queue ADD COLUMN user_id TEXT NULL;"),
     };
-    foreach (var ddl in pendingSessionEventTraceColumnDdl)
+    foreach (var column in pendingEventQueueColumns)
     {
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync(ddl);
-            app.Logger.LogInformation("[Schema] 已补会话事件追踪列：{Ddl}", ddl);
-        }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (
-            ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-        {
-            // 幂等：列已存在，忽略
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogWarning(ex, "[Schema] 会话事件追踪列补齐失败（将继续启动）：{Ddl}", ddl);
-        }
+        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补事件队列追踪列");
+    }
+
+    var pendingSessionEventTraceColumns = new[]
+    {
+        (Table: "session_event_log", Column: "trace_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN trace_id TEXT NULL;"),
+        (Table: "session_event_log", Column: "correlation_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN correlation_id TEXT NULL;"),
+        (Table: "session_event_log", Column: "execution_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN execution_id TEXT NULL;"),
+        (Table: "session_event_log", Column: "parent_execution_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN parent_execution_id TEXT NULL;"),
+        (Table: "session_event_log", Column: "sub_agent_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN sub_agent_id TEXT NULL;"),
+        (Table: "session_event_log", Column: "component", Ddl: "ALTER TABLE session_event_log ADD COLUMN component TEXT NULL;"),
+        (Table: "session_event_log", Column: "operation", Ddl: "ALTER TABLE session_event_log ADD COLUMN operation TEXT NULL;"),
+    };
+    foreach (var column in pendingSessionEventTraceColumns)
+    {
+        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补会话事件追踪列");
     }
 
     // ── 幂等种子：记忆工具 Capabilities（启动时幂等插入，正式迁移来之前兜底）
@@ -1189,6 +1179,60 @@ static void EnsureDefaultAgentInstance(PuddingDataPaths paths)
     """;
     File.WriteAllText(Path.Combine(configDir, "memory.json"), memoryConfig);
 }
+
+/// <summary>
+/// 确保 SQLite 表包含指定列；列已存在时跳过，避免直接执行 ALTER TABLE 触发 EF Core Error 日志。
+/// </summary>
+static async Task EnsureSqliteColumnAsync(DbContext db, Microsoft.Extensions.Logging.ILogger logger, string tableName, string columnName, string ddl, string successMessage)
+{
+    try
+    {
+        if (await SqliteColumnExistsAsync(db, tableName, columnName))
+            return;
+
+        await db.Database.ExecuteSqlRawAsync(ddl);
+        logger.LogInformation("{Message}：{Ddl}", successMessage, ddl);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[Schema] SQLite 列补齐失败（将继续启动）：{Table}.{Column}", tableName, columnName);
+    }
+}
+
+/// <summary>
+/// 通过 PRAGMA table_info 查询 SQLite 列是否存在。
+/// </summary>
+static async Task<bool> SqliteColumnExistsAsync(DbContext db, string tableName, string columnName)
+{
+    var connection = db.Database.GetDbConnection();
+    var shouldClose = connection.State != System.Data.ConnectionState.Open;
+    if (shouldClose)
+        await connection.OpenAsync();
+
+    try
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({QuoteSqliteIdentifier(tableName)});";
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            if (reader.FieldCount > 1 && string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+    finally
+    {
+        if (shouldClose)
+            await connection.CloseAsync();
+    }
+}
+
+/// <summary>
+/// 转义 SQLite 标识符，避免 PRAGMA 查询表名时出现特殊字符问题。
+/// </summary>
+static string QuoteSqliteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
 public sealed record ChatRequest
 {

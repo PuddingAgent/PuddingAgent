@@ -7,7 +7,8 @@ public sealed record LibraryRecord(
     string Name,
     string? Description,
     long CreatedAt,
-    long UpdatedAt);
+    long UpdatedAt,
+    string? AgentId = null);
 
 /// <summary>书籍记录。</summary>
 public sealed record BookRecord(

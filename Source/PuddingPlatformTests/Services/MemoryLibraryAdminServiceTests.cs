@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Entities;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
@@ -131,6 +132,98 @@ public sealed class MemoryLibraryAdminServiceTests
         var hits = await scope.Service.SearchAsync("ws-empty", "zzznotfound", 10);
 
         Assert.HasCount(0, hits);
+    }
+
+    [TestMethod]
+    public async Task AgentOverview_ShouldOnlyCountSelectedAgentLibraries()
+    {
+        await using var scope = await CreateAdminTestScopeAsync();
+        var libA = await scope.Service.EnsureDefaultLibraryAsync("ws-agent", "agent-a");
+        await scope.Library.CreateBookAsync(libA.LibraryId, "BookA", "SummaryA");
+
+        var libB = await scope.Service.EnsureDefaultLibraryAsync("ws-agent", "agent-b");
+        await scope.Library.CreateBookAsync(libB.LibraryId, "BookB", "SummaryB");
+
+        var overview = await scope.Service.GetOverviewAsync("ws-agent", "agent-a");
+
+        Assert.AreEqual("agent-a", overview.AgentId);
+        Assert.AreEqual(1, overview.LibraryCount);
+        Assert.AreEqual(1, overview.BookCount);
+    }
+
+    [TestMethod]
+    public async Task AgentGetBookPage_ShouldRejectBookFromOtherAgent()
+    {
+        await using var scope = await CreateAdminTestScopeAsync();
+        await scope.Service.EnsureDefaultLibraryAsync("ws-agent-book", "agent-a");
+        var libB = await scope.Service.EnsureDefaultLibraryAsync("ws-agent-book", "agent-b");
+        var bookB = await scope.Library.CreateBookAsync(libB.LibraryId, "BookB", "SummaryB");
+
+        try
+        {
+            await scope.Service.GetBookPageAsync("ws-agent-book", "agent-a", bookB.BookId);
+            Assert.Fail("Expected UnauthorizedAccessException was not thrown.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected
+        }
+    }
+
+    [TestMethod]
+    public async Task AgentSearch_ShouldOnlyReturnSelectedAgent()
+    {
+        await using var scope = await CreateAdminTestScopeAsync(enableFts5: true);
+        var libA = await scope.Service.EnsureDefaultLibraryAsync("ws-agent-search", "agent-a");
+        var bookA = await scope.Library.CreateBookAsync(libA.LibraryId, "BookA", "SummaryA");
+        await scope.Library.AddChapterAsync(bookA.BookId, "ChapterA", "agent scoped needle");
+
+        var libB = await scope.Service.EnsureDefaultLibraryAsync("ws-agent-search", "agent-b");
+        var bookB = await scope.Library.CreateBookAsync(libB.LibraryId, "BookB", "SummaryB");
+        await scope.Library.AddChapterAsync(bookB.BookId, "ChapterB", "agent scoped needle");
+
+        var hits = await scope.Service.SearchAsync("ws-agent-search", "agent-a", "needle", 10);
+
+        Assert.IsTrue(hits.Count > 0);
+        Assert.IsTrue(hits.All(x => x.BookId == bookA.BookId));
+    }
+
+    [TestMethod]
+    public async Task CreateBook_ShouldRejectTreeNodeFromDifferentLibraryEvenForSameAgent()
+    {
+        await using var scope = await CreateAdminTestScopeAsync();
+        var libA = await scope.Service.EnsureDefaultLibraryAsync("ws-cross-lib", "agent-a");
+        var nodeA = await scope.Library.CreateTreeNodeAsync("ws-cross-lib", libA.LibraryId, null, "A Node");
+
+        await using (var db = await scope.Factory.CreateDbContextAsync())
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            db.Libraries.Add(new LibraryEntity
+            {
+                LibraryId = "lib-agent-a-second",
+                WorkspaceId = "ws-cross-lib",
+                AgentId = "agent-a",
+                Name = "Second",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            await db.SaveChangesAsync();
+        }
+
+        try
+        {
+            await scope.Service.CreateBookAsync("ws-cross-lib", "agent-a", new CreateMemoryBookRequest(
+                "ws-cross-lib",
+                "lib-agent-a-second",
+                nodeA.NodeId,
+                "Cross library book",
+                null));
+            Assert.Fail("Expected UnauthorizedAccessException was not thrown.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected
+        }
     }
 
     // ── Test Infrastructure ────────────────────────────────────────────

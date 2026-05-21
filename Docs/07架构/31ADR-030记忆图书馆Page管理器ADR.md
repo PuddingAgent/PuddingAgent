@@ -11,7 +11,7 @@
 
 记忆图书馆不是普通数据库表，也不是单纯的向量库。它的长期形态更接近一棵可自然生长的 page tree：
 
-- `Library` 是一个 workspace 下的图书馆。
+- `Library` 是一个 workspace + agent 下的图书馆。workspace 是组织/场景边界，agent 是记忆归属边界。
 - `TreeNode` 是目录树中的 page / folder。
 - `Book` 是可挂载到一个或多个 TreeNode 的文档容器。
 - `Chapter` 是 Book 内的 section / block。
@@ -28,13 +28,15 @@
 
 ### ADR-030-A：UI 以 Page Tree 为主模型
 
-**决定**：Admin 后管新增 `Memory Library Pages`，默认视图是 workspace-scoped page tree。
+**决定**：Admin 后管新增 `Memory Library Pages`，默认视图是 agent-scoped page tree，入口顺序必须是 `WorkspaceSelect -> AgentSelect -> Memory Library Pages`。
 
 界面三栏：
 
 ```text
 左侧：Memory Page Tree
-  Library
+  Workspace
+    Agent
+      Library
     TreeNode
       Book Page
 
@@ -127,28 +129,29 @@ PuddingPlatform.Controllers.Api.MemoryLibraryAdminController
 API 路由：
 
 ```http
-GET  /api/admin/memory-library/workspaces/{workspaceId}/overview
-GET  /api/admin/memory-library/workspaces/{workspaceId}/libraries
-GET  /api/admin/memory-library/libraries/{libraryId}/tree
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/overview
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/libraries
+POST /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/libraries/default
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/libraries/{libraryId}/tree
 GET  /api/admin/memory-library/tree-nodes/{nodeId}
-POST /api/admin/memory-library/tree-nodes
+POST /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/tree-nodes
 PUT  /api/admin/memory-library/tree-nodes/{nodeId}
 POST /api/admin/memory-library/tree-nodes/{nodeId}/archive
 
-GET  /api/admin/memory-library/books/{bookId}
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/books/{bookId}
 GET  /api/admin/memory-library/books/{bookId}/chapters
-POST /api/admin/memory-library/books
-PUT  /api/admin/memory-library/books/{bookId}
-POST /api/admin/memory-library/books/{bookId}/archive
+POST /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/books
+PUT  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/books/{bookId}
+POST /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/books/{bookId}/archive
 
 GET  /api/admin/memory-library/chapters/{chapterId}
-POST /api/admin/memory-library/chapters
-PUT  /api/admin/memory-library/chapters/{chapterId}
-POST /api/admin/memory-library/chapters/{chapterId}/archive
+POST /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/chapters
+PUT  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/chapters/{chapterId}
+POST /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/chapters/{chapterId}/archive
 
-GET  /api/admin/memory-library/search?workspaceId=&query=&topK=
-GET  /api/admin/memory-library/sources?ownerType=&ownerId=
-GET  /api/admin/memory-library/pointers?workspaceId=&sourceType=&sourceId=
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/search?query=&topK=
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/sources?ownerType=&ownerId=
+GET  /api/admin/memory-library/workspaces/{workspaceId}/agents/{agentId}/pointers?sourceType=&sourceId=
 ```
 
 原因：
@@ -156,16 +159,17 @@ GET  /api/admin/memory-library/pointers?workspaceId=&sourceType=&sourceId=
 - Runtime tools 是 Agent 能力入口，不适合作为管理 UI 的稳定 API。
 - Admin API 需要权限、审计、分页、错误模型和写操作保护。
 
-### ADR-030-E：所有查询和写入必须 workspace scoped
+### ADR-030-E：所有查询和写入必须 workspace + agent scoped
 
-**决定**：Page Manager 的所有 API 必须显式绑定 workspace。
+**决定**：Page Manager 的所有 API 必须显式绑定 workspace 与 agent。
 
 规则：
 
-- `workspaceId` 来自路由或请求体。
-- `libraryId/bookId/chapterId/nodeId` 需要在后端反查所属 workspace。
-- 前端切换 workspace 后必须清空当前选中的 node/book/chapter。
-- 搜索只查当前 workspace。
+- `workspaceId` 与 `agentId` 来自路由；请求体中的同名字段不作为安全边界。
+- `libraryId/bookId/chapterId/nodeId/sourceId/pointerId` 需要在后端反查所属 workspace + agent。
+- `Libraries.AgentId = NULL` 表示 legacy workspace-only 图书馆，只能通过兼容入口查看，不自动归属到任意 agent。
+- 前端切换 workspace 或 agent 后必须清空当前选中的 node/book/chapter/source/pointer/search 状态。
+- 搜索只查当前 agent 的图书馆。
 - 跨 workspace 管理必须另开管理员专用能力，本 ADR 不做。
 
 ### ADR-030-F：UI 风格是克制的数据工作台
@@ -193,13 +197,14 @@ GET  /api/admin/memory-library/pointers?workspaceId=&sourceType=&sourceId=
 ### 3.1 顶部工具条
 
 ```text
-WorkspaceSelect | SearchInput | New Page | New Book | Refresh
+WorkspaceSelect | AgentSelect | LibrarySelect? | SearchInput | New Page | New Book | Refresh
 ```
 
 要求：
 
 - `WorkspaceSelect` 复用现有 workspace API。
-- 搜索框默认查当前 workspace 的 chapter FTS。
+- `AgentSelect` 复用现有 workspace agent API。
+- 搜索框默认查当前 agent 的 chapter FTS。
 - 新建操作默认挂到当前选中的 TreeNode。
 
 ### 3.2 左侧 Memory Page Tree
@@ -280,11 +285,12 @@ Audit：
 ```csharp
 public interface IMemoryLibraryAdminService
 {
-    Task<MemoryLibraryOverviewDto> GetOverviewAsync(string workspaceId, CancellationToken ct);
-    Task<IReadOnlyList<MemoryLibraryTreeNodeDto>> GetTreeAsync(string libraryId, CancellationToken ct);
+  Task<MemoryLibraryOverviewDto> GetOverviewAsync(string workspaceId, string agentId, CancellationToken ct);
+  Task<IReadOnlyList<LibraryRecord>> GetLibrariesAsync(string workspaceId, string agentId, CancellationToken ct);
+  Task<IReadOnlyList<MemoryLibraryTreeNodeDto>> GetTreeAsync(string workspaceId, string agentId, string libraryId, CancellationToken ct);
     Task<MemoryPageDto> GetTreeNodePageAsync(string nodeId, CancellationToken ct);
-    Task<MemoryBookPageDto> GetBookPageAsync(string bookId, CancellationToken ct);
-    Task<IReadOnlyList<MemorySearchResultDto>> SearchAsync(string workspaceId, string query, int topK, CancellationToken ct);
+  Task<MemoryBookPageDto> GetBookPageAsync(string workspaceId, string agentId, string bookId, CancellationToken ct);
+  Task<IReadOnlyList<MemorySearchResultDto>> SearchAsync(string workspaceId, string agentId, string query, int topK, CancellationToken ct);
 }
 ```
 
@@ -385,6 +391,7 @@ Admin service 只做 UI 聚合：
 - **编辑体验过度膨胀**：V1 使用 section textarea，不引入块编辑器。
 - **误删长期记忆**：V1 只 archive，不物理删除。
 - **跨 workspace 泄漏**：后端每个 by-id API 都必须反查 workspace。
+- **跨 agent 泄漏**：同一 workspace 下不同 agent 的记忆必须隔离；sources/backlinks 这类 by-id API 必须反查 agent ownership。
 - **Source resolution 不完整**：V1 先显示 pointer 和 resolve status，不强制所有类型可跳转。
 
 ---
@@ -398,5 +405,5 @@ ADR-030 V1 完成后必须满足：
 - 管理员能按 workspace 搜索并跳转到结果。
 - 管理员能查看 SourceReferences 和 Pointers。
 - 管理员能创建/编辑/归档 TreeNode、Book、Chapter。
-- 所有 API 均 workspace scoped，并有测试覆盖。
+- 所有 API 均 workspace + agent scoped，并有跨 agent 隔离测试覆盖。
 - 前端在 1440px、1024px、768px、375px 宽度下无主要布局遮挡。

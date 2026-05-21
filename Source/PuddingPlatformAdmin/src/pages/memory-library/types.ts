@@ -7,6 +7,7 @@ export interface MemoryLibraryOverviewDto {
   libraryCount: number;
   bookCount: number;
   treeNodeCount: number;
+  agentId?: string;
 }
 
 export interface MemoryLibraryTreeNodeDto {
@@ -52,6 +53,7 @@ export interface MemorySearchResultDto {
 export interface LibraryRecord {
   libraryId: string;
   workspaceId: string;
+  agentId?: string;
   name: string;
   description?: string;
   createdAt: number;

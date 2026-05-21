@@ -2,6 +2,7 @@
 
 > 状态：**proposed**
 > 日期：2026-05-20
+> 进度核查：**2026-05-21 未开始实现**（事件化 Hook / SubconsciousEventHandler / SubconsciousJobs / idle-aware Worker 均未落地）
 > 范围：Agent Loop Hook、统一事件系统、潜意识 LLM、记忆图书馆、后续 Skill 维护提案
 > 前置：[10事件系统与事件总线](10事件系统与事件总线.md)、[15潜意识LLM子代理系统ADR](15潜意识LLM子代理系统ADR.md)、[20会话状态机与事件规范ADR](20会话状态机与事件规范ADR.md)、[task41-hook-system](../Tasks/task41-hook-system.md)、[task38-subconscious-memory-engine](../Tasks/task38-subconscious-memory-engine.md)
 
@@ -18,6 +19,22 @@
 但现在潜意识整合仍主要由 `SubconsciousConsolidationHook` 直接写入 `Channel<ConsolidationJob>`。这使 Hook 与潜意识业务耦合，绕开了事件队列、重试、死信、诊断和订阅治理。后续如果 Skill 系统也要由潜意识维护，继续让 Hook 直接调用业务队列会导致 Hook 层膨胀。
 
 本 ADR 决定把 Hook 系统定位为**生命周期事件生产层**：Hook 只把 Agent 生命周期节点转换成标准内部事件；事件系统负责持久排队与派发；潜意识学习作为事件消费者接入。
+
+### 1.1 2026-05-21 实施进度核查
+
+当前代码状态：
+
+| 项目 | 状态 | 证据 |
+|------|------|------|
+| `AgentLoopEventPublisherHook` | 未实现 | `Source/PuddingRuntime/Services/AgentLoop/` 下无对应文件 |
+| `agent.loop.completed` 发布 | 未接入 | `IAgentLoopHook` 注册仍只有 `LoggingAgentLoopHook`、`EmbeddingGenerationHook`、`SubconsciousConsolidationHook` 等旧路径 |
+| `SubconsciousEventHandler` | 未实现 | `IEventHandler` 注册仍只有 `AgentEventHandler` |
+| `SubconsciousJobs` 持久队列 | 未实现 | 无 `ISubconsciousJobQueue`、`SubconsciousJobEntity`、`SubconsciousJobQueue` |
+| `SubconsciousWorkerService` | 仍是旧路径 | 当前仍从 `Channel<ConsolidationJob>` 串行消费 |
+| `IRuntimeIdleSignal` | 未实现 | 无接口与实现 |
+| 编译状态 | 通过 | `dotnet build Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj --no-restore --nologo` 与 `dotnet build Source\PuddingRuntime\PuddingRuntime.csproj --no-restore --nologo` 均通过，仅有既有 warning |
+
+当前唯一相关工作区变更在 `Source/PuddingMemoryEngine/Data/MemoryLibraryDbInitializer.cs`，它属于记忆图书馆 schema 初始化路径，不等同于 ADR-027 的潜意识 Job 队列实现。ADR-027 的 `SubconsciousJobs` 应归属 `MemoryDbContext` / `init_memory.sql` / `PuddingMemoryEngine.Services.SubconsciousJobQueue`，不得塞进 `MemoryLibraryDbInitializer`。
 
 ---
 
@@ -369,6 +386,13 @@ Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs
 - workspace 串行保护。
 - 幂等入队。
 
+数据库初始化边界：
+
+- `SubconsciousJobs` 是潜意识任务队列表，归属 `MemoryDbContext`。
+- DDL 放入 `Source/PuddingMemoryEngine/Schema/init_memory.sql`，并在 `MemoryDbContext` 注册实体和索引。
+- 不放入 `MemoryLibraryDbInitializer`，因为该初始化器只负责 `Libraries`、`Books`、`Chapters`、`Pointers` 等图书馆表。
+- 如果后续 `init_memory.sql` 新增非幂等迁移或复杂触发器，必须同步修正 `MemoryDbInitializer` 的 SQL 执行策略，避免单条失败阻断后续 DDL。
+
 ### 4.4 Worker 改造
 
 修改文件：
@@ -515,4 +539,3 @@ sequenceDiagram
 - V1 不自动修改 Skill 文件。
 - V1 不让 EventDispatcher 直接执行长 LLM 任务。
 - V1 不做跨节点事件分发。
-

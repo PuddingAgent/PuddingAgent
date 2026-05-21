@@ -4,6 +4,7 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS Libraries (
     LibraryId     TEXT PRIMARY KEY,
     WorkspaceId   TEXT NOT NULL,
+    AgentId       TEXT NULL,
     Name          TEXT NOT NULL,
     Description   TEXT,
     CreatedAt     INTEGER NOT NULL,
@@ -12,6 +13,10 @@ CREATE TABLE IF NOT EXISTS Libraries (
 
 CREATE INDEX IF NOT EXISTS IX_Libraries_Workspace
     ON Libraries(WorkspaceId);
+CREATE INDEX IF NOT EXISTS IX_Libraries_Workspace_Agent
+    ON Libraries(WorkspaceId, AgentId);
+
+-- ADR-030 revision: Library is workspace + agent scoped. NULL AgentId means legacy workspace-only library.
 
 -- 2.2 Books 表
 CREATE TABLE IF NOT EXISTS Books (

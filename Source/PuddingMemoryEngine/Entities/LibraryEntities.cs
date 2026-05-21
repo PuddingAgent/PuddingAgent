@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PuddingMemoryEngine.Entities;
 
-/// <summary>图书馆容器——一个 Workspace 可以有多个 Library。</summary>
+/// <summary>图书馆容器——一个 Workspace 下的 Agent 可以拥有多个 Library。</summary>
 public class LibraryEntity
 {
     [Key]
@@ -11,6 +11,12 @@ public class LibraryEntity
 
     [MaxLength(64)]
     public string WorkspaceId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 所属 AgentId。为空表示 ADR-030 agent 绑定前的 legacy workspace-only 图书馆。
+    /// </summary>
+    [MaxLength(64)]
+    public string? AgentId { get; set; }
 
     [MaxLength(200)]
     public string Name { get; set; } = string.Empty;

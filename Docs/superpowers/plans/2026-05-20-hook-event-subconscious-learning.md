@@ -10,6 +10,26 @@
 
 ---
 
+## Implementation Snapshot
+
+Checked on 2026-05-21:
+
+- `AgentLoopEventPublisherHook`: not present.
+- `AgentLoopCompletedPayload`: not present.
+- `SubconsciousEventHandler`: not present.
+- `ISubconsciousJobQueue` / `SubconsciousJobQueue` / `SubconsciousJobEntity`: not present.
+- `IRuntimeIdleSignal` / `RuntimeIdleSignal`: not present.
+- `SubconsciousWorkerService`: still consumes `Channel<ConsolidationJob>`.
+- DI: `PuddingRuntime.DependencyInjection` and `PuddingAgent.Program` still register `SubconsciousConsolidationHook` as the active subconscious hook and only `AgentEventHandler` as `IEventHandler`.
+- Current unrelated workspace change: `Source/PuddingMemoryEngine/Data/MemoryLibraryDbInitializer.cs` was modified to inline library-table DDL. Do not use that initializer for `SubconsciousJobs`.
+- Verification run during progress check:
+  - `dotnet build Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj --no-restore --nologo`: PASS with warnings.
+  - `dotnet build Source\PuddingRuntime\PuddingRuntime.csproj --no-restore --nologo`: PASS with warnings.
+
+This means the ADR-027 implementation should start at Task 1. No ADR-027 task can be treated as complete yet.
+
+---
+
 ## File Map
 
 - Create: `Source/PuddingCore/Models/AgentLifecycleEventPayloads.cs`
@@ -40,12 +60,12 @@
   - Register new hook, handler, queue, idle signal.
 - Modify: `Source/PuddingAgent/Program.cs`
   - Mirror registrations for application host.
-- Modify: `Source/PuddingCoreTests/PuddingCoreTests.csproj`
-  - Add test-only references to `PuddingRuntime` and `PuddingMemoryEngine` for the new integration-facing tests.
-- Test: `Source/PuddingCoreTests/Events/AgentLoopEventPublisherHookTests.cs`
-- Test: `Source/PuddingCoreTests/Events/SubconsciousEventHandlerTests.cs`
-- Test: `Source/PuddingCoreTests/Memory/SubconsciousJobQueueTests.cs`
-- Test: `Source/PuddingCoreTests/Memory/SubconsciousWorkerServiceTests.cs`
+- Create: `Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj`
+  - Hosts Runtime/MemoryEngine integration-facing tests without polluting `PuddingCoreTests`.
+- Test: `Source/PuddingRuntimeTests/Events/AgentLoopEventPublisherHookTests.cs`
+- Test: `Source/PuddingRuntimeTests/Events/SubconsciousEventHandlerTests.cs`
+- Test: `Source/PuddingRuntimeTests/Memory/SubconsciousJobQueueTests.cs`
+- Test: `Source/PuddingRuntimeTests/Memory/SubconsciousWorkerServiceTests.cs`
 
 ---
 
@@ -88,16 +108,33 @@ Expected: build succeeds.
 
 **Files:**
 - Create: `Source/PuddingRuntime/Services/AgentLoop/AgentLoopEventPublisherHook.cs`
-- Modify: `Source/PuddingCoreTests/PuddingCoreTests.csproj`
-- Test: `Source/PuddingCoreTests/Events/AgentLoopEventPublisherHookTests.cs`
+- Create: `Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj`
+- Test: `Source/PuddingRuntimeTests/Events/AgentLoopEventPublisherHookTests.cs`
 
-- [ ] **Step 1: Add test project references**
+- [ ] **Step 1: Create runtime test project**
 
-Add references required by the new tests:
+Create `Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj`:
 
 ```xml
-<ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
-<ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+    <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
+  </ItemGroup>
+</Project>
 ```
 
 - [ ] **Step 2: Write test for done event publishing**
@@ -200,7 +237,7 @@ public sealed class AgentLoopEventPublisherHook : IAgentLoopHook
 
 - [ ] **Step 4: Run test**
 
-Run: `dotnet test Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore --filter AgentLoopEventPublisherHookTests --logger "console;verbosity=minimal"`
+Run: `dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --filter AgentLoopEventPublisherHookTests --logger "console;verbosity=minimal"`
 
 Expected: test passes.
 
@@ -400,7 +437,7 @@ Expected: build succeeds.
 
 **Files:**
 - Create: `Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs`
-- Test: `Source/PuddingCoreTests/Memory/SubconsciousJobQueueTests.cs`
+- Test: `Source/PuddingRuntimeTests/Memory/SubconsciousJobQueueTests.cs`
 
 - [ ] **Step 1: Write idempotent enqueue test**
 
@@ -432,7 +469,7 @@ Implementation requirements:
 
 - [ ] **Step 3: Run tests**
 
-Run: `dotnet test Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore --filter SubconsciousJobQueueTests --logger "console;verbosity=minimal"`
+Run: `dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --filter SubconsciousJobQueueTests --logger "console;verbosity=minimal"`
 
 Expected: queue tests pass.
 
@@ -442,7 +479,7 @@ Expected: queue tests pass.
 
 **Files:**
 - Create: `Source/PuddingRuntime/Services/Events/SubconsciousEventHandler.cs`
-- Test: `Source/PuddingCoreTests/Events/SubconsciousEventHandlerTests.cs`
+- Test: `Source/PuddingRuntimeTests/Events/SubconsciousEventHandlerTests.cs`
 
 - [ ] **Step 1: Write event-to-job test**
 
@@ -548,7 +585,7 @@ public sealed class SubconsciousEventHandler : IEventHandler
 
 - [ ] **Step 3: Run tests**
 
-Run: `dotnet test Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore --filter SubconsciousEventHandlerTests --logger "console;verbosity=minimal"`
+Run: `dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --filter SubconsciousEventHandlerTests --logger "console;verbosity=minimal"`
 
 Expected: handler tests pass.
 
@@ -597,7 +634,7 @@ Expected: build succeeds.
 
 **Files:**
 - Modify: `Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs`
-- Test: `Source/PuddingCoreTests/Memory/SubconsciousWorkerServiceTests.cs`
+- Test: `Source/PuddingRuntimeTests/Memory/SubconsciousWorkerServiceTests.cs`
 
 - [ ] **Step 1: Write busy-skip test**
 
@@ -647,7 +684,7 @@ catch permanent -> dead_letter
 
 - [ ] **Step 4: Run tests**
 
-Run: `dotnet test Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore --filter SubconsciousWorkerServiceTests --logger "console;verbosity=minimal"`
+Run: `dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --filter SubconsciousWorkerServiceTests --logger "console;verbosity=minimal"`
 
 Expected: worker tests pass.
 
@@ -698,7 +735,7 @@ dotnet build Source\PuddingCore\PuddingCore.csproj --no-restore --nologo
 dotnet build Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj --no-restore --nologo
 dotnet build Source\PuddingRuntime\PuddingRuntime.csproj --no-restore --nologo
 dotnet build Source\PuddingAgent\PuddingAgent.csproj --no-restore --nologo
-dotnet test Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore --filter "AgentLoopEventPublisherHookTests|SubconsciousEventHandlerTests|SubconsciousJobQueueTests|SubconsciousWorkerServiceTests" --logger "console;verbosity=minimal"
+dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --filter "AgentLoopEventPublisherHookTests|SubconsciousEventHandlerTests|SubconsciousJobQueueTests|SubconsciousWorkerServiceTests" --logger "console;verbosity=minimal"
 ```
 
 Expected: all builds and focused tests pass.

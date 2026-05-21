@@ -1598,9 +1598,23 @@ export async function getMemoryLibraryOverview(workspaceId: string): Promise<{
 }
 
 export async function listMemoryLibraries(workspaceId: string): Promise<
-  { libraryId: string; workspaceId: string; name: string; description?: string; createdAt: number; updatedAt: number }[]
+  { libraryId: string; workspaceId: string; agentId?: string; name: string; description?: string; createdAt: number; updatedAt: number }[]
 > {
   return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/libraries`);
+}
+
+export async function listAgentMemoryLibraries(workspaceId: string, agentId: string): Promise<
+  { libraryId: string; workspaceId: string; agentId?: string; name: string; description?: string; createdAt: number; updatedAt: number }[]
+> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/libraries`);
+}
+
+export async function ensureAgentDefaultMemoryLibrary(workspaceId: string, agentId: string): Promise<
+  { libraryId: string; workspaceId: string; agentId?: string; name: string; description?: string; createdAt: number; updatedAt: number }
+> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/libraries/default`, {
+    method: 'POST',
+  });
 }
 
 export async function getMemoryLibraryTree(
@@ -1612,6 +1626,16 @@ export async function getMemoryLibraryTree(
   return request(`/api/admin/memory-library/libraries/${encodeURIComponent(libraryId)}/tree`, {
     params: { workspaceId },
   });
+}
+
+export async function getAgentMemoryLibraryTree(
+  workspaceId: string,
+  agentId: string,
+  libraryId: string,
+): Promise<
+  { id: string; parentId: string | null; type: string; title: string; summary?: string; status: string; bookId?: string; children: any[] }[]
+> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/libraries/${encodeURIComponent(libraryId)}/tree`);
 }
 
 export async function getMemoryBookPage(
@@ -1631,6 +1655,22 @@ export async function getMemoryBookPage(
   });
 }
 
+export async function getAgentMemoryBookPage(
+  workspaceId: string,
+  agentId: string,
+  bookId: string,
+): Promise<{
+  workspaceId: string;
+  libraryId: string;
+  bookId: string;
+  title: string;
+  summary?: string;
+  status: string;
+  chapters: { chapterId: string; bookId: string; title: string; content: string; contentType: string; importance: number; createdAt: number; updatedAt: number }[];
+}> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/books/${encodeURIComponent(bookId)}`);
+}
+
 export async function searchMemoryLibrary(
   workspaceId: string,
   query: string,
@@ -1640,6 +1680,19 @@ export async function searchMemoryLibrary(
 > {
   return request('/api/admin/memory-library/search', {
     params: { workspaceId, query, topK },
+  });
+}
+
+export async function searchAgentMemoryLibrary(
+  workspaceId: string,
+  agentId: string,
+  query: string,
+  topK = 20,
+): Promise<
+  { bookId: string; chapterId: string; bookTitle: string; snippet: string; score: number }[]
+> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/search`, {
+    params: { query, topK },
   });
 }
 
@@ -1656,6 +1709,19 @@ export async function createMemoryTreeNode(req: {
   return request('/api/admin/memory-library/tree-nodes', { method: 'POST', data: req });
 }
 
+export async function createAgentMemoryTreeNode(workspaceId: string, agentId: string, req: {
+  libraryId: string;
+  parentNodeId?: string;
+  name: string;
+  summary?: string;
+  nodeType: string;
+}): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/tree-nodes`, {
+    method: 'POST',
+    data: { ...req, workspaceId },
+  });
+}
+
 export async function createMemoryBook(req: {
   workspaceId: string;
   libraryId: string;
@@ -1664,6 +1730,18 @@ export async function createMemoryBook(req: {
   summary?: string;
 }): Promise<any> {
   return request('/api/admin/memory-library/books', { method: 'POST', data: req });
+}
+
+export async function createAgentMemoryBook(workspaceId: string, agentId: string, req: {
+  libraryId: string;
+  nodeId?: string;
+  title: string;
+  summary?: string;
+}): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/books`, {
+    method: 'POST',
+    data: { ...req, workspaceId },
+  });
 }
 
 export async function updateMemoryBook(
@@ -1676,6 +1754,17 @@ export async function updateMemoryBook(
   });
 }
 
+export async function updateAgentMemoryBook(
+  workspaceId: string,
+  agentId: string,
+  bookId: string,
+  req: { title: string; summary?: string },
+): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/books/${encodeURIComponent(bookId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
 export async function createMemoryChapter(req: {
   bookId: string;
   title: string;
@@ -1683,6 +1772,17 @@ export async function createMemoryChapter(req: {
   importance: number;
 }): Promise<any> {
   return request('/api/admin/memory-library/chapters', { method: 'POST', data: req });
+}
+
+export async function createAgentMemoryChapter(workspaceId: string, agentId: string, req: {
+  bookId: string;
+  title: string;
+  content: string;
+  importance: number;
+}): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/chapters`, {
+    method: 'POST', data: req,
+  });
 }
 
 export async function updateMemoryChapter(
@@ -1695,15 +1795,38 @@ export async function updateMemoryChapter(
   });
 }
 
+export async function updateAgentMemoryChapter(
+  workspaceId: string,
+  agentId: string,
+  chapterId: string,
+  req: { title: string; content: string; importance: number },
+): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/chapters/${encodeURIComponent(chapterId)}`, {
+    method: 'PUT', data: req,
+  });
+}
+
 export async function archiveMemoryBook(workspaceId: string, bookId: string): Promise<any> {
   return request(`/api/admin/memory-library/books/${encodeURIComponent(bookId)}/archive`, {
     method: 'POST', params: { workspaceId },
   });
 }
 
+export async function archiveAgentMemoryBook(workspaceId: string, agentId: string, bookId: string): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/books/${encodeURIComponent(bookId)}/archive`, {
+    method: 'POST',
+  });
+}
+
 export async function archiveMemoryChapter(workspaceId: string, chapterId: string): Promise<any> {
   return request(`/api/admin/memory-library/chapters/${encodeURIComponent(chapterId)}/archive`, {
     method: 'POST', params: { workspaceId },
+  });
+}
+
+export async function archiveAgentMemoryChapter(workspaceId: string, agentId: string, chapterId: string): Promise<any> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/chapters/${encodeURIComponent(chapterId)}/archive`, {
+    method: 'POST',
   });
 }
 
@@ -1718,6 +1841,17 @@ export async function listMemorySources(
   });
 }
 
+export async function listAgentMemorySources(
+  workspaceId: string,
+  agentId: string,
+  ownerType: string,
+  ownerId: string,
+): Promise<{ sourceReferenceId: string; ownerType: string; ownerId: string; targetType: string; targetId: string; targetRange?: string; label?: string; createdAt: number }[]> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/sources`, {
+    params: { ownerType, ownerId },
+  });
+}
+
 export async function listMemoryPointers(
   workspaceId: string,
   sourceType: string,
@@ -1728,6 +1862,20 @@ export async function listMemoryPointers(
 }> {
   return request('/api/admin/memory-library/pointers', {
     params: { workspaceId, sourceType, sourceId },
+  });
+}
+
+export async function listAgentMemoryPointers(
+  workspaceId: string,
+  agentId: string,
+  sourceType: string,
+  sourceId: string,
+): Promise<{
+  outgoing: { pointerId: string; targetType: string; targetId: string; targetLabel?: string; description?: string }[];
+  backlinks: { pointerId: string; targetType: string; targetId: string; targetLabel?: string; description?: string }[];
+}> {
+  return request(`/api/admin/memory-library/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/pointers`, {
+    params: { sourceType, sourceId },
   });
 }
 

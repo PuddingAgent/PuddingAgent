@@ -30,6 +30,7 @@ public class MemoryLibraryDbContext : DbContext
             entity.ToTable("Libraries");
             entity.HasKey(e => e.LibraryId);
             entity.HasIndex(e => e.WorkspaceId);
+            entity.HasIndex(e => new { e.WorkspaceId, e.AgentId });
         });
 
         modelBuilder.Entity<BookEntity>(entity =>

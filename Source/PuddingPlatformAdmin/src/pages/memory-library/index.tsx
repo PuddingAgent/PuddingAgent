@@ -10,19 +10,22 @@ import {
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   listWorkspaces,
-  listMemoryLibraries,
-  getMemoryLibraryTree,
-  getMemoryBookPage,
-  searchMemoryLibrary,
-  createMemoryTreeNode,
-  createMemoryBook,
-  updateMemoryBook,
-  createMemoryChapter,
-  archiveMemoryBook,
-  archiveMemoryChapter,
-  listMemorySources,
-  listMemoryPointers,
+  listWorkspaceAgents,
+  listAgentMemoryLibraries,
+  ensureAgentDefaultMemoryLibrary,
+  getAgentMemoryLibraryTree,
+  getAgentMemoryBookPage,
+  searchAgentMemoryLibrary,
+  createAgentMemoryTreeNode,
+  createAgentMemoryBook,
+  updateAgentMemoryBook,
+  createAgentMemoryChapter,
+  archiveAgentMemoryBook,
+  archiveAgentMemoryChapter,
+  listAgentMemorySources,
+  listAgentMemoryPointers,
   type WorkspaceWithPermDto,
+  type WorkspaceAgentDto,
 } from '@/services/platform/api';
 import type {
   MemoryLibraryTreeNodeDto,
@@ -42,6 +45,8 @@ const MemoryLibraryPage: React.FC = () => {
   // ── State ──────────────────────────────────────────────────────
   const [workspaces, setWorkspaces] = useState<WorkspaceWithPermDto[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>();
+  const [agents, setAgents] = useState<WorkspaceAgentDto[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>();
   const [libraries, setLibraries] = useState<LibraryRecord[]>([]);
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>();
   const [treeData, setTreeData] = useState<MemoryLibraryTreeNodeDto[]>([]);
@@ -84,12 +89,27 @@ const MemoryLibraryPage: React.FC = () => {
       .catch(() => setError('无法加载工作区列表'));
   }, []);
 
-  // ── Load libraries when workspace changes ──────────────────────
+  // ── Load agents when workspace changes ─────────────────────────
   useEffect(() => {
     if (!selectedWorkspaceId) return;
     setLoading(true);
     setError(null);
-    listMemoryLibraries(selectedWorkspaceId)
+    listWorkspaceAgents(selectedWorkspaceId)
+      .then((items) => {
+        const enabledAgents = items.filter((a) => a.isEnabled && !a.isFrozen);
+        setAgents(enabledAgents);
+        setSelectedAgentId(enabledAgents[0]?.agentId);
+      })
+      .catch(() => setError('无法加载 Agent 列表'))
+      .finally(() => setLoading(false));
+  }, [selectedWorkspaceId]);
+
+  // ── Load libraries when workspace/agent changes ────────────────
+  useEffect(() => {
+    if (!selectedWorkspaceId || !selectedAgentId) return;
+    setLoading(true);
+    setError(null);
+    listAgentMemoryLibraries(selectedWorkspaceId, selectedAgentId)
       .then((libs: LibraryRecord[]) => {
         setLibraries(libs);
         if (libs.length > 0) {
@@ -102,14 +122,14 @@ const MemoryLibraryPage: React.FC = () => {
       })
       .catch(() => setError('无法加载图书馆列表'))
       .finally(() => setLoading(false));
-  }, [selectedWorkspaceId]);
+  }, [selectedWorkspaceId, selectedAgentId]);
 
   // ── Load tree when library changes ─────────────────────────────
   useEffect(() => {
-    if (!selectedWorkspaceId || !selectedLibraryId) return;
+    if (!selectedWorkspaceId || !selectedAgentId || !selectedLibraryId) return;
     setLoading(true);
     setError(null);
-    getMemoryLibraryTree(selectedWorkspaceId, selectedLibraryId)
+    getAgentMemoryLibraryTree(selectedWorkspaceId, selectedAgentId, selectedLibraryId)
       .then((nodes: MemoryLibraryTreeNodeDto[]) => {
         setTreeData(nodes);
         setSelectedNode(null);
@@ -117,15 +137,32 @@ const MemoryLibraryPage: React.FC = () => {
       })
       .catch(() => setError('无法加载记忆树'))
       .finally(() => setLoading(false));
-  }, [selectedWorkspaceId, selectedLibraryId]);
+  }, [selectedWorkspaceId, selectedAgentId, selectedLibraryId]);
 
   // ── Handlers ──────────────────────────────────────────────────
   const handleWorkspaceChange = useCallback((value: string) => {
     setSelectedWorkspaceId(value);
+    setSelectedAgentId(undefined);
+    setAgents([]);
+    setLibraries([]);
     setSelectedLibraryId(undefined);
     setSelectedNode(null);
     setBookPage(null);
     setTreeData([]);
+    setSearchVisible(false);
+    setSearchResults([]);
+    setSearchQuery('');
+  }, []);
+
+  const handleAgentChange = useCallback((value: string) => {
+    setSelectedAgentId(value);
+    setLibraries([]);
+    setSelectedLibraryId(undefined);
+    setSelectedNode(null);
+    setBookPage(null);
+    setTreeData([]);
+    setSources([]);
+    setPointers({ outgoing: [], backlinks: [] });
     setSearchVisible(false);
     setSearchResults([]);
     setSearchQuery('');
@@ -139,9 +176,9 @@ const MemoryLibraryPage: React.FC = () => {
   }, []);
 
   const handleRefresh = useCallback(() => {
-    if (selectedWorkspaceId && selectedLibraryId) {
+    if (selectedWorkspaceId && selectedAgentId && selectedLibraryId) {
       setLoading(true);
-      getMemoryLibraryTree(selectedWorkspaceId, selectedLibraryId)
+      getAgentMemoryLibraryTree(selectedWorkspaceId, selectedAgentId, selectedLibraryId)
         .then((nodes) => {
           setTreeData(nodes);
           setSelectedNode(null);
@@ -150,7 +187,22 @@ const MemoryLibraryPage: React.FC = () => {
         .catch(() => setError('刷新失败'))
         .finally(() => setLoading(false));
     }
-  }, [selectedWorkspaceId, selectedLibraryId]);
+  }, [selectedWorkspaceId, selectedAgentId, selectedLibraryId]);
+
+  const handleEnsureDefaultLibrary = useCallback(async () => {
+    if (!selectedWorkspaceId || !selectedAgentId) return;
+    setEditLoading(true);
+    try {
+      const library = await ensureAgentDefaultMemoryLibrary(selectedWorkspaceId, selectedAgentId);
+      setLibraries([library]);
+      setSelectedLibraryId(library.libraryId);
+      message.success('已创建默认记忆图书馆');
+    } catch {
+      message.error('创建默认图书馆失败');
+    } finally {
+      setEditLoading(false);
+    }
+  }, [selectedWorkspaceId, selectedAgentId]);
 
   const handleTreeSelect = useCallback((node: MemoryLibraryTreeNodeDto) => {
     setSelectedNode(node);
@@ -159,35 +211,35 @@ const MemoryLibraryPage: React.FC = () => {
     setPointers({ outgoing: [], backlinks: [] });
 
     // If node has a mounted Book, load it
-    if (node.bookId && selectedWorkspaceId) {
+    if (node.bookId && selectedWorkspaceId && selectedAgentId) {
       setBookLoading(true);
-      getMemoryBookPage(selectedWorkspaceId, node.bookId)
+      getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, node.bookId)
         .then(setBookPage)
         .catch(() => setError('无法加载 Book 页'))
         .finally(() => setBookLoading(false));
 
       // 加载来源引用
-      listMemorySources('book', node.bookId)
+      listAgentMemorySources(selectedWorkspaceId, selectedAgentId, 'book', node.bookId)
         .then(setSources)
         .catch(() => {});
       // 加载指针
-      listMemoryPointers(selectedWorkspaceId, 'book', node.bookId)
+      listAgentMemoryPointers(selectedWorkspaceId, selectedAgentId, 'book', node.bookId)
         .then(setPointers)
         .catch(() => {});
     } else {
       setBookPage(null);
       setBookLoading(false);
-      if (selectedWorkspaceId) {
+      if (selectedWorkspaceId && selectedAgentId) {
         // 加载 TreeNode 的来源和指针
-        listMemorySources('tree_node', node.id)
+        listAgentMemorySources(selectedWorkspaceId, selectedAgentId, 'tree_node', node.id)
           .then(setSources)
           .catch(() => {});
-        listMemoryPointers(selectedWorkspaceId, 'tree_node', node.id)
+        listAgentMemoryPointers(selectedWorkspaceId, selectedAgentId, 'tree_node', node.id)
           .then(setPointers)
           .catch(() => {});
       }
     }
-  }, [selectedWorkspaceId]);
+  }, [selectedWorkspaceId, selectedAgentId]);
 
   const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
@@ -196,33 +248,32 @@ const MemoryLibraryPage: React.FC = () => {
       setSearchResults([]);
       return;
     }
-    if (!selectedWorkspaceId) return;
+    if (!selectedWorkspaceId || !selectedAgentId) return;
     setSearchVisible(true);
-    searchMemoryLibrary(selectedWorkspaceId, value, 20)
+    searchAgentMemoryLibrary(selectedWorkspaceId, selectedAgentId, value, 20)
       .then(setSearchResults)
       .catch(() => setError('搜索失败'));
-  }, [selectedWorkspaceId]);
+  }, [selectedWorkspaceId, selectedAgentId]);
 
   const handleSearchResultSelect = useCallback((bookId: string, _chapterId: string) => {
-    if (!selectedWorkspaceId) return;
+    if (!selectedWorkspaceId || !selectedAgentId) return;
     setSearchVisible(false);
     setBookLoading(true);
-    getMemoryBookPage(selectedWorkspaceId, bookId)
+    getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookId)
       .then((page) => {
         setBookPage(page);
         setSelectedNode(null); // clear tree selection when viewing search result
       })
       .catch(() => setError('无法加载搜索结果'))
       .finally(() => setBookLoading(false));
-  }, [selectedWorkspaceId]);
+  }, [selectedWorkspaceId, selectedAgentId]);
 
   // ── Edit handlers ─────────────────────────────────────────────
   const handleCreatePage = useCallback(async (values: any) => {
-    if (!selectedWorkspaceId || !selectedLibraryId) return;
+    if (!selectedWorkspaceId || !selectedAgentId || !selectedLibraryId) return;
     setEditLoading(true);
     try {
-      await createMemoryTreeNode({
-        workspaceId: selectedWorkspaceId,
+      await createAgentMemoryTreeNode(selectedWorkspaceId, selectedAgentId, {
         libraryId: selectedLibraryId,
         parentNodeId: selectedNode?.id,
         name: values.name,
@@ -238,14 +289,13 @@ const MemoryLibraryPage: React.FC = () => {
     } finally {
       setEditLoading(false);
     }
-  }, [selectedWorkspaceId, selectedLibraryId, selectedNode?.id, newPageForm, handleRefresh]);
+  }, [selectedWorkspaceId, selectedAgentId, selectedLibraryId, selectedNode?.id, newPageForm, handleRefresh]);
 
   const handleCreateBook = useCallback(async (values: any) => {
-    if (!selectedWorkspaceId || !selectedLibraryId) return;
+    if (!selectedWorkspaceId || !selectedAgentId || !selectedLibraryId) return;
     setEditLoading(true);
     try {
-      const result = await createMemoryBook({
-        workspaceId: selectedWorkspaceId,
+      const result = await createAgentMemoryBook(selectedWorkspaceId, selectedAgentId, {
         libraryId: selectedLibraryId,
         nodeId: selectedNode?.id,
         title: values.title,
@@ -255,20 +305,20 @@ const MemoryLibraryPage: React.FC = () => {
       setNewBookModalOpen(false);
       newBookForm.resetFields();
       if (result?.bookId && selectedWorkspaceId) {
-        getMemoryBookPage(selectedWorkspaceId, result.bookId).then(setBookPage).catch(() => {});
+        getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, result.bookId).then(setBookPage).catch(() => {});
       }
     } catch {
       message.error('创建失败');
     } finally {
       setEditLoading(false);
     }
-  }, [selectedWorkspaceId, selectedLibraryId, selectedNode?.id, newBookForm]);
+  }, [selectedWorkspaceId, selectedAgentId, selectedLibraryId, selectedNode?.id, newBookForm]);
 
   const handleEditBook = useCallback(async (values: any) => {
-    if (!bookPage || !selectedWorkspaceId) return;
+    if (!bookPage || !selectedWorkspaceId || !selectedAgentId) return;
     setEditLoading(true);
     try {
-      const result = await updateMemoryBook(selectedWorkspaceId, bookPage.bookId, { title: values.title, summary: values.summary });
+      const result = await updateAgentMemoryBook(selectedWorkspaceId, selectedAgentId, bookPage.bookId, { title: values.title, summary: values.summary });
       setBookPage(result);
       setEditBookModalOpen(false);
       message.success('已更新');
@@ -277,13 +327,13 @@ const MemoryLibraryPage: React.FC = () => {
     } finally {
       setEditLoading(false);
     }
-  }, [bookPage, selectedWorkspaceId]);
+  }, [bookPage, selectedWorkspaceId, selectedAgentId]);
 
   const handleCreateChapter = useCallback(async (values: any) => {
-    if (!bookPage) return;
+    if (!bookPage || !selectedWorkspaceId || !selectedAgentId) return;
     setEditLoading(true);
     try {
-      await createMemoryChapter({
+      await createAgentMemoryChapter(selectedWorkspaceId, selectedAgentId, {
         bookId: bookPage.bookId,
         title: values.title,
         content: values.content,
@@ -293,44 +343,49 @@ const MemoryLibraryPage: React.FC = () => {
       setNewChapterModalOpen(false);
       newChapterForm.resetFields();
       if (selectedWorkspaceId) {
-        getMemoryBookPage(selectedWorkspaceId, bookPage.bookId).then(setBookPage).catch(() => {});
+        getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId).then(setBookPage).catch(() => {});
       }
     } catch {
       message.error('添加失败');
     } finally {
       setEditLoading(false);
     }
-  }, [bookPage, selectedWorkspaceId, newChapterForm]);
+  }, [bookPage, selectedWorkspaceId, selectedAgentId, newChapterForm]);
 
   const handleArchiveBook = useCallback(async () => {
-    if (!bookPage || !selectedWorkspaceId) return;
+    if (!bookPage || !selectedWorkspaceId || !selectedAgentId) return;
     try {
-      await archiveMemoryBook(selectedWorkspaceId, bookPage.bookId);
+      await archiveAgentMemoryBook(selectedWorkspaceId, selectedAgentId, bookPage.bookId);
       message.success('Book 已归档');
       setBookPage(null);
       handleRefresh();
     } catch {
       message.error('归档失败');
     }
-  }, [bookPage, selectedWorkspaceId, handleRefresh]);
+  }, [bookPage, selectedWorkspaceId, selectedAgentId, handleRefresh]);
 
   const handleArchiveChapter = useCallback(async (chapterId: string) => {
-    if (!selectedWorkspaceId) return;
+    if (!selectedWorkspaceId || !selectedAgentId) return;
     try {
-      await archiveMemoryChapter(selectedWorkspaceId, chapterId);
+      await archiveAgentMemoryChapter(selectedWorkspaceId, selectedAgentId, chapterId);
       message.success('章节已归档');
       if (bookPage) {
-        getMemoryBookPage(selectedWorkspaceId, bookPage.bookId).then(setBookPage).catch(() => {});
+        getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId).then(setBookPage).catch(() => {});
       }
     } catch {
       message.error('归档失败');
     }
-  }, [bookPage, selectedWorkspaceId]);
+  }, [bookPage, selectedWorkspaceId, selectedAgentId]);
 
   // ── Render ────────────────────────────────────────────────────
   const workspaceOptions = workspaces.map((w) => ({
     label: w.name,
     value: w.workspaceId,
+  }));
+
+  const agentOptions = agents.map((a) => ({
+    label: a.displayName || a.name,
+    value: a.agentId,
   }));
 
   return (
@@ -345,6 +400,14 @@ const MemoryLibraryPage: React.FC = () => {
             value={selectedWorkspaceId}
             onChange={handleWorkspaceChange}
           />
+          <Select
+            style={{ minWidth: 180 }}
+            placeholder="选择 Agent"
+            options={agentOptions}
+            value={selectedAgentId}
+            onChange={handleAgentChange}
+            disabled={!selectedWorkspaceId || agents.length === 0}
+          />
           {libraries.length > 1 && (
             <Select
               style={{ minWidth: 160 }}
@@ -356,16 +419,22 @@ const MemoryLibraryPage: React.FC = () => {
           )}
           <Input.Search
             className="search-input"
-            placeholder="搜索当前工作区记忆..."
+            placeholder="搜索当前 Agent 的记忆..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onSearch={handleSearch}
             allowClear
             enterButton={<SearchOutlined />}
+            disabled={!selectedWorkspaceId || !selectedAgentId}
           />
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} disabled={!selectedLibraryId}>
             刷新
           </Button>
+          {selectedWorkspaceId && selectedAgentId && libraries.length === 0 && (
+            <Button onClick={handleEnsureDefaultLibrary} loading={editLoading}>
+              创建默认图书馆
+            </Button>
+          )}
           <Button icon={<PlusOutlined />} onClick={() => setNewPageModalOpen(true)} disabled={!selectedLibraryId}>
             新建 Page
           </Button>

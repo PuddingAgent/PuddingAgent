@@ -2,7 +2,7 @@
 
 > **创建日期：** 2026-05-20
 > **优先级：** P0.8（事件系统与记忆系统闭环）
-> **状态：** ✏️ 设计中
+> **状态：** ⏳ 未开始实现（2026-05-21 核查）
 > **依赖：** task34-event-bus-and-subscription、task38-subconscious-memory-engine、task41-hook-system
 > **ADR：** [28ADR-027Hook事件潜意识学习闭环ADR](../07架构/28ADR-027Hook事件潜意识学习闭环ADR.md)
 
@@ -29,12 +29,25 @@ Agent done
 
 ## 实施范围
 
+### 当前进度核查（2026-05-21）
+
+| 工作项 | 状态 | 说明 |
+|--------|------|------|
+| 事件化 Hook | 未开始 | 无 `AgentLoopEventPublisherHook`，现有潜意识 Hook 仍直接写 `Channel<ConsolidationJob>` |
+| 潜意识事件消费者 | 未开始 | 无 `SubconsciousEventHandler`，`IEventHandler` 当前只注册 `AgentEventHandler` |
+| 持久化 Job 队列 | 未开始 | 无 `ISubconsciousJobQueue` / `SubconsciousJobs` 表 / `SubconsciousJobQueue` |
+| 空闲 Worker | 未开始 | `SubconsciousWorkerService` 仍直接消费 Channel，无 idle signal |
+| 数据库初始化 | 未开始 | `SubconsciousJobs` 尚未加入 `MemoryDbContext` / `init_memory.sql` |
+| 编译验证 | 通过 | `PuddingMemoryEngine` 与 `PuddingRuntime` 当前 build 通过，仅既有 warning |
+
+注意：当前工作区存在 `MemoryLibraryDbInitializer.cs` 变更，但它是记忆图书馆表初始化逻辑，不是本任务实现。`SubconsciousJobs` 不应放进 `MemoryLibraryDbInitializer`。
+
 ### Phase 1：事件化 Hook
 
 - 新增 `AgentLoopCompletedPayload`。
 - 新增 `AgentLoopEventPublisherHook`。
 - 在 DI 中注册该 Hook。
-- 保留现有 `SubconsciousConsolidationHook` 作为短期兼容路径，但新路径默认启用。
+- 保留现有 `SubconsciousConsolidationHook` 作为短期兼容路径，但必须通过配置开关控制，避免同一会话既走事件路径又走 Channel 路径导致重复学习。
 
 ### Phase 2：潜意识事件消费者
 
@@ -49,6 +62,7 @@ Agent done
 - 新增 `SubconsciousJobEntity`。
 - 新增 `SubconsciousJobQueue` 实现。
 - 支持幂等入队、lease、retry、dead_letter、stats。
+- `SubconsciousJobs` 归属 `MemoryDbContext` 和 `init_memory.sql`，不归属 `MemoryLibraryDbInitializer`。
 
 ### Phase 4：空闲 Worker
 
@@ -87,4 +101,3 @@ Agent done
 - 不重写事件总线。
 - 不新增跨进程事件传输。
 - 不让 Hook 直接执行潜意识 LLM。
-

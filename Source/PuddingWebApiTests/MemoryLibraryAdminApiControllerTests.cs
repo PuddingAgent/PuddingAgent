@@ -84,4 +84,36 @@ public sealed class MemoryLibraryAdminApiControllerTests
         var result = await controller.Search("ws-1", "test", 101, CancellationToken.None);
         Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
     }
+
+    [TestMethod]
+    public async Task GetAgentLibraries_EmptyAgentId_Returns400()
+    {
+        var controller = CreateController();
+        var result = await controller.GetAgentLibraries("ws-1", " ", CancellationToken.None);
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
+
+    [TestMethod]
+    public async Task AgentSearch_EmptyAgentId_Returns400()
+    {
+        var controller = CreateController();
+        var result = await controller.AgentSearch("ws-1", " ", "test", 20, CancellationToken.None);
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
+
+    [TestMethod]
+    public async Task AgentSearch_EmptyQuery_Returns400()
+    {
+        var controller = CreateController();
+        var result = await controller.AgentSearch("ws-1", "agent-1", "", 20, CancellationToken.None);
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
+
+    [TestMethod]
+    public async Task GetSources_MissingAgentScope_Returns400()
+    {
+        var controller = CreateController();
+        var result = await controller.GetSources("book", "book-1", null, null, CancellationToken.None);
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result.Result);
+    }
 }
