@@ -1,0 +1,40 @@
+# ============================================================
+# Pudding Agent — 开发模式（免 Docker 构建，挂载本地编译产物）
+# ============================================================
+# 配合 build-and-up.ps1 -Fast 使用：
+#   .\build-and-up.ps1 -Fast          # 编译 + 重启容器（热加载）
+#   .\build-and-up.ps1 -Fast -Restart # 仅重启容器（不重新编译）
+#
+# 与 docker-compose.yml 的区别：
+#   - 不构建镜像，直接使用 aspnet:10.0 运行时
+#   - 通过卷挂载加载本地编译产物，秒级重启
+#   - 共享相同的端口、环境变量和持久化数据卷
+
+services:
+
+  pudding-agent:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS:  "8080"
+      PUDDING_LOG_LEVEL: ${PUDDING_LOG_LEVEL:-Debug}
+      Jwt__Key:        ${JWT_KEY:-Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!}
+      Jwt__Issuer:     ${JWT_ISSUER:-pudding-platform}
+      Jwt__Audience:   ${JWT_AUDIENCE:-pudding-admin}
+      Jwt__ExpiryHours: "${JWT_EXPIRY_HOURS:-8}"
+      ConnectionStrings__Default: "Data Source=/app/data/pudding_platform.db"
+      Pudding__ControllerEndpoint: ${PUDDING_CONTROLLER_ENDPOINT:-http://localhost:8080}
+      Pudding__RuntimeEndpoint: ${PUDDING_RUNTIME_ENDPOINT:-http://localhost:8080}
+      P2P__Enabled: "true"
+      P2P__Port:    "9527"
+    ports:
+      - "5000:8080"
+      - "9527:9527/udp"
+    volumes:
+      # 单挂载：publish 目录（脚本编译时已将前端 dist 合并进去）
+      - ./Source/PuddingAgent/bin/Release/net10.0/publish:/app
+      # 持久化数据（数据库、配置、日志等）
+      - ./data:/app/data
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["dotnet", "/app/PuddingAgent.dll"]

@@ -39,6 +39,7 @@
 | 降低视觉噪音 | 删除深色玻璃、发光、强渐变和大面积暗蓝背景，避免与 Chat 的纸面工作区冲突。 |
 | 保持改动局部 | 优先改登录页结构与样式，不改变 Auth API；共享入口壳后续可供 Bootstrap / Register 复用。 |
 | 可访问性 | 表单需要真实 label、明确错误提示、键盘焦点、移动端触达尺寸和对比度。 |
+| 产品身份 | 登录页必须呈现 PuddingAgent，而不是 Ant Design Pro 模板身份。 |
 
 ---
 
@@ -88,7 +89,7 @@
 首屏文案应该降低营销感，强调用户即将进入一个本地 Agent 运行环境：
 
 ```text
-Pudding Runtime
+PuddingAgent
 本地 AI Agent 工作台
 ```
 
@@ -153,7 +154,15 @@ Pudding Runtime
 - hover 使用浅棕填充；
 - 右上角位置可保留；
 - 页脚不再落在深色渐变背景上，应使用 `earth-brown` 低透明度文本；
-- 如果页脚来自共享 `Footer`，登录页只负责容器背景和颜色兼容。
+- 页脚不再使用 Ant Design Pro 默认内容；
+- 页脚展示 `PuddingAgent · GitHub`，链接到 `https://github.com/PuddingAgent/PuddingAgent`；
+- 如果页脚来自共享 `Footer`，登录页必须覆盖或禁用 Ant Design Pro 默认页脚。
+
+默认主题必须是浅色。暗色切换不作为登录页局部能力实现：
+
+- 如果已有全局主题能力，右上角可展示图标型 Sun / Moon 切换按钮；
+- 如果没有全局主题能力，不展示主题切换；
+- 主题按钮必须具备 `aria-label`，并复用全局主题状态。
 
 ### ADR-035-H：认证 API 不变，跳转改为页面内转场后路由替换
 
@@ -231,6 +240,9 @@ Source/PuddingPlatformAdmin/src/components/GlobalActions/index.tsx
 6. 键盘可完成完整登录操作。
 7. `prefers-reduced-motion` 下无持续动画。
 8. 登录页测试更新后通过，不再保留旧玻璃拟态快照。
+9. 登录页默认是浅色模式。
+10. 登录页不出现 Ant Design Pro / Powered by Ant Design 默认页脚。
+11. 页脚链接指向 `https://github.com/PuddingAgent/PuddingAgent`。
 
 ---
 

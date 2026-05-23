@@ -17,6 +17,8 @@
 3. 把登录页从“营销 Hero 卡片”改成“本地 Agent 工作台入口”。
 4. 登录成功通过页面内转场进入 Chat，而不是硬跳转。
 5. 保持现有认证 API、token 写入、i18n 和自动登录行为不变。
+6. 页脚与首屏品牌统一为 PuddingAgent，不再出现 Ant Design Pro 默认页脚。
+7. 默认使用白天模式；暗色切换只复用全局主题能力，不在登录页单独实现。
 
 ---
 
@@ -82,11 +84,11 @@
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                                          [语言]              │
+│                                  [主题?] [语言]              │
 │                                                             │
-│   Pudding Runtime                                           │
+│   PuddingAgent                                            │
 │   本地 AI Agent 工作台            ┌──────────────────────┐  │
-│   连接工作空间、Agent 与 Skills，  │ 登录 Pudding Runtime │  │
+│   连接工作空间、Agent 与 Skills，  │ 登录 PuddingAgent    │  │
 │   安静地理解，可靠地执行。         │ 用户名               │  │
 │                                   │ [ admin            ] │  │
 │   Workspace → Agent → Skills       │ 密码                 │  │
@@ -95,7 +97,7 @@
 │                                   │ [ 进入工作台        ] │  │
 │                                   └──────────────────────┘  │
 │                                                             │
-│                                      Powered by Ant Design   │
+│                                      PuddingAgent · GitHub   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -110,13 +112,13 @@
 
 ```text
 ┌──────────────────────────────┐
-│                       [语言] │
-│ Pudding Runtime              │
+│               [主题?] [语言] │
+│ PuddingAgent                 │
 │ 本地 AI Agent 工作台         │
 │ Workspace · Agent · Skills   │
 │                              │
 │ ┌──────────────────────────┐ │
-│ │ 登录 Pudding Runtime     │ │
+│ │ 登录 PuddingAgent        │ │
 │ │ 用户名                   │ │
 │ │ [ admin                ] │ │
 │ │ 密码                     │ │
@@ -134,6 +136,7 @@
 - 表单宽度 `100%`；
 - 输入框和按钮高度不小于 44px；
 - 页脚可保留在底部自然流，不强制 sticky。
+- 页脚只展示 PuddingAgent GitHub 链接，不展示 Ant Design Pro / Powered by Ant Design。
 
 ---
 
@@ -175,6 +178,28 @@ Login
 | `submitBtn` 渐变发光 | 改为实色 `--accent-purple`，8px，hover 只改变背景/透明度。 |
 | `errorAlert` 暗色错误 | 改为浅底低饱和错误色，贴合暖色页面。 |
 | `lang` 白色半透明 | 改为 `earth-brown` 低透明度，hover 浅棕背景。 |
+| Ant Design Pro 默认页脚 | 改为 `PuddingAgent · GitHub`，链接到官方仓库。 |
+
+### 5.2.1 主题与页脚
+
+默认主题为 light。登录页不单独实现暗黑/白天状态：
+
+- 如果已有全局主题能力，右上角可以展示图标型主题按钮；
+- 如果没有全局主题能力，右上角只展示语言切换；
+- 主题按钮必须提供 `aria-label`；
+- 不使用文字胶囊式“白天/黑夜”切换控件。
+
+页脚统一为：
+
+```tsx
+<a
+  href="https://github.com/PuddingAgent/PuddingAgent"
+  target="_blank"
+  rel="noreferrer"
+>
+  PuddingAgent · GitHub
+</a>
+```
 
 ### 5.3 推荐关键样式
 

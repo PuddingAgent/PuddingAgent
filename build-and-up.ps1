@@ -3,9 +3,15 @@
 # ============================================================
 # 用法：
 #   .\build-and-up.ps1                  # 完整构建并启动
+#   .\build-and-up.ps1 -Fast            # 快速开发模式：编译后挂载本地产物并重启
+#   .\build-and-up.ps1 -Fast -Restart   # 仅重启容器（热加载，不重新编译）
 #   .\build-and-up.ps1 -BuildOnly       # 只编译 dotnet，不启动 Docker
 #   .\build-and-up.ps1 -Restart         # 仅重建镜像并重启（不重新编译）
 #   .\build-and-up.ps1 -NoCache         # 禁用 Docker 构建缓存
+#
+# 模式说明：
+#   普通模式  — dotnet build → docker compose build → docker compose up -d
+#   -Fast 模式 — dotnet publish → docker compose -f dev.yml up -d（秒级重启）
 #
 # 配置文件：
 #   data/config/llm.providers.json — LLM 服务商、模型与 profile 配置
@@ -13,6 +19,7 @@
 #   data/config/security.json      — 本地安全配置
 
 param(
+    [switch]$Fast,
     [switch]$BuildOnly,
     [switch]$Restart,
     [switch]$NoCache
@@ -108,11 +115,33 @@ if (-not $Restart) {
 
     Ok "wwwroot 已清理，index.html + Admin SPA 已就绪"
 
-    Step "编译 PuddingAgent"
-    Invoke-Native {
-        dotnet build "$Root\Source\PuddingAgent\PuddingAgent.csproj" -c Release --nologo
-    } "编译失败"
-    Ok "编译通过"
+    if ($Fast) {
+        Step "编译 PuddingAgent（发布模式，用于卷挂载）"
+        $publishDir = "$Root\Source\PuddingAgent\bin\Release\net10.0\publish"
+        if (Test-Path $publishDir) { Remove-Item "$publishDir\*" -Recurse -Force -ErrorAction SilentlyContinue }
+        Invoke-Native {
+            dotnet publish "$Root\Source\PuddingAgent\PuddingAgent.csproj" -c Release -o $publishDir --nologo
+        } "编译失败"
+
+        # 将前端 dist 合并到 publish/wwwroot/admin（单挂载方式）
+        Step "合并前端产物到 publish/wwwroot/admin"
+        $publishAdminDir = Join-Path $publishDir "wwwroot\admin"
+        if (-not (Test-Path $publishAdminDir)) { New-Item -ItemType Directory -Path $publishAdminDir -Force | Out-Null }
+        $adminDistDir = "$Root\Source\PuddingPlatformAdmin\dist"
+        if (Test-Path $adminDistDir) {
+            Copy-Item -Path "$adminDistDir\*" -Destination $publishAdminDir -Recurse -Force
+            Ok "前端产物已合并到 publish/wwwroot/admin"
+        } else {
+            Write-Host "    [WARN] 前端产物不存在: $adminDistDir" -ForegroundColor Yellow
+        }
+        Ok "编译通过（发布产物: $publishDir）"
+    } else {
+        Step "编译 PuddingAgent"
+        Invoke-Native {
+            dotnet build "$Root\Source\PuddingAgent\PuddingAgent.csproj" -c Release --nologo
+        } "编译失败"
+        Ok "编译通过"
+    }
 }
 
 # ── 2. Docker 构建与启动 ─────────────────────────────────
@@ -120,33 +149,43 @@ if (-not $BuildOnly) {
     Push-Location $Root
 
     try {
-        $buildArgs = @('build')
-        if ($NoCache) { $buildArgs += '--no-cache' }
-        $buildArgs += @('pudding-agent')
+        if ($Fast) {
+            # ── 快速开发模式：跳过镜像构建，直接挂载本地产物 ──
+            $composeFile = "docker-compose.dev.yml"
+            Step "快速启动（$composeFile，跳过镜像构建）"
+            docker compose -f $composeFile up -d
+            if ($LASTEXITCODE -ne 0) { Fail "服务启动失败" }
+            Ok "服务已启动（挂载本地产物）"
+        } else {
+            $buildArgs = @('build')
+            if ($NoCache) { $buildArgs += '--no-cache' }
+            $buildArgs += @('pudding-agent')
 
-        Step "构建 Docker 镜像"
-        docker compose @buildArgs
-        if ($LASTEXITCODE -ne 0) { Fail "镜像构建失败" }
-        Ok "镜像构建完成"
+            Step "构建 Docker 镜像"
+            docker compose @buildArgs
+            if ($LASTEXITCODE -ne 0) { Fail "镜像构建失败" }
+            Ok "镜像构建完成"
 
-        Step "启动服务"
-        docker compose up -d
-        if ($LASTEXITCODE -ne 0) { Fail "服务启动失败" }
-        Ok "服务已启动"
+            Step "启动服务"
+            docker compose up -d
+            if ($LASTEXITCODE -ne 0) { Fail "服务启动失败" }
+            Ok "服务已启动"
+        }
     } finally {
         Pop-Location
     }
 
+    $composeArgs = if ($Fast) { "-f docker-compose.dev.yml" } else { "" }
     Write-Host @"
 
 Pudding Agent 已启动！
-  浏览器打开 → http://localhost:8080
+  浏览器打开 → http://localhost:5000
 
 查看日志：
-  docker compose logs -f pudding-agent
+  docker compose $composeArgs logs -f pudding-agent
 
 停止：
-  docker compose down
+  docker compose $composeArgs down
 "@ -ForegroundColor Yellow
 
     # Run healthcheck if requested
@@ -155,6 +194,7 @@ Pudding Agent 已启动！
         & "$Root\Tests\e2e\healthcheck.ps1" -Port 8080
     }
 } else {
-    Write-Host "`n仅编译模式，跳过 Docker 部署。" -ForegroundColor Yellow
+    $modeMsg = if ($Fast) { "发布模式" } else { "编译模式" }
+    Write-Host "`n仅$modeMsg，跳过 Docker 部署。" -ForegroundColor Yellow
     Write-Host "手动运行：dotnet run --project Source/PuddingAgent`n"
 }
