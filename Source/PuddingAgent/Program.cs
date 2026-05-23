@@ -587,6 +587,10 @@ builder.Services.AddSingleton<BootstrapStateService>(sp =>
 // ── JSON 配置种子服务 ─────────────────────────────
 builder.Services.AddScoped<JsonConfigSeedService>();
 
+// ── Agent 头像服务（ADR-034）────────────────────────
+builder.Services.AddSingleton<AgentAvatarSeedService>();
+builder.Services.AddSingleton<AgentAvatarCatalog>();
+
 var app = builder.Build();
 
 var p2pDiscoveryService = app.Services.GetRequiredService<IP2pDiscoveryService>();
@@ -660,6 +664,10 @@ using (var scope = app.Services.CreateScope())
     //   一旦后续生成正式迁移，这些 ALTER 仍然安全（已存在则跳过）。
     var pendingColumns = new[]
     {
+        // ADR-034：AgentAvatar 头像 ID
+        (Table: "GlobalAgentTemplates", Column: "AvatarId", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"AvatarId\" TEXT NULL;"),
+        (Table: "WorkspaceAgentTemplates", Column: "AvatarId", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"AvatarId\" TEXT NULL;"),
+        (Table: "WorkspaceAgents", Column: "AvatarId", Ddl: "ALTER TABLE \"WorkspaceAgents\" ADD COLUMN \"AvatarId\" TEXT NULL;"),
         (Table: "GlobalAgentTemplates", Column: "MemorySearchMode", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';"),
         (Table: "GlobalAgentTemplates", Column: "ReasoningEffort", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"ReasoningEffort\" TEXT NULL;"),
         (Table: "WorkspaceAgentTemplates", Column: "MemorySearchMode", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MemorySearchMode\" TEXT NOT NULL DEFAULT 'deep';"),
@@ -781,6 +789,26 @@ using (var scope = app.Services.CreateScope())
         @"CREATE INDEX IF NOT EXISTS idx_eq_session ON event_queue(session_id);",
         @"CREATE INDEX IF NOT EXISTS idx_eq_workspace ON event_queue(workspace_id);",
 
+        // ADR-034：AgentAvatars 表
+        @"CREATE TABLE IF NOT EXISTS ""AgentAvatars"" (
+            ""Id""              INTEGER PRIMARY KEY AUTOINCREMENT,
+            ""AvatarId""        TEXT    NOT NULL,
+            ""Name""            TEXT    NOT NULL,
+            ""FileName""        TEXT    NOT NULL,
+            ""UrlPath""         TEXT    NOT NULL,
+            ""Personality""     TEXT,
+            ""HairColor""       TEXT,
+            ""Expression""      TEXT,
+            ""VisualTraitsJson"" TEXT   NOT NULL DEFAULT '[]',
+            ""IsBuiltIn""       INTEGER NOT NULL DEFAULT 1,
+            ""IsEnabled""       INTEGER NOT NULL DEFAULT 1,
+            ""SortOrder""       INTEGER NOT NULL DEFAULT 100,
+            ""CreatedAt""       TEXT    NOT NULL,
+            ""UpdatedAt""       TEXT    NOT NULL
+        );",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AgentAvatars_AvatarId"" ON ""AgentAvatars""(""AvatarId"");",
+        @"CREATE INDEX IF NOT EXISTS ""IX_AgentAvatars_Enabled_Sort"" ON ""AgentAvatars""(""IsEnabled"", ""SortOrder"");",
+
         // sub_agent_runs — 子代理运行归档（ADR-021）
         @"CREATE TABLE IF NOT EXISTS sub_agent_runs (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -898,6 +926,11 @@ using (var scope = app.Services.CreateScope())
     // ── JSON 配置种子（幂等 Upsert）──────────────────
     var configSeed = scope.ServiceProvider.GetRequiredService<JsonConfigSeedService>();
     await configSeed.SeedAsync();
+
+    // ── Agent 头像种子（ADR-034：从 avatars.json 幂等 upsert）────
+    var avatarSeed = scope.ServiceProvider.GetRequiredService<AgentAvatarSeedService>();
+    var avatarAssetsDir = Path.Combine(AppContext.BaseDirectory, "wwwroot", "assets", "agent-avatars");
+    await avatarSeed.SeedAsync(avatarAssetsDir);
 }
 
 // ── 错误处理 ─────────────────────────────────────────

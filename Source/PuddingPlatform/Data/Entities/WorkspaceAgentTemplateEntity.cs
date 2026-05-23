@@ -52,9 +52,13 @@ public class WorkspaceAgentTemplateEntity
     [MaxLength(4000)]
     public string? BootstrapTemplate { get; set; }
 
-    /// <summary>Agent 展示用 Emoji（如 🤖🧠🔧）。</summary>
+    /// <summary>Agent 展示用 Emoji（如 🤖🧠🔧）。legacy fallback，新功能不写入。</summary>
     [MaxLength(8)]
     public string? AvatarEmoji { get; set; }
+
+    /// <summary>系统预置头像 ID，对应 AgentAvatarEntity.AvatarId。新功能主路径。</summary>
+    [MaxLength(128)]
+    public string? AvatarId { get; set; }
 
     /// <summary>首选服务商（Provider.ProviderId）</summary>
     [MaxLength(64)]

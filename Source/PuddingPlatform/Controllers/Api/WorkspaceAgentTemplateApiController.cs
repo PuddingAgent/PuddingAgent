@@ -4,13 +4,16 @@ using System.Text.Json;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>Workspace 级 Agent 模板管理 API</summary>
 [ApiController]
 [Route("api/workspace-agent-templates")]
-public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : ControllerBase
+public class WorkspaceAgentTemplateApiController(
+    PlatformDbContext db,
+    AgentAvatarCatalog avatarCatalog) : ControllerBase
 {
     // ── 查询某 Workspace 的所有模板 ───────────────────────────────
     [HttpGet]
@@ -26,7 +29,8 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
             query = query.Where(t => t.IsEnabled);
 
         var list = await query.OrderBy(t => t.WorkspaceId).ThenBy(t => t.SortOrder).ToListAsync(ct);
-        return Ok(list.Select(MapToDto).ToList());
+        var avatarMap = await avatarCatalog.GetEnabledMapAsync();
+        return Ok(list.Select(t => MapToDto(t, avatarMap)).ToList());
     }
 
     // ── 查询单个模板 ──────────────────────────────────────────────
@@ -35,7 +39,9 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
     {
         var t = await db.WorkspaceAgentTemplates.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        return t is null ? NotFound() : Ok(MapToDto(t));
+        if (t is null) return NotFound();
+        var avatarMap = await avatarCatalog.GetEnabledMapAsync();
+        return Ok(MapToDto(t, avatarMap));
     }
 
     // ── 按 workspaceId + templateId 精确查询 ─────────────────────
@@ -45,7 +51,9 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
     {
         var t = await db.WorkspaceAgentTemplates.AsNoTracking()
             .FirstOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.TemplateId == templateId, ct);
-        return t is null ? NotFound() : Ok(MapToDto(t));
+        if (t is null) return NotFound();
+        var avatarMap = await avatarCatalog.GetEnabledMapAsync();
+        return Ok(MapToDto(t, avatarMap));
     }
 
     // ── 创建 ──────────────────────────────────────────────────────
@@ -57,11 +65,17 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
                 t => t.WorkspaceId == req.WorkspaceId && t.TemplateId == req.TemplateId, ct))
             return Conflict(new { error = $"TemplateId '{req.TemplateId}' 在 Workspace '{req.WorkspaceId}' 中已存在" });
 
+        // ADR-034：校验或补全 AvatarId
+        var resolvedAvatarId = await ResolveAvatarIdAsync(req.AvatarId);
+        if (resolvedAvatarId is null)
+            return BadRequest(new { error = "没有可用的系统头像，请先配置头像资源" });
+
         var entity = BuildEntity(req);
+        entity.AvatarId = resolvedAvatarId;
         db.WorkspaceAgentTemplates.Add(entity);
         await db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity));
+        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, await MapToDtoAsync(entity));
     }
 
     // ── 更新 ──────────────────────────────────────────────────────
@@ -71,6 +85,12 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
     {
         var entity = await db.WorkspaceAgentTemplates.FirstOrDefaultAsync(t => t.Id == id, ct);
         if (entity is null) return NotFound();
+
+        // ADR-034：校验或补全 AvatarId
+        var resolvedAvatarId = await ResolveAvatarIdAsync(req.AvatarId);
+        if (resolvedAvatarId is null)
+            return BadRequest(new { error = "没有可用的系统头像，请先配置头像资源" });
+        entity.AvatarId = resolvedAvatarId;
 
         entity.Name = req.Name;
         entity.Description = req.Description;
@@ -98,7 +118,8 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        return Ok(MapToDto(entity));
+        var avatarMap = await avatarCatalog.GetEnabledMapAsync();
+        return Ok(MapToDto(entity, avatarMap));
     }
 
     // ── 删除 ──────────────────────────────────────────────────────
@@ -144,17 +165,54 @@ public class WorkspaceAgentTemplateApiController(PlatformDbContext db) : Control
         SortOrder = req.SortOrder,
     };
 
-    private static WorkspaceAgentTemplateDto MapToDto(WorkspaceAgentTemplateEntity t) => new(
-        t.Id, t.WorkspaceId, t.TemplateId, t.Name, t.Description, t.Role,
-        t.SystemPrompt, t.UserPromptTemplate,
-        t.PreferredProviderId, t.PreferredModelId,
-        t.MaxContextTokens, t.MaxReplyTokens,
-        t.ContainerImage,
-        t.BaseGlobalTemplateId, ParseStringList(t.SelectedCapabilityIdsJson), t.IsEnabled, t.SortOrder,
-        t.CreatedAt, t.UpdatedAt,
-        t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji,
-        t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId, t.MemorySearchMode,
-        t.ReasoningEffort);
+    private WorkspaceAgentTemplateDto MapToDto(WorkspaceAgentTemplateEntity t, Dictionary<string, AgentAvatarEntity>? avatarMap = null)
+    {
+        var avatarId = t.AvatarId;
+        AgentAvatarEntity? avatar = null;
+        if (!string.IsNullOrWhiteSpace(avatarId) && avatarMap?.TryGetValue(avatarId, out avatar) == true)
+        {
+            // 已找到对应头像
+        }
+        else if (avatarMap is not null)
+        {
+            // 尝试用默认头像
+            avatar = avatarMap.Values.MinBy(a => (a.SortOrder, a.Id));
+        }
+
+        return new(
+            t.Id, t.WorkspaceId, t.TemplateId, t.Name, t.Description, t.Role,
+            t.SystemPrompt, t.UserPromptTemplate,
+            t.PreferredProviderId, t.PreferredModelId,
+            t.MaxContextTokens, t.MaxReplyTokens,
+            t.ContainerImage,
+            t.BaseGlobalTemplateId, ParseStringList(t.SelectedCapabilityIdsJson), t.IsEnabled, t.SortOrder,
+            t.CreatedAt, t.UpdatedAt,
+            t.PersonaPrompt, t.ToolsDescription, t.BootstrapTemplate, t.AvatarEmoji,
+            t.AvatarId,
+            avatar?.UrlPath,
+            avatar?.Name,
+            t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId, t.MemorySearchMode,
+            t.ReasoningEffort);
+    }
+
+    private async Task<string?> ResolveAvatarIdAsync(string? avatarId)
+    {
+        if (!string.IsNullOrWhiteSpace(avatarId))
+        {
+            var avatar = await avatarCatalog.GetRequiredEnabledAsync(avatarId);
+            if (avatar is not null) return avatarId;
+            return null;
+        }
+
+        var defaultAvatar = await avatarCatalog.GetDefaultAsync();
+        return defaultAvatar?.AvatarId;
+    }
+
+    private async Task<WorkspaceAgentTemplateDto> MapToDtoAsync(WorkspaceAgentTemplateEntity t)
+    {
+        var avatarMap = await avatarCatalog.GetEnabledMapAsync();
+        return MapToDto(t, avatarMap);
+    }
 
     private static List<string> ParseStringList(string? json)
     {

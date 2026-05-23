@@ -409,6 +409,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               onSend={onSend}
               onStop={onStop}
               onExport={onExport}
+              onOpenDevDetails={() => setDevMode(true)}
               disabled={disabled}
               tLimit={tLimit}
               tUsed={tUsed}

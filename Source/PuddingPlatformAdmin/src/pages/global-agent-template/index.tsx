@@ -10,6 +10,7 @@ import {
 } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import {
+  Avatar,
   Button,
   Card,
   Checkbox,
@@ -27,6 +28,7 @@ import {
   message,
   Alert,
   Radio,
+  Select,
 } from 'antd';
 import {
   PlusOutlined,
@@ -43,10 +45,12 @@ import {
   createGlobalAgentTemplate,
   updateGlobalAgentTemplate,
   deleteGlobalAgentTemplate,
+  listAgentAvatars,
   listLlmProviders,
   listLlmModels,
   listCapabilities,
   listSkillPackages,
+  type AgentAvatarDto,
   type GlobalAgentTemplateDto,
   type UpsertGlobalAgentTemplateRequest,
   type LlmProviderDto,
@@ -96,6 +100,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const [models, setModels] = useState<LlmModelDto[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
   const [skillPackages, setSkillPackages] = useState<SkillPackageDto[]>([]);
+  const [avatars, setAvatars] = useState<AgentAvatarDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [data, setData] = useState<GlobalAgentTemplateDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,6 +135,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
     listLlmProviders().then(setProviders).catch(() => {});
     listCapabilities(true).then(setCapabilities).catch(() => {});
     listSkillPackages(true).then(setSkillPackages).catch(() => {});
+    listAgentAvatars(true).then(setAvatars).catch(() => {});
     fetchData();
   }, [fetchData]);
 
@@ -162,6 +168,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
       maxToolCallsTotal: 100,
       maxContextTokens: 8192,
       maxReplyTokens: 2048,
+      avatarId: avatars[0]?.avatarId,
       selectedCapabilityIds: defaultCapIds,
       selectedSkillPackageIds: [],
     });
@@ -177,7 +184,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
     } else {
       setModels([]);
     }
-    form.setFieldsValue(item);
+    form.setFieldsValue({ ...item, avatarId: item.avatarId || avatars[0]?.avatarId });
     // 同步 Transfer 组件 — 从 selectedCapabilityIds 中提取高权限部分
     const grantIds = (item.selectedCapabilityIds ?? []).filter((id) =>
       grantCapabilities.some((gc) => gc.capabilityId === id),
@@ -189,6 +196,10 @@ const GlobalAgentTemplatePage: React.FC = () => {
 
   const handleSave = async () => {
     const values = await form.validateFields();
+    // ADR-034：如果 avatarId 为空，补默认头像
+    if (!values.avatarId && avatars.length > 0) {
+      values.avatarId = avatars[0].avatarId;
+    }
     if (editItem) {
       await updateGlobalAgentTemplate(editItem.templateId, values);
       message.success('模板已更新');
@@ -357,7 +368,9 @@ const GlobalAgentTemplatePage: React.FC = () => {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <Space>
-                  <Text style={{ fontSize: 18 }}>{item.avatarEmoji || '🤖'}</Text>
+                  <Avatar size={28} src={item.avatarUrl || undefined}>
+                    {item.avatarEmoji || '🤖'}
+                  </Avatar>
                   <Text strong style={{ fontSize: 15 }}>{item.name}</Text>
                   {item.isBuiltIn && <Tag color="gold" icon={<LockOutlined />} style={{ fontSize: 10 }}>内置</Tag>}
                 </Space>
@@ -581,12 +594,34 @@ const GlobalAgentTemplatePage: React.FC = () => {
           />
 
           <Divider orientation="left">个性设置</Divider>
-          <ProFormText
-            name="avatarEmoji"
-            label="头像 Emoji"
-            placeholder="如 🤖"
-            fieldProps={{ maxLength: 8 }}
-          />
+          <Form.Item
+            name="avatarId"
+            label="头像"
+            rules={[{ required: true, message: '请选择头像' }]}
+            initialValue={avatars[0]?.avatarId}
+          >
+            <Select
+              placeholder="选择系统头像"
+              loading={avatars.length === 0}
+              options={avatars.map((a) => ({
+                label: a.name,
+                value: a.avatarId,
+              }))}
+              optionRender={(option) => {
+                const avatar = avatars.find((a) => a.avatarId === option.value);
+                if (!avatar) return option.label;
+                return (
+                  <Space>
+                    <Avatar size={24} src={avatar.url} />
+                    <span>{avatar.name}</span>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {avatar.recommendedUse}
+                    </Text>
+                  </Space>
+                );
+              }}
+            />
+          </Form.Item>
           <ProFormTextArea
             name="personaPrompt"
             label="人设 / 语气 / 边界（SOUL）"

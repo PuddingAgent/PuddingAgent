@@ -7,6 +7,7 @@ import AgentMessageBubble from './AgentMessageBubble';
 
 interface MessageRowProps {
   block: ChatMessageBlock;
+  defaultAvatarUrl?: string;
   formatTime: (ts: number) => string;
   onContextMenu?: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn?: (turnId: string) => void;
@@ -16,6 +17,7 @@ interface MessageRowProps {
 
 const MessageRow: React.FC<MessageRowProps> = ({
   block,
+  defaultAvatarUrl,
   formatTime,
   onContextMenu,
   onRerunTurn,
@@ -57,7 +59,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
           agentName={block.agentName || 'Pudding'}
           agentAvatarEmoji={block.agentAvatarEmoji}
           agentAvatarColor={block.agentAvatarColor}
-          agentAvatarUrl={block.agentAvatarUrl}
+          agentAvatarUrl={block.agentAvatarUrl || defaultAvatarUrl}
           processItems={block.processItems}
           usage={block.usage}
           groupedWithPrevious={block.groupedWithPrevious}

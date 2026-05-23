@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace PuddingPlatform.Data.Entities;
 
 /// <summary>工作空间内配置的 Agent 实例（已部署，区别于 AgentTemplate 定义）。</summary>
@@ -17,8 +19,12 @@ public class WorkspaceAgentEntity
     /// <summary>Agent 展示名称（聊天界面显示）。未设置时回退到 Name。</summary>
     public string? DisplayName { get; set; }
 
-    /// <summary>Agent 头像 URL。未设置时前端根据 DisplayName 首字自动生成。</summary>
+    /// <summary>Agent 头像 URL。legacy fallback，未设置时从模板解析。</summary>
     public string? AvatarUrl { get; set; }
+
+    /// <summary>系统预置头像 ID，对应 AgentAvatarEntity.AvatarId。优先级最高。</summary>
+    [MaxLength(128)]
+    public string? AvatarId { get; set; }
 
     /// <summary>来源模板 ID（WorkspaceAgentTemplate 或 GlobalAgentTemplate 的 TemplateId）。</summary>
     public string? SourceTemplateId { get; set; }

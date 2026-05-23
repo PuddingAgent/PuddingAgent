@@ -10,11 +10,15 @@ import { createStyles } from 'antd-style';
 import React from 'react';
 import { flushSync } from 'react-dom';
 import { outLogin } from '@/services/ant-design-pro/api';
-import HeaderDropdown from '../HeaderDropdown';
+import HeaderDropdown, { type HeaderDropdownProps } from '../HeaderDropdown';
 
 export type GlobalHeaderRightProps = {
   menu?: boolean;
   children?: React.ReactNode;
+  /** 菜单触发方式，默认 hover，Chat 用 click 避免与 Tooltip 冲突 */
+  dropdownTrigger?: HeaderDropdownProps['trigger'];
+  /** 菜单弹出位置，默认 bottomLeft */
+  dropdownPlacement?: HeaderDropdownProps['placement'];
 };
 
 export const AvatarName = () => {
@@ -44,6 +48,8 @@ const useStyles = createStyles(({ token }) => {
 export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({
   menu,
   children,
+  dropdownTrigger,
+  dropdownPlacement,
 }) => {
   /**
    * 退出登录，并且将当前的 url 保存
@@ -131,6 +137,8 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({
 
   return (
     <HeaderDropdown
+      trigger={dropdownTrigger}
+      placement={dropdownPlacement}
       menu={{
         selectedKeys: [],
         onClick: onMenuClick,

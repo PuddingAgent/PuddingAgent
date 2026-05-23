@@ -97,6 +97,22 @@ public record UpsertLlmModelRequest(
     int SortOrder
 );
 
+// ─── Agent Avatar（ADR-034）────────────────────────────────────────
+
+public record AgentAvatarDto(
+    string AvatarId,
+    string Name,
+    string Url,
+    string? Personality,
+    string? HairColor,
+    string? Expression,
+    List<string> VisualTraits,
+    string? RecommendedUse,
+    bool IsBuiltIn,
+    bool IsEnabled,
+    int SortOrder
+);
+
 // ─── Global Agent Template ────────────────────────────────────────
 
 public record CapabilityDto(
@@ -177,6 +193,9 @@ public record GlobalAgentTemplateDto(
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
     string? AvatarEmoji = null,
+    string? AvatarId = null,
+    string? AvatarUrl = null,
+    string? AvatarName = null,
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
@@ -207,6 +226,7 @@ public record UpsertGlobalAgentTemplateRequest(
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
     string? AvatarEmoji = null,
+    string? AvatarId = null,
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
@@ -243,6 +263,9 @@ public record WorkspaceAgentTemplateDto(
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
     string? AvatarEmoji = null,
+    string? AvatarId = null,
+    string? AvatarUrl = null,
+    string? AvatarName = null,
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
@@ -271,6 +294,7 @@ public record UpsertWorkspaceAgentTemplateRequest(
     string? ToolsDescription = null,
     string? BootstrapTemplate = null,
     string? AvatarEmoji = null,
+    string? AvatarId = null,
     string? MemoryLlmEndpoint = null,
     string? MemoryLlmApiKey = null,
     string? MemoryLlmModelId = null,
@@ -433,6 +457,7 @@ public record WorkspaceAgentDto(
     string Name,
     string? Description,
     string? DisplayName,
+    string? AvatarId,
     string? AvatarUrl,
     string? SourceTemplateId,
     string? SystemPromptOverride,
@@ -448,6 +473,7 @@ public record CreateWorkspaceAgentRequest(
     string Name,
     string? Description,
     string? DisplayName,
+    string? AvatarId,
     string? AvatarUrl,
     string? SourceTemplateId,
     string? SystemPromptOverride,
@@ -459,6 +485,7 @@ public record UpdateWorkspaceAgentRequest(
     string Name,
     string? Description,
     string? DisplayName,
+    string? AvatarId,
     string? AvatarUrl,
     string? SourceTemplateId,
     string? SystemPromptOverride,

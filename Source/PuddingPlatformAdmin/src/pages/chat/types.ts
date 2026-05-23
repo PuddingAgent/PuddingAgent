@@ -118,6 +118,7 @@ export function buildMessageBlocks(turns: ChatTurn[], agentName?: string): ChatM
         status: toChatMessageStatus(turn.assistant.status),
         createdAt: turn.userMessage.timestamp,
         agentName: blockAgentName,
+        agentAvatarUrl: turn.source?.avatarUrl,
         agentAvatarColor: turn.source?.avatarColor || '#7c3aed',
         agentAvatarEmoji: turn.source?.avatarEmoji || '🤖',
         processItems: turn.assistant.timelineItems?.length ? turn.assistant.timelineItems : undefined,
@@ -166,6 +167,7 @@ export interface ChatSource {
   displayName: string;
   avatarEmoji: string;
   avatarColor: string;
+  avatarUrl?: string;
 }
 
 export const assistantStatusLabel: Record<AssistantStatus, string> = {

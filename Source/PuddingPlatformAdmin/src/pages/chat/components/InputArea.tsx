@@ -30,6 +30,7 @@ interface InputAreaProps {
   onSend: () => void;
   onStop: () => void;
   onExport: () => void;
+  onOpenDevDetails?: () => void;
   disabled: boolean;
   tLimit: number;
   tUsed: number;
@@ -42,7 +43,7 @@ interface InputAreaProps {
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
-  inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport,
+  inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport, onOpenDevDetails,
   disabled, tLimit, tUsed, tPct, status, sessionId,
   cacheHitTokens, cacheMissTokens, cacheHitRate,
 }) => {
@@ -168,7 +169,7 @@ const InputArea: React.FC<InputAreaProps> = ({
       {/* ── 条件状态行：仅 thinking / tool_executing / streaming / error / completed 短暂显示 ── */}
       {shouldShowStatus && (
         <Popover
-          content={<ComposerStatusDetails summary={runtimeSummary} />}
+          content={<ComposerStatusDetails summary={runtimeSummary} onOpenDevDetails={onOpenDevDetails} />}
           trigger="click"
           open={showStatusDetails}
           onOpenChange={setShowStatusDetails}

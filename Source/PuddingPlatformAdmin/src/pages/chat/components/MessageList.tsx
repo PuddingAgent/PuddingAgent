@@ -235,6 +235,7 @@ const MessageList: React.FC<MessageListProps> = ({
           <MessageStream
             turns={turns}
             agentName={selectedAgent?.name || 'Pudding'}
+            defaultAvatarUrl={selectedAgent?.avatarUrl}
             formatTime={formatTime}
             onContextMenu={onContextMenu}
             onRerunTurn={onRerunTurn}

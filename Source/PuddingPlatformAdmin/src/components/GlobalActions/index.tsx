@@ -11,7 +11,7 @@
 import { Question, SelectLang } from '@/components/RightContent';
 import { AvatarDropdown } from '@/components/RightContent/AvatarDropdown';
 import { ThemeToggleAction } from '@/components/ThemeMode';
-import { Avatar, Space, Tooltip } from 'antd';
+import { Avatar, Space } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
 import React from 'react';
 
@@ -57,10 +57,13 @@ export const PuddingGlobalActions: React.FC<PuddingGlobalActionsProps> = ({
       <div style={{ lineHeight: 0 }}>
         <SelectLang />
       </div>
-      <AvatarDropdown>
-        <Tooltip title="用户菜单">
-          <Avatar size={22} icon={<UserOutlined />} style={{ cursor: 'pointer', flexShrink: 0 }} />
-        </Tooltip>
+      <AvatarDropdown dropdownTrigger={['click']} dropdownPlacement="bottomRight">
+        <Avatar
+          size={22}
+          icon={<UserOutlined />}
+          aria-label="用户菜单"
+          style={{ cursor: 'pointer', flexShrink: 0 }}
+        />
       </AvatarDropdown>
     </Space>
   );

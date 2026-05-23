@@ -120,7 +120,7 @@ export const layout: RunTimeLayoutConfig = ({
       src: initialState?.currentUser?.avatar,
       title: <AvatarName />,
       render: (_, avatarChildren) => {
-        return <AvatarDropdown>{avatarChildren}</AvatarDropdown>;
+        return <AvatarDropdown dropdownTrigger={['click']}>{avatarChildren}</AvatarDropdown>;
       },
     },
     waterMarkProps: {

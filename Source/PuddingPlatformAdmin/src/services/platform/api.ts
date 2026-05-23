@@ -327,6 +327,26 @@ export interface KeyVaultTextTransformResponse {
   text: string;
 }
 
+// ─── Agent Avatar Types (ADR-034) ──────────────────────────────
+
+export interface AgentAvatarDto {
+  avatarId: string;
+  name: string;
+  url: string;
+  personality?: string;
+  hairColor?: string;
+  expression?: string;
+  visualTraits: string[];
+  recommendedUse?: string;
+  isBuiltIn: boolean;
+  isEnabled: boolean;
+  sortOrder: number;
+}
+
+export async function listAgentAvatars(enabledOnly = true): Promise<AgentAvatarDto[]> {
+  return request('/api/agent-avatars', { method: 'GET', params: { enabledOnly } });
+}
+
 // ─── Global Agent Template Types ────────────────────────────────
 
 export interface GlobalAgentTemplateDto {
@@ -335,6 +355,9 @@ export interface GlobalAgentTemplateDto {
   name: string;
   description?: string;
   avatarEmoji?: string;
+  avatarId?: string;
+  avatarUrl?: string;
+  avatarName?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
@@ -368,6 +391,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   name: string;
   description?: string;
   avatarEmoji?: string;
+  avatarId?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
@@ -402,6 +426,9 @@ export interface WorkspaceAgentTemplateDto {
   name: string;
   description?: string;
   avatarEmoji?: string;
+  avatarId?: string;
+  avatarUrl?: string;
+  avatarName?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
@@ -432,6 +459,7 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   name: string;
   description?: string;
   avatarEmoji?: string;
+  avatarId?: string;
   role: string;
   systemPrompt?: string;
   userPromptTemplate?: string;
@@ -1001,6 +1029,7 @@ export interface WorkspaceAgentDto {
   name: string;
   description?: string;
   displayName?: string;
+  avatarId?: string;
   avatarEmoji?: string;
   avatarUrl?: string;
   sourceTemplateId?: string;
@@ -1017,6 +1046,7 @@ export interface CreateWorkspaceAgentRequest {
   name: string;
   description?: string;
   displayName?: string;
+  avatarId?: string;
   avatarEmoji?: string;
   avatarUrl?: string;
   sourceTemplateId?: string;
@@ -1029,6 +1059,7 @@ export interface UpdateWorkspaceAgentRequest {
   name: string;
   description?: string;
   displayName?: string;
+  avatarId?: string;
   avatarEmoji?: string;
   avatarUrl?: string;
   sourceTemplateId?: string;

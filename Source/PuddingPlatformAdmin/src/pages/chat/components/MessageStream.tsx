@@ -10,6 +10,7 @@ import MessageRow from './MessageRow';
 interface MessageStreamProps {
   turns: ChatTurn[];
   agentName?: string;
+  defaultAvatarUrl?: string;
   formatTime: (ts: number) => string;
   onContextMenu?: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn?: (turnId: string) => void;
@@ -20,6 +21,7 @@ interface MessageStreamProps {
 const MessageStream: React.FC<MessageStreamProps> = ({
   turns,
   agentName,
+  defaultAvatarUrl,
   formatTime,
   onContextMenu,
   onRerunTurn,
@@ -39,6 +41,7 @@ const MessageStream: React.FC<MessageStreamProps> = ({
         <MessageRow
           key={block.id}
           block={block}
+          defaultAvatarUrl={defaultAvatarUrl}
           formatTime={formatTime}
           onContextMenu={onContextMenu}
           onRerunTurn={onRerunTurn}

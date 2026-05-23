@@ -47,8 +47,10 @@
 ### 3.1 默认 Composer
 
 ```text
-  语音  输入你的问题或任务…                         发送
-  就绪 / 正在生成回复… / 出错了，可重试        查看状态
+┌────────────────────────────────────────────────────────────┐
+│ +  麦克风   输入你的问题或任务…                  [发送]    │
+│            上下文 · 记忆 · 子任务 0        就绪 / 查看状态 │
+└────────────────────────────────────────────────────────────┘
 ```
 
 说明：
@@ -57,6 +59,7 @@
 - 状态文案独立于 `+`；
 - 生成中、工具调用、错误时状态行可点击打开状态详情；
 - 空闲且无异常时，状态详情入口可以弱化或隐藏。
+- 上下文、记忆、子代理等原本被隐藏的指示器，以低权重反馈带表达“参与情况”，而不是重新堆回菜单里。
 
 ### 3.2 `+` 动作菜单
 
@@ -120,12 +123,17 @@
 ```text
 InputArea
 ├── ComposerStatusLine
+│   ├── ComposerFeedbackStrip
 │   └── ComposerStatusDetailsPopover
 ├── ComposerActionMenuPopover
 │   └── ComposerActionMenu
-├── VoiceInputButton
-├── Input.TextArea
-└── Send / Stop Button
+└── ComposerInputFrame
+    ├── ComposerToolRail
+    │   ├── ComposerActionMenuButton
+    │   └── VoiceInputButton
+    ├── Input.TextArea
+    └── ComposerSubmitRail
+        └── Send / Stop Button
 ```
 
 ### 4.2 新增组件
@@ -135,6 +143,8 @@ InputArea
 | `ComposerActionMenu` | `components/ComposerActionMenu.tsx` | 渲染 `+` 动作菜单，不读取运行时指标。 |
 | `ComposerStatusLine` | `components/ComposerStatusLine.tsx` | 渲染自然语言主状态，可点击打开详情。 |
 | `ComposerStatusDetails` | `components/ComposerStatusDetails.tsx` | 渲染运行状态摘要，统一翻译内部指标。 |
+| `ComposerFeedbackStrip` | `components/ComposerFeedbackStrip.tsx` | 用轻标签 / 状态点表达上下文、记忆、索引、子代理等参与情况。 |
+| `ComposerInputFrame` | 可先内联在 `InputArea.tsx` | 管理三段式输入布局、focus / typing / error 状态。 |
 
 若希望控制改动规模，可以先只新增 `ComposerActionMenu.tsx` 与 `ComposerStatusDetails.tsx`，状态行仍留在 `InputArea.tsx` 中。
 
@@ -152,6 +162,8 @@ interface ComposerRuntimeSummary {
     percentage: number;
   };
   contextService: 'available' | 'idle' | 'disabled' | 'error';
+  memory: 'used' | 'idle' | 'disabled' | 'error';
+  memoryCount?: number;
   index: 'available' | 'building' | 'disabled' | 'error';
   backgroundMemory: 'idle' | 'running' | 'disabled' | 'error';
   subAgentsRunning: number;
@@ -160,6 +172,49 @@ interface ComposerRuntimeSummary {
 ```
 
 第一阶段不要求后端新增字段，可以由现有 props 和 indicator 默认值映射生成。缺数据时显示 `未启用` 或隐藏对应行，不显示 `undefined`。
+
+---
+
+## 4.4 轻反馈带设计
+
+很多指示器被隐藏，是因为旧状态栏的视觉重量过高，而不是这些信息没有价值。新的策略是：**不恢复重型图标栏，改用可扫读的低权重反馈带**。
+
+### 反馈层级
+
+| 层级 | 展示方式 | 用途 |
+|------|----------|------|
+| L1 主状态 | `正在生成回复…` | 告诉用户当前主流程。 |
+| L2 轻反馈带 | `上下文 · 记忆 · 子任务 0` | 告诉用户哪些能力参与了本轮。 |
+| L3 状态详情 | Popover 摘要表 | 告诉用户每项能力的结果。 |
+| L4 开发者详情 | DevPanel / 原指标组件 | 排障与内部诊断。 |
+
+### 轻反馈带样式
+
+```text
+上下文  记忆  子任务 0
+```
+
+规格：
+
+- 高度 18-22px；
+- 字号 11-12px；
+- 颜色使用 `earth-brown` 45%-60% opacity；
+- 激活项使用低饱和色点，不使用发光；
+- 异常项只把对应标签变为低饱和红，不整条报错；
+- 最多显示 4 项，超出折叠为 `更多`；
+- 点击任意标签打开状态详情。
+
+### 能力映射
+
+| 能力 | 空闲 | 参与 | 运行中 | 异常 |
+|------|------|------|--------|------|
+| 上下文 | 隐藏或 `上下文` 弱态 | `上下文` | `整理上下文…` | `上下文异常` |
+| 记忆 | 隐藏 | `记忆 N` | `检索记忆…` | `记忆不可用` |
+| 索引 | 隐藏 | `索引` | `索引中…` | `索引异常` |
+| 子代理 | `子任务 0` 可隐藏 | `子任务 N` | `子任务 N 运行中` | `子任务异常` |
+| 后台整理 | 隐藏 | `后台` | `后台整理中` | `后台异常` |
+
+设计判断：普通用户不需要知道 ASP/LSP 和 Subconscious LLM，但需要知道“上下文、记忆、子任务是否参与”。这能保留 Agent 的可解释性，同时不把页面拉回调试台。
 
 ---
 
@@ -204,6 +259,91 @@ Token           1.2k / 32k
 - 错误用低饱和红，不使用大面积红底；
 - 运行中只允许一个小圆点或轻微 opacity 动效。
 
+### 5.4 输入容器
+
+当前截图中的主要视觉问题是 focus 样式画在 `textarea` 底部，形成一条过强的紫色横线；多行时右侧发送按钮被 `textarea` 的高度和滚动挤压，像被藏到容器边缘。
+
+新 Composer 使用一个完整输入容器承载状态，而不是让 `textarea` 自己表现所有状态：
+
+| 状态 | 容器表现 |
+|------|----------|
+| resting | 暖白纸面、1px 暖棕弱边框、无阴影 |
+| focus | 边框提升到 `accent-purple 18%-22%`，阴影 `0 2px 10px rgba(92,64,42,.05)` |
+| typing | 底部出现短而轻的 ink-line，从输入区左侧 20%-80% 轻扫一次 |
+| loading | 状态点轻微 opacity pulse，发送按钮变停止按钮 |
+| error | 边框变低饱和红，状态行显示恢复动作 |
+
+禁止：
+
+- 整条高饱和紫线横跨输入区；
+- 持续高亮边框；
+- 按钮 hover / focus 导致布局位移；
+- 多行输入时按钮被滚动条、文本或容器裁切遮挡。
+
+### 5.5 输入中动效
+
+动效命名建议：`composerInkWake`。
+
+触发条件：
+
+- `textarea` focus；
+- 或 `inputValue.trim().length > 0`；
+- 不在 `loading` / `disabled` / `error` 中。
+
+表现：
+
+- 容器边框 180ms 过渡；
+- 输入区底部一条 24%-36% 宽的浅色 ink-line 轻微滑动或淡入；
+- 动效时长 220-300ms；
+- 用户连续输入时不每个字符重启大动画，只保持 subtle active 状态；
+- `prefers-reduced-motion: reduce` 下禁用滑动，只保留边框变化。
+
+CSS 方向：
+
+```css
+.composerInputFrame[data-active='true'] {
+  border-color: color-mix(in srgb, var(--accent-purple) 20%, var(--earth-brown) 12%);
+  box-shadow: 0 2px 10px rgba(92, 64, 42, 0.05);
+}
+
+.composerInputFrame[data-active='true']::after {
+  opacity: 1;
+  transform: translateX(0);
+}
+```
+
+### 5.6 多行布局
+
+改为三段式 grid，而不是当前单行 `align-items: flex-end`：
+
+```text
+┌────────────────────────────────────────────────────┐
+│ [ + ][麦]  ┌──────────────────────────────┐ [发送] │
+│            │ 第一行文本                    │        │
+│            │ 第二行文本                    │        │
+│            └──────────────────────────────┘        │
+│            上下文 · 记忆 · 子任务 0          状态   │
+└────────────────────────────────────────────────────┘
+```
+
+布局规格：
+
+- `grid-template-columns: auto minmax(0, 1fr) auto`；
+- 左工具区固定宽度，`align-self: end`；
+- 中央输入区 `min-width: 0`，避免撑破布局；
+- 右操作区固定宽度，`align-self: end`，始终可见；
+- `textarea` `max-height: 132px` 或 `160px`，超出内部滚动；
+- Composer 容器整体 `overflow: visible`，textarea 内部 `overflow-y: auto`；
+- 发送按钮 32x32 桌面，触屏断点 40-44px；
+- 输入框和按钮之间至少 8px gap。
+
+多行状态验收：
+
+- 2 行、5 行、10 行文本都能看到发送按钮；
+- 内部滚动条只出现在文本区，不压住按钮；
+- 光标、紫色 focus 反馈不穿过按钮；
+- 输入容器高度增长但页面底部不出现黑色裁切或布局跳动。
+
 ---
 
 ## 6. 交互规则
@@ -228,6 +368,15 @@ Token           1.2k / 32k
 - 普通模式只看摘要；
 - 开发者模式可在状态详情底部展开完整指标；
 - 若项目已有 DevPanel 开关，则 `打开开发者详情` 复用该入口，不新增全局状态。
+
+### 6.4 输入状态
+
+- focus 进入时，Composer 容器进入 `active` 状态；
+- blur 且输入为空时，Composer 回到 `resting`；
+- 输入非空时，即使 blur 也保留轻微 active 纸面状态；
+- loading 时禁用 typing 动效，避免与生成状态争抢；
+- error 时优先显示错误边框和恢复动作；
+- Enter 发送后，若输入清空，容器回到 resting。
 
 ---
 
@@ -278,6 +427,23 @@ Token           1.2k / 32k
 4. 加 Playwright 或手动验收截图：桌面 986x1270、移动 390x844。
 
 验收：无文本重叠、无横向溢出、键盘可操作、点击目标达标。
+
+### Phase 5：输入框状态与多行布局修复
+
+1. 在 `InputArea.tsx` 中增加本地状态：
+   - `isComposerFocused`
+   - `isComposerActive = isComposerFocused || inputValue.trim().length > 0`
+2. 将当前 `composerRow` 改为 `composerInputFrame`：
+   - 左侧 `composerToolRail`
+   - 中央 `composerTextareaWrap`
+   - 右侧 `composerSubmitRail`
+3. 将 focus 样式从 `composerTextarea &:focus boxShadow` 移到 `composerInputFrame[data-active]`。
+4. 发送 / 停止按钮固定在 `composerSubmitRail`，不参与 textarea 内部滚动。
+5. `textarea` 设置稳定 max height 和内部滚动，不让父容器裁切按钮。
+6. 增加 `composerFeedbackStrip`，先用现有 summary 默认值展示 `上下文`、`记忆`、`子任务`，后续再接真实数据。
+7. 补充 `prefers-reduced-motion`，关闭 `composerInkWake`。
+
+验收：截图中的多行输入、紫色横线过重、发送按钮被隐藏三类问题全部消失。
 
 ---
 
@@ -349,6 +515,11 @@ Token           1.2k / 32k
 - [ ] 内容无重叠、无横向滚动。
 - [ ] 与暖纸面、低饱和、8px 圆角体系一致。
 - [ ] 常态无发光、扫描线、多点 pulse。
+- [ ] 输入 focus 不再显示高饱和整条紫色横线。
+- [ ] 输入中有轻微、短时、可关闭的容器动效。
+- [ ] 多行输入时发送 / 停止按钮始终可见。
+- [ ] 文本区滚动条不遮挡按钮和状态反馈。
+- [ ] 上下文、记忆、子代理等能力有轻反馈入口。
 
 ### 回归
 
