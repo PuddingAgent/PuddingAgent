@@ -1396,6 +1396,41 @@ export interface TokenUsageDto {
   promptCacheMissTokens?: number;
 }
 
+export type ContextHealthState = 'Healthy' | 'Warning' | 'Unhealthy' | 'Critical' | 'Blocking';
+export type ContextCompactionLevel = 'Micro' | 'SessionMemory' | 'Full';
+export type ContextCompactionMode = 'Manual' | 'Auto';
+
+export interface ContextHealthSnapshot {
+  sessionId: string;
+  usedTokens: number;
+  contextWindowTokens: number;
+  effectiveWindowTokens: number;
+  remainingTokens: number;
+  usageRatio: number;
+  state: ContextHealthState;
+  shouldSuggestCompact: boolean;
+  shouldAutoCompact: boolean;
+  shouldBlockSend: boolean;
+}
+
+export interface CompactSessionRequest {
+  workspaceId?: string;
+  agentId?: string;
+  level?: ContextCompactionLevel;
+  reason?: string;
+}
+
+export interface ContextCompactionResult {
+  sessionId: string;
+  summaryMessageId: string;
+  mode: ContextCompactionMode;
+  level: ContextCompactionLevel;
+  beforeTokens: number;
+  afterTokens: number;
+  compactedMessageCount: number;
+  summaryPreview: string;
+}
+
 /** 单轮工具调用步骤摘要（对应后端 TurnStepDto）。 */
 export interface TurnStep {
   round: number;
@@ -1428,6 +1463,10 @@ export type AdminChatStreamEvent =
   | { type: 'tool_result'; name: string; exitCode: number; output: string; error?: string }
   | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
   | { type: 'usage'; usage: TokenUsageDto }
+  | { type: 'context.health'; state?: ContextHealthState; usedTokens?: number; effectiveWindowTokens?: number; usageRatio?: number; [key: string]: unknown }
+  | { type: 'context.compaction.started'; sessionId?: string; mode?: ContextCompactionMode; level?: ContextCompactionLevel; reason?: string; [key: string]: unknown }
+  | { type: 'context.compaction.completed'; sessionId?: string; compactedMessageCount?: number; beforeTokens?: number; afterTokens?: number; summaryMessageId?: string; [key: string]: unknown }
+  | { type: 'context.compaction.failed'; sessionId?: string; error?: string; [key: string]: unknown }
   | { type: 'done'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string }
   | { type: 'error'; message: string }
   | { type: 'cancelled'; message?: string }
@@ -1463,6 +1502,22 @@ export async function sendChatMessage(
     data: req,
     signal,
   }) as Promise<{ messageId: string; sessionId: string }>;
+}
+
+export async function getContextHealth(sessionId: string): Promise<ContextHealthSnapshot> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/context-health`, {
+    method: 'GET',
+  });
+}
+
+export async function compactSession(
+  sessionId: string,
+  req: CompactSessionRequest,
+): Promise<ContextCompactionResult> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
+    method: 'POST',
+    data: req,
+  });
 }
 
 
@@ -1611,6 +1666,69 @@ export async function getSessionTokenStats(
   sessionId: string,
 ): Promise<{ sessionId: string; messages: any[]; aggregates: any }> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/token-stats`, { method: 'GET' });
+}
+
+// ─── Token Events API (ADR-043 缓存统计闭环) ─────────────────────
+
+export interface TokenUsageEventResponse {
+  id: number;
+  sourceType: string;
+  sourceId: string;
+  workspaceId?: string;
+  sessionId?: string;
+  providerId?: string;
+  modelId?: string;
+  occurredAtUtc: string;
+  yearMonth: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+  cacheEligibleTokens: number;
+  cacheHitRate?: number;
+  inputCost: number;
+  outputCost: number;
+  cacheHitCost: number;
+  totalCost: number;
+}
+
+export interface TokenEventsPageResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  events: TokenUsageEventResponse[];
+}
+
+/** 查询 Token 使用事件明细（ADR-043） */
+export async function getTokenEvents(
+  params: {
+    from?: string;
+    to?: string;
+    providerId?: string;
+    modelId?: string;
+    sessionId?: string;
+    page?: number;
+    pageSize?: number;
+  },
+): Promise<TokenEventsPageResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.from) searchParams.set('from', params.from);
+  if (params.to) searchParams.set('to', params.to);
+  if (params.providerId) searchParams.set('providerId', params.providerId);
+  if (params.modelId) searchParams.set('modelId', params.modelId);
+  if (params.sessionId) searchParams.set('sessionId', params.sessionId);
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  return request(`/api/stats/tokens/events?${searchParams.toString()}`, { method: 'GET' });
+}
+
+/** 触发 Token 统计重建（仅管理员，ADR-043） */
+export async function rebuildTokenEvents(
+  yearMonth?: string,
+): Promise<{ eventsCreated: number; messagesScanned: number; skippedDuplicates: number; errors: number; errorDetails: string[] }> {
+  const params = yearMonth ? `?yearMonth=${yearMonth}` : '';
+  return request(`/api/stats/tokens/rebuild${params}`, { method: 'POST' });
 }
 
 // ─── Memory Library Admin API (ADR-030) ──────────────────────────

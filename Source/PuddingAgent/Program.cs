@@ -227,6 +227,11 @@ builder.Services.AddSingleton<IWorkspaceProfileProvider>(sp => sp.GetRequiredSer
 builder.Services.AddSingleton<AgentLLMConfigResolver>();
 builder.Services.AddSingleton<ILLMConfigResolver>(sp => sp.GetRequiredService<AgentLLMConfigResolver>());
 
+// ── ADR-043：Token 使用统计闭环 ────────────────────────────────
+builder.Services.AddSingleton<TokenUsageNormalizer>();
+builder.Services.AddSingleton<TokenUsageRecorder>();
+builder.Services.AddSingleton<TokenUsageRebuildService>();
+
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {
     opt.UseSqlite(controllerConnStr);
@@ -430,8 +435,11 @@ builder.Services.AddSingleton<IMemoryLlmClient>(sp =>
 builder.Services.AddSingleton(new StartupEnvironmentInfo());
 builder.Services.AddSingleton<SystemPromptBuilder>();
 builder.Services.AddSingleton<ContextAssemblyStore>();
+builder.Services.AddSingleton<IExecutionEnvironmentProvider, DefaultExecutionEnvironmentProvider>();
 builder.Services.AddSingleton<ContextPipeline>();
 builder.Services.AddSingleton<ContextWindowManager>();
+builder.Services.AddSingleton<IContextCompactionSummaryGenerator, ExtractiveContextCompactionSummaryGenerator>();
+builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
 // ── Agent Persona 文件读取器 ──
 builder.Services.AddSingleton(sp =>
 {

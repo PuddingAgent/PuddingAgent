@@ -11,6 +11,10 @@ public static class SseEventTypes
     public const string Terminal = "terminal";    // 终端代理输出
     public const string Usage = "usage";          // Token 用量
     public const string Context = "context";      // 上下文层 Token 占比
+    public const string ContextHealth = "context.health"; // 上下文健康状态
+    public const string ContextCompactionStarted = "context.compaction.started";
+    public const string ContextCompactionCompleted = "context.compaction.completed";
+    public const string ContextCompactionFailed = "context.compaction.failed";
     public const string Step = "step";            // 状态转换（向后兼容）
     public const string Done = "done";            // 正常结束
     public const string Error = "error";          // 错误终止

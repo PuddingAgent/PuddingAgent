@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services.Skills;
 
@@ -30,9 +31,13 @@ public sealed class ContextPipeline
     private readonly IMemoryCache _memCache;
     private readonly ILogger<ContextPipeline> _logger;
     private readonly ContextAssemblyStore _contextAssemblyStore;
+    private readonly IExecutionEnvironmentProvider _envProvider;
 
     // 静态层缓存：sessionId → StaticContextCache
     private readonly ConcurrentDictionary<string, StaticContextCache> _staticCache = new();
+
+    // 环境层缓存：workspaceId → EnvironmentLayerCache
+    private readonly ConcurrentDictionary<string, EnvironmentLayerCache> _envCache = new();
 
     // 动态工具/技能缓存：sessionId+topicKey → DynamicToolsCache
     private readonly ConcurrentDictionary<string, DynamicToolsCache> _toolsCache = new();
@@ -53,6 +58,7 @@ public sealed class ContextPipeline
         IMemoryCache memCache,
         ContextAssemblyStore contextAssemblyStore,
         ILogger<ContextPipeline> logger,
+        IExecutionEnvironmentProvider envProvider,
         IMemoryLibraryConvenience? libraryConvenience = null,
         IMemoryRecallService? recallService = null,
         ISubconsciousOrchestrator? orchestrator = null,
@@ -67,6 +73,7 @@ public sealed class ContextPipeline
         _memCache = memCache;
         _contextAssemblyStore = contextAssemblyStore;
         _logger = logger;
+        _envProvider = envProvider;
         _libraryConvenience = libraryConvenience;
         _recallService = recallService;
         _orchestrator = orchestrator;
@@ -98,6 +105,19 @@ public sealed class ContextPipeline
             LayerName = "L0-STATIC",
             TokenCount = staticTokens,
             ContentPreview = BuildPreview(staticCtx),
+        });
+
+        // ── L0-ENVIRONMENT: 运行环境（OS/运行时/workspace 路径）— 低变化，独立于静态 persona ──
+        var envCtx = GetOrBuildEnvironmentLayer(request);
+        var envTokens = EstimateTokens(envCtx);
+        AppendLayer(sb, envCtx);
+        usedBudget += envTokens;
+        layers.Add(new ContextLayerSnapshot("环境信息", envTokens, (double)envTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L0-ENVIRONMENT",
+            TokenCount = envTokens,
+            ContentPreview = BuildPreview(envCtx),
         });
 
         // ── 计算可用预算 ──
@@ -153,7 +173,7 @@ public sealed class ContextPipeline
         // ── L4: 重要记忆（10%）──
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
         var pinnedCtx = await GetOrBuildPinnedMemoryAsync(request, ct);
-        var pinnedBudget = compactionLevel >= ContextCompactionLevel.Aggressive
+        var pinnedBudget = compactionLevel >= ContextPipelineCompactionLevel.Aggressive
             ? (int)(availableBudget * 0.05)
             : (int)(availableBudget * 0.10);
         var pinnedTrimmed = TrimToTokenBudget(pinnedCtx, pinnedBudget);
@@ -214,7 +234,7 @@ public sealed class ContextPipeline
         });
 
         // ── 压缩指令（如触发）──
-        if (compactionLevel >= ContextCompactionLevel.Aggressive)
+        if (compactionLevel >= ContextPipelineCompactionLevel.Aggressive)
         {
             sb.AppendLine();
             sb.AppendLine("[SYSTEM] 当前上下文即将耗尽，请在回复的最后用标记格式总结当前工作进度和待完成事项。");
@@ -233,7 +253,7 @@ public sealed class ContextPipeline
         });
 
         // ── 压缩后附注 ──
-        if (compactionLevel >= ContextCompactionLevel.Aggressive)
+        if (compactionLevel >= ContextPipelineCompactionLevel.Aggressive)
         {
             sb.AppendLine("更早的消息可通过记忆图书馆 Tool 查询恢复。");
         }
@@ -348,6 +368,44 @@ public sealed class ContextPipeline
         {
             sb.AppendLine("Bootstrap:");
             sb.AppendLine(bootstrapTemplate);
+        }
+
+        return sb.ToString();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // L0-ENVIRONMENT: 运行环境
+    // ═══════════════════════════════════════════════════════════════
+
+    private string GetOrBuildEnvironmentLayer(ContextRequest request)
+    {
+        // 环境层缓存以 workspaceId + 环境指纹为键，跨 Session 复用
+        var envCacheKey = $"{request.WorkspaceId}:{_envProvider.EnvironmentFingerprint}";
+        if (_envCache.TryGetValue(envCacheKey, out var cached))
+            return cached.Content;
+
+        var content = BuildEnvironmentLayer(request);
+        _envCache[envCacheKey] = new EnvironmentLayerCache { Content = content };
+        _logger.LogDebug(
+            "[ContextPipeline:L0-ENVIRONMENT] Built env layer fingerprint={Fingerprint} workspace={Workspace}",
+            _envProvider.EnvironmentFingerprint, request.WorkspaceId);
+        return content;
+    }
+
+    private string BuildEnvironmentLayer(ContextRequest request)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("--- LAYER: ENVIRONMENT ---");
+        sb.AppendLine($"OS: {_envProvider.OsDescription} {_envProvider.OsArchitecture}");
+        sb.AppendLine($"Runtime: .NET {_envProvider.RuntimeVersion}");
+        sb.AppendLine($"PathSeparator: {_envProvider.PathSeparator}");
+        sb.AppendLine($"Shell: {_envProvider.DefaultShell}");
+        sb.AppendLine($"Container: {(_envProvider.IsContainer ? "true" : "false")}");
+
+        var workspaceRoot = _envProvider.GetWorkspaceRoot(request.WorkspaceId);
+        if (workspaceRoot is not null)
+        {
+            sb.AppendLine($"WorkspaceRoot: {workspaceRoot}");
         }
 
         return sb.ToString();
@@ -545,7 +603,7 @@ public sealed class ContextPipeline
 
     private string BuildRecentHistoryLayer(
         ContextRequest request,
-        ContextCompactionLevel compactionLevel,
+        ContextPipelineCompactionLevel compactionLevel,
         int budgetTokens)
     {
         var sb = new StringBuilder();
@@ -563,7 +621,7 @@ public sealed class ContextPipeline
 
         switch (compactionLevel)
         {
-            case ContextCompactionLevel.None:
+            case ContextPipelineCompactionLevel.None:
                 // 全部保留，最多最近 20 条
                 for (int i = Math.Max(0, history.Count - 20); i < history.Count; i++)
                 {
@@ -575,7 +633,7 @@ public sealed class ContextPipeline
                 }
                 break;
 
-            case ContextCompactionLevel.Gentle:
+            case ContextPipelineCompactionLevel.Gentle:
                 // 最近 10 条保留原文，更早的摘要化
                 var gentleKeep = Math.Min(10, history.Count);
                 for (int i = history.Count - gentleKeep; i < history.Count; i++)
@@ -594,7 +652,7 @@ public sealed class ContextPipeline
                 }
                 break;
 
-            case ContextCompactionLevel.Aggressive:
+            case ContextPipelineCompactionLevel.Aggressive:
                 // 最近 2 条保留原文，更早的摘要化
                 var aggressiveKeep = Math.Min(2, history.Count);
                 for (int i = history.Count - aggressiveKeep; i < history.Count; i++)
@@ -640,7 +698,7 @@ public sealed class ContextPipeline
     private async Task<string> BuildRecalledMemoryLayerAsync(
         ContextRequest request,
         CancellationToken ct,
-        ContextCompactionLevel compactionLevel)
+        ContextPipelineCompactionLevel compactionLevel)
     {
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: RECALLED ---");
@@ -679,7 +737,7 @@ public sealed class ContextPipeline
 
             try
             {
-                var maxTokens = compactionLevel >= ContextCompactionLevel.Aggressive ? 1000 : 2000;
+                var maxTokens = compactionLevel >= ContextPipelineCompactionLevel.Aggressive ? 1000 : 2000;
                 var recallText = await _orchestrator.RecallAugmentedAsync(
                     request.UserMessage,
                     request.WorkspaceId,
@@ -733,7 +791,7 @@ public sealed class ContextPipeline
                     request.UserMessage,
                     request.WorkspaceId,
                     recentContext: null,
-                    topK: compactionLevel >= ContextCompactionLevel.Aggressive ? 5 : 10,
+                    topK: compactionLevel >= ContextPipelineCompactionLevel.Aggressive ? 5 : 10,
                     ct);
 
                 _logger.LogDebug(
@@ -770,7 +828,7 @@ public sealed class ContextPipeline
         {
             var results = await _libraryConvenience.SmartSearchAsync(
                 request.UserMessage,
-                topK: compactionLevel >= ContextCompactionLevel.Aggressive ? 5 : 10,
+                topK: compactionLevel >= ContextPipelineCompactionLevel.Aggressive ? 5 : 10,
                 ct);
 
             _logger.LogDebug(
@@ -791,7 +849,7 @@ public sealed class ContextPipeline
             {
                 switch (compactionLevel)
                 {
-                    case ContextCompactionLevel.Aggressive:
+                    case ContextPipelineCompactionLevel.Aggressive:
                         // 高分保留原文，其余摘要
                         if (r.Score >= 0.8)
                             sb.AppendLine($"- **{r.BookTitle}** (score:{r.Score:F2}): {TruncateText(r.Snippet, 200)}");
@@ -926,6 +984,14 @@ public sealed class ContextPipeline
             _toolsCache.TryRemove(key, out _);
     }
 
+    /// <summary>使指定 Workspace 的环境层缓存失效。</summary>
+    public void InvalidateEnvironmentCache(string workspaceId)
+    {
+        var prefix = $"{workspaceId}:";
+        foreach (var key in _envCache.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)))
+            _envCache.TryRemove(key, out _);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // Token 预算与压缩
     // ═══════════════════════════════════════════════════════════════
@@ -937,13 +1003,13 @@ public sealed class ContextPipeline
         return Math.Max(1, text.Length / 4);
     }
 
-    private static ContextCompactionLevel DetermineCompactionLevel(int usedBudget, int totalBudget)
+    private static ContextPipelineCompactionLevel DetermineCompactionLevel(int usedBudget, int totalBudget)
     {
-        if (totalBudget <= 0) return ContextCompactionLevel.Aggressive;
+        if (totalBudget <= 0) return ContextPipelineCompactionLevel.Aggressive;
         var ratio = (double)usedBudget / totalBudget;
-        if (ratio >= CompactionThreshold) return ContextCompactionLevel.Aggressive;
-        if (ratio >= GentleThreshold) return ContextCompactionLevel.Gentle;
-        return ContextCompactionLevel.None;
+        if (ratio >= CompactionThreshold) return ContextPipelineCompactionLevel.Aggressive;
+        if (ratio >= GentleThreshold) return ContextPipelineCompactionLevel.Gentle;
+        return ContextPipelineCompactionLevel.None;
     }
 
     private static string TrimToTokenBudget(string text, int maxTokens)
@@ -1006,7 +1072,7 @@ public sealed record ContextRequest
 }
 
 /// <summary>上下文压缩级别。</summary>
-public enum ContextCompactionLevel
+public enum ContextPipelineCompactionLevel
 {
     /// <summary>budget &lt; 60%，无需压缩。</summary>
     None,
@@ -1020,6 +1086,12 @@ public enum ContextCompactionLevel
 internal sealed class StaticContextCache
 {
     public string TemplateId { get; init; } = string.Empty;
+    public string Content { get; init; } = string.Empty;
+}
+
+/// <summary>环境层缓存条目（跨 Session 复用，键 = workspaceId + 环境指纹）。</summary>
+internal sealed class EnvironmentLayerCache
+{
     public string Content { get; init; } = string.Empty;
 }
 

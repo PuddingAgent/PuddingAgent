@@ -53,6 +53,11 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                        .ConfigureWarnings(w => w.Ignore(RelationalEventId.AmbientTransactionWarning));
             }, ServiceLifetime.Singleton);
 
+            // ADR-043 统计闭环服务注册
+            services.AddSingleton<TokenUsageNormalizer>();
+            services.AddSingleton<TokenUsageRecorder>();
+            services.AddSingleton<TokenUsageRebuildService>();
+
             // 将 PlatformApiClient 的内部调用指向当前 TestServer，避免访问外部端口。
             services.AddHttpClient<PlatformApiClient>(client =>
             {

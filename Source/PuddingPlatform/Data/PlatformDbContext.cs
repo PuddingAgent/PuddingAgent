@@ -45,6 +45,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Token 使用统计（ADR-018 缓存可观测性）
     public DbSet<TokenUsageStatsEntity> TokenUsageStats => Set<TokenUsageStatsEntity>();
 
+    // Token 使用事件明细账本（ADR-043 缓存统计闭环）
+    public DbSet<TokenUsageEventEntity> TokenUsageEvents => Set<TokenUsageEventEntity>();
+
     // 运行时活动诊断（Runtime observability foundation）
     public DbSet<RuntimeActivityEntity> RuntimeActivities => Set<RuntimeActivityEntity>();
 
@@ -255,6 +258,22 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.ToTable("TokenUsageStats", "platform");
             e.HasIndex(s => new { s.YearMonth, s.ProviderId, s.ModelId }).IsUnique();
             e.Property(s => s.TotalCost).HasColumnType("decimal(18,6)");
+        });
+
+        // ── TokenUsageEvents (ADR-043) ─────────────────────────
+        modelBuilder.Entity<TokenUsageEventEntity>(e =>
+        {
+            e.ToTable("TokenUsageEvents", "platform");
+            e.HasIndex(ev => new { ev.SourceType, ev.SourceId }).IsUnique();
+            e.HasIndex(ev => ev.YearMonth);
+            e.HasIndex(ev => ev.SessionId);
+            e.HasIndex(ev => new { ev.ProviderId, ev.ModelId });
+            e.HasIndex(ev => ev.OccurredAtUtc);
+            e.Property(ev => ev.InputCost).HasColumnType("decimal(18,10)");
+            e.Property(ev => ev.OutputCost).HasColumnType("decimal(18,10)");
+            e.Property(ev => ev.CacheHitCost).HasColumnType("decimal(18,10)");
+            e.Property(ev => ev.TotalCost).HasColumnType("decimal(18,10)");
+            e.Property(ev => ev.RawUsageJson).HasColumnType("TEXT");
         });
 
         // ── RuntimeActivity (observability foundation) ──────────

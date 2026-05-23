@@ -33,6 +33,7 @@ public class ChatApiController(
     JsonlSessionWriter jsonlWriter,
     ISessionStateManager ssm,
     IRuntimeTraceAccessor traceAccessor,
+    TokenUsageRecorder tokenUsageRecorder,
     ILogger<ChatApiController> logger) : ControllerBase
 {
     private static readonly Regex VaultPlaceholderRegex =
@@ -276,6 +277,7 @@ public class ChatApiController(
                         var capturedProviderId = agent?.PreferredProviderId;
                         var capturedModelId = llmConfig?.ModelId;
                         var capturedData = frame.Data;
+                        var msgId = streamSessionId?.ToString();
                         _ = Task.Run(async () =>
                         {
                             try
@@ -283,76 +285,23 @@ public class ChatApiController(
                                 using var doc = JsonDocument.Parse(capturedData);
                                 var root = doc.RootElement;
                                 if (!root.TryGetProperty("usage", out var usageEl)) return;
-                                
+
                                 var usageTokens = JsonSerializer.Deserialize<TokenUsageDto>(usageEl.GetRawText(), JsonOpts);
                                 if (usageTokens is null) return;
 
-                                var yearMonth = DateTimeOffset.UtcNow.ToString("yyyy-MM");
-                                var providerId = capturedProviderId ?? "unknown";
-                                var modelId = capturedModelId ?? "unknown";
-
-                                using var statsScope = scopeFactory.CreateScope();
-                                var statsDb = statsScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-
-                                // 查询价格配置用于成本计算
-                                var priceConfig = await statsDb.LlmModels.AsNoTracking()
-                                    .Where(m => m.ModelId == modelId)
-                                    .Select(m => new { m.InputPricePer1MTokens, m.OutputPricePer1MTokens, m.CacheHitPricePer1MTokens })
-                                    .FirstOrDefaultAsync();
-
-                                var inputPrice = priceConfig?.InputPricePer1MTokens ?? 0m;
-                                var outputPrice = priceConfig?.OutputPricePer1MTokens ?? 0m;
-                                var cacheHitPrice = priceConfig?.CacheHitPricePer1MTokens ?? inputPrice;
-
-                                // 计算费用：cacheHit * cacheHitPrice + cacheMiss * inputPrice + completion * outputPrice
-                                var hitTokens = (decimal)(usageTokens.PromptCacheHitTokens ?? 0);
-                                var missTokens = (decimal)(usageTokens.PromptCacheMissTokens ?? 0);
-                                var completionTokens = (decimal)(usageTokens.CompletionTokens ?? 0);
-                                var promptTokens = (decimal)(usageTokens.PromptTokens ?? 0);
-                                var actualMiss = missTokens > 0 ? missTokens : (hitTokens > 0 ? promptTokens - hitTokens : promptTokens);
-                                var cost = (hitTokens / 1_000_000m * cacheHitPrice)
-                                         + (actualMiss / 1_000_000m * inputPrice)
-                                         + (completionTokens / 1_000_000m * outputPrice);
-
-                                // UPSERT：SQLite 不支持 ON CONFLICT，先查再插/更
-                                var existing = await statsDb.TokenUsageStats
-                                    .FirstOrDefaultAsync(s => s.YearMonth == yearMonth
-                                        && s.ProviderId == providerId
-                                        && s.ModelId == modelId);
-
-                                if (existing is not null)
-                                {
-                                    existing.PromptTokens += (long)(usageTokens.PromptTokens ?? 0);
-                                    existing.CompletionTokens += (long)(usageTokens.CompletionTokens ?? 0);
-                                    existing.CacheHitTokens += (long)(usageTokens.PromptCacheHitTokens ?? 0);
-                                    existing.CacheMissTokens += (long)(usageTokens.PromptCacheMissTokens ?? 0);
-                                    existing.RequestCount++;
-                                    existing.TotalCost += cost;
-                                    existing.UpdatedAt = DateTimeOffset.UtcNow;
-                                }
-                                else
-                                {
-                                    statsDb.TokenUsageStats.Add(new TokenUsageStatsEntity
-                                    {
-                                        ProviderId = providerId,
-                                        ModelId = modelId,
-                                        YearMonth = yearMonth,
-                                        PromptTokens = (long)(usageTokens.PromptTokens ?? 0),
-                                        CompletionTokens = (long)(usageTokens.CompletionTokens ?? 0),
-                                        CacheHitTokens = (long)(usageTokens.PromptCacheHitTokens ?? 0),
-                                        CacheMissTokens = (long)(usageTokens.PromptCacheMissTokens ?? 0),
-                                        RequestCount = 1,
-                                        TotalCost = cost,
-                                        UpdatedAt = DateTimeOffset.UtcNow,
-                                    });
-                                }
-                                await statsDb.SaveChangesAsync();
+                                var sourceId = msgId ?? Guid.NewGuid().ToString("N");
+                                await tokenUsageRecorder.RecordAsync(
+                                    usageTokens,
+                                    sourceType: "chat_message",
+                                    sourceId: sourceId,
+                                    workspaceId: workspaceId,
+                                    sessionId: streamSessionId?.ToString(),
+                                    providerId: capturedProviderId,
+                                    modelId: capturedModelId);
                             }
                             catch (Exception ex)
                             {
-                                var statsLogger = scopeFactory.CreateScope().ServiceProvider
-                                    .GetRequiredService<ILogger<ChatApiController>>();
-                                statsLogger.LogWarning(ex, "[Chat:Stats] Failed to update TokenUsageStats");
+                                logger.LogWarning(ex, "[Chat:Stats] Failed to record token usage via recorder");
                             }
                         });
                     }

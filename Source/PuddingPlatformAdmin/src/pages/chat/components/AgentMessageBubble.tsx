@@ -7,6 +7,7 @@ import AgentAvatar from './AgentAvatar';
 import MessageItem from './MessageItem';
 import MessageProcessSummary from './MessageProcessSummary';
 import MessageActions from './MessageActions';
+import { useTypewriterStreaming } from '../hooks/useTypewriterStreaming';
 
 interface AgentMessageBubbleProps {
   id: string;
@@ -53,6 +54,26 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const [showActions, setShowActions] = React.useState(false);
 
   const isError = status === 'error' || status === 'cancelled';
+  const typewriter = useTypewriterStreaming({
+    text: content,
+    isStreaming: Boolean(isStreaming),
+    tickMs: 28,
+    maxLagChars: 240,
+  });
+  const hasAnswerContent = content.trim().length > 0 ||
+    typewriter.stableMarkdown.length > 0 ||
+    typewriter.liveText.length > 0;
+  const shouldRenderAnswerBubble = hasAnswerContent || (!isStreaming && content.trim().length > 0);
+  const shouldShowPreAnswerThinking = Boolean(isStreaming) && !hasAnswerContent;
+  const thinkingPreview = React.useMemo(() => {
+    const thinkingText = [...(processItems ?? [])]
+      .reverse()
+      .find(item => item.type === 'thinking')
+      ?.text
+      ?.trim();
+    if (!thinkingText) return null;
+    return thinkingText.length > 180 ? `${thinkingText.slice(0, 180)}...` : thinkingText;
+  }, [processItems]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (turnId) {
@@ -82,24 +103,45 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
           </div>
         )}
 
-        {/* 消息气泡 */}
-        <div
-          className={cx(
-            styles.agentBubbleNew,
-            groupedWithPrevious && styles.agentBubbleGrouped,
-            isStreaming && styles.agentBubbleStreaming,
-            isError && styles.agentBubbleError,
-          )}
-          onContextMenu={handleContextMenu}
-        >
-          <MessageItem
-            markdownText={content}
-            isStreaming={isStreaming}
-          />
-        </div>
+        {/* 首 token 前：用轻量思考态占位，不渲染空回答气泡 */}
+        {shouldShowPreAnswerThinking && (
+          <div className={styles.preAnswerThinkingPanel}>
+            <div className={styles.firstTokenLoading}>
+              <span className={cx(styles.pulseDot, styles.mainStatusDotActive)} />
+              <span className={styles.pulseLabel}>正在思考...</span>
+            </div>
+            {thinkingPreview && (
+              <div className={styles.preAnswerThinkingText}>{thinkingPreview}</div>
+            )}
+          </div>
+        )}
 
-        {/* 过程摘要（默认折叠） */}
-        {processItems && processItems.length > 0 && (
+        {/* 消息气泡 */}
+        {shouldRenderAnswerBubble && (
+          <div
+            className={cx(
+              styles.agentBubbleNew,
+              groupedWithPrevious && styles.agentBubbleGrouped,
+              isStreaming && styles.agentBubbleStreaming,
+              isStreaming && styles.paperStreaming,
+              !isStreaming && styles.paperSettled,
+              isError && styles.agentBubbleError,
+            )}
+            onContextMenu={handleContextMenu}
+          >
+            <MessageItem
+              markdownText={content}
+              isStreaming={isStreaming}
+              stableMarkdown={isStreaming ? typewriter.stableMarkdown : undefined}
+              liveText={isStreaming ? typewriter.liveText : undefined}
+              visibleLiveText={isStreaming ? typewriter.visibleLiveText : undefined}
+              visibleStartOffset={isStreaming ? typewriter.visibleStartOffset : undefined}
+            />
+          </div>
+        )}
+
+        {/* 过程摘要（完成后默认折叠；流式打印时隐藏实时思考，避免挤压气泡） */}
+        {!isStreaming && processItems && processItems.length > 0 && (
           <MessageProcessSummary
             items={processItems}
             status={status}
@@ -108,7 +150,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
         )}
 
         {/* 流式状态提示 */}
-        {isStreaming && !processItems?.length && (
+        {isStreaming && hasAnswerContent && !processItems?.length && (
           <div className={styles.processSummaryRow}>
             <span className={styles.processThinkingLabel}>正在生成回复...</span>
           </div>

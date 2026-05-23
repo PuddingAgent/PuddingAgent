@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   archiveSession,
+  compactSession,
   createSession,
   createWorkspace,
   createWorkspaceAgent,
@@ -18,6 +19,7 @@ import {
   subscribeSessionEvents,
   subscribeWorkspaceNotifications,
   type AdminChatStreamEvent,
+  type ContextCompactionResult,
   type MessageListResponse,
   type SessionRecord,
   type TokenUsageDto,
@@ -76,6 +78,7 @@ function tryExtractDelta(ev: { data?: string; delta?: string }): string | null {
 }
 
 const createId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const COMPACT_COMMAND = '/compact';
 
 const createAssistant = (
   id: string,
@@ -548,6 +551,81 @@ export function useChatState(): UseChatStateReturn {
           },
         };
       }
+      if (ev.type === 'context.compaction.started') {
+        const items = turn.assistant.timelineItems ?? [];
+        const last = items.length > 0 ? items[items.length - 1] : null;
+        if (last?.type === 'subconscious_step' && last.status === 'compacting') {
+          return {
+            ...turn,
+            assistant: {
+              ...turn.assistant,
+              status: 'executing' as const,
+              isStreaming: true,
+              renderMode: 'structured' as const,
+            },
+          };
+        }
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant,
+            status: 'executing' as const,
+            isStreaming: true,
+            renderMode: 'structured' as const,
+            timelineItems: [...items, {
+              id: createId(), type: 'subconscious_step' as const,
+              status: 'compacting', message: '正在压缩上下文…',
+              timestamp: Date.now(), collapsed: false,
+            }],
+          },
+        };
+      }
+      if (ev.type === 'context.compaction.completed') {
+        const before = typeof ev.beforeTokens === 'number' ? ev.beforeTokens : 0;
+        const after = typeof ev.afterTokens === 'number' ? ev.afterTokens : 0;
+        const count = typeof ev.compactedMessageCount === 'number' ? ev.compactedMessageCount : 0;
+        const items = turn.assistant.timelineItems ?? [];
+        const alreadyCompleted = items.some((item) =>
+          item.type === 'subconscious_step' && item.status === 'success' && item.message === '上下文压缩完成',
+        );
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant,
+            status: 'success' as const,
+            isStreaming: false,
+            renderMode: 'structured' as const,
+            answerMarkdown: `上下文已压缩，覆盖 ${count} 条历史消息。${before > 0 ? `\n\nToken 估算：${before} → ${after}` : ''}`,
+            timelineItems: alreadyCompleted ? items : [...items, {
+              id: createId(), type: 'subconscious_step' as const,
+              status: 'success', message: '上下文压缩完成',
+              timestamp: Date.now(), collapsed: false,
+            }],
+          },
+        };
+      }
+      if (ev.type === 'context.compaction.failed') {
+        const items = turn.assistant.timelineItems ?? [];
+        const message = String(ev.error || '上下文压缩失败');
+        const alreadyFailed = items.some((item) =>
+          item.type === 'subconscious_step' && item.status === 'error' && item.message === message,
+        );
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant,
+            status: 'error' as const,
+            isStreaming: false,
+            renderMode: 'structured' as const,
+            answerMarkdown: message,
+            timelineItems: alreadyFailed ? items : [...items, {
+              id: createId(), type: 'subconscious_step' as const,
+              status: 'error', message,
+              timestamp: Date.now(), collapsed: false,
+            }],
+          },
+        };
+      }
       // 子代理流式事件：写入独立 SubAgentCard，不再合并到父代理 timeline
       if (ev.type.startsWith('subagent.')) {
         const mappedType = ev.type.substring('subagent.'.length);
@@ -718,7 +796,7 @@ export function useChatState(): UseChatStateReturn {
     // 所有事件统一路由到 mapEventToTurn 处理。
 
     // ADR-InkBloom: 终端事件前 flush 所有 pending delta，不丢最后一段
-    if (ev.type === 'session.closed' || ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
+    if (ev.type === 'session.closed' || ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled' || ev.type === 'context.compaction.completed' || ev.type === 'context.compaction.failed') {
       flushPendingDeltas();
     }
 
@@ -730,11 +808,84 @@ export function useChatState(): UseChatStateReturn {
     if (ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
       setLoading(false);
     }
+    if (ev.type === 'context.compaction.completed' || ev.type === 'context.compaction.failed') {
+      setLoading(false);
+    }
 
     const targetTurnId = resolveEventTurnId(ev);
     if (!targetTurnId) return;
     mapEventToTurn(targetTurnId, ev);
   }, [mapEventToTurn, resolveEventTurnId, updateLastSequence, flushPendingDeltas]);
+
+  const formatCompactAnswer = useCallback((result: ContextCompactionResult) => {
+    const tokenLine = result.beforeTokens > 0
+      ? `\n\nToken 估算：${result.beforeTokens} → ${result.afterTokens}`
+      : '';
+    return `上下文已压缩，覆盖 ${result.compactedMessageCount} 条历史消息。${tokenLine}`;
+  }, []);
+
+  const appendCompactTurn = useCallback((text: string, status: AssistantStatus, result?: ContextCompactionResult) => {
+    const now = Date.now();
+    const turnId = createId();
+    setTurns(prev => [...prev, {
+      turnId,
+      userMessage: {
+        id: createId(),
+        text: '',
+        timestamp: now,
+        status: 'success',
+      },
+      assistant: {
+        id: createId(),
+        status,
+        timelineItems: [{
+          id: createId(),
+          type: 'subconscious_step' as const,
+          status: status === 'error' ? 'error' : status === 'success' ? 'success' : 'compacting',
+          message: text,
+          timestamp: now,
+          collapsed: false,
+        }],
+        answerMarkdown: result
+          ? formatCompactAnswer(result)
+          : text,
+        isStreaming: status === 'executing' || status === 'thinking',
+        renderMode: 'structured',
+      },
+    }]);
+    return turnId;
+  }, [formatCompactAnswer]);
+
+  const updateCompactTurn = useCallback((
+    turnId: string,
+    status: AssistantStatus,
+    message: string,
+    result?: ContextCompactionResult,
+  ) => {
+    setTurns(prev => prev.map(turn => {
+      if (turn.turnId !== turnId) return turn;
+      const items = turn.assistant.timelineItems ?? [];
+      const itemStatus = status === 'error' ? 'error' : status === 'success' ? 'success' : 'compacting';
+      return {
+        ...turn,
+        assistant: {
+          ...turn.assistant,
+          status,
+          isStreaming: status === 'executing' || status === 'thinking',
+          renderMode: 'structured' as const,
+          answerMarkdown: result ? formatCompactAnswer(result) : message,
+          timelineItems: [...items, {
+            id: createId(),
+            type: 'subconscious_step' as const,
+            status: itemStatus,
+            message,
+            timestamp: Date.now(),
+            collapsed: false,
+          }],
+        },
+      };
+    }));
+  }, [formatCompactAnswer]);
 
   const replayMissedSessionEvents = useCallback(async (sessionId: string, signal?: AbortSignal) => {
     let from = Math.max(0, lastSequenceNumRef.current + 1);
@@ -770,6 +921,40 @@ export function useChatState(): UseChatStateReturn {
       hasMore = hasMore && Boolean(page.hasMore ?? page.HasMore);
     }
   }, [applySessionEvent, listSessionEventsPage, normalizeSessionEvent]);
+
+  const handleCompactCommand = useCallback(async () => {
+    const currentSessionId = sessionIdRef.current ?? selectedSessionId;
+    if (!currentSessionId || !workspaceId) {
+      messageApi.info('当前没有可压缩的会话');
+      return;
+    }
+    if (loading) {
+      messageApi.info('当前会话正在执行，请稍后再压缩');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    const compactTurnId = appendCompactTurn('正在压缩上下文…', 'executing');
+    latestTurnIdRef.current = compactTurnId;
+    try {
+      const result = await compactSession(currentSessionId, {
+        workspaceId,
+        agentId,
+        level: 'Full',
+        reason: 'manual slash command',
+      });
+      setLoading(false);
+      updateCompactTurn(compactTurnId, 'success', '上下文压缩完成', result);
+      messageApi.success(`上下文已压缩，覆盖 ${result.compactedMessageCount} 条历史消息`);
+    } catch (e: unknown) {
+      setLoading(false);
+      const msg = e instanceof Error ? e.message : '上下文压缩失败';
+      setError(msg);
+      updateCompactTurn(compactTurnId, 'error', msg);
+      messageApi.error(msg);
+    }
+  }, [agentId, appendCompactTurn, loading, messageApi, selectedSessionId, updateCompactTurn, workspaceId]);
 
   const startSessionEventStream = useCallback((sessionId: string) => {
     if (!sessionId) return;
@@ -1189,6 +1374,10 @@ export function useChatState(): UseChatStateReturn {
   // T-102: fire-and-forget POST + 持久 SSE 方案。
   const sendMessage = useCallback(async (text: string) => {
     if (!text || loading || !workspaceId || !agentId) return;
+    if (text.trim().toLowerCase() === COMPACT_COMMAND) {
+      await handleCompactCommand();
+      return;
+    }
     setError(null);
     const perfStart = performance.now();
     const now = Date.now();
@@ -1267,7 +1456,7 @@ export function useChatState(): UseChatStateReturn {
       if (abortRef.current === ctrl) abortRef.current = null;
       // T-102: loading 由持久 SSE 的 done/error/cancelled 事件管理，不在此处关闭
     }
-  }, [loading, workspaceId, agentId, agents, replayMissedSessionEvents, refreshSessions]);
+  }, [loading, workspaceId, agentId, agents, replayMissedSessionEvents, refreshSessions, handleCompactCommand]);
 
   // ── handleKeyDown ──────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1277,7 +1466,8 @@ export function useChatState(): UseChatStateReturn {
       const t = inputValue.trim();
       if (!t) return;
       setInputValue('');
-      void sendMessage(t);
+      if (t.toLowerCase() === COMPACT_COMMAND) void handleCompactCommand();
+      else void sendMessage(t);
       return;
     }
     // Enter: 发送 / 中止生成
@@ -1316,7 +1506,8 @@ export function useChatState(): UseChatStateReturn {
         const t = inputValue.trim();
         if (!t) return;
         setInputValue('');
-        void sendMessage(t);
+        if (t.toLowerCase() === COMPACT_COMMAND) void handleCompactCommand();
+        else void sendMessage(t);
       }
       return;
     }
@@ -1328,7 +1519,7 @@ export function useChatState(): UseChatStateReturn {
         setInputValue(lastTurn.userMessage.text);
       }
     }
-  }, [loading, inputValue, sendMessage, turns, stopSessionEventStream, startSessionEventStream, selectedSessionId]);
+  }, [loading, inputValue, sendMessage, turns, stopSessionEventStream, startSessionEventStream, selectedSessionId, handleCompactCommand]);
 
   // ── global Ctrl+Enter ──────────────────────────────────────
   const sendMessageRef = useRef(sendMessage);

@@ -90,7 +90,8 @@ function findStableMarkdownBoundary(text: string): number {
 
 /**
  * 将文本按 visual chunk 分组（避免每个字符一个 DOM 节点）。
- * 中文 2-4 字一组，英文按 word/chunk 分组。
+ * 中文固定 2 字一组，英文按 word/chunk 分组。
+ * 分组必须确定性，否则同一段 liveText 重渲染时会反复重建 DOM 节点。
  */
 export function chunkVisibleText(text: string): { key: number; text: string }[] {
   if (!text) return [];
@@ -103,8 +104,8 @@ export function chunkVisibleText(text: string): { key: number; text: string }[] 
     const c = charArray[i];
     // CJK / 标点
     if (/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/.test(c)) {
-      // 中文 2-4 字一组
-      const end = Math.min(i + 2 + Math.floor(Math.random() * 3), charArray.length);
+      // 中文固定 2 字一组，保持 chunk 边界稳定
+      const end = Math.min(i + 2, charArray.length);
       const grp = charArray.slice(i, end).join('');
       chunks.push({ key: key++, text: grp });
       i = end;
@@ -142,6 +143,7 @@ export function useTypewriterStreaming({
   const prevTextRef = useRef('');
   const stableLenRef = useRef(0);
   const visiblePosRef = useRef(0);
+  const liveTextRef = useRef('');
   const tickTimerRef = useRef<number | null>(null);
   const tickActiveRef = useRef(false);
 
@@ -158,7 +160,8 @@ export function useTypewriterStreaming({
   const tick = useCallback(() => {
     tickActiveRef.current = false;
 
-    const liveLen = liveText.length;
+    const currentLiveText = liveTextRef.current;
+    const liveLen = currentLiveText.length;
     if (visiblePosRef.current >= liveLen) {
       clearTick();
       setIsTyping(false);
@@ -173,14 +176,14 @@ export function useTypewriterStreaming({
 
     const nextPos = Math.min(visiblePosRef.current + charsPerTick, liveLen);
     visiblePosRef.current = nextPos;
-    setVisibleLiveText(liveText.slice(0, nextPos));
+    setVisibleLiveText(currentLiveText.slice(0, nextPos));
     setVisibleStartOffset(0);
     setIsTyping(true);
 
     // 调度下一个 tick
     tickTimerRef.current = window.setTimeout(tick, tickMs);
     tickActiveRef.current = true;
-  }, [liveText, tickMs, clearTick]);
+  }, [tickMs, clearTick]);
 
   // 当 text 变化时
   useEffect(() => {
@@ -195,13 +198,18 @@ export function useTypewriterStreaming({
 
       // 如果 stable 边界推进了，更新
       if (boundary > stableLenRef.current) {
+        const previousStableLen = stableLenRef.current;
+        const visibleAbsolutePos = previousStableLen + visiblePosRef.current;
         stableLenRef.current = boundary;
         setStableMarkdown(text.slice(0, boundary));
+        visiblePosRef.current = Math.max(0, Math.min(visibleAbsolutePos - boundary, text.length - boundary));
       }
 
       // liveText = stable 之后的部分
       const newLive = text.slice(stableLenRef.current);
+      liveTextRef.current = newLive;
       setLiveText(newLive);
+      setVisibleLiveText(newLive.slice(0, Math.min(visiblePosRef.current, newLive.length)));
 
       // 如果 live 长度增长超过 maxLagChars，强制推进 visiblePos
       if (newLive.length - visiblePosRef.current > maxLagChars) {
@@ -217,19 +225,28 @@ export function useTypewriterStreaming({
         tick();
       }
     } else {
-      // 流式结束：先 settle 剩余字符
-      if (visiblePosRef.current < text.length) {
+      // 流式结束：先把 stable 后的尾段打完，再一次性提交为 stable Markdown。
+      const finalLive = text.slice(stableLenRef.current);
+      liveTextRef.current = finalLive;
+      setLiveText(finalLive);
+      visiblePosRef.current = Math.min(visiblePosRef.current, finalLive.length);
+      setVisibleLiveText(finalLive.slice(0, visiblePosRef.current));
+
+      if (visiblePosRef.current < finalLive.length) {
         setIsSettling(true);
         if (!tickActiveRef.current) {
           tick();
         }
         // 剩余字符显示完毕后 → 全部转为 stable
         const settleCheck = () => {
-          if (visiblePosRef.current >= text.length) {
+          if (visiblePosRef.current >= liveTextRef.current.length) {
             setStableMarkdown(text);
+            stableLenRef.current = text.length;
+            liveTextRef.current = '';
             setLiveText('');
             setVisibleLiveText('');
             setVisibleStartOffset(0);
+            visiblePosRef.current = 0;
             setIsTyping(false);
             setIsSettling(false);
             clearTick();
@@ -241,9 +258,12 @@ export function useTypewriterStreaming({
       } else {
         // 已经全部显示
         setStableMarkdown(text);
+        stableLenRef.current = text.length;
+        liveTextRef.current = '';
         setLiveText('');
         setVisibleLiveText('');
         setVisibleStartOffset(0);
+        visiblePosRef.current = 0;
         setIsTyping(false);
         setIsSettling(false);
         clearTick();
@@ -267,6 +287,7 @@ export function useTypewriterStreaming({
       setIsSettling(false);
       stableLenRef.current = 0;
       visiblePosRef.current = 0;
+      liveTextRef.current = '';
       prevTextRef.current = '';
       clearTick();
     }
@@ -280,7 +301,7 @@ export function useTypewriterStreaming({
     liveText,
     visibleLiveText,
     visibleStartOffset,
-    isTyping: isTyping || (isStreaming && visiblePosRef.current < text.length),
-    isSettling: isSettling || (!isStreaming && visiblePosRef.current < text.length),
+    isTyping: isTyping || (isStreaming && visiblePosRef.current < liveTextRef.current.length),
+    isSettling: isSettling || (!isStreaming && visiblePosRef.current < liveTextRef.current.length),
   };
 }

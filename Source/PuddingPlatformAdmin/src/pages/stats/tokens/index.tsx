@@ -1,11 +1,13 @@
-// ── TokenStatsPage：Token 消耗统计页面（ADR-018）────
+// ── TokenStatsPage：Token 消耗统计页面（ADR-018/ADR-043）────
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import {
+  Button,
   Card,
   Col,
   DatePicker,
   Row,
+  Select,
   Space,
   Statistic,
   Typography,
@@ -14,12 +16,14 @@ import {
 import {
   BarChartOutlined,
   DollarOutlined,
+  ReloadOutlined,
   ThunderboltOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   getMonthlyTokenStats,
+  rebuildTokenEvents,
   type MonthlyTokenStatsResponse,
 } from '@/services/platform/api';
 import dayjs from 'dayjs';
@@ -48,14 +52,25 @@ const fmtRate = (rate: number): string => `${(rate * 100).toFixed(1)}%`;
 
 const TokenStatsPage: React.FC = () => {
   const [yearMonth, setYearMonth] = useState<string>(dayjs().format('YYYY-MM'));
+  const [providerFilter, setProviderFilter] = useState<string | undefined>();
+  const [rebuilding, setRebuilding] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<MonthlyTokenStatsResponse | null>(null);
   const [flatRows, setFlatRows] = useState<TokenStatRow[]>([]);
 
-  const fetchStats = useCallback(async (ym: string) => {
+  // 提取所有可用的 Provider 列表
+  const providerOptions = React.useMemo(() => {
+    if (!data?.byProvider) return [];
+    return data.byProvider.map(p => ({
+      label: p.providerId,
+      value: p.providerId,
+    }));
+  }, [data]);
+
+  const fetchStats = useCallback(async (ym: string, pv?: string) => {
     setLoading(true);
     try {
-      const json = await getMonthlyTokenStats(ym);
+      const json = await getMonthlyTokenStats(ym, pv);
       setData(json);
 
       // 展开为平铺列表
@@ -84,8 +99,21 @@ const TokenStatsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void fetchStats(yearMonth);
-  }, [yearMonth, fetchStats]);
+    void fetchStats(yearMonth, providerFilter);
+  }, [yearMonth, providerFilter, fetchStats]);
+
+  const handleRebuild = async () => {
+    setRebuilding(true);
+    try {
+      const result = await rebuildTokenEvents(yearMonth);
+      message.success(`重建完成：创建 ${result.eventsCreated} 条明细，跳过 ${result.skippedDuplicates} 条重复`);
+      void fetchStats(yearMonth, providerFilter);
+    } catch {
+      message.error('重建失败');
+    } finally {
+      setRebuilding(false);
+    }
+  };
 
   const columns: ProColumns<TokenStatRow>[] = [
     { title: 'Provider', dataIndex: 'providerId', key: 'providerId', width: 120 },
@@ -155,6 +183,23 @@ const TokenStatsPage: React.FC = () => {
       title="Token 消耗统计"
       subTitle="按月查看各 LLM 服务商和模型的 Token 用量、缓存命中率及费用"
       extra={[
+        <Select
+          key="provider"
+          allowClear
+          placeholder="筛选 Provider"
+          style={{ width: 160 }}
+          options={providerOptions}
+          value={providerFilter}
+          onChange={(v) => setProviderFilter(v)}
+        />,
+        <Button
+          key="rebuild"
+          icon={<ReloadOutlined />}
+          loading={rebuilding}
+          onClick={handleRebuild}
+        >
+          重建统计
+        </Button>,
         <DatePicker
           key="month"
           picker="month"

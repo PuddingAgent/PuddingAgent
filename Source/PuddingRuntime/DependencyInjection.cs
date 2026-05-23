@@ -62,8 +62,11 @@ public static class RuntimeServiceExtensions
 
         // Agent 执行子服务（职责拆分）
         services.AddSingleton<SystemPromptBuilder>();
+        services.AddSingleton<IExecutionEnvironmentProvider, DefaultExecutionEnvironmentProvider>();
         services.AddSingleton<ContextPipeline>();
         services.AddSingleton<IContextAssemblyService, ContextAssemblyService>();
+        services.AddSingleton<IContextCompactionSummaryGenerator, ExtractiveContextCompactionSummaryGenerator>();
+        services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         services.AddSingleton<IToolInvocationService, ToolInvocationService>();
         services.AddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
         services.AddSingleton<ContextWindowManager>();

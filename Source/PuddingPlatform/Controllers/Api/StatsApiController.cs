@@ -3,17 +3,20 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
-/// Token 使用统计 API — 按月/按 Provider/按 Model 聚合查询。
-/// ADR-018：上下文缓存可观测性体系。
+/// Token 使用统计 API — 聚合查询 + 明细事件 + 数据重建。
+/// ADR-018：上下文缓存可观测性体系。ADR-043：缓存统计闭环。
 /// </summary>
 [Authorize]
 [ApiController]
 [Route("api/stats")]
-public class StatsApiController(PlatformDbContext db) : ControllerBase
+public class StatsApiController(
+    PlatformDbContext db,
+    TokenUsageRebuildService rebuildService) : ControllerBase
 {
     /// <summary>
     /// GET /api/stats/tokens/monthly?yearMonth=2026-05&providerId=&modelId=
@@ -137,5 +140,94 @@ public class StatsApiController(PlatformDbContext db) : ControllerBase
             totalRequests = stats.Sum(s => s.RequestCount),
             byProvider = providerGroups,
         });
+    }
+
+    /// <summary>
+    /// GET /api/stats/tokens/events?from=&amp;to=&amp;providerId=&amp;modelId=&amp;sessionId=
+    /// 查询 Token 使用事件明细（ADR-043）。
+    /// 支持按时间范围、Provider、Model、Session 筛选。
+    /// </summary>
+    [HttpGet("tokens/events")]
+    public async Task<IActionResult> GetTokenEvents(
+        [FromQuery] string? from = null,
+        [FromQuery] string? to = null,
+        [FromQuery] string? providerId = null,
+        [FromQuery] string? modelId = null,
+        [FromQuery] string? sessionId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        var query = db.TokenUsageEvents.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(from) && DateTimeOffset.TryParse(from, out var fromDate))
+            query = query.Where(e => e.OccurredAtUtc >= fromDate);
+
+        if (!string.IsNullOrWhiteSpace(to) && DateTimeOffset.TryParse(to, out var toDate))
+            query = query.Where(e => e.OccurredAtUtc <= toDate);
+
+        if (!string.IsNullOrWhiteSpace(providerId))
+            query = query.Where(e => e.ProviderId == providerId);
+
+        if (!string.IsNullOrWhiteSpace(modelId))
+            query = query.Where(e => e.ModelId == modelId);
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+            query = query.Where(e => e.SessionId == sessionId);
+
+        var total = await query.CountAsync(ct);
+
+        var events = await query
+            .OrderByDescending(e => e.OccurredAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(e => new
+            {
+                e.Id,
+                e.SourceType,
+                e.SourceId,
+                e.WorkspaceId,
+                e.SessionId,
+                e.ProviderId,
+                e.ModelId,
+                e.OccurredAtUtc,
+                e.YearMonth,
+                e.PromptTokens,
+                e.CompletionTokens,
+                e.TotalTokens,
+                e.CacheHitTokens,
+                e.CacheMissTokens,
+                e.CacheEligibleTokens,
+                e.CacheHitRate,
+                e.InputCost,
+                e.OutputCost,
+                e.CacheHitCost,
+                e.TotalCost,
+            })
+            .ToListAsync(ct);
+
+        return Ok(new
+        {
+            total,
+            page,
+            pageSize,
+            events,
+        });
+    }
+
+    /// <summary>
+    /// POST /api/stats/tokens/rebuild
+    /// 从 ChatMessages.UsageJson 重建 TokenUsageEventEntity 明细账本。
+    /// 仅管理员可用。
+    /// 可选参数 yearMonth=2026-05 限制重建范围。
+    /// </summary>
+    [HttpPost("tokens/rebuild")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> RebuildTokenEvents(
+        [FromQuery] string? yearMonth = null,
+        CancellationToken ct = default)
+    {
+        var result = await rebuildService.RebuildAsync(yearMonth, ct);
+        return Ok(result);
     }
 }

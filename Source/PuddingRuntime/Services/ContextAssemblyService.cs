@@ -2,20 +2,20 @@ using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
-using PuddingRuntime.Services;
 
 namespace PuddingRuntime.Services;
 
 /// <summary>
 /// 上下文合成 Facade，包装 ContextPipeline 对外暴露稳定契约。
-/// 第一阶段：仅适配现有 ContextPipeline.AssembleAsync，不改变内部实现。
 /// </summary>
 public sealed class ContextAssemblyService : IContextAssemblyService
 {
     private readonly ContextPipeline _pipeline;
     private readonly ILogger<ContextAssemblyService> _logger;
 
-    public ContextAssemblyService(ContextPipeline pipeline, ILogger<ContextAssemblyService> logger)
+    public ContextAssemblyService(
+        ContextPipeline pipeline,
+        ILogger<ContextAssemblyService> logger)
     {
         _pipeline = pipeline;
         _logger = logger;
@@ -27,9 +27,19 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             "[ContextAssembly] Assemble session={SessionId} agent={AgentTemplateId} maxTokens={MaxTokens} streaming={Streaming} first={First}",
             request.SessionId, request.AgentTemplateId, request.MaxContextTokens, request.ForStreaming, request.IsFirstMessage);
 
+        // 构造最小 AgentTemplateDefinition，确保 ContextPipeline 能读取 Runtime.MaxContextTokens
+        var template = new AgentTemplateDefinition
+        {
+            TemplateId = request.AgentTemplateId ?? "unknown",
+            Name = request.AgentTemplateId ?? "Unknown",
+            TemplateType = AgentTemplateType.Task,
+            Runtime = new RuntimeProfile { MaxContextTokens = request.MaxContextTokens > 0 ? request.MaxContextTokens : 8192 },
+        };
+
         // 适配到现有 ContextPipeline 的输入格式，传递真实会话语义
         var contextRequest = new ContextRequest
         {
+            Template = template,
             WorkspaceId = request.WorkspaceId,
             SessionId = request.SessionId,
             AgentTemplateId = request.AgentTemplateId,

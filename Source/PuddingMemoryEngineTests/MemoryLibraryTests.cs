@@ -6,6 +6,7 @@ using Moq;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
 using PuddingRuntime.Services;
@@ -583,10 +584,12 @@ public sealed class MemoryLibraryTests
 
         Assert.IsNotNull(result);
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.SystemPrompt));
-        // 7 层 + 运行时指令层 = 至少 8 层
-        Assert.IsTrue(result.Layers.Count >= 7, $"Expected >=7 layers, got {result.Layers.Count}");
+        // 7 层 + 环境层 + 运行时指令层 = 至少 9 层
+        Assert.IsTrue(result.Layers.Count >= 9, $"Expected >=9 layers, got {result.Layers.Count}");
         // L0 静态上下文
         Assert.IsTrue(result.Layers.Any(l => l.LayerName == "静态上下文"));
+        // L0-ENVIRONMENT
+        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "环境信息"));
         // L1 动态工具
         Assert.IsTrue(result.Layers.Any(l => l.LayerName == "动态工具"));
         // L2 动态技能
@@ -692,6 +695,75 @@ public sealed class MemoryLibraryTests
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // L0-ENVIRONMENT 层
+    // ═══════════════════════════════════════════════════════════════════
+
+    [TestMethod]
+    public async Task EnvironmentLayer_ShouldBePresentInAssemblyResult()
+    {
+        var pipeline = CreateContextPipeline();
+        var request = CreateDefaultContextRequest();
+
+        var result = await pipeline.AssembleAsync(request, CancellationToken.None);
+
+        // 环境层应出现在 Layers 和系统提示词中
+        Assert.IsTrue(result.SystemPrompt.Contains("--- LAYER: ENVIRONMENT ---"),
+            "System prompt should contain ENVIRONMENT layer marker");
+        Assert.IsTrue(result.SystemPrompt.Contains("TestOS"),
+            "System prompt should contain OS description");
+        Assert.IsTrue(result.SystemPrompt.Contains("/data/workspaces/ws-test"),
+            "System prompt should contain workspace root");
+
+        // 诊断层应包含 L0-ENVIRONMENT
+        var envLayer = result.Layers.FirstOrDefault(l => l.LayerName == "环境信息");
+        Assert.IsNotNull(envLayer, "Environment layer should exist in Layers");
+        Assert.IsTrue(envLayer!.EstimatedTokens > 0, "Environment layer should have positive token count");
+    }
+
+    [TestMethod]
+    public async Task EnvironmentLayer_ShouldUseCorrectWorkspaceRoot()
+    {
+        var pipeline = CreateContextPipeline();
+        var requestA = CreateDefaultContextRequest(workspaceId: "ws-test");
+        var requestB = CreateDefaultContextRequest(workspaceId: "ws-other");
+
+        var resultA = await pipeline.AssembleAsync(requestA, CancellationToken.None);
+        var resultB = await pipeline.AssembleAsync(requestB, CancellationToken.None);
+
+        Assert.IsTrue(resultA.SystemPrompt.Contains("/data/workspaces/ws-test"));
+        Assert.IsTrue(resultB.SystemPrompt.Contains("/data/workspaces/ws-other"));
+        Assert.IsFalse(resultA.SystemPrompt.Contains("/data/workspaces/ws-other"));
+    }
+
+    [TestMethod]
+    public async Task EnvironmentLayer_ShouldBeCachedAcrossSessions()
+    {
+        var pipeline = CreateContextPipeline();
+        // 同一 workspace，不同 session
+        var request1 = CreateDefaultContextRequest(sessionId: "sess-a", workspaceId: "ws-test");
+        var request2 = CreateDefaultContextRequest(sessionId: "sess-b", workspaceId: "ws-test");
+
+        // Build env layer — cache miss
+        var sw1 = System.Diagnostics.Stopwatch.StartNew();
+        var result1 = await pipeline.AssembleAsync(request1, CancellationToken.None);
+        sw1.Stop();
+
+        // Same workspace — cache hit
+        var sw2 = System.Diagnostics.Stopwatch.StartNew();
+        var result2 = await pipeline.AssembleAsync(request2, CancellationToken.None);
+        sw2.Stop();
+
+        // 环境内容应一致
+        var extractEnv = (string sp) =>
+        {
+            var start = sp.IndexOf("--- LAYER: ENVIRONMENT ---");
+            var end = sp.IndexOf("--- LAYER: TOOLS ---");
+            return start >= 0 && end > start ? sp[start..end] : "";
+        };
+        Assert.AreEqual(extractEnv(result1.SystemPrompt), extractEnv(result2.SystemPrompt));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // ContextAssemblyResult
     // ═══════════════════════════════════════════════════════════════════
 
@@ -703,7 +775,7 @@ public sealed class MemoryLibraryTests
             new("L0", 100, 10.0),
             new("L1", 50, 5.0),
         };
-        var result = new ContextAssemblyResult("test prompt", 1000, 150, layers.AsReadOnly());
+        var result = new PuddingRuntime.Services.ContextAssemblyResult("test prompt", 1000, 150, layers.AsReadOnly());
 
         Assert.AreEqual("test prompt", result.SystemPrompt);
         Assert.AreEqual(1000, result.TotalBudget);
@@ -721,7 +793,7 @@ public sealed class MemoryLibraryTests
             new("静态上下文", 500, 25.0),
             new("近期历史", 800, 40.0),
         };
-        var result = new ContextAssemblyResult("prompt", 2000, 1300, layers.AsReadOnly());
+        var result = new PuddingRuntime.Services.ContextAssemblyResult("prompt", 2000, 1300, layers.AsReadOnly());
 
         // 各层 Token 之和应接近 UsedTokens（粗估允许偏差）
         var sumTokens = result.Layers.Sum(l => l.EstimatedTokens);
@@ -952,6 +1024,20 @@ public sealed class MemoryLibraryTests
         var memCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
             new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
         var contextAssemblyStore = new ContextAssemblyStore();
+        var envProvider = new Mock<IExecutionEnvironmentProvider>();
+        envProvider.Setup(e => e.OsDescription).Returns("TestOS");
+        envProvider.Setup(e => e.OsArchitecture).Returns("X64");
+        envProvider.Setup(e => e.RuntimeVersion).Returns("9.0");
+        envProvider.Setup(e => e.PathSeparator).Returns("\\");
+        envProvider.Setup(e => e.DefaultShell).Returns("pwsh");
+        envProvider.Setup(e => e.IsContainer).Returns(false);
+        envProvider.Setup(e => e.EnvironmentFingerprint).Returns("test-fingerprint");
+        envProvider.Setup(e => e.GetWorkspaceRoot(It.IsAny<string>())).Returns<string>(ws => ws switch
+        {
+            "ws-test" => "/data/workspaces/ws-test",
+            "ws-other" => "/data/workspaces/ws-other",
+            _ => null,
+        });
 
         return new ContextPipeline(
             mockMemory.Object,
@@ -961,6 +1047,7 @@ public sealed class MemoryLibraryTests
             memCache,
             contextAssemblyStore,
             NullLogger<ContextPipeline>.Instance,
+            envProvider: envProvider.Object,
             libraryConvenience: mockLibrary.Object,
             recallService: null,
             orchestrator: null,
@@ -972,6 +1059,7 @@ public sealed class MemoryLibraryTests
     /// <summary>创建默认 ContextRequest，部分参数可覆盖。</summary>
     private static ContextRequest CreateDefaultContextRequest(
         string? sessionId = null,
+        string? workspaceId = null,
         int maxTokens = 8000,
         IReadOnlyList<ChatMessage>? sessionHistory = null,
         string? personaPrompt = null)
@@ -987,7 +1075,7 @@ public sealed class MemoryLibraryTests
                 SystemPrompt = "You are a helpful assistant for testing.",
                 Runtime = new RuntimeProfile { MaxContextTokens = maxTokens },
             },
-            WorkspaceId = "ws-test",
+            WorkspaceId = workspaceId ?? "ws-test",
             SessionId = sessionId ?? "session-" + Guid.NewGuid().ToString("N")[..8],
             AgentTemplateId = "test-agent",
             AgentInstanceId = "instance-1",

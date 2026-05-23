@@ -96,7 +96,6 @@ export function buildMessageBlocks(
 
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
-    const prevBlock = blocks[blocks.length - 1];
 
     // ── 用户消息 ──
     if (turn.userMessage.text.trim()) {
@@ -136,8 +135,10 @@ export function buildMessageBlocks(
         isStreaming: turn.assistant.isStreaming,
       };
 
-      // 连续同 Agent 消息：视觉分组
-      if (prevBlock && prevBlock.role === 'agent' && prevBlock.agentName === blockAgentName) {
+      // ADR: Agent 消息分组不得跨用户消息
+      // 分组判断必须以 blocks 中最后一条 block（用户消息插入后）为准
+      const previousVisibleBlock = blocks[blocks.length - 1];
+      if (previousVisibleBlock?.role === 'agent' && previousVisibleBlock.agentName === blockAgentName) {
         block.groupedWithPrevious = true;
       }
 

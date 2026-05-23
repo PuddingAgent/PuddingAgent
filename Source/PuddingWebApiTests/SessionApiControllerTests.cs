@@ -186,4 +186,37 @@ public sealed class SessionApiControllerTests
         var secondDelete = await _client.DeleteAsync($"/api/sessions/{created.SessionId}");
         Assert.AreEqual(HttpStatusCode.NoContent, secondDelete.StatusCode);
     }
+
+    [TestMethod]
+    public async Task GetContextHealth_Returns200_WithSessionId()
+    {
+        var sessionId = "health-session-1";
+
+        var response = await _client.GetAsync($"/api/sessions/{sessionId}/context-health");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.AreEqual(sessionId, doc.RootElement.GetProperty("sessionId").GetString());
+        Assert.IsTrue(doc.RootElement.TryGetProperty("state", out _));
+    }
+
+    [TestMethod]
+    public async Task CompactSession_Returns200_WithStringLevel()
+    {
+        var sessionId = "compact-session-1";
+
+        var response = await _client.PostAsJsonAsync($"/api/sessions/{sessionId}/compact", new
+        {
+            workspaceId = "default",
+            level = "Full",
+            reason = "test compact",
+        });
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.AreEqual(sessionId, doc.RootElement.GetProperty("sessionId").GetString());
+        Assert.AreEqual("Manual", doc.RootElement.GetProperty("mode").GetString());
+        Assert.AreEqual("Full", doc.RootElement.GetProperty("level").GetString());
+        Assert.AreEqual(0, doc.RootElement.GetProperty("compactedMessageCount").GetInt32());
+    }
 }

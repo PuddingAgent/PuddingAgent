@@ -131,7 +131,7 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
             {
                 try
                 {
-                    usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson);
+                    usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson, JsonOpts);
                 }
                 catch { /* ignore */ }
             }

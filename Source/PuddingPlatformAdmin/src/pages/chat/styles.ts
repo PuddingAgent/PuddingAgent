@@ -695,6 +695,16 @@ export const useChatStyles = createStyles(({ token }) => ({
   popupWarning: { color: '#f97316', fontSize: 11, marginTop: 4, padding: '6px 8px', background: 'rgba(249,115,22,0.1)', borderRadius: 6 },
 
   /* ── First-token loading (animation removed for visual calm; @keyframes preserved) ── */
+  preAnswerThinkingPanel: {
+    width: '100%',
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    borderRadius: 8,
+    borderTopLeftRadius: 4,
+    background: 'color-mix(in srgb, var(--soft-white) 92%, transparent)',
+    padding: '4px 0 10px',
+    contain: 'paint',
+  },
   firstTokenLoading: {
     display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
   },
@@ -705,6 +715,20 @@ export const useChatStyles = createStyles(({ token }) => ({
   pulseLabel: {
     fontSize: 13, color: 'color-mix(in srgb, var(--accent-purple) 50%, var(--text-secondary))',
     fontStyle: 'italic',
+  },
+  preAnswerThinkingText: {
+    margin: '0 16px',
+    padding: '8px 10px',
+    borderLeft: '2px solid color-mix(in srgb, var(--accent-purple) 22%, transparent)',
+    color: 'var(--text-muted)',
+    background: 'color-mix(in srgb, var(--accent-purple) 3%, transparent)',
+    borderRadius: 6,
+    fontSize: 12,
+    lineHeight: 1.55,
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+    maxHeight: 96,
+    overflow: 'hidden',
   },
 
   // ── IM-style MessageStream ──────────────────────────────────

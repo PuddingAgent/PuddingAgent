@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -17,13 +18,16 @@ namespace PuddingPlatform.Controllers.Api;
 public class SessionEventsController : ControllerBase
 {
     private readonly ISessionStateManager _ssm;
+    private readonly IContextCompactionService _compactionService;
     private readonly ILogger<SessionEventsController> _logger;
 
     public SessionEventsController(
         ISessionStateManager ssm,
+        IContextCompactionService compactionService,
         ILogger<SessionEventsController> logger)
     {
         _ssm = ssm;
+        _compactionService = compactionService;
         _logger = logger;
     }
 
@@ -143,6 +147,80 @@ public class SessionEventsController : ControllerBase
     }
 
     /// <summary>
+    /// 获取当前会话上下文健康状态。
+    /// GET /api/sessions/{sessionId}/context-health
+    /// </summary>
+    [HttpGet("{sessionId}/context-health")]
+    public async Task<ActionResult<ContextHealthSnapshot>> GetContextHealth(
+        string sessionId,
+        CancellationToken ct)
+    {
+        var health = await _compactionService.GetHealthAsync(sessionId, ct);
+        return Ok(health);
+    }
+
+    /// <summary>
+    /// 主动压缩当前会话上下文。
+    /// POST /api/sessions/{sessionId}/compact
+    /// </summary>
+    [HttpPost("{sessionId}/compact")]
+    public async Task<ActionResult<ContextCompactionResult>> Compact(
+        string sessionId,
+        [FromBody] CompactSessionRequest request,
+        CancellationToken ct)
+    {
+        var workspaceId = string.IsNullOrWhiteSpace(request.WorkspaceId)
+            ? "default"
+            : request.WorkspaceId;
+        var compactRequest = new ContextCompactionRequest(
+            workspaceId,
+            sessionId,
+            request.AgentId,
+            ContextCompactionMode.Manual,
+            request.Level ?? ContextCompactionLevel.Full,
+            request.Reason ?? "manual compact");
+
+        await _ssm.AppendAsync(
+            sessionId,
+            workspaceId,
+            ServerSentEventFrame.Json(SseEventTypes.ContextCompactionStarted, new
+            {
+                sessionId,
+                mode = compactRequest.Mode.ToString(),
+                level = compactRequest.Level.ToString(),
+                reason = compactRequest.Reason,
+            }),
+            ct);
+
+        try
+        {
+            var result = await _compactionService.CompactAsync(compactRequest, ct);
+            await _ssm.AppendAsync(
+                sessionId,
+                workspaceId,
+                ServerSentEventFrame.Json(SseEventTypes.ContextCompactionCompleted, result),
+                ct);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[SessionEvents] Context compact failed session={Session}",
+                sessionId);
+            await _ssm.AppendAsync(
+                sessionId,
+                workspaceId,
+                ServerSentEventFrame.Json(SseEventTypes.ContextCompactionFailed, new
+                {
+                    sessionId,
+                    error = ex.Message,
+                }),
+                CancellationToken.None);
+            return Problem(title: "Context compaction failed", detail: ex.Message);
+        }
+    }
+
+    /// <summary>
     /// 获取 SQLite 与 JSONL 双写一致性检查报告。
     /// GET /api/sessions/{sessionId}/consistency
     /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
@@ -247,3 +325,9 @@ public class SessionEventsController : ControllerBase
         await response.Body.FlushAsync(ct);
     }
 }
+
+public sealed record CompactSessionRequest(
+    string? WorkspaceId,
+    string? AgentId,
+    ContextCompactionLevel? Level,
+    string? Reason);

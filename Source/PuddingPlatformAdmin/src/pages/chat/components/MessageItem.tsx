@@ -155,7 +155,9 @@ function sharedComponents(styles: ReturnType<typeof useChatStyles>['styles']) {
     ),
     code: ({ inline, className, children, node: _node, ...p }: { inline?: boolean; className?: string; children?: React.ReactNode; node?: unknown }) => {
       const c = String(children ?? '').replace(/\n$/, '');
-      if (inline) return <code className={styles.inlineCode} {...p}>{children}</code>;
+      const hasLanguageClass = /\blanguage-/.test(className ?? '');
+      const isInlineCode = inline === true || (!hasLanguageClass && !c.includes('\n'));
+      if (isInlineCode) return <code className={styles.inlineCode} {...p}>{children}</code>;
       return <CodeBlock code={c} className={className} />;
     },
   };

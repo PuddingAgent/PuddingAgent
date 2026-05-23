@@ -2,6 +2,7 @@
 import {
   ApiOutlined,
   BarChartOutlined,
+  CompressOutlined,
   FileOutlined,
   RobotOutlined,
   SearchOutlined,
@@ -27,6 +28,7 @@ const COMMANDS: Command[] = [
   { id: 'call-api', icon: <ApiOutlined />, label: '调用API', shortcut: '/api', description: '调用外部API接口' },
   { id: 'switch-agent', icon: <RobotOutlined />, label: '切换Agent', shortcut: '/agent', description: '切换到其他Agent' },
   { id: 'memory', icon: <StarOutlined />, label: '记忆', shortcut: '/memory', description: '搜索或添加记忆' },
+  { id: 'compact', icon: <CompressOutlined />, label: '压缩上下文', shortcut: '/compact', description: '总结早期对话，释放上下文窗口' },
   { id: 'file', icon: <FileOutlined />, label: '文件', shortcut: '/file', description: '浏览工作区文件' },
   { id: 'settings', icon: <SettingOutlined />, label: '设置', shortcut: '/settings', description: '修改当前会话设置' },
 ];
