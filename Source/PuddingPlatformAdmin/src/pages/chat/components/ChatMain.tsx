@@ -81,6 +81,8 @@ interface ChatMainProps {
   // refs
   messageListRef: React.RefObject<HTMLDivElement | null>;
   listEndRef: React.RefObject<HTMLDivElement | null>;
+  /** 当前登录用户信息 */
+  currentUser?: { name?: string; avatar?: string };
 }
 
 const emojiIconMap: Record<string, React.ReactNode> = {
@@ -132,7 +134,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   cacheHitTokens, cacheMissTokens, cacheHitRate,
   formatTime, onDeleteTurn, onContextMenu,
   onRerunTurn, onPinTurn,
-  messageListRef, listEndRef, subAgentCards,
+  messageListRef, listEndRef, subAgentCards, currentUser,
 }) => {
   const { styles } = useChatStyles();
   const [devMode, setDevMode] = useState<boolean>(() => localStorage.getItem(DEV_MODE_KEY) === '1');
@@ -159,11 +161,11 @@ const ChatMain: React.FC<ChatMainProps> = ({
   }, [loading, turns, inputValue]);
 
   const dropdownRender = useCallback((menu: React.ReactNode) => (
-    <>
+    <div className="pudding-chat-select-popup-container">
       {menu}
       <Divider style={{ margin: '4px 0' }} />
       <Button type="link" block size="small" onClick={onCreateWorkspace}>+ 新建工作空间</Button>
-    </>
+    </div>
   ), [onCreateWorkspace]);
 
   useEffect(() => {
@@ -322,6 +324,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
           placeholder="工作空间"
           popupMatchSelectWidth={false}
           popupRender={dropdownRender}
+          classNames={{ popup: { root: styles.headerSelectPopup } }}
         />
         <Select
           className={styles.headerSelect}
@@ -334,6 +337,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
           placeholder="Agent"
           popupMatchSelectWidth={false}
           notFoundContent="无Agent"
+          classNames={{ popup: { root: styles.headerSelectPopup } }}
           optionRender={(option) => {
             const a = agents.find(x => x.agentId === option.value);
             return a ? renderAgentOption(a) : option.label;
@@ -400,6 +404,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               onPinTurn={onPinTurn}
               messageListRef={messageListRef}
               listEndRef={listEndRef}
+              currentUser={currentUser}
             />
             <InputArea
               inputValue={inputValue}

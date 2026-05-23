@@ -38,16 +38,19 @@ public class GlobalAgentTemplateEntity
 
     // ── 个性层（Persona）─────────────────────────────────────
     /// <summary>人设与语气提示词（SOUL）。定义 Agent 的性格、边界、回复风格。</summary>
-    [MaxLength(8000)]
     public string? PersonaPrompt { get; set; }
 
     /// <summary>工具使用约定描述（TOOLS）。解释用户自定义工具的用途和用法。</summary>
-    [MaxLength(8000)]
     public string? ToolsDescription { get; set; }
 
     /// <summary>首次对话引导模板（BOOTSTRAP）。新会话首轮使用的问答模板。</summary>
-    [MaxLength(4000)]
     public string? BootstrapTemplate { get; set; }
+
+    /// <summary>子 Agent 协作规范（AGENTS.md）。定义子 Agent 的分配和协作方式。</summary>
+    public string? AgentsPrompt { get; set; }
+
+    /// <summary>记忆层配置（MEMORY.md）。定义记忆中读取和写入的策略。</summary>
+    public string? MemoryPrompt { get; set; }
 
     /// <summary>Agent 展示用 Emoji（如 🤖🧠🔧）。legacy fallback，新功能不写入。</summary>
     [MaxLength(8)]

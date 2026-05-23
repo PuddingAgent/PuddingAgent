@@ -33,6 +33,8 @@ const MessageRow: React.FC<MessageRowProps> = ({
           content={block.content}
           createdAt={block.createdAt}
           status={block.status}
+          userName={block.userName}
+          userAvatarUrl={block.userAvatarUrl}
           formatTime={formatTime}
           onContextMenu={(e) => onContextMenu?.(e, block.turnId, 'user')}
         />

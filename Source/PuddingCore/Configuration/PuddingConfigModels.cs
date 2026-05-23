@@ -179,6 +179,11 @@ public sealed record AgentTemplateManifest
     public bool IsBuiltIn { get; init; }
     public bool IsEnabled { get; init; } = true;
     public AgentCapabilitiesConfig Capabilities { get; init; } = new();
+    public string? AvatarId { get; init; }
+    public string? PreferredProviderId { get; init; }
+    public string? PreferredModelId { get; init; }
+    public string? MemoryLlmProviderId { get; init; }
+    public string? MemoryLlmModelId { get; init; }
 }
 
 public sealed record AgentDefaultLlmProfiles
@@ -200,6 +205,8 @@ public sealed record AgentInstanceManifest
     public string WorkspaceId { get; init; } = "";
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
+    public string? AvatarId { get; init; }
+    public string? AvatarUrl { get; init; }
     public bool IsEnabled { get; init; } = true;
     public AgentInstancePaths Paths { get; init; } = new();
 }

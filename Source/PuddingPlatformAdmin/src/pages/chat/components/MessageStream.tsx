@@ -11,6 +11,8 @@ interface MessageStreamProps {
   turns: ChatTurn[];
   agentName?: string;
   defaultAvatarUrl?: string;
+  /** 当前登录用户信息，用于用户消息头像和名称 */
+  currentUser?: { name?: string; avatar?: string };
   formatTime: (ts: number) => string;
   onContextMenu?: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn?: (turnId: string) => void;
@@ -22,6 +24,7 @@ const MessageStream: React.FC<MessageStreamProps> = ({
   turns,
   agentName,
   defaultAvatarUrl,
+  currentUser,
   formatTime,
   onContextMenu,
   onRerunTurn,
@@ -31,8 +34,8 @@ const MessageStream: React.FC<MessageStreamProps> = ({
   const { styles } = useChatStyles();
 
   const blocks = useMemo(
-    () => buildMessageBlocks(turns, agentName),
-    [turns, agentName],
+    () => buildMessageBlocks(turns, agentName, currentUser),
+    [turns, agentName, currentUser],
   );
 
   return (

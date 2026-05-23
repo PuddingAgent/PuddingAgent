@@ -29,6 +29,8 @@ interface MessageListProps {
   messageListRef: React.RefObject<HTMLDivElement | null>;
   listEndRef: React.RefObject<HTMLDivElement | null>;
   subAgentCards?: SubAgentCardMap;
+  /** 当前登录用户信息 */
+  currentUser?: { name?: string; avatar?: string };
 }
 
 /** 保存各会话的滚动位置 */
@@ -86,7 +88,7 @@ const MessageList: React.FC<MessageListProps> = ({
   turns, agentId, selectedAgent, error, historyLoading, loadingMore, hasMoreMessages,
   onClearError, onLoadMore, formatTime, onDeleteTurn, onContextMenu,
   onRerunTurn, onPinTurn,
-  messageListRef, listEndRef, subAgentCards,
+  messageListRef, listEndRef, subAgentCards, currentUser,
 }) => {
   const { styles } = useChatStyles();
   const [unreadCount, setUnreadCount] = useState(0);
@@ -236,6 +238,7 @@ const MessageList: React.FC<MessageListProps> = ({
             turns={turns}
             agentName={selectedAgent?.name || 'Pudding'}
             defaultAvatarUrl={selectedAgent?.avatarUrl}
+            currentUser={currentUser}
             formatTime={formatTime}
             onContextMenu={onContextMenu}
             onRerunTurn={onRerunTurn}

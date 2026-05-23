@@ -14,7 +14,7 @@
 # 访问：
 #   后端 API  → http://localhost:5000
 #   前端 Dev  → http://localhost:8000
-#   nginx 代理 → http://localhost/admin/user/login
+#   nginx 代理 → http://localhost/admin/user/login (浏览器应该打开这个地址，nginx 会代理到前端和dev server)
 
 param(
     [switch]$Down,
@@ -131,6 +131,8 @@ function Start-Backend {
     $env:PUDDING_LOG_LEVEL = "Debug"
     # PlatformApiClient 自环调用时使用正确的 dev 端口
     $env:Pudding__ControllerEndpoint = "http://localhost:5000"
+    # RuntimeDispatcher 回退到自身（dev 模式下 Controller 和 Runtime 同进程）
+    $env:Pudding__RuntimeFallbackEndpoint = "http://localhost:5000"
 
     # 通过环境变量 ASPNETCORE_URLS 控制端口，命令行不传 --urls
     # 避免 Start-Process 传参方式导致参数未透传到 dotnet watch 子进程

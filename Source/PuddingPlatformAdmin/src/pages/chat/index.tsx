@@ -1,6 +1,7 @@
 // ── ChatPage 壳：路由入口，组装布局 + 模态框 ────────────────
 import { App, ConfigProvider, Form, Input, Modal } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useModel } from 'umi';
 import {
   createWorkspace,
   listTeams,
@@ -12,6 +13,8 @@ import { useChatState } from './hooks/useChatState';
 
 const ChatPage: React.FC = () => {
   const chat = useChatState();
+  const { initialState } = useModel('@@initialState');
+  const currentUser = initialState?.currentUser;
   const [createLoading, setCreateLoading] = useState(false);
 
   // T-201: 工作区通知 SSE — 页面级，跟随 workspaceId 自动启停
@@ -155,6 +158,7 @@ const ChatPage: React.FC = () => {
           messageListRef={chat.messageListRef}
           listEndRef={chat.listEndRef}
           subAgentCards={chat.subAgentCards}
+          currentUser={currentUser}
         />
 
         <Modal

@@ -213,15 +213,12 @@ builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
 
 builder.Services.AddSingleton<Sm2JwtSigner>();
 builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
-// ── 文件式配置服务（data/config、data/agent-templates、data/agents，唯一来源）──
-builder.Services.AddSingleton<LlmProviderFileService>();
+// ── DB 种子服务（启动时从 default-data/ 导入配置到 DB）──
+builder.Services.AddSingleton<DataSeedService>();
+// ── Agent 模板文件服务（模板 manifest 读写 + 头像解析）──
 builder.Services.AddSingleton<AgentTemplateFileService>();
+// ── Workspace Agent 运行时文件服务（管理运行时工作目录，非配置）──
 builder.Services.AddSingleton<WorkspaceAgentFileService>();
-builder.Services.AddSingleton<CapabilityFileService>();
-// ── 配置文件热重载服务 ──────────────────────────────
-// 监听 data/config/ 文件变更，自动触发缓存失效（Agent 修改配置后无需重启）
-builder.Services.AddSingleton<ConfigHotReloadService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigHotReloadService>());
 
 // ── 遗留 DB-backed Template/LLM 服务（逐步废弃）────────────────────
 builder.Services.AddSingleton<AgentTemplateProvider>();
@@ -394,7 +391,7 @@ builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 // 支持运行时热重载：外部修改 llm.providers.json 后调用 Reload() 即可生效
 var fileConfigLoader = new PuddingFileConfigLoader(dataPaths);
 
-// 启动时验证配置；启动后通过 ConfigHotReloadService 监听文件变更
+// 启动时验证配置；启动后通过 DB 读取最新配置
 var initialLoadResult = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
 if (!initialLoadResult.Success)
 {
@@ -705,6 +702,9 @@ using (var scope = app.Services.CreateScope())
         (Table: "WorkspaceAgentTemplates", Column: "MaxToolCallsTotal", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;"),
         // ADR-034：AgentAvatars 补列（表已通过 IF NOT EXISTS 创建，但可能缺少列）
         (Table: "AgentAvatars", Column: "RecommendedUse", Ddl: "ALTER TABLE \"AgentAvatars\" ADD COLUMN \"RecommendedUse\" TEXT NULL;"),
+        // ADR-038：Prompt 内容迁移到 DB
+        (Table: "GlobalAgentTemplates", Column: "AgentsPrompt", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"AgentsPrompt\" TEXT NULL;"),
+        (Table: "GlobalAgentTemplates", Column: "MemoryPrompt", Ddl: "ALTER TABLE \"GlobalAgentTemplates\" ADD COLUMN \"MemoryPrompt\" TEXT NULL;"),
     };
     foreach (var column in pendingColumns)
     {
@@ -932,6 +932,10 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // ADR-038: 配置数据种子迁移（仅首次启动时从 default-data/ 文件导入到 DB）
+    var dataSeed = scope.ServiceProvider.GetRequiredService<DataSeedService>();
+    await dataSeed.SeedAsync();
+
     var controllerDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ControllerDbContext>>();
     await using (var controllerDb = await controllerDbFactory.CreateDbContextAsync())
     {
@@ -1044,14 +1048,11 @@ app.MapGet("/health", () =>
     });
 });
 
-// ── 配置热重载接口（Agent 修改文件后手动触发）───────
-app.MapMethods("/admin/reload", new[] { "GET", "POST" }, (HttpContext context) =>
+// ── 配置热重载接口（DB 方式下始终读取最新数据）───────
+app.MapMethods("/admin/reload", new[] { "GET", "POST" }, () =>
 {
-    var hotReload = context.RequestServices.GetRequiredService<ConfigHotReloadService>();
-    var logger = context.RequestServices.GetRequiredService<ILogger<ConfigHotReloadService>>();
-    hotReload.ReloadAll();
-    logger.LogInformation("[HotReload] 管理员手动触发了全配置重载");
-    return Results.Ok(new { status = "reloaded", timestamp = DateTimeOffset.UtcNow });
+    // DB 是唯一事实来源，始终读取最新数据。此端点保留向后兼容。
+    return Results.Ok(new { status = "db-backed", timestamp = DateTimeOffset.UtcNow });
 });
 
 // ── 潜意识 LLM 状态（可观测性）──────────────────────

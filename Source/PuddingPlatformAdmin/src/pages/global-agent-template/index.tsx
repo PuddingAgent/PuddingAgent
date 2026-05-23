@@ -59,6 +59,9 @@ import {
   type SkillPackageDto,
 } from '@/services/platform/api';
 
+import AgentTemplateSettingsDrawer from '@/pages/agent-template-settings/AgentTemplateSettingsDrawer';
+import { collectErrorSections, findSectionByField } from '@/pages/agent-template-settings/types';
+
 const { Text } = Typography;
 
 const ROLES = [
@@ -242,20 +245,6 @@ const GlobalAgentTemplatePage: React.FC = () => {
     tableRef.current?.reload();
     fetchData();
   };
-
-  const renderAvatarSelectItem = (avatar: AgentAvatarDto, compact = false) => (
-    <Space size={8} align="center" style={{ minWidth: 0 }}>
-      <Avatar size={compact ? 20 : 24} src={avatar.url} />
-      <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{avatar.name}</span>
-      {!compact && avatar.recommendedUse && (
-        <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-          {avatar.recommendedUse}
-        </Text>
-      )}
-    </Space>
-  );
-
-  const findAvatar = (avatarId: unknown) => avatars.find((a) => a.avatarId === String(avatarId));
 
   const columns: ProColumns<GlobalAgentTemplateDto>[] = [
     {
@@ -502,270 +491,32 @@ const GlobalAgentTemplatePage: React.FC = () => {
         />
       )}
 
-      <Drawer
-        title={editItem ? '编辑 Agent 模板' : '创建 Agent 模板'}
+      <AgentTemplateSettingsDrawer
+        scope="global"
         open={formDrawer}
-        width={600}
+        mode={editItem ? 'edit' : 'create'}
+        title={editItem ? '编辑 Agent 模板' : '创建 Agent 模板'}
+        builtIn={editItem?.isBuiltIn}
+        form={form}
         onClose={() => setFormDrawer(false)}
-        extra={
-          <Button type="primary" onClick={handleSave}>
-            保存
-          </Button>
-        }
-      >
-        {editItem?.isBuiltIn && (
-          <Alert
-            style={{ marginBottom: 16 }}
-            type="warning"
-            message="这是系统内置模板，不允许修改模板 ID，但可以编辑其他字段。"
-            showIcon
-          />
-        )}
-        <ProForm form={form} submitter={false} layout="vertical">
-          <ProFormText
-            name="templateId"
-            label="模板 ID"
-            rules={[{ required: true }, { pattern: /^[a-z0-9-]+$/, message: '仅允许小写字母、数字、连字符' }]}
-            disabled={!!editItem}
-            placeholder="如 code-reviewer"
-          />
-          <ProFormText name="name" label="名称" rules={[{ required: true }]} />
-          <ProFormSelect name="role" label="角色类型" options={ROLES} rules={[{ required: true }]} />
-          <ProFormTextArea name="description" label="描述" rows={2} />
-
-          {/* ── 默认能力（预设勾选，只读展示）── */}
-          <Form.Item label="默认能力" help="始终可用，无需授权（只读、记忆、子代理等）">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {capabilities
-                .filter((c) => !c.requiresShellExecution && !c.requiresFileWrite)
-                .map((c) => (
-                  <Tag key={c.capabilityId} color="green" style={{ fontSize: 11, opacity: 0.85 }}>
-                    {c.name}
-                  </Tag>
-                ))}
-            </div>
-          </Form.Item>
-
-          {/* ── 高权限能力（Transfer 穿梭框 + 搜索）── */}
-          <Form.Item
-            label="高权限能力"
-            help="需要显式授权：Shell 执行、文件写入、Python 等（右侧为已授权）"
-          >
-            <Transfer
-              dataSource={grantCapabilities.map((c) => ({
-                key: c.capabilityId,
-                title: c.name,
-                description: c.toolName,
-              }))}
-              titles={['可选', '已授权']}
-              targetKeys={grantTargetKeys}
-              onChange={(nextKeys) => {
-                setGrantTargetKeys(nextKeys as string[]);
-                // 合并默认能力 + 高权限能力 → selectedCapabilityIds
-                const merged = [...defaultCapIds, ...(nextKeys as string[])];
-                form.setFieldsValue({ selectedCapabilityIds: merged });
-              }}
-              showSearch
-              filterOption={(inputValue, item) =>
-                item.title.toLowerCase().includes(inputValue.toLowerCase()) ||
-                (item.description ?? '').toLowerCase().includes(inputValue.toLowerCase())
-              }
-              render={(item) => (
-                <span>
-                  {item.title}
-                  <span style={{ fontSize: 10, color: '#888', marginLeft: 6 }}>{item.description}</span>
-                </span>
-              )}
-              listStyle={{ width: 240, height: 280 }}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-
-          {/* ── SKILL 包选择（Transfer + 搜索）── */}
-          <Form.Item label="SKILL 包选择" help="选择 Agent 可用的 Skill 包（右侧为已选）">
-            <Transfer
-              dataSource={skillPackages.map((s) => ({
-                key: s.skillPackageId,
-                title: s.name,
-                description: `v${s.version}`,
-              }))}
-              titles={['可选', '已选']}
-              targetKeys={skillTargetKeys}
-              onChange={(nextKeys) => {
-                setSkillTargetKeys(nextKeys as string[]);
-                form.setFieldsValue({ selectedSkillPackageIds: nextKeys as string[] });
-              }}
-              showSearch
-              filterOption={(inputValue, item) =>
-                item.title.toLowerCase().includes(inputValue.toLowerCase()) ||
-                (item.description ?? '').toLowerCase().includes(inputValue.toLowerCase())
-              }
-              render={(item) => (
-                <span>
-                  {item.title}
-                  <Tag style={{ fontSize: 10, marginLeft: 4 }}>v{item.description}</Tag>
-                </span>
-              )}
-              listStyle={{ width: 240, height: 240 }}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-
-          {/* ── SKILL 包选择 ── */}
-          <Form.Item label="SKILL 包选择（多选）">
-            <Form.Item name="selectedSkillPackageIds" noStyle>
-              <Checkbox.Group style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
-                {skillPackages.map((s) => (
-                  <Checkbox key={s.skillPackageId} value={s.skillPackageId} style={{ marginRight: 0, fontSize: 12 }}>
-                    {s.name} <Tag style={{ fontSize: 10, marginLeft: 4 }}>v{s.version}</Tag>
-                  </Checkbox>
-                ))}
-              </Checkbox.Group>
-            </Form.Item>
-          </Form.Item>
-
-          <ProFormTextArea
-            name="systemPrompt"
-            label="系统 Prompt"
-            rows={6}
-            placeholder="输入 Agent 的角色定义和行为准则…"
-          />
-
-          <Divider orientation="left">个性设置</Divider>
-          <Form.Item
-            name="avatarId"
-            label="头像"
-            rules={[{ required: true, message: '请选择头像' }]}
-            initialValue={avatars[0]?.avatarId}
-          >
-            <Select
-              placeholder="选择系统头像"
-              loading={avatars.length === 0}
-              options={avatars.map((a) => ({
-                label: a.name,
-                value: a.avatarId,
-              }))}
-              optionRender={(option) => {
-                const avatar = findAvatar(option.value);
-                if (!avatar) return option.label;
-                return renderAvatarSelectItem(avatar);
-              }}
-              labelRender={(option) => {
-                const avatar = findAvatar(option.value);
-                if (!avatar) return option.label;
-                return renderAvatarSelectItem(avatar, true);
-              }}
-            />
-          </Form.Item>
-          <ProFormTextArea
-            name="personaPrompt"
-            label="人设 / 语气 / 边界（SOUL）"
-            rows={4}
-            placeholder="定义该 Agent 的表达风格、价值观边界与行为准则"
-          />
-          <ProFormTextArea
-            name="toolsDescription"
-            label="工具使用约定（TOOLS）"
-            rows={4}
-            placeholder="约定何时调用工具、如何解释结果、失败时如何降级"
-          />
-          <ProFormTextArea
-            name="bootstrapTemplate"
-            label="首次引导模板（BOOTSTRAP）"
-            rows={6}
-            placeholder="定义首次对话的开场与引导模板"
-          />
-
-          <Divider orientation="left">潜意识模型（记忆探索）</Divider>
-          <ProFormSelect
-            name="memoryLlmProviderId"
-            label="潜意识模型服务商"
-            options={providers.filter((p) => p.isEnabled).map((p) => ({ label: p.name, value: p.providerId }))}
-            placeholder="不选则跟随主聊天模型"
-            extra="端点、Key 和供应商参数在 LLM 资源池配置，这里只选择服务商。"
-            fieldProps={{ onChange: handleMemoryProviderChange, allowClear: true }}
-          />
-          <ProFormSelect
-            name="memoryLlmModelId"
-            label="潜意识模型"
-            options={memoryModels.map((m) => ({
-              label: `${m.name} (${m.modelId})`,
-              value: m.modelId,
-            }))}
-            placeholder="不选则使用该服务商默认模型"
-            extra="建议选择轻量模型，用于记忆深度探索。"
-            fieldProps={{ loading: loadingMemoryModels, allowClear: true }}
-          />
-          <ProFormSelect
-            name="memorySearchMode"
-            label="记忆搜索模式"
-            options={[
-              { label: '关闭（仅关键词+标签检索）', value: 'off' },
-              { label: '即时（关键词+标签+后台异步探索）', value: 'instant' },
-              { label: '深度（同步探索，首次冷启动≤60s，上下文最精准）', value: 'deep' },
-            ]}
-            initialValue="deep"
-          />
-
-          <Divider orientation="left">推理设置</Divider>
-          <ProFormSelect
-            name="reasoningEffort"
-            label="推理深度"
-            options={[
-              { label: '跟随模型默认', value: '' },
-              { label: '低（快速响应）', value: 'low' },
-              { label: '中（平衡）', value: 'medium' },
-              { label: '高（深度思考）', value: 'high' },
-            ]}
-          />
-
-          <Divider orientation="left">执行护栏</Divider>
-          <Space size="large">
-            <ProFormDigit name="maxRounds" label="最大轮次" min={1} max={1000} initialValue={200} />
-            <ProFormDigit name="maxElapsedSeconds" label="最大耗时(秒)" min={10} max={7200} initialValue={1200} />
-            <ProFormDigit name="maxToolCallsTotal" label="最大工具调用" min={1} max={500} initialValue={100} />
-          </Space>
-
-          <ProFormTextArea
-            name="userPromptTemplate"
-            label="用户 Prompt 模板"
-            rows={3}
-            placeholder="可选，支持 {{variable}} 占位符"
-          />
-
-          <ProFormText
-            name="containerImage"
-            label="容器镜像"
-            placeholder="如 docker.xuanyuan.run/library/ubuntu:latest，留空则使用平台默认"
-          />
-
-          <ProFormSelect
-            name="preferredProviderId"
-            label="首选服务商"
-            options={providers.filter((p) => p.isEnabled).map((p) => ({ label: p.name, value: p.providerId }))}
-            placeholder="不选则使用平台默认"
-            fieldProps={{ onChange: handleProviderChange, allowClear: true }}
-          />
-          <ProFormSelect
-            name="preferredModelId"
-            label="首选模型"
-            options={models.map((m) => ({
-              label: `${m.name} (${(m.maxContextTokens / 1000).toFixed(0)}K)`,
-              value: m.modelId,
-            }))}
-            placeholder="不选则使用服务商默认"
-            fieldProps={{ loading: loadingModels, allowClear: true }}
-          />
-
-          <Space size="large">
-            <ProFormDigit name="maxContextTokens" label="上下文 tokens" min={1024} />
-            <ProFormDigit name="maxReplyTokens" label="最大回复 tokens" min={128} />
-            <ProFormDigit name="sortOrder" label="排序权重" min={0} />
-          </Space>
-
-          <ProFormSwitch name="isEnabled" label="启用" />
-        </ProForm>
-      </Drawer>
+        onSave={handleSave}
+        providers={providers}
+        models={models}
+        memoryModels={memoryModels}
+        loadingModels={loadingModels}
+        loadingMemoryModels={loadingMemoryModels}
+        capabilities={capabilities}
+        skillPackages={skillPackages}
+        avatars={avatars}
+        grantTargetKeys={grantTargetKeys}
+        skillTargetKeys={skillTargetKeys}
+        setGrantTargetKeys={setGrantTargetKeys}
+        setSkillTargetKeys={setSkillTargetKeys}
+        onProviderChange={handleProviderChange}
+        onMemoryProviderChange={handleMemoryProviderChange}
+        defaultCapIds={defaultCapIds}
+        grantCapabilities={grantCapabilities}
+      />
     </PageContainer>
   );
 };

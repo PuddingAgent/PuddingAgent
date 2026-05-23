@@ -204,7 +204,9 @@ public record GlobalAgentTemplateDto(
     int MaxElapsedSeconds = 1200,
     int MaxToolCallsTotal = 100,
     string? ConsciousProfileId = null,
-    string? SubconsciousProfileId = null
+    string? SubconsciousProfileId = null,
+    string? AgentsPrompt = null,
+    string? MemoryPrompt = null
 );
 
 public record UpsertGlobalAgentTemplateRequest(
@@ -236,7 +238,9 @@ public record UpsertGlobalAgentTemplateRequest(
     int? MaxElapsedSeconds = null,
     int? MaxToolCallsTotal = null,
     string? ConsciousProfileId = null,
-    string? SubconsciousProfileId = null
+    string? SubconsciousProfileId = null,
+    string? AgentsPrompt = null,
+    string? MemoryPrompt = null
 );
 
 // ─── Workspace Agent Template ─────────────────────────────────────

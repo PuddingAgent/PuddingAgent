@@ -25,7 +25,7 @@ export default {
       pathRewrite: { '^/ingress/': '/api/' },
     },
     '/assets/': {
-      target: process.env.PUDDING_API_BASE_URL || process.env.PROXY_TARGET || 'http://localhost:5000',
+      target: process.env.PUDDING_API_BASE_URL || process.env.PROXY_TARGET || '',
       changeOrigin: true,
       secure: false,
     },

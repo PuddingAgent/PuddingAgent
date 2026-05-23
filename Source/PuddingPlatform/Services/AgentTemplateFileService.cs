@@ -2,6 +2,7 @@ using System.Text.Json;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
 using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services;
 
@@ -18,12 +19,17 @@ public sealed class AgentTemplateFileService
     };
 
     private readonly PuddingDataPaths _paths;
+    private readonly AgentAvatarCatalog _avatarCatalog;
     private readonly ILogger<AgentTemplateFileService> _logger;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
-    public AgentTemplateFileService(PuddingDataPaths paths, ILogger<AgentTemplateFileService> logger)
+    public AgentTemplateFileService(
+        PuddingDataPaths paths,
+        AgentAvatarCatalog avatarCatalog,
+        ILogger<AgentTemplateFileService> logger)
     {
         _paths = paths;
+        _avatarCatalog = avatarCatalog;
         _logger = logger;
     }
 
@@ -49,7 +55,7 @@ public sealed class AgentTemplateFileService
 
                 if (enabledOnly == true && !manifest.IsEnabled) continue;
 
-                result.Add(MapToDto(idx++, manifest, dir));
+                result.Add(await MapToDtoAsync(idx++, manifest, dir, ct));
             }
             catch (Exception ex)
             {
@@ -69,7 +75,7 @@ public sealed class AgentTemplateFileService
         var templateDir = _paths.AgentTemplateRoot(templateId);
         var allTemplates = await ListTemplatesAsync(ct: ct);
         var idx = allTemplates.Count + 1;
-        return MapToDto(idx, manifest, templateDir);
+        return await MapToDtoAsync(idx, manifest, templateDir, ct);
     }
 
     /// <summary>创建模板。</summary>
@@ -102,6 +108,11 @@ public sealed class AgentTemplateFileService
                 MaxReplyTokens = req.MaxReplyTokens,
                 IsBuiltIn = false,
                 IsEnabled = req.IsEnabled,
+                AvatarId = req.AvatarId,
+                PreferredProviderId = req.PreferredProviderId,
+                PreferredModelId = req.PreferredModelId,
+                MemoryLlmProviderId = req.MemoryLlmProviderId,
+                MemoryLlmModelId = req.MemoryLlmModelId,
                 Capabilities = new AgentCapabilitiesConfig
                 {
                     AllowTools = true,
@@ -122,7 +133,7 @@ public sealed class AgentTemplateFileService
             _logger.LogInformation("Agent template created: {TemplateId}", req.TemplateId);
 
             var allTemplates = await ListTemplatesAsync(ct: ct);
-            return MapToDto(allTemplates.Count + 1, manifest, templateDir);
+            return await MapToDtoAsync(allTemplates.Count + 1, manifest, templateDir, ct);
         }
         finally
         {
@@ -154,6 +165,11 @@ public sealed class AgentTemplateFileService
                 IsEnabled = req.IsEnabled,
                 MemorySearchMode = req.MemorySearchMode ?? manifest.MemorySearchMode,
                 ReasoningEffort = req.ReasoningEffort ?? manifest.ReasoningEffort,
+                AvatarId = req.AvatarId ?? manifest.AvatarId,
+                PreferredProviderId = req.PreferredProviderId,
+                PreferredModelId = req.PreferredModelId,
+                MemoryLlmProviderId = req.MemoryLlmProviderId,
+                MemoryLlmModelId = req.MemoryLlmModelId,
                 DefaultLlmProfiles = new AgentDefaultLlmProfiles
                 {
                     Conscious = req.ConsciousProfileId ?? manifest.DefaultLlmProfiles.Conscious,
@@ -173,7 +189,7 @@ public sealed class AgentTemplateFileService
 
             _logger.LogInformation("Agent template updated: {TemplateId}", templateId);
 
-            return MapToDto(1, updated, templateDir);
+            return await MapToDtoAsync(1, updated, templateDir, ct);
         }
         finally
         {
@@ -216,11 +232,17 @@ public sealed class AgentTemplateFileService
         return await AtomicFileWriter.ReadJsonAsync<AgentTemplateManifest>(path, JsonOptions, ct);
     }
 
-    private static GlobalAgentTemplateDto MapToDto(int id, AgentTemplateManifest m, string templateDir)
+    private async Task<GlobalAgentTemplateDto> MapToDtoAsync(int id, AgentTemplateManifest m, string templateDir, CancellationToken ct)
     {
         var soulPath = Path.Combine(templateDir, "SOUL.md");
         var toolsPath = Path.Combine(templateDir, "TOOLS.md");
         var bootstrapPath = Path.Combine(templateDir, "BOOTSTRAP.md");
+
+        // 解析头像：优先 manifest.avatarId → manifest 内嵌的 legacy fallback → 默认头像
+        AgentAvatarEntity? avatar = null;
+        if (!string.IsNullOrWhiteSpace(m.AvatarId))
+            avatar = await _avatarCatalog.GetRequiredEnabledAsync(m.AvatarId);
+        avatar ??= await _avatarCatalog.GetDefaultAsync();
 
         return new GlobalAgentTemplateDto(
             Id: id,
@@ -230,8 +252,8 @@ public sealed class AgentTemplateFileService
             Role: m.Role,
             SystemPrompt: null,
             UserPromptTemplate: null,
-            PreferredProviderId: null,
-            PreferredModelId: null,
+            PreferredProviderId: m.PreferredProviderId,
+            PreferredModelId: m.PreferredModelId,
             MaxContextTokens: m.MaxContextTokens,
             MaxReplyTokens: m.MaxReplyTokens,
             ContainerImage: null,
@@ -242,15 +264,15 @@ public sealed class AgentTemplateFileService
             SortOrder: 0,
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow,
-            PersonaPrompt: File.Exists(soulPath) ? File.ReadAllText(soulPath) : null,
-            ToolsDescription: File.Exists(toolsPath) ? File.ReadAllText(toolsPath) : null,
-            BootstrapTemplate: File.Exists(bootstrapPath) ? File.ReadAllText(bootstrapPath) : null,
+            PersonaPrompt: File.Exists(soulPath) ? await File.ReadAllTextAsync(soulPath, ct) : null,
+            ToolsDescription: File.Exists(toolsPath) ? await File.ReadAllTextAsync(toolsPath, ct) : null,
+            BootstrapTemplate: File.Exists(bootstrapPath) ? await File.ReadAllTextAsync(bootstrapPath, ct) : null,
             AvatarEmoji: null,
-            AvatarId: null,
-            AvatarUrl: null,
-            AvatarName: null,
-            MemoryLlmProviderId: null,
-            MemoryLlmModelId: null,
+            AvatarId: avatar?.AvatarId ?? m.AvatarId,
+            AvatarUrl: avatar?.UrlPath,
+            AvatarName: avatar?.Name,
+            MemoryLlmProviderId: m.MemoryLlmProviderId,
+            MemoryLlmModelId: m.MemoryLlmModelId,
             MemorySearchMode: m.MemorySearchMode,
             ReasoningEffort: m.ReasoningEffort,
             MaxRounds: 200,

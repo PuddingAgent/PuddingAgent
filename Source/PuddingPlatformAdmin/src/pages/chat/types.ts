@@ -57,6 +57,10 @@ export interface ChatMessageBlock {
   status: ChatMessageStatus;
   createdAt: number;
 
+  /** 用户信息（仅 role='user' 时有效） */
+  userName?: string;
+  userAvatarUrl?: string;
+
   /** Agent 信息（仅 role='agent' 时有效） */
   agentId?: string;
   agentName?: string;
@@ -83,7 +87,11 @@ export interface ChatMessageBlock {
  * 3. 不同 Agent 必须分开显示
  * 4. 工具过程不作为消息气泡
  */
-export function buildMessageBlocks(turns: ChatTurn[], agentName?: string): ChatMessageBlock[] {
+export function buildMessageBlocks(
+  turns: ChatTurn[],
+  agentName?: string,
+  currentUser?: { name?: string; avatar?: string },
+): ChatMessageBlock[] {
   const blocks: ChatMessageBlock[] = [];
 
   for (let i = 0; i < turns.length; i++) {
@@ -99,6 +107,8 @@ export function buildMessageBlocks(turns: ChatTurn[], agentName?: string): ChatM
         content: turn.userMessage.text,
         status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
         createdAt: turn.userMessage.timestamp,
+        userName: currentUser?.name || '我',
+        userAvatarUrl: currentUser?.avatar,
       });
     }
 

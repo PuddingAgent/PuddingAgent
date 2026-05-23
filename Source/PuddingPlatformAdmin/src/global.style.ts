@@ -36,6 +36,23 @@ injectGlobal`
     --error-signal: #EF4444;
     --text-muted: #5C4A3A;
 
+    /* Pudding Chat Tokens — Light */
+    --pudding-chat-bg: #f5f0e8;
+    --pudding-chat-sidebar-bg: rgba(250, 250, 247, 0.7);
+    --pudding-chat-header-bg: rgba(250, 250, 247, 0.7);
+    --pudding-chat-surface: #fafaf7;
+    --pudding-chat-surface-muted: #f2eee7;
+    --pudding-chat-border: rgba(92, 74, 58, 0.12);
+    --pudding-chat-border-strong: rgba(92, 74, 58, 0.2);
+    --pudding-chat-text: #1a1a2e;
+    --pudding-chat-text-muted: #5c4a3a;
+    --pudding-chat-text-subtle: #8c7a6a;
+    --pudding-chat-accent: #7c3aed;
+    --pudding-chat-accent-soft: rgba(124, 58, 237, 0.08);
+    --pudding-chat-danger: #b42318;
+    --pudding-chat-success: #4f7f58;
+    --pudding-chat-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+
     /* Pudding Admin Tokens — Light */
     --pudding-admin-bg: #f5f0e8;
     --pudding-admin-bg-subtle: #ede5d9;
@@ -283,6 +300,23 @@ injectGlobal`
     --error-signal: #F87171;
     --text-primary: #E6EAF2;
     --text-muted: #94A3B8;
+
+    /* Pudding Chat Tokens — Dark */
+    --pudding-chat-bg: #11100d;
+    --pudding-chat-sidebar-bg: rgba(24, 22, 18, 0.92);
+    --pudding-chat-header-bg: rgba(24, 22, 18, 0.88);
+    --pudding-chat-surface: #1c1a16;
+    --pudding-chat-surface-muted: #26231d;
+    --pudding-chat-border: rgba(224, 211, 190, 0.12);
+    --pudding-chat-border-strong: rgba(224, 211, 190, 0.22);
+    --pudding-chat-text: #f4efe7;
+    --pudding-chat-text-muted: #d2c5b5;
+    --pudding-chat-text-subtle: #a99c8d;
+    --pudding-chat-accent: #a78bfa;
+    --pudding-chat-accent-soft: rgba(167, 139, 250, 0.14);
+    --pudding-chat-danger: #fca5a5;
+    --pudding-chat-success: #86efac;
+    --pudding-chat-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 
     /* Pudding Admin Tokens — Dark */
     --pudding-admin-bg: #0b1020;

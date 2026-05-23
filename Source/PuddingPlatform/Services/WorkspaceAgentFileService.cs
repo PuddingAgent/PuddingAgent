@@ -17,24 +17,31 @@ public sealed class WorkspaceAgentFileService
     };
 
     private readonly PuddingDataPaths _paths;
+    private readonly AgentTemplateFileService _templateFileService;
+    private readonly AgentAvatarCatalog _avatarCatalog;
     private readonly ILogger<WorkspaceAgentFileService> _logger;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
-    public WorkspaceAgentFileService(PuddingDataPaths paths, ILogger<WorkspaceAgentFileService> logger)
+    public WorkspaceAgentFileService(
+        PuddingDataPaths paths,
+        AgentTemplateFileService templateFileService,
+        AgentAvatarCatalog avatarCatalog,
+        ILogger<WorkspaceAgentFileService> logger)
     {
         _paths = paths;
+        _templateFileService = templateFileService;
+        _avatarCatalog = avatarCatalog;
         _logger = logger;
     }
 
     /// <summary>获取工作区下所有 Agent 实例。</summary>
     public async Task<List<WorkspaceAgentDto>> ListAgentsAsync(string workspaceId, CancellationToken ct = default)
     {
-        var agentRefDir = _paths.WorkspaceAgentRoot(workspaceId, "");
-        var parentDir = Path.GetDirectoryName(agentRefDir); // workspaces/{workspaceId}/agents/
-        if (parentDir is null || !Directory.Exists(parentDir))
+        var agentsDir = Path.Combine(_paths.WorkspaceRoot(workspaceId), "agents");
+        if (!Directory.Exists(agentsDir))
             return [];
 
-        var agentDirs = Directory.GetDirectories(parentDir);
+        var agentDirs = Directory.GetDirectories(agentsDir);
         var result = new List<WorkspaceAgentDto>();
 
         foreach (var agentDir in agentDirs)
@@ -50,13 +57,14 @@ public sealed class WorkspaceAgentFileService
                 var instanceManifest = await LoadInstanceManifestAsync(refData.AgentInstanceId, ct);
                 if (instanceManifest is null) continue;
 
+                var avatar = await ResolveAgentAvatarAsync(instanceManifest, ct);
                 result.Add(new WorkspaceAgentDto(
                     AgentId: refData.AgentInstanceId,
                     Name: instanceManifest.DisplayName ?? instanceManifest.TemplateId,
                     Description: instanceManifest.Description,
                     DisplayName: instanceManifest.DisplayName,
-                    AvatarId: null,
-                    AvatarUrl: null,
+                    AvatarId: avatar.AvatarId,
+                    AvatarUrl: avatar.AvatarUrl,
                     SourceTemplateId: instanceManifest.TemplateId,
                     SystemPromptOverride: null,
                     PreferredProviderId: null,
@@ -85,13 +93,14 @@ public sealed class WorkspaceAgentFileService
         var instanceManifest = await LoadInstanceManifestAsync(agentId, ct);
         if (instanceManifest is null) return null;
 
+        var avatar = await ResolveAgentAvatarAsync(instanceManifest, ct);
         return new WorkspaceAgentDto(
             AgentId: agentId,
             Name: instanceManifest.DisplayName ?? instanceManifest.TemplateId,
             Description: instanceManifest.Description,
             DisplayName: instanceManifest.DisplayName,
-            AvatarId: null,
-            AvatarUrl: null,
+            AvatarId: avatar.AvatarId,
+            AvatarUrl: avatar.AvatarUrl,
             SourceTemplateId: instanceManifest.TemplateId,
             SystemPromptOverride: null,
             PreferredProviderId: null,
@@ -125,6 +134,8 @@ public sealed class WorkspaceAgentFileService
                 WorkspaceId = workspaceId,
                 DisplayName = req.DisplayName ?? req.Name,
                 Description = req.Description,
+                AvatarId = req.AvatarId,
+                AvatarUrl = req.AvatarUrl,
                 IsEnabled = true,
                 Paths = new AgentInstancePaths
                 {
@@ -174,13 +185,14 @@ public sealed class WorkspaceAgentFileService
                 "Workspace agent created: workspace={Workspace} agent={AgentId} template={Template}",
                 workspaceId, agentInstanceId, req.SourceTemplateId);
 
+            var avatar = await ResolveAgentAvatarAsync(instanceManifest, ct);
             return new WorkspaceAgentDto(
                 AgentId: agentInstanceId,
                 Name: instanceManifest.DisplayName ?? instanceManifest.TemplateId,
                 Description: instanceManifest.Description,
                 DisplayName: instanceManifest.DisplayName,
-                AvatarId: null,
-                AvatarUrl: null,
+                AvatarId: avatar.AvatarId,
+                AvatarUrl: avatar.AvatarUrl,
                 SourceTemplateId: instanceManifest.TemplateId,
                 SystemPromptOverride: null,
                 PreferredProviderId: req.PreferredProviderId,
@@ -213,6 +225,8 @@ public sealed class WorkspaceAgentFileService
             {
                 DisplayName = req.DisplayName ?? req.Name,
                 Description = req.Description,
+                AvatarId = req.AvatarId ?? instanceManifest.AvatarId,
+                AvatarUrl = req.AvatarUrl ?? instanceManifest.AvatarUrl,
                 IsEnabled = req.IsEnabled,
             };
 
@@ -222,13 +236,14 @@ public sealed class WorkspaceAgentFileService
 
             _logger.LogInformation("Workspace agent updated: {AgentId}", agentId);
 
+            var avatar = await ResolveAgentAvatarAsync(updated, ct);
             return new WorkspaceAgentDto(
                 AgentId: agentId,
                 Name: updated.DisplayName ?? updated.TemplateId,
                 Description: updated.Description,
                 DisplayName: updated.DisplayName,
-                AvatarId: null,
-                AvatarUrl: null,
+                AvatarId: avatar.AvatarId,
+                AvatarUrl: avatar.AvatarUrl,
                 SourceTemplateId: updated.TemplateId,
                 SystemPromptOverride: req.SystemPromptOverride,
                 PreferredProviderId: req.PreferredProviderId,
@@ -245,7 +260,7 @@ public sealed class WorkspaceAgentFileService
         }
     }
 
-    /// <summary>软删除 Agent 实例。</summary>
+    /// <summary>删除工作区中的 Agent 引用（硬删除文件），Agent 实例数据仍保留在 data/agents/ 中以备数据恢复。</summary>
     public async Task DeleteAgentAsync(string workspaceId, string agentId, CancellationToken ct = default)
     {
         await _writeLock.WaitAsync(ct);
@@ -255,22 +270,14 @@ public sealed class WorkspaceAgentFileService
             if (refData is null)
                 throw new KeyNotFoundException($"Agent '{agentId}' in workspace '{workspaceId}' 不存在");
 
-            // 软删：设置 IsEnabled = false
-            var refPath = _paths.WorkspaceAgentRefFile(workspaceId, agentId);
-            var updatedRef = refData with { IsEnabled = false };
-            await AtomicFileWriter.WriteJsonAsync(refPath, updatedRef, JsonOptions, ct);
-
-            // 同时更新 instance manifest
-            var instanceRoot = _paths.AgentInstanceRoot(agentId);
-            var manifestPath = Path.Combine(instanceRoot, "manifest.json");
-            var manifest = await AtomicFileWriter.ReadJsonAsync<AgentInstanceManifest>(manifestPath, JsonOptions, ct);
-            if (manifest is not null)
+            // 删除 workspace ref 文件及其目录
+            var wsAgentRoot = _paths.WorkspaceAgentRoot(workspaceId, agentId);
+            if (Directory.Exists(wsAgentRoot))
             {
-                await AtomicFileWriter.WriteJsonAsync(manifestPath,
-                    manifest with { IsEnabled = false }, JsonOptions, ct);
+                Directory.Delete(wsAgentRoot, recursive: true);
             }
 
-            _logger.LogInformation("Workspace agent soft-deleted: {AgentId}", agentId);
+            _logger.LogInformation("Workspace agent deleted (ref removed): {AgentId} from workspace {WorkspaceId}", agentId, workspaceId);
         }
         finally
         {
@@ -292,5 +299,38 @@ public sealed class WorkspaceAgentFileService
         var path = _paths.WorkspaceAgentRefFile(workspaceId, agentInstanceId);
         if (!File.Exists(path)) return null;
         return await AtomicFileWriter.ReadJsonAsync<WorkspaceAgentRef>(path, JsonOptions, ct);
+    }
+
+    /// <summary>
+    /// 解析 Agent 头像，优先级：
+    /// 1. AgentInstanceManifest.AvatarId
+    /// 2. 对应 AgentTemplateManifest 的头像
+    /// 3. AgentInstanceManifest.AvatarUrl（legacy fallback）
+    /// 4. 默认启用头像
+    /// 5. null（前端使用 emoji fallback）
+    /// </summary>
+    private async Task<(string? AvatarId, string? AvatarUrl)> ResolveAgentAvatarAsync(
+        AgentInstanceManifest instance,
+        CancellationToken ct)
+    {
+        // 1. 实例级 AvatarId
+        if (!string.IsNullOrWhiteSpace(instance.AvatarId))
+        {
+            var avatar = await _avatarCatalog.GetRequiredEnabledAsync(instance.AvatarId);
+            if (avatar is not null) return (avatar.AvatarId, avatar.UrlPath);
+        }
+
+        // 2. 模板级头像
+        var template = await _templateFileService.GetTemplateAsync(instance.TemplateId, ct);
+        if (template?.AvatarUrl is not null)
+            return (template.AvatarId, template.AvatarUrl);
+
+        // 3. 实例级 legacy Url
+        if (!string.IsNullOrWhiteSpace(instance.AvatarUrl))
+            return (instance.AvatarId, instance.AvatarUrl);
+
+        // 4. 默认启用头像
+        var fallback = await _avatarCatalog.GetDefaultAsync();
+        return (fallback?.AvatarId, fallback?.UrlPath);
     }
 }

@@ -63,6 +63,7 @@ interface ChatLayoutProps {
   messageListRef: React.RefObject<HTMLDivElement | null>;
   listEndRef: React.RefObject<HTMLDivElement | null>;
   subAgentCards: SubAgentCardMap;
+  currentUser?: { name?: string; avatar?: string };
 }
 
 const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
@@ -129,6 +130,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         messageListRef={props.messageListRef}
         listEndRef={props.listEndRef}
         subAgentCards={props.subAgentCards}
+        currentUser={props.currentUser}
       />
     </div>
   );

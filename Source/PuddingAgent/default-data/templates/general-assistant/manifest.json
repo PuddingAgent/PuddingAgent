@@ -15,5 +15,6 @@
   "capabilities": {
     "allowTools": true,
     "allowedToolIds": []
-  }
+  },
+  "avatarId": "neutral"
 }

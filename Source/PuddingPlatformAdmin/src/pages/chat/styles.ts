@@ -40,6 +40,51 @@ export const useChatStyles = createStyles(({ token }) => ({
   headerLogo: { width: 24, height: 24, objectFit: 'contain' as const },
   headerBrand: { fontSize: 14, fontWeight: 700, color: token.colorText, whiteSpace: 'nowrap' as const },
   headerSelect: { minWidth: 110, maxWidth: 180, fontSize: 12 },
+  /** Select popup 下拉菜单，使用 --pudding-chat-* 语义 token 覆盖 AntD 默认背景 */
+  headerSelectPopup: {
+    background: 'var(--pudding-chat-surface) !important',
+    border: '1px solid var(--pudding-chat-border)',
+    borderRadius: 8,
+    boxShadow: 'var(--pudding-chat-shadow)',
+    padding: 4,
+    '& .ant-select-item': {
+      borderRadius: 6,
+      padding: '5px 12px',
+      fontSize: 13,
+      color: 'var(--pudding-chat-text)',
+      transition: 'background 0.15s, color 0.15s',
+    },
+    '& .ant-select-item-option-active': {
+      background: 'var(--pudding-chat-surface-muted) !important',
+    },
+    '& .ant-select-item-option-selected': {
+      background: 'var(--pudding-chat-accent-soft) !important',
+      color: 'var(--pudding-chat-accent) !important',
+      fontWeight: 500,
+    },
+    '& .ant-select-item-option-disabled': {
+      color: 'var(--pudding-chat-text-subtle) !important',
+      opacity: 0.5,
+    },
+    '& .ant-select-item-empty': {
+      color: 'var(--pudding-chat-text-subtle)',
+    },
+    '& .ant-divider': {
+      margin: '4px 0',
+      borderColor: 'var(--pudding-chat-border)',
+    },
+    '& .ant-btn-link': {
+      color: 'var(--pudding-chat-accent)',
+      fontSize: 12,
+      height: 32,
+      width: '100%',
+      borderRadius: 6,
+      transition: 'background 0.15s',
+      '&:hover': {
+        background: 'var(--pudding-chat-accent-soft) !important',
+      },
+    },
+  },
   headerSpacer: { flex: 1 },
   devModeActive: { color: token.colorPrimary },
   /** 全局操作区（主题/Help/语言/用户）适应 Chat Header 紧凑空间 */
@@ -770,7 +815,7 @@ export const useChatStyles = createStyles(({ token }) => ({
     borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
     background: 'color-mix(in srgb, #ef4444 4%, var(--soft-white))',
   },
-  // ── 用户消息 ──
+  // ── 用户消息（带头像、名称、右对齐气泡）──
   userMessageContainer: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -778,12 +823,12 @@ export const useChatStyles = createStyles(({ token }) => ({
     maxWidth: '70%',
     minWidth: 0,
   },
-  userNameRow: {
+  userMetaRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
     marginBottom: 2,
-    paddingRight: 4,
+    paddingRight: 40, // 为右侧头像留位，保持名称/时间与气泡对齐
     minHeight: 20,
   },
   userNameText: {
@@ -798,11 +843,24 @@ export const useChatStyles = createStyles(({ token }) => ({
     opacity: 0.5,
     lineHeight: '20px',
   },
+  userBubbleRow: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 8,
+    maxWidth: '100%',
+  },
+  userBubbleArea: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-end',
+    minWidth: 0,
+    flex: '0 1 auto',
+  },
   userBubbleNew: {
     background: 'color-mix(in srgb, var(--accent-purple) 8%, var(--soft-white))',
-    border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 14%, transparent)',
-    borderRadius: 8,
+    border: '1.5px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 28%, transparent)',
+    borderRadius: 10,
     borderBottomRightRadius: 4,
     padding: '10px 16px',
     fontSize: 14,
@@ -811,7 +869,7 @@ export const useChatStyles = createStyles(({ token }) => ({
     wordBreak: 'break-word' as const,
     transition: 'background 200ms ease',
     '&:hover': {
-      background: 'color-mix(in srgb, var(--accent-purple) 12%, var(--soft-white))',
+      background: 'color-mix(in srgb, var(--accent-purple) 14%, var(--soft-white))',
     },
   },
   userBubbleSending: {
@@ -823,6 +881,19 @@ export const useChatStyles = createStyles(({ token }) => ({
     opacity: 0.5,
     marginTop: 2,
     paddingRight: 4,
+  },
+  userAvatarShell: {
+    flex: '0 0 auto',
+  },
+  userAvatarImg: {
+    border: '2px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
+  },
+  userAvatarFallback: {
+    background: 'color-mix(in srgb, var(--accent-purple) 15%, var(--soft-white))',
+    color: 'var(--accent-purple)',
+    border: '2px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
   },
   // ── 过程摘要（默认折叠）───────────────────────────────────
   processSummaryRow: {

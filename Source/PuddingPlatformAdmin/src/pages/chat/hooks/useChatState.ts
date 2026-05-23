@@ -453,7 +453,7 @@ export function useChatState(): UseChatStateReturn {
                        anyMeta.source_type === 'webhook' ? '🪝' as const :
                        anyMeta.source_type === 'email' ? '📧' as const : '🤖' as const),
           avatarColor: stringToColor(String(anyMeta.source_id || anyMeta.sourceId || 'agent')),
-          avatarUrl: String(anyMeta.avatar_url || anyMeta.avatarUrl || '') || undefined,
+          avatarUrl: String(anyMeta.avatar_url || anyMeta.avatarUrl || selectedAgent?.avatarUrl || '') || undefined,
         } : undefined;
         return {
           ...turn,
@@ -687,7 +687,7 @@ export function useChatState(): UseChatStateReturn {
       }
       return turn;
     }));
-  }, [enqueueDelta]);
+  }, [enqueueDelta, selectedAgent]);
 
   const applySessionEvent = useCallback((ev: AdminChatStreamEvent) => {
     updateLastSequence(ev);

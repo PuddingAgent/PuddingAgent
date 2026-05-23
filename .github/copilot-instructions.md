@@ -147,10 +147,14 @@ Architect 不止响应新架构方向，还承担**领航员**角色——周期
 | 0517 | 累计12个任务卡 | 全局架构 | ADR-003 更新+2项债务 | — |
 ```
 
+# 需要记住的关键信息
 
 pudding登录，测试环境使用，用户名和密码是 admin Admin@123456
 
-
-日常开发 → dev-up.ps1（源码挂载 + watch + HMR）
+日常开发 → dev-up.ps1（源码挂载 + watch + HMR）  如果用户说部署，这是默认选择
 快速集成 → .build-and-up.ps1 -Fast（支持跳过参数）
 发布验证 → build-and-up.ps1（生产构建 + Docker 镜像）
+
+#   后端 API  → http://localhost:5000
+#   前端 Dev  → http://localhost:8000
+#   nginx 代理 → http://localhost/admin/user/login (浏览器应该打开这个地址，nginx 会代理到前端和dev server)
