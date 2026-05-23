@@ -420,16 +420,12 @@ namespace PuddingPlatform.Migrations
                     b.Property<int>("MaxToolCallsTotal")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("MemoryLlmApiKey")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MemoryLlmEndpoint")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("MemoryLlmModelId")
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MemoryLlmProviderId")
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MemorySearchMode")
@@ -1307,16 +1303,12 @@ namespace PuddingPlatform.Migrations
                     b.Property<int>("MaxReplyTokens")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("MemoryLlmApiKey")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MemoryLlmEndpoint")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("MemoryLlmModelId")
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MemoryLlmProviderId")
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MemorySearchMode")

@@ -69,8 +69,10 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
   const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
   const [providers, setProviders] = useState<LlmProviderDto[]>([]);
   const [models, setModels] = useState<LlmModelDto[]>([]);
+  const [memoryModels, setMemoryModels] = useState<LlmModelDto[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingMemoryModels, setLoadingMemoryModels] = useState(false);
   const [formDrawer, setFormDrawer] = useState(false);
   const [editItem, setEditItem] = useState<WorkspaceAgentTemplateDto | null>(null);
   const [form] = Form.useForm<UpsertWorkspaceAgentTemplateRequest>();
@@ -103,6 +105,18 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
     }
   };
 
+  const handleMemoryProviderChange = async (providerId: string) => {
+    form.setFieldValue('memoryLlmModelId', undefined);
+    if (!providerId) { setMemoryModels([]); return; }
+    setLoadingMemoryModels(true);
+    try {
+      const ms = await listLlmModels(providerId);
+      setMemoryModels(ms.filter((m) => !m.isDeprecated));
+    } finally {
+      setLoadingMemoryModels(false);
+    }
+  };
+
   const handleGlobalTemplateChange = (templateId: string) => {
     if (!templateId) return;
     const tpl = globalTemplates.find((t) => t.templateId === templateId);
@@ -123,8 +137,12 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       containerImage: tpl.containerImage,
       selectedCapabilityIds: tpl.selectedCapabilityIds,
       reasoningEffort: tpl.reasoningEffort,
+      memoryLlmProviderId: tpl.memoryLlmProviderId,
+      memoryLlmModelId: tpl.memoryLlmModelId,
+      memorySearchMode: tpl.memorySearchMode,
     });
     if (tpl.preferredProviderId) handleProviderChange(tpl.preferredProviderId);
+    if (tpl.memoryLlmProviderId) handleMemoryProviderChange(tpl.memoryLlmProviderId);
   };
 
   const openCreate = () => {
@@ -140,6 +158,7 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       selectedCapabilityIds: [],
     });
     setModels([]);
+    setMemoryModels([]);
     setFormDrawer(true);
   };
 
@@ -150,6 +169,12 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       setModels(ms.filter((m) => !m.isDeprecated));
     } else {
       setModels([]);
+    }
+    if (item.memoryLlmProviderId) {
+      const ms = await listLlmModels(item.memoryLlmProviderId);
+      setMemoryModels(ms.filter((m) => !m.isDeprecated));
+    } else {
+      setMemoryModels([]);
     }
     form.setFieldsValue(item);
     setFormDrawer(true);
@@ -437,22 +462,24 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
           />
 
           <Divider orientation="left">潜意识模型（记忆探索）</Divider>
-          <ProFormText
-            name="memoryLlmEndpoint"
-            label="潜意识模型 Endpoint"
-            placeholder="如 https://api.deepseek.com/v1"
-            extra="未配置时使用主聊天模型处理记忆"
+          <ProFormSelect
+            name="memoryLlmProviderId"
+            label="潜意识模型服务商"
+            options={providers.filter((p) => p.isEnabled).map((p) => ({ label: p.name, value: p.providerId }))}
+            placeholder="不选则跟随主聊天模型"
+            extra="端点、Key 和供应商参数在 LLM 资源池配置，这里只选择服务商。"
+            fieldProps={{ onChange: handleMemoryProviderChange, allowClear: true }}
           />
-          <ProFormText.Password
-            name="memoryLlmApiKey"
-            label="潜意识模型 ApiKey"
-            placeholder="可留空，留空时回退主聊天模型"
-          />
-          <ProFormText
+          <ProFormSelect
             name="memoryLlmModelId"
-            label="潜意识模型 ModelId"
-            placeholder="如 deepseek-chat"
-            extra="强烈建议：DeepSeek/Haiku 等轻量模型。用于记忆深度探索，比主模型慢但决定整场对话的上下文方向。"
+            label="潜意识模型"
+            options={memoryModels.map((m) => ({
+              label: `${m.name} (${m.modelId})`,
+              value: m.modelId,
+            }))}
+            placeholder="不选则使用该服务商默认模型"
+            extra="建议选择轻量模型，用于记忆深度探索。"
+            fieldProps={{ loading: loadingMemoryModels, allowClear: true }}
           />
           <ProFormSelect
             name="memorySearchMode"

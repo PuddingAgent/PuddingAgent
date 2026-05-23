@@ -678,6 +678,8 @@ using (var scope = app.Services.CreateScope())
         (Table: "WorkspaceAgentTemplates", Column: "MaxRounds", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxRounds\" INTEGER NOT NULL DEFAULT 200;"),
         (Table: "WorkspaceAgentTemplates", Column: "MaxElapsedSeconds", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxElapsedSeconds\" INTEGER NOT NULL DEFAULT 1200;"),
         (Table: "WorkspaceAgentTemplates", Column: "MaxToolCallsTotal", Ddl: "ALTER TABLE \"WorkspaceAgentTemplates\" ADD COLUMN \"MaxToolCallsTotal\" INTEGER NOT NULL DEFAULT 100;"),
+        // ADR-034：AgentAvatars 补列（表已通过 IF NOT EXISTS 创建，但可能缺少列）
+        (Table: "AgentAvatars", Column: "RecommendedUse", Ddl: "ALTER TABLE \"AgentAvatars\" ADD COLUMN \"RecommendedUse\" TEXT NULL;"),
     };
     foreach (var column in pendingColumns)
     {
@@ -800,6 +802,7 @@ using (var scope = app.Services.CreateScope())
             ""HairColor""       TEXT,
             ""Expression""      TEXT,
             ""VisualTraitsJson"" TEXT   NOT NULL DEFAULT '[]',
+            ""RecommendedUse""  TEXT,
             ""IsBuiltIn""       INTEGER NOT NULL DEFAULT 1,
             ""IsEnabled""       INTEGER NOT NULL DEFAULT 1,
             ""SortOrder""       INTEGER NOT NULL DEFAULT 100,

@@ -19,8 +19,8 @@ public interface ILLMConfigResolver
         CancellationToken ct = default);
 
     /// <summary>
-    /// 解析潜意识 LLM 配置：MemoryLlmEndpoint/ApiKey/ModelId + MemorySearchMode。
-    /// 优先级：WorkspaceAgentTemplate > GlobalAgentTemplate > 环境变量 > 回退显意识 LLM。
+    /// 解析潜意识 LLM 配置：MemoryLlmProviderId/ModelId + MemorySearchMode。
+    /// Endpoint 与 ApiKey 从 LLM 资源池解析；旧 Endpoint/ApiKey 字段只作为兼容回退。
     /// </summary>
     Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(
         string templateId,
@@ -40,6 +40,7 @@ public sealed record LlmRoutingConfig
 /// <summary>潜意识 LLM 路由配置。</summary>
 public sealed record MemoryLlmRoutingConfig
 {
+    public string? ProviderId { get; init; }
     public string? Endpoint { get; init; }
     public string? ApiKey { get; init; }
     public string? ModelId { get; init; }

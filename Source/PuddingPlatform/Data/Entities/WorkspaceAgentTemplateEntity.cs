@@ -68,13 +68,9 @@ public class WorkspaceAgentTemplateEntity
     [MaxLength(128)]
     public string? PreferredModelId { get; set; }
 
-    /// <summary>记忆专用 LLM Endpoint（独立于主聊天模型）。null 时使用主模型。</summary>
-    [MaxLength(512)]
-    public string? MemoryLlmEndpoint { get; set; }
-
-    /// <summary>记忆专用 LLM ApiKey 或 KeyVault 引用。</summary>
-    [MaxLength(512)]
-    public string? MemoryLlmApiKey { get; set; }
+    /// <summary>记忆专用 LLM ProviderId。端点与 Key 从 LLM 资源池读取。</summary>
+    [MaxLength(64)]
+    public string? MemoryLlmProviderId { get; set; }
 
     /// <summary>记忆专用 LLM ModelId（建议使用轻量模型）。</summary>
     [MaxLength(128)]

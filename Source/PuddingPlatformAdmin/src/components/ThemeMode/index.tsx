@@ -75,9 +75,17 @@ export const ThemeProviderContainer: React.FC<{ children: React.ReactNode }> = (
       setSystemPrefersDark(event.matches);
     };
     setSystemPrefersDark(media.matches);
-    media.addEventListener('change', onThemeChange);
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', onThemeChange);
+    } else {
+      media.addListener?.(onThemeChange);
+    }
     return () => {
-      media.removeEventListener('change', onThemeChange);
+      if (typeof media.removeEventListener === 'function') {
+        media.removeEventListener('change', onThemeChange);
+      } else {
+        media.removeListener?.(onThemeChange);
+      }
     };
   }, []);
 

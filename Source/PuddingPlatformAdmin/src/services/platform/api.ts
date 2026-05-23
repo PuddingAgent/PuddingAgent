@@ -366,8 +366,7 @@ export interface GlobalAgentTemplateDto {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
-  memoryLlmEndpoint?: string;
-  memoryLlmApiKey?: string;
+  memoryLlmProviderId?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
@@ -400,8 +399,7 @@ export interface UpsertGlobalAgentTemplateRequest {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
-  memoryLlmEndpoint?: string;
-  memoryLlmApiKey?: string;
+  memoryLlmProviderId?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
@@ -437,8 +435,7 @@ export interface WorkspaceAgentTemplateDto {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
-  memoryLlmEndpoint?: string;
-  memoryLlmApiKey?: string;
+  memoryLlmProviderId?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
@@ -468,8 +465,7 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   bootstrapTemplate?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
-  memoryLlmEndpoint?: string;
-  memoryLlmApiKey?: string;
+  memoryLlmProviderId?: string;
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;

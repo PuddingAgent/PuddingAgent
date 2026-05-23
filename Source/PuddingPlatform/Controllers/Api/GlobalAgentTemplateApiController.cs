@@ -81,8 +81,7 @@ public class GlobalAgentTemplateApiController(
         entity.AvatarEmoji = req.AvatarEmoji;
         entity.PreferredProviderId = req.PreferredProviderId;
         entity.PreferredModelId = req.PreferredModelId;
-        entity.MemoryLlmEndpoint = req.MemoryLlmEndpoint;
-        entity.MemoryLlmApiKey = req.MemoryLlmApiKey;
+        entity.MemoryLlmProviderId = req.MemoryLlmProviderId;
         entity.MemoryLlmModelId = req.MemoryLlmModelId;
         entity.MemorySearchMode = req.MemorySearchMode ?? "deep";
         entity.ReasoningEffort = req.ReasoningEffort;
@@ -130,8 +129,7 @@ public class GlobalAgentTemplateApiController(
         AvatarEmoji = req.AvatarEmoji,
         PreferredProviderId = req.PreferredProviderId,
         PreferredModelId = req.PreferredModelId,
-        MemoryLlmEndpoint = req.MemoryLlmEndpoint,
-        MemoryLlmApiKey = req.MemoryLlmApiKey,
+        MemoryLlmProviderId = req.MemoryLlmProviderId,
         MemoryLlmModelId = req.MemoryLlmModelId,
         MemorySearchMode = req.MemorySearchMode ?? "deep",
         ReasoningEffort = req.ReasoningEffort,
@@ -175,7 +173,7 @@ public class GlobalAgentTemplateApiController(
             t.AvatarId,
             avatar?.UrlPath,
             avatar?.Name,
-            t.MemoryLlmEndpoint, t.MemoryLlmApiKey, t.MemoryLlmModelId, t.MemorySearchMode,
+            t.MemoryLlmProviderId, t.MemoryLlmModelId, t.MemorySearchMode,
             t.ReasoningEffort,
             t.MaxRounds, t.MaxElapsedSeconds, t.MaxToolCallsTotal);
     }

@@ -98,10 +98,12 @@ const GlobalAgentTemplatePage: React.FC = () => {
   const [form] = Form.useForm<UpsertGlobalAgentTemplateRequest>();
   const [providers, setProviders] = useState<LlmProviderDto[]>([]);
   const [models, setModels] = useState<LlmModelDto[]>([]);
+  const [memoryModels, setMemoryModels] = useState<LlmModelDto[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
   const [skillPackages, setSkillPackages] = useState<SkillPackageDto[]>([]);
   const [avatars, setAvatars] = useState<AgentAvatarDto[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingMemoryModels, setLoadingMemoryModels] = useState(false);
   const [data, setData] = useState<GlobalAgentTemplateDto[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -154,6 +156,21 @@ const GlobalAgentTemplatePage: React.FC = () => {
     }
   };
 
+  const handleMemoryProviderChange = async (providerId: string) => {
+    form.setFieldValue('memoryLlmModelId', undefined);
+    if (!providerId) {
+      setMemoryModels([]);
+      return;
+    }
+    setLoadingMemoryModels(true);
+    try {
+      const ms = await listLlmModels(providerId);
+      setMemoryModels(ms.filter((m) => !m.isDeprecated));
+    } finally {
+      setLoadingMemoryModels(false);
+    }
+  };
+
   const openCreate = () => {
     setEditItem(null);
     form.resetFields();
@@ -173,6 +190,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
       selectedSkillPackageIds: [],
     });
     setModels([]);
+    setMemoryModels([]);
     setFormDrawer(true);
   };
 
@@ -183,6 +201,12 @@ const GlobalAgentTemplatePage: React.FC = () => {
       setModels(ms.filter((m) => !m.isDeprecated));
     } else {
       setModels([]);
+    }
+    if (item.memoryLlmProviderId) {
+      const ms = await listLlmModels(item.memoryLlmProviderId);
+      setMemoryModels(ms.filter((m) => !m.isDeprecated));
+    } else {
+      setMemoryModels([]);
     }
     form.setFieldsValue({ ...item, avatarId: item.avatarId || avatars[0]?.avatarId });
     // 同步 Transfer 组件 — 从 selectedCapabilityIds 中提取高权限部分
@@ -218,6 +242,20 @@ const GlobalAgentTemplatePage: React.FC = () => {
     tableRef.current?.reload();
     fetchData();
   };
+
+  const renderAvatarSelectItem = (avatar: AgentAvatarDto, compact = false) => (
+    <Space size={8} align="center" style={{ minWidth: 0 }}>
+      <Avatar size={compact ? 20 : 24} src={avatar.url} />
+      <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{avatar.name}</span>
+      {!compact && avatar.recommendedUse && (
+        <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+          {avatar.recommendedUse}
+        </Text>
+      )}
+    </Space>
+  );
+
+  const findAvatar = (avatarId: unknown) => avatars.find((a) => a.avatarId === String(avatarId));
 
   const columns: ProColumns<GlobalAgentTemplateDto>[] = [
     {
@@ -608,17 +646,14 @@ const GlobalAgentTemplatePage: React.FC = () => {
                 value: a.avatarId,
               }))}
               optionRender={(option) => {
-                const avatar = avatars.find((a) => a.avatarId === option.value);
+                const avatar = findAvatar(option.value);
                 if (!avatar) return option.label;
-                return (
-                  <Space>
-                    <Avatar size={24} src={avatar.url} />
-                    <span>{avatar.name}</span>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {avatar.recommendedUse}
-                    </Text>
-                  </Space>
-                );
+                return renderAvatarSelectItem(avatar);
+              }}
+              labelRender={(option) => {
+                const avatar = findAvatar(option.value);
+                if (!avatar) return option.label;
+                return renderAvatarSelectItem(avatar, true);
               }}
             />
           </Form.Item>
@@ -642,22 +677,24 @@ const GlobalAgentTemplatePage: React.FC = () => {
           />
 
           <Divider orientation="left">潜意识模型（记忆探索）</Divider>
-          <ProFormText
-            name="memoryLlmEndpoint"
-            label="潜意识模型 Endpoint"
-            placeholder="如 https://api.deepseek.com/v1"
-            extra="未配置时使用主聊天模型处理记忆"
+          <ProFormSelect
+            name="memoryLlmProviderId"
+            label="潜意识模型服务商"
+            options={providers.filter((p) => p.isEnabled).map((p) => ({ label: p.name, value: p.providerId }))}
+            placeholder="不选则跟随主聊天模型"
+            extra="端点、Key 和供应商参数在 LLM 资源池配置，这里只选择服务商。"
+            fieldProps={{ onChange: handleMemoryProviderChange, allowClear: true }}
           />
-          <ProFormText.Password
-            name="memoryLlmApiKey"
-            label="潜意识模型 ApiKey"
-            placeholder="可留空，留空时回退主聊天模型"
-          />
-          <ProFormText
+          <ProFormSelect
             name="memoryLlmModelId"
-            label="潜意识模型 ModelId"
-            placeholder="如 deepseek-chat"
-            extra="强烈建议：DeepSeek/Haiku 等轻量模型。用于记忆深度探索，比主模型慢但决定整场对话的上下文方向。"
+            label="潜意识模型"
+            options={memoryModels.map((m) => ({
+              label: `${m.name} (${m.modelId})`,
+              value: m.modelId,
+            }))}
+            placeholder="不选则使用该服务商默认模型"
+            extra="建议选择轻量模型，用于记忆深度探索。"
+            fieldProps={{ loading: loadingMemoryModels, allowClear: true }}
           />
           <ProFormSelect
             name="memorySearchMode"

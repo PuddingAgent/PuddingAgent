@@ -1001,12 +1001,51 @@ export const useChatStyles = createStyles(({ token }) => ({
     position: 'sticky' as const,
     bottom: 0,
     background: 'var(--pudding-surface, #fffefa)',
-    border: '1px solid var(--pudding-line, rgba(92,74,58,0.16))',
+    border: '1px solid color-mix(in srgb, var(--earth-brown, #5c4a3a) 14%, transparent)',
     borderRadius: 8,
-    padding: '8px 10px',
+    padding: '8px 10px 6px',
     boxShadow: 'none',
     zIndex: 10,
     margin: '0 0 4px',
+    overflow: 'visible' as const,
+    transition: 'border-color 180ms ease, box-shadow 180ms ease',
+    /* ink-line */
+    '&::after': {
+      content: '""',
+      position: 'absolute' as const,
+      bottom: -1,
+      left: '20%',
+      width: '36%',
+      height: 2,
+      borderRadius: 1,
+      background: 'color-mix(in srgb, var(--accent-purple, #8b5cf6) 24%, transparent)',
+      opacity: 0,
+      transform: 'translateX(-10px)',
+      transition: 'opacity 220ms ease, transform 220ms ease',
+      pointerEvents: 'none' as const,
+    },
+    '&[data-active="true"]': {
+      borderColor: 'color-mix(in srgb, var(--accent-purple, #8b5cf6) 20%, var(--earth-brown, #5c4a3a) 12%)',
+      boxShadow: '0 2px 10px rgba(92, 64, 42, 0.05)',
+    },
+    '&[data-active="true"]::after': {
+      opacity: 1,
+      transform: 'translateX(0)',
+    },
+    '&[data-error="true"]': {
+      borderColor: 'color-mix(in srgb, #c4944c 40%, transparent)',
+      boxShadow: '0 2px 10px rgba(196, 148, 76, 0.06)',
+    },
+    '&[data-active="true"][data-error="true"]::after': {
+      opacity: 0,
+    },
+    /* prefers-reduced-motion: 禁用 ink-line 动画，只保留颜色 */
+    '@media (prefers-reduced-motion: reduce)': {
+      '&::after': {
+        transition: 'none',
+        opacity: 0,
+      },
+    },
   },
   composerStatusLine: {
     display: 'flex',
@@ -1024,9 +1063,24 @@ export const useChatStyles = createStyles(({ token }) => ({
     flexShrink: 0,
   },
   composerRow: {
-    display: 'flex',
-    alignItems: 'flex-end',
+    display: 'grid',
+    gridTemplateColumns: 'auto minmax(0, 1fr) auto',
     gap: 6,
+    alignItems: 'end',
+  },
+  composerToolArea: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    alignSelf: 'end',
+    flexShrink: 0,
+  },
+  composerActionArea: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'end',
+    flexShrink: 0,
   },
   composerIconButton: {
     width: 28,
@@ -1034,9 +1088,9 @@ export const useChatStyles = createStyles(({ token }) => ({
     opacity: 0.58,
     border: 'none',
     background: 'transparent',
+    flexShrink: 0,
   },
   composerTextarea: {
-    flex: 1,
     border: 'none',
     background: 'transparent',
     boxShadow: 'none',
@@ -1044,8 +1098,11 @@ export const useChatStyles = createStyles(({ token }) => ({
     fontSize: 14,
     lineHeight: 1.55,
     outline: 'none',
+    minWidth: 0,
+    maxHeight: 132,
+    overflowY: 'auto' as const,
     '&:focus': {
-      boxShadow: '0 2px 0 0 var(--pudding-accent, #8b5cf6)',
+      boxShadow: 'none',
     },
   },
 
@@ -1113,6 +1170,52 @@ export const useChatStyles = createStyles(({ token }) => ({
     fontSize: 12,
     color: 'var(--pudding-text-muted, #756b5f)',
     fontVariantNumeric: 'tabular-nums' as const,
+  },
+
+  // ── Composer Feedback Strip（轻反馈带）─────────────────────
+  composerFeedbackStrip: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap' as const,
+    gap: 2,
+    minHeight: 18,
+    padding: '2px 0 0',
+    cursor: 'pointer' as const,
+    userSelect: 'none' as const,
+    '&:hover .composerFeedbackLabel': {
+      opacity: 0.8,
+    },
+  },
+  composerFeedbackSep: {
+    color: 'var(--earth-brown, #5c4a3a)',
+    opacity: 0.2,
+    fontSize: 11,
+    margin: '0 1px',
+    userSelect: 'none' as const,
+  },
+  composerFeedbackItem: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '1px 4px',
+    borderRadius: 3,
+    transition: 'background 0.15s',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--earth-brown, #5c4a3a) 5%, transparent)',
+    },
+  },
+  composerFeedbackDot: {
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  composerFeedbackLabel: {
+    fontSize: 11,
+    color: 'var(--earth-brown, #5c4a3a)',
+    opacity: 0.55,
+    whiteSpace: 'nowrap' as const,
+    transition: 'opacity 0.15s',
   },
 
   // ── Composer Status Pill（状态行胶囊）─────────────────────────

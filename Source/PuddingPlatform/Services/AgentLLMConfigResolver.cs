@@ -84,18 +84,81 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
                 .FirstOrDefaultAsync(t => t.TemplateId == canonicalId && t.WorkspaceId == workspaceId, ct)
             : null;
 
-        // 四级回退：Workspace → Global → Environment → null
-        var endpoint = ws?.MemoryLlmEndpoint
-                       ?? global?.MemoryLlmEndpoint
-                       ?? Environment.GetEnvironmentVariable("MEMORY_LLM_ENDPOINT");
-
-        var apiKey = ws?.MemoryLlmApiKey
-                     ?? global?.MemoryLlmApiKey
-                     ?? Environment.GetEnvironmentVariable("MEMORY_LLM_API_KEY");
+        var providerId = ws?.MemoryLlmProviderId
+                         ?? global?.MemoryLlmProviderId
+                         ?? Environment.GetEnvironmentVariable("MEMORY_LLM_PROVIDER_ID");
 
         var modelId = ws?.MemoryLlmModelId
-                      ?? global?.MemoryLlmModelId
-                      ?? Environment.GetEnvironmentVariable("MEMORY_LLM_MODEL_ID");
+                      ?? global?.MemoryLlmModelId;
+
+        string? endpoint = null;
+        string? apiKey = null;
+
+        if (!string.IsNullOrWhiteSpace(providerId))
+        {
+            var provider = await db.LlmProviders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.ProviderId == providerId && p.IsEnabled, ct);
+
+            if (provider is not null)
+            {
+                endpoint = provider.BaseUrl;
+                apiKey = provider.ApiKey;
+
+                if (string.IsNullOrWhiteSpace(modelId))
+                {
+                    modelId = await db.LlmModels
+                        .AsNoTracking()
+                        .Where(m => m.ProviderId == provider.Id && !m.IsDeprecated)
+                        .OrderByDescending(m => m.IsDefault)
+                        .ThenBy(m => m.SortOrder)
+                        .ThenBy(m => m.Id)
+                        .Select(m => m.ModelId)
+                        .FirstOrDefaultAsync(ct);
+                }
+                else
+                {
+                    var modelExists = await db.LlmModels
+                        .AsNoTracking()
+                        .AnyAsync(m => m.ProviderId == provider.Id && m.ModelId == modelId && !m.IsDeprecated, ct);
+                    if (!modelExists)
+                    {
+                        _logger.LogWarning(
+                            "[LLMConfig] Memory model not found or deprecated provider={Provider} model={Model}",
+                            providerId,
+                            modelId);
+                        modelId = null;
+                    }
+                }
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "[LLMConfig] Memory provider not found or disabled provider={Provider}",
+                    providerId);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(providerId) && string.IsNullOrWhiteSpace(modelId))
+        {
+            var conscious = await ResolveConsciousAsync(canonicalId, workspaceId, ct);
+            providerId = conscious?.ProviderId;
+            modelId = conscious?.ModelId;
+
+            if (!string.IsNullOrWhiteSpace(providerId))
+            {
+                var provider = await db.LlmProviders
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.ProviderId == providerId && p.IsEnabled, ct);
+                endpoint = provider?.BaseUrl;
+                apiKey = provider?.ApiKey;
+            }
+            else
+            {
+                endpoint = conscious?.Endpoint;
+                apiKey = conscious?.ApiKey;
+            }
+        }
 
         var searchMode = ws?.MemorySearchMode
                          ?? global?.MemorySearchMode
@@ -107,6 +170,7 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
 
         return new MemoryLlmRoutingConfig
         {
+            ProviderId = providerId,
             Endpoint = endpoint,
             ApiKey = apiKey,
             ModelId = modelId,

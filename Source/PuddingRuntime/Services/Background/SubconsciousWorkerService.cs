@@ -67,18 +67,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex,
-                            "[SubconsciousWorker] Resolve memory LLM config failed template={Template} workspace={Workspace}, fallback env",
+                            "[SubconsciousWorker] Resolve memory LLM config failed template={Template} workspace={Workspace}, fallback default memory client config",
                             job.AgentTemplateId, job.WorkspaceId);
-                    }
-                }
-
-                // 最终回退：PuddingConfigLoader（JSON → 环境变量）
-                if (memoryLlmConfig is null)
-                {
-                    var (envEndpoint, envApiKey, envModel) = PuddingConfigLoader.ResolveMemory();
-                    if (!string.IsNullOrWhiteSpace(envEndpoint) || !string.IsNullOrWhiteSpace(envModel))
-                    {
-                        memoryLlmConfig = new MemoryLlmConfig(envEndpoint, envApiKey, envModel);
                     }
                 }
 

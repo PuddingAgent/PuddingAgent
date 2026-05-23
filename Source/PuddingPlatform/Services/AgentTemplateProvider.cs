@@ -42,8 +42,7 @@ public sealed class AgentTemplateProvider(
             BootstrapTemplate = global.BootstrapTemplate,
             AvatarEmoji = global.AvatarEmoji,
             MemorySearchMode = global.MemorySearchMode,
-            MemoryLlmEndpoint = global.MemoryLlmEndpoint,
-            MemoryLlmApiKey = global.MemoryLlmApiKey,
+            MemoryLlmProviderId = global.MemoryLlmProviderId,
             MemoryLlmModelId = global.MemoryLlmModelId,
         };
 
@@ -67,8 +66,7 @@ public sealed class AgentTemplateProvider(
             BootstrapTemplate = wsTemplate.BootstrapTemplate ?? persona.BootstrapTemplate,
             AvatarEmoji = wsTemplate.AvatarEmoji ?? persona.AvatarEmoji,
             MemorySearchMode = wsTemplate.MemorySearchMode ?? persona.MemorySearchMode,
-            MemoryLlmEndpoint = wsTemplate.MemoryLlmEndpoint ?? persona.MemoryLlmEndpoint,
-            MemoryLlmApiKey = wsTemplate.MemoryLlmApiKey ?? persona.MemoryLlmApiKey,
+            MemoryLlmProviderId = wsTemplate.MemoryLlmProviderId ?? persona.MemoryLlmProviderId,
             MemoryLlmModelId = wsTemplate.MemoryLlmModelId ?? persona.MemoryLlmModelId,
         };
     }

@@ -1,8 +1,15 @@
-﻿// @ts-ignore
-import { startMock } from '@@/requestRecordMock';
 import { TestBrowser } from '@@/testBrowser';
-import { fireEvent, render } from '@testing-library/react';
-import React, { act } from 'react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act } from 'react';
+import * as React from 'react';
+
+const mockLogin = jest.fn();
+const mockCurrentUser = jest.fn();
+
+jest.mock('@/services/ant-design-pro/api', () => ({
+  login: (...args: any[]) => mockLogin(...args),
+  currentUser: (...args: any[]) => mockCurrentUser(...args),
+}));
 
 const waitTime = (time: number = 100) => {
   return new Promise((resolve) => {
@@ -12,23 +19,30 @@ const waitTime = (time: number = 100) => {
   });
 };
 
-let server: {
-  close: () => void;
-};
-
 describe('Login Page', () => {
-  beforeAll(async () => {
-    server = await startMock({
-      port: 8000,
-      scene: 'login',
+  beforeEach(() => {
+    window.HTMLElement.prototype.scrollIntoView = jest.fn();
+    mockLogin.mockResolvedValue({
+      status: 'ok',
+      token: 'test-token',
+      currentAuthority: 'admin',
+    });
+    mockCurrentUser.mockResolvedValue({
+      data: {
+        name: 'Admin',
+        userid: 'admin',
+        access: 'admin',
+      },
     });
   });
 
-  afterAll(() => {
-    server?.close();
+  afterEach(() => {
+    mockLogin.mockReset();
+    mockCurrentUser.mockReset();
+    localStorage.removeItem('pudding_token');
   });
 
-  it('should show login form', async () => {
+  it('renders the Pudding runtime entry shell', async () => {
     const historyRef = React.createRef<any>();
     const rootContainer = render(
       <TestBrowser
@@ -39,25 +53,26 @@ describe('Login Page', () => {
       />,
     );
 
-    await rootContainer.findAllByText('Ant Design');
+    await rootContainer.findAllByText('Pudding Runtime');
 
     act(() => {
       historyRef.current?.push('/user/login');
     });
 
-    expect(
-      rootContainer.baseElement?.querySelector('.ant-pro-form-login-desc')
-        ?.textContent,
-    ).toBe(
-      'Ant Design is the most influential web design specification in Xihu district',
-    );
-
-    expect(rootContainer.asFragment()).toMatchSnapshot();
+    expect(await rootContainer.findByTestId('runtime-entry-shell')).toBeTruthy();
+    expect(await rootContainer.findByTestId('runtime-entry-visual')).toBeTruthy();
+    expect(await rootContainer.findByTestId('auth-card-login')).toBeTruthy();
+    expect(await rootContainer.findByText('本地 AI Agent 工作台')).toBeTruthy();
+    expect((await rootContainer.findAllByText('Workspace')).length).toBeGreaterThan(0);
+    expect((await rootContainer.findAllByText('Agent')).length).toBeGreaterThan(0);
+    expect((await rootContainer.findAllByText('Skills')).length).toBeGreaterThan(0);
+    expect(await rootContainer.findByLabelText('用户名')).toBeTruthy();
+    expect(await rootContainer.findByLabelText('密码')).toBeTruthy();
 
     rootContainer.unmount();
   });
 
-  it('should login success', async () => {
+  it('uses an in-app transition before navigating to chat after login success', async () => {
     const historyRef = React.createRef<any>();
     const rootContainer = render(
       <TestBrowser
@@ -68,34 +83,35 @@ describe('Login Page', () => {
       />,
     );
 
-    await rootContainer.findAllByText('Ant Design');
+    await rootContainer.findAllByText('Pudding Runtime');
 
-    const userNameInput = await rootContainer.findByPlaceholderText(
-      'Username: admin or user',
-    );
+    const userNameInput = await rootContainer.findByLabelText('用户名');
 
     act(() => {
       fireEvent.change(userNameInput, { target: { value: 'admin' } });
     });
 
-    const passwordInput = await rootContainer.findByPlaceholderText(
-      'Password: ant.design',
-    );
+    const passwordInput = await rootContainer.findByLabelText('密码');
 
     act(() => {
-      fireEvent.change(passwordInput, { target: { value: 'ant.design' } });
+      fireEvent.change(passwordInput, { target: { value: 'pudding.dev' } });
     });
 
-    await (await rootContainer.findByText('Login')).click();
+    const submitButton = await rootContainer.findByText('进入工作台');
 
-    // 等待接口返回结果
-    await waitTime(5000);
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
 
-    await rootContainer.findAllByText('Ant Design Pro');
+    await waitFor(async () => {
+      expect((await rootContainer.findByTestId('runtime-entry-shell')).getAttribute('data-transition')).toBe('entering-chat');
+    });
 
-    expect(rootContainer.asFragment()).toMatchSnapshot();
+    await act(async () => {
+      await waitTime(400);
+    });
 
-    await waitTime(2000);
+    expect(historyRef.current?.location?.pathname).toBe('/chat');
 
     rootContainer.unmount();
   });

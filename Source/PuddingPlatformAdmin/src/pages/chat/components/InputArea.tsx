@@ -1,11 +1,13 @@
-// ── InputArea：安静 Composer（单行输入 → 条件状态行）────────────
+// ── InputArea：安静 Composer（三列 grid + 轻反馈带）────────
 import { PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
-import { Button, Input, Popover, Tooltip } from 'antd';
+import { Button, Input, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import { useChatStyles } from '../styles';
 import CommandPalette, { COMMANDS, type Command } from './CommandPalette';
 import ComposerActionMenu from './ComposerActionMenu';
+import ComposerFeedbackStrip, { type FeedbackState } from './ComposerFeedbackStrip';
 import ComposerStatusDetails, { type ComposerRuntimeSummary } from './ComposerStatusDetails';
+import { Popover } from 'antd';
 import VoiceInputButton from './VoiceInputButton';
 
 /** Composer 的聊天状态 */
@@ -57,6 +59,10 @@ const InputArea: React.FC<InputAreaProps> = ({
   const [showStatusDetails, setShowStatusDetails] = useState(false);
   /** 已完成状态短暂显示后自动消失 */
   const [completedVisible, setCompletedVisible] = useState(false);
+  /** Composer 输入容器焦点状态 */
+  const [composerFocused, setComposerFocused] = useState(false);
+  /** 容器是否处于 active（focus 或 非空输入） */
+  const composerActive = composerFocused || inputValue.trim().length > 0;
 
   // 当 status 变为 completed 时，短暂显示后自动隐藏
   React.useEffect(() => {
@@ -136,6 +142,18 @@ const InputArea: React.FC<InputAreaProps> = ({
 
   const handleClosePalette = useCallback(() => { setPaletteVisible(false); }, []);
 
+  const handleTextAreaFocus = useCallback(() => { setComposerFocused(true); }, []);
+  const handleTextAreaBlur = useCallback(() => { setComposerFocused(false); }, []);
+
+  /** 轻反馈带状态 */
+  const feedbackState: FeedbackState = React.useMemo(() => ({
+    context: status === 'thinking' || status === 'tool_executing' || status === 'streaming',
+    memoryCount: 0,
+    indexAvailable: false,
+    subAgentsRunning: 0,
+    backgroundMemoryRunning: false,
+  }), [status]);
+
   /** 是否显示状态行 */
   const shouldShowStatus =
     status === 'thinking' || status === 'tool_executing' || status === 'streaming' || status === 'error' || completedVisible;
@@ -156,7 +174,11 @@ const InputArea: React.FC<InputAreaProps> = ({
   }), [status, displayStatusText, tLimit, tUsed, tPct, cacheHitRate]);
 
   return (
-    <div className={styles.composerSurface}>
+    <div
+      className={styles.composerSurface}
+      data-active={composerActive && !loading ? 'true' : undefined}
+      data-error={status === 'error' ? 'true' : undefined}
+    >
       <CommandPalette
         visible={paletteVisible}
         filterText={slashFilterText}
@@ -166,66 +188,84 @@ const InputArea: React.FC<InputAreaProps> = ({
         onClose={handleClosePalette}
       />
 
-      {/* ── 条件状态行：仅 thinking / tool_executing / streaming / error / completed 短暂显示 ── */}
-      {shouldShowStatus && (
-        <Popover
-          content={<ComposerStatusDetails summary={runtimeSummary} onOpenDevDetails={onOpenDevDetails} />}
-          trigger="click"
-          open={showStatusDetails}
-          onOpenChange={setShowStatusDetails}
-          placement="topLeft"
+      {/* ── 条件状态行：仅 thinking / tool_executing / streaming / error / completed ── */}
+      <Popover
+        content={<ComposerStatusDetails summary={runtimeSummary} onOpenDevDetails={onOpenDevDetails} />}
+        trigger="click"
+        open={showStatusDetails}
+        onOpenChange={setShowStatusDetails}
+        placement="topLeft"
+      >
+        <div
+          className={shouldShowStatus ? styles.composerStatusPill : styles.composerFeedbackStrip}
+          role="button"
+          tabIndex={0}
+          aria-label="查看运行状态详情"
+          onClick={() => setShowStatusDetails(true)}
         >
-          <div className={styles.composerStatusPill} role="button" tabIndex={0} aria-label="查看运行状态详情">
-            <span className={styles.composerStatusDot} style={{
-              background: status === 'error' ? 'var(--pudding-warning, #c4944c)' : '#6f8f72',
-            }} />
-            <span>{displayStatusText}</span>
-          </div>
-        </Popover>
-      )}
+          {shouldShowStatus ? (
+            <>
+              <span className={styles.composerStatusDot} style={{
+                background: status === 'error' ? 'var(--pudding-warning, #c4944c)' : '#6f8f72',
+              }} />
+              <span>{displayStatusText}</span>
+            </>
+          ) : (
+            <ComposerFeedbackStrip state={feedbackState} />
+          )}
+        </div>
+      </Popover>
 
-      {/* ── Composer 主行：+ 菜单 / 语音 / 输入框 / 发送 ── */}
+      {/* ── Composer 三列 grid：工具区 / 文本区 / 发送区 ── */}
       <div className={styles.composerRow}>
-        <Popover
-          content={<ComposerActionMenu onExport={onExport} onClose={() => setShowComposerMenu(false)} />}
-          trigger="click"
-          open={showComposerMenu}
-          onOpenChange={setShowComposerMenu}
-          placement="topLeft"
-        >
-          <Button
-            type="text"
-            icon={<PlusOutlined />}
-            className={styles.composerIconButton}
-            aria-label="打开输入动作菜单"
-            data-testid="composer-menu"
-          />
-        </Popover>
+        {/* 左侧工具区：+ 菜单 + 语音 */}
+        <div className={styles.composerToolArea}>
+          <Popover
+            content={<ComposerActionMenu onExport={onExport} onClose={() => setShowComposerMenu(false)} />}
+            trigger="click"
+            open={showComposerMenu}
+            onOpenChange={setShowComposerMenu}
+            placement="topLeft"
+          >
+            <Button
+              type="text"
+              icon={<PlusOutlined />}
+              className={styles.composerIconButton}
+              aria-label="打开输入动作菜单"
+              data-testid="composer-menu"
+            />
+          </Popover>
+          <VoiceInputButton disabled={disabled} />
+        </div>
 
-        <VoiceInputButton disabled={disabled} />
-
+        {/* 中央输入区 */}
         <Input.TextArea
           ref={textAreaRef as any}
           value={inputValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
+          onFocus={handleTextAreaFocus}
+          onBlur={handleTextAreaBlur}
           placeholder={loading ? '正在生成回复…' : '输入你的问题或任务…'}
           disabled={disabled}
-          autoSize={{ minRows: 1, maxRows: 5 }}
+          autoSize={{ minRows: 1, maxRows: 4 }}
           className={styles.composerTextarea}
           data-testid="chat-input"
         />
 
-        <Tooltip title={loading ? '停止生成' : '发送'}>
-          <Button
-            type={loading ? 'default' : 'primary'}
-            icon={loading ? <StopOutlined /> : <SendOutlined />}
-            onClick={loading ? onStop : onSend}
-            disabled={loading ? false : (!inputValue.trim() || disabled)}
-            className={styles.composerIconButton}
-            data-testid="chat-send"
-          />
-        </Tooltip>
+        {/* 右侧操作区：发送/停止 */}
+        <div className={styles.composerActionArea}>
+          <Tooltip title={loading ? '停止生成' : '发送'}>
+            <Button
+              type={loading ? 'default' : 'primary'}
+              icon={loading ? <StopOutlined /> : <SendOutlined />}
+              onClick={loading ? onStop : onSend}
+              disabled={loading ? false : (!inputValue.trim() || disabled)}
+              className={styles.composerIconButton}
+              data-testid="chat-send"
+            />
+          </Tooltip>
+        </div>
       </div>
     </div>
   );
