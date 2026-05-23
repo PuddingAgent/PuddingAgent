@@ -3,4 +3,30 @@ version = 1
 name = "PuddingAgent-tree"
 
 [setup]
-script = ""
+script = '''
+$ErrorActionPreference = "Stop"
+Set-Location $env:CODEX_WORKTREE_PATH
+
+corepack enable
+dotnet restore .\PuddingAgentNetwork.slnx
+
+Push-Location .\Source\PuddingPlatformAdmin
+try {
+  pnpm install --frozen-lockfile
+} finally {
+  Pop-Location
+}
+
+'''
+
+[cleanup]
+script = '''
+$ErrorActionPreference = "Continue"
+Set-Location $env:CODEX_WORKTREE_PATH
+
+if (Test-Path .\dev-up.ps1) {
+  .\dev-up.ps1 -Down
+}
+
+Remove-Item -Recurse -Force .\tmp\dev -ErrorAction SilentlyContinue
+'''

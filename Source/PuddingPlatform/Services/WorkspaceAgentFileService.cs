@@ -109,7 +109,9 @@ public sealed class WorkspaceAgentFileService
         await _writeLock.WaitAsync(ct);
         try
         {
-            var agentInstanceId = $"{workspaceId}.{req.SourceTemplateId ?? "agent"}.{Guid.NewGuid():N}"[..36];
+            var rawId = $"{workspaceId}.{req.SourceTemplateId ?? "agent"}.{Guid.NewGuid():N}"[..36];
+            // 替换文件系统非法字符（Windows 不允许 : * ? " < > | 等）
+            var agentInstanceId = string.Join("_", rawId.Split(Path.GetInvalidFileNameChars()));
 
             // 创建 agent instance 目录
             var instanceRoot = _paths.AgentInstanceRoot(agentInstanceId);

@@ -2,16 +2,23 @@
 # Pudding Agent — 编译 + Docker 部署脚本
 # ============================================================
 # 用法：
-#   .\build-and-up.ps1                  # 完整构建并启动
-#   .\build-and-up.ps1 -Fast            # 快速开发模式：编译后挂载本地产物并重启
-#   .\build-and-up.ps1 -Fast -Restart   # 仅重启容器（热加载，不重新编译）
-#   .\build-and-up.ps1 -BuildOnly       # 只编译 dotnet，不启动 Docker
+#   .\build-and-up.ps1                  # 发布验证：前端 build → docker compose build → up
+#   .\build-and-up.ps1 -Fast            # 快速集成：前端 build → dotnet publish → dev.yml up
+#   .\build-and-up.ps1 -Fast -Restart   # 仅重启容器（不重新编译）
+#   .\build-and-up.ps1 -BuildOnly       # 只编译，不启动 Docker
 #   .\build-and-up.ps1 -Restart         # 仅重建镜像并重启（不重新编译）
 #   .\build-and-up.ps1 -NoCache         # 禁用 Docker 构建缓存
+#   .\build-and-up.ps1 -Validate        # 显式执行宿主机 dotnet build（默认由 Docker 内 publish）
+#
+# -Fast 跳过参数：
+#   .\build-and-up.ps1 -Fast -SkipFrontend   # 跳过前端 build，使用现有 dist
+#   .\build-and-up.ps1 -Fast -SkipBackend    # 跳过 dotnet publish，只重启容器
+#   .\build-and-up.ps1 -Fast -NoInstall      # 跳过 pnpm install，依赖已安装
 #
 # 模式说明：
-#   普通模式  — dotnet build → docker compose build → docker compose up -d
-#   -Fast 模式 — dotnet publish → docker compose -f dev.yml up -d（秒级重启）
+#   发布验证模式 — 前端 build → docker compose build → docker compose up -d
+#   -Fast 模式   — 前端 build → dotnet publish → docker compose -f dev.yml up -d
+#   dev 开发模式 — .\dev-up.ps1（源码挂载 + dotnet watch + 前端 HMR）
 #
 # 配置文件：
 #   data/config/llm.providers.json — LLM 服务商、模型与 profile 配置
@@ -22,7 +29,11 @@ param(
     [switch]$Fast,
     [switch]$BuildOnly,
     [switch]$Restart,
-    [switch]$NoCache
+    [switch]$NoCache,
+    [switch]$SkipFrontend,
+    [switch]$SkipBackend,
+    [switch]$NoInstall,
+    [switch]$Validate
 )
 
 $ErrorActionPreference = "Continue"
@@ -58,17 +69,21 @@ if (-not (Test-Path "$configDir\llm.providers.json")) {
     Fail "缺少 data/config/llm.providers.json，无法解析 LLM 服务商和模型配置"
 }
 
-# ── 1. 编译 Admin 前端（pnpm，产物 dist/，Docker 直接 COPY）──
-if (-not $Restart) {
+# ── 1. 编译 Admin 前端（pnpm，产物 dist/）─────────────
+if ((-not $Restart) -and (-not $SkipFrontend)) {
     Step "编译 Admin 前端 (pnpm)"
     $adminDir = "$Root\Source\PuddingPlatformAdmin"
     Invoke-Native {
         Push-Location $adminDir
         try {
-            pnpm install --frozen-lockfile 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "    pnpm install --frozen-lockfile 失败，尝试 pnpm install..." -ForegroundColor Yellow
-                pnpm install
+            if (-not $NoInstall) {
+                pnpm install --frozen-lockfile 2>$null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "    pnpm install --frozen-lockfile 失败，尝试 pnpm install..." -ForegroundColor Yellow
+                    pnpm install
+                }
+            } else {
+                Write-Host "    [--NoInstall] 跳过 pnpm install" -ForegroundColor Yellow
             }
             pnpm run build
         } finally {
@@ -76,75 +91,54 @@ if (-not $Restart) {
         }
     } "Admin 前端编译失败"
     Ok "Admin 前端编译通过"
+} elseif (-not $Restart) {
+    Write-Host "    [--SkipFrontend] 跳过前端构建，使用现有 dist" -ForegroundColor Yellow
+}
 
-    # 清理旧的前端构建产物，避免哈希冲突（Docker COPY dist/ 会提供正确的文件）
-    Step "清理旧 wwwroot 产物"
-    $wwwrootDir = "$Root\Source\PuddingAgent\wwwroot"
-    if (Test-Path $wwwrootDir) {
-        Remove-Item -Path "$wwwrootDir\*" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    # 生成根 index.html — 重定向到 /admin/（Umi base=/admin/）
-    $indexContent = @'
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="refresh" content="0;url=/admin/">
-    <title>Pudding</title>
-</head>
-<body>
-    <p>Redirecting to <a href="/admin/">Pudding Admin</a>...</p>
-</body>
-</html>
-'@
-    Set-Content -Path "$wwwrootDir\index.html" -Value $indexContent -Encoding UTF8
+# ── 1.5 复制前端产物到输出目录 wwwroot/ ─────────────
+# ADR-037: 脚本显式复制到输出目录（Program.cs 中 UseWebRoot 指向 AppContext.BaseDirectory/wwwroot）
+$adminDist = "$Root\Source\PuddingPlatformAdmin\dist"
 
-    # 复制 Admin SPA 构建产物到 wwwroot/admin/（用于 dotnet run 本地开发，Docker 通过 Dockerfile COPY）
-    $adminDistDir = "$Root\Source\PuddingPlatformAdmin\dist"
-    $adminWwwrootDir = "$wwwrootDir\admin"
-    if (Test-Path $adminDistDir) {
-        if (-not (Test-Path $adminWwwrootDir)) {
-            New-Item -ItemType Directory -Path $adminWwwrootDir -Force | Out-Null
-        }
-        Copy-Item -Path "$adminDistDir\*" -Destination $adminWwwrootDir -Recurse -Force
-        Ok "Admin SPA 已复制到 wwwroot/admin/"
+function Copy-DistToWwwroot($targetWwwroot) {
+    if (Test-Path $adminDist) {
+        Step "复制前端产物到 $targetWwwroot"
+        if (Test-Path $targetWwwroot) { Remove-Item "$targetWwwroot\*" -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $targetWwwroot -Force | Out-Null
+        Copy-Item "$adminDist\*" $targetWwwroot -Recurse -Force
+        Ok "前端产物已复制到 $targetWwwroot"
     } else {
-        Write-Host "    [WARN] Admin SPA 构建产物不存在: $adminDistDir" -ForegroundColor Yellow
-        Write-Host "    请先执行 pnpm run build" -ForegroundColor Yellow
+        Write-Host "    [i] 未找到前端产物 dist/，跳过复制" -ForegroundColor Yellow
     }
+}
 
-    Ok "wwwroot 已清理，index.html + Admin SPA 已就绪"
-
-    if ($Fast) {
-        Step "编译 PuddingAgent（发布模式，用于卷挂载）"
+# ── 2. 编译后端 ────────────────────────────────────────
+if (-not $Restart) {
+    if ($Fast -and (-not $SkipBackend)) {
+        Step "编译 PuddingAgent（Fast：发布模式，用于卷挂载）"
         $publishDir = "$Root\Source\PuddingAgent\bin\Release\net10.0\publish"
         if (Test-Path $publishDir) { Remove-Item "$publishDir\*" -Recurse -Force -ErrorAction SilentlyContinue }
         Invoke-Native {
             dotnet publish "$Root\Source\PuddingAgent\PuddingAgent.csproj" -c Release -o $publishDir --nologo
         } "编译失败"
-
-        # 将前端 dist 合并到 publish/wwwroot/admin（单挂载方式）
-        Step "合并前端产物到 publish/wwwroot/admin"
-        $publishAdminDir = Join-Path $publishDir "wwwroot\admin"
-        if (-not (Test-Path $publishAdminDir)) { New-Item -ItemType Directory -Path $publishAdminDir -Force | Out-Null }
-        $adminDistDir = "$Root\Source\PuddingPlatformAdmin\dist"
-        if (Test-Path $adminDistDir) {
-            Copy-Item -Path "$adminDistDir\*" -Destination $publishAdminDir -Recurse -Force
-            Ok "前端产物已合并到 publish/wwwroot/admin"
-        } else {
-            Write-Host "    [WARN] 前端产物不存在: $adminDistDir" -ForegroundColor Yellow
-        }
+        # publish 后复制前端到输出目录 wwwroot
+        Copy-DistToWwwroot "$publishDir\wwwroot"
         Ok "编译通过（发布产物: $publishDir）"
-    } else {
-        Step "编译 PuddingAgent"
+    } elseif ($Fast -and $SkipBackend) {
+        Write-Host "    [--SkipBackend] 跳过 dotnet publish" -ForegroundColor Yellow
+    } elseif ($Validate) {
+        # 显式传入 -Validate 时才在宿主机执行 dotnet build
+        # 默认普通模式依靠 Docker 内 dotnet publish，不重复编译
+        Step "编译 PuddingAgent（-Validate 显式验证）"
         Invoke-Native {
             dotnet build "$Root\Source\PuddingAgent\PuddingAgent.csproj" -c Release --nologo
         } "编译失败"
         Ok "编译通过"
+    } else {
+        Write-Host "    [i] 宿主机跳过 dotnet build，交由 Docker 内 dotnet publish" -ForegroundColor Yellow
     }
 }
 
-# ── 2. Docker 构建与启动 ─────────────────────────────────
+# ── 3. Docker 构建与启动 ─────────────────────────────────
 if (-not $BuildOnly) {
     Push-Location $Root
 

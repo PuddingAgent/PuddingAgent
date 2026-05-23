@@ -1,16 +1,29 @@
 {
-    // 使用 IntelliSense 了解相关属性。 
-    // 悬停以查看现有属性的描述。
-    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
-            "name": "C#: ApplicationWPF Debug",
-            "type": "dotnet",
+            "name": "PuddingAgent",
+            "type": "coreclr",
             "request": "launch",
-            "projectPath": "${workspaceFolder}/Source/MPCAL.ApplicationWPF/MPCAL.ApplicationWPF.csproj"
+            "preLaunchTask": "pudding-build-frontend",
+            "program": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/Source/PuddingAgent/PuddingAgent.csproj"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5000",
+                "PUDDING_DATA_ROOT": "${workspaceFolder}/data",
+                "PUDDING_LOG_LEVEL": "Debug",
+                "Jwt__Key": "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!",
+                "Jwt__Issuer": "pudding-platform",
+                "Jwt__Audience": "pudding-admin",
+                "Jwt__ExpiryHours": "8",
+                "Pudding__ControllerEndpoint": "http://localhost:5000"
+            }
         }
-
     ]
 }

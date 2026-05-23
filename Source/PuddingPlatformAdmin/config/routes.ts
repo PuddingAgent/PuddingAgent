@@ -121,7 +121,7 @@ export default [
     name: 'diagnostics',
     icon: 'bug',
     routes: [
-      { path: '/diagnostics', component: './diagnostics/DiagnosticsPage', name: 'overview' },
+      { path: '/diagnostics/overview', redirect: '/diagnostics/overview', component: './diagnostics/DiagnosticsPage', name: 'overview' },
       { path: '/diagnostics/timeline', component: './diagnostics/RuntimeTimelinePage', name: 'timeline' },
       { path: '/diagnostics/subagent-runs', component: './diagnostics/SubAgentRunsPage', name: 'subagent-runs' },
     ],

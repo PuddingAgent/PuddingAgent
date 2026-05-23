@@ -53,7 +53,7 @@ describe('Login Page', () => {
       />,
     );
 
-    await rootContainer.findAllByText('Pudding Runtime');
+    await rootContainer.findByText('本地 AI Agent 工作台');
 
     act(() => {
       historyRef.current?.push('/user/login');
@@ -63,29 +63,23 @@ describe('Login Page', () => {
       await rootContainer.findByTestId('runtime-entry-shell'),
     ).toBeTruthy();
     expect(
+      await rootContainer.findByTestId('login-ambient-backdrop'),
+    ).toBeTruthy();
+    expect(
       await rootContainer.findByTestId('runtime-entry-visual'),
     ).toBeTruthy();
     expect(
-      await rootContainer.findByTestId('workshop-illustration'),
-    ).toBeTruthy();
-    expect(await rootContainer.findByTestId('auth-card-login')).toBeTruthy();
+      rootContainer.queryByTestId('runtime-entry-map'),
+    ).not.toBeTruthy();
+    const authCard = await rootContainer.findByTestId('auth-card-login');
+    expect(authCard).toBeTruthy();
     expect(
       await rootContainer
         .findByTestId('auth-card-login')
         .then((node) => node.getAttribute('data-surface')),
     ).toBe('warm-paper');
     expect(await rootContainer.findByText('本地 AI Agent 工作台')).toBeTruthy();
-    expect(await rootContainer.findByText('Local AI Workshop')).toBeTruthy();
-    expect(await rootContainer.findByText('森林边的本地运行工坊')).toBeTruthy();
-    expect(
-      (await rootContainer.findAllByText('Workspace')).length,
-    ).toBeGreaterThan(0);
-    expect((await rootContainer.findAllByText('Agent')).length).toBeGreaterThan(
-      0,
-    );
-    expect(
-      (await rootContainer.findAllByText('Skills')).length,
-    ).toBeGreaterThan(0);
+    expect(authCard.textContent).toContain('登录 PuddingAgent');
     expect(await rootContainer.findByLabelText('用户名')).toBeTruthy();
     expect(await rootContainer.findByLabelText('密码')).toBeTruthy();
 
@@ -103,7 +97,7 @@ describe('Login Page', () => {
       />,
     );
 
-    await rootContainer.findAllByText('Pudding Runtime');
+    await rootContainer.findByText('本地 AI Agent 工作台');
 
     const userNameInput = await rootContainer.findByLabelText('用户名');
 

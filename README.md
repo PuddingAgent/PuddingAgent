@@ -75,6 +75,50 @@ docker run -p 5000:8080 pudding-agent
 
 ---
 
+## Development / Build / Release
+
+Pudding provides three build workflows for different scenarios:
+
+### Daily Development (source watch, HMR, no Docker required)
+
+```powershell
+.\dev-up.ps1
+```
+
+- Backend `dotnet watch`: auto-restarts on `.cs` file changes
+- Frontend `pnpm run start:dev`: HMR on `.tsx`/`.css` changes
+- Frontend dev server: http://localhost:8000
+- Backend API: http://localhost:5000
+- Status: `.\dev-up.ps1 -Status`
+- View logs: `.\dev-up.ps1 -Logs`
+- Stop: `.\dev-up.ps1 -Down`
+- Restart: `.\dev-up.ps1 -Restart`
+- Skip dependency install: `.\dev-up.ps1 -NoInstall`
+
+### Fast Integration (verify local publish + container)
+
+```powershell
+.\build-and-up.ps1 -Fast
+```
+
+Optional skip switches:
+
+```powershell
+.\build-and-up.ps1 -Fast -SkipFrontend    # skip frontend build
+.\build-and-up.ps1 -Fast -SkipBackend     # skip backend publish
+.\build-and-up.ps1 -Fast -NoInstall       # skip pnpm install
+```
+
+### Release Verification (production build + image)
+
+```powershell
+.\build-and-up.ps1
+```
+
+Runs frontend production build → Docker `dotnet publish` → final image.
+
+---
+
 ## Tech Stack
 
 She's built with one rule: **zero external dependencies for the user.**

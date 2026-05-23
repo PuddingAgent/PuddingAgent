@@ -10,18 +10,24 @@
  * @doc https://umijs.org/docs/guides/proxy
  */
 export default {
-  // dev 环境代理 → 后端 API（默认 localhost:5000，可通过 PROXY_TARGET 环境变量覆盖）
+  // dev 环境代理 → 后端 API（通过 nginx 统一路由，使用相对路径）
+  // 可通过 PUDDING_API_BASE_URL 或 PROXY_TARGET 环境变量覆盖目标地址
   dev: {
     '/api/': {
-      target: process.env.PROXY_TARGET || 'http://localhost:5000',
+      target: process.env.PUDDING_API_BASE_URL || process.env.PROXY_TARGET || '',
       changeOrigin: true,
       secure: false,
     },
     '/ingress/': {
-      target: process.env.PROXY_TARGET || 'http://localhost:5000',
+      target: process.env.PUDDING_API_BASE_URL || process.env.PROXY_TARGET || '',
       changeOrigin: true,
       secure: false,
       pathRewrite: { '^/ingress/': '/api/' },
+    },
+    '/assets/': {
+      target: process.env.PUDDING_API_BASE_URL || process.env.PROXY_TARGET || 'http://localhost:5000',
+      changeOrigin: true,
+      secure: false,
     },
   },
   /**

@@ -38,4 +38,22 @@
     </Content>
   </ItemGroup>
 
+  <!-- 运行时 data 目录（配置、数据库、Agent 实例等）拷贝到输出 -->
+  <ItemGroup Condition="Exists('..\..\data\config\llm.providers.json')">
+    <Content Include="..\..\data\**\*">
+      <Link>data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- ADR-037: Admin SPA 静态产物由脚本在构建时复制到 wwwroot/admin/ -->
+  <!-- 见 build-and-up.ps1（dotnet publish 前复制）和 dev-up.ps1（dotnet watch 前复制） -->
+
+  <!-- ADR-034: Agent 头像资源由 dev-up.ps1/build-and-up.ps1 在启动时复制到输出目录 -->
+
+  <Target Name="EnsureAdminDistExists" BeforeTargets="Publish" Condition="'$(SkipAdminDistCheck)' != 'true'">
+    <Error Condition="!Exists('..\PuddingPlatformAdmin\dist\index.html')" Text="Admin SPA dist is missing. Run pnpm run build in Source/PuddingPlatformAdmin first, or set SkipAdminDistCheck=true for backend-only development." />
+  </Target>
+
 </Project>

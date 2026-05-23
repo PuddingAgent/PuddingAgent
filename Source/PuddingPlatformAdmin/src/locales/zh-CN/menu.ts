@@ -13,6 +13,7 @@ export default {
   'menu.teamManagement': '团队管理',
   'menu.session': '会话记录',
   'menu.memoryLibrary': '记忆图书馆',
+  'menu.tokenStats': 'Token 统计',
   'menu.runtimeManagement': 'Runtime 节点',
   'menu.diagnostics': '诊断',
   'menu.diagnostics.overview': '概览',

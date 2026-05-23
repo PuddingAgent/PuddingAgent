@@ -406,7 +406,7 @@ const WorkspacePage: React.FC = () => {
         okText="创建"
         cancelText="取消"
         width={520}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" className={styles.createForm}>
           <Form.Item

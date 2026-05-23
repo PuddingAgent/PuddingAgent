@@ -121,18 +121,20 @@ if (aspnetcoreEnvironment == "Development")
 builder.Host.UseSerilog();
 
 // ── 端口 ─────────────────────────────────────────────
-builder.WebHost.UseUrls("http://0.0.0.0:8080");
+// 默认监听 8080（Docker/生产环境）；dev-up.ps1 通过 ASPNETCORE_URLS 覆盖为 localhost:5000
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+{
+    builder.WebHost.UseUrls("http://0.0.0.0:8080");
+}
 
 // ── CORS（允许 Admin SPA 跨域访问）───────────────────
+var corsOrigins = (builder.Configuration["Cors:AllowedOrigins"]
+    ?? "http://localhost:8000;http://localhost:8001;http://localhost:8004;http://localhost:3000;http://localhost:8080")
+    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AdminSpa", policy =>
-        policy.WithOrigins(
-                "http://localhost:8000",
-                "http://localhost:8001",
-                "http://localhost:8004",
-            "http://localhost:3000",
-            "http://localhost:8080")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials());
@@ -216,6 +218,10 @@ builder.Services.AddSingleton<LlmProviderFileService>();
 builder.Services.AddSingleton<AgentTemplateFileService>();
 builder.Services.AddSingleton<WorkspaceAgentFileService>();
 builder.Services.AddSingleton<CapabilityFileService>();
+// ── 配置文件热重载服务 ──────────────────────────────
+// 监听 data/config/ 文件变更，自动触发缓存失效（Agent 修改配置后无需重启）
+builder.Services.AddSingleton<ConfigHotReloadService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ConfigHotReloadService>());
 
 // ── 遗留 DB-backed Template/LLM 服务（逐步废弃）────────────────────
 builder.Services.AddSingleton<AgentTemplateProvider>();
@@ -385,18 +391,30 @@ builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
 builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 
 // ── 统一 LLM 配置服务（data/config/llm.providers.json，唯一来源）──────────
+// 支持运行时热重载：外部修改 llm.providers.json 后调用 Reload() 即可生效
 var fileConfigLoader = new PuddingFileConfigLoader(dataPaths);
-var llmLoadResult = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
-if (!llmLoadResult.Success)
+
+// 启动时验证配置；启动后通过 ConfigHotReloadService 监听文件变更
+var initialLoadResult = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
+if (!initialLoadResult.Success)
 {
-    var errorSummary = string.Join("\n  - ", llmLoadResult.Errors);
+    var errorSummary = string.Join("\n  - ", initialLoadResult.Errors);
     throw new InvalidOperationException(
         $"LLM providers config validation failed:\n  - {errorSummary}");
 }
-var llmProvidersConfig = llmLoadResult.Config!;
-var llmConfigService = new PuddingFileLlmConfigService(llmProvidersConfig);
+
+var llmConfigService = new PuddingFileLlmConfigService(() =>
+{
+    // 热重载时重新读取并验证文件
+    var result = fileConfigLoader.LoadLlmProvidersAsync().GetAwaiter().GetResult();
+    if (!result.Success)
+    {
+        // 重载失败则返回启动时的配置，不影响运行
+        return initialLoadResult.Config!;
+    }
+    return result.Config!;
+});
 builder.Services.AddSingleton(fileConfigLoader);
-builder.Services.AddSingleton(llmProvidersConfig);
 builder.Services.AddSingleton<ILlmConfigService>(llmConfigService);
 
 // Memory LLM client — 通过统一服务获取配置
@@ -931,7 +949,8 @@ using (var scope = app.Services.CreateScope())
     await workspaceCatalog.LoadAsync();
 
     var runtimeDispatcher = scope.ServiceProvider.GetRequiredService<RuntimeDispatcher>();
-    runtimeDispatcher.SetFallbackEndpoint("http://localhost:8080");
+    runtimeDispatcher.SetFallbackEndpoint(
+        builder.Configuration["Pudding:RuntimeFallbackEndpoint"] ?? "http://localhost:8080");
 
     // ── JSON 配置种子（幂等 Upsert）──────────────────
     var configSeed = scope.ServiceProvider.GetRequiredService<JsonConfigSeedService>();
@@ -969,7 +988,14 @@ app.UseSession();
 
 app.UseAuthorization();
 
-// ── 静态文件 ─────────────────────────────────────────
+// ── 静态文件（同时从输出目录 wwwroot/ 和项目 wwwroot/ 提供）─
+// 输出目录 wwwroot 由脚本复制前端产物，支持热加载
+var outputWwwRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+if (Directory.Exists(outputWwwRoot))
+{
+    var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(outputWwwRoot);
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+}
 app.MapStaticAssets();
 app.UseStaticFiles();
 
@@ -1016,6 +1042,16 @@ app.MapGet("/health", () =>
         buildTime = buildTime ?? "unknown",
         timestamp = DateTimeOffset.UtcNow
     });
+});
+
+// ── 配置热重载接口（Agent 修改文件后手动触发）───────
+app.MapMethods("/admin/reload", new[] { "GET", "POST" }, (HttpContext context) =>
+{
+    var hotReload = context.RequestServices.GetRequiredService<ConfigHotReloadService>();
+    var logger = context.RequestServices.GetRequiredService<ILogger<ConfigHotReloadService>>();
+    hotReload.ReloadAll();
+    logger.LogInformation("[HotReload] 管理员手动触发了全配置重载");
+    return Results.Ok(new { status = "reloaded", timestamp = DateTimeOffset.UtcNow });
 });
 
 // ── 潜意识 LLM 状态（可观测性）──────────────────────

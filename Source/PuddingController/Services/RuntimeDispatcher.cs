@@ -15,16 +15,18 @@ public sealed class RuntimeDispatcher
     private readonly RuntimeRegistryService _registry;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<RuntimeDispatcher> _logger;
-    private string _fallbackEndpoint = "http://localhost:5100";
+    private string _fallbackEndpoint;
 
     public RuntimeDispatcher(
         RuntimeRegistryService registry,
         IHttpClientFactory httpClientFactory,
-        ILogger<RuntimeDispatcher> logger)
+        ILogger<RuntimeDispatcher> logger,
+        IConfiguration configuration)
     {
         _registry = registry;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _fallbackEndpoint = configuration["Pudding:RuntimeFallbackEndpoint"] ?? "http://localhost:5100";
     }
 
     /// <summary>配置兜底静态端点（从 appsettings 读取，用于无注册节点时回退）。</summary>

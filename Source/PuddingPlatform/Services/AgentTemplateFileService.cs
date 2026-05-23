@@ -93,8 +93,8 @@ public sealed class AgentTemplateFileService
                 Role = req.Role,
                 DefaultLlmProfiles = new AgentDefaultLlmProfiles
                 {
-                    Conscious = req.PreferredProviderId is not null ? "default-conscious" : null,
-                    Subconscious = null,
+                    Conscious = req.ConsciousProfileId,
+                    Subconscious = req.SubconsciousProfileId,
                 },
                 MemorySearchMode = req.MemorySearchMode ?? "deep",
                 ReasoningEffort = req.ReasoningEffort,
@@ -154,6 +154,11 @@ public sealed class AgentTemplateFileService
                 IsEnabled = req.IsEnabled,
                 MemorySearchMode = req.MemorySearchMode ?? manifest.MemorySearchMode,
                 ReasoningEffort = req.ReasoningEffort ?? manifest.ReasoningEffort,
+                DefaultLlmProfiles = new AgentDefaultLlmProfiles
+                {
+                    Conscious = req.ConsciousProfileId ?? manifest.DefaultLlmProfiles.Conscious,
+                    Subconscious = req.SubconsciousProfileId ?? manifest.DefaultLlmProfiles.Subconscious,
+                },
             };
 
             await AtomicFileWriter.WriteJsonAsync(Path.Combine(templateDir, "manifest.json"), updated, JsonOptions, ct);
@@ -225,7 +230,7 @@ public sealed class AgentTemplateFileService
             Role: m.Role,
             SystemPrompt: null,
             UserPromptTemplate: null,
-            PreferredProviderId: m.DefaultLlmProfiles.Conscious,
+            PreferredProviderId: null,
             PreferredModelId: null,
             MaxContextTokens: m.MaxContextTokens,
             MaxReplyTokens: m.MaxReplyTokens,
@@ -250,7 +255,9 @@ public sealed class AgentTemplateFileService
             ReasoningEffort: m.ReasoningEffort,
             MaxRounds: 200,
             MaxElapsedSeconds: 1200,
-            MaxToolCallsTotal: 100
+            MaxToolCallsTotal: 100,
+            ConsciousProfileId: m.DefaultLlmProfiles.Conscious,
+            SubconsciousProfileId: m.DefaultLlmProfiles.Subconscious
         );
     }
 }

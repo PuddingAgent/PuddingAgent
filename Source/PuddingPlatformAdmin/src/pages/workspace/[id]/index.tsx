@@ -2004,7 +2004,7 @@ const WorkspaceDetailPage: React.FC = () => {
         confirmLoading={addMemberLoading}
         okText="添加"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={memberForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item
@@ -2041,7 +2041,7 @@ const WorkspaceDetailPage: React.FC = () => {
         confirmLoading={editLoading}
         okText="保存"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
         width={520}
       >
         <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>

@@ -37,14 +37,23 @@ public static class AtomicFileWriter
                 fs.Flush(flushToDisk: true);
             }
 
-            // 替换目标文件（Windows 下使用 File.Replace 保持元数据）
-            if (OperatingSystem.IsWindows())
+            // 替换/写入目标文件
+            // File.Replace 要求目标已存在（适合更新已有配置）；
+            // 若目标不存在则用 File.Move（适合首次创建）。
+            if (File.Exists(filePath))
             {
-                File.Replace(tempPath, filePath, null, ignoreMetadataErrors: true);
+                if (OperatingSystem.IsWindows())
+                {
+                    File.Replace(tempPath, filePath, null, ignoreMetadataErrors: true);
+                }
+                else
+                {
+                    File.Move(tempPath, filePath, overwrite: true);
+                }
             }
             else
             {
-                File.Move(tempPath, filePath, overwrite: true);
+                File.Move(tempPath, filePath);
             }
         }
         catch

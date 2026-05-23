@@ -321,7 +321,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
           onChange={onWorkspaceChange}
           placeholder="工作空间"
           popupMatchSelectWidth={false}
-          dropdownRender={dropdownRender}
+          popupRender={dropdownRender}
         />
         <Select
           className={styles.headerSelect}

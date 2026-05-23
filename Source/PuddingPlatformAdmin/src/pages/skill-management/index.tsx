@@ -284,7 +284,7 @@ const SkillManagementPage: React.FC = () => {
                         backdropFilter: 'blur(8px)',
                         boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
                       }}
-                      bodyStyle={{ padding: '16px' }}
+                      styles={{ body: { padding: '16px' } }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                         <Space>

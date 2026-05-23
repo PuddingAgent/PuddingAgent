@@ -149,3 +149,8 @@ Architect 不止响应新架构方向，还承担**领航员**角色——周期
 
 
 pudding登录，测试环境使用，用户名和密码是 admin Admin@123456
+
+
+日常开发 → dev-up.ps1（源码挂载 + watch + HMR）
+快速集成 → .build-and-up.ps1 -Fast（支持跳过参数）
+发布验证 → build-and-up.ps1（生产构建 + Docker 镜像）

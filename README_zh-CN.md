@@ -94,6 +94,50 @@ docker run -p 5000:8080 pudding-agent
 
 ---
 
+## 开发/构建/发布
+
+Pudding 提供了三条构建链路，适用于不同的使用场景：
+
+### 日常开发（源码 watch，热更新，不依赖 Docker）
+
+```powershell
+.\dev-up.ps1
+```
+
+- 后端 `dotnet watch`：修改 `.cs` 文件后自动重启
+- 前端 `pnpm run start:dev`：修改 `.tsx`/`.css` 后 HMR 热更新
+- 前端开发服务器：http://localhost:8000
+- 后端 API：http://localhost:5000
+- 查看状态：`.\dev-up.ps1 -Status`
+- 查看日志：`.\dev-up.ps1 -Logs`
+- 停止：`.\dev-up.ps1 -Down`
+- 重启：`.\dev-up.ps1 -Restart`
+- 跳过依赖安装：`.\dev-up.ps1 -NoInstall`
+
+### 快速集成（验证本地 publish 产物与容器运行时组合）
+
+```powershell
+.\build-and-up.ps1 -Fast
+```
+
+可选跳过参数：
+
+```powershell
+.\build-and-up.ps1 -Fast -SkipFrontend    # 跳过前端构建
+.\build-and-up.ps1 -Fast -SkipBackend     # 跳过后端 publish
+.\build-and-up.ps1 -Fast -NoInstall       # 跳过 pnpm install
+```
+
+### 发布验证（生产构建 + 镜像）
+
+```powershell
+.\build-and-up.ps1
+```
+
+执行前端生产构建 → Docker 内 `dotnet publish` → 生成最终镜像。
+
+---
+
 ## 技术选型
 
 她的构建遵循一条规则：**用户零外部依赖。**
