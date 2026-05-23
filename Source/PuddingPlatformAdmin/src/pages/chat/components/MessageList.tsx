@@ -5,9 +5,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStyles } from '../styles';
 import type { ChatTurn, SubAgentCardMap, SubAgentCard as SubAgentCardType } from '../types';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
-import MessageGroup from './MessageGroup';
-import AmbientParticles from './AmbientParticles';
-import GlobeSphere from './GlobeSphere';
+import MessageStream from './MessageStream';
+import ChatEmptyState from './ChatEmptyState';
+import type { ChatEmptyStateMode } from './ChatEmptyState';
 
 const { Title, Text } = Typography;
 
@@ -22,9 +22,7 @@ interface MessageListProps {
   onClearError: () => void;
   onLoadMore: () => void;
   formatTime: (ts: number) => string;
-  getStepTone: (status?: string) => 'executing' | 'success' | 'error';
   onDeleteTurn: (turnId: string) => void;
-  onToggleReasoning: (turnId: string, blockId: string) => void;
   onContextMenu: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn?: (turnId: string) => void;
   onPinTurn?: (turnId: string) => void;
@@ -86,7 +84,7 @@ const SubAgentCard: React.FC<{ card: SubAgentCardType }> = ({ card }) => {
 
 const MessageList: React.FC<MessageListProps> = ({
   turns, agentId, selectedAgent, error, historyLoading, loadingMore, hasMoreMessages,
-  onClearError, onLoadMore, formatTime, getStepTone, onDeleteTurn, onToggleReasoning, onContextMenu,
+  onClearError, onLoadMore, formatTime, onDeleteTurn, onContextMenu,
   onRerunTurn, onPinTurn,
   messageListRef, listEndRef, subAgentCards,
 }) => {
@@ -94,6 +92,17 @@ const MessageList: React.FC<MessageListProps> = ({
   const [unreadCount, setUnreadCount] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const prevTurnCountRef = useRef(turns.length);
+  // ADR-InkBloom: RAF 节流 scroll ref
+  const scrollRafRef = useRef<number | null>(null);
+  const scheduleFollowScroll = useCallback(() => {
+    if (!followRef.current) return;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (!followRef.current) return;
+      listEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    });
+  }, [listEndRef]);
   // ── 滚动跟随状态机（ref 避免 React 异步渲染时机问题）──
   const followRef = useRef(true);            // true=FOLLOWING, false=FREE
   const userInitiatedScrollRef = useRef(false);
@@ -160,7 +169,7 @@ const MessageList: React.FC<MessageListProps> = ({
     prevTurnCountRef.current = turns.length;
   }, [turns.length, scrollToBottom]);
 
-  // Streaming 内容增长时：用 ResizeObserver 监听最后一个 turn 的 DOM 变化
+  // Streaming 内容增长时：用 ResizeObserver 监听最后一个 turn 的 DOM 变化（RAF 节流）
   useEffect(() => {
     const el = messageListRef.current;
     if (!el) return;
@@ -169,14 +178,18 @@ const MessageList: React.FC<MessageListProps> = ({
     if (!lastTurn) return;
 
     const observer = new ResizeObserver(() => {
-      if (followRef.current) {
-        listEndRef.current?.scrollIntoView({ behavior: 'auto' });
-      }
+      scheduleFollowScroll();
     });
     observer.observe(lastTurn);
 
-    return () => observer.disconnect();
-  }, [turns.length, listEndRef, messageListRef]);
+    return () => {
+      observer.disconnect();
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [turns.length, listEndRef, messageListRef, scheduleFollowScroll]);
 
   // 点击未读按钮 → 强制 FOLLOWING
   const handleUnreadClick = useCallback(() => {
@@ -185,48 +198,24 @@ const MessageList: React.FC<MessageListProps> = ({
 
   return (
     <div className={styles.messageList} ref={messageListRef} style={{ position: 'relative' }} data-testid="chat-message-list">
-      {!agentId && !error && (
-        <div className={styles.onboardingState} style={{ position: 'relative' }}>
-          <AmbientParticles count={8} opacity={[0.15, 0.28]} />
-          <img src="/admin/assets/images/logo.png" alt="Pudding" className={styles.onboardingLogo} />
-          <Title level={2} className={styles.onboardingTitle}>你好，我是布丁</Title>
-          <Text className={styles.onboardingSubtitle}>选择一个工作空间和 Agent，然后把任务交给我。</Text>
-        </div>
-      )}
-      {agentId && turns.length === 0 && !error && !historyLoading && (
-        <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: 16, padding: '48px 24px', position: 'relative',
-        }}>
-          <AmbientParticles count={8} opacity={[0.15, 0.28]} />
-          {/* 3D 粒子球体 — 在文字上方 */}
-          <div style={{ zIndex: 1, marginBottom: 8 }}>
-            <GlobeSphere size={240} />
-          </div>
-          <Title level={2} style={{ margin: 0, fontSize: 22, fontWeight: 600, color: 'var(--text-primary)', zIndex: 1 }}>
-            Pudding Runtime Ready
-          </Title>
-          <Text style={{ color: 'var(--text-muted)', fontSize: 14, textAlign: 'center', maxWidth: 320, zIndex: 1 }}>
-            一个本地 AI Agent 正在安静等待意图
-          </Text>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {['分析代码任务', '整理会议记录', '检索记忆'].map((suggestion) => (
-              <div key={suggestion} style={{
-                padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
-                background: 'color-mix(in srgb, var(--accent-purple) 8%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--accent-purple) 18%, transparent)',
-                fontSize: 13, color: 'var(--text-muted)',
-                transition: 'all 150ms',
-              }}
-                onMouseEnter={(e) => { (e.target as HTMLDivElement).style.background = 'color-mix(in srgb, var(--accent-purple) 16%, transparent)'; }}
-                onMouseLeave={(e) => { (e.target as HTMLDivElement).style.background = 'color-mix(in srgb, var(--accent-purple) 8%, transparent)'; }}
-              >
-                ○ {suggestion}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {(() => {
+        const emptyStateMode: ChatEmptyStateMode | null = (() => {
+          if (historyLoading || turns.length > 0) return null;
+          if (error) return 'error';
+          if (!agentId) return 'no-agent';
+          return 'ready';
+        })();
+        return emptyStateMode ? (
+          <ChatEmptyState
+            mode={emptyStateMode}
+            errorText={error ?? undefined}
+            onRetry={onClearError}
+            onSuggestionClick={(text) => {
+              window.dispatchEvent(new CustomEvent('pudding:chat:suggestion', { detail: text }));
+            }}
+          />
+        ) : null;
+      })()}
       {historyLoading && (
         <div className={styles.historyLoading}><Spin /></div>
       )}
@@ -241,28 +230,19 @@ const MessageList: React.FC<MessageListProps> = ({
           加载更多历史消息
         </div>
       )}
-      {turns.map((turn, idx) => {
-        const isLast = idx === turns.length - 1;
-        const groupElem = (
-          <MessageGroup
-            key={turn.turnId}
-            turn={turn}
+      {turns.length > 0 && (
+        <div data-turn-last={turns.length > 0 ? 'true' : undefined}>
+          <MessageStream
             turns={turns}
-            isLatest={isLast}
-            selectedAgent={selectedAgent}
+            agentName={selectedAgent?.name || 'Pudding'}
             formatTime={formatTime}
-            getStepTone={getStepTone}
-            onDeleteTurn={onDeleteTurn}
-            onToggleReasoning={onToggleReasoning}
             onContextMenu={onContextMenu}
             onRerunTurn={onRerunTurn}
             onPinTurn={onPinTurn}
+            onDeleteTurn={onDeleteTurn}
           />
-        );
-        return isLast
-          ? <div key={turn.turnId} data-turn-last="true">{groupElem}</div>
-          : groupElem;
-      })}
+        </div>
+      )}
       {/* 子代理卡片 */}
       {subAgentCards && Object.values(subAgentCards).map(card => (
         <SubAgentCard key={card.turnId} card={card} />

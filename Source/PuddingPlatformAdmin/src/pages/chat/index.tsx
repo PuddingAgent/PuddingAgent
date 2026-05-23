@@ -148,9 +148,7 @@ const ChatPage: React.FC = () => {
           cacheMissTokens={chat.sessionCacheMissTokens}
           cacheHitRate={chat.cacheHitRate}
           formatTime={chat.formatTime}
-          getStepTone={chat.getStepTone}
           onDeleteTurn={chat.onDeleteTurn}
-          onToggleReasoning={chat.onToggleReasoning}
           onContextMenu={handleContextMenu}
           onRerunTurn={handleRerunTurn}
           onPinTurn={handlePinTurn}

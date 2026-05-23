@@ -56,9 +56,7 @@ interface ChatLayoutProps {
   cacheMissTokens?: number;
   cacheHitRate?: number;
   formatTime: (ts: number) => string;
-  getStepTone: (status?: string) => 'executing' | 'success' | 'error';
   onDeleteTurn: (turnId: string) => void;
-  onToggleReasoning: (turnId: string, blockId: string) => void;
   onContextMenu: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn: (turnId: string) => void;
   onPinTurn: (turnId: string) => void;
@@ -124,9 +122,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         cacheMissTokens={props.cacheMissTokens}
         cacheHitRate={props.cacheHitRate}
         formatTime={props.formatTime}
-        getStepTone={props.getStepTone}
         onDeleteTurn={props.onDeleteTurn}
-        onToggleReasoning={props.onToggleReasoning}
         onContextMenu={props.onContextMenu}
         onRerunTurn={props.onRerunTurn}
         onPinTurn={props.onPinTurn}

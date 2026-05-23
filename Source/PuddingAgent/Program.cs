@@ -266,6 +266,7 @@ builder.Services.AddSingleton<MemoryRecallService>();
 builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<MemoryRecallService>());
 builder.Services.AddSingleton<JsonlSessionWriter>();
 builder.Services.AddSingleton<JsonlSessionReader>();
+builder.Services.AddSingleton<ChatTranscriptWriter>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
 builder.Services.AddSingleton<AgentProfileProvider>();
 builder.Services.AddSingleton<IAgentWorkspaceGuard, AgentWorkspaceGuard>();

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,11 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
 {
     private const int DefaultPageSize = 20;
     private const int MaxPageSize = 50;
+    private static readonly string[] TranscriptFallbackEventTypes = ["delta", "thinking", "usage", "done"];
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+    };
 
     // ── 消息 DTO ────────────────────────────────────────────────
 
@@ -58,6 +64,15 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
     {
         if (limit < 1 || limit > MaxPageSize)
             limit = DefaultPageSize;
+
+        var hasMaterializedMessages = await db.ChatMessages
+            .AsNoTracking()
+            .AnyAsync(m => m.SessionId == sessionId, ct);
+
+        if (!hasMaterializedMessages)
+        {
+            return Ok(await BuildFallbackFromEventLogAsync(sessionId, before, limit, ct));
+        }
 
         IQueryable<ChatMessageEntity> query = db.ChatMessages
             .AsNoTracking()
@@ -172,7 +187,7 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
         {
             try
             {
-                thinking = JsonSerializer.Deserialize<List<ThinkingChunkDto>>(m.ThinkingJson);
+                thinking = JsonSerializer.Deserialize<List<ThinkingChunkDto>>(m.ThinkingJson, JsonOpts);
             }
             catch { /* ignore malformed thinking JSON */ }
         }
@@ -182,7 +197,7 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
         {
             try
             {
-                usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson);
+                usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson, JsonOpts);
             }
             catch { /* ignore */ }
         }
@@ -195,5 +210,201 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
             usage,
             m.CreatedAt
         );
+    }
+
+    /// <summary>
+    /// ADR-031 旧数据降级：ChatMessages 为空时，从 session_event_log 合成 assistant-only 转录。
+    /// 用户原文未持久化，不能伪造；前端会将 agent-only 消息渲染为 orphan turn。
+    /// </summary>
+    private async Task<MessageListResponse> BuildFallbackFromEventLogAsync(
+        string sessionId,
+        long? before,
+        int limit,
+        CancellationToken ct)
+    {
+        var events = await db.SessionEventLogs
+            .AsNoTracking()
+            .Where(e => e.SessionId == sessionId && TranscriptFallbackEventTypes.Contains(e.EventType))
+            .OrderBy(e => e.SequenceNum)
+            .Select(e => new
+            {
+                e.SequenceNum,
+                e.EventType,
+                e.Data,
+                e.RecordedAt,
+            })
+            .ToListAsync(ct);
+
+        if (events.Count == 0)
+            return new MessageListResponse([], false, null);
+
+        var fallbackMessages = new List<ChatMessageDto>();
+        var replyBuilder = new StringBuilder();
+        var thinking = new List<ThinkingChunkDto>();
+        string? usageJson = null;
+        long? firstCreatedAt = null;
+        long lastSequence = 0;
+        long lastCreatedAt = 0;
+
+        foreach (var ev in events)
+        {
+            var createdAt = ParseRecordedAtMillis(ev.RecordedAt);
+            firstCreatedAt ??= createdAt;
+            lastSequence = ev.SequenceNum;
+            lastCreatedAt = createdAt;
+
+            if (ev.EventType == "delta")
+            {
+                var delta = TryReadStringProperty(ev.Data, "delta");
+                if (!string.IsNullOrEmpty(delta))
+                    replyBuilder.Append(delta);
+                continue;
+            }
+
+            if (ev.EventType == "thinking")
+            {
+                var delta = TryReadStringProperty(ev.Data, "delta");
+                if (!string.IsNullOrEmpty(delta))
+                    thinking.Add(new ThinkingChunkDto(delta, createdAt));
+                continue;
+            }
+
+            if (ev.EventType == "usage")
+            {
+                usageJson = TryReadUsageJson(ev.Data) ?? usageJson;
+                continue;
+            }
+
+            if (ev.EventType == "done")
+            {
+                var reply = TryReadStringProperty(ev.Data, "reply");
+                var content = !string.IsNullOrWhiteSpace(reply)
+                    ? reply
+                    : replyBuilder.ToString();
+                var doneUsageJson = TryReadUsageJson(ev.Data) ?? usageJson;
+
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    fallbackMessages.Add(new ChatMessageDto(
+                        -Math.Abs(ev.SequenceNum),
+                        "agent",
+                        content,
+                        thinking.Count > 0 ? [.. thinking] : null,
+                        DeserializeUsage(doneUsageJson),
+                        firstCreatedAt ?? createdAt));
+                }
+
+                replyBuilder.Clear();
+                thinking.Clear();
+                usageJson = null;
+                firstCreatedAt = null;
+            }
+        }
+
+        if (replyBuilder.Length > 0)
+        {
+            fallbackMessages.Add(new ChatMessageDto(
+                -Math.Abs(lastSequence == 0 ? 1 : lastSequence),
+                "agent",
+                replyBuilder.ToString(),
+                thinking.Count > 0 ? thinking : null,
+                DeserializeUsage(usageJson),
+                firstCreatedAt ?? lastCreatedAt));
+        }
+
+        var pageCandidates = fallbackMessages.AsEnumerable();
+        if (before.HasValue)
+            pageCandidates = pageCandidates.Where(m => m.CreatedAt < before.Value);
+
+        var page = pageCandidates
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(limit + 1)
+            .ToList();
+
+        var hasMore = page.Count > limit;
+        if (hasMore)
+            page.RemoveAt(page.Count - 1);
+
+        var ordered = page.OrderBy(m => m.CreatedAt).ToList();
+        var oldestCreatedAt = ordered.Count > 0
+            ? ordered.Min(m => m.CreatedAt)
+            : (long?)null;
+
+        return new MessageListResponse(ordered, hasMore, oldestCreatedAt);
+    }
+
+    private static long ParseRecordedAtMillis(string recordedAt)
+    {
+        return DateTimeOffset.TryParse(recordedAt, out var parsed)
+            ? parsed.ToUnixTimeMilliseconds()
+            : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    }
+
+    private static TokenUsageDto? DeserializeUsage(string? usageJson)
+    {
+        if (string.IsNullOrWhiteSpace(usageJson))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<TokenUsageDto>(usageJson, JsonOpts);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryReadStringProperty(string json, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryReadUsageJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                return usage.GetRawText();
+
+            return LooksLikeUsagePayload(root)
+                ? root.GetRawText()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool LooksLikeUsagePayload(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+            return false;
+
+        return root.TryGetProperty("promptTokens", out _)
+            || root.TryGetProperty("PromptTokens", out _)
+            || root.TryGetProperty("completionTokens", out _)
+            || root.TryGetProperty("CompletionTokens", out _)
+            || root.TryGetProperty("totalTokens", out _)
+            || root.TryGetProperty("TotalTokens", out _);
     }
 }

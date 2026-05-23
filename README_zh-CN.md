@@ -87,7 +87,9 @@ Pudding 不一样：
 ### Docker (可选)
 
 ```bash
-docker run -p 8080:8080 pudding-agent
+# 端口映射：5000（主机）→ 8080（容器）
+docker run -p 5000:8080 pudding-agent
+# 浏览器访问 http://localhost:5000
 ```
 
 ---

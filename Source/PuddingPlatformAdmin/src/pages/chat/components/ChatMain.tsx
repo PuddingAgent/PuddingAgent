@@ -16,6 +16,7 @@ import {
 import { history } from '@umijs/max';
 import { Avatar, Button, Divider, Select, Space, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { PuddingGlobalActions } from '@/components/GlobalActions';
 import { useChatStyles } from '../styles';
 import type { ChatTurn, SubAgentCardMap } from '../types';
 import { getAgentName, stringToColor } from '../hooks/useChatState';
@@ -73,9 +74,7 @@ interface ChatMainProps {
   cacheHitRate?: number;
   // message rendering
   formatTime: (ts: number) => string;
-  getStepTone: (status?: string) => 'executing' | 'success' | 'error';
   onDeleteTurn: (turnId: string) => void;
-  onToggleReasoning: (turnId: string, blockId: string) => void;
   onContextMenu: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
   onRerunTurn: (turnId: string) => void;
   onPinTurn: (turnId: string) => void;
@@ -131,7 +130,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport, disabled,
   tLimit, tUsed, tPct,
   cacheHitTokens, cacheMissTokens, cacheHitRate,
-  formatTime, getStepTone, onDeleteTurn, onToggleReasoning, onContextMenu,
+  formatTime, onDeleteTurn, onContextMenu,
   onRerunTurn, onPinTurn,
   messageListRef, listEndRef, subAgentCards,
 }) => {
@@ -343,8 +342,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
         {(inferredSessionId ?? selectedSessionId) && (
           <Tooltip title="点击复制 Session ID">
             <span
+              className={styles.sessionIdText}
               onClick={() => { navigator.clipboard.writeText((inferredSessionId ?? selectedSessionId)!); }}
-              style={{ cursor: 'pointer', fontSize: 11, color: 'var(--earth-brown)', opacity: 0.6, marginLeft: 8, fontFamily: 'monospace', userSelect: 'all' }}
             >
               {(inferredSessionId ?? selectedSessionId)!.slice(0, 8)}...
             </span>
@@ -374,6 +373,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
             className={devMode ? styles.devModeActive : ''}
           />
         </Tooltip>
+        <div className={styles.headerGlobalActions}>
+          <PuddingGlobalActions variant="chat" />
+        </div>
       </div>
 
       {/* Chat Body */}
@@ -392,9 +394,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               onClearError={onClearError}
               onLoadMore={onLoadMore}
               formatTime={formatTime}
-              getStepTone={getStepTone}
               onDeleteTurn={onDeleteTurn}
-              onToggleReasoning={onToggleReasoning}
               onContextMenu={onContextMenu}
               onRerunTurn={onRerunTurn}
               onPinTurn={onPinTurn}

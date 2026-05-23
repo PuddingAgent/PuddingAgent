@@ -8,6 +8,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { useChatStyles } from '../styles';
+import { chunkVisibleText } from '../hooks/useTypewriterStreaming';
 
 // ── Markdown 预处理：修复 GFM 表格渲染问题 ─────────────────
 // 问题1：LLM 在表格单元格内生成 fenced code block，跨行破坏 GFM 表结构
@@ -87,26 +88,57 @@ const CodeBlock: React.FC<{ code: string; className?: string }> = ({ code, class
 interface MessageItemProps {
   markdownText: string;
   isStreaming?: boolean;
+  /** ADR-InkBloom: 流式模式下可安全渲染的稳定 Markdown */
+  stableMarkdown?: string;
+  /** ADR-InkBloom: 未稳定的尾段完整文本 */
+  liveText?: string;
+  /** ADR-InkBloom: 已"敲出来"的可见尾段 */
+  visibleLiveText?: string;
+  /** ADR-InkBloom: visible 在 liveText 中的起始偏移 */
+  visibleStartOffset?: number;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ markdownText, isStreaming }) => {
+const MessageItem: React.FC<MessageItemProps> = ({
+  markdownText,
+  isStreaming,
+  stableMarkdown,
+  liveText,
+  visibleLiveText,
+  visibleStartOffset: _visibleStartOffset,
+}) => {
   const { styles } = useChatStyles();
+
+  // ADR-InkBloom: 流式渲染模式 — 稳定 Markdown + 轻量 liveText
+  if (isStreaming && stableMarkdown !== undefined) {
+    return (
+      <div className={styles.markdownBody}>
+        {stableMarkdown && (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={{ ...sharedComponents(styles) }}
+          >
+            {preprocessMarkdown(stableMarkdown)}
+          </ReactMarkdown>
+        )}
+        <span className={styles.typewriterLiveText}>
+          {visibleLiveText ? chunkVisibleText(visibleLiveText).map(chunk => (
+            <span key={chunk.key} className={styles.inkChunk}>{chunk.text}</span>
+          )) : (liveText ? (
+            <span className={styles.inkChunk}>{liveText}</span>
+          ) : null)}
+          <span className={styles.inkCursor} />
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.markdownBody}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
-        components={{
-          table: ({ children, node: _node, ...p }: { children?: React.ReactNode; node?: unknown }) => (
-            <div className={styles.markdownTableScroll}><table {...p}>{children}</table></div>
-          ),
-          code: ({ inline, className, children, node: _node, ...p }: { inline?: boolean; className?: string; children?: React.ReactNode; node?: unknown }) => {
-            const c = String(children ?? '').replace(/\n$/, '');
-            if (inline) return <code className={styles.inlineCode} {...p}>{children}</code>;
-            return <CodeBlock code={c} className={className} />;
-          },
-        }}
+        components={{ ...sharedComponents(styles) }}
       >
         {markdownText ? preprocessMarkdown(markdownText) : (isStreaming ? ' ' : '')}
       </ReactMarkdown>
@@ -114,5 +146,19 @@ const MessageItem: React.FC<MessageItemProps> = ({ markdownText, isStreaming }) 
     </div>
   );
 };
+
+/** 共享的 ReactMarkdown components 配置 */
+function sharedComponents(styles: ReturnType<typeof useChatStyles>['styles']) {
+  return {
+    table: ({ children, node: _node, ...p }: { children?: React.ReactNode; node?: unknown }) => (
+      <div className={styles.markdownTableScroll}><table {...p}>{children}</table></div>
+    ),
+    code: ({ inline, className, children, node: _node, ...p }: { inline?: boolean; className?: string; children?: React.ReactNode; node?: unknown }) => {
+      const c = String(children ?? '').replace(/\n$/, '');
+      if (inline) return <code className={styles.inlineCode} {...p}>{children}</code>;
+      return <CodeBlock code={c} className={className} />;
+    },
+  };
+}
 
 export default MessageItem;

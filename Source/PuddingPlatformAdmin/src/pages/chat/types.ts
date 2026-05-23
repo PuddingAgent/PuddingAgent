@@ -3,6 +3,7 @@ import type { TokenUsageDto, WorkspaceAgentDto, WorkspaceWithPermDto } from '@/s
 
 export type MessageStatus = 'sending' | 'success' | 'error';
 export type AssistantStatus = 'thinking' | 'executing' | 'streaming' | 'success' | 'error' | 'cancelled';
+export type ChatMessageStatus = 'sending' | 'thinking' | 'streaming' | 'success' | 'error' | 'cancelled';
 
 /** 统一时间线条目：思考 / 工具调用 / 工具结果 / 潜意识步骤 / 子代理 */
 export interface TimelineItem {
@@ -39,6 +40,112 @@ export interface ChatTurn {
     usage?: TokenUsageDto;
     renderMode: 'legacy' | 'structured';
   };
+}
+
+// ── IM-style MessageStream ViewModel ─────────────────────────
+
+/**
+ * ADR: Chat Message Interaction Redesign
+ * IM-style 消息块，由 buildMessageBlocks 从 ChatTurn[] 转换而来。
+ * 每个块对应一条独立的消息气泡。
+ */
+export interface ChatMessageBlock {
+  id: string;
+  turnId: string;
+  role: 'user' | 'agent' | 'system';
+  content: string;
+  status: ChatMessageStatus;
+  createdAt: number;
+
+  /** Agent 信息（仅 role='agent' 时有效） */
+  agentId?: string;
+  agentName?: string;
+  agentAvatarUrl?: string;
+  agentAvatarColor?: string;
+  agentAvatarEmoji?: string;
+
+  /** 执行过程（默认折叠） */
+  processItems?: TimelineItem[];
+  /** Token 用量 */
+  usage?: TokenUsageDto;
+  /** 是否与上一条消息同 Agent（视觉分组） */
+  groupedWithPrevious?: boolean;
+
+  /** 流式渲染标记 */
+  isStreaming?: boolean;
+}
+
+/**
+ * 从 ChatTurn[] 转换为 IM-style ChatMessageBlock[]
+ * 拆分规则：
+ * 1. 每次用户输入至少生成一个 AgentMessage
+ * 2. 同一个 Agent 连续消息可分组
+ * 3. 不同 Agent 必须分开显示
+ * 4. 工具过程不作为消息气泡
+ */
+export function buildMessageBlocks(turns: ChatTurn[], agentName?: string): ChatMessageBlock[] {
+  const blocks: ChatMessageBlock[] = [];
+
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i];
+    const prevBlock = blocks[blocks.length - 1];
+
+    // ── 用户消息 ──
+    if (turn.userMessage.text.trim()) {
+      blocks.push({
+        id: `${turn.turnId}:user`,
+        turnId: turn.turnId,
+        role: 'user',
+        content: turn.userMessage.text,
+        status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
+        createdAt: turn.userMessage.timestamp,
+      });
+    }
+
+    // ── Agent 消息 ──
+    const hasContent = Boolean(turn.assistant.answerMarkdown) ||
+      turn.assistant.isStreaming ||
+      turn.assistant.status === 'error' ||
+      turn.assistant.status === 'cancelled';
+
+    if (hasContent) {
+      const blockAgentName = turn.source?.displayName || agentName || 'Pudding';
+      const block: ChatMessageBlock = {
+        id: `${turn.turnId}:assistant:0`,
+        turnId: turn.turnId,
+        role: 'agent',
+        content: turn.assistant.answerMarkdown,
+        status: toChatMessageStatus(turn.assistant.status),
+        createdAt: turn.userMessage.timestamp,
+        agentName: blockAgentName,
+        agentAvatarColor: turn.source?.avatarColor || '#7c3aed',
+        agentAvatarEmoji: turn.source?.avatarEmoji || '🤖',
+        processItems: turn.assistant.timelineItems?.length ? turn.assistant.timelineItems : undefined,
+        usage: turn.assistant.usage,
+        isStreaming: turn.assistant.isStreaming,
+      };
+
+      // 连续同 Agent 消息：视觉分组
+      if (prevBlock && prevBlock.role === 'agent' && prevBlock.agentName === blockAgentName) {
+        block.groupedWithPrevious = true;
+      }
+
+      blocks.push(block);
+    }
+  }
+
+  return blocks;
+}
+
+function toChatMessageStatus(s: AssistantStatus): ChatMessageStatus {
+  switch (s) {
+    case 'thinking': return 'thinking';
+    case 'executing': return 'thinking';
+    case 'streaming': return 'streaming';
+    case 'success': return 'success';
+    case 'error': return 'error';
+    case 'cancelled': return 'cancelled';
+  }
 }
 
 export interface SessionGroup {

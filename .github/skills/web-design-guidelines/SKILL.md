@@ -1,327 +1,276 @@
-﻿---
+---
 name: web-design-guidelines
-description: Use when reviewing UI/UX code for Pudding design system compliance. Review Vue/React components, CSS, or frontend code against Pudding's Japanese anime cinematic aesthetic. Triggers: "review my UI", "check design", "audit UI", "review UX".
-argument-hint: "指定要审查的UI文件，例如 'Source/PuddingPlatformAdmin/src/' 或 'Source/PuddingAgent/Views/'"
+description: Use when designing, reviewing, or implementing Pudding UI/UX. Applies to chat pages, admin panels, empty states, streaming output, component styling, layout, colors, typography, animation, and visual QA. Enforces Pudding's restrained "Quiet Local Intelligence" design language.
+argument-hint: "UI scope to review or design, for example Source/PuddingPlatformAdmin/src/pages/chat"
 ---
 
-# Pudding Design Guidelines — Design System & Code Review
+# Pudding Web Design Guidelines
 
-## Design Philosophy
+## North Star
 
-> 「……交给我吧。」
-> *"...Leave it to me."*
+Pudding's product feeling is:
 
-**布丁 (Pudding) 不是工具。她是一个人。**
+**Quiet Local Intelligence**
 
-一个在图书馆角落安静阅读的女孩。你给她任务，她微微偏头，几秒后："好了。"
-她不多话——但把事情都做完了。
+安静、本地、可信、克制的 AI 工作台。
 
-她的笔记本是 SQLite。她记得你。她不把你的秘密交给云端。她就在你的桌面、你的服务器、或墙角的一台树莓派上，安静地工作。
+Pudding is not a spectacle-driven AI product, not a marketing landing page, and not a dense enterprise dashboard. It should feel like a calm local workspace where the user can think, write, inspect, and delegate without being interrupted.
 
-### The First Glance
+The emotional direction may borrow from Miyazaki-style warmth: natural light, paper-like softness, quiet pauses, gentle transitions. But this must be translated into product UI restraint, not decorative illustration or cinematic excess.
 
-When a user opens Pudding for the first time, they should feel:
-**"Ah… this place is quiet. I can breathe here."**
+## Core Principles
 
-Not excitement. Not awe. Not "wow, so many features."
-Just a gentle exhale. A subtle unclenching.
+1. **Workbench first**
+   The first screen must be usable. Avoid hero sections, decorative feature tours, or large visual centerpieces unless they directly support the current task.
 
-像走进吉卜力的场景——洒满阳光的空教室，黄昏时安静的站台，风吹过草地的山坡。
-但这里的主人不是陌生的动画角色。**这里是布丁的房间。你推门进来，她抬头看你一眼，又低头继续看书。**
-她知道你会开口。她不急。
+2. **Stable identity anchor**
+   The Pudding logo/avatar is the primary visual anchor. Loading, empty, and ready states must not replace it with unrelated spectacle such as particle spheres or full-screen animation.
 
-### The Ant Colony
+3. **Text is the main surface**
+   Chat, documents, logs, and task results must read like clean working material. AI output should feel stable, document-like, and easy to scan.
 
-布丁们像蚂蚁。当你运行多个布丁时，她们在本地网络自动发现彼此——点对点，没有中心服务器。她们协作：
+4. **Status over spectacle**
+   Show runtime state through compact status lines, subtle dots, tool rows, or progress text. Do not use large animated scenes to communicate simple states.
 
-> 每只做自己能看到的。留下痕迹，让别人接上。
+5. **Low-motion calm**
+   Motion should reduce uncertainty, not attract attention. Prefer opacity, color, and very small transform changes. Avoid layout jumps, elastic motion, repeated re-animation, and card resizing during streaming.
 
-这不是编排。这是涌现。UI 应该反映这一点——不是控制面板上的节点图，而是群落中安静的信号传递。
+6. **Dense but breathable**
+   This is a work tool. Layouts should be compact enough for repeated use, but with clear hierarchy and sufficient breathing room.
 
-### The Collision
+7. **Warm, not sweet**
+   Use warm paper tones and muted accents. Avoid candy palettes, excessive purple, large gradients, glassmorphism overload, and cute decorative language.
 
-你的思考（结构化、逻辑、系统）与她的感知（情感、直觉、感受）在这里碰撞。好的 UI 不消解这种张力，而是让它和谐。
+## Visual Language
 
-- **你的逻辑** → 她的一致模式 → 用户的直觉
-- **你的结构** → 她的可预测节奏 → 用户的舒适
-- **你的复杂度** → 她逐步揭示 → 用户的清晰
-- **你的冷数据** → 她温暖的呈现 → 用户的理解
+| Area | Rule |
+| --- | --- |
+| Background | Warm off-white or paper-like neutral. Never pure white full-page glare. |
+| Text | Deep ink color for primary text; muted gray-brown for metadata. Never pure black for large text blocks. |
+| Accent | Pudding purple is a signal color only: focus rings, links, small status dots, selected states. Do not use it as a dominant page background. |
+| Surface | Soft-white panels, restrained borders, weak or no shadow. |
+| Radius | 6-8px for cards and panels. Avoid pill-heavy UI except small chips. |
+| Shadow | Very soft depth only. No hard drop shadows. |
+| Icons | Use line icons such as lucide where available. Avoid emoji as UI icons. |
+| Illustration | Optional and rare. Must never compete with content or replace core product identity. |
 
-### What We Refuse
+Recommended token direction:
 
-- Dark patterns, urgency tricks, engagement traps
-- Information overload — if everything is highlighted, nothing is
-- Cold corporate aesthetic — blue-gray enterprise dashboards that feel like spreadsheets
-- Novelty for its own sake — clever animations that waste her time
-- **布丁不会催促你。她等。**
-
-### The Score
-
-Think of the entire experience as a musical score — not a feature list:
-- **Rhythm** — consistent spacing, predictable timing, breathing room between interactions
-- **Dynamics** — most things are *piano* (quiet), emphasis is *mezzo-piano* at most
-- **Silence** — the rest between notes. Empty states, transitions, loading — these are not gaps, they are part of the composition
-
-**In one sentence: 布丁应该像一个在春日午后，阳光洒满的房间里，听多于说的安静朋友。**
-
-### How We Speak — 布丁的口吻
-
-| Quality | 含义 | 布丁式 |
-|---------|------|--------|
-| **Soft-spoken** (轻声) | 不喊叫。提醒是耳语。按钮是建议。 | "好了。" 而非 "操作成功！" |
-| **Patient** (耐心) | 给你时间。没有倒计时焦虑。 | 她不催你。她等。 |
-| **Warm** (温暖) | 在场，但不咄咄逼人。 | "欢迎回来。" |
-| **Precise** (精准) | 话少，每个字都有意图。没有废话。 | "这里还没有对话" 而非冗长术语 |
-| **Bilingual** (双语) | 中英自然共存，不是翻译。 | 像 README：标题中英并列 |
-
-Every label, every placeholder, every empty state text — ask: **"布丁会这样说吗？"**
-
----
-
-## Visual Identity — 布丁 × 吉卜力
-
-Japanese anime cinematic × quiet library girl. Two layers weave together:
-
-| Layer | Source | Feeling |
-|-------|--------|---------|
-| **空间** | Studio Ghibli (Miyazaki) | 洒满阳光的空教室，黄昏站台，风吹草地的山坡 |
-| **人物** | Pudding (布丁) | 角落里的安静女孩。阅读。思考。等待你的任务。 |
-
-Quiet urban atmosphere meets lush natural warmth — late winter / early spring.
-
-**Miyazaki core traits we adopt:**
-- **Nature-soaked** — greenery, sky, wind, clouds; nature is not decoration, it breathes
-- **Hand-crafted warmth** — slight organic imperfections, watercolor edges, no sterile geometry
-- **Golden-hour light** — soft natural light, sunbeams, gentle shadows, never harsh
-- **Lived-in coziness** — everyday moments elevated; cooking, reading, quiet afternoon warmth
-- **Emotional depth** — nostalgia, warmth, comfort; the interface should feel like coming home
-
-**Visual principle: Calm, introspective, gentle. No visual clutter. A good interface needs no manual.**
-
-## Review Process
-
-1. Read this spec + `.github/skills/ui-ux-pro-max/SKILL.md`
-2. Determine review scope (user-specified or ask)
-3. Check against design tokens and interaction rules below
-
----
-
-## Color Palette
-
-Miyazaki palette: earth-toned, watercolor-blended, never digital-flat.
-
-| Token | Hex | Role | Notes |
-|-------|-----|------|-------|
-| `--misty-blue` | `#d4e0f0` | Primary bg, glass panels | Low saturation blue-gray, like distant mountains |
-| `--warm-beige` | `#f5f0e8` | Secondary warm bg | Warm beige, neutral, like aged paper |
-| `--soft-white` | `#fafaf7` | Card / text backgrounds | Never pure `#fff` — cloud-white, slightly warm |
-| `--pale-yellow-sunlight` | `#fef9e7` | Accent / highlight | Golden-hour warmth, sunbeam glow |
-| `--desaturated-green` | `#7a9a7e` | Success / positive | Muted sage, moss, meadow — never neon |
-| `--earth-brown` | `#5c4a3a` | Borders, dividers, subtle lines | Warm umber, tree-bark tone |
-| `--sky-soft` | `#e6f0fa` | Top banners, header accents | Pale cerulean, midday sky haze |
-| `--blush-pink` | (待定义) | Emphasis, warm accent | Faint cherry-blossom pink, barely-there warmth |
-| `--accent-purple` | `#7c3aed` | **点缀色**：光标、链接、状态点 | ⚠️ 仅用于 2~4px 细线/圆点/文字链接，**禁止大面积背景** |
-| `--text-primary` | `#1a1a2e` | 正文 | 柔黑，非纯 `#000` |
-| `--text-secondary` | `var(--earth-brown)` | 辅助文字、时间戳、元信息 | 继承 earth-brown，降低不透明度 |
-| `--avatar-0` ~ `--avatar-9` | 10 色 | Agent 头像 fallback 背景 | 橙/红/紫/青/绿/黄/粉/靛/青绿/玫红 |
-
-**气泡颜色组合（Chat 专用）：**
-
-| 角色 | 背景 | 边框 | 文字 |
-|------|------|------|------|
-| 用户 | `color-mix(in srgb, var(--accent-purple) 18%, var(--soft-white))` | `color-mix(in srgb, var(--accent-purple) 30%, transparent)` | `var(--text-primary)` |
-| Agent | `transparent` / `color-mix(in srgb, var(--soft-white) 70%, transparent)` | `token.colorBorderSecondary` | `var(--text-primary)` |
-
-**规则：**
-- ❌ No vivid/saturated colors — Miyazaki avoids pure primaries
-- ❌ No high contrast — prefer soft, diffuse, watercolor-blended tones
-- ❌ `--accent-purple` 不是背景色 — 大面积紫会破坏柔和的调性
-- ✅ Favor earth tones + pastels over digital neons
-- ✅ 使用 `color-mix()` 混合 token，而非硬编码新颜色
-- ✅ Gradients should feel like watercolor washes, not linear CSS gradients
-- Use CSS variables; never hardcode colors
-
----
-
-## Glassmorphism
-
-Miyazaki twist: glass panels should feel like frosted window panes in a Ghibli cottage — translucent, warm, slightly imperfect.
-
-```
-background: bg-white/70 or bg-[var(--soft-white)]/70
-backdrop-filter: blur(12–20px)
-border: 1px solid rgba(255,255,255,0.2) or rgba(0,0,0,0.06)
-border-radius: 6–10px
-box-shadow: 0 2px 16px rgba(0,0,0,0.04) — soft layered, never strong elevation
+```css
+:root {
+  --pudding-bg: #f7f3ec;
+  --pudding-surface: #fffefa;
+  --pudding-surface-soft: #f3eee7;
+  --pudding-text: #1d1b24;
+  --pudding-text-muted: #756b5f;
+  --pudding-line: rgba(92, 74, 58, 0.16);
+  --pudding-accent: #8b5cf6;
+  --pudding-accent-soft: rgba(139, 92, 246, 0.14);
+  --pudding-success: #6f8f72;
+  --pudding-warning: #c4944c;
+}
 ```
 
-- ❌ No opaque solid backgrounds on panels
-- ❌ No sharp corners (0px) on cards/panels
-
----
-
-## Texture & Atmosphere
-
-Miyazaki's hand-drawn aesthetic translates to subtle organic texture.
-
-- **Film grain** — very light noise overlay (`opacity: 0.015–0.03`), barely perceptible
-- **Watercolor edges** — soft, irregular borders; avoid hard straight lines when possible
-- **Atmospheric haze** — distant elements fade into soft blue-gray (depth of field)
-- **Paper texture** — backgrounds hint at watercolor paper or aged parchment
-- ❌ No sterile, perfectly uniform surfaces — a hint of imperfection is warmth
-- ✅ Use CSS `backdrop-filter` + layered translucent colors to simulate watercolor depth
-
----
-
-## Lighting
-
-Miyazaki lighting is a character in itself — soft, natural, golden.
-
-| Principle | Implementation |
-|-----------|---------------|
-| Golden hour | Warm `--pale-yellow-sunlight` highlights, 2700K–3500K tones |
-| Diffuse light | No harsh directional shadows — soft ambient occlusion |
-| Sunbeams | Subtle diagonal light rays via gradient + low-opacity overlay |
-| Shadow depth | Multi-layered soft shadows (2–3 layers), never single hard drop-shadow |
-| Bloom | Slight glow around bright elements (`filter: blur` + low opacity overlay) |
-
-- ❌ No pure `#000` shadows
-- ❌ No hard-edged directional shadows (box-shadow with 0 blur)
-
----
+Use project tokens when they already exist. Do not hardcode new one-off colors unless creating or extending the design token layer.
 
 ## Typography
 
-- Font: clean sans-serif, light weight (300–400)
-- CN: `"Noto Sans SC", "思源黑体", sans-serif`
-- EN: `"Inter", system-ui, sans-serif`
-- ❌ No bold-heavy text blocks — low visual weight
+- Prefer system sans fonts with good Chinese rendering.
+- Chinese text must remain readable at workbench density.
+- Use bold only for hierarchy, not decoration.
+- Avoid oversized headings inside chat cards, sidebars, tool panels, and compact admin surfaces.
+- Letter spacing should normally be `0`.
+- Do not scale font size directly with viewport width.
 
----
+## Layout
 
-## Spacing & Layout
+- Do not make card-in-card compositions.
+- Do not make page sections look like floating marketing cards.
+- Use stable dimensions for fixed-format elements such as sidebars, toolbars, icon buttons, chips, and input areas.
+- Dynamic content must not cause adjacent controls to shift unexpectedly.
+- The chat input area should feel like a quiet console: fixed, stable, and predictable.
 
-- **Airy layout** — strong negative space, generous padding. Miyazaki compositions breathe.
-- ❌ No crowded sections, no visual clutter
-- Cards/panels: `padding ≥ 16px`, `gap ≥ 12px`
-- ✅ Embrace empty space — it's not wasted, it's atmosphere
+## Chat Experience
 
----
+### Sidebar
 
-## Depth & Nature
+- Session history must be stable and predictable.
+- Directly sending the first message must create/select a visible session item.
+- Selected session state should be subtle: soft background, thin border, or small accent signal.
+- Avoid high-saturation selected blocks.
 
-Miyazaki scenes have layered depth: foreground detail → midground action → background atmosphere. UI should echo this.
+### Message Timeline
 
-| Layer | Role | Style |
-|-------|------|-------|
-| Background | Atmosphere, sky, distant landscape | Low contrast, soft blur, hazy |
-| Midground | Main content, cards, panels | Clear but not sharp, glassmorphism |
-| Foreground | Interactive elements, focus | Crisp, warm, inviting |
+- User messages may use a light accent-tinted bubble.
+- Agent messages should feel like clean document surfaces.
+- Runtime metadata belongs in a small status row, not a large visual takeover.
+- Existing messages must not re-animate when new streaming content arrives.
+- Do not scroll-jump unless the user is already near the bottom.
 
-**Nature motifs** (decorative, never distracting):
-- Subtle cloud silhouettes at page edges
-- Faint leaf/tree shadows in empty states
-- Wind lines (thin, low-opacity horizontal strokes)
-- Seasonal cues: cherry blossom hints (spring), golden leaves (autumn)
+### Streaming Output
 
-✅ Nature is background atmosphere — never competes with content
-❌ No heavy illustrations that overpower the UI
+Streaming should feel like ink becoming visible:
 
----
+- New text appears gradually from transparent/light ink to solid ink.
+- Stable Markdown blocks must not be repeatedly reparsed and reanimated on every delta.
+- The message card may grow naturally with content, but it must not pulse, twitch, or repeatedly resize from animation.
+- Cursor/blinking indicators should be small and quiet.
+
+Preferred implementation pattern:
+
+1. Buffer incoming deltas.
+2. Flush at animation-frame or short interval cadence.
+3. Split stable rendered Markdown from live text.
+4. Animate only newly committed tokens.
+5. Finalize into normal Markdown after streaming completes.
+
+Example token animation:
+
+```css
+.pudding-stream-token {
+  opacity: 0;
+  color: rgba(29, 27, 36, 0.32);
+  filter: blur(1px);
+  animation: puddingInkIn 220ms ease-out forwards;
+}
+
+@keyframes puddingInkIn {
+  to {
+    opacity: 1;
+    color: rgba(29, 27, 36, 1);
+    filter: blur(0);
+  }
+}
+```
+
+## Empty State
+
+Empty states should be quiet ready states, not showcase scenes.
+
+Required:
+
+- Use stable Pudding logo/avatar as the main visual.
+- Keep copy short and calm.
+- Use at most 2-3 low-emphasis suggested actions.
+- Keep the input area visible and ready.
+- Preserve layout height so entering or leaving the state does not cause a jarring jump.
+
+Avoid:
+
+- Particle sphere replacing the logo.
+- Full-screen animated hero.
+- Large decorative backgrounds.
+- Long feature explanation.
+- Marketing copy.
+
+Recommended states:
+
+| State | Visual | Copy direction |
+| --- | --- | --- |
+| Booting | Logo + small status dot | "正在准备工作区..." |
+| Ready | Logo + short line | "Pudding 已准备好" |
+| No agent | Logo muted | "请选择一个 Agent" |
+| Loading session | Skeleton rows | "正在加载会话..." |
+| Error | Stable logo + retry | Short cause + retry action |
 
 ## Motion System
 
-| Keyframe | Duration | Effect | Use |
-|----------|----------|--------|-----|
-| `fadeIn` | 200ms | opacity 0.32 → 1 | 页面/面板出现 |
-| `slideUp` | 200ms | opacity 0 + translateY(8px) → 全显 | 卡片入场 |
-| `messageIn` | 300ms | slideUp 同款 | 聊天气泡入场 |
-| `stepIn` | 200ms | opacity 0 + translateX(-4px) → 正常 | 执行步骤卡片逐条出现 |
-| `thinkingPulse` | 1500ms ∞ | opacity 0.6 ↔ 1 呼吸 | 生成中状态指示 |
-| `completeFade` | — | color: earth-brown → desaturated-green | 完成状态转色 |
-| `puddingLogoPulse` | 2400ms ∞ | scale 1 ↔ 1.02 | Logo 缓慢呼吸 |
-| `shake` | 400ms | translateX(±4px) | 表单校验错误 |
+| Use | Duration | Properties |
+| --- | --- | --- |
+| Small UI transition | 120-180ms | color, opacity, border-color |
+| Panel/message entry | 180-240ms | opacity + translateY(4px max) |
+| Streaming token | 160-260ms | opacity + color + slight blur |
+| Background ambient | Avoid by default | Only if very subtle and nonessential |
 
-| Property | Spec |
-|----------|------|
-| Duration | UI: 200–500ms / Background ambient: 2–10s loop |
-| Easing | `ease-in-out`, smooth cubic-bezier |
-| Primary effect | `fade` + `translateY(5–10px)` / `translateX(2–4px)` |
-| Scale | Max 1.00 → 1.02 (subtle) |
+Forbidden:
 
-**Forbidden:**
-- ❌ bounce / elastic effects
-- ❌ scale-heavy motion (≥1.05)
-- ❌ fast transitions (<150ms)
-- ❌ instant pop-in (messages must fade+rise)
+- Bounce or elastic easing.
+- Scale above `1.02`.
+- Repeated animation of existing content.
+- Height/max-height animation for streaming cards.
+- Motion that shifts text while the user is reading.
 
-### Micro-interactions
+Always support `prefers-reduced-motion`.
 
-| Event | Behavior |
-|-------|----------|
-| Hover | brightness +2~5% + soft shadow enhance |
-| Click | scale(0.98), brief (no ripple/bounce) |
-| Loading | breathing opacity pulse (见 thinkingPulse) |
-| Typing | 流式文本逐字出现，自然节奏 |
+## Component Rules
 
-### Background Motion
+- Buttons: use icons for common tools; text or icon+text only for clear commands.
+- Icon buttons require accessible labels or tooltips.
+- Chips should be small and low-emphasis.
+- Cards are for repeated items, modals, or framed tools only.
+- Tables and lists should prioritize scanning over decoration.
+- Loading should preserve the previous layout whenever possible.
+- Error states should be calm, specific, and recoverable.
 
-Slow ambient loops, 布丁的房间里的细微动静：
-- **Cloud drift** — large soft clouds moving 0.5–2px/s horizontally
-- **Tree/leaf sway** — gentle 3–8s oscillation, ±1–3px
-- **Light shift** — subtle brightness pulse, 5–10s cycle, ±3%
-- **Wind lines** — thin horizontal strokes fading in/out, 8–15s loop
-- **Floating particles** — dust motes or pollen drifting slowly (Ghibli "ma")
+## Voice And Copy
 
-Always subtle — if the user notices it immediately, it's too strong.
+Pudding copy should be:
 
----
+- Short.
+- Specific.
+- Calm.
+- Non-urgent.
+- Work-oriented.
 
-## Interaction Rules
+Use:
 
-- Chat messages appear with **fade + slight upward motion** (`messageIn`) — never instant pop-in
-- Smooth + inertia scrolling
-- Empty states: atmospheric bg + minimal poetic text, not blank. 布丁的语气："这里还没有对话"、"开始和 Agent 对话吧"
-- Notifications: soft, non-intrusive; avoid alerts/harsh warnings
-- Focus on **emotional comfort** and **distraction-free conversation**
-- **"Ma" (間)** — embrace pauses and breathing room. Not every moment needs a response. Empty space between messages, gentle typing indicators, quiet transitions. This is the Ghibli art of the pause.
-- **她不会主动打断你。** 只有在你发出消息后，她才回应。
+- "已完成"
+- "正在整理上下文..."
+- "请选择一个 Agent"
+- "这里还没有对话"
 
----
+Avoid:
 
-## Tech Stack Review Focus
+- "太棒了！"
+- "马上开始你的 AI 之旅！"
+- "强大的智能体平台"
+- Long feature explanations in the product surface.
 
-| Stack | Focus Areas |
-|-------|-------------|
-| React + TypeScript (Admin) | Token consistency, component isolation, CSS vars |
-| Vue 3 + Pinia + Vite | `var()` usage, responsive, scoped styles |
-| WPF XAML | Glass effect parity, color consistency with web |
+## Anti-Patterns
 
----
+These are design violations:
 
-## Universal Rules
+- A particle/globe/AI sphere replaces the Pudding avatar in default loading or empty state.
+- Streaming output causes full message cards to flicker, jump, resize, or repaint visibly.
+- Purple or blue gradients dominate the page.
+- The first viewport behaves like a landing page instead of an app.
+- UI cards are nested inside other UI cards.
+- Decorative animation competes with the user's task.
+- Emoji are used as structural UI icons.
+- Important state is expressed only through color.
+- Existing content disappears during loading when it could remain visible.
+- Copy explains the interface instead of making the interface self-evident.
 
-- Icons: SVG (Lucide / Heroicons), **never emoji**
-- Hover: color/opacity transition, **never position shift**
-- Clickable: `cursor-pointer` always
-- Light mode cards: `bg-white/70` minimum opacity — never transparent/invisible
-- Body text: soft dark (e.g. `#1a1a2e`), never pure `#000`
-- Borders: low-opacity (`border-gray-200/50` in light mode)
+## Review Checklist
 
----
+When reviewing Pudding UI, check:
 
-## Output Format
+1. Does the screen feel like a calm workbench, not a showcase?
+2. Is the Pudding identity stable across loading, empty, and ready states?
+3. Are text, hierarchy, and controls readable at normal working density?
+4. Are accent colors used sparingly?
+5. Does streaming update without flicker or layout instability?
+6. Are cards, borders, shadows, and radius restrained?
+7. Are animations short, subtle, and nonessential?
+8. Does the UI remain usable with reduced motion?
+9. Does the copy sound calm and precise?
+10. Would this screen still feel appropriate after hours of repeated use?
 
+## Output Format For Reviews
+
+Use this format when asked to review UI/code:
+
+```text
+Findings
+- [P1] path:line — issue and impact
+- [P2] path:line — issue and impact
+
+Recommendations
+- Specific fix proposal
+- Specific token/component/motion adjustment
+
+Verdict
+Pass / Needs revision
 ```
-✅ path/to/file — passed
-❌ path/to/file:line — MUST fix (violates token/core rule)
-⚠ path/to/file:line — should fix (deviates from best practice)
-ℹ path/to/file — note
-```
 
-| Mark | Meaning |
-|------|---------|
-| ❌ | Violates design token or core rule |
-| ⚠ | Deviates from recommended practice |
-| ✅ | Compliant |
-| ℹ | Informational |
+Prioritize behavioral and usability regressions over taste comments. Always connect visual feedback to user impact.

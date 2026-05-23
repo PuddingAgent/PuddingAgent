@@ -1,0 +1,53 @@
+// ── MessageStream：IM 风格消息流 ────────────────────────────
+// 替代 MessageGroup 的 Runtime Timeline 容器。
+// 将 ChatTurn[] 转换为 ChatMessageBlock[] 后渲染为 IM 风格的消息列表。
+import React, { useMemo } from 'react';
+import { useChatStyles } from '../styles';
+import type { ChatTurn } from '../types';
+import { buildMessageBlocks } from '../types';
+import MessageRow from './MessageRow';
+
+interface MessageStreamProps {
+  turns: ChatTurn[];
+  agentName?: string;
+  formatTime: (ts: number) => string;
+  onContextMenu?: (e: React.MouseEvent, turnId: string, role: 'user' | 'assistant') => void;
+  onRerunTurn?: (turnId: string) => void;
+  onPinTurn?: (turnId: string) => void;
+  onDeleteTurn?: (turnId: string) => void;
+}
+
+const MessageStream: React.FC<MessageStreamProps> = ({
+  turns,
+  agentName,
+  formatTime,
+  onContextMenu,
+  onRerunTurn,
+  onPinTurn,
+  onDeleteTurn,
+}) => {
+  const { styles } = useChatStyles();
+
+  const blocks = useMemo(
+    () => buildMessageBlocks(turns, agentName),
+    [turns, agentName],
+  );
+
+  return (
+    <div className={styles.messageStream}>
+      {blocks.map((block) => (
+        <MessageRow
+          key={block.id}
+          block={block}
+          formatTime={formatTime}
+          onContextMenu={onContextMenu}
+          onRerunTurn={onRerunTurn}
+          onPinTurn={onPinTurn}
+          onDeleteTurn={onDeleteTurn}
+        />
+      ))}
+    </div>
+  );
+};
+
+export default React.memo(MessageStream);

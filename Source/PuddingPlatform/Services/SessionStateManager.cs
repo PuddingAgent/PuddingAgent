@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -41,8 +42,8 @@ public sealed class SessionStateManager : ISessionStateManager
     // 会话状态追踪
     private readonly ConcurrentDictionary<string, SessionState> _sessionStates = new();
 
-    // 序列号生成锁（per session，保证递增）
-    private readonly ConcurrentDictionary<string, object> _seqLocks = new();
+    // 序列号生成锁（per session SemaphoreSlim，保证递增 + SaveChangesAsync 在同一临界区）
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _seqLocks = new();
 
     // Channel TTL 倒计时
     private static readonly TimeSpan ChannelTtl = TimeSpan.FromMinutes(30);
@@ -103,39 +104,12 @@ public sealed class SessionStateManager : ISessionStateManager
             ?? RuntimeTraceContext.CreateNew(sessionId: sessionId, workspaceId: workspaceId);
         var effectiveComponent = component ?? RuntimeActivityComponents.SessionState;
         var effectiveOperation = operation ?? $"append:{frame.Event}";
-        long seq;
 
         // 1. 持久化到 SQLite（主存储，失败抛异常，不继续 JSONL）
-        using var scope = _scopeFactory.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-
-        var seqLock = _seqLocks.GetOrAdd(sessionId, _ => new object());
-        lock (seqLock)
-        {
-            var maxSeq = db.SessionEventLogs
-                .Where(wqe => wqe.SessionId == sessionId)
-                .Max(e => (long?)e.SequenceNum) ?? 0;
-            seq = maxSeq + 1;
-
-            var entity = new SessionEventLogEntity
-            {
-                SessionId = sessionId,
-                WorkspaceId = workspaceId,
-                SequenceNum = seq,
-                EventType = frame.Event,
-                Data = frame.Data,
-                RecordedAt = recordedAt,
-                TraceId = effectiveTrace.TraceId,
-                CorrelationId = effectiveTrace.CorrelationId,
-                ExecutionId = effectiveTrace.ExecutionId,
-                ParentExecutionId = effectiveTrace.ParentExecutionId,
-                SubAgentId = effectiveTrace.SubAgentId,
-                Component = effectiveComponent,
-                Operation = effectiveOperation,
-            };
-            db.SessionEventLogs.Add(entity);
-        }
-
-        await db.SaveChangesAsync(ct);
+        //    ADR-028: 序号分配与 SaveChangesAsync 必须在同一 per-session 异步临界区
+        var seq = await AppendSqliteEventWithRetryAsync(
+            sessionId, workspaceId, frame, recordedAt,
+            effectiveTrace, effectiveComponent, effectiveOperation, ct);
 
         _logger.LogDebug("[SSM] Append frame session={Session} type={EventType} seq={Seq}", sessionId, frame.Event, seq);
 
@@ -531,6 +505,111 @@ public sealed class SessionStateManager : ISessionStateManager
     // ════════════════════════════════════════════════════════
     // 内部方法
     // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// ADR-028：在 per-session SemaphoreSlim 临界区内执行序号查询 + 插入 + SaveChangesAsync。
+    /// 同一 session 的并发 append 串行化，消除 unique constraint 竞争。
+    /// </summary>
+    private async Task<long> AppendSqliteEventAsync(
+        string sessionId,
+        string workspaceId,
+        ServerSentEventFrame frame,
+        string recordedAt,
+        RuntimeTraceContext effectiveTrace,
+        string effectiveComponent,
+        string effectiveOperation,
+        CancellationToken ct)
+    {
+        var gate = _seqLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+            var maxSeq = await db.SessionEventLogs
+                .Where(e => e.SessionId == sessionId)
+                .MaxAsync(e => (long?)e.SequenceNum, ct) ?? 0;
+
+            var seq = maxSeq + 1;
+
+            db.SessionEventLogs.Add(new SessionEventLogEntity
+            {
+                SessionId = sessionId,
+                WorkspaceId = workspaceId,
+                SequenceNum = seq,
+                EventType = frame.Event,
+                Data = frame.Data,
+                RecordedAt = recordedAt,
+                TraceId = effectiveTrace.TraceId,
+                CorrelationId = effectiveTrace.CorrelationId,
+                ExecutionId = effectiveTrace.ExecutionId,
+                ParentExecutionId = effectiveTrace.ParentExecutionId,
+                SubAgentId = effectiveTrace.SubAgentId,
+                Component = effectiveComponent,
+                Operation = effectiveOperation,
+            });
+
+            await db.SaveChangesAsync(ct);
+            return seq;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// ADR-028-C：对 DbUpdateException + SQLite error 19（session_event_log 唯一约束冲突）
+    /// 最多重试 3 次，每次重试延迟递增。作为多实例/旧代码路径的最后防线。
+    /// </summary>
+    private async Task<long> AppendSqliteEventWithRetryAsync(
+        string sessionId,
+        string workspaceId,
+        ServerSentEventFrame frame,
+        string recordedAt,
+        RuntimeTraceContext effectiveTrace,
+        string effectiveComponent,
+        string effectiveOperation,
+        CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await AppendSqliteEventAsync(
+                    sessionId, workspaceId, frame, recordedAt,
+                    effectiveTrace, effectiveComponent, effectiveOperation, ct);
+            }
+            catch (DbUpdateException ex) when (IsSessionSequenceConflict(ex) && attempt < maxAttempts)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "[SSM] Sequence conflict retry session={Session} event={EventType} attempt={Attempt}",
+                    sessionId, frame.Event, attempt);
+
+                await Task.Delay(TimeSpan.FromMilliseconds(20 * attempt), ct);
+            }
+        }
+
+        // 最后一次尝试不捕获，让异常传播
+        return await AppendSqliteEventAsync(
+            sessionId, workspaceId, frame, recordedAt,
+            effectiveTrace, effectiveComponent, effectiveOperation, ct);
+    }
+
+    /// <summary>
+    /// 判定 DbUpdateException 是否为 session_event_log 的 (session_id, sequence_num) 唯一约束冲突。
+    /// </summary>
+    private static bool IsSessionSequenceConflict(DbUpdateException ex)
+    {
+        return ex.InnerException is SqliteException sqlite
+            && sqlite.SqliteErrorCode == 19
+            && sqlite.Message.Contains("session_event_log.session_id, session_event_log.sequence_num", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// 推送工作区级别通知到对应 Channel。

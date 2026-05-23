@@ -42,6 +42,34 @@ export const useChatStyles = createStyles(({ token }) => ({
   headerSelect: { minWidth: 110, maxWidth: 180, fontSize: 12 },
   headerSpacer: { flex: 1 },
   devModeActive: { color: token.colorPrimary },
+  /** 全局操作区（主题/Help/语言/用户）适应 Chat Header 紧凑空间 */
+  headerGlobalActions: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 2,
+    flexShrink: 0,
+    '& .ant-btn': { fontSize: 13, width: 28, height: 28 },
+    '& .ant-select': { fontSize: 12 },
+  },
+  /** Session ID 文本，中屏以下隐藏 */
+  sessionIdText: {
+    cursor: 'pointer',
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.6,
+    marginLeft: 8,
+    fontFamily: 'monospace',
+    userSelect: 'all' as const,
+    '@media (max-width: 1023px)': { display: 'none' },
+  },
+  /** 移动端隐藏元素 */
+  hideOnMobile: {
+    '@media (max-width: 767px)': { display: 'none' },
+  },
+  /** 平板端隐藏元素 */
+  hideOnTablet: {
+    '@media (min-width: 768px) and (max-width: 1023px)': { display: 'none' },
+  },
   chatBody: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', padding: '0 20px', background: 'var(--warm-beige)' },
   chatBodyWithDev: { display: 'flex', flexDirection: 'row' as const, gap: 12, minHeight: 0, height: '100%' },
   chatBodyMain: { display: 'flex', flexDirection: 'column' as const, flex: 1, minWidth: 0, minHeight: 0 },
@@ -220,10 +248,79 @@ export const useChatStyles = createStyles(({ token }) => ({
   inputArea: { display: 'flex', gap: 8, alignItems: 'center' },
   input: { flex: 1 },
   emptyState: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorTextQuaternary, fontSize: 15 },
-  onboardingState: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '24px 0' },
-  onboardingLogo: { width: 56, height: 56, objectFit: 'contain' as const, opacity: 0.7 },
-  onboardingTitle: { margin: 0 },
-  onboardingSubtitle: { color: token.colorTextSecondary, fontSize: 14, textAlign: 'center' as const },
+  /* ── 空状态（ChatEmptyState）── */
+  emptyStateShell: {
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '48px 24px 96px',
+  },
+  emptyStateInner: {
+    width: '100%',
+    maxWidth: 420,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center' as const,
+    gap: 12,
+    animation: 'emptyFadeIn 220ms ease-out',
+  },
+  emptyLogoFrame: {
+    width: 112,
+    height: 112,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: 28,
+    background: 'color-mix(in srgb, var(--accent-purple) 5%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--earth-brown) 8%, transparent)',
+  },
+  emptyLogo: {
+    width: 64,
+    height: 64,
+    objectFit: 'contain' as const,
+    opacity: 0.92,
+  },
+  emptyTitle: {
+    margin: '8px 0 0 !important',
+    fontSize: '22px !important',
+    fontWeight: '600 !important',
+    color: 'var(--text-primary) !important',
+  },
+  emptySubtitle: {
+    maxWidth: 360,
+    fontSize: 14,
+    lineHeight: 1.7,
+    color: 'var(--text-muted)',
+  },
+  emptySuggestionRow: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap' as const,
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  emptySuggestionButton: {
+    height: 34,
+    padding: '0 14px',
+    borderRadius: 17,
+    border: '1px solid color-mix(in srgb, var(--earth-brown) 10%, transparent)',
+    background: 'color-mix(in srgb, var(--soft-white) 86%, transparent)',
+    color: 'var(--text-muted)',
+    fontSize: 13,
+    cursor: 'pointer' as const,
+    transition: 'background 160ms ease, border-color 160ms ease, color 160ms ease',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--accent-purple) 7%, var(--soft-white))',
+      borderColor: 'color-mix(in srgb, var(--accent-purple) 18%, transparent)',
+      color: 'var(--text-primary)',
+    },
+  },
+  '@keyframes emptyFadeIn': {
+    '0%': { opacity: 0, transform: 'translateY(4px)' },
+    '100%': { opacity: 1, transform: 'translateY(0)' },
+  },
   errorAlert: { margin: '8px 0' },
   sidebarEmpty: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorTextQuaternary, fontSize: 13, padding: '0 16px', textAlign: 'center' as const },
   markdownBody: {
@@ -565,73 +662,569 @@ export const useChatStyles = createStyles(({ token }) => ({
     fontStyle: 'italic',
   },
 
-  // ── Agent Console dock（紧凑三行：工具栏 → 输入 → 状态栏）─────
-  consoleDock: {
-    position: 'sticky' as const,
-    bottom: 0,
-    background: 'var(--glass-surface, rgba(250,250,247,0.72))',
-    backdropFilter: 'blur(16px)',
-    WebkitBackdropFilter: 'blur(16px)',
-    borderTop: '1px solid var(--glass-border, rgba(124,58,237,0.18))',
-    borderRadius: '12px 12px 0 0',
-    padding: '6px 12px 4px',
-    zIndex: 10,
-  },
-  consoleInner: {
+  // ── IM-style MessageStream ──────────────────────────────────
+  messageStream: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: 4,
+    gap: 2,
+    padding: '8px 0',
   },
-  consoleTextarea: {
-    flex: 1,
-    border: 'none',
-    background: 'transparent',
-    resize: 'none' as const,
+  messageRow: {
+    display: 'flex',
+    width: '100%',
+    marginBottom: 2,
+  },
+  messageRowUser: {
+    justifyContent: 'flex-end',
+  },
+  messageRowAgent: {
+    justifyContent: 'flex-start',
+  },
+  messageRowGrouped: {
+    marginTop: -4,
+  },
+  // ── Agent 头像 ──
+  agentAvatarWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    fontSize: 16,
+    userSelect: 'none' as const,
+    overflow: 'hidden',
+    marginTop: 18,
+    marginRight: 10,
+  },
+  agentAvatarImg: {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    objectFit: 'cover' as const,
+  },
+  agentAvatarGrouped: {
+    visibility: 'hidden' as const,
+    marginRight: 10,
+    width: 32,
+    flexShrink: 0,
+  },
+  // ── Agent 消息容器 ──
+  agentMessageContainer: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-start',
+    maxWidth: '82%',
+    minWidth: 0,
+  },
+  // ── Agent 名称时间行 ──
+  agentNameRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+    paddingLeft: 4,
+    minHeight: 20,
+  },
+  agentNameText: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--earth-brown)',
+    lineHeight: '20px',
+  },
+  agentTimeText: {
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.5,
+    lineHeight: '20px',
+  },
+  // ── Agent 气泡 ──
+  agentBubbleNew: {
+    background: 'var(--soft-white)',
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    borderRadius: 8,
+    borderTopLeftRadius: 4,
+    padding: '12px 16px',
     fontSize: 14,
-    lineHeight: 1.6,
-    outline: 'none',
-    transition: 'box-shadow 200ms ease',
-    '&:focus': {
-      boxShadow: '0 2px 0 0 var(--accent-purple, #7c3aed)',
+    lineHeight: 1.7,
+    color: 'var(--text-primary)',
+    wordBreak: 'break-word' as const,
+    width: '100%',
+    transition: 'background 200ms ease, border-color 200ms ease',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--soft-white) 95%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
     },
   },
-  consoleTextareaSending: {
-    animation: 'sendWave 400ms ease-out',
+  agentBubbleGrouped: {
+    borderTopLeftRadius: 8,
+    borderTop: '1px solid',
+    borderTopColor: 'color-mix(in srgb, var(--earth-brown) 4%, transparent)',
   },
-  '@keyframes sendWave': {
-    '0%': { boxShadow: '0 0 0 0 rgba(124,58,237,0.3)' },
-    '100%': { boxShadow: '0 0 0 12px rgba(124,58,237,0)' },
+  agentBubbleStreaming: {
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
   },
-  // ── IDE 风格状态栏（始终可见，紧凑单行）──────────────
-  consoleStatusBar: {
+  agentBubbleError: {
+    borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
+    background: 'color-mix(in srgb, #ef4444 4%, var(--soft-white))',
+  },
+  // ── 用户消息 ──
+  userMessageContainer: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-end',
+    maxWidth: '70%',
+    minWidth: 0,
+  },
+  userNameRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+    paddingRight: 4,
+    minHeight: 20,
+  },
+  userNameText: {
+    fontSize: 13,
+    color: 'var(--earth-brown)',
+    opacity: 0.7,
+    lineHeight: '20px',
+  },
+  userTimeText: {
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.5,
+    lineHeight: '20px',
+  },
+  userBubbleNew: {
+    background: 'color-mix(in srgb, var(--accent-purple) 8%, var(--soft-white))',
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 14%, transparent)',
+    borderRadius: 8,
+    borderBottomRightRadius: 4,
+    padding: '10px 16px',
+    fontSize: 14,
+    lineHeight: 1.6,
+    color: 'var(--text-primary)',
+    wordBreak: 'break-word' as const,
+    transition: 'background 200ms ease',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--accent-purple) 12%, var(--soft-white))',
+    },
+  },
+  userBubbleSending: {
+    opacity: 0.7,
+  },
+  userSendingIndicator: {
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.5,
+    marginTop: 2,
+    paddingRight: 4,
+  },
+  // ── 过程摘要（默认折叠）───────────────────────────────────
+  processSummaryRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    padding: '1px 4px 2px',
-    fontSize: 10,
-    color: 'var(--earth-brown)',
-    opacity: 0.7,
-    flexWrap: 'wrap' as const,
-    minHeight: 20,
-    background: 'transparent',
-    borderTop: '1px solid rgba(124,58,237,0.08)',
-    borderRadius: '0 0 4px 4px',
+    padding: '4px 4px 0',
+    cursor: 'pointer' as const,
     userSelect: 'none' as const,
+    transition: 'opacity 200ms ease',
+    '&:hover': {
+      opacity: 0.8,
+    },
   },
-  consoleStatusBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    fontSize: 10,
-    whiteSpace: 'nowrap' as const,
+  processSummaryDot: {
+    width: 4,
+    height: 4,
+    borderRadius: '50%',
+    background: 'var(--earth-brown)',
+    opacity: 0.3,
     flexShrink: 0,
   },
-  consoleStatusDot: {
+  processSummaryText: {
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.5,
+    lineHeight: '16px',
+  },
+  processSummaryLink: {
+    fontSize: 11,
+    color: 'var(--accent-purple)',
+    opacity: 0.6,
+    cursor: 'pointer' as const,
+    lineHeight: '16px',
+    '&:hover': {
+      opacity: 1,
+      textDecoration: 'underline',
+    },
+  },
+  processThinkingLabel: {
+    fontSize: 11,
+    color: 'var(--accent-purple)',
+    opacity: 0.6,
+    fontStyle: 'italic',
+    lineHeight: '16px',
+  },
+  processRetryBtn: {
+    fontSize: 11,
+    color: '#ef4444',
+    cursor: 'pointer' as const,
+    opacity: 0.7,
+    lineHeight: '16px',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    '&:hover': {
+      opacity: 1,
+      textDecoration: 'underline',
+    },
+  },
+  // ── 过程展开区 ──
+  processExpandedArea: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+    marginTop: 4,
+    paddingLeft: 12,
+    borderLeft: '2px solid',
+    borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
+  },
+  processCollapseLink: {
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.4,
+    cursor: 'pointer' as const,
+    padding: '2px 4px',
+    userSelect: 'none' as const,
+    '&:hover': {
+      opacity: 0.7,
+    },
+  },
+  processItem: {
+    fontSize: 12,
+    color: 'var(--earth-brown)',
+    opacity: 0.6,
+    lineHeight: 1.5,
+    padding: '3px 4px',
+  },
+  processItemName: {
+    fontWeight: 500,
+    opacity: 0.8,
+  },
+  processItemStatus: {
+    fontSize: 10,
+    marginLeft: 6,
+  },
+  processItemStatusRunning: {
+    color: 'var(--accent-purple)',
+  },
+  processItemStatusSuccess: {
+    color: '#22c55e',
+  },
+  processItemStatusError: {
+    color: '#ef4444',
+  },
+  processItemDetail: {
+    fontSize: 11,
+    color: 'var(--earth-brown)',
+    opacity: 0.5,
+    marginTop: 2,
+    padding: '4px 6px',
+    background: 'color-mix(in srgb, var(--earth-brown) 4%, transparent)',
+    borderRadius: 4,
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+    maxHeight: 200,
+    overflowY: 'auto' as const,
+  },
+  processItemToggle: {
+    fontSize: 11,
+    color: 'var(--accent-purple)',
+    opacity: 0.5,
+    cursor: 'pointer' as const,
+    padding: '2px 4px',
+    '&:hover': {
+      opacity: 0.8,
+    },
+  },
+  // ── 消息操作按钮 ──
+  messageActionsNew: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    padding: '2px 4px 0',
+    opacity: 0,
+    transition: 'opacity 180ms ease',
+  },
+  messageActionsVisible: {
+    opacity: 0.6,
+  },
+  messageActionBtn: {
+    width: 24,
+    height: 24,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: 4,
+    cursor: 'pointer' as const,
+    color: 'var(--earth-brown)',
+    opacity: 0.5,
+    fontSize: 13,
+    transition: 'opacity 120ms ease, background 120ms ease',
+    '&:hover': {
+      opacity: 1,
+      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    },
+  },
+  messageActionBtnDanger: {
+    '&:hover': {
+      color: '#ef4444',
+      opacity: 1,
+    },
+  },
+  // ── Token 用量 ──
+  tokenUsageLine: {
+    fontSize: 10,
+    color: 'var(--earth-brown)',
+    opacity: 0.35,
+    padding: '2px 4px 0',
+  },
+
+  // ── Composer Surface（安静单行输入区）────────────────────
+  composerSurface: {
+    position: 'sticky' as const,
+    bottom: 0,
+    background: 'var(--pudding-surface, #fffefa)',
+    border: '1px solid var(--pudding-line, rgba(92,74,58,0.16))',
+    borderRadius: 8,
+    padding: '8px 10px',
+    boxShadow: 'none',
+    zIndex: 10,
+    margin: '0 0 4px',
+  },
+  composerStatusLine: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 18,
+    marginBottom: 4,
+    fontSize: 11,
+    color: 'var(--pudding-text-muted, #756b5f)',
+  },
+  composerStatusDot: {
     width: 5,
     height: 5,
     borderRadius: '50%',
     flexShrink: 0,
-    transition: 'background 0.4s ease',
+  },
+  composerRow: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  composerIconButton: {
+    width: 28,
+    height: 28,
+    opacity: 0.58,
+    border: 'none',
+    background: 'transparent',
+  },
+  composerTextarea: {
+    flex: 1,
+    border: 'none',
+    background: 'transparent',
+    boxShadow: 'none',
+    resize: 'none' as const,
+    fontSize: 14,
+    lineHeight: 1.55,
+    outline: 'none',
+    '&:focus': {
+      boxShadow: '0 2px 0 0 var(--pudding-accent, #8b5cf6)',
+    },
+  },
+
+  // ── Composer Action Menu（`+` Popover）─────────────────────
+  composerMenu: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+    padding: '4px 0',
+    minWidth: 220,
+  },
+  composerMenuSection: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 1,
+    padding: '4px 0',
+  },
+  composerMenuSectionTitle: {
+    padding: '4px 12px 6px',
+    fontSize: 11,
+    color: 'var(--pudding-text-muted, #756b5f)',
+    fontWeight: 500,
+    opacity: 0.6,
+    userSelect: 'none' as const,
+  },
+  composerMenuItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    height: 36,
+    padding: '0 12px',
+    border: 'none',
+    borderRadius: 6,
+    background: 'transparent',
+    color: 'var(--pudding-text, #1d1b24)',
+    fontSize: 13,
+    cursor: 'pointer' as const,
+    transition: 'background 0.15s',
+    textAlign: 'left' as const,
+    '&:hover:not(:disabled)': {
+      background: 'color-mix(in srgb, var(--earth-brown, #5c4a3a) 6%, transparent)',
+    },
+    '&:focus-visible': {
+      outline: '2px solid var(--pudding-accent, #8b5cf6)',
+      outlineOffset: -2,
+    },
+    '& .anticon': {
+      fontSize: 14,
+      flexShrink: 0,
+    },
+  },
+  composerMenuItemDisabled: {
+    opacity: 0.4,
+    cursor: 'not-allowed' as const,
+  },
+  composerMenuComingSoon: {
+    marginLeft: 'auto',
+    fontSize: 10,
+    color: 'var(--pudding-text-muted, #756b5f)',
+    opacity: 0.5,
+  },
+  composerMenuValue: {
+    marginLeft: 'auto',
+    fontSize: 12,
+    color: 'var(--pudding-text-muted, #756b5f)',
+    fontVariantNumeric: 'tabular-nums' as const,
+  },
+
+  // ── Composer Status Pill（状态行胶囊）─────────────────────────
+  composerStatusPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    cursor: 'pointer' as const,
+    borderRadius: 4,
+    padding: '2px 6px',
+    transition: 'background 0.15s',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--earth-brown, #5c4a3a) 6%, transparent)',
+    },
+    '&:focus-visible': {
+      outline: '2px solid var(--pudding-accent, #8b5cf6)',
+      outlineOffset: 1,
+    },
+  },
+
+  // ── Composer Status Details Popover ─────────────────────────
+  composerStatusDetails: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+    padding: '4px 0',
+    minWidth: 220,
+    maxWidth: 280,
+  },
+  composerStatusDetailsHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '4px 12px 8px',
+    borderBottom: '1px solid color-mix(in srgb, var(--earth-brown, #5c4a3a) 10%, transparent)',
+    marginBottom: 4,
+  },
+  composerStatusDetailsDot: {
+    width: 7,
+    height: 7,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  composerStatusDetailsTitle: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--pudding-text, #1d1b24)',
+  },
+  composerStatusDetailsGroup: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+    padding: '0 12px',
+  },
+  composerStatusDetailsGroupTitle: {
+    fontSize: 10,
+    color: 'var(--pudding-text-muted, #756b5f)',
+    fontWeight: 500,
+    opacity: 0.5,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+    marginBottom: 2,
+  },
+  composerStatusDetailRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 22,
+  },
+  composerStatusDetailLabel: {
+    fontSize: 12,
+    color: 'var(--pudding-text-muted, #756b5f)',
+    flexShrink: 0,
+  },
+  composerStatusDetailValue: {
+    fontSize: 12,
+    color: 'var(--pudding-text, #1d1b24)',
+    fontVariantNumeric: 'tabular-nums' as const,
+    textAlign: 'right' as const,
+  },
+  composerStatusDetailsDevEntry: {
+    borderTop: '1px solid color-mix(in srgb, var(--earth-brown, #5c4a3a) 10%, transparent)',
+    padding: '6px 12px 2px',
+    marginTop: 4,
+  },
+  composerStatusDetailsDevButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    height: 32,
+    padding: '0 8px',
+    border: 'none',
+    borderRadius: 6,
+    background: 'transparent',
+    color: 'var(--pudding-text-muted, #756b5f)',
+    fontSize: 12,
+    cursor: 'pointer' as const,
+    transition: 'background 0.15s',
+    textAlign: 'left' as const,
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--earth-brown, #5c4a3a) 6%, transparent)',
+      color: 'var(--pudding-text, #1d1b24)',
+    },
+    '&:focus-visible': {
+      outline: '2px solid var(--pudding-accent, #8b5cf6)',
+      outlineOffset: -2,
+    },
+    '& .anticon': {
+      fontSize: 12,
+    },
   },
 
   // ── Runtime Timeline 样式 ──────────────────────────────────
@@ -755,6 +1348,54 @@ export const useChatStyles = createStyles(({ token }) => ({
   '@keyframes streamBreathe': {
     '0%, 100%': { opacity: 1 },
     '50%': { opacity: 0.92 },
+  },
+  /* ── ADR-InkBloom: 纸感卡片（流式中）── */
+  paperStreaming: {
+    background: 'color-mix(in srgb, var(--soft-white) 92%, #fff7df)',
+    borderColor: 'color-mix(in srgb, var(--earth-brown) 8%, transparent)',
+    boxShadow: '0 1px 8px rgba(92, 64, 42, 0.04)',
+    transition: 'background 420ms ease, border-color 420ms ease, box-shadow 520ms ease',
+    contain: 'paint',
+  },
+  /* ── ADR-InkBloom: 纸感卡片（已稳定）── */
+  paperSettled: {
+    background: 'var(--soft-white)',
+    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    boxShadow: 'none',
+    transition: 'background 520ms ease, border-color 520ms ease, box-shadow 520ms ease',
+  },
+  /* ── ADR-InkBloom: 墨迹 live text 容器 ── */
+  typewriterLiveText: {
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+  },
+  /* ── ADR-InkBloom: 墨迹 chunk 淡入动画 ── */
+  inkChunk: {
+    display: 'inline' as const,
+    animation: 'inkBloom 180ms ease-out both',
+  },
+  '@keyframes inkBloom': {
+    '0%': { opacity: 0.12, color: 'color-mix(in srgb, var(--text-primary) 35%, #d8c7a5)', transform: 'translateY(1px)' },
+    '100%': { opacity: 1, color: 'var(--text-primary)', transform: 'translateY(0)' },
+  },
+  /* ── ADR-InkBloom: 墨迹光标 ── */
+  inkCursor: {
+    display: 'inline-block' as const,
+    width: 2,
+    height: '1em',
+    marginLeft: 2,
+    verticalAlign: '-0.12em',
+    background: 'color-mix(in srgb, var(--earth-brown) 55%, transparent)',
+    animation: 'inkCursorBreath 1.4s ease-in-out infinite',
+  },
+  '@keyframes inkCursorBreath': {
+    '0%, 100%': { opacity: 0.28 },
+    '50%': { opacity: 0.75 },
+  },
+  /* ── ADR-InkBloom: prefers-reduced-motion 禁用动画 ── */
+  '@media (prefers-reduced-motion: reduce)': {
+    inkChunk: { animation: 'none' as const },
+    inkCursor: { animation: 'none' as const },
   },
   /* ── 操作按钮 settle 淡入 ── */
   actionButtonsSettled: {

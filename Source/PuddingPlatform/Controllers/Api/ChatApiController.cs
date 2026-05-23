@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Abstractions;
@@ -27,6 +28,7 @@ public class ChatApiController(
     PlatformApiClient apiClient,
     MinioStorageService minio,
     IServiceScopeFactory scopeFactory,
+    ChatTranscriptWriter transcriptWriter,
     IDbContextFactory<MemoryDbContext> memoryDbFactory,
     JsonlSessionWriter jsonlWriter,
     ISessionStateManager ssm,
@@ -35,6 +37,11 @@ public class ChatApiController(
 {
     private static readonly Regex VaultPlaceholderRegex =
         new(@"^\{\{vault:(?<name>[a-zA-Z0-9._-]+)\}\}$", RegexOptions.Compiled);
+
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+    };
 
     // POST /api/workspaces/{workspaceId}/chat/message
     // T-102: 改为 fire-and-forget — 立即返回 { messageId, sessionId }，不再等待完整执行结果。
@@ -148,10 +155,17 @@ public class ChatApiController(
         string? streamSessionId = req.SessionId;
         string? streamMessageId = null;
         var framesWritten = 0;
+        var userCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         // 启动后台执行 — 获取第一个 metadata 帧后返回，剩余帧推入 SSM
         _ = Task.Run(async () =>
         {
+            var replyBuilder = new StringBuilder();
+            var thinkingChunks = new List<TranscriptThinkingChunk>();
+            string? latestUsageJson = null;
+            var userTranscriptPersisted = false;
+            var assistantTranscriptPersisted = false;
+
             try
             {
                 await foreach (var frame in apiClient.SendMessageStreamAsync(
@@ -183,6 +197,42 @@ public class ChatApiController(
                         catch { /* ignore parse errors */ }
                     }
 
+                    // ADR-031: ChatMessages 是面向 UI/检索的聊天转录物化视图。
+                    // 用户消息在确认 sessionId 后写入；执行事实仍由 session_event_log 记录。
+                    if (!userTranscriptPersisted && streamSessionId is not null)
+                    {
+                        await transcriptWriter.PersistMessageAsync(
+                            streamSessionId,
+                            role: "user",
+                            content: req.MessageText,
+                            createdAt: userCreatedAt,
+                            thinkingJson: null,
+                            usageJson: null,
+                                CancellationToken.None);
+                        userTranscriptPersisted = true;
+                    }
+
+                    if (frame.Event == "delta")
+                    {
+                        var delta = TryReadStringProperty(frame.Data, "delta");
+                        if (!string.IsNullOrEmpty(delta))
+                            replyBuilder.Append(delta);
+                    }
+                    else if (frame.Event == "thinking")
+                    {
+                        var delta = TryReadStringProperty(frame.Data, "delta");
+                        if (!string.IsNullOrEmpty(delta))
+                        {
+                            thinkingChunks.Add(new TranscriptThinkingChunk(
+                                delta,
+                                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                        }
+                    }
+                    else if (frame.Event == "usage")
+                    {
+                        latestUsageJson = TryReadUsageJson(frame.Data) ?? latestUsageJson;
+                    }
+
                     // 写入 SSM EventHub
                     if (streamSessionId is not null)
                     {
@@ -201,6 +251,28 @@ public class ChatApiController(
                     // T-CACHE-005: 检测 done 帧，fire-and-forget 更新 TokenUsageStats
                     if (frame.Event == "done" && !string.IsNullOrEmpty(frame.Data))
                     {
+                        if (!assistantTranscriptPersisted && streamSessionId is not null)
+                        {
+                            var reply = TryReadStringProperty(frame.Data, "reply");
+                            var assistantContent = !string.IsNullOrWhiteSpace(reply)
+                                ? reply
+                                : replyBuilder.ToString();
+                            var doneUsageJson = TryReadUsageJson(frame.Data) ?? latestUsageJson;
+                            var thinkingJson = thinkingChunks.Count > 0
+                                ? JsonSerializer.Serialize(thinkingChunks, JsonOpts)
+                                : null;
+
+                            await transcriptWriter.PersistMessageAsync(
+                                streamSessionId,
+                                role: "agent",
+                                content: assistantContent,
+                                createdAt: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                                thinkingJson,
+                                doneUsageJson,
+                                CancellationToken.None);
+                            assistantTranscriptPersisted = true;
+                        }
+
                         var capturedProviderId = agent?.PreferredProviderId;
                         var capturedModelId = llmConfig?.ModelId;
                         var capturedData = frame.Data;
@@ -212,7 +284,7 @@ public class ChatApiController(
                                 var root = doc.RootElement;
                                 if (!root.TryGetProperty("usage", out var usageEl)) return;
                                 
-                                var usageTokens = JsonSerializer.Deserialize<TokenUsageDto>(usageEl.GetRawText());
+                                var usageTokens = JsonSerializer.Deserialize<TokenUsageDto>(usageEl.GetRawText(), JsonOpts);
                                 if (usageTokens is null) return;
 
                                 var yearMonth = DateTimeOffset.UtcNow.ToString("yyyy-MM");
@@ -341,6 +413,61 @@ public class ChatApiController(
             workspaceId, streamMessageId, streamSessionId, sw.ElapsedMilliseconds);
 
         return Ok(new { messageId = streamMessageId, sessionId = streamSessionId });
+    }
+
+    private sealed record TranscriptThinkingChunk(string Text, long Timestamp);
+
+    private static string? TryReadStringProperty(string json, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryReadUsageJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                return usage.GetRawText();
+
+            return LooksLikeUsagePayload(root)
+                ? root.GetRawText()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool LooksLikeUsagePayload(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+            return false;
+
+        return root.TryGetProperty("promptTokens", out _)
+            || root.TryGetProperty("PromptTokens", out _)
+            || root.TryGetProperty("completionTokens", out _)
+            || root.TryGetProperty("CompletionTokens", out _)
+            || root.TryGetProperty("totalTokens", out _)
+            || root.TryGetProperty("TotalTokens", out _);
     }
 
     private sealed record ResolvedCapabilities(

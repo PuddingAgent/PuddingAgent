@@ -68,7 +68,9 @@ Pudding is different:
 ### Docker (optional)
 
 ```bash
-docker run -p 8080:8080 pudding-agent
+# Port mapping: 5000 (host) → 8080 (container)
+docker run -p 5000:8080 pudding-agent
+# Browser -> http://localhost:5000
 ```
 
 ---

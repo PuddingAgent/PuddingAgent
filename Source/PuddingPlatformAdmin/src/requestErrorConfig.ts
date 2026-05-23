@@ -70,17 +70,25 @@ export const errorConfig: RequestConfig = {
           }
         }
       } else if (error.response) {
-        // Axios 的错误
-        // 请求成功发出且服务器也响应了状态码，但状态代码超出了 2xx 的范围
-        message.error(`Response status:${error.response.status}`);
+        // Axios 的错误：请求成功发出且服务器也响应了状态码，但超出了 2xx 范围
+        const { status, config, data } = error.response;
+        const method = (config?.method ?? '?').toUpperCase();
+        const url = config?.url ?? '?';
+        // 尝试提取后端 body 中的 message / title（Problem Details）
+        let bodyMsg = '';
+        try {
+          if (data) {
+            bodyMsg = typeof data === 'string' ? data : (data.message || data.title || JSON.stringify(data).slice(0, 200));
+          }
+        } catch { /* ignore */ }
+        const detail = [`${method} ${url}`, `HTTP ${status}`, bodyMsg].filter(Boolean).join(' — ');
+        message.error(detail);
       } else if (error.request) {
         // 请求已经成功发起，但没有收到响应
-        // \`error.request\` 在浏览器中是 XMLHttpRequest 的实例，
-        // 而在node.js中是 http.ClientRequest 的实例
-        message.error('None response! Please retry.');
+        message.error('无响应，请检查网络连接');
       } else {
         // 发送请求时出了点问题
-        message.error('Request error, please retry.');
+        message.error('请求异常，请重试');
       }
     },
   },

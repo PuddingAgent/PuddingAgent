@@ -267,6 +267,10 @@ export function useChatState(): UseChatStateReturn {
   const workspaceNotifyReconnectRef = useRef<number | null>(null);
   const workspaceNotifyWsIdRef = useRef<string | null>(null);
 
+  // ADR-InkBloom: delta 批处理 refs
+  const pendingDeltaRef = useRef<Map<string, string>>(new Map());
+  const deltaFlushTimerRef = useRef<number | null>(null);
+
   const [createSceneOpen, setCreateSceneOpen] = useState(false);
   const [createSceneLoading, setCreateSceneLoading] = useState(false);
   const [createSceneForm] = Form.useForm<{ name: string }>();
@@ -314,6 +318,58 @@ export function useChatState(): UseChatStateReturn {
     }
   }, []);
 
+  // ADR-InkBloom: 合并 delta 到 pending 缓冲，80ms 批刷新一次
+  const enqueueDelta = useCallback((turnId: string, delta: string) => {
+    pendingDeltaRef.current.set(
+      turnId,
+      (pendingDeltaRef.current.get(turnId) ?? '') + delta,
+    );
+    if (deltaFlushTimerRef.current != null) return;
+    deltaFlushTimerRef.current = window.setTimeout(() => {
+      const pending = new Map(pendingDeltaRef.current);
+      pendingDeltaRef.current.clear();
+      deltaFlushTimerRef.current = null;
+      setTurns(prev => prev.map(turn => {
+        const d = pending.get(turn.turnId);
+        if (!d) return turn;
+        return {
+          ...turn,
+          assistant: {
+            ...turn.assistant,
+            status: 'streaming' as const,
+            isStreaming: true,
+            renderMode: 'structured' as const,
+            answerMarkdown: turn.assistant.answerMarkdown + d,
+          },
+        };
+      }));
+    }, 80);
+  }, []);
+
+  const flushPendingDeltas = useCallback(() => {
+    if (deltaFlushTimerRef.current != null) {
+      window.clearTimeout(deltaFlushTimerRef.current);
+      deltaFlushTimerRef.current = null;
+    }
+    if (pendingDeltaRef.current.size === 0) return;
+    const pending = new Map(pendingDeltaRef.current);
+    pendingDeltaRef.current.clear();
+    setTurns(prev => prev.map(turn => {
+      const d = pending.get(turn.turnId);
+      if (!d) return turn;
+      return {
+        ...turn,
+        assistant: {
+          ...turn.assistant,
+          status: 'streaming' as const,
+          isStreaming: true,
+          renderMode: 'structured' as const,
+          answerMarkdown: turn.assistant.answerMarkdown + d,
+        },
+      };
+    }));
+  }, []);
+
   const normalizeSessionEvent = useCallback((raw: unknown): (AdminChatStreamEvent & { sequenceNum?: number }) | null => {
     if (!raw || typeof raw !== 'object') return null;
     const obj = raw as Record<string, unknown>;
@@ -344,10 +400,10 @@ export function useChatState(): UseChatStateReturn {
     if (!type) return null;
 
     return {
-      ...(payload as AdminChatStreamEvent),
-      type: type as AdminChatStreamEvent['type'],
+      ...(payload as Record<string, unknown>),
+      type,
       ...(Number.isFinite(sequenceNum) ? { sequenceNum } : {}),
-    };
+    } as AdminChatStreamEvent & { sequenceNum?: number };
   }, []);
 
   const listSessionEventsPage = useCallback(async (
@@ -406,7 +462,7 @@ export function useChatState(): UseChatStateReturn {
       }
       if (ev.type === 'delta') {
         if (!ev.delta) return turn;
-        // 去重：如果 delta 与已有末尾重叠，截去重叠前缀
+        // ADR-InkBloom: 去重逻辑保留，通过 enqueueDelta 批处理更新
         const current = turn.assistant.answerMarkdown;
         let delta = ev.delta;
         const maxOverlap = Math.min(current.length, delta.length, 10);
@@ -417,14 +473,8 @@ export function useChatState(): UseChatStateReturn {
           }
         }
         if (!delta) return turn;
-        return {
-          ...turn,
-          assistant: {
-            ...turn.assistant, status: 'streaming' as const, isStreaming: true,
-            renderMode: 'structured' as const,
-            answerMarkdown: current + delta,
-          },
-        };
+        enqueueDelta(turn.turnId, delta);
+        return turn;
       }
       if (ev.type === 'thinking') {
         const items = turn.assistant.timelineItems ?? [];
@@ -636,7 +686,7 @@ export function useChatState(): UseChatStateReturn {
       }
       return turn;
     }));
-  }, []);
+  }, [enqueueDelta]);
 
   const applySessionEvent = useCallback((ev: AdminChatStreamEvent) => {
     updateLastSequence(ev);
@@ -666,6 +716,11 @@ export function useChatState(): UseChatStateReturn {
     // T-102: 持久 SSE 已合并为单一通道 — 不再过滤 delta/thinking/tool_call/tool_result。
     // 所有事件统一路由到 mapEventToTurn 处理。
 
+    // ADR-InkBloom: 终端事件前 flush 所有 pending delta，不丢最后一段
+    if (ev.type === 'session.closed' || ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
+      flushPendingDeltas();
+    }
+
     // T-102: 终端事件管理 loading 状态
     if (ev.type === 'session.closed') {
       setLoading(false);
@@ -678,7 +733,7 @@ export function useChatState(): UseChatStateReturn {
     const targetTurnId = resolveEventTurnId(ev);
     if (!targetTurnId) return;
     mapEventToTurn(targetTurnId, ev);
-  }, [mapEventToTurn, resolveEventTurnId, updateLastSequence]);
+  }, [mapEventToTurn, resolveEventTurnId, updateLastSequence, flushPendingDeltas]);
 
   const replayMissedSessionEvents = useCallback(async (sessionId: string, signal?: AbortSignal) => {
     let from = Math.max(0, lastSequenceNumRef.current + 1);
@@ -896,19 +951,30 @@ export function useChatState(): UseChatStateReturn {
   }, [workspaceId]);
 
   // ── refreshSessions ────────────────────────────────────────
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options?: { preserveSessionId?: string }) => {
     if (!workspaceId) return;
     try {
       const list = await listSessions(workspaceId);
-      setSessions((list || []).filter((s: SessionRecord) => s.status !== 'Frozen').map((s: SessionRecord) => ({
-        sessionId: s.sessionId,
-        title: s.title?.trim() || s.agentTemplateId?.replace('global:', '') || '对话',
-        timestamp: new Date(s.createdAt).getTime(),
-      })).sort((a, b) => b.timestamp - a.timestamp));
-    } catch { setSessions([]); }
+      const serverMapped: { sessionId: string; title: string; timestamp: number }[]
+        = (list || []).filter((s: SessionRecord) => s.status !== 'Frozen').map((s: SessionRecord) => ({
+          sessionId: s.sessionId,
+          title: s.title?.trim() || s.agentTemplateId?.replace('global:', '') || '对话',
+          timestamp: new Date(s.createdAt).getTime(),
+        })).sort((a, b) => b.timestamp - a.timestamp);
+
+      setSessions(prev => {
+        // ADR: merge 模式 — 如果服务端缺少乐观会话项，保留本地项不被覆盖
+        if (options?.preserveSessionId && !serverMapped.some(s => s.sessionId === options.preserveSessionId)) {
+          const localItem = prev.find(s => s.sessionId === options.preserveSessionId);
+          if (localItem) return [localItem, ...serverMapped];
+        }
+        return serverMapped;
+      });
+    } catch { /* 刷新失败保留现有列表，不清空 */ }
   }, [workspaceId]);
 
-  useEffect(() => { refreshSessions(); }, [refreshSessions, turns.length]);
+  // ADR: 移除 turns.length 触发，会话列表由 sendMessage 同步插入 + 后台刷新补偿
+  useEffect(() => { refreshSessions(); }, [refreshSessions]);
 
   // T-201: 停止工作区通知 SSE
   const stopWorkspaceNotificationStream = useCallback(() => {
@@ -981,7 +1047,8 @@ export function useChatState(): UseChatStateReturn {
 
   // ── handleSelectSession ────────────────────────────────────
   const handleSelectSession = useCallback(async (sid: string) => {
-    if (sid === selectedSessionId) return;
+    if (sid === selectedSessionId && turns.length > 0) return;
+    const shouldRestartSameSessionStream = sid === selectedSessionId;
     clearSessionUnread(sid);
     historyAbortRef.current?.abort();
     abortRef.current?.abort();
@@ -1009,8 +1076,11 @@ export function useChatState(): UseChatStateReturn {
     } finally {
       if (historyAbortRef.current === ctrl) historyAbortRef.current = null;
       setHistoryLoading(false);
+      if (shouldRestartSameSessionStream && !ctrl.signal.aborted && sessionIdRef.current === sid) {
+        startSessionEventStream(sid);
+      }
     }
-  }, [selectedSessionId, toTurnsFromHistory, messageApi, stopSessionEventStream, clearSessionUnread]);
+  }, [selectedSessionId, turns.length, toTurnsFromHistory, messageApi, stopSessionEventStream, startSessionEventStream, clearSessionUnread]);
 
   // ── handleSetMainSession ──────────────────────────────────
   const handleSetMainSession = useCallback((sessionId: string) => {
@@ -1149,6 +1219,20 @@ export function useChatState(): UseChatStateReturn {
       forceNewSessionRef.current = false;
       messageIdToTurnIdRef.current.set(messageId, turnId);
 
+      // ADR: 首条消息隐式会话的前端物化 — 将返回的 sessionId 同步到左侧 sessions 列表
+      const agName = agents.find(a => a.agentId === agentId);
+      const agTitle = agName ? getAgentName(agName) : null;
+      const optimisticTitle = agTitle || text.slice(0, 30).trim() || '对话';
+      setSessions(prev => {
+        const idx = prev.findIndex(s => s.sessionId === returnedSessionId);
+        if (idx >= 0) {
+          const updated = { ...prev[idx], timestamp: now };
+          if (!prev[idx].title || prev[idx].title === '对话') updated.title = optimisticTitle;
+          return [updated, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
+        }
+        return [{ sessionId: returnedSessionId, title: optimisticTitle, timestamp: now }, ...prev];
+      });
+
       // ADR-026: debug mode 写入 sessionId/messageId
       writeDebugSessionState(returnedSessionId, messageId);
 
@@ -1166,19 +1250,23 @@ export function useChatState(): UseChatStateReturn {
       try {
         await replayMissedSessionEvents(returnedSessionId, ctrl.signal);
       } catch { /* 网络波动，SSE 会重连补偿 */ }
+
+      // ADR: 后台刷新会话列表（merge 模式保留乐观项不被覆盖）
+      refreshSessions({ preserveSessionId: returnedSessionId });
     } catch (e: unknown) {
       if (e instanceof Error && e.name === 'AbortError') {
         setTurns(p => p.map(t => t.turnId === turnId ? { ...t, assistant: { ...t.assistant, status: 'cancelled' as const, isStreaming: false } } : t));
       } else {
         setError(e instanceof Error ? e.message : '请求失败');
         setTurns(p => p.map(t => t.turnId === turnId ? { ...t, assistant: { ...t.assistant, status: 'error' as const, isStreaming: false } } : t));
+        // ADR: POST 已成功，会话由后端持久化，不做前端回滚
       }
       setLoading(false);
     } finally {
       if (abortRef.current === ctrl) abortRef.current = null;
       // T-102: loading 由持久 SSE 的 done/error/cancelled 事件管理，不在此处关闭
     }
-  }, [loading, workspaceId, agentId, replayMissedSessionEvents]);
+  }, [loading, workspaceId, agentId, agents, replayMissedSessionEvents, refreshSessions]);
 
   // ── handleKeyDown ──────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {

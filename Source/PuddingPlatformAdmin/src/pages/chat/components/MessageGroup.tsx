@@ -6,7 +6,7 @@ import React, { useMemo } from 'react';
 import { useChatStyles } from '../styles';
 import type { ChatTurn, TimelineItem } from '../types';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
-import { useBufferedStreaming } from '../hooks/useBufferedStreaming';
+import { useTypewriterStreaming } from '../hooks/useTypewriterStreaming';
 import MessageItem from './MessageItem';
 
 const { Text } = Typography;
@@ -98,10 +98,12 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
   const { styles, cx } = useChatStyles();
   const { assistant, userMessage } = turn;
 
-  // ── 块级凝聚缓冲 ──
-  const { displayText, isCondensing, justSettled } = useBufferedStreaming({
+  // ── Ink Bloom Typewriter 流式渲染 ──
+  const typewriter = useTypewriterStreaming({
     text: assistant.answerMarkdown,
     isStreaming: assistant.isStreaming,
+    tickMs: 28,
+    maxLagChars: 240,
   });
 
   const timelineItems = assistant.timelineItems ?? [];
@@ -358,29 +360,32 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
             </>
           )}
 
-          {/* ── Final Answer：块级凝聚输出（块级缓冲 + blockCondense 动画）── */}
-          {(displayText || assistant.answerMarkdown) && (
+          {/* ── Final Answer：Ink Bloom 纸感卡片（稳定 Markdown + 墨迹尾段）── */}
+          {(typewriter.stableMarkdown || typewriter.liveText || assistant.answerMarkdown) && (
             <div className={cx(styles.timelineNode, styles.timelineNodeAnswer)}>
               <div
                 className={cx(
                   styles.timelineAnswerBlock,
-                  isCondensing && styles.blockCondensing,
-                  justSettled && styles.answerSettled,
-                  assistant.isStreaming && styles.streamingBreathe,
+                  assistant.isStreaming && styles.paperStreaming,
+                  !assistant.isStreaming && styles.paperSettled,
                   runtimeState === 'error' && styles.runtimeStateError,
                 )}
                 onContextMenu={(e) => onContextMenu(e, turn.turnId, 'assistant')}
               >
                 <MessageItem
-                  markdownText={assistant.isStreaming ? displayText : assistant.answerMarkdown}
-                  isStreaming={assistant.isStreaming && !justSettled}
+                  markdownText={assistant.answerMarkdown}
+                  isStreaming={assistant.isStreaming}
+                  stableMarkdown={typewriter.stableMarkdown}
+                  liveText={typewriter.liveText}
+                  visibleLiveText={typewriter.visibleLiveText}
+                  visibleStartOffset={typewriter.visibleStartOffset}
                 />
               </div>
             </div>
           )}
 
-          {/* ── 流式等待态（无内容但有 buffered 标记）── */}
-          {!displayText && !assistant.answerMarkdown && assistant.isStreaming && timelineItems.length > 0 && (
+          {/* ── 流式等待态（无内容但有 typewriter 标记）── */}
+          {!typewriter.stableMarkdown && !typewriter.liveText && !assistant.answerMarkdown && assistant.isStreaming && timelineItems.length > 0 && (
             <div className={cx(styles.timelineNode, styles.runtimeStateStreaming)}>
               <span className={cx(styles.toolSummaryStatus, styles.statusTextStreaming)}>
                 正在生成...
@@ -394,7 +399,7 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
             className={cx(
               styles.messageActions,
               'message-actions',
-              (!assistant.isStreaming || justSettled) && styles.actionButtonsSettled,
+              (!assistant.isStreaming || typewriter.isSettling) && styles.actionButtonsSettled,
             )}
             style={{ paddingLeft: 28 }}
           >
