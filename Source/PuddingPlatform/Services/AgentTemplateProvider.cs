@@ -1,17 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
+using PuddingCode.Agents;
 using PuddingPlatform.Data;
 
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// Agent 模板/用户画像读取服务：
+/// Agent 模板/用户画像读取服务（混合模式：优先文件，回退 DB）。
 /// - 提供模板个性字段（全局模板 + 工作区覆盖）；
 /// - 提供工作区用户画像文本。
 /// Runtime 层只依赖抽象接口，不直接依赖 PlatformDbContext。
+/// ADR-036：配置类数据唯一来源已迁移至文件，DB 表逐步废弃。
 /// </summary>
 public sealed class AgentTemplateProvider(
     IDbContextFactory<PlatformDbContext> dbFactory,
+    AgentProfileProvider profileProvider,
     ILogger<AgentTemplateProvider> logger) : IAgentTemplateProvider, IWorkspaceProfileProvider
 {
     public async Task<AgentTemplatePersona?> GetPersonaAsync(
@@ -26,6 +29,33 @@ public sealed class AgentTemplateProvider(
         if (string.IsNullOrWhiteSpace(canonicalId))
             return null;
 
+        // ADR-036: 尝试从文件模板加载（优先路径）
+        var manifestPath = profileProvider.GetTemplateManifestPath(canonicalId);
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                var templateManifest = await profileProvider.LoadTemplateManifestAsync(canonicalId, ct);
+                if (templateManifest is not null)
+                {
+                    var markdown = profileProvider.GetMarkdown(canonicalId);
+                    return new AgentTemplatePersona
+                    {
+                        DisplayName = templateManifest.Name,
+                        PersonaPrompt = markdown.Soul,
+                        ToolsDescription = markdown.Tools,
+                        BootstrapTemplate = markdown.Bootstrap,
+                        MemorySearchMode = templateManifest.MemorySearchMode,
+                    };
+                }
+            }
+            catch
+            {
+                // 文件加载失败，回退 DB
+            }
+        }
+
+        // 回退：DB 读取（兼容旧数据）
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
         var global = await db.GlobalAgentTemplates

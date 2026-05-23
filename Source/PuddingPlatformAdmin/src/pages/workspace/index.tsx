@@ -1,3 +1,10 @@
+/**
+ * Workspace 页面 — 去 Pro 模板化样板页
+ *
+ * 使用 Pudding wrapper 组件：PuddingPageHeader、PuddingToolbar、PuddingDataTable、PuddingStatusBadge、PuddingEntityCard。
+ * 桌面端默认表格视图，卡片视图作为辅助。
+ * 不使用 PageContainer、ProTable、DefaultFooter。
+ */
 import {
   DeleteOutlined,
   EnterOutlined,
@@ -5,26 +12,24 @@ import {
   AppstoreOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import { PageContainer } from '@ant-design/pro-components';
 import {
   App,
-  Badge,
   Button,
-  Card,
   Col,
-  Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
   Row,
+  Segmented,
+  Select,
   Space,
-  Tag,
   Tooltip,
   Typography,
-  Radio,
 } from 'antd';
-import React, { useEffect, useRef, useState } from 'react';
+import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { history } from '@umijs/max';
 import {
   createWorkspace,
@@ -34,8 +39,15 @@ import {
   type CreateWorkspaceRequest,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import { ProTable } from '@ant-design/pro-components';
-import type { ProColumns } from '@ant-design/pro-components';
+import {
+  PuddingPageHeader,
+  PuddingToolbar,
+  PuddingDataTable,
+  PuddingStatusBadge,
+  PuddingEntityCard,
+} from '@/components';
+import type { PuddingStatusTone } from '@/components';
+import styles from './styles';
 
 const { Text } = Typography;
 
@@ -44,78 +56,48 @@ interface CreateSceneFormValues {
   description?: string;
 }
 
-type ViewMode = 'card' | 'table';
+type ViewMode = 'table' | 'card';
 
-/** 获取场景状态对应的 Badge 配置 */
-const getStatusBadge = (r: WorkspaceWithPermDto) => {
-  if (r.isFrozen) return { status: 'error' as const, text: '已冻结', color: '#ef4444' };
-  if (!r.isEnabled) return { status: 'default' as const, text: '已停用', color: '#94a3b8' };
-  return { status: 'success' as const, text: '运行中', color: '#22c55e' };
+interface WorkspaceStatus {
+  tone: PuddingStatusTone;
+  label: string;
+}
+
+/** 获取场景状态映射 */
+const getWorkspaceStatus = (workspace: WorkspaceWithPermDto): WorkspaceStatus => {
+  if (workspace.isFrozen) return { tone: 'danger', label: '已冻结' };
+  if (!workspace.isEnabled) return { tone: 'neutral', label: '已停用' };
+  return { tone: 'success', label: '运行中' };
 };
 
-// 表格列定义
-const tableColumns: ProColumns<WorkspaceWithPermDto>[] = [
-  {
-    title: '名称',
-    dataIndex: 'name',
-    render: (_, record) => (
-      <Space>
-        <span style={{ fontWeight: 500 }}>{record.name}</span>
-        {record.workspaceId === 'default' && <Tag color="blue">内置</Tag>}
-      </Space>
-    ),
-  },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    ellipsis: true,
-    search: false,
-  },
-  {
-    title: '状态',
-    key: 'status',
-    search: false,
-    width: 90,
-    render: (_, record) => {
-      const s = getStatusBadge(record);
-      return <Badge status={s.status} text={s.text} />;
-    },
-  },
-  {
-    title: '场景 ID',
-    dataIndex: 'workspaceId',
-    copyable: true,
-    width: 180,
-    ellipsis: true,
-    search: false,
-  },
-  {
-    title: '成员数',
-    dataIndex: 'memberCount',
-    width: 80,
-    search: false,
-  },
-  {
-    title: '创建时间',
-    dataIndex: 'createdAt',
-    valueType: 'dateTime',
-    width: 170,
-    search: false,
-    render: (_, r) => new Date(r.createdAt).toLocaleString('zh-CN'),
-  },
+/** 桌面端默认表格，移动端默认卡片 */
+const getInitialViewMode = (): ViewMode => {
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+    return 'card';
+  }
+  return 'table';
+};
+
+const statusOptions = [
+  { value: 'all', label: '全部状态' },
+  { value: 'success', label: '运行中' },
+  { value: 'danger', label: '已冻结' },
+  { value: 'neutral', label: '已停用' },
 ];
 
-const WorkspaceTable: React.FC = () => {
+const WorkspacePage: React.FC = () => {
   const { message } = App.useApp();
-  const [viewMode, setViewMode] = useState<ViewMode>('card');
   const [workspaces, setWorkspaces] = useState<WorkspaceWithPermDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [form] = Form.useForm<CreateSceneFormValues>();
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await listWorkspaces();
@@ -125,14 +107,30 @@ const WorkspaceTable: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [message]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const openCreateModal = () => {
+  /** 搜索与筛选 */
+  const filteredWorkspaces = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return workspaces.filter((workspace) => {
+      const matchesQuery =
+        !normalizedQuery ||
+        workspace.name?.toLowerCase().includes(normalizedQuery) ||
+        workspace.workspaceId?.toLowerCase().includes(normalizedQuery);
+
+      const status = getWorkspaceStatus(workspace).tone;
+      const matchesStatus = statusFilter === 'all' || statusFilter === status;
+
+      return matchesQuery && matchesStatus;
+    });
+  }, [query, statusFilter, workspaces]);
+
+  const openCreateModal = useCallback(() => {
     form.resetFields();
     setCreateOpen(true);
-  };
+  }, [form]);
 
   const handleCreate = async () => {
     try {
@@ -184,107 +182,147 @@ const WorkspaceTable: React.FC = () => {
     }
   };
 
-  return (
-    <PageContainer
-      header={{
-        title: '场景管理',
-        subTitle: '管理你的 AI 助手场景',
-        extra: [
-          <Radio.Group
-            key="viewToggle"
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value)}
-            optionType="button"
-            buttonStyle="solid"
-            size="small"
+  /** 表格列定义 */
+  const columns: ColumnsType<WorkspaceWithPermDto> = useMemo(() => [
+    {
+      title: '场景',
+      dataIndex: 'name',
+      render: (_, record) => (
+        <div className={styles.nameCell}>
+          <Space>
+            <span className={styles.name}>{record.name}</span>
+            {record.workspaceId === 'default' && (
+              <PuddingStatusBadge tone="accent">内置</PuddingStatusBadge>
+            )}
+          </Space>
+          {record.description && (
+            <span className={styles.nameDescription}>{record.description}</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      width: 112,
+      render: (_, record) => {
+        const status = getWorkspaceStatus(record);
+        return <PuddingStatusBadge tone={status.tone}>{status.label}</PuddingStatusBadge>;
+      },
+    },
+    {
+      title: '成员',
+      dataIndex: 'memberCount',
+      width: 88,
+      align: 'right',
+      render: (value) => value ?? 0,
+    },
+    {
+      title: '场景 ID',
+      dataIndex: 'workspaceId',
+      width: 220,
+      render: (value) => <Text code copyable={{ text: value }}>{value}</Text>,
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 160,
+      render: (value) => dayjs(value).format('YYYY-MM-DD'),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 132,
+      render: (_, record) => (
+        <Space size={4}>
+          <Tooltip title={`进入 ${record.name} Chat`}>
+            <Button
+              aria-label={`进入 ${record.name} Chat`}
+              icon={<EnterOutlined />}
+              onClick={() => history.push(`/workspace/${record.workspaceId}`)}
+            />
+          </Tooltip>
+          <Popconfirm
+            title="确认删除此场景？"
+            description="此操作不可恢复，内置场景无法删除。"
+            onConfirm={() => handleDelete(record)}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
           >
-            <Radio.Button value="card"><AppstoreOutlined /> 卡片</Radio.Button>
-            <Radio.Button value="table"><TableOutlined /> 表格</Radio.Button>
-          </Radio.Group>,
-          <Button
-            key="create"
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={openCreateModal}
-            style={{ marginLeft: 8 }}
-          >
+            <Tooltip title={record.workspaceId === 'default' ? '内置场景不可删除' : '删除'}>
+              <Button
+                aria-label={`删除 ${record.name}`}
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.workspaceId === 'default'}
+              />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ], []);
+
+  const emptyText = useMemo(() => (
+    <div className={styles.emptyState}>
+      <div className={styles.emptyTitle}>暂无场景</div>
+      <div className={styles.emptyDescription}>
+        创建一个场景后，就可以为不同工作上下文配置 Agent。
+      </div>
+      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+        新建场景
+      </Button>
+    </div>
+  ), [openCreateModal]);
+
+  const renderTable = () => (
+    <PuddingDataTable<WorkspaceWithPermDto>
+      rowKey="workspaceId"
+      columns={columns}
+      dataSource={filteredWorkspaces}
+      loading={loading}
+      emptyText={emptyText}
+      pagination={{ pageSize: 20, showSizeChanger: false }}
+    />
+  );
+
+  const renderCards = () => {
+    if (filteredWorkspaces.length === 0 && !loading) {
+      return (
+        <div className={styles.emptyState}>
+          <div className={styles.emptyTitle}>暂无场景</div>
+          <div className={styles.emptyDescription}>
+            创建一个场景后，就可以为不同工作上下文配置 Agent。
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
             新建场景
-          </Button>,
-        ],
-      }}
-    >
-      {viewMode === 'card' ? (
-        workspaces.length === 0 && !loading ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="暂无场景，点击右上角「新建场景」创建你的第一个 AI 助手场景"
-          >
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-              创建场景
-            </Button>
-          </Empty>
-        ) : (
-          <Row gutter={[16, 16]}>
-            {workspaces.map((ws) => {
-              const status = getStatusBadge(ws);
-              return (
-                <Col xs={24} sm={12} lg={8} xl={6} key={ws.workspaceId}>
-                  <Card
-                    hoverable
-                    loading={loading}
-                    style={{
-                      borderRadius: 16,
-                      background: 'rgba(250,250,247,0.72)',
-                      backdropFilter: 'blur(8px)',
-                      border: '1px solid rgba(124,58,237,0.18)',
-                      boxShadow: '0 4px 24px rgba(124,58,237,0.06)',
-                      height: '100%',
-                    }}
-                    bodyStyle={{ padding: '20px 20px 16px' }}
-                  >
-                    {/* Header: name + status */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                      <Text strong style={{ fontSize: 16, maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {ws.name}
-                      </Text>
-                      <Tag color={status.color}>{status.text}</Tag>
-                    </div>
+          </Button>
+        </div>
+      );
+    }
 
-                    {/* Description */}
-                    {ws.description && (
-                      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12, lineHeight: '18px' }}>
-                        {ws.description.length > 60 ? `${ws.description.slice(0, 60)}…` : ws.description}
-                      </Text>
-                    )}
-
-                    {/* Meta info */}
-                    <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 11 }}>成员</Text>
-                        <div><Text strong style={{ fontSize: 14 }}>{ws.memberCount ?? 0}</Text></div>
-                      </div>
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 11 }}>场景 ID</Text>
-                        <div><Text code style={{ fontSize: 11 }}>{ws.workspaceId.slice(0, 12)}…</Text></div>
-                      </div>
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 11 }}>创建</Text>
-                        <div><Text style={{ fontSize: 12 }}>{new Date(ws.createdAt).toLocaleDateString('zh-CN')}</Text></div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 8, borderTop: '1px solid rgba(124,58,237,0.1)', paddingTop: 12 }}>
+    return (
+      <div className={styles.cardGrid}>
+        <Row gutter={[16, 16]}>
+          {filteredWorkspaces.map((ws) => {
+            const status = getWorkspaceStatus(ws);
+            return (
+              <Col xs={24} sm={12} lg={8} xl={6} key={ws.workspaceId}>
+                <PuddingEntityCard
+                  title={ws.name}
+                  status={<PuddingStatusBadge tone={status.tone}>{status.label}</PuddingStatusBadge>}
+                  description={ws.description}
+                  meta={[
+                    { label: '成员', value: ws.memberCount ?? 0 },
+                    { label: '场景 ID', value: ws.workspaceId.slice(0, 12) + '…' },
+                    { label: '创建', value: dayjs(ws.createdAt).format('YYYY-MM-DD') },
+                  ]}
+                  actions={
+                    <>
                       <Button
                         type="primary"
                         icon={<EnterOutlined />}
-                        size="middle"
                         block
-                        style={{
-                          background: '#7c3aed',
-                          borderColor: '#7c3aed',
-                          fontWeight: 500,
-                        }}
                         onClick={() => history.push(`/workspace/${ws.workspaceId}`)}
                       >
                         进入 Chat
@@ -300,75 +338,64 @@ const WorkspaceTable: React.FC = () => {
                         <Button
                           danger
                           icon={<DeleteOutlined />}
-                          size="middle"
                           disabled={ws.workspaceId === 'default'}
+                          aria-label={`删除 ${ws.name}`}
                         />
                       </Popconfirm>
-                    </div>
-                  </Card>
-                </Col>
-              );
-            })}
-          </Row>
-        )
-      ) : (
-        <ProTable<WorkspaceWithPermDto>
-          rowKey="workspaceId"
-          columns={[
-            ...tableColumns,
-            {
-              title: '操作',
-              valueType: 'option',
-              width: 180,
-              render: (_: unknown, record: WorkspaceWithPermDto) => [
-                <Tooltip title="进入 Chat" key="enter">
-                  <Button
-                    type="link"
-                    icon={<EnterOutlined />}
-                    size="small"
-                    onClick={() => history.push(`/workspace/${record.workspaceId}`)}
-                  >
-                    进入 Chat
-                  </Button>
-                </Tooltip>,
-                <Popconfirm
-                  key="delete"
-                  title="确认删除此场景？"
-                  description="此操作不可恢复，内置场景无法删除。"
-                  onConfirm={() => handleDelete(record)}
-                  okText="删除"
-                  cancelText="取消"
-                  okButtonProps={{ danger: true }}
-                >
-                  <Button
-                    type="link"
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    danger
-                    disabled={record.workspaceId === 'default'}
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>,
-              ],
-            },
-          ]}
-          dataSource={workspaces}
-          loading={loading}
-          search={false}
-          pagination={{ pageSize: 20 }}
-          options={{ reload: fetchData, density: true }}
-          cardBordered
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="暂无场景，点击右上角「新建场景」按钮创建"
-              />
-            ),
-          }}
-        />
-      )}
+                    </>
+                  }
+                />
+              </Col>
+            );
+          })}
+        </Row>
+      </div>
+    );
+  };
+
+  return (
+    <main className={styles.page}>
+      <PuddingPageHeader
+        title="场景"
+        description="管理 AI 助手运行上下文、成员入口和默认会话空间。"
+        actions={
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+            新建场景
+          </Button>
+        }
+      />
+
+      <PuddingToolbar
+        leading={
+          <Input.Search
+            allowClear
+            placeholder="搜索名称或场景 ID"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        }
+        filters={
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={statusOptions}
+            aria-label="按状态筛选场景"
+            style={{ minWidth: 120 }}
+          />
+        }
+        actions={
+          <Segmented
+            value={viewMode}
+            onChange={(value) => setViewMode(value as ViewMode)}
+            options={[
+              { label: '表格', value: 'table', icon: <TableOutlined /> },
+              { label: '卡片', value: 'card', icon: <AppstoreOutlined /> },
+            ]}
+          />
+        }
+      />
+
+      {viewMode === 'table' ? renderTable() : renderCards()}
 
       <Modal
         title="新建场景"
@@ -381,7 +408,7 @@ const WorkspaceTable: React.FC = () => {
         width={520}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={form} layout="vertical" className={styles.createForm}>
           <Form.Item
             name="name"
             label="名称"
@@ -390,23 +417,27 @@ const WorkspaceTable: React.FC = () => {
               { max: 128, message: '最多 128 个字符' },
             ]}
           >
-            <Input placeholder="场景显示名称" />
+            <Input autoFocus placeholder="例如：默认工作空间" />
           </Form.Item>
 
-          <Form.Item name="description" label="描述">
-            <Input.TextArea placeholder="可选，场景用途说明" rows={2} maxLength={512} />
+          <Form.Item
+            name="description"
+            label="描述"
+            extra="用于帮助成员理解这个场景的用途。"
+          >
+            <Input.TextArea placeholder="可选" rows={3} maxLength={512} showCount />
           </Form.Item>
         </Form>
       </Modal>
-    </PageContainer>
+    </main>
   );
 };
 
-const WorkspacePage: React.FC = () => (
+const WorkspacePageWrapper: React.FC = () => (
   <App>
-    <WorkspaceTable />
+    <WorkspacePage />
   </App>
 );
 
-export default WorkspacePage;
+export default WorkspacePageWrapper;
 

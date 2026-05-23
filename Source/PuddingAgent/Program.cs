@@ -211,6 +211,13 @@ builder.Services.AddDbContextFactory<PlatformDbContext>(opt =>
 
 builder.Services.AddSingleton<Sm2JwtSigner>();
 builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
+// ── 文件式配置服务（data/config、data/agent-templates、data/agents，唯一来源）──
+builder.Services.AddSingleton<LlmProviderFileService>();
+builder.Services.AddSingleton<AgentTemplateFileService>();
+builder.Services.AddSingleton<WorkspaceAgentFileService>();
+builder.Services.AddSingleton<CapabilityFileService>();
+
+// ── 遗留 DB-backed Template/LLM 服务（逐步废弃）────────────────────
 builder.Services.AddSingleton<AgentTemplateProvider>();
 builder.Services.AddSingleton<IAgentTemplateProvider>(sp => sp.GetRequiredService<AgentTemplateProvider>());
 builder.Services.AddSingleton<IWorkspaceProfileProvider>(sp => sp.GetRequiredService<AgentTemplateProvider>());

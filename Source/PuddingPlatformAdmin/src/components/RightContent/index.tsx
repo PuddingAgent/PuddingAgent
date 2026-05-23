@@ -17,7 +17,7 @@ export const SelectLang: React.FC = () => {
 export const Question: React.FC = () => {
   return (
     <a
-      href="https://pro.ant.design/docs/getting-started"
+      href="https://github.com/PuddingAgent/PuddingAgent"
       target="_blank"
       rel="noreferrer"
       style={{

@@ -15,6 +15,7 @@
     "postinstall": "max setup",
     "jest": "jest",
     "lint": "npm run biome:lint && npm run tsc",
+    "lint:branding": "node scripts/scan-ant-pro-template.cjs",
     "lint-staged": "lint-staged",
     "openapi": "max openapi",
     "prepare": "husky",

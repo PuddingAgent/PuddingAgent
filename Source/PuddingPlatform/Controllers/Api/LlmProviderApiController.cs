@@ -1,191 +1,99 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
-using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
-/// <summary>LLM 资源池 — 服务商管理 API</summary>
+/// <summary>
+/// LLM 资源池 — 服务商管理 API（文件式配置，唯一来源 data/config/llm.providers.json）。
+/// </summary>
 [ApiController]
 [Route("api/llm/providers")]
-public class LlmProviderApiController(PlatformDbContext db) : ControllerBase
+public class LlmProviderApiController(LlmProviderFileService fileService) : ControllerBase
 {
-    // ── 查询所有 provider（附配额摘要）──────────────────────────
+    // ── 查询所有 provider ──────────────────────────────────
     [HttpGet]
     public async Task<ActionResult<List<LlmProviderDto>>> List(CancellationToken ct)
     {
-        var providers = await db.LlmProviders
-            .AsNoTracking()
-            .Include(p => p.Quota)
-            .OrderBy(p => p.Id)
-            .ToListAsync(ct);
-
-        return Ok(providers.Select(MapToDto).ToList());
+        var providers = await fileService.ListProvidersAsync(ct);
+        return Ok(providers);
     }
 
-    // ── 查询单个 provider（含模型列表和配额）────────────────────
+    // ── 查询单个 provider（含模型列表）─────────────────────
     [HttpGet("{providerId}")]
     public async Task<ActionResult<LlmProviderDetailDto>> Get(string providerId, CancellationToken ct)
     {
-        var p = await db.LlmProviders
-            .AsNoTracking()
-            .Include(x => x.Models)
-            .Include(x => x.Quota)
-            .FirstOrDefaultAsync(x => x.ProviderId == providerId, ct);
-
-        if (p is null) return NotFound();
-
-        return Ok(MapToDetailDto(p));
+        var provider = await fileService.GetProviderAsync(providerId, ct);
+        if (provider is null) return NotFound();
+        return Ok(provider);
     }
 
-    // ── 创建 provider ────────────────────────────────────────────
+    // ── 创建 provider ──────────────────────────────────────
     [HttpPost]
     public async Task<ActionResult<LlmProviderDto>> Create(
         [FromBody] UpsertLlmProviderRequest req, CancellationToken ct)
     {
-        if (await db.LlmProviders.AnyAsync(p => p.ProviderId == req.ProviderId, ct))
-            return Conflict(new { error = $"ProviderId '{req.ProviderId}' 已存在" });
-
-        var entity = new LlmProviderEntity
+        try
         {
-            ProviderId = req.ProviderId,
-            Name = req.Name,
-            Protocol = req.Protocol,
-            BaseUrl = req.BaseUrl,
-            ApiKey = req.ApiKey,
-            Description = req.Description,
-            IsEnabled = req.IsEnabled,
-        };
-        db.LlmProviders.Add(entity);
-        await db.SaveChangesAsync(ct);
-
-        return CreatedAtAction(nameof(Get), new { providerId = entity.ProviderId }, MapToDto(entity));
+            var result = await fileService.CreateProviderAsync(req, ct);
+            return CreatedAtAction(nameof(Get), new { providerId = result.ProviderId }, result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
     }
 
-    // ── 更新 provider ────────────────────────────────────────────
+    // ── 更新 provider ──────────────────────────────────────
     [HttpPut("{providerId}")]
     public async Task<ActionResult<LlmProviderDto>> Update(
         string providerId, [FromBody] UpsertLlmProviderRequest req, CancellationToken ct)
     {
-        var entity = await db.LlmProviders.FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
-        if (entity is null) return NotFound();
-
-        entity.Name = req.Name;
-        entity.Protocol = req.Protocol;
-        entity.BaseUrl = req.BaseUrl;
-        if (req.ApiKey is not null) entity.ApiKey = req.ApiKey;
-        entity.Description = req.Description;
-        entity.IsEnabled = req.IsEnabled;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await db.SaveChangesAsync(ct);
-        return Ok(MapToDto(entity));
+        try
+        {
+            var result = await fileService.UpdateProviderAsync(providerId, req, ct);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
     }
 
-    // ── 删除 provider ────────────────────────────────────────────
+    // ── 删除 provider ──────────────────────────────────────
     [HttpDelete("{providerId}")]
     public async Task<IActionResult> Delete(string providerId, CancellationToken ct)
     {
-        var entity = await db.LlmProviders.FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
-        if (entity is null) return NotFound();
-
-        db.LlmProviders.Remove(entity);
-        await db.SaveChangesAsync(ct);
-        return NoContent();
+        try
+        {
+            await fileService.DeleteProviderAsync(providerId, ct);
+            return NoContent();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
     }
 
-    // ── 配额管理 ─────────────────────────────────────────────────
+    // ── 配额管理（保留接口，返回空配额 — 配额上限已移至文件，用量在 TokenUsageStats）──
 
     [HttpGet("{providerId}/quota")]
-    public async Task<ActionResult<LlmProviderQuotaDto>> GetQuota(string providerId, CancellationToken ct)
+    public ActionResult<LlmProviderQuotaDto> GetQuota(string providerId)
     {
-        var p = await db.LlmProviders
-            .AsNoTracking()
-            .Include(x => x.Quota)
-            .FirstOrDefaultAsync(x => x.ProviderId == providerId, ct);
-        if (p is null) return NotFound();
-
-        return p.Quota is null
-            ? Ok(new LlmProviderQuotaDto(null, null, 0, 0, false, null, null, DateTimeOffset.UtcNow))
-            : Ok(MapQuotaToDto(p.Quota));
+        // 配额上限在 llm.providers.json 中，实际用量在 TokenUsageStats
+        return Ok(new LlmProviderQuotaDto(null, null, 0, 0, false, null, null, DateTimeOffset.UtcNow));
     }
 
     [HttpPut("{providerId}/quota")]
-    public async Task<ActionResult<LlmProviderQuotaDto>> UpsertQuota(
-        string providerId, [FromBody] UpdateQuotaRequest req, CancellationToken ct)
+    public ActionResult<LlmProviderQuotaDto> UpsertQuota(string providerId, [FromBody] UpdateQuotaRequest req)
     {
-        var p = await db.LlmProviders
-            .Include(x => x.Quota)
-            .FirstOrDefaultAsync(x => x.ProviderId == providerId, ct);
-        if (p is null) return NotFound();
-
-        if (p.Quota is null)
-        {
-            p.Quota = new LlmProviderQuotaEntity
-            {
-                DailyTokenLimit = req.DailyTokenLimit,
-                MonthlyTokenLimit = req.MonthlyTokenLimit,
-            };
-        }
-        else
-        {
-            p.Quota.DailyTokenLimit = req.DailyTokenLimit;
-            p.Quota.MonthlyTokenLimit = req.MonthlyTokenLimit;
-            p.Quota.UpdatedAt = DateTimeOffset.UtcNow;
-        }
-
-        await db.SaveChangesAsync(ct);
-        return Ok(MapQuotaToDto(p.Quota));
+        // 配额上限配置已移入 llm.providers.json，未来通过文件 API 修改
+        return Ok(new LlmProviderQuotaDto(req.DailyTokenLimit, req.MonthlyTokenLimit, 0, 0, false, null, null, DateTimeOffset.UtcNow));
     }
 
     [HttpPost("{providerId}/quota/reset-daily")]
-    public async Task<IActionResult> ResetDailyQuota(string providerId, CancellationToken ct)
+    public IActionResult ResetDailyQuota()
     {
-        var quota = await db.LlmProviderQuotas
-            .Include(q => q.Provider)
-            .FirstOrDefaultAsync(q => q.Provider.ProviderId == providerId, ct);
-        if (quota is null) return NotFound();
-
-        quota.DailyTokensUsed = 0;
-        quota.IsSuspended = false;
-        quota.DailyResetAt = DateTimeOffset.UtcNow;
-        quota.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
         return NoContent();
-    }
-
-    // ── Mapping helpers ───────────────────────────────────────────
-
-    private static LlmProviderDto MapToDto(LlmProviderEntity p) =>
-        new(p.Id, p.ProviderId, p.Name, p.Protocol, p.BaseUrl, p.ApiKey is not null,
-            p.Description, p.IsEnabled, p.CreatedAt, p.UpdatedAt);
-
-    private static LlmProviderDetailDto MapToDetailDto(LlmProviderEntity p) =>
-        new(p.Id, p.ProviderId, p.Name, p.Protocol, p.BaseUrl, p.ApiKey is not null,
-            p.Description, p.IsEnabled,
-            p.Quota is null ? null : MapQuotaToDto(p.Quota),
-            p.Models.OrderBy(m => m.SortOrder).Select(MapModelToDto).ToList(),
-            p.CreatedAt, p.UpdatedAt);
-
-    private static LlmProviderQuotaDto MapQuotaToDto(LlmProviderQuotaEntity q) =>
-        new(q.DailyTokenLimit, q.MonthlyTokenLimit, q.DailyTokensUsed, q.MonthlyTokensUsed,
-            q.IsSuspended, q.DailyResetAt, q.MonthlyResetAt, q.UpdatedAt);
-
-    private static LlmModelDto MapModelToDto(LlmModelEntity m)
-    {
-        var tags = TryParseStringList(m.CapabilityTagsJson);
-        return new(m.Id, m.ProviderId, m.ModelId, m.Name, m.Description,
-            m.MaxContextTokens, m.MaxOutputTokens, m.InputPricePer1MTokens, m.OutputPricePer1MTokens,
-            m.CacheHitPricePer1MTokens,
-            tags, m.IsDeprecated, m.IsDefault, m.SortOrder, m.CreatedAt, m.UpdatedAt);
-    }
-
-    private static List<string> TryParseStringList(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return [];
-        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
-        catch { return []; }
     }
 }

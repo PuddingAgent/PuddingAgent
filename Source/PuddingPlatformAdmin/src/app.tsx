@@ -1,13 +1,11 @@
-import { LinkOutlined } from '@ant-design/icons';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
-import { history, Link } from '@umijs/max';
+import { history } from '@umijs/max';
 import React from 'react';
 import {
   AvatarDropdown,
   AvatarName,
-  Footer,
 } from '@/components';
 import { PuddingGlobalActions } from '@/components/GlobalActions';
 import { ThemeProviderContainer, getInitialSettings } from '@/components/ThemeMode';
@@ -17,6 +15,7 @@ import '@ant-design/v5-patch-for-react-19';
 import './global.style';
 
 const isDev = process.env.NODE_ENV === 'development';
+const showDevTools = isDev && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
 const loginPath = '/user/login';
 const bootstrapPath = '/bootstrap';
 
@@ -123,10 +122,7 @@ export const layout: RunTimeLayoutConfig = ({
         return <AvatarDropdown dropdownTrigger={['click']}>{avatarChildren}</AvatarDropdown>;
       },
     },
-    waterMarkProps: {
-      content: initialState?.currentUser?.name,
-    },
-    footerRender: () => <Footer />,
+    footerRender: false,
     onPageChange: () => {
       const { location } = history;
       // 如果没有登录且不在登录页或初始化页，重定向到登录页
@@ -139,14 +135,7 @@ export const layout: RunTimeLayoutConfig = ({
       }
     },
     bgLayoutImgList: [],
-    links: isDev
-      ? [
-          <Link key="openapi" to="/umi/plugin/openapi" target="_blank">
-            <LinkOutlined />
-            <span>OpenAPI 文档</span>
-          </Link>,
-        ]
-      : [],
+    links: [],
     menuHeaderRender: undefined,
     // 自定义 403 页面
     // unAccessible: <div>unAccessible</div>,
@@ -156,7 +145,7 @@ export const layout: RunTimeLayoutConfig = ({
       return (
         <>
           {children}
-          {isDev && (
+          {showDevTools && (
             <SettingDrawer
               disableUrlParams
               enableDarkTheme

@@ -106,7 +106,7 @@ public sealed class PuddingFileConfigLoader
     }
 
     /// <summary>验证 LLM 配置，返回错误列表（空列表表示通过）。</summary>
-    internal static List<string> ValidateLlmProviders(PuddingLlmProvidersConfig config)
+    public static List<string> ValidateLlmProviders(PuddingLlmProvidersConfig config)
     {
         var errors = new List<string>();
 

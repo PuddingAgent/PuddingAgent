@@ -114,6 +114,40 @@ public sealed class AgentProfileProvider
         sourcePaths[sourceKey] = path;
         return File.ReadAllText(path);
     }
+
+    /// <summary>
+    /// 获取模板 manifest.json 的完整路径。
+    /// </summary>
+    public string GetTemplateManifestPath(string templateId)
+    {
+        return _paths.AgentTemplateFile(templateId, "manifest.json");
+    }
+
+    /// <summary>
+    /// 只读取模板 manifest（不需要 agent instance），用于 AgentTemplateProvider 文件回退。
+    /// </summary>
+    public async Task<AgentTemplateManifest?> LoadTemplateManifestAsync(string templateId, CancellationToken ct = default)
+    {
+        var path = GetTemplateManifestPath(templateId);
+        if (!File.Exists(path)) return null;
+        return await ReadRequiredJsonAsync<AgentTemplateManifest>(path, ct);
+    }
+
+    /// <summary>
+    /// 获取模板的 Markdown 文件（不记录 sourcePaths）。
+    /// </summary>
+    public AgentProfileMarkdown GetMarkdown(string templateId)
+    {
+        var templateRoot = _paths.AgentTemplateRoot(templateId);
+        return new AgentProfileMarkdown
+        {
+            Soul = File.Exists(Path.Combine(templateRoot, "SOUL.md")) ? File.ReadAllText(Path.Combine(templateRoot, "SOUL.md")) : null,
+            Agents = File.Exists(Path.Combine(templateRoot, "AGENTS.md")) ? File.ReadAllText(Path.Combine(templateRoot, "AGENTS.md")) : null,
+            Tools = File.Exists(Path.Combine(templateRoot, "TOOLS.md")) ? File.ReadAllText(Path.Combine(templateRoot, "TOOLS.md")) : null,
+            Bootstrap = File.Exists(Path.Combine(templateRoot, "BOOTSTRAP.md")) ? File.ReadAllText(Path.Combine(templateRoot, "BOOTSTRAP.md")) : null,
+            Memory = File.Exists(Path.Combine(templateRoot, "MEMORY.md")) ? File.ReadAllText(Path.Combine(templateRoot, "MEMORY.md")) : null,
+        };
+    }
 }
 
 public sealed record AgentFileProfile

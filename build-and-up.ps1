@@ -91,7 +91,22 @@ if (-not $Restart) {
 </html>
 '@
     Set-Content -Path "$wwwrootDir\index.html" -Value $indexContent -Encoding UTF8
-    Ok "wwwroot 已清理，index.html 已生成"
+
+    # 复制 Admin SPA 构建产物到 wwwroot/admin/（用于 dotnet run 本地开发，Docker 通过 Dockerfile COPY）
+    $adminDistDir = "$Root\Source\PuddingPlatformAdmin\dist"
+    $adminWwwrootDir = "$wwwrootDir\admin"
+    if (Test-Path $adminDistDir) {
+        if (-not (Test-Path $adminWwwrootDir)) {
+            New-Item -ItemType Directory -Path $adminWwwrootDir -Force | Out-Null
+        }
+        Copy-Item -Path "$adminDistDir\*" -Destination $adminWwwrootDir -Recurse -Force
+        Ok "Admin SPA 已复制到 wwwroot/admin/"
+    } else {
+        Write-Host "    [WARN] Admin SPA 构建产物不存在: $adminDistDir" -ForegroundColor Yellow
+        Write-Host "    请先执行 pnpm run build" -ForegroundColor Yellow
+    }
+
+    Ok "wwwroot 已清理，index.html + Admin SPA 已就绪"
 
     Step "编译 PuddingAgent"
     Invoke-Native {
