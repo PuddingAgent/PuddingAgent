@@ -1,7 +1,7 @@
 import { TestBrowser } from '@@/testBrowser';
 import { fireEvent, render, waitFor } from '@testing-library/react';
-import { act } from 'react';
 import * as React from 'react';
+import { act } from 'react';
 
 const mockLogin = jest.fn();
 const mockCurrentUser = jest.fn();
@@ -59,13 +59,33 @@ describe('Login Page', () => {
       historyRef.current?.push('/user/login');
     });
 
-    expect(await rootContainer.findByTestId('runtime-entry-shell')).toBeTruthy();
-    expect(await rootContainer.findByTestId('runtime-entry-visual')).toBeTruthy();
+    expect(
+      await rootContainer.findByTestId('runtime-entry-shell'),
+    ).toBeTruthy();
+    expect(
+      await rootContainer.findByTestId('runtime-entry-visual'),
+    ).toBeTruthy();
+    expect(
+      await rootContainer.findByTestId('workshop-illustration'),
+    ).toBeTruthy();
     expect(await rootContainer.findByTestId('auth-card-login')).toBeTruthy();
+    expect(
+      await rootContainer
+        .findByTestId('auth-card-login')
+        .then((node) => node.getAttribute('data-surface')),
+    ).toBe('warm-paper');
     expect(await rootContainer.findByText('本地 AI Agent 工作台')).toBeTruthy();
-    expect((await rootContainer.findAllByText('Workspace')).length).toBeGreaterThan(0);
-    expect((await rootContainer.findAllByText('Agent')).length).toBeGreaterThan(0);
-    expect((await rootContainer.findAllByText('Skills')).length).toBeGreaterThan(0);
+    expect(await rootContainer.findByText('Local AI Workshop')).toBeTruthy();
+    expect(await rootContainer.findByText('森林边的本地运行工坊')).toBeTruthy();
+    expect(
+      (await rootContainer.findAllByText('Workspace')).length,
+    ).toBeGreaterThan(0);
+    expect((await rootContainer.findAllByText('Agent')).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      (await rootContainer.findAllByText('Skills')).length,
+    ).toBeGreaterThan(0);
     expect(await rootContainer.findByLabelText('用户名')).toBeTruthy();
     expect(await rootContainer.findByLabelText('密码')).toBeTruthy();
 
@@ -104,7 +124,11 @@ describe('Login Page', () => {
     });
 
     await waitFor(async () => {
-      expect((await rootContainer.findByTestId('runtime-entry-shell')).getAttribute('data-transition')).toBe('entering-chat');
+      expect(
+        (await rootContainer.findByTestId('runtime-entry-shell')).getAttribute(
+          'data-transition',
+        ),
+      ).toBe('entering-chat');
     });
 
     await act(async () => {
