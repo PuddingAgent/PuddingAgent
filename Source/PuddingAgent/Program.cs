@@ -598,9 +598,7 @@ builder.Services.AddHttpClient("SkillPackageDL", client =>
 });
 
 // ── Bootstrap 初始化 ─────────────────────────────────
-var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
-Directory.CreateDirectory(dataDir);
-var stateFilePath = Path.Combine(dataDir, "bootstrap-state.json");
+var stateFilePath = Path.Combine(dataPaths.DataRoot, "bootstrap-state.json");
 
 if (!File.Exists(stateFilePath))
 {

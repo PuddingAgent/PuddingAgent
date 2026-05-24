@@ -4,6 +4,7 @@ import importlib.util
 import socket
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -40,6 +41,14 @@ class DevUpProxyTests(unittest.TestCase):
             "http://127.0.0.1:8000/admin/user/login",
             dev_up.proxy_target_for_path("/admin/user/login", "http://127.0.0.1:5000", "http://127.0.0.1:8000"),
         )
+
+    def test_frontend_spa_fallback_rewrites_admin_deep_links_only(self):
+        dev_up = load_dev_up_module()
+
+        self.assertEqual("/admin/", dev_up.frontend_spa_fallback_path("/admin/bootstrap"))
+        self.assertEqual("/admin/", dev_up.frontend_spa_fallback_path("/admin/workspace/abc?tab=agents"))
+        self.assertEqual("/admin/assets/app.js", dev_up.frontend_spa_fallback_path("/admin/assets/app.js"))
+        self.assertEqual("/api/bootstrap/status", dev_up.frontend_spa_fallback_path("/api/bootstrap/status"))
 
     def test_choose_proxy_port_falls_back_when_preferred_port_is_in_use(self):
         dev_up = load_dev_up_module()
@@ -106,8 +115,15 @@ class DevUpSupervisorTests(unittest.TestCase):
         dev_up = load_dev_up_module()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            log_path = Path(temp_dir) / "data" / "logs" / "dev-up.log"
-            with patch.object(dev_up, "DATA_LOG_DIR", log_path.parent), patch.object(dev_up, "DEV_UP_LOG", log_path):
+            log_dir = Path(temp_dir) / "data" / "logs"
+            log_path = log_dir / "dev-up-2026-05-24.log"
+
+            class FakeDateTime:
+                @staticmethod
+                def now():
+                    return datetime(2026, 5, 24, 10, 30, 0)
+
+            with patch.object(dev_up, "DATA_LOG_DIR", log_dir), patch.object(dev_up, "datetime", FakeDateTime):
                 with contextlib.redirect_stdout(io.StringIO()):
                     dev_up.info("launcher ready")
 
@@ -115,6 +131,43 @@ class DevUpSupervisorTests(unittest.TestCase):
 
         self.assertIn("launcher ready", content)
         self.assertIn("pid=", content)
+
+    def test_launcher_log_path_uses_current_date(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "data" / "logs"
+
+            class FakeDateTime:
+                @staticmethod
+                def now():
+                    return datetime(2026, 5, 24, 23, 59, 0)
+
+            with patch.object(dev_up, "DATA_LOG_DIR", log_dir), patch.object(dev_up, "datetime", FakeDateTime):
+                self.assertEqual(log_dir / "dev-up-2026-05-24.log", dev_up.launcher_log_path())
+
+    def test_write_stdout_replaces_unencodable_characters(self):
+        dev_up = load_dev_up_module()
+
+        class GbkStdout:
+            encoding = "gbk"
+
+            def __init__(self):
+                self.value = ""
+
+            def write(self, text):
+                text.encode(self.encoding)
+                self.value += text
+
+            def flush(self):
+                pass
+
+        stream = GbkStdout()
+
+        with patch.object(dev_up.sys, "stdout", stream):
+            dev_up.write_stdout("bad \ufffd char")
+
+        self.assertEqual("bad ? char", stream.value)
 
     def test_supervised_roles_restart_unless_supervisor_is_stopping(self):
         dev_up = load_dev_up_module()

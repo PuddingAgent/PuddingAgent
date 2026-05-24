@@ -32,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 RUN_DIR = ROOT / "tmp" / "dev"
 DATA_LOG_DIR = ROOT / "data" / "logs"
-DEV_UP_LOG = DATA_LOG_DIR / "dev-up.log"
+DEV_UP_LOG_PREFIX = "dev-up"
 
 BACKEND_PORT = 5000
 FRONTEND_PORT = 8000
@@ -131,11 +131,17 @@ WATCH_IGNORED_PARTS = {
 def write_launcher_log(message: str) -> None:
     try:
         DATA_LOG_DIR.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-        with DEV_UP_LOG.open("a", encoding="utf-8") as handle:
+        now = datetime.now().astimezone()
+        timestamp = now.isoformat(timespec="seconds")
+        with launcher_log_path(now).open("a", encoding="utf-8") as handle:
             handle.write(f"{timestamp} pid={os.getpid()} {message}\n")
     except OSError:
         pass
+
+
+def launcher_log_path(now: datetime | None = None) -> Path:
+    value = now or datetime.now().astimezone()
+    return DATA_LOG_DIR / f"{DEV_UP_LOG_PREFIX}-{value.date().isoformat()}.log"
 
 
 def info(message: str) -> None:
@@ -311,6 +317,16 @@ def proxy_target_for_path(path: str, backend_base_url: str, frontend_base_url: s
     if not path.startswith("/"):
         path = "/" + path
     return base + path
+
+
+def frontend_spa_fallback_path(path: str) -> str:
+    parsed = urllib.parse.urlsplit(path)
+    route_path = parsed.path or "/"
+    if not route_path.startswith("/admin/") or route_path == "/admin/":
+        return path
+    if "." in route_path.rsplit("/", 1)[-1]:
+        return path
+    return "/admin/"
 
 
 def prepare_config() -> None:
@@ -636,9 +652,27 @@ def show_status() -> None:
         info(line)
 
 
-def follow_logs() -> None:
+def write_stdout(text: str) -> None:
+    try:
+        sys.stdout.write(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        safe_text = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        try:
+            sys.stdout.write(safe_text)
+        except OSError:
+            return
+    except OSError:
+        return
+    try:
+        sys.stdout.flush()
+    except OSError:
+        return
+
+
+def follow_logs(tail_lines: int = 0) -> None:
     paths = [
-        DEV_UP_LOG,
+        launcher_log_path(),
         SUPERVISOR_OUT_LOG,
         SUPERVISOR_ERR_LOG,
         BACKEND_OUT_LOG,
@@ -650,6 +684,16 @@ def follow_logs() -> None:
     ]
     for path in paths:
         path.touch(exist_ok=True)
+
+    if tail_lines < 0:
+        fail("--logs line count must be zero or greater.")
+
+    if tail_lines:
+        for path in paths:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if lines:
+                write_stdout(f"\n--- {path.name} (last {tail_lines}) ---\n")
+                write_stdout("\n".join(lines[-tail_lines:]) + "\n")
 
     positions = {path: path.stat().st_size for path in paths}
     info("Following logs. Press Ctrl+C to stop.")
@@ -664,8 +708,8 @@ def follow_logs() -> None:
                         handle.seek(positions[path])
                         data = handle.read()
                         if data:
-                            print(f"\n--- {path.name} ---")
-                            print(data, end="")
+                            write_stdout(f"\n--- {path.name} ---\n")
+                            write_stdout(data)
                         positions[path] = handle.tell()
             time.sleep(1)
     except KeyboardInterrupt:
@@ -732,7 +776,10 @@ class ReverseProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def proxy_http(self) -> None:
         self.close_connection = True
-        target = proxy_target_for_path(self.path, self.backend_url, self.frontend_url)
+        request_path = self.path
+        if self.command in ("GET", "HEAD") and not self.path.startswith(BACKEND_PREFIXES):
+            request_path = frontend_spa_fallback_path(self.path)
+        target = proxy_target_for_path(request_path, self.backend_url, self.frontend_url)
         body = self.read_body()
         headers = self.forward_headers()
         request = urllib.request.Request(target, data=body, headers=headers, method=self.command)
@@ -1011,7 +1058,14 @@ def start_all(no_install: bool) -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start Pudding Agent local development services.")
     parser.add_argument("--down", action="store_true", help="Stop tracked development processes.")
-    parser.add_argument("--logs", action="store_true", help="Follow backend/frontend/proxy logs.")
+    parser.add_argument(
+        "--logs",
+        nargs="?",
+        const=0,
+        type=int,
+        metavar="LINES",
+        help="Follow backend/frontend/proxy logs; optionally print the last LINES first.",
+    )
     parser.add_argument("--status", action="store_true", help="Show tracked process status.")
     parser.add_argument("--restart", action="store_true", help="Stop and start development processes.")
     parser.add_argument("--no-install", action="store_true", help="Skip frontend dependency installation.")
@@ -1058,8 +1112,8 @@ def main(argv: list[str] | None = None) -> int:
         show_status()
         return 0
 
-    if args.logs:
-        follow_logs()
+    if args.logs is not None:
+        follow_logs(args.logs)
         return 0
 
     start_all(no_install=args.no_install)
