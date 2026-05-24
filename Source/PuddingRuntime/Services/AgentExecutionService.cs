@@ -52,7 +52,7 @@ public sealed class AgentExecutionService
     private readonly IContextAssemblyService? _contextAssemblyService;
     private readonly ContextWindowManager _contextManager;
     private readonly IKeyVaultService _keyVaultService;
-    private readonly JsonlSessionWriter? _jsonlSessionWriter;
+    private readonly PuddingMemoryEngine.Data.JsonlSessionWriter? _jsonlSessionWriter;
     private readonly ITerminalProcessManager _terminalManager;
     private readonly IMemoryLibraryConvenience? _libraryConvenience;
     private readonly Channel<ConsolidationJob>? _subconsciousJobChannel;
@@ -89,7 +89,7 @@ public sealed class AgentExecutionService
         IContextAssemblyService? contextAssemblyService = null,
         ILlmInvocationService? llmInvocationService = null,
         IKeyVaultService? keyVaultService = null,
-        JsonlSessionWriter? jsonlSessionWriter = null,
+        PuddingMemoryEngine.Data.JsonlSessionWriter? jsonlSessionWriter = null,
         ITerminalProcessManager? terminalManager = null,
         IMemoryLibraryConvenience? libraryConvenience = null,
         Channel<ConsolidationJob>? subconsciousJobChannel = null,
@@ -1880,7 +1880,7 @@ public sealed class AgentExecutionService
             var timestampPrefix = now.ToString("x");
             var userMessageId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}";
 
-            _jsonlSessionWriter.Enqueue(request.SessionId, new JsonlEntry
+            _jsonlSessionWriter.Enqueue(request.SessionId, new PuddingMemoryEngine.Data.JsonlEntry
             {
                 Type = "user",
                 MessageId = userMessageId,
@@ -1896,7 +1896,7 @@ public sealed class AgentExecutionService
 
             if (!string.IsNullOrWhiteSpace(assistantReply))
             {
-                _jsonlSessionWriter.Enqueue(request.SessionId, new JsonlEntry
+                _jsonlSessionWriter.Enqueue(request.SessionId, new PuddingMemoryEngine.Data.JsonlEntry
                 {
                     Type = "assistant",
                     MessageId = $"{timestampPrefix}-{Guid.NewGuid().ToString("N")[..8]}",

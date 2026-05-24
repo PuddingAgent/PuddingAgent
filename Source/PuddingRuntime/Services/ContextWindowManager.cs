@@ -20,7 +20,7 @@ public sealed class ContextWindowManager
     private readonly ExecutionControlRegistry _controlRegistry;
     private readonly ExecutionJournal _journal;
     private readonly IDbContextFactory<MemoryDbContext>? _memoryDbFactory;
-    private readonly JsonlSessionReader? _jsonlReader;
+    private readonly PuddingMemoryEngine.Data.JsonlSessionReader? _jsonlReader;
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _historyLastAccessedAt;
     private readonly ConcurrentDictionary<string, TimeSpan> _historyTimeouts;
@@ -34,7 +34,7 @@ public sealed class ContextWindowManager
         ExecutionJournal journal,
         ILogger<ContextWindowManager> logger,
         IDbContextFactory<MemoryDbContext>? memoryDbFactory = null,
-        JsonlSessionReader? jsonlReader = null)
+        PuddingMemoryEngine.Data.JsonlSessionReader? jsonlReader = null)
     {
         _sessionManager = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;

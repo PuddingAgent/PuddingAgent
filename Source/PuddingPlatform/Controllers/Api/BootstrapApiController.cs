@@ -22,7 +22,12 @@ namespace PuddingPlatform.Controllers.Api;
 [ApiController]
 [Route("api/bootstrap")]
 [AllowAnonymous]
-public partial class BootstrapApiController(IConfiguration config, PlatformDbContext db, BootstrapStateService stateService, Sm2JwtSigner sm2JwtSigner) : ControllerBase
+public partial class BootstrapApiController(
+    IConfiguration config,
+    PlatformDbContext db,
+    BootstrapStateService stateService,
+    Sm2JwtSigner sm2JwtSigner,
+    ILogger<BootstrapApiController> logger) : ControllerBase
 {
     private IActionResult? CheckInitialized()
     {
@@ -101,6 +106,7 @@ public partial class BootstrapApiController(IConfiguration config, PlatformDbCon
             await transaction.CommitAsync(ct);
 
             await stateService.SetInitializedAsync();
+            logger.LogInformation("[Bootstrap] Created first admin account userId={UserId}", entity.UserId);
 
             var token = GenerateJwt(entity.UserId, entity.DisplayName ?? entity.UserId, entity.Email, "admin");
 
@@ -115,6 +121,279 @@ public partial class BootstrapApiController(IConfiguration config, PlatformDbCon
             try { await transaction.RollbackAsync(ct); } catch (InvalidOperationException) { }
             throw;
         }
+    }
+
+    /// <summary>POST /api/bootstrap/complete — 一次性提交首次安装向导。</summary>
+    [HttpPost("complete")]
+    public async Task<IActionResult> Complete([FromBody] BootstrapCompleteRequest request, CancellationToken ct)
+    {
+        var lockResult = CheckInitialized();
+        if (lockResult != null) return lockResult;
+
+        if (request.Admin is null)
+            return BadRequest(new { status = "error", message = "缺少管理员账号信息" });
+
+        if (!PasswordStrengthRegex().IsMatch(request.Admin.Password))
+            return BadRequest(new
+            {
+                status = "error",
+                message = "密码必须至少8位，且包含大写字母、小写字母和数字",
+            });
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        try
+        {
+            if (await db.AppUsers.AnyAsync(u => u.UserType == UserType.Admin, ct))
+            {
+                await transaction.RollbackAsync(ct);
+                return BadRequest(new { status = "error", message = "系统已完成初始化" });
+            }
+
+            if (await db.AppUsers.AnyAsync(u => u.UserId == request.Admin.UserId, ct))
+            {
+                await transaction.RollbackAsync(ct);
+                return BadRequest(new { status = "error", message = "用户 ID 已被占用" });
+            }
+
+            if (await db.AppUsers.AnyAsync(u => u.Email == request.Admin.Email, ct))
+            {
+                await transaction.RollbackAsync(ct);
+                return BadRequest(new { status = "error", message = "邮箱已被占用" });
+            }
+
+            var admin = new AppUserEntity
+            {
+                UserId = request.Admin.UserId,
+                Username = request.Admin.UserId,
+                Email = request.Admin.Email,
+                DisplayName = string.IsNullOrWhiteSpace(request.Admin.DisplayName)
+                    ? request.Admin.UserId
+                    : request.Admin.DisplayName,
+                PasswordHash = PasswordHasher.Hash(request.Admin.Password),
+                UserType = UserType.Admin,
+                IsEnabled = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            db.AppUsers.Add(admin);
+            await db.SaveChangesAsync(ct);
+
+            var workspace = await EnsureDefaultWorkspaceAsync(admin, request.Defaults, ct);
+            var providerResult = await ConfigureProviderAsync(request.Provider, ct);
+
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+
+            await stateService.SetInitializedAsync();
+            logger.LogInformation(
+                "[Bootstrap] Completed setup userId={UserId} providerId={ProviderId} workspaceId={WorkspaceId}",
+                admin.UserId,
+                providerResult.ProviderId,
+                workspace.WorkspaceId);
+
+            var token = GenerateJwt(admin.UserId, admin.DisplayName ?? admin.UserId, admin.Email, "admin");
+
+            HttpContext.Session.SetString("username", admin.UserId);
+            HttpContext.Session.SetString("authority", "admin");
+
+            return Ok(new BootstrapCompleteResponse(
+                "ok",
+                "admin",
+                token,
+                providerResult.ProviderId,
+                providerResult.ChatModelId,
+                providerResult.MemoryModelId,
+                workspace.WorkspaceId,
+                new BootstrapHealthSummary(
+                    Database: true,
+                    Admin: true,
+                    Provider: providerResult.Configured,
+                    Workspace: true,
+                    Warnings: providerResult.Warnings)));
+        }
+        catch
+        {
+            try { await transaction.RollbackAsync(ct); } catch (InvalidOperationException) { }
+            throw;
+        }
+    }
+
+    private async Task<WorkspaceEntity> EnsureDefaultWorkspaceAsync(
+        AppUserEntity admin,
+        BootstrapDefaultsRequest? defaults,
+        CancellationToken ct)
+    {
+        const string teamId = "platform-team";
+        const string workspaceId = "default";
+
+        var team = await db.Teams.FirstOrDefaultAsync(t => t.TeamId == teamId, ct);
+        if (team is null)
+        {
+            team = new TeamEntity
+            {
+                TeamId = teamId,
+                Name = "平台团队",
+                Description = "平台默认团队",
+                IsEnabled = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            db.Teams.Add(team);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var workspace = await db.Workspaces.FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId, ct);
+        if (workspace is null)
+        {
+            workspace = new WorkspaceEntity
+            {
+                WorkspaceId = workspaceId,
+                Slug = workspaceId,
+                TeamEntityId = team.Id,
+                Name = string.IsNullOrWhiteSpace(defaults?.WorkspaceName) ? "默认工作空间" : defaults.WorkspaceName,
+                Description = "首次初始化创建的默认工作空间",
+                TeamAccessPolicy = WorkspaceAccessPolicy.Write,
+                CompanyAccessPolicy = WorkspaceAccessPolicy.ReadOnly,
+                IsEnabled = true,
+                IsFrozen = false,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            db.Workspaces.Add(workspace);
+            await db.SaveChangesAsync(ct);
+        }
+        else if (!string.IsNullOrWhiteSpace(defaults?.WorkspaceName))
+        {
+            workspace.Name = defaults.WorkspaceName;
+            workspace.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        if (!await db.TeamMembers.AnyAsync(m => m.TeamEntityId == team.Id && m.UserEntityId == admin.Id, ct))
+        {
+            db.TeamMembers.Add(new TeamMemberEntity
+            {
+                TeamEntityId = team.Id,
+                UserEntityId = admin.Id,
+                Role = TeamMemberRole.Admin,
+                JoinedAt = DateTimeOffset.UtcNow,
+            });
+        }
+
+        if (!await db.WorkspaceMembers.AnyAsync(m => m.WorkspaceEntityId == workspace.Id && m.UserEntityId == admin.Id, ct))
+        {
+            db.WorkspaceMembers.Add(new WorkspaceMemberEntity
+            {
+                WorkspaceEntityId = workspace.Id,
+                UserEntityId = admin.Id,
+                AccessLevel = WorkspaceAccessPolicy.Manage,
+                AddedAt = DateTimeOffset.UtcNow,
+            });
+        }
+
+        return workspace;
+    }
+
+    private async Task<BootstrapProviderResult> ConfigureProviderAsync(
+        BootstrapProviderRequest? provider,
+        CancellationToken ct)
+    {
+        if (provider is null || string.Equals(provider.Mode, "skip", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BootstrapProviderResult(null, null, null, false, ["未配置真实模型服务，将继续使用已有或 fake provider。"]);
+        }
+
+        if (string.IsNullOrWhiteSpace(provider.ProviderId)
+            || string.IsNullOrWhiteSpace(provider.Name)
+            || string.IsNullOrWhiteSpace(provider.BaseUrl))
+        {
+            throw new InvalidOperationException("ProviderId、名称和 BaseUrl 不能为空");
+        }
+
+        var providerId = provider.ProviderId.Trim();
+        var entity = await db.LlmProviders
+            .Include(p => p.Models)
+            .Include(p => p.Quota)
+            .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+
+        if (entity is null)
+        {
+            entity = new LlmProviderEntity
+            {
+                ProviderId = providerId,
+                Name = provider.Name.Trim(),
+                Protocol = string.IsNullOrWhiteSpace(provider.Protocol) ? "openai" : provider.Protocol.Trim(),
+                BaseUrl = provider.BaseUrl.Trim(),
+                ApiKey = string.IsNullOrWhiteSpace(provider.ApiKey) ? null : provider.ApiKey,
+                Description = "首次初始化创建",
+                IsEnabled = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Quota = new LlmProviderQuotaEntity { UpdatedAt = DateTimeOffset.UtcNow },
+            };
+            db.LlmProviders.Add(entity);
+            await db.SaveChangesAsync(ct);
+        }
+        else
+        {
+            entity.Name = provider.Name.Trim();
+            entity.Protocol = string.IsNullOrWhiteSpace(provider.Protocol) ? "openai" : provider.Protocol.Trim();
+            entity.BaseUrl = provider.BaseUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(provider.ApiKey))
+                entity.ApiKey = provider.ApiKey;
+            entity.IsEnabled = true;
+            entity.UpdatedAt = DateTimeOffset.UtcNow;
+            entity.Quota ??= new LlmProviderQuotaEntity { ProviderId = entity.Id, UpdatedAt = DateTimeOffset.UtcNow };
+        }
+
+        var chatModelId = AddOrUpdateModel(entity, provider.ChatModelId, isDefault: true);
+        var memoryModelId = AddOrUpdateModel(entity, provider.MemoryModelId, isDefault: false);
+        var warnings = new List<string>();
+        if (string.IsNullOrWhiteSpace(provider.ApiKey))
+            warnings.Add("未填写 API Key，后续调用真实模型可能失败。");
+        if (chatModelId is null)
+            warnings.Add("未填写默认聊天模型。");
+
+        return new BootstrapProviderResult(providerId, chatModelId, memoryModelId, true, warnings);
+    }
+
+    private static string? AddOrUpdateModel(LlmProviderEntity provider, string? modelId, bool isDefault)
+    {
+        if (string.IsNullOrWhiteSpace(modelId))
+            return null;
+
+        var normalized = modelId.Trim();
+        var model = provider.Models.FirstOrDefault(m => m.ModelId == normalized);
+        if (model is null)
+        {
+            provider.Models.Add(new LlmModelEntity
+            {
+                ProviderId = provider.Id,
+                ModelId = normalized,
+                Name = normalized,
+                Description = isDefault ? "首次初始化默认聊天模型" : "首次初始化记忆/总结模型",
+                MaxContextTokens = 8192,
+                MaxOutputTokens = 2048,
+                CapabilityTagsJson = "[]",
+                IsDefault = isDefault,
+                SortOrder = isDefault ? 0 : 10,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+        }
+        else
+        {
+            model.IsDefault = model.IsDefault || isDefault;
+            model.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        if (isDefault)
+        {
+            foreach (var other in provider.Models.Where(m => m.ModelId != normalized))
+                other.IsDefault = false;
+        }
+
+        return normalized;
     }
 
     private string GenerateJwt(string userId, string displayName, string email, string authority)
@@ -174,4 +453,53 @@ public sealed record BootstrapAdminRequest(
     string Email,
     string Password,
     string? DisplayName = null
+);
+
+public sealed record BootstrapCompleteRequest(
+    BootstrapAdminRequest Admin,
+    BootstrapProviderRequest? Provider,
+    BootstrapDefaultsRequest? Defaults
+);
+
+public sealed record BootstrapProviderRequest(
+    string Mode,
+    string? ProviderId,
+    string? Name,
+    string? Protocol,
+    string? BaseUrl,
+    string? ApiKey,
+    string? ChatModelId,
+    string? MemoryModelId
+);
+
+public sealed record BootstrapDefaultsRequest(
+    string? WorkspaceName,
+    string? AgentName
+);
+
+public sealed record BootstrapCompleteResponse(
+    string Status,
+    string CurrentAuthority,
+    string Token,
+    string? ProviderId,
+    string? ChatModelId,
+    string? MemoryModelId,
+    string WorkspaceId,
+    BootstrapHealthSummary Health
+);
+
+public sealed record BootstrapHealthSummary(
+    bool Database,
+    bool Admin,
+    bool Provider,
+    bool Workspace,
+    IReadOnlyList<string> Warnings
+);
+
+internal sealed record BootstrapProviderResult(
+    string? ProviderId,
+    string? ChatModelId,
+    string? MemoryModelId,
+    bool Configured,
+    IReadOnlyList<string> Warnings
 );

@@ -279,8 +279,10 @@ builder.Services.AddSingleton<IMemoryLibrarian, MemoryLibrarian>();
 builder.Services.AddScoped<PuddingPlatform.Services.IMemoryLibraryAdminService, PuddingPlatform.Services.MemoryLibraryAdminService>();
 builder.Services.AddSingleton<MemoryRecallService>();
 builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<MemoryRecallService>());
-builder.Services.AddSingleton<JsonlSessionWriter>();
-builder.Services.AddSingleton<JsonlSessionReader>();
+builder.Services.AddSingleton<PuddingMemoryEngine.Data.JsonlSessionWriter>();
+builder.Services.AddSingleton<PuddingMemoryEngine.Data.JsonlSessionReader>();
+builder.Services.AddSingleton<PuddingCode.Services.JsonlSessionWriter>();
+builder.Services.AddSingleton<PuddingCode.Services.JsonlSessionReader>();
 builder.Services.AddSingleton<ChatTranscriptWriter>();
 builder.Services.AddSingleton<AgentExecutionGuardrails>();
 builder.Services.AddSingleton<AgentProfileProvider>();
@@ -596,9 +598,7 @@ builder.Services.AddHttpClient("SkillPackageDL", client =>
 });
 
 // ── Bootstrap 初始化 ─────────────────────────────────
-var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
-Directory.CreateDirectory(dataDir);
-var stateFilePath = Path.Combine(dataDir, "bootstrap-state.json");
+var stateFilePath = Path.Combine(dataPaths.DataRoot, "bootstrap-state.json");
 
 if (!File.Exists(stateFilePath))
 {
@@ -625,7 +625,7 @@ builder.Services.AddSingleton<AgentAvatarCatalog>();
 var app = builder.Build();
 
 var p2pDiscoveryService = app.Services.GetRequiredService<IP2pDiscoveryService>();
-var jsonlSessionWriter = app.Services.GetRequiredService<JsonlSessionWriter>();
+var jsonlSessionWriter = app.Services.GetRequiredService<PuddingMemoryEngine.Data.JsonlSessionWriter>();
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     _ = Task.Run(async () =>
