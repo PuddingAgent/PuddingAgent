@@ -14,6 +14,59 @@ namespace PuddingPlatformTests.Services;
 public sealed class FileSubAgentRunStoreTests
 {
     [TestMethod]
+    public async Task SubAgentRunIndex_Maps_SnakeCase_Runtime_Columns_From_Existing_Schema()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var dbPath = Path.Combine(temp.Path, "platform.db");
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE sub_agent_runs (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id              TEXT    NOT NULL UNIQUE,
+                    parent_session_id   TEXT    NOT NULL,
+                    sub_session_id      TEXT    NOT NULL,
+                    workspace_id        TEXT    NOT NULL,
+                    agent_instance_id   TEXT    NOT NULL,
+                    template_id         TEXT    NOT NULL,
+                    status              TEXT    NOT NULL DEFAULT 'running',
+                    started_at          TEXT    NOT NULL,
+                    completed_at        TEXT,
+                    archive_path        TEXT    NOT NULL,
+                    trace_id            TEXT,
+                    correlation_id      TEXT,
+                    error_message       TEXT,
+                    total_rounds        INTEGER NOT NULL DEFAULT 0,
+                    total_tool_calls    INTEGER NOT NULL DEFAULT 0,
+                    total_duration_ms   INTEGER NOT NULL DEFAULT 0
+                );
+                """);
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO sub_agent_runs (
+                    run_id, parent_session_id, sub_session_id, workspace_id, agent_instance_id,
+                    template_id, status, started_at, archive_path, total_rounds,
+                    total_tool_calls, total_duration_ms
+                ) VALUES (
+                    'run-1', 'parent-1', 'sub-1', 'default', 'agent-1',
+                    'template-1', 'failed', '2026-05-24T00:00:00Z', 'archive',
+                    4, 2, 350
+                );
+                """);
+        }
+
+        await using var verifyDb = new PlatformDbContext(options);
+        var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == "run-1");
+
+        Assert.AreEqual(4, index.TotalRounds);
+        Assert.AreEqual(2, index.TotalToolCalls);
+        Assert.AreEqual(350, index.TotalDurationMs);
+    }
+
+    [TestMethod]
     public async Task RunArchive_Writes_Expected_File_Formats_And_Terminal_State_Is_Idempotent()
     {
         using var temp = TemporaryDirectory.Create();

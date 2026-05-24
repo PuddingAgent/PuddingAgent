@@ -76,6 +76,7 @@ public static class RuntimeServiceExtensions
 
         // Agent 执行服务
         services.AddSingleton<AgentExecutionService>();
+        services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
 
         return services;
     }

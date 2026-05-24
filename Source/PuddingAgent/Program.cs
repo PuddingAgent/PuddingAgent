@@ -450,6 +450,7 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<SessionArchiver>();
 builder.Services.AddSingleton<AgentExecutionService>();
+builder.Services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
 
 // ── P2P 发现（局域网 UDP 广播 + HTTP 探活）────────────────
 builder.Services.AddSingleton<IP2pDiscoveryService, MdnsDiscoveryService>();

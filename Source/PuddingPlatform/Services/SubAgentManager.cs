@@ -453,33 +453,29 @@ public sealed class SubAgentManager : ISubAgentManager
     }
 
     // ════════════════════════════════════════════════════════
-    // 跨模块调用（反射，PuddingPlatform 不引用 PuddingRuntime）
+    // 跨模块调用（通过 Core 接口解耦 PuddingPlatform 与 PuddingRuntime）
     // ════════════════════════════════════════════════════════
 
     private Task<dynamic> DispatchChildAgentAsync(string subSessionId, SubAgentSpawnRequest request)
         => DispatchChildAgentImpl(subSessionId, request, _services);
 
-    private static Task<dynamic> DispatchChildAgentImpl(string subSessionId, SubAgentSpawnRequest request, IServiceProvider services)
+    private static async Task<dynamic> DispatchChildAgentImpl(string subSessionId, SubAgentSpawnRequest request, IServiceProvider services)
     {
-        var reqType = Type.GetType("PuddingRuntime.Services.RuntimeDispatchRequest, PuddingRuntime")
-            ?? throw new InvalidOperationException("Cannot find RuntimeDispatchRequest");
-        var childReq = Activator.CreateInstance(reqType)!;
-        reqType.GetProperty("SessionId")?.SetValue(childReq, subSessionId);
-        reqType.GetProperty("WorkspaceId")?.SetValue(childReq, request.WorkspaceId);
-        reqType.GetProperty("AgentTemplateId")?.SetValue(childReq, request.TemplateId);
-        reqType.GetProperty("MessageText")?.SetValue(childReq, request.TaskDescription);
-        reqType.GetProperty("CapabilityPolicy")?.SetValue(childReq, request.CapabilityPolicy);
-        reqType.GetProperty("LlmConfig")?.SetValue(childReq, request.LlmConfig);
-        reqType.GetProperty("MaxRounds")?.SetValue(childReq, request.MaxRounds);
+        var dispatcher = services.GetService<IRuntimeAgentDispatcher>()
+            ?? throw new InvalidOperationException("Runtime agent dispatcher not registered");
 
-        var execType = Type.GetType("PuddingRuntime.Services.AgentExecutionService, PuddingRuntime")
-            ?? throw new InvalidOperationException("Cannot find AgentExecutionService");
-        var execMethod = execType.GetMethod("ExecuteAsync")
-            ?? throw new InvalidOperationException("Cannot find ExecuteAsync");
-        var execSvc = services.GetService(execType)
-            ?? throw new InvalidOperationException("AgentExecutionService not registered");
+        var childReq = new RuntimeDispatchRequest
+        {
+            SessionId = subSessionId,
+            WorkspaceId = request.WorkspaceId,
+            AgentTemplateId = request.TemplateId,
+            MessageText = request.TaskDescription,
+            CapabilityPolicy = request.CapabilityPolicy,
+            LlmConfig = request.LlmConfig,
+            MaxRounds = request.MaxRounds,
+        };
 
-        return (Task<dynamic>)execMethod.Invoke(execSvc, [childReq, CancellationToken.None])!;
+        return await dispatcher.DispatchAsync(childReq, CancellationToken.None);
     }
 
     private RuntimeTraceContext ResolveTrace(SubAgentSpawnRequest request, string subSessionId)

@@ -55,4 +55,17 @@ describe('useTypewriterStreaming', () => {
     expect(result.current.visibleLiveText).toBe('');
     expect(result.current.isSettling).toBe(false);
   });
+
+  it('renders already completed history as full stable markdown immediately', () => {
+    const { result } = renderHook(() => useTypewriterStreaming({
+      text: '已经完成的历史回答',
+      isStreaming: false,
+      tickMs: 10,
+    }));
+
+    expect(result.current.stableMarkdown).toBe('已经完成的历史回答');
+    expect(result.current.liveText).toBe('');
+    expect(result.current.visibleLiveText).toBe('');
+    expect(result.current.isSettling).toBe(false);
+  });
 });

@@ -1,20 +1,20 @@
 # ============================================================
-# Pudding Agent - 本地开发启动脚本
+# Pudding Agent - local development startup script
 # ============================================================
-# 启动后端 dotnet watch（端口 5000）和前端 dev server（端口 8000），
-# 通过 nginx 在 http://localhost/ 统一提供。
+# Starts backend dotnet watch (port 5000) and frontend dev server (port 8000).
+# nginx/back-end proxy serves the app from http://localhost/.
 #
-# 用法：
-#   .\dev-up.ps1              # 启动
-#   .\dev-up.ps1 -Status      # 查看状态
-#   .\dev-up.ps1 -Logs        # 跟随日志
-#   .\dev-up.ps1 -Down        # 停止
-#   .\dev-up.ps1 -Restart     # 重启
+# Usage:
+#   .\dev-up.ps1              # start
+#   .\dev-up.ps1 -Status      # show status
+#   .\dev-up.ps1 -Logs        # follow logs
+#   .\dev-up.ps1 -Down        # stop
+#   .\dev-up.ps1 -Restart     # restart
 #
-# 访问：
-#   后端 API  → http://localhost:5000
-#   前端 Dev  → http://localhost:8000
-#   nginx 代理 → http://localhost/admin/user/login (浏览器应该打开这个地址，nginx 会代理到前端和dev server)
+# URLs:
+#   Backend API   -> http://localhost:5000
+#   Frontend Dev  -> http://localhost:8000
+#   Proxy entry   -> http://localhost/admin/user/login
 
 param(
     [switch]$Down,
@@ -41,7 +41,7 @@ function Fail($msg) { Write-Host "    X $msg" -ForegroundColor Red; exit 1 }
 
 function Require-Command($name) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
-        Fail "缺少命令：$name。请先安装并确保它在 PATH 中。"
+        Fail "Missing command: $name. Install it and make sure it is in PATH."
     }
 }
 
@@ -59,7 +59,7 @@ function Test-ProcessAlive($pidValue) {
 }
 
 function Stop-ProcessTree($pidValue) {
-    # 递归终止子进程，避免前端 dev server 子进程残留
+    # Stop child processes recursively so dev-server subprocesses do not remain.
     $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $pidValue" -ErrorAction SilentlyContinue
     foreach ($child in $children) {
         Stop-ProcessTree $child.ProcessId
@@ -73,14 +73,14 @@ function Stop-ProcessTree($pidValue) {
 function Stop-TrackedProcess($name, $pidFile) {
     $pidValue = Get-PidFromFile $pidFile
     if (-not $pidValue) {
-        Warn "$name 未记录 PID"
+        Warn "$name PID is not recorded"
         return
     }
     if (Test-ProcessAlive $pidValue) {
         Stop-ProcessTree $pidValue
-        Ok "已停止 $name (PID $pidValue)"
+        Ok "Stopped $name (PID $pidValue)"
     } else {
-        Warn "$name PID $pidValue 已不存在"
+        Warn "$name PID $pidValue is no longer running"
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 }
@@ -110,14 +110,14 @@ function Prepare-Config {
         $source = Join-Path $defaultConfigDir $name
         if ((-not (Test-Path $target)) -and (Test-Path $source)) {
             Copy-Item -Path $source -Destination $target
-            Write-Host "[i] 已创建默认配置 data/config/$name" -ForegroundColor Yellow
+            Write-Host "[i] Created default config data/config/$name" -ForegroundColor Yellow
         }
     }
 }
 
 function Start-Backend {
-    Step "启动后端 dotnet watch"
-    # 通过环境变量控制端口绑定（ASPNETCORE_HTTP_PORTS 与 ASPNETCORE_URLS 互斥，只用后者）
+    Step "Start backend dotnet watch"
+    # Use environment variables for port binding.
     $env:ASPNETCORE_ENVIRONMENT = "Development"
     $env:ASPNETCORE_URLS = "http://localhost:5000"
     $env:DOTNET_USE_POLLING_FILE_WATCHER = "1"
@@ -129,13 +129,12 @@ function Start-Backend {
     $env:Jwt__ExpiryHours = "8"
     $env:ConnectionStrings__Default = "Data Source=$(Join-Path $Root 'data\pudding_platform.db')"
     $env:PUDDING_LOG_LEVEL = "Debug"
-    # PlatformApiClient 自环调用时使用正确的 dev 端口
+    # PlatformApiClient self-calls use the dev port.
     $env:Pudding__ControllerEndpoint = "http://localhost:5000"
-    # RuntimeDispatcher 回退到自身（dev 模式下 Controller 和 Runtime 同进程）
+    # RuntimeDispatcher falls back to the same dev process.
     $env:Pudding__RuntimeFallbackEndpoint = "http://localhost:5000"
 
-    # 通过环境变量 ASPNETCORE_URLS 控制端口，命令行不传 --urls
-    # 避免 Start-Process 传参方式导致参数未透传到 dotnet watch 子进程
+    # Control the port through ASPNETCORE_URLS instead of passing --urls.
     $process = Start-Process `
         -FilePath "dotnet" `
         -ArgumentList "watch --project Source\PuddingAgent\PuddingAgent.csproj run" `
@@ -146,16 +145,16 @@ function Start-Backend {
         -PassThru
 
     Set-Content -Path $BackendPidFile -Value $process.Id -Encoding ASCII
-    Ok "后端已启动 (PID $($process.Id))"
+    Ok "Backend started (PID $($process.Id))"
 }
 
-# ── 主流程 ──────────────────────────────────────────────
+# Main flow
 
 New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
 
-# 停止或重启
+# Stop or restart
 if ($Down -or $Restart) {
-    Step "停止开发进程"
+    Step "Stop development processes"
     Stop-TrackedProcess "Frontend" $FrontendPidFile
     Stop-TrackedProcess "Backend" $BackendPidFile
     if ($Down -and (-not $Restart)) { exit 0 }
@@ -167,22 +166,22 @@ if ($Status) {
 }
 
 if ($Logs) {
-    Step "跟随后端和前端日志（Ctrl+C 退出）"
+    Step "Follow backend and frontend logs (Ctrl+C to exit)"
     Get-Content -Path $BackendOutLog, $BackendErrLog, $FrontendOutLog, $FrontendErrLog -Wait -ErrorAction SilentlyContinue
     exit 0
 }
 
 Require-Command "dotnet"
 
-if (-not (Test-PortFree 5000)) { Fail "端口 5000 已被占用，请先停止占用进程或修改开发端口。" }
+if (-not (Test-PortFree 5000)) { Fail "Port 5000 is already in use. Stop the occupying process or change the dev port." }
 
 Prepare-Config
 
-# ── 后端启动 ──────────────────────────────────────────
+# Backend
 Start-Backend
 
-# ── 前端启动（独立 dev server，通过 nginx 汇总）──────
-# ADR-034: 确保头像资源在输出目录中存在
+# Frontend dev server
+# ADR-034: Ensure avatar assets exist in the output directory.
 $avatarSrc = Join-Path $Root "Source\PuddingPlatform\wwwroot\assets\agent-avatars"
 $avatarDst = Join-Path $Root "Source\PuddingAgent\bin\Debug\net10.0\wwwroot\assets\agent-avatars"
 if (Test-Path $avatarSrc) {
@@ -201,21 +200,22 @@ $process = Start-Process `
     -WindowStyle Hidden `
     -PassThru
 Set-Content -Path $FrontendPidFile -Value $process.Id -Encoding ASCII
-Ok "前端 dev server 已启动 (PID $($process.Id))"
+Ok "Frontend dev server started (PID $($process.Id))"
 
-Write-Host @"
+$summary = @"
 
-开发环境已启动：
-  后端 API   → http://localhost:5000
-  前端 Dev   → http://localhost:8000
-  nginx 代理 → http://localhost/admin/user/login
+Development environment started:
+  Backend API  -> http://localhost:5000
+  Frontend Dev -> http://localhost:8000
+  Proxy entry  -> http://localhost/admin/user/login
 
-查看状态：
+Status:
   .\dev-up.ps1 -Status
 
-查看日志：
+Logs:
   .\dev-up.ps1 -Logs
 
-停止：
+Stop:
   .\dev-up.ps1 -Down
-"@ -ForegroundColor Yellow
+"@
+Write-Host $summary -ForegroundColor Yellow

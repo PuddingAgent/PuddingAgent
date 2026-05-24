@@ -67,6 +67,38 @@ export const groupSessions = (raw: { sessionId: string; title: string; timestamp
   }));
 };
 
+export function shouldAdvanceSequenceForSessionEvent(type: string, hasTargetTurn: boolean): boolean {
+  return hasTargetTurn;
+}
+
+export function shouldReplayEventsAfterHistory(turns: ChatTurn[]): boolean {
+  const latest = turns[turns.length - 1];
+  if (!latest) return false;
+  const assistant = latest.assistant;
+  return assistant.isStreaming ||
+    assistant.status === 'thinking' ||
+    assistant.status === 'executing' ||
+    assistant.status === 'streaming' ||
+    assistant.answerMarkdown.trim().length === 0;
+}
+
+const HISTORICAL_REPLAY_TERMINAL_EVENTS = new Set([
+  'done',
+  'error',
+  'cancelled',
+  'session.closed',
+  'context.compaction.completed',
+  'context.compaction.failed',
+]);
+
+export function shouldHydrateSessionEventReplay(events: Array<{ type: string }>): boolean {
+  return events.some(event => HISTORICAL_REPLAY_TERMINAL_EVENTS.has(event.type));
+}
+
+function countCompletedAssistantTurns(turns: ChatTurn[]): number {
+  return turns.filter(turn => turn.assistant.answerMarkdown.trim().length > 0).length;
+}
+
 /** 从 subagent.* 事件的 data 字段中提取 delta 文本 */
 function tryExtractDelta(ev: { data?: string; delta?: string }): string | null {
   if (ev.delta) return ev.delta;
@@ -263,6 +295,7 @@ export function useChatState(): UseChatStateReturn {
   const sessionEventsPollTimerRef = useRef<number | null>(null);
   const sessionEventsReconnectTimerRef = useRef<number | null>(null);
   const sseSessionIdRef = useRef<string | null>(null);
+  const hydrateSessionReplayRef = useRef(false);
 
   // T-201: 工作区通知 SSE（独立于会话 SSE）
   const [sessionUnreadCounts, setSessionUnreadCounts] = useState<Record<string, number>>({});
@@ -477,6 +510,16 @@ export function useChatState(): UseChatStateReturn {
           }
         }
         if (!delta) return turn;
+        if (hydrateSessionReplayRef.current) {
+          return {
+            ...turn,
+            assistant: {
+              ...turn.assistant,
+              renderMode: 'structured' as const,
+              answerMarkdown: current + delta,
+            },
+          };
+        }
         enqueueDelta(turn.turnId, delta);
         return turn;
       }
@@ -768,13 +811,23 @@ export function useChatState(): UseChatStateReturn {
   }, [enqueueDelta, selectedAgent]);
 
   const applySessionEvent = useCallback((ev: AdminChatStreamEvent) => {
-    updateLastSequence(ev);
-
     const anyEv = ev as Record<string, unknown>;
     const messageId = typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
     if (messageId && latestTurnIdRef.current) {
       messageIdToTurnIdRef.current.set(messageId, latestTurnIdRef.current);
     }
+
+    const targetTurnId = resolveEventTurnId(ev);
+    const hasTargetTurn = Boolean(targetTurnId);
+    if (shouldAdvanceSequenceForSessionEvent(ev.type, hasTargetTurn)) {
+      updateLastSequence(ev);
+    }
+
+    if (ev.type === 'session.closed') {
+      setLoading(false);
+      return;
+    }
+    if (!targetTurnId) return;
 
     if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
     if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
@@ -801,19 +854,12 @@ export function useChatState(): UseChatStateReturn {
     }
 
     // T-102: 终端事件管理 loading 状态
-    if (ev.type === 'session.closed') {
-      setLoading(false);
-      return;
-    }
     if (ev.type === 'done' || ev.type === 'error' || ev.type === 'cancelled') {
       setLoading(false);
     }
     if (ev.type === 'context.compaction.completed' || ev.type === 'context.compaction.failed') {
       setLoading(false);
     }
-
-    const targetTurnId = resolveEventTurnId(ev);
-    if (!targetTurnId) return;
     mapEventToTurn(targetTurnId, ev);
   }, [mapEventToTurn, resolveEventTurnId, updateLastSequence, flushPendingDeltas]);
 
@@ -919,6 +965,73 @@ export function useChatState(): UseChatStateReturn {
       }
 
       hasMore = hasMore && Boolean(page.hasMore ?? page.HasMore);
+    }
+  }, [applySessionEvent, listSessionEventsPage, normalizeSessionEvent]);
+
+  const replayLatestTurnSessionEvents = useCallback(async (
+    sessionId: string,
+    loadedTurns: ChatTurn[],
+    signal?: AbortSignal,
+  ) => {
+    const completedAssistantTurns = countCompletedAssistantTurns(loadedTurns);
+    const normalizedEvents: Array<AdminChatStreamEvent & { sequenceNum?: number }> = [];
+    let from = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const page = await listSessionEventsPage(sessionId, from, SESSION_EVENT_PAGE_SIZE, signal);
+      const list = (Array.isArray(page.events) ? page.events : Array.isArray(page.Events) ? page.Events : []) as unknown[];
+      if (list.length === 0) break;
+
+      let maxSeqInPage = Number.NaN;
+      for (const item of list) {
+        const normalized = normalizeSessionEvent(item);
+        if (!normalized) continue;
+        normalizedEvents.push(normalized);
+        if (typeof normalized.sequenceNum === 'number' && Number.isFinite(normalized.sequenceNum)) {
+          maxSeqInPage = Math.max(maxSeqInPage, normalized.sequenceNum);
+        }
+      }
+
+      if (Number.isFinite(maxSeqInPage)) {
+        from = Number(maxSeqInPage) + 1;
+      } else {
+        hasMore = false;
+      }
+      hasMore = hasMore && Boolean(page.hasMore ?? page.HasMore);
+    }
+
+    let doneCount = 0;
+    let tailStart = 0;
+    for (let i = 0; i < normalizedEvents.length; i++) {
+      if (normalizedEvents[i].type === 'done') {
+        doneCount++;
+        if (doneCount <= completedAssistantTurns) {
+          tailStart = i + 1;
+        }
+      }
+    }
+
+    const previous = normalizedEvents[tailStart - 1];
+    if (previous && typeof previous.sequenceNum === 'number' && Number.isFinite(previous.sequenceNum)) {
+      lastSequenceNumRef.current = Math.max(lastSequenceNumRef.current, previous.sequenceNum);
+    }
+
+    const replayTail = normalizedEvents.slice(tailStart);
+    const shouldHydrate = shouldHydrateSessionEventReplay(replayTail);
+    const previousHydrateMode = hydrateSessionReplayRef.current;
+    hydrateSessionReplayRef.current = shouldHydrate;
+    try {
+      for (const event of replayTail) {
+        if (typeof event.sequenceNum === 'number' &&
+          Number.isFinite(event.sequenceNum) &&
+          event.sequenceNum <= lastSequenceNumRef.current) {
+          continue;
+        }
+        applySessionEvent(event);
+      }
+    } finally {
+      hydrateSessionReplayRef.current = previousHydrateMode;
     }
   }, [applySessionEvent, listSessionEventsPage, normalizeSessionEvent]);
 
@@ -1254,9 +1367,16 @@ export function useChatState(): UseChatStateReturn {
     try {
       const res: MessageListResponse = await listSessionMessages(sid, undefined, MESSAGE_PAGE_SIZE);
       if (ctrl.signal.aborted) return;
-      setTurns(toTurnsFromHistory(res));
+      const loadedTurns = toTurnsFromHistory(res);
+      setTurns(loadedTurns);
+      latestTurnIdRef.current = loadedTurns.length > 0
+        ? loadedTurns[loadedTurns.length - 1].turnId
+        : null;
       setHasMoreMessages(res.hasMore);
       if (res.oldestCreatedAt != null) setOldestMessageCursor(res.oldestCreatedAt);
+      if (shouldReplayEventsAfterHistory(loadedTurns)) {
+        await replayLatestTurnSessionEvents(sid, loadedTurns, ctrl.signal);
+      }
     } catch {
       if (!ctrl.signal.aborted) messageApi.error('加载历史消息失败');
     } finally {
@@ -1266,7 +1386,7 @@ export function useChatState(): UseChatStateReturn {
         startSessionEventStream(sid);
       }
     }
-  }, [selectedSessionId, turns.length, toTurnsFromHistory, messageApi, stopSessionEventStream, startSessionEventStream, clearSessionUnread]);
+  }, [selectedSessionId, turns.length, toTurnsFromHistory, messageApi, stopSessionEventStream, startSessionEventStream, clearSessionUnread, replayLatestTurnSessionEvents]);
 
   // ── handleSetMainSession ──────────────────────────────────
   const handleSetMainSession = useCallback((sessionId: string) => {

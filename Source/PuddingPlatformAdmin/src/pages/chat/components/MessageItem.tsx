@@ -22,6 +22,13 @@ const preprocessMarkdown = (md: string): string => {
     const line = lines[i];
     const trimmed = line.trim();
 
+    // LLM 偶尔把 fenced code block 写成单独一行的双反引号，规范化后避免吞掉后续 Markdown。
+    if (trimmed === '``') {
+      out.push('```');
+      i++;
+      continue;
+    }
+
     // 情况3：heading 行内混杂表格（## | 测试项 | 结果 |）→ 拆分为 heading + 空行 + 表格头
     const headingMatch = /^(#{1,6}\s+)(.*)$/.exec(trimmed);
     if (headingMatch && headingMatch[2].includes('|')) {

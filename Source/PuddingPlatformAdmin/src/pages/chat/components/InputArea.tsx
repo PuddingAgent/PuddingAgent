@@ -71,6 +71,9 @@ const InputArea: React.FC<InputAreaProps> = ({
       const timer = setTimeout(() => setCompletedVisible(false), 2000);
       return () => clearTimeout(timer);
     }
+    if (status === 'thinking' || status === 'tool_executing' || status === 'streaming' || status === 'error') {
+      setCompletedVisible(false);
+    }
   }, [status]);
 
   /** 当前文本中最后一个 / 后的内容（用于过滤命令） */
@@ -156,9 +159,16 @@ const InputArea: React.FC<InputAreaProps> = ({
 
   /** 是否显示状态行 */
   const shouldShowStatus =
-    status === 'thinking' || status === 'tool_executing' || status === 'streaming' || status === 'error' || completedVisible;
+    status === 'thinking' ||
+    status === 'tool_executing' ||
+    status === 'streaming' ||
+    status === 'error' ||
+    (status === 'completed' && completedVisible);
 
-  const displayStatusText = completedVisible ? STATUS_LABEL.completed : (STATUS_LABEL[status] ?? '');
+  const displayStatusText =
+    status === 'completed' && completedVisible
+      ? STATUS_LABEL.completed
+      : (STATUS_LABEL[status] ?? '');
 
   /** 组装运行摘要视图模型 */
   const runtimeSummary: ComposerRuntimeSummary = React.useMemo(() => ({

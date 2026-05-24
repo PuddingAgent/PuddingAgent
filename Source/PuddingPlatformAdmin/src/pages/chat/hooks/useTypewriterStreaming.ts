@@ -133,19 +133,20 @@ export function useTypewriterStreaming({
   tickMs = 28,
   maxLagChars = 240,
 }: TypewriterStreamingOptions): TypewriterStreamingState {
-  const [stableMarkdown, setStableMarkdown] = useState('');
+  const [stableMarkdown, setStableMarkdown] = useState(() => isStreaming ? '' : text);
   const [liveText, setLiveText] = useState('');
   const [visibleLiveText, setVisibleLiveText] = useState('');
   const [visibleStartOffset, setVisibleStartOffset] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
 
-  const prevTextRef = useRef('');
-  const stableLenRef = useRef(0);
+  const prevTextRef = useRef(isStreaming ? '' : text);
+  const stableLenRef = useRef(isStreaming ? 0 : text.length);
   const visiblePosRef = useRef(0);
   const liveTextRef = useRef('');
   const tickTimerRef = useRef<number | null>(null);
   const tickActiveRef = useRef(false);
+  const wasStreamingRef = useRef(isStreaming);
 
   // 清除 tick 定时器
   const clearTick = useCallback(() => {
@@ -193,6 +194,7 @@ export function useTypewriterStreaming({
     prevTextRef.current = text;
 
     if (isStreaming) {
+      wasStreamingRef.current = true;
       // 流式中：计算 stableMarkdown 边界
       const boundary = findStableMarkdownBoundary(text);
 
@@ -225,6 +227,20 @@ export function useTypewriterStreaming({
         tick();
       }
     } else {
+      if (!wasStreamingRef.current) {
+        setStableMarkdown(text);
+        stableLenRef.current = text.length;
+        liveTextRef.current = '';
+        setLiveText('');
+        setVisibleLiveText('');
+        setVisibleStartOffset(0);
+        visiblePosRef.current = 0;
+        setIsTyping(false);
+        setIsSettling(false);
+        clearTick();
+        return;
+      }
+      wasStreamingRef.current = false;
       // 流式结束：先把 stable 后的尾段打完，再一次性提交为 stable Markdown。
       const finalLive = text.slice(stableLenRef.current);
       liveTextRef.current = finalLive;
