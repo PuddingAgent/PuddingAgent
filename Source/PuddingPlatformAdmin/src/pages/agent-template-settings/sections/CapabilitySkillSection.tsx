@@ -15,6 +15,8 @@ export interface CapabilitySkillSectionProps {
   grantCapabilities: CapabilityDto[];
 }
 
+const HiddenFormField: React.FC = () => null;
+
 const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
   id,
   capabilities,
@@ -31,6 +33,13 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
   return (
     <section id={id} data-section-id={id} className={styles.section}>
       <div className={styles.sectionTitle}>能力与 Skill</div>
+
+      <Form.Item name="selectedCapabilityIds" hidden>
+        <HiddenFormField />
+      </Form.Item>
+      <Form.Item name="selectedSkillPackageIds" hidden>
+        <HiddenFormField />
+      </Form.Item>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Tag color="green">{defaultCapIds.length} 项默认能力</Tag>

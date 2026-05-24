@@ -20,8 +20,12 @@ jest.mock('./CommandPalette', () => ({
 }));
 
 jest.mock('./ComposerActionMenu', () => () => null);
-jest.mock('./ComposerFeedbackStrip', () => () => <div data-testid="feedback-strip" />);
-jest.mock('./ComposerStatusDetails', () => () => <div data-testid="status-details" />);
+jest.mock('./ComposerFeedbackStrip', () => ({ state }: { state: { subAgentsRunning: number } }) => (
+  <div data-testid="feedback-strip">子任务 {state.subAgentsRunning}</div>
+));
+jest.mock('./ComposerStatusDetails', () => ({ summary }: { summary: { subAgentsRunning: number } }) => (
+  <div data-testid="status-details">运行中 {summary.subAgentsRunning}</div>
+));
 jest.mock('./VoiceInputButton', () => () => <button type="button">voice</button>);
 
 const baseProps = {
@@ -69,5 +73,29 @@ describe('InputArea status feedback', () => {
     expect(screen.queryByText('· 已完成')).toBeNull();
     expect(screen.getByText('· 正在生成回复…')).toBeTruthy();
     expect(screen.getByPlaceholderText('正在生成回复…')).toBeTruthy();
+  });
+
+  it('shows the current session sub-agent count in the feedback strip', () => {
+    render(React.createElement(InputArea as any, {
+      ...baseProps,
+      status: 'idle',
+      subAgentsRunning: 2,
+    }));
+
+    expect(screen.getByText('子任务 2')).toBeTruthy();
+  });
+
+  it('keeps the send action mounted and enabled for multiline input', () => {
+    render(React.createElement(InputArea as any, {
+      ...baseProps,
+      inputValue: '第一行\n第二行\n第三行\n第四行',
+      status: 'idle',
+    }));
+
+    const sendButton = screen.getByTestId('chat-send') as HTMLButtonElement;
+
+    expect(screen.getByTestId('composer-action-area')).toBeTruthy();
+    expect(sendButton).toBeTruthy();
+    expect(sendButton.disabled).toBe(false);
   });
 });

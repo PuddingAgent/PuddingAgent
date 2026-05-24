@@ -370,6 +370,8 @@ export interface GlobalAgentTemplateDto {
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
+  consciousProfileId?: string;
+  subconsciousProfileId?: string;
   maxRounds?: number;
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;
@@ -378,6 +380,8 @@ export interface GlobalAgentTemplateDto {
   containerImage?: string;
   selectedCapabilityIds: string[];
   selectedSkillPackageIds: string[];
+  agentsPrompt?: string;
+  memoryPrompt?: string;
   isBuiltIn: boolean;
   isEnabled: boolean;
   sortOrder: number;
@@ -403,6 +407,8 @@ export interface UpsertGlobalAgentTemplateRequest {
   memoryLlmModelId?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
+  consciousProfileId?: string;
+  subconsciousProfileId?: string;
   maxRounds?: number;
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;
@@ -411,6 +417,8 @@ export interface UpsertGlobalAgentTemplateRequest {
   containerImage?: string;
   selectedCapabilityIds?: string[];
   selectedSkillPackageIds?: string[];
+  agentsPrompt?: string;
+  memoryPrompt?: string;
   isEnabled: boolean;
   sortOrder: number;
 }

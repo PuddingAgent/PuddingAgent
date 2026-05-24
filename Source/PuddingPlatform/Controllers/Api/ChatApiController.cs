@@ -27,6 +27,7 @@ public class ChatApiController(
     PlatformDbContext db,
     PlatformApiClient apiClient,
     MinioStorageService minio,
+    AgentTemplateFileService templateFileService,
     IServiceScopeFactory scopeFactory,
     ChatTranscriptWriter transcriptWriter,
     IDbContextFactory<MemoryDbContext> memoryDbFactory,
@@ -91,12 +92,12 @@ public class ChatApiController(
             agentTemplateId = agent?.SourceTemplateId;
 
             var resolved = await ResolveCapabilitiesAsync(
-                db, workspaceId, agentTemplateId, ct);
+                db, templateFileService, workspaceId, agentTemplateId, ct);
             capabilityPolicy = resolved.Policy;
             toolDefinitions = resolved.ToolDefinitions;
 
             // 解析 Agent 模板关联的 Skill 包，生成预签名下载 URL
-            skillPackages = await ResolveSkillPackagesAsync(db, minio, agentTemplateId, ct);
+            skillPackages = await ResolveSkillPackagesAsync(db, minio, templateFileService, agentTemplateId, ct);
 
             if (agent?.PreferredProviderId is not null)
             {
@@ -112,7 +113,7 @@ public class ChatApiController(
                         KeyVaultId = keyVaultId,
                         ModelId = normalizedModelId,
                         ApiKey = string.IsNullOrWhiteSpace(keyVaultId) ? provider.ApiKey : null,
-                        ReasoningEffort = await ResolveReasoningEffortAsync(db, workspaceId, agentTemplateId, ct),
+                        ReasoningEffort = await ResolveReasoningEffortAsync(db, templateFileService, workspaceId, agentTemplateId, ct),
                     };
                     logger.LogInformation(
                         "[Chat] LlmConfig resolved: provider={ProviderId} model={ModelId} rawModel={RawModelId} endpoint={Endpoint} hasKeyVaultRef={HasKeyVaultRef}",
@@ -437,6 +438,7 @@ public class ChatApiController(
 
     private static async Task<ResolvedCapabilities> ResolveCapabilitiesAsync(
         PlatformDbContext db,
+        AgentTemplateFileService templateFileService,
         string workspaceId,
         string? templateId,
         CancellationToken ct)
@@ -470,21 +472,20 @@ public class ChatApiController(
                 BuildToolDefinitions(capabilities));
         }
 
-        // 全局模板：用去前缀的 ID 查询（DB 中存的是无前缀的裸 TemplateId）
-        var globalTemplate = await db.GlobalAgentTemplates.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.TemplateId == globalId && t.IsEnabled, ct);
+        // 全局模板：ADR-044 后以文件模板为主源。
+        var globalTemplate = await templateFileService.GetTemplateAsync(globalId, ct);
         if (globalTemplate is not null)
         {
-            var selected = ParseStringList(globalTemplate.SelectedCapabilityIdsJson);
+            var selected = globalTemplate.SelectedCapabilityIds;
             var capabilities = await db.Capabilities.AsNoTracking()
                 .Where(c => selected.Contains(c.CapabilityId) && c.IsEnabled)
                 .ToListAsync(ct);
             return new ResolvedCapabilities(
                 BuildPolicy(
-                globalTemplate.AllowFileWrite,
-                globalTemplate.AllowShellExecution,
-                globalTemplate.AllowNetworkAccess,
-                globalTemplate.AllowedToolNamesJson,
+                false,
+                false,
+                false,
+                "[]",
                 globalTemplate.Role,
                 capabilities),
                 BuildToolDefinitions(capabilities));
@@ -740,6 +741,7 @@ public class ChatApiController(
     private static async Task<IReadOnlyList<SkillPackageInfo>?> ResolveSkillPackagesAsync(
         PlatformDbContext db,
         MinioStorageService minio,
+        AgentTemplateFileService templateFileService,
         string? templateId,
         CancellationToken ct)
     {
@@ -748,13 +750,12 @@ public class ChatApiController(
 
         var (_, globalId) = NormalizeTemplateId(templateId);
 
-        // 先查全局模板
-        var globalTemplate = await db.GlobalAgentTemplates.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.TemplateId == globalId && t.IsEnabled, ct);
+        // 全局模板 Skill 选择以文件模板为主源。
+        var globalTemplate = await templateFileService.GetTemplateAsync(globalId, ct);
         if (globalTemplate is null)
             return null;
 
-        var selectedIds = ParseStringList(globalTemplate.SelectedSkillPackageIdsJson);
+        var selectedIds = globalTemplate.SelectedSkillPackageIds;
         if (selectedIds.Count == 0)
             return null;
 
@@ -787,6 +788,7 @@ public class ChatApiController(
     /// </summary>
     private static async Task<string?> ResolveReasoningEffortAsync(
         PlatformDbContext db,
+        AgentTemplateFileService templateFileService,
         string workspaceId,
         string? templateId,
         CancellationToken ct)
@@ -803,8 +805,7 @@ public class ChatApiController(
         if (wsTemplate?.ReasoningEffort is not null)
             return wsTemplate.ReasoningEffort;
 
-        var globalTemplate = await db.GlobalAgentTemplates.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.TemplateId == globalId && t.IsEnabled, ct);
+        var globalTemplate = await templateFileService.GetTemplateAsync(globalId, ct);
         return globalTemplate?.ReasoningEffort;
     }
 }

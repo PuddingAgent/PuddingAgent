@@ -174,16 +174,26 @@ public sealed record AgentTemplateManifest
     public AgentDefaultLlmProfiles DefaultLlmProfiles { get; init; } = new();
     public string MemorySearchMode { get; init; } = "deep";
     public string? ReasoningEffort { get; init; }
+    public string? SystemPrompt { get; init; }
+    public string? UserPromptTemplate { get; init; }
     public int MaxContextTokens { get; init; } = 65536;
     public int MaxReplyTokens { get; init; } = 4096;
+    public int MaxRounds { get; init; } = 200;
+    public int MaxElapsedSeconds { get; init; } = 1200;
+    public int MaxToolCallsTotal { get; init; } = 100;
+    public string? ContainerImage { get; init; }
     public bool IsBuiltIn { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public int SortOrder { get; init; }
     public AgentCapabilitiesConfig Capabilities { get; init; } = new();
+    public List<string> SkillPackageIds { get; init; } = [];
     public string? AvatarId { get; init; }
     public string? PreferredProviderId { get; init; }
     public string? PreferredModelId { get; init; }
     public string? MemoryLlmProviderId { get; init; }
     public string? MemoryLlmModelId { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
 }
 
 public sealed record AgentDefaultLlmProfiles

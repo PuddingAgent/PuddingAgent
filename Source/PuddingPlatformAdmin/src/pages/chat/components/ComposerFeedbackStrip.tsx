@@ -9,7 +9,7 @@ export interface FeedbackState {
   memoryCount: number;
   /** 索引是否可用 */
   indexAvailable: boolean;
-  /** 运行中的子任务数 */
+  /** 当前会话可见的子任务数 */
   subAgentsRunning: number;
   /** 后台记忆整理是否运行中 */
   backgroundMemoryRunning: boolean;

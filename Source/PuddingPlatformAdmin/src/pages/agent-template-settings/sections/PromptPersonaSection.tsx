@@ -42,6 +42,20 @@ const PromptPersonaSection: React.FC<PromptPersonaSectionProps> = ({ id }) => {
       />
 
       <ProFormTextArea
+        name="agentsPrompt"
+        label="子 Agent 协作规范（AGENTS.md）"
+        rows={5}
+        placeholder="定义多 Agent 协作时的角色职责、边界与交付约束"
+      />
+
+      <ProFormTextArea
+        name="memoryPrompt"
+        label="记忆策略（MEMORY.md）"
+        rows={5}
+        placeholder="定义记忆写入、检索、压缩与优先级策略"
+      />
+
+      <ProFormTextArea
         name="userPromptTemplate"
         label="用户 Prompt 模板"
         rows={3}

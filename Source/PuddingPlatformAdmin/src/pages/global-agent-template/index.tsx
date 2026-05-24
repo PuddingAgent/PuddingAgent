@@ -93,6 +93,40 @@ const memoryModeLabelMap: Record<string, string> = {
 
 type ViewMode = 'card' | 'table';
 
+export interface GlobalAgentTemplateRequestDefaults {
+  defaultCapIds: string[];
+  grantTargetKeys: string[];
+  skillTargetKeys: string[];
+}
+
+function uniqueStrings(values: (string | undefined | null)[]): string[] {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    seen.add(value);
+  }
+  return Array.from(seen);
+}
+
+export function buildGlobalAgentTemplateRequest(
+  values: UpsertGlobalAgentTemplateRequest,
+  defaults: GlobalAgentTemplateRequestDefaults,
+): UpsertGlobalAgentTemplateRequest {
+  return {
+    ...values,
+    selectedCapabilityIds: uniqueStrings([...defaults.defaultCapIds, ...defaults.grantTargetKeys]),
+    selectedSkillPackageIds: uniqueStrings(defaults.skillTargetKeys),
+    memorySearchMode: values.memorySearchMode || 'deep',
+    maxRounds: values.maxRounds ?? 200,
+    maxElapsedSeconds: values.maxElapsedSeconds ?? 1200,
+    maxToolCallsTotal: values.maxToolCallsTotal ?? 100,
+    maxContextTokens: values.maxContextTokens ?? 8192,
+    maxReplyTokens: values.maxReplyTokens ?? 2048,
+    isEnabled: values.isEnabled ?? true,
+    sortOrder: values.sortOrder ?? 100,
+  };
+}
+
 const GlobalAgentTemplatePage: React.FC = () => {
   const tableRef = useRef<ActionType | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('card');
@@ -199,6 +233,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
 
   const openEdit = async (item: GlobalAgentTemplateDto) => {
     setEditItem(item);
+    form.resetFields();
     if (item.preferredProviderId) {
       const ms = await listLlmModels(item.preferredProviderId);
       setModels(ms.filter((m) => !m.isDeprecated));
@@ -227,11 +262,16 @@ const GlobalAgentTemplatePage: React.FC = () => {
     if (!values.avatarId && avatars.length > 0) {
       values.avatarId = avatars[0].avatarId;
     }
+    const request = buildGlobalAgentTemplateRequest(values, {
+      defaultCapIds,
+      grantTargetKeys,
+      skillTargetKeys,
+    });
     if (editItem) {
-      await updateGlobalAgentTemplate(editItem.templateId, values);
+      await updateGlobalAgentTemplate(editItem.templateId, request);
       message.success('模板已更新');
     } else {
-      await createGlobalAgentTemplate(values);
+      await createGlobalAgentTemplate(request);
       message.success('模板已创建');
     }
     setFormDrawer(false);
@@ -464,7 +504,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
       ) : (
         <ProTable<GlobalAgentTemplateDto>
           actionRef={tableRef}
-          rowKey="id"
+          rowKey="templateId"
           columns={columns}
           request={async () => {
             const data = await listGlobalAgentTemplates();

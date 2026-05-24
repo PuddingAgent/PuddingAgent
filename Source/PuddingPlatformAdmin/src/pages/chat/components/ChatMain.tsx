@@ -141,6 +141,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const [rawEvents, setRawEvents] = useState<DevRawEvent[]>([]);
   const [inferredSessionId, setInferredSessionId] = useState<string | null>(null);
   const turnSnapshotRef = useRef<Map<string, TurnSnapshot>>(new Map());
+  const subAgentCount = React.useMemo(
+    () => Object.keys(subAgentCards ?? {}).length,
+    [subAgentCards],
+  );
 
   /** 根据当前 turns 和 loading 推导 Agent Console 状态文案 */
   const chatStatus: ChatStatus = React.useMemo(() => {
@@ -424,6 +428,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
               cacheHitTokens={cacheHitTokens}
               cacheMissTokens={cacheMissTokens}
               cacheHitRate={cacheHitRate}
+              subAgentsRunning={subAgentCount}
             />
           </div>
 

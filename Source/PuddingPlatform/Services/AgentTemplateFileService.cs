@@ -63,7 +63,10 @@ public sealed class AgentTemplateFileService
             }
         }
 
-        return result;
+        return result
+            .OrderBy(t => t.SortOrder)
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>获取单个模板详情。</summary>
@@ -91,8 +94,11 @@ public sealed class AgentTemplateFileService
             var templateDir = _paths.AgentTemplateRoot(req.TemplateId);
             Directory.CreateDirectory(templateDir);
 
+            var now = DateTimeOffset.UtcNow;
             var manifest = new AgentTemplateManifest
             {
+                CreatedAt = now,
+                UpdatedAt = now,
                 TemplateId = req.TemplateId,
                 Name = req.Name,
                 Description = req.Description,
@@ -104,15 +110,23 @@ public sealed class AgentTemplateFileService
                 },
                 MemorySearchMode = req.MemorySearchMode ?? "deep",
                 ReasoningEffort = req.ReasoningEffort,
+                SystemPrompt = req.SystemPrompt,
+                UserPromptTemplate = req.UserPromptTemplate,
                 MaxContextTokens = req.MaxContextTokens,
                 MaxReplyTokens = req.MaxReplyTokens,
+                MaxRounds = req.MaxRounds ?? 200,
+                MaxElapsedSeconds = req.MaxElapsedSeconds ?? 1200,
+                MaxToolCallsTotal = req.MaxToolCallsTotal ?? 100,
+                ContainerImage = req.ContainerImage,
                 IsBuiltIn = false,
                 IsEnabled = req.IsEnabled,
+                SortOrder = req.SortOrder,
                 AvatarId = req.AvatarId,
                 PreferredProviderId = req.PreferredProviderId,
                 PreferredModelId = req.PreferredModelId,
                 MemoryLlmProviderId = req.MemoryLlmProviderId,
                 MemoryLlmModelId = req.MemoryLlmModelId,
+                SkillPackageIds = req.SelectedSkillPackageIds ?? [],
                 Capabilities = new AgentCapabilitiesConfig
                 {
                     AllowTools = true,
@@ -129,6 +143,10 @@ public sealed class AgentTemplateFileService
                 await File.WriteAllTextAsync(Path.Combine(templateDir, "TOOLS.md"), req.ToolsDescription, ct);
             if (!string.IsNullOrWhiteSpace(req.BootstrapTemplate))
                 await File.WriteAllTextAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), req.BootstrapTemplate, ct);
+            if (!string.IsNullOrWhiteSpace(req.AgentsPrompt))
+                await File.WriteAllTextAsync(Path.Combine(templateDir, "AGENTS.md"), req.AgentsPrompt, ct);
+            if (!string.IsNullOrWhiteSpace(req.MemoryPrompt))
+                await File.WriteAllTextAsync(Path.Combine(templateDir, "MEMORY.md"), req.MemoryPrompt, ct);
 
             _logger.LogInformation("Agent template created: {TemplateId}", req.TemplateId);
 
@@ -160,9 +178,16 @@ public sealed class AgentTemplateFileService
                 Name = req.Name,
                 Description = req.Description,
                 Role = req.Role,
+                SystemPrompt = req.SystemPrompt,
+                UserPromptTemplate = req.UserPromptTemplate,
                 MaxContextTokens = req.MaxContextTokens,
                 MaxReplyTokens = req.MaxReplyTokens,
+                MaxRounds = req.MaxRounds ?? manifest.MaxRounds,
+                MaxElapsedSeconds = req.MaxElapsedSeconds ?? manifest.MaxElapsedSeconds,
+                MaxToolCallsTotal = req.MaxToolCallsTotal ?? manifest.MaxToolCallsTotal,
+                ContainerImage = req.ContainerImage,
                 IsEnabled = req.IsEnabled,
+                SortOrder = req.SortOrder,
                 MemorySearchMode = req.MemorySearchMode ?? manifest.MemorySearchMode,
                 ReasoningEffort = req.ReasoningEffort ?? manifest.ReasoningEffort,
                 AvatarId = req.AvatarId ?? manifest.AvatarId,
@@ -170,11 +195,18 @@ public sealed class AgentTemplateFileService
                 PreferredModelId = req.PreferredModelId,
                 MemoryLlmProviderId = req.MemoryLlmProviderId,
                 MemoryLlmModelId = req.MemoryLlmModelId,
+                SkillPackageIds = req.SelectedSkillPackageIds ?? manifest.SkillPackageIds,
+                Capabilities = manifest.Capabilities with
+                {
+                    AllowedToolIds = req.SelectedCapabilityIds ?? manifest.Capabilities.AllowedToolIds,
+                },
                 DefaultLlmProfiles = new AgentDefaultLlmProfiles
                 {
                     Conscious = req.ConsciousProfileId ?? manifest.DefaultLlmProfiles.Conscious,
                     Subconscious = req.SubconsciousProfileId ?? manifest.DefaultLlmProfiles.Subconscious,
                 },
+                CreatedAt = manifest.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
             };
 
             await AtomicFileWriter.WriteJsonAsync(Path.Combine(templateDir, "manifest.json"), updated, JsonOptions, ct);
@@ -186,6 +218,10 @@ public sealed class AgentTemplateFileService
                 await File.WriteAllTextAsync(Path.Combine(templateDir, "TOOLS.md"), req.ToolsDescription, ct);
             if (req.BootstrapTemplate is not null)
                 await File.WriteAllTextAsync(Path.Combine(templateDir, "BOOTSTRAP.md"), req.BootstrapTemplate, ct);
+            if (req.AgentsPrompt is not null)
+                await File.WriteAllTextAsync(Path.Combine(templateDir, "AGENTS.md"), req.AgentsPrompt, ct);
+            if (req.MemoryPrompt is not null)
+                await File.WriteAllTextAsync(Path.Combine(templateDir, "MEMORY.md"), req.MemoryPrompt, ct);
 
             _logger.LogInformation("Agent template updated: {TemplateId}", templateId);
 
@@ -229,7 +265,22 @@ public sealed class AgentTemplateFileService
         var path = _paths.AgentTemplateFile(templateId, "manifest.json");
         if (!File.Exists(path)) return null;
 
-        return await AtomicFileWriter.ReadJsonAsync<AgentTemplateManifest>(path, JsonOptions, ct);
+        var manifest = await AtomicFileWriter.ReadJsonAsync<AgentTemplateManifest>(path, JsonOptions, ct);
+        if (manifest is null) return null;
+
+        var fileInfo = new FileInfo(path);
+        var createdAt = manifest.CreatedAt == default
+            ? new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero)
+            : manifest.CreatedAt;
+        var updatedAt = manifest.UpdatedAt == default
+            ? new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero)
+            : manifest.UpdatedAt;
+
+        return manifest with
+        {
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt == default ? createdAt : updatedAt,
+        };
     }
 
     private async Task<GlobalAgentTemplateDto> MapToDtoAsync(int id, AgentTemplateManifest m, string templateDir, CancellationToken ct)
@@ -237,11 +288,23 @@ public sealed class AgentTemplateFileService
         var soulPath = Path.Combine(templateDir, "SOUL.md");
         var toolsPath = Path.Combine(templateDir, "TOOLS.md");
         var bootstrapPath = Path.Combine(templateDir, "BOOTSTRAP.md");
+        var agentsPath = Path.Combine(templateDir, "AGENTS.md");
+        var memoryPath = Path.Combine(templateDir, "MEMORY.md");
 
         // 解析头像：优先 manifest.avatarId → manifest 内嵌的 legacy fallback → 默认头像
         AgentAvatarEntity? avatar = null;
         if (!string.IsNullOrWhiteSpace(m.AvatarId))
+        {
             avatar = await _avatarCatalog.GetRequiredEnabledAsync(m.AvatarId);
+            if (avatar is null)
+            {
+                _logger.LogWarning(
+                    "AvatarId '{AvatarId}' for template '{TemplateId}' is invalid or disabled. Falling back to default avatar.",
+                    m.AvatarId,
+                    m.TemplateId);
+            }
+        }
+
         avatar ??= await _avatarCatalog.GetDefaultAsync();
 
         return new GlobalAgentTemplateDto(
@@ -250,20 +313,20 @@ public sealed class AgentTemplateFileService
             Name: m.Name,
             Description: m.Description,
             Role: m.Role,
-            SystemPrompt: null,
-            UserPromptTemplate: null,
+            SystemPrompt: m.SystemPrompt,
+            UserPromptTemplate: m.UserPromptTemplate,
             PreferredProviderId: m.PreferredProviderId,
             PreferredModelId: m.PreferredModelId,
             MaxContextTokens: m.MaxContextTokens,
             MaxReplyTokens: m.MaxReplyTokens,
-            ContainerImage: null,
+            ContainerImage: m.ContainerImage,
             SelectedCapabilityIds: m.Capabilities.AllowedToolIds,
-            SelectedSkillPackageIds: [],
+            SelectedSkillPackageIds: m.SkillPackageIds,
             IsBuiltIn: m.IsBuiltIn,
             IsEnabled: m.IsEnabled,
-            SortOrder: 0,
-            CreatedAt: DateTimeOffset.UtcNow,
-            UpdatedAt: DateTimeOffset.UtcNow,
+            SortOrder: m.SortOrder,
+            CreatedAt: m.CreatedAt,
+            UpdatedAt: m.UpdatedAt,
             PersonaPrompt: File.Exists(soulPath) ? await File.ReadAllTextAsync(soulPath, ct) : null,
             ToolsDescription: File.Exists(toolsPath) ? await File.ReadAllTextAsync(toolsPath, ct) : null,
             BootstrapTemplate: File.Exists(bootstrapPath) ? await File.ReadAllTextAsync(bootstrapPath, ct) : null,
@@ -275,11 +338,13 @@ public sealed class AgentTemplateFileService
             MemoryLlmModelId: m.MemoryLlmModelId,
             MemorySearchMode: m.MemorySearchMode,
             ReasoningEffort: m.ReasoningEffort,
-            MaxRounds: 200,
-            MaxElapsedSeconds: 1200,
-            MaxToolCallsTotal: 100,
+            MaxRounds: m.MaxRounds,
+            MaxElapsedSeconds: m.MaxElapsedSeconds,
+            MaxToolCallsTotal: m.MaxToolCallsTotal,
             ConsciousProfileId: m.DefaultLlmProfiles.Conscious,
-            SubconsciousProfileId: m.DefaultLlmProfiles.Subconscious
+            SubconsciousProfileId: m.DefaultLlmProfiles.Subconscious,
+            AgentsPrompt: File.Exists(agentsPath) ? await File.ReadAllTextAsync(agentsPath, ct) : null,
+            MemoryPrompt: File.Exists(memoryPath) ? await File.ReadAllTextAsync(memoryPath, ct) : null
         );
     }
 }

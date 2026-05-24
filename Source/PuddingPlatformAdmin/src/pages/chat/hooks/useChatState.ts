@@ -1,7 +1,7 @@
 // ── 聊天页状态管理 Hook ──────────────────────────────────────
 import { App, Form, notification } from 'antd';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   archiveSession,
   compactSession,
@@ -93,6 +93,26 @@ const HISTORICAL_REPLAY_TERMINAL_EVENTS = new Set([
 
 export function shouldHydrateSessionEventReplay(events: Array<{ type: string }>): boolean {
   return events.some(event => HISTORICAL_REPLAY_TERMINAL_EVENTS.has(event.type));
+}
+
+export function inferParentSessionIdFromSubSessionId(subSessionId?: string | null): string | null {
+  if (!subSessionId) return null;
+  const markerIndex = subSessionId.lastIndexOf('-sub-');
+  if (markerIndex <= 0) return null;
+  return subSessionId.slice(0, markerIndex);
+}
+
+export function filterSubAgentCardsForSession(
+  cards: SubAgentCardMap,
+  sessionId: string | null | undefined,
+): SubAgentCardMap {
+  if (!sessionId) return {};
+  return Object.fromEntries(
+    Object.entries(cards).filter(([, card]) => {
+      const parentSessionId = card.parentSessionId ?? inferParentSessionIdFromSubSessionId(card.subSessionId);
+      return parentSessionId === sessionId;
+    }),
+  );
 }
 
 function countCompletedAssistantTurns(turns: ChatTurn[]): number {
@@ -676,6 +696,9 @@ export function useChatState(): UseChatStateReturn {
         const subAgentId = saData.sub_agent_id || saData.id || 'sub';
         if (!subAgentId || subAgentId === 'sub') return turn;
         const cardId = `sa-${subAgentId}`;
+        const parentSessionId = typeof saData.parent_session_id === 'string'
+          ? saData.parent_session_id
+          : inferParentSessionIdFromSubSessionId(subAgentId) ?? sessionIdRef.current ?? selectedSessionId ?? undefined;
 
         // 子代理 delta → 追加到独立卡片 output
         if (mappedType === 'delta') {
@@ -688,6 +711,7 @@ export function useChatState(): UseChatStateReturn {
             }
             return { ...prev, [cardId]: {
               turnId: cardId, subSessionId: subAgentId,
+              parentSessionId,
               taskSummary: saData.template || '子代理', status: 'running',
               spawnedAt: Date.now(), output: innerText,
             }};
@@ -699,6 +723,7 @@ export function useChatState(): UseChatStateReturn {
           setSubAgentCards(prev => ({
             ...prev, [cardId]: {
               turnId: cardId, subSessionId: subAgentId,
+              parentSessionId,
               templateId: saData.template, modelId: saData.model,
               taskSummary: '处理中...',
               status: 'running', spawnedAt: Date.now(),
@@ -713,6 +738,7 @@ export function useChatState(): UseChatStateReturn {
             if (!existing) return prev;
             return { ...prev, [cardId]: {
               ...existing, status: saData.success ? 'completed' : 'failed',
+              parentSessionId: existing.parentSessionId ?? parentSessionId,
               completedAt: Date.now(), success: !!saData.success,
               output: existing.output || saData.result_summary || '',
             }};
@@ -1720,6 +1746,10 @@ export function useChatState(): UseChatStateReturn {
   const cacheHitRate = cacheTotalTokens > 0
     ? Math.round((sessionCacheHitTokens / cacheTotalTokens) * 100)
     : (cacheTotalTokens === 0 && sessionCacheHitTokens === 0 && sessionCacheMissTokens === 0 ? -1 : 0);
+  const visibleSubAgentCards = useMemo(
+    () => filterSubAgentCardsForSession(subAgentCards, selectedSessionId),
+    [subAgentCards, selectedSessionId],
+  );
 
   return {
     workspaces, workspaceId, workspaceLoading, setWorkspaceId, setWorkspaces,
@@ -1730,7 +1760,7 @@ export function useChatState(): UseChatStateReturn {
     inputValue, setInputValue, loading, error, setError,
     latestUsage, tLimit, tUsed, tPct,
     mainSessionId, sessionCacheHitTokens, sessionCacheMissTokens, cacheHitRate, handleSetMainSession,
-    subAgentCards,
+    subAgentCards: visibleSubAgentCards,
     sessionUnreadCounts, startWorkspaceNotificationStream, stopWorkspaceNotificationStream, clearSessionUnread,
     createSceneOpen, setCreateSceneOpen, createSceneLoading, createSceneForm,
     renameModalOpen, setRenameModalOpen, renameTitle, setRenameTitle, renameSessionId,

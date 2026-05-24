@@ -197,6 +197,8 @@ export interface SubAgentCard {
   /** 该子代理对应的 turnId */
   turnId: string;
   subSessionId: string;
+  /** 父会话 ID，用于会话切换时隔离子代理卡片 */
+  parentSessionId?: string;
   templateId?: string;
   modelId?: string;
   taskSummary: string;

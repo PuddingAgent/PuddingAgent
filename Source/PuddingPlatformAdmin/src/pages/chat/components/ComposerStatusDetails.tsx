@@ -16,7 +16,7 @@ export interface ComposerRuntimeSummary {
   index: 'available' | 'building' | 'disabled' | 'error';
   /** 后台记忆整理 */
   backgroundMemory: 'idle' | 'running' | 'disabled' | 'error';
-  /** 运行中的子任务数 */
+  /** 当前会话可见的子任务数 */
   subAgentsRunning: number;
   /** 模型服务 */
   modelService: 'available' | 'warning' | 'error';
@@ -139,7 +139,7 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({ summary, 
           <div className={styles.composerStatusDetailRow}>
             <span className={styles.composerStatusDetailLabel}>子任务</span>
             <span className={styles.composerStatusDetailValue}>
-              {summary.subAgentsRunning} 个运行中
+              {summary.subAgentsRunning} 个
             </span>
           </div>
         )}

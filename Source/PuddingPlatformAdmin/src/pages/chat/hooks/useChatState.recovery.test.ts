@@ -1,5 +1,6 @@
 import type { ChatTurn } from '../types';
 import {
+  filterSubAgentCardsForSession,
   shouldAdvanceSequenceForSessionEvent,
   shouldHydrateSessionEventReplay,
   shouldReplayEventsAfterHistory,
@@ -50,5 +51,26 @@ describe('chat session recovery decisions', () => {
       { type: 'delta' },
       { type: 'thinking' },
     ])).toBe(false);
+  });
+
+  it('only exposes sub-agent cards that belong to the selected session', () => {
+    const cards = filterSubAgentCardsForSession({
+      'sa-session-a-sub-11111111': {
+        turnId: 'sa-session-a-sub-11111111',
+        subSessionId: 'session-a-sub-11111111',
+        taskSummary: 'from session a',
+        status: 'failed',
+        spawnedAt: 1,
+      },
+      'sa-session-b-sub-22222222': {
+        turnId: 'sa-session-b-sub-22222222',
+        subSessionId: 'session-b-sub-22222222',
+        taskSummary: 'from session b',
+        status: 'running',
+        spawnedAt: 2,
+      },
+    }, 'session-b');
+
+    expect(Object.keys(cards)).toEqual(['sa-session-b-sub-22222222']);
   });
 });

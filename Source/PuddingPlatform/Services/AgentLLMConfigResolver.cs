@@ -8,20 +8,23 @@ namespace PuddingPlatform.Services;
 
 /// <summary>
 /// LLM 配置解析器实现：
-/// - 从 GlobalAgentTemplates + WorkspaceAgentTemplates 读取 LLM 路由配置
+/// - 从文件化 GlobalAgentTemplate + WorkspaceAgentTemplates 读取 LLM 路由配置
 /// - 不受 IsEnabled 限制——只过滤 TemplateId 匹配
 /// - 回退链路：Workspace → Global → 环境变量 → 显意识 LLM
 /// </summary>
 public sealed class AgentLLMConfigResolver : ILLMConfigResolver
 {
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
+    private readonly AgentTemplateFileService _templateFileService;
     private readonly ILogger<AgentLLMConfigResolver> _logger;
 
     public AgentLLMConfigResolver(
         IDbContextFactory<PlatformDbContext> dbFactory,
+        AgentTemplateFileService templateFileService,
         ILogger<AgentLLMConfigResolver> logger)
     {
         _dbFactory = dbFactory;
+        _templateFileService = templateFileService;
         _logger = logger;
     }
 
@@ -39,9 +42,7 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        var global = await db.GlobalAgentTemplates
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.TemplateId == canonicalId, ct);
+        var global = await _templateFileService.GetTemplateAsync(canonicalId, ct);
 
         var ws = !string.IsNullOrWhiteSpace(workspaceId)
             ? await db.WorkspaceAgentTemplates
@@ -72,10 +73,8 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        // 全局模板
-        var global = await db.GlobalAgentTemplates
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.TemplateId == canonicalId, ct);
+        // 全局模板以文件模板为主源；工作区覆盖仍来自 DB。
+        var global = await _templateFileService.GetTemplateAsync(canonicalId, ct);
 
         // 工作区覆盖
         var ws = !string.IsNullOrWhiteSpace(workspaceId)

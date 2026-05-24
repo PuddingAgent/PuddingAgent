@@ -54,10 +54,20 @@ const GuardrailSection: React.FC<GuardrailSectionProps> = ({ id }) => {
       {/* Token 限制三列布局 */}
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
-          <ProFormDigit name="maxContextTokens" label="上下文 tokens" min={1024} />
+          <ProFormDigit
+            name="maxContextTokens"
+            label="上下文 tokens"
+            min={1024}
+            rules={[{ required: true, message: '请填写上下文 tokens' }]}
+          />
         </Col>
         <Col xs={24} sm={12} md={8}>
-          <ProFormDigit name="maxReplyTokens" label="最大回复 tokens" min={128} />
+          <ProFormDigit
+            name="maxReplyTokens"
+            label="最大回复 tokens"
+            min={128}
+            rules={[{ required: true, message: '请填写最大回复 tokens' }]}
+          />
         </Col>
       </Row>
     </section>

@@ -42,12 +42,14 @@ interface InputAreaProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 当前会话可见的子任务数 */
+  subAgentsRunning?: number;
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
   inputValue, onInputChange, onKeyDown, loading, onSend, onStop, onExport, onOpenDevDetails,
   disabled, tLimit, tUsed, tPct, status, sessionId,
-  cacheHitTokens, cacheMissTokens, cacheHitRate,
+  cacheHitTokens, cacheMissTokens, cacheHitRate, subAgentsRunning = 0,
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -153,9 +155,9 @@ const InputArea: React.FC<InputAreaProps> = ({
     context: status === 'thinking' || status === 'tool_executing' || status === 'streaming',
     memoryCount: 0,
     indexAvailable: false,
-    subAgentsRunning: 0,
+    subAgentsRunning,
     backgroundMemoryRunning: false,
-  }), [status]);
+  }), [status, subAgentsRunning]);
 
   /** 是否显示状态行 */
   const shouldShowStatus =
@@ -179,9 +181,9 @@ const InputArea: React.FC<InputAreaProps> = ({
     contextService: 'available',
     index: 'disabled',
     backgroundMemory: 'idle',
-    subAgentsRunning: 0,
+    subAgentsRunning,
     modelService: 'available',
-  }), [status, displayStatusText, tLimit, tUsed, tPct, cacheHitRate]);
+  }), [status, displayStatusText, tLimit, tUsed, tPct, cacheHitRate, subAgentsRunning]);
 
   return (
     <div
@@ -264,7 +266,7 @@ const InputArea: React.FC<InputAreaProps> = ({
         />
 
         {/* 右侧操作区：发送/停止 */}
-        <div className={styles.composerActionArea}>
+        <div className={styles.composerActionArea} data-testid="composer-action-area">
           <Tooltip title={loading ? '停止生成' : '发送'}>
             <Button
               type={loading ? 'default' : 'primary'}
