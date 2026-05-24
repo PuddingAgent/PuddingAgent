@@ -30,7 +30,7 @@ public class ChatApiController(
     IServiceScopeFactory scopeFactory,
     ChatTranscriptWriter transcriptWriter,
     IDbContextFactory<MemoryDbContext> memoryDbFactory,
-    JsonlSessionWriter jsonlWriter,
+    PuddingMemoryEngine.Data.JsonlSessionWriter jsonlWriter,
     ISessionStateManager ssm,
     IRuntimeTraceAccessor traceAccessor,
     TokenUsageRecorder tokenUsageRecorder,
