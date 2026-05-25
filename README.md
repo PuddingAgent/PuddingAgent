@@ -215,6 +215,7 @@ Pudding's design is deeply inspired by the following projects and research:
 - **[OpenHanako](https://github.com/liliMozi/openhanako)** — Multi-tier memory pipeline (today/week/longterm/facts), sandbox security, plugin hot-swap
 - **[SuperPowers](https://github.com/anthropics/superpowers)** — Skill system, TDD discipline, subagent-driven development
 - **[EVO MAP](https://github.com/nousresearch/evo-map)** — Experience Capsule concept, portable knowledge packaging
+- **[AgentMemory](https://github.com/rohitg00/agentmemory)** — Agent memory design reference
 - **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan et al.) — Multi-agent coordination mechanisms, information drift, shared Board research
 - **[Strange Loop Canon Archive](https://www.strangeloopcanon.com/archive)** — Comprehensive archive of agent economy experiments
 - **[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)** (Anthropic) — Agent design patterns guide

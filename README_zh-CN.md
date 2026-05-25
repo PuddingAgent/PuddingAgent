@@ -222,6 +222,7 @@ Pudding 的设计深受以下项目和研究的启发：
 - **[OpenHanako](https://github.com/liliMozi/openhanako)** — 多层记忆编译管道(today/week/longterm/facts)、沙箱安全、插件热插拔
 - **[SuperPowers](https://github.com/anthropics/superpowers)** — 技能系统、TDD 铁律、子代理驱动开发
 - **[EVO MAP](https://github.com/nousresearch/evo-map)** — 经验胶囊概念、可移植知识打包
+- **[AgentMemory](https://github.com/rohitg00/agentmemory)** — Agent 记忆设计参考
 - **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan 等) — 多 Agent 协作机制、信息漂移、共享 Board 研究
 - **[Strange Loop Canon 文章归档](https://www.strangeloopcanon.com/archive)** — Agent 经济实验的完整归档
 - **[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)** (Anthropic) — Agent 设计模式指南
