@@ -1,4 +1,4 @@
-# 感谢 / Acknowledgments
+﻿# 感谢 / Acknowledgments
 
 Pudding 的设计深受以下项目和研究的启发。
 Pudding's design is deeply inspired by the following projects and research.
@@ -13,6 +13,7 @@ Pudding's design is deeply inspired by the following projects and research.
 - **[SuperPowers](https://github.com/anthropics/superpowers)** — 技能系统、TDD 铁律、子代理驱动开发 / Skill system, TDD discipline, subagent-driven development
 - **[EVO MAP](https://github.com/nousresearch/evo-map)** — 经验胶囊概念、可移植知识打包 / Experience Capsule concept, portable knowledge packaging
 - **[AgentMemory](https://github.com/rohitg00/agentmemory)** — Agent 记忆设计参考 / Agent memory design reference
+- **[KunAgent](https://github.com/KunAgent/Kun)** — 需求先行的 SDD 范式、Electron 桌面 Agent 工程实践 / Requirement-first SDD paradigm, Electron desktop Agent engineering
 - **[DeepSeek-Reasonix](https://github.com/esengine/deepseek-reasonix)** — DeepSeek 原生前缀缓存稳定性与缓存优先循环工程参考 / DeepSeek-native prefix-cache stability and cache-first loop engineering reference
 - **[Headroom](https://github.com/chopratejas/headroom)** — 工具输出、日志、文件和 RAG 进入 LLM 前的压缩、前缀稳定与 CCR 可逆取回参考 / Reference for pre-LLM compression of tool outputs, logs, files, and RAG context, prefix stabilization, and CCR retrieval
 - **[Strange Loop Canon](https://www.strangeloopcanon.com/)** (Rohit Krishnan 等) — 多 Agent 协作机制、信息漂移、共享 Board 研究 / Multi-agent coordination mechanisms, information drift, shared Board research

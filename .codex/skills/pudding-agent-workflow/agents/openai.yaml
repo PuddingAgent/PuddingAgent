@@ -1,4 +1,0 @@
-interface:
-  display_name: "Pudding Agent Workflow"
-  short_description: "Pudding repo workflow and checks"
-  default_prompt: "Use $pudding-agent-workflow for this repository task."
