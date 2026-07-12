@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/version-v0.1.0-blue" alt="Version"/>
   <img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"/>
   <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"/>
+  <img src="https://img.shields.io/badge/Powered_by-DeepSeek-4D6BFE?style=flat&logoColor=white" alt="Powered by DeepSeek"/>
 </p>
 
 <p align="center">
