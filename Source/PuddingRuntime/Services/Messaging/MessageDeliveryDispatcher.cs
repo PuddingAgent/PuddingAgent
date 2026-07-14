@@ -9,7 +9,7 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
-using PuddingPlatform.Services;
+using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services.Messaging;
 
@@ -377,7 +377,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
             var dispatchRequest = dispatch.Request;
 
-            var transcriptWriter = scope.ServiceProvider.GetService<ChatTranscriptWriter>();
+            var transcriptWriter = scope.ServiceProvider.GetService<IChatTranscriptWriter>();
             var result = await DispatchStreamAndCollectAsync(
                 runtime,
                 dispatchRequest,
@@ -483,7 +483,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         IRuntimeAgentDispatcher runtime,
         RuntimeDispatchRequest request,
         string agentId,
-        ChatTranscriptWriter? transcriptWriter,
+        IChatTranscriptWriter? transcriptWriter,
         MessageInboxItem? inboundTranscript,
         CancellationToken ct)
     {

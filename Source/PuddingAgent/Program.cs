@@ -373,6 +373,7 @@ builder.Services.AddSingleton<BenchmarkRunService>();
 // ── Workspace Agent 运行时文件服务（管理运行时工作目录，非配置）──
 builder.Services.AddSingleton<WorkspaceAgentFileService>();
 builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
+builder.Services.AddSingleton<IWorkspaceAgentQueryService, WorkspaceAgentQueryServiceAdapter>();
 builder.Services.AddSingleton<IAgentRosterProvider, WorkspaceAgentRosterProvider>();
 builder.Services.AddSingleton<IWorkspaceAuditAgentProvider>(sp =>
 {
@@ -474,6 +475,7 @@ builder.Services.AddSingleton<AgentDailySummaryService>();
 builder.Services.AddSingleton<AgentDailySummaryBatchService>();
 builder.Services.AddSingleton<AgentContentSummaryService>();
 builder.Services.AddSingleton<ChatTranscriptWriter>();
+builder.Services.AddSingleton<IChatTranscriptWriter>(sp => sp.GetRequiredService<ChatTranscriptWriter>());
 builder.Services.AddSingleton<IRawSessionLogService>(sp =>
     new RawSessionLogService(
         sp.GetRequiredService<IDbContextFactory<PlatformDbContext>>(),

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -13,12 +14,24 @@ namespace PuddingPlatform.Services;
 /// 聊天转录物化视图。该服务只负责物化视图写入，不改变事件日志权威性。
 /// </para>
 /// </summary>
-public sealed class ChatTranscriptWriter(
-    IServiceScopeFactory scopeFactory,
-    ILogger<ChatTranscriptWriter> logger,
-    MessageTopicService? messageTopicService = null,
-    AgentConversationLogService? agentConversationLogService = null)
+public sealed class ChatTranscriptWriter : IChatTranscriptWriter
 {
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<ChatTranscriptWriter> _logger;
+    private readonly MessageTopicService? _messageTopicService;
+    private readonly AgentConversationLogService? _agentConversationLogService;
+
+    public ChatTranscriptWriter(
+        IServiceScopeFactory _scopeFactory,
+        ILogger<ChatTranscriptWriter> _logger,
+        MessageTopicService? messageTopicService = null,
+        AgentConversationLogService? _agentConversationLogService = null)
+    {
+        _scopeFactory = _scopeFactory;
+        _logger = _logger;
+        _messageTopicService = messageTopicService;
+        _agentConversationLogService = _agentConversationLogService;
+    }
     /// <summary>
     /// 幂等写入一条聊天转录消息。返回生成的 messageId，重复消息返回 null。
     /// </summary>
@@ -64,9 +77,9 @@ public sealed class ChatTranscriptWriter(
         {
             long? messageId = null;
 
-            if (agentConversationLogService is not null)
+            if (_agentConversationLogService is not null)
             {
-                messageId = await agentConversationLogService.PersistMessageAsync(
+                messageId = await _agentConversationLogService.PersistMessageAsync(
                     new AgentConversationLogWriteRequest(
                         workspaceId ?? string.Empty,
                         agentInstanceId ?? string.Empty,
@@ -79,14 +92,14 @@ public sealed class ChatTranscriptWriter(
                         usageJson),
                     ct);
 
-                // 话题检测：仅对用户消息且未持久化通过 agentConversationLogService 的情况
-                // 如果 agentConversationLogService 返回了 ID，这里统一检测
+                // 话题检测：仅对用户消息且未持久化通过 _agentConversationLogService 的情况
+                // 如果 _agentConversationLogService 返回了 ID，这里统一检测
             }
 
             if (messageId is null)
             {
 
-                using var scope = scopeFactory.CreateScope();
+                using var scope = _scopeFactory.CreateScope();
                 var transcriptDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
                 var windowStart = createdAt - 2_000;
                 var windowEnd = createdAt + 2_000;
@@ -101,7 +114,7 @@ public sealed class ChatTranscriptWriter(
 
                 if (exists)
                 {
-                    logger.LogDebug(
+                    _logger.LogDebug(
                         "[Chat:Transcript] Skip duplicate transcript session={Session} role={Role} createdAt={CreatedAt}",
                         sessionId, role, createdAt);
                     return null;
@@ -120,7 +133,7 @@ public sealed class ChatTranscriptWriter(
                 await transcriptDb.SaveChangesAsync(ct);
                 messageId = entity.Id;
 
-                logger.LogInformation(
+                _logger.LogInformation(
                     "[Chat:Transcript] Persisted transcript session={Session} role={Role} contentLen={ContentLen}",
                     sessionId, role, content.Length);
             }
@@ -129,7 +142,7 @@ public sealed class ChatTranscriptWriter(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex,
+            _logger.LogWarning(ex,
                 "[Chat:Transcript] Failed to persist transcript session={Session} role={Role}",
                 sessionId, role);
             return null;

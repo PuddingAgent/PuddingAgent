@@ -1,9 +1,9 @@
 ﻿using System.Text;
 using System.Text.Json;
+using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
-using PuddingPlatform.Services;
 using PuddingRuntime.Models;
 using PuddingRuntime.Services;
 
@@ -24,14 +24,14 @@ public sealed class AgentStatusTool : PuddingToolBase<AgentStatusArgs>
 {
     private const int DefaultHeartbeatSeconds = 3600;
 
-    private readonly IWorkspaceAgentCatalog _catalog;
+    private readonly IWorkspaceAgentQueryService _catalog;
     private readonly PuddingDataPaths _paths;
     private readonly AgentWakeQueue _wakeQueue;
     private readonly IIdleDetector _idleDetector;
     private readonly ILogger<AgentStatusTool> _logger;
 
     public AgentStatusTool(
-        IWorkspaceAgentCatalog catalog,
+        IWorkspaceAgentQueryService catalog,
         PuddingDataPaths paths,
         AgentWakeQueue wakeQueue,
         IIdleDetector idleDetector,
