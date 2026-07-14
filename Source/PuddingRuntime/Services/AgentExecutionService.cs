@@ -1989,8 +1989,8 @@ public sealed class AgentExecutionService
                 error: null,
                 ct: CancellationToken.None);
 
-            // ADR-016：将每一帧推送到 SessionStateManager（持久化 + 实时 Channel）
-            // fire-and-forget，不阻塞流式管道；AppendAsync 内部 TryWrite Channel 非阻塞
+            // ADR-056：将每一帧先持久化到 SessionStateManager，再 yield return。
+            // await 保证持久化成功后再发送给 SSE 消费者，避免"浏览器看过但未落盘"。
             async Task Append(ServerSentEventFrame frame)
             {
                 try
@@ -2074,7 +2074,7 @@ public sealed class AgentExecutionService
                 {
                     _logger.LogInformation("[AgentExec:Stream] Cancelled session={Session}", request.SessionId);
                     var cancelledFrame = ServerSentEventFrame.Json(SseEventTypes.Cancelled, new { message = "已取消" });
-                    Append(cancelledFrame);
+                    await Append(cancelledFrame);
                     yield return cancelledFrame;
                     break;
                 }
@@ -2082,7 +2082,7 @@ public sealed class AgentExecutionService
                 {
                     _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", _guardrails.MaxElapsed);
                     var timeoutFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"执行超时 ({_guardrails.MaxElapsed.TotalSeconds}s)" });
-                    Append(timeoutFrame);
+                    await Append(timeoutFrame);
                     yield return timeoutFrame;
                     break;
                 }
@@ -2090,7 +2090,7 @@ public sealed class AgentExecutionService
                 {
                     _logger.LogWarning("[AgentExec:Stream] MaxToolCallsTotal={Max} reached", _guardrails.MaxToolCallsTotal);
                     var maxToolFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"工具调用次数已达上限 ({_guardrails.MaxToolCallsTotal})" });
-                    Append(maxToolFrame);
+                    await Append(maxToolFrame);
                     yield return maxToolFrame;
                     break;
                 }
@@ -2254,7 +2254,7 @@ public sealed class AgentExecutionService
                             reasoningBuf.Append(delta.ReasoningDelta);
                             var thinkingFrame = ServerSentEventFrame.Json(SseEventTypes.Thinking,
                                 new { delta = delta.ReasoningDelta });
-                            Append(thinkingFrame);
+                            await Append(thinkingFrame);
                             yield return thinkingFrame;
                             _ = _eventBus?.EmitAsync(new StreamingEvent
                             {
@@ -2271,7 +2271,7 @@ public sealed class AgentExecutionService
                             replyBuf.Append(safeDelta);
                             var deltaFrame = ServerSentEventFrame.Json(SseEventTypes.Delta,
                                 new { delta = safeDelta });
-                            Append(deltaFrame);
+                            await Append(deltaFrame);
                             yield return deltaFrame;
                             _ = _eventBus?.EmitAsync(new StreamingEvent
                             {
@@ -2369,7 +2369,7 @@ public sealed class AgentExecutionService
                         terminalStreamError.Location);
 
                     var errFrame = ServerSentEventFrame.Json(SseEventTypes.Error, terminalStreamError);
-                    Append(errFrame);
+                    await Append(errFrame);
                     yield return errFrame;
                     if (fuse is { Triggered: true })
                     {
@@ -2387,7 +2387,7 @@ public sealed class AgentExecutionService
                 if (usage is not null)
                 {
                     var usageFrame = ServerSentEventFrame.Json(SseEventTypes.Usage, usage);
-                    Append(usageFrame);
+                    await Append(usageFrame);
                     yield return usageFrame;
                 }
 
@@ -2457,7 +2457,7 @@ public sealed class AgentExecutionService
                         faultSummary = fuse.Summary;
                         reply = fuse.Summary;
                         var blockedFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = fuse.Summary });
-                        Append(blockedFrame);
+                        await Append(blockedFrame);
                         yield return blockedFrame;
                         stopAfterTool = true;
                         break;
@@ -2465,7 +2465,7 @@ public sealed class AgentExecutionService
 
                     var toolCallFrame = ServerSentEventFrame.Json(SseEventTypes.ToolCall,
                         new { name = tc.Name, arguments = tc.Arguments });
-                    Append(toolCallFrame);
+                    await Append(toolCallFrame);
                     yield return toolCallFrame;
 
                     _runtimeControl?.MarkSessionWaitingForTool(request.SessionId);
@@ -2538,7 +2538,7 @@ public sealed class AgentExecutionService
                         output = result.Output,
                         error = result.Error,
                     });
-                    Append(toolResultFrame);
+                    await Append(toolResultFrame);
                     yield return toolResultFrame;
 
                     _ = _eventBus?.EmitAsync(new StreamingEvent
@@ -2747,7 +2747,7 @@ public sealed class AgentExecutionService
                 toolFailureSummary = firstToolFailureSummary,
                 voice = voiceEnabled ? new { enabled = true, tts_text = voiceTtsText } : new { enabled = false, tts_text = (string?)null },
             });
-            Append(doneFrame);
+            await Append(doneFrame);
             streamCompletedSuccessfully = terminalStreamError is null;
             if (!faultedByFuse && terminalStreamError is null)
                 _runtimeControl?.MarkSessionCompleted(request.SessionId);
