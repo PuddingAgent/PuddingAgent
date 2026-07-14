@@ -5,7 +5,7 @@ namespace PuddingCode.Platform;
 /// </summary>
 public sealed class WorkspaceRow
 {
-    public long Id { get; init; }
+    public int Id { get; init; }
     public string WorkspaceId { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string? Description { get; init; }
@@ -80,7 +80,7 @@ public interface IWorkspaceRepository
     Task<WorkspaceRow?> FindByIdAsync(string workspaceId, CancellationToken ct = default);
     Task<bool> ExistsAsync(string workspaceId, CancellationToken ct = default);
     Task CreateAsync(string workspaceId, string name, string? description, bool isEnabled, CancellationToken ct = default);
-    Task UpdateAsync(long id, string name, string? description, bool isEnabled, CancellationToken ct = default);
+    Task UpdateAsync(int id, string name, string? description, bool isEnabled, CancellationToken ct = default);
 }
 
 /// <summary>

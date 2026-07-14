@@ -38,7 +38,7 @@ public sealed class WorkspaceRepository : IWorkspaceRepository
         await _db.SaveChangesAsync(ct);
     }
 
-    public async Task UpdateAsync(long id, string name, string? description, bool isEnabled, CancellationToken ct = default)
+    public async Task UpdateAsync(int id, string name, string? description, bool isEnabled, CancellationToken ct = default)
     {
         var entity = await _db.Workspaces.FindAsync([id], ct);
         if (entity is null) return;

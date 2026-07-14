@@ -27,7 +27,7 @@ namespace PuddingPlatform.Controllers.Api;
 [ApiController]
 [Route("api/workspaces/{workspaceId}/chat")]
 public class ChatApiController(
-    PlatformDbContext db,
+    IWorkspaceRepository workspaceRepo,
     PlatformApiClient apiClient,
     MinioStorageService minio,
     AgentTemplateFileService templateFileService,
@@ -135,8 +135,7 @@ public class ChatApiController(
             ct: ct);
 
         // 验证 workspace 存在
-        var ws = await db.Workspaces.AsNoTracking()
-            .FirstOrDefaultAsync(w => w.WorkspaceId == workspaceId, ct);
+        var ws = await workspaceRepo.FindByIdAsync(workspaceId, ct);
         if (ws is null)
             return NotFound(new { message = $"Workspace '{workspaceId}' 不存在" });
 
@@ -178,7 +177,7 @@ public class ChatApiController(
         logger.LogInformation(
             "[Chat] DB_LOAD_AGENTS start ws={WorkspaceId}",
             workspaceId);
-        var workspaceAgents = await ChatDispatchService.LoadWorkspaceAgentsForRoutingAsync(db, workspaceAgentFileService, ws.Id, workspaceId, ct);
+        var workspaceAgents = await dispatch.LoadWorkspaceAgentsForRoutingAsync(workspaceAgentFileService, ws.Id, workspaceId, ct);
         logger.LogInformation(
             "[Chat] DB_LOAD_AGENTS done ws={WorkspaceId} count={Count} elapsedMs={ElapsedMs}",
             workspaceId, workspaceAgents.Count, sw.ElapsedMilliseconds);
@@ -421,8 +420,7 @@ public class ChatApiController(
         if (string.IsNullOrWhiteSpace(req.MessageText))
             return BadRequest(new { message = "引导消息不能为空" });
 
-        var workspaceExists = await db.Workspaces.AsNoTracking()
-            .AnyAsync(w => w.WorkspaceId == workspaceId, ct);
+        var workspaceExists = await workspaceRepo.ExistsAsync(workspaceId, ct);
         if (!workspaceExists)
             return NotFound(new { message = $"Workspace '{workspaceId}' 不存在" });
 

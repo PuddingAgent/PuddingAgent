@@ -184,14 +184,13 @@ public sealed class ChatDispatchService
             ct);
     }
 
-    public static async Task<IReadOnlyList<WorkspaceAgentDto>> LoadWorkspaceAgentsForRoutingAsync(
-        PlatformDbContext db,
+    public async Task<IReadOnlyList<WorkspaceAgentDto>> LoadWorkspaceAgentsForRoutingAsync(
         WorkspaceAgentFileService workspaceAgentFileService,
         int workspacePk,
         string workspaceId,
         CancellationToken ct)
     {
-        var dbAgents = await db.WorkspaceAgents.AsNoTracking()
+        var dbAgents = await _db.WorkspaceAgents.AsNoTracking()
             .Where(a => a.WorkspaceEntityId == workspacePk)
             .Select(a => new WorkspaceAgentDto(
                 a.AgentId,
