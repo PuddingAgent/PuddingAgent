@@ -49,9 +49,10 @@ public sealed class ChatCommandStore : IChatCommandStore
             "last_error TEXT," +
             "event_cursor TEXT)", ct);
         await db.Database.ExecuteSqlRawAsync(
-            "CREATE INDEX IF NOT EXISTS ix_cec_cmd_id ON chat_execution_commands(command_id)", ct);
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_cec_cmd_id ON chat_execution_commands(command_id)", ct);
         await db.Database.ExecuteSqlRawAsync(
-            "CREATE INDEX IF NOT EXISTS ix_cec_client_ws ON chat_execution_commands(client_request_id, workspace_id)", ct);
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_cec_client_ws ON chat_execution_commands(client_request_id, workspace_id)" +
+            " WHERE client_request_id IS NOT NULL", ct);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS ix_cec_session_status ON chat_execution_commands(session_id, status)", ct);
         await db.Database.ExecuteSqlRawAsync(

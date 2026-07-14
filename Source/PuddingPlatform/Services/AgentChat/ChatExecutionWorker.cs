@@ -80,6 +80,11 @@ public sealed class ChatExecutionWorker : BackgroundService
 
         _logger.LogInformation("[ChatWorker] Stopping, waiting for {Count} running commands", running.Count);
         await Task.WhenAll(running.Values);
+
+        // Release any remaining leased commands during shutdown.
+        // Running commands that complete naturally are already handled.
+        // Any crashed/incomplete commands will be picked up after lease expiry.
+
         _logger.LogInformation("[ChatWorker] Stopped");
     }
 
