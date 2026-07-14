@@ -10,9 +10,6 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public interface IWorkspaceAgentCatalog
 {
-    /// <summary>
-    /// Lists agent instances attached to the workspace.
-    /// </summary>
     Task<IReadOnlyList<WorkspaceAgentDto>> ListAgentsAsync(string workspaceId, CancellationToken ct = default);
 }
 

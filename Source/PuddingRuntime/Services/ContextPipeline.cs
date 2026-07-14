@@ -11,7 +11,6 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingMemoryEngine.Services;
-using PuddingPlatform.Services;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
@@ -48,7 +47,7 @@ public sealed class ContextPipeline
     private readonly AgentSkillFileService? _agentSkillFileService;
     private readonly AgentMemorySummaryContextBuilder? _agentMemorySummaryContextBuilder;
     private readonly AgentLogRecallService? _agentLogRecallService;
-    private readonly ImportantMemoryService? _importantMemory;
+    private readonly IImportantMemoryService? _importantMemory;
     private readonly PuddingDataPaths _dataPaths;
     private readonly CroppedLayersProvider? _croppedLayersProvider;
     private readonly SubconsciousRecallPipeline? _subconsciousRecallPipeline;
@@ -93,7 +92,7 @@ public sealed class ContextPipeline
         AgentSkillFileService? agentSkillFileService = null,
         AgentMemorySummaryContextBuilder? agentMemorySummaryContextBuilder = null,
         AgentLogRecallService? agentLogRecallService = null,
-        ImportantMemoryService? importantMemory = null,
+        IImportantMemoryService? importantMemory = null,
         PuddingDataPaths? dataPaths = null,
         CroppedLayersProvider? croppedLayersProvider = null,
         SubconsciousRecallPipeline? subconsciousRecallPipeline = null)

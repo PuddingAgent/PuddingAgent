@@ -7,7 +7,6 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingMemoryEngine.Data;
-using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -26,14 +25,14 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
     private readonly IMemoryLibraryConvenience _library;
     private readonly IMemoryLibrary _memLib;
     private readonly ILogger<SaveMemoryTool> _logger;
-    private readonly ImportantMemoryService? _importantMemory;
+    private readonly IImportantMemoryService? _importantMemory;
     private readonly MemoryQualityFilter? _qualityFilter;
 
     public SaveMemoryTool(
         IMemoryLibraryConvenience library,
         IMemoryLibrary memLib,
         ILogger<SaveMemoryTool> logger,
-        ImportantMemoryService? importantMemory = null,
+        IImportantMemoryService? importantMemory = null,
         MemoryQualityFilter? qualityFilter = null)
     {
         _library = library;
@@ -89,8 +88,8 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
                         : writeResult.Error,
                     writeResult.LineCount,
                     writeResult.ByteCount,
-                    max_lines = ImportantMemoryService.MaxLines,
-                    max_chars = ImportantMemoryService.MaxChars,
+                    max_lines = IImportantMemoryService.MaxLines,
+                    max_chars = IImportantMemoryService.MaxChars,
                 });
                 return ToolExecutionResult.Ok(output);
             }

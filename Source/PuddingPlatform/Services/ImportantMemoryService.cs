@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 
 namespace PuddingPlatform.Services;
@@ -8,7 +9,7 @@ namespace PuddingPlatform.Services;
 /// 精选重要记忆文件管理 — 读写 agents/{id}/memory/important_memory.md。
 /// 作为 L4-PINNED 上下文层的主数据源，替代不可靠的关键词搜索。
 /// </summary>
-public sealed class ImportantMemoryService
+public sealed class ImportantMemoryService : IImportantMemoryService
 {
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<ImportantMemoryService> _logger;
@@ -231,14 +232,4 @@ public sealed class ImportantMemoryService
             };
         }
     }
-}
-
-/// <summary>重要记忆写入结果。</summary>
-public sealed record ImportantMemoryWriteResult
-{
-    public bool Success { get; init; }
-    public string? Error { get; init; }
-    public int LineCount { get; init; }
-    public int CharCount { get; init; }
-    public int ByteCount { get; init; }
 }
