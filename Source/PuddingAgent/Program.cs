@@ -1229,6 +1229,21 @@ catch (Exception ex)
     Console.WriteLine($"[Startup] Platform DB ensure failed: {ex.Message}");
 }
 
+Console.WriteLine("[Startup] Ensuring Memory DB tables...");
+try
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var memoryDb = scope.ServiceProvider.GetRequiredService<PuddingMemoryEngine.Data.MemoryLibraryDbContext>();
+        await memoryDb.Database.EnsureCreatedAsync();
+    }
+    Console.WriteLine("[Startup] Memory DB tables ensured");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[Startup] Memory DB ensure failed: {ex.Message}");
+}
+
 // ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
 Console.WriteLine("[Startup] Initializing Workspace Catalog...");
 try
