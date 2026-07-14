@@ -141,3 +141,27 @@ public interface ICompactionChatMessageStore
     Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default);
     Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default);
 }
+
+/// <summary>
+/// Repository for session event log queries.
+/// </summary>
+public interface ISessionEventLogRepository
+{
+    Task<bool> AnyForSessionAsync(string sessionId, CancellationToken ct = default);
+    Task<IReadOnlyList<SessionEventRow>> GetByEventTypesAsync(
+        string sessionId, string[] eventTypes, CancellationToken ct = default);
+    Task<long> GetCountAsync(string sessionId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Lightweight session event row for queries.
+/// </summary>
+public sealed class SessionEventRow
+{
+    public long Id { get; init; }
+    public string SessionId { get; init; } = string.Empty;
+    public string EventType { get; init; } = string.Empty;
+    public string? Data { get; init; }
+    public long CreatedAt { get; init; }
+    public long SequenceNum { get; init; }
+}
