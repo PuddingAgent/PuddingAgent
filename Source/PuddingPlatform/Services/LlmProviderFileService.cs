@@ -9,7 +9,7 @@ namespace PuddingPlatform.Services;
 /// 文件式 LLM Provider/Model 管理服务 — 读写 data/config/llm.providers.json。
 /// 唯一事实来源：llm.providers.json 文件。
 /// </summary>
-public sealed class LlmProviderFileService
+public sealed class LlmProviderFileService : ILlmResourcePoolService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {

@@ -320,5 +320,10 @@ public sealed class QuerySessionLogsToolTests
                 "message by id",
                 "2026-06-02T08:00:00.0000000Z",
                 $"session-message:session-1:{messageId}"));
+
+        public Task<RawSessionLogSearchResult> GrepFtsAsync(
+            RawSessionLogSearchRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult(new RawSessionLogSearchResult([], false));
     }
 }

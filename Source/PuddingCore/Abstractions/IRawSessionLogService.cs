@@ -59,6 +59,11 @@ public interface IRawSessionLogService
         string workspaceId,
         long messageId,
         CancellationToken ct = default);
+
+    /// <summary>全文搜索引擎检索原始日志中的文本，返回带证据坐标的片段。</summary>
+    Task<RawSessionLogSearchResult> GrepFtsAsync(
+        RawSessionLogSearchRequest request,
+        CancellationToken ct = default);
 }
 
 /// <summary>原始日志日期列表。</summary>

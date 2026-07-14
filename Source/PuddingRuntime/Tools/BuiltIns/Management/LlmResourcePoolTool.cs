@@ -1,9 +1,9 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
-using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -50,7 +50,7 @@ public sealed class LlmResourcePoolTool : PuddingToolBase<LlmResourcePoolArgs>
     {
         try
         {
-            var fileService = _serviceProvider.GetRequiredService<LlmProviderFileService>();
+            var fileService = _serviceProvider.GetRequiredService<ILlmResourcePoolService>();
             var config = await fileService.LoadAsync(ct);
 
             // 构建响应

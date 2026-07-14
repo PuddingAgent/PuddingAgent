@@ -2,7 +2,6 @@
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
-using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -126,9 +125,9 @@ public sealed class QuerySessionLogsTool : PuddingToolBase<QuerySessionLogsArgs>
                         return ToolExecutionResult.Ok(SerializeError(action, "query is required."));
 
                     // ── fts=true → 走 Lucene 全文检索（jieba 分词）──
-                    if (IsTrue(root, "fts") && _rawLogs is RawSessionLogService rawSvc)
+                    if (IsTrue(root, "fts"))
                     {
-                        var ftsResult = await rawSvc.GrepFtsAsync(new RawSessionLogSearchRequest
+                        var ftsResult = await _rawLogs.GrepFtsAsync(new RawSessionLogSearchRequest
                         {
                             WorkspaceId = workspaceId,
                             AgentInstanceId = root.GetString("agent_instance_id", null),

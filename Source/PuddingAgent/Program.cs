@@ -656,6 +656,7 @@ builder.Services.AddSingleton<ILlmConfigService>(llmConfigService);
 
 // ── 文件式 LLM Provider/Model 管理（A方案：Controller → Service → JSON 文件）──
 builder.Services.AddSingleton<LlmProviderFileService>();
+builder.Services.AddSingleton<ILlmResourcePoolService>(sp => sp.GetRequiredService<LlmProviderFileService>());
 
 // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
 builder.Services.AddSingleton<VoiceProviderFileService>();
