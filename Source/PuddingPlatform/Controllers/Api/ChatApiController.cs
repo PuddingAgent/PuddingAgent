@@ -32,18 +32,9 @@ public class ChatApiController(
     MinioStorageService minio,
     AgentTemplateFileService templateFileService,
     WorkspaceAgentFileService workspaceAgentFileService,
-    IServiceScopeFactory scopeFactory,
     ChatTranscriptWriter transcriptWriter,
-    MessageTopicService messageTopicService,
-    IDbContextFactory<MemoryDbContext> memoryDbFactory,
-    PuddingCode.Services.JsonlSessionWriter jsonlWriter,
     ISessionStateManager ssm,
-    IRuntimeTraceAccessor traceAccessor,
-    TokenUsageRecorder tokenUsageRecorder,
-    ChatVisualReasoningSessionRunner visualReasoningRunner,
-    SessionTitleService sessionTitleService,
-    ISessionTimelineRecorder timelineRecorder,
-    ITelemetryMetricSink telemetrySink,
+    ChatTelemetryRecorder telemetry,
     IPuddingToolCatalogService toolCatalog,
     IToolPermissionPolicyService toolPermissionPolicy,
     IToolAuthorizationService toolAuthorizationService,
@@ -53,9 +44,12 @@ public class ChatApiController(
     ILlmConfigService llmConfigService,
     IHostApplicationLifetime appLifetime,
     SessionRedirectStore redirectStore,
+    IRuntimeTraceAccessor traceAccessor,
+    TokenUsageRecorder tokenUsageRecorder,
+    ChatVisualReasoningSessionRunner visualReasoningRunner,
+    SessionTitleService sessionTitleService,
     ILogger<ChatApiController> logger,
-    ChatCommandAcceptanceService acceptanceService,
-    IConfiguration? configuration = null) : ControllerBase
+    ChatCommandAcceptanceService acceptanceService) : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
@@ -107,7 +101,7 @@ public class ChatApiController(
             req.Audience ?? "agent",
             req.TargetAgentIds?.Count ?? 0,
             req.MessageText?.Length ?? 0);
-        await RecordTimelineAsync(
+        await telemetry.RecordTimelineAsync(
             trace,
             RuntimeActivityComponents.AgentExecution,
             "chat.post.received",
@@ -121,7 +115,7 @@ public class ChatApiController(
                 ["messageChars"] = (req.MessageText?.Length ?? 0).ToString(),
             },
             ct: ct);
-        await RecordTelemetryMetricAsync(
+        await telemetry.RecordTelemetryMetricAsync(
             trace,
             TelemetryMetricCategories.Session,
             "session.message.received",
@@ -246,7 +240,7 @@ public class ChatApiController(
             string.Join(",", req.TargetAgentIds),
             req.MessageText.Length,
             req.OriginalMessageText?.Length ?? 0);
-        await RecordTimelineAsync(
+        await telemetry.RecordTimelineAsync(
             trace,
             RuntimeActivityComponents.AgentExecution,
             "chat.route.resolved",
@@ -331,7 +325,7 @@ public class ChatApiController(
                 req = req with { SessionId = resolvedSessionId };
                 trace = trace.WithSession(resolvedSessionId, workspaceId);
                 traceAccessor.Current = trace;
-                await RecordTimelineAsync(
+                await telemetry.RecordTimelineAsync(
                     trace,
                     RuntimeActivityComponents.AgentExecution,
                     "chat.main_session.resolved",
@@ -463,7 +457,7 @@ public class ChatApiController(
             trace,
             RuntimeActivityComponents.AgentExecution,
             "steering.created");
-        await RecordTelemetryMetricAsync(
+        await telemetry.RecordTelemetryMetricAsync(
             trace,
             TelemetryMetricCategories.Session,
             "session.steering.created",
@@ -616,7 +610,7 @@ public class ChatApiController(
             "chat.command.done");
 
         await ssm.MarkStreamCompleteAsync(chatSessionId, ct);
-        await RecordTimelineAsync(
+        await telemetry.RecordTimelineAsync(
             frameTrace,
             RuntimeActivityComponents.AgentExecution,
             sourceType == "system_command" ? "chat.system_command.handled" : "chat.runtime_control.handled",
@@ -628,7 +622,7 @@ public class ChatApiController(
                 ["messageLength"] = userMessageText.Length.ToString(),
             },
             ct: ct);
-        await RecordTelemetryMetricAsync(
+        await telemetry.RecordTelemetryMetricAsync(
             frameTrace,
             TelemetryMetricCategories.Session,
             "session.system_command.handled",
@@ -1039,70 +1033,6 @@ public class ChatApiController(
             visualModel);
 
         return Ok(new { messageId, sessionId = chatSessionId });
-    }
-
-    private async Task RecordTimelineAsync(
-        RuntimeTraceContext trace,
-        string component,
-        string stage,
-        string operation,
-        string status,
-        long? durationMs = null,
-        IReadOnlyDictionary<string, string>? metadata = null,
-        string? errorMessage = null,
-        CancellationToken ct = default)
-    {
-        await SafeRecorder.RunAsync(
-            ct2 => timelineRecorder.RecordAsync(new SessionTimelineRecord
-            {
-                Trace = trace,
-                Component = component,
-                Stage = stage,
-                Operation = operation,
-                Status = status,
-                DurationMs = durationMs,
-                Metadata = metadata,
-                ErrorMessage = errorMessage,
-            }, ct2),
-            logger,
-            $"timeline:{stage}",
-            ct);
-    }
-
-    private async Task RecordTelemetryMetricAsync(
-        RuntimeTraceContext trace,
-        string category,
-        string name,
-        string status,
-        long? durationMs,
-        long? countValue,
-        IReadOnlyDictionary<string, string>? dimensions = null,
-        DateTimeOffset? occurredAtUtc = null,
-        Exception? error = null,
-        string? errorMessage = null,
-        CancellationToken ct = default)
-    {
-        await SafeRecorder.RunAsync(
-            ct2 => telemetrySink.RecordAsync(new TelemetryMetric
-            {
-                Trace = trace,
-                Source = "backend",
-                Category = category,
-                Name = name,
-                Status = status,
-                OccurredAtUtc = occurredAtUtc ?? DateTimeOffset.UtcNow,
-                DurationMs = durationMs,
-                CountValue = countValue,
-                Unit = countValue is null ? null : "event",
-                Severity = error is null && status != TelemetryMetricStatuses.Failed ? "info" : "error",
-                Summary = name,
-                Dimensions = dimensions,
-                ErrorCode = error?.GetType().Name,
-                ErrorMessage = error?.Message ?? errorMessage,
-            }, ct2),
-            logger,
-            $"telemetry:{name}",
-            ct);
     }
 
     private async Task<ChatAgentDispatch> ResolveChatAgentDispatchAsync(

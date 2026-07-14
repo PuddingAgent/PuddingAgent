@@ -254,6 +254,7 @@ builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<
 // ── Chat 执行命令队列（ADR-056）─────────────────
 builder.Services.AddSingleton<IChatCommandStore, ChatCommandStore>();
 builder.Services.AddSingleton<ChatCommandAcceptanceService>();
+builder.Services.AddSingleton<ChatTelemetryRecorder>();
 builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
