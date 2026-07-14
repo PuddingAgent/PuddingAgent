@@ -6,7 +6,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
-using PuddingPlatform.Services;
+using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services;
 
@@ -26,7 +26,7 @@ public sealed class MemoryLlmInvocationClient(
     ILlmInvocationService invocationService,
     ILogger<MemoryLlmInvocationClient> logger,
     ILlmConfigService? llmConfigService = null,
-    TokenUsageRecorder? tokenUsageRecorder = null) : IMemoryLlmClient
+    ITokenUsageRecorder? tokenUsageRecorder = null) : IMemoryLlmClient
 {
     private const string DefaultWorkspaceId = "memory";
     private const string DefaultSessionId = "subconscious-memory";

@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
-using PuddingPlatform.Services;
+using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services;
 
@@ -22,14 +22,14 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
     private readonly ILogger<DirectMemoryLlmClient> _logger;
     private readonly LlmConfig? _memoryConfig;
     private readonly string? _memoryProviderId;
-    private readonly TokenUsageRecorder? _tokenUsageRecorder;
+    private readonly ITokenUsageRecorder? _tokenUsageRecorder;
     private readonly ProviderRateLimiter? _rateLimiter;
 
     public DirectMemoryLlmClient(
         IHttpClientFactory httpClientFactory,
         ILogger<DirectMemoryLlmClient> logger,
         LlmConfig? memoryConfig = null,
-        TokenUsageRecorder? tokenUsageRecorder = null,
+        ITokenUsageRecorder? tokenUsageRecorder = null,
         string? memoryProviderId = null,
         ProviderRateLimiter? rateLimiter = null)
     {

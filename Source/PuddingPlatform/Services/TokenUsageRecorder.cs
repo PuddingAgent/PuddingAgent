@@ -19,15 +19,33 @@ namespace PuddingPlatform.Services;
 /// 从 chat done 帧或消息持久化结果中记录一条 TokenUsageEventEntity，并更新月度聚合。
 /// 失败仅记录 warning，不影响调用方主流程。
 /// </summary>
-public class TokenUsageRecorder(
-    IServiceScopeFactory scopeFactory,
-    TokenUsageNormalizer normalizer,
-    ILogger<TokenUsageRecorder> logger,
-    ITelemetryMetricSink? telemetrySink = null,
-    ContextAssemblyStore? contextAssemblyStore = null,
-    ILlmConfigService? llmConfigService = null,
-    ISessionTimelineRecorder? timelineRecorder = null)
+public class TokenUsageRecorder : ITokenUsageRecorder
 {
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly TokenUsageNormalizer _normalizer;
+    private readonly ILogger<TokenUsageRecorder> _logger;
+    private readonly ITelemetryMetricSink? _telemetrySink;
+    private readonly ContextAssemblyStore? _contextAssemblyStore;
+    private readonly ILlmConfigService? _llmConfigService;
+    private readonly ISessionTimelineRecorder? _timelineRecorder;
+
+    public TokenUsageRecorder(
+        IServiceScopeFactory _scopeFactory,
+        TokenUsageNormalizer _normalizer,
+        ILogger<TokenUsageRecorder> _logger,
+        ITelemetryMetricSink? _telemetrySink = null,
+        ContextAssemblyStore? _contextAssemblyStore = null,
+        ILlmConfigService? _llmConfigService = null,
+        ISessionTimelineRecorder? _timelineRecorder = null)
+    {
+        _scopeFactory = _scopeFactory;
+        _normalizer = _normalizer;
+        _logger = _logger;
+        _telemetrySink = _telemetrySink;
+        _contextAssemblyStore = _contextAssemblyStore;
+        _llmConfigService = _llmConfigService;
+        _timelineRecorder = _timelineRecorder;
+    }
     /// <summary>
     /// 记录一条 token usage 事件。
     /// 幂等：同一 (SourceType, SourceId) 重复调用不会重复计数。
@@ -45,7 +63,7 @@ public class TokenUsageRecorder(
     {
         try
         {
-            using var scope = scopeFactory.CreateScope();
+            using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
             // 幂等检查
@@ -54,7 +72,7 @@ public class TokenUsageRecorder(
 
             if (exists)
             {
-                logger.LogDebug(
+                _logger.LogDebug(
                     "[TokenUsageRecorder] Skip duplicate source={SourceType}/{SourceId}",
                     sourceType, sourceId);
                 return;
@@ -70,7 +88,7 @@ public class TokenUsageRecorder(
 
             if (!string.IsNullOrWhiteSpace(modelId))
             {
-                var models = llmConfigService?.GetAllModels() ?? [];
+                var models = _llmConfigService?.GetAllModels() ?? [];
                 var priceConfig = models.FirstOrDefault(m =>
                     string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase)
                     && (string.IsNullOrWhiteSpace(providerId)
@@ -92,7 +110,7 @@ public class TokenUsageRecorder(
             }
 
             // 归一化计算
-            var normalized = normalizer.Normalize(usage, inputPrice, outputPrice, cacheHitPrice);
+            var normalized = _normalizer.Normalize(usage, inputPrice, outputPrice, cacheHitPrice);
 
             var resolvedPrefixSnapshot = await ResolvePrefixChangeReasonAsync(
                 db,
@@ -186,7 +204,7 @@ public class TokenUsageRecorder(
 
             await db.SaveChangesAsync();
 
-            logger.LogDebug(
+            _logger.LogDebug(
                 "[TokenUsageRecorder] Recorded source={SourceType}/{SourceId} provider={Provider} model={Model} cost={Cost}",
                 sourceType, sourceId, providerIdVal, modelIdVal, normalized.TotalCost);
 
@@ -203,7 +221,7 @@ public class TokenUsageRecorder(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex,
+            _logger.LogWarning(ex,
                 "[TokenUsageRecorder] Failed to record token usage source={SourceType}/{SourceId}",
                 sourceType, sourceId);
         }
@@ -227,9 +245,9 @@ public class TokenUsageRecorder(
                 workspaceId: workspaceId);
 
             // 1. 写入 telemetry_metric_events (token.usage)
-            if (telemetrySink is not null)
+            if (_telemetrySink is not null)
             {
-                await telemetrySink.RecordAsync(new TelemetryMetric
+                await _telemetrySink.RecordAsync(new TelemetryMetric
                 {
                     Trace = trace,
                     Source = "backend",
@@ -263,7 +281,7 @@ public class TokenUsageRecorder(
                 // 2. 写入专用的 llm.cache.hit_rate 指标（便于按维度聚合）
                 if (normalized.CacheHitRate.HasValue)
                 {
-                    _ = telemetrySink.RecordAsync(new TelemetryMetric
+                    _ = _telemetrySink.RecordAsync(new TelemetryMetric
                     {
                         Trace = trace,
                         Source = "backend",
@@ -292,9 +310,9 @@ public class TokenUsageRecorder(
             }
 
             // 3. 写入 Session Timeline (diagnostics JSONL)
-            if (timelineRecorder is not null)
+            if (_timelineRecorder is not null)
             {
-                _ = timelineRecorder.RecordAsync(new SessionTimelineRecord
+                _ = _timelineRecorder.RecordAsync(new SessionTimelineRecord
                 {
                     Trace = trace,
                     Component = "llm",
@@ -320,7 +338,7 @@ public class TokenUsageRecorder(
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "[TokenUsageRecorder] Failed to record telemetry metric source={SourceType}/{SourceId}", sourceType, sourceId);
+            _logger.LogDebug(ex, "[TokenUsageRecorder] Failed to record telemetry metric source={SourceType}/{SourceId}", sourceType, sourceId);
         }
     }
 
@@ -335,9 +353,9 @@ public class TokenUsageRecorder(
         string? modelId,
         DateTimeOffset occurredAtUtc)
     {
-        if (contextAssemblyStore is null
+        if (_contextAssemblyStore is null
             || string.IsNullOrWhiteSpace(sessionId)
-            || !contextAssemblyStore.TryGet(sessionId, out var snapshot)
+            || !_contextAssemblyStore.TryGet(sessionId, out var snapshot)
             || snapshot is null
             || snapshot.Layers.Count == 0)
         {

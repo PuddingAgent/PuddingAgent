@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -66,7 +66,7 @@ public sealed class AgentExecutionService
     private readonly bool _enableLegacyAgentExecutionFallback;
     private readonly IStreamingEventBus? _eventBus;
     private readonly SessionArchiver? _sessionArchiver;
-    private readonly TokenUsageRecorder? _tokenUsageRecorder;
+    private readonly ITokenUsageRecorder? _tokenUsageRecorder;
     private readonly ILogger<AgentExecutionService> _logger;
     private readonly ILlmResolver? _llmResolver; // 可选：为子代理等无 LlmConfig 场景兜底
     private readonly ISessionStateManager? _ssm;  // ADR-016：会话状态层
@@ -119,7 +119,7 @@ public sealed class AgentExecutionService
         IToolInvocationService? toolInvocationService = null,
         ISubAgentInvocationService? subAgentInvocationService = null,
         ISessionOutputWriter? sessionOutputWriter = null,
-        TokenUsageRecorder? tokenUsageRecorder = null,
+        ITokenUsageRecorder? tokenUsageRecorder = null,
         PuddingToolSchemaService? toolSchemaService = null,
         IRuntimeControlService? runtimeControl = null,
         SessionSteeringService? steeringService = null,

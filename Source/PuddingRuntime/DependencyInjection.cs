@@ -18,7 +18,6 @@ using PuddingRuntime.Services.Messaging;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
-using PuddingPlatform.Services.TaskPlanning;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Storage;
@@ -46,7 +45,6 @@ public static class RuntimeServiceExtensions
         var enableLegacyConsolidationHook = configuration?.GetValue<bool>(
             $"{SubconsciousOptions.SectionName}:{nameof(SubconsciousOptions.EnableLegacyConsolidationHook)}") == true;
 
-        services.TryAddScoped<ITaskPlanStore, TaskPlanStore>();
         services.AddScoped<ITaskDelegationPolicy, TaskDelegationPolicy>();
 
         services.AddSingleton<AgentSessionManager>();

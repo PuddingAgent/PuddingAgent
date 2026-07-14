@@ -1,3 +1,6 @@
+using PuddingCode.Models;
+using PuddingCode.Runtime;
+
 namespace PuddingCode.Abstractions;
 
 /// <summary>
@@ -5,5 +8,14 @@ namespace PuddingCode.Abstractions;
 /// </summary>
 public interface ITokenUsageRecorder
 {
-    Task RecordAsync(string sessionId, string workspaceId, CancellationToken ct = default);
+    Task RecordAsync(
+        TokenUsageDto usage,
+        string sourceType,
+        string sourceId,
+        string? workspaceId,
+        string? sessionId,
+        string? providerId,
+        string? modelId,
+        PromptPrefixSnapshot? prefixSnapshot = null,
+        DateTimeOffset? occurredAtUtc = null);
 }

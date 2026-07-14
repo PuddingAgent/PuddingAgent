@@ -411,6 +411,7 @@ builder.Services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispa
 // ── ADR-043：Token 使用统计闭环 ────────────────────────────────
 builder.Services.AddSingleton<TokenUsageNormalizer>();
 builder.Services.AddSingleton<TokenUsageRecorder>();
+builder.Services.AddSingleton<ITokenUsageRecorder>(sp => sp.GetRequiredService<TokenUsageRecorder>());
 builder.Services.AddSingleton<TokenUsageRebuildService>();
 builder.Services.AddSingleton<SessionSteeringService>();
 builder.Services.AddScoped<CacheDiagnosticsService>();
