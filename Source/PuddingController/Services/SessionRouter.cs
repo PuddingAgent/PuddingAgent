@@ -285,6 +285,8 @@ public sealed class SessionRouter
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var messageId = Guid.NewGuid().ToString("N");
+        var turnId = GetMetadataValue(request.Metadata, "turn_id", "turnId", "TurnId")
+            ?? Guid.NewGuid().ToString("N");
         var workspaceId = request.WorkspaceId ?? "default";
         var userId = request.UserExternalId;
 
@@ -391,6 +393,7 @@ public sealed class SessionRouter
         yield return ServerSentEventFrame.Json(SseEventTypes.Metadata, new
         {
             messageId,
+            turnId,
             sessionId = session.SessionId,
             routeDecisionId = routeDecision.RouteDecisionId,
             source_type = request.Metadata?.GetValueOrDefault("source_type"),

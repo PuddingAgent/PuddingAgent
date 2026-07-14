@@ -4,7 +4,20 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://0.0.0.0:5000",
+        "DOTNET_USE_POLLING_FILE_WATCHER": "1",
+        "PUDDING_DATA_ROOT": "D:\\data",
+        "PUDDING_LOG_LEVEL": "Debug",
+        "PUDDING_DEBUG": " 1",
+        "PUDDING_TELEMETRY_DEBUG": " 1",
+        "Pudding__ControllerEndpoint": " http://127.0.0.1:5000",
+        "Pudding__RuntimeFallbackEndpoint ": "http://127.0.0.1:5000",
+        "Jwt__Key": "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!",
+        "Jwt__Issuer": " pudding-platform",
+        "Jwt__Audience": " pudding-admin",
+        "Jwt__ExpiryHours": "24",
+        "ConnectionStrings__Default": " Data Source=D:\\data\\databases\\pudding_platform.db"
       },
       "applicationUrl": "https://localhost:14965;http://localhost:14966"
     }

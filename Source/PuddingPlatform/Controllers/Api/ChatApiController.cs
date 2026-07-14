@@ -53,7 +53,9 @@ public class ChatApiController(
     ILlmConfigService llmConfigService,
     IHostApplicationLifetime appLifetime,
     SessionRedirectStore redirectStore,
-    ILogger<ChatApiController> logger) : ControllerBase
+    ILogger<ChatApiController> logger,
+    IChatCommandStore? commandStore = null,
+    IConfiguration? configuration = null) : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
@@ -176,7 +178,13 @@ public class ChatApiController(
                 ct);
         }
 
+        logger.LogInformation(
+            "[Chat] DB_LOAD_AGENTS start ws={WorkspaceId}",
+            workspaceId);
         var workspaceAgents = await LoadWorkspaceAgentsForRoutingAsync(db, workspaceAgentFileService, ws.Id, workspaceId, ct);
+        logger.LogInformation(
+            "[Chat] DB_LOAD_AGENTS done ws={WorkspaceId} count={Count} elapsedMs={ElapsedMs}",
+            workspaceId, workspaceAgents.Count, sw.ElapsedMilliseconds);
         var route = ChatRoomRouteResolver.Resolve(
             req,
             workspaceAgents);
@@ -256,9 +264,13 @@ public class ChatApiController(
         // 使用 web-chat 内置渠道 ID（已在 SeedDefaults 中注册）
         var channelId = $"web-chat-{workspaceId}";
 
+        logger.LogInformation(
+            "[Chat] DISPATCH_RESOLVE start ws={WorkspaceId} targets={Targets}",
+            workspaceId, string.Join(",", req.TargetAgentIds));
         var dispatches = new List<ChatAgentDispatch>();
         foreach (var targetAgentId in req.TargetAgentIds)
         {
+            var dispatchSw = System.Diagnostics.Stopwatch.StartNew();
             dispatches.Add(await ResolveChatAgentDispatchAsync(
                 db,
                 workspaceAgentFileService,
@@ -269,7 +281,13 @@ public class ChatApiController(
                 ws.Id,
                 targetAgentId,
                 ct));
+            logger.LogInformation(
+                "[Chat] DISPATCH_RESOLVE agent={AgentId} elapsedMs={ElapsedMs}",
+                targetAgentId, dispatchSw.ElapsedMilliseconds);
         }
+        logger.LogInformation(
+            "[Chat] DISPATCH_RESOLVE done ws={WorkspaceId} count={Count} elapsedMs={ElapsedMs}",
+            workspaceId, dispatches.Count, sw.ElapsedMilliseconds);
 
         var primaryDispatch = dispatches[0];
         if (string.IsNullOrWhiteSpace(req.SessionId)
@@ -277,6 +295,10 @@ public class ChatApiController(
             && dispatches.Count == 1
             && !string.Equals(req.Audience, "all", StringComparison.OrdinalIgnoreCase))
         {
+            logger.LogInformation(
+                "[Chat] ENSURE_MAIN_SESSION start agent={AgentId}",
+                primaryDispatch.AgentId);
+            var ensureSw = System.Diagnostics.Stopwatch.StartNew();
             var main = await apiClient.EnsureMainSessionAsync(new Services.EnsureMainSessionRequest
             {
                 WorkspaceId = workspaceId,
@@ -287,6 +309,12 @@ public class ChatApiController(
                     : primaryDispatch.AgentTemplateId,
                 Title = primaryDispatch.DisplayName,
             }, ct);
+
+            logger.LogInformation(
+                "[Chat] ENSURE_MAIN_SESSION done agent={AgentId} result={Result} elapsedMs={ElapsedMs}",
+                primaryDispatch.AgentId,
+                main is not null ? "ok" : "null",
+                ensureSw.ElapsedMilliseconds);
 
             if (main is not null)
             {
@@ -354,9 +382,112 @@ public class ChatApiController(
                 trace);
         }
 
+        // ── ADR-056 Phase 1: 命令队列路径 ──────────────────────────
+        // 当 commandStore 已注册时，持久化命令并立即返回，由 ChatExecutionWorker 异步执行。
+        if (commandStore is not null)
+        {
+            var cmdTurnId = Guid.NewGuid().ToString("N");
+            var cmdCommandId = Guid.NewGuid().ToString("N");
+            var cmdMessageId = Guid.NewGuid().ToString("N");
+            var cmdClientRequestId = req.ClientRequestId
+                ?? HttpContext?.Request.Headers["Idempotency-Key"].FirstOrDefault()
+                ?? cmdCommandId;
+
+            var cmdSessionId = req.SessionId ?? Guid.NewGuid().ToString("N");
+
+            // 幂等检查：相同 clientRequestId + workspaceId 返回已有命令
+            if (!string.IsNullOrWhiteSpace(req.ClientRequestId))
+            {
+                var existing = await commandStore.FindByClientRequestIdAsync(req.ClientRequestId, workspaceId, ct);
+                if (existing is not null)
+                {
+                    logger.LogInformation(
+                        "[Chat:Queue] Idempotent hit cmd={CommandId} clientRequestId={ClientRequestId}",
+                        existing.CommandId, req.ClientRequestId);
+                    return Ok(new
+                    {
+                        status = existing.Status == "pending" ? "accepted" : existing.Status,
+                        commandId = existing.CommandId,
+                        messageId = existing.MessageId,
+                        turnId = existing.TurnId,
+                        sessionId = existing.SessionId,
+                        eventCursor = existing.EventCursor,
+                        clientRequestId = existing.ClientRequestId,
+                        idempotent = true,
+                    });
+                }
+            }
+
+            var payload = new Dictionary<string, object?>
+            {
+                ["channelId"] = channelId,
+                ["userExternalId"] = userExternalId,
+                ["messageText"] = req.MessageText,
+                ["llmConfig"] = primaryDispatch.LlmConfig,
+                ["agentTemplateId"] = primaryDispatch.AgentTemplateId,
+                ["agentInstanceId"] = primaryDispatch.AgentId,
+                ["capabilityPolicy"] = primaryDispatch.CapabilityPolicy,
+                ["toolDefinitions"] = primaryDispatch.ToolDefinitions,
+                ["skillPackages"] = primaryDispatch.SkillPackages,
+                ["metadata"] = BuildChatIngressMetadata(req, primaryDispatch, fanoutIndex: 0, fanoutCount: dispatches.Count,
+                    turnId: cmdTurnId, clientRequestId: cmdClientRequestId),
+            };
+
+            var command = new ChatCommandRecord
+            {
+                CommandId = cmdCommandId,
+                ClientRequestId = cmdClientRequestId,
+                WorkspaceId = workspaceId,
+                SessionId = cmdSessionId,
+                MessageId = cmdMessageId,
+                TurnId = cmdTurnId,
+                AgentInstanceId = primaryDispatch.AgentId,
+                AgentTemplateId = primaryDispatch.AgentTemplateId,
+                UserId = userExternalId,
+                PayloadJson = JsonSerializer.Serialize(payload, JsonOpts),
+                Status = "pending",
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+
+            await commandStore.SaveAsync(command, ct);
+
+            var acceptedFrame = ServerSentEventFrame.Json("turn.accepted", new
+            {
+                commandId = cmdCommandId,
+                messageId = cmdMessageId,
+                turnId = cmdTurnId,
+                sessionId = cmdSessionId,
+                clientRequestId = cmdClientRequestId,
+            });
+            await ssm.AppendAsync(cmdSessionId, workspaceId, acceptedFrame, ct);
+
+            var eventCursor = await ssm.GetLatestSequenceNumAsync(cmdSessionId, ct);
+
+            logger.LogInformation(
+                "[Chat:Queue] Command queued cmd={CommandId} turn={TurnId} msg={MessageId} session={SessionId}",
+                cmdCommandId, cmdTurnId, cmdMessageId, cmdSessionId);
+
+            sw.Stop();
+            return Ok(new
+            {
+                status = "accepted",
+                commandId = cmdCommandId,
+                messageId = cmdMessageId,
+                turnId = cmdTurnId,
+                sessionId = cmdSessionId,
+                eventCursor,
+                clientRequestId = cmdClientRequestId,
+            });
+        }
+
         // T-102: 通过流式接口获取第一个 metadata 帧提取 sessionId/messageId，
         // 然后 fire-and-forget 将剩余帧写入 SSM (EventHub)，立即返回 IDs 给前端。
         var primaryTrace = trace.WithAgent(primaryDispatch.AgentId, primaryDispatch.AgentTemplateId);
+        var turnId = Guid.NewGuid().ToString("N");
+        var clientRequestId = req.ClientRequestId
+            ?? HttpContext?.Request.Headers["Idempotency-Key"].FirstOrDefault()
+            ?? turnId;
+        var metadataTcs = new TaskCompletionSource<(string? sessionId, string? messageId)>(TaskCreationOptions.RunContinuationsAsynchronously);
         string? streamSessionId = req.SessionId;
         string? streamMessageId = null;
         var framesWritten = 0;
@@ -364,7 +495,8 @@ public class ChatApiController(
         var transcriptMessageText = string.IsNullOrWhiteSpace(req.OriginalMessageText)
             ? req.MessageText
             : req.OriginalMessageText;
-        var ingressMetadata = BuildChatIngressMetadata(req, primaryDispatch, fanoutIndex: 0, fanoutCount: dispatches.Count);
+        var ingressMetadata = BuildChatIngressMetadata(req, primaryDispatch, fanoutIndex: 0, fanoutCount: dispatches.Count,
+            turnId: turnId, clientRequestId: clientRequestId);
         var secondaryDispatches = dispatches.Skip(1).ToList();
         var secondaryFanoutStarted = false;
 
@@ -381,6 +513,9 @@ public class ChatApiController(
                 ["fanoutCount"] = dispatches.Count.ToString(),
             },
             ct: ct);
+        logger.LogInformation(
+            "[Chat] SYNC_DONE dispatching background agent={AgentId} session={SessionId} elapsedMs={ElapsedMs}",
+            primaryDispatch.AgentId, req.SessionId, sw.ElapsedMilliseconds);
         _ = Task.Run(async () =>
         {
             var backgroundStartedAt = DateTimeOffset.UtcNow;
@@ -430,9 +565,13 @@ public class ChatApiController(
                             if (root.TryGetProperty("messageId", out var mid))
                                 streamMessageId = mid.GetString();
                         }
-                        catch { /* ignore parse errors */ }
+                        catch (Exception metaParseEx)
+                        {
+                            logger.LogWarning(metaParseEx, "[Chat] Failed to parse metadata frame");
+                        }
                         if (streamSessionId is not null)
                         {
+                            metadataTcs.TrySetResult((streamSessionId, streamMessageId));
                             await RecordTimelineAsync(
                                 primaryTrace.WithSession(streamSessionId, workspaceId),
                                 RuntimeActivityComponents.AgentExecution,
@@ -650,6 +789,56 @@ public class ChatApiController(
                 logger.LogWarning(ex,
                     "[Chat:FireAndForget] Background stream failed ws={Workspace} session={Session}",
                     workspaceId, streamSessionId);
+                if (streamSessionId is not null)
+                {
+                    try
+                    {
+                        var errorFrame = ServerSentEventFrame.Json("error", new
+                        {
+                            messageId = streamMessageId ?? "",
+                            turnId,
+                            message = ex.Message,
+                            error = ex.GetType().Name,
+                        });
+                        await ssm.AppendAsync(
+                            streamSessionId,
+                            workspaceId,
+                            errorFrame,
+                            CancellationToken.None,
+                            primaryTrace.WithSession(streamSessionId, workspaceId),
+                            RuntimeActivityComponents.AgentExecution,
+                            "chat.stream.error");
+                    }
+                    catch (Exception ssmEx)
+                    {
+                        logger.LogError(ssmEx,
+                            "[Chat:FireAndForget] Failed to append error frame to SSM ws={Workspace} session={Session}",
+                            workspaceId, streamSessionId);
+                    }
+                    try
+                    {
+                        var cancelledFrame = ServerSentEventFrame.Json("cancelled", new
+                        {
+                            messageId = streamMessageId ?? "",
+                            turnId,
+                            reason = ex.GetType().Name,
+                        });
+                        await ssm.AppendAsync(
+                            streamSessionId,
+                            workspaceId,
+                            cancelledFrame,
+                            CancellationToken.None,
+                            primaryTrace.WithSession(streamSessionId, workspaceId),
+                            RuntimeActivityComponents.AgentExecution,
+                            "chat.stream.cancelled");
+                    }
+                    catch (Exception ssmEx2)
+                    {
+                        logger.LogError(ssmEx2,
+                            "[Chat:FireAndForget] Failed to append cancelled frame to SSM ws={Workspace} session={Session}",
+                            workspaceId, streamSessionId);
+                    }
+                }
                 await RecordTimelineAsync(
                     streamSessionId is null ? trace : trace.WithSession(streamSessionId, workspaceId),
                     RuntimeActivityComponents.AgentExecution,
@@ -676,7 +865,7 @@ public class ChatApiController(
             }
         });
 
-        // 等待首个 metadata 帧到达（带超时）
+        // 等待首个 metadata 帧到达（带超时）— Phase 0: TCS 替代轮询
         await RecordTimelineAsync(
             trace,
             RuntimeActivityComponents.AgentExecution,
@@ -688,26 +877,22 @@ public class ChatApiController(
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
         try
         {
-            while (streamMessageId is null && streamSessionId is null)
-            {
-                await Task.Delay(100, linkedCts.Token);
-                // streamSessionId 可能从 request 中已有
-                if (req.SessionId is not null && streamSessionId is null)
-                    streamSessionId = req.SessionId;
-            }
-
-            // 再等一等 messageId（metadata 帧可能延迟）
-            var waitStart = System.Diagnostics.Stopwatch.StartNew();
-            while (streamMessageId is null && waitStart.ElapsedMilliseconds < 3000)
-            {
-                await Task.Delay(100, linkedCts.Token);
-            }
+            linkedCts.Token.Register(() => metadataTcs.TrySetCanceled(linkedCts.Token));
+            var (sid, mid) = await metadataTcs.Task;
+            streamSessionId = sid;
+            streamMessageId = mid;
         }
         catch (OperationCanceledException)
         {
             logger.LogWarning(
                 "[Chat:FireAndForget] Timeout waiting for metadata ws={Workspace} session={Session}",
                 workspaceId, streamSessionId);
+        }
+        catch (Exception tcsEx)
+        {
+            logger.LogError(tcsEx,
+                "[Chat:FireAndForget] Unexpected error waiting for metadata ws={Workspace}",
+                workspaceId);
         }
 
         sw.Stop();
@@ -1046,113 +1231,128 @@ public class ChatApiController(
         CancellationToken ct)
     {
         if (command.Action == SystemCommandAction.Help)
-        {
             return SystemCommandProcessingResult.Stop(
                 ToolAuthorizationDefaults.BuildHelpMessage(command.TargetId));
-        }
 
-        if (command.CommandKind == SystemCommandKind.Compact)
+        switch (command.CommandKind)
         {
-            var compactResult = await contextCompactionService.CompactAsync(
-                new ContextCompactionRequest(
-                    workspaceId,
-                    sessionId,
-                    string.IsNullOrWhiteSpace(agentId) ? null : agentId,
-                    ContextCompactionMode.Manual,
-                    ContextCompactionLevel.Full,
-                    "user command /compact"),
-                ct);
-
-            return SystemCommandProcessingResult.Stop(BuildCompactResultMessage(compactResult));
-        }
-
-        if (command.CommandKind == SystemCommandKind.Memory)
-        {
-            return SystemCommandProcessingResult.Stop(
-                "Command '/memory' is recognized, but this feature is not implemented yet.");
-        }
-
-        if (command.CommandKind == SystemCommandKind.Status)
-        {
-            return SystemCommandProcessingResult.Stop(
-                BuildStatusMessage(runtimeControl.GetStatus(sessionId), sessionId, agentId));
-        }
-
-        if (command.CommandKind == SystemCommandKind.Stop)
-        {
-            var stopResult = string.Equals(command.TargetId, "all", StringComparison.Ordinal)
-                ? runtimeControl.StopAll("user command /stop all")
-                : runtimeControl.StopSession(sessionId, "user command /stop");
-            return SystemCommandProcessingResult.Stop(stopResult.Message);
-        }
-
-        if (command.CommandKind == SystemCommandKind.Mode)
-        {
-            if (string.Equals(command.TargetId, "list", StringComparison.Ordinal))
-                return SystemCommandProcessingResult.Stop(BuildModeListMessage(runtimeControl.Mode));
-
-            if (string.Equals(command.TargetId, "safe", StringComparison.Ordinal))
+            case SystemCommandKind.Compact:
+                return await HandleCompactCommand(workspaceId, sessionId, agentId, ct);
+            case SystemCommandKind.Memory:
                 return SystemCommandProcessingResult.Stop(
-                    runtimeControl.SetMode(RuntimeExecutionMode.Safe, "user command /mode safe").Message);
-
-            if (string.Equals(command.TargetId, "normal", StringComparison.Ordinal))
+                    "Command '/memory' is recognized, but this feature is not implemented yet.");
+            case SystemCommandKind.Status:
                 return SystemCommandProcessingResult.Stop(
-                    runtimeControl.SetMode(RuntimeExecutionMode.Normal, "user command /mode normal").Message);
-
-            return SystemCommandProcessingResult.Stop($"Current runtime mode: {runtimeControl.Mode}. Send /mode list for examples.");
+                    BuildStatusMessage(runtimeControl.GetStatus(sessionId), sessionId, agentId));
+            case SystemCommandKind.Stop:
+                return HandleStopCommand(command, sessionId);
+            case SystemCommandKind.Mode:
+                return HandleModeCommand(command);
+            case SystemCommandKind.Yolo:
+                return HandleYoloCommand(sessionId, agentId);
+            case SystemCommandKind.EmergencyStop:
+                return HandleEmergencyStop();
+            default:
+                if (command.RawText?.StartsWith("/resume", StringComparison.OrdinalIgnoreCase) == true)
+                    return HandleResumeCommand(command, sessionId);
+                return await HandleToolAuthorizationFallback(
+                    command, workspaceId, sessionId, agentId, userExternalId, ct);
         }
+    }
 
-        if (command.CommandKind == SystemCommandKind.Yolo)
-        {
-            var yoloResult = runtimeControl.SetMode(RuntimeExecutionMode.Yolo, "user command /yolo");
-            logger.LogWarning(
-                "[Chat:Yolo] YOLO mode activated — all tool permission checks bypassed. Session={SessionId} Agent={AgentId}",
-                sessionId, agentId);
-            return SystemCommandProcessingResult.Stop(yoloResult.Message);
-        }
+    private async Task<SystemCommandProcessingResult> HandleCompactCommand(
+        string workspaceId, string sessionId, string agentId, CancellationToken ct)
+    {
+        var compactResult = await contextCompactionService.CompactAsync(
+            new ContextCompactionRequest(
+                workspaceId,
+                sessionId,
+                string.IsNullOrWhiteSpace(agentId) ? null : agentId,
+                ContextCompactionMode.Manual,
+                ContextCompactionLevel.Full,
+                "user command /compact"),
+            ct);
+        return SystemCommandProcessingResult.Stop(BuildCompactResultMessage(compactResult));
+    }
 
-        if (command.CommandKind == SystemCommandKind.EmergencyStop)
-        {
-            runtimeControl.SetMode(RuntimeExecutionMode.EmergencyStopping, "user command /estop");
-            runtimeControl.StopAll("emergency stop");
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(250);
-                appLifetime.StopApplication();
-            });
+    private SystemCommandProcessingResult HandleStopCommand(SystemCommand command, string sessionId)
+    {
+        var stopResult = string.Equals(command.TargetId, "all", StringComparison.Ordinal)
+            ? runtimeControl.StopAll("user command /stop all")
+            : runtimeControl.StopSession(sessionId, "user command /stop");
+        return SystemCommandProcessingResult.Stop(stopResult.Message);
+    }
+
+    private SystemCommandProcessingResult HandleModeCommand(SystemCommand command)
+    {
+        if (string.Equals(command.TargetId, "list", StringComparison.Ordinal))
+            return SystemCommandProcessingResult.Stop(BuildModeListMessage(runtimeControl.Mode));
+
+        if (string.Equals(command.TargetId, "safe", StringComparison.Ordinal))
             return SystemCommandProcessingResult.Stop(
-                "Emergency stop accepted. Runtime is rejecting new messages, cancelling active sessions and stopping the backend.");
-        }
+                runtimeControl.SetMode(RuntimeExecutionMode.Safe, "user command /mode safe").Message);
 
-        // Resume command handled via raw text since its enum isn't resolved here
-        if (command.RawText?.StartsWith("/resume", StringComparison.OrdinalIgnoreCase) == true)
+        if (string.Equals(command.TargetId, "normal", StringComparison.Ordinal))
+            return SystemCommandProcessingResult.Stop(
+                runtimeControl.SetMode(RuntimeExecutionMode.Normal, "user command /mode normal").Message);
+
+        return SystemCommandProcessingResult.Stop(
+            $"Current runtime mode: {runtimeControl.Mode}. Send /mode list for examples.");
+    }
+
+    private SystemCommandProcessingResult HandleYoloCommand(string sessionId, string agentId)
+    {
+        var yoloResult = runtimeControl.SetMode(RuntimeExecutionMode.Yolo, "user command /yolo");
+        logger.LogWarning(
+            "[Chat:Yolo] YOLO mode activated — all tool permission checks bypassed. Session={SessionId} Agent={AgentId}",
+            sessionId, agentId);
+        return SystemCommandProcessingResult.Stop(yoloResult.Message);
+    }
+
+    private SystemCommandProcessingResult HandleEmergencyStop()
+    {
+        runtimeControl.SetMode(RuntimeExecutionMode.EmergencyStopping, "user command /estop");
+        runtimeControl.StopAll("emergency stop");
+        _ = Task.Run(async () =>
         {
-            var sessionToResume = string.IsNullOrWhiteSpace(command.TargetId) || command.TargetId == "resume"
-                ? sessionId
-                : command.TargetId;
-            var resumeResult = runtimeControl.ResetSessionFault(sessionToResume);
-            return SystemCommandProcessingResult.Stop(resumeResult.Message);
-        }
+            await Task.Delay(250);
+            appLifetime.StopApplication();
+        });
+        return SystemCommandProcessingResult.Stop(
+            "Emergency stop accepted. Runtime is rejecting new messages, cancelling active sessions and stopping the backend.");
+    }
 
+    private SystemCommandProcessingResult HandleResumeCommand(SystemCommand command, string sessionId)
+    {
+        var sessionToResume = string.IsNullOrWhiteSpace(command.TargetId) || command.TargetId == "resume"
+            ? sessionId
+            : command.TargetId;
+        var resumeResult = runtimeControl.ResetSessionFault(sessionToResume);
+        return SystemCommandProcessingResult.Stop(resumeResult.Message);
+    }
+
+    private async Task<SystemCommandProcessingResult> HandleToolAuthorizationFallback(
+        SystemCommand command,
+        string workspaceId,
+        string sessionId,
+        string agentId,
+        string userExternalId,
+        CancellationToken ct)
+    {
         var descriptor = toolCatalog.ListTools()
             .FirstOrDefault(t => t.ToolId.Equals(command.TargetId, StringComparison.OrdinalIgnoreCase));
+
         if (descriptor is null)
-        {
             return SystemCommandProcessingResult.Stop(
                 $"Unknown tool '{command.TargetId}'. Send /help for available commands.");
-        }
 
         if (!toolPermissionPolicy.RequiresRuntimeAuthorization(descriptor))
-        {
             return SystemCommandProcessingResult.Stop(
                 $"Tool '{command.TargetId}' does not require runtime authorization.");
-        }
 
         if (string.IsNullOrWhiteSpace(agentId))
-        {
             return SystemCommandProcessingResult.Stop(
                 $"Select an agent before authorizing tool '{command.TargetId}'.");
-        }
 
         var result = await toolAuthorizationService.ApplyCommandAsync(
             command.ToToolAuthorizationCommand(),
@@ -1399,9 +1599,8 @@ public class ChatApiController(
         string? errorMessage = null,
         CancellationToken ct = default)
     {
-        try
-        {
-            await timelineRecorder.RecordAsync(new SessionTimelineRecord
+        await SafeRecorder.RunAsync(
+            ct2 => timelineRecorder.RecordAsync(new SessionTimelineRecord
             {
                 Trace = trace,
                 Component = component,
@@ -1411,17 +1610,10 @@ public class ChatApiController(
                 DurationMs = durationMs,
                 Metadata = metadata,
                 ErrorMessage = errorMessage,
-            }, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            // 可观测性副作用，不得阻断消息主流程；请求取消时静默丢弃该条 timeline。
-            logger.LogDebug("[Chat] Timeline record cancelled stage={Stage}", stage);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[Chat] Timeline record failed stage={Stage}", stage);
-        }
+            }, ct2),
+            logger,
+            $"timeline:{stage}",
+            ct);
     }
 
     private async Task RecordTelemetryMetricAsync(
@@ -1437,9 +1629,8 @@ public class ChatApiController(
         string? errorMessage = null,
         CancellationToken ct = default)
     {
-        try
-        {
-            await telemetrySink.RecordAsync(new TelemetryMetric
+        await SafeRecorder.RunAsync(
+            ct2 => telemetrySink.RecordAsync(new TelemetryMetric
             {
                 Trace = trace,
                 Source = "backend",
@@ -1455,17 +1646,10 @@ public class ChatApiController(
                 Dimensions = dimensions,
                 ErrorCode = error?.GetType().Name,
                 ErrorMessage = error?.Message ?? errorMessage,
-            }, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            // 可观测性副作用，不得阻断消息主流程；请求取消时静默丢弃该条 metric。
-            logger.LogDebug("[Chat] Telemetry metric record cancelled name={Name}", name);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[Chat] Telemetry metric record failed name={Name}", name);
-        }
+            }, ct2),
+            logger,
+            $"telemetry:{name}",
+            ct);
     }
 
     private async Task<ChatAgentDispatch> ResolveChatAgentDispatchAsync(
@@ -1598,7 +1782,9 @@ public class ChatApiController(
         AdminChatRequest req,
         ChatAgentDispatch dispatch,
         int fanoutIndex,
-        int fanoutCount)
+        int fanoutCount,
+        string? turnId = null,
+        string? clientRequestId = null)
     {
         var metadata = new Dictionary<string, string>(
             req.Metadata ?? new Dictionary<string, string>(),
@@ -1620,6 +1806,10 @@ public class ChatApiController(
             metadata["suppress_user_transcript"] = "true";
         metadata["fanout_index"] = fanoutIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
         metadata["fanout_count"] = fanoutCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(turnId))
+            metadata["turn_id"] = turnId;
+        if (!string.IsNullOrWhiteSpace(clientRequestId))
+            metadata["client_request_id"] = clientRequestId;
 
         return metadata.Count > 0 ? metadata : null;
     }

@@ -93,7 +93,7 @@ public class AppRoleApiController(PlatformDbContext db) : ControllerBase
     {
         var perms = new List<string>();
         try { perms = JsonSerializer.Deserialize<List<string>>(r.PermissionsJson) ?? []; }
-        catch { /* ignore */ }
+        catch (JsonException) { /* malformed PermissionsJson — treat as empty */ }
         return new(r.Id, r.RoleId, r.Name, r.Description, perms, r.IsSystemRole, r.CreatedAt);
     }
 }

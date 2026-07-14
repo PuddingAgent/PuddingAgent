@@ -16,7 +16,7 @@ namespace PuddingPlatform.Controllers.Api;
 [Authorize]
 [ApiController]
 [Route("api/sessions/{sessionId}/messages")]
-public class MessageApiController(PlatformDbContext db) : ControllerBase
+public class MessageApiController(PlatformDbContext db, ILogger<MessageApiController> logger) : ControllerBase
 {
     private const int DefaultPageSize = 20;
     private const int MaxPageSize = 50;
@@ -133,7 +133,10 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
                 {
                     usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson, JsonOpts);
                 }
-                catch { /* ignore */ }
+                catch (JsonException jex)
+                {
+                    logger.LogWarning(jex, "[Messages] Failed to deserialize UsageJson for message {MessageId}", m.Id);
+                }
             }
 
             if (usage is null) continue;
@@ -189,7 +192,7 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
             {
                 thinking = JsonSerializer.Deserialize<List<ThinkingChunkDto>>(m.ThinkingJson, JsonOpts);
             }
-            catch { /* ignore malformed thinking JSON */ }
+            catch (JsonException) { /* skip malformed thinking JSON */ }
         }
 
         TokenUsageDto? usage = null;
@@ -199,7 +202,7 @@ public class MessageApiController(PlatformDbContext db) : ControllerBase
             {
                 usage = JsonSerializer.Deserialize<TokenUsageDto>(m.UsageJson, JsonOpts);
             }
-            catch { /* ignore */ }
+            catch (JsonException) { /* skip malformed UsageJson */ }
         }
 
         return new ChatMessageDto(

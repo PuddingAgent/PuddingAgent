@@ -145,44 +145,17 @@ public sealed class ContextPipeline
         {
         // ── L0: 静态上下文（IDENTITY/SOUL/AGENTS）— Session 内不变，利用 KV-cache ──
         var staticCtx = await GetOrBuildStaticLayerAsync(request, ct);
-        var staticTokens = EstimateTokens(staticCtx);
-        AppendLayer(sb, staticCtx);
-        usedBudget += staticTokens;
-        layers.Add(new ContextLayerSnapshot("静态上下文", staticTokens, (double)staticTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L0-STATIC",
-            TokenCount = staticTokens,
-            ContentPreview = BuildPreview(staticCtx),
-        });
+        RecordLayer(sb, staticCtx, "静态上下文", "L0-STATIC", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-ENVIRONMENT: 运行环境不变量（OS/运行时/shell）— 低变化，独立于 workspace 路径 ──
         var envCtx = GetOrBuildEnvironmentLayer(request);
-        var envTokens = EstimateTokens(envCtx);
-        AppendLayer(sb, envCtx);
-        usedBudget += envTokens;
-        layers.Add(new ContextLayerSnapshot("运行环境不变量", envTokens, (double)envTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L0-ENVIRONMENT",
-            TokenCount = envTokens,
-            ContentPreview = BuildPreview(envCtx),
-        });
+        RecordLayer(sb, envCtx, "运行环境不变量", "L0-ENVIRONMENT", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-AGENTS-ROSTER: 当前工作区可见 Agent 名册，用于 agent-to-agent 消息寻址 ──
         var workspaceAgentsCtx = _workspaceAgentsContextBuilder is null
             ? "--- LAYER: WORKSPACE AGENTS ---\n(No workspace agents available.)\n"
             : await _workspaceAgentsContextBuilder.BuildAsync(request.WorkspaceId, "default", ct);
-        var workspaceAgentsTokens = EstimateTokens(workspaceAgentsCtx);
-        AppendLayer(sb, workspaceAgentsCtx);
-        usedBudget += workspaceAgentsTokens;
-        layers.Add(new ContextLayerSnapshot("工作区 Agents", workspaceAgentsTokens, (double)workspaceAgentsTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L0-AGENTS-ROSTER",
-            TokenCount = workspaceAgentsTokens,
-            ContentPreview = BuildPreview(workspaceAgentsCtx),
-        });
+        RecordLayer(sb, workspaceAgentsCtx, "工作区 Agents", "L0-AGENTS-ROSTER", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-TASK-PLANNING: 系统生成的任务树位置与委派约束 ──
         // 预算在此处核算（影响后续层分配），但注入位置后移至 RECALLED 之后以保护前缀缓存
@@ -223,31 +196,13 @@ public sealed class ContextPipeline
         var toolsCtx = await BuildToolsLayerAsync(request, ct);
         var toolsBudget = (int)(availableBudget * 0.05);
         var toolsTrimmed = TrimToTokenBudget(toolsCtx, toolsBudget);
-        var toolsTokens = EstimateTokens(toolsTrimmed);
-        AppendLayer(sb, toolsTrimmed);
-        usedBudget += toolsTokens;
-        layers.Add(new ContextLayerSnapshot("动态工具", toolsTokens, (double)toolsTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L1-TOOLS",
-            TokenCount = toolsTokens,
-            ContentPreview = BuildPreview(toolsTrimmed),
-        });
+        RecordLayer(sb, toolsTrimmed, "动态工具", "L1-TOOLS", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L2: 动态 Skills（5%）──
         var skillsCtx = await BuildSkillsLayerAsync(request, ct);
         var skillsBudget = (int)(availableBudget * 0.05);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
-        var skillsTokens = EstimateTokens(skillsTrimmed);
-        AppendLayer(sb, skillsTrimmed);
-        usedBudget += skillsTokens;
-        layers.Add(new ContextLayerSnapshot("动态技能", skillsTokens, (double)skillsTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L2-SKILLS",
-            TokenCount = skillsTokens,
-            ContentPreview = BuildPreview(skillsTrimmed),
-        });
+        RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L2-MEMORY-SUMMARY: 持久化 Session 摘要（后移至 PINNED 之后注入）──
         var memorySummaryCtx = _agentMemorySummaryContextBuilder is null
@@ -284,16 +239,7 @@ public sealed class ContextPipeline
 
         // ── L3-WORKSPACE-ENVIRONMENT ──
         var workspaceEnvironmentCtx = BuildWorkspaceEnvironmentLayer(request);
-        var workspaceEnvironmentTokens = EstimateTokens(workspaceEnvironmentCtx);
-        AppendLayer(sb, workspaceEnvironmentCtx);
-        usedBudget += workspaceEnvironmentTokens;
-        layers.Add(new ContextLayerSnapshot("工作区环境", workspaceEnvironmentTokens, (double)workspaceEnvironmentTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L3-WORKSPACE-ENVIRONMENT",
-            TokenCount = workspaceEnvironmentTokens,
-            ContentPreview = BuildPreview(workspaceEnvironmentCtx),
-        });
+        RecordLayer(sb, workspaceEnvironmentCtx, "工作区环境", "L3-WORKSPACE-ENVIRONMENT", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L3: 用户偏好 ──
         AppendLayer(sb, userProfile);
@@ -312,16 +258,7 @@ public sealed class ContextPipeline
             ? (int)(availableBudget * 0.05)
             : (int)(availableBudget * 0.10);
         var pinnedTrimmed = TrimToTokenBudget(pinnedCtx, pinnedBudget);
-        var pinnedTokens = EstimateTokens(pinnedTrimmed);
-        AppendLayer(sb, pinnedTrimmed);
-        usedBudget += pinnedTokens;
-        layers.Add(new ContextLayerSnapshot("重要记忆", pinnedTokens, (double)pinnedTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L4-PINNED",
-            TokenCount = pinnedTokens,
-            ContentPreview = BuildPreview(pinnedTrimmed),
-        });
+        RecordLayer(sb, pinnedTrimmed, "重要记忆", "L4-PINNED", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ═══════════════════════════════════════════════════════════════
         // 收集可变层原始内容，准备 Flash 裁剪
@@ -446,15 +383,7 @@ public sealed class ContextPipeline
         availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 100);
         var currentMsgBudget = (int)(availableBudget * 0.15);
         var currentMsg = BuildCurrentMessageLayer(request, currentMsgBudget);
-        var currentMsgTokens = EstimateTokens(currentMsg);
-        AppendLayer(sb, currentMsg);
-        layers.Add(new ContextLayerSnapshot("当前消息", currentMsgTokens, (double)currentMsgTokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
-        {
-            LayerName = "L9-CURRENT",
-            TokenCount = currentMsgTokens,
-            ContentPreview = BuildPreview(currentMsg),
-        });
+        RecordLayer(sb, currentMsg, "当前消息", "L9-CURRENT", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── 压缩指令（如触发）──
         if (compactionLevel >= ContextPipelineCompactionLevel.Aggressive)
@@ -524,6 +453,22 @@ public sealed class ContextPipeline
         }
     }
 
+    private void RecordLayer(
+        StringBuilder sb, string content, string snapshotLabel, string layerName,
+        ref int usedBudget, int totalBudget, List<ContextLayerSnapshot> layers, List<ContextLayerInfo> layerInfos)
+    {
+        var tokens = EstimateTokens(content);
+        AppendLayer(sb, content);
+        usedBudget += tokens;
+        layers.Add(new ContextLayerSnapshot(snapshotLabel, tokens, (double)tokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = layerName,
+            TokenCount = tokens,
+            ContentPreview = BuildPreview(content),
+        });
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // L0: 静态上下文
     // ═══════════════════════════════════════════════════════════════
@@ -553,7 +498,7 @@ public sealed class ContextPipeline
         // Persona 优先级：MD 文件 > DB > 内置模板
         AgentPersonaFiles? personaFiles = null;
         if (!string.IsNullOrWhiteSpace(request.AgentTemplateId) && _personaFileProvider is not null)
-            personaFiles = _personaFileProvider.Load(request.AgentTemplateId);
+            personaFiles = _personaFileProvider.Load(request.AgentTemplateId, request.AgentInstanceId);
 
         string? dbPersonaPrompt = null;
         string? dbToolsDescription = null;
@@ -1228,9 +1173,9 @@ public sealed class ContextPipeline
                     sb.AppendLine("---");
                     totalChars += stripped.Length;
                 }
-                catch
+                catch (IOException ex)
                 {
-                    // 跳过损坏的日志文件
+                    _logger.LogDebug(ex, "[ContextPipeline] Skip unreadable log file {File}", file);
                 }
             }
         }
@@ -1693,8 +1638,6 @@ public sealed class ContextPipeline
             sb.AppendLine(text);
         return sb.ToString();
     }
-
-    /// <summary>
 }
 
 // ═══════════════════════════════════════════════════════════════

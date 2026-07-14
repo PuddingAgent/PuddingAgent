@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -85,20 +86,11 @@ public class WorkspaceNotificationsController : ControllerBase
     // ── SSE 工具方法 ───────────────────────────────────
 
     private static void ConfigureSseResponse(HttpResponse response)
-    {
-        response.ContentType = "text/event-stream";
-        response.Headers.CacheControl = "no-cache";
-        response.Headers.Connection = "keep-alive";
-        response.Headers["X-Accel-Buffering"] = "no";
-    }
+        => SseResponseWriter.Configure(response);
 
-    private static async Task WriteSseAsync(
+    private static Task WriteSseAsync(
         HttpResponse response,
         ServerSentEventFrame frame,
         CancellationToken ct)
-    {
-        await response.WriteAsync($"event: {frame.Event}\n", ct);
-        await response.WriteAsync($"data: {frame.Data}\n\n", ct);
-        await response.Body.FlushAsync(ct);
-    }
+        => SseResponseWriter.WriteFrameAndFlushAsync(response, frame, ct);
 }

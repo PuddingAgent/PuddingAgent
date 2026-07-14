@@ -1059,6 +1059,9 @@ class ReverseProxyHandler(http.server.BaseHTTPRequestHandler):
                 target=target)
         body = self.read_body()
         headers = self.forward_headers()
+        # SSE/streaming 端点需要长连接，移除 close 头避免连接过早断开
+        if is_session_events_stream_path(request_path):
+            headers.pop("Connection", None)
         request = urllib.request.Request(target, data=body, headers=headers, method=self.command)
 
         try:
@@ -1227,6 +1230,8 @@ class ReverseProxyHandler(http.server.BaseHTTPRequestHandler):
                 headers[key] = value
         headers["X-Forwarded-Host"] = self.headers.get("Host", "")
         headers["X-Forwarded-Proto"] = "http"
+        # 强制 close，避免 urllib HTTP/1.1 keep-alive 导致 response.read() 阻塞 EOF
+        headers["Connection"] = "close"
         return headers
 
     def tunnel_websocket(self) -> None:
@@ -1288,9 +1293,12 @@ def run_proxy(host: str, port: int, backend_url: str, frontend_url: str) -> None
         server.server_close()
 
 
-def restart_child(role: str, processes: dict[str, subprocess.Popen], no_install: bool, proxy_port: int) -> None:
+def restart_child(role: str, processes: dict[str, subprocess.Popen], no_install: bool, proxy_port: int, frontend_only: bool = False) -> None:
     info(f"! {role} exited; restarting")
     if role == "backend":
+        if frontend_only:
+            info("! Backend exited but --frontend-only, not restarting")
+            return
         force_release_port(BACKEND_PORT)
         stop_port_owner("Backend", BACKEND_PORT)
         wait_until_port_free(BACKEND_PORT)
@@ -1320,12 +1328,13 @@ def health_monitor_loop(url: str, stop_event: threading.Event) -> None:
         stop_event.wait(HEALTH_INTERVAL_SECONDS)
 
 
-def run_supervisor(no_install: bool) -> None:
+def run_supervisor(no_install: bool, frontend_only: bool = False) -> None:
     ensure_run_dir()
-    require_command("dotnet")
+    if not frontend_only:
+        require_command("dotnet")
     require_command("pnpm")
 
-    if not is_port_free(LOOPBACK_HOST, BACKEND_PORT):
+    if not frontend_only and not is_port_free(LOOPBACK_HOST, BACKEND_PORT):
         fail(f"Backend port {BACKEND_PORT} is already in use.")
     if not is_port_free(LOOPBACK_HOST, FRONTEND_PORT):
         fail(f"Frontend port {FRONTEND_PORT} is already in use.")
@@ -1336,10 +1345,13 @@ def run_supervisor(no_install: bool) -> None:
     write_pid(SUPERVISOR_PID_FILE, os.getpid())
 
     processes = {
-        "backend": start_backend(),
         "frontend": start_frontend(no_install=no_install),
         "proxy": start_proxy(proxy_port),
     }
+    if frontend_only:
+        info("Frontend-only mode (skip backend)")
+    else:
+        processes["backend"] = start_backend()
     health_url = build_health_url("127.0.0.1", proxy_port, HEALTH_PATH)
     HEALTH_STATUS_FILE.unlink(missing_ok=True)
     health_stop = threading.Event()
@@ -1380,7 +1392,7 @@ def run_supervisor(no_install: bool) -> None:
                     continue
                 if guard_enabled and should_restart_role(role, exit_code, stopping):
                     info(f"! {role} exited; restarting")
-                    restart_child(role, processes, no_install=True, proxy_port=proxy_port)
+                    restart_child(role, processes, no_install=True, proxy_port=proxy_port, frontend_only=frontend_only)
             time.sleep(2)
     finally:
         health_stop.set()
@@ -1394,7 +1406,7 @@ def run_supervisor(no_install: bool) -> None:
         HEALTH_STATUS_FILE.unlink(missing_ok=True)
 
 
-def start_supervisor(no_install: bool) -> None:
+def start_supervisor(no_install: bool, frontend_only: bool = False) -> None:
     supervisor_pid = read_pid(SUPERVISOR_PID_FILE)
     if supervisor_pid and is_process_alive(supervisor_pid):
         fail(f"Development supervisor is already running (PID {supervisor_pid}). Use --status, --restart, or --down.")
@@ -1405,6 +1417,7 @@ def start_supervisor(no_install: bool) -> None:
             str(Path(__file__).resolve()),
             "--supervisor",
             *(["--no-install"] if no_install else []),
+            *(["--frontend-only"] if frontend_only else []),
         ],
         cwd=ROOT,
         stdout=open_log(SUPERVISOR_OUT_LOG),
@@ -1418,9 +1431,9 @@ def start_supervisor(no_install: bool) -> None:
     info("  Stop:   python dev-up.py --down")
 
 
-def start_all(no_install: bool) -> None:
+def start_all(no_install: bool, frontend_only: bool = False) -> None:
     ensure_run_dir()
-    start_supervisor(no_install=no_install)
+    start_supervisor(no_install=no_install, frontend_only=frontend_only)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1440,6 +1453,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--no-install", action="store_true", help="Skip frontend dependency installation.")
     parser.add_argument("--guard-on", action="store_true", help="Enable supervisor auto-restart and file-change restarts.")
     parser.add_argument("--guard-off", action="store_true", help="Disable supervisor auto-restart and file-change restarts.")
+    parser.add_argument("--frontend-only", action="store_true", help="Start frontend + proxy only (backend started manually).")
     parser.add_argument("--proxy", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--supervisor", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--proxy-host", default=PROXY_HOST, help=argparse.SUPPRESS)
@@ -1458,7 +1472,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.supervisor:
-        run_supervisor(no_install=args.no_install)
+        run_supervisor(no_install=args.no_install, frontend_only=args.frontend_only)
         return 0
 
     if args.guard_on and args.guard_off:
@@ -1475,7 +1489,7 @@ def main(argv: list[str] | None = None) -> int:
         stop_all()
         if args.down and not args.restart and not args.rebuild:
             return 0
-        if args.rebuild:
+        if args.rebuild and not args.frontend_only:
             info("==> Full rebuild (--no-incremental) ...")
             rc = run_backend_build(full_rebuild=True)
             if rc != 0:
@@ -1491,7 +1505,7 @@ def main(argv: list[str] | None = None) -> int:
             follow_logs(args.logs)
             return 0
 
-    start_all(no_install=args.no_install)
+    start_all(no_install=args.no_install, frontend_only=args.frontend_only)
     return 0
 
 

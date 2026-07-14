@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
@@ -105,6 +106,30 @@ public sealed class SessionStateManager : ISessionStateManager
     private static long ElapsedMilliseconds(long startedAt)
         => (long)((Stopwatch.GetTimestamp() - startedAt) * 1000.0 / Stopwatch.Frequency);
 
+    private static string InjectSequenceNum(string data, long seq)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            using var stream = new MemoryStream();
+            using var writer = new Utf8JsonWriter(stream);
+            writer.WriteStartObject();
+            writer.WriteNumber("sequenceNum", seq);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.NameEquals("sequenceNum")) continue;
+                prop.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+            writer.Flush();
+            return Encoding.UTF8.GetString(stream.ToArray());
+        }
+        catch
+        {
+            return data;
+        }
+    }
+
     // ════════════════════════════════════════════════════════
     // 事件追加
     // ════════════════════════════════════════════════════════
@@ -204,7 +229,7 @@ public sealed class SessionStateManager : ISessionStateManager
             return new SessionChannelFanout();
         });
 
-        var pushed = hub.Publish(frame);
+        var pushed = hub.Publish(frame with { Data = InjectSequenceNum(frame.Data, seq) });
         fanoutMs = ElapsedMilliseconds(fanoutStartedAt);
         _logger.LogInformation(
             "[SSM] Channel fanout session={Session} type={EventType} seq={Seq} subscribers={SubscriberCount} ok={Ok} created={Created} dataChars={DataChars} activeChannels={ActiveChannels}",
@@ -438,6 +463,14 @@ public sealed class SessionStateManager : ISessionStateManager
         using var scope = _scopeFactory.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         return await db.SessionEventLogs
             .CountAsync(e => e.SessionId == sessionId && e.SequenceNum > afterSequence, ct);
+    }
+
+    public async Task<long> GetLatestSequenceNumAsync(string sessionId, CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        return await db.SessionEventLogs
+            .Where(e => e.SessionId == sessionId)
+            .MaxAsync(e => (long?)e.SequenceNum, ct) ?? 0;
     }
 
     // ════════════════════════════════════════════════════════
@@ -837,6 +870,8 @@ public sealed class SessionStateManager : ISessionStateManager
                 state.Initialized = true;
             }
 
+            var frameData = InjectSequenceNum(frame.Data, seq);
+
             db.SessionEventLogs.Add(new SessionEventLogEntity
             {
                 SessionId = sessionId,
@@ -845,7 +880,7 @@ public sealed class SessionStateManager : ISessionStateManager
                 AgentTemplateId = effectiveTrace.AgentTemplateId,
                 SequenceNum = seq,
                 EventType = frame.Event,
-                Data = frame.Data,
+                Data = frameData,
                 RecordedAt = recordedAt,
                 TraceId = effectiveTrace.TraceId,
                 CorrelationId = effectiveTrace.CorrelationId,
@@ -1486,7 +1521,11 @@ public sealed class SessionStateManager : ISessionStateManager
                     using var doc = JsonDocument.Parse(e.Data);
                     subAgentId = doc.RootElement.TryGetProperty("subAgentId", out var sai) ? sai.GetString() : null;
                 }
-                catch { }
+                catch (JsonException)
+                {
+                    // malformed data JSON — skip this event for sub-agent lookup
+                    continue;
+                }
             }
 
             if (subAgentId == null) continue;

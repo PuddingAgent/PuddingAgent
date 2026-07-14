@@ -3,6 +3,13 @@
 ## 项目概述
 Pudding 是一个 .NET 10 的自主 Agent 框架，支持六层记忆体系、Skill 系统、子代理委派、潜意识后台管道。
 
+## 开发环境约定
+
+用户名：admin
+密码：Admin@123
+
+
+
 ## 项目路径
 - 主项目: `D:\data\Pudding`
 - 工作空间: `D:\data\workspaces\default`

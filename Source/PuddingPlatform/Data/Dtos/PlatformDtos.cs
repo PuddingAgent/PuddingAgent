@@ -751,7 +751,8 @@ public record AdminChatRequest(
     string? Audience = null,
     bool SuppressUserTranscript = false,
     bool ForceNewSession = false,
-    IReadOnlyDictionary<string, string>? Metadata = null
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    string? ClientRequestId = null
 );
 
 public record AdminChatResponse(

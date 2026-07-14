@@ -1,5 +1,7 @@
 # ADR-053 前端会话引用生命周期与 SSE 清理边界
 
+> **恢复协议补充（2026-07-13）**：SSE 重连除遵守本 ADR 的 session 作用域清理边界外，还必须按 [ADR-056 聊天消息受理与可靠事件流架构](57ADR-056聊天消息受理与可靠事件流架构ADR.md) 保存最后确认的 `sequenceNum`，通过 `Last-Event-ID` 或 `afterSequence` 追赶。网络错误不得仅重建 live Channel 而跳过订阅间隙内的持久事件。
+
 > 状态：Proposed  
 > 日期：2026-06-27  
 > 范围：Admin Chat、useChatState、session replay、session SSE、Agent main session

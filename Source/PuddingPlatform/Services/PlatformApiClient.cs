@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services;
@@ -12,8 +13,13 @@ namespace PuddingPlatform.Services;
 public sealed class PlatformApiClient
 {
     private readonly HttpClient _http;
+    private readonly ILogger<PlatformApiClient> _logger;
 
-    public PlatformApiClient(HttpClient http) => _http = http;
+    public PlatformApiClient(HttpClient http, ILogger<PlatformApiClient> logger)
+    {
+        _http = http;
+        _logger = logger;
+    }
 
     // ── Workspace ──────────────────────────────────────
 
@@ -249,11 +255,24 @@ public sealed class PlatformApiClient
         {
             Content = JsonContent.Create(request)
         };
-        using var resp = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        _logger.LogWarning("[PlatformApi] ENTER_SendMessageStreamAsync base={BaseAddress} session={SessionId}", _http.BaseAddress, sessionId);
+
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PlatformApi] STREAM failed base={BaseAddress} session={SessionId}", _http.BaseAddress, sessionId);
+            throw;
+        }
 
         if (!resp.IsSuccessStatusCode)
         {
             var body = await resp.Content.ReadAsStringAsync(ct);
+            _logger.LogWarning("[PlatformApi] STREAM non-OK status={Status} body={Body}", (int)resp.StatusCode, body);
             yield return ServerSentEventFrame.Json("error", new { message = $"Controller stream failed: {body}" });
             yield break;
         }

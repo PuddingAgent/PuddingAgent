@@ -58,6 +58,11 @@ public interface ISessionStateManager
     /// </summary>
     Task<long> GetEventCountAfterAsync(string sessionId, long afterSequence, CancellationToken ct = default);
 
+    /// <summary>
+    /// 获取会话当前最大序列号（用于 eventCursor）。
+    /// </summary>
+    Task<long> GetLatestSequenceNumAsync(string sessionId, CancellationToken ct = default);
+
     // ════════════════════════════════════════════════════════
     // 实时订阅
     // ════════════════════════════════════════════════════════

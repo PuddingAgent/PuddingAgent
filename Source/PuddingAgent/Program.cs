@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -183,6 +183,16 @@ if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
     builder.WebHost.UseUrls("http://0.0.0.0:8080");
 }
 
+// ── HTTP 请求日志 ────────────────────────────────────
+builder.Services.AddHttpLogging(o =>
+{
+    o.LoggingFields = Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.RequestPath
+                    | Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.RequestMethod
+                    | Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.RequestQuery
+                    | Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.ResponseStatusCode
+                    | Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.Duration;
+});
+
 // ── CORS（允许 Admin SPA 跨域访问）───────────────────
 var corsOrigins = (builder.Configuration["Cors:AllowedOrigins"]
     ?? "http://localhost:8000;http://localhost:8001;http://localhost:8004;http://localhost:3000;http://localhost:8080")
@@ -229,7 +239,7 @@ builder.Services.AddAuthorization();
 // ── PlatformApiClient（通过 Controller API 操作控制面）──
 builder.Services.AddHttpClient<PlatformApiClient>(client =>
 {
-    var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:8080";
+    var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:5000";
     client.BaseAddress = new Uri(endpoint);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
@@ -240,6 +250,10 @@ builder.Services.AddSingleton<MinioStorageService>();
 builder.Services.AddSingleton<SessionEventHub>();
 builder.Services.AddSingleton<SessionStateManager>();
 builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
+
+// ── Chat 执行命令队列（ADR-056 Phase 1）─────────────────
+builder.Services.AddSingleton<IChatCommandStore, ChatCommandStore>();
+builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
 builder.Services.AddSingleton<ISubAgentRunStore, FileSubAgentRunStore>();
@@ -268,6 +282,7 @@ builder.Services.AddScoped<IVisualArtifactReferenceResolver>(sp => sp.GetRequire
 builder.Services.AddScoped<ChatVisualReasoningRequestFactory>();
 builder.Services.AddScoped<ChatVisualReasoningSessionRunner>();
 builder.Services.AddScoped<SessionTitleService>();
+builder.Services.AddScoped<TokenCostService>();
 builder.Services.AddScoped<IVisualReasoningService, DefaultVisualReasoningService>();
 builder.Services.AddHttpClient("DashScopeVisualReasoning");
 builder.Services.AddScoped<IVisualReasoningProvider>(sp =>
@@ -474,7 +489,7 @@ builder.Services.AddPuddingAgentTool<HttpFetchSkill>();
 // TerminalSkill: registered via assembly scan (AddPuddingToolsFromAssembly) below
 builder.Services.AddSingleton<FullTextIndexOptions>();
 builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
-builder.Services.AddHostedService<IndexPrebuildService>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<IndexPrebuildService>();
 builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 builder.Services.AddPuddingAgentTool<SmartSearchTool>();
 builder.Services.AddPuddingAgentTool<SmartQuerySessionLogsTool>();
@@ -558,7 +573,7 @@ if (builder.Configuration.GetValue<bool>(
     builder.Services.AddSingleton<SubconsciousConsolidationHook>();
     builder.Services.AddSingleton<IAgentLoopHook>(sp => sp.GetRequiredService<SubconsciousConsolidationHook>());
 }
-builder.Services.AddHostedService<SubconsciousWorkerService>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<SubconsciousWorkerService>();
 
 // ── 流式事件总线（可观测性基础设施）────────────────────────────
 builder.Services.AddSingleton<StreamingEventBus>();
@@ -589,16 +604,16 @@ builder.Services.TryAddSingleton<IMemoryWriteCoordinator, MemoryWriteCoordinator
 builder.Services.TryAddSingleton<SubconsciousPlanGenerationService>();
 builder.Services.AddSingleton<IdleDetector>();
 builder.Services.AddSingleton<IIdleDetector>(sp => sp.GetRequiredService<IdleDetector>());
-builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleDetector>());
+// HOSTED-DISABLED: builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleDetector>());
 
 // ── 主动心跳系统（空闲驱动 + 多 Agent 队列 + 尽力模式 + 哲学引导）────
 builder.Services.AddSingleton<AgentWakeQueue>();
 builder.Services.AddSingleton<HeartbeatOrchestrator>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatOrchestrator>());
+// HOSTED-DISABLED: builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatOrchestrator>());
 builder.Services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateRegistry>();
 builder.Services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
 builder.Services.AddSingleton<MessageDeliveryDispatcher>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
+// HOSTED-DISABLED: builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
 
 // 检查点与订阅管理
 builder.Services.AddSingleton<AgentCheckpointService>();
@@ -610,11 +625,11 @@ builder.Services.AddSingleton<IEventSubscriptionTool>(sp => sp.GetRequiredServic
 builder.Services.AddSingleton<IEventHandler, AgentEventHandler>();
 
 // 入站桥：IInternalEventBus → Preprocessor → PriorityQueue 管道入口
-builder.Services.AddHostedService<EventIngressBridge>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<EventIngressBridge>();
 
 // 分发器：PriorityQueue 出队 → IEventHandler.HandleAsync()
-builder.Services.AddHostedService<EventDispatcher>();
-builder.Services.AddHostedService<SessionCompressedMemoryMaintenanceHook>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<EventDispatcher>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<SessionCompressedMemoryMaintenanceHook>();
 
 builder.Services.AddSingleton<ProviderRateLimiter>();
 builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
@@ -803,9 +818,9 @@ builder.Services.AddSingleton<ConnectorHost>(sp =>
 });
 
 // ── Cron 定时任务调度 ──────────────────────────────
-builder.Services.AddHostedService<CronSchedulerService>();
-builder.Services.AddHostedService<AgentDailySummaryHostedService>();
-builder.Services.AddHostedService<StartupDailySummaryCompensationService>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<CronSchedulerService>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<AgentDailySummaryHostedService>();
+// HOSTED-DISABLED: builder.Services.AddHostedService<StartupDailySummaryCompensationService>();
 
 // ILlmConfigService 已注册（见上方），同时注册 ILlmResolver 兼容旧接口。
 // Provider/model 配置仅从 data/config/llm.providers.json 读取，不再回落到 DB。
@@ -930,503 +945,10 @@ app.Lifetime.ApplicationStopping.Register(() =>
     });
 });
 
-// ── 启动时应用迁移 ───────────────────────────────────
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-    await db.Database.MigrateAsync();
-    await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(db, app.Logger);
-    await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(db, app.Logger);
+Console.WriteLine("[Startup] DB migration skipped — using pre-built database");
 
-    // ── 幂等补列：实体已新增但尚未生成迁移的列，启动时通过 ALTER TABLE 兜底。
-    //   先查列再 ALTER，避免 EF Core 对“duplicate column name”记录 Error 级日志污染启动日志。
-    //   一旦后续生成正式迁移，这些 ALTER 仍然安全（已存在则跳过）。
-    var pendingColumns = new[]
-    {
-        // ADR-034：AgentAvatar 头像 ID
-        (Table: "WorkspaceAgents", Column: "AvatarId", Ddl: "ALTER TABLE \"WorkspaceAgents\" ADD COLUMN \"AvatarId\" TEXT NULL;"),
-        // ADR-034：AgentAvatars 补列（表已通过 IF NOT EXISTS 创建，但可能缺少列）
-        (Table: "AgentAvatars", Column: "RecommendedUse", Ddl: "ALTER TABLE \"AgentAvatars\" ADD COLUMN \"RecommendedUse\" TEXT NULL;"),
-        // GlobalAgentTemplate / WorkspaceAgentTemplate 已迁移到文件管理，无需 DB 列
-        // Agent 私有消息日志：ChatMessages 增加运行态 Agent 归属字段。
-        (Table: "ChatMessages", Column: "WorkspaceId", Ddl: "ALTER TABLE \"ChatMessages\" ADD COLUMN \"WorkspaceId\" TEXT NOT NULL DEFAULT '';"),
-        (Table: "ChatMessages", Column: "AgentInstanceId", Ddl: "ALTER TABLE \"ChatMessages\" ADD COLUMN \"AgentInstanceId\" TEXT NOT NULL DEFAULT '';"),
-        (Table: "ChatMessages", Column: "AgentTemplateId", Ddl: "ALTER TABLE \"ChatMessages\" ADD COLUMN \"AgentTemplateId\" TEXT NOT NULL DEFAULT '';"),
-    };
-    foreach (var column in pendingColumns)
-    {
-        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补列");
-    }
-
-    // ── ADR-016：幂等建表 — session_event_log / session_sub_agents
-    var pendingTableDdl = new[]
-    {
-        // SQLite event append path: WAL is persistent, while connection-level PRAGMAs
-        // are applied by PlatformSqliteConnectionInterceptor on each EF connection.
-        @"PRAGMA journal_mode=WAL;",
-
-        // session_event_log — 会话事件日志（append-only）
-        @"CREATE TABLE IF NOT EXISTS session_event_log (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id      TEXT    NOT NULL,
-            workspace_id    TEXT    NOT NULL,
-            sequence_num    INTEGER NOT NULL,
-            event_type      TEXT    NOT NULL,
-            data            TEXT    NOT NULL,
-            recorded_at     TEXT    NOT NULL,
-            agent_instance_id TEXT,
-            agent_template_id TEXT,
-            UNIQUE(session_id, sequence_num)
-        );",
-        @"DROP INDEX IF EXISTS idx_sel_session_seq;",
-        @"CREATE INDEX IF NOT EXISTS idx_sel_workspace_time ON session_event_log(workspace_id, recorded_at);",
-
-        // message_topics — 消息话题索引（#开头消息的话题标题）
-        @"CREATE TABLE IF NOT EXISTS message_topics (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            message_id      INTEGER NOT NULL,
-            topic_title     TEXT    NOT NULL,
-            session_id      TEXT    NOT NULL,
-            workspace_id    TEXT    NOT NULL,
-            created_at      TEXT    NOT NULL,
-            UNIQUE(message_id)
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_mt_workspace_title ON message_topics(workspace_id, topic_title);",
-
-        // session_sub_agents — 子代理状态追踪
-        @"CREATE TABLE IF NOT EXISTS session_sub_agents (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            parent_session_id   TEXT    NOT NULL,
-            parent_agent_id     TEXT,
-            sub_session_id      TEXT    NOT NULL UNIQUE,
-            status              TEXT    NOT NULL DEFAULT 'running',
-            template_id         TEXT,
-            model_id            TEXT,
-            task_summary        TEXT    NOT NULL,
-            spawned_at          TEXT    NOT NULL,
-            completed_at        TEXT,
-            success             INTEGER,
-            reply_summary       TEXT,
-            error_summary       TEXT,
-            full_result_json    TEXT
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_ssa_parent ON session_sub_agents(parent_session_id, status);",
-        @"CREATE INDEX IF NOT EXISTS idx_ssa_sub ON session_sub_agents(sub_session_id);",
-
-        // runtime_activity — 运行时活动诊断日志
-        @"CREATE TABLE IF NOT EXISTS runtime_activity (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            activity_id         TEXT    NOT NULL UNIQUE,
-            trace_id            TEXT    NOT NULL,
-            correlation_id      TEXT    NOT NULL,
-            session_id          TEXT,
-            workspace_id        TEXT,
-            execution_id        TEXT,
-            parent_execution_id TEXT,
-            sub_agent_id        TEXT,
-            event_id            TEXT,
-            connector_id        TEXT,
-            user_id             TEXT,
-            component           TEXT    NOT NULL,
-            operation           TEXT    NOT NULL,
-            status              TEXT    NOT NULL,
-            started_at_utc      TEXT    NOT NULL,
-            ended_at_utc        TEXT,
-            duration_ms         INTEGER,
-            severity            TEXT    NOT NULL DEFAULT 'info',
-            summary             TEXT,
-            metadata_json       TEXT,
-            error_code          TEXT,
-            error_message       TEXT
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_ra_trace ON runtime_activity(trace_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_ra_session ON runtime_activity(session_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_ra_execution ON runtime_activity(execution_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_ra_component ON runtime_activity(component);",
-        @"CREATE INDEX IF NOT EXISTS idx_ra_started ON runtime_activity(started_at_utc);",
-
-        // telemetry_metric_events — 可聚合遥测事实表（会话/LLM/工具/缓存/性能）
-        @"CREATE TABLE IF NOT EXISTS telemetry_metric_events (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            metric_id           TEXT    NOT NULL UNIQUE,
-            trace_id            TEXT    NOT NULL,
-            correlation_id      TEXT    NOT NULL,
-            session_id          TEXT,
-            workspace_id        TEXT,
-            execution_id        TEXT,
-            parent_execution_id TEXT,
-            sub_agent_id        TEXT,
-            event_id            TEXT,
-            connector_id        TEXT,
-            user_id             TEXT,
-            source              TEXT    NOT NULL,
-            category            TEXT    NOT NULL,
-            name                TEXT    NOT NULL,
-            status              TEXT,
-            occurred_at_utc     TEXT    NOT NULL,
-            duration_ms         INTEGER,
-            count_value         INTEGER,
-            numeric_value       REAL,
-            unit                TEXT,
-            severity            TEXT    NOT NULL DEFAULT 'info',
-            summary             TEXT,
-            dimensions_json     TEXT,
-            debug_json          TEXT,
-            error_code          TEXT,
-            error_message       TEXT
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_tme_trace ON telemetry_metric_events(trace_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_tme_session ON telemetry_metric_events(session_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_tme_workspace_time ON telemetry_metric_events(workspace_id, occurred_at_utc);",
-        @"CREATE INDEX IF NOT EXISTS idx_tme_category_name_time ON telemetry_metric_events(category, name, occurred_at_utc);",
-        @"CREATE INDEX IF NOT EXISTS idx_tme_status ON telemetry_metric_events(status);",
-
-        // TokenUsageEvents — LLM usage 明细账本（ADR-043 + prefix cache diagnostics）
-        @"CREATE TABLE IF NOT EXISTS ""TokenUsageEvents"" (
-            ""Id""                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            ""SourceType""          TEXT    NOT NULL,
-            ""SourceId""            TEXT    NOT NULL,
-            ""WorkspaceId""         TEXT,
-            ""SessionId""           TEXT,
-            ""ProviderId""          TEXT,
-            ""ModelId""             TEXT,
-            ""OccurredAtUtc""       TEXT    NOT NULL,
-            ""YearMonth""           TEXT    NOT NULL,
-            ""PromptTokens""        INTEGER NOT NULL DEFAULT 0,
-            ""CompletionTokens""    INTEGER NOT NULL DEFAULT 0,
-            ""TotalTokens""         INTEGER NOT NULL DEFAULT 0,
-            ""CacheHitTokens""      INTEGER NOT NULL DEFAULT 0,
-            ""CacheMissTokens""     INTEGER NOT NULL DEFAULT 0,
-            ""CacheEligibleTokens"" INTEGER NOT NULL DEFAULT 0,
-            ""CacheHitRate""        REAL,
-            ""InputCost""           TEXT    NOT NULL DEFAULT '0',
-            ""OutputCost""          TEXT    NOT NULL DEFAULT '0',
-            ""CacheHitCost""        TEXT    NOT NULL DEFAULT '0',
-            ""TotalCost""           TEXT    NOT NULL DEFAULT '0',
-            ""RawUsageJson""        TEXT,
-            ""PrefixVersion""       TEXT,
-            ""PrefixHash""          TEXT,
-            ""SystemPromptHash""    TEXT,
-            ""ToolSpecHash""        TEXT,
-            ""MemoryHash""          TEXT,
-            ""FewShotHash""         TEXT,
-            ""PrefixChangeReason""  TEXT,
-            ""PrefixMessageCount""  INTEGER,
-            ""PrefixToolCount""     INTEGER,
-            ""CreatedAtUtc""        TEXT    NOT NULL,
-            UNIQUE(""SourceType"", ""SourceId"")
-        );",
-        @"CREATE INDEX IF NOT EXISTS ""IX_TokenUsageEvents_YearMonth"" ON ""TokenUsageEvents""(""YearMonth"");",
-        @"CREATE INDEX IF NOT EXISTS ""IX_TokenUsageEvents_SessionId"" ON ""TokenUsageEvents""(""SessionId"");",
-        @"CREATE INDEX IF NOT EXISTS ""IX_TokenUsageEvents_PrefixHash"" ON ""TokenUsageEvents""(""PrefixHash"");",
-        @"CREATE INDEX IF NOT EXISTS ""IX_TokenUsageEvents_ProviderId_ModelId"" ON ""TokenUsageEvents""(""ProviderId"", ""ModelId"");",
-        @"CREATE INDEX IF NOT EXISTS ""IX_TokenUsageEvents_OccurredAtUtc"" ON ""TokenUsageEvents""(""OccurredAtUtc"");",
-
-        // context_layer_metric_events — context layer facts for cache-hit diagnostics
-        @"CREATE TABLE IF NOT EXISTS context_layer_metric_events (
-            id                              INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_type                     TEXT    NOT NULL,
-            source_id                       TEXT    NOT NULL,
-            workspace_id                    TEXT,
-            session_id                      TEXT,
-            provider_id                     TEXT,
-            model_id                        TEXT,
-            occurred_at_utc                 TEXT    NOT NULL,
-            assembler_version               TEXT    NOT NULL,
-            layout_version                  TEXT    NOT NULL,
-            layer_name                      TEXT    NOT NULL,
-            layer_order                     INTEGER NOT NULL,
-            layer_role                      TEXT    NOT NULL,
-            token_count                     INTEGER NOT NULL DEFAULT 0,
-            char_count                      INTEGER NOT NULL DEFAULT 0,
-            content_hash                    TEXT    NOT NULL,
-            previous_hash                   TEXT,
-            is_changed                      INTEGER NOT NULL DEFAULT 0,
-            change_reason                   TEXT,
-            starts_at_token                 INTEGER NOT NULL DEFAULT 0,
-            ends_at_token                   INTEGER NOT NULL DEFAULT 0,
-            is_cache_eligible               INTEGER NOT NULL DEFAULT 1,
-            estimated_cache_hit_tokens      INTEGER NOT NULL DEFAULT 0,
-            estimated_cache_miss_tokens     INTEGER NOT NULL DEFAULT 0,
-            estimated_cache_hit_rate        REAL,
-            confidence                      TEXT    NOT NULL,
-            truncated_tokens                INTEGER NOT NULL DEFAULT 0,
-            truncated_reason                TEXT,
-            created_at_utc                  TEXT    NOT NULL,
-            UNIQUE(source_type, source_id, layer_name)
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_clme_session ON context_layer_metric_events(session_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_clme_provider_model ON context_layer_metric_events(provider_id, model_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_clme_occurred ON context_layer_metric_events(occurred_at_utc);",
-        @"CREATE INDEX IF NOT EXISTS idx_clme_layer ON context_layer_metric_events(layer_name);",
-        @"CREATE INDEX IF NOT EXISTS idx_clme_hash ON context_layer_metric_events(content_hash);",
-
-        // session_steering_messages — pending user guidance for next LLM-call injection
-        @"CREATE TABLE IF NOT EXISTS session_steering_messages (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            steering_id         TEXT    NOT NULL UNIQUE,
-            workspace_id        TEXT    NOT NULL,
-            session_id          TEXT    NOT NULL,
-            agent_id            TEXT,
-            source_queue_item_id TEXT,
-            message_text        TEXT    NOT NULL,
-            priority            INTEGER NOT NULL DEFAULT 100,
-            status              TEXT    NOT NULL DEFAULT 'pending',
-            created_by          TEXT,
-            created_at_utc      TEXT    NOT NULL,
-            consumed_at_utc     TEXT,
-            consumed_round      INTEGER,
-            expired_at_utc      TEXT
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_steering_session_status_priority ON session_steering_messages(session_id, status, priority);",
-        @"CREATE INDEX IF NOT EXISTS idx_steering_workspace_created ON session_steering_messages(workspace_id, created_at_utc);",
-
-        // event_queue — 内部事件持久队列
-        @"CREATE TABLE IF NOT EXISTS event_queue (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id            TEXT    NOT NULL UNIQUE,
-            priority            INTEGER NOT NULL,
-            event_type          TEXT    NOT NULL,
-            source_type         TEXT,
-            source_id           TEXT,
-            connector_id        TEXT,
-            session_id          TEXT,
-            workspace_id        TEXT,
-            agent_id            TEXT,
-            payload             TEXT    NOT NULL,
-            status              TEXT    NOT NULL DEFAULT 'pending',
-            retry_count         INTEGER NOT NULL DEFAULT 0,
-            available_at        INTEGER NOT NULL,
-            lease_until         INTEGER,
-            started_at          INTEGER,
-            completed_at        INTEGER,
-            created_at          INTEGER NOT NULL,
-            updated_at          INTEGER NOT NULL,
-            error_message       TEXT,
-            schema_version      INTEGER NOT NULL DEFAULT 1,
-            causation_id        TEXT,
-            trace_id            TEXT,
-            correlation_id      TEXT,
-            execution_id        TEXT,
-            parent_execution_id TEXT,
-            sub_agent_id        TEXT,
-            user_id             TEXT
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_eq_dequeue ON event_queue(status, available_at, priority, created_at);",
-        @"CREATE INDEX IF NOT EXISTS idx_eq_trace ON event_queue(trace_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_eq_session ON event_queue(session_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_eq_workspace ON event_queue(workspace_id);",
-
-        // ADR-034：AgentAvatars 表
-        @"CREATE TABLE IF NOT EXISTS ""AgentAvatars"" (
-            ""Id""              INTEGER PRIMARY KEY AUTOINCREMENT,
-            ""AvatarId""        TEXT    NOT NULL,
-            ""Name""            TEXT    NOT NULL,
-            ""FileName""        TEXT    NOT NULL,
-            ""UrlPath""         TEXT    NOT NULL,
-            ""Personality""     TEXT,
-            ""HairColor""       TEXT,
-            ""Expression""      TEXT,
-            ""VisualTraitsJson"" TEXT   NOT NULL DEFAULT '[]',
-            ""RecommendedUse""  TEXT,
-            ""IsBuiltIn""       INTEGER NOT NULL DEFAULT 1,
-            ""IsEnabled""       INTEGER NOT NULL DEFAULT 1,
-            ""SortOrder""       INTEGER NOT NULL DEFAULT 100,
-            ""CreatedAt""       TEXT    NOT NULL,
-            ""UpdatedAt""       TEXT    NOT NULL
-        );",
-        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AgentAvatars_AvatarId"" ON ""AgentAvatars""(""AvatarId"");",
-        @"CREATE INDEX IF NOT EXISTS ""IX_AgentAvatars_Enabled_Sort"" ON ""AgentAvatars""(""IsEnabled"", ""SortOrder"");",
-
-        // sub_agent_runs — 子代理运行归档（ADR-021）
-        @"CREATE TABLE IF NOT EXISTS sub_agent_runs (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id              TEXT    NOT NULL UNIQUE,
-            parent_session_id   TEXT    NOT NULL,
-            sub_session_id      TEXT    NOT NULL,
-            workspace_id        TEXT    NOT NULL,
-            agent_instance_id   TEXT    NOT NULL,
-            template_id         TEXT    NOT NULL,
-            status              TEXT    NOT NULL DEFAULT 'running',
-            started_at          TEXT    NOT NULL,
-            completed_at        TEXT,
-            archive_path        TEXT    NOT NULL,
-            trace_id            TEXT,
-            correlation_id      TEXT,
-            error_message       TEXT,
-            task_planning_metadata_json TEXT,
-            total_rounds        INTEGER NOT NULL DEFAULT 0,
-            total_tool_calls    INTEGER NOT NULL DEFAULT 0,
-            total_duration_ms   INTEGER NOT NULL DEFAULT 0
-        );",
-        @"CREATE INDEX IF NOT EXISTS idx_sub_agent_runs_parent ON sub_agent_runs(parent_session_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_sub_agent_runs_workspace ON sub_agent_runs(workspace_id);",
-        @"CREATE INDEX IF NOT EXISTS idx_sub_agent_runs_status ON sub_agent_runs(status);",
-    };
-    foreach (var ddl in pendingTableDdl)
-    {
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync(ddl);
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogWarning(ex, "[Schema] ADR-016 建表失败（将继续启动）：{Ddl}", ddl[..Math.Min(ddl.Length, 80)]);
-        }
-    }
-
-    var pendingTokenUsageEventColumns = new[]
-    {
-        (Table: "TokenUsageEvents", Column: "PrefixVersion", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"PrefixVersion\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "PrefixHash", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"PrefixHash\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "SystemPromptHash", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"SystemPromptHash\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "ToolSpecHash", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"ToolSpecHash\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "MemoryHash", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"MemoryHash\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "FewShotHash", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"FewShotHash\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "PrefixChangeReason", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"PrefixChangeReason\" TEXT NULL;"),
-        (Table: "TokenUsageEvents", Column: "PrefixMessageCount", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"PrefixMessageCount\" INTEGER NULL;"),
-        (Table: "TokenUsageEvents", Column: "PrefixToolCount", Ddl: "ALTER TABLE \"TokenUsageEvents\" ADD COLUMN \"PrefixToolCount\" INTEGER NULL;"),
-    };
-    foreach (var column in pendingTokenUsageEventColumns)
-    {
-        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补 TokenUsageEvents prefix 诊断列");
-    }
-
-    var pendingSubAgentRunColumns = new[]
-    {
-        (Table: "sub_agent_runs", Column: "task_planning_metadata_json", Ddl: "ALTER TABLE sub_agent_runs ADD COLUMN task_planning_metadata_json TEXT NULL;"),
-    };
-    foreach (var column in pendingSubAgentRunColumns)
-    {
-        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补 sub_agent_runs 任务规划列");
-    }
-
-    var pendingEventQueueColumns = new[]
-    {
-        (Table: "event_queue", Column: "schema_version", Ddl: "ALTER TABLE event_queue ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1;"),
-        (Table: "event_queue", Column: "causation_id", Ddl: "ALTER TABLE event_queue ADD COLUMN causation_id TEXT NULL;"),
-        (Table: "event_queue", Column: "trace_id", Ddl: "ALTER TABLE event_queue ADD COLUMN trace_id TEXT NULL;"),
-        (Table: "event_queue", Column: "correlation_id", Ddl: "ALTER TABLE event_queue ADD COLUMN correlation_id TEXT NULL;"),
-        (Table: "event_queue", Column: "execution_id", Ddl: "ALTER TABLE event_queue ADD COLUMN execution_id TEXT NULL;"),
-        (Table: "event_queue", Column: "parent_execution_id", Ddl: "ALTER TABLE event_queue ADD COLUMN parent_execution_id TEXT NULL;"),
-        (Table: "event_queue", Column: "sub_agent_id", Ddl: "ALTER TABLE event_queue ADD COLUMN sub_agent_id TEXT NULL;"),
-        (Table: "event_queue", Column: "user_id", Ddl: "ALTER TABLE event_queue ADD COLUMN user_id TEXT NULL;"),
-    };
-    foreach (var column in pendingEventQueueColumns)
-    {
-        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补事件队列追踪列");
-    }
-
-    var pendingSessionEventTraceColumns = new[]
-    {
-        (Table: "session_event_log", Column: "trace_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN trace_id TEXT NULL;"),
-        (Table: "session_event_log", Column: "correlation_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN correlation_id TEXT NULL;"),
-        (Table: "session_event_log", Column: "execution_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN execution_id TEXT NULL;"),
-        (Table: "session_event_log", Column: "parent_execution_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN parent_execution_id TEXT NULL;"),
-        (Table: "session_event_log", Column: "sub_agent_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN sub_agent_id TEXT NULL;"),
-        (Table: "session_event_log", Column: "component", Ddl: "ALTER TABLE session_event_log ADD COLUMN component TEXT NULL;"),
-        (Table: "session_event_log", Column: "operation", Ddl: "ALTER TABLE session_event_log ADD COLUMN operation TEXT NULL;"),
-        (Table: "session_event_log", Column: "agent_instance_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN agent_instance_id TEXT NULL;"),
-        (Table: "session_event_log", Column: "agent_template_id", Ddl: "ALTER TABLE session_event_log ADD COLUMN agent_template_id TEXT NULL;"),
-    };
-    foreach (var column in pendingSessionEventTraceColumns)
-    {
-        await EnsureSqliteColumnAsync(db, app.Logger, column.Table, column.Column, column.Ddl, "[Schema] 已补会话事件追踪列");
-    }
-
-    // ── 幂等种子：记忆工具 Capabilities（启动时幂等插入，正式迁移来之前兜底）
-    var now = DateTimeOffset.UtcNow;
-    var memoryCaps = new (string CapabilityId, string Name, string ToolName, string Description, string ToolDescription, int SortOrder)[]
-    {
-        ("cap-search-memory", "搜索记忆", "search_memory", "允许 Agent 使用 search_memory 工具搜索记忆图书馆中的事实和偏好", "Search the user's memory library for related facts, preferences, and knowledge.", 60),
-        ("cap-save-memory", "保存记忆", "save_memory", "允许 Agent 使用 save_memory 工具主动写入事实、偏好、摘要到记忆图书馆", "Save or update a fact, preference, summary, or chapter into the user's memory library.", 70),
-        ("cap-manage-memory", "管理记忆图书馆", "manage_memory", "允许 Agent 使用 manage_memory 工具管理记忆图书馆结构（Book/Chapter/指针CRUD）", "Manage memory library structure: create/list/update/delete books, chapters, and pointers.", 80),
-        ("cap-grep-memory", "全文检索记忆", "grep_memory", "允许 Agent 使用 grep_memory 工具执行全文搜索、Book内检索、目录浏览", "Full-text search across the memory library with FTS5, in-book search, and table-of-contents listing.", 90),
-        ("cap-query-session-logs", "查询会话证据", "query_session_logs", "允许 Agent 使用 query_session_logs 工具只读查询分页消息转录；raw event 动作仅用于诊断工具调用/事件证据", "Read-only access to paged session message transcripts by default, with explicit raw event diagnostics when needed.", 95),
-    };
-    foreach (var (capId, name, toolName, desc, toolDesc, sortOrder) in memoryCaps)
-    {
-        try
-        {
-            var exists = await db.Capabilities.AnyAsync(c => c.CapabilityId == capId);
-            if (!exists)
-            {
-                await db.Database.ExecuteSqlRawAsync(
-                    "INSERT INTO Capabilities (CapabilityId, Name, ToolName, Description, ToolDescription, RequiresShellExecution, RequiresFileWrite, RequiresNetworkAccess, IsEnabled, SortOrder, CreatedAt, UpdatedAt) VALUES ({0}, {1}, {2}, {3}, {4}, 0, 0, 0, 1, {5}, {6}, {7})",
-                    capId, name, toolName, desc, toolDesc, sortOrder, now, now);
-                app.Logger.LogInformation("[Seed] 已插入 Capability: {CapId}", capId);
-            }
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogWarning(ex, "[Seed] 幂等插入 Capability 失败（继续启动）: {CapId}", capId);
-        }
-    }
-
-    // ADR-038: 配置数据种子迁移（仅首次启动时从 default-data/ 文件导入到 DB）
-    var dataSeed = scope.ServiceProvider.GetRequiredService<DataSeedService>();
-    await dataSeed.SeedAsync();
-
-    var controllerDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ControllerDbContext>>();
-    await using (var controllerDb = await controllerDbFactory.CreateDbContextAsync())
-    {
-        await controllerDb.Database.EnsureCreatedAsync();
-    }
-
-    var memoryDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MemoryDbContext>>();
-    await MemoryDbInitializer.InitializeAsync(memoryDbFactory);
-
-    var libraryDbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MemoryLibraryDbContext>>();
-    var initLogger = scope.ServiceProvider.GetService<ILogger<MemoryLibraryDbContext>>();
-    await MemoryLibraryDbInitializer.InitializeAsync(libraryDbFactory, initLogger);
-
-    var workspaceCatalog = scope.ServiceProvider.GetRequiredService<InMemoryWorkspaceCatalog>();
-    await workspaceCatalog.LoadAsync();
-
-    var runtimeDispatcher = scope.ServiceProvider.GetRequiredService<RuntimeDispatcher>();
-    runtimeDispatcher.SetFallbackEndpoint(
-        builder.Configuration["Pudding:RuntimeFallbackEndpoint"] ?? "http://localhost:8080");
-
-    // ── JSON 配置种子（幂等 Upsert）──────────────────
-    var configSeed = scope.ServiceProvider.GetRequiredService<JsonConfigSeedService>();
-    await configSeed.SeedAsync();
-
-    // ── Runtime 执行配置（幂等补齐）──────────────────
-    // 子代理并发和超时是调度基础设施参数，启动时主动补齐文件，避免工具层回落到隐式硬编码。
-    scope.ServiceProvider.GetRequiredService<IRuntimeExecutionConfigService>().GetOptions();
-
-    // ── Agent 头像种子（ADR-034：从 avatars.json 幂等 upsert）────
-    var avatarSeed = scope.ServiceProvider.GetRequiredService<AgentAvatarSeedService>();
-    var avatarAssetsDir = Path.Combine(AppContext.BaseDirectory, "default-data", "assets", "agent-avatars");
-    await avatarSeed.SeedAsync(avatarAssetsDir);
-
-    // ── Session 重定向存储：加载持久化映射 ──
-        var redirectStore = scope.ServiceProvider.GetRequiredService<SessionRedirectStore>();
-    redirectStore.LoadFromDisk();
-
-    // 会话状态恢复：从磁盘加载并注入 SessionStateManager
-    var stateStore = scope.ServiceProvider.GetRequiredService<SessionStateStore>();
-    var stateManager = scope.ServiceProvider.GetRequiredService<ISessionStateManager>();
-    var restoredCount = 0;
-    foreach (var entry in stateStore.LoadFromDisk())
-    {
-        var state = Enum.TryParse<SessionState>(entry.State, out var parsed)
-            ? parsed
-            : SessionState.Stopped;
-
-        // 被重启中断的运行中会话 → Stopped
-        if (state is SessionState.Streaming or SessionState.Running
-            or SessionState.WaitingForUser or SessionState.WaitingForTool
-            or SessionState.Created)
-        {
-            state = SessionState.Stopped;
-        }
-
-        stateManager.Restore(entry.SessionId, state);
-        restoredCount++;
-    }
-    Log.Information("[Bootstrap] Session states restored. count={Count}", restoredCount);
-}
+// ── HTTP 请求日志（最先执行，记录所有请求）───────────
+app.UseHttpLogging();
 
 // ── 错误处理 ─────────────────────────────────────────
 if (!app.Environment.IsDevelopment())
@@ -1455,6 +977,24 @@ app.UseSession();
 
 app.UseAuthorization();
 
+// ── 请求诊断（Auth 之后）─ 记录到达控制器管线的请求 ──
+app.Use(async (ctx, next) =>
+{
+    var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("HttpPipeline.Diag");
+    if (ctx.Request.Path.StartsWithSegments("/api"))
+    {
+        logger.LogDebug(
+            "[Pipeline] {Method} {Path} auth={Auth} ct={ContentType} len={Len}",
+            ctx.Request.Method,
+            ctx.Request.Path,
+            ctx.User?.Identity?.IsAuthenticated ?? false,
+            ctx.Request.ContentType ?? "-",
+            ctx.Request.ContentLength ?? 0);
+    }
+    await next();
+});
+
 // ── 静态文件（同时从输出目录 wwwroot/ 和项目 wwwroot/ 提供）─
 // 输出目录 wwwroot 由脚本复制前端产物，支持热加载
 var outputWwwRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
@@ -1468,6 +1008,24 @@ app.UseStaticFiles();
 
 // ── API 路由（必须在 Fallback 前）────────────────────
 app.MapControllers();
+
+// ── 路由后诊断 ── 确认请求到达了控制器路由层 ──
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/api"))
+    {
+        var endpoint = ctx.GetEndpoint();
+        var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("HttpPipeline.Diag");
+        logger.LogDebug(
+            "[Pipeline:AfterRoute] {Method} {Path} endpoint={Endpoint} status={Status}",
+            ctx.Request.Method,
+            ctx.Request.Path,
+            endpoint?.DisplayName ?? "(none)",
+            ctx.Response.StatusCode);
+    }
+    await next();
+});
 
 // ── MVC Controller 路由 ──────────────────────────────
 app.MapControllerRoute(
@@ -1607,6 +1165,24 @@ app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
 // ── Chat SPA fallback（根路径 → Chat，必须最后！）──────
 app.MapFallbackToFile("index.html");
+
+// ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
+Console.WriteLine("[Startup] Initializing Workspace Catalog...");
+try
+{
+    var catalog = app.Services.GetRequiredService<InMemoryWorkspaceCatalog>();
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ControllerDbContext>();
+        await db.Database.EnsureCreatedAsync();
+    }
+    await catalog.LoadAsync();
+    Console.WriteLine($"[Startup] Workspace Catalog loaded, {catalog.GetAll().Count} workspace(s)");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[Startup] Workspace Catalog init failed: {ex.Message}");
+}
 
 // ── jieba 分词回填：存量 Chapter 的 TitleTokens / ContentTokens ──
 Console.WriteLine("[Startup] Starting jieba backfill...");

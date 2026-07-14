@@ -80,6 +80,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<TaskPlanRunEntity> TaskPlanRuns => Set<TaskPlanRunEntity>();
     public DbSet<TaskNodeEntity> TaskNodes => Set<TaskNodeEntity>();
 
+    // 聊天执行命令队列（ADR-056 Phase 1）
+    public DbSet<ChatExecutionCommandEntity> ChatExecutionCommands => Set<ChatExecutionCommandEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -404,6 +407,17 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(x => x.TaskNodeId).IsUnique();
             e.HasIndex(x => new { x.PlanId, x.ParentTaskNodeId, x.Status });
             e.HasIndex(x => new { x.PlanId, x.Depth, x.Status });
+        });
+
+        // ── Chat Execution Commands（ADR-056 Phase 1）──────────────────
+        modelBuilder.Entity<ChatExecutionCommandEntity>(e =>
+        {
+            e.ToTable("chat_execution_commands");
+            e.HasIndex(x => x.CommandId).IsUnique();
+            e.HasIndex(x => new { x.ClientRequestId, x.WorkspaceId });
+            e.HasIndex(x => new { x.SessionId, x.Status });
+            e.HasIndex(x => new { x.Status, x.LeaseUntil });
+            e.HasIndex(x => new { x.Status, x.CreatedAt });
         });
 
         // ── 注意：配置类 seed 数据已废弃（ADR-036）────────────────────

@@ -1,5 +1,7 @@
 # ADR-050 会话层统一投影与前端观察者模型
 
+> **可靠输入补充（2026-07-13）**：[ADR-056 聊天消息受理与可靠事件流架构](57ADR-056聊天消息受理与可靠事件流架构ADR.md) 为本 ADR 的 ConversationProjection 提供稳定的 `turnId/messageId/sequenceNum`、committed-before-publish 事件输入、投影检查点以及 replay+live 追赶协议。前端观察者模型不得把易失 Channel 或 optimistic state 当作事实源。
+
 > 状态：**Proposed**  
 > 日期：2026-06-14  
 > 范围：Admin Chat、SessionStateManager、session_event_log、ChatMessages、AgentConversationProjection、子代理状态、系统通知、前端同步模型  

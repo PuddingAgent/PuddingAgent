@@ -58,6 +58,7 @@ public static class PuddingToolServiceCollectionExtensions
 
         services.TryAddSingleton<IPuddingToolRegistry>(sp =>
         {
+
             var nativeTools = sp.GetServices<IPuddingTool>().ToList();
             var toolSources = sp.GetServices<IPuddingToolSource>().ToList();
 

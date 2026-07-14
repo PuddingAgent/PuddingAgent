@@ -1,5 +1,7 @@
 # 16 会话状态层与客户端解耦 (Session State Layer & Client Decoupling)
 
+> **演进说明（2026-07-13）**：本 ADR 关于 SSM、append-only Event Log、多观察者和 Channel 生命周期的决策继续有效。[ADR-056 聊天消息受理与可靠事件流架构](57ADR-056聊天消息受理与可靠事件流架构ADR.md) 进一步规定：聊天执行不得由请求内裸 `Task.Run` 承载；事件必须先持久化再发布；Session SSE 必须通过 sequence cursor 将 replay 与 live 无缝衔接；实时 Channel 只是易失加速器，不构成可靠历史。
+
 > 状态：**proposed**
 > 作者：@architect (战略 ADR)
 > 日期：2026-05-15

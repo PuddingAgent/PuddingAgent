@@ -163,11 +163,21 @@ public class SessionEventsController : ControllerBase
 
     /// <summary>
     /// 实时订阅会话事件（SSE）。
-    /// GET /api/sessions/{sessionId}/events/stream
+    /// GET /api/sessions/{sessionId}/events/stream?afterSequence={seq}
+    /// 断线重连时使用 Last-Event-ID header 或 afterSequence 游标补发缺口事件。
     /// </summary>
     [HttpGet("{sessionId}/events/stream")]
-    public async Task EventsStream(string sessionId, CancellationToken ct)
+    public async Task EventsStream(
+        string sessionId,
+        [FromQuery] long? afterSequence = null,
+        CancellationToken ct = default)
     {
+        if (!afterSequence.HasValue)
+        {
+            var lastEventId = Request.Headers["Last-Event-ID"].FirstOrDefault();
+            if (lastEventId is not null && long.TryParse(lastEventId, out var parsed))
+                afterSequence = parsed;
+        }
         // P0: 验证 session 存在性（必须在设置 SSE header 之前执行）
         //    规则：Platform API 有记录，或本地 DB 有历史事件/消息/子代理证据
         var sessionStatus = await GetSessionStatusAsync(sessionId, ct);
@@ -221,6 +231,40 @@ public class SessionEventsController : ControllerBase
             metadata: null,
             logger: _logger,
             ct: ct);
+
+        // Phase 0: 断线重连时补发缺口事件（订阅后、实时推送前）
+        long lastReplayedSeq = 0;
+        if (afterSequence.HasValue)
+        {
+            try
+            {
+                var replayed = 0L;
+                var page = await _ssm.GetEventsAsync(sessionId, afterSequence, limit: 200, ct);
+                foreach (var entry in page.Events)
+                {
+                    if (replayed >= 200) break;
+                    var replayFrame = new ServerSentEventFrame(entry.EventType, entry.Data);
+                    await WriteSseFrameAsync(Response, replayFrame, sessionId, _logger, replayed, ct);
+                    lastReplayedSeq = entry.SequenceNum;
+                    replayed++;
+                    if (replayed % 50 == 0) await Response.Body.FlushAsync(ct);
+                }
+                await Response.Body.FlushAsync(ct);
+                _logger.LogInformation(
+                    "[SessionEvents] SSE replay complete session={Session} after={AfterSeq} lastReplayed={LastSeq} count={Count}",
+                    sessionId, afterSequence, lastReplayedSeq, replayed);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[SessionEvents] SSE replay failed session={Session} after={AfterSeq}",
+                    sessionId, afterSequence);
+            }
+        }
 
         try
         {
@@ -632,12 +676,7 @@ public class SessionEventsController : ControllerBase
     // ── SSE 工具方法 ───────────────────────────────────
 
     private static void ConfigureSseResponse(HttpResponse response)
-    {
-        response.ContentType = "text/event-stream";
-        response.Headers.CacheControl = "no-cache";
-        response.Headers.Connection = "keep-alive";
-        response.Headers["X-Accel-Buffering"] = "no";
-    }
+        => SseResponseWriter.Configure(response);
 
     private static async Task WriteSseAsync(
         HttpResponse response,
@@ -677,8 +716,7 @@ public class SessionEventsController : ControllerBase
         logger.LogDebug(
             "[SessionEvents] SSE write begin session={Session} index={Index} type={EventType} seq={Seq} dataChars={DataChars}",
             sessionId, frameIndex, frame.Event, seq, frame.Data.Length);
-        await response.WriteAsync($"event: {frame.Event}\n", ct);
-        await response.WriteAsync($"data: {frame.Data}\n\n", ct);
+        await SseResponseWriter.WriteFrameAsync(response, frame, ct);
     }
 
     private static async Task FlushSseBatchAsync(
