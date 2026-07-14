@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +54,7 @@ public class ChatApiController(
     IHostApplicationLifetime appLifetime,
     SessionRedirectStore redirectStore,
     ILogger<ChatApiController> logger,
-    IChatCommandStore? commandStore = null,
+    ChatCommandAcceptanceService acceptanceService,
     IConfiguration? configuration = null) : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
@@ -382,583 +382,36 @@ public class ChatApiController(
                 trace);
         }
 
-        // ── ADR-056 Phase 1: 命令队列路径 ──────────────────────────
-        // 当 commandStore 已注册时，持久化命令并立即返回，由 ChatExecutionWorker 异步执行。
-        if (commandStore is not null)
-        {
-            var cmdTurnId = Guid.NewGuid().ToString("N");
-            var cmdCommandId = Guid.NewGuid().ToString("N");
-            var cmdMessageId = Guid.NewGuid().ToString("N");
-            var cmdClientRequestId = req.ClientRequestId
-                ?? HttpContext?.Request.Headers["Idempotency-Key"].FirstOrDefault()
-                ?? cmdCommandId;
-
-            var cmdSessionId = req.SessionId ?? Guid.NewGuid().ToString("N");
-
-            // 幂等检查：相同 clientRequestId + workspaceId 返回已有命令
-            if (!string.IsNullOrWhiteSpace(req.ClientRequestId))
-            {
-                var existing = await commandStore.FindByClientRequestIdAsync(req.ClientRequestId, workspaceId, ct);
-                if (existing is not null)
-                {
-                    logger.LogInformation(
-                        "[Chat:Queue] Idempotent hit cmd={CommandId} clientRequestId={ClientRequestId}",
-                        existing.CommandId, req.ClientRequestId);
-                    return Ok(new
-                    {
-                        status = existing.Status == "pending" ? "accepted" : existing.Status,
-                        commandId = existing.CommandId,
-                        messageId = existing.MessageId,
-                        turnId = existing.TurnId,
-                        sessionId = existing.SessionId,
-                        eventCursor = existing.EventCursor,
-                        clientRequestId = existing.ClientRequestId,
-                        idempotent = true,
-                    });
-                }
-            }
-
-            var payload = new Dictionary<string, object?>
-            {
-                ["channelId"] = channelId,
-                ["userExternalId"] = userExternalId,
-                ["messageText"] = req.MessageText,
-                ["llmConfig"] = primaryDispatch.LlmConfig,
-                ["agentTemplateId"] = primaryDispatch.AgentTemplateId,
-                ["agentInstanceId"] = primaryDispatch.AgentId,
-                ["capabilityPolicy"] = primaryDispatch.CapabilityPolicy,
-                ["toolDefinitions"] = primaryDispatch.ToolDefinitions,
-                ["skillPackages"] = primaryDispatch.SkillPackages,
-                ["metadata"] = BuildChatIngressMetadata(req, primaryDispatch, fanoutIndex: 0, fanoutCount: dispatches.Count,
-                    turnId: cmdTurnId, clientRequestId: cmdClientRequestId),
-            };
-
-            var command = new ChatCommandRecord
-            {
-                CommandId = cmdCommandId,
-                ClientRequestId = cmdClientRequestId,
-                WorkspaceId = workspaceId,
-                SessionId = cmdSessionId,
-                MessageId = cmdMessageId,
-                TurnId = cmdTurnId,
-                AgentInstanceId = primaryDispatch.AgentId,
-                AgentTemplateId = primaryDispatch.AgentTemplateId,
-                UserId = userExternalId,
-                PayloadJson = JsonSerializer.Serialize(payload, JsonOpts),
-                Status = "pending",
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            };
-
-            await commandStore.SaveAsync(command, ct);
-
-            var acceptedFrame = ServerSentEventFrame.Json("turn.accepted", new
-            {
-                commandId = cmdCommandId,
-                messageId = cmdMessageId,
-                turnId = cmdTurnId,
-                sessionId = cmdSessionId,
-                clientRequestId = cmdClientRequestId,
-            });
-            await ssm.AppendAsync(cmdSessionId, workspaceId, acceptedFrame, ct);
-
-            var eventCursor = await ssm.GetLatestSequenceNumAsync(cmdSessionId, ct);
-
-            logger.LogInformation(
-                "[Chat:Queue] Command queued cmd={CommandId} turn={TurnId} msg={MessageId} session={SessionId}",
-                cmdCommandId, cmdTurnId, cmdMessageId, cmdSessionId);
-
-            sw.Stop();
-            return Ok(new
-            {
-                status = "accepted",
-                commandId = cmdCommandId,
-                messageId = cmdMessageId,
-                turnId = cmdTurnId,
-                sessionId = cmdSessionId,
-                eventCursor,
-                clientRequestId = cmdClientRequestId,
-            });
-        }
-
-        // T-102: 通过流式接口获取第一个 metadata 帧提取 sessionId/messageId，
-        // 然后 fire-and-forget 将剩余帧写入 SSM (EventHub)，立即返回 IDs 给前端。
-        var primaryTrace = trace.WithAgent(primaryDispatch.AgentId, primaryDispatch.AgentTemplateId);
-        var turnId = Guid.NewGuid().ToString("N");
+        // ── ADR-056: 命令队列路径 ──────────────────────────
+        // 所有消息统一持久化到命令队列，由 ChatExecutionWorker 异步执行。
         var clientRequestId = req.ClientRequestId
-            ?? HttpContext?.Request.Headers["Idempotency-Key"].FirstOrDefault()
-            ?? turnId;
-        var metadataTcs = new TaskCompletionSource<(string? sessionId, string? messageId)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        string? streamSessionId = req.SessionId;
-        string? streamMessageId = null;
-        var framesWritten = 0;
-        var userCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var transcriptMessageText = string.IsNullOrWhiteSpace(req.OriginalMessageText)
-            ? req.MessageText
-            : req.OriginalMessageText;
-        var ingressMetadata = BuildChatIngressMetadata(req, primaryDispatch, fanoutIndex: 0, fanoutCount: dispatches.Count,
-            turnId: turnId, clientRequestId: clientRequestId);
-        var secondaryDispatches = dispatches.Skip(1).ToList();
-        var secondaryFanoutStarted = false;
+            ?? Guid.NewGuid().ToString("N");
 
-        // 启动后台执行 — 获取第一个 metadata 帧后返回，剩余帧推入 SSM
-        await RecordTimelineAsync(
-            trace,
-            RuntimeActivityComponents.AgentExecution,
-            "chat.dispatch.queued",
-            "chat.dispatch",
-            RuntimeActivityStatuses.Started,
-            metadata: new Dictionary<string, string>
-            {
-                ["primaryAgentId"] = primaryDispatch.AgentId,
-                ["fanoutCount"] = dispatches.Count.ToString(),
-            },
-            ct: ct);
+        var result = await acceptanceService.AcceptAsync(
+            workspaceId,
+            req,
+            primaryDispatch,
+            dispatches.Count,
+            channelId,
+            userExternalId,
+            clientRequestId,
+            ct);
+
         logger.LogInformation(
-            "[Chat] SYNC_DONE dispatching background agent={AgentId} session={SessionId} elapsedMs={ElapsedMs}",
-            primaryDispatch.AgentId, req.SessionId, sw.ElapsedMilliseconds);
-        _ = Task.Run(async () =>
-        {
-            var backgroundStartedAt = DateTimeOffset.UtcNow;
-            var backgroundSw = System.Diagnostics.Stopwatch.StartNew();
-            var replyBuilder = new StringBuilder();
-            var thinkingChunks = new List<TranscriptThinkingChunk>();
-            string? latestUsageJson = null;
-            var userTranscriptPersisted = false;
-            var assistantTranscriptPersisted = false;
-
-            try
-            {
-                logger.LogInformation(
-                    "[Chat:Stream] Dispatching LLM request agent={Agent} template={Template} hasLlmConfig={HasCfg} provider={Provider} model={Model} endpoint={Endpoint}",
-                    primaryDispatch.AgentId, primaryDispatch.AgentTemplateId,
-                    primaryDispatch.LlmConfig is not null,
-                    primaryDispatch.PreferredProviderId ?? "(none)",
-                    primaryDispatch.LlmConfig?.ModelId ?? "(none)",
-                    primaryDispatch.LlmConfig?.Endpoint ?? "(none)");
-
-                await foreach (var frame in apiClient.SendMessageStreamAsync(
-                    channelId:      channelId,
-                    userExternalId: userExternalId,
-                    messageText:    req.MessageText,
-                    workspaceId:    workspaceId,
-                    sessionId:      req.SessionId,
-                    llmConfig:      primaryDispatch.LlmConfig,
-                    agentTemplateId: primaryDispatch.AgentTemplateId,
-                    agentInstanceId: primaryDispatch.AgentId,
-                    capabilityPolicy: primaryDispatch.CapabilityPolicy,
-                    toolDefinitions: primaryDispatch.ToolDefinitions,
-                    skillPackages: primaryDispatch.SkillPackages,
-                    forceNewSession: req.ForceNewSession,
-                    sessionTitle: initialSessionTitle,
-                    metadata: ingressMetadata,
-                    ct:             CancellationToken.None))
-                {
-                    // 提取 metadata 帧中的 IDs
-                    if (frame.Event == "metadata")
-                    {
-                        try
-                        {
-                            using var doc = JsonDocument.Parse(frame.Data);
-                            var root = doc.RootElement;
-                            if (root.TryGetProperty("sessionId", out var sid))
-                                streamSessionId = sid.GetString();
-                            if (root.TryGetProperty("messageId", out var mid))
-                                streamMessageId = mid.GetString();
-                        }
-                        catch (Exception metaParseEx)
-                        {
-                            logger.LogWarning(metaParseEx, "[Chat] Failed to parse metadata frame");
-                        }
-                        if (streamSessionId is not null)
-                        {
-                            metadataTcs.TrySetResult((streamSessionId, streamMessageId));
-                            await RecordTimelineAsync(
-                                primaryTrace.WithSession(streamSessionId, workspaceId),
-                                RuntimeActivityComponents.AgentExecution,
-                                "chat.metadata.received",
-                                "chat.metadata",
-                                RuntimeActivityStatuses.Succeeded,
-                                metadata: new Dictionary<string, string>
-                                {
-                                    ["messageId"] = streamMessageId ?? "",
-                                    ["frameDataChars"] = frame.Data.Length.ToString(),
-                                },
-                                ct: CancellationToken.None);
-                        }
-                    }
-
-                    // ADR-031: ChatMessages 是面向 UI/检索的聊天转录物化视图。
-                    // 用户消息在确认 sessionId 后写入；执行事实仍由 session_event_log 记录。
-                    if (!req.SuppressUserTranscript && !userTranscriptPersisted && streamSessionId is not null)
-                    {
-                        await transcriptWriter.PersistMessageAsync(
-                            streamSessionId,
-                            role: "user",
-                            content: transcriptMessageText,
-                            createdAt: userCreatedAt,
-                            thinkingJson: null,
-                            usageJson: null,
-                            workspaceId: workspaceId,
-                            agentInstanceId: primaryDispatch.AgentId,
-                            agentTemplateId: primaryDispatch.AgentTemplateId,
-                            ct: CancellationToken.None);
-                        userTranscriptPersisted = true;
-
-                        // 话题检测：若消息以 # 开头则存储话题索引
-                        var topic = MessageTopicService.DetectTopic(transcriptMessageText);
-                        if (topic is not null)
-                        {
-                            await messageTopicService.SaveTopicAsync(
-                                messageId: 0, // 由 SaveTopicAsync 内部按 session+content 反查
-                                topicTitle: topic,
-                                sessionId: streamSessionId,
-                                workspaceId: workspaceId,
-                                ct: CancellationToken.None);
-                        }
-                    }
-
-                    if (frame.Event == "delta")
-                    {
-                        var delta = TryReadStringProperty(frame.Data, "delta");
-                        if (!string.IsNullOrEmpty(delta))
-                            replyBuilder.Append(delta);
-                    }
-                    else if (frame.Event == "thinking")
-                    {
-                        var delta = TryReadStringProperty(frame.Data, "delta");
-                        if (!string.IsNullOrEmpty(delta))
-                        {
-                            thinkingChunks.Add(new TranscriptThinkingChunk(
-                                delta,
-                                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-                        }
-                    }
-                    else if (frame.Event == "usage")
-                    {
-                        latestUsageJson = TryReadUsageJson(frame.Data) ?? latestUsageJson;
-                    }
-
-                    // ExecuteStreamAsync 已将执行帧写入 SSM；Platform 只补 metadata，避免重复 delta/thinking/done。
-                    if (frame.Event == "metadata" && streamSessionId is not null)
-                    {
-                        var frameTrace = primaryTrace.WithSession(streamSessionId, workspaceId);
-                        await ssm.AppendAsync(
-                            streamSessionId,
-                            workspaceId,
-                            frame,
-                            CancellationToken.None,
-                            frameTrace,
-                            RuntimeActivityComponents.AgentExecution,
-                            $"chat.stream.{frame.Event}");
-                        framesWritten++;
-
-                        if (!secondaryFanoutStarted && secondaryDispatches.Count > 0)
-                        {
-                            secondaryFanoutStarted = true;
-                            var capturedSessionId = streamSessionId;
-                            for (var i = 0; i < secondaryDispatches.Count; i++)
-                            {
-                                var secondaryDispatch = secondaryDispatches[i];
-                                var fanoutIndex = i + 1;
-                                _ = Task.Run(() => RunSecondaryChatFanoutAsync(
-                                    apiClient,
-                                    transcriptWriter,
-                                    ssm,
-                                    tokenUsageRecorder,
-                                    logger,
-                                    trace.WithAgent(secondaryDispatch.AgentId, secondaryDispatch.AgentTemplateId),
-                                    channelId,
-                                    userExternalId,
-                                    workspaceId,
-                                    req,
-                                    secondaryDispatch,
-                                    capturedSessionId,
-                                    fanoutIndex,
-                                    dispatches.Count,
-                                    CancellationToken.None));
-                            }
-                        }
-                    }
-
-                    // T-CACHE-005: 检测 done 帧，fire-and-forget 更新 TokenUsageStats
-                    if (frame.Event == "done" && !string.IsNullOrEmpty(frame.Data))
-                    {
-                        if (!assistantTranscriptPersisted && streamSessionId is not null)
-                        {
-                            var reply = TryReadStringProperty(frame.Data, "reply");
-                            var assistantContent = !string.IsNullOrWhiteSpace(reply)
-                                ? reply
-                                : replyBuilder.ToString();
-                            var doneUsageJson = TryReadUsageJson(frame.Data) ?? latestUsageJson;
-                            var thinkingJson = thinkingChunks.Count > 0
-                                ? JsonSerializer.Serialize(thinkingChunks, JsonOpts)
-                                : null;
-
-                            await transcriptWriter.PersistMessageAsync(
-                                streamSessionId,
-                                role: "agent",
-                                content: assistantContent,
-                                createdAt: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                thinkingJson,
-                                doneUsageJson,
-                                workspaceId: workspaceId,
-                                agentInstanceId: primaryDispatch.AgentId,
-                                agentTemplateId: primaryDispatch.AgentTemplateId,
-                                ct: CancellationToken.None);
-                            assistantTranscriptPersisted = true;
-                        }
-
-                        var capturedProviderId = primaryDispatch.PreferredProviderId;
-                        var capturedModelId = primaryDispatch.LlmConfig?.ModelId;
-                        var capturedData = frame.Data;
-                        var msgId = streamMessageId ?? streamSessionId?.ToString();
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                using var doc = JsonDocument.Parse(capturedData);
-                                var root = doc.RootElement;
-                                if (!root.TryGetProperty("usage", out var usageEl)) return;
-
-                                var usageTokens = JsonSerializer.Deserialize<TokenUsageDto>(usageEl.GetRawText(), JsonOpts);
-                                if (usageTokens is null) return;
-                                PromptPrefixSnapshot? prefixSnapshot = null;
-                                if (root.TryGetProperty("prefixSnapshot", out var prefixEl)
-                                    && prefixEl.ValueKind == JsonValueKind.Object)
-                                {
-                                    prefixSnapshot = JsonSerializer.Deserialize<PromptPrefixSnapshot>(
-                                        prefixEl.GetRawText(),
-                                        JsonOpts);
-                                }
-
-                                var sourceId = msgId ?? Guid.NewGuid().ToString("N");
-                                await tokenUsageRecorder.RecordAsync(
-                                    usageTokens,
-                                    sourceType: "chat_message",
-                                    sourceId: sourceId,
-                                    workspaceId: workspaceId,
-                                    sessionId: streamSessionId?.ToString(),
-                                    providerId: capturedProviderId,
-                                    modelId: capturedModelId,
-                                    prefixSnapshot: prefixSnapshot);
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.LogWarning(ex, "[Chat:Stats] Failed to record token usage via recorder");
-                            }
-                        });
-                    }
-                }
-
-                logger.LogInformation(
-                    "[Chat:FireAndForget] Stream completed ws={Workspace} session={Session} framesWritten={Frames}",
-                    workspaceId, streamSessionId, framesWritten);
-                backgroundSw.Stop();
-                await RecordTimelineAsync(
-                    streamSessionId is null ? trace : trace.WithSession(streamSessionId, workspaceId),
-                    RuntimeActivityComponents.AgentExecution,
-                    "chat.background.completed",
-                    "chat.dispatch",
-                    RuntimeActivityStatuses.Succeeded,
-                    metadata: new Dictionary<string, string>
-                    {
-                        ["framesWritten"] = framesWritten.ToString(),
-                        ["messageId"] = streamMessageId ?? "",
-                    },
-                    ct: CancellationToken.None);
-                await RecordTelemetryMetricAsync(
-                    streamSessionId is null ? trace : trace.WithSession(streamSessionId, workspaceId),
-                    TelemetryMetricCategories.Session,
-                    "session.background.completed",
-                    TelemetryMetricStatuses.Succeeded,
-                    durationMs: backgroundSw.ElapsedMilliseconds,
-                    countValue: 1,
-                    occurredAtUtc: backgroundStartedAt,
-                    dimensions: new Dictionary<string, string>
-                    {
-                        ["frames_written"] = framesWritten.ToString(),
-                        ["message_id"] = streamMessageId ?? "",
-                        ["reply_chars"] = replyBuilder.Length.ToString(),
-                        ["thinking_chunks"] = thinkingChunks.Count.ToString(),
-                    },
-                    ct: CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                backgroundSw.Stop();
-                logger.LogWarning(ex,
-                    "[Chat:FireAndForget] Background stream failed ws={Workspace} session={Session}",
-                    workspaceId, streamSessionId);
-                if (streamSessionId is not null)
-                {
-                    try
-                    {
-                        var errorFrame = ServerSentEventFrame.Json("error", new
-                        {
-                            messageId = streamMessageId ?? "",
-                            turnId,
-                            message = ex.Message,
-                            error = ex.GetType().Name,
-                        });
-                        await ssm.AppendAsync(
-                            streamSessionId,
-                            workspaceId,
-                            errorFrame,
-                            CancellationToken.None,
-                            primaryTrace.WithSession(streamSessionId, workspaceId),
-                            RuntimeActivityComponents.AgentExecution,
-                            "chat.stream.error");
-                    }
-                    catch (Exception ssmEx)
-                    {
-                        logger.LogError(ssmEx,
-                            "[Chat:FireAndForget] Failed to append error frame to SSM ws={Workspace} session={Session}",
-                            workspaceId, streamSessionId);
-                    }
-                    try
-                    {
-                        var cancelledFrame = ServerSentEventFrame.Json("cancelled", new
-                        {
-                            messageId = streamMessageId ?? "",
-                            turnId,
-                            reason = ex.GetType().Name,
-                        });
-                        await ssm.AppendAsync(
-                            streamSessionId,
-                            workspaceId,
-                            cancelledFrame,
-                            CancellationToken.None,
-                            primaryTrace.WithSession(streamSessionId, workspaceId),
-                            RuntimeActivityComponents.AgentExecution,
-                            "chat.stream.cancelled");
-                    }
-                    catch (Exception ssmEx2)
-                    {
-                        logger.LogError(ssmEx2,
-                            "[Chat:FireAndForget] Failed to append cancelled frame to SSM ws={Workspace} session={Session}",
-                            workspaceId, streamSessionId);
-                    }
-                }
-                await RecordTimelineAsync(
-                    streamSessionId is null ? trace : trace.WithSession(streamSessionId, workspaceId),
-                    RuntimeActivityComponents.AgentExecution,
-                    "chat.background.failed",
-                    "chat.dispatch",
-                    RuntimeActivityStatuses.Failed,
-                    errorMessage: ex.Message,
-                    ct: CancellationToken.None);
-                await RecordTelemetryMetricAsync(
-                    streamSessionId is null ? trace : trace.WithSession(streamSessionId, workspaceId),
-                    TelemetryMetricCategories.Session,
-                    "session.background.failed",
-                    TelemetryMetricStatuses.Failed,
-                    durationMs: backgroundSw.ElapsedMilliseconds,
-                    countValue: 1,
-                    occurredAtUtc: backgroundStartedAt,
-                    dimensions: new Dictionary<string, string>
-                    {
-                        ["frames_written"] = framesWritten.ToString(),
-                        ["message_id"] = streamMessageId ?? "",
-                    },
-                    error: ex,
-                    ct: CancellationToken.None);
-            }
-        });
-
-        // 等待首个 metadata 帧到达（带超时）— Phase 0: TCS 替代轮询
-        await RecordTimelineAsync(
-            trace,
-            RuntimeActivityComponents.AgentExecution,
-            "chat.metadata.wait.started",
-            "chat.metadata.wait",
-            RuntimeActivityStatuses.Started,
-            ct: ct);
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-        try
-        {
-            linkedCts.Token.Register(() => metadataTcs.TrySetCanceled(linkedCts.Token));
-            var (sid, mid) = await metadataTcs.Task;
-            streamSessionId = sid;
-            streamMessageId = mid;
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning(
-                "[Chat:FireAndForget] Timeout waiting for metadata ws={Workspace} session={Session}",
-                workspaceId, streamSessionId);
-        }
-        catch (Exception tcsEx)
-        {
-            logger.LogError(tcsEx,
-                "[Chat:FireAndForget] Unexpected error waiting for metadata ws={Workspace}",
-                workspaceId);
-        }
+            "[Chat:Queue] Command accepted cmd={CommandId} turn={TurnId} session={SessionId} status={Status}",
+            result.CommandId, result.TurnId, result.SessionId, result.Status);
 
         sw.Stop();
-
-        // P0-2 修复: metadata 帧获取失败时返回 500，防止前端 loading 永久悬挂
-        if (streamMessageId is null || streamSessionId is null)
+        return StatusCode(202, new
         {
-            logger.LogError(
-                "[Chat:FireAndForget] Failed to get metadata ws={Workspace} msgId={MessageId} session={Session} elapsed={Elapsed}ms",
-                workspaceId, streamMessageId, streamSessionId, sw.ElapsedMilliseconds);
-            await RecordTimelineAsync(
-                trace,
-                RuntimeActivityComponents.AgentExecution,
-                "chat.post.failed",
-                "chat.send",
-                RuntimeActivityStatuses.Failed,
-                durationMs: sw.ElapsedMilliseconds,
-                errorMessage: "metadata timeout",
-                ct: CancellationToken.None);
-            await RecordTelemetryMetricAsync(
-                trace,
-                TelemetryMetricCategories.Session,
-                "session.message.failed",
-                TelemetryMetricStatuses.Failed,
-                durationMs: sw.ElapsedMilliseconds,
-                countValue: 1,
-                dimensions: new Dictionary<string, string>
-                {
-                    ["reason"] = "metadata_timeout",
-                    ["agent_id"] = req.AgentId ?? "",
-                },
-                errorMessage: "metadata timeout",
-                ct: CancellationToken.None);
-            return StatusCode(500, new { message = "AI 服务响应超时，请稍后重试" });
-        }
-
-        logger.LogInformation(
-            "[Chat:FireAndForget] Returned ws={Workspace} msgId={MessageId} sessionId={SessionId} elapsed={Elapsed}ms",
-            workspaceId, streamMessageId, streamSessionId, sw.ElapsedMilliseconds);
-        await RecordTimelineAsync(
-            trace.WithSession(streamSessionId, workspaceId),
-            RuntimeActivityComponents.AgentExecution,
-            "chat.post.returned",
-            "chat.send",
-            RuntimeActivityStatuses.Succeeded,
-            durationMs: sw.ElapsedMilliseconds,
-            metadata: new Dictionary<string, string>
-            {
-                ["messageId"] = streamMessageId,
-            },
-            ct: CancellationToken.None);
-        await RecordTelemetryMetricAsync(
-            trace.WithSession(streamSessionId, workspaceId),
-            TelemetryMetricCategories.Session,
-            "session.message.returned",
-            TelemetryMetricStatuses.Succeeded,
-            durationMs: sw.ElapsedMilliseconds,
-            countValue: 1,
-            dimensions: new Dictionary<string, string>
-            {
-                ["message_id"] = streamMessageId,
-                ["agent_id"] = req.AgentId ?? "",
-            },
-            ct: CancellationToken.None);
-
-        return Ok(new { messageId = streamMessageId, sessionId = streamSessionId });
+            status = result.Status,
+            commandId = result.CommandId,
+            messageId = result.MessageId,
+            turnId = result.TurnId,
+            sessionId = result.SessionId,
+            eventCursor = result.EventCursor?.ToString(),
+            clientRequestId = result.ClientRequestId,
+        });
     }
 
     // POST /api/workspaces/{workspaceId}/chat/sessions/{sessionId}/steering
@@ -1778,7 +1231,7 @@ public class ChatApiController(
             SkillPackages: skillPackages);
     }
 
-    private static Dictionary<string, string>? BuildChatIngressMetadata(
+    internal static Dictionary<string, string>? BuildChatIngressMetadata(
         AdminChatRequest req,
         ChatAgentDispatch dispatch,
         int fanoutIndex,
@@ -2103,17 +1556,6 @@ public class ChatApiController(
             .Select(group => group.First())
             .ToList();
     }
-
-    private sealed record ChatAgentDispatch(
-        string AgentId,
-        string DisplayName,
-        string? AvatarUrl,
-        string? AgentTemplateId,
-        string? PreferredProviderId,
-        LlmConfig? LlmConfig,
-        CapabilityPolicy? CapabilityPolicy,
-        IReadOnlyList<LlmToolDefinition>? ToolDefinitions,
-        IReadOnlyList<SkillPackageInfo>? SkillPackages);
 
     private sealed record TranscriptThinkingChunk(string Text, long Timestamp);
 
@@ -2532,3 +1974,14 @@ public class ChatApiController(
         return globalTemplate?.ReasoningEffort;
     }
 }
+
+internal sealed record ChatAgentDispatch(
+    string AgentId,
+    string DisplayName,
+    string? AvatarUrl,
+    string? AgentTemplateId,
+    string? PreferredProviderId,
+    LlmConfig? LlmConfig,
+    CapabilityPolicy? CapabilityPolicy,
+    IReadOnlyList<LlmToolDefinition>? ToolDefinitions,
+    IReadOnlyList<SkillPackageInfo>? SkillPackages);

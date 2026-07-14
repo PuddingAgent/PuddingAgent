@@ -21,6 +21,7 @@ public sealed class ChatExecutionWorker : BackgroundService
     private readonly ChatTranscriptWriter _transcriptWriter;
     private readonly ILogger<ChatExecutionWorker> _logger;
     private readonly int _maxConcurrency;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
 
     public ChatExecutionWorker(
         IChatCommandStore commandStore,
@@ -55,7 +56,7 @@ public sealed class ChatExecutionWorker : BackgroundService
                     var command = await _commandStore.LeaseNextAsync(LeaseOwner, LeaseDurationMs, stoppingToken);
                     if (command is null) break;
 
-                    var task = ExecuteCommandAsync(command, stoppingToken);
+                    var task = ExecuteWithSessionLockAsync(command, stoppingToken);
                     running.TryAdd(command.CommandId, task);
 
                     _ = task.ContinueWith(_ =>
@@ -80,6 +81,24 @@ public sealed class ChatExecutionWorker : BackgroundService
         _logger.LogInformation("[ChatWorker] Stopping, waiting for {Count} running commands", running.Count);
         await Task.WhenAll(running.Values);
         _logger.LogInformation("[ChatWorker] Stopped");
+    }
+
+    /// <summary>
+    /// Executes a command with per-session serialization.
+    /// Same-session turns are processed sequentially; different sessions run concurrently.
+    /// </summary>
+    private async Task ExecuteWithSessionLockAsync(ChatCommandRecord command, CancellationToken stoppingToken)
+    {
+        var sessionLock = _sessionLocks.GetOrAdd(command.SessionId, _ => new SemaphoreSlim(1, 1));
+        await sessionLock.WaitAsync(stoppingToken);
+        try
+        {
+            await ExecuteCommandAsync(command, stoppingToken);
+        }
+        finally
+        {
+            sessionLock.Release();
+        }
     }
 
     private async Task ExecuteCommandAsync(ChatCommandRecord command, CancellationToken stoppingToken)

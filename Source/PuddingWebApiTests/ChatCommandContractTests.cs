@@ -88,7 +88,7 @@ public sealed class ChatCommandContractTests
             $"/api/workspaces/{workspaceId}/chat/message", content);
 
         var bodyText = await response.Content.ReadAsStringAsync();
-        if ((int)response.StatusCode != 200)
+        if ((int)response.StatusCode is not (200 or 202))
         {
             Assert.Fail($"Expected 200, got {(int)response.StatusCode}. Body: {bodyText}");
         }

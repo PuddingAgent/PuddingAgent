@@ -251,8 +251,9 @@ builder.Services.AddSingleton<SessionEventHub>();
 builder.Services.AddSingleton<SessionStateManager>();
 builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
 
-// ── Chat 执行命令队列（ADR-056 Phase 1）─────────────────
+// ── Chat 执行命令队列（ADR-056）─────────────────
 builder.Services.AddSingleton<IChatCommandStore, ChatCommandStore>();
+builder.Services.AddSingleton<ChatCommandAcceptanceService>();
 builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
