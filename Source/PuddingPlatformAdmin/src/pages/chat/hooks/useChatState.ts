@@ -4826,9 +4826,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       });
 
       try {
-        // T-102: 非流式 POST — 立即返回 { messageId, sessionId }。
-        // Chat UI 只提交路由意图；@all fan-out 必须由后端消息/事件系统承接。
-        const { messageId, sessionId: returnedSessionId } =
+        // T-102: 非流式 POST — 202 Accepted + { success, status, commandId, messageId, turnId, sessionId, eventCursor }
+        // ADR-056: turnId 由后端分配（非前端生成），确保事件系统一致。
+        const { messageId, sessionId: returnedSessionId, turnId: serverTurnId } =
           await sendChatMessage(
             workspaceId,
             buildChatMessageRequest(
@@ -4843,8 +4843,10 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
 
         const stillViewingSendSession =
           (sessionIdRef.current ?? null) === previousSessionId;
+        const effectiveTurnId = serverTurnId ?? turnId;
         logChatDiag('post.returned.beforeApply', {
-          turnId,
+          turnId: effectiveTurnId,
+          serverTurnId,
           messageId,
           returnedSessionId,
           previousSessionId,
@@ -4864,7 +4866,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           setSelectedSessionId(returnedSessionId);
         }
         forceNewSessionRef.current = false;
-        messageIdToTurnIdRef.current.set(messageId, turnId);
+        messageIdToTurnIdRef.current.set(messageId, effectiveTurnId);
         messageIdToAgentIdsRef.current.set(messageId, workingTargetAgentIds);
         const previousSessionAgentIds =
           sessionIdToAgentIdsRef.current.get(returnedSessionId) ?? [];
@@ -4879,9 +4881,10 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           startSessionEventStream(returnedSessionId);
         }
 
-        // 埋点：消息发送成功，记录 messageId→turnId 绑定
+        // 埋点
         console.debug('[Pudding Chat] post returned', {
-          turnId,
+          turnId: effectiveTurnId,
+          serverTurnId,
           messageId,
           sessionId: returnedSessionId,
           stillViewingSendSession,
@@ -4889,7 +4892,8 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           activeMessageCount: activeMessageIdsRef.current.size,
         });
         logChatDiag('post.returned.afterApply', {
-          turnId,
+          turnId: effectiveTurnId,
+          serverTurnId,
           messageId,
           returnedSessionId,
           previousSessionId,

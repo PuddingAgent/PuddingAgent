@@ -14,7 +14,7 @@ Pudding 是一个 .NET 10 的自主 Agent 框架，支持六层记忆体系、Sk
 - 主项目: `D:\data\Pudding`
 - 工作空间: `D:\data\workspaces\default`
 - 编译入口: `dotnet build PuddingRuntime`
-
+- 代码地图: `Source\code_map.md`
 
 ## 运行时配置
 - Shell: `pwsh` (PowerShell Core)

@@ -395,12 +395,13 @@ public class ChatApiController(
         sw.Stop();
         return StatusCode(202, new
         {
+            success = true,
             status = result.Status,
             commandId = result.CommandId,
             messageId = result.MessageId,
             turnId = result.TurnId,
             sessionId = result.SessionId,
-            eventCursor = result.EventCursor?.ToString(),
+            eventCursor = result.EventCursor,
             clientRequestId = result.ClientRequestId,
         });
     }
