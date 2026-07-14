@@ -140,6 +140,13 @@ public sealed class ContextPipeline
         var assemblyStartedAt = DateTimeOffset.UtcNow;
         var assemblySw = System.Diagnostics.Stopwatch.StartNew();
 
+        var budget = new ContextBudgetAllocator(_logger);
+        var ctx = new ContextBuildContext
+        {
+            Request = request,
+            TotalBudget = totalBudget,
+        };
+
         try
         {
         // ── L0: 静态上下文（IDENTITY/SOUL/AGENTS）— Session 内不变，利用 KV-cache ──
@@ -157,7 +164,6 @@ public sealed class ContextPipeline
         RecordLayer(sb, workspaceAgentsCtx, "工作区 Agents", "L0-AGENTS-ROSTER", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-TASK-PLANNING: 系统生成的任务树位置与委派约束 ──
-        // 预算在此处核算（影响后续层分配），但注入位置后移至 RECALLED 之后以保护前缀缓存
         var taskPlanningCtx = _taskPlannerContextBuilder is null
             ? string.Empty
             : await _taskPlannerContextBuilder.BuildAsync(request, ct);
@@ -175,45 +181,44 @@ public sealed class ContextPipeline
             });
         }
 
-        // ── L0-INBOUND-MESSAGE-CONTEXT: agent-to-agent 消息上下文 ——
-        // 预算在此处核算（影响后续层分配），但注入位置后移至 RUNTIME 之后以保护前缀缓存
+        // ── L0-INBOUND-MESSAGE-CONTEXT ──
         var inboundCtx = BuildInboundMessageContextLayer(request);
         var inboundTokens = EstimateTokens(inboundCtx);
         usedBudget += inboundTokens;
+        ctx.InboundTokens = inboundTokens;
 
-        // ── 计算可用预算 ──
-        var availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 500);
-        var compactionLevel = DetermineCompactionLevel(usedBudget, totalBudget);
+        // ── 更新预算上下文 ──
+        ctx.UsedBudget = usedBudget;
+        budget.Initialize(ctx);
+        var availableBudget = ctx.AvailableBudget;
+        var compactionLevel = ctx.CompactionLevel;
 
-        // ── L3: 用户偏好（提前计算，因为预算公式需要扣除）──
+        // ── L3: 用户偏好 ──
         var userProfile = await GetOrBuildUserProfileAsync(request, ct);
         var userProfileTokens = EstimateTokens(userProfile);
         usedBudget += userProfileTokens;
-        availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 500);
+        ctx.UsedBudget = usedBudget;
+        budget.UpdateAvailable(ctx);
 
         // ── L1: 动态工具（5%）──
         var toolsCtx = await BuildToolsLayerAsync(request, ct);
-        var toolsBudget = (int)(availableBudget * 0.05);
+        var toolsBudget = budget.AllocatePercent(ctx, 0.05);
         var toolsTrimmed = TrimToTokenBudget(toolsCtx, toolsBudget);
         RecordLayer(sb, toolsTrimmed, "动态工具", "L1-TOOLS", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L2: 动态 Skills（5%）──
         var skillsCtx = await BuildSkillsLayerAsync(request, ct);
-        var skillsBudget = (int)(availableBudget * 0.05);
+        var skillsBudget = budget.AllocatePercent(ctx, 0.05);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
         RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
 
-        // ── L2-MEMORY-SUMMARY: 持久化 Session 摘要（后移至 PINNED 之后注入）──
+        // ── L2-MEMORY-SUMMARY ──
         var memorySummaryCtx = _agentMemorySummaryContextBuilder is null
             ? string.Empty
             : await _agentMemorySummaryContextBuilder.BuildAsync(
-                request.SessionId,
-                request.AgentInstanceId,
-                request.IsFirstMessage,
-                ct);
+                request.SessionId, request.AgentInstanceId, request.IsFirstMessage, ct);
         var hasMemorySummary = !string.IsNullOrWhiteSpace(memorySummaryCtx);
         var memorySummaryTokens = hasMemorySummary ? EstimateTokens(memorySummaryCtx) : 0;
-        // 预算先扣，注入时再决定用原始还是片段
         usedBudget += memorySummaryTokens;
         if (hasMemorySummary)
         {
@@ -251,11 +256,11 @@ public sealed class ContextPipeline
         });
 
         // ── L4: 重要记忆（10%）──
-        availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 200);
+        ctx.UsedBudget = usedBudget;
+        budget.UpdateAvailable(ctx);
         var pinnedCtx = await GetOrBuildPinnedMemoryAsync(request, ct);
-        var pinnedBudget = compactionLevel >= ContextPipelineCompactionLevel.Aggressive
-            ? (int)(availableBudget * 0.05)
-            : (int)(availableBudget * 0.10);
+        var pinnedPercent = compactionLevel >= ContextPipelineCompactionLevel.Aggressive ? 0.05 : 0.10;
+        var pinnedBudget = budget.AllocatePercent(ctx, pinnedPercent);
         var pinnedTrimmed = TrimToTokenBudget(pinnedCtx, pinnedBudget);
         RecordLayer(sb, pinnedTrimmed, "重要记忆", "L4-PINNED", ref usedBudget, totalBudget, layers, layerInfos);
 
@@ -379,8 +384,9 @@ public sealed class ContextPipeline
         }
 
         // ── L7: 当前消息（15%）──
-        availableBudget = Math.Max(totalBudget - ReservedForReply - usedBudget, 100);
-        var currentMsgBudget = (int)(availableBudget * 0.15);
+        ctx.UsedBudget = usedBudget;
+        budget.UpdateAvailable(ctx);
+        var currentMsgBudget = budget.AllocatePercentWithFloor(ctx, 0.15, 100);
         var currentMsg = BuildCurrentMessageLayer(request, currentMsgBudget);
         RecordLayer(sb, currentMsg, "当前消息", "L9-CURRENT", ref usedBudget, totalBudget, layers, layerInfos);
 
