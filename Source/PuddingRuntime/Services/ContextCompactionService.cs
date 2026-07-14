@@ -6,8 +6,6 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
-using PuddingPlatform.Data;
-using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services;
 
@@ -23,8 +21,9 @@ public sealed class ContextCompactionService : IContextCompactionService
     private readonly IDbContextFactory<MemoryDbContext> _dbFactory;
     private readonly IContextCompactionSummaryGenerator _summaryGenerator;
     private readonly ILogger<ContextCompactionService> _logger;
-    private readonly AgentContentSummaryService? _contentSummaryService;
-    private readonly IDbContextFactory<PlatformDbContext>? _transcriptDbFactory;
+    private readonly IAgentContentSummaryService? _contentSummaryService;
+    private readonly ITokenUsageEventRepository? _tokenUsageRepo;
+    private readonly ICompactionChatMessageStore? _messageStore;
     private readonly SessionSummaryStore? _sessionSummaryStore;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly ContextCompactionOptions? _options;
@@ -34,8 +33,9 @@ public sealed class ContextCompactionService : IContextCompactionService
         IDbContextFactory<MemoryDbContext> dbFactory,
         IContextCompactionSummaryGenerator summaryGenerator,
         ILogger<ContextCompactionService> logger,
-        AgentContentSummaryService? contentSummaryService = null,
-        IDbContextFactory<PlatformDbContext>? transcriptDbFactory = null,
+        IAgentContentSummaryService? contentSummaryService = null,
+        ITokenUsageEventRepository? tokenUsageRepo = null,
+        ICompactionChatMessageStore? messageStore = null,
         SessionSummaryStore? sessionSummaryStore = null,
         ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         ContextCompactionOptions? options = null,
@@ -45,7 +45,8 @@ public sealed class ContextCompactionService : IContextCompactionService
         _summaryGenerator = summaryGenerator;
         _logger = logger;
         _contentSummaryService = contentSummaryService;
-        _transcriptDbFactory = transcriptDbFactory;
+        _tokenUsageRepo = tokenUsageRepo;
+        _messageStore = messageStore;
         _sessionSummaryStore = sessionSummaryStore;
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
         _options = options;
@@ -124,25 +125,12 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     private async Task<ContextUsageSnapshot?> TryGetLatestProviderUsageAsync(string sessionId, CancellationToken ct)
     {
-        if (_transcriptDbFactory is null)
+        if (_tokenUsageRepo is null)
             return null;
 
         try
         {
-            await using var platformDb = await _transcriptDbFactory.CreateDbContextAsync(ct);
-            var latest = await platformDb.TokenUsageEvents
-                .AsNoTracking()
-                .Where(ev => ev.SessionId == sessionId && ev.PromptTokens > 0)
-                .OrderByDescending(ev => ev.OccurredAtUtc)
-                .ThenByDescending(ev => ev.Id)
-                .Select(ev => new
-                {
-                    ev.PromptTokens,
-                    ev.CompletionTokens,
-                    ev.TotalTokens,
-                    ev.OccurredAtUtc,
-                })
-                .FirstOrDefaultAsync(ct);
+            var latest = await _tokenUsageRepo.GetLatestStatsAsync(sessionId, ct);
 
             if (latest is null)
                 return null;
@@ -580,17 +568,10 @@ public sealed class ContextCompactionService : IContextCompactionService
         ContextCompactionRequest request,
         CancellationToken ct)
     {
-        if (_transcriptDbFactory is null)
+        if (_messageStore is null)
             return;
 
-        await using var transcriptDb = await _transcriptDbFactory.CreateDbContextAsync(ct);
-        var transcriptRows = await transcriptDb.ChatMessages
-            .AsNoTracking()
-            .Where(m => m.SessionId == request.SessionId)
-            .Where(m => !string.IsNullOrWhiteSpace(m.Content))
-            .OrderBy(m => m.CreatedAt)
-            .ThenBy(m => m.Id)
-            .ToListAsync(ct);
+        var transcriptRows = await _messageStore.GetAllForSessionAsync(request.SessionId, ct);
 
         if (transcriptRows.Count == 0)
             return;

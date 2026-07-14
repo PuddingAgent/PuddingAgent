@@ -117,4 +117,27 @@ public interface ITokenUsageEventRepository
         int page = 1,
         int pageSize = 50,
         CancellationToken ct = default);
+
+    Task<SessionTokenStats?> GetLatestStatsAsync(string sessionId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Token statistics for a session.
+/// </summary>
+public sealed class SessionTokenStats
+{
+    public long PromptTokens { get; init; }
+    public long CompletionTokens { get; init; }
+    public long TotalTokens { get; init; }
+    public DateTimeOffset OccurredAtUtc { get; init; }
+    public long? MostRecentEventId { get; init; }
+}
+
+/// <summary>
+/// Extended chat message methods for compaction decisions.
+/// </summary>
+public interface ICompactionChatMessageStore
+{
+    Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default);
+    Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default);
 }

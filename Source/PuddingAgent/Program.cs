@@ -262,6 +262,8 @@ builder.Services.AddSingleton<ChatMessageExecutionService>();
 // ── Repository pattern (EF Core → Repository → Service) ──
 builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
+builder.Services.AddScoped<ICompactionChatMessageStore, ChatMessageRepository>();
+builder.Services.AddScoped<ITokenUsageEventRepository, TokenUsageEventRepository>();
 builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
@@ -477,6 +479,7 @@ builder.Services.AddSingleton<AgentRawLogMirrorService>();
 builder.Services.AddSingleton<AgentDailySummaryService>();
 builder.Services.AddSingleton<AgentDailySummaryBatchService>();
 builder.Services.AddSingleton<AgentContentSummaryService>();
+builder.Services.AddSingleton<IAgentContentSummaryService>(sp => sp.GetRequiredService<AgentContentSummaryService>());
 builder.Services.AddSingleton<ChatTranscriptWriter>();
 builder.Services.AddSingleton<IChatTranscriptWriter>(sp => sp.GetRequiredService<ChatTranscriptWriter>());
 builder.Services.AddSingleton<IRawSessionLogService>(sp =>

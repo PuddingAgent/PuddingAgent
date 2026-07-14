@@ -9,7 +9,7 @@ namespace PuddingPlatform.Services;
 
 public sealed class AgentContentSummaryService(
     PuddingDataPaths paths,
-    ISubconsciousTextProcessingService textProcessing)
+    ISubconsciousTextProcessingService textProcessing) : IAgentContentSummaryService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -212,23 +212,6 @@ public sealed record AgentContentSummaryUpdateRequest(
     string ConversationText,
     string Reason,
     MemoryLlmConfig? MemoryLlmConfig);
-
-public sealed record AgentCompressedContentSummaryRequest(
-    string WorkspaceId,
-    string AgentInstanceId,
-    string? AgentTemplateId,
-    string SessionId,
-    string Day,
-    string SummaryMarkdown,
-    string Reason);
-
-public sealed record AgentContentSummaryResult(
-    string AgentInstanceId,
-    string Day,
-    string ContentPath,
-    string MetadataPath,
-    string SourceHash,
-    bool ResetForNewDay);
 
 public sealed record AgentContentSummaryMetadata(
     string AgentInstanceId,

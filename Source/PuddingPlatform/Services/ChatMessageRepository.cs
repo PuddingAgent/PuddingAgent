@@ -6,9 +6,9 @@ using PuddingPlatform.Data.Entities;
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// EF Core implementation of IChatMessageRepository.
+/// EF Core implementation of IChatMessageRepository and ICompactionChatMessageStore.
 /// </summary>
-public sealed class ChatMessageRepository : IChatMessageRepository
+public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionChatMessageStore
 {
     private readonly PlatformDbContext _db;
 
@@ -45,4 +45,17 @@ public sealed class ChatMessageRepository : IChatMessageRepository
         CreatedAt = e.CreatedAt,
         AgentInstanceId = e.AgentInstanceId,
     };
+
+    public async Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        var messages = await _db.ChatMessages.AsNoTracking()
+            .Where(m => m.SessionId == sessionId && !string.IsNullOrWhiteSpace(m.Content))
+            .OrderBy(m => m.CreatedAt)
+            .ThenBy(m => m.Id)
+            .ToListAsync(ct);
+        return messages.Select(Map).ToList();
+    }
+
+    public async Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default)
+        => await _db.ChatMessages.CountAsync(m => m.SessionId == sessionId, ct);
 }
