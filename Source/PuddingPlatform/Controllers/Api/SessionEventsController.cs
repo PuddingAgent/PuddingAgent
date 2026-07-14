@@ -28,6 +28,7 @@ public class SessionEventsController : ControllerBase
 
     private readonly ISessionStateManager _ssm;
     private readonly ISessionEventStream _eventStream;
+    private readonly ISessionProjectionStore _projectionStore;
     private readonly IContextCompactionService _compactionService;
     private readonly CacheDiagnosticsService _cacheDiagnosticsService;
     private readonly ISessionTimelineRecorder _timelineRecorder;
@@ -43,6 +44,7 @@ public class SessionEventsController : ControllerBase
     public SessionEventsController(
         ISessionStateManager ssm,
         ISessionEventStream eventStream,
+        ISessionProjectionStore projectionStore,
         IContextCompactionService compactionService,
         CacheDiagnosticsService cacheDiagnosticsService,
         ISessionTimelineRecorder timelineRecorder,
@@ -57,6 +59,7 @@ public class SessionEventsController : ControllerBase
     {
         _ssm = ssm;
         _eventStream = eventStream;
+        _projectionStore = projectionStore;
         _compactionService = compactionService;
         _cacheDiagnosticsService = cacheDiagnosticsService;
         _timelineRecorder = timelineRecorder;
@@ -246,6 +249,22 @@ public class SessionEventsController : ControllerBase
             metadata: null,
             logger: _logger,
             ct: CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 获取会话的投影游标。
+    /// GET /api/sessions/{sessionId}/projected-cursor
+    /// <para>
+    /// ADR-056: 浏览器加载历史消息 → ChatMessages；然后从 projectedThroughSequence 之后读取尾部队列事件。
+    /// ChatMessages 是 SessionEventLog 的物化投影，不是独立事实源。
+    /// </para>
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("{sessionId}/projected-cursor")]
+    public async Task<ActionResult> GetProjectedCursor(string sessionId, CancellationToken ct)
+    {
+        var cursor = await _projectionStore.GetProjectedCursorAsync(sessionId, ct);
+        return Ok(new { sessionId, projectedThroughSequence = cursor });
     }
 
     private static async Task WriteEnvelopeAsSseAsync(

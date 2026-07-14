@@ -17,6 +17,8 @@ public sealed class ChatExecutionWorker : BackgroundService
 
     private readonly IChatCommandStore _commandStore;
     private readonly ISessionStateManager _ssm;
+    private readonly ISessionProjectionStore _projectionStore;
+    private readonly ISessionEventReader _eventReader;
     private readonly PlatformApiClient _apiClient;
     private readonly ChatTranscriptWriter _transcriptWriter;
     private readonly ILogger<ChatExecutionWorker> _logger;
@@ -26,6 +28,8 @@ public sealed class ChatExecutionWorker : BackgroundService
     public ChatExecutionWorker(
         IChatCommandStore commandStore,
         ISessionStateManager ssm,
+        ISessionProjectionStore projectionStore,
+        ISessionEventReader eventReader,
         PlatformApiClient apiClient,
         ChatTranscriptWriter transcriptWriter,
         ILogger<ChatExecutionWorker> logger,
@@ -33,6 +37,8 @@ public sealed class ChatExecutionWorker : BackgroundService
     {
         _commandStore = commandStore;
         _ssm = ssm;
+        _projectionStore = projectionStore;
+        _eventReader = eventReader;
         _apiClient = apiClient;
         _transcriptWriter = transcriptWriter;
         _logger = logger;
@@ -213,6 +219,10 @@ public sealed class ChatExecutionWorker : BackgroundService
                             agentTemplateId: command.AgentTemplateId,
                             ct: CancellationToken.None);
                         assistantTranscriptPersisted = true;
+
+                        // Update projection cursor: messages now reflect events up to current head.
+                        var projectedSeq = await _eventReader.GetHeadAsync(command.SessionId, CancellationToken.None);
+                        await _projectionStore.SetProjectedCursorAsync(command.SessionId, projectedSeq);
                     }
                 }
 
