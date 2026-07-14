@@ -2,8 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingRuntime.Services;
 
-namespace PuddingRuntime.Services;
+namespace PuddingAgent.Services;
 
 /// <summary>
 /// 启动时将 JSON 配置种子到 SQLite（幂等 Upsert）。

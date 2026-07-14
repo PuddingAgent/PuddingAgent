@@ -367,7 +367,25 @@ builder.Services.AddSingleton<BenchmarkRunService>();
 builder.Services.AddSingleton<WorkspaceAgentFileService>();
 builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
 builder.Services.AddSingleton<IAgentRosterProvider, WorkspaceAgentRosterProvider>();
-builder.Services.AddSingleton<IWorkspaceAuditAgentProvider, WorkspaceAuditAgentProvider>();
+builder.Services.AddSingleton<IWorkspaceAuditAgentProvider>(sp =>
+{
+    var fileService = sp.GetRequiredService<WorkspaceAgentFileService>();
+    return new WorkspaceAuditAgentProviderAdapter(
+        async (workspaceId, ct) =>
+        {
+            var candidate = await fileService.FindFirstEnabledAuditAgentAsync(workspaceId, ct);
+            if (candidate is null) return null;
+            return new WorkspaceAuditAgentProfile
+            {
+                WorkspaceId = candidate.WorkspaceId,
+                AgentInstanceId = candidate.AgentInstanceId,
+                AgentTemplateId = candidate.AgentTemplateId,
+                ProviderId = candidate.ProviderId,
+                ProfileId = candidate.ProfileId,
+                ModelId = candidate.ModelId,
+            };
+        });
+});
 
 // ── 重要记忆文件服务 ──
 builder.Services.AddSingleton<ImportantMemoryService>();

@@ -1,52 +1,28 @@
-using PuddingPlatform.Services;
+using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services.Tools;
 
-/// <summary>Provides the workspace-scoped Audit agent used by automatic tool approval.</summary>
-public interface IWorkspaceAuditAgentProvider
+/// <summary>
+/// Runtime-side adapter that delegates to Platform's WorkspaceAgentFileService
+/// to resolve workspace audit agents for automatic tool approval.
+/// </summary>
+/// <remarks>
+/// This adapter exists to decouple Runtime tools from the concrete Platform service.
+/// The IWorkspaceAuditAgentProvider abstraction lives in PuddingCore.
+/// The implementation is registered in PuddingAgent startup (Program.cs) via DI.
+/// </remarks>
+public sealed class WorkspaceAuditAgentProviderAdapter : IWorkspaceAuditAgentProvider
 {
-    Task<WorkspaceAuditAgentProfile?> FindFirstEnabledAuditAgentAsync(
-        string workspaceId,
-        CancellationToken ct = default);
-}
+    private readonly Func<string, CancellationToken, Task<WorkspaceAuditAgentProfile?>> _finder;
 
-/// <summary>Resolved Audit agent identity and LLM route for a workspace approval review.</summary>
-public sealed record WorkspaceAuditAgentProfile
-{
-    public required string WorkspaceId { get; init; }
-    public required string AgentInstanceId { get; init; }
-    public required string AgentTemplateId { get; init; }
-    public string? ProviderId { get; init; }
-    public string? ProfileId { get; init; }
-    public string? ModelId { get; init; }
-}
-
-/// <summary>File-backed adapter from workspace agent configuration to the approval reviewer boundary.</summary>
-public sealed class WorkspaceAuditAgentProvider : IWorkspaceAuditAgentProvider
-{
-    private readonly WorkspaceAgentFileService _workspaceAgents;
-
-    public WorkspaceAuditAgentProvider(WorkspaceAgentFileService workspaceAgents)
+    public WorkspaceAuditAgentProviderAdapter(
+        Func<string, CancellationToken, Task<WorkspaceAuditAgentProfile?>> finder)
     {
-        _workspaceAgents = workspaceAgents;
+        _finder = finder;
     }
 
-    public async Task<WorkspaceAuditAgentProfile?> FindFirstEnabledAuditAgentAsync(
+    public Task<WorkspaceAuditAgentProfile?> FindFirstEnabledAuditAgentAsync(
         string workspaceId,
         CancellationToken ct = default)
-    {
-        var candidate = await _workspaceAgents.FindFirstEnabledAuditAgentAsync(workspaceId, ct);
-        if (candidate is null)
-            return null;
-
-        return new WorkspaceAuditAgentProfile
-        {
-            WorkspaceId = candidate.WorkspaceId,
-            AgentInstanceId = candidate.AgentInstanceId,
-            AgentTemplateId = candidate.AgentTemplateId,
-            ProviderId = candidate.ProviderId,
-            ProfileId = candidate.ProfileId,
-            ModelId = candidate.ModelId,
-        };
-    }
+        => _finder(workspaceId, ct);
 }
