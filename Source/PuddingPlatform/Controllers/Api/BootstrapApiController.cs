@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
@@ -32,7 +33,10 @@ public partial class BootstrapApiController(
     WorkspaceAgentFileService workspaceAgentFileService,
     LlmProviderFileService llmProviderFileService,
     PuddingFileLlmConfigService llmConfigService,
-    ILogger<BootstrapApiController> logger) : ControllerBase
+    ILogger<BootstrapApiController> logger,
+    IAppUserRepository appUserRepo,
+    ITeamRepository teamRepo,
+    IWorkspaceMemberRepository wsMemberRepo) : ControllerBase
 {
     private IActionResult? CheckInitialized()
     {
@@ -49,8 +53,8 @@ public partial class BootstrapApiController(
         var lockResult = CheckInitialized();
         if (lockResult != null) return lockResult;
 
-        var hasAdmin = await db.AppUsers.AnyAsync(u => u.UserType == UserType.Admin, ct);
-        var userCount = await db.AppUsers.CountAsync(ct);
+        var hasAdmin = await appUserRepo.AnyAdminExistsAsync(ct);
+        var userCount = await appUserRepo.CountAsync(ct);
 
         return Ok(new
         {
@@ -82,7 +86,7 @@ public partial class BootstrapApiController(
         try
         {
             // 仅当无 Admin 时允许
-            if (await db.AppUsers.AnyAsync(u => u.UserType == UserType.Admin, ct))
+            if (await appUserRepo.AnyAdminExistsAsync(ct))
             {
                 await transaction.RollbackAsync(ct);
                 return BadRequest(new { status = "error", message = "系统已完成初始化" });
@@ -148,7 +152,7 @@ public partial class BootstrapApiController(
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         try
         {
-            if (await db.AppUsers.AnyAsync(u => u.UserType == UserType.Admin, ct))
+            if (await appUserRepo.AnyAdminExistsAsync(ct))
             {
                 await transaction.RollbackAsync(ct);
                 return BadRequest(new { status = "error", message = "系统已完成初始化" });
@@ -276,7 +280,7 @@ public partial class BootstrapApiController(
             workspace.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
-        if (!await db.TeamMembers.AnyAsync(m => m.TeamEntityId == team.Id && m.UserEntityId == admin.Id, ct))
+        if (!await teamRepo.AnyTeamMemberAsync(team.Id, admin.Id, ct))
         {
             db.TeamMembers.Add(new TeamMemberEntity
             {
@@ -287,7 +291,7 @@ public partial class BootstrapApiController(
             });
         }
 
-        if (!await db.WorkspaceMembers.AnyAsync(m => m.WorkspaceEntityId == workspace.Id && m.UserEntityId == admin.Id, ct))
+        if (!await wsMemberRepo.AnyMemberAsync(workspace.Id, admin.Id, ct))
         {
             db.WorkspaceMembers.Add(new WorkspaceMemberEntity
             {
