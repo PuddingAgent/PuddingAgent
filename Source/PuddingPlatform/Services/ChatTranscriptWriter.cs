@@ -22,15 +22,15 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
     private readonly AgentConversationLogService? _agentConversationLogService;
 
     public ChatTranscriptWriter(
-        IServiceScopeFactory _scopeFactory,
-        ILogger<ChatTranscriptWriter> _logger,
+        IServiceScopeFactory scopeFactory,
+        ILogger<ChatTranscriptWriter> logger,
         MessageTopicService? messageTopicService = null,
-        AgentConversationLogService? _agentConversationLogService = null)
+        AgentConversationLogService? agentConversationLogService = null)
     {
-        _scopeFactory = _scopeFactory;
-        _logger = _logger;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
         _messageTopicService = messageTopicService;
-        _agentConversationLogService = _agentConversationLogService;
+        _agentConversationLogService = agentConversationLogService;
     }
     /// <summary>
     /// 幂等写入一条聊天转录消息。返回生成的 messageId，重复消息返回 null。

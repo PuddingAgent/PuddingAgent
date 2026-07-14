@@ -25,11 +25,11 @@ public sealed class SessionSteeringService : ISessionSteeringService
     private static readonly TimeSpan PendingTtl = TimeSpan.FromMinutes(30);
 
     public SessionSteeringService(
-        IDbContextFactory<PlatformDbContext> _dbFactory,
-        ILogger<SessionSteeringService> _logger)
+        IDbContextFactory<PlatformDbContext> dbFactory,
+        ILogger<SessionSteeringService> logger)
     {
-        _dbFactory = _dbFactory;
-        _logger = _logger;
+        _dbFactory = dbFactory;
+        _logger = logger;
     }
 
     public async Task<SessionSteeringMessageEntity> CreateAsync(
