@@ -48,3 +48,62 @@ public sealed record SessionHeadAdvanced(
     string SessionId,
     long CommittedThroughSequence
 );
+
+/// <summary>
+/// ADR-056-E 统一事件类型常量。
+/// <para>
+/// 旧事件名（delta/thinking/done/error/cancelled/usage/tool_call/tool_result）
+/// 保留兼容但不推荐新代码使用。新代码应使用本类的常量。
+/// </para>
+/// </summary>
+public static class SessionEventNames
+{
+    // Turn 生命周期
+    public const string TurnAccepted = "turn.accepted";
+    public const string TurnStarted = "turn.started";
+    public const string TurnCompleted = "turn.completed";
+    public const string TurnFailed = "turn.failed";
+    public const string TurnCancelled = "turn.cancelled";
+
+    // 助手内容流
+    public const string AssistantThinkingDelta = "assistant.thinking.delta";
+    public const string AssistantContentDelta = "assistant.content.delta";
+
+    // 工具调用
+    public const string ToolCallStarted = "tool.call.started";
+    public const string ToolCallCompleted = "tool.call.completed";
+    public const string ToolCallFailed = "tool.call.failed";
+
+    // Token 使用
+    public const string UsageRecorded = "usage.recorded";
+
+    // 会话管理
+    public const string SessionArchived = "session.archived";
+    public const string SessionClosed = "session.closed";
+
+    // 上下文
+    public const string Context = "context";
+
+    /// <summary>
+    /// 旧事件名 → 新事件名的映射（用于历史兼容读取/迁移）。
+    /// </summary>
+    public static readonly System.Collections.Generic.IReadOnlyDictionary<string, string> LegacyToNew =
+        new System.Collections.Generic.Dictionary<string, string>
+        {
+            ["delta"] = AssistantContentDelta,
+            ["thinking"] = AssistantThinkingDelta,
+            ["done"] = TurnCompleted,
+            ["error"] = TurnFailed,
+            ["cancelled"] = TurnCancelled,
+            ["usage"] = UsageRecorded,
+            ["tool_call"] = ToolCallStarted,
+            ["tool_result"] = ToolCallCompleted,
+        };
+
+    /// <summary>
+    /// 将旧事件名映射为新事件名（如果存在映射）；否则返回原名。
+    /// </summary>
+    public static string MapLegacy(string eventType)
+        => LegacyToNew.TryGetValue(eventType, out var mapped) ? mapped : eventType;
+}
+

@@ -17,15 +17,28 @@ using PuddingPlatform.Data.Entities;
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// SessionStateManager — ISessionStateManager 的 SQLite + Channel 实现。
+/// SessionStateManager — 会话事件系统的核心实现（Singleton）。
+/// 
+/// 实现接口：ISessionStateManager（兼容 Facade）、ISessionEventWriter、
+///           ISessionEventReader、ISessionHeadNotifier。
 /// 
 /// 三大职责：
-///   1. 持久化事件日志（session_event_log 表，append-only）
-///   2. 实时推送通道（Channel per session，生命周期独立于 HTTP 连接）
-///   3. 子代理状态追踪（session_sub_agents 表）
+///   1. 持久化事件日志 — session_event_log 表，append-only 不可变记录。
+///      a. 正常路径：先 SQLite → 后 JSONL → 后 Channel fan-out
+///      b. 批量路径：先缓冲（最多 32 条或 150ms）→ flush SQLite → 后 Channel fan-out
+///      c. 两条路径均保证 persist-before-notify（ADR-056 P0 正确性不变量）
+///   2. 实时通知通道 — 双通道架构：
+///      a. SessionChannelFanout（旧）：完整 ServerSentEventFrame，用于兼容
+///      b. HeadNotificationChannel（新）：轻量 SessionHeadAdvanced，只携带 committed sequence
+///         DropOldest 在此模式下安全（丢失唤醒 = 下次通知自动补齐）
+///   3. 子代理状态追踪 — session_sub_agents 表
 /// 
-/// Singleton 生命周期。使用 IDbContextFactory 解决 Singleton 与 Scoped DbContext 的冲突。
-/// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md
+/// 关键设计决策：
+///   - 使用 IDbContextFactory 解决 Singleton 与 Scoped DbContext 的冲突
+///   - 序号分配与 SaveChangesAsync 在同一 per-session SemaphoreSlim 临界区（ADR-028）
+///   - ISessionStateManager 保留为兼容 Facade，内部逐步迁移到 ISessionEventWriter/Reader 端口
+/// 
+/// 关联 ADR：ADR-056（可靠事件流）、ADR-028（序号原子性）
 /// </summary>
 public sealed class SessionStateManager : ISessionStateManager, ISessionEventWriter, ISessionEventReader, ISessionHeadNotifier
 {

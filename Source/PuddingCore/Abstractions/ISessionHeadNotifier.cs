@@ -3,10 +3,13 @@ using PuddingCode.Platform;
 namespace PuddingCode.Abstractions;
 
 /// <summary>
-/// 会话 Head 通知器——不携带 Payload，只通知 confirmed 的 sequence。
+/// 会话 Head 通知器——只通知 committed sequence 水位，不携带 Payload。
 /// <para>
-/// Channel 订阅者收到通知后，应从 ISessionEventReader 读取实际事件。
-/// 通知丢失不会导致数据丢失，下一个更大的通知或高水位检查仍能补齐。
+/// ADR-056 核心架构原则：
+/// 1. Channel 是通知 "N 已提交到 session_event_log"，不是事件传输层。
+/// 2. SSE 收到 SessionHeadAdvanced 后从 ISessionEventReader 读取实际事件。
+/// 3. 通知丢失不会导致数据丢失——下一个通知携带更大的 N，客户端自然补齐。
+/// 4. BoundedChannelFullMode.DropOldest 在此模式下是安全的（最多丢失一次唤醒）。
 /// </para>
 /// </summary>
 public interface ISessionHeadNotifier

@@ -24,7 +24,6 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/sessions")]
 public class SessionEventsController : ControllerBase
 {
-    private static readonly SseFrameBatchPump SsePump = new();
 
     private readonly ISessionStateManager _ssm;
     private readonly ISessionEventStream _eventStream;
@@ -278,7 +277,7 @@ public class SessionEventsController : ControllerBase
         var sb = new System.Text.StringBuilder(64 + payload.Length);
 
         sb.Append("id:").Append(envelope.Sequence).Append('\n');
-        sb.Append("event:").Append(envelope.EventType).Append('\n');
+        sb.Append("event:").Append(SessionEventNames.MapLegacy(envelope.EventType)).Append('\n');
         sb.Append("data:").Append(payload).Append('\n');
 
         if (envelope.TurnId is not null)

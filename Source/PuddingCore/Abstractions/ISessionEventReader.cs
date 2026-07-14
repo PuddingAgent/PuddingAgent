@@ -4,7 +4,12 @@ namespace PuddingCode.Abstractions;
 
 /// <summary>
 /// 会话事件读取器——只读 SQLite Event Store。
-/// 提供水位查询、向前翻页、向后追尾三种语义。
+/// <para>
+/// ADR-056：事件读取使用严格的单调游标语义，消除旧 GetEventsAsync(fromSequence) 的歧义：
+/// - ReadAfterAsync(afterExclusive) 使用 > 语义，读取游标之后的事件
+/// - ReadBeforeAsync(beforeExclusive) 使用 &lt; 语义，用于历史向前翻页
+/// - GetHeadAsync 返回当前高水位（0 表示无事件）
+/// </para>
 /// </summary>
 public interface ISessionEventReader
 {
