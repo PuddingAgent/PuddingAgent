@@ -8,7 +8,7 @@ using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using System.Text.Json;
 
-namespace PuddingRuntime.Services.Events;
+namespace PuddingPlatform.Services;
 
 /// <summary>
 /// 优先级事件队列 — SQLite 持久化实现。
