@@ -255,6 +255,9 @@ builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<
 builder.Services.AddSingleton<IChatCommandStore, ChatCommandStore>();
 builder.Services.AddSingleton<ChatCommandAcceptanceService>();
 builder.Services.AddSingleton<ChatTelemetryRecorder>();
+builder.Services.AddSingleton<ChatSystemCommandService>();
+builder.Services.AddSingleton<ChatDispatchService>();
+builder.Services.AddSingleton<ChatMessageExecutionService>();
 builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());

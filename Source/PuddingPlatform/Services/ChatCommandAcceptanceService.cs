@@ -77,7 +77,7 @@ public sealed class ChatCommandAcceptanceService
             ["capabilityPolicy"] = primaryDispatch.CapabilityPolicy,
             ["toolDefinitions"] = primaryDispatch.ToolDefinitions,
             ["skillPackages"] = primaryDispatch.SkillPackages,
-            ["metadata"] = ChatApiController.BuildChatIngressMetadata(req, primaryDispatch,
+            ["metadata"] = ChatMessageExecutionService.BuildChatIngressMetadata(req, primaryDispatch,
                 fanoutIndex: 0, fanoutCount, turnId: turnId, clientRequestId: clientRequestId),
         };
 
