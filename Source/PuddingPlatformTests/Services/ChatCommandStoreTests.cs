@@ -143,9 +143,8 @@ public sealed class ChatCommandStoreTests
     public async Task CompleteAsync_Marks_Succeeded()
     {
         await _store.SaveAsync(NewCommand("cmd-1", "ws"));
-        await _store.LeaseNextAsync("worker-1", 60_000);
-
-        await _store.CompleteAsync("cmd-1", "succeeded");
+        var leased = (await _store.LeaseNextAsync("worker-1", 60_000))!;
+        await _store.CompleteAsync("cmd-1", leased.FenceToken!, "succeeded");
 
         var completed = await _store.GetAsync("cmd-1");
         Assert.IsNotNull(completed);
@@ -157,9 +156,8 @@ public sealed class ChatCommandStoreTests
     public async Task CompleteAsync_Marks_Failed()
     {
         await _store.SaveAsync(NewCommand("cmd-1", "ws"));
-        await _store.LeaseNextAsync("worker-1", 60_000);
-
-        await _store.CompleteAsync("cmd-1", "failed", "LLM timeout");
+        var leased = (await _store.LeaseNextAsync("worker-1", 60_000))!;
+        await _store.CompleteAsync("cmd-1", leased.FenceToken!, "failed", "LLM timeout");
 
         var completed = await _store.GetAsync("cmd-1");
         Assert.AreEqual("failed", completed.Status);
@@ -170,9 +168,9 @@ public sealed class ChatCommandStoreTests
     public async Task ReleaseLeaseAsync_Resets_To_Pending()
     {
         await _store.SaveAsync(NewCommand("cmd-1", "ws"));
-        await _store.LeaseNextAsync("worker-1", 60_000);
+        var leased = (await _store.LeaseNextAsync("worker-1", 60_000))!;
 
-        await _store.ReleaseLeaseAsync("cmd-1");
+        await _store.ReleaseLeaseAsync("cmd-1", leased.FenceToken!);
 
         var released = await _store.GetAsync("cmd-1");
         Assert.AreEqual("pending", released!.Status);

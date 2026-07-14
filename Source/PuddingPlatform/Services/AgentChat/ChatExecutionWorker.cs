@@ -219,14 +219,14 @@ public sealed class ChatExecutionWorker : BackgroundService
                 framesWritten++;
             }
 
-            await _commandStore.CompleteAsync(command.CommandId, "succeeded");
+            await _commandStore.CompleteAsync(command.CommandId, command.FenceToken!, "succeeded");
             _logger.LogInformation(
                 "[ChatWorker] Completed command={CommandId} turn={TurnId} frames={Frames}",
                 command.CommandId, command.TurnId, framesWritten);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            await _commandStore.ReleaseLeaseAsync(command.CommandId, CancellationToken.None);
+            await _commandStore.ReleaseLeaseAsync(command.CommandId, command.FenceToken!, CancellationToken.None);
             _logger.LogWarning("[ChatWorker] Released lease command={CommandId} (shutdown)", command.CommandId);
         }
         catch (Exception ex)
@@ -258,7 +258,7 @@ public sealed class ChatExecutionWorker : BackgroundService
                 _logger.LogError(ssmEx, "[ChatWorker] Failed to append error frames");
             }
 
-            await _commandStore.CompleteAsync(command.CommandId, "failed", ex.Message);
+            await _commandStore.CompleteAsync(command.CommandId, command.FenceToken!, "failed", ex.Message);
         }
     }
 

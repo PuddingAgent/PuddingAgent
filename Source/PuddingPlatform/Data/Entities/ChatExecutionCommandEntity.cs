@@ -70,4 +70,7 @@ public class ChatExecutionCommandEntity
 
     [MaxLength(32), Column("event_cursor")]
     public string? EventCursor { get; set; }
+
+    [MaxLength(64), Column("fence_token")]
+    public string? FenceToken { get; set; }     // 每次 LeaseNext 生成唯一 token，用于完成/释放所有权校验
 }

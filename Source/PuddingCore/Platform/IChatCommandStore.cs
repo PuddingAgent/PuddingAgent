@@ -18,17 +18,17 @@ public interface IChatCommandStore
     /// <summary>按幂等键查找（clientRequestId + workspaceId）。</summary>
     Task<ChatCommandRecord?> FindByClientRequestIdAsync(string clientRequestId, string workspaceId, CancellationToken ct = default);
 
-    /// <summary>领取下一条待执行的命令（租约语义）。</summary>
+    /// <summary>领取下一条待执行的命令（租约语义）。返回的 FenceToken 必须在 CompleteAsync/ReleaseLeaseAsync 中验证。</summary>
     Task<ChatCommandRecord?> LeaseNextAsync(string leaseOwner, long leaseDurationMs, CancellationToken ct = default);
 
     /// <summary>更新命令状态。</summary>
     Task UpdateStatusAsync(string commandId, string status, string? lastError = null, CancellationToken ct = default);
 
-    /// <summary>完成命令（标记 succeeded/failed/cancelled）。</summary>
-    Task CompleteAsync(string commandId, string status, string? lastError = null, CancellationToken ct = default);
+    /// <summary>完成命令（标记 succeeded/failed/cancelled）。须传入正确的 FenceToken 以验证本轮租约所有权。</summary>
+    Task CompleteAsync(string commandId, string fenceToken, string status, string? lastError = null, CancellationToken ct = default);
 
-    /// <summary>释放租约（将命令重置为 pending）。</summary>
-    Task ReleaseLeaseAsync(string commandId, CancellationToken ct = default);
+    /// <summary>释放租约（将命令重置为 pending）。须传入正确的 FenceToken。</summary>
+    Task ReleaseLeaseAsync(string commandId, string fenceToken, CancellationToken ct = default);
 }
 
 /// <summary>聊天命令持久记录。</summary>
@@ -53,6 +53,7 @@ public sealed record ChatCommandRecord
     public long? CompletedAt { get; init; }
     public string? LastError { get; init; }
     public string? EventCursor { get; init; }
+    public string? FenceToken { get; init; }     // 每次 LeaseNext 生成唯一 fencing token，用于完成/释放时的所有权校验
 
     public ChatCommandRecord() { }
 }

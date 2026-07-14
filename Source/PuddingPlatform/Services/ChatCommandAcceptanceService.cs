@@ -47,14 +47,14 @@ public sealed class ChatCommandAcceptanceService
 
         var sessionId = req.SessionId ?? Guid.NewGuid().ToString("N");
 
-        if (!string.IsNullOrWhiteSpace(req.ClientRequestId))
+        if (!string.IsNullOrWhiteSpace(clientRequestId))
         {
-            var existing = await _commandStore.FindByClientRequestIdAsync(req.ClientRequestId, workspaceId, ct);
+            var existing = await _commandStore.FindByClientRequestIdAsync(clientRequestId, workspaceId, ct);
             if (existing is not null)
             {
                 _logger.LogInformation(
                     "[Chat:Queue] Idempotent hit cmd={CommandId} clientRequestId={ClientRequestId}",
-                    existing.CommandId, req.ClientRequestId);
+                    existing.CommandId, clientRequestId);
                 return new ChatCommandAcceptanceResult
                 {
                     Status = existing.Status == "pending" ? "accepted" : existing.Status,

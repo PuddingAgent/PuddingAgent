@@ -47,7 +47,8 @@ public sealed class ChatCommandStore : IChatCommandStore
             "started_at INTEGER," +
             "completed_at INTEGER," +
             "last_error TEXT," +
-            "event_cursor TEXT)", ct);
+            "event_cursor TEXT," +
+            "fence_token TEXT)", ct);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_cec_cmd_id ON chat_execution_commands(command_id)", ct);
         await db.Database.ExecuteSqlRawAsync(
@@ -85,6 +86,7 @@ public sealed class ChatCommandStore : IChatCommandStore
             AttemptCount = command.AttemptCount,
             CreatedAt = command.CreatedAt,
             EventCursor = command.EventCursor,
+            FenceToken = command.FenceToken,
         };
 
         db.ChatExecutionCommands.Add(entity);
@@ -130,25 +132,45 @@ public sealed class ChatCommandStore : IChatCommandStore
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var until = now + leaseDurationMs;
+        var fenceToken = Guid.NewGuid().ToString("N");
 
-        var entity = await db.ChatExecutionCommands
+        // Atomic CAS: UPDATE with WHERE predicate ensures only one worker wins.
+        // Returns the id of the updated row; if 0, no row matched (race lost or empty queue).
+        var targetEntity = await db.ChatExecutionCommands
             .Where(c => c.Status == "pending" || (c.LeaseUntil.HasValue && c.LeaseUntil.Value < now))
             .OrderBy(c => c.CreatedAt)
+            .Select(c => new { c.Id })
             .FirstOrDefaultAsync(ct);
 
-        if (entity is null) return null;
+        if (targetEntity is null) return null;
 
-        entity.Status = "running";
-        entity.LeaseOwner = leaseOwner;
-        entity.LeaseUntil = now + leaseDurationMs;
-        entity.StartedAt = now;
-        entity.AttemptCount++;
+        var affected = await db.ChatExecutionCommands
+            .Where(c => c.Id == targetEntity.Id)
+            .Where(c => c.Status == "pending" || (c.LeaseUntil.HasValue && c.LeaseUntil.Value < now))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(c => c.Status, "running")
+                .SetProperty(c => c.LeaseOwner, leaseOwner)
+                .SetProperty(c => c.LeaseUntil, until)
+                .SetProperty(c => c.FenceToken, fenceToken)
+                .SetProperty(c => c.StartedAt, now)
+                .SetProperty(c => c.AttemptCount, c => c.AttemptCount + 1),
+                ct);
 
-        await db.SaveChangesAsync(ct);
+        if (affected == 0)
+        {
+            // Another worker claimed it first — retry by returning null (caller re-polls)
+            _logger.LogDebug("[CommandStore] CAS lost for command id={Id}", targetEntity.Id);
+            return null;
+        }
+
+        db.ChangeTracker.Clear();
+        var entity = await db.ChatExecutionCommands.AsNoTracking()
+            .FirstAsync(c => c.Id == targetEntity.Id, ct);
 
         _logger.LogInformation(
-            "[CommandStore] Leased command={CommandId} turn={TurnId} attempt={Attempt} leaseOwner={LeaseOwner}",
-            entity.CommandId, entity.TurnId, entity.AttemptCount, leaseOwner);
+            "[CommandStore] Leased command={CommandId} turn={TurnId} attempt={Attempt} leaseOwner={LeaseOwner} fence={FenceToken}",
+            entity.CommandId, entity.TurnId, entity.AttemptCount, leaseOwner, fenceToken);
 
         return Map(entity);
     }
@@ -169,44 +191,57 @@ public sealed class ChatCommandStore : IChatCommandStore
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task CompleteAsync(string commandId, string status, string? lastError = null, CancellationToken ct = default)
+    public async Task CompleteAsync(string commandId, string fenceToken, string status, string? lastError = null, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
-        var entity = await db.ChatExecutionCommands
-            .FirstOrDefaultAsync(c => c.CommandId == commandId, ct);
+        // Fence token validation: only the worker with the matching token can complete.
+        // Uses ExecuteUpdateAsync for atomicity.
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var affected = await db.ChatExecutionCommands
+            .Where(c => c.CommandId == commandId && c.FenceToken == fenceToken)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(c => c.Status, status)
+                .SetProperty(c => c.CompletedAt, now)
+                .SetProperty(c => c.LeaseOwner, (string?)null)
+                .SetProperty(c => c.LeaseUntil, (long?)null)
+                .SetProperty(c => c.LastError, lastError),
+                ct);
 
-        if (entity is null) return;
-
-        entity.Status = status;
-        entity.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        entity.LeaseOwner = null;
-        entity.LeaseUntil = null;
-        if (lastError is not null) entity.LastError = lastError;
-
-        await db.SaveChangesAsync(ct);
+        if (affected == 0)
+        {
+            _logger.LogWarning(
+                "[CommandStore] Complete fence mismatch or already completed command={CommandId} fence={FenceToken}",
+                commandId, fenceToken);
+            return;
+        }
 
         _logger.LogInformation(
             "[CommandStore] Completed command={CommandId} status={Status}",
             commandId, status);
     }
 
-    public async Task ReleaseLeaseAsync(string commandId, CancellationToken ct = default)
+    public async Task ReleaseLeaseAsync(string commandId, string fenceToken, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
-        var entity = await db.ChatExecutionCommands
-            .FirstOrDefaultAsync(c => c.CommandId == commandId, ct);
+        var affected = await db.ChatExecutionCommands
+            .Where(c => c.CommandId == commandId && c.FenceToken == fenceToken)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(c => c.Status, "pending")
+                .SetProperty(c => c.LeaseOwner, (string?)null)
+                .SetProperty(c => c.LeaseUntil, (long?)null)
+                .SetProperty(c => c.FenceToken, (string?)null),
+                ct);
 
-        if (entity is null) return;
-
-        entity.Status = "pending";
-        entity.LeaseOwner = null;
-        entity.LeaseUntil = null;
-
-        await db.SaveChangesAsync(ct);
+        if (affected == 0)
+        {
+            _logger.LogWarning(
+                "[CommandStore] Release fence mismatch or already completed command={CommandId} fence={FenceToken}",
+                commandId, fenceToken);
+        }
     }
 
     private static ChatCommandRecord Map(ChatExecutionCommandEntity e) => new()
@@ -230,5 +265,6 @@ public sealed class ChatCommandStore : IChatCommandStore
         CompletedAt = e.CompletedAt,
         LastError = e.LastError,
         EventCursor = e.EventCursor,
+        FenceToken = e.FenceToken,
     };
 }
