@@ -29,6 +29,9 @@ public interface IChatCommandStore
 
     /// <summary>释放租约（将命令重置为 pending）。须传入正确的 FenceToken。</summary>
     Task ReleaseLeaseAsync(string commandId, string fenceToken, CancellationToken ct = default);
+
+    /// <summary>续租（延长 lease until）。须传入正确的 FenceToken。返回 false 表示 fencing 冲突。</summary>
+    Task<bool> RenewLeaseAsync(string commandId, string fenceToken, long leaseDurationMs, CancellationToken ct = default);
 }
 
 /// <summary>聊天命令持久记录。</summary>

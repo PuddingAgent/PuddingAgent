@@ -127,6 +127,9 @@ public sealed class ChatExecutionWorker : BackgroundService
         string? streamMessageId = null;
         var userCreatedAt = command.CreatedAt;
 
+        CancellationTokenSource? renewCts = null;
+        Task? renewTask = null;
+
         try
         {
             _logger.LogInformation(
@@ -142,6 +145,11 @@ public sealed class ChatExecutionWorker : BackgroundService
             await _ssm.AppendAsync(command.SessionId, command.WorkspaceId, startedFrame, stoppingToken);
 
             var payload = DeserializePayload(command.PayloadJson);
+
+            // Periodic lease renewal: long LLM calls (up to minutes) must keep the lease alive
+            // to prevent other workers from stealing the command. Renew at half of lease duration.
+            renewCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            renewTask = RenewLeasePeriodicallyAsync(command, renewCts.Token);
 
             await foreach (var frame in _apiClient.SendMessageStreamAsync(
                 channelId: payload.ChannelId,
@@ -229,6 +237,9 @@ public sealed class ChatExecutionWorker : BackgroundService
                 framesWritten++;
             }
 
+            renewCts!.Cancel();
+            await renewTask!;
+
             await _commandStore.CompleteAsync(command.CommandId, command.FenceToken!, "succeeded");
             _logger.LogInformation(
                 "[ChatWorker] Completed command={CommandId} turn={TurnId} frames={Frames}",
@@ -236,11 +247,17 @@ public sealed class ChatExecutionWorker : BackgroundService
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            renewCts?.Cancel();
+            if (renewTask is not null)
+                try { await renewTask; } catch { }
             await _commandStore.ReleaseLeaseAsync(command.CommandId, command.FenceToken!, CancellationToken.None);
             _logger.LogWarning("[ChatWorker] Released lease command={CommandId} (shutdown)", command.CommandId);
         }
         catch (Exception ex)
         {
+            renewCts?.Cancel();
+            if (renewTask is not null)
+                try { await renewTask; } catch { }
             _logger.LogError(ex,
                 "[ChatWorker] Failed command={CommandId} turn={TurnId}",
                 command.CommandId, command.TurnId);
@@ -301,6 +318,36 @@ public sealed class ChatExecutionWorker : BackgroundService
         }
         catch (JsonException) { }
         return null;
+    }
+
+    /// <summary>
+    /// 定期续租（每 LeaseDurationMs/2），防止长 LLM 调用（多轮 tool call）
+    /// 期间其他 Worker 因租约过期而抢占命令。
+    /// 续租失败（fence token 不匹配）仅记录 Warning，不抛异常。
+    /// </summary>
+    private async Task RenewLeasePeriodicallyAsync(ChatCommandRecord command, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(command.FenceToken)) return;
+        var intervalMs = LeaseDurationMs / 2;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay((int)intervalMs, ct);
+                var renewed = await _commandStore.RenewLeaseAsync(
+                    command.CommandId, command.FenceToken, LeaseDurationMs, CancellationToken.None);
+                if (!renewed)
+                {
+                    _logger.LogWarning(
+                        "[ChatWorker] Lease renewal failed (fence mismatch?) command={CommandId}",
+                        command.CommandId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Normal shutdown — stream completed or worker stopping.
+        }
     }
 
     private sealed class ChatExecutionPayload

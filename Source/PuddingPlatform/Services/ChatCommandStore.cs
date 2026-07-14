@@ -244,6 +244,34 @@ public sealed class ChatCommandStore : IChatCommandStore
         }
     }
 
+    public async Task<bool> RenewLeaseAsync(string commandId, string fenceToken, long leaseDurationMs, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var until = now + leaseDurationMs;
+
+        var affected = await db.ChatExecutionCommands
+            .Where(c => c.CommandId == commandId && c.FenceToken == fenceToken && c.Status == "running")
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(c => c.LeaseUntil, until),
+                ct);
+
+        if (affected == 0)
+        {
+            _logger.LogWarning(
+                "[CommandStore] RenewLease fence mismatch or not running command={CommandId} fence={FenceToken}",
+                commandId, fenceToken);
+            return false;
+        }
+
+        _logger.LogDebug(
+            "[CommandStore] Renewed lease command={CommandId} until={LeaseUntil}",
+            commandId, until);
+        return true;
+    }
+
     private static ChatCommandRecord Map(ChatExecutionCommandEntity e) => new()
     {
         CommandId = e.CommandId,
