@@ -293,6 +293,24 @@ public sealed class SubconsciousWorkerServiceTests
             MemorySearchRequest request,
             CancellationToken ct = default)
             => throw new NotSupportedException();
+
+        public Task<AutoDreamReport> AutoDreamAsync(
+            string workspaceId,
+            MemoryLlmConfig? memoryLlmConfig = null,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<PatternExtractionReport> ExtractPatternsAsync(
+            string workspaceId,
+            MemoryLlmConfig? memoryLlmConfig = null,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<SkillImprovementReport> ImproveSkillsAsync(
+            string workspaceId,
+            MemoryLlmConfig? memoryLlmConfig = null,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class StaticMemoryLlmClient(string response) : IMemoryLlmClient

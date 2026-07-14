@@ -246,6 +246,9 @@ public sealed class SubAgentManagerMessageTests
                 ToolCalls = [],
                 SubAgents = [],
             });
+        public Task<long> GetLatestSequenceNumAsync(string sessionId, CancellationToken ct = default) =>
+            Task.FromResult(0L);
+        public void Restore(string sessionId, SessionState state) { }
     }
 
     private sealed class RecordingInternalEventBus : IInternalEventBus

@@ -13,6 +13,7 @@ using PuddingCode.Models;
 using PuddingCode.Runtime;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.AgentChat;
 using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Events;
 using PuddingRuntime.Services.Messaging;
@@ -48,6 +49,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             RemoveHostedService<EventDispatcher>(services);
             RemoveHostedService<MessageDeliveryDispatcher>(services);
             RemoveHostedService<SubconsciousWorkerService>(services);
+            RemoveHostedService<ChatExecutionWorker>(services);
 
             services.RemoveAll<IP2pDiscoveryService>();
             services.AddSingleton<IP2pDiscoveryService, NoOpP2pDiscoveryService>();

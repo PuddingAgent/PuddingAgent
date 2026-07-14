@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Threading.Channels;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Services;
@@ -46,12 +47,15 @@ public sealed class SessionStateManagerSequenceTests
         var tmpDir = Path.Combine(Path.GetTempPath(), $"jsonl_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tmpDir);
 
+        var dataPaths = PuddingDataPaths.FromRoot(tmpDir);
+
         return new SessionStateManager(
             scopeFactory,
             NullLogger<SessionStateManager>.Instance,
             NullRuntimeActivitySink.Instance,
             new NoOpTraceAccessor(),
             new JsonlSessionWriter(tmpDir),
+            new SessionStateStore(dataPaths, NullLogger<SessionStateStore>.Instance),
             rawLogMirror);
     }
 

@@ -34,7 +34,7 @@ public sealed class SessionTitleServiceTests
         return new PlatformApiClient(new HttpClient(handler)
         {
             BaseAddress = new Uri("http://controller.local"),
-        });
+        }, NullLogger<PlatformApiClient>.Instance);
     }
 
     private static SessionRecord CreateSession(string sessionId, string title, string agentTemplateId)
