@@ -107,12 +107,11 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
     {
         if (Interlocked.CompareExchange(ref _started, 1, 0) == 1)
         {
-            Console.WriteLine("[Startup] IdleDetector.StartAsync — already started (duplicate)");
-            _logger.LogDebug("[IdleDetector] Already started; skipping duplicate StartAsync");
+            _logger.LogInformation("[IdleDetector] Already started; skipping duplicate StartAsync");
             return;
         }
 
-        Console.WriteLine("[Startup] IdleDetector.StartAsync — subscribing...");
+        _logger.LogInformation("[IdleDetector] Subscribing...");
         if (_eventBus is not null)
         {
             var messageSub = await _eventBus.SubscribeAsync("message.deliver", OnUserMessageAsync, cancellationToken);

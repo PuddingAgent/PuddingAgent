@@ -59,7 +59,6 @@ public sealed class SubconsciousWorkerService : BackgroundService
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Console.WriteLine("[Startup] SubconsciousWorkerService.ExecuteAsync started");
         _logger.LogInformation(
             "[SubconsciousWorker] Started leaseOwner={LeaseOwner} durableQueue={HasDurableQueue}.",
             _leaseOwner,

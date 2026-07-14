@@ -48,7 +48,6 @@ public class EventDispatcher : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Console.WriteLine($"[Startup] EventDispatcher.ExecuteAsync started, {_handlers.Count()} handlers");
         _logger.LogInformation("[EventDispatcher] Started. Handlers registered: {Count}",
             _handlers.Count());
 

@@ -1992,7 +1992,7 @@ public sealed class AgentExecutionService
 
             // ADR-016：将每一帧推送到 SessionStateManager（持久化 + 实时 Channel）
             // fire-and-forget，不阻塞流式管道；AppendAsync 内部 TryWrite Channel 非阻塞
-            async void Append(ServerSentEventFrame frame)
+            async Task Append(ServerSentEventFrame frame)
             {
                 try
                 {

@@ -104,9 +104,9 @@ public sealed class CodeSummaryTool : PuddingToolBase<CodeSummaryArgs>
                 context.WorkspaceId, effectiveProjectId, sym.SymbolId, ct);
             var calleesTask = _queryService.GetCalleesAsync(
                 context.WorkspaceId, effectiveProjectId, sym.SymbolId, ct);
-            await Task.WhenAll(callersTask, calleesTask);
-            callers = callersTask.Result.Take(MaxCallers).ToList();
-            callees = calleesTask.Result.Take(MaxCallees).ToList();
+            var results = await Task.WhenAll(callersTask, calleesTask);
+            callers = results[0].Take(MaxCallers).ToList();
+            callees = results[1].Take(MaxCallees).ToList();
         }
         catch { }
 
