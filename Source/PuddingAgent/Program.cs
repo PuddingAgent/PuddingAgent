@@ -258,6 +258,10 @@ builder.Services.AddSingleton<ChatTelemetryRecorder>();
 builder.Services.AddSingleton<ChatSystemCommandService>();
 builder.Services.AddSingleton<ChatDispatchService>();
 builder.Services.AddSingleton<ChatMessageExecutionService>();
+
+// ── Repository pattern (EF Core → Repository → Service) ──
+builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
 builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
