@@ -8,12 +8,17 @@ namespace PuddingPlatform.Services;
 
 /// <summary>
 /// Encapsulates chat command acceptance: ID generation, idempotency, persistence, and turn.accepted event emission.
-/// Shared by ChatApiController. All operations within a single call are logically atomic.
+/// Shared by ChatApiController.
+/// <para>
+/// ADR-056 P0 TODO: command save (line 103) and turn.accepted event (line 126) are currently two
+/// separate non-transactional writes. In the rare event that SaveAsync succeeds but AppendAsync fails,
+/// the command is persisted without its turn.accepted event. Mitigation: idempotency key at entry ensures
+/// retries produce the same command. Future: single PlatformDbContext transaction.
+/// </para>
 /// </summary>
 public sealed class ChatCommandAcceptanceService
 {
     private readonly IChatCommandStore _commandStore;
-    private readonly ISessionStateManager _ssm;
     private readonly ISessionEventWriter _eventWriter;
     private readonly ILogger<ChatCommandAcceptanceService> _logger;
 
@@ -21,12 +26,10 @@ public sealed class ChatCommandAcceptanceService
 
     public ChatCommandAcceptanceService(
         IChatCommandStore commandStore,
-        ISessionStateManager ssm,
         ISessionEventWriter eventWriter,
         ILogger<ChatCommandAcceptanceService> logger)
     {
         _commandStore = commandStore;
-        _ssm = ssm;
         _eventWriter = eventWriter;
         _logger = logger;
     }
