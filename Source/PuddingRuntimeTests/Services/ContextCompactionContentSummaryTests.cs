@@ -199,7 +199,7 @@ public sealed class ContextCompactionContentSummaryTests
             new FixedSummaryGenerator("## 用户目标\n只压缩当前 session 窗口。"),
             NullLogger<ContextCompactionService>.Instance,
             contentSummary,
-            new TestPlatformDbContextFactory(platformOptions));
+            null, null);
 
         var result = await service.CompactAsync(new ContextCompactionRequest(
             WorkspaceId: "workspace-1",

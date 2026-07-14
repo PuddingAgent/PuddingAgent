@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
     <ProjectReference Include="..\PuddingController\PuddingController.csproj" />
     <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />

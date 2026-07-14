@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
+    <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
   </ItemGroup>
 
 </Project>
