@@ -3,10 +3,51 @@
 ## 项目概述
 Pudding 是一个 .NET 10 的自主 Agent 框架，支持六层记忆体系、Skill 系统、子代理委派、潜意识后台管道。
 
+dev-up.py是守护进程脚本，用于控制后端、前端的编译、启动。也可以直接直接启动前端和后端。
+
+## 兼容性和补丁约定
+
+不要为了兼容性而牺牲性能和可维护性，除非有明确的业务需求。比如旧的数据格式或者旧的 API 版本。
+
+除非必要，建议直接对D:\data的数据库和配置文件进行升级，而不是通过兼容性层。
+
+建议对于配置类的数据，配置文件优先，而非数据库优先。
+
+
+## 版本号约定
+- 版本号格式：`主版本号.次版本号.修订号`    
+
+典型用法：
+dev-up是用于开发环境的调试和代理工具，方便快速启动环境。
+
+```bash
+# 只启动前端端，然后使用命令行启动后端，用于调试后端服务：
+python E:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --frontend-only
+# 关闭（如果你想手动启动，那么先down，否则会占用端口）
+python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
+# 重启
+ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --restart
+ # 重新编译，用于排除编译缓存问题：
+ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --rebuild
+ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --status
+```
+
 ## 开发环境约定
 
 用户名：admin
 密码：Admin@123
+
+测试脚本：TestScripts目录
+必读文件：Agents.md
+
+
+## 数据存储
+
+- 开发环境默认 D:\data
+可以清理D:\data下的数据存储和缓存还原一个干净的开发环境，但是建议备份llm.providers.json，因为包含了LLM服务商的信息。
+
+重置开发环境之后，需要访问Bootstrap页面，完成初始化。当然，也需要重新配置一下配置文件，因为Bootstrap是根据配置文件判断是否可以初始化的。
+
 
 
 

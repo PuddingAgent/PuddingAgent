@@ -1214,6 +1214,22 @@ app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 app.MapFallbackToFile("index.html");
 
 // ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
+Console.WriteLine("[Startup] Ensuring Platform DB tables...");
+try
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        await platformDb.Database.EnsureCreatedAsync();
+    }
+    Console.WriteLine("[Startup] Platform DB tables ensured");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[Startup] Platform DB ensure failed: {ex.Message}");
+}
+
+// ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
 Console.WriteLine("[Startup] Initializing Workspace Catalog...");
 try
 {

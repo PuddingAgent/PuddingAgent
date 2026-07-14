@@ -1436,6 +1436,95 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
     start_supervisor(no_install=no_install, frontend_only=frontend_only)
 
 
+# ── Bootstrap / Init ──────────────────────────────────────────
+
+def run_init() -> None:
+    """Initialize a fresh development environment: prepare config, bootstrap admin user & workspace."""
+    info("==> Initializing development environment ...")
+
+    # 1. Copy default config files
+    prepare_config()
+    copy_avatar_assets()
+
+    # 2. Build backend
+    ensure_run_dir()
+    require_command("dotnet")
+    info("==> Building backend ...")
+    rc = run_backend_build(full_rebuild=False)
+    if rc != 0:
+        fail(f"Backend build failed with exit code {rc}")
+
+    # 3. Start backend temporarily
+    if not is_port_free(LOOPBACK_HOST, BACKEND_PORT):
+        info(f"Backend port {BACKEND_PORT} is in use, stopping existing owner...")
+        force_release_port(BACKEND_PORT)
+        if not wait_until_port_free(BACKEND_PORT, timeout_seconds=10):
+            fail(f"Cannot free backend port {BACKEND_PORT}")
+
+    process = start_backend(full_rebuild=False)
+    info("Waiting for backend to be ready ...")
+    health_url = build_health_url(LOCAL_CONNECT_HOST, BACKEND_PORT, HEALTH_PATH)
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        status = probe_health(health_url, timeout_seconds=3)
+        if status["ok"]:
+            info(f"Backend ready (HTTP {status['status_code']})")
+            break
+        time.sleep(2)
+    else:
+        stop_process_tree(process.pid)
+        fail("Backend did not become healthy within 60s")
+
+    # 4. Check if already initialized
+    try:
+        with urllib.request.urlopen(f"http://{LOCAL_CONNECT_HOST}:{BACKEND_PORT}/api/bootstrap/status", timeout=5) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        data = json.loads(body) if body else {}
+    except Exception as exc:
+        data = {}
+
+    if "needsSetup" not in data and data.get("status") == "error":
+        info("i Bootstrap: already initialized, skipping")
+    else:
+        # 5. Bootstrap: POST /api/bootstrap/complete
+        info("==> Bootstrapping admin account and default workspace ...")
+        admin_password = os.environ.get("PUDDING_ADMIN_PASSWORD", "Admin@123")
+        payload = json.dumps({
+            "admin": {
+                "userId": "admin",
+                "password": admin_password,
+                "displayName": "Administrator",
+                "email": "admin@localhost"
+            },
+            "provider": None,
+            "defaults": None
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"http://{LOCAL_CONNECT_HOST}:{BACKEND_PORT}/api/bootstrap/complete",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8", errors="replace"))
+                info(f"V Bootstrap completed: {result.get('status')} adminId={result.get('adminId','?')} workspaceId={result.get('workspaceId','?')}")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            info(f"Bootstrap returned HTTP {exc.code}: {body[:300]}")
+            stop_process_tree(process.pid)
+            sys.exit(1 if exc.code >= 400 else 0)
+
+    # 6. Stop temporary backend
+    info("Stopping temporary backend ...")
+    stop_process_tree(process.pid)
+    wait_until_port_free(BACKEND_PORT)
+    info("V Initialization complete. Run 'python dev-up.py' to start the development environment.")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start Pudding Agent local development services.")
     parser.add_argument("--down", action="store_true", help="Stop tracked development processes.")
@@ -1454,6 +1543,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--guard-on", action="store_true", help="Enable supervisor auto-restart and file-change restarts.")
     parser.add_argument("--guard-off", action="store_true", help="Disable supervisor auto-restart and file-change restarts.")
     parser.add_argument("--frontend-only", action="store_true", help="Start frontend + proxy only (backend started manually).")
+    parser.add_argument("--init", action="store_true", help="Initialize/bootstrap a fresh development environment (create admin, default workspace, etc.).")
     parser.add_argument("--proxy", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--supervisor", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--proxy-host", default=PROXY_HOST, help=argparse.SUPPRESS)
@@ -1483,6 +1573,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.guard_off:
         disable_guard()
+        return 0
+
+    if args.init:
+        run_init()
         return 0
 
     if args.down or args.restart or args.rebuild:
