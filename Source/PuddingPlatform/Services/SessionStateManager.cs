@@ -27,7 +27,7 @@ namespace PuddingPlatform.Services;
 /// Singleton 生命周期。使用 IDbContextFactory 解决 Singleton 与 Scoped DbContext 的冲突。
 /// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md
 /// </summary>
-public sealed class SessionStateManager : ISessionStateManager
+public sealed class SessionStateManager : ISessionStateManager, ISessionEventReader, ISessionHeadNotifier
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SessionStateManager> _logger;
@@ -39,6 +39,10 @@ public sealed class SessionStateManager : ISessionStateManager
 
     // 会话实时订阅（sessionId → fan-out hub）。每个订阅者拥有独立 Channel，避免多连接竞争消费同一队列。
     private readonly ConcurrentDictionary<string, SessionChannelFanout> _sessionChannels = new();
+
+    // Head 通知专用 Channel（sessionId → Channel<SessionHeadAdvanced>）。
+    // 仅携带 committedThroughSequence，SSE 收到后从数据库读取实际事件。支持 DropOldest 无风险。
+    private readonly ConcurrentDictionary<string, Channel<SessionHeadAdvanced>> _headNotificationChannels = new();
 
     // Agent 流式输出的短帧批量持久化缓冲。实时推送先走 fan-out，SQLite/JSONL 在后台按批次落盘。
     private readonly ConcurrentDictionary<string, SessionEventBatchBuffer> _streamBatchBuffers = new();
@@ -229,8 +233,13 @@ public sealed class SessionStateManager : ISessionStateManager
             return new SessionChannelFanout();
         });
 
-        var pushed = hub.Publish(frame with { Data = InjectSequenceNum(frame.Data, seq) });
+        var pushed =         hub.Publish(frame with { Data = InjectSequenceNum(frame.Data, seq) });
         fanoutMs = ElapsedMilliseconds(fanoutStartedAt);
+
+        // Head notification: lightweight signal carrying only committedThroughSequence.
+        if (_headNotificationChannels.TryGetValue(sessionId, out var headChannel))
+            headChannel.Writer.TryWrite(new SessionHeadAdvanced(sessionId, seq));
+
         _logger.LogInformation(
             "[SSM] Channel fanout session={Session} type={EventType} seq={Seq} subscribers={SubscriberCount} ok={Ok} created={Created} dataChars={DataChars} activeChannels={ActiveChannels}",
             sessionId, frame.Event, seq, hub.SubscriberCount, pushed, channelCreated, frame.Data.Length, _sessionChannels.Count);
@@ -294,10 +303,6 @@ public sealed class SessionStateManager : ISessionStateManager
             return new SessionChannelFanout();
         });
 
-        var fanoutStartedAt = Stopwatch.GetTimestamp();
-        var pushed = hub.Publish(frame);
-        var fanoutMs = ElapsedMilliseconds(fanoutStartedAt);
-
         var item = new BufferedSessionEvent(
             sessionId,
             workspaceId,
@@ -311,8 +316,8 @@ public sealed class SessionStateManager : ISessionStateManager
         var queuedCount = buffer.Enqueue(item);
 
         _logger.LogDebug(
-            "[SSM] Realtime append buffered session={Session} type={EventType} seq={Seq} queued={Queued} subscribers={SubscriberCount} pushed={Pushed} fanoutMs={FanoutMs}",
-            sessionId, frame.Event, seq, queuedCount, hub.SubscriberCount, pushed, fanoutMs);
+            "[SSM] Realtime append buffered session={Session} type={EventType} seq={Seq} queued={Queued} subscribers={SubscriberCount}",
+            sessionId, frame.Event, seq, queuedCount, hub.SubscriberCount);
 
         if (IsRealtimeTerminalFrame(frame))
             await MarkStreamCompleteAsync(sessionId, ct);
@@ -380,6 +385,109 @@ public sealed class SessionStateManager : ISessionStateManager
             MaxSequence = events.Count > 0 ? events[^1].SequenceNum : 0,
             TotalCount = totalCount,
         };
+    }
+
+    // ════════════════════════════════════════════════════════
+    // ISessionEventReader
+    // ════════════════════════════════════════════════════════
+
+    public async Task<long> GetHeadAsync(string sessionId, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var maxSeq = await db.SessionEventLogs
+            .AsNoTracking()
+            .Where(e => e.SessionId == sessionId)
+            .MaxAsync(e => (long?)e.SequenceNum, ct);
+
+        return maxSeq ?? 0L;
+    }
+
+    public async Task<IReadOnlyList<SessionEventEnvelope>> ReadAfterAsync(
+        string sessionId,
+        long afterExclusive,
+        long? throughInclusive = null,
+        int limit = 256,
+        CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var query = db.SessionEventLogs
+            .AsNoTracking()
+            .Where(e => e.SessionId == sessionId
+                && e.SequenceNum > afterExclusive);
+
+        if (throughInclusive.HasValue)
+            query = query.Where(e => e.SequenceNum <= throughInclusive.Value);
+
+        var events = await query
+            .OrderBy(e => e.SequenceNum)
+            .Take(limit)
+            .ToListAsync(ct);
+
+        return events.Select(MapToEnvelope).ToList();
+    }
+
+    public async Task<IReadOnlyList<SessionEventEnvelope>> ReadBeforeAsync(
+        string sessionId,
+        long beforeExclusive,
+        int limit = 50,
+        CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var events = await db.SessionEventLogs
+            .AsNoTracking()
+            .Where(e => e.SessionId == sessionId
+                && e.SequenceNum < beforeExclusive)
+            .OrderByDescending(e => e.SequenceNum)
+            .Take(limit)
+            .ToListAsync(ct);
+
+        events.Reverse();
+        return events.Select(MapToEnvelope).ToList();
+    }
+
+    private static SessionEventEnvelope MapToEnvelope(SessionEventLogEntity e)
+    {
+        JsonElement payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<JsonElement>(e.Data);
+        }
+        catch
+        {
+            payload = JsonSerializer.SerializeToElement(new { raw = e.Data });
+        }
+
+        return new SessionEventEnvelope(
+            EventId: e.Id.ToString(),
+            SessionId: e.SessionId,
+            Sequence: e.SequenceNum,
+            EventType: e.EventType,
+            SchemaVersion: 1,
+            CommandId: null,
+            TurnId: null,
+            MessageId: null,
+            AgentId: e.AgentInstanceId,
+            OccurredAt: DateTimeOffset.TryParse(e.RecordedAt, out var dt) ? dt : DateTimeOffset.UtcNow,
+            Payload: payload,
+            Trace: e.TraceId is not null
+                ? new RuntimeTraceContext
+                {
+                    TraceId = e.TraceId,
+                    CorrelationId = e.CorrelationId ?? e.TraceId,
+                    SessionId = e.SessionId,
+                    WorkspaceId = e.WorkspaceId,
+                    AgentInstanceId = e.AgentInstanceId,
+                    AgentTemplateId = e.AgentTemplateId,
+                    ExecutionId = e.ExecutionId,
+                }
+                : null
+        );
     }
 
     public async Task<SessionReplayResult> ReplaySessionAsync(
@@ -539,6 +647,49 @@ public sealed class SessionStateManager : ISessionStateManager
 
         // 启动 TTL 清理倒计时：最后一个订阅者断开后延迟释放 Channel
         _ = ScheduleWorkspaceChannelCleanupAsync(workspaceId);
+    }
+
+    // ════════════════════════════════════════════════════════
+    // ISessionHeadNotifier
+    // ════════════════════════════════════════════════════════
+
+    public async IAsyncEnumerable<SessionHeadAdvanced> SubscribeAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        var channel = _headNotificationChannels.GetOrAdd(sessionId, _ =>
+        {
+            _logger.LogInformation(
+                "[SSM] Head notification channel created session={Session}",
+                sessionId);
+            return Channel.CreateBounded<SessionHeadAdvanced>(
+                new BoundedChannelOptions(128)
+                {
+                    FullMode = BoundedChannelFullMode.DropOldest,
+                    SingleReader = true,
+                    SingleWriter = false,
+                });
+        });
+
+        while (!ct.IsCancellationRequested)
+        {
+            var readOk = false;
+            try
+            {
+                readOk = await channel.Reader.WaitToReadAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            if (!readOk) break;
+
+            while (channel.Reader.TryRead(out var head))
+            {
+                yield return head;
+            }
+        }
     }
 
     // ════════════════════════════════════════════════════════
@@ -1063,6 +1214,21 @@ public sealed class SessionStateManager : ISessionStateManager
             var sqliteStartedAt = Stopwatch.GetTimestamp();
             await PersistBufferedSessionEventsWithRetryAsync(batch, ct);
             var sqliteMs = ElapsedMilliseconds(sqliteStartedAt);
+
+            // Fan-out to SSE subscribers AFTER SQLite commit (ADR-056: persist-first).
+            if (_sessionChannels.TryGetValue(sessionId, out var fanoutHub))
+            {
+                foreach (var item in batch)
+                    fanoutHub.Publish(item.Frame);
+            }
+
+            // Head notification: lightweight signal carrying only committedThroughSequence.
+            // SSE clients read actual events from DB after receiving this.
+            if (_headNotificationChannels.TryGetValue(sessionId, out var headChannel) && batch.Count > 0)
+            {
+                var maxSeq = batch[^1].SequenceNum;
+                headChannel.Writer.TryWrite(new SessionHeadAdvanced(sessionId, maxSeq));
+            }
 
             long jsonlMs = 0;
             var jsonlStartedAt = Stopwatch.GetTimestamp();

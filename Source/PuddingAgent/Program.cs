@@ -250,6 +250,9 @@ builder.Services.AddSingleton<MinioStorageService>();
 builder.Services.AddSingleton<SessionEventHub>();
 builder.Services.AddSingleton<SessionStateManager>();
 builder.Services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
+builder.Services.AddSingleton<ISessionEventReader>(sp => sp.GetRequiredService<SessionStateManager>());
+builder.Services.AddSingleton<ISessionHeadNotifier>(sp => sp.GetRequiredService<SessionStateManager>());
+builder.Services.AddSingleton<ISessionEventStream, SessionEventStreamService>();
 
 // ── Chat 执行命令队列（ADR-056）─────────────────
 builder.Services.AddSingleton<IChatCommandStore, ChatCommandStore>();

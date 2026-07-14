@@ -27,6 +27,7 @@ public class SessionEventsController : ControllerBase
     private static readonly SseFrameBatchPump SsePump = new();
 
     private readonly ISessionStateManager _ssm;
+    private readonly ISessionEventStream _eventStream;
     private readonly IContextCompactionService _compactionService;
     private readonly CacheDiagnosticsService _cacheDiagnosticsService;
     private readonly ISessionTimelineRecorder _timelineRecorder;
@@ -41,6 +42,7 @@ public class SessionEventsController : ControllerBase
 
     public SessionEventsController(
         ISessionStateManager ssm,
+        ISessionEventStream eventStream,
         IContextCompactionService compactionService,
         CacheDiagnosticsService cacheDiagnosticsService,
         ISessionTimelineRecorder timelineRecorder,
@@ -54,6 +56,7 @@ public class SessionEventsController : ControllerBase
         ILogger<SessionEventsController> logger)
     {
         _ssm = ssm;
+        _eventStream = eventStream;
         _compactionService = compactionService;
         _cacheDiagnosticsService = cacheDiagnosticsService;
         _timelineRecorder = timelineRecorder;
@@ -202,24 +205,6 @@ public class SessionEventsController : ControllerBase
 
         ConfigureSseResponse(Response);
 
-        var reader = _ssm.Subscribe(sessionId);
-        if (reader == null)
-        {
-            _logger.LogWarning(
-                "[SessionEvents] SSE subscribe closed session={Session}; no channel is available",
-                sessionId);
-            // 会话已关闭且无 Channel → 返回 session.closed 事件后结束
-            await WriteSseAsync(Response, new ServerSentEventFrame(
-                    SessionEventTypes.SessionClosed,
-                    JsonSerializer.Serialize(new { sessionId })),
-                sessionId,
-                _logger,
-                _timelineRecorder,
-                1,
-                ct);
-            return;
-        }
-
         _logger.LogInformation(
             "[SessionEvents] SSE subscribed session={Session}", sessionId);
         await RecordSseTimelineAsync(
@@ -232,64 +217,60 @@ public class SessionEventsController : ControllerBase
             logger: _logger,
             ct: ct);
 
-        // Phase 0: 断线重连时补发缺口事件（订阅后、实时推送前）
-        long lastReplayedSeq = 0;
-        if (afterSequence.HasValue)
-        {
-            try
-            {
-                var replayed = 0L;
-                var page = await _ssm.GetEventsAsync(sessionId, afterSequence, limit: 200, ct);
-                foreach (var entry in page.Events)
-                {
-                    if (replayed >= 200) break;
-                    var replayFrame = new ServerSentEventFrame(entry.EventType, entry.Data);
-                    await WriteSseFrameAsync(Response, replayFrame, sessionId, _logger, replayed, ct);
-                    lastReplayedSeq = entry.SequenceNum;
-                    replayed++;
-                    if (replayed % 50 == 0) await Response.Body.FlushAsync(ct);
-                }
-                await Response.Body.FlushAsync(ct);
-                _logger.LogInformation(
-                    "[SessionEvents] SSE replay complete session={Session} after={AfterSeq} lastReplayed={LastSeq} count={Count}",
-                    sessionId, afterSequence, lastReplayedSeq, replayed);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "[SessionEvents] SSE replay failed session={Session} after={AfterSeq}",
-                    sessionId, afterSequence);
-            }
-        }
-
+        // ADR-056: ISessionEventStream.FollowAsync handles replay + live + dedup automatically.
         try
         {
-            await SsePump.PumpAsync(
-                reader,
-                (frame, frameIndex, token) => WriteSseFrameAsync(Response, frame, sessionId, _logger, frameIndex, token),
-                (flush, token) => FlushSseBatchAsync(Response, flush, sessionId, _logger, _timelineRecorder, token),
-                ct);
+            var after = afterSequence ?? 0L;
+            await foreach (var envelope in _eventStream.FollowAsync(sessionId, after, ct))
+            {
+                await WriteEnvelopeAsSseAsync(Response, envelope, sessionId, _logger, ct);
+            }
         }
         catch (OperationCanceledException)
         {
-            // 客户端主动取消（刷新页面、关闭标签）——正常行为
             _logger.LogDebug(
                 "[SessionEvents] SSE disconnected session={Session}", sessionId);
         }
         catch (IOException)
         {
-            // 客户端断连导致写入失败（broken pipe / connection reset）——正常行为，不计入 Session Fuse
             _logger.LogDebug(
                 "[SessionEvents] SSE write failed (client disconnected) session={Session}", sessionId);
         }
-        finally
-        {
-            _ssm.Unsubscribe(sessionId, reader);
-        }
+
+        await RecordSseTimelineAsync(
+            _timelineRecorder,
+            sessionId,
+            "sse.session.ended",
+            "sse.subscribe",
+            RuntimeActivityStatuses.Succeeded,
+            metadata: null,
+            logger: _logger,
+            ct: CancellationToken.None);
+    }
+
+    private static async Task WriteEnvelopeAsSseAsync(
+        HttpResponse response,
+        SessionEventEnvelope envelope,
+        string sessionId,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        var payload = envelope.Payload.GetRawText();
+        var sb = new System.Text.StringBuilder(64 + payload.Length);
+
+        sb.Append("id:").Append(envelope.Sequence).Append('\n');
+        sb.Append("event:").Append(envelope.EventType).Append('\n');
+        sb.Append("data:").Append(payload).Append('\n');
+
+        if (envelope.TurnId is not null)
+            sb.Append("turn:").Append(envelope.TurnId).Append('\n');
+        if (envelope.MessageId is not null)
+            sb.Append("message:").Append(envelope.MessageId).Append('\n');
+
+        sb.Append('\n');
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        await response.Body.WriteAsync(bytes, ct);
     }
 
     /// <summary>

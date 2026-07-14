@@ -56,6 +56,9 @@ public static class PuddingServiceCollectionExtensions
         }, ServiceLifetime.Scoped);
 
         services.AddSingleton<ISessionStateManager>(sp => sp.GetRequiredService<SessionStateManager>());
+        services.AddSingleton<ISessionEventReader>(sp => sp.GetRequiredService<SessionStateManager>());
+        services.AddSingleton<ISessionHeadNotifier>(sp => sp.GetRequiredService<SessionStateManager>());
+        services.AddSingleton<ISessionEventStream, SessionEventStreamService>();
         services.TryAddSingleton<ISessionTimelineRecorder, SessionTimelineRecorder>();
         services.TryAddSingleton<ITelemetryMetricSink, TelemetryMetricSink>();
 
