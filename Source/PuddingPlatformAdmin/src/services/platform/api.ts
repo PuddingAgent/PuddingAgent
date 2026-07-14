@@ -1785,6 +1785,39 @@ export async function getSessionSubAgents(sessionId: string): Promise<SubAgentSt
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/sub-agents`, { method: 'GET' });
 }
 
+// ── ADR-056: projected cursor ──────────────────────────────────
+
+export interface ProjectedCursor {
+  sessionId: string;
+  projectedThroughSequence: number;
+}
+
+/** 获取会话的投影游标（ChatMessages 已物化到该 Sequence）。用于历史消息加载 + 尾部队列事件的衔接。 */
+export async function getProjectedCursor(sessionId: string): Promise<ProjectedCursor> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/projected-cursor`, {
+    method: 'GET',
+  });
+}
+
+// ── ADR-056-E: normalize new server event names to legacy names ──
+// Backend emits new names (assistant.content.delta etc.) via MapLegacy.
+// Frontend internally uses legacy names for backward compatibility.
+const NEW_TO_LEGACY_EVENT: Record<string, string> = {
+  'assistant.content.delta': 'delta',
+  'assistant.thinking.delta': 'thinking',
+  'turn.completed': 'done',
+  'turn.failed': 'error',
+  'turn.cancelled': 'cancelled',
+  'usage.recorded': 'usage',
+  'tool.call.started': 'tool_call',
+  'tool.call.completed': 'tool_result',
+  'tool.call.failed': 'tool_error',
+};
+
+function normalizeEventType(rawType: string): string {
+  return NEW_TO_LEGACY_EVENT[rawType] ?? rawType;
+}
+
 /** SSE 订阅会话事件流（含 subagent.spawned / subagent.completed） */
 export function subscribeSessionEvents(
   sessionId: string,
@@ -1823,6 +1856,8 @@ export function subscribeSessionEvents(
       let buf = '';
       let chunkCount = 0;
       let eventCount = 0;
+      let lastEventType = '';
+      let lastEventId = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1838,26 +1873,38 @@ export function subscribeSessionEvents(
         });
         const lines = buf.split('\n');
         buf = lines.pop() || '';
-        let eventType = '';
         for (const line of lines) {
-          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
-          else if (line.startsWith('data: ')) {
+          if (line.startsWith('id: ')) {
+            // ADR-056: SSE id field carries the committed sequence number.
+            // It replaces the old sequenceNum injection in the JSON data payload.
+            lastEventId = line.slice(4).trim();
+          } else if (line.startsWith('event: ')) {
+            lastEventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
               eventCount++;
+              const seqNum = /^\d+$/.test(lastEventId) ? Number(lastEventId) : undefined;
               recordPerfEvent('chat.sse.event', {
                 sessionId,
-                eventType,
+                eventType: lastEventType,
                 eventCount,
-                sequenceNum: typeof data?.sequenceNum === 'number' ? data.sequenceNum : undefined,
-                messageId: typeof data?.messageId === 'string' ? data.messageId : undefined,
+                sequenceNum: seqNum,
+                sseId: lastEventId || undefined,
                 dataChars: line.length,
               });
-              onEvent({ type: eventType as any, ...data });
+              // ADR-056: normalize event names (new → legacy) then pass to callback
+              const normalizedType = normalizeEventType(lastEventType);
+              onEvent({
+                type: normalizedType as any,
+                ...data,
+                ...(seqNum !== undefined ? { sequenceNum: seqNum } : {}),
+              });
             } catch (error) {
               recordPerfEvent('chat.sse.parseError', {
                 sessionId,
-                eventType,
+                eventType: lastEventType,
+                sseId: lastEventId || undefined,
                 lineChars: line.length,
                 error: error instanceof Error ? error.message : String(error),
               });
@@ -2085,10 +2132,20 @@ export interface TurnStep {
 }
 
 export interface AdminChatResponse {
+  /** ADR-056: 命令受理状态 ("accepted" = 已入队, "completed" = 已完成) */
+  status?: string;
+  /** ADR-056: 命令 ID（幂等键校验 + 状态跟踪） */
+  commandId?: string;
   messageId: string;
   sessionId: string;
+  /** ADR-056: 轮次 ID（同一 command 内的执行单位） */
+  turnId?: string;
+  /** ADR-056: 事件游标（turn.accepted 的 sequence 号） */
+  eventCursor?: number;
+  /** 幂等键（ClientRequestId 回显） */
+  clientRequestId?: string;
   reply?: string;
-  isSuccess: boolean;
+  isSuccess?: boolean;
   errorMessage?: string;
   usage?: TokenUsageDto;
   /** 本次执行产生的逐轮步骤（包含工具调用记录）。 */
@@ -2189,17 +2246,17 @@ export async function sendAdminChatMessage(
   });
 }
 
-/** T-102: 非流式消息提交 — POST 返回 { messageId, sessionId }，帧通过持久 SSE 接收 */
+/** T-102: 非流式消息提交 — POST 返回 202 Accepted + { status, commandId, messageId, turnId, sessionId, eventCursor } */
 export async function sendChatMessage(
   workspaceId: string,
   req: AdminChatRequest,
   signal?: AbortSignal,
-): Promise<{ messageId: string; sessionId: string }> {
+): Promise<AdminChatResponse> {
   return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
     method: 'POST',
     data: req,
     signal,
-  }) as Promise<{ messageId: string; sessionId: string }>;
+  });
 }
 
 export async function createChatSteeringMessage(
