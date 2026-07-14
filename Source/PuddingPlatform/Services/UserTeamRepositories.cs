@@ -29,6 +29,12 @@ public sealed class AppUserRepository : IAppUserRepository
         return e is null ? null : Map(e);
     }
 
+    public async Task<AppUserRow?> FindByUserIdOrEmailAsync(string login, CancellationToken ct = default)
+    {
+        var e = await _db.AppUsers.FirstOrDefaultAsync(u => u.UserId == login || u.Email == login, ct);
+        return e is null ? null : Map(e);
+    }
+
     public async Task<AppUserRow> CreateAsync(string userId, string userName, string? email, string? passwordHash, string userType, string? displayName, CancellationToken ct = default)
     {
         var entity = new AppUserEntity
@@ -65,7 +71,7 @@ public sealed class AppUserRepository : IAppUserRepository
     {
         var entity = await _db.AppUsers.FirstOrDefaultAsync(u => u.UserId == user.UserId, ct);
         if (entity is null) return;
-        entity.Username = user.UserName;
+        entity.Username = user.Username;
         entity.Email = entity.Email;
         entity.DisplayName = user.DisplayName;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
@@ -76,10 +82,11 @@ public sealed class AppUserRepository : IAppUserRepository
     {
         Id = e.Id,
         UserId = e.UserId,
-        UserName = e.Username,
+        Username = e.Username,
         Email = e.Email,
         PasswordHash = e.PasswordHash,
         UserType = e.UserType == UserType.Admin ? "admin" : "simple",
+        IsEnabled = e.IsEnabled,
         DisplayName = e.DisplayName,
         CreatedAt = e.CreatedAt,
         UpdatedAt = e.UpdatedAt,

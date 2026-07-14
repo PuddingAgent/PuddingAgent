@@ -6,6 +6,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
@@ -19,7 +20,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Route("api")]
-public class AuthApiController(IConfiguration config, PlatformDbContext db, Sm2JwtSigner sm2JwtSigner) : ControllerBase
+public class AuthApiController(IConfiguration config, IAppUserRepository appUserRepo, Sm2JwtSigner sm2JwtSigner) : ControllerBase
 {
     /// <summary>POST /api/login/account</summary>
     [HttpPost("login/account")]
@@ -31,8 +32,7 @@ public class AuthApiController(IConfiguration config, PlatformDbContext db, Sm2J
         logger.LogWarning("[Auth:Login] Received Username={Username} PasswordLen={PwdLen} Type={Type}",
             request.Username ?? "(null)", request.Password?.Length ?? 0, request.Type ?? "(null)");
 
-        var user = await db.AppUsers
-            .FirstOrDefaultAsync(u => u.UserId == request.Username || u.Email == request.Username, ct);
+        var user = await appUserRepo.FindByUserIdOrEmailAsync(request.Username ?? "", ct);
 
         logger.LogWarning("[Auth:Login] User found={Found} UserId={UserId} IsEnabled={Enabled}",
             user is not null, user?.UserId, user?.IsEnabled);
@@ -40,7 +40,7 @@ public class AuthApiController(IConfiguration config, PlatformDbContext db, Sm2J
         if (user is null || !user.IsEnabled || !PasswordHasher.Verify(request.Password, user.PasswordHash))
             return Ok(new { status = "error", type = "account", currentAuthority = "guest" });
 
-        var authority = user.UserType == UserType.Admin ? "admin" : "user";
+        var authority = user.UserType == "admin" ? "admin" : "user";
         var token = GenerateJwt(user.UserId, user.DisplayName ?? user.Username, user.Email, authority);
 
         // 同时写入 Session，兼容 SSR 页面

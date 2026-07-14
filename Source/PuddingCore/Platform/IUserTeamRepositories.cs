@@ -7,11 +7,12 @@ public sealed class AppUserRow
 {
     public int Id { get; init; }
     public string UserId { get; init; } = string.Empty;
-    public string? UserName { get; init; }
+    public string? Username { get; init; }
     public string? Email { get; init; }
     public string? PasswordHash { get; init; }
     public string UserType { get; init; } = string.Empty;
     public string? DisplayName { get; init; }
+    public bool IsEnabled { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }
@@ -26,6 +27,7 @@ public interface IAppUserRepository
     Task<bool> AnyByUserIdAsync(string userId, CancellationToken ct = default);
     Task<bool> AnyByEmailAsync(string email, CancellationToken ct = default);
     Task<AppUserRow?> FindByIdAsync(string userId, CancellationToken ct = default);
+    Task<AppUserRow?> FindByUserIdOrEmailAsync(string login, CancellationToken ct = default);
     Task<AppUserRow> CreateAsync(string userId, string userName, string? email, string? passwordHash, string userType, string? displayName, CancellationToken ct = default);
     Task DeleteAsync(string userId, CancellationToken ct = default);
     Task UpdateAsync(AppUserRow user, CancellationToken ct = default);
