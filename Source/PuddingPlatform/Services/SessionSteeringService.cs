@@ -15,25 +15,22 @@ public sealed record CreateSessionSteeringMessage(
     string? CreatedBy,
     int Priority = 100);
 
-public sealed record ConsumedSessionSteeringMessage(
-    string SteeringId,
-    string WorkspaceId,
-    string SessionId,
-    string? AgentId,
-    string MessageText,
-    int Priority,
-    DateTimeOffset CreatedAtUtc,
-    DateTimeOffset ConsumedAtUtc,
-    int Round);
-
 /// <summary>
 /// Durable store for user steering messages that should be injected into a running Agent loop.
 /// </summary>
-public sealed class SessionSteeringService(
-    IDbContextFactory<PlatformDbContext> dbFactory,
-    ILogger<SessionSteeringService> logger)
+public sealed class SessionSteeringService : ISessionSteeringService
 {
+    private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
+    private readonly ILogger<SessionSteeringService> _logger;
     private static readonly TimeSpan PendingTtl = TimeSpan.FromMinutes(30);
+
+    public SessionSteeringService(
+        IDbContextFactory<PlatformDbContext> _dbFactory,
+        ILogger<SessionSteeringService> _logger)
+    {
+        _dbFactory = _dbFactory;
+        _logger = _logger;
+    }
 
     public async Task<SessionSteeringMessageEntity> CreateAsync(
         CreateSessionSteeringMessage request,
@@ -43,7 +40,7 @@ public sealed class SessionSteeringService(
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Steering message cannot be empty.", nameof(request));
 
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var entity = new SessionSteeringMessageEntity
         {
             SteeringId = Guid.NewGuid().ToString("N"),
@@ -73,7 +70,7 @@ public sealed class SessionSteeringService(
 
         var now = DateTimeOffset.UtcNow;
         var expiresBefore = now - PendingTtl;
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         var candidates = await db.SessionSteeringMessages
             .Where(m => m.SessionId == sessionId
@@ -109,7 +106,7 @@ public sealed class SessionSteeringService(
         pending.ConsumedRound = round;
         await db.SaveChangesAsync(ct);
 
-        logger.LogInformation(
+        _logger.LogInformation(
             "[SessionSteering] Consumed steering={SteeringId} session={Session} agent={Agent} round={Round}",
             pending.SteeringId, pending.SessionId, pending.AgentId ?? "(any)", round);
 

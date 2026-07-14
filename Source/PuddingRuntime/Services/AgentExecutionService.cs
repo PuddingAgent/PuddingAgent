@@ -17,7 +17,6 @@ using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Tools;
-using PuddingPlatform.Services;
 using PuddingCode.Observability;
 using PuddingCode.Runtime;
 using Serilog.Context;
@@ -79,7 +78,7 @@ public sealed class AgentExecutionService
     private readonly ISessionOutputWriter? _sessionOutputWriter;           // ADR-026：会话输出 facade
     private readonly PuddingToolSchemaService? _toolSchemaService;
     private readonly IRuntimeControlService? _runtimeControl;
-    private readonly SessionSteeringService? _steeringService;
+    private readonly ISessionSteeringService? _steeringService;
     private readonly IIdleDetector? _idleDetector;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly SkillEnforcerService? _skillEnforcer;
@@ -122,7 +121,7 @@ public sealed class AgentExecutionService
         ITokenUsageRecorder? tokenUsageRecorder = null,
         PuddingToolSchemaService? toolSchemaService = null,
         IRuntimeControlService? runtimeControl = null,
-        SessionSteeringService? steeringService = null,
+        ISessionSteeringService? steeringService = null,
         IIdleDetector? idleDetector = null,
         ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         SkillEnforcerService? skillEnforcer = null,
