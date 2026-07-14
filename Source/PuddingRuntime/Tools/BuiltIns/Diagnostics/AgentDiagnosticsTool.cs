@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
-using PuddingPlatform.Services;
+using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -183,7 +183,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
     private async Task<string> GetCacheHealthAsync(string? sessionId, CancellationToken ct)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
-        var cacheSvc = scope.ServiceProvider.GetService<CacheDiagnosticsService>();
+        var cacheSvc = scope.ServiceProvider.GetService<ICacheDiagnosticsService>();
 
         if (cacheSvc is null)
             return JsonSerializer.Serialize(new { error = "Cache diagnostics service is not available." });

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -7,7 +8,7 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// 会话级 prefix cache 诊断服务。基于 TokenUsageEvents 判断缓存收益和 prefix churn 来源。
 /// </summary>
-public sealed class CacheDiagnosticsService(PlatformDbContext db)
+public sealed class CacheDiagnosticsService(PlatformDbContext db) : ICacheDiagnosticsService
 {
     public async Task<CacheDiagnosticsReport> GetSessionReportAsync(
         string sessionId,
@@ -65,7 +66,8 @@ public sealed class CacheDiagnosticsService(PlatformDbContext db)
             initialHash ??= ev.PrefixHash;
             if (!string.Equals(initialHash, ev.PrefixHash, StringComparison.Ordinal))
                 return ev;
-        }
+}
+
 
         return null;
     }
@@ -116,31 +118,3 @@ public sealed class CacheDiagnosticsService(PlatformDbContext db)
         TotalCost: ev.TotalCost);
 }
 
-public sealed record CacheDiagnosticsReport(
-    string SessionId,
-    int AnalyzedEventCount,
-    int DistinctPrefixHashCount,
-    string Status,
-    double? AverageCacheHitRate,
-    long CacheHitTokens,
-    long CacheMissTokens,
-    long CacheEligibleTokens,
-    DateTimeOffset? FirstChurnAtUtc,
-    string? FirstChurnReason,
-    string? FirstChurnSource,
-    IReadOnlyList<CacheDiagnosticsTurn> Turns);
-
-public sealed record CacheDiagnosticsTurn(
-    string SourceType,
-    string SourceId,
-    DateTimeOffset OccurredAtUtc,
-    string? ProviderId,
-    string? ModelId,
-    string? PrefixHash,
-    string? SystemPromptHash,
-    string? ToolSpecHash,
-    string? PrefixChangeReason,
-    long CacheHitTokens,
-    long CacheMissTokens,
-    double? CacheHitRate,
-    decimal TotalCost);

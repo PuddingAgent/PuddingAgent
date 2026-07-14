@@ -416,6 +416,7 @@ builder.Services.AddSingleton<TokenUsageRebuildService>();
 builder.Services.AddSingleton<SessionSteeringService>();
 builder.Services.AddSingleton<ISessionSteeringService>(sp => sp.GetRequiredService<SessionSteeringService>());
 builder.Services.AddScoped<CacheDiagnosticsService>();
+builder.Services.AddScoped<ICacheDiagnosticsService>(sp => sp.GetRequiredService<CacheDiagnosticsService>());
 
 builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
 {
