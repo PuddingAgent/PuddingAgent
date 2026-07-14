@@ -30,21 +30,21 @@ public class TokenUsageRecorder : ITokenUsageRecorder
     private readonly ISessionTimelineRecorder? _timelineRecorder;
 
     public TokenUsageRecorder(
-        IServiceScopeFactory _scopeFactory,
-        TokenUsageNormalizer _normalizer,
-        ILogger<TokenUsageRecorder> _logger,
-        ITelemetryMetricSink? _telemetrySink = null,
-        ContextAssemblyStore? _contextAssemblyStore = null,
-        ILlmConfigService? _llmConfigService = null,
-        ISessionTimelineRecorder? _timelineRecorder = null)
+        IServiceScopeFactory scopeFactory,
+        TokenUsageNormalizer normalizer,
+        ILogger<TokenUsageRecorder> logger,
+        ITelemetryMetricSink? telemetrySink = null,
+        ContextAssemblyStore? contextAssemblyStore = null,
+        ILlmConfigService? llmConfigService = null,
+        ISessionTimelineRecorder? timelineRecorder = null)
     {
-        _scopeFactory = _scopeFactory;
-        _normalizer = _normalizer;
-        _logger = _logger;
-        _telemetrySink = _telemetrySink;
-        _contextAssemblyStore = _contextAssemblyStore;
-        _llmConfigService = _llmConfigService;
-        _timelineRecorder = _timelineRecorder;
+        _scopeFactory = scopeFactory;
+        _normalizer = normalizer;
+        _logger = logger;
+        _telemetrySink = telemetrySink;
+        _contextAssemblyStore = contextAssemblyStore;
+        _llmConfigService = llmConfigService;
+        _timelineRecorder = timelineRecorder;
     }
     /// <summary>
     /// 记录一条 token usage 事件。
