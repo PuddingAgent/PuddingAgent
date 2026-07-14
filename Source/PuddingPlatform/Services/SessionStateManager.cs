@@ -27,7 +27,7 @@ namespace PuddingPlatform.Services;
 /// Singleton 生命周期。使用 IDbContextFactory 解决 Singleton 与 Scoped DbContext 的冲突。
 /// 关联 ADR：Docs/07架构/16会话状态层与客户端解耦ADR.md
 /// </summary>
-public sealed class SessionStateManager : ISessionStateManager, ISessionEventReader, ISessionHeadNotifier
+public sealed class SessionStateManager : ISessionStateManager, ISessionEventWriter, ISessionEventReader, ISessionHeadNotifier
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SessionStateManager> _logger;
@@ -332,6 +332,130 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventRea
         }
 
         return seq;
+    }
+
+    // ════════════════════════════════════════════════════════
+    // ISessionEventWriter（新统一事件写入接口，ADX-056-E）
+    // ════════════════════════════════════════════════════════
+
+    public async ValueTask<SessionEventEnvelope> AppendAsync(
+        string sessionId,
+        string workspaceId,
+        SessionEventDraft draft,
+        CancellationToken ct = default)
+    {
+        var recordedAt = DateTimeOffset.UtcNow.ToString("O");
+        var trace = draft.Trace
+            ?? _traceAccessor.Current?.WithSession(sessionId, workspaceId)
+            ?? RuntimeTraceContext.CreateNew(sessionId: sessionId, workspaceId: workspaceId);
+        var eventId = draft.EventId ?? Guid.NewGuid().ToString("N");
+
+        var seq = await ReserveSequenceAsync(sessionId, ct);
+
+        var payloadJson = draft.Payload.GetRawText();
+        var entity = new SessionEventLogEntity
+        {
+            SessionId = sessionId,
+            WorkspaceId = workspaceId,
+            AgentInstanceId = trace.AgentInstanceId,
+            AgentTemplateId = trace.AgentTemplateId,
+            SequenceNum = seq,
+            EventType = draft.EventType,
+            Data = payloadJson,
+            RecordedAt = recordedAt,
+            TraceId = trace.TraceId,
+            CorrelationId = trace.CorrelationId,
+            ExecutionId = trace.ExecutionId,
+            ParentExecutionId = trace.ParentExecutionId,
+            SubAgentId = trace.SubAgentId,
+            Component = RuntimeActivityComponents.SessionState,
+            Operation = $"append:{draft.EventType}",
+        };
+
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.SessionEventLogs.Add(entity);
+            await db.SaveChangesAsync(ct);
+        }
+
+        // Notify subscribers
+        var envelope = MapToEnvelope(entity);
+
+        if (_sessionChannels.TryGetValue(sessionId, out var hub))
+        {
+            var legacyFrame = new ServerSentEventFrame(draft.EventType, payloadJson);
+            hub.Publish(legacyFrame);
+        }
+
+        if (_headNotificationChannels.TryGetValue(sessionId, out var headChannel))
+            headChannel.Writer.TryWrite(new SessionHeadAdvanced(sessionId, seq));
+
+        return envelope;
+    }
+
+    public async ValueTask<IReadOnlyList<SessionEventEnvelope>> AppendBatchAsync(
+        string sessionId,
+        string workspaceId,
+        IReadOnlyList<SessionEventDraft> drafts,
+        CancellationToken ct)
+    {
+        if (drafts.Count == 0)
+            return [];
+
+        var recordedAt = DateTimeOffset.UtcNow.ToString("O");
+        var baseTrace = _traceAccessor.Current?.WithSession(sessionId, workspaceId)
+            ?? RuntimeTraceContext.CreateNew(sessionId: sessionId, workspaceId: workspaceId);
+
+        var envelopes = new List<SessionEventEnvelope>(drafts.Count);
+
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChangeTracker.AutoDetectChangesEnabled = false;
+
+            foreach (var draft in drafts)
+            {
+                var seq = await ReserveSequenceAsync(sessionId, ct);
+                var eventId = draft.EventId ?? Guid.NewGuid().ToString("N");
+                var payloadJson = draft.Payload.GetRawText();
+                var trace = draft.Trace ?? baseTrace;
+
+                var entity = new SessionEventLogEntity
+                {
+                    SessionId = sessionId,
+                    WorkspaceId = workspaceId,
+                    AgentInstanceId = trace.AgentInstanceId,
+                    AgentTemplateId = trace.AgentTemplateId,
+                    SequenceNum = seq,
+                    EventType = draft.EventType,
+                    Data = payloadJson,
+                    RecordedAt = recordedAt,
+                    TraceId = trace.TraceId,
+                    CorrelationId = trace.CorrelationId,
+                    ExecutionId = trace.ExecutionId,
+                    ParentExecutionId = trace.ParentExecutionId,
+                    SubAgentId = trace.SubAgentId,
+                    Component = RuntimeActivityComponents.SessionState,
+                    Operation = $"append:{draft.EventType}",
+                };
+
+                db.SessionEventLogs.Add(entity);
+                envelopes.Add(MapToEnvelope(entity));
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        // Notify: publish max sequence in batch (same notification serves all)
+        if (envelopes.Count > 0)
+        {
+            var maxEnvelope = envelopes[^1];
+            if (_headNotificationChannels.TryGetValue(sessionId, out var headChannel))
+                headChannel.Writer.TryWrite(new SessionHeadAdvanced(sessionId, maxEnvelope.Sequence));
+        }
+
+        return envelopes;
     }
 
     // ════════════════════════════════════════════════════════

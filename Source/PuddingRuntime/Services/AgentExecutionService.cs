@@ -76,6 +76,7 @@ public sealed class AgentExecutionService
     private readonly IToolInvocationService? _toolInvocationService;       // ADR-026：工具调用 facade
     private readonly ISubAgentInvocationService? _subAgentInvocationService; // ADR-026：子代理调用 facade
     private readonly ISessionOutputWriter? _sessionOutputWriter;           // ADR-026：会话输出 facade
+    private readonly ISessionEventWriter? _eventWriter;                    // ADR-056-E：统一事件写入
     private readonly PuddingToolSchemaService? _toolSchemaService;
     private readonly IRuntimeControlService? _runtimeControl;
     private readonly ISessionSteeringService? _steeringService;
@@ -118,6 +119,7 @@ public sealed class AgentExecutionService
         IToolInvocationService? toolInvocationService = null,
         ISubAgentInvocationService? subAgentInvocationService = null,
         ISessionOutputWriter? sessionOutputWriter = null,
+        ISessionEventWriter? eventWriter = null,
         ITokenUsageRecorder? tokenUsageRecorder = null,
         PuddingToolSchemaService? toolSchemaService = null,
         IRuntimeControlService? runtimeControl = null,
@@ -164,6 +166,7 @@ public sealed class AgentExecutionService
         _toolInvocationService     = toolInvocationService;       // ADR-026
         _subAgentInvocationService = subAgentInvocationService; // ADR-026
         _sessionOutputWriter       = sessionOutputWriter;           // ADR-026
+        _eventWriter               = eventWriter;                   // ADR-056-E
         _tokenUsageRecorder        = tokenUsageRecorder;
         _toolSchemaService         = toolSchemaService;
         _runtimeControl            = runtimeControl;
@@ -1989,15 +1992,32 @@ public sealed class AgentExecutionService
                 error: null,
                 ct: CancellationToken.None);
 
-            // ADR-056：将每一帧先持久化到 SessionStateManager，再 yield return。
-            // await 保证持久化成功后再发送给 SSE 消费者，避免"浏览器看过但未落盘"。
+            // ADR-056-E：prefer ISessionEventWriter (unified envelope); fallback to sessionOutputWriter / SSM for backward compat.
             async Task Append(ServerSentEventFrame frame)
             {
                 try
                 {
                     var appendStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     var scopedFrame = EnsureFrameMessageId(frame, request.MessageId);
-                    if (_sessionOutputWriter is not null)
+
+                    if (_eventWriter is not null)
+                    {
+                        var draft = new SessionEventDraft(
+                            EventType: scopedFrame.Event,
+                            SchemaVersion: 1,
+                            CommandId: null,
+                            TurnId: null,
+                            MessageId: request.MessageId,
+                            AgentId: null,
+                            Payload: JsonSerializer.Deserialize<JsonElement>(scopedFrame.Data),
+                            Trace: null);
+                        await _eventWriter.AppendAsync(
+                            request.SessionId,
+                            request.WorkspaceId ?? "",
+                            draft,
+                            CancellationToken.None);
+                    }
+                    else if (_sessionOutputWriter is not null)
                     {
                         await _sessionOutputWriter.WriteFrameAsync(
                             request.SessionId,
@@ -2010,8 +2030,7 @@ public sealed class AgentExecutionService
                     }
                     else if (_ssm is not null)
                     {
-                        // ADR-027 legacy fallback for tests only (SSM)
-                        _logger.LogWarning("[AgentExec:Append] SessionOutputWriter not wired, falling back to SSM direct — session={Session}", request.SessionId);
+                        _logger.LogWarning("[AgentExec:Append] No event writer, falling back to SSM direct — session={Session}", request.SessionId);
                         await _ssm.AppendAsync(request.SessionId, request.WorkspaceId ?? "", scopedFrame, CancellationToken.None);
                     }
                     else

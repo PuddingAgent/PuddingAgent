@@ -14,6 +14,7 @@ public sealed class ChatCommandAcceptanceService
 {
     private readonly IChatCommandStore _commandStore;
     private readonly ISessionStateManager _ssm;
+    private readonly ISessionEventWriter _eventWriter;
     private readonly ILogger<ChatCommandAcceptanceService> _logger;
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
@@ -21,10 +22,12 @@ public sealed class ChatCommandAcceptanceService
     public ChatCommandAcceptanceService(
         IChatCommandStore commandStore,
         ISessionStateManager ssm,
+        ISessionEventWriter eventWriter,
         ILogger<ChatCommandAcceptanceService> logger)
     {
         _commandStore = commandStore;
         _ssm = ssm;
+        _eventWriter = eventWriter;
         _logger = logger;
     }
 
@@ -99,17 +102,29 @@ public sealed class ChatCommandAcceptanceService
 
         await _commandStore.SaveAsync(command, ct);
 
-        var acceptedFrame = ServerSentEventFrame.Json("turn.accepted", new
+        // ADR-056-E: use ISessionEventWriter instead of ServerSentEventFrame + ISessionStateManager
+        var acceptedPayload = JsonSerializer.SerializeToElement(new
         {
             commandId,
             messageId,
             turnId,
             sessionId,
             clientRequestId,
-        });
-        await _ssm.AppendAsync(sessionId, workspaceId, acceptedFrame, ct);
+        }, JsonOpts);
+        var acceptedEnvelope = await _eventWriter.AppendAsync(
+            sessionId, workspaceId,
+            new SessionEventDraft(
+                EventType: "turn.accepted",
+                SchemaVersion: 1,
+                CommandId: commandId,
+                TurnId: turnId,
+                MessageId: messageId,
+                AgentId: primaryDispatch.AgentId,
+                Payload: acceptedPayload,
+                Trace: null),
+            ct);
 
-        var eventCursor = await _ssm.GetLatestSequenceNumAsync(sessionId, ct);
+        var eventCursor = acceptedEnvelope.Sequence;
 
         _logger.LogInformation(
             "[Chat:Queue] Command queued cmd={CommandId} turn={TurnId} msg={MessageId} session={SessionId}",
