@@ -49,6 +49,14 @@ public sealed class ChatCommandStore : IChatCommandStore
             "last_error TEXT," +
             "event_cursor TEXT," +
             "fence_token TEXT)", ct);
+
+        // Migrate: add fence_token column to pre-existing tables (ADR-056).
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE chat_execution_commands ADD COLUMN fence_token TEXT", ct);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { /* column already exists */ }
         await db.Database.ExecuteSqlRawAsync(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_cec_cmd_id ON chat_execution_commands(command_id)", ct);
         await db.Database.ExecuteSqlRawAsync(
