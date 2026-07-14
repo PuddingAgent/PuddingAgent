@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -16,7 +17,7 @@ namespace PuddingPlatform.Controllers.Api;
 [Authorize]
 [ApiController]
 [Route("api/sessions/{sessionId}/messages")]
-public class MessageApiController(PlatformDbContext db, ILogger<MessageApiController> logger) : ControllerBase
+public class MessageApiController(PlatformDbContext db, IChatMessageRepository msgRepo, ILogger<MessageApiController> logger) : ControllerBase
 {
     private const int DefaultPageSize = 20;
     private const int MaxPageSize = 50;
@@ -65,9 +66,7 @@ public class MessageApiController(PlatformDbContext db, ILogger<MessageApiContro
         if (limit < 1 || limit > MaxPageSize)
             limit = DefaultPageSize;
 
-        var hasMaterializedMessages = await db.ChatMessages
-            .AsNoTracking()
-            .AnyAsync(m => m.SessionId == sessionId, ct);
+        var hasMaterializedMessages = await msgRepo.AnyBySessionIdAsync(sessionId, ct);
 
         if (!hasMaterializedMessages)
         {
