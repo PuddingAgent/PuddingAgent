@@ -219,10 +219,20 @@ public sealed class ChatCommandStore : IChatCommandStore
 
         if (affected == 0)
         {
+            // Fence mismatch: another worker or stale lease. Still complete the command
+            // to prevent infinite retry loop (failed commands re-leased on expired lease).
             _logger.LogWarning(
-                "[CommandStore] Complete fence mismatch or already completed command={CommandId} fence={FenceToken}",
+                "[CommandStore] Complete fence mismatch, forcing complete command={CommandId} fence={FenceToken}",
                 commandId, fenceToken);
-            return;
+            await db.ChatExecutionCommands
+                .Where(c => c.CommandId == commandId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(c => c.Status, status)
+                    .SetProperty(c => c.CompletedAt, now)
+                    .SetProperty(c => c.LeaseOwner, (string?)null)
+                    .SetProperty(c => c.LeaseUntil, (long?)null)
+                    .SetProperty(c => c.LastError, lastError),
+                    ct);
         }
 
         _logger.LogInformation(
@@ -246,9 +256,18 @@ public sealed class ChatCommandStore : IChatCommandStore
 
         if (affected == 0)
         {
+            // Fence mismatch: force release to prevent stale commands blocking the queue.
             _logger.LogWarning(
-                "[CommandStore] Release fence mismatch or already completed command={CommandId} fence={FenceToken}",
+                "[CommandStore] Release fence mismatch, forcing release command={CommandId} fence={FenceToken}",
                 commandId, fenceToken);
+            await db.ChatExecutionCommands
+                .Where(c => c.CommandId == commandId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(c => c.Status, "pending")
+                    .SetProperty(c => c.LeaseOwner, (string?)null)
+                    .SetProperty(c => c.LeaseUntil, (long?)null)
+                    .SetProperty(c => c.FenceToken, (string?)null),
+                    ct);
         }
     }
 

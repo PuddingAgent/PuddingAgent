@@ -1301,6 +1301,7 @@ static void EnsureRuntimeDirectories(PuddingDataPaths paths)
     Directory.CreateDirectory(paths.AgentInstancesRoot);
     Directory.CreateDirectory(paths.WorkspacesRoot);
     Directory.CreateDirectory(paths.SystemLogsRoot);
+    Directory.CreateDirectory(Path.GetDirectoryName(paths.ErrorLogFile)!);
     Directory.CreateDirectory(paths.DiagnosticsLogsRoot);
     Directory.CreateDirectory(paths.SessionLogsRoot);
     Directory.CreateDirectory(paths.RuntimeTracesRoot);

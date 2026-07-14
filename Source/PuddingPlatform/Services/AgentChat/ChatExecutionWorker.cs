@@ -270,6 +270,7 @@ public sealed class ChatExecutionWorker : BackgroundService
                     turnId = command.TurnId,
                     message = ex.Message,
                     error = ex.GetType().Name,
+                    stackTrace = ex.ToString(),
                 });
                 await _ssm.AppendAsync(command.SessionId, command.WorkspaceId, errorFrame, CancellationToken.None);
                 await _ssm.AppendAsync(command.SessionId, command.WorkspaceId,
