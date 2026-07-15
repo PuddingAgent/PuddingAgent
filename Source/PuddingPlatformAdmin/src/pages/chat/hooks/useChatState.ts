@@ -2595,6 +2595,23 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         }
       }
 
+      // ADR-056: When turn.accepted pre-populates messageIdToTurnId before metadata,
+      // the metadata handler above is skipped. Ensure loading state and active tracking
+      // are set even for pre-mapped metadata events.
+      if (
+        eventType === 'metadata' &&
+        messageId &&
+        messageIdToTurnIdRef.current.has(messageId) &&
+        !activeMessageIdsRef.current.has(messageId)
+      ) {
+        const mappedTurnId = messageIdToTurnIdRef.current.get(messageId)!;
+        const mappedTurn = turnsRef.current.find((t) => t.turnId === mappedTurnId);
+        if (mappedTurn && mappedTurn.assistant.status !== 'success') {
+          activeMessageIdsRef.current.add(messageId);
+          setLoading(true);
+        }
+      }
+
       const targetTurnId = resolveEventTurnId(ev);
       if (messageId && targetTurnId) {
         messageIdToTurnIdRef.current.set(messageId, targetTurnId);

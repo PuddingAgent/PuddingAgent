@@ -136,6 +136,22 @@ public sealed class ChatExecutionWorker : BackgroundService
                 "[ChatWorker] Executing command={CommandId} turn={TurnId} session={SessionId} attempt={Attempt}",
                 command.CommandId, command.TurnId, command.SessionId, command.AttemptCount);
 
+            // ADR-056: metadata event — creates turn-to-messageId mapping on the frontend.
+            // SessionRouter sends this in the old flow; ChatExecutionWorker must emit it here.
+            var metadataFrame = ServerSentEventFrame.Json("metadata", new
+            {
+                messageId = command.MessageId,
+                turnId = command.TurnId,
+                sessionId = command.SessionId,
+                source_type = "user",
+                source_id = command.UserId,
+                source_name = command.UserId,
+                agent_id = command.AgentInstanceId,
+                fanout_index = 0,
+                fanout_count = 1,
+            });
+            await _ssm.AppendAsync(command.SessionId, command.WorkspaceId, metadataFrame, stoppingToken);
+
             var startedFrame = ServerSentEventFrame.Json("turn.started", new
             {
                 commandId = command.CommandId,

@@ -36,6 +36,7 @@
 30. [42ADR-041Chat暗色主题语义Token收敛ADR](42ADR-041Chat暗色主题语义Token收敛ADR.md)
 31. [51ADR-050会话层统一投影与前端观察者模型ADR](51ADR-050会话层统一投影与前端观察者模型ADR.md)
 32. [57ADR-056聊天消息受理与可靠事件流架构ADR](57ADR-056聊天消息受理与可靠事件流架构ADR.md)
+33. [58ADR-057前后端可靠SSE与Conversation事件流架构ADR](58ADR-057前后端可靠SSE与Conversation事件流架构ADR.md)
 
 文档分工：
 

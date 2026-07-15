@@ -276,14 +276,14 @@ public class SessionEventsController : ControllerBase
         var payload = envelope.Payload.GetRawText();
         var sb = new System.Text.StringBuilder(64 + payload.Length);
 
-        sb.Append("id:").Append(envelope.Sequence).Append('\n');
-        sb.Append("event:").Append(SessionEventNames.MapLegacy(envelope.EventType)).Append('\n');
-        sb.Append("data:").Append(payload).Append('\n');
+        sb.Append("id: ").Append(envelope.Sequence).Append('\n');
+        sb.Append("event: ").Append(SessionEventNames.MapLegacy(envelope.EventType)).Append('\n');
+        sb.Append("data: ").Append(payload).Append('\n');
 
         if (envelope.TurnId is not null)
-            sb.Append("turn:").Append(envelope.TurnId).Append('\n');
+            sb.Append("turn: ").Append(envelope.TurnId).Append('\n');
         if (envelope.MessageId is not null)
-            sb.Append("message:").Append(envelope.MessageId).Append('\n');
+            sb.Append("message: ").Append(envelope.MessageId).Append('\n');
 
         sb.Append('\n');
 
