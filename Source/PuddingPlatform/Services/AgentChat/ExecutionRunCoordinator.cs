@@ -181,7 +181,11 @@ public sealed class ExecutionRunCoordinator(
             logger.LogError(ex, "[Coordinator] Failed run={RunId}", lease.RunId);
             try
             {
-                var term = TurnTerminal.ProtocolError(ex.Message);
+                var term = ex is AgentConfigurationException configurationError
+                    ? TurnTerminal.Failure(
+                        configurationError.ErrorCode,
+                        configurationError.Message)
+                    : TurnTerminal.ProtocolError(ex.Message);
                 var pending = CollectPendingOutput(
                     lease,
                     command?.AssistantMessageId,
@@ -240,7 +244,8 @@ public sealed class ExecutionRunCoordinator(
     private static string RequireRoutingValue(string? value, string field, string agentId)
         => !string.IsNullOrWhiteSpace(value)
             ? value
-            : throw new InvalidOperationException(
+            : throw new AgentConfigurationException(
+                agentId,
                 $"Agent '{agentId}' does not have a resolved LLM {field}.");
 
     private async Task<ControlMonitorOutcome> MonitorAsync(

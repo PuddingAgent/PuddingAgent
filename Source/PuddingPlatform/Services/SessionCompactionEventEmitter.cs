@@ -1,24 +1,24 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// ISessionCompactionEventEmitter 实现：通过 ISessionStateManager.AppendAsync 推送压缩 SSE 事件。
-/// 注册为 Singleton，在 ContextWindowManager.TryAutoCompactAsync 中调用。
+/// ISessionCompactionEventEmitter 实现：将自动压缩生命周期写入 canonical
+/// Conversation Event Store。SSE 只是 Event Store 的可恢复投递视图。
 /// </summary>
 public sealed class SessionCompactionEventEmitter : ISessionCompactionEventEmitter
 {
-    private readonly ISessionStateManager _ssm;
+    private readonly IConversationEventStore _eventStore;
     private readonly ILogger<SessionCompactionEventEmitter> _logger;
 
     public SessionCompactionEventEmitter(
-        ISessionStateManager ssm,
+        IConversationEventStore eventStore,
         ILogger<SessionCompactionEventEmitter> logger)
     {
-        _ssm = ssm;
+        _eventStore = eventStore;
         _logger = logger;
     }
 
@@ -31,14 +31,44 @@ public sealed class SessionCompactionEventEmitter : ISessionCompactionEventEmitt
     {
         try
         {
-            var frame = ServerSentEventFrame.Json(eventType, payload);
-            await _ssm.AppendAsync(sessionId, workspaceId, frame, ct);
+            var element = JsonSerializer.SerializeToElement(
+                payload,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var compactionId =
+                element.ValueKind == JsonValueKind.Object
+                && element.TryGetProperty("compactionId", out var id)
+                && id.ValueKind == JsonValueKind.String
+                    ? id.GetString()
+                    : null;
+            var eventId =
+                $"compaction:{compactionId ?? Guid.NewGuid().ToString("N")}:{eventType}:{Guid.NewGuid():N}";
+            await _eventStore.AppendAsync(
+                sessionId,
+                expectedVersion: -1,
+                [
+                    new NewConversationEvent(
+                        eventId,
+                        eventType,
+                        SchemaVersion: 1,
+                        WorkspaceId: workspaceId,
+                        TurnId: null,
+                        CommandId: compactionId,
+                        RunId: null,
+                        MessageId: null,
+                        CorrelationId: compactionId,
+                        CausationId: null,
+                        ProducerEventId: null,
+                        Payload: element),
+                ],
+                EventWriteCondition.ForRun(
+                    $"auto-compaction:{compactionId ?? sessionId}",
+                    0),
+                ct);
         }
         catch (Exception ex)
         {
-            // SSE 推送失败不影响压缩主流程
             _logger.LogWarning(ex,
-                "[CompactionEmitter] Failed to emit SSE {EventType} session={Session}",
+                "[CompactionEmitter] Failed to persist {EventType} session={Session}",
                 eventType, sessionId);
         }
     }

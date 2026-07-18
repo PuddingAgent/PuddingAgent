@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace PuddingCode.Configuration;
 
@@ -242,8 +242,12 @@ public sealed record AgentCapabilitiesConfig
     public List<string> AllowedToolNames { get; init; } = [];
 }
 
+/// <summary>
+/// Agent 实例 manifest — 创建时从模板复制全部配置，运行时自包含，不再跨目录引用模板。
+/// </summary>
 public sealed record AgentInstanceManifest
 {
+    // ── 实例身份字段 ──
     public string AgentInstanceId { get; init; } = "";
     public string TemplateId { get; init; } = "";
     public string WorkspaceId { get; init; } = "";
@@ -252,9 +256,34 @@ public sealed record AgentInstanceManifest
     public string? AvatarId { get; init; }
     public string? AvatarUrl { get; init; }
     public string? MainSessionId { get; init; }
-    public string? HeartbeatPrompt { get; init; }
     public bool IsEnabled { get; init; } = true;
     public AgentInstancePaths Paths { get; init; } = new();
+
+    // ── 模板配置（创建时嵌入，运行时不再查模板）──
+    public string? Role { get; init; }
+    public string? SystemPrompt { get; init; }
+    public string? MemorySearchMode { get; init; }
+    public string? ReasoningEffort { get; init; }
+    public int MaxContextTokens { get; init; } = 65536;
+    public int MaxReplyTokens { get; init; } = 4096;
+    public int MaxRounds { get; init; } = 200;
+    public int MaxElapsedSeconds { get; init; } = 1200;
+    public int MaxToolCallsTotal { get; init; } = 100;
+    public AgentDefaultLlmProfiles DefaultLlmProfiles { get; init; } = new();
+    public AgentCapabilitiesConfig Capabilities { get; init; } = new();
+    public List<string> SkillPackageIds { get; init; } = [];
+    public string? PreferredProviderId { get; init; }
+    public string? PreferredModelId { get; init; }
+    public string? MemoryLlmProviderId { get; init; }
+    public string? MemoryLlmModelId { get; init; }
+
+    // ── Markdown 文件引用（相对于实例根目录的文件名，如 "SOUL.md"）──
+    public string? SoulMdFile { get; init; }
+    public string? AgentsMdFile { get; init; }
+    public string? ToolsMdFile { get; init; }
+    public string? BootstrapMdFile { get; init; }
+    public string? MemoryMdFile { get; init; }
+    public string? HeartbeatMdFile { get; init; }
 }
 
 public sealed record AgentInstancePaths

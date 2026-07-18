@@ -154,14 +154,29 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                     AvatarUrl: avatar.AvatarUrl,
                     SourceTemplateId: instanceManifest.TemplateId,
                     MainSessionId: instanceManifest.MainSessionId,
-                    SystemPromptOverride: null,
-                    PreferredProviderId: null,
-                    PreferredModelId: null,
+                                        SystemPromptOverride: null,
+                    PreferredProviderId: instanceManifest.PreferredProviderId,
+                    PreferredModelId: instanceManifest.PreferredModelId,
                     IsEnabled: instanceManifest.IsEnabled,
                     IsFrozen: false,
                     CreatedAt: DateTimeOffset.UtcNow,
                     UpdatedAt: DateTimeOffset.UtcNow,
-                    HeartbeatPrompt: ResolveHeartbeatPrompt(instanceManifest.HeartbeatPrompt)
+                    HeartbeatPrompt: await ReadAgentMdContentAsync(
+                        _paths.AgentInstanceRoot(refData.AgentInstanceId),
+                        instanceManifest.HeartbeatMdFile, ct),
+                    Role: instanceManifest.Role,
+                    SystemPrompt: instanceManifest.SystemPrompt,
+                    MemorySearchMode: instanceManifest.MemorySearchMode,
+                    MaxContextTokens: instanceManifest.MaxContextTokens,
+                    MaxReplyTokens: instanceManifest.MaxReplyTokens,
+                    MaxRounds: instanceManifest.MaxRounds,
+                    MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
+                    AllowFileWrite: instanceManifest.Capabilities.AllowFileWrite,
+                    AllowShellExecution: instanceManifest.Capabilities.AllowShellExecution,
+                    AllowNetworkAccess: instanceManifest.Capabilities.AllowNetworkAccess,
+                    SelectedCapabilityIds: instanceManifest.Capabilities.AllowedToolIds,
+                    SkillPackageIds: instanceManifest.SkillPackageIds,
+                    AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames
                 ));
             }
             catch (Exception ex)
@@ -197,16 +212,36 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
             AvatarUrl: avatar.AvatarUrl,
             SourceTemplateId: instanceManifest.TemplateId,
             MainSessionId: instanceManifest.MainSessionId,
-            SystemPromptOverride: null,
-            PreferredProviderId: null,
-            PreferredModelId: null,
-            IsEnabled: instanceManifest.IsEnabled,
-            IsFrozen: false,
-            CreatedAt: DateTimeOffset.UtcNow,
-            UpdatedAt: DateTimeOffset.UtcNow,
-            HeartbeatPrompt: ResolveHeartbeatPrompt(instanceManifest.HeartbeatPrompt)
-        );
-    }
+                                SystemPromptOverride: null,
+                    PreferredProviderId: instanceManifest.PreferredProviderId,
+                    PreferredModelId: instanceManifest.PreferredModelId,
+                    IsEnabled: instanceManifest.IsEnabled,
+                    IsFrozen: false,
+                    CreatedAt: DateTimeOffset.UtcNow,
+                    UpdatedAt: DateTimeOffset.UtcNow,
+                    HeartbeatPrompt: await ReadAgentMdContentAsync(
+                        _paths.AgentInstanceRoot(agentId),
+                        instanceManifest.HeartbeatMdFile, ct),
+                    Role: instanceManifest.Role,
+                    SystemPrompt: instanceManifest.SystemPrompt,
+                    MemorySearchMode: instanceManifest.MemorySearchMode,
+                    MaxContextTokens: instanceManifest.MaxContextTokens,
+                    MaxReplyTokens: instanceManifest.MaxReplyTokens,
+                    MaxRounds: instanceManifest.MaxRounds,
+                    MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
+                    AllowFileWrite: instanceManifest.Capabilities.AllowFileWrite,
+                    AllowShellExecution: instanceManifest.Capabilities.AllowShellExecution,
+                    AllowNetworkAccess: instanceManifest.Capabilities.AllowNetworkAccess,
+                    SelectedCapabilityIds: instanceManifest.Capabilities.AllowedToolIds,
+                                        SkillPackageIds: instanceManifest.SkillPackageIds,
+                    AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames,
+                    SoulMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.SoulMdFile, ct),
+                    AgentsMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.AgentsMdFile, ct),
+                    ToolsMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.ToolsMdFile, ct),
+                    BootstrapMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.BootstrapMdFile, ct),
+                    MemoryMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.MemoryMdFile, ct)
+                );
+        }
 
     /// <summary>在工作区下创建 Agent 实例。</summary>
     public async Task<WorkspaceAgentDto> CreateAgentAsync(string workspaceId, CreateWorkspaceAgentRequest req, CancellationToken ct = default)
@@ -220,14 +255,26 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
             if (await IsAuditTemplateAsync(requestedTemplateId, ct))
                 await EnsureNoOtherAuditAgentAsync(workspaceId, excludingAgentId: null, ct);
 
+            var template = await ResolveTemplateAsync(requestedTemplateId, ct);
+
             var rawId = $"{workspaceId}.{req.SourceTemplateId ?? "agent"}.{Guid.NewGuid():N}"[..36];
-            // 替换文件系统非法字符（Windows 不允许 : * ? " < > | 等）
             var agentInstanceId = string.Join("_", rawId.Split(Path.GetInvalidFileNameChars()));
 
             // 创建 agent instance 目录
             var instanceRoot = _paths.AgentInstanceRoot(agentInstanceId);
             Directory.CreateDirectory(instanceRoot);
             Directory.CreateDirectory(_paths.AgentInstanceConfigRoot(agentInstanceId));
+
+            // 写入 Markdown 文件（从模板复制或使用默认内容）
+            var soulMd = await WriteAgentMdFileAsync(instanceRoot, "SOUL.md", template?.PersonaPrompt, ct);
+            var agentsMd = await WriteAgentMdFileAsync(instanceRoot, "AGENTS.md", template?.AgentsPrompt, ct);
+            var toolsMd = await WriteAgentMdFileAsync(instanceRoot, "TOOLS.md", template?.ToolsDescription, ct);
+            var bootstrapMd = await WriteAgentMdFileAsync(instanceRoot, "BOOTSTRAP.md", template?.BootstrapTemplate, ct);
+            var memoryMd = await WriteAgentMdFileAsync(instanceRoot, "MEMORY.md", template?.MemoryPrompt, ct);
+            var heartbeatMd = await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md",
+                req.HeartbeatPrompt ?? DefaultHeartbeatPrompt, ct);
+
+            var avatar = ResolveAvatarFromTemplate(template);
 
             var instanceManifest = new AgentInstanceManifest
             {
@@ -236,37 +283,65 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 WorkspaceId = workspaceId,
                 DisplayName = req.DisplayName ?? req.Name,
                 Description = req.Description,
-                AvatarId = req.AvatarId,
-                AvatarUrl = req.AvatarUrl,
-                HeartbeatPrompt = ResolveHeartbeatPrompt(req.HeartbeatPrompt),
+                AvatarId = req.AvatarId ?? avatar.AvatarId,
+                AvatarUrl = req.AvatarUrl ?? avatar.AvatarUrl,
                 IsEnabled = true,
-                Paths = new AgentInstancePaths
+                Paths = new AgentInstancePaths { Config = "config", Workspace = "workspace", State = "state", Logs = "logs" },
+
+                Role = template?.Role,
+                SystemPrompt = template?.SystemPrompt,
+                MemorySearchMode = template?.MemorySearchMode ?? "deep",
+                ReasoningEffort = template?.ReasoningEffort,
+                MaxContextTokens = template?.MaxContextTokens ?? 65536,
+                MaxReplyTokens = template?.MaxReplyTokens ?? 4096,
+                MaxRounds = template?.MaxRounds ?? 200,
+                MaxElapsedSeconds = template?.MaxElapsedSeconds ?? 1200,
+                MaxToolCallsTotal = template?.MaxToolCallsTotal ?? 100,
+                PreferredProviderId = req.PreferredProviderId ?? template?.PreferredProviderId,
+                PreferredModelId = req.PreferredModelId ?? template?.PreferredModelId,
+                MemoryLlmProviderId = template?.MemoryLlmProviderId,
+                MemoryLlmModelId = template?.MemoryLlmModelId,
+                Capabilities = new AgentCapabilitiesConfig
                 {
-                    Config = "config",
-                    Workspace = "workspace",
-                    State = "state",
-                    Logs = "logs",
+                    AllowedToolIds = template?.SelectedCapabilityIds ?? [],
+                    AllowFileWrite = template?.AllowFileWrite ?? false,
+                    AllowShellExecution = template?.AllowShellExecution ?? false,
+                    AllowNetworkAccess = template?.AllowNetworkAccess ?? false,
+                    AllowedToolNames = template?.AllowedToolNames ?? [],
+                },
+                SkillPackageIds = template?.SelectedSkillPackageIds ?? [],
+
+                SoulMdFile = soulMd,
+                AgentsMdFile = agentsMd,
+                ToolsMdFile = toolsMd,
+                BootstrapMdFile = bootstrapMd,
+                MemoryMdFile = memoryMd,
+                HeartbeatMdFile = heartbeatMd,
+            };
+
+                        await AtomicFileWriter.WriteJsonAsync(Path.Combine(instanceRoot, "manifest.json"), instanceManifest, JsonOptions, ct);
+
+            // 写入 LLM 快照到 config/llm.json（Agent 独立于模板运行）
+            var llmSnapshot = new AgentInstanceLlmConfig
+            {
+                Conscious = template == null ? null : new AgentLlmBinding
+                {
+                    ProfileId = template.ConsciousProfileId,
+                    ProviderId = instanceManifest.PreferredProviderId,
+                    ModelId = instanceManifest.PreferredModelId,
+                    ReasoningEffort = template.ReasoningEffort,
+                    MaxContextTokens = template.MaxContextTokens,
+                    MaxReplyTokens = template.MaxReplyTokens,
                 },
             };
+            var configPath = _paths.AgentInstanceConfigFile(agentInstanceId, "llm.json");
+            if (!File.Exists(configPath))
+                await AtomicFileWriter.WriteJsonAsync(configPath, llmSnapshot, JsonOptions, ct);
 
-            await AtomicFileWriter.WriteJsonAsync(
-                Path.Combine(instanceRoot, "manifest.json"),
-                instanceManifest, JsonOptions, ct);
-
-            // 创建 workspace ref
             var refDir = _paths.WorkspaceAgentRoot(workspaceId, agentInstanceId);
             Directory.CreateDirectory(refDir);
-
-            var workspaceRef = new WorkspaceAgentRef
-            {
-                AgentInstanceId = agentInstanceId,
-                WorkspaceId = workspaceId,
-                AgentPath = Path.GetRelativePath(refDir, instanceRoot),
-                IsEnabled = true,
-            };
-            await AtomicFileWriter.WriteJsonAsync(
-                Path.Combine(refDir, "ref.json"),
-                workspaceRef, JsonOptions, ct);
+            var workspaceRef = new WorkspaceAgentRef { AgentInstanceId = agentInstanceId, WorkspaceId = workspaceId, AgentPath = Path.GetRelativePath(refDir, instanceRoot), IsEnabled = true };
+            await AtomicFileWriter.WriteJsonAsync(Path.Combine(refDir, "ref.json"), workspaceRef, JsonOptions, ct);
 
             try
             {
@@ -274,38 +349,48 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(
-                    ex,
-                    "Failed to create default memory library for workspace agent: workspace={Workspace} agent={AgentId}",
-                    workspaceId,
-                    agentInstanceId);
+                _logger.LogError(ex, "Failed to create default memory library for workspace agent: workspace={Workspace} agent={AgentId}", workspaceId, agentInstanceId);
                 TryDeleteDirectory(refDir);
                 TryDeleteDirectory(instanceRoot);
                 throw;
             }
 
-            _logger.LogInformation(
-                "Workspace agent created: workspace={Workspace} agent={AgentId} template={Template}",
-                workspaceId, agentInstanceId, req.SourceTemplateId);
+            _logger.LogInformation("Workspace agent created: workspace={Workspace} agent={AgentId} template={Template}", workspaceId, agentInstanceId, req.SourceTemplateId);
 
-            var avatar = await ResolveAgentAvatarAsync(instanceManifest, ct);
+            var resolvedAvatar = await ResolveAgentAvatarAsync(instanceManifest, ct);
             return new WorkspaceAgentDto(
                 AgentId: agentInstanceId,
                 Name: instanceManifest.DisplayName ?? instanceManifest.TemplateId,
                 Description: instanceManifest.Description,
                 DisplayName: instanceManifest.DisplayName,
-                AvatarId: avatar.AvatarId,
-                AvatarUrl: avatar.AvatarUrl,
+                AvatarId: resolvedAvatar.AvatarId,
+                AvatarUrl: resolvedAvatar.AvatarUrl,
                 SourceTemplateId: instanceManifest.TemplateId,
                 MainSessionId: instanceManifest.MainSessionId,
                 SystemPromptOverride: null,
-                PreferredProviderId: null,
-                PreferredModelId: null,
+                                PreferredProviderId: instanceManifest.PreferredProviderId,
+                PreferredModelId: instanceManifest.PreferredModelId,
                 IsEnabled: true,
                 IsFrozen: false,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                HeartbeatPrompt: ResolveHeartbeatPrompt(instanceManifest.HeartbeatPrompt)
+                HeartbeatPrompt: await ReadAgentMdContentAsync(instanceRoot, heartbeatMd, ct),
+                Role: instanceManifest.Role,
+                SystemPrompt: instanceManifest.SystemPrompt,
+                MemorySearchMode: instanceManifest.MemorySearchMode,
+                ReasoningEffort: instanceManifest.ReasoningEffort,
+                MaxContextTokens: instanceManifest.MaxContextTokens,
+                MaxReplyTokens: instanceManifest.MaxReplyTokens,
+                MaxRounds: instanceManifest.MaxRounds,
+                MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
+                MemoryLlmProviderId: instanceManifest.MemoryLlmProviderId,
+                MemoryLlmModelId: instanceManifest.MemoryLlmModelId,
+                AllowFileWrite: instanceManifest.Capabilities.AllowFileWrite,
+                AllowShellExecution: instanceManifest.Capabilities.AllowShellExecution,
+                AllowNetworkAccess: instanceManifest.Capabilities.AllowNetworkAccess,
+                SelectedCapabilityIds: instanceManifest.Capabilities.AllowedToolIds,
+                SkillPackageIds: instanceManifest.SkillPackageIds,
+                AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames
             );
         }
         finally
@@ -343,11 +428,72 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 Description = req.Description,
                 AvatarId = req.AvatarId ?? instanceManifest.AvatarId,
                 AvatarUrl = req.AvatarUrl ?? instanceManifest.AvatarUrl,
-                HeartbeatPrompt = req.HeartbeatPrompt is null
-                    ? instanceManifest.HeartbeatPrompt
-                    : ResolveHeartbeatPrompt(req.HeartbeatPrompt),
                 IsEnabled = req.IsEnabled,
+                SystemPrompt = req.SystemPrompt ?? instanceManifest.SystemPrompt,
+                MemorySearchMode = req.MemorySearchMode ?? instanceManifest.MemorySearchMode,
+                ReasoningEffort = req.ReasoningEffort ?? instanceManifest.ReasoningEffort,
+                MaxContextTokens = req.MaxContextTokens ?? instanceManifest.MaxContextTokens,
+                MaxReplyTokens = req.MaxReplyTokens ?? instanceManifest.MaxReplyTokens,
+                MaxRounds = req.MaxRounds ?? instanceManifest.MaxRounds,
+                MaxElapsedSeconds = req.MaxElapsedSeconds ?? instanceManifest.MaxElapsedSeconds,
+                MaxToolCallsTotal = req.MaxToolCallsTotal ?? instanceManifest.MaxToolCallsTotal,
+                PreferredProviderId = req.PreferredProviderId ?? instanceManifest.PreferredProviderId,
+                PreferredModelId = req.PreferredModelId ?? instanceManifest.PreferredModelId,
+                MemoryLlmProviderId = req.MemoryLlmProviderId ?? instanceManifest.MemoryLlmProviderId,
+                MemoryLlmModelId = req.MemoryLlmModelId ?? instanceManifest.MemoryLlmModelId,
+                Capabilities = instanceManifest.Capabilities with
+                {
+                    AllowFileWrite = req.AllowFileWrite ?? instanceManifest.Capabilities.AllowFileWrite,
+                    AllowShellExecution = req.AllowShellExecution ?? instanceManifest.Capabilities.AllowShellExecution,
+                    AllowNetworkAccess = req.AllowNetworkAccess ?? instanceManifest.Capabilities.AllowNetworkAccess,
+                    AllowedToolIds = req.SelectedCapabilityIds ?? instanceManifest.Capabilities.AllowedToolIds,
+                    AllowedToolNames = req.AllowedToolNames ?? instanceManifest.Capabilities.AllowedToolNames,
+                },
+                SkillPackageIds = req.SkillPackageIds ?? instanceManifest.SkillPackageIds,
             };
+
+            var llmConfigPath = _paths.AgentInstanceConfigFile(agentId, "llm.json");
+            var existingLlm = File.Exists(llmConfigPath)
+                ? await AtomicFileWriter.ReadJsonAsync<AgentInstanceLlmConfig>(
+                    llmConfigPath,
+                    JsonOptions,
+                    ct)
+                : null;
+            var updatedLlm = new AgentInstanceLlmConfig
+            {
+                Conscious = new AgentLlmBinding
+                {
+                    ProfileId = existingLlm?.Conscious?.ProfileId
+                        ?? instanceManifest.DefaultLlmProfiles.Conscious,
+                    ProviderId = updated.PreferredProviderId,
+                    ModelId = updated.PreferredModelId,
+                    ReasoningEffort = updated.ReasoningEffort,
+                    ThinkingMode = existingLlm?.Conscious?.ThinkingMode,
+                    MaxContextTokens = updated.MaxContextTokens,
+                    MaxReplyTokens = updated.MaxReplyTokens,
+                },
+                Subconscious = existingLlm?.Subconscious,
+            };
+
+            await AtomicFileWriter.WriteJsonAsync(
+                llmConfigPath,
+                updatedLlm,
+                JsonOptions,
+                ct);
+
+            // 写入 Markdown 文件（如果提供了新内容）
+            if (req.SoulMdContent is not null)
+                await WriteAgentMdFileAsync(instanceRoot, "SOUL.md", req.SoulMdContent, ct);
+            if (req.AgentsMdContent is not null)
+                await WriteAgentMdFileAsync(instanceRoot, "AGENTS.md", req.AgentsMdContent, ct);
+            if (req.ToolsMdContent is not null)
+                await WriteAgentMdFileAsync(instanceRoot, "TOOLS.md", req.ToolsMdContent, ct);
+            if (req.BootstrapMdContent is not null)
+                await WriteAgentMdFileAsync(instanceRoot, "BOOTSTRAP.md", req.BootstrapMdContent, ct);
+            if (req.MemoryMdContent is not null)
+                await WriteAgentMdFileAsync(instanceRoot, "MEMORY.md", req.MemoryMdContent, ct);
+            if (!string.IsNullOrWhiteSpace(req.HeartbeatPrompt))
+                await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md", req.HeartbeatPrompt, ct);
 
             await AtomicFileWriter.WriteJsonAsync(
                 Path.Combine(instanceRoot, "manifest.json"),
@@ -355,6 +501,7 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
 
             _logger.LogInformation("Workspace agent updated: {AgentId}", agentId);
 
+            var heartbeatContent = await ReadAgentMdContentAsync(instanceRoot, updated.HeartbeatMdFile, ct);
             var avatar = await ResolveAgentAvatarAsync(updated, ct);
             return new WorkspaceAgentDto(
                 AgentId: agentId,
@@ -366,13 +513,26 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 SourceTemplateId: updated.TemplateId,
                 MainSessionId: updated.MainSessionId,
                 SystemPromptOverride: null,
-                PreferredProviderId: null,
-                PreferredModelId: null,
+                PreferredProviderId: updated.PreferredProviderId,
+                PreferredModelId: updated.PreferredModelId,
                 IsEnabled: req.IsEnabled,
                 IsFrozen: false,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                HeartbeatPrompt: ResolveHeartbeatPrompt(updated.HeartbeatPrompt)
+                                HeartbeatPrompt: heartbeatContent,
+                Role: updated.Role,
+                SystemPrompt: updated.SystemPrompt,
+                MemorySearchMode: updated.MemorySearchMode,
+                MaxContextTokens: updated.MaxContextTokens,
+                MaxReplyTokens: updated.MaxReplyTokens,
+                MaxRounds: updated.MaxRounds,
+                MaxElapsedSeconds: updated.MaxElapsedSeconds,
+                AllowFileWrite: updated.Capabilities.AllowFileWrite,
+                AllowShellExecution: updated.Capabilities.AllowShellExecution,
+                AllowNetworkAccess: updated.Capabilities.AllowNetworkAccess,
+                SelectedCapabilityIds: updated.Capabilities.AllowedToolIds,
+                SkillPackageIds: updated.SkillPackageIds,
+                AllowedToolNames: updated.Capabilities.AllowedToolNames
             );
         }
         finally
@@ -529,25 +689,20 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 if (instanceManifest is null)
                     continue;
                 if (enabledOnly && !instanceManifest.IsEnabled)
-                    continue;
+                                        continue;
 
-                var templateId = NormalizeTemplateId(instanceManifest.TemplateId);
-                var template = await _templateFileService.GetTemplateAsync(templateId, ct);
-                if (template is null
-                    || (enabledOnly && !template.IsEnabled)
-                    || !string.Equals(template.Role, "Audit", StringComparison.OrdinalIgnoreCase))
-                {
+                // 使用实例 manifest 的 Role（创建时嵌入），不再查模板
+                if (!string.Equals(instanceManifest.Role, "Audit", StringComparison.OrdinalIgnoreCase))
                     continue;
-                }
 
                 return new WorkspaceAgentAuditProfile
                 {
                     WorkspaceId = workspaceId,
                     AgentInstanceId = refData.AgentInstanceId,
-                    AgentTemplateId = template.TemplateId,
-                    ProfileId = template.ConsciousProfileId,
-                    ProviderId = template.PreferredProviderId,
-                    ModelId = template.PreferredModelId,
+                    AgentTemplateId = instanceManifest.TemplateId,
+                    ProfileId = instanceManifest.DefaultLlmProfiles?.Conscious,
+                    ProviderId = instanceManifest.PreferredProviderId,
+                    ModelId = instanceManifest.PreferredModelId,
                 };
             }
             catch (Exception ex)
@@ -587,13 +742,14 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
             if (instanceManifest is null)
                 throw new KeyNotFoundException($"Agent instance '{agentId}' 不存在");
 
-            var prompt = ResolveHeartbeatPrompt(instanceManifest.HeartbeatPrompt);
-            if (!string.IsNullOrWhiteSpace(instanceManifest.HeartbeatPrompt))
-                return prompt;
+            var instanceRoot = _paths.AgentInstanceRoot(agentId);
+            var existing = await ReadAgentMdContentAsync(instanceRoot, instanceManifest.HeartbeatMdFile, ct);
+            if (!string.IsNullOrWhiteSpace(existing))
+                return existing;
 
-            var updated = instanceManifest with { HeartbeatPrompt = prompt };
+            var updated = instanceManifest with { HeartbeatMdFile = "heartbeatPrompt.md" };
             await AtomicFileWriter.WriteJsonAsync(
-                Path.Combine(_paths.AgentInstanceRoot(agentId), "manifest.json"),
+                Path.Combine(instanceRoot, "manifest.json"),
                 updated,
                 JsonOptions,
                 ct);
@@ -603,6 +759,8 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 workspaceId,
                 agentId);
 
+            await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md", DefaultHeartbeatPrompt, ct);
+            var prompt = await ReadAgentMdContentAsync(instanceRoot, "heartbeatPrompt.md", ct);
             return prompt;
         }
         finally
@@ -622,27 +780,17 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
     /// 4. 默认启用头像
     /// 5. null（前端使用 emoji fallback）
     /// </summary>
-    private async Task<(string? AvatarId, string? AvatarUrl)> ResolveAgentAvatarAsync(
+        private async Task<(string? AvatarId, string? AvatarUrl)> ResolveAgentAvatarAsync(
         AgentInstanceManifest instance,
         CancellationToken ct)
     {
-        // 1. 实例级 AvatarId
         if (!string.IsNullOrWhiteSpace(instance.AvatarId))
         {
             var avatar = _avatarCatalog.Find(instance.AvatarId);
             if (avatar is not null) return (avatar.AvatarId, avatar.UrlPath);
         }
-
-        // 2. 模板级头像
-        var template = await _templateFileService.GetTemplateAsync(NormalizeTemplateId(instance.TemplateId), ct);
-        if (template?.AvatarUrl is not null)
-            return (template.AvatarId, template.AvatarUrl);
-
-        // 3. 实例级 legacy Url
         if (!string.IsNullOrWhiteSpace(instance.AvatarUrl))
             return (instance.AvatarId, instance.AvatarUrl);
-
-        // 4. 默认头像（JSON 内存目录，非数据库）
         var fallback = _avatarCatalog.GetDefault();
         return (fallback?.AvatarId, fallback?.UrlPath);
     }
@@ -655,9 +803,44 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
             : templateId;
     }
 
+    /// <summary>从已加载的模板 DTO 解析头像，用于创建时内联解析。</summary>
+    private (string? AvatarId, string? AvatarUrl) ResolveAvatarFromTemplate(GlobalAgentTemplateDto? template)
+    {
+        if (template?.AvatarUrl is not null)
+            return (template.AvatarId, template.AvatarUrl);
+
+        var fallback = _avatarCatalog.GetDefault();
+        return (fallback?.AvatarId, fallback?.UrlPath);
+    }
+
     private static string ResolveHeartbeatPrompt(string? prompt) =>
         string.IsNullOrWhiteSpace(prompt)
             ? DefaultHeartbeatPrompt
             : prompt.Trim();
+
+    // ── Markdown 文件读写辅助方法 ──
+
+    /// <summary>将内容写入 Agent 实例目录下的 .md 文件，返回文件名。内容为空时返回 null。</summary>
+    private static async Task<string?> WriteAgentMdFileAsync(
+        string instanceRoot, string fileName, string? content, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return null;
+
+        var path = Path.Combine(instanceRoot, fileName);
+        await File.WriteAllTextAsync(path, content.Trim(), ct);
+        return fileName;
+    }
+
+    /// <summary>读取 Agent 实例目录下的 .md 文件内容，文件不存在时返回 null。</summary>
+    private static async Task<string?> ReadAgentMdContentAsync(
+        string instanceRoot, string? fileName, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return null;
+
+        var path = Path.Combine(instanceRoot, fileName);
+        return File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
+    }
 
 }

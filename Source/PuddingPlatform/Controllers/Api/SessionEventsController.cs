@@ -32,13 +32,13 @@ public class SessionEventsController : ControllerBase
     private readonly CacheDiagnosticsService _cacheDiagnosticsService;
     private readonly ISessionTimelineRecorder _timelineRecorder;
     private readonly PlatformApiClient _platformApi;
-    private readonly SessionRedirectStore _redirectStore;
     private readonly PlatformDbContext _db;
     private readonly IAgentRuntimeProfileResolver _agentRuntimeProfileResolver;
     private readonly ILlmConfigService _llmConfigService;
     private readonly IRawSessionLogService _rawLogs;
     private readonly TokenCostService _tokenCostService;
     private readonly IConversationEventStore _conversationEventStore;
+    private readonly IRequestCompactionHandler _requestCompactionHandler;
     private readonly ILogger<SessionEventsController> _logger;
 
     public SessionEventsController(
@@ -49,13 +49,13 @@ public class SessionEventsController : ControllerBase
         CacheDiagnosticsService cacheDiagnosticsService,
         ISessionTimelineRecorder timelineRecorder,
         PlatformApiClient platformApi,
-        SessionRedirectStore redirectStore,
         PlatformDbContext db,
         IAgentRuntimeProfileResolver agentRuntimeProfileResolver,
         ILlmConfigService llmConfigService,
         IRawSessionLogService rawLogs,
         TokenCostService tokenCostService,
         IConversationEventStore conversationEventStore,
+        IRequestCompactionHandler requestCompactionHandler,
         ILogger<SessionEventsController> logger)
     {
         _ssm = ssm;
@@ -65,13 +65,13 @@ public class SessionEventsController : ControllerBase
         _cacheDiagnosticsService = cacheDiagnosticsService;
         _timelineRecorder = timelineRecorder;
         _platformApi = platformApi;
-        _redirectStore = redirectStore;
         _db = db;
         _agentRuntimeProfileResolver = agentRuntimeProfileResolver;
         _llmConfigService = llmConfigService;
         _rawLogs = rawLogs;
         _tokenCostService = tokenCostService;
         _conversationEventStore = conversationEventStore;
+        _requestCompactionHandler = requestCompactionHandler;
         _logger = logger;
     }
 
@@ -385,65 +385,112 @@ public class SessionEventsController : ControllerBase
 
         var hasMoreHistory = messages.Count >= messageLimit;
 
-        // ADR-057: Query active turns from Event Store (not yet terminal)
-        var activeTurns = new List<object>();
+        // A snapshot cursor may only cover state that is present in this response.
+        // Therefore include terminal Turns as well as active Turns; otherwise a
+        // turn.failed before snapshotCursor can never be reconstructed by replay.
+        var projectedTurns = new List<object>();
+        var lifecycleEvents = new List<object>();
         try
         {
             var recentEvents = await _conversationEventStore.ReadBackwardAsync(
                 conversationId, long.MaxValue, limit: 500, ct);
-            var activeTurnIds = new HashSet<string>();
-            var terminalTurnIds = new HashSet<string>();
-
-            foreach (var evt in recentEvents.Events)
-            {
-                var tid = evt.TurnId;
-                if (string.IsNullOrEmpty(tid)) continue;
-
-                switch (evt.Type)
+            lifecycleEvents.AddRange(
+                recentEvents.Events
+                    .Where(e => e.Type is
+                        ConversationEventTypes.ContextCompactionStarted or
+                        ConversationEventTypes.ContextCompactionCompleted or
+                        ConversationEventTypes.ContextCompactionFailed)
+                    .OrderBy(e => e.Sequence)
+                    .Select(e => (object)new
+                    {
+                        eventId = e.EventId,
+                        conversationId = e.ConversationId,
+                        sequence = e.Sequence,
+                        type = e.Type,
+                        schemaVersion = e.SchemaVersion,
+                        commandId = e.CommandId,
+                        turnId = e.TurnId,
+                        messageId = e.MessageId,
+                        occurredAt = e.OccurredAt,
+                        payload = e.Payload,
+                    }));
+            var turnGroups = recentEvents.Events
+                .Where(e => !string.IsNullOrWhiteSpace(e.TurnId))
+                .GroupBy(e => e.TurnId!, StringComparer.Ordinal)
+                .ToList();
+            var turnIds = turnGroups.Select(group => group.Key).ToList();
+            var commandIdentities = await _db.ChatExecutionCommands
+                .AsNoTracking()
+                .Where(command =>
+                    command.SessionId == conversationId
+                    && turnIds.Contains(command.TurnId))
+                .Select(command => new
                 {
-                    case "turn.completed":
-                    case "turn.failed":
-                    case "turn.cancelled":
-                        terminalTurnIds.Add(tid);
-                        activeTurnIds.Remove(tid);
-                        break;
-                    case "turn.accepted":
-                    case "turn.started":
-                    case "turn.waiting_for_tool":
-                        if (!terminalTurnIds.Contains(tid))
-                            activeTurnIds.Add(tid);
-                        break;
-                }
-            }
+                    command.TurnId,
+                    command.UserMessageId,
+                    AssistantMessageId = command.MessageId,
+                })
+                .ToDictionaryAsync(command => command.TurnId, ct);
 
-            foreach (var tid in activeTurnIds)
+            foreach (var group in turnGroups)
             {
-                var turnEvent = recentEvents.Events.FirstOrDefault(e => e.TurnId == tid && e.Type == "turn.accepted");
-                activeTurns.Add(new
+                var ordered = group.OrderBy(e => e.Sequence).ToList();
+                var accepted = ordered.FirstOrDefault(
+                    e => e.Type == ConversationEventTypes.TurnAccepted);
+                var terminal = ordered.LastOrDefault(e =>
+                    e.Type is
+                        ConversationEventTypes.TurnCompleted or
+                        ConversationEventTypes.TurnFailed or
+                        ConversationEventTypes.TurnCancelled);
+                commandIdentities.TryGetValue(group.Key, out var identity);
+
+                var status = terminal?.Type switch
                 {
-                    turnId = tid,
-                    status = "active",
-                    userMessageId = (string?)null,
-                    assistantMessageId = (string?)null,
-                    createdAt = turnEvent?.OccurredAt.ToUnixTimeMilliseconds() ?? 0L,
+                    ConversationEventTypes.TurnCompleted => "completed",
+                    ConversationEventTypes.TurnFailed => "failed",
+                    ConversationEventTypes.TurnCancelled => "cancelled",
+                    _ => "active",
+                };
+
+                projectedTurns.Add(new
+                {
+                    turnId = group.Key,
+                    status,
+                    userMessageId = identity?.UserMessageId
+                        ?? ReadPayloadString(accepted?.Payload, "userMessageId"),
+                    assistantMessageId = identity?.AssistantMessageId
+                        ?? terminal?.MessageId,
+                    createdAt = accepted?.OccurredAt.ToUnixTimeMilliseconds()
+                        ?? ordered[0].OccurredAt.ToUnixTimeMilliseconds(),
+                    terminalSequence = terminal?.Sequence,
+                    errorCode = ReadPayloadString(terminal?.Payload, "errorCode"),
+                    errorMessage = ReadPayloadString(terminal?.Payload, "errorMessage"),
                 });
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Bootstrap] Failed to read active turns conv={ConvId}", conversationId);
+            _logger.LogWarning(ex, "[Bootstrap] Failed to read turn snapshot conv={ConvId}", conversationId);
         }
 
         return Ok(new
         {
             conversation = new { conversationId, sessionId = conversationId },
-            turns = activeTurns.ToArray(),
+            turns = projectedTurns.ToArray(),
             messages,
+            lifecycleEvents = lifecycleEvents.ToArray(),
             snapshotCursor,
             hasMoreHistory,
             historyCursor = (long?)null,
         });
     }
+
+    private static string? ReadPayloadString(JsonElement? payload, string propertyName)
+        => payload is { ValueKind: JsonValueKind.Object } value
+           && value.TryGetProperty(propertyName, out var property)
+           && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
 
     /// <summary>
     /// P2: 获取流指标。
@@ -641,7 +688,7 @@ public class SessionEventsController : ControllerBase
     /// POST /api/sessions/{sessionId}/compact
     /// </summary>
     [HttpPost("{sessionId}/compact")]
-    public async Task<ActionResult<ContextCompactionResult>> Compact(
+    public async Task<ActionResult<CompactSessionResponse>> Compact(
         string sessionId,
         [FromBody] CompactSessionRequest request,
         CancellationToken ct)
@@ -649,109 +696,56 @@ public class SessionEventsController : ControllerBase
         var workspaceId = string.IsNullOrWhiteSpace(request.WorkspaceId)
             ? "default"
             : request.WorkspaceId;
-        var resolvedAgentId = request.AgentId ?? "default.global_general-assistant.823";
-
-        // Resolve LlmConfig from agent runtime profile.
-        // Without this, AgentContextCompactionSummaryGenerator fails with
-        // "Agent LLM config is null" because the compaction summary needs an LLM.
-        LlmConfig? llmConfig = null;
-        try
+        if (string.IsNullOrWhiteSpace(request.AgentId))
         {
-            var profile = await _agentRuntimeProfileResolver.ResolveAsync(workspaceId, resolvedAgentId, ct);
-            llmConfig = profile.LlmConfig;
-            _logger.LogInformation(
-                "[SessionEvents] Compact resolved LlmConfig agent={AgentId} provider={Provider} model={Model}",
-                resolvedAgentId, profile.PreferredProviderId, profile.PreferredModelId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[SessionEvents] Compact failed to resolve LlmConfig agent={AgentId}", resolvedAgentId);
+            return BadRequest(new
+            {
+                errorCode = "agent_id_required",
+                message = "Compaction requires the current Agent instance ID.",
+            });
         }
 
-        var compactRequest = new ContextCompactionRequest(
-            workspaceId,
-            sessionId,
-            resolvedAgentId,
-            ContextCompactionMode.Manual,
-            request.Level ?? ContextCompactionLevel.Full,
-            request.Reason ?? "manual compact")
-        {
-            LlmConfig = llmConfig
-        };
-
-        await _ssm.AppendAsync(
-            sessionId,
-            workspaceId,
-            ServerSentEventFrame.Json(SseEventTypes.ContextCompactionStarted, new
-            {
-                sessionId,
-                mode = compactRequest.Mode.ToString(),
-                level = compactRequest.Level.ToString(),
-                reason = compactRequest.Reason,
-            }),
-            ct);
-
+        var compactionId = string.IsNullOrWhiteSpace(request.CompactionId)
+            ? Guid.NewGuid().ToString("N")
+            : request.CompactionId.Trim();
         try
         {
-            var result = await _compactionService.CompactAsync(compactRequest, ct);
-
-            // 压缩成功后创建新 Session，让后续对话在新 Session 中进行
-            string? newSessionId = null;
-            SessionRecord? newSession = null;
-            try
-            {
-                var oldSession = await _platformApi.GetSessionAsync(sessionId, ct);
-                var agentTemplateId = oldSession?.AgentTemplateId ?? request.AgentId ?? "global:code-assistant";
-                var title = oldSession?.Title is { Length: > 0 } t
-                    ? $"压缩 - {t}"
-                    : "压缩后的新会话";
-                newSession = await _platformApi.CreateSessionAsync(
+            var result = await _requestCompactionHandler.HandleAsync(
+                new RequestCompactionCommand(
+                    sessionId,
                     workspaceId,
-                    agentTemplateId,
-                    title,
-                    ct: ct);
-                newSessionId = newSession?.SessionId;
-
-                if (newSessionId is not null)
-                {
-                    var agentId = request.AgentId ?? oldSession?.AgentTemplateId ?? agentTemplateId;
-                    _redirectStore.Register(workspaceId, agentId, sessionId, newSessionId);
-                    _logger.LogInformation(
-                        "[SessionEvents] Compact created new session old={OldSession} new={NewSession}",
-                        sessionId,
-                        newSessionId);
-                }
-            }
-            catch (Exception ex)
-            {
-                // 新 Session 创建失败不影响 compact 本身的结果
-                _logger.LogWarning(ex,
-                    "[SessionEvents] Compact succeeded but new session creation failed old={OldSession}",
-                    sessionId);
-            }
-
-            var response = new CompactSessionResponse(result, newSessionId, newSession?.Title);
-            await _ssm.AppendAsync(
-                sessionId,
-                workspaceId,
-                ServerSentEventFrame.Json(SseEventTypes.ContextCompactionCompleted, response),
+                    request.AgentId.Trim(),
+                    request.Level ?? ContextCompactionLevel.Full,
+                    request.Reason ?? "manual compact",
+                    compactionId,
+                    User.Identity?.Name),
                 ct);
-            return Ok(response);
+
+            return Ok(new CompactSessionResponse(
+                result.CompactionId,
+                result.Compaction,
+                result.NewConversationId,
+                result.NewConversationTitle));
+        }
+        catch (AgentConfigurationException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[SessionEvents] Compact rejected invalid agent configuration agent={AgentId} errorCode={ErrorCode}",
+                request.AgentId,
+                ex.ErrorCode);
+            return BadRequest(new
+            {
+                errorCode = ex.ErrorCode,
+                message = ex.Message,
+                agentId = ex.AgentId,
+            });
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "[SessionEvents] Context compact failed session={Session}",
                 sessionId);
-            await _ssm.AppendAsync(
-                sessionId,
-                workspaceId,
-                ServerSentEventFrame.Json(SseEventTypes.ContextCompactionFailed, new
-                {
-                    sessionId,
-                    error = ex.Message,
-                }),
-                CancellationToken.None);
             return Problem(title: "Context compaction failed", detail: ex.Message);
         }
     }
@@ -1133,13 +1127,15 @@ public sealed record CompactSessionRequest(
     string? WorkspaceId,
     string? AgentId,
     ContextCompactionLevel? Level,
-    string? Reason);
+    string? Reason,
+    string? CompactionId);
 
 /// <summary>
 /// 压缩会话的响应，包含压缩结果和可选的新会话信息。
 /// 压缩成功后会创建新 Session，前端应切换到新 Session 继续对话。
 /// </summary>
 public sealed record CompactSessionResponse(
+    string CompactionId,
     ContextCompactionResult Compaction,
-    string? NewSessionId,
+    string NewSessionId,
     string? NewSessionTitle);

@@ -274,6 +274,7 @@ builder.Services.AddSingleton<PlatformReadinessProbe>();
     builder.Services.AddScoped<IRequestTurnCancellationHandler, RequestTurnCancellationHandler>();
     builder.Services.AddScoped<ICreateSteeringHandler, CreateSteeringHandler>();
     builder.Services.AddScoped<IRequestCompactionHandler, RequestCompactionHandler>();
+    builder.Services.AddScoped<ICompactionSessionSuccessor, CompactionSessionSuccessor>();
     builder.Services.AddScoped<IConversationAcceptanceStore, ConversationAcceptanceStore>();
 
     // ── Conversation Event Store（ADR-057 Phase 2）────

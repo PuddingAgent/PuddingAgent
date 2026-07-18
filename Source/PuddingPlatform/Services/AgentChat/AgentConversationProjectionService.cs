@@ -8,13 +8,13 @@ using System.Text.Json;
 
 namespace PuddingPlatform.Services.AgentChat;
 
-/// <summary>Builds renderable Agent conversation projections from existing session and transcript facts.</summary>
+/// <summary>Builds renderable Agent conversation projections from the canonical Conversation Event Store.</summary>
 public interface IAgentConversationProjectionService
 {
     Task<AgentConversationView> GetConversationAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct);
 
-    /// <summary>Lightweight cursor check — returns max event sequence without building the full projection.</summary>
-    Task<int> GetConversationCursorAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct);
+    /// <summary>Lightweight cursor check — returns the canonical conversation head.</summary>
+    Task<long> GetConversationCursorAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct);
 }
 
 /// <summary>Default conversation projection service for the single-user Agent chat client.</summary>
@@ -26,25 +26,30 @@ public sealed class AgentConversationProjectionService(
 {
     private const string DefaultOwnerUserId = "single-user";
     private static readonly TimeSpan ActiveRunStaleAfter = TimeSpan.FromMinutes(5);
-    private static readonly HashSet<string> StatusEventTypes = new(StringComparer.Ordinal)
-    {
-        "delta",
-        "thinking",
-        "tool_call",
-        "tool_result",
+    private static readonly string[] MessageProcessEventTypes =
+    [
+        ConversationEventTypes.MessageThinkingSummaryAppended,
+        ConversationEventTypes.ToolCallRequested,
+        ConversationEventTypes.ToolCallCompleted,
+        ConversationEventTypes.ToolCallFailed,
         "subagent.spawned",
         "subagent.delta",
         "subagent.thinking",
         "subagent.tool_call",
         "subagent.tool_result",
         "subagent.completed",
-        "done",
-        "error",
-        "cancelled",
-        "session.closed",
-    };
+    ];
+    private static readonly string[] MessageProjectionEventTypes =
+    [
+        .. MessageProcessEventTypes,
+        ConversationEventTypes.TurnCompleted,
+    ];
 
-    public async Task<AgentConversationView> GetConversationAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct)
+    public async Task<AgentConversationView> GetConversationAsync(
+        string workspaceId,
+        string ownerUserId,
+        string agentId,
+        CancellationToken ct)
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
@@ -64,35 +69,76 @@ public sealed class AgentConversationProjectionService(
                 DateTimeOffset.UtcNow);
         }
 
-        var eventRows = await db.SessionEventLogs
-            .AsNoTracking()
-            .Where(e => e.SessionId == main.SessionId)
-            .OrderBy(e => e.SequenceNum)
-            .ToListAsync(ct);
-
-        var completedProcessItems = BuildCompletedProcessItemsByReply(eventRows);
         var messageRows = await db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == main.SessionId)
             .OrderByDescending(m => m.CreatedAt)
+            .ThenByDescending(m => m.Id)
             .Take(100)
             .ToListAsync(ct);
-        messageRows = messageRows
-            .OrderBy(m => m.CreatedAt)
-            .ThenBy(m => m.Id)
-            .ToList();
+        messageRows.Reverse();
 
+        var messageIds = messageRows
+            .Select(m => m.MessageId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var messageEvents = messageIds.Count == 0
+            ? []
+            : await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => e.ConversationId == main.SessionId)
+                .Where(e => e.MessageId != null && messageIds.Contains(e.MessageId))
+                .Where(e => MessageProjectionEventTypes.Contains(e.Type))
+                .OrderBy(e => e.Sequence)
+                .ToListAsync(ct);
+
+        var completedProcessByMessageId = BuildCompletedProcessByMessageId(messageEvents);
         var messages = messageRows
-            .Select(m => BuildConversationMessageView(m, ownerUserId, agentId, main.Title, completedProcessItems))
+            .Select(m => BuildConversationMessageView(
+                m,
+                ownerUserId,
+                agentId,
+                main.Title,
+                completedProcessByMessageId))
             .ToList();
 
-        var activeRun = BuildActiveRun(
-            workspaceId,
-            ownerUserId,
-            agentId,
-            main,
-            eventRows);
-        var eventCursor = eventRows.Count == 0 ? 0 : eventRows[^1].SequenceNum;
+        var latestRunEvent = await db.ConversationEvents
+            .AsNoTracking()
+            .Where(e => e.ConversationId == main.SessionId)
+            .Where(e => e.RunId != null && e.RunId != "")
+            .OrderByDescending(e => e.Sequence)
+            .FirstOrDefaultAsync(ct);
+
+        AgentRunView? activeRun = null;
+        if (latestRunEvent is not null && !IsTerminalEvent(latestRunEvent.Type))
+        {
+            var activeEvents = await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => e.ConversationId == main.SessionId && e.RunId == latestRunEvent.RunId)
+                .OrderBy(e => e.Sequence)
+                .ToListAsync(ct);
+            var commandClientId = string.IsNullOrWhiteSpace(latestRunEvent.CommandId)
+                ? null
+                : await db.ChatExecutionCommands
+                    .AsNoTracking()
+                    .Where(c => c.CommandId == latestRunEvent.CommandId)
+                    .Select(c => c.UserMessageId)
+                    .FirstOrDefaultAsync(ct);
+
+            activeRun = BuildActiveRun(
+                workspaceId,
+                ownerUserId,
+                agentId,
+                main,
+                commandClientId,
+                activeEvents);
+        }
+
+        var eventCursor = await GetEventCursorAsync(main.SessionId, ct);
+        var updatedAt = latestRunEvent is null
+            ? main.LastActiveAt
+            : ParseOccurredAt(latestRunEvent.OccurredAt);
 
         return new AgentConversationView(
             workspaceId,
@@ -102,25 +148,30 @@ public sealed class AgentConversationProjectionService(
             messages,
             activeRun,
             eventCursor,
-            main.LastActiveAt);
+            updatedAt);
     }
 
-    /// <summary>Lightweight cursor query — only reads the max sequence number, no projection or message fetch.</summary>
-    public async Task<int> GetConversationCursorAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct)
+    public async Task<long> GetConversationCursorAsync(
+        string workspaceId,
+        string ownerUserId,
+        string agentId,
+        CancellationToken ct)
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
         var sessions = await api.GetSessionsAsync(workspaceId, ct);
         var main = await ResolveAgentMainSessionAsync(workspaceId, ownerUserId, agentId, sessions, ct);
 
-        if (main is null) return 0;
+        return main is null ? 0 : await GetEventCursorAsync(main.SessionId, ct);
+    }
 
-        var maxSeq = await db.SessionEventLogs
+    private async Task<long> GetEventCursorAsync(string conversationId, CancellationToken ct)
+    {
+        var maxSequence = await db.ConversationEvents
             .AsNoTracking()
-            .Where(e => e.SessionId == main.SessionId)
-            .MaxAsync(e => (int?)e.SequenceNum, ct);
-
-        return maxSeq ?? 0;
+            .Where(e => e.ConversationId == conversationId)
+            .MaxAsync(e => (long?)e.Sequence, ct);
+        return maxSequence ?? 0;
     }
 
     private static string NormalizeOwnerUserId(string? ownerUserId)
@@ -168,135 +219,63 @@ public sealed class AgentConversationProjectionService(
         string ownerUserId,
         string agentId,
         SessionRecord main,
-        IReadOnlyList<SessionEventLogEntity> events)
+        string? commandClientId,
+        IReadOnlyList<ConversationEventEntity> events)
     {
-        var latestStatusEvent = events.LastOrDefault(e => StatusEventTypes.Contains(e.EventType));
-        if (latestStatusEvent is null || IsTerminalEvent(latestStatusEvent.EventType))
-            return null;
-
-        var activeEvents = SelectActiveRunEvents(events, latestStatusEvent);
-        if (activeEvents.Count == 0)
+        if (events.Count == 0 || events.Any(e => IsTerminalEvent(e.Type)))
             return null;
 
         var markdown = new StringBuilder();
         var processItems = new List<ProcessSummaryItem>();
-        foreach (var evt in activeEvents)
+        foreach (var evt in events)
         {
-            if (evt.EventType == "delta")
+            if (evt.Type == ConversationEventTypes.MessageContentAppended)
             {
-                markdown.Append(ReadString(evt.Data, "delta")
-                    ?? ReadString(evt.Data, "text")
-                    ?? ReadString(evt.Data, "content")
+                markdown.Append(ReadString(evt.Payload, "delta")
+                    ?? ReadString(evt.Payload, "text")
+                    ?? ReadString(evt.Payload, "content")
                     ?? "");
                 continue;
             }
-
-            if (evt.EventType is "metadata" or "done")
-                continue;
 
             if (TryBuildEventProcessItem(evt, out var item))
                 processItems.Add(item);
         }
 
-        var startedAt = ParseRecordedAt(activeEvents[0].RecordedAt);
-        var updatedAt = ParseRecordedAt(activeEvents[^1].RecordedAt);
+        var startedAt = ParseOccurredAt(
+            events.FirstOrDefault(e => e.Type == ConversationEventTypes.TurnStarted)?.OccurredAt
+            ?? events[0].OccurredAt);
+        var updatedAt = ParseOccurredAt(events[^1].OccurredAt);
         if (DateTimeOffset.UtcNow - updatedAt > ActiveRunStaleAfter)
             return null;
 
-        var cursor = activeEvents[^1].SequenceNum;
-        var activeMessageId = activeEvents
-            .Select(e => ReadMessageId(e.Data))
-            .FirstOrDefault(id => !string.IsNullOrWhiteSpace(id));
+        var runId = events[^1].RunId;
+        if (string.IsNullOrWhiteSpace(runId))
+            return null;
+
         return new AgentRunView(
-            activeEvents.LastOrDefault(e => !string.IsNullOrWhiteSpace(e.ExecutionId))?.ExecutionId
-                ?? $"{main.SessionId}:{cursor}",
+            runId,
             workspaceId,
             ownerUserId,
             agentId,
             main.SessionId,
-            activeMessageId,
+            commandClientId,
             "running",
             "正在输出",
             main.Title ?? "",
-            cursor,
+            events[^1].Sequence,
             new AgentOutputSnapshot(markdown.ToString(), processItems),
             startedAt,
             updatedAt,
             null);
     }
 
-    private static IReadOnlyList<SessionEventLogEntity> SelectActiveRunEvents(
-        IReadOnlyList<SessionEventLogEntity> events,
-        SessionEventLogEntity latestStatusEvent)
-    {
-        var activeMessageId = ReadMessageId(latestStatusEvent.Data);
-        if (!string.IsNullOrWhiteSpace(activeMessageId))
-        {
-            var matching = events
-                .Where(e => string.Equals(ReadMessageId(e.Data), activeMessageId, StringComparison.Ordinal))
-                .ToList();
-            if (matching.Count > 0)
-                return matching;
-        }
-
-        var latestIndex = -1;
-        for (var i = events.Count - 1; i >= 0; i--)
-        {
-            if (ReferenceEquals(events[i], latestStatusEvent) || events[i].SequenceNum == latestStatusEvent.SequenceNum)
-            {
-                latestIndex = i;
-                break;
-            }
-        }
-
-        if (latestIndex < 0)
-            latestIndex = events.Count - 1;
-
-        var startIndex = 0;
-        for (var i = latestIndex - 1; i >= 0; i--)
-        {
-            if (IsTerminalEvent(events[i].EventType))
-            {
-                startIndex = i + 1;
-                break;
-            }
-        }
-
-        return events
-            .Skip(startIndex)
-            .Take(latestIndex - startIndex + 1)
-            .ToList();
-    }
-
-    private static string? ReadString(string json, string propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string? ReadMessageId(string json)
-        => ReadString(json, "messageId")
-            ?? ReadString(json, "message_id")
-            ?? ReadString(json, "MessageId");
-
     private static ConversationMessageView BuildConversationMessageView(
         ChatMessageEntity message,
         string ownerUserId,
         string agentId,
         string? agentTitle,
-        IReadOnlyDictionary<string, IReadOnlyList<ProcessSummaryItem>> completedProcessItems)
+        IReadOnlyDictionary<string, CompletedMessageProcess> completedProcessByMessageId)
     {
         var metadata = ParsePuddingMessageMetadata(message.Content);
         var sourceKind = metadata?.SourceKind
@@ -312,17 +291,18 @@ public sealed class AgentConversationProjectionService(
             : string.Equals(sourceKind, "system", StringComparison.OrdinalIgnoreCase)
                 ? "system"
                 : "user";
+        completedProcessByMessageId.TryGetValue(message.MessageId, out var completedProcess);
 
         return new ConversationMessageView(
-            message.Id.ToString(),
-            null,
+            string.IsNullOrWhiteSpace(message.MessageId) ? message.Id.ToString() : message.MessageId,
+            completedProcess?.RunId,
             uiRole,
             sourceId,
             sourceName,
             DateTimeOffset.FromUnixTimeMilliseconds(message.CreatedAt),
             message.Content,
             "succeeded",
-            BuildMessageProcessItems(message, completedProcessItems))
+            BuildMessageProcessItems(message, completedProcess?.Items))
         {
             SourceKind = sourceKind,
             MessageType = messageType,
@@ -346,15 +326,11 @@ public sealed class AgentConversationProjectionService(
 
     private static IReadOnlyList<ProcessSummaryItem> BuildMessageProcessItems(
         ChatMessageEntity message,
-        IReadOnlyDictionary<string, IReadOnlyList<ProcessSummaryItem>> completedProcessItems)
+        IReadOnlyList<ProcessSummaryItem>? eventItems)
     {
         var transcriptItems = BuildTranscriptProcessItems(message);
-        if (message.Role != "agent"
-            || !completedProcessItems.TryGetValue(message.Content, out var eventItems)
-            || eventItems.Count == 0)
-        {
+        if (message.Role != "agent" || eventItems is null || eventItems.Count == 0)
             return transcriptItems;
-        }
 
         if (eventItems.Any(item => item.Kind == "thinking") || transcriptItems.Count == 0)
             return eventItems;
@@ -362,35 +338,37 @@ public sealed class AgentConversationProjectionService(
         return transcriptItems.Concat(eventItems).ToList();
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<ProcessSummaryItem>> BuildCompletedProcessItemsByReply(
-        IReadOnlyList<SessionEventLogEntity> events)
+    private static IReadOnlyDictionary<string, CompletedMessageProcess> BuildCompletedProcessByMessageId(
+        IReadOnlyList<ConversationEventEntity> events)
     {
-        var byReply = new Dictionary<string, IReadOnlyList<ProcessSummaryItem>>(StringComparer.Ordinal);
+        var byMessageId = new Dictionary<string, CompletedMessageProcess>(StringComparer.Ordinal);
         var grouped = events
-            .Select(e => new { Event = e, MessageId = ReadMessageId(e.Data) })
-            .Where(x => !string.IsNullOrWhiteSpace(x.MessageId))
-            .GroupBy(x => x.MessageId!, StringComparer.Ordinal);
+            .Where(e => !string.IsNullOrWhiteSpace(e.MessageId))
+            .GroupBy(e => e.MessageId!, StringComparer.Ordinal);
 
         foreach (var group in grouped)
         {
-            var runEvents = group.Select(x => x.Event).OrderBy(e => e.SequenceNum).ToList();
-            var done = runEvents.LastOrDefault(e => e.EventType == "done");
-            var reply = done is null ? null : ReadString(done.Data, "reply");
-            if (string.IsNullOrWhiteSpace(reply))
+            var completed = group
+                .Where(e => e.Type == ConversationEventTypes.TurnCompleted)
+                .OrderBy(e => e.Sequence)
+                .LastOrDefault();
+            if (completed is null)
                 continue;
 
+            var runEvents = group
+                .Where(e => string.Equals(e.RunId, completed.RunId, StringComparison.Ordinal))
+                .OrderBy(e => e.Sequence);
             var processItems = runEvents
-                .Where(e => e.EventType is not "metadata" and not "delta" and not "usage" and not "done")
                 .Select(e => TryBuildEventProcessItem(e, out var item) ? item : null)
                 .Where(item => item is not null)
                 .Cast<ProcessSummaryItem>()
                 .ToList();
 
             if (processItems.Count > 0)
-                byReply[reply] = processItems;
+                byMessageId[group.Key] = new CompletedMessageProcess(completed.RunId, processItems);
         }
 
-        return byReply;
+        return byMessageId;
     }
 
     private static IReadOnlyList<ProcessSummaryItem> BuildTranscriptProcessItems(ChatMessageEntity message)
@@ -421,7 +399,7 @@ public sealed class AgentConversationProjectionService(
                         : DateTimeOffset.FromUnixTimeMilliseconds(message.CreatedAt);
 
                 items.Add(new ProcessSummaryItem(
-                    $"{message.Id}:thinking:{index++}",
+                    $"{message.MessageId}:thinking:{index++}",
                     "thinking",
                     "done",
                     text,
@@ -433,6 +411,29 @@ public sealed class AgentConversationProjectionService(
         catch (JsonException)
         {
             return Array.Empty<ProcessSummaryItem>();
+        }
+    }
+
+    private static string? ReadString(string json, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty(propertyName, out var value))
+                return null;
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Object or JsonValueKind.Array => value.GetRawText(),
+                _ => null,
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
@@ -459,40 +460,52 @@ public sealed class AgentConversationProjectionService(
         }
     }
 
-    private static bool TryBuildEventProcessItem(SessionEventLogEntity evt, out ProcessSummaryItem item)
+    private static bool TryBuildEventProcessItem(
+        ConversationEventEntity evt,
+        out ProcessSummaryItem item)
     {
-        var name = ReadString(evt.Data, "name");
-        var arguments = ReadString(evt.Data, "arguments");
-        var output = ReadString(evt.Data, "output");
-        var error = ReadString(evt.Data, "error");
-        var exitCode = ReadInt(evt.Data, "exitCode") ?? ReadInt(evt.Data, "exit_code");
-        var message = ReadString(evt.Data, "message")
-            ?? BuildToolProcessMessage(evt.EventType, name, arguments, output, error, exitCode);
-        var text = ReadString(evt.Data, "delta")
-            ?? ReadString(evt.Data, "text")
+        var kind = MapProcessKind(evt.Type);
+        if (kind is null)
+        {
+            item = null!;
+            return false;
+        }
+
+        var name = ReadString(evt.Payload, "name");
+        var arguments = ReadString(evt.Payload, "arguments");
+        var output = ReadString(evt.Payload, "output");
+        var error = ReadString(evt.Payload, "error");
+        var exitCode = ReadInt(evt.Payload, "exitCode") ?? ReadInt(evt.Payload, "exit_code");
+        var message = ReadString(evt.Payload, "message")
+            ?? BuildToolProcessMessage(kind, name, arguments, output, error, exitCode);
+        var text = ReadString(evt.Payload, "delta")
+            ?? ReadString(evt.Payload, "text")
             ?? message
             ?? output
             ?? error
             ?? name
-            ?? evt.EventType;
-
+            ?? kind;
         if (string.IsNullOrWhiteSpace(text))
         {
             item = null!;
             return false;
         }
 
-        var status = ReadString(evt.Data, "status")
-            ?? (evt.EventType == "tool_result"
-                ? exitCode == 0 ? "success" : "error"
-                : "done");
+        var status = ReadString(evt.Payload, "status") ?? kind switch
+        {
+            "tool_call" => "running",
+            "tool_result" when !string.IsNullOrWhiteSpace(error) => "error",
+            "tool_result" when exitCode.HasValue => exitCode.Value == 0 ? "success" : "error",
+            "tool_result" => "success",
+            _ => "done",
+        };
 
         item = new ProcessSummaryItem(
-            evt.Id == 0 ? $"{evt.SessionId}:{evt.SequenceNum}" : evt.Id.ToString(),
-            evt.EventType,
+            string.IsNullOrWhiteSpace(evt.EventId) ? $"{evt.ConversationId}:{evt.Sequence}" : evt.EventId,
+            kind,
             status,
             text,
-            ParseRecordedAt(evt.RecordedAt),
+            ParseOccurredAt(evt.OccurredAt),
             name,
             arguments,
             output,
@@ -500,6 +513,17 @@ public sealed class AgentConversationProjectionService(
             message);
         return true;
     }
+
+    private static string? MapProcessKind(string eventType)
+        => eventType switch
+        {
+            ConversationEventTypes.MessageThinkingSummaryAppended => "thinking",
+            ConversationEventTypes.ToolCallRequested => "tool_call",
+            ConversationEventTypes.ToolCallCompleted or ConversationEventTypes.ToolCallFailed => "tool_result",
+            "subagent.spawned" or "subagent.delta" or "subagent.thinking" or
+            "subagent.tool_call" or "subagent.tool_result" or "subagent.completed" => eventType,
+            _ => null,
+        };
 
     private static string? BuildToolProcessMessage(
         string eventType,
@@ -512,22 +536,25 @@ public sealed class AgentConversationProjectionService(
         if (eventType == "tool_call")
             return $"调用工具: {name ?? "工具"}{(string.IsNullOrWhiteSpace(arguments) ? "" : $"\n参数: {arguments}")}";
         if (eventType == "tool_result")
-            return $"{name ?? "工具"} {(exitCode == 0 ? "✓" : "✗")}\n{output ?? error ?? "(empty)"}";
+            return $"{name ?? "工具"} {(!string.IsNullOrWhiteSpace(error) || exitCode is not null and not 0 ? "✗" : "✓")}\n{output ?? error ?? "(empty)"}";
         return null;
     }
 
-    private static DateTimeOffset ParseRecordedAt(string value)
+    private static DateTimeOffset ParseOccurredAt(string value)
         => DateTimeOffset.TryParse(value, out var parsed)
             ? parsed
             : DateTimeOffset.UtcNow;
 
     private static bool IsTerminalEvent(string eventType)
-        => eventType switch
-        {
-            "done" or "error" or "cancelled" or "session.closed" or
-            "context.compaction.completed" or "context.compaction.failed" => true,
-            _ => false,
-        };
+        => eventType is
+            ConversationEventTypes.TurnCompleted or
+            ConversationEventTypes.TurnFailed or
+            ConversationEventTypes.TurnCancelled or
+            ConversationEventTypes.RunLeaseLost;
+
+    private sealed record CompletedMessageProcess(
+        string? RunId,
+        IReadOnlyList<ProcessSummaryItem> Items);
 
     private sealed record PuddingMessageMetadata(
         string? SourceKind,

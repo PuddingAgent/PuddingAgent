@@ -129,6 +129,8 @@ public sealed class SessionEventsControllerTests
                 services.AddSingleton<IContextCompactionService>(capture);
                 services.RemoveAll<IAgentRuntimeProfileResolver>();
                 services.AddSingleton<IAgentRuntimeProfileResolver>(new FixedAgentRuntimeProfileResolver());
+                services.RemoveAll<ICompactionSessionSuccessor>();
+                services.AddSingleton<ICompactionSessionSuccessor>(new FixedCompactionSessionSuccessor());
             });
         });
         using var client = factory.CreateClient();
@@ -157,6 +159,131 @@ public sealed class SessionEventsControllerTests
         Assert.IsNotNull(capture.LastRequest.CapabilityPolicy);
         Assert.IsNotNull(capture.LastRequest.ToolDefinitions);
         Assert.IsNotNull(capture.LastRequest.SkillPackages);
+
+        using var compactBody = JsonDocument.Parse(
+            await compactResp.Content.ReadAsStringAsync());
+        var compactionId = compactBody.RootElement
+            .GetProperty("compactionId")
+            .GetString();
+        var successorId = compactBody.RootElement
+            .GetProperty("newSessionId")
+            .GetString();
+        Assert.IsFalse(string.IsNullOrWhiteSpace(compactionId));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(successorId));
+
+        using var sourceEvents = JsonDocument.Parse(
+            await client.GetStringAsync(
+                $"/api/sessions/{created.SessionId}/events?from=0&limit=50"));
+        var sourceTypes = sourceEvents.RootElement
+            .GetProperty("events")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("type").GetString())
+            .ToArray();
+        CollectionAssert.Contains(
+            sourceTypes,
+            ConversationEventTypes.ContextCompactionStarted);
+        CollectionAssert.Contains(
+            sourceTypes,
+            ConversationEventTypes.ContextCompactionCompleted);
+
+        using var successorEvents = JsonDocument.Parse(
+            await client.GetStringAsync(
+                $"/api/sessions/{successorId}/events?from=0&limit=50"));
+        var successorCompleted = successorEvents.RootElement
+            .GetProperty("events")
+            .EnumerateArray()
+            .Single(item =>
+                item.GetProperty("type").GetString()
+                == ConversationEventTypes.ContextCompactionCompleted);
+        Assert.AreEqual(
+            compactionId,
+            successorCompleted
+                .GetProperty("payload")
+                .GetProperty("compactionId")
+                .GetString());
+
+        using var successorBootstrap = JsonDocument.Parse(
+            await client.GetStringAsync(
+                $"/api/conversations/{successorId}/bootstrap?messageLimit=1"));
+        var lifecycleCompleted = successorBootstrap.RootElement
+            .GetProperty("lifecycleEvents")
+            .EnumerateArray()
+            .Single(item =>
+                item.GetProperty("type").GetString()
+                == ConversationEventTypes.ContextCompactionCompleted);
+        Assert.AreEqual(
+            compactionId,
+            lifecycleCompleted
+                .GetProperty("payload")
+                .GetProperty("compactionId")
+                .GetString());
+    }
+
+    [TestMethod]
+    public async Task Compact_Persists_Failed_Terminal_Event()
+    {
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IContextCompactionService>();
+                services.AddSingleton<IContextCompactionService>(
+                    new ThrowingCompactionService());
+                services.RemoveAll<IAgentRuntimeProfileResolver>();
+                services.AddSingleton<IAgentRuntimeProfileResolver>(
+                    new FixedAgentRuntimeProfileResolver());
+                services.RemoveAll<ICompactionSessionSuccessor>();
+                services.AddSingleton<ICompactionSessionSuccessor>(
+                    new FixedCompactionSessionSuccessor());
+            });
+        });
+        using var client = factory.CreateClient();
+        JwtHelper.SetBearerToken(client);
+
+        var createResp = await client.PostAsJsonAsync("/api/sessions", new
+        {
+            workspaceId = "default",
+            agentTemplateId = "global:research-assistant",
+            title = "compact failure test"
+        });
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        var compactionId = $"compact-failure-{Guid.NewGuid():N}";
+
+        var compactResp = await client.PostAsJsonAsync(
+            $"/api/sessions/{created!.SessionId}/compact",
+            new
+            {
+                workspaceId = "default",
+                agentId = "default.global_research-assistant.c1",
+                compactionId,
+            });
+
+        Assert.AreEqual(
+            HttpStatusCode.InternalServerError,
+            compactResp.StatusCode);
+        using var sourceEvents = JsonDocument.Parse(
+            await client.GetStringAsync(
+                $"/api/sessions/{created.SessionId}/events?from=0&limit=50"));
+        var failed = sourceEvents.RootElement
+            .GetProperty("events")
+            .EnumerateArray()
+            .Single(item =>
+                item.GetProperty("type").GetString()
+                == ConversationEventTypes.ContextCompactionFailed);
+        Assert.AreEqual(
+            compactionId,
+            failed.GetProperty("payload").GetProperty("compactionId").GetString());
+    }
+
+    private sealed class FixedCompactionSessionSuccessor : ICompactionSessionSuccessor
+    {
+        public Task<CompactionSuccessor> CreateAsync(
+            CreateCompactionSuccessorCommand command,
+            CancellationToken ct)
+            => Task.FromResult(new CompactionSuccessor(
+                $"successor-{command.PreviousConversationId}",
+                "compact profile successor"));
     }
 
     private sealed class CapturingCompactionService : IContextCompactionService
@@ -200,6 +327,22 @@ public sealed class SessionEventsControllerTests
                 SummaryPreview: "summary",
                 SummaryMarkdown: "summary"));
         }
+    }
+
+    private sealed class ThrowingCompactionService : IContextCompactionService
+    {
+        public Task<ContextHealthSnapshot> GetHealthAsync(
+            string sessionId,
+            CancellationToken ct = default,
+            int? contextWindowTokens = null,
+            int? maxOutputTokens = null,
+            int toolCount = 0)
+            => throw new NotSupportedException();
+
+        public Task<ContextCompactionResult> CompactAsync(
+            ContextCompactionRequest request,
+            CancellationToken ct = default)
+            => throw new InvalidOperationException("synthetic compact failure");
     }
 
     private sealed class FixedAgentRuntimeProfileResolver : IAgentRuntimeProfileResolver

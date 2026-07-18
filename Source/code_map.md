@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-16 | 维护原则: 仅收录核心常用类，不追求全覆盖
+> 最后更新: 2026-07-18 | 维护原则: 仅收录核心常用类，不追求全覆盖
 
 ---
 
@@ -111,6 +111,12 @@ Source/
 | `Services/AgentSessionManager.cs` | Agent 会话管理 |
 | `Services/SseEventForwarder.cs` | SSE 事件转发到前端 |
 
+### Chat 前端 Viewport
+| 文件 | 用途 |
+|------|------|
+| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；virtualizer 负责测量/锚点，真实容器负责贴底，并在 pinned 模式下对延迟布局增长持续收敛 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息虚拟列表与 viewport overlay；不直接拥有滚动策略 |
+
 ---
 
 ## 🔑 PuddingPlatform — 平台层
@@ -144,11 +150,13 @@ Source/
 |------|------|
 | `Services/SessionStateManager.cs` | 遗留 Session 状态与 SSE/WS 推送；Conversation Event Store 迁移完成后退出聊天事实链路 |
 | `Services/SessionStateStore.cs` | 🔑 会话状态持久化 — 重启后恢复（data/sessions/{id}.json） |
-| `Services/SessionCompactionEventEmitter.cs` | 压缩事件发射器 |
+| `Services/SessionCompactionEventEmitter.cs` | 自动压缩生命周期适配器；只写 canonical Conversation Event Store |
 | `Services/SessionRedirectStore.cs` | 会话重定向（压缩后新旧 Session 映射） |
 | `Services/PlatformApiClient.cs` | 平台 API 客户端（内部调用） |
 | `Services/ChatHistoryService.cs` | 聊天历史查询 |
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
+| `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；从实例 manifest + `config/llm.json` 读取快照，并用 `llm.providers.json` 补齐连接配置 |
+| `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/更新同步维护 manifest、Markdown 与 `config/llm.json` |
 | `Services/SubAgentManager.cs` | 子代理管理 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
 | `Services/ExecutionCommandReader.cs` | Command 稳定执行引用的只读适配器；不拥有任何状态转换 |
@@ -158,6 +166,8 @@ Source/
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement |
+| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按稳定 `messageId/runId` 关联 `ChatMessages` |
+| `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人状态投影；状态与 cursor 均来自 canonical Conversation Event sequence |
 | `Services/Execution/SqliteExecutionLeaseStore.cs` | 原子 CAS 领取与恢复：BEGIN IMMEDIATE + fencing；释放/过期时事务恢复 Run、Command、Turn |
 | `Services/Execution/SqliteExecutionJournal.cs` | 统一 fenced 事件写入、原子终态和 Worker 基础设施失败兜底；终态从 Command 读取 assistant MessageId |
 | `Services/Execution/SqliteControlInbox.cs` | 控制消息只读/确认端口；写入只允许经 ExecutionControlService |
@@ -167,6 +177,8 @@ Source/
 | `Services/Conversation/SubmitTurnHandler.cs` | Submit Turn 应用处理器 |
 | `Services/Conversation/RequestTurnCancellationHandler.cs` | Cancel 处理器 — 写 turn.cancel.requested |
 | `Services/Conversation/CreateSteeringHandler.cs` | Steering 应用 Handler；端点在 Runtime 消费器落地前保持关闭 |
+| `Services/Conversation/RequestCompactionHandler.cs` | 手动压缩唯一应用入口；解析 Agent Profile、执行压缩、写生命周期事件并创建后继 Conversation |
+| `Services/Conversation/CompactionSessionSuccessor.cs` | 压缩后继会话边界；集中创建 Session、持久化 Agent mainSessionId、注册旧→新重定向 |
 
 ### 消息系统
 | 文件 | 用途 |
@@ -178,8 +190,8 @@ Source/
 ### API Controllers（核心）
 | Controller | 用途 |
 |------------|------|
-| `Api/SessionEventsController.cs` | 🔑 Conversation Event live SSE 与 forward replay；两者返回同一 canonical envelope |
-| `Api/SessionApiController.cs` | Session CRUD + `/compact` |
+| `Api/SessionEventsController.cs` | 🔑 Conversation Event live SSE、forward replay 与 `/compact` HTTP 映射；不编排压缩业务 |
+| `Api/SessionApiController.cs` | Session CRUD |
 | `Api/AgentChatApiController.cs` | Agent 聊天 API |
 | `Api/ConversationTurnsController.cs` | ADR-059 Conversation Turn 唯一命令入口：Submit / Cancel；Steering 明确返回 501 |
 | `Api/MessageApiController.cs` | ChatMessages 查询 API；返回 Message/Turn/Command 稳定身份供前端历史收敛 |
@@ -243,6 +255,7 @@ Source/
 | `Models/SwarmSessionState.cs` | 会话状态枚举 |
 | `Services/RuntimeActivity.cs` | 运行时活动记录（Enrich 方法处理 "unknown" 合法阶段） |
 | `Configuration/PuddingDataPaths.cs` | 数据路径配置 |
+| `Agents/AgentProfileProvider.cs` | 加载自包含 Agent 实例定义：manifest、`config/llm.json`、Markdown 与 permissions；运行时不跨目录读取模板 |
 
 ### Conversation 受理与可靠事件流
 | 文件 | 用途 |
@@ -293,6 +306,7 @@ Source/
   → ICommittedEventSignal
   → SSE / forward replay（同一 canonical envelope）
   → 前端确认服务端 Turn ID，原子替换 optimistic Turn ID
+    → `turn.accepted` 可先于 POST continuation 完成身份迁移
   → 前端 Reducer 按 sequence 幂等提交
   → ConversationProjectionWorker 发现 Head > Checkpoint
   → ConversationProjector 按事件 MessageId 幂等物化 ChatMessages
@@ -309,11 +323,42 @@ ContextWindowManager.EnsureCapacity()
     ├── 60-80% → TrimHistory（token 驱动，修剪到 70%）  // 动态计算 maxMessages = budget/2500
     └── >= 80% → TryAutoCompactAsync()  // LLM 压缩
       → ContextCompactionService.CompactAsync()
-      → CompactionEventEmitter.EmitAsync() → SSE → 前端
+      → CompactionEventEmitter.EmitAsync()
+      → conversation_events → resumable SSE → 前端
   → CapacityPrediction: 剩余 tokens + 预计几轮后触发各阈值
 ```
 
-### 3. Smart* 工具 — 子代理薄包装模式
+### 3. 手动 `/compact` 与新会话切换
+
+```text
+Frontend /compact
+  → POST /api/sessions/{conversationId}/compact
+  → IRequestCompactionHandler
+      → IAgentRuntimeProfileResolver
+      → context.compaction.started
+      → IContextCompactionService
+      → ICompactionSessionSuccessor
+          → create successor Session
+          → Controller SessionRepository.RebindMainAsync
+          → persist Agent mainSessionId
+          → register old → new redirect
+      → source context.compaction.completed
+      → successor context.compaction.completed
+  → 前端按 compactionId 更新独立状态 Turn
+  → 清零新 Conversation 的 SSE cursor 并切换
+  → Bootstrap.lifecycleEvents 恢复持久压缩状态
+  → 前端维护独立 lifecycle Turn 索引
+  → Hook 输出边界统一合并 ChatMessages 与 lifecycle Turn
+```
+
+Compact HTTP 命令只携带 Conversation/Workspace/Agent 身份、压缩级别、原因和
+`compactionId`，不得携带 `llmConfig`。压缩事件没有 `turnId`，前端不得把它
+归并到最近的 Agent 回复。`snapshotCursor` 覆盖压缩事件时，Bootstrap 必须同时
+返回对应 `lifecycleEvents`，前端应用这些事件后才允许推进 SSE cursor。
+Controller SessionRepository 是 Main Session 归属的事实源；Agent manifest 只是
+运行时镜像，内存 redirect 只负责进程内低延迟跳转，二者都不能替代持久 rebind。
+
+### 4. Smart* 工具 — 子代理薄包装模式
 ```
 Agent 调用 smart_search(what="...", capability_requirements="fast,search")
   → SmartSearchTool → spawn_sub_agent(sync, model 或 capability)
@@ -372,3 +417,5 @@ Agent 调用 search_memory / grep_memory
 13. **Command 单一写入权威**: `IChatCommandStore` 已删除；读取使用 `IExecutionCommandReader`，受理/租约/终态分别由 AcceptanceStore/LeaseStore/Journal 写入
 14. **Control 安全边界**: Inbox 只读后确认；Cancel 在终态成功后确认；Steering 在 Runtime 消费器完成前返回 501
 15. **启动与健康门禁**: 所有环境启用 DI Build/Scope 校验；`/health/live` 与 `/health/ready` 分离
+16. **Agent LLM 快照**: `data/agents/{agentId}/config/llm.json` 是执行期 LLM Binding 真相源；manifest 中同名字段仅为管理视图镜像，写入服务必须同步维护，Resolver 不得回查模板或系统默认模型
+17. **前端终态游标**: `turn.accepted` 负责尽早迁移 optimistic Turn 身份；终态按 Turn 清除全部关联 messageId，事件只有成功归并后才能推进 cursor

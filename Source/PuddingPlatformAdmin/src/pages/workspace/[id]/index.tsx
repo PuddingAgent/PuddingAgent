@@ -1,4 +1,4 @@
-import {
+﻿import {
   ArrowLeftOutlined,
   CodeOutlined,
   DeleteOutlined,
@@ -53,7 +53,8 @@ import {
   createWorkspaceSkill,
   createKnowledgeBase,
   createWorkflow,
-  deleteWorkspaceAgent,
+    deleteWorkspaceAgent,
+  getWorkspaceAgent,
   deleteWorkspaceChannel,
   deleteWorkspaceSkill,
   deleteKnowledgeBase,
@@ -300,9 +301,15 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     setDrawerOpen(true);
   };
 
-  const openEdit = async (item: WorkspaceAgentDto) => {
+    const openEdit = async (item: WorkspaceAgentDto) => {
     setEditItem(item);
-    form.setFieldsValue({ ...item });
+    form.resetFields();
+    try {
+      const detail = await getWorkspaceAgent(workspaceId, item.agentId);
+      form.setFieldsValue({ ...detail });
+    } catch {
+      form.setFieldsValue({ ...item });
+    }
     setDrawerOpen(true);
   };
 
@@ -394,90 +401,48 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增 Agent</Button>,
         ]}
       />
-      <Drawer
+            <Drawer
         title={editItem ? '编辑 Agent' : '新增 Agent'}
         open={drawerOpen}
-        width={640}
+        width={800}
         onClose={() => setDrawerOpen(false)}
         extra={<Button type="primary" onClick={handleSave}>保存</Button>}
       >
+        <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
         <ProForm form={form} submitter={false} layout="vertical">
           <ProFormText name="name" label="Agent 名称" rules={[{ required: true }]} />
-          <ProFormTextArea
-            name="description"
-            label="实例职责"
-            rows={2}
-            placeholder="描述这个 Agent 在当前工作区负责什么，例如：前端评审、会议纪要、资料整理"
-          />
-          <ProFormTextArea
-            name="heartbeatPrompt"
-            label="心跳提示词"
-            rows={8}
-            placeholder="这个 Agent 空闲心跳时收到的提示词；留空时由后端写入实例默认提示词"
-            extra="这是 Agent 实例自己的配置，不来自全局模板，也不与其他 Agent 共享。"
-          />
-          <ProFormSelect
-            name="sourceTemplateId"
-            label="来源模板"
-            placeholder="选择全局模板作为能力和角色蓝图"
-            extra="模板决定角色定义、能力上限和默认运行策略；实例只保存工作区内身份、头像和启停状态。"
-            fieldProps={{
-              allowClear: true,
-              options: globalTemplates.map((t) => ({
-                label: `${t.name} (${t.templateId})`,
-                value: `global:${t.templateId}`,
-              })),
-            }}
-          />
+          <ProFormTextArea name="description" label="实例职责" rows={2} placeholder="描述这个 Agent 在当前工作区负责什么" />
+          <ProFormTextArea name="heartbeatPrompt" label="心跳提示词" rows={4} placeholder="Agent 空闲心跳时收到的提示词；留空用默认" />
+          <ProFormSelect name="sourceTemplateId" label="来源模板" placeholder="选择全局模板"
+            disabled={!!editItem}
+            fieldProps={{ allowClear: true, options: globalTemplates.map(t => ({ label: `${t.name} (${t.templateId})`, value: `global:${t.templateId}` })) }}
+            extra="创建时从模板嵌入配置，已创建的 Agent 不可修改来源模板" />
+          {selectedTemplate && (<Alert showIcon type="info" message={`模板预览: ${selectedTemplate.name} · ${selectedTemplate.role}`}
+            description={<Text type="secondary">模型: {selectedTemplate.preferredModelId || '平台默认'} · 记忆: {selectedTemplate.memorySearchMode || 'deep'}</Text>}
+            style={{ marginBottom: 12 }} />)}
 
-          {selectedTemplate && (
-            <Alert
-              showIcon
-              type="info"
-              message="模板默认值预览"
-              description={
-                <Space direction="vertical" size={4}>
-                  <Text>
-                    {selectedTemplate.name} · {selectedTemplate.role}
-                    {selectedTemplate.avatarId ? ` · 默认头像：${selectedTemplate.avatarId}` : ''}
-                  </Text>
-                  <Text type="secondary">
-                    默认模型：
-                    {selectedTemplate.preferredModelId || selectedTemplate.preferredProviderId || '平台默认'}
-                    {' '}· 默认记忆：{selectedTemplate.memorySearchMode || 'deep'}
-                  </Text>
-                  {selectedTemplate.description && (
-                    <Text type="secondary">{selectedTemplate.description}</Text>
-                  )}
-                </Space>
-              }
-              style={{ marginBottom: 16 }}
-            />
-          )}
+          <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>运行时配置</Text>
+          <ProFormTextArea name="systemPrompt" label="系统提示词" rows={4} placeholder="Agent 核心行为指令"
+            extra="这是 Agent 实例自己的配置，修改不影响模板" />
+          <ProFormDigit name="maxContextTokens" label="最大上下文 Token" min={1024} max={1048576} fieldProps={{ precision: 0 }} />
+          <ProFormDigit name="maxRounds" label="最大轮次" min={1} max={500} fieldProps={{ precision: 0 }} />
+          <ProFormDigit name="maxElapsedSeconds" label="最大执行时间(秒)" min={60} max={86400} fieldProps={{ precision: 0 }} />
+          <ProFormSelect name="memorySearchMode" label="记忆搜索模式"
+            options={[{ label: '关闭', value: 'off' },{ label: '即时', value: 'instant' },{ label: '深度', value: 'deep' }]} />
 
-          <Text strong>个性化覆盖</Text>
-          <ProFormSelect
-            name="avatarId"
-            label="覆盖头像"
-            placeholder="不选则使用模板默认头像"
-            fieldProps={{
-              allowClear: true,
-              options: avatars.map((avatar) => ({
-                label: avatar.name,
-                value: avatar.avatarId,
-              })),
-              optionRender: (option) => {
-                const avatar = avatars.find((item) => item.avatarId === option.value);
-                return avatar ? renderAvatarOption(avatar) : option.label;
-              },
-              labelRender: (option) => {
-                const avatar = avatars.find((item) => item.avatarId === option.value);
-                return avatar ? renderAvatarOption(avatar) : option.label;
-              },
-            }}
-          />
+          <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>Markdown 文件（.md）</Text>
+          <ProFormTextArea name="soulMdContent" label="SOUL.md - 人设/性格" rows={2} placeholder="定义 Agent 的性格、边界、回复风格" />
+          <ProFormTextArea name="agentsMdContent" label="AGENTS.md - 工具约定" rows={2} placeholder="定义 Agent 的工作流、工具使用策略" />
+          <ProFormTextArea name="toolsMdContent" label="TOOLS.md - 工具描述" rows={2} placeholder="描述 Agent 可用工具及其用途" />
+          <ProFormTextArea name="bootstrapMdContent" label="BOOTSTRAP.md - 首次引导" rows={2} placeholder="新会话首轮使用的问答模板" />
+          <ProFormTextArea name="memoryMdContent" label="MEMORY.md - 记忆策略" rows={2} placeholder="定义 Agent 的记忆分层与存储策略" />
+
+          <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>个性化覆盖</Text>
+          <ProFormSelect name="avatarId" label="覆盖头像" placeholder="不选则使用模板默认头像"
+            fieldProps={{ allowClear: true, options: avatars.map(a => ({ label: a.name, value: a.avatarId })) }} />
           {editItem && <ProFormSwitch name="isEnabled" label="启用" />}
         </ProForm>
+        </div>
       </Drawer>
     </>
   );

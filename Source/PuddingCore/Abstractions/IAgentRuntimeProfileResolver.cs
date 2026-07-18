@@ -1,4 +1,4 @@
-using PuddingCode.Platform;
+﻿using PuddingCode.Platform;
 
 namespace PuddingCode.Abstractions;
 
@@ -27,6 +27,22 @@ public interface IAgentRuntimeProfileResolver
         CancellationToken ct = default);
 }
 
+/// <summary>
+/// Agent 实例配置无法形成可执行 Profile。
+/// 该异常属于可预期的配置终态，不应被归类为 Worker/数据库等基础设施故障。
+/// </summary>
+public sealed class AgentConfigurationException : Exception
+{
+    public AgentConfigurationException(string agentId, string message)
+        : base(message)
+    {
+        AgentId = agentId;
+    }
+
+    public string AgentId { get; }
+    public string ErrorCode => TerminalErrorCodes.AgentConfigurationInvalid;
+}
+
 public sealed record AgentRuntimeProfile
 {
     public required string WorkspaceId { get; init; }
@@ -39,9 +55,13 @@ public sealed record AgentRuntimeProfile
     public string? PreferredProviderId { get; init; }
     public string? PreferredModelId { get; init; }
     public LlmConfig? LlmConfig { get; init; }
+    public string? SystemPrompt { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public IReadOnlyList<LlmToolDefinition>? ToolDefinitions { get; init; }
     public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
+    public int? MaxRounds { get; init; }
+    public int? MaxElapsedSeconds { get; init; }
+    public int? MaxContextTokens { get; init; }
     public string CapabilitySource { get; init; } = "none";
     public int CapabilityCount { get; init; }
 }

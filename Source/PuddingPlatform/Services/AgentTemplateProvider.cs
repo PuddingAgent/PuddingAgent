@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingPlatform.Data;
@@ -6,10 +6,15 @@ using PuddingPlatform.Data;
 namespace PuddingPlatform.Services;
 
 /// <summary>
+/// <summary>
 /// Agent 模板读取（纯文件模式 — data/agent-templates/{id}/）。
-/// A方案：配置文件为唯一来源，DB 不再参与模板解析。
-/// Workspace user profile 保留 DB 读取（业务数据，非配置）。
 /// </summary>
+/// <remarks>
+/// 已废弃：模板配置在创建 Agent 时嵌入实例 manifest，运行时不再需要查模板文件。
+/// 保留用于向后兼容旧 Agent（未迁移到新文件格式的实例）。
+/// 新代码应使用 WorkspaceAgentDto 上的嵌入字段。
+/// </remarks>
+[Obsolete("Template config is now embedded in agent instance manifest. Use WorkspaceAgentDto fields directly.")]
 public sealed class AgentTemplateProvider(
     AgentProfileProvider profileProvider,
     IDbContextFactory<PlatformDbContext>? dbFactory,

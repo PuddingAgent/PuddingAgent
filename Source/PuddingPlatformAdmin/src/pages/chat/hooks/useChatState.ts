@@ -32,6 +32,7 @@ import {
   type EnsureMainSessionRequest,
   ensureMainSession,
   getAgentMessageQueue,
+  getConversationBootstrap,
   listSessionMessages,
   listSessions,
   listTeams,
@@ -170,17 +171,52 @@ export const formatCompactSuccessMessage = (
   result: Pick<
     ContextCompactionResult,
     'beforeTokens' | 'afterTokens' | 'compactedMessageCount'
-  >,
+  > &
+    Partial<ContextCompactionResult>,
+  successor?: {
+    newSessionId?: string | null;
+    newSessionTitle?: string | null;
+  },
 ) => {
+  const diagnostics = result.diagnostics;
   const tokenLine =
     result.beforeTokens > 0
       ? `\n\nToken 估算：${result.beforeTokens} → ${result.afterTokens}`
       : '';
-  if (result.compactedMessageCount <= 0) {
-    return `已生成当前会话摘要。${tokenLine}`;
-  }
+  const hasSummary =
+    diagnostics === undefined ||
+    Boolean(result.summaryMessageId) ||
+    Boolean(result.summaryPreview?.trim()) ||
+    diagnostics.summaryCharacterCount > 0;
+  const headline =
+    result.compactedMessageCount > 0
+      ? `上下文已压缩，覆盖 ${result.compactedMessageCount} 条历史消息。`
+      : hasSummary
+        ? '已生成当前会话摘要。'
+        : '当前没有可压缩的会话内容。';
 
-  return `上下文已压缩，覆盖 ${result.compactedMessageCount} 条历史消息。${tokenLine}`;
+  if (!diagnostics) return `${headline}${tokenLine}`;
+
+  const nextSessionId =
+    successor?.newSessionId ?? diagnostics.newSessionId ?? null;
+  const lines = [
+    `${headline}${tokenLine}`,
+    '',
+    '### 压缩诊断',
+    `- Compaction ID：\`${diagnostics.compactionId}\``,
+    `- 旧 Session：\`${diagnostics.previousSessionId}\``,
+    diagnostics.previousLastMessageId
+      ? `- 最后消息：\`${diagnostics.previousLastMessageId}\``
+      : null,
+    `- 旧 Session 大小：${diagnostics.beforeTokens} tokens / ${diagnostics.activeMessageCountBefore} messages`,
+    `- 摘要大小：${diagnostics.summaryCharacterCount} chars / ${diagnostics.summaryEstimatedTokens} tokens`,
+    diagnostics.summaryGenerator
+      ? `- 摘要生成器：\`${diagnostics.summaryGenerator}\``
+      : null,
+    nextSessionId ? `- 新 Session：\`${nextSessionId}\`` : null,
+    `- 完成时间：\`${diagnostics.completedAtUtc}\``,
+  ].filter((line): line is string => line !== null);
+  return lines.join('\n');
 };
 
 export interface ChatRouteSelection {
@@ -590,6 +626,22 @@ export function hasTrackedActiveSessionMessages(
   );
 }
 
+export function removeTrackedActiveMessageIdsForTurn(
+  activeMessageIds: Set<string>,
+  messageIdToTurnId: ReadonlyMap<string, string>,
+  turnId: string,
+  terminalMessageId?: string | null,
+): number {
+  let removed = 0;
+  for (const [trackedMessageId, trackedTurnId] of messageIdToTurnId) {
+    if (trackedTurnId !== turnId) continue;
+    if (activeMessageIds.delete(trackedMessageId)) removed++;
+  }
+  if (terminalMessageId && activeMessageIds.delete(terminalMessageId))
+    removed++;
+  return removed;
+}
+
 function findMatchingRecentUserTurn(
   loadedTurns: ChatTurn[],
   currentTurn: ChatTurn,
@@ -917,6 +969,27 @@ function tryExtractDelta(ev: { data?: string; delta?: string }): string | null {
 const createId = () =>
   `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const COMPACT_COMMAND = '/compact';
+const COMPACTION_TURN_PREFIX = 'compaction:';
+
+function compactionTurnId(compactionId: string): string {
+  return `${COMPACTION_TURN_PREFIX}${compactionId}`;
+}
+
+export function mergeHistoryWithLifecycleTurns(
+  historyTurns: ChatTurn[],
+  currentTurns: ChatTurn[],
+): ChatTurn[] {
+  const lifecycleTurns = currentTurns.filter((turn) =>
+    turn.turnId.startsWith(COMPACTION_TURN_PREFIX),
+  );
+  if (lifecycleTurns.length === 0) return historyTurns;
+
+  const historyIds = new Set(historyTurns.map((turn) => turn.turnId));
+  return [
+    ...lifecycleTurns.filter((turn) => !historyIds.has(turn.turnId)),
+    ...historyTurns,
+  ];
+}
 
 const createAssistant = (
   id: string,
@@ -1203,6 +1276,15 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
   const compactSessionSwitchRef = useRef<
     (sessionId: string, title?: string | null) => void
   >(() => {});
+  const compactLifecycleEventRef = useRef<
+    (
+      event: AdminChatStreamEvent,
+      options?: { allowSessionSwitch?: boolean; notify?: boolean },
+    ) => void
+  >(() => {});
+  const compactionTurnIdsRef = useRef<Map<string, string>>(new Map());
+  const compactionLifecycleTurnsRef = useRef<Map<string, ChatTurn>>(new Map());
+  const activeCompactionTurnIdRef = useRef<string | null>(null);
   const pendingCompactSessionSwitchRef = useRef<{
     sessionId: string;
     title?: string | null;
@@ -1879,9 +1961,18 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
   const syncCompletedHistoryEventCursor = useCallback(
     async (sessionId: string, signal?: AbortSignal) => {
       try {
-        const page = await listSessionEventsPage(sessionId, 1, 1, signal);
-        const cursor = resolveSessionReplayCursorSequence(page);
-        if (cursor === null) return;
+        const bootstrap = await getConversationBootstrap(sessionId, 1);
+        if (signal?.aborted) return;
+        for (const rawEvent of bootstrap.lifecycleEvents ?? []) {
+          const event = normalizeSessionEvent(rawEvent);
+          if (!event) continue;
+          compactLifecycleEventRef.current(event, {
+            allowSessionSwitch: false,
+            notify: false,
+          });
+        }
+        const cursor = Number(bootstrap.snapshotCursor);
+        if (!Number.isFinite(cursor) || cursor < 0) return;
         lastSequenceNumRef.current = Math.max(
           lastSequenceNumRef.current,
           cursor,
@@ -1902,7 +1993,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         );
       }
     },
-    [listSessionEventsPage],
+    [normalizeSessionEvent],
   );
 
   const resolveEventTurnId = useCallback(
@@ -2596,6 +2687,84 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         );
       }
 
+      // Compaction is a conversation lifecycle fact, not an Agent Turn event.
+      // It has no turnId/messageId and must never fall through to the normal
+      // message resolver, otherwise it mutates whichever Agent Turn happened
+      // to be latest when the event arrived.
+      if (
+        eventType === 'context.compaction.started' ||
+        eventType === 'context.compaction.completed' ||
+        eventType === 'context.compaction.failed'
+      ) {
+        compactLifecycleEventRef.current(ev);
+        updateLastSequence(ev);
+        return;
+      }
+
+      // turn.accepted 是服务端 Turn 身份的首个持久事实。必须在这里完成
+      // optimisticTurn -> serverTurnId 迁移，不能只等待 POST continuation，
+      // 否则快速失败终态可能先到达并被当作 staleTarget 丢弃。
+      if (eventType === 'turn.accepted') {
+        const confirmedTurnId =
+          typeof anyEv.turnId === 'string' ? anyEv.turnId : null;
+        const confirmedUserMessageId =
+          typeof anyEv.userMessageId === 'string'
+            ? anyEv.userMessageId
+            : messageId;
+        const optimisticTurn = confirmedUserMessageId
+          ? turnsRef.current.find(
+              (turn) => turn.userMessage.id === confirmedUserMessageId,
+            )
+          : undefined;
+
+        if (
+          confirmedTurnId &&
+          confirmedUserMessageId &&
+          optimisticTurn &&
+          optimisticTurn.turnId !== confirmedTurnId
+        ) {
+          const optimisticTurnId = optimisticTurn.turnId;
+          const confirmedTurns = confirmOptimisticTurn(
+            turnsRef.current,
+            optimisticTurnId,
+            confirmedTurnId,
+            confirmedUserMessageId,
+          );
+          turnsRef.current = confirmedTurns;
+          setTurns((current) =>
+            confirmOptimisticTurn(
+              current,
+              optimisticTurnId,
+              confirmedTurnId,
+              confirmedUserMessageId,
+            ),
+          );
+
+          const migrateTurnKey = <T,>(map: Map<string, T>) => {
+            if (!map.has(optimisticTurnId)) return;
+            const value = map.get(optimisticTurnId) as T;
+            map.delete(optimisticTurnId);
+            map.set(confirmedTurnId, value);
+          };
+          migrateTurnKey(pendingDeltaRef.current);
+          migrateTurnKey(pendingThinkingRef.current);
+          migrateTurnKey(duplicateDeltaReplayOffsetRef.current);
+          if (completedTurnsRef.current.delete(optimisticTurnId))
+            completedTurnsRef.current.add(confirmedTurnId);
+          if (latestTurnIdRef.current === optimisticTurnId)
+            latestTurnIdRef.current = confirmedTurnId;
+        }
+
+        if (confirmedTurnId && confirmedUserMessageId) {
+          messageIdToTurnIdRef.current.set(
+            confirmedUserMessageId,
+            confirmedTurnId,
+          );
+        }
+        updateLastSequence(ev);
+        return;
+      }
+
       if (
         eventType === 'metadata' &&
         messageId &&
@@ -2677,19 +2846,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         }
       }
 
-      // ADR-057: turn.accepted is an acknowledgement, not a turn-creation event.
-      // Only metadata should create the messageId → turnId mapping.
-      // turn.accepted arriving before metadata would pre-populate the map and
-      // cause the metadata handler to skip turn creation and active tracking.
-      const targetTurnId = eventType !== 'turn.accepted'
-        ? resolveEventTurnId(ev)
-        : null;
+      const targetTurnId = resolveEventTurnId(ev);
       if (messageId && targetTurnId) {
         messageIdToTurnIdRef.current.set(messageId, targetTurnId);
-      }
-      const hasTargetTurn = Boolean(targetTurnId);
-      if (shouldAdvanceSequenceForSessionEvent(eventType, hasTargetTurn)) {
-        updateLastSequence(ev);
       }
 
       if (eventType === 'session.closed') {
@@ -2697,6 +2856,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           sessionId: sseSessionIdRef.current,
           sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
         });
+        updateLastSequence(ev);
         setLoading(false);
         return;
       }
@@ -2739,12 +2899,16 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           });
           scheduleInjectedSteeringDismiss(steeringId);
         }
+        updateLastSequence(ev);
         return;
       }
       if (eventType === 'steering.created') {
+        updateLastSequence(ev);
         return;
       }
       if (!targetTurnId) {
+        if (shouldAdvanceSequenceForSessionEvent(eventType, false))
+          updateLastSequence(ev);
         recordPerfEvent(
           'chat.event.unmapped',
           {
@@ -2862,9 +3026,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         eventType === 'session.closed' ||
         eventType === 'done' ||
         eventType === 'error' ||
-        eventType === 'cancelled' ||
-        eventType === 'context.compaction.completed' ||
-        eventType === 'context.compaction.failed'
+        eventType === 'cancelled'
       ) {
         flushPendingDeltas();
         flushPendingThinking();
@@ -2886,7 +3048,15 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           activeMessageCountBeforeDelete: activeMessageIdsRef.current.size,
           turnCount: turnsRef.current.length,
         });
-        if (messageId) activeMessageIdsRef.current.delete(messageId);
+        // Acceptance tracks the client/user messageId, while output and terminal
+        // events use the assistant messageId. Clear every active message bound
+        // to this Turn instead of assuming both identities are equal.
+        removeTrackedActiveMessageIdsForTurn(
+          activeMessageIdsRef.current,
+          messageIdToTurnIdRef.current,
+          targetTurnId,
+          messageId,
+        );
         clearWorkingAgentsForMessage(messageId, targetTurnId);
         const hasActiveMessages = pruneTrackedActiveMessages('terminal-event');
         const hasOtherActiveTurn = turnsRef.current.some(
@@ -2906,67 +3076,8 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           }
         }
       }
-      if (
-        eventType === 'context.compaction.completed' ||
-        eventType === 'context.compaction.failed'
-      ) {
-        setLoading(false);
-      }
-
-      // compaction started — show visible notification for auto-compaction awareness
-      if (eventType === 'context.compaction.started') {
-        messageApi.loading({
-          content: '系统正在自动压缩上下文…',
-          key: 'compaction-status',
-          duration: 0,
-        });
-      }
-
       mapEventToTurn(targetTurnId, ev);
-
-      // compaction completed → switch to new session for seamless continuous conversation
-      if (eventType === 'context.compaction.completed') {
-        messageApi.destroy('compaction-status');
-        const newSid =
-          typeof (ev as any).newSessionId === 'string'
-            ? (ev as any).newSessionId
-            : null;
-        if (newSid && sessionIdRef.current !== newSid) {
-          const compactTitle =
-            typeof (ev as any).newSessionTitle === 'string'
-              ? (ev as any).newSessionTitle
-              : '新会话';
-          const hasActiveMessages = pruneTrackedActiveMessages(
-            'compact-completed-switch',
-          );
-          const hasActiveTurn = turnsRef.current.some(
-            (turn) =>
-              turn.turnId !== targetTurnId && isActiveAssistantTurn(turn),
-          );
-          if (hasActiveMessages || hasActiveTurn) {
-            pendingCompactSessionSwitchRef.current = {
-              sessionId: newSid,
-              title: compactTitle,
-            };
-            messageApi.success(
-              `上下文压缩完成，当前回复完成后切换到「${compactTitle}」`,
-              4,
-            );
-          } else {
-            messageApi.success(
-              `上下文压缩完成，已切换到「${compactTitle}」`,
-              4,
-            );
-            setTimeout(() => {
-              compactSessionSwitchRef.current(newSid, compactTitle);
-            }, 0);
-          }
-        }
-      }
-      if (eventType === 'context.compaction.failed') {
-        messageApi.destroy('compaction-status');
-        messageApi.error(String((ev as any).error || '上下文压缩失败'), 4);
-      }
+      updateLastSequence(ev);
 
       const streamStart = messageId
         ? streamStartAtRef.current.get(messageId)
@@ -3018,43 +3129,62 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       text: string,
       status: AssistantStatus,
       result?: ContextCompactionResult,
+      stableTurnId?: string,
+      placeAtStart = false,
     ) => {
       const now = Date.now();
-      const turnId = createId();
-      setTurns((prev) => [
-        ...prev,
-        {
-          turnId,
-          userMessage: {
-            id: createId(),
-            text: '',
-            timestamp: now,
-            status: 'success',
-          },
-          assistant: {
-            id: createId(),
-            status,
-            timelineItems: [
-              {
-                id: createId(),
-                type: 'subconscious_step' as const,
-                status:
-                  status === 'error'
-                    ? 'error'
-                    : status === 'success'
-                      ? 'success'
-                      : 'compacting',
-                message: text,
-                timestamp: now,
-                collapsed: false,
-              },
-            ],
-            answerMarkdown: result ? formatCompactAnswer(result) : text,
-            isStreaming: status === 'executing' || status === 'thinking',
-            renderMode: 'structured',
-          },
+      const turnId = stableTurnId ?? createId();
+      const existing = turnsRef.current.find(
+        (turn) => turn.turnId === turnId,
+      );
+      if (existing) {
+        if (existing.turnId.startsWith(COMPACTION_TURN_PREFIX)) {
+          compactionLifecycleTurnsRef.current.set(existing.turnId, existing);
+        }
+        return existing.turnId;
+      }
+      const compactTurn: ChatTurn = {
+        turnId,
+        userMessage: {
+          id: createId(),
+          text: '',
+          timestamp: now,
+          status: 'success',
         },
-      ]);
+        assistant: {
+          id: createId(),
+          status,
+          timelineItems: [
+            {
+              id: createId(),
+              type: 'subconscious_step' as const,
+              status:
+                status === 'error'
+                  ? 'error'
+                  : status === 'success'
+                    ? 'success'
+                    : 'compacting',
+              message: text,
+              timestamp: now,
+              collapsed: false,
+            },
+          ],
+          answerMarkdown: result ? formatCompactAnswer(result) : text,
+          isStreaming: status === 'executing' || status === 'thinking',
+          renderMode: 'structured',
+        },
+      };
+      const nextTurns: ChatTurn[] = placeAtStart
+        ? [compactTurn, ...turnsRef.current]
+        : [...turnsRef.current, compactTurn];
+      if (compactTurn.turnId.startsWith(COMPACTION_TURN_PREFIX)) {
+        compactionLifecycleTurnsRef.current.set(
+          compactTurn.turnId,
+          compactTurn,
+        );
+      }
+      turnsRef.current = nextTurns;
+      setTurns(nextTurns);
       return turnId;
     },
     [formatCompactAnswer],
@@ -3067,8 +3197,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       message: string,
       result?: ContextCompactionResult,
     ) => {
-      setTurns((prev) =>
-        prev.map((turn) => {
+      const nextTurns = turnsRef.current.map((turn) => {
           if (turn.turnId !== turnId) return turn;
           const items = turn.assistant.timelineItems ?? [];
           const itemStatus =
@@ -3077,6 +3206,26 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               : status === 'success'
                 ? 'success'
                 : 'compacting';
+          const compactItemIndex = items.findIndex(
+            (item) => item.type === 'subconscious_step',
+          );
+          const nextItem = {
+            id:
+              compactItemIndex >= 0
+                ? items[compactItemIndex].id
+                : createId(),
+            type: 'subconscious_step' as const,
+            status: itemStatus,
+            message,
+            timestamp: Date.now(),
+            collapsed: false,
+          };
+          const nextItems =
+            compactItemIndex >= 0
+              ? items.map((item, index) =>
+                  index === compactItemIndex ? nextItem : item,
+                )
+              : [...items, nextItem];
           return {
             ...turn,
             assistant: {
@@ -3085,24 +3234,118 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               isStreaming: status === 'executing' || status === 'thinking',
               renderMode: 'structured' as const,
               answerMarkdown: result ? formatCompactAnswer(result) : message,
-              timelineItems: [
-                ...items,
-                {
-                  id: createId(),
-                  type: 'subconscious_step' as const,
-                  status: itemStatus,
-                  message,
-                  timestamp: Date.now(),
-                  collapsed: false,
-                },
-              ],
+              timelineItems: nextItems,
             },
           };
-        }),
+        });
+      const updatedLifecycleTurn = nextTurns.find(
+        (turn) =>
+          turn.turnId === turnId &&
+          turn.turnId.startsWith(COMPACTION_TURN_PREFIX),
       );
+      if (updatedLifecycleTurn) {
+        compactionLifecycleTurnsRef.current.set(turnId, updatedLifecycleTurn);
+      }
+      turnsRef.current = nextTurns;
+      setTurns(nextTurns);
     },
     [formatCompactAnswer],
   );
+
+  compactLifecycleEventRef.current = (
+    event: AdminChatStreamEvent,
+    options?: { allowSessionSwitch?: boolean; notify?: boolean },
+  ) => {
+    const raw = event as Record<string, unknown>;
+    const compactionId =
+      typeof raw.compactionId === 'string' && raw.compactionId
+        ? raw.compactionId
+        : 'unidentified-compaction';
+    let compactTurnId =
+      compactionTurnIdsRef.current.get(compactionId) ??
+      activeCompactionTurnIdRef.current ??
+      compactionTurnId(compactionId);
+    const eventConversationId =
+      typeof raw.conversationId === 'string' ? raw.conversationId : null;
+    const sourceSessionId =
+      typeof raw.sourceSessionId === 'string' ? raw.sourceSessionId : null;
+    const placeAtStart =
+      event.type === 'context.compaction.completed' &&
+      eventConversationId !== null &&
+      sourceSessionId !== null &&
+      eventConversationId !== sourceSessionId;
+
+    if (!turnsRef.current.some((turn) => turn.turnId === compactTurnId)) {
+      compactTurnId = appendCompactTurn(
+        event.type === 'context.compaction.failed'
+          ? String(raw.error || '上下文压缩失败')
+          : '正在压缩上下文…',
+        event.type === 'context.compaction.failed' ? 'error' : 'executing',
+        undefined,
+        compactTurnId,
+        placeAtStart,
+      );
+    }
+    compactionTurnIdsRef.current.set(compactionId, compactTurnId);
+    activeCompactionTurnIdRef.current = compactTurnId;
+
+    if (event.type === 'context.compaction.started') {
+      setLoading(true);
+      updateCompactTurn(compactTurnId, 'executing', '正在压缩上下文…');
+      if (options?.notify !== false) {
+        messageApi.loading({
+          content: '正在压缩上下文…',
+          key: 'compaction-status',
+          duration: 0,
+        });
+      }
+      return;
+    }
+
+    setLoading(false);
+    if (options?.notify !== false) {
+      messageApi.destroy('compaction-status');
+    }
+    if (event.type === 'context.compaction.failed') {
+      const errorMessage = String(raw.error || '上下文压缩失败');
+      updateCompactTurn(compactTurnId, 'error', errorMessage);
+      activeCompactionTurnIdRef.current = null;
+      if (options?.notify !== false) {
+        messageApi.error(errorMessage, 4);
+      }
+      return;
+    }
+
+    const compacted =
+      raw.compaction && typeof raw.compaction === 'object'
+        ? (raw.compaction as ContextCompactionResult)
+        : undefined;
+    updateCompactTurn(
+      compactTurnId,
+      'success',
+      '上下文压缩完成',
+      compacted,
+    );
+    activeCompactionTurnIdRef.current = null;
+
+    const newSessionId =
+      typeof raw.newSessionId === 'string' ? raw.newSessionId : null;
+    const newSessionTitle =
+      typeof raw.newSessionTitle === 'string'
+        ? raw.newSessionTitle
+        : '新会话';
+    if (
+      options?.allowSessionSwitch !== false &&
+      newSessionId &&
+      sessionIdRef.current !== newSessionId
+    ) {
+      messageApi.success(
+        `上下文压缩完成，已切换到「${newSessionTitle}」`,
+        4,
+      );
+      compactSessionSwitchRef.current(newSessionId, newSessionTitle);
+    }
+  };
 
   const replayMissedSessionEvents = useCallback(
     async (
@@ -3843,10 +4086,14 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         afterLatestStatus:
           loadedTurns[loadedTurns.length - 1]?.assistant.status,
       });
-      setTurns(loadedTurns);
-      turnsRef.current = loadedTurns;
+      const reconciledTurns = mergeHistoryWithLifecycleTurns(
+        loadedTurns,
+        Array.from(compactionLifecycleTurnsRef.current.values()),
+      );
+      setTurns(reconciledTurns);
+      turnsRef.current = reconciledTurns;
       latestTurnIdRef.current =
-        loadedTurns[loadedTurns.length - 1]?.turnId ?? null;
+        reconciledTurns[reconciledTurns.length - 1]?.turnId ?? null;
       setLoading(false);
       await syncCompletedHistoryEventCursor(sessionId);
     },
@@ -3872,6 +4119,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       lastSequenceNumRef.current = 0;
       latestTurnIdRef.current = null;
       messageIdToTurnIdRef.current.clear();
+      compactionTurnIdsRef.current.clear();
+      compactionLifecycleTurnsRef.current.clear();
+      activeCompactionTurnIdRef.current = null;
       const targetWorkspaceId = nextWorkspaceId ?? workspaceId;
       const targetAgentId = nextAgentId ?? agentId;
       if (!targetWorkspaceId || !targetAgentId) return undefined;
@@ -4050,6 +4300,12 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       setSelectedSessionId(sessionId);
       setMainSessionId(sessionId);
       forceNewSessionRef.current = false;
+      // Conversation event sequences are scoped per conversation. Carrying the
+      // source cursor into the successor would skip its compaction-origin event
+      // and every early event whose sequence is lower than the old cursor.
+      lastSequenceNumRef.current = 0;
+      messageIdToTurnIdRef.current.clear();
+      projectionOwnedSessionIdsRef.current.delete(sessionId);
       setSessions((prev) => {
         const idx = prev.findIndex((item) => item.sessionId === sessionId);
         const timestamp = Date.now();
@@ -4192,6 +4448,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       forceNewSessionRef.current = false;
       lastSequenceNumRef.current = 0;
       messageIdToTurnIdRef.current.clear();
+      compactionTurnIdsRef.current.clear();
+      compactionLifecycleTurnsRef.current.clear();
+      activeCompactionTurnIdRef.current = null;
       latestTurnIdRef.current = null;
       turnsRef.current = [];
       setTurns([]);
@@ -4405,7 +4664,15 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
 
     setError(null);
     setLoading(true);
-    const compactTurnId = appendCompactTurn('正在压缩上下文…', 'executing');
+    const compactionId = createId();
+    const compactTurnId = appendCompactTurn(
+      '正在压缩上下文…',
+      'executing',
+      undefined,
+      compactionTurnId(compactionId),
+    );
+    compactionTurnIdsRef.current.set(compactionId, compactTurnId);
+    activeCompactionTurnIdRef.current = compactTurnId;
     latestTurnIdRef.current = compactTurnId;
     try {
       const response = await compactSession(currentSessionId, {
@@ -4413,17 +4680,25 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         agentId,
         level: 'Full',
         reason: 'manual slash command',
+        compactionId,
       });
       setLoading(false);
       const result = response.compaction;
-      updateCompactTurn(compactTurnId, 'success', '上下文压缩完成', result);
-      messageApi.success(formatCompactSuccessMessage(result).split('\n\n')[0]);
+      const responseTurnId =
+        compactionTurnIdsRef.current.get(response.compactionId) ??
+        compactTurnId;
+      updateCompactTurn(
+        responseTurnId,
+        'success',
+        '上下文压缩完成',
+        result,
+      );
+      activeCompactionTurnIdRef.current = null;
 
-      if (response.newSessionId) {
-        const switchMsg = response.newSessionTitle
-          ? `已创建新会话「${response.newSessionTitle}」`
-          : '已创建新会话';
-        messageApi.info(switchMsg, 4);
+      if (
+        response.newSessionId &&
+        sessionIdRef.current !== response.newSessionId
+      ) {
         switchToCompactedSessionPreservingTurns(
           response.newSessionId,
           response.newSessionTitle,
@@ -4434,6 +4709,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       const msg = e instanceof Error ? e.message : '上下文压缩失败';
       setError(msg);
       updateCompactTurn(compactTurnId, 'error', msg);
+      activeCompactionTurnIdRef.current = null;
       messageApi.error(msg);
     }
   }, [
@@ -5706,6 +5982,14 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     () => filterSubAgentCardsForSession(subAgentCards, selectedSessionId),
     [subAgentCards, selectedSessionId],
   );
+  const visibleTurns = useMemo(
+    () =>
+      mergeHistoryWithLifecycleTurns(
+        turns,
+        Array.from(compactionLifecycleTurnsRef.current.values()),
+      ),
+    [turns],
+  );
 
   return {
     workspaces,
@@ -5724,7 +6008,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     selectedSessionId,
     sessionsLoading,
     groups,
-    turns,
+    turns: visibleTurns,
     chatInteractionRuntimeEvents,
     historyLoading,
     hasMoreMessages,

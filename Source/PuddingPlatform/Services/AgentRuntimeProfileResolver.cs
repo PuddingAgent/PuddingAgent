@@ -1,7 +1,9 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Agents;
+using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingCode.Tools;
 using PuddingPlatform.Data;
@@ -11,25 +13,13 @@ namespace PuddingPlatform.Services;
 
 /// <summary>
 /// Resolves the complete runtime profile for a workspace agent instance.
+/// Template config is now embedded in the agent DTO at creation time,
+/// eliminating the need for template-file lookups during execution.
 /// </summary>
-/// <remarks>
-/// Agent execution has several ingress paths: Web chat, message delivery,
-/// heartbeat, connector ingress, and future automation. Those paths must not
-/// independently read agent manifests, template manifests, model providers, or
-/// capability policy. The profile resolver is the application-service boundary
-/// that turns configuration files and runtime indexes into one execution-ready
-/// snapshot.
-///
-/// The key design constraint is ownership: workspace agents own identity,
-/// avatar, enablement, and main-session binding; source templates own model
-/// routing, capability policy, and Skill selection. Keeping that rule here
-/// prevents controllers and queue consumers from re-implementing configuration
-/// fallbacks whenever the storage layout changes.
-/// </remarks>
 public sealed class AgentRuntimeProfileResolver(
     IWorkspaceAgentCatalog agentCatalog,
-    ILLMConfigResolver templateLlmResolver,
-    AgentTemplateFileService templateFileService,
+    AgentProfileProvider profileProvider,
+    ILLMConfigResolver llmConfigResolver,
     PlatformDbContext db,
     MinioStorageService minio,
     IPuddingToolCatalogService toolCatalog,
@@ -52,9 +42,16 @@ public sealed class AgentRuntimeProfileResolver(
         CancellationToken ct = default)
     {
         var agent = await ResolveAgentAsync(workspaceId, agentId, ct);
-        var llm = await ResolveTemplateLlmAsync(workspaceId, agent, ct);
-        var capabilities = await ResolveCapabilitiesAsync(agent.SourceTemplateId, ct);
-        var skillPackages = await ResolveSkillPackagesAsync(agent.SourceTemplateId, ct);
+        var definition = await LoadDefinitionAsync(workspaceId, agent, ct);
+        var llm = await ResolveLlmAsync(
+            definition.LlmConfig.Conscious,
+            workspaceId,
+            agent.AgentId,
+            ct);
+        var capabilities = BuildCapabilitiesFromInstance(definition.Instance);
+        var skillPackages = await ResolveSkillPackagesFromInstanceAsync(
+            definition.Instance,
+            ct);
 
         return new AgentRuntimeProfile
         {
@@ -71,9 +68,43 @@ public sealed class AgentRuntimeProfileResolver(
             CapabilityPolicy = capabilities.Policy,
             ToolDefinitions = capabilities.ToolDefinitions,
             SkillPackages = skillPackages,
+            SystemPrompt = definition.Instance.SystemPrompt,
+            MaxRounds = definition.Instance.MaxRounds,
+            MaxElapsedSeconds = definition.Instance.MaxElapsedSeconds,
+            MaxContextTokens = definition.Instance.MaxContextTokens,
             CapabilitySource = capabilities.Source,
             CapabilityCount = capabilities.CapabilityCount,
         };
+    }
+
+    private async Task<AgentFileProfile> LoadDefinitionAsync(
+        string workspaceId,
+        WorkspaceAgentDto agent,
+        CancellationToken ct)
+    {
+        AgentFileProfile definition;
+        try
+        {
+            definition = await profileProvider.LoadAsync(agent.AgentId, ct);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or JsonException or InvalidOperationException)
+        {
+            throw new AgentConfigurationException(
+                agent.AgentId,
+                $"Agent '{agent.AgentId}' definition is incomplete or invalid: {ex.Message}");
+        }
+
+        if (!string.Equals(
+                definition.Instance.WorkspaceId,
+                workspaceId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new AgentConfigurationException(
+                agent.AgentId,
+                $"Agent '{agent.AgentId}' belongs to workspace '{definition.Instance.WorkspaceId}', not '{workspaceId}'.");
+        }
+
+        return definition;
     }
 
     private async Task<WorkspaceAgentDto> ResolveAgentAsync(
@@ -88,92 +119,82 @@ public sealed class AgentRuntimeProfileResolver(
             ?? throw new InvalidOperationException($"Agent '{agentId}' was not found in workspace '{workspaceId}'.");
     }
 
-    private async Task<ResolvedLlmRouting> ResolveTemplateLlmAsync(
+    /// <summary>
+    /// Resolve LLM config from the Agent instance's config/llm.json snapshot.
+    /// Provider credentials and endpoint details are enriched from llm.providers.json.
+    /// </summary>
+    private async Task<ResolvedLlmRouting> ResolveLlmAsync(
+        AgentLlmBinding? binding,
         string workspaceId,
-        WorkspaceAgentDto agent,
+        string agentId,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(agent.SourceTemplateId))
-            return new ResolvedLlmRouting(null, null, null, null);
-
-        var templateRouting = await templateLlmResolver.ResolveConsciousAsync(
-            agent.SourceTemplateId!,
-            workspaceId,
-            ct);
-
-        var providerId = TrimToNull(templateRouting?.ProviderId);
-        var modelId = TrimToNull(templateRouting?.Config?.ModelId ?? templateRouting?.ModelId);
-        var config = templateRouting?.Config;
-
-        if (config is null)
+        if (binding is null)
         {
-            logger.LogWarning(
-                "[AgentRuntimeProfile] Template LLM config unresolved workspace={WorkspaceId} agent={AgentId} template={TemplateId} provider={ProviderId} model={ModelId}",
-                workspaceId,
-                agent.AgentId,
-                agent.SourceTemplateId,
-                providerId ?? "(none)",
-                modelId ?? "(none)");
+            throw new AgentConfigurationException(
+                agentId,
+                $"Agent '{agentId}' is missing config/llm.json conscious binding.");
         }
 
-        return new ResolvedLlmRouting(
-            TrimToNull(templateRouting?.ProfileId),
-            providerId,
-            modelId,
-            config);
+        var routing = await llmConfigResolver.ResolveAsync(binding, ct);
+
+        var providerId = routing?.ProviderId;
+        var modelId = routing?.Config?.ModelId ?? routing?.ModelId;
+        if (routing?.Config is null)
+        {
+            logger.LogWarning(
+                "[AgentRuntimeProfile] LLM config unresolved workspace={WorkspaceId} agent={AgentId} provider={ProviderId} model={ModelId}",
+                workspaceId, agentId, providerId ?? "(none)", modelId ?? "(none)");
+            throw new AgentConfigurationException(
+                agentId,
+                $"Agent '{agentId}' conscious LLM binding cannot be resolved from llm.providers.json.");
+        }
+
+        return new ResolvedLlmRouting(routing?.ProfileId, providerId, modelId, routing?.Config);
     }
 
-    private async Task<ResolvedCapabilities> ResolveCapabilitiesAsync(
-        string? templateId,
-        CancellationToken ct)
+    /// <summary>
+    /// Build capability policy and tool definitions from agent's embedded config.
+    /// No longer reads template files at runtime.
+    /// </summary>
+    private ResolvedCapabilities BuildCapabilitiesFromInstance(AgentInstanceManifest instance)
     {
-        if (string.IsNullOrWhiteSpace(templateId))
+        var capIds = instance.Capabilities.AllowedToolIds;
+        if (capIds.Count == 0)
             return new ResolvedCapabilities(null, null, "none", 0);
 
-        var (_, globalId, _) = NormalizeTemplateId(templateId);
-        var template = await templateFileService.GetTemplateAsync(globalId, ct);
-        if (template is null)
-        {
-            logger.LogWarning(
-                "[AgentRuntimeProfile] Template capability config missing template={TemplateId}; runtime will execute without template capability grants",
-                templateId);
-            return new ResolvedCapabilities(null, null, "missing-template", 0);
-        }
-
-        var selectedToolDescriptors = ResolveSelectedToolDescriptors(template.SelectedCapabilityIds);
-        var selectedToolNames = selectedToolDescriptors.Select(descriptor => descriptor.ToolId).ToList();
-        var allowedToolNamesJson = template.AllowedToolNames is { Count: > 0 } names
+        var selectedToolDescriptors = ResolveSelectedToolDescriptors(capIds);
+        var selectedToolNames = selectedToolDescriptors.Select(d => d.ToolId).ToList();
+        var allowedToolNamesJson = instance.Capabilities.AllowedToolNames is { Count: > 0 } names
             ? JsonSerializer.Serialize(names)
             : "[]";
 
         return new ResolvedCapabilities(
             BuildPolicy(
-                template.AllowFileWrite,
-                template.AllowShellExecution,
-                template.AllowNetworkAccess,
+                instance.Capabilities.AllowFileWrite,
+                instance.Capabilities.AllowShellExecution,
+                instance.Capabilities.AllowNetworkAccess,
                 allowedToolNamesJson,
-                template.Role,
+                instance.Role ?? "Service",
                 selectedToolNames),
             BuildToolDefinitions(selectedToolDescriptors),
-            "global-file-template",
+            "agent-instance-embedded",
             selectedToolNames.Count);
     }
 
-    private async Task<IReadOnlyList<SkillPackageInfo>?> ResolveSkillPackagesAsync(
-        string? templateId,
+    /// <summary>
+    /// Resolve skill packages from agent's embedded skill package IDs.
+    /// </summary>
+    private async Task<IReadOnlyList<SkillPackageInfo>?> ResolveSkillPackagesFromInstanceAsync(
+        AgentInstanceManifest instance,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(templateId))
+        var skillIds = instance.SkillPackageIds;
+        if (skillIds.Count == 0)
             return null;
 
-        var (_, globalId, _) = NormalizeTemplateId(templateId);
-        var template = await templateFileService.GetTemplateAsync(globalId, ct);
-        if (template is null || template.SelectedSkillPackageIds.Count == 0)
-            return null;
-
-        var selectedIds = template.SelectedSkillPackageIds;
         var packages = await db.SkillPackages.AsNoTracking()
-            .Where(package => selectedIds.Contains(package.SkillPackageId) && package.IsEnabled)
+            .Where(p => skillIds.Contains(p.SkillPackageId) && p.IsEnabled)
             .ToListAsync(ct);
 
         if (packages.Count == 0)
@@ -195,6 +216,8 @@ public sealed class AgentRuntimeProfileResolver(
 
         return result;
     }
+
+    // ── 以下方法保持不变 ──
 
     private IReadOnlyList<ToolDescriptor> ResolveSelectedToolDescriptors(
         IEnumerable<string> selectedCapabilityOrToolIds)
@@ -233,12 +256,10 @@ public sealed class AgentRuntimeProfileResolver(
         IReadOnlyList<ToolDescriptor> descriptors)
     {
         var map = new Dictionary<string, LlmToolDefinition>(StringComparer.OrdinalIgnoreCase);
-
         foreach (var descriptor in descriptors)
         {
             if (map.ContainsKey(descriptor.ToolId))
                 continue;
-
             map[descriptor.ToolId] = new LlmToolDefinition
             {
                 Name = descriptor.ToolId,
@@ -246,7 +267,6 @@ public sealed class AgentRuntimeProfileResolver(
                 Parameters = descriptor.Parameters,
             };
         }
-
         return map.Values.ToList();
     }
 
@@ -260,48 +280,33 @@ public sealed class AgentRuntimeProfileResolver(
     {
         var tools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var descriptors = toolCatalog.ListTools();
-        var descriptorByTool = descriptors.ToDictionary(descriptor => descriptor.ToolId, StringComparer.OrdinalIgnoreCase);
+        var descriptorByTool = descriptors.ToDictionary(d => d.ToolId, StringComparer.OrdinalIgnoreCase);
 
         try
         {
             foreach (var toolName in JsonSerializer.Deserialize<List<string>>(allowedToolNamesJson) ?? [])
-            {
                 AddPolicyTool(tools, toolName);
-            }
         }
         catch (JsonException ex)
         {
-            logger.LogWarning(ex, "[AgentRuntimeProfile] Ignoring malformed allowed tool list from template capability policy.");
+            logger.LogWarning(ex, "[AgentRuntimeProfile] Ignoring malformed allowed tool list.");
         }
 
         foreach (var toolName in selectedToolNames)
-        {
             AddPolicyTool(tools, toolName);
-        }
 
         var isTaskRole = role.Equals("Task", StringComparison.OrdinalIgnoreCase);
         if (isTaskRole && tools.Count == 0)
         {
             tools.UnionWith([
-                "terminal_start",
-                "terminal_wait",
-                "terminal_read",
-                "terminal_status",
-                "terminal_cancel",
-                "terminal_input",
-                "shell",
-                "file_read",
-                "list_dir",
-                "file_write",
-                "file_patch",
-                "apply_patch",
+                "terminal_start", "terminal_wait", "terminal_read",
+                "terminal_status", "terminal_cancel", "terminal_input",
+                "shell", "file_read", "list_dir", "file_write", "file_patch", "apply_patch",
             ]);
         }
 
         var policy = toolPermissionPolicy.BuildCapabilityPolicy(
-            descriptors,
-            tools.Where(descriptorByTool.ContainsKey),
-            isTaskRole);
+            descriptors, tools.Where(descriptorByTool.ContainsKey), isTaskRole);
 
         return policy with
         {
@@ -323,24 +328,20 @@ public sealed class AgentRuntimeProfileResolver(
         IEnumerable<string> toolIds)
     {
         foreach (var toolId in toolIds)
-        {
             if (byToolId.TryGetValue(toolId, out var descriptor))
                 result.TryAdd(descriptor.ToolId, descriptor);
-        }
     }
 
     private static void AddPolicyTool(HashSet<string> tools, string? toolName)
     {
         if (string.IsNullOrWhiteSpace(toolName))
             return;
-
         var trimmed = toolName.Trim();
         if (!IsTerminalExecuteAlias(trimmed))
         {
             tools.Add(trimmed);
             return;
         }
-
         foreach (var terminalToolId in TerminalLifecycleToolIds)
             tools.Add(terminalToolId);
     }
@@ -348,14 +349,6 @@ public sealed class AgentRuntimeProfileResolver(
     private static bool IsTerminalExecuteAlias(string value)
         => value.Equals("terminal_execute", StringComparison.OrdinalIgnoreCase)
         || value.Equals("cap-terminal-execute", StringComparison.OrdinalIgnoreCase);
-
-    private static (string RawId, string GlobalId, bool IsExplicitGlobal) NormalizeTemplateId(string templateId)
-    {
-        const string prefix = "global:";
-        return templateId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            ? (templateId, templateId[prefix.Length..], true)
-            : (templateId, templateId, false);
-    }
 
     private static string ToolIdToCapabilityId(string toolId)
         => $"cap-{toolId.Trim().Replace('_', '-').ToLowerInvariant()}";

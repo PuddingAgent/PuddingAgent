@@ -1,6 +1,7 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 
@@ -140,6 +141,111 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
             ModelId = modelId,
             SearchMode = searchMode,
         };
+    }
+
+        // ── 新接口：基于 Agent 实例 LLM binding，不依赖模板文件 ──
+
+    public Task<LlmRoutingConfig?> ResolveAsync(
+        AgentLlmBinding binding,
+        CancellationToken ct = default)
+    {
+        var providerId = binding.ProviderId;
+        var modelId = binding.ModelId;
+
+        LlmRoutingConfig? result = null;
+
+        // 优先使用 profile 解析
+        if (!string.IsNullOrWhiteSpace(binding.ProfileId))
+        {
+            var profile = _llmConfigService.ResolveProfile(binding.ProfileId);
+            if (profile is not null)
+            {
+                providerId ??= profile.ProviderId;
+                modelId ??= profile.ModelId;
+                result = new LlmRoutingConfig
+                {
+                    ProfileId = binding.ProfileId,
+                    ProviderId = providerId,
+                    ModelId = modelId,
+                    Endpoint = profile.Config?.Endpoint,
+#pragma warning disable CS0618
+                    ApiKey = profile.Config?.ApiKey,
+#pragma warning restore CS0618
+                    Config = profile.Config,
+                };
+            }
+        }
+
+        // 从 llm.providers.json 解析 provider/model
+        if (result is null && !string.IsNullOrWhiteSpace(providerId))
+        {
+            var config = _llmConfigService.Resolve(providerId, modelId);
+            if (config is not null)
+            {
+                modelId = config.ModelId;
+                result = new LlmRoutingConfig
+                {
+                    ProviderId = providerId,
+                    ModelId = modelId,
+                    Endpoint = config.Endpoint,
+#pragma warning disable CS0618
+                    ApiKey = config.ApiKey,
+#pragma warning restore CS0618
+                    Config = config,
+                };
+            }
+        }
+
+        // 应用 agent 级别的 reasoning effort 和 token 限制
+        if (result?.Config is not null)
+        {
+            var cfg = result.Config;
+            if (!string.IsNullOrWhiteSpace(binding.ReasoningEffort) && cfg.ReasoningEffort is null)
+                cfg = cfg with { ReasoningEffort = binding.ReasoningEffort };
+            result = result with { Config = cfg };
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(
+        AgentLlmBinding binding,
+        CancellationToken ct = default)
+    {
+        var providerId = binding.ProviderId;
+        var modelId = binding.ModelId;
+
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
+        {
+            var memoryConfig = _llmConfigService.GetMemoryConfig();
+            if (memoryConfig is null)
+                return Task.FromResult<MemoryLlmRoutingConfig?>(null);
+
+            return Task.FromResult<MemoryLlmRoutingConfig?>(new MemoryLlmRoutingConfig
+            {
+                Endpoint = memoryConfig.Endpoint,
+#pragma warning disable CS0618
+                ApiKey = memoryConfig.ApiKey,
+#pragma warning restore CS0618
+                ModelId = memoryConfig.ModelId,
+                SearchMode = "deep",
+            });
+        }
+
+        var config = _llmConfigService.Resolve(providerId, modelId);
+        if (config is null)
+            return Task.FromResult<MemoryLlmRoutingConfig?>(null);
+
+        return Task.FromResult<MemoryLlmRoutingConfig?>(new MemoryLlmRoutingConfig
+        {
+            ProviderId = providerId,
+            Endpoint = config.Endpoint,
+#pragma warning disable CS0618
+            ApiKey = config.ApiKey,
+#pragma warning restore CS0618
+            ModelId = config.ModelId,
+            SearchMode = "deep",
+        });
     }
 
     private static (string CanonicalId, bool IsExplicitGlobal) NormalizeTemplateId(string templateId)

@@ -132,6 +132,8 @@ IDLE
 5. 历史加载由 viewport 发起 `onRequestLoadBefore(anchor)`，加载完成后按 `anchorItemId + offset` 恢复视口。
 6. 所有滚动到底部操作只能调用 runtime 的 `scrollToBottom`，禁止同一路径同时调用 `scrollIntoView`、`scrollTop` 和 virtualizer API。
 7. `useChatState` 不注册 message list 的 scroll listener。
+8. `PINNED_BOTTOM` 只能由用户显式关闭；普通/程序化 `scroll`、`user-send` 和 streaming 更新都不能把它降级为 `auto/off`。
+9. 底部跟随以滚动容器的实际 `scrollHeight - clientHeight` 为准；virtualizer 只负责 item 测量和 anchor 恢复。虚拟内容、Markdown、图片或工具面板延迟增高时，由 ResizeObserver 触发下一帧底部收敛。
 
 ## 视觉与交互
 

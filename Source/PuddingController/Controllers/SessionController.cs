@@ -115,6 +115,34 @@ public class SessionController : ControllerBase
         return Ok(session);
     }
 
+    /// <summary>
+    /// POST /api/session/main/rebind — 将 principal 的 Main 所有权转移到后继会话。
+    /// </summary>
+    [HttpPost("main/rebind")]
+    public async Task<ActionResult<SessionRecord>> RebindMain(
+        [FromBody] RebindMainSessionRequest req,
+        CancellationToken ct)
+    {
+        var principalKind = req.PrincipalKind.Trim().ToLowerInvariant();
+        if (principalKind is not "agent" and not "group")
+            return BadRequest(new { message = "principalKind must be agent or group" });
+
+        try
+        {
+            var session = await _sessions.RebindMainAsync(
+                req.WorkspaceId,
+                principalKind,
+                req.PrincipalId,
+                req.SuccessorSessionId,
+                ct);
+            return Ok(session);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
     private async Task<string?> BuildDefaultTitleAsync(
         string workspaceId,
         string agentTemplateId,
@@ -175,4 +203,12 @@ public sealed record EnsureMainSessionRequest
     public required string PrincipalId { get; init; }
     public required string AgentTemplateId { get; init; }
     public string? Title { get; init; }
+}
+
+public sealed record RebindMainSessionRequest
+{
+    public required string WorkspaceId { get; init; }
+    public required string PrincipalKind { get; init; }
+    public required string PrincipalId { get; init; }
+    public required string SuccessorSessionId { get; init; }
 }

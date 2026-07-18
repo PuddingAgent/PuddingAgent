@@ -17,6 +17,7 @@ public interface ISessionRepository
     Task<SessionRecord?> GetAsync(string sessionId, CancellationToken ct = default);
     Task<SessionRecord?> FindActiveAsync(string channelId, string ownerUserId, string workspaceId, string agentTemplateId, CancellationToken ct = default);
     Task<SessionRecord?> FindMainAsync(string workspaceId, string principalKind, string principalId, CancellationToken ct = default);
+    Task<SessionRecord> RebindMainAsync(string workspaceId, string principalKind, string principalId, string successorSessionId, CancellationToken ct = default);
     Task<IReadOnlyList<SessionRecord>> QueryAsync(string? channelId = null, string? userId = null, string? workspaceId = null, CancellationToken ct = default);
     Task UpdateAsync(SessionRecord record, CancellationToken ct = default);
     Task DeleteAsync(string sessionId, CancellationToken ct = default);

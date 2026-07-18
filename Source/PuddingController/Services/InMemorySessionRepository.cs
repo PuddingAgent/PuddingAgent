@@ -72,6 +72,72 @@ public sealed class InMemorySessionRepository : ISessionRepository
             .FirstOrDefault();
     }
 
+    public async Task<SessionRecord> RebindMainAsync(
+        string workspaceId,
+        string principalKind,
+        string principalId,
+        string successorSessionId,
+        CancellationToken ct = default)
+    {
+        var normalizedKind = principalKind.Trim().ToLowerInvariant();
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            if (!_sessions.TryGetValue(successorSessionId, out var successor)
+                || !string.Equals(successor.WorkspaceId, workspaceId, StringComparison.Ordinal))
+            {
+                throw new KeyNotFoundException(
+                    $"Successor session '{successorSessionId}' does not exist in workspace '{workspaceId}'.");
+            }
+
+            var previousMains = _sessions.Values
+                .Where(session =>
+                    session.SessionId != successorSessionId
+                    && string.Equals(session.WorkspaceId, workspaceId, StringComparison.Ordinal)
+                    && session.SessionRole == SessionRole.Main
+                    && string.Equals(session.PrincipalKind, normalizedKind, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(session.PrincipalId, principalId, StringComparison.Ordinal))
+                .ToList();
+
+            var promoted = successor with
+            {
+                SessionRole = SessionRole.Main,
+                PrincipalKind = normalizedKind,
+                PrincipalId = principalId,
+                AgentInstanceId = normalizedKind == "agent"
+                    ? principalId
+                    : successor.AgentInstanceId,
+                LastActiveAt = DateTimeOffset.UtcNow,
+            };
+
+            // Promote first. If the process stops before all older records are
+            // demoted, FindMainAsync still deterministically selects the newest
+            // promoted session.
+            await PersistUnlockedAsync(promoted, ct);
+            foreach (var previous in previousMains)
+            {
+                await PersistUnlockedAsync(
+                    previous with { SessionRole = SessionRole.Task },
+                    ct);
+            }
+
+            _sessions[successorSessionId] = promoted;
+            foreach (var previous in previousMains)
+            {
+                _sessions[previous.SessionId] = previous with
+                {
+                    SessionRole = SessionRole.Task,
+                };
+            }
+
+            return promoted;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     public Task<IReadOnlyList<SessionRecord>> QueryAsync(
         string? channelId = null, string? userId = null, string? workspaceId = null,
         CancellationToken ct = default)
@@ -124,13 +190,20 @@ public sealed class InMemorySessionRepository : ISessionRepository
         await _writeLock.WaitAsync(ct);
         try
         {
-            await AtomicFileWriter.WriteJsonAsync(SessionFilePath(record.WorkspaceId, record.SessionId), record, JsonOptions, ct);
+            await PersistUnlockedAsync(record, ct);
         }
         finally
         {
             _writeLock.Release();
         }
     }
+
+    private Task PersistUnlockedAsync(SessionRecord record, CancellationToken ct) =>
+        AtomicFileWriter.WriteJsonAsync(
+            SessionFilePath(record.WorkspaceId, record.SessionId),
+            record,
+            JsonOptions,
+            ct);
 
     private void LoadPersistedSessions()
     {

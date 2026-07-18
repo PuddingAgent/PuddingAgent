@@ -756,7 +756,10 @@ const MessageList: React.FC<MessageListProps> = ({
       )}
       {/* 虚拟滚动容器 */}
       {projection.items.length > 0 && (
-        <div style={{ height: `${viewport.totalSize}px`, width: '100%', position: 'relative' }}>
+        <div
+          ref={viewport.contentRef}
+          style={{ height: `${viewport.totalSize}px`, width: '100%', position: 'relative' }}
+        >
           {viewport.virtualRows.map((virtualRow) => {
             const item = projection.items[virtualRow.index];
             if (!item) return null;

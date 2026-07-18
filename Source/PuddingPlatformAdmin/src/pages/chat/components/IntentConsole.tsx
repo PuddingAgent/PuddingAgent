@@ -295,6 +295,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   React.useEffect(() => {
     if (!isTextComposingRef.current && inputValue !== draftValue) {
       setDraftValue(inputValue);
+      if (!inputValue.trim()) {
+        setPaletteVisible(false);
+      }
     }
   }, [draftValue, inputValue]);
 

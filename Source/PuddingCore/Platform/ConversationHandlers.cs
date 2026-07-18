@@ -1,3 +1,5 @@
+using PuddingCode.Runtime;
+
 namespace PuddingCode.Platform;
 
 // ════════════════════════════════════════════════════════════════
@@ -55,7 +57,13 @@ public sealed record CreateSteeringCommand(
     string UserId);
 
 public sealed record RequestCompactionCommand(
-    string ConversationId);
+    string ConversationId,
+    string WorkspaceId,
+    string AgentId,
+    ContextCompactionLevel Level,
+    string Reason,
+    string CompactionId,
+    string? UserId);
 
 public sealed record CancelTurnResult(
     string ConversationId,
@@ -66,4 +74,29 @@ public sealed record CreateSteeringResult(
     string SteeringId);
 
 public sealed record CompactionResult(
-    string NewConversationId);
+    string CompactionId,
+    ContextCompactionResult Compaction,
+    string NewConversationId,
+    string? NewConversationTitle);
+
+/// <summary>
+/// 创建压缩后的后继 Conversation，并原子收敛 Agent 主会话身份。
+/// 该接口隔离 Session 存储、Agent manifest 与重定向存储，压缩 Handler
+/// 不得直接读取数据库或配置文件。
+/// </summary>
+public interface ICompactionSessionSuccessor
+{
+    Task<CompactionSuccessor> CreateAsync(
+        CreateCompactionSuccessorCommand command,
+        CancellationToken ct);
+}
+
+public sealed record CreateCompactionSuccessorCommand(
+    string PreviousConversationId,
+    string WorkspaceId,
+    string AgentId,
+    string? SourceTemplateId);
+
+public sealed record CompactionSuccessor(
+    string ConversationId,
+    string? Title);

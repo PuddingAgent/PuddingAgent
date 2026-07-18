@@ -65,11 +65,12 @@ public sealed class AgentChatApiControllerTests
     [TestMethod]
     public async Task AgentStatusEndpoint_MapsActiveMainSessionWithoutRunningEventsToIdle()
     {
+        var agentId = await CreateWorkspaceAgentAsync("agent-idle-active");
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
             workspaceId = "default",
             principalKind = "agent",
-            principalId = "agent-idle-active",
+            principalId = agentId,
             agentTemplateId = "global:general-assistant",
             title = "Idle Active Agent"
         });
@@ -91,18 +92,19 @@ public sealed class AgentChatApiControllerTests
         response.EnsureSuccessStatusCode();
 
         var list = await response.Content.ReadFromJsonAsync<List<AgentStatusProjectionDto>>(JsonOpts);
-        var projection = list!.Single(item => item.AgentId == "agent-idle-active");
+        var projection = list!.Single(item => item.AgentId == agentId);
         Assert.AreEqual("idle", projection.Status);
     }
 
     [TestMethod]
     public async Task AgentStatusEndpoint_MapsUnfinishedExecutionEventsToRunning()
     {
+        var agentId = await CreateWorkspaceAgentAsync("agent-running-events");
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
             workspaceId = "default",
             principalKind = "agent",
-            principalId = "agent-running-events",
+            principalId = agentId,
             agentTemplateId = "global:general-assistant",
             title = "Running Events Agent"
         });
@@ -119,15 +121,13 @@ public sealed class AgentChatApiControllerTests
                 CancellationToken.None);
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            db.SessionEventLogs.Add(new SessionEventLogEntity
-            {
-                SessionId = session.SessionId,
-                WorkspaceId = "default",
-                SequenceNum = 1,
-                EventType = "delta",
-                Data = "{\"delta\":\"working\"}",
-                RecordedAt = DateTimeOffset.UtcNow.ToString("O"),
-            });
+            db.ConversationEvents.Add(NewConversationEvent(
+                session.SessionId,
+                1,
+                ConversationEventTypes.MessageContentAppended,
+                "{\"delta\":\"working\"}",
+                DateTimeOffset.UtcNow,
+                runId: "run-status-running"));
             await db.SaveChangesAsync();
         }
 
@@ -135,18 +135,19 @@ public sealed class AgentChatApiControllerTests
         response.EnsureSuccessStatusCode();
 
         var list = await response.Content.ReadFromJsonAsync<List<AgentStatusProjectionDto>>(JsonOpts);
-        var projection = list!.Single(item => item.AgentId == "agent-running-events");
+        var projection = list!.Single(item => item.AgentId == agentId);
         Assert.AreEqual("running", projection.Status);
     }
 
     [TestMethod]
     public async Task AgentStatusEndpoint_MapsStaleUnfinishedExecutionEventsToIdle()
     {
+        var agentId = await CreateWorkspaceAgentAsync("agent-stale-running-events");
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
             workspaceId = "default",
             principalKind = "agent",
-            principalId = "agent-stale-running-events",
+            principalId = agentId,
             agentTemplateId = "global:general-assistant",
             title = "Stale Running Events Agent"
         });
@@ -163,15 +164,13 @@ public sealed class AgentChatApiControllerTests
                 CancellationToken.None);
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            db.SessionEventLogs.Add(new SessionEventLogEntity
-            {
-                SessionId = session.SessionId,
-                WorkspaceId = "default",
-                SequenceNum = 1,
-                EventType = "delta",
-                Data = "{\"delta\":\"stale\"}",
-                RecordedAt = DateTimeOffset.UtcNow.AddMinutes(-15).ToString("O"),
-            });
+            db.ConversationEvents.Add(NewConversationEvent(
+                session.SessionId,
+                1,
+                ConversationEventTypes.MessageContentAppended,
+                "{\"delta\":\"stale\"}",
+                DateTimeOffset.UtcNow.AddMinutes(-15),
+                runId: "run-status-stale"));
             await db.SaveChangesAsync();
         }
 
@@ -179,18 +178,19 @@ public sealed class AgentChatApiControllerTests
         response.EnsureSuccessStatusCode();
 
         var list = await response.Content.ReadFromJsonAsync<List<AgentStatusProjectionDto>>(JsonOpts);
-        var projection = list!.Single(item => item.AgentId == "agent-stale-running-events");
+        var projection = list!.Single(item => item.AgentId == agentId);
         Assert.AreEqual("idle", projection.Status);
     }
 
     [TestMethod]
     public async Task AgentStatusEndpoint_MapsTerminalExecutionEventsToIdle()
     {
+        var agentId = await CreateWorkspaceAgentAsync("agent-terminal-events");
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
             workspaceId = "default",
             principalKind = "agent",
-            principalId = "agent-terminal-events",
+            principalId = agentId,
             agentTemplateId = "global:general-assistant",
             title = "Terminal Events Agent"
         });
@@ -208,25 +208,21 @@ public sealed class AgentChatApiControllerTests
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var now = DateTimeOffset.UtcNow;
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "delta",
-                    Data = "{\"delta\":\"done\"}",
-                    RecordedAt = now.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "done",
-                    Data = "{\"reply\":\"done\"}",
-                    RecordedAt = now.AddMilliseconds(1).ToString("O"),
-                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"done\"}",
+                    now,
+                    runId: "run-status-terminal"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.TurnCompleted,
+                    "{\"reply\":\"done\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-status-terminal"));
             await db.SaveChangesAsync();
         }
 
@@ -234,18 +230,19 @@ public sealed class AgentChatApiControllerTests
         response.EnsureSuccessStatusCode();
 
         var list = await response.Content.ReadFromJsonAsync<List<AgentStatusProjectionDto>>(JsonOpts);
-        var projection = list!.Single(item => item.AgentId == "agent-terminal-events");
+        var projection = list!.Single(item => item.AgentId == agentId);
         Assert.AreEqual("idle", projection.Status);
     }
 
     [TestMethod]
     public async Task AgentStatusEndpoint_IgnoresUsageEventsAfterTerminalExecution()
     {
+        var agentId = await CreateWorkspaceAgentAsync("agent-terminal-usage-events");
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
             workspaceId = "default",
             principalKind = "agent",
-            principalId = "agent-terminal-usage-events",
+            principalId = agentId,
             agentTemplateId = "global:general-assistant",
             title = "Terminal Usage Events Agent"
         });
@@ -263,34 +260,28 @@ public sealed class AgentChatApiControllerTests
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var now = DateTimeOffset.UtcNow;
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "delta",
-                    Data = "{\"delta\":\"done\"}",
-                    RecordedAt = now.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "done",
-                    Data = "{\"reply\":\"done\"}",
-                    RecordedAt = now.AddMilliseconds(1).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 3,
-                    EventType = "usage",
-                    Data = "{\"totalTokens\":10}",
-                    RecordedAt = now.AddMilliseconds(2).ToString("O"),
-                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"done\"}",
+                    now,
+                    runId: "run-status-usage"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.TurnCompleted,
+                    "{\"reply\":\"done\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-status-usage"),
+                NewConversationEvent(
+                    session.SessionId,
+                    3,
+                    ConversationEventTypes.UsageRecorded,
+                    "{\"totalTokens\":10}",
+                    now.AddMilliseconds(2),
+                    runId: "run-status-usage"));
             await db.SaveChangesAsync();
         }
 
@@ -298,7 +289,7 @@ public sealed class AgentChatApiControllerTests
         response.EnsureSuccessStatusCode();
 
         var list = await response.Content.ReadFromJsonAsync<List<AgentStatusProjectionDto>>(JsonOpts);
-        var projection = list!.Single(item => item.AgentId == "agent-terminal-usage-events");
+        var projection = list!.Single(item => item.AgentId == agentId);
         Assert.AreEqual("idle", projection.Status);
     }
 
@@ -322,6 +313,7 @@ public sealed class AgentChatApiControllerTests
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             db.ChatMessages.Add(new ChatMessageEntity
             {
+                MessageId = "conversation-renderable-user",
                 SessionId = session!.SessionId,
                 Role = "user",
                 Content = "hello agent",
@@ -367,6 +359,7 @@ public sealed class AgentChatApiControllerTests
             {
                 db.ChatMessages.Add(new ChatMessageEntity
                 {
+                    MessageId = $"conversation-window-{i:000}",
                     SessionId = session!.SessionId,
                     Role = i % 2 == 0 ? "user" : "agent",
                     Content = $"message-{i:000}",
@@ -407,6 +400,7 @@ public sealed class AgentChatApiControllerTests
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             db.ChatMessages.Add(new ChatMessageEntity
             {
+                MessageId = "conversation-thinking-agent",
                 SessionId = session!.SessionId,
                 Role = "agent",
                 Content = "final answer",
@@ -429,7 +423,7 @@ public sealed class AgentChatApiControllerTests
     }
 
     [TestMethod]
-    public async Task AgentConversationEndpoint_ProjectsHistoricalToolProcessItemsFromSessionEvents()
+    public async Task AgentConversationEndpoint_ProjectsHistoricalToolProcessItemsFromConversationEvents()
     {
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
@@ -450,48 +444,45 @@ public sealed class AgentChatApiControllerTests
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             db.ChatMessages.Add(new ChatMessageEntity
             {
+                MessageId = externalMessageId,
                 SessionId = session!.SessionId,
                 Role = "agent",
                 Content = "tool final answer",
                 CreatedAt = now.ToUnixTimeMilliseconds(),
             });
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "thinking",
-                    Data = $"{{\"messageId\":\"{externalMessageId}\",\"delta\":\"准备查找文件\"}}",
-                    RecordedAt = now.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "tool_call",
-                    Data = $"{{\"messageId\":\"{externalMessageId}\",\"name\":\"file_search\",\"arguments\":\"{{\\\"pattern\\\":\\\"*.md\\\"}}\"}}",
-                    RecordedAt = now.AddMilliseconds(1).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 3,
-                    EventType = "tool_result",
-                    Data = $"{{\"messageId\":\"{externalMessageId}\",\"name\":\"file_search\",\"exitCode\":0,\"output\":\"README.md\"}}",
-                    RecordedAt = now.AddMilliseconds(2).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 4,
-                    EventType = "done",
-                    Data = $"{{\"messageId\":\"{externalMessageId}\",\"reply\":\"tool final answer\"}}",
-                    RecordedAt = now.AddMilliseconds(3).ToString("O"),
-                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    "{\"delta\":\"准备查找文件\"}",
+                    now,
+                    runId: "run-historical-tools",
+                    messageId: externalMessageId),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"file_search\",\"arguments\":\"{\\\"pattern\\\":\\\"*.md\\\"}\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-historical-tools",
+                    messageId: externalMessageId),
+                NewConversationEvent(
+                    session.SessionId,
+                    3,
+                    ConversationEventTypes.ToolCallCompleted,
+                    "{\"name\":\"file_search\",\"exitCode\":0,\"output\":\"README.md\"}",
+                    now.AddMilliseconds(2),
+                    runId: "run-historical-tools",
+                    messageId: externalMessageId),
+                NewConversationEvent(
+                    session.SessionId,
+                    4,
+                    ConversationEventTypes.TurnCompleted,
+                    "{\"reply\":\"tool final answer\"}",
+                    now.AddMilliseconds(3),
+                    runId: "run-historical-tools",
+                    messageId: externalMessageId));
             await db.SaveChangesAsync();
         }
 
@@ -501,6 +492,8 @@ public sealed class AgentChatApiControllerTests
         var view = await response.Content.ReadFromJsonAsync<AgentConversationViewDto>(JsonOpts);
         Assert.IsNotNull(view);
         var message = view!.Messages.Single();
+        Assert.AreEqual(externalMessageId, message.MessageId);
+        Assert.AreEqual("run-historical-tools", message.RunId);
         Assert.AreEqual("tool final answer", message.Content);
         Assert.HasCount(3, message.ProcessItems);
         Assert.AreEqual("thinking", message.ProcessItems[0].Kind);
@@ -514,7 +507,109 @@ public sealed class AgentChatApiControllerTests
     }
 
     [TestMethod]
-    public async Task AgentConversationEndpoint_ReturnsActiveRunOutputFromSessionEvents()
+    public async Task AgentConversationEndpoint_CorrelatesProcessByMessageIdAndCompletedRun()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-process-correlation",
+            agentTemplateId = "global:general-assistant",
+            title = "Process Correlation Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        var now = DateTimeOffset.UtcNow;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.AddRange(
+                new ChatMessageEntity
+                {
+                    MessageId = "same-reply-message-a",
+                    SessionId = session!.SessionId,
+                    Role = "agent",
+                    Content = "same reply",
+                    CreatedAt = now.ToUnixTimeMilliseconds(),
+                },
+                new ChatMessageEntity
+                {
+                    MessageId = "same-reply-message-b",
+                    SessionId = session.SessionId,
+                    Role = "agent",
+                    Content = "same reply",
+                    CreatedAt = now.AddMilliseconds(1).ToUnixTimeMilliseconds(),
+                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    "{\"delta\":\"failed attempt\"}",
+                    now,
+                    runId: "run-a-failed",
+                    messageId: "same-reply-message-a"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.TurnFailed,
+                    "{\"message\":\"retry\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-a-failed",
+                    messageId: "same-reply-message-a"),
+                NewConversationEvent(
+                    session.SessionId,
+                    3,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    "{\"delta\":\"successful attempt\"}",
+                    now.AddMilliseconds(2),
+                    runId: "run-a-completed",
+                    messageId: "same-reply-message-a"),
+                NewConversationEvent(
+                    session.SessionId,
+                    4,
+                    ConversationEventTypes.TurnCompleted,
+                    "{\"reply\":\"same reply\"}",
+                    now.AddMilliseconds(3),
+                    runId: "run-a-completed",
+                    messageId: "same-reply-message-a"),
+                NewConversationEvent(
+                    session.SessionId,
+                    5,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    "{\"delta\":\"second message process\"}",
+                    now.AddMilliseconds(4),
+                    runId: "run-b-completed",
+                    messageId: "same-reply-message-b"),
+                NewConversationEvent(
+                    session.SessionId,
+                    6,
+                    ConversationEventTypes.TurnCompleted,
+                    "{\"reply\":\"same reply\"}",
+                    now.AddMilliseconds(5),
+                    runId: "run-b-completed",
+                    messageId: "same-reply-message-b"));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync("/api/workspaces/default/agents/agent-process-correlation/conversation");
+        response.EnsureSuccessStatusCode();
+
+        var view = await response.Content.ReadFromJsonAsync<AgentConversationViewDto>(JsonOpts);
+        Assert.IsNotNull(view);
+        Assert.HasCount(2, view!.Messages);
+        Assert.AreEqual("run-a-completed", view.Messages[0].RunId);
+        Assert.HasCount(1, view.Messages[0].ProcessItems);
+        Assert.AreEqual("successful attempt", view.Messages[0].ProcessItems[0].Text);
+        Assert.AreEqual("run-b-completed", view.Messages[1].RunId);
+        Assert.HasCount(1, view.Messages[1].ProcessItems);
+        Assert.AreEqual("second message process", view.Messages[1].ProcessItems[0].Text);
+    }
+
+    [TestMethod]
+    public async Task AgentConversationEndpoint_ReturnsActiveRunOutputFromConversationEvents()
     {
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
@@ -538,52 +633,42 @@ public sealed class AgentChatApiControllerTests
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var now = DateTimeOffset.UtcNow;
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "thinking",
-                    Data = "{\"delta\":\"分析需求\"}",
-                    RecordedAt = now.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "tool_call",
-                    Data = "{\"name\":\"file_search\",\"arguments\":\"{\\\"pattern\\\":\\\"*.md\\\"}\"}",
-                    RecordedAt = now.AddMilliseconds(1).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 3,
-                    EventType = "tool_result",
-                    Data = "{\"name\":\"file_search\",\"exitCode\":0,\"output\":\"README.md\"}",
-                    RecordedAt = now.AddMilliseconds(2).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 4,
-                    EventType = "delta",
-                    Data = "{\"delta\":\"partial \"}",
-                    RecordedAt = now.AddMilliseconds(3).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 5,
-                    EventType = "delta",
-                    Data = "{\"delta\":\"answer\"}",
-                    RecordedAt = now.AddMilliseconds(4).ToString("O"),
-                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    "{\"delta\":\"分析需求\"}",
+                    now,
+                    runId: "run-active-output"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"file_search\",\"arguments\":\"{\\\"pattern\\\":\\\"*.md\\\"}\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-active-output"),
+                NewConversationEvent(
+                    session.SessionId,
+                    3,
+                    ConversationEventTypes.ToolCallCompleted,
+                    "{\"name\":\"file_search\",\"exitCode\":0,\"output\":\"README.md\"}",
+                    now.AddMilliseconds(2),
+                    runId: "run-active-output"),
+                NewConversationEvent(
+                    session.SessionId,
+                    4,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"partial \"}",
+                    now.AddMilliseconds(3),
+                    runId: "run-active-output"),
+                NewConversationEvent(
+                    session.SessionId,
+                    5,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"answer\"}",
+                    now.AddMilliseconds(4),
+                    runId: "run-active-output"));
             await db.SaveChangesAsync();
         }
 
@@ -632,61 +717,55 @@ public sealed class AgentChatApiControllerTests
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var now = DateTimeOffset.UtcNow;
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "metadata",
-                    Data = "{\"messageId\":\"welcome-message\"}",
-                    RecordedAt = now.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "delta",
-                    Data = "{\"messageId\":\"welcome-message\",\"delta\":\"old welcome\"}",
-                    RecordedAt = now.AddMilliseconds(1).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 3,
-                    EventType = "done",
-                    Data = "{\"messageId\":\"welcome-message\",\"reply\":\"old welcome\"}",
-                    RecordedAt = now.AddMilliseconds(2).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 4,
-                    EventType = "metadata",
-                    Data = "{\"messageId\":\"current-message\"}",
-                    RecordedAt = now.AddMilliseconds(3).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 5,
-                    EventType = "delta",
-                    Data = "{\"messageId\":\"current-message\",\"delta\":\"current \"}",
-                    RecordedAt = now.AddMilliseconds(4).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 6,
-                    EventType = "delta",
-                    Data = "{\"messageId\":\"current-message\",\"delta\":\"answer\"}",
-                    RecordedAt = now.AddMilliseconds(5).ToString("O"),
-                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.TurnStarted,
+                    "{}",
+                    now,
+                    runId: "run-old",
+                    messageId: "welcome-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"old welcome\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-old",
+                    messageId: "welcome-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    3,
+                    ConversationEventTypes.TurnCompleted,
+                    "{\"reply\":\"old welcome\"}",
+                    now.AddMilliseconds(2),
+                    runId: "run-old",
+                    messageId: "welcome-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    4,
+                    ConversationEventTypes.TurnStarted,
+                    "{}",
+                    now.AddMilliseconds(3),
+                    runId: "run-current",
+                    messageId: "current-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    5,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"current \"}",
+                    now.AddMilliseconds(4),
+                    runId: "run-current",
+                    messageId: "current-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    6,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"answer\"}",
+                    now.AddMilliseconds(5),
+                    runId: "run-current",
+                    messageId: "current-message"));
             await db.SaveChangesAsync();
         }
 
@@ -726,34 +805,31 @@ public sealed class AgentChatApiControllerTests
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var stale = DateTimeOffset.UtcNow.AddMinutes(-15);
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "metadata",
-                    Data = "{\"messageId\":\"stale-message\"}",
-                    RecordedAt = stale.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "delta",
-                    Data = "{\"messageId\":\"stale-message\",\"delta\":\"stale output\"}",
-                    RecordedAt = stale.AddSeconds(1).ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = session.SessionId,
-                    WorkspaceId = "default",
-                    SequenceNum = 3,
-                    EventType = "tool_call",
-                    Data = "{\"messageId\":\"stale-message\",\"name\":\"file_search\"}",
-                    RecordedAt = stale.AddSeconds(2).ToString("O"),
-                });
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.TurnStarted,
+                    "{}",
+                    stale,
+                    runId: "run-stale",
+                    messageId: "stale-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"stale output\"}",
+                    stale.AddSeconds(1),
+                    runId: "run-stale",
+                    messageId: "stale-message"),
+                NewConversationEvent(
+                    session.SessionId,
+                    3,
+                    ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"file_search\"}",
+                    stale.AddSeconds(2),
+                    runId: "run-stale",
+                    messageId: "stale-message"));
             await db.SaveChangesAsync();
         }
 
@@ -776,6 +852,47 @@ public sealed class AgentChatApiControllerTests
         long EventCursor,
         string UpdatedAt);
 
+    private async Task<string> CreateWorkspaceAgentAsync(string name)
+    {
+        var response = await _client.PostAsJsonAsync("/api/workspaces/default/agents", new
+        {
+            name,
+            displayName = name,
+            sourceTemplateId = "general-assistant",
+        });
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<WorkspaceAgentIdDto>(JsonOpts);
+        Assert.IsNotNull(created);
+        return created.AgentId;
+    }
+
+    private static ConversationEventEntity NewConversationEvent(
+        string conversationId,
+        long sequence,
+        string type,
+        string payload,
+        DateTimeOffset occurredAt,
+        string? runId = null,
+        string messageId = "assistant-message",
+        string commandId = "command")
+        => new()
+        {
+            ConversationId = conversationId,
+            Sequence = sequence,
+            EventId = $"{conversationId}:{sequence}:{Guid.NewGuid():N}",
+            WorkspaceId = "default",
+            TurnId = $"turn:{runId ?? "accepted"}",
+            CommandId = commandId,
+            RunId = runId,
+            MessageId = messageId,
+            Type = type,
+            SchemaVersion = 1,
+            Payload = payload,
+            OccurredAt = occurredAt.ToString("O"),
+            CommittedAt = occurredAt.ToString("O"),
+            CorrelationId = conversationId,
+        };
+
     private sealed record AgentConversationViewDto(
         string WorkspaceId,
         string OwnerUserId,
@@ -785,6 +902,8 @@ public sealed class AgentChatApiControllerTests
         AgentRunViewDto? ActiveRun,
         long EventCursor,
         string UpdatedAt);
+
+    private sealed record WorkspaceAgentIdDto(string AgentId);
 
     private sealed record AgentRunViewDto(
         string RunId,

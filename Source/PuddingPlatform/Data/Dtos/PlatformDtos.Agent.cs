@@ -1,4 +1,4 @@
-namespace PuddingPlatform.Data.Dtos;
+﻿namespace PuddingPlatform.Data.Dtos;
 
 // ════════════════════════════════════════════════════════════════
 // Agent DTOs — Agent 模板、实例、能力、Skill、Avatar。
@@ -242,7 +242,30 @@ public record WorkspaceAgentDto(
     bool IsFrozen,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    string? HeartbeatPrompt = null
+    string? HeartbeatPrompt = null,
+    // ── 嵌入的模板配置（Phase 4: 供 AgentRuntimeProfileResolver 使用）──
+    string? Role = null,
+    string? SystemPrompt = null,
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null,
+    int MaxContextTokens = 65536,
+    int MaxReplyTokens = 4096,
+    int MaxRounds = 200,
+    int MaxElapsedSeconds = 1200,
+    string? MemoryLlmProviderId = null,
+    string? MemoryLlmModelId = null,
+    bool AllowFileWrite = false,
+    bool AllowShellExecution = false,
+    bool AllowNetworkAccess = false,
+    List<string>? SelectedCapabilityIds = null,
+    List<string>? SkillPackageIds = null,
+    List<string>? AllowedToolNames = null,
+    // ── Markdown 文件内容（仅在 GetAgentAsync 中填充）──
+    string? SoulMdContent = null,
+    string? AgentsMdContent = null,
+    string? ToolsMdContent = null,
+    string? BootstrapMdContent = null,
+    string? MemoryMdContent = null
 );
 
 public record CreateWorkspaceAgentRequest(
@@ -269,5 +292,28 @@ public record UpdateWorkspaceAgentRequest(
     string? PreferredProviderId,
     string? PreferredModelId,
     bool IsEnabled,
-    string? HeartbeatPrompt = null
+    string? HeartbeatPrompt = null,
+    // ── Agent 自身配置（可独立覆盖模板默认）──
+    string? SystemPrompt = null,
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null,
+    int? MaxContextTokens = null,
+    int? MaxReplyTokens = null,
+    int? MaxRounds = null,
+    int? MaxElapsedSeconds = null,
+    int? MaxToolCallsTotal = null,
+    string? MemoryLlmProviderId = null,
+    string? MemoryLlmModelId = null,
+    bool? AllowFileWrite = null,
+    bool? AllowShellExecution = null,
+    bool? AllowNetworkAccess = null,
+    List<string>? SelectedCapabilityIds = null,
+    List<string>? SkillPackageIds = null,
+    List<string>? AllowedToolNames = null,
+    // ── Markdown 文件内容（不传则保留原文件）──
+    string? SoulMdContent = null,
+    string? AgentsMdContent = null,
+    string? ToolsMdContent = null,
+    string? BootstrapMdContent = null,
+    string? MemoryMdContent = null
 );

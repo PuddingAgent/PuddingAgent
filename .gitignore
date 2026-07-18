@@ -384,3 +384,4 @@ FodyWeavers.xsd
 
 # jieba.NET dictionary files (auto-copied from NuGet cache)
 Resources/
+/.codex-out

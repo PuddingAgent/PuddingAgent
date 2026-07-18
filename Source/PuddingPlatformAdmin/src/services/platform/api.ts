@@ -1533,11 +1533,30 @@ export interface WorkspaceAgentDto {
   systemPromptOverride?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
-  heartbeatPrompt?: string;
+    heartbeatPrompt?: string;
   isEnabled: boolean;
   isFrozen: boolean;
   createdAt: string;
   updatedAt: string;
+  // 嵌入的模板配置
+  systemPrompt?: string;
+  role?: string;
+  memorySearchMode?: string;
+  maxContextTokens?: number;
+  maxRounds?: number;
+  maxElapsedSeconds?: number;
+  allowFileWrite?: boolean;
+  allowShellExecution?: boolean;
+  allowNetworkAccess?: boolean;
+  selectedCapabilityIds?: string[];
+  skillPackageIds?: string[];
+  allowedToolNames?: string[];
+  // Markdown 文件内容
+  soulMdContent?: string;
+  agentsMdContent?: string;
+  toolsMdContent?: string;
+  bootstrapMdContent?: string;
+  memoryMdContent?: string;
 }
 
 export interface CreateWorkspaceAgentRequest {
@@ -1561,12 +1580,35 @@ export interface UpdateWorkspaceAgentRequest {
   sourceTemplateId?: string;
   heartbeatPrompt?: string;
   isEnabled: boolean;
+  // Agent 自身配置
+  systemPrompt?: string;
+  memorySearchMode?: string;
+  maxContextTokens?: number;
+  maxRounds?: number;
+  maxElapsedSeconds?: number;
+  allowFileWrite?: boolean;
+  allowShellExecution?: boolean;
+  allowNetworkAccess?: boolean;
+  selectedCapabilityIds?: string[];
+  skillPackageIds?: string[];
+  allowedToolNames?: string[];
+  soulMdContent?: string;
+  agentsMdContent?: string;
+  toolsMdContent?: string;
+  bootstrapMdContent?: string;
+  memoryMdContent?: string;
 }
 
 // ─── WorkspaceAgent API ───────────────────────────────────────
 
 export async function listWorkspaceAgents(workspaceId: string): Promise<WorkspaceAgentDto[]> {
   return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents`, { method: 'GET' });
+}
+
+export async function getWorkspaceAgent(
+  workspaceId: string, agentId: string,
+): Promise<WorkspaceAgentDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}`, { method: 'GET' });
 }
 
 export async function createWorkspaceAgent(
@@ -1812,6 +1854,9 @@ export interface ConversationBootstrapResponse {
     userMessageId: string;
     assistantMessageId: string;
     createdAt: number;
+    terminalSequence?: number | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
   }>;
   messages: Array<{
     id: number;
@@ -1819,6 +1864,7 @@ export interface ConversationBootstrapResponse {
     content: string;
     createdAt: number;
   }>;
+  lifecycleEvents: unknown[];
   snapshotCursor: number;
   hasMoreHistory: boolean;
   historyCursor: string | null;
@@ -1881,10 +1927,17 @@ export function projectConversationEventEnvelope(
     !Array.isArray(data.payload)
       ? (data.payload as Record<string, unknown>)
       : {};
+  const normalizedType = normalizeConversationEventType(rawType);
+  const terminalMessage =
+    normalizedType === 'error' &&
+    typeof payload.errorMessage === 'string'
+      ? payload.errorMessage
+      : undefined;
   return {
     ...data,
     ...payload,
-    type: normalizeConversationEventType(rawType) as AdminChatStreamEvent['type'],
+    type: normalizedType as AdminChatStreamEvent['type'],
+    ...(terminalMessage ? { message: terminalMessage } : {}),
     ...(sequenceNum !== undefined ? { sequenceNum } : {}),
   } as AdminChatStreamEvent;
 }
@@ -2184,6 +2237,7 @@ export interface CompactSessionRequest {
   agentId?: string;
   level?: ContextCompactionLevel;
   reason?: string;
+  compactionId?: string;
 }
 
 export interface ContextCompactionResult {
@@ -2195,12 +2249,35 @@ export interface ContextCompactionResult {
   afterTokens: number;
   compactedMessageCount: number;
   summaryPreview: string;
+  summaryMarkdown?: string;
+  diagnostics?: ContextCompactionDiagnostics;
+}
+
+export interface ContextCompactionDiagnostics {
+  compactionId: string;
+  previousSessionId: string;
+  newSessionId?: string | null;
+  newSessionTitle?: string | null;
+  previousLastMessageId?: string | null;
+  previousLastMessageSequence?: number | null;
+  activeMessageCountBefore: number;
+  compactedMessageCount: number;
+  keptRecentMessageCount: number;
+  beforeTokens: number;
+  afterTokens: number;
+  summaryMessageId: string;
+  summaryCharacterCount: number;
+  summaryEstimatedTokens: number;
+  summaryGenerator?: string;
+  completedAtUtc: string;
+  durationMs: number;
 }
 
 /// 压缩会话的完整响应，包含压缩结果和可选的新会话。
 export interface CompactSessionResponse {
+  compactionId: string;
   compaction: ContextCompactionResult;
-  newSessionId: string | null;
+  newSessionId: string;
   newSessionTitle: string | null;
 }
 
@@ -2285,9 +2362,9 @@ export type AdminChatStreamEvent =
   | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
   | { type: 'usage'; usage: TokenUsageDto }
   | { type: 'context.health'; state?: ContextHealthState; usedTokens?: number; effectiveWindowTokens?: number; usageRatio?: number; [key: string]: unknown }
-  | { type: 'context.compaction.started'; sessionId?: string; mode?: ContextCompactionMode; level?: ContextCompactionLevel; reason?: string; [key: string]: unknown }
-  | { type: 'context.compaction.completed'; sessionId?: string; compactedMessageCount?: number; beforeTokens?: number; afterTokens?: number; summaryMessageId?: string; [key: string]: unknown }
-  | { type: 'context.compaction.failed'; sessionId?: string; error?: string; [key: string]: unknown }
+  | { type: 'context.compaction.started'; compactionId?: string; sessionId?: string; mode?: ContextCompactionMode; level?: ContextCompactionLevel; reason?: string; [key: string]: unknown }
+  | { type: 'context.compaction.completed'; compactionId?: string; sessionId?: string; sourceSessionId?: string; newSessionId?: string; newSessionTitle?: string; compaction?: ContextCompactionResult; [key: string]: unknown }
+  | { type: 'context.compaction.failed'; compactionId?: string; sessionId?: string; error?: string; errorType?: string; [key: string]: unknown }
   | { type: 'done'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string }
   | { type: 'error'; message: string }
   | { type: 'cancelled'; message?: string }

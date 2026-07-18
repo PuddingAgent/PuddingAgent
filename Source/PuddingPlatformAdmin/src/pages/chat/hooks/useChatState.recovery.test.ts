@@ -31,6 +31,7 @@ import {
   shouldAdvanceSequenceForSessionEvent,
   isChatStreamErrorEvent,
   looksLikePersistedErrorDiagnostic,
+  mergeHistoryWithLifecycleTurns,
   shouldHydrateSessionEventReplay,
   shouldReplayEventsAfterHistory,
   shouldResetSequenceForSessionChange,
@@ -870,6 +871,29 @@ describe('chat stream error diagnostics', () => {
 });
 
 describe('compact result messages', () => {
+  it('preserves a persisted compaction lifecycle turn during history reconciliation', () => {
+    const historyTurn = turn('successor reply');
+    const lifecycleTurn: ChatTurn = {
+      ...turn('上下文压缩完成'),
+      turnId: 'compaction:compact-uuid-1',
+      userMessage: {
+        ...turn('').userMessage,
+        id: 'compact-user',
+        text: '',
+      },
+    };
+
+    const merged = mergeHistoryWithLifecycleTurns(
+      [historyTurn],
+      [lifecycleTurn, historyTurn],
+    );
+
+    expect(merged.map((item) => item.turnId)).toEqual([
+      'compaction:compact-uuid-1',
+      historyTurn.turnId,
+    ]);
+  });
+
   it('describes zero-compaction results as current session summary generation', () => {
     const text = formatCompactSuccessMessage({
       beforeTokens: 12,

@@ -289,7 +289,7 @@ public sealed class MessageDeliveryDispatcherTests
         services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(
             [Agent("agent-b", mainSessionId: "agent-b-main-session")]));
         services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
-        services.AddSingleton<ChatTranscriptWriter>();
+        services.AddSingleton<IChatTranscriptWriter, ChatTranscriptWriter>();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
 
@@ -477,7 +477,7 @@ public sealed class MessageDeliveryDispatcherTests
         services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(
             [Agent("agent-b", mainSessionId: "agent-b-main-session")]));
         services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
-        services.AddSingleton<ChatTranscriptWriter>();
+        services.AddSingleton<IChatTranscriptWriter, ChatTranscriptWriter>();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
 

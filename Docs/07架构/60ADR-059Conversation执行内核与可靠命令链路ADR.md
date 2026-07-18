@@ -63,7 +63,8 @@ X-Workspace-Id: {workspaceId}
 
 命令载荷不得包含 `llmConfig`、Provider、Profile、Model、Tool、Skill、密钥、
 SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
-`IAgentRuntimeProfileResolver` 组装 Agent、模板、LLM Provider、Tool 与 Skill；
+`IAgentRuntimeProfileResolver` 从自包含 Agent 实例定义组装身份、LLM Provider、
+Tool 与 Skill；运行时不得再次读取来源模板；
 `IAgentExecutionSnapshotFactory` 只消费已经解析的 Profile 并冻结不可变快照，
 不得再次读取配置文件、数据库或 Skill 存储。
 
@@ -79,7 +80,7 @@ SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
 | 输出事件与 Turn/Run/Command 终态 | `IExecutionJournal` | 不直接提交终态 |
 | Cancel/Control + 对应事件 | `IExecutionControlService` | Inbox 只读/确认 |
 | Command 稳定执行引用 | `IExecutionCommandReader` | 不提供写方法 |
-| Agent/Template/LLM/Tool/Skill 配置解析 | `IAgentRuntimeProfileResolver` | Controller、Worker、Runtime 不自行读取 |
+| Agent Instance/LLM/Tool/Skill 配置解析 | `IAgentRuntimeProfileResolver` | Controller、Worker、Runtime 不自行读取；来源模板只在创建实例时读取 |
 | 不含秘密的执行快照 | `IAgentExecutionSnapshotFactory` | 只消费已解析 Profile |
 
 `IChatCommandStore` 已删除。它原有的保存、领取、续租和终态方法均与上述
@@ -112,6 +113,11 @@ SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
 
 ### 3.5 LLM 路由身份
 
+- `data/agents/{agentId}/config/llm.json` 是 Agent 执行期 LLM Binding 的唯一真相源。
+- `manifest.json` 中用于管理界面展示的 Provider/Model 字段必须由同一写入服务同步维护，
+  但 Resolver 不得以它们替代缺失的 `config/llm.json`。
+- `llm.providers.json` 只负责根据 Binding 补齐 Provider 凭证、Endpoint 和模型配置；
+  Binding 缺失时产生 `agent_configuration_invalid`，不得回退系统默认模型。
 - `ProviderId`、`ProfileId`、`ModelId` 是三个独立字段，从 Agent Profile 一直传递到
   `LlmInvocationService`。
 - Runtime 不得从 `Endpoint`、`KeyVaultId`、`ApiKey` 或 `ModelId` 猜测
@@ -140,6 +146,12 @@ SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
 - `202` 返回的服务端 Turn ID 是持久身份；前端必须在重启 SSE 前原子迁移乐观
   Turn ID、Turn 状态及所有以 Turn ID 为键的缓冲，不能只更新
   `messageId -> turnId` 映射。
+- `turn.accepted` 也是服务端身份确认事实。它可能先于 POST Promise continuation
+  到达，前端必须使用 `userMessageId/clientRequestId` 提前完成同一身份迁移。
+- Acceptance 使用用户消息 ID，输出和终态使用助手消息 ID；前端清理活动状态时必须
+  按 `turnId` 清理全部关联 messageId，不能假设二者相等。
+- 事件游标只能在事件成功归并到前端状态后推进。`unmapped/staleTarget` 事件必须缓存
+  或由 gap recovery 重放，禁止先推进 cursor 再丢弃事件。
 - `202` 只表示受理；完成、失败、取消均以持久 SSE 终态为准。
 - 断线补读使用 `/api/sessions/{conversationId}/events?from={exclusiveCursor}` 读取
   `conversation_events`；不能调用旧 SessionStateManager `/replay` 读取另一套事实源。
@@ -150,6 +162,10 @@ SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
 - Acceptance 为每个 Command 分配的 assistant `messageId` 必须贯穿
   `turn.started`、输出事件、终态事件和 ChatMessages 投影；Projector 不得重新生成
   一套无法关联的消息身份。
+- Chat 查询投影不得回读 `session_event_log` 或按回答文本猜测关联。历史过程必须通过
+  `ChatMessages.message_id = conversation_events.message_id` 关联，并使用产生
+  `turn.completed` 的 `run_id` 隔离重试；活动输出、联系人状态和 `knownCursor`
+  必须使用同一 canonical Conversation sequence。
 - 投影调度由独立 `ConversationProjectionWorker` 根据持久化
   `conversation_heads > projection_checkpoint` 发现工作。不得把 Projector
   fire-and-forget 绑定到某一个 Event Store 写方法，因为 Acceptance、Journal 和
@@ -157,8 +173,44 @@ SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
 - SSE 是低延迟视图，ChatMessages 是异步物化视图。历史对账必须单调：较旧物化快照
   不得清空或替换已由持久终态事件确认的前端回答；等物化追平后再用相同
   `messageId/turnId/commandId` 收敛。
+- Bootstrap 的 `snapshotCursor` 只能覆盖响应中已经物化的状态，因此快照必须包含近期
+  active/completed/failed/cancelled Turn 及终态错误；不能只返回 active Turn 后跳过
+  cursor 之前的 `turn.failed`。
 
-### 3.8 Composition Root 与健康检查
+### 3.8 Manual Compaction 与后继 Conversation
+
+- `/compact` 的 HTTP 载荷只包含
+  `conversationId/workspaceId/agentId/level/reason/compactionId`，不得包含
+  `llmConfig`、Provider、Model、Tool 或 Skill。
+- `IRequestCompactionHandler` 是手动压缩唯一应用入口。Controller 只做认证、
+  参数映射和 HTTP 错误映射，不得直接解析 Agent Profile、调用压缩服务、创建
+  Session 或写生命周期事件。
+- Handler 通过 `IAgentRuntimeProfileResolver` 获得完整不可变 Profile，并把
+  LLM/Tool/Skill 参数传给 `IContextCompactionService`。配置缺失产生
+  `agent_configuration_invalid`，不得回退默认 LLM。
+- `ICompactionSessionSuccessor` 是后继会话唯一写入边界，按顺序完成：
+  创建后继 Session、通过 Controller `ISessionRepository.RebindMainAsync` 转移
+  canonical Main 所有权、持久化 Agent `mainSessionId` 镜像、注册旧 Session 到
+  新 Session 的进程内重定向。任何一步失败都必须形成
+  `context.compaction.failed`，不能返回伪成功。
+- Controller SessionRepository 是 Main Session 归属的事实源。Agent manifest
+  只是文件运行时镜像，`SessionRedirectStore` 只是进程内加速；重启后
+  `EnsureMainSession` 必须直接返回已 rebind 的后继 Session，不能依赖 redirect
+  恢复正确性。
+- `context.compaction.started/completed/failed` 写入 canonical
+  `conversation_events`。完成时，旧 Conversation 保存终态，新 Conversation
+  保存“由压缩创建”的来源事实，以便浏览器切换或重连后恢复状态。
+- 压缩事件不是 Agent Turn，Envelope 不包含 `turnId/messageId`。前端必须以
+  `compactionId` 维护独立状态 Turn，禁止把事件映射到最近的 Agent 回复。
+- 切换后继 Conversation 时必须把 SSE cursor 清零；sequence 只在单个
+  Conversation 内有意义，不能从旧 Conversation 携带到新 Conversation。
+- Bootstrap 必须返回 `snapshotCursor` 覆盖范围内的近期
+  `context.compaction.*` 生命周期事件。前端先把它们投影为确定性
+  `compaction:{compactionId}` 状态 Turn，再推进 cursor；前端以独立 lifecycle
+  索引保存这些状态，并在 Hook 输出边界与 ChatMessages 投影统一合并。任何历史
+  对账、主会话投影接管或乐观 Turn 确认都不能隐藏生命周期 Turn。
+
+### 3.9 Composition Root 与健康检查
 
 - 所有环境启用 `ValidateScopes` 和 `ValidateOnBuild`。
 - `PlatformDbContext` 由 singleton `IDbContextFactory` 创建，singleton 服务
@@ -190,6 +242,19 @@ SSE Channel 或 Trace 配置。Worker 领取命令后，只调用
     已显示回答消失。
 13. 无论事件由 Acceptance、Journal、Control 或 EventStore 写入，Projection Worker
     都能仅依据持久 head/checkpoint 在重启后追平 ChatMessages。
+14. Agent 缺少 `config/llm.json.conscious` 时产生可诊断的
+    `agent_configuration_invalid`，不得发起 LLM 请求或回退系统默认配置。
+15. 快速 `turn.failed` 先于 POST continuation 到达时，前端仍能映射到同一 Turn，
+    结束 loading 并显示错误；刷新页面后 Bootstrap 仍保留该失败终态。
+16. `/compact` 成功时，旧 Conversation 包含 started/completed，后继
+    Conversation 包含 completed 来源事实，且两端 `compactionId` 相同。
+17. `/compact` 失败时存在持久 `context.compaction.failed`；创建后继 Session、
+    更新 Agent 主会话或重定向失败不得返回 200。
+18. 前端切换新 Conversation 后仍显示压缩成功状态，并从 sequence 0 订阅后继
+    Conversation；压缩事件不得改变普通 Agent Turn；刷新页面或完成下一轮消息
+    对账后，压缩成功状态仍可由 Bootstrap 恢复。
+19. 进程重启后 `EnsureMainSession(agentId)` 仍返回压缩产生的后继 Session；
+    旧 Session 已降为 Task，Agent manifest 不会被旧 Main 反向覆盖。
 
 ## 5. 后续工作
 

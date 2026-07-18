@@ -124,6 +124,18 @@ public sealed class PlatformApiClient
         return await resp.Content.ReadFromJsonAsync<SessionRecord>(ct);
     }
 
+    public async Task<SessionRecord?> RebindMainSessionAsync(
+        RebindMainSessionRequest request,
+        CancellationToken ct = default)
+    {
+        var resp = await _http.PostAsJsonAsync(
+            "/api/session/main/rebind",
+            request,
+            ct);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<SessionRecord>(ct);
+    }
+
     public async Task DeleteSessionAsync(string sessionId, CancellationToken ct = default)
     {
         await _http.DeleteAsync($"/api/session/{Uri.EscapeDataString(sessionId)}", ct);
@@ -555,4 +567,12 @@ public sealed record EnsureMainSessionRequest
     public required string PrincipalId { get; init; }
     public required string AgentTemplateId { get; init; }
     public string? Title { get; init; }
+}
+
+public sealed record RebindMainSessionRequest
+{
+    public required string WorkspaceId { get; init; }
+    public required string PrincipalKind { get; init; }
+    public required string PrincipalId { get; init; }
+    public required string SuccessorSessionId { get; init; }
 }

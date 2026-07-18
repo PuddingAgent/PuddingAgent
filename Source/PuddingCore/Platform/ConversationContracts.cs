@@ -65,6 +65,7 @@ public enum TurnTerminalKind
 
 public static class TerminalErrorCodes
 {
+    public const string AgentConfigurationInvalid = "agent_configuration_invalid";
     public const string RuntimeStartRejected = "runtime_start_rejected";
     public const string RuntimeExecutionFailed = "runtime_execution_failed";
     public const string ToolExecutionFailed = "tool_execution_failed";
@@ -103,6 +104,10 @@ public static class ConversationEventTypes
     public const string UsageRecorded = "usage.recorded";
     public const string RunLeaseLost = "run.lease_lost";
     public const string ErrorRecorded = "error.recorded";
+
+    public const string ContextCompactionStarted = "context.compaction.started";
+    public const string ContextCompactionCompleted = "context.compaction.completed";
+    public const string ContextCompactionFailed = "context.compaction.failed";
 
     public const string ConversationArchived = "conversation.archived";
 }

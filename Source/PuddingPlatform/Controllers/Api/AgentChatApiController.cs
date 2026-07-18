@@ -25,7 +25,7 @@ public sealed class AgentChatApiController(IAgentRunProjectionService projection
     public async Task<ActionResult<AgentConversationView>> GetConversation(
         string workspaceId,
         string agentId,
-        [FromQuery] int? knownCursor,
+        [FromQuery] long? knownCursor,
         [FromServices] IAgentConversationProjectionService conversation,
         CancellationToken ct)
     {

@@ -6,10 +6,13 @@ using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services.AgentChat;
 
-/// <summary>Builds Agent status projections from the existing session read model.</summary>
+/// <summary>Builds Agent contact-list status from the canonical Conversation Event Store.</summary>
 public interface IAgentRunProjectionService
 {
-    Task<IReadOnlyList<AgentStatusProjection>> GetWorkspaceAgentStatusesAsync(string workspaceId, string ownerUserId, CancellationToken ct);
+    Task<IReadOnlyList<AgentStatusProjection>> GetWorkspaceAgentStatusesAsync(
+        string workspaceId,
+        string ownerUserId,
+        CancellationToken ct);
 }
 
 /// <summary>Default Agent status projection service for the single-user admin chat client.</summary>
@@ -21,25 +24,26 @@ public sealed class AgentRunProjectionService(
 {
     private const string DefaultOwnerUserId = "single-user";
     private static readonly TimeSpan ActiveRunStaleAfter = TimeSpan.FromMinutes(5);
-    private static readonly string[] StatusEventTypes =
+    private static readonly string[] LifecycleEventTypes =
     [
-        "delta",
-        "thinking",
-        "tool_call",
-        "tool_result",
-        "subagent.spawned",
-        "subagent.delta",
-        "subagent.thinking",
-        "subagent.tool_call",
-        "subagent.tool_result",
-        "subagent.completed",
-        "done",
-        "error",
-        "cancelled",
-        "session.closed",
+        ConversationEventTypes.TurnStarted,
+        ConversationEventTypes.MessageStarted,
+        ConversationEventTypes.MessageContentAppended,
+        ConversationEventTypes.MessageThinkingSummaryAppended,
+        ConversationEventTypes.ToolCallRequested,
+        ConversationEventTypes.ToolCallCompleted,
+        ConversationEventTypes.ToolCallFailed,
+        ConversationEventTypes.TurnCompleted,
+        ConversationEventTypes.TurnFailed,
+        ConversationEventTypes.TurnCancelled,
+        ConversationEventTypes.RunLeaseLost,
+        ConversationEventTypes.ErrorRecorded,
     ];
 
-    public async Task<IReadOnlyList<AgentStatusProjection>> GetWorkspaceAgentStatusesAsync(string workspaceId, string ownerUserId, CancellationToken ct)
+    public async Task<IReadOnlyList<AgentStatusProjection>> GetWorkspaceAgentStatusesAsync(
+        string workspaceId,
+        string ownerUserId,
+        CancellationToken ct)
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
@@ -57,42 +61,53 @@ public sealed class AgentRunProjectionService(
                 ct)));
         }
 
-        var sessionIds = projectedSessions
+        var conversationIds = projectedSessions
             .Select(item => item.Session?.SessionId)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
             .Cast<string>()
             .ToList();
-        var latestEvents = sessionIds.Count == 0
-            ? new Dictionary<string, SessionEventLogEntity>(StringComparer.Ordinal)
-            : await db.SessionEventLogs
+
+        var latestEvents = conversationIds.Count == 0
+            ? new Dictionary<string, ConversationEventEntity>(StringComparer.Ordinal)
+            : await db.ConversationEvents
                 .AsNoTracking()
-                .Where(e => sessionIds.Contains(e.SessionId))
-                .Where(e => StatusEventTypes.Contains(e.EventType))
-                .GroupBy(e => e.SessionId)
-                .Select(g => g.OrderByDescending(e => e.SequenceNum).First())
-                .ToDictionaryAsync(e => e.SessionId, StringComparer.Ordinal, ct);
+                .Where(e => conversationIds.Contains(e.ConversationId))
+                .GroupBy(e => e.ConversationId)
+                .Select(g => g.OrderByDescending(e => e.Sequence).First())
+                .ToDictionaryAsync(e => e.ConversationId, StringComparer.Ordinal, ct);
+        var latestLifecycleEvents = conversationIds.Count == 0
+            ? new Dictionary<string, ConversationEventEntity>(StringComparer.Ordinal)
+            : await db.ConversationEvents
+                .AsNoTracking()
+                .Where(e => conversationIds.Contains(e.ConversationId))
+                .Where(e => LifecycleEventTypes.Contains(e.Type))
+                .GroupBy(e => e.ConversationId)
+                .Select(g => g.OrderByDescending(e => e.Sequence).First())
+                .ToDictionaryAsync(e => e.ConversationId, StringComparer.Ordinal, ct);
 
         return projectedSessions
             .Select(item =>
             {
                 var session = item.Session;
-                latestEvents.TryGetValue(session?.SessionId ?? "", out var latestEvent);
-                var status = session is null ? "idle" : MapStatus(session.Status, latestEvent);
+                var conversationId = session?.SessionId ?? "";
+                latestEvents.TryGetValue(conversationId, out var latestEvent);
+                latestLifecycleEvents.TryGetValue(conversationId, out var latestLifecycleEvent);
+                var status = session is null ? "idle" : MapStatus(session.Status, latestLifecycleEvent);
 
                 return new AgentStatusProjection(
                     workspaceId,
                     ownerUserId,
                     item.Agent.AgentId,
-                    session?.SessionId ?? "",
+                    conversationId,
                     status,
-                    status is "running" && latestEvent is not null
-                        ? latestEvent.ExecutionId ?? $"{session!.SessionId}:{latestEvent.SequenceNum}"
-                        : null,
+                    status == "running" ? latestLifecycleEvent?.RunId : null,
                     session?.Title ?? item.Agent.DisplayName ?? item.Agent.Name ?? "",
                     0,
-                    latestEvent?.SequenceNum ?? 0,
-                    latestEvent is null ? session?.LastActiveAt ?? item.Agent.UpdatedAt : ParseRecordedAt(latestEvent.RecordedAt));
+                    latestEvent?.Sequence ?? 0,
+                    latestEvent is null
+                        ? session?.LastActiveAt ?? item.Agent.UpdatedAt
+                        : ParseOccurredAt(latestEvent.OccurredAt));
             })
             .ToList();
     }
@@ -137,43 +152,41 @@ public sealed class AgentRunProjectionService(
             .FirstOrDefault();
     }
 
-    private static string MapStatus(SessionStatus status, SessionEventLogEntity? latestEvent)
+    private static string MapStatus(
+        SessionStatus sessionStatus,
+        ConversationEventEntity? latestLifecycleEvent)
     {
-        if (status == SessionStatus.Failed)
+        if (sessionStatus == SessionStatus.Failed)
             return "failed";
-        if (status == SessionStatus.Frozen)
+        if (sessionStatus == SessionStatus.Frozen)
             return "offline";
-        if (latestEvent is null)
+        if (latestLifecycleEvent is null)
             return "idle";
-        if (latestEvent.EventType == "error")
+
+        if (latestLifecycleEvent.Type is
+            ConversationEventTypes.TurnFailed or
+            ConversationEventTypes.RunLeaseLost or
+            ConversationEventTypes.ErrorRecorded)
+        {
             return "failed";
+        }
 
-        if (IsStaleRunningEvent(latestEvent))
+        if (IsTerminalEvent(latestLifecycleEvent.Type))
+            return "idle";
+        if (DateTimeOffset.UtcNow - ParseOccurredAt(latestLifecycleEvent.OccurredAt) > ActiveRunStaleAfter)
             return "idle";
 
-        return IsRunningEvent(latestEvent.EventType) ? "running" : "idle";
+        return "running";
     }
-
-    private static bool IsStaleRunningEvent(SessionEventLogEntity latestEvent)
-    {
-        if (!IsRunningEvent(latestEvent.EventType))
-            return false;
-
-        return DateTimeOffset.UtcNow - ParseRecordedAt(latestEvent.RecordedAt) > ActiveRunStaleAfter;
-    }
-
-    private static bool IsRunningEvent(string eventType)
-        => !IsTerminalEvent(eventType);
 
     private static bool IsTerminalEvent(string eventType)
-        => eventType switch
-        {
-            "done" or "error" or "cancelled" or "session.closed" or
-            "context.compaction.completed" or "context.compaction.failed" => true,
-            _ => false,
-        };
+        => eventType is
+            ConversationEventTypes.TurnCompleted or
+            ConversationEventTypes.TurnFailed or
+            ConversationEventTypes.TurnCancelled or
+            ConversationEventTypes.RunLeaseLost;
 
-    private static DateTimeOffset ParseRecordedAt(string value)
+    private static DateTimeOffset ParseOccurredAt(string value)
         => DateTimeOffset.TryParse(value, out var parsed)
             ? parsed
             : DateTimeOffset.UtcNow;

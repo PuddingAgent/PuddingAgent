@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingCode.SubAgents;
 
@@ -19,43 +19,44 @@ public sealed class AgentProfileProvider
         _paths = paths;
     }
 
+    /// <summary>
+    /// 加载 Agent 实例完整 profile。模板配置已嵌入实例 manifest，不再跨目录读取。
+    /// </summary>
     public async Task<AgentFileProfile> LoadAsync(string agentInstanceId, CancellationToken ct = default)
     {
-        var instancePath = Path.Combine(_paths.AgentInstanceRoot(agentInstanceId), "manifest.json");
+        var instanceRoot = _paths.AgentInstanceRoot(agentInstanceId);
+        var instancePath = Path.Combine(instanceRoot, "manifest.json");
         var instance = await ReadRequiredJsonAsync<AgentInstanceManifest>(instancePath, ct);
         if (string.IsNullOrWhiteSpace(instance.AgentInstanceId))
             instance = instance with { AgentInstanceId = agentInstanceId };
 
-        if (string.IsNullOrWhiteSpace(instance.TemplateId))
-            throw new InvalidOperationException($"Agent instance '{agentInstanceId}' has empty templateId.");
+        // 模板配置已嵌入实例 manifest，从实例字段构建（不再跨目录读模板文件）
+        var template = BuildTemplateFromInstance(instance);
 
-        var templateRoot = _paths.AgentTemplateRoot(instance.TemplateId);
-        var templatePath = Path.Combine(templateRoot, "manifest.json");
-        var template = await ReadRequiredJsonAsync<AgentTemplateManifest>(templatePath, ct);
-
+        // LLM 配置（实例级覆盖）
         var llmPath = _paths.AgentInstanceConfigFile(agentInstanceId, "llm.json");
         var llmConfig = File.Exists(llmPath)
             ? await ReadRequiredJsonAsync<AgentInstanceLlmConfig>(llmPath, ct)
             : new AgentInstanceLlmConfig();
 
-        // 加载权限配置 — 如果模板目录存在 permissions.json 则加载，否则返回默认权限（禁止写 config/databases）
-        var permissions = await LoadPermissionsOrDefaultAsync(templateRoot, ct);
+        // 权限配置（从实例目录加载）
+        var permissions = await LoadPermissionsOrDefaultAsync(instanceRoot, ct);
 
         var sourcePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["instance.manifest"] = instancePath,
-            ["template.manifest"] = templatePath,
         };
         if (File.Exists(llmPath))
             sourcePaths["instance.config.llm"] = llmPath;
 
+        // Markdown 从实例目录下的文件读取（通过 manifest 中的文件名引用）
         var markdown = new AgentProfileMarkdown
         {
-            Soul = ReadMarkdown(templateRoot, "SOUL.md", sourcePaths, "template.SOUL.md"),
-            Agents = ReadMarkdown(templateRoot, "AGENTS.md", sourcePaths, "template.AGENTS.md"),
-            Tools = ReadMarkdown(templateRoot, "TOOLS.md", sourcePaths, "template.TOOLS.md"),
-            Bootstrap = ReadMarkdown(templateRoot, "BOOTSTRAP.md", sourcePaths, "template.BOOTSTRAP.md"),
-            Memory = ReadMarkdown(templateRoot, "MEMORY.md", sourcePaths, "template.MEMORY.md"),
+            Soul = ReadMarkdownFile(instanceRoot, instance.SoulMdFile, sourcePaths, "instance.SOUL.md"),
+            Agents = ReadMarkdownFile(instanceRoot, instance.AgentsMdFile, sourcePaths, "instance.AGENTS.md"),
+            Tools = ReadMarkdownFile(instanceRoot, instance.ToolsMdFile, sourcePaths, "instance.TOOLS.md"),
+            Bootstrap = ReadMarkdownFile(instanceRoot, instance.BootstrapMdFile, sourcePaths, "instance.BOOTSTRAP.md"),
+            Memory = ReadMarkdownFile(instanceRoot, instance.MemoryMdFile, sourcePaths, "instance.MEMORY.md"),
         };
 
         return new AgentFileProfile
@@ -70,11 +71,39 @@ public sealed class AgentProfileProvider
     }
 
     /// <summary>
-    /// 从模板目录加载 permissions.json；如果文件不存在，返回默认权限（禁止写 config/databases）。
+    /// 从 AgentInstanceManifest 构建 AgentTemplateManifest（向后兼容）。
+    /// 模板配置在创建时已嵌入实例 manifest，此方法提供 Template 视图供现有消费方使用。
     /// </summary>
-    internal async Task<SubAgentPermissions> LoadPermissionsOrDefaultAsync(string templateRoot, CancellationToken ct)
+    private static AgentTemplateManifest BuildTemplateFromInstance(AgentInstanceManifest instance)
+        => new()
+        {
+            TemplateId = instance.TemplateId,
+            Name = instance.DisplayName ?? instance.TemplateId,
+            Description = instance.Description,
+            Role = instance.Role ?? "Service",
+            SystemPrompt = instance.SystemPrompt,
+            MemorySearchMode = instance.MemorySearchMode ?? "deep",
+            ReasoningEffort = instance.ReasoningEffort,
+            MaxContextTokens = instance.MaxContextTokens,
+            MaxReplyTokens = instance.MaxReplyTokens,
+            MaxRounds = instance.MaxRounds,
+            MaxElapsedSeconds = instance.MaxElapsedSeconds,
+            MaxToolCallsTotal = instance.MaxToolCallsTotal,
+            PreferredProviderId = instance.PreferredProviderId,
+            PreferredModelId = instance.PreferredModelId,
+            MemoryLlmProviderId = instance.MemoryLlmProviderId,
+            MemoryLlmModelId = instance.MemoryLlmModelId,
+            Capabilities = instance.Capabilities,
+            SkillPackageIds = instance.SkillPackageIds,
+            IsEnabled = instance.IsEnabled,
+        };
+
+    /// <summary>
+    /// 从目录加载 permissions.json；如果文件不存在，返回默认权限。
+    /// </summary>
+    internal async Task<SubAgentPermissions> LoadPermissionsOrDefaultAsync(string directory, CancellationToken ct)
     {
-        var permissionsPath = Path.Combine(templateRoot, "permissions.json");
+        var permissionsPath = Path.Combine(directory, "permissions.json");
         if (!File.Exists(permissionsPath))
             return new SubAgentPermissions();
 
@@ -86,7 +115,6 @@ public sealed class AgentProfileProvider
         }
         catch
         {
-            // 权限文件损坏或格式错误时返回默认权限，不阻断 agent 加载
             return new SubAgentPermissions();
         }
     }
@@ -101,12 +129,18 @@ public sealed class AgentProfileProvider
         return value ?? throw new InvalidOperationException($"Agent profile file is empty or invalid: {path}");
     }
 
-    private static string? ReadMarkdown(
-        string directory,
-        string fileName,
+    /// <summary>
+    /// 读取实例目录下的 Markdown 文件。directory 或 fileName 为空时返回 null。
+    /// </summary>
+    private static string? ReadMarkdownFile(
+        string? directory,
+        string? fileName,
         IDictionary<string, string> sourcePaths,
         string sourceKey)
     {
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(fileName))
+            return null;
+
         var path = Path.Combine(directory, fileName);
         if (!File.Exists(path))
             return null;
@@ -114,6 +148,8 @@ public sealed class AgentProfileProvider
         sourcePaths[sourceKey] = path;
         return File.ReadAllText(path);
     }
+
+    // ── 向后兼容方法（模板目录读取，用于 AgentTemplateProvider 等场景）──
 
     /// <summary>
     /// 获取模板 manifest.json 的完整路径。

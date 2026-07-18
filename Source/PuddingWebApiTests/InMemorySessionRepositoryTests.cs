@@ -65,6 +65,58 @@ public sealed class InMemorySessionRepositoryTests
         }
     }
 
+    [TestMethod]
+    public async Task RebindMainAsync_ShouldPersistSuccessorAsOnlyMainAcrossRestart()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "pudding-session-repo-tests",
+            Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = PuddingDataPaths.FromRoot(root);
+            var repo = new InMemorySessionRepository(paths);
+            var previous = CreateSession("previous-main", "default");
+            var successor = CreateSession("successor-main", "default") with
+            {
+                SessionRole = SessionRole.Task,
+                PrincipalKind = null,
+                PrincipalId = null,
+                AgentInstanceId = null,
+                CreatedAt = previous.CreatedAt.AddMinutes(1),
+                LastActiveAt = previous.LastActiveAt.AddMinutes(1),
+            };
+            await repo.CreateAsync(previous);
+            await repo.CreateAsync(successor);
+
+            var rebound = await repo.RebindMainAsync(
+                "default",
+                "agent",
+                "agent-alpha",
+                successor.SessionId);
+
+            Assert.AreEqual(successor.SessionId, rebound.SessionId);
+            Assert.AreEqual(SessionRole.Main, rebound.SessionRole);
+            Assert.AreEqual("agent-alpha", rebound.AgentInstanceId);
+
+            var reloaded = new InMemorySessionRepository(paths);
+            var main = await reloaded.FindMainAsync(
+                "default",
+                "agent",
+                "agent-alpha");
+            var demoted = await reloaded.GetAsync(previous.SessionId);
+
+            Assert.IsNotNull(main);
+            Assert.AreEqual(successor.SessionId, main!.SessionId);
+            Assert.AreEqual(SessionRole.Task, demoted!.SessionRole);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static SessionRecord CreateSession(string sessionId, string workspaceId) => new()
     {
         SessionId = sessionId,

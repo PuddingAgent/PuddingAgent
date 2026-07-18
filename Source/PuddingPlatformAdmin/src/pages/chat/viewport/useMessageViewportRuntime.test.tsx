@@ -1,11 +1,13 @@
-import { renderHook, act } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import {
   getVirtualMessageContentFingerprint,
   useMessageViewportRuntime,
 } from './useMessageViewportRuntime';
 import type { VirtualMessageItem } from './types';
 
-const makeItem = (id: string, createdAt: number): VirtualMessageItem => ({
+type MessageItem = Extract<VirtualMessageItem, { kind: 'message' }>;
+
+const makeItem = (id: string, createdAt: number): MessageItem => ({
   kind: 'message',
   id,
   createdAt,
@@ -96,11 +98,17 @@ describe('useMessageViewportRuntime', () => {
         onRequestLoadBefore: jest.fn(),
       }),
     );
+    const node = document.createElement('div');
+    Object.defineProperty(node, 'scrollTop', { value: 0, writable: true });
+    Object.defineProperty(node, 'clientHeight', { value: 400 });
+    Object.defineProperty(node, 'scrollHeight', { value: 1200 });
+    result.current.parentRef.current = node;
 
     act(() => {
       result.current.scrollToBottom({ behavior: 'auto', reason: 'test' });
     });
 
+    expect(node.scrollTop).toBe(800);
     expect(result.current.state.atBottom).toBe(true);
     expect(result.current.state.showBottomButton).toBe(false);
   });
@@ -118,6 +126,26 @@ describe('useMessageViewportRuntime', () => {
 
     act(() => {
       result.current.setPinnedBottom(true);
+    });
+    expect(result.current.state.followMode).toBe('pinned');
+
+    const node = document.createElement('div');
+    Object.defineProperty(node, 'scrollTop', { value: 100, writable: true });
+    Object.defineProperty(node, 'clientHeight', { value: 400 });
+    Object.defineProperty(node, 'scrollHeight', { value: 1200 });
+    result.current.parentRef.current = node;
+
+    act(() => {
+      result.current.onScroll();
+    });
+    expect(result.current.state.followMode).toBe('pinned');
+
+    act(() => {
+      result.current.applyIntent({
+        type: 'user-send',
+        itemId: 'm2',
+        createdAt: 2,
+      });
     });
     expect(result.current.state.followMode).toBe('pinned');
 

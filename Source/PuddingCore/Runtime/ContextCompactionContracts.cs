@@ -173,7 +173,8 @@ public interface IContextCompactionSummaryGenerator
 
 /// <summary>
 /// 压缩事件的 SSE 推送接口。
-/// 由 PuddingPlatform 实现，通过 ISessionStateManager.AppendAsync 推送事件帧到前端。
+/// 由 PuddingPlatform 实现，将生命周期事实写入 Conversation Event Store；
+/// SSE 只负责从持久事件投递到前端。
 /// ContextWindowManager.TryAutoCompactAsync 调用此接口通知前端压缩开始/完成/失败。
 /// </summary>
 public interface ISessionCompactionEventEmitter

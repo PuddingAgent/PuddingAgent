@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -56,7 +56,7 @@ public sealed class AgentExecutionSnapshotFactory(
             SnapshotHash: snapshotHash,
             DisplayName: profile.DisplayName,
             AvatarUrl: profile.AvatarUrl,
-            SystemPrompt: null,
+            SystemPrompt: profile.SystemPrompt,
             PersonaJson: null,
             ProviderId: profile.PreferredProviderId,
             ProfileId: profile.ConsciousProfileId,

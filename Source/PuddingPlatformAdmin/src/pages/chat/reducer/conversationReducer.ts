@@ -37,9 +37,11 @@ export interface ConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   thinkingDelta: string;
-  status: 'placeholder' | 'streaming' | 'completed';
+  status: 'placeholder' | 'streaming' | 'completed' | 'failed' | 'cancelled';
   turnId: string;
   createdAt: number;
+  errorCode?: string;
+  errorMessage?: string;
   usage?: {
     promptTokens?: number;
     completionTokens?: number;
@@ -60,6 +62,8 @@ export interface ConversationEvent {
   delta?: string;
   reply?: string;
   message?: string;
+  errorCode?: string;
+  errorMessage?: string;
   usage?: {
     promptTokens?: number;
     completionTokens?: number;
@@ -312,8 +316,21 @@ function applyEvent(
       const newTurns = state.turns.map((t) =>
         t.turnId === turnId ? { ...t, status: 'failed' as const } : t,
       );
+      const turn = state.turns.find((t) => t.turnId === turnId);
+      const newMessages = new Map(state.messages);
+      if (turn) {
+        const assistant = newMessages.get(turn.assistantMessageId);
+        if (assistant) {
+          newMessages.set(turn.assistantMessageId, {
+            ...assistant,
+            status: 'failed',
+            errorCode: event.errorCode,
+            errorMessage: event.errorMessage ?? event.message ?? '请求失败',
+          });
+        }
+      }
 
-      return { ...state, turns: newTurns };
+      return { ...state, turns: newTurns, messages: newMessages };
     }
 
     case 'turn.cancelled': {
@@ -323,8 +340,20 @@ function applyEvent(
       const newTurns = state.turns.map((t) =>
         t.turnId === turnId ? { ...t, status: 'cancelled' as const } : t,
       );
+      const turn = state.turns.find((t) => t.turnId === turnId);
+      const newMessages = new Map(state.messages);
+      if (turn) {
+        const assistant = newMessages.get(turn.assistantMessageId);
+        if (assistant) {
+          newMessages.set(turn.assistantMessageId, {
+            ...assistant,
+            status: 'cancelled',
+            errorMessage: event.errorMessage ?? event.message,
+          });
+        }
+      }
 
-      return { ...state, turns: newTurns };
+      return { ...state, turns: newTurns, messages: newMessages };
     }
 
     case 'message.usage': {
