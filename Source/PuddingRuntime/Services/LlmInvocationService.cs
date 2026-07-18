@@ -28,10 +28,11 @@ public sealed class LlmInvocationService : ILlmInvocationService
 
     public async Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
     {
+        var messages = NormalizeMessages(request);
         _logger.LogDebug(
             "[LlmInvocation] Invoke session={SessionId} provider={ProviderId} profile={ProfileId} model={ModelId} msgCount={MsgCount} toolCount={ToolCount} prefix={PrefixHash}",
             request.SessionId, request.Profile.ProviderId, request.Profile.ProfileId, request.Profile.ModelId,
-            request.Messages.Count, request.Tools.Count, request.PrefixSnapshot?.PrefixHash ?? "(none)");
+            messages.Count, request.Tools.Count, request.PrefixSnapshot?.PrefixHash ?? "(none)");
 
         try
         {
@@ -59,7 +60,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 request.WorkspaceId,
                 request.SessionId,
                 request.AgentTemplateId,
-                request.Messages,
+                messages,
                 request.Tools.Count > 0 ? request.Tools : null,
                 resolved.Config,
                 ct);
@@ -91,10 +92,11 @@ public sealed class LlmInvocationService : ILlmInvocationService
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         ResolvedLlmInvocationProfile resolved;
+        var messages = NormalizeMessages(request);
         _logger.LogDebug(
             "[LlmInvocation] Stream session={SessionId} provider={ProviderId} profile={ProfileId} model={ModelId} msgCount={MsgCount} toolCount={ToolCount} prefix={PrefixHash}",
             request.SessionId, request.Profile.ProviderId, request.Profile.ProfileId, request.Profile.ModelId,
-            request.Messages.Count, request.Tools.Count, request.PrefixSnapshot?.PrefixHash ?? "(none)");
+            messages.Count, request.Tools.Count, request.PrefixSnapshot?.PrefixHash ?? "(none)");
 
         if (_profileResolver is not null)
         {
@@ -119,7 +121,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
             request.WorkspaceId,
             request.SessionId,
             request.AgentTemplateId,
-            request.Messages,
+            messages,
             request.Tools.Count > 0 ? request.Tools : null,
             resolved.Config,
             ct))
@@ -155,4 +157,20 @@ public sealed class LlmInvocationService : ILlmInvocationService
 
     private static string? FirstNonBlank(string? first, string? fallback)
         => string.IsNullOrWhiteSpace(first) ? fallback : first;
+
+    private IReadOnlyList<ChatMessage> NormalizeMessages(LlmInvocationRequest request)
+    {
+        var normalized = LlmMessageSequenceNormalizer.Normalize(request.Messages);
+        if (normalized.Changed)
+        {
+            _logger.LogWarning(
+                "[LlmInvocation] Repaired invalid tool-call history before provider invocation session={SessionId} incompleteToolRounds={IncompleteToolRounds} orphanToolMessages={OrphanToolMessages} downgradedAssistants={DowngradedAssistants}",
+                request.SessionId,
+                normalized.RepairedIncompleteToolRounds,
+                normalized.DroppedOrphanToolMessages,
+                normalized.DowngradedAssistantMessages);
+        }
+
+        return normalized.Messages;
+    }
 }

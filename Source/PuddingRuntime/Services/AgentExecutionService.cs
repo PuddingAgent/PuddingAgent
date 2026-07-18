@@ -83,6 +83,7 @@ public sealed class AgentExecutionService
     private readonly IIdleDetector? _idleDetector;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly SkillEnforcerService? _skillEnforcer;
+    private readonly ISessionExecutionGate _sessionExecutionGate;
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -101,6 +102,7 @@ public sealed class AgentExecutionService
         ContextPipeline contextPipeline,
         ContextWindowManager contextManager,
         ILogger<AgentExecutionService> logger,
+        ISessionExecutionGate sessionExecutionGate,
         IContextAssemblyService? contextAssemblyService = null,
         ILlmInvocationService? llmInvocationService = null,
         IKeyVaultService? keyVaultService = null,
@@ -146,6 +148,7 @@ public sealed class AgentExecutionService
         _contextPipeline     = contextPipeline;
         _contextAssemblyService = contextAssemblyService;
         _contextManager      = contextManager;
+        _sessionExecutionGate = sessionExecutionGate;
         _keyVaultService     = keyVaultService ?? NoOpKeyVaultService.Instance;
         _jsonlSessionWriter  = jsonlSessionWriter;
         _terminalManager     = terminalManager ?? NoOpTerminalProcessManager.Instance;
@@ -187,6 +190,11 @@ public sealed class AgentExecutionService
         RuntimeDispatchRequest request,
         CancellationToken external = default)
     {
+        await using var executionLease = await _sessionExecutionGate.EnterAsync(
+            request.SessionId,
+            executionSource: "agent_execute",
+            external);
+
         _logger.LogInformation(
             "[AgentExec] session={Session} template={Template} msgLen={Len} hasLlmConfig={HasCfg}",
             request.SessionId, request.AgentTemplateId,
@@ -684,11 +692,14 @@ public sealed class AgentExecutionService
                 // 优先走 function-call 闭环：Assistant(tool_calls) -> Tool(result) -> 下一轮
                 if (llmResp.ToolCalls is { Count: > 0 })
                 {
-                    history.Add(new ChatMessage(
-                        ChatRole.Assistant,
-                        rawText,
-                        ToolCalls: llmResp.ToolCalls,
-                        ReasoningContent: llmResp.ReasoningContent));
+                    var toolRoundMessages = new List<ChatMessage>
+                    {
+                        new(
+                            ChatRole.Assistant,
+                            rawText,
+                            ToolCalls: llmResp.ToolCalls,
+                            ReasoningContent: llmResp.ReasoningContent),
+                    };
 
                     noProgressCount = 0;
                     foreach (var call in llmResp.ToolCalls)
@@ -710,7 +721,7 @@ public sealed class AgentExecutionService
                         toolRepeatMap.TryGetValue(repeatKey, out var repeatCount);
                         if (repeatCount >= _guardrails.MaxSameToolRepeat)
                         {
-                            history.Add(new ChatMessage(ChatRole.Tool,
+                            toolRoundMessages.Add(new ChatMessage(ChatRole.Tool,
                                 $"Tool '{call.Name}' blocked: repeated identical arguments {repeatCount} times.",
                                 ToolCallId: call.Id));
                             continue;
@@ -948,7 +959,7 @@ public sealed class AgentExecutionService
                             ? skillResult.Error
                             : await _keyVaultService.StripAsync(skillResult.Error, ct);
 
-                        history.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id));
+                        toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id));
 
                         _journal.Record(request.SessionId, new TurnRecord
                         {
@@ -967,6 +978,11 @@ public sealed class AgentExecutionService
                     if (execState == AgentExecutionState.Failed)
                         break;
 
+                    // History is a provider protocol document. Publish the
+                    // assistant tool-call batch and all matching results as one
+                    // atomic unit so cancellation/guardrail failures cannot
+                    // expose a half-written round to the next execution.
+                    history.AddRange(toolRoundMessages);
                     continue;
                 }
 
@@ -1596,6 +1612,11 @@ public sealed class AgentExecutionService
         RuntimeDispatchRequest request,
         [EnumeratorCancellation] CancellationToken external = default)
     {
+        await using var executionLease = await _sessionExecutionGate.EnterAsync(
+            request.SessionId,
+            executionSource: "agent_execute_stream",
+            external);
+
         _logger.LogInformation(
             "[AgentExec] STREAM session={Session} template={Template} msgLen={Len} hasLlmConfig={HasCfg}",
             request.SessionId, request.AgentTemplateId,
@@ -2468,9 +2489,14 @@ public sealed class AgentExecutionService
                 var assistantContent = replyBuf.Length > 0
                     ? await StripWithDiagnosticsAsync(replyBuf.ToString(), "tool_round_assistant", ct)
                     : null;
-                history.Add(new ChatMessage(ChatRole.Assistant, assistantContent,
-                    ToolCalls: assistantToolCalls,
-                    ReasoningContent: reasoningBuf.Length > 0 ? reasoningBuf.ToString() : null));
+                var toolRoundMessages = new List<ChatMessage>
+                {
+                    new(
+                        ChatRole.Assistant,
+                        assistantContent,
+                        ToolCalls: assistantToolCalls,
+                        ReasoningContent: reasoningBuf.Length > 0 ? reasoningBuf.ToString() : null),
+                };
 
                 // 逐个工具调用：发送 tool_call → 执行 → 发送 tool_result
                 var stopAfterTool = false;
@@ -2608,7 +2634,7 @@ public sealed class AgentExecutionService
                             snapshot is null ? string.Empty : string.Join(Environment.NewLine, snapshot.Lines),
                             snapshot?.NextOffset ?? 0);
                         var safeTerminalPayload = await _keyVaultService.StripAsync(terminalPayload, ct);
-                        history.Add(new ChatMessage(ChatRole.Tool, safeTerminalPayload, ToolCallId: tc.Id));
+                        toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, safeTerminalPayload, ToolCallId: tc.Id));
                         _runtimeControl?.MarkSessionRunning(request.SessionId);
                         continue;
                     }
@@ -2621,7 +2647,7 @@ public sealed class AgentExecutionService
                             result.Error?.Contains("not allowed", StringComparison.OrdinalIgnoreCase) == true ||
                             result.Error?.Contains("rejected", StringComparison.OrdinalIgnoreCase) == true);
                     var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
-                    history.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id));
+                    toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id));
                     var controlSnapshot = _runtimeControl?.GetStatus(request.SessionId).Session;
                     if (controlSnapshot?.State == SessionState.Faulted)
                     {
@@ -2635,6 +2661,11 @@ public sealed class AgentExecutionService
                 }
                 if (stopAfterTool)
                     break;
+
+                // Commit the tool protocol round only after every advertised
+                // tool call has a matching result. Frames may already have been
+                // emitted, but incomplete provider history is never published.
+                history.AddRange(toolRoundMessages);
                 // 下一轮 LLM 调用，模型可根据工具结果继续生成
             }
 

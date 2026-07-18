@@ -7,6 +7,15 @@ public interface IMessageInbox
 {
     Task<IReadOnlyList<MessageInboxItem>> ListAsync(MessageInboxQuery query, CancellationToken ct = default);
 
+    /// <summary>
+    /// Lists distinct durable delivery targets that still have queued or retrying work.
+    /// The dispatcher uses this database-backed projection to recover work after a
+    /// process restart; in-memory wakeup subscriptions are only a latency optimization.
+    /// </summary>
+    Task<IReadOnlyList<MessageDeliveryTarget>> ListPendingTargetsAsync(
+        string targetKind,
+        CancellationToken ct = default);
+
     Task<MessageInboxItem?> ClaimNextAsync(MessageClaimRequest request, CancellationToken ct = default);
 
     /// <summary>

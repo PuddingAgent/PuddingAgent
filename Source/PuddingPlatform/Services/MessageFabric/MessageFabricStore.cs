@@ -115,6 +115,39 @@ public sealed class MessageFabricStore : IMessageInbox
         return await BuildInboxItemsAsync(limited, ct);
     }
 
+    public async Task<IReadOnlyList<MessageDeliveryTarget>> ListPendingTargetsAsync(
+        string targetKind,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetKind))
+            throw new ArgumentException("Target kind is required.", nameof(targetKind));
+
+        var targets = await _db.MessageDeliveries.AsNoTracking()
+            .Where(delivery => delivery.TargetKind == targetKind)
+            .Where(delivery =>
+                delivery.Status == MessageDeliveryStatuses.Queued
+                || delivery.Status == MessageDeliveryStatuses.Retrying)
+            .Select(delivery => new
+            {
+                delivery.WorkspaceId,
+                delivery.RoomId,
+                delivery.TargetKind,
+                delivery.TargetId,
+            })
+            .Distinct()
+            .ToListAsync(ct);
+
+        return targets
+            .Select(target => new MessageDeliveryTarget
+            {
+                WorkspaceId = target.WorkspaceId,
+                RoomId = target.RoomId,
+                TargetKind = target.TargetKind,
+                TargetId = target.TargetId,
+            })
+            .ToList();
+    }
+
     public async Task<MessageInboxItem?> ClaimNextAsync(
         MessageClaimRequest request,
         CancellationToken ct = default)

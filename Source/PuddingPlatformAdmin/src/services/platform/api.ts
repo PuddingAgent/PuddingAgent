@@ -2259,6 +2259,10 @@ export interface AgentMessageQueueItem {
   from: MessageAddressDto;
   target: MessageAddressDto;
   content: string;
+  audience?: string;
+  visibility?: string;
+  messageType?: string;
+  contentType?: string;
   status: 'queued' | 'delivering' | 'retrying' | 'delivered' | 'dead_letter' | 'failed' | 'cancelled' | 'expired' | string;
   priority: number;
   attemptCount: number;
@@ -2466,7 +2470,12 @@ export async function sendWorkspaceMessage(
 export async function getAgentMessageQueue(
   workspaceId: string,
   agentId: string,
-  params?: { roomId?: string; limit?: number; includeTerminal?: boolean },
+  params?: {
+    roomId?: string;
+    limit?: number;
+    includeTerminal?: boolean;
+    includeSystem?: boolean;
+  },
 ): Promise<AgentMessageQueueSnapshot> {
   return request(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/message-queue`,

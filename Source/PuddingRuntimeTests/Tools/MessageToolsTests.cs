@@ -207,6 +207,11 @@ public sealed class MessageToolsTests
             return Task.FromResult(items);
         }
 
+        public Task<IReadOnlyList<MessageDeliveryTarget>> ListPendingTargetsAsync(
+            string targetKind,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<MessageDeliveryTarget>>([]);
+
         public Task AckAsync(string deliveryId, CancellationToken ct = default)
         {
             Acked.Add(deliveryId);

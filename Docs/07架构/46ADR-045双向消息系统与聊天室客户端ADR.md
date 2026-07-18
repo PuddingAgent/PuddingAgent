@@ -7,6 +7,31 @@
 
 ---
 
+## 2026-07-18 实现边界修订
+
+`message.deliver` 的唯一自动消费方确定为 Runtime 内的 `MessageDeliveryDispatcher`，不再由通用 `AgentEventHandler` 执行。`MessageDelivery` 持久化状态是可靠性权威，内部事件只是低延迟唤醒信号。
+
+`MessageDeliveryDispatcher` 必须同时满足：
+
+- 以 Hosted Service 启动并订阅 `message.deliver` / `agent.availability.changed`。
+- 每轮恢复从 `IMessageInbox` 查询存在 `queued/retrying` 投递的 Agent 目标，不能只依赖进程内见过的目标。
+- 通过原子 claim 进入 Runtime，成功 ack，失败 retry/dead-letter，并周期恢复过期 lease。
+- `Busy` 只表示调度竞争，必须延后重试且不得触发业务失败死信阈值。
+- 入站执行确认与回复发送是两个投递事务；回复目标失效不得回滚已成功的入站 delivery，批量 claim 的每条记录必须一起完成状态迁移。
+- Chat 的交互队列默认只显示用户可见投递；`visibility=system` 仅供显式诊断查询，且协议 envelope 投影为上下文正文。
+
+### Runtime 会话完整性边界
+
+`MessageDeliveryDispatcher` 与 ADR-059 `ChatExecutionWorker` 是不同的可靠性入口：前者拥有 `MessageDelivery` 的 claim/ack/retry，后者拥有 Conversation Turn/Run 的 lease/fence。二者可以继续保留各自事实源，但只要解析到同一个 Runtime `sessionId`，就必须服从同一个会话单写者。
+
+- `ISessionExecutionGate` 是进程内 Runtime 会话状态的唯一写入门。用户 Turn、Agent 消息、Heartbeat、直接 Runtime 调度进入 `AgentExecutionService` 时都必须先按 `sessionId` 串行化。
+- `ChatExecutionWorker` 的每 Conversation 锁只是命令领取优化，不能被视为 Runtime 全局锁；Conversation Run 的数据库 lease/fence 仍是跨进程正确性权威。
+- `ContextWindowManager` 的历史不是并发协调器。禁止两个执行同时修改同一个 `List<ChatMessage>`。
+- Assistant `tool_calls` 与其全部 Tool results 是一个不可分割的协议轮次。只有每个 advertised `tool_call_id` 都有且只有一个结果时，才允许一次性提交到历史；取消、超时、Fuse、工具异常不得留下半轮历史。
+- `LlmMessageSequenceNormalizer` 在历史水合与 LLM 调用边界修复遗留的不完整轮次，`OpenAiLlmGateway` 在协议序列化前执行最后守卫。修复必须记录 incomplete round/orphan tool 计数，不能静默把 Provider 400 当作普通网络失败重试。
+
+---
+
 ## 1. Context
 
 当前 Admin Chat 正在从单 Agent 对话界面演进到多 Agent 聊天室。用户期望的语义不是“用户请求、Agent 回复”的单向管线，而是类似微信的双向消息关系：
@@ -82,7 +107,7 @@ IMessageRouter
               IPriorityEventQueue
                     |
                     v
-              AgentEventHandler
+        MessageDeliveryDispatcher
                     |
                     v
               Runtime / Tools / LLM
@@ -100,7 +125,7 @@ MessageEnvelope
   -> RoomMessageLog / MessageDelivery / MessageInbox
   -> message.deliver event
   -> IInternalEventBus / IPriorityEventQueue
-  -> AgentEventHandler / ConnectorEgress / UI Projection consumer
+  -> MessageDeliveryDispatcher / ConnectorEgress / UI Projection consumer
   -> delivery ack / retry / dead-letter / trace update
 ```
 
@@ -115,7 +140,8 @@ MessageEnvelope
 | `IMessageInbox` | 查询、领取、确认端点收件箱 | 决定消息目标、调用 LLM |
 | `IInternalEventBus` | 纯事件管道、优先级队列、重试、死信 | 理解 Chat UI 或房间语义 |
 | `IPriorityEventQueue` | 按事件优先级持久化推进、ack、retry、dead-letter | 持有消息领域状态、解析 room/endpoint |
-| `AgentEventHandler` | 将 `message.deliver` 转成 Runtime 执行请求 | 解析 `@all`、决定群发目标 |
+| `MessageDeliveryDispatcher` | 发现/领取持久化 Agent 投递，检查可用性，构造 Runtime 执行并 ack/retry/dead-letter | 解析 `@all`、决定群发目标、依赖浏览器在线 |
+| `AgentEventHandler` | 消费非消息类通用内部事件 | 消费 `message.deliver`、重复触发消息执行 |
 | `SessionStateManager` | 会话事件日志、实时观察、回放 | 消息路由和投递策略 |
 | `ChatApiController` | 接收 Web 客户端消息意图 | secondary fan-out、Agent 调度 |
 | Admin Chat UI | 聊天室客户端、观察窗口、输入器 | 消息路由权威、执行依赖 |
@@ -187,7 +213,7 @@ Agent Runtime
   -> send_message
   -> IMessageSystem
   -> IMessageRouter
-       - target=agent      => message.deliver event for AgentEventHandler
+       - target=agent      => message.deliver wakeup for MessageDeliveryDispatcher
        - target=user       => user/client delivery + notification projection
        - target=room       => room transcript + participant deliveries
        - target=connector  => connector egress delivery
@@ -387,7 +413,7 @@ Web Chat Client
   -> RoomMessageLog appends public/direct transcript
   -> MessageDelivery queued for target agent
   -> IInternalEventBus publishes message.deliver
-  -> AgentEventHandler invokes Runtime
+  -> MessageDeliveryDispatcher atomically claims delivery and invokes Runtime
   -> Agent may respond via send_message(from=agent, to=user or room)
 ```
 
@@ -439,7 +465,7 @@ Runtime tool call: receive_messages(endpoint=agent:self)
 事件订阅:
 Agent subscribes message.*
   -> IInternalEventBus publishes message.deliver
-  -> AgentEventHandler receives event
+  -> MessageDeliveryDispatcher receives wakeup or discovers durable pending target
   -> Runtime is invoked or resumed
   -> same delivery is marked delivered/failed
 ```
@@ -549,7 +575,9 @@ Admin Chat 应从“单 Agent 对话页”转为“聊天室客户端”：
 ### Phase 3：事件桥接和可靠推进
 
 - `IMessageSystem` 发布 `message.deliver`。
-- `AgentEventHandler` 识别 `message.deliver`，从 payload 构造 `RuntimeDispatchRequest`。
+- `MessageDeliveryDispatcher` 以 Hosted Service 运行，订阅 `message.deliver` 并从 payload 唤醒目标。
+- Dispatcher 每轮从持久化 Inbox 发现 `queued/retrying` 目标，确保丢失事件或进程重启后仍可恢复。
+- `AgentEventHandler` 明确跳过 `message.deliver`，避免双消费者重复执行。
 - `MessageDelivery` 随执行状态更新。
 - `IPriorityEventQueue` 对 `message.deliver` 提供 ack、retry、dead-letter 和重放入口。
 - delivery 状态与事件状态要可互相定位：从消息能查到事件，从事件能查到消息和最终执行结果。
@@ -589,6 +617,8 @@ Admin Chat 应从“单 Agent 对话页”转为“聊天室客户端”：
 13. 删除或禁用补丁式 fan-out 后，群聊能力仍由消息系统提供。
 14. 每个可执行 `MessageDelivery` 都能追踪到对应 `message.deliver` 事件、队列状态、执行 trace 和最终 ack/retry/dead-letter 结果。
 15. Web Chat 发送给 Agent，Agent 再通过 `send_message` 主动回复用户，必须走同一条 `IMessageSystem -> MessageDelivery -> message.deliver/event/projection` 管道。
+16. 未收到 `message.deliver` 或 Runtime 重启后，`queued/retrying` 投递仍能被持久化扫描发现并进入同一原子 claim 路径。
+17. Chat 交互队列默认不显示 `visibility=system` 的内部投递；显式诊断查询返回正文投影而不是原始 envelope JSON。
 
 ---
 

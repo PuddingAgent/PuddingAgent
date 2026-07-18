@@ -467,6 +467,43 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_RepairsIncompleteInMemoryToolRound_BeforeKeepingRicherHistory()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-corrupt-memory", messageCount: 2, charsPerMessage: 0);
+
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options));
+        var history = manager.GetOrCreateHistory("session-corrupt-memory");
+        history.Add(new ChatMessage(ChatRole.System, "system"));
+        history.Add(new ChatMessage(ChatRole.User, "memory-user-1"));
+        history.Add(new ChatMessage(ChatRole.Assistant, "memory-assistant-1"));
+        history.Add(new ChatMessage(ChatRole.User, "memory-user-2"));
+        history.Add(new ChatMessage(
+            ChatRole.Assistant,
+            null,
+            ToolCalls:
+            [
+                new ToolCall("call-1", "first", "{}"),
+                new ToolCall("call-2", "second", "{}"),
+            ]));
+        history.Add(new ChatMessage(ChatRole.Tool, "partial", ToolCallId: "call-1"));
+
+        await manager.TryHydrateStreamHistoryFromDbAsync(
+            "session-corrupt-memory",
+            history,
+            maxTokenBudget: 8000,
+            CancellationToken.None);
+
+        Assert.IsTrue(history.Any(message => message.Content == "memory-user-2"));
+        Assert.IsFalse(history.Any(message => message.Role == ChatRole.Tool));
+        Assert.IsFalse(history.Any(message => message.ToolCalls is { Count: > 0 }));
+    }
+
+    [TestMethod]
     public async Task TryHydrateStreamHistoryFromDbAsync_UsesJsonl_When_DbSnapshotIsStale()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

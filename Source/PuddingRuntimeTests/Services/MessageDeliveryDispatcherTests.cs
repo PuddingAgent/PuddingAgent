@@ -166,6 +166,31 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
+    public async Task HandleAsync_OrdinaryDeliveryBusyOnThirdAttempt_DefersWithoutDeadLetter()
+    {
+        var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames =
+            [
+                ServerSentEventFrame.Json("error", new
+                {
+                    error = "Agent 'agent-b' is busy.",
+                    executionState = "Busy",
+                }),
+            ],
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        Assert.IsEmpty(inbox.Acked);
+        Assert.HasCount(1, inbox.Retried);
+        Assert.AreEqual("d1", inbox.Retried[0].DeliveryId);
+        Assert.IsEmpty(inbox.DeadLettered);
+    }
+
+    [TestMethod]
     public async Task HandleAsync_DeadLettersDeliveryWhenThirdRuntimeAttemptFails()
     {
         var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };
@@ -246,6 +271,43 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
+    public async Task StartAsync_DiscoversAndDispatchesDurablePendingTarget()
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            PendingTargets =
+            [
+                new MessageDeliveryTarget
+                {
+                    WorkspaceId = "default",
+                    RoomId = "room-default",
+                    TargetKind = MessageEndpointKinds.Agent,
+                    TargetId = "agent-b",
+                },
+            ],
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.StartAsync(CancellationToken.None);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            while (inbox.Acked.Count == 0)
+                await Task.Delay(10, timeout.Token);
+        }
+        finally
+        {
+            await dispatcher.StopAsync(CancellationToken.None);
+        }
+
+        Assert.HasCount(1, inbox.PendingTargetKinds);
+        Assert.AreEqual(MessageEndpointKinds.Agent, inbox.PendingTargetKinds[0]);
+        Assert.HasCount(1, runtime.StreamRequests);
+        Assert.HasCount(1, inbox.Acked);
+    }
+
+    [TestMethod]
     public async Task HandleAsync_AvailabilityChangedToIdle_ClaimsDispatchesAndAcks()
     {
         var inbox = new RecordingMessageInbox();
@@ -298,7 +360,7 @@ public sealed class MessageDeliveryDispatcherTests
             await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Database.EnsureCreatedAsync();
         }
 
-                var dispatcher = new MessageDeliveryDispatcher(
+        var dispatcher = new MessageDeliveryDispatcher(
             new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
@@ -361,6 +423,73 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.AreEqual("agent_reply", reply.Metadata["intent"]);
         Assert.AreEqual("m1", reply.ReplyToMessageId);
         Assert.HasCount(1, inbox.Acked);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_ReplyRoutingFailure_DoesNotRetryCompletedInboundDelivery()
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimFrom = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Agent,
+                Id = "retired-child-agent",
+                DisplayName = "Retired Child Agent",
+            },
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames = [ServerSentEventFrame.Json("done", new { reply = "completed work" })],
+        };
+        var messageSystem = new RecordingMessageSystem
+        {
+            Failure = new InvalidOperationException("Sender no longer accepts messages."),
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime, messageSystem: messageSystem);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        Assert.HasCount(1, messageSystem.Sent);
+        Assert.HasCount(1, inbox.Acked);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_BatchedRuntimeFailure_RetriesEveryClaimedDelivery()
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            BatchClaims =
+            [
+                new MessageInboxItem
+                {
+                    DeliveryId = "d2",
+                    MessageId = "m2",
+                    WorkspaceId = "default",
+                    RoomId = "room-default",
+                    From = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-a" },
+                    Target = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-b" },
+                    Content = "second message",
+                    Status = MessageDeliveryStatuses.Delivering,
+                    Priority = 0,
+                    AttemptCount = 1,
+                    CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                },
+            ],
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames = [ServerSentEventFrame.Json("error", new { message = "model failed" })],
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        CollectionAssert.AreEquivalent(
+            new[] { "d1", "d2" },
+            inbox.Retried.Select(item => item.DeliveryId).ToArray());
+        Assert.IsEmpty(inbox.Acked);
     }
 
     [TestMethod]
@@ -486,7 +615,7 @@ public sealed class MessageDeliveryDispatcherTests
             await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Database.EnsureCreatedAsync();
         }
 
-                var dispatcher = new MessageDeliveryDispatcher(
+        var dispatcher = new MessageDeliveryDispatcher(
             new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
@@ -531,7 +660,7 @@ public sealed class MessageDeliveryDispatcherTests
             services.AddScoped<IMessageSystem>(_ => messageSystem);
 
         var provider = services.BuildServiceProvider();
-                return new MessageDeliveryDispatcher(
+        return new MessageDeliveryDispatcher(
             eventBus ?? new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
@@ -628,12 +757,23 @@ public sealed class MessageDeliveryDispatcherTests
         public IReadOnlyDictionary<string, string>? ClaimMetadata { get; init; }
         public string? ClaimContent { get; init; }
         public MessageAddress? ClaimFrom { get; init; }
+        public IReadOnlyList<MessageInboxItem> BatchClaims { get; init; } = [];
+        public IReadOnlyList<MessageDeliveryTarget> PendingTargets { get; init; } = [];
+        public List<string> PendingTargetKinds { get; } = [];
         public List<(string DeliveryId, string ExecutionId)> Acked { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error, DateTimeOffset AvailableAt)> Retried { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error)> DeadLettered { get; } = [];
 
         public Task<IReadOnlyList<MessageInboxItem>> ListAsync(MessageInboxQuery query, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<MessageInboxItem>>([]);
+
+        public Task<IReadOnlyList<MessageDeliveryTarget>> ListPendingTargetsAsync(
+            string targetKind,
+            CancellationToken ct = default)
+        {
+            PendingTargetKinds.Add(targetKind);
+            return Task.FromResult(PendingTargets);
+        }
 
         public Task<MessageInboxItem?> ClaimNextAsync(MessageClaimRequest request, CancellationToken ct = default)
         {
@@ -659,7 +799,7 @@ public sealed class MessageDeliveryDispatcherTests
             MessageClaimRequest request,
             int maxBatch,
             CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<MessageInboxItem>>([]);
+            Task.FromResult(BatchClaims);
 
         public Task<int> RecoverExpiredLeasesAsync(DateTimeOffset now, CancellationToken ct = default) =>
             Task.FromResult(0);
@@ -789,10 +929,14 @@ public sealed class MessageDeliveryDispatcherTests
     private sealed class RecordingMessageSystem : IMessageSystem
     {
         public List<MessageEnvelope> Sent { get; } = [];
+        public Exception? Failure { get; init; }
 
         public Task<MessageSendResult> SendAsync(MessageEnvelope envelope, CancellationToken ct = default)
         {
             Sent.Add(envelope);
+            if (Failure is not null)
+                throw Failure;
+
             return Task.FromResult(new MessageSendResult
             {
                 MessageId = envelope.MessageId,

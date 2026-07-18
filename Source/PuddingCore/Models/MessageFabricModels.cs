@@ -147,6 +147,17 @@ public sealed record MessageClaimRequest
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
 }
 
+/// <summary>
+/// Distinct endpoint scope with durable queued or retrying deliveries.
+/// </summary>
+public sealed record MessageDeliveryTarget
+{
+    public required string WorkspaceId { get; init; }
+    public string? RoomId { get; init; }
+    public required string TargetKind { get; init; }
+    public required string TargetId { get; init; }
+}
+
 /// <summary>Inbox projection over a durable message delivery.</summary>
 public sealed record MessageInboxItem
 {

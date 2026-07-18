@@ -22,11 +22,33 @@ Implemented V1.0 baseline:
 - `WorkspaceAgentsContextBuilder` injects a compact `WORKSPACE AGENTS` layer into context assembly.
 - SQLite bootstrap now upgrades existing `message_deliveries` tables by adding claim columns before creating indexes that reference them.
 
+## 2026-07-18 Reliability Correction
+
+The durable delivery table is the recovery authority. `message.deliver` and the in-memory known-target set are latency optimizations only.
+
+- `MessageDeliveryDispatcher` must be registered as a hosted service; registering only the singleton leaves the durable inbox without a consumer.
+- Each recovery pass discovers distinct agent targets with `queued` or `retrying` deliveries from `IMessageInbox`, then applies the normal claim/availability/dispatch path.
+- Expired delivery leases are recovered periodically so a process failure cannot strand `delivering` rows.
+- Runtime `Busy` is a transient scheduling race: defer the delivery without applying the business-failure dead-letter threshold.
+- A generated reply is a new outbound message transaction. Reply routing failure must not roll an already successful inbound execution back to `retrying`; batch transitions must cover every claimed delivery.
+- The Chat interaction-queue projection excludes `visibility=system` by default. Diagnostic callers may opt in, but canonical `pudding-message` envelopes are projected as `context.text`, not raw protocol JSON.
+- `AgentEventHandler` continues to skip `message.deliver`; there is exactly one automatic delivery owner.
+
+## 2026-07-18 Runtime Session Integrity Correction
+
+Message delivery reliability and Conversation Turn reliability remain separate durable concerns, but they converge on the same mutable Runtime session. Therefore:
+
+- `AgentExecutionService` is protected by a process-wide `ISessionExecutionGate` keyed by `sessionId`. Dispatcher execution, Conversation execution, heartbeat and direct Runtime calls cannot concurrently mutate one session.
+- `ChatExecutionWorker`'s per-Conversation lock is not the Runtime-wide correctness boundary; its database run lease/fence remains the cross-process Conversation authority.
+- Tool-call history is committed as one atomic batch only after every assistant `tool_call_id` has a matching Tool result.
+- Cancellation, timeout, Fuse and tool exceptions discard the unpublished tool round instead of leaving invalid provider history.
+- `ContextWindowManager` repairs a richer in-memory snapshot before deciding whether to keep it over a shorter persisted snapshot.
+- `LlmInvocationService` records repairs, while `OpenAiLlmGateway` normalizes again as the final OpenAI-compatible wire-protocol guard.
+
 Still pending after V1.0:
 
 - Idle-state gating before claim and execution.
 - `agent.availability.changed` subscription.
-- Periodic queued/retrying recovery and expired lease recovery.
 - A retry-to-dead-letter policy threshold.
 - Structured telemetry for every dispatcher decision and status transition.
 - Timeline projection for queued/delivering/delivered/dead-letter delivery states.
@@ -214,9 +236,9 @@ Task RetryAsync(string deliveryId, string executionId, string error, DateTimeOff
 Task DeadLetterAsync(string deliveryId, string executionId, string error, CancellationToken ct);
 ```
 
-## Subscription-Driven Dispatcher
+## Durable Dispatcher
 
-The dispatcher is subscription-driven first, with periodic recovery as follow-up hardening.
+The dispatcher is subscription-driven for low latency and database-driven for recovery. Both paths converge on the same atomic claim and execution method.
 
 Implemented V1.0 path:
 
@@ -259,13 +281,15 @@ Recovery path:
 
 ```text
 every 10s:
-  scan queued/retrying deliveries for idle agents
+  list distinct agent targets with queued/retrying deliveries
+  remember target scope
+  run normal availability + atomic claim + dispatch path
 
 every 60s:
   recover expired delivering leases
 ```
 
-Subscriptions provide timely response. Durable delivery state provides reliability. Atomic claim provides concurrency safety.
+Subscriptions provide timely response. Durable delivery state provides reliability across missed wakeups and process restarts. Atomic claim provides concurrency safety.
 
 The dispatcher should stay in Runtime, close to `IRuntimeAgentDispatcher`, because delivery consumption creates runtime work. Platform owns message persistence and routing; Runtime owns execution.
 

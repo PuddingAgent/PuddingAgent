@@ -9,7 +9,6 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
-using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services.Messaging;
 
@@ -23,7 +22,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         PropertyNameCaseInsensitive = true,
     };
 
-        private readonly IInternalEventBus _eventBus;
+    private readonly IInternalEventBus _eventBus;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AgentWakeQueue _wakeQueue;
     private readonly ILogger<MessageDeliveryDispatcher> _logger;
@@ -33,7 +32,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     private CancellationTokenSource? _recoveryCts;
     private Task? _recoveryTask;
 
-        public MessageDeliveryDispatcher(
+    public MessageDeliveryDispatcher(
         IInternalEventBus eventBus,
         IServiceScopeFactory scopeFactory,
         AgentWakeQueue wakeQueue,
@@ -388,27 +387,45 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
             if (result.IsSuccess)
             {
-                await SendReplyToSenderIfNeededAsync(
-                    scope.ServiceProvider,
-                    claimed,
-                    result,
-                    metadata,
-                    ct);
-
-                await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
-                // 确认批量声明的其余消息
-                foreach (var item in batch.Skip(1))
+                foreach (var item in batch)
+                {
                     await inbox.AckAsync(item.DeliveryId, executionId, ct);
-                LogExecutionResult(
-                    claimed,
-                    MessageDeliveryStatuses.Delivered,
-                    executionId,
-                    correlationId: correlationId,
-                    causationId: causationId);
+                    LogExecutionResult(
+                        item,
+                        MessageDeliveryStatuses.Delivered,
+                        executionId,
+                        correlationId: correlationId,
+                        causationId: causationId);
+                }
+
                 _logger.LogInformation(
-                    "[MessageDeliveryDispatcher] Delivery acked delivery={DeliveryId} agent={AgentId}",
+                    "[MessageDeliveryDispatcher] Delivery batch acked delivery={DeliveryId} agent={AgentId} count={DeliveryCount}",
                     claimed.DeliveryId,
-                    claimed.Target.Id);
+                    claimed.Target.Id,
+                    batch.Count);
+
+                // Reply routing is a new outbound message transaction. A missing
+                // or unavailable sender must not roll an already completed inbound
+                // execution back to retrying.
+                try
+                {
+                    await SendReplyToSenderIfNeededAsync(
+                        scope.ServiceProvider,
+                        claimed,
+                        result,
+                        metadata,
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "[MessageDeliveryDispatcher] Reply delivery failed after inbound ack delivery={DeliveryId} sender={SenderKind}:{SenderId}",
+                        claimed.DeliveryId,
+                        claimed.From.Kind,
+                        claimed.From.Id);
+                }
+
                 return;
             }
 
@@ -429,34 +446,59 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 return;
             }
 
-            var deadLettered = await RetryOrDeadLetterAsync(inbox, claimed, executionId, error, ct);
-            if (deadLettered)
+            if (result.ExecutionState == AgentExecutionState.Busy)
             {
-                LogExecutionResult(
-                    claimed,
-                    MessageDeliveryStatuses.DeadLetter,
-                    executionId,
-                    correlationId: correlationId,
-                    causationId: causationId);
-                _logger.LogWarning(
-                    "[MessageDeliveryDispatcher] Delivery dead-lettered delivery={DeliveryId} agent={AgentId} attempts={Attempts}",
-                    claimed.DeliveryId,
-                    claimed.Target.Id,
-                    claimed.AttemptCount);
+                foreach (var item in batch)
+                {
+                    await inbox.RetryAsync(
+                        item.DeliveryId,
+                        executionId,
+                        error,
+                        DateTimeOffset.UtcNow.AddSeconds(30),
+                        ct);
+                    LogExecutionResult(
+                        item,
+                        MessageDeliveryStatuses.Retrying,
+                        executionId,
+                        correlationId: correlationId,
+                        causationId: causationId);
+                    _logger.LogInformation(
+                        "[MessageDeliveryDispatcher] Delivery deferred because target is busy delivery={DeliveryId} agent={AgentId} attempts={Attempts}",
+                        item.DeliveryId,
+                        item.Target.Id,
+                        item.AttemptCount);
+                }
+
                 return;
             }
 
-            LogExecutionResult(
-                claimed,
-                MessageDeliveryStatuses.Retrying,
-                executionId,
-                correlationId: correlationId,
-                causationId: causationId);
-            _logger.LogWarning(
-                "[MessageDeliveryDispatcher] Delivery retrying delivery={DeliveryId} agent={AgentId} state={State}",
-                claimed.DeliveryId,
-                claimed.Target.Id,
-                result.ExecutionState);
+            foreach (var item in batch)
+            {
+                var deadLettered = await RetryOrDeadLetterAsync(inbox, item, executionId, error, ct);
+                LogExecutionResult(
+                    item,
+                    deadLettered ? MessageDeliveryStatuses.DeadLetter : MessageDeliveryStatuses.Retrying,
+                    executionId,
+                    correlationId: correlationId,
+                    causationId: causationId);
+
+                if (deadLettered)
+                {
+                    _logger.LogWarning(
+                        "[MessageDeliveryDispatcher] Delivery dead-lettered delivery={DeliveryId} agent={AgentId} attempts={Attempts}",
+                        item.DeliveryId,
+                        item.Target.Id,
+                        item.AttemptCount);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "[MessageDeliveryDispatcher] Delivery retrying delivery={DeliveryId} agent={AgentId} state={State}",
+                        item.DeliveryId,
+                        item.Target.Id,
+                        result.ExecutionState);
+                }
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -464,18 +506,28 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         }
         catch (Exception ex)
         {
-            var deadLettered = await RetryOrDeadLetterAsync(inbox, claimed, executionId, ex.Message, CancellationToken.None);
-            LogExecutionResult(
-                claimed,
-                deadLettered ? MessageDeliveryStatuses.DeadLetter : MessageDeliveryStatuses.Retrying,
-                executionId,
-                correlationId: correlationId,
-                causationId: causationId);
+            foreach (var item in batch)
+            {
+                var deadLettered = await RetryOrDeadLetterAsync(
+                    inbox,
+                    item,
+                    executionId,
+                    ex.Message,
+                    CancellationToken.None);
+                LogExecutionResult(
+                    item,
+                    deadLettered ? MessageDeliveryStatuses.DeadLetter : MessageDeliveryStatuses.Retrying,
+                    executionId,
+                    correlationId: correlationId,
+                    causationId: causationId);
+            }
+
             _logger.LogError(
                 ex,
-                "[MessageDeliveryDispatcher] Delivery failed delivery={DeliveryId} agent={AgentId}",
+                "[MessageDeliveryDispatcher] Delivery batch failed delivery={DeliveryId} agent={AgentId} count={DeliveryCount}",
                 claimed.DeliveryId,
-                claimed.Target.Id);
+                claimed.Target.Id,
+                batch.Count);
         }
     }
 
@@ -769,18 +821,22 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
         var nextLeaseRecovery = DateTimeOffset.MinValue;
 
-        while (await timer.WaitForNextTickAsync(ct))
+        while (!ct.IsCancellationRequested)
         {
             try
             {
-                await TryDispatchKnownTargetsAsync(ct);
-
                 var now = DateTimeOffset.UtcNow;
-                if (now < nextLeaseRecovery)
-                    continue;
+                if (now >= nextLeaseRecovery)
+                {
+                    nextLeaseRecovery = now.AddSeconds(60);
+                    await RecoverExpiredLeasesAsync(now, ct);
+                }
 
-                nextLeaseRecovery = now.AddSeconds(60);
-                await RecoverExpiredLeasesAsync(now, ct);
+                // Wakeup events provide low-latency dispatch, but durable delivery
+                // rows are authoritative. Re-discover targets on every recovery pass
+                // so queued/retrying work survives process restarts or lost events.
+                await DiscoverPendingTargetsAsync(ct);
+                await TryDispatchKnownTargetsAsync(ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -790,6 +846,24 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             {
                 _logger.LogError(ex, "[MessageDeliveryDispatcher] Recovery loop failed");
             }
+
+            await timer.WaitForNextTickAsync(ct);
+        }
+    }
+
+    private async Task DiscoverPendingTargetsAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
+        var targets = await inbox.ListPendingTargetsAsync(MessageEndpointKinds.Agent, ct);
+        foreach (var target in targets)
+            RememberTarget(target.WorkspaceId, target.RoomId, target.TargetId);
+
+        if (targets.Count > 0)
+        {
+            _logger.LogDebug(
+                "[MessageDeliveryDispatcher] Discovered pending durable targets count={Count}",
+                targets.Count);
         }
     }
 

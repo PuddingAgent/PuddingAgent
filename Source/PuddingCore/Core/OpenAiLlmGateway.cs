@@ -203,8 +203,9 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         bool stream)
     {
         var messagesArray = new JsonArray();
+        var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
 
-        foreach (var msg in messages)
+        foreach (var msg in protocolSafeMessages)
         {
             var msgObj = new JsonObject
             {

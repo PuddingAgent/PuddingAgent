@@ -42,7 +42,8 @@ Source/
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口，驱动 LLM 调用 → 工具调用 → 循环；同步返回前强制将 Running 收敛为 Completed/Failed/Cancelled/WaitingEvent 终态 |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史 |
+| `Services/SessionExecutionGate.cs` + `PuddingCore/Runtime/ISessionExecutionGate.cs` | Runtime 会话进程内单写者；统一串行化 Conversation Worker、MessageDelivery、Heartbeat 与直接 Runtime 调度对同一 session 的状态修改 |
 | `Services/AgentLoop/CompletionPolicy.cs` | 判断 Agent 何时完成（stop reason 处理） |
 | `Services/AgentLoop/ExecutionJournal.cs` | 执行日志记录 |
 | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 执行护栏（最大轮次等） |
@@ -54,7 +55,7 @@ Source/
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
 | `Services/DirectLlmClient.cs` | 直连 LLM 客户端 |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
-| `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口） |
+| `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断 |
 | `Services/LlmProfileResolver.cs` | 解析 Agent 的 LLM 配置 |
 | `Services/LlmOptions.cs` | LLM 请求选项（RecordProviderUsage 只更新诊断字段，不覆盖上下文快照） |
 | `Services/ProviderRateLimiter.cs` | Provider 级限流器 |
@@ -62,7 +63,8 @@ Source/
 ### 上下文管理
 | 文件 | 用途 |
 |------|------|
-| `Services/ContextWindowManager.cs` | 🔑 上下文窗口管理（token 驱动裁剪 + 自动压缩触发） |
+| `Services/ContextWindowManager.cs` | 🔑 上下文窗口管理（token 驱动裁剪 + 自动压缩触发）；比较持久化快照前先修复内存中的不完整工具轮次 |
+| `PuddingCore/Models/LlmMessageSequenceNormalizer.cs` | OpenAI-compatible 消息协议守卫；保留完整工具轮次、移除 orphan Tool、降级或丢弃不完整 Assistant tool-call |
 | `Services/ContextCompactionService.cs` | 上下文压缩执行（消息合并） |
 | `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估 + 容量预测（PredictCapacity） |
 | `Services/ContextAssemblyService.cs` | 上下文组装（System Prompt + 历史 + 记忆） |
@@ -212,7 +214,10 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份 |
 | `Services/MessageFabric/MessageSystem.cs` | 消息系统核心 |
 | `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room） |
-| `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化 |
+| `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；从 `queued/retrying` 投递发现待处理 Agent 目标 |
+| `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
+| `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；Hosted Service 订阅唤醒事件，并周期从持久化 Inbox 发现目标、恢复 lease、原子领取；执行进入共享 session 单写者后再 ack/retry/dead-letter |
+| `Controllers/Api/MessageQueueController.cs` | Agent 交互队列 API；`includeSystem=false` 为默认用户界面边界 |
 
 ### API Controllers（核心）
 | Controller | 用途 |
@@ -238,6 +243,7 @@ Source/
 | `Data/MemoryLibrary.cs` | 🔑 记忆图书馆实现（Book/Chapter CRUD, FTS5 搜索） |
 | `Data/IMemoryLibrary.cs` | 记忆图书馆接口 |
 | `Data/MemoryDbContext.cs` | 核心会话、消息、记忆与事件队列 DbContext |
+| `Data/PlatformDbContextFactory.cs` | Platform 数据库统一工厂；singleton options + singleton factory 供后台服务使用，并由同一工厂创建 scoped HTTP/application DbContext |
 | `Data/MemoryDbInitializer.cs` | 从 `Schema/init_memory.sql` 显式初始化核心 Schema；与图书馆共享数据库时不使用 `EnsureCreated` |
 | `Data/MemoryLibraryDbContext.cs` | 记忆图书馆 DbContext（与核心记忆共享同一 SQLite 文件） |
 | `Data/MemoryLibraryDbInitializer.cs` | 核心 Schema 完成后显式初始化图书馆 Schema |

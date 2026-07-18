@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
+using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -40,6 +41,15 @@ public sealed class MessageQueueProjectionService
 
         if (!string.IsNullOrWhiteSpace(query.RoomId))
             deliveriesQuery = deliveriesQuery.Where(delivery => delivery.RoomId == query.RoomId);
+
+        if (!query.IncludeSystem)
+        {
+            deliveriesQuery = deliveriesQuery.Where(delivery =>
+                _db.RoomMessages.Any(message =>
+                    message.WorkspaceId == delivery.WorkspaceId
+                    && message.MessageId == delivery.MessageId
+                    && message.Visibility != MessageVisibilities.System));
+        }
 
         if (!query.IncludeTerminal)
             deliveriesQuery = deliveriesQuery.Where(delivery => ActiveStatuses.Contains(delivery.Status));
@@ -83,6 +93,9 @@ public sealed class MessageQueueProjectionService
         IReadOnlyDictionary<string, RoomMessageEntity> messages)
     {
         messages.TryGetValue(delivery.MessageId, out var message);
+        var envelope = message is null
+            ? null
+            : AgentContextEnvelopeRenderer.TryParse(message.Content);
 
         return new MessageQueueItem
         {
@@ -104,7 +117,11 @@ public sealed class MessageQueueProjectionService
                 WorkspaceId = delivery.WorkspaceId,
                 DisplayName = delivery.TargetDisplayName,
             },
-            Content = message?.Content ?? string.Empty,
+            Content = envelope?.Context.Text ?? message?.Content ?? string.Empty,
+            Audience = message?.Audience,
+            Visibility = message?.Visibility,
+            MessageType = envelope?.MessageType,
+            ContentType = envelope?.ContentType,
             Status = delivery.Status,
             Priority = delivery.Priority,
             AttemptCount = delivery.AttemptCount,
@@ -126,6 +143,7 @@ public sealed record MessageQueueProjectionQuery
     public string? RoomId { get; init; }
     public int Limit { get; init; } = 50;
     public bool IncludeTerminal { get; init; }
+    public bool IncludeSystem { get; init; }
 }
 
 public sealed record MessageQueueSnapshot
@@ -145,6 +163,10 @@ public sealed record MessageQueueItem
     public required MessageAddress From { get; init; }
     public required MessageAddress Target { get; init; }
     public required string Content { get; init; }
+    public string? Audience { get; init; }
+    public string? Visibility { get; init; }
+    public string? MessageType { get; init; }
+    public string? ContentType { get; init; }
     public required string Status { get; init; }
     public int Priority { get; init; }
     public int AttemptCount { get; init; }

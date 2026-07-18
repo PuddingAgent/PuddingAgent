@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
+using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services.MessageFabric;
 
@@ -99,6 +100,73 @@ public sealed class MessageQueueProjectionServiceTests
         CollectionAssert.AreEqual(new[] { "d-a" }, snapshot.Items.Select(item => item.DeliveryId).ToArray());
     }
 
+    [TestMethod]
+    public async Task GetAgentQueueAsync_HidesSystemDeliveriesAndProjectsEnvelopeContext()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync(
+            "default",
+            RoutePlan(
+                "m-public",
+                "d-public",
+                "room-default",
+                "visible user message",
+                priority: 0,
+                createdAt: 100),
+            CancellationToken.None);
+        await store.PersistRouteAsync(
+            "default",
+            RoutePlan(
+                "m-system",
+                "d-system",
+                "room-default",
+                AgentContextEnvelopeRenderer.RenderForAgent(new AgentContextEnvelope
+                {
+                    MessageId = "m-system",
+                    MessageType = "subagent_result",
+                    ContentType = "text/plain",
+                    CreatedAt = 200,
+                    WorkspaceId = "default",
+                    RoomId = "room-default",
+                    From = new AgentContextEndpoint("agent", "child", "Child"),
+                    To = [new AgentContextEndpoint("agent", "assistant", "Assistant")],
+                    Constraints = [],
+                    Context = new AgentContextPayload("text/plain", "child failed"),
+                }),
+                priority: 10,
+                createdAt: 200,
+                visibility: MessageVisibilities.System),
+            CancellationToken.None);
+
+        var service = new MessageQueueProjectionService(db);
+        var userQueue = await service.GetAgentQueueAsync(new MessageQueueProjectionQuery
+        {
+            WorkspaceId = "default",
+            AgentId = "assistant",
+        }, CancellationToken.None);
+        var diagnosticQueue = await service.GetAgentQueueAsync(new MessageQueueProjectionQuery
+        {
+            WorkspaceId = "default",
+            AgentId = "assistant",
+            IncludeSystem = true,
+        }, CancellationToken.None);
+
+        CollectionAssert.AreEqual(
+            new[] { "d-public" },
+            userQueue.Items.Select(item => item.DeliveryId).ToArray());
+        Assert.HasCount(2, diagnosticQueue.Items);
+        var systemItem = diagnosticQueue.Items.Single(item => item.DeliveryId == "d-system");
+        Assert.AreEqual("child failed", systemItem.Content);
+        Assert.AreEqual(MessageVisibilities.System, systemItem.Visibility);
+        Assert.AreEqual("subagent_result", systemItem.MessageType);
+        Assert.AreEqual("text/plain", systemItem.ContentType);
+    }
+
     private static DbContextOptions<PlatformDbContext> CreateOptions(string root)
     {
         var dbPath = Path.Combine(root, "platform.db");
@@ -125,7 +193,8 @@ public sealed class MessageQueueProjectionServiceTests
         string content,
         int priority,
         long createdAt,
-        string targetId = "assistant") => new()
+        string targetId = "assistant",
+        string visibility = MessageVisibilities.Public) => new()
     {
         MessageId = messageId,
         RoomMessage = new RoomMessageDraft
@@ -140,7 +209,7 @@ public sealed class MessageQueueProjectionServiceTests
                 DisplayName = "Owner",
             },
             Audience = MessageAudiences.Direct,
-            Visibility = MessageVisibilities.Public,
+            Visibility = visibility,
             Content = content,
             CreatedAt = createdAt,
         },

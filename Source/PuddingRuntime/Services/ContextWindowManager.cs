@@ -251,6 +251,23 @@ public sealed class ContextWindowManager
     {
         try
         {
+            var inMemorySource = history
+                .Where(message => !IsRuntimeControlMessage(message))
+                .ToList();
+            var normalizedInMemory = LlmMessageSequenceNormalizer.Normalize(inMemorySource);
+            var removedRuntimeControls = history.Count - inMemorySource.Count;
+            if (normalizedInMemory.Changed || removedRuntimeControls > 0)
+            {
+                history.Clear();
+                history.AddRange(normalizedInMemory.Messages);
+                _logger.LogWarning(
+                    "[AgentExec] Repaired in-memory LLM history before hydration session={Session} incompleteToolRounds={IncompleteToolRounds} orphanToolMessages={OrphanToolMessages} runtimeControls={RuntimeControls}",
+                    sessionId,
+                    normalizedInMemory.RepairedIncompleteToolRounds,
+                    normalizedInMemory.DroppedOrphanToolMessages,
+                    removedRuntimeControls);
+            }
+
             HydratedHistorySnapshot? hydrated = null;
 
             if (_memoryDbFactory is not null)
@@ -862,58 +879,8 @@ public sealed class ContextWindowManager
 
     private static List<ChatMessage> SanitizeForLlmContext(IEnumerable<ChatMessage> source)
     {
-        var messages = source.ToList();
-        var sanitized = new List<ChatMessage>(messages.Count);
-
-        for (var i = 0; i < messages.Count; i++)
-        {
-            var message = messages[i];
-
-            if (IsRuntimeControlMessage(message))
-                continue;
-
-            if (message.Role == ChatRole.Tool)
-                continue;
-
-            if (message.Role != ChatRole.Assistant || message.ToolCalls is not { Count: > 0 })
-            {
-                sanitized.Add(message);
-                continue;
-            }
-
-            var expectedIds = message.ToolCalls
-                .Select(call => call.Id)
-                .Where(id => !string.IsNullOrWhiteSpace(id))
-                .ToHashSet(StringComparer.Ordinal);
-            var toolMessages = new List<ChatMessage>();
-            var cursor = i + 1;
-
-            while (cursor < messages.Count && messages[cursor].Role == ChatRole.Tool)
-            {
-                var toolMessage = messages[cursor];
-                if (!string.IsNullOrWhiteSpace(toolMessage.ToolCallId)
-                    && expectedIds.Remove(toolMessage.ToolCallId))
-                {
-                    toolMessages.Add(toolMessage);
-                }
-
-                cursor++;
-            }
-
-            if (expectedIds.Count == 0 && toolMessages.Count > 0)
-            {
-                sanitized.Add(message);
-                sanitized.AddRange(toolMessages);
-            }
-            else if (!string.IsNullOrWhiteSpace(message.Content))
-            {
-                sanitized.Add(message with { ToolCalls = null, ToolCallId = null, ToolName = null });
-            }
-
-            i = cursor - 1;
-        }
-
-        return sanitized;
+        var messages = source.Where(message => !IsRuntimeControlMessage(message));
+        return LlmMessageSequenceNormalizer.Normalize(messages).Messages.ToList();
     }
 
     private static bool IsRuntimeControlMessage(ChatMessage message)

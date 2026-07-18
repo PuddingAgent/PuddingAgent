@@ -367,12 +367,17 @@ var controllerConnStr = builder.Configuration.GetConnectionString("Controller")
 var memoryConnStr = builder.Configuration.GetConnectionString("Memory")
     ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_memory.db")}";
 builder.Services.AddSingleton<PlatformSqliteConnectionInterceptor>();
-builder.Services.AddDbContextFactory<PlatformDbContext>((sp, opt) =>
+builder.Services.AddSingleton<DbContextOptions<PlatformDbContext>>(sp =>
 {
+    var opt = new DbContextOptionsBuilder<PlatformDbContext>();
     opt.UseSqlite(connStr);
     opt.AddInterceptors(sp.GetRequiredService<PlatformSqliteConnectionInterceptor>());
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-}, ServiceLifetime.Singleton);
+    return opt.Options;
+});
+builder.Services.AddSingleton<IDbContextFactory<PlatformDbContext>, PlatformDbContextFactory>();
+builder.Services.AddScoped(sp =>
+    sp.GetRequiredService<IDbContextFactory<PlatformDbContext>>().CreateDbContext());
 
 // ── 双向消息系统（事件系统之上的聊天室/Agent 消息抽象）──────────
 builder.Services.AddScoped<IMessageRouter, MessageRouter>();
@@ -687,7 +692,7 @@ builder.Services.AddSingleton<HeartbeatOrchestrator>();
 builder.Services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateRegistry>();
 builder.Services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
 builder.Services.AddSingleton<MessageDeliveryDispatcher>();
-// HOSTED-DISABLED: builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
 
 // 检查点与订阅管理
 builder.Services.AddSingleton<AgentCheckpointService>();
@@ -758,6 +763,7 @@ builder.Services.AddSingleton<IContextCompactionSummaryGenerator, CompositeConte
 builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
 builder.Services.AddSingleton<ISessionCompactionEventEmitter, PuddingPlatform.Services.SessionCompactionEventEmitter>();
 builder.Services.AddSingleton<ContextWindowManager>();
+builder.Services.AddSingleton<ISessionExecutionGate, SessionExecutionGate>();
 // ── Agent Persona 文件读取器 ──
 builder.Services.AddSingleton(sp =>
 {

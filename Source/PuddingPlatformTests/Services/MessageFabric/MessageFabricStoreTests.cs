@@ -113,6 +113,29 @@ public sealed class MessageFabricStoreTests
     }
 
     [TestMethod]
+    public async Task ListPendingTargetsAsync_ReturnsDistinctQueuedAndRetryingAgentScopes()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+
+        await store.AckAsync("d2", CancellationToken.None);
+        var targets = await store.ListPendingTargetsAsync(
+            MessageEndpointKinds.Agent,
+            CancellationToken.None);
+
+        Assert.HasCount(1, targets);
+        Assert.AreEqual("default", targets[0].WorkspaceId);
+        Assert.AreEqual("room-default", targets[0].RoomId);
+        Assert.AreEqual(MessageEndpointKinds.Agent, targets[0].TargetKind);
+        Assert.AreEqual("assistant", targets[0].TargetId);
+    }
+
+    [TestMethod]
     public async Task RetryAsync_RequeuesDeliveryAfterAvailableAt_AndDeadLetterAsyncStopsClaim()
     {
         using var temp = TemporaryDirectory.Create();

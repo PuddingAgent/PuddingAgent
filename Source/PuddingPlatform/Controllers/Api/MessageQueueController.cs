@@ -19,6 +19,7 @@ public sealed class MessageQueueController(MessageQueueProjectionService project
         [FromQuery] string? roomId = null,
         [FromQuery] int limit = 50,
         [FromQuery] bool includeTerminal = false,
+        [FromQuery] bool includeSystem = false,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(workspaceId))
@@ -34,6 +35,7 @@ public sealed class MessageQueueController(MessageQueueProjectionService project
             RoomId = string.IsNullOrWhiteSpace(roomId) ? null : roomId,
             Limit = limit,
             IncludeTerminal = includeTerminal,
+            IncludeSystem = includeSystem,
         }, ct);
 
         return Ok(snapshot);
