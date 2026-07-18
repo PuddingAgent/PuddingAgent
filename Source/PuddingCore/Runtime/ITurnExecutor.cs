@@ -37,6 +37,9 @@ public sealed record TurnExecutionContext(
     IReadOnlyList<SkillPackageInfo>? SkillPackages,
     LlmInvocationProfile LlmProfile,
     LlmConfig? LlmConfig,
+    int? MaxRounds,
+    int? MaxElapsedSeconds,
+    int? MaxToolCallsTotal,
     string? ChannelId,
     string? UserExternalId,
     RunCancellation RunCancellation

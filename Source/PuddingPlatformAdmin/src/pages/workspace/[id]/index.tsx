@@ -25,7 +25,6 @@ import {
 import {
   App,
   Alert,
-  Avatar,
   Badge,
   Button,
   Descriptions,
@@ -61,7 +60,11 @@ import {
   deleteWorkflow,
   getWorkspace,
   listAgentAvatars,
+  listCapabilities,
   listGlobalAgentTemplates,
+  listLlmModels,
+  listLlmProviders,
+  listSkillPackages,
   listKnowledgeBases,
   listUsers,
   listWorkspaceAgents,
@@ -80,10 +83,14 @@ import {
   type AddWorkspaceMemberRequest,
   type AgentAvatarDto,
   type AppUserDto,
+  type CapabilityDto,
   type CreateWorkspaceAgentRequest,
   type GlobalAgentTemplateDto,
   type KnowledgeBaseDto,
+  type LlmModelDto,
+  type LlmProviderDto,
   type PeerNodeDto,
+  type SkillPackageDto,
   type UpsertKnowledgeBaseRequest,
   type UpsertWorkflowRequest,
   type UpsertWorkspaceChannelRequest,
@@ -99,6 +106,9 @@ import {
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import { buildWorkspacePath } from '@/utils/workspaceNavigation';
+import WorkspaceAgentSettingsDrawer, {
+  type WorkspaceAgentFormValues,
+} from './WorkspaceAgentSettingsDrawer';
 
 const { Text } = Typography;
 
@@ -272,13 +282,45 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
   const [editItem, setEditItem] = useState<WorkspaceAgentDto | null>(null);
   const [globalTemplates, setGlobalTemplates] = useState<GlobalAgentTemplateDto[]>([]);
   const [avatars, setAvatars] = useState<AgentAvatarDto[]>([]);
-  const [form] = Form.useForm<CreateWorkspaceAgentRequest & UpdateWorkspaceAgentRequest>();
+  const [providers, setProviders] = useState<LlmProviderDto[]>([]);
+  const [models, setModels] = useState<LlmModelDto[]>([]);
+  const [memoryModels, setMemoryModels] = useState<LlmModelDto[]>([]);
+  const [embeddingModels, setEmbeddingModels] = useState<LlmModelDto[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityDto[]>([]);
+  const [skillPackages, setSkillPackages] = useState<SkillPackageDto[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingMemoryModels, setLoadingMemoryModels] = useState(false);
+  const [loadingEmbeddingModels, setLoadingEmbeddingModels] = useState(false);
+  const [grantTargetKeys, setGrantTargetKeys] = useState<string[]>([]);
+  const [skillTargetKeys, setSkillTargetKeys] = useState<string[]>([]);
+  const [form] = Form.useForm<WorkspaceAgentFormValues>();
   const selectedSourceTemplateId = Form.useWatch('sourceTemplateId', form);
 
   useEffect(() => {
     listGlobalAgentTemplates().then(setGlobalTemplates).catch(() => {});
     listAgentAvatars(true).then(setAvatars).catch(() => {});
+    listLlmProviders().then(setProviders).catch(() => {});
+    listCapabilities(true).then(setCapabilities).catch(() => {});
+    listSkillPackages(true).then(setSkillPackages).catch(() => {});
   }, [workspaceId]);
+
+  const defaultCapIds = React.useMemo(
+    () => capabilities
+      .filter((capability) =>
+        !capability.requiresShellExecution
+        && !capability.requiresFileWrite
+        && !capability.requiresNetworkAccess)
+      .map((capability) => capability.capabilityId),
+    [capabilities],
+  );
+
+  const grantCapabilities = React.useMemo(
+    () => capabilities.filter((capability) =>
+      capability.requiresShellExecution
+      || capability.requiresFileWrite
+      || capability.requiresNetworkAccess),
+    [capabilities],
+  );
 
   const normalizeTemplateId = (value?: string) =>
     value?.startsWith('global:') ? value.slice('global:'.length) : value;
@@ -287,40 +329,156 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     (template) => template.templateId === normalizeTemplateId(selectedSourceTemplateId),
   );
 
-  const renderAvatarOption = (avatar: AgentAvatarDto) => (
-    <Space size={8}>
-      <Avatar size={20} src={avatar.url} />
-      <span>{avatar.name}</span>
-    </Space>
-  );
+  const loadModels = async (
+    providerId: string | undefined,
+    setter: React.Dispatch<React.SetStateAction<LlmModelDto[]>>,
+    setLoading: React.Dispatch<React.SetStateAction<boolean>>,
+    embeddingOnly = false,
+  ) => {
+    if (!providerId) {
+      setter([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await listLlmModels(providerId);
+      setter(result.filter((model) =>
+        !model.isDeprecated && (!embeddingOnly || model.isEmbedding)));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const openCreate = () => {
+  const loadAgentModelOptions = async (values: Partial<WorkspaceAgentFormValues>) => {
+    await Promise.all([
+      loadModels(values.preferredProviderId, setModels, setLoadingModels),
+      loadModels(values.memoryLlmProviderId, setMemoryModels, setLoadingMemoryModels),
+      loadModels(values.embeddingProviderId, setEmbeddingModels, setLoadingEmbeddingModels, true),
+    ]);
+  };
+
+  const syncGrantState = (selectedCapabilityIds: string[] = [], selectedSkillIds: string[] = []) => {
+    setGrantTargetKeys(selectedCapabilityIds.filter((id) =>
+      grantCapabilities.some((capability) => capability.capabilityId === id)));
+    setSkillTargetKeys(selectedSkillIds);
+  };
+
+  const applyTemplateSnapshot = async (template: GlobalAgentTemplateDto) => {
+    const selectedCapabilityIds = template.selectedCapabilityIds ?? defaultCapIds;
+    const values: Partial<WorkspaceAgentFormValues> = {
+      name: template.name,
+      description: template.description,
+      sourceTemplateId: `global:${template.templateId}`,
+      role: template.role,
+      systemPrompt: template.systemPrompt,
+      userPromptTemplate: template.userPromptTemplate,
+      preferredProviderId: template.preferredProviderId,
+      preferredModelId: template.preferredModelId,
+      memoryLlmProviderId: template.memoryLlmProviderId,
+      memoryLlmModelId: template.memoryLlmModelId,
+      embeddingProviderId: template.embeddingProviderId,
+      embeddingModelId: template.embeddingModelId,
+      memorySearchMode: template.memorySearchMode ?? 'deep',
+      reasoningEffort: template.reasoningEffort,
+      maxReplyTokens: template.maxReplyTokens,
+      maxRounds: template.maxRounds ?? 200,
+      maxElapsedSeconds: template.maxElapsedSeconds ?? 1200,
+      maxToolCallsTotal: template.maxToolCallsTotal ?? 100,
+      containerImage: template.containerImage,
+      selectedCapabilityIds,
+      skillPackageIds: template.selectedSkillPackageIds ?? [],
+      soulMdContent: template.personaPrompt,
+      agentsMdContent: template.agentsPrompt,
+      toolsMdContent: template.toolsDescription,
+      bootstrapMdContent: template.bootstrapTemplate,
+      memoryMdContent: template.memoryPrompt,
+      avatarId: template.avatarId,
+      isEnabled: true,
+    };
+    form.setFieldsValue(values);
+    syncGrantState(selectedCapabilityIds, template.selectedSkillPackageIds ?? []);
+    await loadAgentModelOptions(values);
+  };
+
+  const openCreate = async () => {
     setEditItem(null);
     form.resetFields();
-    form.setFieldsValue({ isEnabled: true });
+    setGrantTargetKeys([]);
+    setSkillTargetKeys([]);
+    const template = globalTemplates.find((item) => item.templateId === 'general-assistant')
+      ?? globalTemplates[0];
+    if (template) {
+      await applyTemplateSnapshot(template);
+    } else {
+      form.setFieldsValue({
+        isEnabled: true,
+        role: 'Service',
+        memorySearchMode: 'deep',
+        maxRounds: 200,
+        maxElapsedSeconds: 1200,
+        maxToolCallsTotal: 100,
+        selectedCapabilityIds: defaultCapIds,
+        skillPackageIds: [],
+      });
+    }
     setDrawerOpen(true);
   };
 
-    const openEdit = async (item: WorkspaceAgentDto) => {
+  const openEdit = async (item: WorkspaceAgentDto) => {
     setEditItem(item);
     form.resetFields();
     try {
       const detail = await getWorkspaceAgent(workspaceId, item.agentId);
       form.setFieldsValue({ ...detail });
+      syncGrantState(detail.selectedCapabilityIds ?? [], detail.skillPackageIds ?? []);
+      await loadAgentModelOptions(detail);
+      setDrawerOpen(true);
     } catch {
-      form.setFieldsValue({ ...item });
+      setEditItem(null);
+      message.error('Agent 完整配置加载失败，请稍后重试');
     }
-    setDrawerOpen(true);
+  };
+
+  const handleSourceTemplateChange = async (sourceTemplateId?: string) => {
+    const templateId = normalizeTemplateId(sourceTemplateId);
+    const template = globalTemplates.find((item) => item.templateId === templateId);
+    if (template) {
+      await applyTemplateSnapshot(template);
+    }
+  };
+
+  const handleProviderChange = async (providerId: string) => {
+    form.setFieldValue('preferredModelId', undefined);
+    await loadModels(providerId, setModels, setLoadingModels);
+  };
+
+  const handleMemoryProviderChange = async (providerId: string) => {
+    form.setFieldValue('memoryLlmModelId', undefined);
+    await loadModels(providerId, setMemoryModels, setLoadingMemoryModels);
+  };
+
+  const handleEmbeddingProviderChange = async (providerId: string) => {
+    form.setFieldValue('embeddingModelId', undefined);
+    await loadModels(providerId, setEmbeddingModels, setLoadingEmbeddingModels, true);
   };
 
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      const request = {
+        ...values,
+        selectedCapabilityIds: Array.from(new Set([...defaultCapIds, ...grantTargetKeys])),
+        skillPackageIds: [...skillTargetKeys],
+      };
       if (editItem) {
-        await updateWorkspaceAgent(workspaceId, editItem.agentId, values as UpdateWorkspaceAgentRequest);
+        await updateWorkspaceAgent(
+          workspaceId,
+          editItem.agentId,
+          request as UpdateWorkspaceAgentRequest,
+        );
         message.success('Agent 已更新');
       } else {
-        await createWorkspaceAgent(workspaceId, values as CreateWorkspaceAgentRequest);
+        await createWorkspaceAgent(workspaceId, request as CreateWorkspaceAgentRequest);
         message.success('Agent 已创建');
       }
       setDrawerOpen(false);
@@ -401,49 +559,44 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增 Agent</Button>,
         ]}
       />
-            <Drawer
-        title={editItem ? '编辑 Agent' : '新增 Agent'}
+      <WorkspaceAgentSettingsDrawer
         open={drawerOpen}
-        width={800}
+        editMode={!!editItem}
+        form={form}
         onClose={() => setDrawerOpen(false)}
-        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
-      >
-        <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
-        <ProForm form={form} submitter={false} layout="vertical">
-          <ProFormText name="name" label="Agent 名称" rules={[{ required: true }]} />
-          <ProFormTextArea name="description" label="实例职责" rows={2} placeholder="描述这个 Agent 在当前工作区负责什么" />
-          <ProFormTextArea name="heartbeatPrompt" label="心跳提示词" rows={4} placeholder="Agent 空闲心跳时收到的提示词；留空用默认" />
-          <ProFormSelect name="sourceTemplateId" label="来源模板" placeholder="选择全局模板"
-            disabled={!!editItem}
-            fieldProps={{ allowClear: true, options: globalTemplates.map(t => ({ label: `${t.name} (${t.templateId})`, value: `global:${t.templateId}` })) }}
-            extra="创建时从模板嵌入配置，已创建的 Agent 不可修改来源模板" />
-          {selectedTemplate && (<Alert showIcon type="info" message={`模板预览: ${selectedTemplate.name} · ${selectedTemplate.role}`}
-            description={<Text type="secondary">模型: {selectedTemplate.preferredModelId || '平台默认'} · 记忆: {selectedTemplate.memorySearchMode || 'deep'}</Text>}
-            style={{ marginBottom: 12 }} />)}
-
-          <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>运行时配置</Text>
-          <ProFormTextArea name="systemPrompt" label="系统提示词" rows={4} placeholder="Agent 核心行为指令"
-            extra="这是 Agent 实例自己的配置，修改不影响模板" />
-          <ProFormDigit name="maxContextTokens" label="最大上下文 Token" min={1024} max={1048576} fieldProps={{ precision: 0 }} />
-          <ProFormDigit name="maxRounds" label="最大轮次" min={1} max={500} fieldProps={{ precision: 0 }} />
-          <ProFormDigit name="maxElapsedSeconds" label="最大执行时间(秒)" min={60} max={86400} fieldProps={{ precision: 0 }} />
-          <ProFormSelect name="memorySearchMode" label="记忆搜索模式"
-            options={[{ label: '关闭', value: 'off' },{ label: '即时', value: 'instant' },{ label: '深度', value: 'deep' }]} />
-
-          <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>Markdown 文件（.md）</Text>
-          <ProFormTextArea name="soulMdContent" label="SOUL.md - 人设/性格" rows={2} placeholder="定义 Agent 的性格、边界、回复风格" />
-          <ProFormTextArea name="agentsMdContent" label="AGENTS.md - 工具约定" rows={2} placeholder="定义 Agent 的工作流、工具使用策略" />
-          <ProFormTextArea name="toolsMdContent" label="TOOLS.md - 工具描述" rows={2} placeholder="描述 Agent 可用工具及其用途" />
-          <ProFormTextArea name="bootstrapMdContent" label="BOOTSTRAP.md - 首次引导" rows={2} placeholder="新会话首轮使用的问答模板" />
-          <ProFormTextArea name="memoryMdContent" label="MEMORY.md - 记忆策略" rows={2} placeholder="定义 Agent 的记忆分层与存储策略" />
-
-          <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>个性化覆盖</Text>
-          <ProFormSelect name="avatarId" label="覆盖头像" placeholder="不选则使用模板默认头像"
-            fieldProps={{ allowClear: true, options: avatars.map(a => ({ label: a.name, value: a.avatarId })) }} />
-          {editItem && <ProFormSwitch name="isEnabled" label="启用" />}
-        </ProForm>
-        </div>
-      </Drawer>
+        onSave={handleSave}
+        onSourceTemplateChange={handleSourceTemplateChange}
+        templates={globalTemplates}
+        selectedTemplate={selectedTemplate}
+        avatars={avatars}
+        providers={providers}
+        models={models}
+        memoryModels={memoryModels}
+        embeddingModels={embeddingModels}
+        loadingModels={loadingModels}
+        loadingMemoryModels={loadingMemoryModels}
+        loadingEmbeddingModels={loadingEmbeddingModels}
+        onProviderChange={handleProviderChange}
+        onMemoryProviderChange={handleMemoryProviderChange}
+        onEmbeddingProviderChange={handleEmbeddingProviderChange}
+        capabilities={capabilities}
+        skillPackages={skillPackages}
+        defaultCapIds={defaultCapIds}
+        grantCapabilities={grantCapabilities}
+        grantTargetKeys={grantTargetKeys}
+        skillTargetKeys={skillTargetKeys}
+        onGrantChange={(keys) => {
+          setGrantTargetKeys(keys);
+          form.setFieldValue(
+            'selectedCapabilityIds',
+            Array.from(new Set([...defaultCapIds, ...keys])),
+          );
+        }}
+        onSkillChange={(keys) => {
+          setSkillTargetKeys(keys);
+          form.setFieldValue('skillPackageIds', keys);
+        }}
+      />
     </>
   );
 };

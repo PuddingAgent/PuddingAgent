@@ -106,7 +106,10 @@ const MemoryPageEditor: React.FC<MemoryPageEditorProps> = ({
 
   return (
     <div className="editor-empty">
-      请从左侧记忆树中选择一个节点
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="从左侧记忆树选择一个 Page 或 Book"
+      />
     </div>
   );
 };

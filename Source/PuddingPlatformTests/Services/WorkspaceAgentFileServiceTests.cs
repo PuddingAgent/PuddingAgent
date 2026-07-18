@@ -97,6 +97,138 @@ public sealed class WorkspaceAgentFileServiceTests
     }
 
     [TestMethod]
+    public async Task SmartRoleModels_ShouldRoundTripThroughAgentManifest()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "pudding-workspace-agent-tests",
+            Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            var paths = PuddingDataPaths.FromRoot(root);
+
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
+            var templateService = new AgentTemplateFileService(
+                paths,
+                avatarCatalog,
+                NullLogger<AgentTemplateFileService>.Instance);
+            var service = new WorkspaceAgentFileService(
+                paths,
+                templateService,
+                avatarCatalog,
+                CreateMemoryScopeFactory(),
+                NullLogger<WorkspaceAgentFileService>.Instance);
+
+            var created = await service.CreateAgentAsync(
+                "default",
+                new CreateWorkspaceAgentRequest(
+                    Name: "smart-role-agent",
+                    Description: null,
+                    DisplayName: null,
+                    AvatarId: null,
+                    AvatarUrl: null,
+                    SourceTemplateId: null,
+                    SystemPromptOverride: null,
+                    PreferredProviderId: "deepseek",
+                    PreferredModelId: "deepseek-v4-pro",
+                    Role: "Task",
+                    SystemPrompt: "instance system prompt",
+                    UserPromptTemplate: "Task: {{task}}",
+                    MemorySearchMode: "instant",
+                    ReasoningEffort: "high",
+                    MaxReplyTokens: 8192,
+                    MaxRounds: 88,
+                    MaxElapsedSeconds: 900,
+                    MaxToolCallsTotal: 77,
+                    ContainerImage: "pudding/agent:latest",
+                    MemoryLlmProviderId: "deepseek",
+                    MemoryLlmModelId: "deepseek-v4-flash",
+                    EmbeddingProviderId: "dashscope",
+                    EmbeddingModelId: "text-embedding-v4",
+                    SelectedCapabilityIds: ["file_read", "file_write"],
+                    SkillPackageIds: ["coding"],
+                    SoulMdContent: "soul",
+                    AgentsMdContent: "agents",
+                    ToolsMdContent: "tools",
+                    BootstrapMdContent: "bootstrap",
+                    MemoryMdContent: "memory",
+                    ExplorerModel: " deepseek/deepseek-v4-pro ",
+                    ResearcherModel: "deepseek/deepseek-v4-pro",
+                    PlannerModel: "deepseek/deepseek-v4-pro",
+                    ReviewerModel: "deepseek/deepseek-v4-pro",
+                    DeveloperModel: "deepseek/deepseek-v4-pro",
+                    DeployerModel: "deepseek/deepseek-v4-pro",
+                    TesterModel: "deepseek/deepseek-v4-pro"));
+
+            var listed = (await service.ListAgentsAsync("default")).Single();
+            var loaded = await service.GetAgentAsync("default", created.AgentId);
+
+            Assert.AreEqual("deepseek/deepseek-v4-pro", created.ExplorerModel);
+            Assert.AreEqual(created.ExplorerModel, listed.ExplorerModel);
+            Assert.AreEqual(created.TesterModel, loaded!.TesterModel);
+            Assert.AreEqual("Task", loaded.Role);
+            Assert.AreEqual("Task: {{task}}", loaded.UserPromptTemplate);
+            Assert.AreEqual(77, loaded.MaxToolCallsTotal);
+            Assert.AreEqual("pudding/agent:latest", loaded.ContainerImage);
+            Assert.AreEqual("dashscope", loaded.EmbeddingProviderId);
+            Assert.AreEqual("text-embedding-v4", loaded.EmbeddingModelId);
+            CollectionAssert.AreEqual(new[] { "file_read", "file_write" }, loaded.SelectedCapabilityIds);
+            CollectionAssert.AreEqual(new[] { "coding" }, loaded.SkillPackageIds);
+            Assert.AreEqual("soul", loaded.SoulMdContent);
+
+            var updated = await service.UpdateAgentAsync(
+                "default",
+                created.AgentId,
+                new UpdateWorkspaceAgentRequest(
+                    Name: loaded.Name,
+                    Description: loaded.Description,
+                    DisplayName: loaded.DisplayName,
+                    AvatarId: loaded.AvatarId,
+                    AvatarUrl: loaded.AvatarUrl,
+                    SourceTemplateId: loaded.SourceTemplateId,
+                    SystemPromptOverride: loaded.SystemPromptOverride,
+                    PreferredProviderId: loaded.PreferredProviderId,
+                    PreferredModelId: loaded.PreferredModelId,
+                    IsEnabled: loaded.IsEnabled,
+                    Role: "Custom",
+                    UserPromptTemplate: "Updated: {{task}}",
+                    MaxToolCallsTotal: 66,
+                    ContainerImage: "pudding/agent:next",
+                    MemoryLlmProviderId: "mimo",
+                    MemoryLlmModelId: "mimo-v2.5-pro",
+                    EmbeddingProviderId: "openai",
+                    EmbeddingModelId: "text-embedding-3-small",
+                    ExplorerModel: null,
+                    ResearcherModel: "mimo/mimo-v2.5-pro",
+                    PlannerModel: loaded.PlannerModel,
+                    ReviewerModel: loaded.ReviewerModel,
+                    DeveloperModel: loaded.DeveloperModel,
+                    DeployerModel: loaded.DeployerModel,
+                    TesterModel: loaded.TesterModel));
+
+            var reloaded = await service.GetAgentAsync("default", created.AgentId);
+
+            Assert.IsNull(updated.ExplorerModel);
+            Assert.AreEqual("mimo/mimo-v2.5-pro", updated.ResearcherModel);
+            Assert.AreEqual("Custom", updated.Role);
+            Assert.AreEqual("Updated: {{task}}", updated.UserPromptTemplate);
+            Assert.AreEqual(66, updated.MaxToolCallsTotal);
+            Assert.AreEqual("pudding/agent:next", updated.ContainerImage);
+            Assert.AreEqual("openai", updated.EmbeddingProviderId);
+            Assert.IsNull(reloaded!.ExplorerModel);
+            Assert.AreEqual("mimo/mimo-v2.5-pro", reloaded.ResearcherModel);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task GetAndListAgentsAsync_ShouldIgnoreLegacyInstanceLlmConfigAndUseTemplateDefaults()
     {
         var root = Path.Combine(Path.GetTempPath(), "pudding-workspace-agent-tests", Guid.NewGuid().ToString("N"));

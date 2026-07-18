@@ -85,8 +85,10 @@ public sealed record LlmProviderStrategy
     public int? MaxRetries { get; init; }
     public int? RetryDelaySeconds { get; init; }
     public int? CircuitBreakerFailureThreshold { get; init; }
-        public int? CircuitBreakerRecoverySeconds { get; init; }
+    public int? CircuitBreakerRecoverySeconds { get; init; }
     public int? MaxConcurrentRequests { get; init; }
+    public long? TokensPerMinute { get; init; }
+    public int? RequestsPerMinute { get; init; }
 
     public int EffectiveRequestTimeoutSeconds => RequestTimeoutSeconds ?? 120;
     public int EffectiveMaxConcurrentRequests => MaxConcurrentRequests ?? 50;

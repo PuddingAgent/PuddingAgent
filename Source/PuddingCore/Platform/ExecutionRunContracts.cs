@@ -125,6 +125,7 @@ public sealed record AgentExecutionSnapshot(
     string? MemoryPolicyJson,
     int? BudgetTotalTokens,
     int? BudgetMaxRounds,
+    int? BudgetMaxToolCalls,
     TimeSpan? Timeout,
     DateTimeOffset CreatedAt);
 

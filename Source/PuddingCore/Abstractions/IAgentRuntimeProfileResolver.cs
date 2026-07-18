@@ -13,11 +13,11 @@ namespace PuddingCode.Abstractions;
 /// that turns configuration files and runtime indexes into one execution-ready
 /// snapshot.
 ///
-/// The key design constraint is ownership: workspace agents own identity,
-/// avatar, enablement, and main-session binding; source templates own model
-/// routing, capability policy, and Skill selection. Keeping that rule here
-/// prevents controllers and queue consumers from re-implementing configuration
-/// fallbacks whenever the storage layout changes.
+/// The key design constraint is ownership: the self-contained Agent instance
+/// owns identity, runtime policy, model routing, capability policy, and Skill
+/// selection. Source templates are create-time blueprints only. Keeping that
+/// rule here prevents controllers and queue consumers from re-implementing
+/// configuration fallbacks whenever the storage layout changes.
 /// </remarks>
 public interface IAgentRuntimeProfileResolver
 {
@@ -61,7 +61,7 @@ public sealed record AgentRuntimeProfile
     public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
     public int? MaxRounds { get; init; }
     public int? MaxElapsedSeconds { get; init; }
-    public int? MaxContextTokens { get; init; }
+    public int? MaxToolCallsTotal { get; init; }
     public string CapabilitySource { get; init; } = "none";
     public int CapabilityCount { get; init; }
 }

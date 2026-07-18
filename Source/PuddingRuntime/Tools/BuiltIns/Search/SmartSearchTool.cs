@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +6,7 @@ using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Tools;
+using PuddingCode.Agents;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntime.Services.Tools;
@@ -24,7 +25,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "smart_search",
     name: "Smart Search",
-    description: "智能代码搜索。用自然语言描述搜索意图（what/scope/focus），" +
+    description: "【已合并到 smart_explore】智能代码搜索。用自然语言描述搜索意图（what/scope/focus），" +
                  "内部使用子代理自动执行多轮搜索，返回带上下文的摘要结果。" +
                  "一次调用完成 file_search + 多次 file_read 的工作。" +
                  "参数：what（搜索什么，自然语言描述）、scope（可选，目录范围）、" +
@@ -106,14 +107,36 @@ public sealed class SmartSearchTool : PuddingToolBase<SmartSearchArgs>
             },
         }, ct);
 
-        try
+                try
         {
+            // Explorer 模型解析：无显式 model 时从父 Agent manifest 读取
+            var resolvedModel = args.Model;
+            if (string.IsNullOrWhiteSpace(resolvedModel))
+            {
+                try
+                {
+                    var profileProvider = _serviceProvider.GetService<AgentProfileProvider>();
+                    if (profileProvider is not null)
+                    {
+                        var profile = await profileProvider.LoadAsync(context.AgentInstanceId, CancellationToken.None);
+                        resolvedModel = profile.Instance.ExplorerModel;
+                        if (!string.IsNullOrWhiteSpace(resolvedModel))
+                            _logger.LogInformation("[SmartSearch] Resolved explorer model: {Model}", resolvedModel);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[SmartSearch] Failed to resolve explorer model");
+                }
+            }
+
             var spawnArgs = JsonSerializer.Serialize(new
             {
                 task,
                 agent_template = SubAgentTemplateId,
                 sync = true,
-                model = args.Model,
+                model = resolvedModel,
+                role_in_plan = "explorer",
                 capability_requirements = args.CapabilityRequirements,
                 timeout_seconds = timeoutUsed,
                 max_rounds = DefaultMaxRounds,

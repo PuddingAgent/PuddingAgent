@@ -140,6 +140,46 @@ describe('LlmResourcePoolPage provider templates', () => {
     });
   });
 
+  it('builds the Moonshot Kimi K3 pay-as-you-go provider and model', () => {
+    const template = LLM_PROVIDER_TEMPLATES.find((item) => item.value === 'moonshot');
+    expect(template).toBeDefined();
+
+    expect(getProviderTemplateProviderValues(template!)).toEqual({
+      providerId: 'moonshot',
+      name: 'Moonshot（Kimi，按量付费）',
+      protocol: 'openai',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      description: 'Moonshot Kimi K3 按量付费；额度：并发 50、TPM 2,000,000、RPM 200。',
+      isEnabled: true,
+      maxConcurrentRequests: 50,
+      tokensPerMinute: 2000000,
+      requestsPerMinute: 200,
+    });
+
+    const modelValues = getProviderTemplateModelValues(template!);
+    expect(modelValues).toHaveLength(1);
+    expect(modelValues[0]).toMatchObject({
+      modelId: 'kimi-k3',
+      name: 'Kimi K3',
+      maxContextTokens: 1048576,
+      maxOutputTokens: 131072,
+      inputPricePer1MTokens: 20,
+      outputPricePer1MTokens: 100,
+      cacheHitPricePer1MTokens: 2,
+      maxConcurrentRequests: 50,
+      isDefault: true,
+      capabilityTags: [
+        'text',
+        'function-calling',
+        'json-mode',
+        'streaming',
+        'long-context',
+        'code',
+        'reasoning',
+      ],
+    });
+  });
+
   it('builds Xiaomi MiMo pay-as-you-go models with RMB API values', () => {
     const template = LLM_PROVIDER_TEMPLATES.find((item) => item.value === 'xiaomimimo-payg');
     expect(template).toBeDefined();

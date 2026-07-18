@@ -39,6 +39,35 @@ describe('buildVirtualMessageItems', () => {
     ]);
   });
 
+  it('preserves system-command source identity through message projection', () => {
+    const turn = makeTurn('system-turn', 1000, 'Runtime mode is now Yolo');
+    turn.source = {
+      sourceId: 'system',
+      sourceType: 'system_command',
+      displayName: 'System',
+      avatarColor: '#1677ff',
+      avatarEmoji: '⚙',
+    };
+
+    const result = buildVirtualMessageItems({
+      turns: [turn],
+      agentName: 'Agent',
+    });
+    const systemResponse = result.items.find(
+      (item) => item.kind === 'message' && item.block.role === 'agent',
+    );
+
+    expect(systemResponse).toMatchObject({
+      kind: 'message',
+      block: {
+        agentId: 'system',
+        sourceType: 'system_command',
+        agentName: 'System',
+        agentAvatarEmoji: '⚙',
+      },
+    });
+  });
+
   it('adds loader before messages when older history exists', () => {
     const result = buildVirtualMessageItems({
       turns: [makeTurn('t1', 1000)],

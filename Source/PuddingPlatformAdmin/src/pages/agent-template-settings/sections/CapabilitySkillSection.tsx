@@ -16,6 +16,8 @@ export interface CapabilitySkillSectionProps {
   onSkillChange: (keys: string[]) => void;
   defaultCapIds: string[];
   grantCapabilities: CapabilityDto[];
+  capabilityFieldName?: string;
+  skillFieldName?: string;
 }
 
 type GrantModalKind = 'capability' | 'skill';
@@ -292,6 +294,8 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
   onSkillChange,
   defaultCapIds,
   grantCapabilities,
+  capabilityFieldName = 'selectedCapabilityIds',
+  skillFieldName = 'selectedSkillPackageIds',
 }) => {
   const { styles } = useStyles();
   const [activePicker, setActivePicker] = useState<GrantModalKind | null>(null);
@@ -315,10 +319,10 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
     <section id={id} data-section-id={id} className={styles.section}>
       <div className={styles.sectionTitle}>能力与 Skill</div>
 
-      <Form.Item name="selectedCapabilityIds" hidden>
+      <Form.Item name={capabilityFieldName} hidden>
         <HiddenFormField />
       </Form.Item>
-      <Form.Item name="selectedSkillPackageIds" hidden>
+      <Form.Item name={skillFieldName} hidden>
         <HiddenFormField />
       </Form.Item>
 

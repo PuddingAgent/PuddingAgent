@@ -103,6 +103,7 @@ export interface ChatMessageBlock {
 
   /** Agent 信息（仅 role='agent' 时有效） */
   agentId?: string;
+  sourceType?: ChatSource['sourceType'];
   agentName?: string;
   agentAvatarUrl?: string;
   agentAvatarColor?: string;
@@ -198,6 +199,8 @@ export function buildMessageBlocks(
         content: turn.assistant.answerMarkdown,
         status: toChatMessageStatus(turn.assistant.status),
         createdAt: turn.userMessage.timestamp,
+        agentId: turn.source?.sourceId,
+        sourceType: turn.source?.sourceType,
         agentName: blockAgentName,
         agentAvatarUrl: turn.source?.avatarUrl,
         agentAvatarColor: turn.source?.avatarColor || '#7c3aed',

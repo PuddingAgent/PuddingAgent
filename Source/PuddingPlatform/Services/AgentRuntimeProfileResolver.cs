@@ -71,7 +71,7 @@ public sealed class AgentRuntimeProfileResolver(
             SystemPrompt = definition.Instance.SystemPrompt,
             MaxRounds = definition.Instance.MaxRounds,
             MaxElapsedSeconds = definition.Instance.MaxElapsedSeconds,
-            MaxContextTokens = definition.Instance.MaxContextTokens,
+            MaxToolCallsTotal = definition.Instance.MaxToolCallsTotal,
             CapabilitySource = capabilities.Source,
             CapabilityCount = capabilities.CapabilityCount,
         };

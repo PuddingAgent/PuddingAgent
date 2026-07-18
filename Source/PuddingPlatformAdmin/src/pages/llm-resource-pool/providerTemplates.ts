@@ -29,6 +29,16 @@ const DEEPSEEK_V4_CAPABILITIES = [
   'reasoning',
 ];
 
+const KIMI_K3_CAPABILITIES = [
+  'text',
+  'function-calling',
+  'json-mode',
+  'streaming',
+  'long-context',
+  'code',
+  'reasoning',
+];
+
 const MIMO_V25_CAPABILITIES = [
   'text',
   'function-calling',
@@ -94,7 +104,7 @@ const createMimoModels = (
 export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   {
     value: 'deepseek',
-        label: 'DeepSeek',
+    label: 'DeepSeek',
     provider: {
       providerId: 'deepseek',
       name: 'DeepSeek',
@@ -136,8 +146,40 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     ],
   },
   {
+    value: 'moonshot',
+    label: 'Moonshot（Kimi，按量付费）',
+    provider: {
+      providerId: 'moonshot',
+      name: 'Moonshot（Kimi，按量付费）',
+      protocol: 'openai',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      description: 'Moonshot Kimi K3 按量付费；额度：并发 50、TPM 2,000,000、RPM 200。',
+      isEnabled: true,
+      maxConcurrentRequests: 50,
+      tokensPerMinute: 2000000,
+      requestsPerMinute: 200,
+    },
+    models: [
+      {
+        modelId: 'kimi-k3',
+        name: 'Kimi K3',
+        description: 'Moonshot Kimi K3，1,048,576 tokens 上下文窗口，最大输出 131,072 tokens。',
+        maxContextTokens: 1048576,
+        maxOutputTokens: 131072,
+        inputPricePer1MTokensRmb: 20,
+        outputPricePer1MTokensRmb: 100,
+        cacheHitPricePer1MTokensRmb: 2,
+        capabilityTags: KIMI_K3_CAPABILITIES,
+        isDeprecated: false,
+        isDefault: true,
+        sortOrder: 0,
+        maxConcurrentRequests: 50,
+      },
+    ],
+  },
+  {
     value: 'xiaomimimo-tokenplan',
-        label: 'xiaomimimo-tokenplan',
+    label: 'xiaomimimo-tokenplan',
     provider: {
       providerId: 'xiaomimimo-tokenplan',
       name: 'xiaomimimo-tokenplan',
@@ -353,4 +395,5 @@ export const getProviderTemplateModelValues = (
     isDefault: model.isDefault,
     isEmbedding: model.isEmbedding ?? false,
     sortOrder: model.sortOrder,
+    maxConcurrentRequests: model.maxConcurrentRequests,
   }));

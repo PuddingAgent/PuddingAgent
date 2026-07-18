@@ -1,4 +1,4 @@
-using BenchmarkDotNet.Attributes;
+﻿using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -47,11 +47,14 @@ public class MemoryRecallBenchmarks
             await SeedDataAsync(db, FactCount);
         }
 
-        _libraryConvenience = new FakeMemoryLibraryConvenience();
+                _libraryConvenience = new FakeMemoryLibraryConvenience();
+        var memoryLibrary = new FakeMemoryLibrary();
         _service = new MemoryRecallService(
             _libraryConvenience,
+            memoryLibrary,
             _dbFactory,
-            NullLogger<MemoryRecallService>.Instance);
+            NullLogger<MemoryRecallService>.Instance,
+            embeddingService: null);
     }
 
     [GlobalCleanup]
@@ -277,9 +280,72 @@ public class MemoryRecallBenchmarks
             return Task.CompletedTask;
         }
 
-        public IReadOnlyList<RankedResult> GetPendingExplorations(string query)
+                public IReadOnlyList<RankedResult> GetPendingExplorations(string query)
         {
             return Array.Empty<RankedResult>();
         }
+    }
+
+    private sealed class FakeMemoryLibrary : IMemoryLibrary
+    {
+        public Task<IReadOnlyList<RankedResult>> SearchChaptersFtsScopedAsync(string workspaceId, string query, int topK = 20, CancellationToken ct = default, string? agentInstanceId = null, bool includeHistory = false)
+            => Task.FromResult<IReadOnlyList<RankedResult>>(Array.Empty<RankedResult>());
+
+        public Task<IReadOnlyList<RankedResult>> SearchChaptersByVectorAsync(float[] queryEmbedding, int topK = 20, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RankedResult>>(Array.Empty<RankedResult>());
+
+        // Stub — remaining members throw to fail fast if called unexpectedly.
+        public Task<LibraryRecord> CreateLibraryAsync(string workspaceId, string name, string? description, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<LibraryRecord?> GetLibraryAsync(string libraryId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<LibraryRecord>> ListLibrariesAsync(string workspaceId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookRecord> CreateBookAsync(string libraryId, string title, string summary, IReadOnlyList<string>? tagPaths = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookRecord?> GetBookAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookRecord?> GetBookReadOnlyAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookRecord> UpdateBookAsync(string bookId, Func<BookRecord, BookRecord> updater, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> ArchiveBookAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<BookRecord>> ListBooksAsync(string libraryId, int limit = 50, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> AddChapterAsync(string bookId, string title, string content, int chapterOrder = 0, string? sourceSessionId = null, string? agentInstanceId = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> AddChapterWithSourceAsync(string bookId, string title, string content, int chapterOrder = 0, string? sourceSessionId = null, string? sourceReference = null, string? referenceType = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord?> GetChapterAsync(string chapterId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> UpdateChapterContentAsync(string chapterId, string newContent, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> UpdateChapterTitleAsync(string chapterId, string newTitle, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> UpdateChapterImportanceAsync(string chapterId, double importance, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> SupersedeChapterAsync(string chapterId, string newTitle, string newContent, string? sourceSessionId = null, string? agentInstanceId = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ChapterRecord>> ListChaptersAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ChapterRecord>> ListChapterHistoryAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<PointerRecord> CreatePointerAsync(string chapterId, string targetType, string targetId, string? label = null, string? description = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<PointerRecord> CreateGeneralPointerAsync(string workspaceId, string sourceType, string sourceId, string targetType, string targetId, string? label = null, string? description = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<PointerRecord>> GetPointersAsync(string chapterId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<PointerRecord>> GetPointersBySourceAsync(string workspaceId, string sourceType, string sourceId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<PointerRecord>> ResolveBacklinksAsync(string targetType, string targetId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookRecord?> FindBookByTitleAsync(string libraryId, string title, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> DeleteLibraryAsync(string libraryId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> DeleteBookAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> DeleteChapterAsync(string chapterId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> DeletePointerAsync(string pointerId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<RankedResult>> SearchBooksFtsScoredAsync(string query, int topK = 20, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<RankedResult>> SearchChaptersFtsScoredAsync(string query, int topK = 20, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<BookRecord>> SearchBooksFtsAsync(string query, int topK = 20, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ChapterRecord>> SearchChaptersFtsAsync(string query, int topK = 20, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<BookRecord>> ListBooksScopedAsync(string workspaceId, int limit = 50, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<SourceReferenceRecord> AddSourceReferenceAsync(SourceReferenceCreateRequest request, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<SourceReferenceRecord>> GetSourceReferencesAsync(string ownerType, string ownerId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TreeNodeRecord>> GetTreeChildrenAsync(string workspaceId, string libraryId, string? parentNodeId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<TreeNodeRecord> CreateTreeNodeAsync(string workspaceId, string libraryId, string? parentNodeId, string name, string? summary = null, string nodeType = "category", CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookTreeMountRecord> MountBookAsync(string bookId, string nodeId, int weight = 1, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task EnsureDefaultBooksAsync(string workspaceId, string libraryId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task BackfillTokensAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<BookRecord>> SearchBooksByTagAsync(string tagPrefix, int topK = 20, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TagTreeNode>> GetTagChildrenAsync(string? parentTag = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<RankedResult>> HybridSearchAsync(string query, float[]? queryEmbedding, int topK = 20, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> UpdateChapterEmbeddingAsync(string chapterId, byte[] embedding, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BranchRecord> BranchBookAsync(string bookId, string branchName, string? description, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<BranchRecord>> ListBranchesAsync(string bookId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> MergeBranchAsync(string sourceBranchId, string targetBranchId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRelationRecord> CreateChapterRelationAsync(string sourceChapterId, string targetChapterId, string relationType, string? description = null, double weight = 1.0, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ChapterRelationRecord>> GetChapterRelationsAsync(string chapterId, string? relationType = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ChapterRelationRecord>> GetRelatedChaptersAsync(string chapterId, int depth = 1, double minWeight = 0.0, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ChapterRecord> UpdateChapterMetadataAsync(string chapterId, string? scene = null, string? constraints = null, string? tags = null, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<int> MergeBookChaptersAsync(string sourceBookId, string targetBookId, CancellationToken ct = default) => throw new NotImplementedException();
     }
 }

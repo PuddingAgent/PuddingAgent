@@ -164,6 +164,10 @@ public sealed record RuntimeDispatchRequest
     public string? ExpectedOutputContract { get; init; }
     /// <summary>Agent Loop 最大轮数。与 AgentExecutionGuardrails.MaxRounds(默认200) 保持一致。0 或负数表示使用护栏默认值。</summary>
     public int MaxRounds { get; init; }
+    /// <summary>Agent Loop 最大总耗时秒数。0 或负数表示使用平台护栏默认值。</summary>
+    public int MaxElapsedSeconds { get; init; }
+    /// <summary>Agent Loop 最大工具调用总数。0 或负数表示使用平台护栏默认值。</summary>
+    public int MaxToolCallsTotal { get; init; }
     /// <summary>ADR-042: 入站消息的发送 Agent ID（agent-to-agent 消息时非空）。</summary>
     public string? InboundSourceAgentId { get; init; }
     /// <summary>ADR-042: 入站消息的发送 Agent 名称。</summary>

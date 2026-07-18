@@ -71,8 +71,8 @@ public sealed class AgentProfileProvider
     }
 
     /// <summary>
-    /// 从 AgentInstanceManifest 构建 AgentTemplateManifest（向后兼容）。
-    /// 模板配置在创建时已嵌入实例 manifest，此方法提供 Template 视图供现有消费方使用。
+    /// 从自包含 AgentInstanceManifest 投影运行时角色配置。
+    /// Template 只是现有 AgentProfile 消费方使用的内存视图，不触发模板目录读取。
     /// </summary>
     private static AgentTemplateManifest BuildTemplateFromInstance(AgentInstanceManifest instance)
         => new()
@@ -82,17 +82,20 @@ public sealed class AgentProfileProvider
             Description = instance.Description,
             Role = instance.Role ?? "Service",
             SystemPrompt = instance.SystemPrompt,
+            UserPromptTemplate = instance.UserPromptTemplate,
             MemorySearchMode = instance.MemorySearchMode ?? "deep",
             ReasoningEffort = instance.ReasoningEffort,
-            MaxContextTokens = instance.MaxContextTokens,
             MaxReplyTokens = instance.MaxReplyTokens,
             MaxRounds = instance.MaxRounds,
             MaxElapsedSeconds = instance.MaxElapsedSeconds,
             MaxToolCallsTotal = instance.MaxToolCallsTotal,
+            ContainerImage = instance.ContainerImage,
             PreferredProviderId = instance.PreferredProviderId,
             PreferredModelId = instance.PreferredModelId,
             MemoryLlmProviderId = instance.MemoryLlmProviderId,
             MemoryLlmModelId = instance.MemoryLlmModelId,
+            EmbeddingProviderId = instance.EmbeddingProviderId,
+            EmbeddingModelId = instance.EmbeddingModelId,
             Capabilities = instance.Capabilities,
             SkillPackageIds = instance.SkillPackageIds,
             IsEnabled = instance.IsEnabled,

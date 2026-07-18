@@ -209,6 +209,9 @@ export interface ChatMessageDto {
   messageId?: string | null;
   turnId?: string | null;
   commandId?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  sourceName?: string | null;
 }
 
 export interface ThinkingChunkDto {
@@ -331,6 +334,8 @@ export interface LlmProviderDto {
   description?: string;
   isEnabled: boolean;
   maxConcurrentRequests?: number;
+  tokensPerMinute?: number;
+  requestsPerMinute?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -381,6 +386,8 @@ export interface UpsertLlmProviderRequest {
   description?: string;
   isEnabled: boolean;
   maxConcurrentRequests?: number;
+  tokensPerMinute?: number;
+  requestsPerMinute?: number;
 }
 
 export interface UpsertLlmModelRequest {
@@ -1533,24 +1540,40 @@ export interface WorkspaceAgentDto {
   systemPromptOverride?: string;
   preferredProviderId?: string;
   preferredModelId?: string;
-    heartbeatPrompt?: string;
+  heartbeatPrompt?: string;
   isEnabled: boolean;
   isFrozen: boolean;
   createdAt: string;
   updatedAt: string;
   // 嵌入的模板配置
   systemPrompt?: string;
+  userPromptTemplate?: string;
   role?: string;
   memorySearchMode?: string;
-  maxContextTokens?: number;
+  reasoningEffort?: string;
+  maxReplyTokens?: number;
   maxRounds?: number;
   maxElapsedSeconds?: number;
+  maxToolCallsTotal?: number;
+  containerImage?: string;
+  memoryLlmProviderId?: string;
+  memoryLlmModelId?: string;
+  embeddingProviderId?: string;
+  embeddingModelId?: string;
   allowFileWrite?: boolean;
   allowShellExecution?: boolean;
   allowNetworkAccess?: boolean;
   selectedCapabilityIds?: string[];
   skillPackageIds?: string[];
   allowedToolNames?: string[];
+  // Smart 子代理角色模型，格式为 providerId/modelId
+  explorerModel?: string;
+  researcherModel?: string;
+  plannerModel?: string;
+  reviewerModel?: string;
+  developerModel?: string;
+  deployerModel?: string;
+  testerModel?: string;
   // Markdown 文件内容
   soulMdContent?: string;
   agentsMdContent?: string;
@@ -1568,6 +1591,37 @@ export interface CreateWorkspaceAgentRequest {
   avatarUrl?: string;
   sourceTemplateId?: string;
   heartbeatPrompt?: string;
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  isEnabled?: boolean;
+  role?: string;
+  systemPrompt?: string;
+  userPromptTemplate?: string;
+  memorySearchMode?: string;
+  reasoningEffort?: string;
+  maxReplyTokens?: number;
+  maxRounds?: number;
+  maxElapsedSeconds?: number;
+  maxToolCallsTotal?: number;
+  containerImage?: string;
+  memoryLlmProviderId?: string;
+  memoryLlmModelId?: string;
+  embeddingProviderId?: string;
+  embeddingModelId?: string;
+  selectedCapabilityIds?: string[];
+  skillPackageIds?: string[];
+  soulMdContent?: string;
+  agentsMdContent?: string;
+  toolsMdContent?: string;
+  bootstrapMdContent?: string;
+  memoryMdContent?: string;
+  explorerModel?: string;
+  researcherModel?: string;
+  plannerModel?: string;
+  reviewerModel?: string;
+  developerModel?: string;
+  deployerModel?: string;
+  testerModel?: string;
 }
 
 export interface UpdateWorkspaceAgentRequest {
@@ -1579,19 +1633,37 @@ export interface UpdateWorkspaceAgentRequest {
   avatarUrl?: string;
   sourceTemplateId?: string;
   heartbeatPrompt?: string;
+  preferredProviderId?: string;
+  preferredModelId?: string;
   isEnabled: boolean;
   // Agent 自身配置
+  role?: string;
   systemPrompt?: string;
+  userPromptTemplate?: string;
   memorySearchMode?: string;
-  maxContextTokens?: number;
+  reasoningEffort?: string;
+  maxReplyTokens?: number;
   maxRounds?: number;
   maxElapsedSeconds?: number;
+  maxToolCallsTotal?: number;
+  containerImage?: string;
+  memoryLlmProviderId?: string;
+  memoryLlmModelId?: string;
+  embeddingProviderId?: string;
+  embeddingModelId?: string;
   allowFileWrite?: boolean;
   allowShellExecution?: boolean;
   allowNetworkAccess?: boolean;
   selectedCapabilityIds?: string[];
   skillPackageIds?: string[];
   allowedToolNames?: string[];
+  explorerModel?: string;
+  researcherModel?: string;
+  plannerModel?: string;
+  reviewerModel?: string;
+  developerModel?: string;
+  deployerModel?: string;
+  testerModel?: string;
   soulMdContent?: string;
   agentsMdContent?: string;
   toolsMdContent?: string;
@@ -2419,6 +2491,39 @@ export async function submitConversationTurn(
       data: req,
       headers: { 'X-Workspace-Id': workspaceId },
       signal,
+    },
+  );
+}
+
+export interface ExecuteSystemCommandRequest {
+  agentId: string;
+  clientRequestId: string;
+  clientMessageId: string;
+  responseMessageId: string;
+  commandText: string;
+}
+
+export interface SystemCommandResult {
+  conversationId: string;
+  clientMessageId: string;
+  responseMessageId: string;
+  command: string;
+  message: string;
+  runtimeMode: string;
+}
+
+/** Executes a system-owned command without creating an Agent turn. */
+export async function executeConversationSystemCommand(
+  workspaceId: string,
+  conversationId: string,
+  req: ExecuteSystemCommandRequest,
+): Promise<SystemCommandResult> {
+  return request(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/system-commands`,
+    {
+      method: 'POST',
+      data: req,
+      headers: { 'X-Workspace-Id': workspaceId },
     },
   );
 }

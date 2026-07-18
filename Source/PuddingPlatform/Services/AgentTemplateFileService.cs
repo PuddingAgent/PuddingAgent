@@ -230,6 +230,8 @@ public sealed class AgentTemplateFileService
                 PreferredModelId = req.PreferredModelId,
                 MemoryLlmProviderId = req.MemoryLlmProviderId,
                 MemoryLlmModelId = req.MemoryLlmModelId,
+                EmbeddingProviderId = req.EmbeddingProviderId,
+                EmbeddingModelId = req.EmbeddingModelId,
                 SkillPackageIds = req.SelectedSkillPackageIds ?? [],
                 Capabilities = new AgentCapabilitiesConfig
                 {
@@ -299,6 +301,8 @@ public sealed class AgentTemplateFileService
                 PreferredModelId = req.PreferredModelId,
                 MemoryLlmProviderId = req.MemoryLlmProviderId,
                 MemoryLlmModelId = req.MemoryLlmModelId,
+                EmbeddingProviderId = req.EmbeddingProviderId,
+                EmbeddingModelId = req.EmbeddingModelId,
                 SkillPackageIds = req.SelectedSkillPackageIds ?? manifest.SkillPackageIds,
                 Capabilities = manifest.Capabilities with
                 {
@@ -531,6 +535,8 @@ public sealed class AgentTemplateFileService
             AvatarName: avatar?.Name,
             MemoryLlmProviderId: m.MemoryLlmProviderId,
             MemoryLlmModelId: m.MemoryLlmModelId,
+            EmbeddingProviderId: m.EmbeddingProviderId,
+            EmbeddingModelId: m.EmbeddingModelId,
             MemorySearchMode: m.MemorySearchMode,
             ReasoningEffort: m.ReasoningEffort,
             MaxRounds: m.MaxRounds,

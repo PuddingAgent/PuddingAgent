@@ -201,8 +201,8 @@ public sealed class AgentExecutionService
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
         var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
-        // TODO(platform-template-guardrails): 从 AgentTemplate（Global/Workspace）读取 MaxRounds/MaxElapsedSeconds/MaxToolCallsTotal，
-        // 并覆盖注入 AgentExecutionGuardrails；当前阶段仅支持在模板侧存储配置，不参与 Runtime 执行。
+        var maxElapsed = ResolveMaxElapsed(request);
+        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request);
 
         var execTrace = RuntimeTraceContext.CreateNew(
             sessionId: request.SessionId,
@@ -515,11 +515,11 @@ public sealed class AgentExecutionService
                 }
 
                 // ── 检查点 B：最大总耗时 ──────────────────────────────
-                if (totalSw.Elapsed > _guardrails.MaxElapsed)
+                if (totalSw.Elapsed > maxElapsed)
                 {
                     _logger.LogWarning(
                         "[AgentExec] MaxElapsed={Max} exceeded session={Session}",
-                        _guardrails.MaxElapsed, request.SessionId);
+                        maxElapsed, request.SessionId);
                     stopReason = AgentLoopStopReason.MaxElapsedReached;
                     execState  = AgentExecutionState.Failed;
                     await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
@@ -693,11 +693,11 @@ public sealed class AgentExecutionService
                     noProgressCount = 0;
                     foreach (var call in llmResp.ToolCalls)
                     {
-                        if (totalToolCalls >= _guardrails.MaxToolCallsTotal)
+                        if (totalToolCalls >= maxToolCallsTotal)
                         {
                             _logger.LogWarning(
                                 "[AgentExec] MaxToolCallsTotal={Max} reached session={Session}",
-                                _guardrails.MaxToolCallsTotal, request.SessionId);
+                                maxToolCallsTotal, request.SessionId);
                             stopReason = AgentLoopStopReason.MaxRoundsReached;
                             execState = AgentExecutionState.Failed;
                             break;
@@ -1077,11 +1077,11 @@ public sealed class AgentExecutionService
                 {
                     noProgressCount = 0; // 有工具调用，重置无进展计数
                     // 检查点 C：总工具调用次数上限
-                    if (totalToolCalls >= _guardrails.MaxToolCallsTotal)
+                    if (totalToolCalls >= maxToolCallsTotal)
                     {
                         _logger.LogWarning(
                             "[AgentExec] MaxToolCallsTotal={Max} reached session={Session}",
-                            _guardrails.MaxToolCallsTotal, request.SessionId);
+                            maxToolCallsTotal, request.SessionId);
                         await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
                         stopReason = AgentLoopStopReason.MaxRoundsReached;
                         execState  = AgentExecutionState.Failed;
@@ -1599,6 +1599,8 @@ public sealed class AgentExecutionService
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
         var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
+        var maxElapsed = ResolveMaxElapsed(request);
+        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request);
 
         _contextManager.CleanupExpiredSessions(request.SessionId);
 
@@ -2092,18 +2094,24 @@ public sealed class AgentExecutionService
                     yield return cancelledFrame;
                     break;
                 }
-                if (perfTotalSw.Elapsed > _guardrails.MaxElapsed)
+                if (perfTotalSw.Elapsed > maxElapsed)
                 {
-                    _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", _guardrails.MaxElapsed);
-                    var timeoutFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"执行超时 ({_guardrails.MaxElapsed.TotalSeconds}s)" });
+                    _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", maxElapsed);
+                    var timeoutFrame = ServerSentEventFrame.Json(
+                        SseEventTypes.Error,
+                        new { message = $"执行超时 ({maxElapsed.TotalSeconds}s)" });
                     await Append(timeoutFrame);
                     yield return timeoutFrame;
                     break;
                 }
-                if (totalToolCalls >= _guardrails.MaxToolCallsTotal)
+                if (totalToolCalls >= maxToolCallsTotal)
                 {
-                    _logger.LogWarning("[AgentExec:Stream] MaxToolCallsTotal={Max} reached", _guardrails.MaxToolCallsTotal);
-                    var maxToolFrame = ServerSentEventFrame.Json(SseEventTypes.Error, new { message = $"工具调用次数已达上限 ({_guardrails.MaxToolCallsTotal})" });
+                    _logger.LogWarning(
+                        "[AgentExec:Stream] MaxToolCallsTotal={Max} reached",
+                        maxToolCallsTotal);
+                    var maxToolFrame = ServerSentEventFrame.Json(
+                        SseEventTypes.Error,
+                        new { message = $"工具调用次数已达上限 ({maxToolCallsTotal})" });
                     await Append(maxToolFrame);
                     yield return maxToolFrame;
                     break;
@@ -3277,6 +3285,20 @@ public sealed class AgentExecutionService
         var configured = template.Runtime?.SessionTimeout ?? TimeSpan.Zero;
         return NormalizeSessionTimeout(configured);
     }
+
+    private TimeSpan ResolveMaxElapsed(RuntimeDispatchRequest request)
+    {
+        if (request.MaxElapsedSeconds <= 0)
+            return _guardrails.MaxElapsed;
+
+        var requested = TimeSpan.FromSeconds(request.MaxElapsedSeconds);
+        return requested < _guardrails.MaxElapsed ? requested : _guardrails.MaxElapsed;
+    }
+
+    private int ResolveMaxToolCallsTotal(RuntimeDispatchRequest request)
+        => request.MaxToolCallsTotal > 0
+            ? Math.Min(request.MaxToolCallsTotal, _guardrails.MaxToolCallsTotal)
+            : _guardrails.MaxToolCallsTotal;
 
     private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
         timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;

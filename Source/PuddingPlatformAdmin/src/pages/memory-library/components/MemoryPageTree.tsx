@@ -19,7 +19,11 @@ interface MemoryPageTreeProps {
 function toDataNodes(nodes: MemoryLibraryTreeNodeDto[]): DataNode[] {
   return nodes.map((n) => ({
     key: n.id,
-    title: n.title,
+    title: (
+      <span className="memory-tree-node-title" title={n.title}>
+        {n.title}
+      </span>
+    ),
     icon: n.type === 'book_page'
       ? React.createElement(FileTextOutlined)
       : n.type === 'library'
@@ -50,6 +54,7 @@ const MemoryPageTree: React.FC<MemoryPageTreeProps> = ({
 
   return (
     <Tree
+      className="memory-page-tree"
       showIcon
       defaultExpandAll
       treeData={treeData}

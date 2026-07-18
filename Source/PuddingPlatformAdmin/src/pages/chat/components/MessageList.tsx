@@ -792,6 +792,14 @@ const MessageList: React.FC<MessageListProps> = ({
                   <MessageStream
                     turns={[{
                       turnId: item.block.turnId,
+                      source: item.block.role === 'agent' ? {
+                        sourceId: item.block.agentId || 'agent',
+                        sourceType: item.block.sourceType || 'agent',
+                        displayName: item.block.agentName || selectedAgent?.name || 'Pudding',
+                        avatarEmoji: item.block.agentAvatarEmoji || '🤖',
+                        avatarColor: item.block.agentAvatarColor || '#7c3aed',
+                        avatarUrl: item.block.agentAvatarUrl,
+                      } : undefined,
                       userMessage: item.block.role === 'user' ? {
                         id: item.block.id,
                         text: item.block.content,

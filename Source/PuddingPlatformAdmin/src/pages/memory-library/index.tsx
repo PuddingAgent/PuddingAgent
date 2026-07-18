@@ -1,5 +1,5 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { Select, Input, Button, Alert, Space, Typography, Modal, Form, Popconfirm, message } from 'antd';
+import { Select, Input, Button, Alert, Modal, Form, Popconfirm, message } from 'antd';
 import {
   ReloadOutlined,
   SearchOutlined,
@@ -38,8 +38,6 @@ import MemoryPageEditor from './components/MemoryPageEditor';
 import MemoryInspector from './components/MemoryInspector';
 import MemorySearchResults from './components/MemorySearchResults';
 import './styles.less';
-
-const { Text } = Typography;
 
 const MemoryLibraryPage: React.FC = () => {
   // ── State ──────────────────────────────────────────────────────
@@ -405,59 +403,64 @@ const MemoryLibraryPage: React.FC = () => {
       <div className="memory-library-page">
         {/* ── Toolbar ──────────────────────────────────────── */}
         <div className="memory-library-toolbar">
-          <Select
-            className="workspace-select"
-            placeholder="选择工作区"
-            options={workspaceOptions}
-            value={selectedWorkspaceId}
-            onChange={handleWorkspaceChange}
-          />
-          <Select
-            style={{ minWidth: 180 }}
-            placeholder="选择 Agent"
-            options={agentOptions}
-            value={selectedAgentId}
-            onChange={handleAgentChange}
-            disabled={!selectedWorkspaceId || agents.length === 0}
-          />
-          {libraries.length > 1 && (
+          <div className="memory-library-scope">
             <Select
-              style={{ minWidth: 160 }}
-              placeholder="选择图书馆"
-              value={selectedLibraryId}
-              onChange={handleLibraryChange}
-              options={libraries.map((l) => ({ label: l.name, value: l.libraryId }))}
+              className="workspace-select"
+              placeholder="选择工作区"
+              options={workspaceOptions}
+              value={selectedWorkspaceId}
+              onChange={handleWorkspaceChange}
             />
-          )}
-          <Input.Search
-            className="search-input"
-            placeholder="搜索当前 Agent 的记忆..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onSearch={handleSearch}
-            allowClear
-            enterButton={<SearchOutlined />}
-            disabled={!selectedWorkspaceId || !selectedAgentId}
-          />
-          <Button icon={<ReloadOutlined />} onClick={handleRefresh} disabled={!selectedLibraryId}>
-            刷新
-          </Button>
-          {selectedWorkspaceId && selectedAgentId && libraries.length === 0 && (
-            <Button onClick={handleEnsureDefaultLibrary} loading={editLoading}>
-              创建默认图书馆
+            <Select
+              className="workspace-select"
+              placeholder="选择 Agent"
+              options={agentOptions}
+              value={selectedAgentId}
+              onChange={handleAgentChange}
+              disabled={!selectedWorkspaceId || agents.length === 0}
+            />
+            {libraries.length > 1 && (
+              <Select
+                className="workspace-select"
+                placeholder="选择图书馆"
+                value={selectedLibraryId}
+                onChange={handleLibraryChange}
+                options={libraries.map((l) => ({ label: l.name, value: l.libraryId }))}
+              />
+            )}
+            <Input.Search
+              className="search-input"
+              placeholder="搜索当前 Agent 的记忆..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onSearch={handleSearch}
+              allowClear
+              enterButton={<SearchOutlined />}
+              disabled={!selectedWorkspaceId || !selectedAgentId}
+            />
+          </div>
+          <div className="memory-library-actions">
+            <Button icon={<ReloadOutlined />} onClick={handleRefresh} disabled={!selectedLibraryId}>
+              刷新
             </Button>
-          )}
-          <Button icon={<PlusOutlined />} onClick={() => setNewPageModalOpen(true)} disabled={!selectedLibraryId}>
-            新建 Page
-          </Button>
-          <Button icon={<PlusOutlined />} onClick={() => setNewBookModalOpen(true)} disabled={!selectedLibraryId}>
-            新建 Book
-          </Button>
-          <Space style={{ marginLeft: 'auto' }}>
-            <Text type="secondary">
-              {selectedNode ? `已选中: ${selectedNode.title}` : bookPage ? `浏览: ${bookPage.title}` : '未选中节点'}
-            </Text>
-          </Space>
+            {selectedWorkspaceId && selectedAgentId && libraries.length === 0 && (
+              <Button onClick={handleEnsureDefaultLibrary} loading={editLoading}>
+                创建默认图书馆
+              </Button>
+            )}
+            <Button icon={<PlusOutlined />} onClick={() => setNewPageModalOpen(true)} disabled={!selectedLibraryId}>
+              新建 Page
+            </Button>
+            <Button icon={<PlusOutlined />} onClick={() => setNewBookModalOpen(true)} disabled={!selectedLibraryId}>
+              新建 Book
+            </Button>
+          </div>
+          <div
+            className="memory-library-selection"
+            title={selectedNode?.title ?? bookPage?.title ?? '未选中节点'}
+          >
+            {selectedNode ? `已选中: ${selectedNode.title}` : bookPage ? `浏览: ${bookPage.title}` : '未选中节点'}
+          </div>
         </div>
 
         {/* ── Content: Tree | Editor | Inspector ────────────── */}

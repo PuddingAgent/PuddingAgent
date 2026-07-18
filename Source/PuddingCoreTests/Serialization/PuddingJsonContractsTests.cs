@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PuddingCode.Configuration;
 using PuddingCode.Serialization;
 
 namespace PuddingCoreTests.Serialization;
@@ -34,5 +35,35 @@ public sealed class PuddingJsonContractsTests
         Assert.IsTrue(json.Contains('\n'));
         StringAssert.Contains(json, "\"parentSessionId\"");
         StringAssert.Contains(json, "  \"payload\"");
+    }
+
+    [TestMethod]
+    public void AgentConfig_DoesNotDuplicate_ModelContextCapacity()
+    {
+        var manifestJson = JsonSerializer.Serialize(
+            new AgentInstanceManifest
+            {
+                AgentInstanceId = "agent-1",
+                WorkspaceId = "default",
+            },
+            PuddingJsonContracts.PrettyJson);
+        var bindingJson = JsonSerializer.Serialize(
+            new AgentLlmBinding
+            {
+                ProviderId = "moonshot",
+                ModelId = "kimi-k3",
+            },
+            PuddingJsonContracts.PrettyJson);
+        var modelJson = JsonSerializer.Serialize(
+            new PuddingLlmModelConfig
+            {
+                ModelId = "kimi-k3",
+                MaxContextTokens = 1_048_576,
+            },
+            PuddingJsonContracts.PrettyJson);
+
+        Assert.IsFalse(manifestJson.Contains("\"maxContextTokens\"", StringComparison.Ordinal));
+        Assert.IsFalse(bindingJson.Contains("\"maxContextTokens\"", StringComparison.Ordinal));
+        StringAssert.Contains(modelJson, "\"maxContextTokens\": 1048576");
     }
 }

@@ -1,4 +1,4 @@
-using BenchmarkDotNet.Attributes;
+﻿using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
@@ -220,7 +220,7 @@ public class MemoryLibraryBenchmarks
             a[i] = (float)i / 1536;
             b[i] = (float)(1536 - i) / 1536;
         }
-        return VectorSimilarity.CosineSimilarity(a, b);
+        return (float)VectorSimilarity.CosineSimilarity(a, b);
     }
 
     [Benchmark]

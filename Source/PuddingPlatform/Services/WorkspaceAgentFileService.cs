@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Configuration;
 using PuddingPlatform.Data.Dtos;
@@ -166,17 +166,31 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                         instanceManifest.HeartbeatMdFile, ct),
                     Role: instanceManifest.Role,
                     SystemPrompt: instanceManifest.SystemPrompt,
+                    UserPromptTemplate: instanceManifest.UserPromptTemplate,
                     MemorySearchMode: instanceManifest.MemorySearchMode,
-                    MaxContextTokens: instanceManifest.MaxContextTokens,
+                    ReasoningEffort: instanceManifest.ReasoningEffort,
                     MaxReplyTokens: instanceManifest.MaxReplyTokens,
                     MaxRounds: instanceManifest.MaxRounds,
                     MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
+                    MaxToolCallsTotal: instanceManifest.MaxToolCallsTotal,
+                    ContainerImage: instanceManifest.ContainerImage,
+                    MemoryLlmProviderId: instanceManifest.MemoryLlmProviderId,
+                    MemoryLlmModelId: instanceManifest.MemoryLlmModelId,
+                    EmbeddingProviderId: instanceManifest.EmbeddingProviderId,
+                    EmbeddingModelId: instanceManifest.EmbeddingModelId,
                     AllowFileWrite: instanceManifest.Capabilities.AllowFileWrite,
                     AllowShellExecution: instanceManifest.Capabilities.AllowShellExecution,
                     AllowNetworkAccess: instanceManifest.Capabilities.AllowNetworkAccess,
                     SelectedCapabilityIds: instanceManifest.Capabilities.AllowedToolIds,
                     SkillPackageIds: instanceManifest.SkillPackageIds,
-                    AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames
+                    AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames,
+                    ExplorerModel: instanceManifest.ExplorerModel,
+                    ResearcherModel: instanceManifest.ResearcherModel,
+                    PlannerModel: instanceManifest.PlannerModel,
+                    ReviewerModel: instanceManifest.ReviewerModel,
+                    DeveloperModel: instanceManifest.DeveloperModel,
+                    DeployerModel: instanceManifest.DeployerModel,
+                    TesterModel: instanceManifest.TesterModel
                 ));
             }
             catch (Exception ex)
@@ -224,17 +238,31 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                         instanceManifest.HeartbeatMdFile, ct),
                     Role: instanceManifest.Role,
                     SystemPrompt: instanceManifest.SystemPrompt,
+                    UserPromptTemplate: instanceManifest.UserPromptTemplate,
                     MemorySearchMode: instanceManifest.MemorySearchMode,
-                    MaxContextTokens: instanceManifest.MaxContextTokens,
+                    ReasoningEffort: instanceManifest.ReasoningEffort,
                     MaxReplyTokens: instanceManifest.MaxReplyTokens,
                     MaxRounds: instanceManifest.MaxRounds,
                     MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
+                    MaxToolCallsTotal: instanceManifest.MaxToolCallsTotal,
+                    ContainerImage: instanceManifest.ContainerImage,
+                    MemoryLlmProviderId: instanceManifest.MemoryLlmProviderId,
+                    MemoryLlmModelId: instanceManifest.MemoryLlmModelId,
+                    EmbeddingProviderId: instanceManifest.EmbeddingProviderId,
+                    EmbeddingModelId: instanceManifest.EmbeddingModelId,
                     AllowFileWrite: instanceManifest.Capabilities.AllowFileWrite,
                     AllowShellExecution: instanceManifest.Capabilities.AllowShellExecution,
                     AllowNetworkAccess: instanceManifest.Capabilities.AllowNetworkAccess,
                     SelectedCapabilityIds: instanceManifest.Capabilities.AllowedToolIds,
-                                        SkillPackageIds: instanceManifest.SkillPackageIds,
+                    SkillPackageIds: instanceManifest.SkillPackageIds,
                     AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames,
+                    ExplorerModel: instanceManifest.ExplorerModel,
+                    ResearcherModel: instanceManifest.ResearcherModel,
+                    PlannerModel: instanceManifest.PlannerModel,
+                    ReviewerModel: instanceManifest.ReviewerModel,
+                    DeveloperModel: instanceManifest.DeveloperModel,
+                    DeployerModel: instanceManifest.DeployerModel,
+                    TesterModel: instanceManifest.TesterModel,
                     SoulMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.SoulMdFile, ct),
                     AgentsMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.AgentsMdFile, ct),
                     ToolsMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.ToolsMdFile, ct),
@@ -266,11 +294,16 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
             Directory.CreateDirectory(_paths.AgentInstanceConfigRoot(agentInstanceId));
 
             // 写入 Markdown 文件（从模板复制或使用默认内容）
-            var soulMd = await WriteAgentMdFileAsync(instanceRoot, "SOUL.md", template?.PersonaPrompt, ct);
-            var agentsMd = await WriteAgentMdFileAsync(instanceRoot, "AGENTS.md", template?.AgentsPrompt, ct);
-            var toolsMd = await WriteAgentMdFileAsync(instanceRoot, "TOOLS.md", template?.ToolsDescription, ct);
-            var bootstrapMd = await WriteAgentMdFileAsync(instanceRoot, "BOOTSTRAP.md", template?.BootstrapTemplate, ct);
-            var memoryMd = await WriteAgentMdFileAsync(instanceRoot, "MEMORY.md", template?.MemoryPrompt, ct);
+            var soulMd = await WriteAgentMdFileAsync(
+                instanceRoot, "SOUL.md", req.SoulMdContent ?? template?.PersonaPrompt, ct);
+            var agentsMd = await WriteAgentMdFileAsync(
+                instanceRoot, "AGENTS.md", req.AgentsMdContent ?? template?.AgentsPrompt, ct);
+            var toolsMd = await WriteAgentMdFileAsync(
+                instanceRoot, "TOOLS.md", req.ToolsMdContent ?? template?.ToolsDescription, ct);
+            var bootstrapMd = await WriteAgentMdFileAsync(
+                instanceRoot, "BOOTSTRAP.md", req.BootstrapMdContent ?? template?.BootstrapTemplate, ct);
+            var memoryMd = await WriteAgentMdFileAsync(
+                instanceRoot, "MEMORY.md", req.MemoryMdContent ?? template?.MemoryPrompt, ct);
             var heartbeatMd = await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md",
                 req.HeartbeatPrompt ?? DefaultHeartbeatPrompt, ct);
 
@@ -285,31 +318,46 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 Description = req.Description,
                 AvatarId = req.AvatarId ?? avatar.AvatarId,
                 AvatarUrl = req.AvatarUrl ?? avatar.AvatarUrl,
-                IsEnabled = true,
+                IsEnabled = req.IsEnabled,
                 Paths = new AgentInstancePaths { Config = "config", Workspace = "workspace", State = "state", Logs = "logs" },
 
-                Role = template?.Role,
-                SystemPrompt = template?.SystemPrompt,
-                MemorySearchMode = template?.MemorySearchMode ?? "deep",
-                ReasoningEffort = template?.ReasoningEffort,
-                MaxContextTokens = template?.MaxContextTokens ?? 65536,
-                MaxReplyTokens = template?.MaxReplyTokens ?? 4096,
-                MaxRounds = template?.MaxRounds ?? 200,
-                MaxElapsedSeconds = template?.MaxElapsedSeconds ?? 1200,
-                MaxToolCallsTotal = template?.MaxToolCallsTotal ?? 100,
+                Role = req.Role ?? template?.Role,
+                SystemPrompt = req.SystemPrompt ?? template?.SystemPrompt,
+                UserPromptTemplate = req.UserPromptTemplate ?? template?.UserPromptTemplate,
+                MemorySearchMode = req.MemorySearchMode ?? template?.MemorySearchMode ?? "deep",
+                ReasoningEffort = req.ReasoningEffort ?? template?.ReasoningEffort,
+                MaxReplyTokens = req.MaxReplyTokens ?? template?.MaxReplyTokens ?? 4096,
+                MaxRounds = req.MaxRounds ?? template?.MaxRounds ?? 200,
+                MaxElapsedSeconds = req.MaxElapsedSeconds ?? template?.MaxElapsedSeconds ?? 1200,
+                MaxToolCallsTotal = req.MaxToolCallsTotal ?? template?.MaxToolCallsTotal ?? 100,
+                ContainerImage = req.ContainerImage ?? template?.ContainerImage,
+                DefaultLlmProfiles = new AgentDefaultLlmProfiles
+                {
+                    Conscious = template?.ConsciousProfileId,
+                    Subconscious = template?.SubconsciousProfileId,
+                },
                 PreferredProviderId = req.PreferredProviderId ?? template?.PreferredProviderId,
                 PreferredModelId = req.PreferredModelId ?? template?.PreferredModelId,
-                MemoryLlmProviderId = template?.MemoryLlmProviderId,
-                MemoryLlmModelId = template?.MemoryLlmModelId,
+                MemoryLlmProviderId = req.MemoryLlmProviderId ?? template?.MemoryLlmProviderId,
+                MemoryLlmModelId = req.MemoryLlmModelId ?? template?.MemoryLlmModelId,
+                EmbeddingProviderId = req.EmbeddingProviderId ?? template?.EmbeddingProviderId,
+                EmbeddingModelId = req.EmbeddingModelId ?? template?.EmbeddingModelId,
+                ExplorerModel = NormalizeSmartRoleModel(req.ExplorerModel),
+                ResearcherModel = NormalizeSmartRoleModel(req.ResearcherModel),
+                PlannerModel = NormalizeSmartRoleModel(req.PlannerModel),
+                ReviewerModel = NormalizeSmartRoleModel(req.ReviewerModel),
+                DeveloperModel = NormalizeSmartRoleModel(req.DeveloperModel),
+                DeployerModel = NormalizeSmartRoleModel(req.DeployerModel),
+                TesterModel = NormalizeSmartRoleModel(req.TesterModel),
                 Capabilities = new AgentCapabilitiesConfig
                 {
-                    AllowedToolIds = template?.SelectedCapabilityIds ?? [],
+                    AllowedToolIds = req.SelectedCapabilityIds ?? template?.SelectedCapabilityIds ?? [],
                     AllowFileWrite = template?.AllowFileWrite ?? false,
                     AllowShellExecution = template?.AllowShellExecution ?? false,
                     AllowNetworkAccess = template?.AllowNetworkAccess ?? false,
                     AllowedToolNames = template?.AllowedToolNames ?? [],
                 },
-                SkillPackageIds = template?.SelectedSkillPackageIds ?? [],
+                SkillPackageIds = req.SkillPackageIds ?? template?.SelectedSkillPackageIds ?? [],
 
                 SoulMdFile = soulMd,
                 AgentsMdFile = agentsMd,
@@ -319,19 +367,28 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 HeartbeatMdFile = heartbeatMd,
             };
 
-                        await AtomicFileWriter.WriteJsonAsync(Path.Combine(instanceRoot, "manifest.json"), instanceManifest, JsonOptions, ct);
+            await AtomicFileWriter.WriteJsonAsync(
+                Path.Combine(instanceRoot, "manifest.json"),
+                instanceManifest,
+                JsonOptions,
+                ct);
 
             // 写入 LLM 快照到 config/llm.json（Agent 独立于模板运行）
             var llmSnapshot = new AgentInstanceLlmConfig
             {
-                Conscious = template == null ? null : new AgentLlmBinding
+                Conscious = new AgentLlmBinding
                 {
-                    ProfileId = template.ConsciousProfileId,
+                    ProfileId = instanceManifest.DefaultLlmProfiles.Conscious,
                     ProviderId = instanceManifest.PreferredProviderId,
                     ModelId = instanceManifest.PreferredModelId,
-                    ReasoningEffort = template.ReasoningEffort,
-                    MaxContextTokens = template.MaxContextTokens,
-                    MaxReplyTokens = template.MaxReplyTokens,
+                    ReasoningEffort = instanceManifest.ReasoningEffort,
+                    MaxReplyTokens = instanceManifest.MaxReplyTokens,
+                },
+                Subconscious = new AgentLlmBinding
+                {
+                    ProfileId = instanceManifest.DefaultLlmProfiles.Subconscious,
+                    ProviderId = instanceManifest.MemoryLlmProviderId,
+                    ModelId = instanceManifest.MemoryLlmModelId,
                 },
             };
             var configPath = _paths.AgentInstanceConfigFile(agentInstanceId, "llm.json");
@@ -368,29 +425,40 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 SourceTemplateId: instanceManifest.TemplateId,
                 MainSessionId: instanceManifest.MainSessionId,
                 SystemPromptOverride: null,
-                                PreferredProviderId: instanceManifest.PreferredProviderId,
+                PreferredProviderId: instanceManifest.PreferredProviderId,
                 PreferredModelId: instanceManifest.PreferredModelId,
-                IsEnabled: true,
+                IsEnabled: instanceManifest.IsEnabled,
                 IsFrozen: false,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
                 HeartbeatPrompt: await ReadAgentMdContentAsync(instanceRoot, heartbeatMd, ct),
                 Role: instanceManifest.Role,
                 SystemPrompt: instanceManifest.SystemPrompt,
+                UserPromptTemplate: instanceManifest.UserPromptTemplate,
                 MemorySearchMode: instanceManifest.MemorySearchMode,
                 ReasoningEffort: instanceManifest.ReasoningEffort,
-                MaxContextTokens: instanceManifest.MaxContextTokens,
                 MaxReplyTokens: instanceManifest.MaxReplyTokens,
                 MaxRounds: instanceManifest.MaxRounds,
                 MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
+                MaxToolCallsTotal: instanceManifest.MaxToolCallsTotal,
+                ContainerImage: instanceManifest.ContainerImage,
                 MemoryLlmProviderId: instanceManifest.MemoryLlmProviderId,
                 MemoryLlmModelId: instanceManifest.MemoryLlmModelId,
+                EmbeddingProviderId: instanceManifest.EmbeddingProviderId,
+                EmbeddingModelId: instanceManifest.EmbeddingModelId,
                 AllowFileWrite: instanceManifest.Capabilities.AllowFileWrite,
                 AllowShellExecution: instanceManifest.Capabilities.AllowShellExecution,
                 AllowNetworkAccess: instanceManifest.Capabilities.AllowNetworkAccess,
                 SelectedCapabilityIds: instanceManifest.Capabilities.AllowedToolIds,
                 SkillPackageIds: instanceManifest.SkillPackageIds,
-                AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames
+                AllowedToolNames: instanceManifest.Capabilities.AllowedToolNames,
+                ExplorerModel: instanceManifest.ExplorerModel,
+                ResearcherModel: instanceManifest.ResearcherModel,
+                PlannerModel: instanceManifest.PlannerModel,
+                ReviewerModel: instanceManifest.ReviewerModel,
+                DeveloperModel: instanceManifest.DeveloperModel,
+                DeployerModel: instanceManifest.DeployerModel,
+                TesterModel: instanceManifest.TesterModel
             );
         }
         finally
@@ -429,18 +497,29 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 AvatarId = req.AvatarId ?? instanceManifest.AvatarId,
                 AvatarUrl = req.AvatarUrl ?? instanceManifest.AvatarUrl,
                 IsEnabled = req.IsEnabled,
+                Role = req.Role ?? instanceManifest.Role,
                 SystemPrompt = req.SystemPrompt ?? instanceManifest.SystemPrompt,
+                UserPromptTemplate = req.UserPromptTemplate ?? instanceManifest.UserPromptTemplate,
                 MemorySearchMode = req.MemorySearchMode ?? instanceManifest.MemorySearchMode,
                 ReasoningEffort = req.ReasoningEffort ?? instanceManifest.ReasoningEffort,
-                MaxContextTokens = req.MaxContextTokens ?? instanceManifest.MaxContextTokens,
                 MaxReplyTokens = req.MaxReplyTokens ?? instanceManifest.MaxReplyTokens,
                 MaxRounds = req.MaxRounds ?? instanceManifest.MaxRounds,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? instanceManifest.MaxElapsedSeconds,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? instanceManifest.MaxToolCallsTotal,
+                ContainerImage = req.ContainerImage ?? instanceManifest.ContainerImage,
                 PreferredProviderId = req.PreferredProviderId ?? instanceManifest.PreferredProviderId,
                 PreferredModelId = req.PreferredModelId ?? instanceManifest.PreferredModelId,
                 MemoryLlmProviderId = req.MemoryLlmProviderId ?? instanceManifest.MemoryLlmProviderId,
                 MemoryLlmModelId = req.MemoryLlmModelId ?? instanceManifest.MemoryLlmModelId,
+                EmbeddingProviderId = req.EmbeddingProviderId ?? instanceManifest.EmbeddingProviderId,
+                EmbeddingModelId = req.EmbeddingModelId ?? instanceManifest.EmbeddingModelId,
+                ExplorerModel = NormalizeSmartRoleModel(req.ExplorerModel),
+                ResearcherModel = NormalizeSmartRoleModel(req.ResearcherModel),
+                PlannerModel = NormalizeSmartRoleModel(req.PlannerModel),
+                ReviewerModel = NormalizeSmartRoleModel(req.ReviewerModel),
+                DeveloperModel = NormalizeSmartRoleModel(req.DeveloperModel),
+                DeployerModel = NormalizeSmartRoleModel(req.DeployerModel),
+                TesterModel = NormalizeSmartRoleModel(req.TesterModel),
                 Capabilities = instanceManifest.Capabilities with
                 {
                     AllowFileWrite = req.AllowFileWrite ?? instanceManifest.Capabilities.AllowFileWrite,
@@ -469,10 +548,18 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                     ModelId = updated.PreferredModelId,
                     ReasoningEffort = updated.ReasoningEffort,
                     ThinkingMode = existingLlm?.Conscious?.ThinkingMode,
-                    MaxContextTokens = updated.MaxContextTokens,
                     MaxReplyTokens = updated.MaxReplyTokens,
                 },
-                Subconscious = existingLlm?.Subconscious,
+                Subconscious = new AgentLlmBinding
+                {
+                    ProfileId = existingLlm?.Subconscious?.ProfileId
+                        ?? instanceManifest.DefaultLlmProfiles.Subconscious,
+                    ProviderId = updated.MemoryLlmProviderId,
+                    ModelId = updated.MemoryLlmModelId,
+                    ReasoningEffort = existingLlm?.Subconscious?.ReasoningEffort,
+                    ThinkingMode = existingLlm?.Subconscious?.ThinkingMode,
+                    MaxReplyTokens = existingLlm?.Subconscious?.MaxReplyTokens,
+                },
             };
 
             await AtomicFileWriter.WriteJsonAsync(
@@ -519,20 +606,34 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
                 IsFrozen: false,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                                HeartbeatPrompt: heartbeatContent,
+                HeartbeatPrompt: heartbeatContent,
                 Role: updated.Role,
                 SystemPrompt: updated.SystemPrompt,
+                UserPromptTemplate: updated.UserPromptTemplate,
                 MemorySearchMode: updated.MemorySearchMode,
-                MaxContextTokens: updated.MaxContextTokens,
+                ReasoningEffort: updated.ReasoningEffort,
                 MaxReplyTokens: updated.MaxReplyTokens,
                 MaxRounds: updated.MaxRounds,
                 MaxElapsedSeconds: updated.MaxElapsedSeconds,
+                MaxToolCallsTotal: updated.MaxToolCallsTotal,
+                ContainerImage: updated.ContainerImage,
+                MemoryLlmProviderId: updated.MemoryLlmProviderId,
+                MemoryLlmModelId: updated.MemoryLlmModelId,
+                EmbeddingProviderId: updated.EmbeddingProviderId,
+                EmbeddingModelId: updated.EmbeddingModelId,
                 AllowFileWrite: updated.Capabilities.AllowFileWrite,
                 AllowShellExecution: updated.Capabilities.AllowShellExecution,
                 AllowNetworkAccess: updated.Capabilities.AllowNetworkAccess,
                 SelectedCapabilityIds: updated.Capabilities.AllowedToolIds,
                 SkillPackageIds: updated.SkillPackageIds,
-                AllowedToolNames: updated.Capabilities.AllowedToolNames
+                AllowedToolNames: updated.Capabilities.AllowedToolNames,
+                ExplorerModel: updated.ExplorerModel,
+                ResearcherModel: updated.ResearcherModel,
+                PlannerModel: updated.PlannerModel,
+                ReviewerModel: updated.ReviewerModel,
+                DeveloperModel: updated.DeveloperModel,
+                DeployerModel: updated.DeployerModel,
+                TesterModel: updated.TesterModel
             );
         }
         finally
@@ -775,24 +876,26 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
     /// <summary>
     /// 解析 Agent 头像，优先级：
     /// 1. AgentInstanceManifest.AvatarId
-    /// 2. 对应 AgentTemplateManifest 的头像
-    /// 3. AgentInstanceManifest.AvatarUrl（legacy fallback）
-    /// 4. 默认启用头像
-    /// 5. null（前端使用 emoji fallback）
+    /// 2. AgentInstanceManifest.AvatarUrl
+    /// 3. 默认启用头像
+    /// 4. null（前端使用 emoji fallback）
     /// </summary>
-        private async Task<(string? AvatarId, string? AvatarUrl)> ResolveAgentAvatarAsync(
+    private Task<(string? AvatarId, string? AvatarUrl)> ResolveAgentAvatarAsync(
         AgentInstanceManifest instance,
         CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(instance.AvatarId))
         {
             var avatar = _avatarCatalog.Find(instance.AvatarId);
-            if (avatar is not null) return (avatar.AvatarId, avatar.UrlPath);
+            if (avatar is not null)
+                return Task.FromResult<(string?, string?)>((avatar.AvatarId, avatar.UrlPath));
         }
+
         if (!string.IsNullOrWhiteSpace(instance.AvatarUrl))
-            return (instance.AvatarId, instance.AvatarUrl);
+            return Task.FromResult<(string?, string?)>((instance.AvatarId, instance.AvatarUrl));
+
         var fallback = _avatarCatalog.GetDefault();
-        return (fallback?.AvatarId, fallback?.UrlPath);
+        return Task.FromResult<(string?, string?)>((fallback?.AvatarId, fallback?.UrlPath));
     }
 
     private static string NormalizeTemplateId(string templateId)
@@ -801,6 +904,20 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
         return templateId.StartsWith(globalPrefix, StringComparison.OrdinalIgnoreCase)
             ? templateId[globalPrefix.Length..]
             : templateId;
+    }
+
+    private static string? NormalizeSmartRoleModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+            return null;
+
+        var normalized = model.Trim();
+        var separatorIndex = normalized.IndexOf('/');
+        if (separatorIndex <= 0 || separatorIndex == normalized.Length - 1)
+            throw new ArgumentException(
+                $"Smart role model '{model}' must use the format '{{providerId}}/{{modelId}}'.");
+
+        return normalized;
     }
 
     /// <summary>从已加载的模板 DTO 解析头像，用于创建时内联解析。</summary>

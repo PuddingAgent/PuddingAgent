@@ -104,6 +104,11 @@ public sealed class ExecutionRunCoordinator(
                 SkillPackages: profile.SkillPackages,
                 LlmProfile: llmProfile,
                 LlmConfig: profile.LlmConfig,
+                MaxRounds: snapshot.BudgetMaxRounds,
+                MaxElapsedSeconds: snapshot.Timeout is { } timeout
+                    ? (int)Math.Ceiling(timeout.TotalSeconds)
+                    : null,
+                MaxToolCallsTotal: snapshot.BudgetMaxToolCalls,
                 ChannelId: command.ChannelId,
                 UserExternalId: command.UserId,
                 RunCancellation: new RunCancellation(ctsRun.Token));

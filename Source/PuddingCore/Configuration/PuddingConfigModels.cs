@@ -88,7 +88,16 @@ public sealed record PuddingLlmProviderConfig
     public string? ApiKey { get; init; }
     public string? ApiKeyRef { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public string? Description { get; init; }
     public List<PuddingLlmModelConfig> Models { get; init; } = [];
+
+    // ── 服务商额度元数据 ────────────────────────────────
+    /// <summary>服务商级最大并发请求数（null=使用内置默认值 50）</summary>
+    public int? MaxConcurrentRequests { get; init; }
+    /// <summary>服务商声明的每分钟 Token 配额（TPM）</summary>
+    public long? TokensPerMinute { get; init; }
+    /// <summary>服务商声明的每分钟请求配额（RPM）</summary>
+    public int? RequestsPerMinute { get; init; }
 
     // ── 超时策略 ──────────────────────────────────────
     /// <summary>非流式请求超时秒数（默认 120）</summary>
@@ -262,13 +271,14 @@ public sealed record AgentInstanceManifest
     // ── 模板配置（创建时嵌入，运行时不再查模板）──
     public string? Role { get; init; }
     public string? SystemPrompt { get; init; }
+    public string? UserPromptTemplate { get; init; }
     public string? MemorySearchMode { get; init; }
     public string? ReasoningEffort { get; init; }
-    public int MaxContextTokens { get; init; } = 65536;
     public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
     public int MaxElapsedSeconds { get; init; } = 1200;
     public int MaxToolCallsTotal { get; init; } = 100;
+    public string? ContainerImage { get; init; }
     public AgentDefaultLlmProfiles DefaultLlmProfiles { get; init; } = new();
     public AgentCapabilitiesConfig Capabilities { get; init; } = new();
     public List<string> SkillPackageIds { get; init; } = [];
@@ -276,6 +286,17 @@ public sealed record AgentInstanceManifest
     public string? PreferredModelId { get; init; }
     public string? MemoryLlmProviderId { get; init; }
     public string? MemoryLlmModelId { get; init; }
+    public string? EmbeddingProviderId { get; init; }
+    public string? EmbeddingModelId { get; init; }
+
+    // ── Smart 工具模型配置（子代理角色→模型映射）──
+    public string? ExplorerModel { get; init; }
+    public string? ResearcherModel { get; init; }
+    public string? PlannerModel { get; init; }
+    public string? ReviewerModel { get; init; }
+    public string? DeveloperModel { get; init; }
+    public string? DeployerModel { get; init; }
+    public string? TesterModel { get; init; }
 
     // ── Markdown 文件引用（相对于实例根目录的文件名，如 "SOUL.md"）──
     public string? SoulMdFile { get; init; }
@@ -307,7 +328,6 @@ public sealed record AgentLlmBinding
     public string? ModelId { get; init; }
     public string? ReasoningEffort { get; init; }
     public string? ThinkingMode { get; init; }
-    public int? MaxContextTokens { get; init; }
     public int? MaxReplyTokens { get; init; }
 }
 

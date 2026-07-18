@@ -16,6 +16,9 @@ public record LlmProviderDto(
     bool HasApiKey,
     string? Description,
     bool IsEnabled,
+    int? MaxConcurrentRequests,
+    long? TokensPerMinute,
+    int? RequestsPerMinute,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
 );
@@ -30,6 +33,9 @@ public record LlmProviderDetailDto(
     bool HasApiKey,
     string? Description,
     bool IsEnabled,
+    int? MaxConcurrentRequests,
+    long? TokensPerMinute,
+    int? RequestsPerMinute,
     LlmProviderQuotaDto? Quota,
     List<LlmModelDto> Models,
     DateTimeOffset CreatedAt,
@@ -44,7 +50,10 @@ public record UpsertLlmProviderRequest(
     string BaseUrl,
     string? ApiKey,
     string? Description,
-    bool IsEnabled
+    bool IsEnabled,
+    int? MaxConcurrentRequests = null,
+    long? TokensPerMinute = null,
+    int? RequestsPerMinute = null
 );
 
 // ── LLM Provider Quota 配额 ────────────────────────────────────

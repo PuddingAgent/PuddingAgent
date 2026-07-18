@@ -131,6 +131,12 @@ public sealed class PuddingFileConfigLoader
             }
             if (string.IsNullOrWhiteSpace(provider.BaseUrl))
                 errors.Add($"llm.providers.json provider '{provider.ProviderId}' has empty baseUrl.");
+            if (provider.MaxConcurrentRequests is <= 0)
+                errors.Add($"llm.providers.json provider '{provider.ProviderId}' maxConcurrentRequests must be greater than zero.");
+            if (provider.TokensPerMinute is <= 0)
+                errors.Add($"llm.providers.json provider '{provider.ProviderId}' tokensPerMinute must be greater than zero.");
+            if (provider.RequestsPerMinute is <= 0)
+                errors.Add($"llm.providers.json provider '{provider.ProviderId}' requestsPerMinute must be greater than zero.");
 
             var modelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var model in provider.Models)
@@ -139,6 +145,8 @@ public sealed class PuddingFileConfigLoader
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' contains a model with empty modelId.");
                 else if (!modelIds.Add(model.ModelId))
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' contains duplicate modelId '{model.ModelId}'.");
+                if (model.MaxConcurrentRequests is <= 0)
+                    errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' maxConcurrentRequests must be greater than zero.");
             }
         }
 

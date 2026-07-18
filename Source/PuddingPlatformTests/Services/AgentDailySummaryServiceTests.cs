@@ -162,6 +162,11 @@ public sealed class AgentDailySummaryServiceTests
             CancellationToken ct = default) =>
             Task.FromResult<LlmRoutingConfig?>(null);
 
+        public Task<LlmRoutingConfig?> ResolveAsync(
+            AgentLlmBinding binding,
+            CancellationToken ct = default) =>
+            Task.FromResult<LlmRoutingConfig?>(null);
+
         public Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(
             string templateId,
             string? workspaceId,
@@ -176,6 +181,16 @@ public sealed class AgentDailySummaryServiceTests
                 ModelId = "memory-model",
             });
         }
+
+        public Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(
+            AgentLlmBinding binding,
+            CancellationToken ct = default) =>
+            Task.FromResult<MemoryLlmRoutingConfig?>(new MemoryLlmRoutingConfig
+            {
+                Endpoint = "https://memory.local",
+                ApiKey = "key",
+                ModelId = binding.ModelId ?? "memory-model",
+            });
     }
 
     private sealed class TempDataRoot : IDisposable

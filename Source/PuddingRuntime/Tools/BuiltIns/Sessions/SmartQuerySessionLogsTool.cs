@@ -1,10 +1,11 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Tools;
+using PuddingCode.Agents;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -22,7 +23,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "smart_query_session_log",
     name: "Smart Query Session Log",
-    description: "智能会话日志查询。用自然语言描述查询意图（what），" +
+    description: "【已合并到 smart_explore】智能会话日志查询。用自然语言描述查询意图（what），" +
                  "内部使用子代理自动调用 query_session_logs 搜索会话历史，" +
                  "自动设置 exclude_heartbeat=true 以过滤心跳噪音并分页遍历。" +
                  "一次调用完成 query_session_logs 的 grep + messages 多轮翻阅。" +
@@ -104,14 +105,36 @@ public sealed class SmartQuerySessionLogsTool : PuddingToolBase<SmartQuerySessio
             },
         }, ct);
 
-        try
+                try
         {
+            // Explorer 模型解析：无显式 model 时从父 Agent manifest 读取
+            var resolvedModel = args.Model;
+            if (string.IsNullOrWhiteSpace(resolvedModel))
+            {
+                try
+                {
+                    var profileProvider = _serviceProvider.GetService<AgentProfileProvider>();
+                    if (profileProvider is not null)
+                    {
+                        var profile = await profileProvider.LoadAsync(context.AgentInstanceId, CancellationToken.None);
+                        resolvedModel = profile.Instance.ExplorerModel;
+                        if (!string.IsNullOrWhiteSpace(resolvedModel))
+                            _logger.LogInformation("[SmartQuerySessionLog] Resolved explorer model: {Model}", resolvedModel);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[SmartQuerySessionLog] Failed to resolve explorer model");
+                }
+            }
+
             var spawnArgs = JsonSerializer.Serialize(new
             {
                 task,
                 agent_template = SubAgentTemplateId,
                 sync = true,
-                model = args.Model,
+                model = resolvedModel,
+                role_in_plan = "explorer",
                 capability_requirements = args.CapabilityRequirements,
                 timeout_seconds = timeoutUsed,
                 max_rounds = DefaultMaxRounds,

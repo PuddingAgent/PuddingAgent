@@ -276,6 +276,7 @@ builder.Services.AddSingleton<PlatformReadinessProbe>();
     builder.Services.AddScoped<IRequestCompactionHandler, RequestCompactionHandler>();
     builder.Services.AddScoped<ICompactionSessionSuccessor, CompactionSessionSuccessor>();
     builder.Services.AddScoped<IConversationAcceptanceStore, ConversationAcceptanceStore>();
+    builder.Services.AddScoped<ISystemCommandHandler, SystemCommandHandler>();
 
     // ── Conversation Event Store（ADR-057 Phase 2）────
     builder.Services.AddSingleton<IConversationEventStore, ConversationEventStore>();
@@ -554,6 +555,16 @@ builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
 builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 builder.Services.AddPuddingAgentTool<SmartSearchTool>();
 builder.Services.AddPuddingAgentTool<SmartQuerySessionLogsTool>();
+
+// ── Smart 工作流工具（角色化子代理）──
+builder.Services.AddPuddingAgentTool<SmartExploreTool>();
+builder.Services.AddPuddingAgentTool<SmartResearchTool>();
+builder.Services.AddPuddingAgentTool<SmartPlanTool>();
+builder.Services.AddPuddingAgentTool<SmartReviewTool>();
+builder.Services.AddPuddingAgentTool<SmartDevelopTool>();
+builder.Services.AddPuddingAgentTool<SmartDeployTool>();
+builder.Services.AddPuddingAgentTool<SmartTestTool>();
+
 builder.Services.AddPuddingAgentTool<LlmResourcePoolTool>();
 builder.Services.AddPuddingAgentTool<ReadOfficeDocumentTool>();
 builder.Services.AddPuddingAgentTool<TaskManagerTool>();

@@ -1,6 +1,7 @@
 ﻿# Agent 模板与客户端
 
-> **2026-06-12**：客户端 = 内嵌 Web UI。Agent 模板统一为全局模板库；Workspace 只管理 Agent 实例，不再暴露 Workspace 级模板管理。
+> **2026-07-18**：客户端 = 内嵌 Web UI。Agent 模板统一为全局模板库；
+> Workspace 只管理自包含 Agent 实例，不再暴露 Workspace 级模板管理。
 
 ## Agent 模板
 
@@ -33,11 +34,13 @@ Agent 模板只有一个全局层级，配置主源为 `data/agent-templates/{te
 - 首选模型与提供商
 - 能力（Capability）引用
 - Skill Package 引用
-- 记忆策略与 Token 限制
+- 记忆策略与执行护栏
 
 前端页面：`/global-agent-template`
 
-Workspace 内只创建和管理 Agent 实例。实例可引用全局模板，并按实例保存运行期覆盖项，例如名称、描述、首选模型和系统提示词覆盖。
+Workspace 内只创建和管理 Agent 实例。全局模板只在创建时作为蓝图：
+`WorkspaceAgentFileService` 把模板配置、Markdown 内容和 LLM Binding 复制到
+`data/agents/{agentId}/`。创建完成后，Agent 独立编辑、独立演进；运行时不得回查模板。
 
 > **2026-06-12 变更**：Workspace 详情页移除“模板管理”Tab，`/workspace-agent-template` 旧入口保留隐藏重定向用于兼容旧链接。旧版 `/agent-template` 统一模板页面已移除，其 API（`listAgentTemplates`、`getAgentTemplate`、`AgentTemplateType`、`AgentTemplateDefinition`）同步清理。详见 [QA-2026-05-03-RemoveOldAgentTemplate](../QA/QA-2026-05-03-RemoveOldAgentTemplate.md)。
 
@@ -54,11 +57,34 @@ Workspace 内只创建和管理 Agent 实例。实例可引用全局模板，并
 Workspace Agent 实例负责场景化与个性化字段：
 
 - Agent 名称、实例职责、所属 Workspace
-- 来源全局模板
-- 覆盖头像、高级 Prompt 覆盖、模型覆盖
+- 来源全局模板 ID（只用于审计来源，创建后只读，不是运行时外键）
+- 角色类型、头像、系统与用户 Prompt、Markdown 角色文件
+- 能力、Skill、模型路由、记忆策略、Smart 子代理角色模型
+- 最大轮次、最大耗时、最大工具调用、运行环境等执行护栏
 - 实例启用状态、运行状态、记忆归属
 
-未填写实例覆盖项时，运行时应继承来源模板默认值；实例配置不复制整份模板。
+创建请求未填写某个可复制字段时，创建服务可以使用模板值完成一次性填充；
+实例创建后，读取、更新和执行均以 Agent 实例目录为配置源，不再产生继承关系。
+
+### Agent 实例配置边界
+
+Agent 实例目录保存：
+
+- `manifest.json`：身份、角色、权限、Skill、执行护栏、模型引用和 Smart 角色模型
+- `config/llm.json`：主模型与潜意识模型的执行期 Binding 快照
+- `SOUL.md`、`AGENTS.md`、`TOOLS.md`、`BOOTSTRAP.md`、`MEMORY.md`
+- `heartbeatPrompt.md`
+
+Workspace Agent 编辑器应覆盖上述可编辑字段，并按“基础信息、能力与 Skill、
+角色定义、默认模型策略、执行护栏”分组。来源模板在编辑模式只读。
+
+实例的最大轮次、最大耗时和最大工具调用数必须进入 `AgentExecutionSnapshot`，
+再由 `TurnExecutionContext` 传给 Runtime。平台 `AgentExecutionGuardrails` 是硬上限，
+实例只能收紧上限，不能突破平台安全边界。
+
+`maxContextTokens` 不属于 Agent 实例配置。上下文容量的唯一运行时来源是
+`data/config/llm.providers.json` 中选中 Provider Model 的配置，执行快照通过
+provider/model 引用解析容量，禁止在 Agent manifest、Agent DTO 或 LLM Binding 中复制该值。
 
 ## 内嵌 Web UI
 

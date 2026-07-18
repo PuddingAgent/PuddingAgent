@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   compactSession,
   ensureMainSession,
+  executeConversationSystemCommand,
   getAgentMessageQueue,
   listSessionMessages,
   listSessions,
@@ -33,6 +34,7 @@ jest.mock('@/services/platform/api', () => ({
   createWorkspaceAgent: jest.fn(),
   deleteSession: jest.fn(),
   ensureMainSession: jest.fn(),
+  executeConversationSystemCommand: jest.fn(),
   getAgentMessageQueue: jest.fn(),
   listSessions: jest.fn(),
   listSessionMessages: jest.fn(),
@@ -160,6 +162,14 @@ describe('useChatState session selection races', () => {
     (listWorkspaceAgents as jest.Mock).mockResolvedValue(agents);
     (listSessions as jest.Mock).mockResolvedValue(sessions);
     (ensureMainSession as jest.Mock).mockResolvedValue(sessions[0]);
+    (executeConversationSystemCommand as jest.Mock).mockResolvedValue({
+      conversationId: 'session-a',
+      clientMessageId: 'client-message',
+      responseMessageId: 'system-response',
+      command: '/yolo',
+      message: 'Runtime mode is now Yolo (memory-only, lost on restart).',
+      runtimeMode: 'Yolo',
+    });
     (getAgentMessageQueue as jest.Mock).mockResolvedValue({
       workspaceId: 'default',
       agentId: 'agent-a',
@@ -631,6 +641,38 @@ describe('useChatState session selection races', () => {
       'session-compact',
       undefined,
       expect.any(Number),
+    );
+  });
+
+  it('routes /yolo to the system command endpoint without creating an Agent turn', async () => {
+    (listSessionMessages as jest.Mock).mockResolvedValue(messagePage('A'));
+
+    const { result } = renderHook(() => useChatState('?workspaceId=default'), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(result.current.selectedSessionId).toBe('session-a'),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage('/yolo');
+    });
+
+    expect(executeConversationSystemCommand).toHaveBeenCalledWith(
+      'default',
+      'session-a',
+      expect.objectContaining({
+        agentId: 'agent-a',
+        commandText: '/yolo',
+      }),
+    );
+    expect(submitConversationTurn).not.toHaveBeenCalled();
+
+    const commandTurn = result.current.turns.at(-1);
+    expect(commandTurn?.source?.sourceType).toBe('system_command');
+    expect(commandTurn?.assistant.status).toBe('success');
+    expect(commandTurn?.assistant.answerMarkdown).toContain(
+      'Runtime mode is now Yolo',
     );
   });
 

@@ -32,6 +32,9 @@ public sealed class TurnExecutorAdapter(
             CapabilityPolicy = context.CapabilityPolicy,
             ToolDefinitions = context.ToolDefinitions,
             SkillPackages = context.SkillPackages,
+            MaxRounds = context.MaxRounds ?? 0,
+            MaxElapsedSeconds = context.MaxElapsedSeconds ?? 0,
+            MaxToolCallsTotal = context.MaxToolCallsTotal ?? 0,
         };
 
         var sawTerminal = false;

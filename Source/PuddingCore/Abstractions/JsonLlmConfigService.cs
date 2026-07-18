@@ -171,6 +171,9 @@ public class JsonLlmConfigService : ILlmConfigService
             RetryDelaySeconds = provider.RetryDelaySeconds,
             CircuitBreakerFailureThreshold = provider.CircuitBreakerFailureThreshold,
             CircuitBreakerRecoverySeconds = provider.CircuitBreakerRecoverySeconds,
+            MaxConcurrentRequests = provider.MaxConcurrentRequests,
+            TokensPerMinute = provider.TokensPerMinute,
+            RequestsPerMinute = provider.RequestsPerMinute,
         };
     }
 
@@ -196,7 +199,9 @@ public class JsonLlmConfigService : ILlmConfigService
             RetryDelaySeconds = provider?.RetryDelaySeconds,
             CircuitBreakerFailureThreshold = provider?.CircuitBreakerFailureThreshold,
             CircuitBreakerRecoverySeconds = provider?.CircuitBreakerRecoverySeconds,
-            MaxConcurrentRequests = model?.MaxConcurrentRequests,
+            MaxConcurrentRequests = model?.MaxConcurrentRequests ?? provider?.MaxConcurrentRequests,
+            TokensPerMinute = provider?.TokensPerMinute,
+            RequestsPerMinute = provider?.RequestsPerMinute,
         };
     }
 
@@ -268,6 +273,9 @@ internal sealed record LlmProviderEntry
     public int? RetryDelaySeconds { get; init; }
     public int? CircuitBreakerFailureThreshold { get; init; }
     public int? CircuitBreakerRecoverySeconds { get; init; }
+    public int? MaxConcurrentRequests { get; init; }
+    public long? TokensPerMinute { get; init; }
+    public int? RequestsPerMinute { get; init; }
 }
 
 internal sealed record LlmModelEntry

@@ -183,6 +183,9 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             RetryDelaySeconds = provider.RetryDelaySeconds,
             CircuitBreakerFailureThreshold = provider.CircuitBreakerFailureThreshold,
             CircuitBreakerRecoverySeconds = provider.CircuitBreakerRecoverySeconds,
+            MaxConcurrentRequests = provider.MaxConcurrentRequests,
+            TokensPerMinute = provider.TokensPerMinute,
+            RequestsPerMinute = provider.RequestsPerMinute,
         };
     }
 
@@ -204,7 +207,9 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             RetryDelaySeconds = provider?.RetryDelaySeconds,
             CircuitBreakerFailureThreshold = provider?.CircuitBreakerFailureThreshold,
             CircuitBreakerRecoverySeconds = provider?.CircuitBreakerRecoverySeconds,
-            MaxConcurrentRequests = model?.MaxConcurrentRequests,
+            MaxConcurrentRequests = model?.MaxConcurrentRequests ?? provider?.MaxConcurrentRequests,
+            TokensPerMinute = provider?.TokensPerMinute,
+            RequestsPerMinute = provider?.RequestsPerMinute,
         };
     }
 

@@ -38,7 +38,10 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         long CreatedAt,
         string? MessageId,
         string? TurnId,
-        string? CommandId
+        string? CommandId,
+        string? SourceType,
+        string? SourceId,
+        string? SourceName
     );
 
     public record ThinkingChunkDto(
@@ -207,6 +210,8 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
             catch (JsonException) { /* skip malformed UsageJson */ }
         }
 
+        var source = ParseSourceMetadata(m.MetadataJson);
+
         return new ChatMessageDto(
             m.Id,
             m.Role,
@@ -216,9 +221,34 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
             m.CreatedAt,
             m.MessageId,
             m.TurnId,
-            m.CommandId
+            m.CommandId,
+            source?.SourceType,
+            source?.SourceId,
+            source?.SourceName
         );
     }
+
+    private static MessageSourceMetadata? ParseSourceMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<MessageSourceMetadata>(
+                metadataJson,
+                JsonOpts);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record MessageSourceMetadata(
+        string? SourceType,
+        string? SourceId,
+        string? SourceName);
 
     /// <summary>
     /// ADR-031 旧数据降级：ChatMessages 为空时，从 session_event_log 合成 assistant-only 转录。
@@ -302,6 +332,9 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
                         firstCreatedAt ?? createdAt,
                         null,
                         null,
+                        null,
+                        null,
+                        null,
                         null));
                 }
 
@@ -321,6 +354,9 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
                 thinking.Count > 0 ? thinking : null,
                 DeserializeUsage(usageJson),
                 firstCreatedAt ?? lastCreatedAt,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null));

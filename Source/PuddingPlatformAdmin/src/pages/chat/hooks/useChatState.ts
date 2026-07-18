@@ -31,6 +31,7 @@ import {
   deleteSession,
   type EnsureMainSessionRequest,
   ensureMainSession,
+  executeConversationSystemCommand,
   getAgentMessageQueue,
   getConversationBootstrap,
   listSessionMessages,
@@ -3981,6 +3982,16 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         mapped[targetIndex] = {
           ...mapped[targetIndex],
           turnId: item.turnId || mapped[targetIndex].turnId,
+          source:
+            item.sourceType === 'system_command'
+              ? {
+                  sourceId: item.sourceId || 'system',
+                  sourceType: 'system_command',
+                  displayName: item.sourceName || 'System',
+                  avatarEmoji: '⚙',
+                  avatarColor: stringToColor(item.sourceId || 'system'),
+                }
+              : mapped[targetIndex].source,
           assistant: {
             ...mapped[targetIndex].assistant,
             id: item.messageId || mapped[targetIndex].assistant.id,
@@ -5124,6 +5135,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       const route = resolveChatRoute(text, agents, agentId);
       const routedText = route.messageText.trim();
       if (!routedText || route.targetAgentIds.length === 0) return;
+      const isDirectSystemCommand = /^\/yolo$/i.test(routedText);
       resetMainSessionEnsureSuppression('send-message');
       setError(null);
       const perfStart = performance.now();
@@ -5131,8 +5143,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       const routeLabel = getChatRouteLabel(route, agents);
       const targetAgentId = route.primaryAgentId ?? agentId;
       const targetAgent = agents.find((item) => item.agentId === targetAgentId);
-      const isSystemCommand = routedText.startsWith('/');
-      const workingTargetAgentIds = isSystemCommand
+      const workingTargetAgentIds = isDirectSystemCommand
         ? []
         : Array.from(
             new Set(
@@ -5146,7 +5157,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         sessionIdRef.current
         ?? selectedSessionIdRef.current
         ?? mainSessionIdRef.current;
-      if (forceNewSessionRef.current) {
+      if (forceNewSessionRef.current && !isDirectSystemCommand) {
         const created = await createSession(
           workspaceId,
           targetAgent?.sourceTemplateId || `global:${targetAgentId}`,
@@ -5168,6 +5179,90 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       startSessionEventStream(sendConversationId);
 
       const turnId = createId();
+      if (isDirectSystemCommand) {
+        const clientRequestId = createId();
+        const clientMessageId = createId();
+        const responseMessageId = createId();
+        const systemTurn: ChatTurn = {
+          turnId: clientRequestId,
+          source: {
+            sourceId: 'system',
+            sourceType: 'system_command',
+            displayName: 'System',
+            avatarEmoji: '⚙',
+            avatarColor: stringToColor('system'),
+          },
+          userMessage: {
+            id: clientMessageId,
+            text: route.originalText,
+            timestamp: now,
+            status: 'sending',
+          },
+          assistant: createAssistant(
+            responseMessageId,
+            'legacy',
+            'thinking',
+            true,
+          ),
+        };
+        turnsRef.current = [...turnsRef.current, systemTurn];
+        setTurns((current) => [...current, systemTurn]);
+        setViewportScrollIntent({
+          type: 'user-send',
+          itemId: `message:user:${clientMessageId}`,
+          createdAt: now,
+        });
+
+        const updateSystemTurn = (
+          status: 'success' | 'error',
+          answerMarkdown: string,
+        ) => {
+          const apply = (current: ChatTurn[]) =>
+            current.map((turn) =>
+              turn.turnId === clientRequestId
+                ? {
+                    ...turn,
+                    userMessage: {
+                      ...turn.userMessage,
+                      status: status === 'success' ? 'success' : 'error',
+                    },
+                    assistant: {
+                      ...turn.assistant,
+                      status,
+                      isStreaming: false,
+                      answerMarkdown,
+                    },
+                  }
+                : turn,
+            );
+          turnsRef.current = apply(turnsRef.current);
+          setTurns(apply);
+        };
+
+        try {
+          const result = await executeConversationSystemCommand(
+            workspaceId,
+            sendConversationId,
+            {
+              agentId: targetAgentId,
+              clientRequestId,
+              clientMessageId,
+              responseMessageId,
+              commandText: routedText,
+            },
+          );
+          updateSystemTurn('success', result.message);
+          forceNewSessionRef.current = false;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : '系统指令执行失败';
+          updateSystemTurn('error', errorMessage);
+          setError(errorMessage);
+          messageApi.error(errorMessage);
+        }
+        return;
+      }
+
       markPerf(`chat.post.${turnId}.start`);
       // ADR-058: Generate stable idempotency keys at send initiation.
       // - clientRequestId: reused across retries; same send action = same ID.
@@ -5177,20 +5272,16 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       const optimisticTurn: ChatTurn = {
         turnId,
         source: {
-          sourceId: isSystemCommand ? 'system' : targetAgentId,
-          sourceType: isSystemCommand ? 'system_command' : 'agent',
-          displayName: isSystemCommand
-            ? 'System'
-            : route.audience === 'all'
+          sourceId: targetAgentId,
+          sourceType: 'agent',
+          displayName: route.audience === 'all'
               ? 'all'
               : targetAgent
                 ? getAgentName(targetAgent)
                 : targetAgentId,
-          avatarEmoji: isSystemCommand ? '⚙' : '🤖',
-          avatarColor: stringToColor(
-            isSystemCommand ? 'system' : targetAgentId,
-          ),
-          avatarUrl: isSystemCommand ? undefined : targetAgent?.avatarUrl,
+          avatarEmoji: '🤖',
+          avatarColor: stringToColor(targetAgentId),
+          avatarUrl: targetAgent?.avatarUrl,
         },
         userMessage: {
           id: clientMessageId,
@@ -5364,11 +5455,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         });
 
         // ADR: 首条消息隐式会话的前端物化 — 将返回的 sessionId 同步到左侧 sessions 列表
-        const optimisticTitle = isSystemCommand
-          ? `System · ${routedText.slice(0, 40).trim() || 'command'}`
-          : route.audience === 'all'
-            ? `all · ${routedText.slice(0, 24).trim() || '群聊'}`
-            : routeLabel || routedText.slice(0, 30).trim() || '对话';
+        const optimisticTitle = route.audience === 'all'
+          ? `all · ${routedText.slice(0, 24).trim() || '群聊'}`
+          : routeLabel || routedText.slice(0, 30).trim() || '对话';
         setSessions((prev) => {
           const idx = prev.findIndex((s) => s.sessionId === returnedSessionId);
           if (idx >= 0) {

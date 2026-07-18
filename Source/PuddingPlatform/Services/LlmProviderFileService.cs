@@ -54,8 +54,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             Protocol: p.Protocol,
             BaseUrl: p.BaseUrl,
             HasApiKey: !string.IsNullOrWhiteSpace(p.ApiKey) || !string.IsNullOrWhiteSpace(p.ApiKeyRef),
-            Description: null,
+            Description: p.Description,
             IsEnabled: p.IsEnabled,
+            MaxConcurrentRequests: p.MaxConcurrentRequests,
+            TokensPerMinute: p.TokensPerMinute,
+            RequestsPerMinute: p.RequestsPerMinute,
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow
         )).ToList();
@@ -76,8 +79,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             Protocol: p.Protocol,
             BaseUrl: p.BaseUrl,
             HasApiKey: !string.IsNullOrWhiteSpace(p.ApiKey) || !string.IsNullOrWhiteSpace(p.ApiKeyRef),
-            Description: null,
+            Description: p.Description,
             IsEnabled: p.IsEnabled,
+            MaxConcurrentRequests: p.MaxConcurrentRequests,
+            TokensPerMinute: p.TokensPerMinute,
+            RequestsPerMinute: p.RequestsPerMinute,
             Quota: p.IsEnabled ? new LlmProviderQuotaDto(null, null, 0, 0, false, null, null, DateTimeOffset.UtcNow) : null,
             Models: p.Models.Select(m => new LlmModelDto(
                 Id: 0,
@@ -123,6 +129,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 BaseUrl = req.BaseUrl,
                 ApiKey = req.ApiKey,
                 IsEnabled = req.IsEnabled,
+                Description = req.Description,
+                MaxConcurrentRequests = req.MaxConcurrentRequests,
+                TokensPerMinute = req.TokensPerMinute,
+                RequestsPerMinute = req.RequestsPerMinute,
             };
 
             config.Providers.Add(newProvider);
@@ -135,8 +145,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 Protocol: newProvider.Protocol,
                 BaseUrl: newProvider.BaseUrl,
                 HasApiKey: !string.IsNullOrWhiteSpace(newProvider.ApiKey) || !string.IsNullOrWhiteSpace(newProvider.ApiKeyRef),
-                Description: null,
+                Description: newProvider.Description,
                 IsEnabled: newProvider.IsEnabled,
+                MaxConcurrentRequests: newProvider.MaxConcurrentRequests,
+                TokensPerMinute: newProvider.TokensPerMinute,
+                RequestsPerMinute: newProvider.RequestsPerMinute,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow
             );
@@ -168,6 +181,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 BaseUrl = req.BaseUrl,
                 ApiKey = req.ApiKey ?? p.ApiKey,
                 IsEnabled = req.IsEnabled,
+                Description = req.Description,
+                MaxConcurrentRequests = req.MaxConcurrentRequests,
+                TokensPerMinute = req.TokensPerMinute,
+                RequestsPerMinute = req.RequestsPerMinute,
             };
             config.Providers.Add(updated);
 
@@ -180,8 +197,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 Protocol: updated.Protocol,
                 BaseUrl: updated.BaseUrl,
                 HasApiKey: !string.IsNullOrWhiteSpace(updated.ApiKey) || !string.IsNullOrWhiteSpace(updated.ApiKeyRef),
-                Description: null,
+                Description: updated.Description,
                 IsEnabled: updated.IsEnabled,
+                MaxConcurrentRequests: updated.MaxConcurrentRequests,
+                TokensPerMinute: updated.TokensPerMinute,
+                RequestsPerMinute: updated.RequestsPerMinute,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow
             );
@@ -217,6 +237,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 BaseUrl = providerRequest.BaseUrl,
                 ApiKey = providerRequest.ApiKey ?? provider.ApiKey,
                 IsEnabled = providerRequest.IsEnabled,
+                Description = providerRequest.Description,
+                MaxConcurrentRequests = providerRequest.MaxConcurrentRequests,
+                TokensPerMinute = providerRequest.TokensPerMinute,
+                RequestsPerMinute = providerRequest.RequestsPerMinute,
                 Models = MergeModels(provider.Models, modelRequests),
             };
 
@@ -233,8 +257,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 Protocol: provider.Protocol,
                 BaseUrl: provider.BaseUrl,
                 HasApiKey: !string.IsNullOrWhiteSpace(provider.ApiKey) || !string.IsNullOrWhiteSpace(provider.ApiKeyRef),
-                Description: null,
+                Description: provider.Description,
                 IsEnabled: provider.IsEnabled,
+                MaxConcurrentRequests: provider.MaxConcurrentRequests,
+                TokensPerMinute: provider.TokensPerMinute,
+                RequestsPerMinute: provider.RequestsPerMinute,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow
             );

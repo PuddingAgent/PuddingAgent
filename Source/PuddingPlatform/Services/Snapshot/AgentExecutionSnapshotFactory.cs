@@ -40,7 +40,11 @@ public sealed class AgentExecutionSnapshotFactory(
             profile.ConsciousProfileId,
             profile.PreferredProviderId,
             profile.PreferredModelId,
+            profile.SystemPrompt,
             profile.CapabilityPolicy,
+            profile.MaxRounds,
+            profile.MaxElapsedSeconds,
+            profile.MaxToolCallsTotal,
             tools = profile.ToolDefinitions?.Select(tool => tool.Name).OrderBy(name => name),
             skills = profile.SkillPackages?
                 .Select(skill => new { skill.SkillPackageId, skill.Version })
@@ -66,8 +70,11 @@ public sealed class AgentExecutionSnapshotFactory(
             SkillReferences: skillReferences,
             MemoryPolicyJson: null,
             BudgetTotalTokens: null,
-            BudgetMaxRounds: null,
-            Timeout: null,
+            BudgetMaxRounds: profile.MaxRounds,
+            BudgetMaxToolCalls: profile.MaxToolCallsTotal,
+            Timeout: profile.MaxElapsedSeconds is > 0
+                ? TimeSpan.FromSeconds(profile.MaxElapsedSeconds.Value)
+                : null,
             CreatedAt: DateTimeOffset.UtcNow);
 
         logger.LogInformation("[SnapshotFactory] Created snapshot={SnapshotId} agent={AgentId}",

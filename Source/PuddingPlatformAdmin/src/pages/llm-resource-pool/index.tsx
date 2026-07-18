@@ -504,13 +504,25 @@ const LlmResourcePoolPage: React.FC = () => {
             />
           </Form.Item>
           <ProFormTextArea name="description" label="描述" rows={3} />
-                    <ProFormDigit
+          <ProFormDigit
             name="maxConcurrentRequests"
             label="最大并发请求数"
             tooltip="限制该服务商的并发 API 请求数，防止触发 429 限流。留空使用默认值 (50)"
             min={0}
             max={1000}
             placeholder="留空使用默认值 (50)"
+            fieldProps={{ precision: 0 }}
+          />
+          <ProFormDigit
+            name="tokensPerMinute"
+            label="TPM（每分钟 Token 配额）"
+            min={1}
+            fieldProps={{ precision: 0 }}
+          />
+          <ProFormDigit
+            name="requestsPerMinute"
+            label="RPM（每分钟请求配额）"
+            min={1}
             fieldProps={{ precision: 0 }}
           />
           <ProFormSwitch name="isEnabled" label="启用" />
