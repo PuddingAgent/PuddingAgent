@@ -510,7 +510,8 @@ public class StatsApiController(
 
     /// <summary>
     /// POST /api/stats/tokens/rebuild
-    /// 从 ChatMessages.UsageJson 重建 TokenUsageEventEntity 明细账本。
+    /// 从 Conversation Event Store 的 usage.recorded v2 事实事件重建 Agent LLM 明细账本，
+    /// 再从完整 TokenUsageEvents 账本重建月度汇总。
     /// 仅管理员可用。
     /// 可选参数 yearMonth=2026-05 限制重建范围。
     /// </summary>

@@ -120,6 +120,21 @@ normalize(values, grantTargetKeys, skillTargetKeys, defaultCapIds)
 3. File service：manifest/Markdown 写入后读取一致。
 4. Runtime：resolved template 使用保存后的能力、Skill、模型和 persona。
 
+### ADR-044-F：Agent 自维护必须经过实例配置写入权威
+
+Agent 可以通过 Low 风险 `agent_state` 工具检查、诊断、读取和更新自己的实例级
+Markdown，但必须满足：
+
+1. Agent 身份只取自 `ToolExecutionContext.AgentInstanceId`，参数不能指定其他 Agent。
+2. 只允许 `SOUL.md`、`AGENTS.md`、`TOOLS.md`、`BOOTSTRAP.md`、
+   `MEMORY.md`、`heartbeatPrompt.md` 六个白名单文件。
+3. Tool 不接收物理路径，不直接使用通用文件工具，也不写历史 `persona/` 目录。
+4. `WorkspaceAgentFileService : IAgentSelfMaintenanceService` 是写入权威；
+   使用原子文件替换、共享写锁和可选 SHA-256 乐观并发检查。
+5. manifest 文件引用缺失时，更新操作将其修复为规范文件名；读取不会跟随异常引用。
+6. 不允许通过该工具修改 LLM 路由、能力授权、Skill、密钥、工作空间归属或其他 Agent。
+7. 更新从下一轮上下文组装开始生效；当前正在执行的不可变快照不被回写。
+
 ---
 
 ## 4. 施工方案
@@ -174,6 +189,17 @@ normalize(values, grantTargetKeys, skillTargetKeys, defaultCapIds)
 - API PUT/GET 测试覆盖能力、Skill、Prompt、模型、护栏。
 - Runtime capability resolve 测试确认保存后的 `cap-python` 可进入工具策略。
 
+### P5：Agent 私有状态自维护
+
+状态：已实施。
+
+- 用 `AgentStateTool` 替换未注册且写入旧 `persona/` 目录的 `AgentUpdateTool`。
+- `inspect/diagnose` 返回 manifest 引用、文件存在性、长度、SHA-256 和健康问题。
+- `read` 返回受控文档内容与截断元数据。
+- `update` 全量替换单个白名单文档，支持 `expectedSha256` 防止陈旧覆盖。
+- 权限为 Low，不设置 `RequiresFileWrite` 或 `Destructive`，由权限策略识别为
+  `low-risk agent-private state tool`，无需运行时授权。
+
 ---
 
 ## 5. 验收标准
@@ -183,3 +209,5 @@ normalize(values, grantTargetKeys, skillTargetKeys, defaultCapIds)
 3. 修改 `SOUL.md`、`TOOLS.md`、`BOOTSTRAP.md`、`AGENTS.md`、`MEMORY.md` 对应字段后，文件落盘且 Runtime 使用新内容。
 4. 修改模型、记忆模型、推理深度和护栏后，API GET 与运行时解析结果一致。
 5. 删除或重建 SQLite 配置表不会导致全局 Agent 模板配置丢失。
+6. `agent_state` 不能选择其他 Agent 或传入路径；更新后根目录 Markdown 和 manifest
+   引用一致，下一轮运行时读取新内容。

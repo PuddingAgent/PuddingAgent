@@ -399,9 +399,11 @@ builder.Services.AddSingleton<BenchmarkCaseCatalogService>();
 builder.Services.AddSingleton<BenchmarkCaseFileService>();
 builder.Services.AddSingleton<BenchmarkWorkspaceSeedService>();
 builder.Services.AddSingleton<BenchmarkRunService>();
-// ── Workspace Agent 运行时文件服务（管理运行时工作目录，非配置）──
+// ── Workspace Agent 实例配置与运行目录写入权威 ──
 builder.Services.AddSingleton<WorkspaceAgentFileService>();
 builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
+builder.Services.AddSingleton<IAgentSelfMaintenanceService>(
+    sp => sp.GetRequiredService<WorkspaceAgentFileService>());
 builder.Services.AddSingleton<IWorkspaceAgentQueryService, WorkspaceAgentQueryServiceAdapter>();
 builder.Services.AddSingleton<IAgentRosterProvider, WorkspaceAgentRosterProvider>();
 builder.Services.AddSingleton<IWorkspaceAuditAgentProvider>(sp =>

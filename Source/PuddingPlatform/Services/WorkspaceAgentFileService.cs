@@ -1,5 +1,8 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Agents;
 using PuddingCode.Configuration;
 using PuddingPlatform.Data.Dtos;
 
@@ -50,8 +53,26 @@ public sealed class WorkspaceAuditAgentConflictException : Exception
 /// 是避免列表/详情 DTO 变成第二个模型配置来源，进而让 Controller 或消息队列
 /// 消费者误以为可以绕过模板服务直接构造 LLM 配置。
 /// </remarks>
-public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
+public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSelfMaintenanceService
 {
+    private const int MaxSelfMaintainedDocumentChars = 200_000;
+
+    private static readonly IReadOnlyList<SelfDocumentDefinition> SelfDocumentDefinitions =
+    [
+        new(AgentSelfStateDocuments.Soul, "SOUL.md", manifest => manifest.SoulMdFile,
+            manifest => manifest with { SoulMdFile = "SOUL.md" }),
+        new(AgentSelfStateDocuments.Agents, "AGENTS.md", manifest => manifest.AgentsMdFile,
+            manifest => manifest with { AgentsMdFile = "AGENTS.md" }),
+        new(AgentSelfStateDocuments.Tools, "TOOLS.md", manifest => manifest.ToolsMdFile,
+            manifest => manifest with { ToolsMdFile = "TOOLS.md" }),
+        new(AgentSelfStateDocuments.Bootstrap, "BOOTSTRAP.md", manifest => manifest.BootstrapMdFile,
+            manifest => manifest with { BootstrapMdFile = "BOOTSTRAP.md" }),
+        new(AgentSelfStateDocuments.Memory, "MEMORY.md", manifest => manifest.MemoryMdFile,
+            manifest => manifest with { MemoryMdFile = "MEMORY.md" }),
+        new(AgentSelfStateDocuments.Heartbeat, "heartbeatPrompt.md", manifest => manifest.HeartbeatMdFile,
+            manifest => manifest with { HeartbeatMdFile = "heartbeatPrompt.md" }),
+    ];
+
     /// <summary>
     /// Agent 实例级心跳提示词的种子默认值。
     ///
@@ -111,6 +132,206 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
         _avatarCatalog = avatarCatalog;
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
+    }
+
+    public async Task<AgentSelfStateSnapshot> InspectAsync(
+        string agentInstanceId,
+        CancellationToken ct = default)
+    {
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var instanceRoot = ResolveAgentInstanceRoot(agentInstanceId);
+            var manifest = await LoadRequiredInstanceManifestAsync(agentInstanceId, ct);
+            var issues = new List<string>();
+            if (!string.Equals(
+                    manifest.AgentInstanceId,
+                    agentInstanceId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                issues.Add(
+                    $"manifest_agent_id_mismatch: expected '{agentInstanceId}', actual '{manifest.AgentInstanceId}'");
+            }
+
+            var documents = new List<AgentSelfStateDocumentInfo>(SelfDocumentDefinitions.Count);
+            foreach (var definition in SelfDocumentDefinitions)
+            {
+                var reference = definition.GetReference(manifest);
+                var referenced = string.Equals(
+                    reference,
+                    definition.FileName,
+                    StringComparison.OrdinalIgnoreCase);
+                if (!referenced)
+                {
+                    issues.Add(
+                        string.IsNullOrWhiteSpace(reference)
+                            ? $"manifest_reference_missing:{definition.Document}"
+                            : $"manifest_reference_invalid:{definition.Document}:{reference}");
+                }
+
+                var path = Path.Combine(instanceRoot, definition.FileName);
+                var exists = File.Exists(path);
+                string? content = null;
+                if (exists)
+                {
+                    content = await File.ReadAllTextAsync(path, ct);
+                    if (string.IsNullOrWhiteSpace(content))
+                        issues.Add($"document_empty:{definition.Document}");
+                }
+                else
+                {
+                    issues.Add($"document_missing:{definition.Document}");
+                }
+
+                documents.Add(new AgentSelfStateDocumentInfo
+                {
+                    Document = definition.Document,
+                    FileName = definition.FileName,
+                    ReferencedByManifest = referenced,
+                    Exists = exists,
+                    Length = content?.Length ?? 0,
+                    Sha256 = content is null ? null : ComputeSha256(content),
+                    LastModifiedAt = exists
+                        ? new DateTimeOffset(File.GetLastWriteTimeUtc(path))
+                        : null,
+                });
+            }
+
+            return new AgentSelfStateSnapshot
+            {
+                AgentInstanceId = agentInstanceId,
+                TemplateId = manifest.TemplateId,
+                DisplayName = manifest.DisplayName,
+                IsEnabled = manifest.IsEnabled,
+                Documents = documents,
+                Issues = issues,
+            };
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    public async Task<AgentSelfStateDocument> ReadDocumentAsync(
+        string agentInstanceId,
+        string document,
+        CancellationToken ct = default)
+    {
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var definition = ResolveSelfDocument(document);
+            var instanceRoot = ResolveAgentInstanceRoot(agentInstanceId);
+            var manifest = await LoadRequiredInstanceManifestAsync(agentInstanceId, ct);
+            EnsureCanonicalManifestReference(manifest, definition);
+
+            var path = Path.Combine(instanceRoot, definition.FileName);
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException(
+                    $"Agent state document '{definition.Document}' is missing. Run agent_state action=inspect for diagnostics.",
+                    definition.FileName);
+            }
+
+            var content = await File.ReadAllTextAsync(path, ct);
+            return new AgentSelfStateDocument
+            {
+                AgentInstanceId = agentInstanceId,
+                Document = definition.Document,
+                FileName = definition.FileName,
+                Content = content,
+                Sha256 = ComputeSha256(content),
+                LastModifiedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(path)),
+            };
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    public async Task<AgentSelfStateUpdateResult> UpdateDocumentAsync(
+        string agentInstanceId,
+        string document,
+        string content,
+        string? expectedSha256 = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ArgumentException("Agent state document content cannot be empty.", nameof(content));
+        if (content.Length > MaxSelfMaintainedDocumentChars)
+        {
+            throw new ArgumentException(
+                $"Agent state document exceeds the {MaxSelfMaintainedDocumentChars} character limit.",
+                nameof(content));
+        }
+
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var definition = ResolveSelfDocument(document);
+            var instanceRoot = ResolveAgentInstanceRoot(agentInstanceId);
+            var manifest = await LoadRequiredInstanceManifestAsync(agentInstanceId, ct);
+            var path = Path.Combine(instanceRoot, definition.FileName);
+            var previousContent = File.Exists(path)
+                ? await File.ReadAllTextAsync(path, ct)
+                : null;
+            var previousSha256 = previousContent is null
+                ? string.Empty
+                : ComputeSha256(previousContent);
+
+            if (!string.IsNullOrWhiteSpace(expectedSha256)
+                && !string.Equals(
+                    expectedSha256.Trim(),
+                    previousSha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new AgentSelfStateConflictException(
+                    definition.Document,
+                    expectedSha256.Trim(),
+                    previousSha256);
+            }
+
+            await AtomicFileWriter.WriteAsync(path, content, ct);
+
+            var manifestReferenceRepaired = !string.Equals(
+                definition.GetReference(manifest),
+                definition.FileName,
+                StringComparison.OrdinalIgnoreCase);
+            if (manifestReferenceRepaired)
+            {
+                manifest = definition.SetReference(manifest);
+                await AtomicFileWriter.WriteJsonAsync(
+                    Path.Combine(instanceRoot, "manifest.json"),
+                    manifest,
+                    JsonOptions,
+                    ct);
+            }
+
+            var sha256 = ComputeSha256(content);
+            _logger.LogInformation(
+                "Agent self-maintained document updated: agent={AgentId} document={Document} previousSha={PreviousSha} sha={Sha}",
+                agentInstanceId,
+                definition.Document,
+                previousSha256,
+                sha256);
+
+            return new AgentSelfStateUpdateResult
+            {
+                AgentInstanceId = agentInstanceId,
+                Document = definition.Document,
+                FileName = definition.FileName,
+                PreviousSha256 = previousSha256,
+                Sha256 = sha256,
+                Length = content.Length,
+                ManifestReferenceRepaired = manifestReferenceRepaired,
+            };
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     /// <summary>返回工作区内第一个启用的 Audit Agent；未找到时返回 null。</summary>
@@ -736,6 +957,66 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
         }
     }
 
+    private async Task<AgentInstanceManifest> LoadRequiredInstanceManifestAsync(
+        string agentInstanceId,
+        CancellationToken ct)
+    {
+        var manifest = await LoadInstanceManifestAsync(agentInstanceId, ct);
+        return manifest ?? throw new FileNotFoundException(
+            $"Agent instance '{agentInstanceId}' does not have a manifest.json.");
+    }
+
+    private string ResolveAgentInstanceRoot(string agentInstanceId)
+    {
+        if (string.IsNullOrWhiteSpace(agentInstanceId)
+            || !string.Equals(
+                Path.GetFileName(agentInstanceId),
+                agentInstanceId,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Agent instance ID is invalid.", nameof(agentInstanceId));
+        }
+
+        var agentsRoot = Path.GetFullPath(_paths.AgentInstancesRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var instanceRoot = Path.GetFullPath(_paths.AgentInstanceRoot(agentInstanceId));
+        var requiredPrefix = agentsRoot + Path.DirectorySeparatorChar;
+        if (!instanceRoot.StartsWith(requiredPrefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Agent instance path escaped the configured agents root.");
+
+        return instanceRoot;
+    }
+
+    private static SelfDocumentDefinition ResolveSelfDocument(string document)
+    {
+        var normalized = document?.Trim();
+        return SelfDocumentDefinitions.FirstOrDefault(definition =>
+                   string.Equals(
+                       definition.Document,
+                       normalized,
+                       StringComparison.OrdinalIgnoreCase))
+               ?? throw new ArgumentException(
+                   $"Unknown Agent state document '{document}'. Valid documents: {string.Join(", ", AgentSelfStateDocuments.All)}.",
+                   nameof(document));
+    }
+
+    private static void EnsureCanonicalManifestReference(
+        AgentInstanceManifest manifest,
+        SelfDocumentDefinition definition)
+    {
+        var reference = definition.GetReference(manifest);
+        if (!string.Equals(reference, definition.FileName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Agent manifest does not reference canonical file '{definition.FileName}' for document " +
+                $"'{definition.Document}'. Run agent_state action=inspect, then action=update to repair it.");
+        }
+    }
+
+    private static string ComputeSha256(string content)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)))
+            .ToLowerInvariant();
+
     private async Task<AgentInstanceManifest?> LoadInstanceManifestAsync(string agentInstanceId, CancellationToken ct)
     {
         var path = Path.Combine(_paths.AgentInstanceRoot(agentInstanceId), "manifest.json");
@@ -959,5 +1240,11 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
         var path = Path.Combine(instanceRoot, fileName);
         return File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
     }
+
+    private sealed record SelfDocumentDefinition(
+        string Document,
+        string FileName,
+        Func<AgentInstanceManifest, string?> GetReference,
+        Func<AgentInstanceManifest, AgentInstanceManifest> SetReference);
 
 }

@@ -489,7 +489,10 @@ const TokenStatsPage: React.FC = () => {
     setRebuilding(true);
     try {
       const result = await rebuildTokenEvents(yearMonth);
-      message.success(`重建完成：删除 ${result.eventsDeleted ?? 0} 条旧明细，创建 ${result.eventsCreated} 条明细，跳过 ${result.skippedDuplicates} 条重复`);
+      message.success(
+        `重建完成：扫描 ${result.usageEventsScanned} 条事实事件，删除 ${result.eventsDeleted ?? 0} 条旧明细，` +
+        `创建 ${result.eventsCreated} 条明细，跳过 ${result.unattributedEventsSkipped} 条无归因旧事件`,
+      );
       void fetchStats(yearMonth, providerFilter, modelFilter);
     } catch {
       message.error('重建失败');

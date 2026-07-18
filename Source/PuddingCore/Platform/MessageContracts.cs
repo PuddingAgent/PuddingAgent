@@ -121,6 +121,10 @@ public sealed record RuntimeDispatchRequest
     public required string AgentTemplateId { get; init; }
     public required string MessageText { get; init; }
     public required string WorkspaceId { get; init; }
+    /// <summary>
+    /// 本次执行允许文件工具使用的根目录。WorkspaceId 只表示业务身份，不得用于反推该路径。
+    /// </summary>
+    public string? WorkingDirectory { get; init; }
     /// <summary>User identity used for runtime authorization and observability.</summary>
     public string? UserId { get; init; }
     /// <summary>Controller 为本次用户消息分配的消息 ID，用于将流式事件稳定绑定到前端 turn。</summary>

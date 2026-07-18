@@ -57,7 +57,12 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         var summaries = new List<string>();
         foreach (var patch in patches)
         {
-            if (!HostFileToolPaths.TryResolveInsideWorkspace(patch.Path, out var fullPath, out var resolveError, skipWorkspaceCheck: context.IsYoloMode))
+            if (!HostFileToolPaths.TryResolveInsideWorkspace(
+                    patch.Path,
+                    out var fullPath,
+                    out var resolveError,
+                    skipWorkspaceCheck: context.IsYoloMode,
+                    executionWorkingDirectory: context.WorkingDirectory))
             {
                 _audit.Write(OperationZone.External, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, 0, context.Trace);
@@ -795,7 +800,12 @@ internal static class UnifiedDiffPatchRunner
         var touchedFiles = new List<(UnifiedDiffFile Patch, string FullPath, string Original, string Current, OperationZone Zone)>();
         foreach (var patch in parsed.Files)
         {
-            if (!HostFileToolPaths.TryResolveInsideWorkspace(patch.Path, out var fullPath, out var resolveError, skipWorkspaceCheck: context.IsYoloMode))
+            if (!HostFileToolPaths.TryResolveInsideWorkspace(
+                    patch.Path,
+                    out var fullPath,
+                    out var resolveError,
+                    skipWorkspaceCheck: context.IsYoloMode,
+                    executionWorkingDirectory: context.WorkingDirectory))
             {
                 audit.Write(OperationZone.External, toolId, context.AgentInstanceId,
                     patch.Path, reason, false, 0, context.Trace);

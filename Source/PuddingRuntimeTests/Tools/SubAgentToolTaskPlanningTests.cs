@@ -46,6 +46,10 @@ public sealed class SubAgentToolTaskPlanningTests
         StringAssert.Contains(invocation.LastRequest!.Task, "QUESTION: Which files still have risky TODO markers?");
         StringAssert.Contains(invocation.LastRequest.Task, "SCOPE: Source/PuddingAgent and Source/PuddingRuntime");
         StringAssert.Contains(invocation.LastRequest.Task, "OUTPUT: SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS");
+        Assert.AreEqual("test", invocation.LastRequest.LlmProfile.ProviderId);
+        Assert.AreEqual("subagent.conscious", invocation.LastRequest.LlmProfile.ProfileId);
+        Assert.AreEqual("test-model", invocation.LastRequest.LlmProfile.ModelId);
+        Assert.AreEqual("test-model", invocation.LastRequest.LlmConfig.ModelId);
     }
 
     [TestMethod]
@@ -114,6 +118,72 @@ public sealed class SubAgentToolTaskPlanningTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_PropagatesExplicitMaxRounds()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "completed",
+        };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Inspect the runtime","sync":true,"max_rounds":15}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual(15, invocation.LastRequest!.MaxRounds);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_PropagatesWorkingDirectoryAsExecutionSnapshot()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "completed",
+        };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+        var workingDirectory = Directory.GetCurrentDirectory();
+        var arguments = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            task = "Inspect the runtime",
+            sync = true,
+            working_directory = workingDirectory,
+        });
+
+        var result = await tool.ExecuteAsync(CreateRequest(arguments));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual(workingDirectory, invocation.LastRequest!.WorkingDirectory);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_RejectsOutOfRangeMaxRounds()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Inspect the runtime","sync":true,"max_rounds":201}"""));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "max_rounds must be between 1 and 200");
+        Assert.IsNull(invocation.LastRequest);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_DeniesSpawnAtMaxDepth()
     {
         var invocation = new RecordingSubAgentInvocationService();
@@ -145,7 +215,7 @@ public sealed class SubAgentToolTaskPlanningTests
         ITaskPlanStore store)
     {
         return new ServiceCollection()
-            .AddSingleton<ILlmResolver, FakeLlmResolver>()
+            .AddSingleton<ILlmResolver>(new FakeLlmResolver())
             .AddSingleton<ISubAgentInvocationService>(invocation)
             .AddSingleton<ITaskDelegationPolicy>(policy)
             .AddSingleton<ITaskPlanStore>(store)
@@ -223,20 +293,23 @@ public sealed class SubAgentToolTaskPlanningTests
 
     private sealed class FakeLlmResolver : ILlmResolver
     {
-        public Task<LlmConfig?> ResolveAsync(string providerId, string? modelId = null, CancellationToken ct = default)
-            => Task.FromResult<LlmConfig?>(CreateConfig(modelId));
-
-                public Task<LlmConfig> ResolveDefaultAsync(CancellationToken ct = default)
-            => Task.FromResult(CreateConfig("test-model"));
-
-                public Task<IReadOnlyList<string>> ListEnabledProviderIdsAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<string>>(["test"]);
-
-        public Task<LlmConfig?> ResolveByCapabilityAsync(string[] requiredTags, string[]? preferredTags = null, string? providerId = null, CancellationToken ct = default)
-            => Task.FromResult<LlmConfig?>(CreateConfig("test-model"));
-
-        public IReadOnlyList<LlmModelInfo> GetAllModels()
-            => Array.Empty<LlmModelInfo>();
+        public Task<ResolvedLlmRoute> ResolveRouteAsync(
+            string? modelRoute = null,
+            IReadOnlyCollection<string>? requiredCapabilityTags = null,
+            CancellationToken ct = default)
+        {
+            var route = string.IsNullOrWhiteSpace(modelRoute)
+                ? ["test", "test-model"]
+                : modelRoute.Split('/', 2, StringSplitOptions.TrimEntries);
+            var providerId = route.Length == 2 ? route[0] : "test";
+            var modelId = route.Length == 2 ? route[1] : route[0];
+            return Task.FromResult(new ResolvedLlmRoute
+            {
+                ProviderId = providerId,
+                ModelId = modelId,
+                Config = CreateConfig(modelId),
+            });
+        }
 
         private static LlmConfig CreateConfig(string? modelId) => new()
         {

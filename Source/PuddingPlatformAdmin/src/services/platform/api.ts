@@ -2938,8 +2938,8 @@ export async function rebuildTokenEvents(
 ): Promise<{
   eventsCreated: number;
   eventsDeleted?: number;
-  messagesScanned: number;
-  skippedDuplicates: number;
+  usageEventsScanned: number;
+  unattributedEventsSkipped: number;
   statsRowsRebuilt?: number;
   errors: number;
   errorDetails: string[];

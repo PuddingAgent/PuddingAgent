@@ -28,6 +28,7 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
 
     protected override string RoleName => "developer";
     protected override int DefaultTimeoutSeconds => 300;
+    protected override int DefaultMaxRounds => 24;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDevelopArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -72,14 +73,6 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
     }
 }
 
-public sealed class SmartDevelopArgs
+public sealed class SmartDevelopArgs : ScopedSmartWorkflowArgs
 {
-    [ToolParam("开发任务 — 自然语言描述，如 '为 UserService 添加 UpdateEmail 方法'")]
-    public string? Task { get; set; }
-
-    [ToolParam("工作目录范围")]
-    public string? Scope { get; set; }
-
-    [ToolParam("子代理超时秒数，默认 300s")]
-    public int? TimeoutSeconds { get; set; }
 }

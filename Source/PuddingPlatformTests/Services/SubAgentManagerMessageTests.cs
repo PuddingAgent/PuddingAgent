@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingCode.SubAgents;
 using PuddingPlatform.Services;
 
@@ -17,9 +18,11 @@ public sealed class SubAgentManagerMessageTests
     public async Task SpawnAsync_SendsParentAgentMessage_WhenAsyncSubAgentCompletes()
     {
         var messageSystem = new RecordingMessageSystem();
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
         var services = new ServiceCollection()
             .AddSingleton<IMessageSystem>(messageSystem)
-            .AddSingleton<IRuntimeAgentDispatcher>(new RecordingRuntimeAgentDispatcher())
+            .AddSingleton<IRuntimeAgentDispatcher>(dispatcher)
+            .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
             .BuildServiceProvider();
 
         var manager = new SubAgentManager(
@@ -29,7 +32,8 @@ public sealed class SubAgentManagerMessageTests
             new RecordingSubAgentRunStore(),
             NullLogger<SubAgentManager>.Instance,
             new RecordingRuntimeActivitySink(),
-            new RecordingRuntimeTraceAccessor());
+            new RecordingRuntimeTraceAccessor(),
+            services.GetRequiredService<IRuntimeExecutionConfigService>());
 
         var result = await manager.SpawnAsync(new SubAgentSpawnRequest
         {
@@ -38,6 +42,8 @@ public sealed class SubAgentManagerMessageTests
             WorkspaceId = "default",
             TaskDescription = "Return child result.",
             TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
         });
 
         Assert.IsTrue(result.Success);
@@ -56,11 +62,16 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("subagent_result", envelope.Metadata["message_type"]);
         Assert.AreEqual("1", envelope.Metadata["pudding_message_version"]);
         Assert.AreEqual(result.SubSessionId, envelope.Metadata["sub_agent_id"]);
-        Assert.AreEqual("completed", envelope.Metadata["subagent_status"]);
+        Assert.AreEqual("completed", envelope.Metadata["subagent_status"], envelope.Content);
         StringAssert.Contains(envelope.Content, "\"schema\": \"pudding-message\"");
         StringAssert.Contains(envelope.Content, "\"message_type\": \"subagent_result\"");
         StringAssert.Contains(envelope.Content, "\"format\": \"text/markdown\"");
         StringAssert.Contains(envelope.Content, "child ok");
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual("test-provider", dispatcher.LastRequest!.LlmProfile?.ProviderId);
+        Assert.AreEqual("subagent.conscious", dispatcher.LastRequest.LlmProfile?.ProfileId);
+        Assert.AreEqual("test-model", dispatcher.LastRequest.LlmProfile?.ModelId);
+        Assert.AreEqual("test-model", dispatcher.LastRequest.LlmConfig?.ModelId);
     }
 
     [TestMethod]
@@ -81,6 +92,7 @@ public sealed class SubAgentManagerMessageTests
                 ToolOutputChars = 100_088,
                 ToolFailureSummary = "shell: Command timed out after 30 seconds.",
             }))
+            .AddSingleton<IRuntimeExecutionConfigService>(new TestRuntimeExecutionConfigService())
             .BuildServiceProvider();
 
         var manager = new SubAgentManager(
@@ -90,7 +102,8 @@ public sealed class SubAgentManagerMessageTests
             new RecordingSubAgentRunStore(),
             NullLogger<SubAgentManager>.Instance,
             new RecordingRuntimeActivitySink(),
-            new RecordingRuntimeTraceAccessor());
+            new RecordingRuntimeTraceAccessor(),
+            services.GetRequiredService<IRuntimeExecutionConfigService>());
 
         var result = await manager.SpawnAsync(new SubAgentSpawnRequest
         {
@@ -99,6 +112,8 @@ public sealed class SubAgentManagerMessageTests
             WorkspaceId = "default",
             TaskDescription = "Return child result.",
             TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
         });
 
         Assert.IsTrue(result.Success);
@@ -106,13 +121,91 @@ public sealed class SubAgentManagerMessageTests
 
         Assert.AreEqual("subagent_result", envelope.Metadata["intent"]);
         Assert.AreEqual("failed", envelope.Metadata["subagent_status"]);
-        Assert.AreEqual("1", envelope.Metadata["tool_failure_count"]);
+        Assert.AreEqual("1", envelope.Metadata["tool_failure_count"], envelope.Content);
         Assert.AreEqual("1", envelope.Metadata["tool_output_truncated_count"]);
         Assert.AreEqual("100088", envelope.Metadata["tool_output_chars"]);
         Assert.AreEqual("shell: Command timed out after 30 seconds.", envelope.Metadata["tool_failure_summary"]);
         StringAssert.Contains(envelope.Content, "\"subagent_status\": \"failed\"");
         StringAssert.Contains(envelope.Content, "\"tool_failure_count\": \"1\"");
         StringAssert.Contains(envelope.Content, "Command timed out after 30 seconds.");
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_RejectsMismatchedLlmRoute_BeforeDispatch()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+            {
+                ParentSessionId = "parent-session",
+                ParentAgentId = "agent-parent",
+                WorkspaceId = "default",
+                TaskDescription = "Must not dispatch.",
+                TemplateId = "workspace-task-agent",
+                LlmConfig = CreateLlmConfig() with { ModelId = "other-model" },
+                LlmProfile = CreateLlmProfile(),
+            }));
+
+        StringAssert.Contains(error.Message, "does not match config model");
+        Assert.IsNull(dispatcher.LastRequest);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_RejectsMissingLlmProfile_BeforeDispatch()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+            {
+                ParentSessionId = "parent-session",
+                ParentAgentId = "agent-parent",
+                WorkspaceId = "default",
+                TaskDescription = "Must not dispatch.",
+                TemplateId = "workspace-task-agent",
+                LlmConfig = CreateLlmConfig(),
+                LlmProfile = null!,
+            }));
+
+        StringAssert.Contains(error.Message, "missing its LLM profile snapshot");
+        Assert.IsNull(dispatcher.LastRequest);
+    }
+
+    private static SubAgentManager CreateManager(RecordingRuntimeAgentDispatcher dispatcher)
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IRuntimeAgentDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        return new SubAgentManager(
+            new RecordingSessionStateManager(),
+            services,
+            new RecordingInternalEventBus(),
+            new RecordingSubAgentRunStore(),
+            NullLogger<SubAgentManager>.Instance,
+            new RecordingRuntimeActivitySink(),
+            new RecordingRuntimeTraceAccessor(),
+            new TestRuntimeExecutionConfigService());
+    }
+
+    private static LlmConfig CreateLlmConfig() => new()
+    {
+        Endpoint = "https://example.invalid/v1",
+        ModelId = "test-model",
+    };
+
+    private static LlmInvocationProfile CreateLlmProfile() => new()
+    {
+        ProviderId = "test-provider",
+        ProfileId = "subagent.conscious",
+        ModelId = "test-model",
+    };
+
+    private sealed class TestRuntimeExecutionConfigService : IRuntimeExecutionConfigService
+    {
+        public RuntimeExecutionOptions GetOptions() => new();
     }
 
     private sealed class RecordingMessageSystem : IMessageSystem
@@ -138,6 +231,7 @@ public sealed class SubAgentManagerMessageTests
     private sealed class RecordingRuntimeAgentDispatcher : IRuntimeAgentDispatcher
     {
         private readonly RuntimeDispatchResult? _result;
+        public RuntimeDispatchRequest? LastRequest { get; private set; }
 
         public RecordingRuntimeAgentDispatcher(RuntimeDispatchResult? result = null)
         {
@@ -146,6 +240,7 @@ public sealed class SubAgentManagerMessageTests
 
         public Task<RuntimeDispatchResult> DispatchAsync(RuntimeDispatchRequest request, CancellationToken ct = default)
         {
+            LastRequest = request;
             var result = _result ?? new RuntimeDispatchResult
             {
                 SessionId = request.SessionId,

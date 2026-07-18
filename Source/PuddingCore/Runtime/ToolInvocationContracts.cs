@@ -9,6 +9,7 @@ public sealed record ToolInvocationRequest
     public required string WorkspaceId { get; init; }
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }
+    public string? WorkingDirectory { get; init; }
     public string? AgentTemplateId { get; init; }
     public required string ToolCallId { get; init; }
     public required string ToolName { get; init; }

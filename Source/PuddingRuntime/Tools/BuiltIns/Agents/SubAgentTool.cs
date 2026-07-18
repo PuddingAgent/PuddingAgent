@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services.Skills;
 ///   · 复用 AgentExecutionService — 子代理与主代理使用同一执行引擎，不另起炉灶
 ///   · 权限继承 — 子代继承父代理的能力策略，父代理可下调（不可升级）
 ///   · 工具继承 — 默认继承父代理的工具集，可指定子集
-///   · 模型继承 — 通过 ILlmResolver 从 DB 注册表解析 LLM 配置
+///   · 模型路由 — 通过 ILlmResolver 从 llm.providers.json 唯一配置源解析身份与配置快照
 ///   · 同步模式 — 父代理等待子代理完成，结果注入父代理上下文
 ///   · 异步模式 — 父代理继续执行，子代理完成后通过事件系统回调通知
 ///   · 参数校验 — 无效模板名返回可用列表，不让 LLM 盲猜
@@ -55,6 +55,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
     private const string DelegationProtocolVersion = "SUBAGENTS.md/v1";
     private const string DefaultSubAgentOutputContract = "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS";
+    private const int DefaultSubAgentMaxRounds = 10;
+    private const int MaximumSubAgentMaxRounds = 200;
     private static readonly string[] ResultSectionNames = ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
 
     public SubAgentTool(
@@ -113,6 +115,18 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                           ?? GetStringProp(json, "permissionMode")
                           ?? SubAgentPermissionModes.Inherit;
         var timeoutSeconds = GetIntArg(json, request, "timeout_seconds", "timeoutSeconds");
+        var workingDirectory = GetStringArg(
+            json,
+            request,
+            "working_directory",
+            "workingDirectory");
+        var maxRounds = GetIntArg(json, request, "max_rounds", "maxRounds")
+                     ?? DefaultSubAgentMaxRounds;
+        if (maxRounds is < 1 or > MaximumSubAgentMaxRounds)
+        {
+            return Fail(
+                $"max_rounds must be between 1 and {MaximumSubAgentMaxRounds}. Received: {maxRounds}.");
+        }
         var capabilityRequirements = GetStringProp(json, "capability_requirements")
                                  ?? GetStringProp(json, "capabilityRequirements")
                                  ?? request.Parameters.GetValueOrDefault("capability_requirements");
@@ -128,11 +142,15 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         // 构造子代理的 Capability（继承父代理，可下调不可升级）
         var childCapability = BuildChildCapability(json, request, template, permissionMode);
 
-        // 构造 LlmConfig — 错误的 model 参数会抛 InvalidOperationException，转为友好 Fail 返回给 Agent
-        LlmConfig childLlmConfig;
+        // 在调用入口一次性解析不可变路由身份和调用配置。
+        // 后续 InvocationService / Manager 只能透传，禁止从 Endpoint、密钥或 model 字符串反推 Provider。
+        ResolvedChildLlmRoute childLlmRoute;
         try
         {
-            childLlmConfig = await BuildChildLlmConfigAsync(modelId, capabilityRequirements, request);
+            childLlmRoute = await ResolveChildLlmRouteAsync(
+                modelId,
+                capabilityRequirements,
+                ct);
         }
         catch (InvalidOperationException ex)
         {
@@ -146,8 +164,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var childAllowSubDelegation = taskPlanning.AllowSubDelegation == true;
 
         _logger.LogInformation(
-            "[SubAgent] Spawning sync={Sync} template={Template} model={Model} session={Session}",
-            isSync, template.TemplateId, childLlmConfig?.ModelId ?? "inherit", request.SessionId);
+            "[SubAgent] Spawning sync={Sync} template={Template} provider={Provider} profile={Profile} model={Model} session={Session}",
+            isSync,
+            template.TemplateId,
+            childLlmRoute.Profile.ProviderId,
+            childLlmRoute.Profile.ProfileId,
+            childLlmRoute.Profile.ModelId,
+            request.SessionId);
 
         if (batchTasksResult.Tasks is not null)
         {
@@ -158,13 +181,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     ParentSessionId = request.SessionId,
                     ParentAgentInstanceId = request.AgentInstanceId,
                     ParentAgentId = request.AgentInstanceId,
-                    WorkspaceId = request.WorkspaceId ?? "",
+                    WorkspaceId = request.WorkspaceId,
+                    WorkingDirectory = workingDirectory,
                     TemplateId = template.TemplateId,
                     Tasks = batchTasksResult.Tasks,
                     IsAsync = !isSync,
-                    ModelId = childLlmConfig?.ModelId ?? modelId,
-                    LlmConfig = childLlmConfig,
-                    MaxRounds = 10,
+                    LlmConfig = childLlmRoute.Config,
+                    LlmProfile = childLlmRoute.Profile,
+                    MaxRounds = maxRounds,
                     CapabilityPolicy = childCapability,
                     ParentTaskId = GetStringProp(json, "parent_task_id") ?? GetStringProp(json, "parentTaskId"),
                     TaskPlanId = taskPlanning.TaskPlanId,
@@ -199,7 +223,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ParentSessionId = request.SessionId,
                 ParentAgentInstanceId = request.AgentInstanceId,
                 ParentAgentId = request.AgentInstanceId,
-                WorkspaceId = request.WorkspaceId ?? "",
+                WorkspaceId = request.WorkspaceId,
+                WorkingDirectory = workingDirectory,
                 TemplateId = template.TemplateId,
                 Task = task!,
                 DelegationProtocol = DelegationProtocolVersion,
@@ -210,9 +235,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 StopCondition = delegation.StopCondition,
                 OutputContract = delegation.Output,
                 IsAsync = !isSync,
-                ModelId = childLlmConfig?.ModelId ?? modelId,
-                LlmConfig = childLlmConfig,
-                MaxRounds = 10,
+                LlmConfig = childLlmRoute.Config,
+                LlmProfile = childLlmRoute.Profile,
+                MaxRounds = maxRounds,
                 CapabilityPolicy = childCapability,
                 TaskPlanId = taskPlanning.TaskPlanId,
                 TaskNodeId = taskPlanning.TaskNodeId,
@@ -696,122 +721,29 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     /// <summary>
-    /// 通过 ILlmResolver 从 DB 注册表解析 LLM 配置。
-    /// modelId 格式支持 "provider/model"（如 "deepseek/deepseek-v3"）或纯 modelId。
-    /// 不指定时回退到平台默认 provider 的默认模型。
-    /// 指定了但找不到时返回友好的错误信息，列出所有可用服务商和模型。
+    /// 从统一 LLM Resolver 获取唯一配置源已经解析好的 Provider/Model 与配置快照，
+    /// 本层只补充子代理调用语义（ProfileId/Role）。
     /// </summary>
-    private async Task<LlmConfig> BuildChildLlmConfigAsync(string? modelId, string? capabilityRequirements, SubAgentToolRequest request)
+    private async Task<ResolvedChildLlmRoute> ResolveChildLlmRouteAsync(
+        string? modelId,
+        string? capabilityRequirements,
+        CancellationToken ct)
     {
         var resolver = _services.GetRequiredService<ILlmResolver>();
+        var requiredTags = capabilityRequirements?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(tag => tag.Length > 0)
+            .ToArray();
+        var resolved = await resolver.ResolveRouteAsync(modelId, requiredTags, ct);
 
-        if (!string.IsNullOrWhiteSpace(capabilityRequirements) && string.IsNullOrWhiteSpace(modelId))
+        var profile = new LlmInvocationProfile
         {
-            var tags = capabilityRequirements.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(t => t.Length > 0)
-                .ToArray();
-            if (tags.Length > 0)
-            {
-                var cfg = await resolver.ResolveByCapabilityAsync(tags, null, null);
-                if (cfg is not null)
-                {
-                    _logger.LogInformation("[SubAgent] Capability-resolution model tags={Tags} → {Model}",
-                        capabilityRequirements, cfg.ModelId);
-                    return cfg;
-                }
-                _logger.LogWarning("[SubAgent] No model matched capability tags={Tags}, falling back to default", capabilityRequirements);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(modelId) && modelId.Contains('/'))
-        {
-            // provider/model 格式
-            var parts = modelId.Split('/', 2);
-            var cfg = await resolver.ResolveAsync(parts[0], parts[1]);
-            if (cfg is not null) return cfg;
-            _logger.LogWarning("[SubAgent] Provider/model '{ModelId}' not resolved, fallback to default", modelId);
-        }
-
-        if (!string.IsNullOrWhiteSpace(modelId))
-        {
-            // 尝试所有 provider 匹配此 model
-            var providerIds = await resolver.ListEnabledProviderIdsAsync();
-            foreach (var pid in providerIds)
-            {
-                var cfg = await resolver.ResolveAsync(pid, modelId);
-                if (cfg is not null) return cfg;
-            }
-
-            // 指定了 model 但找不到 → 返回友好错误，列出可用模型
-            throw new InvalidOperationException(
-                $"Model '{modelId}' not found in any provider. " +
-                "Please specify a valid model using format 'providerId/modelId' (e.g. 'deepseek/deepseek-v4-flash').\n\n" +
-                BuildAvailableProvidersMessage());
-        }
-
-        // 未指定 model → 回退到平台默认模型
-        return await resolver.ResolveDefaultAsync();
-    }
-
-    /// <summary>
-    /// 从 ILlmConfigService 读取全部可用服务商和模型列表，生成可读的帮助信息。
-    /// </summary>
-    private string BuildAvailableProvidersMessage()
-    {
-        try
-        {
-            var configService = _services.GetRequiredService<ILlmConfigService>();
-            var providers = configService.GetEnabledProviders();
-            var models = configService.GetAllModels();
-
-            if (providers.Count == 0)
-                return "(No LLM providers configured. Please add providers in data/config/llm.providers.json.)";
-
-            var lines = new List<string> { "## Available providers and models:" };
-            foreach (var p in providers.OrderBy(p => p.ProviderId))
-            {
-                var providerModels = models
-                    .Where(m => m.ProviderId == p.ProviderId && !m.IsDeprecated)
-                    .OrderBy(m => m.SortOrder)
-                    .ThenBy(m => m.ModelId)
-                    .ToList();
-
-                if (providerModels.Count == 0)
-                {
-                    lines.Add($"- **{p.ProviderId}** (`{p.Protocol}`) — {p.Name}: (no models registered)");
-                }
-                else
-                {
-                    lines.Add($"- **{p.ProviderId}** (`{p.Protocol}`) — {p.Name}:");
-                    foreach (var m in providerModels)
-                    {
-                        var defaultTag = m.IsDefault ? " (default)" : "";
-                        var ctxInfo = m.MaxContextTokens > 0 ? $" | {m.MaxContextTokens / 1000}K ctx" : "";
-                        lines.Add($"  - `{p.ProviderId}/{m.ModelId}`{defaultTag}{ctxInfo}");
-                    }
-                }
-            }
-
-            lines.Add("");
-            lines.Add("## Correct usage examples:");
-            if (providers.Count > 0)
-            {
-                var first = providers[0];
-                var firstModel = models.FirstOrDefault(m => m.ProviderId == first.ProviderId);
-                var example = firstModel is not null
-                    ? string.Format(@"  {{""model"": ""{0}/{1}""}}", first.ProviderId, firstModel.ModelId)
-                    : string.Format(@"  {{""model"": ""{0}/your-model-id""}}", first.ProviderId);
-                lines.Add(example);
-            }
-            lines.Add("Or omit 'model' entirely to use the platform default.");
-
-            return string.Join("\n", lines);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[SubAgent] Failed to build available providers message");
-            return "(Unable to list available providers due to configuration error.)";
-        }
+            ProviderId = resolved.ProviderId,
+            ProfileId = "subagent.conscious",
+            ModelId = resolved.ModelId,
+            Role = "conscious",
+        };
+        return new ResolvedChildLlmRoute(profile, resolved.Config);
     }
 
     private static string TruncateForLog(string text, int maxLen)
@@ -827,12 +759,16 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
     private static ToolExecutionResult Fail(string error) => ToolExecutionResult.Fail(error);
 
+    private sealed record ResolvedChildLlmRoute(
+        LlmInvocationProfile Profile,
+        LlmConfig Config);
+
     private sealed record SubAgentToolRequest(
         string Input,
         IReadOnlyDictionary<string, string> Parameters,
-        string? WorkspaceId,
-        string? SessionId,
-        string? AgentInstanceId)
+        string WorkspaceId,
+        string SessionId,
+        string AgentInstanceId)
     {
         public static SubAgentToolRequest From(SubAgentToolArgs args, ToolExecutionContext context)
         {
@@ -875,6 +811,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["tools"] = args.Tools,
                 ["permission_mode"] = args.PermissionMode,
                 ["timeout_seconds"] = args.TimeoutSeconds,
+                ["max_rounds"] = args.MaxRounds,
+                ["working_directory"] = args.WorkingDirectory,
                 ["parent_task_id"] = args.ParentTaskId,
                 ["plan_id"] = args.PlanId,
                 ["task_plan_id"] = args.TaskPlanId,
@@ -1011,6 +949,12 @@ public sealed record SubAgentToolArgs
 
     [ToolParam("Optional sub-agent timeout. Must not exceed runtime.execution.json maxTimeoutSeconds.")]
     public int? TimeoutSeconds { get; init; }
+
+    [ToolParam("Maximum child Agent Loop rounds, 1-200. Default: 10.")]
+    public int? MaxRounds { get; init; }
+
+    [ToolParam("Optional child file-tool root directory. WorkspaceId remains a business identity and is not converted to a path.")]
+    public string? WorkingDirectory { get; init; }
 
     [ToolParam("Optional parent task id.")]
     public string? ParentTaskId { get; init; }

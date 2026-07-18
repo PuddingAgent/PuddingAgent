@@ -1,5 +1,6 @@
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 
 namespace PuddingCode.Abstractions;
 
@@ -96,10 +97,13 @@ public sealed record SubAgentSpawnRequest
     public required string ParentSessionId { get; init; }
     public string? ParentAgentId { get; init; }
     public required string WorkspaceId { get; init; }
+    public string? WorkingDirectory { get; init; }
     public required string TaskDescription { get; init; }
     public string TemplateId { get; init; } = "workspace-task-agent";
-    public string? ModelId { get; init; }
-    public LlmConfig? LlmConfig { get; init; }
+    /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
+    public required LlmConfig LlmConfig { get; init; }
+    /// <summary>调用入口已解析的不可变 Provider/Profile/Model 路由身份。</summary>
+    public required LlmInvocationProfile LlmProfile { get; init; }
     public int MaxRounds { get; init; } = 10;
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public string? TaskPlanId { get; init; }

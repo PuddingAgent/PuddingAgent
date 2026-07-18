@@ -215,6 +215,14 @@ public sealed class LlmStreamObservabilityTests
 
         public LlmProfileInfo? ResolveProfile(string profileId) => null;
 
+        public LlmProfileInfo GetDefaultProfile() => new()
+        {
+            ProfileId = "default-conscious",
+            ProviderId = "provider-a",
+            ModelId = "test-model",
+            Config = GetDefault(),
+        };
+
         public LlmConfig GetDefault() => new()
         {
             Endpoint = "https://provider.test/v1",

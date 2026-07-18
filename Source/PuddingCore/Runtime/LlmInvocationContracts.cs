@@ -23,6 +23,11 @@ public sealed record LlmInvocationProfile
 /// <summary>LLM 调用请求。</summary>
 public sealed record LlmInvocationRequest
 {
+    /// <summary>
+    /// Stable identity for this logical provider invocation. Retries inside the
+    /// invocation service retain the same identity, allowing usage facts to be idempotent.
+    /// </summary>
+    public string InvocationId { get; init; } = Guid.NewGuid().ToString("N");
     public required string WorkspaceId { get; init; }
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }

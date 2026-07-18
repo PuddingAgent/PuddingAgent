@@ -749,6 +749,110 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task FileSearchTool_Falls_Back_When_ExplicitEverything_IsUnavailable()
+    {
+        var directory = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "file-search-explicit-fallback-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var file = Path.Combine(directory, "fallback.cs");
+            await File.WriteAllTextAsync(file, "class Fallback {}");
+            var everything = new FakeFileSearchProvider("Everything")
+            {
+                IsAvailable = false,
+            };
+            var builtIn = new FakeFileSearchProvider("BuiltInRecursiveFileSearch").WithItem(file);
+            var tool = new FileSearchTool([everything, builtIn]);
+
+            var result = await ExecuteFileSearchAsync(tool, $$"""
+            {
+              "provider": "Everything",
+              "pattern": "*.cs",
+              "directory": "{{JsonEscape(directory)}}"
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(0, everything.SearchCallCount);
+            Assert.AreEqual(1, builtIn.SearchCallCount);
+            StringAssert.Contains(result.Output, "fallback.cs");
+            StringAssert.Contains(
+                result.Output,
+                "Provider fallback: Everything -> BuiltInRecursiveFileSearch");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task FileSearchTool_RequireProvider_DoesNotFallback()
+    {
+        var directory = Directory.GetCurrentDirectory();
+        var everything = new FakeFileSearchProvider("Everything")
+        {
+            IsAvailable = false,
+        };
+        var builtIn = new FakeFileSearchProvider("BuiltInRecursiveFileSearch");
+        var tool = new FileSearchTool([everything, builtIn]);
+
+        var result = await ExecuteFileSearchAsync(tool, $$"""
+        {
+          "provider": "Everything",
+          "require_provider": true,
+          "pattern": "*.cs",
+          "directory": "{{JsonEscape(directory)}}"
+        }
+        """);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Provider Everything is not available");
+        Assert.AreEqual(0, everything.SearchCallCount);
+        Assert.AreEqual(0, builtIn.SearchCallCount);
+    }
+
+    [TestMethod]
+    public async Task ListDirectoryTool_UsesExecutionWorkingDirectory()
+    {
+        var root = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "list-dir-execution-root-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "root-marker.txt"), "marker");
+            var tool = new ListDirectoryTool();
+
+            var result = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-dir-working-root",
+                ArgumentsJson = """{"path":"."}""",
+                Context = new ToolExecutionContext
+                {
+                    WorkspaceId = "workspace",
+                    SessionId = "session",
+                    AgentInstanceId = "agent",
+                    WorkingDirectory = root,
+                },
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "root-marker.txt");
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void PuddingToolSchemaService_Converts_Descriptors_To_Llm_Tool_Definitions()
     {
         var registry = new PuddingToolRegistry([new SampleSearchTool()]);

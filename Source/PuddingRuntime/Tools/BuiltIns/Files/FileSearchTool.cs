@@ -39,16 +39,34 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         string providerId;
         IFileSearchProvider? provider;
+        string? fallbackFrom = null;
+        string? fallbackReason = null;
+        var requireProvider = args.RequireProvider == true;
+        var requestedProvider = args.Provider?.Trim();
 
-        if (!string.IsNullOrWhiteSpace(args.Provider))
+        if (!string.IsNullOrWhiteSpace(requestedProvider)
+            && !string.Equals(requestedProvider, "auto", StringComparison.OrdinalIgnoreCase))
         {
-            providerId = args.Provider;
+            providerId = requestedProvider;
             provider = _providers.FirstOrDefault(p =>
                 string.Equals(p.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
             if (provider == null)
                 return ToolExecutionResult.Fail($"File search provider not found: {providerId}");
             if (!provider.IsAvailable)
-                return ToolExecutionResult.Fail($"Provider {providerId} is not available on this host.");
+            {
+                if (requireProvider)
+                    return ToolExecutionResult.Fail($"Provider {providerId} is not available on this host.");
+
+                var builtInFallback = FindBuiltInProvider();
+                if (builtInFallback is null)
+                    return ToolExecutionResult.Fail(
+                        $"Provider {providerId} is not available on this host and no fallback provider is available.");
+
+                fallbackFrom = providerId;
+                fallbackReason = "requested provider is unavailable on this host";
+                provider = builtInFallback;
+                providerId = builtInFallback.ProviderId;
+            }
         }
         else
         {
@@ -93,7 +111,11 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         var directory = string.IsNullOrWhiteSpace(args.Directory) ? "." : args.Directory;
         if (!Path.IsPathRooted(directory))
-            directory = Path.GetFullPath(Path.Combine(HostFileToolPaths.WorkspaceRoot, directory));
+        {
+            directory = Path.GetFullPath(Path.Combine(
+                HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory),
+                directory));
+        }
 
         if (!Directory.Exists(directory))
         {
@@ -118,15 +140,70 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         try
         {
             var results = await provider.SearchAsync(directory, pattern, recursive, maxResults, ct);
-            var output = JsonSerializer.Serialize(results);
+            var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
             if (results.Count == 0)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
             return ToolExecutionResult.Ok(output);
+        }
+        catch (Exception ex) when (
+            IsEverythingProvider(providerId)
+            && !requireProvider
+            && FindBuiltInProvider() is not null)
+        {
+            var builtInFallback = FindBuiltInProvider()!;
+            try
+            {
+                var results = await builtInFallback.SearchAsync(directory, pattern, recursive, maxResults, ct);
+                var output = BuildSearchOutput(
+                    results,
+                    providerId,
+                    builtInFallback.ProviderId,
+                    $"provider query failed: {ex.Message}");
+                if (results.Count == 0)
+                {
+                    output += Environment.NewLine + Environment.NewLine +
+                              BuildNoResultsGuidance(
+                                  builtInFallback.ProviderId,
+                                  directory,
+                                  pattern,
+                                  recursive);
+                }
+
+                return ToolExecutionResult.Ok(output);
+            }
+            catch (Exception fallbackException)
+            {
+                return ToolExecutionResult.Fail(
+                    $"File search failed using provider {providerId}: {ex.Message}. " +
+                    $"Fallback provider {builtInFallback.ProviderId} also failed: {fallbackException.Message}");
+            }
         }
         catch (Exception ex)
         {
             return ToolExecutionResult.Fail($"File search failed using provider {providerId}: {ex.Message}");
         }
+    }
+
+    private IFileSearchProvider? FindBuiltInProvider() =>
+        _providers.FirstOrDefault(p =>
+            string.Equals(
+                p.ProviderId,
+                "BuiltInRecursiveFileSearch",
+                StringComparison.OrdinalIgnoreCase)
+            && p.IsAvailable);
+
+    private static string BuildSearchOutput(
+        IReadOnlyList<string> results,
+        string? fallbackFrom,
+        string selectedProvider,
+        string? fallbackReason)
+    {
+        var output = JsonSerializer.Serialize(results);
+        if (string.IsNullOrWhiteSpace(fallbackFrom))
+            return output;
+
+        return output + Environment.NewLine + Environment.NewLine +
+               $"Provider fallback: {fallbackFrom} -> {selectedProvider}. Reason: {fallbackReason}.";
     }
 
     private static bool IsEverythingProvider(string providerId) =>
@@ -191,6 +268,9 @@ public sealed record FileSearchArgs
 
     [ToolParam("File search provider id. Default: auto-select Everything (fast) or BuiltInRecursiveFileSearch (slow fallback). Supported providers: Everything, BuiltInRecursiveFileSearch. Use action=list to inspect availability.")]
     public string? Provider { get; init; }
+
+    [ToolParam("Require the explicitly selected provider. Default: false, so unavailable or failed Everything searches fall back to BuiltInRecursiveFileSearch.")]
+    public bool? RequireProvider { get; init; }
 
     [ToolParam("File name text or glob pattern. Default: *")]
     public string? Pattern { get; init; }

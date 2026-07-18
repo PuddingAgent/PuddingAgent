@@ -80,6 +80,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 WorkspaceId = request.WorkspaceId,
                 SessionId = request.SessionId,
                 AgentInstanceId = request.AgentInstanceId,
+                WorkingDirectory = request.WorkingDirectory,
                 AgentTemplateId = request.AgentTemplateId,
                 Trace = request.Trace,
             };

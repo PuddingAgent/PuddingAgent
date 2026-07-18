@@ -17,11 +17,11 @@ namespace PuddingRuntime.Services.Tools;
 public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> where TArgs : class, new()
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
-    protected const int DefaultMaxRounds = 15;
 
     protected abstract string RoleName { get; }
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
     protected abstract int DefaultTimeoutSeconds { get; }
+    protected virtual int DefaultMaxRounds => 15;
 
     protected async Task<ToolExecutionResult> RunSubAgentAsync(
         TArgs args,
@@ -34,6 +34,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         var task = BuildTaskPrompt(args, context);
         var timeout = timeoutSeconds ?? DefaultTimeoutSeconds;
         var toolName = GetType().Name;
+        var workingDirectory = ResolveWorkingDirectory(args);
 
         // 从父 Agent manifest 解析角色对应的模型
         var model = await ResolveRoleModelAsync(context.AgentInstanceId, services, logger);
@@ -51,6 +52,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 role_in_plan = RoleName,
                 timeout_seconds = timeout,
                 max_rounds = DefaultMaxRounds,
+                working_directory = workingDirectory,
                 allow_sub_delegation = false,
             });
 
@@ -91,6 +93,30 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         }
     }
 
+    private static string? ResolveWorkingDirectory(TArgs args)
+    {
+        if (args is not ScopedSmartWorkflowArgs { Scope: { } scope }
+            || string.IsNullOrWhiteSpace(scope))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (Directory.Exists(scope))
+                return Path.GetFullPath(scope);
+            if (File.Exists(scope))
+                return Path.GetDirectoryName(Path.GetFullPath(scope));
+        }
+        catch
+        {
+            // Scope can also be a semantic boundary. Only existing filesystem paths
+            // become execution roots; all other scope text remains prompt-only.
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// 从父 Agent manifest 读取角色对应的模型。
     /// 用于 Smart 工具显式指定子代理模型，不依赖 spawn_sub_agent 内部逻辑。
@@ -128,4 +154,24 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             return null;
         }
     }
+}
+
+/// <summary>
+/// 所有 Smart 工作流工具共用的稳定请求合同。
+/// 角色只决定执行策略，不改变主任务参数名称。
+/// </summary>
+public abstract class SmartWorkflowArgs
+{
+    [ToolParam("要交给对应角色子代理完成的任务")]
+    public string? Task { get; set; }
+
+    [ToolParam("子代理超时秒数；留空时使用角色默认值")]
+    public int? TimeoutSeconds { get; set; }
+}
+
+/// <summary>需要文件、会话或研究边界的 Smart 工作流请求。</summary>
+public abstract class ScopedSmartWorkflowArgs : SmartWorkflowArgs
+{
+    [ToolParam("任务范围，例如目录、文件、会话或研究边界")]
+    public string? Scope { get; set; }
 }

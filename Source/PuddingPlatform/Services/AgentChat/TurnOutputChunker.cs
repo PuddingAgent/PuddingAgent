@@ -117,19 +117,39 @@ public sealed class TurnOutputChunker
 
     private static NewConversationEvent MapEvent(
         TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
-        => NewEvent(evt.Type, conversationId, workspaceId, turnId, commandId, runId, messageId, evt.Payload, evt.ProducerEventId);
+        => NewEvent(
+            evt.Type,
+            conversationId,
+            workspaceId,
+            turnId,
+            commandId,
+            runId,
+            messageId,
+            evt.Payload,
+            evt.ProducerEventId,
+            evt.SchemaVersion);
 
     private static NewConversationEvent MapTerminal(
         TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
-        => NewEvent(evt.Type, conversationId, workspaceId, turnId, commandId, runId, messageId, evt.Payload, evt.ProducerEventId);
+        => NewEvent(
+            evt.Type,
+            conversationId,
+            workspaceId,
+            turnId,
+            commandId,
+            runId,
+            messageId,
+            evt.Payload,
+            evt.ProducerEventId,
+            evt.SchemaVersion);
 
     private static NewConversationEvent NewEvent(
         string type, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId,
-        JsonElement payload, string? producerEventId = null)
+        JsonElement payload, string? producerEventId = null, int schemaVersion = 1)
         => new(
             EventId: Guid.NewGuid().ToString("N"),
             Type: type,
-            SchemaVersion: 1,
+            SchemaVersion: schemaVersion,
             WorkspaceId: workspaceId,
             TurnId: turnId,
             CommandId: commandId,

@@ -33,6 +33,7 @@ public sealed record SubAgentInvocationRequest
 {
     public required string ParentSessionId { get; init; }
     public required string WorkspaceId { get; init; }
+    public string? WorkingDirectory { get; init; }
     public required string ParentAgentInstanceId { get; init; }
     /// <summary>子代理父 Agent ID（映射到 SubAgentSpawnRequest.ParentAgentId）。</summary>
     public string? ParentAgentId { get; init; }
@@ -46,8 +47,10 @@ public sealed record SubAgentInvocationRequest
     public string? StopCondition { get; init; }
     public string? OutputContract { get; init; }
     public bool IsAsync { get; init; }
-    public string? ModelId { get; init; }
-    public LlmConfig? LlmConfig { get; init; }
+    /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
+    public required LlmConfig LlmConfig { get; init; }
+    /// <summary>调用入口已解析的不可变 Provider/Profile/Model 路由身份。</summary>
+    public required LlmInvocationProfile LlmProfile { get; init; }
     public int? MaxRounds { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
@@ -84,13 +87,16 @@ public sealed record SubAgentBatchInvocationRequest
 {
     public required string ParentSessionId { get; init; }
     public required string WorkspaceId { get; init; }
+    public string? WorkingDirectory { get; init; }
     public required string ParentAgentInstanceId { get; init; }
     public string? ParentAgentId { get; init; }
     public required string TemplateId { get; init; }
     public required IReadOnlyList<SubAgentBatchTask> Tasks { get; init; }
     public bool IsAsync { get; init; }
-    public string? ModelId { get; init; }
-    public LlmConfig? LlmConfig { get; init; }
+    /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
+    public required LlmConfig LlmConfig { get; init; }
+    /// <summary>批次内所有任务共用的不可变 Provider/Profile/Model 路由身份。</summary>
+    public required LlmInvocationProfile LlmProfile { get; init; }
     public int? MaxRounds { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }

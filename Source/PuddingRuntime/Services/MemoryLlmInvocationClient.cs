@@ -6,7 +6,6 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
-using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services;
 
@@ -157,10 +156,12 @@ public sealed class MemoryLlmInvocationClient(
         SubconsciousMemoryScope? targetScope = null)
     {
         var profile = ResolveSubconsciousProfile(overrideConfig);
-        var result = await invocationService.InvokeAsync(new LlmInvocationRequest
+        var workspaceId = targetScope?.WorkspaceId ?? DefaultWorkspaceId;
+        var sessionId = targetScope?.SessionId ?? DefaultSessionId;
+        var invocationRequest = new LlmInvocationRequest
         {
-            WorkspaceId = targetScope?.WorkspaceId ?? DefaultWorkspaceId,
-            SessionId = targetScope?.SessionId ?? DefaultSessionId,
+            WorkspaceId = workspaceId,
+            SessionId = sessionId,
             AgentInstanceId = targetScope?.AgentId ?? DefaultAgentInstanceId,
             AgentTemplateId = targetScope?.AgentTemplateId ?? DefaultAgentTemplateId,
             Profile = profile,
@@ -170,14 +171,29 @@ public sealed class MemoryLlmInvocationClient(
                 new ChatMessage(ChatRole.System, systemPrompt),
                 new ChatMessage(ChatRole.User, userPrompt),
             ],
-        }, ct);
+        };
+        var result = await invocationService.InvokeAsync(invocationRequest, ct);
 
         if (!result.Success)
             throw new InvalidOperationException($"Memory LLM call failed: {result.Error}");
 
         if (result.Usage is not null && HasTokenValues(result.Usage))
         {
-            _ = RecordUsageBestEffortAsync(result, targetScope, ct);
+            if (tokenUsageRecorder is null)
+            {
+                throw new InvalidOperationException(
+                    "Token usage recorder is required for subconscious LLM invocations.");
+            }
+
+            await tokenUsageRecorder.RecordRequiredAsync(
+                result.Usage,
+                sourceType: "subconscious_memory",
+                sourceId: $"llm:{invocationRequest.InvocationId}",
+                workspaceId: workspaceId,
+                sessionId: sessionId,
+                providerId: result.ProviderId,
+                modelId: result.ModelId,
+                prefixSnapshot: result.PrefixSnapshot);
         }
 
         return result.ReplyText ?? string.Empty;
@@ -229,31 +245,6 @@ public sealed class MemoryLlmInvocationClient(
 #pragma warning restore CS0618
             ModelId = config.ModelId,
         };
-    }
-
-    private async Task RecordUsageBestEffortAsync(
-        LlmInvocationResult result,
-        SubconsciousMemoryScope? targetScope,
-        CancellationToken ct)
-    {
-        if (tokenUsageRecorder is null || result.Usage is null)
-            return;
-
-        try
-        {
-            await tokenUsageRecorder.RecordAsync(
-                result.Usage,
-                sourceType: "subconscious_memory",
-                sourceId: $"mem:{Guid.NewGuid():N}",
-                workspaceId: targetScope?.WorkspaceId,
-                sessionId: targetScope?.SessionId,
-                providerId: result.ProviderId,
-                modelId: result.ModelId);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogDebug(ex, "[MemoryLlm] Token usage record failed.");
-        }
     }
 
     private static bool TryParseClassification(string raw, out MemoryClassification classification)

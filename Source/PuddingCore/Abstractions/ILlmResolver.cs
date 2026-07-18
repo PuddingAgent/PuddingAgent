@@ -14,28 +14,23 @@ namespace PuddingCode.Abstractions;
 public interface ILlmResolver
 {
     /// <summary>
-    /// 根据服务商 ID 和模型 ID 解析完整的 LLM 配置。
-    /// modelId 可选 — 不指定时使用 provider 的默认模型。
-    /// 返回 null 表示 provider 不存在或未启用。
+    /// 从唯一配置源解析不可变 Provider/Model 身份和调用配置。
+    /// modelRoute 支持 providerId/modelId 或唯一的纯 modelId；为空时解析平台默认路由。
+    /// requiredCapabilityTags 仅在 modelRoute 为空时参与模型选择。
     /// </summary>
-    Task<LlmConfig?> ResolveAsync(string providerId, string? modelId = null, CancellationToken ct = default);
-
-    /// <summary>
-    /// 获取默认的 LLM 配置（平台首选 provider + 默认模型）。
-    /// 全局默认必须存在，否则抛出异常。
-    /// </summary>
-    Task<LlmConfig> ResolveDefaultAsync(CancellationToken ct = default);
-
-    Task<LlmConfig?> ResolveByCapabilityAsync(
-        string[] requiredTags,
-        string[]? preferredTags = null,
-        string? providerId = null,
+    Task<ResolvedLlmRoute> ResolveRouteAsync(
+        string? modelRoute = null,
+        IReadOnlyCollection<string>? requiredCapabilityTags = null,
         CancellationToken ct = default);
+}
 
-    IReadOnlyList<LlmModelInfo> GetAllModels();
-
-    /// <summary>
-    /// 列出所有已启用的 provider ID（供 Agent 选择模型时参考）。
-    /// </summary>
-    Task<IReadOnlyList<string>> ListEnabledProviderIdsAsync(CancellationToken ct = default);
+/// <summary>
+/// 配置解析边界返回的不可变 Provider/Model 路由。
+/// Profile 属于调用语义，由上层 invocation boundary 单独赋值。
+/// </summary>
+public sealed record ResolvedLlmRoute
+{
+    public required string ProviderId { get; init; }
+    public required string ModelId { get; init; }
+    public required LlmConfig Config { get; init; }
 }

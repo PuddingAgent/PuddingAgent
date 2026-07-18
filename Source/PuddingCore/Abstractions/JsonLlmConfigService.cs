@@ -104,7 +104,7 @@ public class JsonLlmConfigService : ILlmConfigService
     public LlmProfileInfo? ResolveProfile(string profileId)
         => null;
 
-    public LlmConfig GetDefault()
+    public LlmProfileInfo GetDefaultProfile()
     {
         var data = GetData();
         var providerId = data.DefaultProviderId
@@ -115,10 +115,20 @@ public class JsonLlmConfigService : ILlmConfigService
                 "No enabled LLM provider found. Configure at least one provider in data/config/llm.providers.json.");
 
         var resolved = Resolve(providerId, data.DefaultModelId);
-        return resolved
+        var config = resolved
             ?? throw new InvalidOperationException(
                 $"Default provider '{providerId}' with model '{data.DefaultModelId}' could not be resolved.");
+        return new LlmProfileInfo
+        {
+            ProfileId = "default-conscious",
+            ProviderId = providerId,
+            ModelId = config.ModelId
+                ?? throw new InvalidOperationException("Default LLM config resolved without a model identity."),
+            Config = config,
+        };
     }
+
+    public LlmConfig GetDefault() => GetDefaultProfile().Config;
 
     public LlmConfig? GetMemoryConfig()
     {

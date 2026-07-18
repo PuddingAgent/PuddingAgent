@@ -62,6 +62,7 @@ public sealed class SubAgentManager : ISubAgentManager
         SubAgentSpawnRequest request,
         CancellationToken ct = default)
     {
+        ValidateLlmRoute(request);
         var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var spawnedAt = DateTimeOffset.UtcNow;
         var trace = ResolveTrace(request, subSessionId);
@@ -78,7 +79,7 @@ public sealed class SubAgentManager : ISubAgentManager
             ParentSessionId = request.ParentSessionId,
             ParentAgentId = request.ParentAgentId,
             TemplateId = request.TemplateId,
-            ModelId = request.ModelId,
+            ModelId = request.LlmProfile.ModelId,
             TaskSummary = request.TaskDescription.Length > 200
                 ? request.TaskDescription[..200] + "..."
                 : request.TaskDescription,
@@ -157,7 +158,7 @@ public sealed class SubAgentManager : ISubAgentManager
             {
                 sub_agent_id = subSessionId,
                 template = request.TemplateId,
-                model = request.ModelId ?? "默认",
+                model = request.LlmProfile.ModelId,
                 task_summary = request.TaskDescription.Length > 200
                     ? request.TaskDescription[..200] + "..."
                     : request.TaskDescription,
@@ -363,6 +364,7 @@ public sealed class SubAgentManager : ISubAgentManager
         SubAgentSpawnRequest request,
         CancellationToken ct = default)
     {
+        ValidateLlmRoute(request);
         var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var trace = ResolveTrace(request, subSessionId);
 
@@ -776,8 +778,10 @@ public sealed class SubAgentManager : ISubAgentManager
             // 误判为同一个 Agent 实例 busy；模板并发额度由上层调度配置负责。
             AgentInstanceId = subSessionId,
             MessageText = request.TaskDescription,
+            WorkingDirectory = request.WorkingDirectory,
             CapabilityPolicy = request.CapabilityPolicy,
             LlmConfig = request.LlmConfig,
+            LlmProfile = request.LlmProfile,
             MaxRounds = request.MaxRounds,
             TaskPlanId = request.TaskPlanId,
             TaskNodeId = request.TaskNodeId,
@@ -792,6 +796,36 @@ public sealed class SubAgentManager : ISubAgentManager
         };
 
         return await dispatcher.DispatchAsync(childReq, ct);
+    }
+
+    private static void ValidateLlmRoute(SubAgentSpawnRequest request)
+    {
+        var profile = request.LlmProfile
+            ?? throw new InvalidOperationException("Sub-agent dispatch is missing its LLM profile snapshot.");
+        var config = request.LlmConfig
+            ?? throw new InvalidOperationException("Sub-agent dispatch is missing its LLM config snapshot.");
+        if (string.IsNullOrWhiteSpace(profile.ProviderId)
+            || string.IsNullOrWhiteSpace(profile.ProfileId)
+            || string.IsNullOrWhiteSpace(profile.ModelId))
+        {
+            throw new InvalidOperationException(
+                "Sub-agent LLM route requires non-empty provider, profile, and model IDs.");
+        }
+
+        if (string.IsNullOrWhiteSpace(config.ModelId))
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent LLM config for '{profile.ProviderId}/{profile.ModelId}' has no model ID.");
+        }
+
+        if (!string.Equals(
+                profile.ModelId,
+                config.ModelId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent LLM route model '{profile.ModelId}' does not match config model '{config.ModelId}'.");
+        }
     }
 
     private RuntimeTraceContext ResolveTrace(SubAgentSpawnRequest request, string subSessionId)

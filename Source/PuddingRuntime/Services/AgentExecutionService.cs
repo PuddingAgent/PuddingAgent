@@ -749,6 +749,7 @@ public sealed class AgentExecutionService
                                         WorkspaceId = request.WorkspaceId,
                                         SessionId = request.SessionId,
                                         AgentInstanceId = instance.AgentInstanceId,
+                                        WorkingDirectory = request.WorkingDirectory,
                                         AgentTemplateId = request.AgentTemplateId,
                                         ToolCallId = call.Id,
                                         ToolName = call.Name,
@@ -1136,6 +1137,7 @@ public sealed class AgentExecutionService
                                 WorkspaceId = request.WorkspaceId,
                                 SessionId = request.SessionId,
                                 AgentInstanceId = instance.AgentInstanceId,
+                                WorkingDirectory = request.WorkingDirectory,
                                 AgentTemplateId = request.AgentTemplateId,
                                 ToolCallId = toolName, // CONTINUE 路径没有独立 toolCallId
                                 ToolName = toolName,
@@ -1459,6 +1461,18 @@ public sealed class AgentExecutionService
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);
         _runtimeSessionStore.Touch(request.SessionId);
+
+        // ExecuteAsync is a synchronous boundary: once it returns, the execution must be terminal.
+        // Function-call rounds use `continue`, so the last tool call can otherwise leave state=Running
+        // when the for-loop exhausts maxRounds.
+        if (execState == AgentExecutionState.Running)
+        {
+            execState = AgentExecutionState.Failed;
+            stopReason = AgentLoopStopReason.MaxRoundsReached;
+            executionError ??=
+                $"Maximum agent rounds reached ({maxRounds}) before a final response.";
+            await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
+        }
 
         var finalMessageIsFailure = LooksLikeFailureReply(finalMessage);
         var executeIsSuccess = execState is AgentExecutionState.Completed or AgentExecutionState.WaitingEvent;
@@ -2501,6 +2515,7 @@ public sealed class AgentExecutionService
                             WorkspaceId = request.WorkspaceId ?? string.Empty,
                             SessionId = request.SessionId,
                             AgentInstanceId = instance.AgentInstanceId,
+                            WorkingDirectory = request.WorkingDirectory,
                             AgentTemplateId = request.AgentTemplateId,
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,

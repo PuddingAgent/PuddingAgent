@@ -107,16 +107,39 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
         };
     }
 
-    public LlmConfig GetDefault()
+    public LlmProfileInfo GetDefaultProfile()
     {
         var config = Snapshot();
-        return ResolveRoleProfileConfig(config, config.Roles.Conscious)
-            ?? Resolve(config.DefaultProviderId ?? "", config.DefaultModelId)
-            ?? throw new InvalidOperationException(
+        if (!string.IsNullOrWhiteSpace(config.Roles.Conscious))
+        {
+            var conscious = ResolveProfile(config.Roles.Conscious);
+            if (conscious is not null)
+                return conscious;
+        }
+
+        var providerId = config.DefaultProviderId;
+        var provider = config.Providers.FirstOrDefault(candidate =>
+            candidate.IsEnabled
+            && string.Equals(candidate.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+        var model = provider is null ? null : ResolveModel(provider, config.DefaultModelId);
+        if (provider is null || model is null)
+        {
+            throw new InvalidOperationException(
                 "LLM provider 'profiles.conscious' is not configured or its provider/model is not found " +
                 "in data/config/llm.providers.json. Ensure profiles.conscious.providerId and profiles.conscious.modelId " +
                 "match an enabled provider.");
+        }
+
+        return new LlmProfileInfo
+        {
+            ProfileId = "default-conscious",
+            ProviderId = provider.ProviderId,
+            ModelId = model.ModelId,
+            Config = ToLlmConfig(provider, model, profile: null),
+        };
     }
+
+    public LlmConfig GetDefault() => GetDefaultProfile().Config;
 
     public LlmConfig? GetMemoryConfig()
     {

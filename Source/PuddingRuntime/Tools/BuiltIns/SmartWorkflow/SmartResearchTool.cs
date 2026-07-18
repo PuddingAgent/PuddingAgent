@@ -9,7 +9,7 @@ namespace PuddingRuntime.Services.Tools;
     name: "Smart Research",
     description: "智能深度研究。用自然语言描述研究课题，内部委托 Researcher 子代理自动执行" +
                  "anysearch_search + http_fetch + file_read 多源信息收集，返回综合分析报告。" +
-                 "参数：question（研究问题）、scope（可选，研究边界）、" +
+                 "参数：task（研究任务）、scope（可选，研究边界）、" +
                  "domain（可选，搜索领域如 code/academic/news）、" +
                  "timeout_seconds（可选，默认 180s）。模型由 Agent 配置的 Researcher_Model 决定。",
     category: ToolCategory.Query,
@@ -33,11 +33,11 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartResearchArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(args.Question?.Trim()))
-            return ToolExecutionResult.Fail("question is required. Describe your research question in natural language.");
+        if (string.IsNullOrWhiteSpace(args.Task?.Trim()))
+            return ToolExecutionResult.Fail("task is required. Describe your research question in natural language.");
 
-        _logger.LogInformation("[SmartResearch] agent={Agent} question={Question}",
-            context.AgentInstanceId, args.Question);
+        _logger.LogInformation("[SmartResearch] agent={Agent} task={Task}",
+            context.AgentInstanceId, args.Task);
 
         return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
     }
@@ -60,7 +60,7 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
         sb.AppendLine();
         sb.AppendLine("### ⚠️ Read/search only. If http_fetch fails: note gap and continue.");
         sb.AppendLine();
-        sb.AppendLine($"## 🎯 Question: {args.Question}");
+        sb.AppendLine($"## 🎯 Task: {args.Task}");
         if (!string.IsNullOrWhiteSpace(args.Scope))
             sb.AppendLine($"## 📁 Scope: {args.Scope}");
         sb.AppendLine();
@@ -76,17 +76,8 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
     }
 }
 
-public sealed class SmartResearchArgs
+public sealed class SmartResearchArgs : ScopedSmartWorkflowArgs
 {
-    [ToolParam("研究问题 — 自然语言描述")]
-    public string? Question { get; set; }
-
-    [ToolParam("研究边界/范围")]
-    public string? Scope { get; set; }
-
     [ToolParam("搜索领域: general, code, academic, news, finance, health")]
     public string? Domain { get; set; }
-
-    [ToolParam("子代理超时秒数，默认 180s")]
-    public int? TimeoutSeconds { get; set; }
 }

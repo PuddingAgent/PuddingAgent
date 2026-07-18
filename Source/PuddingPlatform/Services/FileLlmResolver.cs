@@ -5,8 +5,8 @@ using PuddingCode.Platform;
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// 文件配置 LLM 解析器 — 兼容旧 ILlmResolver 接口，实际从 ILlmConfigService 读取
-/// data/config/llm.providers.json，不再访问数据库中的 provider/model 表。
+/// 文件配置 LLM 路由解析器。模型选择和 Provider 身份只来自 ILlmConfigService，
+/// 不访问数据库，也不从 endpoint、密钥或 model 字符串反推 Provider。
 /// </summary>
 public sealed class FileLlmResolver : ILlmResolver
 {
@@ -21,63 +21,114 @@ public sealed class FileLlmResolver : ILlmResolver
         _logger = logger;
     }
 
-    public Task<LlmConfig?> ResolveAsync(
-        string providerId, string? modelId = null, CancellationToken ct = default)
-    {
-        var config = _llmConfigService.Resolve(providerId, modelId);
-        if (config is null)
-        {
-            _logger.LogWarning("[LlmResolver] Provider/model not found in file config provider={ProviderId} model={ModelId}",
-                providerId, modelId);
-        }
-
-        return Task.FromResult(config);
-    }
-
-    public Task<LlmConfig> ResolveDefaultAsync(CancellationToken ct = default)
-    {
-        var config = _llmConfigService.GetDefault()
-            ?? throw new InvalidOperationException("Global LLM default (profiles.conscious) is not configured in data/config/llm.providers.json.");
-        return Task.FromResult(config);
-    }
-
-    public Task<IReadOnlyList<string>> ListEnabledProviderIdsAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<string>>(
-            _llmConfigService.GetEnabledProviders().Select(p => p.ProviderId).ToList());
-
-    public Task<LlmConfig?> ResolveByCapabilityAsync(
-        string[] requiredTags,
-        string[]? preferredTags = null,
-        string? providerId = null,
+    public Task<ResolvedLlmRoute> ResolveRouteAsync(
+        string? modelRoute = null,
+        IReadOnlyCollection<string>? requiredCapabilityTags = null,
         CancellationToken ct = default)
     {
-        var allModels = _llmConfigService.GetAllModels()
-            .Where(m => !m.IsDeprecated)
+        ct.ThrowIfCancellationRequested();
+        var enabledProviderIds = _llmConfigService.GetEnabledProviders()
+            .Select(provider => provider.ProviderId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var models = _llmConfigService.GetAllModels()
+            .Where(model => !model.IsDeprecated && enabledProviderIds.Contains(model.ProviderId))
             .ToList();
 
-        if (!string.IsNullOrWhiteSpace(providerId))
-            allModels = allModels.Where(m => string.Equals(m.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!string.IsNullOrWhiteSpace(modelRoute) && modelRoute.Contains('/'))
+        {
+            var parts = modelRoute.Split('/', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2
+                || string.IsNullOrWhiteSpace(parts[0])
+                || string.IsNullOrWhiteSpace(parts[1]))
+            {
+                throw new InvalidOperationException(
+                    $"Invalid model route '{modelRoute}'. Expected 'providerId/modelId'.");
+            }
 
-        var required = requiredTags?.Where(t => !string.IsNullOrWhiteSpace(t)).ToArray() ?? [];
-        var candidates = allModels
-            .Where(m => required.All(rt => m.CapabilityTags.Contains(rt, StringComparer.OrdinalIgnoreCase)))
-            .ToList();
+            return Task.FromResult(ResolveRequired(parts[0], parts[1]));
+        }
 
-        if (candidates.Count == 0) return Task.FromResult<LlmConfig?>(null);
+        if (!string.IsNullOrWhiteSpace(modelRoute))
+        {
+            var matches = models
+                .Where(model => string.Equals(
+                    model.ModelId,
+                    modelRoute,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (matches.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Model '{modelRoute}' exists under multiple providers. " +
+                    "Specify the route as 'providerId/modelId'.");
+            }
+            if (matches.Count == 1)
+                return Task.FromResult(ResolveRequired(matches[0].ProviderId, matches[0].ModelId));
 
-        var preferred = preferredTags?.Where(t => !string.IsNullOrWhiteSpace(t)).ToArray() ?? [];
-        var best = candidates
-            .OrderByDescending(m => preferred.Count(pt => m.CapabilityTags.Contains(pt, StringComparer.OrdinalIgnoreCase)))
-            .ThenBy(m => m.SortOrder)
-            .First();
+            throw new InvalidOperationException(
+                $"Model '{modelRoute}' not found in any enabled provider. " +
+                "Specify a configured route as 'providerId/modelId'.");
+        }
 
-        _logger.LogInformation("[LlmResolver] Capability resolve required={Required} preferred={Preferred} → {Provider}/{Model}",
-            string.Join(",", required), string.Join(",", preferred), best.ProviderId, best.ModelId);
+        var requiredTags = requiredCapabilityTags?
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Select(tag => tag.Trim())
+            .ToArray() ?? [];
+        if (requiredTags.Length > 0)
+        {
+            var selected = models
+                .Where(model => requiredTags.All(tag =>
+                    model.CapabilityTags.Contains(tag, StringComparer.OrdinalIgnoreCase)))
+                .OrderBy(model => model.SortOrder)
+                .ThenBy(model => model.ProviderId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(model => model.ModelId, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (selected is not null)
+            {
+                _logger.LogInformation(
+                    "[LlmResolver] Capability route required={Required} route={Provider}/{Model}",
+                    string.Join(",", requiredTags),
+                    selected.ProviderId,
+                    selected.ModelId);
+                return Task.FromResult(ResolveRequired(selected.ProviderId, selected.ModelId));
+            }
 
-        var config = _llmConfigService.Resolve(best.ProviderId, best.ModelId);
-        return Task.FromResult(config);
+            _logger.LogWarning(
+                "[LlmResolver] No model matched required capabilities={Required}; using configured default route",
+                string.Join(",", requiredTags));
+        }
+
+        var defaultProfile = _llmConfigService.GetDefaultProfile();
+        return Task.FromResult(CreateRoute(
+            defaultProfile.ProviderId,
+            defaultProfile.ModelId,
+            defaultProfile.Config));
+
+        ResolvedLlmRoute ResolveRequired(string providerId, string modelId)
+        {
+            var config = _llmConfigService.Resolve(providerId, modelId)
+                ?? throw new InvalidOperationException(
+                    $"LLM route '{providerId}/{modelId}' is not configured or is disabled.");
+            return CreateRoute(providerId, modelId, config);
+        }
     }
 
-    public IReadOnlyList<LlmModelInfo> GetAllModels()
-        => _llmConfigService.GetAllModels();
+    private static ResolvedLlmRoute CreateRoute(string providerId, string modelId, LlmConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(config.ModelId))
+            throw new InvalidOperationException(
+                $"LLM route '{providerId}/{modelId}' resolved without a model in its configuration snapshot.");
+        if (!string.Equals(config.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"LLM route '{providerId}/{modelId}' resolved mismatched config model '{config.ModelId}'.");
+        }
+
+        return new ResolvedLlmRoute
+        {
+            ProviderId = providerId,
+            ModelId = modelId,
+            Config = config,
+        };
+    }
 }

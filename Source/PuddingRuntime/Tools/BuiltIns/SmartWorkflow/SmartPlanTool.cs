@@ -9,8 +9,8 @@ namespace PuddingRuntime.Services.Tools;
     name: "Smart Plan",
     description: "智能任务规划。用自然语言描述目标，内部委托 Planner 子代理分解为可执行的" +
                  "结构化任务计划，包含步骤、依赖、预估工作量。" +
-                 "参数：goal（目标描述）、context（可选，已有的上下文/约束）、" +
-                 "timeout_seconds（可选，默认 120s）。模型由 Agent 配置的 Planner_Model 决定。",
+                 "参数：task（规划任务）、context（可选，已有的上下文/约束）、" +
+                 "timeout_seconds（可选，默认 240s）。模型由 Agent 配置的 Planner_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -27,15 +27,16 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 
     protected override string RoleName => "planner";
-    protected override int DefaultTimeoutSeconds => 120;
+    protected override int DefaultTimeoutSeconds => 240;
+    protected override int DefaultMaxRounds => 20;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartPlanArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(args.Goal?.Trim()))
-            return ToolExecutionResult.Fail("goal is required. Describe the goal you want to plan.");
+        if (string.IsNullOrWhiteSpace(args.Task?.Trim()))
+            return ToolExecutionResult.Fail("task is required. Describe the goal you want to plan.");
 
-        _logger.LogInformation("[SmartPlan] agent={Agent} goal={Goal}", context.AgentInstanceId, args.Goal);
+        _logger.LogInformation("[SmartPlan] agent={Agent} task={Task}", context.AgentInstanceId, args.Task);
 
         return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
     }
@@ -54,7 +55,7 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
         sb.AppendLine();
         sb.AppendLine("### ⚠️ Read-only only: file_read, search_memory, query_session_logs, list_dir.");
         sb.AppendLine();
-        sb.AppendLine($"## 🎯 Goal: {args.Goal}");
+        sb.AppendLine($"## 🎯 Task: {args.Task}");
         if (!string.IsNullOrWhiteSpace(args.Context))
             sb.AppendLine($"## 📋 Context: {args.Context}");
         sb.AppendLine();
@@ -73,14 +74,8 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 }
 
-public sealed class SmartPlanArgs
+public sealed class SmartPlanArgs : SmartWorkflowArgs
 {
-    [ToolParam("目标描述 — 自然语言")]
-    public string? Goal { get; set; }
-
     [ToolParam("已有上下文或约束条件")]
     public string? Context { get; set; }
-
-    [ToolParam("子代理超时秒数，默认 120s")]
-    public int? TimeoutSeconds { get; set; }
 }

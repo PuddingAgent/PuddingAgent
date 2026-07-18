@@ -148,6 +148,10 @@ public sealed record ToolExecutionContext
     public required string WorkspaceId { get; init; }
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }
+    /// <summary>
+    /// 本次执行快照确定的文件工具根目录。它是文件系统边界，不等同于 WorkspaceId。
+    /// </summary>
+    public string? WorkingDirectory { get; init; }
     public string? AgentTemplateId { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
     public bool IsYoloMode { get; init; }

@@ -46,11 +46,34 @@ public sealed class TurnOutputChunkerPayloadOwnershipTests
         Assert.AreEqual("OK", events.Single().Payload.GetProperty("delta").GetString());
     }
 
-    private static TurnExecutionEvent RuntimeEvent(string type, JsonElement payload) =>
+    [TestMethod]
+    public void Feed_NonDeltaEvent_PreservesRuntimeSchemaVersion()
+    {
+        using var document = JsonDocument.Parse("""{"usage":{"promptTokens":42}}""");
+
+        var events = new TurnOutputChunker().Feed(
+            RuntimeEvent(
+                ConversationEventTypes.UsageRecorded,
+                document.RootElement,
+                schemaVersion: 2),
+            "conversation",
+            "workspace",
+            "turn",
+            "command",
+            "run",
+            null);
+
+        Assert.AreEqual(2, events.Single().SchemaVersion);
+    }
+
+    private static TurnExecutionEvent RuntimeEvent(
+        string type,
+        JsonElement payload,
+        int schemaVersion = 1) =>
         new(
             ProducerEventId: Guid.NewGuid().ToString("N"),
             Type: type,
-            SchemaVersion: 1,
+            SchemaVersion: schemaVersion,
             Payload: payload,
             IsTerminal: false,
             TerminalInfo: null);

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 
@@ -16,8 +17,14 @@ public sealed class ConversationProjector(
     IServiceScopeFactory scopeFactory,
     IConversationEventStore eventStore,
     IChatTranscriptWriter transcriptWriter,
+    TokenUsageRecorder tokenUsageRecorder,
     ILogger<ConversationProjector> logger)
 {
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     public async Task<ProjectionResult> ProjectAsync(
         string conversationId,
         CancellationToken ct = default)
@@ -32,6 +39,11 @@ public sealed class ConversationProjector(
 
             foreach (var evt in batch.Events)
             {
+                if (evt.Type == ConversationEventTypes.UsageRecorded)
+                {
+                    await ProjectTokenUsageAsync(evt);
+                }
+
                 var (role, content, thinking, usage) = ExtractFields(evt);
                 if (content is not null || usage is not null)
                 {
@@ -71,6 +83,52 @@ public sealed class ConversationProjector(
             logger.LogError(ex, "[ConversationProjector] Projection failed conv={ConvId}", conversationId);
             return new ProjectionResult(0, false, ex.Message);
         }
+    }
+
+    private async Task ProjectTokenUsageAsync(ConversationEvent evt)
+    {
+        if (evt.Payload.ValueKind != JsonValueKind.Object
+            || !evt.Payload.TryGetProperty("usage", out var usageElement)
+            || usageElement.ValueKind != JsonValueKind.Object)
+        {
+            logger.LogDebug(
+                "[ConversationProjector] Skip unattributed usage event={EventId} schema={SchemaVersion}",
+                evt.EventId,
+                evt.SchemaVersion);
+            return;
+        }
+
+        var providerId = ExtractString(evt.Payload, "providerId");
+        var modelId = ExtractString(evt.Payload, "modelId");
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
+        {
+            logger.LogWarning(
+                "[ConversationProjector] Skip usage without immutable route event={EventId} run={RunId}",
+                evt.EventId,
+                evt.RunId);
+            return;
+        }
+
+        var usage = JsonSerializer.Deserialize<TokenUsageDto>(
+            usageElement.GetRawText(),
+            JsonOpts);
+        if (usage is null)
+        {
+            logger.LogWarning(
+                "[ConversationProjector] Skip invalid usage payload event={EventId}",
+                evt.EventId);
+            return;
+        }
+
+        await tokenUsageRecorder.RecordRequiredAsync(
+            usage,
+            sourceType: "agent_llm",
+            sourceId: evt.EventId,
+            workspaceId: evt.WorkspaceId,
+            sessionId: evt.ConversationId,
+            providerId: providerId,
+            modelId: modelId,
+            occurredAtUtc: evt.OccurredAt);
     }
 
     private static (string role, string? content, string? thinking, string? usage) ExtractFields(ConversationEvent evt)

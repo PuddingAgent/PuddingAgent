@@ -71,13 +71,15 @@ flowchart LR
 
 ## Built-In File Search Tool
 
-`file_search` is a native Pudding Tool, not an external MCP tool. Its implementation lives in `Source/PuddingRuntime/Services/Tools/FileTools.cs`:
+`file_search` is a native Pudding Tool, not an external MCP tool. Its implementation lives in `Source/PuddingRuntime/Tools/BuiltIns/Files/FileSearchTool.cs`:
 
 - `FileSearchTool` is annotated with `[Tool(id: "file_search", ...)]`.
 - `FileSearchArgs` exposes `Action`, `Provider`, `Pattern`, `Directory`, `Recursive`, and `MaxResults`.
 - `Action=list` lists available file search providers and their availability.
-- `Action=search` requires `Provider`; supported providers are `Everything` and `BuiltInRecursiveFileSearch`.
-- `Directory` may be null or empty only for `Everything`; in that mode Everything performs a full-disk search across its local index. `BuiltInRecursiveFileSearch` requires an existing directory and returns an error when the directory is omitted.
+- `Action=search` defaults `Provider` to `auto`; supported explicit providers are `Everything` and `BuiltInRecursiveFileSearch`.
+- `auto` prefers Everything and falls back to `BuiltInRecursiveFileSearch`.
+- An explicit Everything request also falls back when the provider is unavailable or its query fails. Set `RequireProvider=true` only when the selected implementation itself is part of the caller's requirement.
+- `Directory` must resolve to an existing directory. Everything requires an absolute directory; the built-in provider accepts paths relative to the execution snapshot's `WorkingDirectory`.
 - The tool searches file names and relative paths under the requested directory. It does not search file contents.
 - Searches outside the current workspace are allowed, but the result includes a warning that the agent must ask for explicit user approval before reading, modifying, deleting, executing, or patching out-of-workspace results.
 
@@ -104,3 +106,18 @@ File retrieval tools should split provider integration from tool execution:
 - Tool: depends on `ILocalFileIndexProvider`, exposes stable search arguments and output
 
 This keeps Everything-specific concerns out of Tool registry, admin, and context assembly.
+
+## Execution Filesystem Root
+
+`WorkspaceId` is a business identity and must never be converted into a filesystem path by Tool or SubAgent components.
+
+The effective root is frozen in `RuntimeDispatchRequest.WorkingDirectory` and propagated through:
+
+```text
+RuntimeDispatchRequest
+  -> ToolInvocationRequest
+  -> ToolExecutionContext
+  -> HostFileToolPaths
+```
+
+Smart workflow tools only promote `scope` to `WorkingDirectory` when it resolves to an existing file or directory. Semantic scope text remains prompt-only. Relative file operations are resolved under this root, and directory/write operations cannot escape it unless the existing explicit YOLO boundary allows the operation.

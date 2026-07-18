@@ -9,7 +9,7 @@ namespace PuddingRuntime.Services.Tools;
     name: "Smart Deploy",
     description: "智能部署运维。用自然语言描述部署任务，内部委托 Deployer 子代理执行部署操作。" +
                  "需要显式授权（High 权限）。" +
-                 "参数：task（部署任务描述）、environment（可选，目标环境）、" +
+                 "参数：task（部署任务描述）、scope（可选，工作目录）、environment（可选，目标环境）、" +
                  "timeout_seconds（可选，默认 300s）。模型由 Agent 配置的 Deployer_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
@@ -28,6 +28,7 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
 
     protected override string RoleName => "deployer";
     protected override int DefaultTimeoutSeconds => 300;
+    protected override int DefaultMaxRounds => 30;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDeployArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -55,6 +56,8 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
         sb.AppendLine("### ⚠️ SAFETY — rollback plan BEFORE execution. Stop on error. Log everything.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
+        if (!string.IsNullOrWhiteSpace(args.Scope))
+            sb.AppendLine($"## 📁 CWD: {args.Scope}");
         if (!string.IsNullOrWhiteSpace(args.Environment))
             sb.AppendLine($"## 🌐 Env: {args.Environment}");
         sb.AppendLine();
@@ -70,14 +73,8 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
     }
 }
 
-public sealed class SmartDeployArgs
+public sealed class SmartDeployArgs : ScopedSmartWorkflowArgs
 {
-    [ToolParam("部署任务 — 自然语言描述")]
-    public string? Task { get; set; }
-
     [ToolParam("目标环境: dev, staging, production")]
     public string? Environment { get; set; }
-
-    [ToolParam("子代理超时秒数，默认 300s")]
-    public int? TimeoutSeconds { get; set; }
 }

@@ -15,11 +15,26 @@ internal static class HostFileToolPaths
 {
     public static string WorkspaceRoot => Path.GetFullPath(Directory.GetCurrentDirectory());
 
+    public static string ResolveWorkspaceRoot(string? executionWorkingDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(executionWorkingDirectory))
+            return WorkspaceRoot;
+
+        return Path.GetFullPath(executionWorkingDirectory);
+    }
+
     public static bool TryResolveInsideWorkspace(
-        string path, out string fullPath, out string error, bool skipWorkspaceCheck = false)
+        string path,
+        out string fullPath,
+        out string error,
+        bool skipWorkspaceCheck = false,
+        string? executionWorkingDirectory = null)
     {
         fullPath = null!;
         error = null!;
+        var requestedRoot = string.IsNullOrWhiteSpace(executionWorkingDirectory)
+            ? WorkspaceRoot
+            : executionWorkingDirectory;
 
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -29,13 +44,14 @@ internal static class HostFileToolPaths
 
         try
         {
+            var workspaceRoot = ResolveWorkspaceRoot(executionWorkingDirectory);
             fullPath = Path.GetFullPath(
-                Path.IsPathRooted(path) ? path : Path.Combine(WorkspaceRoot, path));
+                Path.IsPathRooted(path) ? path : Path.Combine(workspaceRoot, path));
 
             if (skipWorkspaceCheck)
                 return true;
 
-            var root = Path.GetFullPath(WorkspaceRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var root = workspaceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var normalized = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
             if (normalized.Equals(root, StringComparison.OrdinalIgnoreCase) ||
@@ -43,12 +59,14 @@ internal static class HostFileToolPaths
                 normalized.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 return true;
 
-                                    error = $"Access denied: path '{path}' is outside the workspace.";
+            error = $"Access denied: path '{path}' is outside execution root '{workspaceRoot}'.";
             return false;
         }
         catch (Exception ex)
         {
-            error = $"Invalid path '{path}': {ex.Message}. Workspace root: {WorkspaceRoot}";
+            error =
+                $"Invalid path '{path}': {ex.Message}. " +
+                $"Execution root: {requestedRoot}";
             return false;
         }
     }
@@ -76,7 +94,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
         FileReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         // file_read �ǵͷ���ֻ�����ߣ�����������·������
-        if (!HostFileToolPaths.TryResolveInsideWorkspace(args.Path, out var fullPath, out var error, skipWorkspaceCheck: true))
+        if (!HostFileToolPaths.TryResolveInsideWorkspace(
+                args.Path,
+                out var fullPath,
+                out var error,
+                skipWorkspaceCheck: true,
+                executionWorkingDirectory: context.WorkingDirectory))
             return Task.FromResult(ToolExecutionResult.Fail(error));
 
         if (!File.Exists(fullPath))
@@ -178,7 +201,12 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
     protected override Task<ToolExecutionResult> ExecuteCoreAsync(
         FileWriteArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (!HostFileToolPaths.TryResolveInsideWorkspace(args.Path, out var fullPath, out var error, skipWorkspaceCheck: context.IsYoloMode))
+        if (!HostFileToolPaths.TryResolveInsideWorkspace(
+                args.Path,
+                out var fullPath,
+                out var error,
+                skipWorkspaceCheck: context.IsYoloMode,
+                executionWorkingDirectory: context.WorkingDirectory))
         {
             _audit.Write(OperationZone.External, "file_write", context.AgentInstanceId,
                 args.Path, args.Reason, false, 0, context.Trace);
@@ -270,7 +298,11 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
         ListDirectoryArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         var path = string.IsNullOrWhiteSpace(args.Path) ? "." : args.Path;
-        if (!HostFileToolPaths.TryResolveInsideWorkspace(path, out var fullPath, out var error))
+        if (!HostFileToolPaths.TryResolveInsideWorkspace(
+                path,
+                out var fullPath,
+                out var error,
+                executionWorkingDirectory: context.WorkingDirectory))
             return Task.FromResult(ToolExecutionResult.Fail(error));
 
         if (!Directory.Exists(fullPath))
@@ -287,7 +319,9 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
         {
             Walk(fullPath, fullPath, recursive, includeHidden, pattern, maxEntries, entries, ref truncated, ct);
             var payload = new ListDirectoryResult(
-                Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, fullPath),
+                Path.GetRelativePath(
+                    HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory),
+                    fullPath),
                 entries.Count,
                 truncated,
                 entries);

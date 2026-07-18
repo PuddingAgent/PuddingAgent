@@ -245,6 +245,13 @@ public sealed class RuntimeContractTests
             ParentAgentInstanceId = "agent",
             TemplateId = "code-agent",
             Task = "review file",
+            LlmConfig = new LlmConfig { ModelId = "test-model" },
+            LlmProfile = new LlmInvocationProfile
+            {
+                ProviderId = "test-provider",
+                ProfileId = "subagent.conscious",
+                ModelId = "test-model",
+            },
         };
 
         Assert.IsFalse(request.IsAsync);

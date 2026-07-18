@@ -31,12 +31,14 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
                                     || descriptor.Safety.HasFlag(ToolSafetyFlags.ReadOnly);
         var isLowRiskAgentCoordinationTool = IsLowRiskAgentCoordinationTool(descriptor);
         var isLowRiskAgentPrivateSkillTool = IsLowRiskAgentPrivateSkillTool(descriptor);
+        var isLowRiskAgentPrivateStateTool = IsLowRiskAgentPrivateStateTool(descriptor);
         var tier = requiresRuntimeAuthorization
             ? ToolPermissionTier.RuntimeGranted
             : isLowRiskReadOnlyTool
               || isLowRiskControlPlaneTool
               || isLowRiskAgentCoordinationTool
               || isLowRiskAgentPrivateSkillTool
+              || isLowRiskAgentPrivateStateTool
                 ? ToolPermissionTier.AutoAllowed
                 : ToolPermissionTier.TemplateGranted;
 
@@ -57,7 +59,9 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
                         ? "low-risk agent coordination tool"
                         : isLowRiskAgentPrivateSkillTool
                             ? "low-risk agent-private SKILL tool"
-                            : "low-risk read-only tool",
+                            : isLowRiskAgentPrivateStateTool
+                                ? "low-risk agent-private state tool"
+                                : "low-risk read-only tool",
                 ToolPermissionTier.TemplateGranted => "template-granted tool",
                 ToolPermissionTier.RuntimeGranted => "runtime authorization required",
                 _ => "blocked",
@@ -104,6 +108,22 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
         }
 
         return descriptor.ToolId.Equals("agent_skill", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsLowRiskAgentPrivateStateTool(ToolDescriptor descriptor)
+    {
+        if (descriptor.PermissionLevel != ToolPermissionLevel.Low)
+            return false;
+
+        if (descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresShell)
+            || descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresFileWrite)
+            || descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresNetwork)
+            || descriptor.Safety.HasFlag(ToolSafetyFlags.Destructive))
+        {
+            return false;
+        }
+
+        return descriptor.ToolId.Equals("agent_state", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool CanExposeToAgent(ToolDescriptor descriptor, CapabilityPolicy? policy)

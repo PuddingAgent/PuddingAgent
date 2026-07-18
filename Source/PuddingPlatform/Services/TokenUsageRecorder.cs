@@ -16,8 +16,8 @@ namespace PuddingPlatform.Services;
 
 /// <summary>
 /// Token 使用事件记录器（ADR-043）。
-/// 从 chat done 帧或消息持久化结果中记录一条 TokenUsageEventEntity，并更新月度聚合。
-/// 失败仅记录 warning，不影响调用方主流程。
+/// 将已归因的单次 LLM usage 写入 TokenUsageEventEntity，并增量更新月度聚合。
+/// 计费与审计事实使用 required 语义；仅非权威遥测允许 best-effort。
 /// </summary>
 public class TokenUsageRecorder : ITokenUsageRecorder
 {
@@ -63,66 +63,120 @@ public class TokenUsageRecorder : ITokenUsageRecorder
     {
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-
-            // 幂等检查
-            var exists = await db.Set<TokenUsageEventEntity>()
-                .AnyAsync(e => e.SourceType == sourceType && e.SourceId == sourceId);
-
-            if (exists)
-            {
-                _logger.LogDebug(
-                    "[TokenUsageRecorder] Skip duplicate source={SourceType}/{SourceId}",
-                    sourceType, sourceId);
-                return;
-            }
-
-            occurredAtUtc ??= DateTimeOffset.UtcNow;
-            var yearMonth = occurredAtUtc.Value.ToString("yyyy-MM");
-
-            // 查询价格配置
-            var inputPrice = 0m;
-            var outputPrice = 0m;
-            var cacheHitPrice = 0m;
-
-            if (!string.IsNullOrWhiteSpace(modelId))
-            {
-                var models = _llmConfigService?.GetAllModels() ?? [];
-                var priceConfig = models.FirstOrDefault(m =>
-                    string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase)
-                    && (string.IsNullOrWhiteSpace(providerId)
-                        || string.Equals(m.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
-                    ?? models
-                        .GroupBy(m => m.ModelId, StringComparer.OrdinalIgnoreCase)
-                        .Where(g => g.Count() == 1)
-                        .Select(g => g.First())
-                        .FirstOrDefault(m => string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
-
-                if (priceConfig is not null)
-                {
-                    inputPrice = priceConfig.InputPricePer1MTokens;
-                    outputPrice = priceConfig.OutputPricePer1MTokens;
-                    cacheHitPrice = priceConfig.CacheHitPricePer1MTokens > 0
-                        ? priceConfig.CacheHitPricePer1MTokens
-                        : inputPrice;
-                }
-            }
-
-            // 归一化计算
-            var normalized = _normalizer.Normalize(usage, inputPrice, outputPrice, cacheHitPrice);
-
-            var resolvedPrefixSnapshot = await ResolvePrefixChangeReasonAsync(
-                db,
+            await RecordCoreAsync(
+                usage,
+                sourceType,
+                sourceId,
+                workspaceId,
                 sessionId,
+                providerId,
+                modelId,
                 prefixSnapshot,
-                occurredAtUtc.Value);
+                occurredAtUtc);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[TokenUsageRecorder] Failed to record token usage source={SourceType}/{SourceId}",
+                sourceType, sourceId);
+        }
+    }
 
-            // 写入明细账本
-            var rawJson = System.Text.Json.JsonSerializer.Serialize(usage, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+    /// <summary>
+    /// 供持久投影器和 LLM 调用拥有方使用。写入失败时向上抛出，禁止工作流静默丢失用量事实。
+    /// </summary>
+    public Task RecordRequiredAsync(
+        TokenUsageDto usage,
+        string sourceType,
+        string sourceId,
+        string? workspaceId,
+        string? sessionId,
+        string? providerId,
+        string? modelId,
+        PromptPrefixSnapshot? prefixSnapshot = null,
+        DateTimeOffset? occurredAtUtc = null)
+        => RecordCoreAsync(
+            usage,
+            sourceType,
+            sourceId,
+            workspaceId,
+            sessionId,
+            providerId,
+            modelId,
+            prefixSnapshot,
+            occurredAtUtc);
 
-            db.Set<TokenUsageEventEntity>().Add(new TokenUsageEventEntity
+    private async Task RecordCoreAsync(
+        TokenUsageDto usage,
+        string sourceType,
+        string sourceId,
+        string? workspaceId,
+        string? sessionId,
+        string? providerId,
+        string? modelId,
+        PromptPrefixSnapshot? prefixSnapshot,
+        DateTimeOffset? occurredAtUtc)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        // 幂等检查
+        var exists = await db.Set<TokenUsageEventEntity>()
+            .AnyAsync(e => e.SourceType == sourceType && e.SourceId == sourceId);
+
+        if (exists)
+        {
+            _logger.LogDebug(
+                "[TokenUsageRecorder] Skip duplicate source={SourceType}/{SourceId}",
+                sourceType, sourceId);
+            return;
+        }
+
+        occurredAtUtc ??= DateTimeOffset.UtcNow;
+        var yearMonth = occurredAtUtc.Value.ToString("yyyy-MM");
+
+        // 查询价格配置
+        var inputPrice = 0m;
+        var outputPrice = 0m;
+        var cacheHitPrice = 0m;
+
+        if (!string.IsNullOrWhiteSpace(modelId))
+        {
+            var models = _llmConfigService?.GetAllModels() ?? [];
+            var priceConfig = models.FirstOrDefault(m =>
+                string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrWhiteSpace(providerId)
+                    || string.Equals(m.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)))
+                ?? models
+                    .GroupBy(m => m.ModelId, StringComparer.OrdinalIgnoreCase)
+                    .Where(g => g.Count() == 1)
+                    .Select(g => g.First())
+                    .FirstOrDefault(m => string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
+
+            if (priceConfig is not null)
             {
+                inputPrice = priceConfig.InputPricePer1MTokens;
+                outputPrice = priceConfig.OutputPricePer1MTokens;
+                cacheHitPrice = priceConfig.CacheHitPricePer1MTokens > 0
+                    ? priceConfig.CacheHitPricePer1MTokens
+                    : inputPrice;
+            }
+        }
+
+        // 归一化计算
+        var normalized = _normalizer.Normalize(usage, inputPrice, outputPrice, cacheHitPrice);
+
+        var resolvedPrefixSnapshot = await ResolvePrefixChangeReasonAsync(
+            db,
+            sessionId,
+            prefixSnapshot,
+            occurredAtUtc.Value);
+
+        // 写入明细账本
+        var rawJson = System.Text.Json.JsonSerializer.Serialize(usage, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        db.Set<TokenUsageEventEntity>().Add(new TokenUsageEventEntity
+        {
                 SourceType = sourceType,
                 SourceId = sourceId,
                 WorkspaceId = workspaceId,
@@ -153,30 +207,30 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 PrefixMessageCount = resolvedPrefixSnapshot?.MessageCount,
                 PrefixToolCount = resolvedPrefixSnapshot?.ToolCount,
                 CreatedAtUtc = DateTimeOffset.UtcNow,
-            });
+        });
 
-            await RecordContextLayerMetricsAsync(
-                db,
-                normalized,
-                sourceType,
-                sourceId,
-                workspaceId,
-                sessionId,
-                providerId,
-                modelId,
-                occurredAtUtc.Value);
+        await RecordContextLayerMetricsAsync(
+            db,
+            normalized,
+            sourceType,
+            sourceId,
+            workspaceId,
+            sessionId,
+            providerId,
+            modelId,
+            occurredAtUtc.Value);
 
-            // 更新月度聚合
-            var providerIdVal = providerId ?? "unknown";
-            var modelIdVal = modelId ?? "unknown";
+        // 更新月度聚合
+        var providerIdVal = providerId ?? "unknown";
+        var modelIdVal = modelId ?? "unknown";
 
-            var stats = await db.TokenUsageStats
-                .FirstOrDefaultAsync(s => s.YearMonth == yearMonth
-                    && s.ProviderId == providerIdVal
-                    && s.ModelId == modelIdVal);
+        var stats = await db.TokenUsageStats
+            .FirstOrDefaultAsync(s => s.YearMonth == yearMonth
+                && s.ProviderId == providerIdVal
+                && s.ModelId == modelIdVal);
 
-            if (stats is not null)
-            {
+        if (stats is not null)
+        {
                 stats.PromptTokens += normalized.PromptTokens;
                 stats.CompletionTokens += normalized.CompletionTokens;
                 stats.CacheHitTokens += normalized.CacheHitTokens;
@@ -184,11 +238,11 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 stats.RequestCount++;
                 stats.TotalCost += normalized.TotalCost;
                 stats.UpdatedAt = DateTimeOffset.UtcNow;
-            }
-            else
+        }
+        else
+        {
+            db.TokenUsageStats.Add(new TokenUsageStatsEntity
             {
-                db.TokenUsageStats.Add(new TokenUsageStatsEntity
-                {
                     ProviderId = providerIdVal,
                     ModelId = modelIdVal,
                     YearMonth = yearMonth,
@@ -199,32 +253,25 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                     RequestCount = 1,
                     TotalCost = normalized.TotalCost,
                     UpdatedAt = DateTimeOffset.UtcNow,
-                });
-            }
-
-            await db.SaveChangesAsync();
-
-            _logger.LogDebug(
-                "[TokenUsageRecorder] Recorded source={SourceType}/{SourceId} provider={Provider} model={Model} cost={Cost}",
-                sourceType, sourceId, providerIdVal, modelIdVal, normalized.TotalCost);
-
-            await RecordTelemetryAsync(
-                normalized,
-                sourceType,
-                sourceId,
-                workspaceId,
-                sessionId,
-                providerIdVal,
-                modelIdVal,
-                resolvedPrefixSnapshot,
-                occurredAtUtc.Value);
+            });
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "[TokenUsageRecorder] Failed to record token usage source={SourceType}/{SourceId}",
-                sourceType, sourceId);
-        }
+
+        await db.SaveChangesAsync();
+
+        _logger.LogDebug(
+            "[TokenUsageRecorder] Recorded source={SourceType}/{SourceId} provider={Provider} model={Model} cost={Cost}",
+            sourceType, sourceId, providerIdVal, modelIdVal, normalized.TotalCost);
+
+        await RecordTelemetryAsync(
+            normalized,
+            sourceType,
+            sourceId,
+            workspaceId,
+            sessionId,
+            providerIdVal,
+            modelIdVal,
+            resolvedPrefixSnapshot,
+            occurredAtUtc.Value);
     }
 
     private async Task RecordTelemetryAsync(

@@ -9,7 +9,7 @@ namespace PuddingRuntime.Services.Tools;
     name: "Smart Review",
     description: "智能代码审查。用自然语言描述审查范围，内部委托 Reviewer 子代理自动审查代码" +
                  "质量、安全性、最佳实践，返回结构化的审查报告。" +
-                 "参数：what（审查目标）、scope（文件/目录范围）、" +
+                 "参数：task（审查任务）、scope（文件/目录范围）、" +
                  "aspects（可选，关注的安全/质量/性能方面）、" +
                  "timeout_seconds（可选，默认 180s）。模型由 Agent 配置的 Reviewer_Model 决定。",
     category: ToolCategory.Query,
@@ -33,11 +33,11 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartReviewArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(args.What?.Trim()) && string.IsNullOrWhiteSpace(args.Scope?.Trim()))
-            return ToolExecutionResult.Fail("what or scope is required. Describe what to review.");
+        if (string.IsNullOrWhiteSpace(args.Task?.Trim()))
+            return ToolExecutionResult.Fail("task is required. Describe what to review.");
 
-        _logger.LogInformation("[SmartReview] agent={Agent} what={What} scope={Scope}",
-            context.AgentInstanceId, args.What, args.Scope);
+        _logger.LogInformation("[SmartReview] agent={Agent} task={Task} scope={Scope}",
+            context.AgentInstanceId, args.Task, args.Scope);
 
         return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
     }
@@ -58,7 +58,7 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
         sb.AppendLine();
         sb.AppendLine("### ⚠️ Read-only only. Focus issues on: correctness → security → performance.");
         sb.AppendLine();
-        sb.AppendLine($"## 🎯 Target: {args.What ?? args.Scope}");
+        sb.AppendLine($"## 🎯 Task: {args.Task}");
         if (!string.IsNullOrWhiteSpace(args.Scope))
             sb.AppendLine($"## 📁 Scope: {args.Scope}");
         if (!string.IsNullOrWhiteSpace(args.Aspects))
@@ -79,17 +79,8 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
     }
 }
 
-public sealed class SmartReviewArgs
+public sealed class SmartReviewArgs : ScopedSmartWorkflowArgs
 {
-    [ToolParam("审查目标 — 自然语言描述")]
-    public string? What { get; set; }
-
-    [ToolParam("审查范围 — 文件或目录")]
-    public string? Scope { get; set; }
-
     [ToolParam("关注方面: security, performance, correctness, maintainability, best-practices")]
     public string? Aspects { get; set; }
-
-    [ToolParam("子代理超时秒数，默认 180s")]
-    public int? TimeoutSeconds { get; set; }
 }

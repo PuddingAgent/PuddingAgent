@@ -13,7 +13,7 @@ namespace PuddingRuntime.Services.Tools;
                  "① 代码/文件探索 — file_search + search_grep + file_read + code_outline\n" +
                  "② 会话日志查询 — query_session_logs（grep/messages/list_days，已自动过滤心跳噪音）\n" +
                  "③ 通用文件系统浏览 — list_dir + file_search + project_map\n" +
-                 "参数：what（探索目标，自然语言描述）、scope（可选，目录/会话范围）、" +
+                 "参数：task（探索任务，自然语言描述）、scope（可选，目录/会话范围）、" +
                  "session_id（可选，目标会话ID）、focus（可选，重点关注哪些方面）、" +
                  "max_results（可选，默认 15）、timeout_seconds（可选，默认 120s）。" +
                  "模型由 Agent 配置的 Explorer_Model 决定。",
@@ -38,11 +38,11 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartExploreArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(args.What?.Trim()))
-            return ToolExecutionResult.Fail("what is required. Describe what you want to explore in natural language.");
+        if (string.IsNullOrWhiteSpace(args.Task?.Trim()))
+            return ToolExecutionResult.Fail("task is required. Describe what you want to explore in natural language.");
 
-        _logger.LogInformation("[SmartExplore] agent={Agent} what={What} scope={Scope}",
-            context.AgentInstanceId, args.What, args.Scope ?? "(root)");
+        _logger.LogInformation("[SmartExplore] agent={Agent} task={Task} scope={Scope}",
+            context.AgentInstanceId, args.Task, args.Scope ?? "(root)");
 
         return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
     }
@@ -66,7 +66,7 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
         sb.AppendLine("- NEVER: file_write, file_patch, shell, spawn_sub_agent.");
         sb.AppendLine("- If a tool fails: try alternative tool, then report the gap.");
         sb.AppendLine();
-        sb.AppendLine($"## 🎯 Target: {args.What}");
+        sb.AppendLine($"## 🎯 Task: {args.Task}");
         if (!string.IsNullOrWhiteSpace(args.Scope))
             sb.AppendLine($"## 📁 Scope: {args.Scope}");
         if (!string.IsNullOrWhiteSpace(args.SessionId))
@@ -89,14 +89,8 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     }
 }
 
-public sealed class SmartExploreArgs
+public sealed class SmartExploreArgs : ScopedSmartWorkflowArgs
 {
-    [ToolParam("探索目标 — 自然语言描述，如 '找到认证相关的所有文件和类'")]
-    public string? What { get; set; }
-
-    [ToolParam("探索范围目录")]
-    public string? Scope { get; set; }
-
     [ToolParam("重点关注哪些方面")]
     public string? Focus { get; set; }
 
@@ -106,6 +100,4 @@ public sealed class SmartExploreArgs
     [ToolParam("目标会话 ID（可选），用于查询特定会话日志")]
     public string? SessionId { get; set; }
 
-    [ToolParam("子代理超时秒数，默认 120s")]
-    public int? TimeoutSeconds { get; set; }
 }

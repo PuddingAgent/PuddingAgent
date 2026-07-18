@@ -9,7 +9,7 @@ namespace PuddingRuntime.Services.Tools;
     name: "Smart Test",
     description: "智能测试执行。用自然语言描述测试需求，内部委托 Tester 子代理自动运行测试、" +
                  "分析失败原因、生成测试报告。需要显式授权（High 权限）。" +
-                 "参数：what（测试什么）、scope（可选，测试范围/项目）、" +
+                 "参数：task（测试任务）、scope（可选，测试范围/项目）、" +
                  "timeout_seconds（可选，默认 300s）。模型由 Agent 配置的 Tester_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
@@ -28,14 +28,15 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
 
     protected override string RoleName => "tester";
     protected override int DefaultTimeoutSeconds => 300;
+    protected override int DefaultMaxRounds => 30;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartTestArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(args.What?.Trim()))
-            return ToolExecutionResult.Fail("what is required. Describe what to test.");
+        if (string.IsNullOrWhiteSpace(args.Task?.Trim()))
+            return ToolExecutionResult.Fail("task is required. Describe what to test.");
 
-        _logger.LogInformation("[SmartTest] agent={Agent} what={What}", context.AgentInstanceId, args.What);
+        _logger.LogInformation("[SmartTest] agent={Agent} task={Task}", context.AgentInstanceId, args.Task);
 
         return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
     }
@@ -53,7 +54,7 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
         sb.AppendLine();
         sb.AppendLine("### ⚠️ terminal_start/terminal_wait + dotnet test only. No spawn_sub_agent.");
         sb.AppendLine();
-        sb.AppendLine($"## 🎯 Target: {args.What}");
+        sb.AppendLine($"## 🎯 Task: {args.Task}");
         if (!string.IsNullOrWhiteSpace(args.Scope))
             sb.AppendLine($"## 📁 Scope: {args.Scope}");
         sb.AppendLine();
@@ -70,14 +71,6 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
     }
 }
 
-public sealed class SmartTestArgs
+public sealed class SmartTestArgs : ScopedSmartWorkflowArgs
 {
-    [ToolParam("测试目标 — 自然语言描述，如 '运行所有单元测试' 或 '测试 UserService'")]
-    public string? What { get; set; }
-
-    [ToolParam("测试范围/项目路径")]
-    public string? Scope { get; set; }
-
-    [ToolParam("子代理超时秒数，默认 300s")]
-    public int? TimeoutSeconds { get; set; }
 }

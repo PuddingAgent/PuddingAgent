@@ -38,18 +38,30 @@ public sealed class TurnExecutorAdapter(
         };
 
         var sawTerminal = false;
+        var usageInvocationIndex = 0;
 
         await foreach (var frame in executionService.ExecuteStreamAsync(request, ct))
         {
             sawTerminal |= frame.Event == "done" || frame.Event == "error" || frame.Event == "cancelled";
 
-            var (eventType, terminal, terminalInfo) = ConvertFrame(frame);
+            var payload = ParsePayload(frame.Data);
+            var (eventType, terminal, terminalInfo) = ConvertFrame(frame.Event, payload);
+            var schemaVersion = 1;
+            if (eventType == ConversationEventTypes.UsageRecorded)
+            {
+                usageInvocationIndex++;
+                payload = CreateUsageRecordedPayload(
+                    payload,
+                    context.LlmProfile,
+                    usageInvocationIndex);
+                schemaVersion = 2;
+            }
 
             yield return new TurnExecutionEvent(
                 ProducerEventId: Guid.NewGuid().ToString("N"),
                 Type: eventType,
-                SchemaVersion: 1,
-                Payload: ParsePayload(frame.Data),
+                SchemaVersion: schemaVersion,
+                Payload: payload,
                 IsTerminal: terminal,
                 TerminalInfo: terminalInfo
             );
@@ -73,11 +85,11 @@ public sealed class TurnExecutorAdapter(
         }
     }
 
-    private static (string Type, bool IsTerminal, TurnTerminalInfo? Info) ConvertFrame(ServerSentEventFrame frame)
+    private static (string Type, bool IsTerminal, TurnTerminalInfo? Info) ConvertFrame(
+        string eventType,
+        JsonElement payload)
     {
-        var payload = ParsePayload(frame.Data);
-
-        return frame.Event switch
+        return eventType switch
         {
             "metadata" => (ConversationEventTypes.TurnStarted, false, null),
             "thinking" => (ConversationEventTypes.MessageThinkingSummaryAppended, false, null),
@@ -101,8 +113,26 @@ public sealed class TurnExecutorAdapter(
                 ConversationEventTypes.TurnCancelled,
                 true,
                 TurnTerminalInfo.Cancelled()),
-            _ => (frame.Event, false, null),
+            _ => (eventType, false, null),
         };
+    }
+
+    private static JsonElement CreateUsageRecordedPayload(
+        JsonElement usage,
+        LlmInvocationProfile profile,
+        int invocationIndex)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            usage,
+            providerId = profile.ProviderId,
+            profileId = profile.ProfileId,
+            modelId = profile.ModelId,
+            role = profile.Role,
+            invocationIndex,
+        });
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     private static string? TryGetString(JsonElement el, string name)

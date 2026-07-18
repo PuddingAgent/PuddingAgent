@@ -42,7 +42,7 @@ Source/
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口，驱动 LLM 调用 → 工具调用 → 循环 |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口，驱动 LLM 调用 → 工具调用 → 循环；同步返回前强制将 Running 收敛为 Completed/Failed/Cancelled/WaitingEvent 终态 |
 | `Services/AgentLoop/CompletionPolicy.cs` | 判断 Agent 何时完成（stop reason 处理） |
 | `Services/AgentLoop/ExecutionJournal.cs` | 执行日志记录 |
 | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 执行护栏（最大轮次等） |
@@ -81,7 +81,7 @@ Source/
 |------|------|------|
 | `Tools/BuiltIns/Files/` | `FileTools.cs` | 文件读写、搜索、grep |
 | `Tools/BuiltIns/Memory/` | `MemoryTools.cs` | 记忆读写（save/manage/search/grep） |
-| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生（支持 model + capability_requirements 参数） |
+| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory` 执行快照 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
 | `Tools/BuiltIns/Search/` | `SmartSearchTool.cs` | 🔑 语义代码搜索 — 薄包装子代理，三层搜索协议，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | 通用搜索（Web/文档） |
@@ -89,8 +89,9 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具（explore/research/plan/review/develop/deploy/test），每个通过 manifest.{Role}Model 选定子代理模型 |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task` 主参数，通过 manifest.{Role}Model 选定模型，并冻结角色 timeout/maxRounds/真实目录 scope |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
+| `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
 | `Tools/BuiltIns/Shell/` | Shell 工具 | 终端命令执行（支持 tail_lines） |
 | `Tools/BuiltIns/Terminal/` | `TerminalTools.cs` | 后台终端执行 |
@@ -157,16 +158,18 @@ Source/
 | `Services/ChatHistoryService.cs` | 聊天历史查询 |
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；从实例 manifest + `config/llm.json` 读取快照，并用 `llm.providers.json` 补齐连接配置 |
-| `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/更新同步维护 manifest、Markdown 与 `config/llm.json` |
+| `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，并实现 `IAgentSelfMaintenanceService` 的受控自维护写入 |
 | `Services/SubAgentManager.cs` | 子代理管理 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
 | `Services/ExecutionCommandReader.cs` | Command 稳定执行引用的只读适配器；不拥有任何状态转换 |
 | `Services/ConversationEventStore.cs` | Conversation Sequence 分配、事件追加和历史读取 |
-| `Services/ConversationProjector.cs` | Event Store 到 ChatMessages/查询模型的 checkpoint 投影；保留事件的 Message/Turn/Command 稳定身份 |
+| `Services/ConversationProjector.cs` | Event Store 到查询模型的 checkpoint 投影；除按稳定身份物化 ChatMessages 外，还将带不可变 Provider/Model 归因的 `usage.recorded` v2 必达写入 Token 明细账本 |
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
+| `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync` |
+| `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
-| `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement |
+| `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按稳定 `messageId/runId` 关联 `ChatMessages` |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人状态投影；状态与 cursor 均来自 canonical Conversation Event sequence |
 | `Services/Execution/SqliteExecutionLeaseStore.cs` | 原子 CAS 领取与恢复：BEGIN IMMEDIATE + fencing；释放/过期时事务恢复 Run、Command、Turn |
@@ -262,9 +265,9 @@ Source/
 ### LLM 配置与解析
 | 文件 | 用途 |
 |------|------|
-| `Abstractions/ILlmResolver.cs` | 🔑 LLM 解析器接口（含 ResolveByCapabilityAsync 按能力标签匹配） |
-| `Abstractions/ILlmConfigService.cs` | LLM 配置服务接口（LlmModelInfo 含 CapabilityTags） |
-| `Services/FileLlmResolver.cs` | 基于文件配置的 LLM 解析器实现 |
+| `Abstractions/ILlmResolver.cs` | 🔑 LLM 路由解析边界；`ResolveRouteAsync` 原子返回 Provider/Model 身份与 `LlmConfig` 快照 |
+| `Abstractions/ILlmConfigService.cs` | LLM 唯一配置源接口；`GetDefaultProfile` 保留默认 Provider/Profile/Model 身份 |
+| `Services/FileLlmResolver.cs` | 基于文件配置的 LLM 路由实现；负责显式路由、唯一纯模型、能力标签和默认 Profile 选择 |
 | `Services/FileLlmConfigService.cs` | 基于文件的 LLM 配置服务 |
 | `Contracts/LlmContracts.cs` | LLM 相关契约模型 |
 
@@ -281,6 +284,7 @@ Source/
 | `Services/RuntimeActivity.cs` | 运行时活动记录（Enrich 方法处理 "unknown" 合法阶段） |
 | `Configuration/PuddingDataPaths.cs` | 数据路径配置 |
 | `Agents/AgentProfileProvider.cs` | 加载自包含 Agent 实例定义：manifest、`config/llm.json`、Markdown 与 permissions；运行时不跨目录读取模板 |
+| `Agents/IAgentSelfMaintenanceService.cs` | Agent 自维护端口；只暴露当前实例白名单文档的 inspect/read/update，不暴露任意路径或其他 Agent ID |
 
 ### Conversation 受理与可靠事件流
 | 文件 | 用途 |
@@ -324,6 +328,7 @@ Source/
       → IAgentExecutionSnapshotFactory             // 无密钥执行快照
       → LlmInvocationProfile                       // Provider/Profile/Model 类型化路由身份
       → ITurnExecutor                             // Agent Loop Runtime
+        → TurnExecutorAdapter                     // usage 帧封装为 v2：usage + 不可变 Provider/Profile/Model/Role
       → TurnOutputChunker                         // delta 聚合
       → IExecutionJournal.AppendOutputAsync       // fenced 输出
       → IExecutionJournal.CommitTerminalAsync     // 原子终态（验证 runId/workerId/fence/lease）
@@ -334,7 +339,9 @@ Source/
     → `turn.accepted` 可先于 POST continuation 完成身份迁移
   → 前端 Reducer 按 sequence 幂等提交
   → ConversationProjectionWorker 发现 Head > Checkpoint
-  → ConversationProjector 按事件 MessageId 幂等物化 ChatMessages
+  → ConversationProjector
+    → 按事件 MessageId 幂等物化 ChatMessages
+    → 按 EventId 幂等物化 agent_llm TokenUsageEvents（失败不推进 checkpoint）
   → 前端历史对账只允许单调收敛，不得用滞后物化结果降级 SSE 终态
 
 旧 POST /api/workspaces/{workspaceId}/chat/message 已删除，不保留兼容翻译层
@@ -387,9 +394,13 @@ Controller SessionRepository 是 Main Session 归属的事实源；Agent manifes
 ```
 Agent 调用 smart_search(what="...", capability_requirements="fast,search")
   → SmartSearchTool → spawn_sub_agent(sync, model 或 capability)
-    → SubAgentTool.BuildChildLlmConfigAsync()
-      → ILlmResolver.ResolveByCapabilityAsync(["fast","search"])
-        → 从 LLM 资源池匹配 deepseek-v4-flash
+    → SubAgentTool.ResolveChildLlmRouteAsync()
+      → ILlmResolver（唯一读取 data/config/llm.providers.json）
+        → 唯一确定 Provider/Model + LlmConfig
+      → SubAgentTool 仅补充调用语义 ProfileId=subagent.conscious、Role=conscious
+    → ISubAgentInvocationService（只映射，不重新解析）
+      → SubAgentManager.ValidateLlmRoute()
+        → RuntimeDispatchRequest.LlmProfile + LlmConfig
     → 子代理执行三层搜索协议（Phase 1 广度 → Phase 2 深度 → Phase 3 退路）
     → 返回结构化结果（FOUND/FILES/SUMMARY/MISSING）
   → 子代理标记 MainAgentOnly（不暴露给孙代理，防循环）
@@ -446,7 +457,19 @@ Agent 调用 search_memory / grep_memory
 - `WorkspaceAgentDto` / `CreateWorkspaceAgentRequest` / `UpdateWorkspaceAgentRequest`：管理 API 的七字段契约
 - `WorkspaceAgentFileService`：创建、列表、详情、更新均以 Agent manifest 为唯一配置源；PUT 支持清空角色模型
 - `SmartWorkflowToolBase.ResolveRoleModelAsync()`：从 manifest 解析角色模型
-- `SubAgentTool`：**不做修改**，仅依赖入场参数
+- `ILlmResolver.ResolveRouteAsync()`：消费入场 `providerId/modelId` 或能力标签，从
+  `ILlmConfigService` 原子解析 `ProviderId + ModelId + LlmConfig`；默认路由使用
+  `GetDefaultProfile()`，不得从 endpoint/key/model 反推 Provider
+- `SubAgentTool.ResolveChildLlmRouteAsync()`：只为上述路由补充
+  `ProfileId=subagent.conscious` 与 `Role=conscious`
+- `SubAgentInvocationRequest` / `SubAgentSpawnRequest`：不再持有冗余 `ModelId`，
+  只透传上述不可变快照；同时透传 `MaxRounds` 与 `WorkingDirectory`，后者是文件
+  工具根目录而不是 WorkspaceId 的路径映射；`SubAgentManager` 在产生状态/事件前
+  校验两个模型 ID 一致
+- `SmartWorkflowArgs`：七个 Smart 工具统一以 `task` 作为必填主指令；
+  `ScopedSmartWorkflowArgs.scope` 只有在指向真实文件/目录时才冻结为 WorkingDirectory
+- `AgentExecutionService.ExecuteAsync()`：同步边界禁止返回 `Running`；function-call 在最后
+  一轮耗尽时统一返回 `Failed + MaxRoundsReached`
 
 ### 前端 UI
 - `workspace/[id]/SmartRoleModelFields.tsx`：加载启用的 LLM 服务商/模型并生成 7 个角色模型下拉
@@ -482,8 +505,8 @@ WorkspaceAgentSettingsDrawer
 
 1. **双轨工具系统**: 正在从 `IAgentSkill`（Legacy）迁移到 `IPuddingTool`（新），两套接口并存
 2. **双轨记忆系统**: 传统图书馆（Book/Chapter）+ 结构化事实库（Fact）并存，未来融合
-3. **Smart* 工具薄包装模式**: 语义化工具 = `SubAgentExposure.MainAgentOnly` + 自然语言接口 + 三层搜索协议。支持 `model` 和 `capability_requirements` 两种模型选择方式
-4. **能力标签系统 (P2)**: `ILlmResolver.ResolveByCapabilityAsync` 按标签匹配模型。`search` 标签仅 `deepseek-v4-flash`
+3. **Smart* 工具薄包装模式**: 语义化工具 = `SubAgentExposure.MainAgentOnly` + 统一 `task` 合同 + 角色执行预算 + 三层搜索协议。支持 `model` 和 `capability_requirements` 两种模型选择方式
+4. **能力标签系统 (P2)**: `ILlmResolver.ResolveRouteAsync(requiredCapabilityTags)` 按标签选择唯一配置源中的模型；显式 model 路由优先
 5. **Token 预算准确**: `RecordProviderUsage` 不再覆盖上下文快照；`TrimHistory` 改为 token 驱动（`maxTokenBudget/2500`）
 6. **会话持久化**: `SessionStateStore` 在状态变更时异步写入 `data/sessions/{id}.json`，重启后恢复
 7. **EF Core Migration**: Platform 用 Code-First Migration，MemoryEngine 用 DbInitializer 手动建表
