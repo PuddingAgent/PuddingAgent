@@ -37,7 +37,7 @@ public sealed class LlmProfileResolver : ILlmProfileResolver
         var profileId = profile.ProfileId;
         var modelId = profile.ModelId;
         LlmConfig? llmConfig = null;
-        var resolverName = "legacy.direct";
+        var resolverName = "llm-config.fallback";
 
         if (_llmConfigService is not null)
         {
@@ -61,10 +61,14 @@ public sealed class LlmProfileResolver : ILlmProfileResolver
             }
         }
 
-        llmConfig ??= new LlmConfig
+        // ADR-058: No legacy.direct fallback. Provider must be resolvable.
+        if (llmConfig is null)
         {
-            ModelId = modelId,
-        };
+            throw new InvalidOperationException(
+                $"LLM profile cannot be resolved for agent '{agentInstanceId}': " +
+                $"provider={providerId ?? "(null)"} model={modelId ?? "(null)"} profile={profileId ?? "(null)"}. " +
+                "Verify the provider/model/profile exists in data/config/llm.providers.json.");
+        }
 
         var resolved = new ResolvedLlmInvocationProfile
         {

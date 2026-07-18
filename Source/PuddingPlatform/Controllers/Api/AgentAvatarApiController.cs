@@ -1,76 +1,52 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using PuddingPlatform.Data;
+using PuddingCode.Platform;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
-using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
-/// 系统预置 Agent 头像只读 API（ADR-034）。
-/// 头像由 avatars.json 种子产生，服务端统一管理。
+/// 系统预置 Agent 头像只读 API（ADR-034 revised）。
+/// 数据来自内存目录，PNG 由 wwwroot 静态资源提供。
 /// </summary>
 [ApiController]
 [Route("api/agent-avatars")]
 public class AgentAvatarApiController(
-    PlatformDbContext db,
-    AgentAvatarCatalog catalog) : ControllerBase
+    IAgentAvatarCatalog catalog) : ControllerBase
 {
     /// <summary>获取头像列表</summary>
-    /// <param name="enabledOnly">为 true 时只返回启用头像</param>
     [HttpGet]
-    public async Task<ActionResult<List<AgentAvatarDto>>> List(
-        [FromQuery] bool enabledOnly = true, CancellationToken ct = default)
+    public ActionResult<List<AgentAvatarDto>> List(CancellationToken ct = default)
     {
-        if (enabledOnly)
-        {
-            var enabledList = await catalog.ListEnabledAsync();
-            return Ok(enabledList.Select(MapToDto).ToList());
-        }
-
-        var query = db.AgentAvatars.AsNoTracking();
-
-        var list = await query
-            .OrderBy(a => a.SortOrder)
-            .ThenBy(a => a.Id)
-            .ToListAsync(ct);
-
-        return Ok(list.Select(MapToDto).ToList());
+        var list = catalog.List();
+        var defaultId = catalog.GetDefault().AvatarId;
+        return Ok(list.Select(d => MapToDto(d, d.AvatarId == defaultId)).ToList());
     }
 
     /// <summary>按 AvatarId 获取单个头像</summary>
     [HttpGet("{avatarId}")]
-    public async Task<ActionResult<AgentAvatarDto>> Get(string avatarId, CancellationToken ct = default)
+    public ActionResult<AgentAvatarDto> Get(string avatarId, CancellationToken ct = default)
     {
-        var entity = await db.AgentAvatars
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.AvatarId == avatarId, ct);
+        var def = catalog.Find(avatarId);
+        if (def is null) return NotFound();
 
-        return entity is null ? NotFound() : Ok(MapToDto(entity));
+        var isDefault = def.AvatarId == catalog.GetDefault().AvatarId;
+        return Ok(MapToDto(def, isDefault));
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    private static AgentAvatarDto MapToDto(AgentAvatarEntity e) => new(
-        e.AvatarId,
-        e.Name,
-        e.UrlPath,
-        e.Personality,
-        e.HairColor,
-        e.Expression,
-        SafeParseStringList(e.VisualTraitsJson),
-        e.RecommendedUse,
-        e.IsBuiltIn,
-        e.IsEnabled,
-        e.SortOrder
+    private static AgentAvatarDto MapToDto(AgentAvatarDefinition d, bool isDefault) => new(
+        d.AvatarId,
+        d.Name,
+        d.UrlPath,
+        d.Personality,
+        HairColor: null,
+        Expression: null,
+        VisualTraits: [],
+        d.RecommendedUse,
+        IsBuiltIn: true,
+        d.IsEnabled,
+        d.SortOrder,
+        IsDefault: isDefault
     );
-
-    private static List<string> SafeParseStringList(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return [];
-        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
-        catch { return []; }
-    }
 }

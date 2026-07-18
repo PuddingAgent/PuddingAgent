@@ -34,6 +34,17 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
     public async Task<bool> AnyBySessionIdAsync(string sessionId, CancellationToken ct = default)
         => await _db.ChatMessages.AnyAsync(m => m.SessionId == sessionId, ct);
 
+    /// <summary>
+    /// ADR-058: 按稳定业务 ID 加载用户消息。
+    /// ChatExecutionWorker 通过此方法获取用户消息正文，不再从命令载荷反序列化。
+    /// </summary>
+    public async Task<ChatMessageRow?> GetByMessageIdAsync(string messageId, CancellationToken ct = default)
+    {
+        var entity = await _db.ChatMessages.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.MessageId == messageId, ct);
+        return entity is null ? null : Map(entity);
+    }
+
     private static ChatMessageRow Map(ChatMessageEntity e) => new()
     {
         Id = e.Id,

@@ -18,8 +18,11 @@ using PuddingCode.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Controllers.Api;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Conversation;
+using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.AgentChat;
 using PuddingPlatform.Services.Diagnostics;
+using PuddingPlatform.Services.Snapshot;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Storage;
@@ -168,11 +171,15 @@ Log.Logger = new LoggerConfiguration()
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(dataPaths);
 
-// EF Core 10: AddDbContextFactory 的 Singleton factory 消费 Scoped DbContextOptions
-// 需要关闭 scope validation。
+// Enable scope validation in Development to catch Singleton→Scoped violations
 if (aspnetcoreEnvironment == "Development")
 {
-    builder.Host.UseDefaultServiceProvider(o => o.ValidateScopes = false);
+    builder.Host.UseDefaultServiceProvider(o =>
+    {
+        o.ValidateScopes = true;
+        // ValidateOnBuild disabled temporarily due to pre-existing violations in Runtime DI
+        o.ValidateOnBuild = false;
+    });
 }
 builder.Host.UseSerilog();
 
@@ -255,14 +262,30 @@ builder.Services.AddSingleton<ISessionEventReader>(sp => sp.GetRequiredService<S
 builder.Services.AddSingleton<ISessionHeadNotifier>(sp => sp.GetRequiredService<SessionStateManager>());
 builder.Services.AddSingleton<ISessionEventStream, SessionEventStreamService>();
 builder.Services.AddSingleton<ISessionProjectionStore, SessionProjectionStore>();
+builder.Services.AddSingleton<StreamMetrics>();
+builder.Services.AddSingleton<ICommittedEventSignal, CommittedEventSignal>();
 
-// ── Chat 执行命令队列（ADR-056）─────────────────
-builder.Services.AddSingleton<IChatCommandStore, ChatCommandStore>();
-builder.Services.AddSingleton<ChatCommandAcceptanceService>();
-builder.Services.AddSingleton<ChatTelemetryRecorder>();
-builder.Services.AddSingleton<ChatSystemCommandService>();
-builder.Services.AddSingleton<ChatDispatchService>();
-builder.Services.AddSingleton<ChatMessageExecutionService>();
+    // ── Execution Lease + Journal + Control（ADR-059）─────────
+    builder.Services.AddSingleton<IExecutionLeaseStore, SqliteExecutionLeaseStore>();
+    builder.Services.AddSingleton<IExecutionJournal, SqliteExecutionJournal>();
+    builder.Services.AddSingleton<IControlInbox, SqliteControlInbox>();
+    builder.Services.AddSingleton<IExecutionControlService, ExecutionControlService>();
+
+    // ── Conversation 命令受理（ADR-059）─────────────
+    builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
+    builder.Services.AddScoped<IRequestTurnCancellationHandler, RequestTurnCancellationHandler>();
+    builder.Services.AddScoped<ICreateSteeringHandler, CreateSteeringHandler>();
+    builder.Services.AddScoped<IRequestCompactionHandler, RequestCompactionHandler>();
+    builder.Services.AddScoped<IConversationAcceptanceStore, ConversationAcceptanceStore>();
+
+    // ── Conversation Event Store（ADR-057 Phase 2）────
+    builder.Services.AddSingleton<IConversationEventStore, ConversationEventStore>();
+    builder.Services.AddSingleton<ConversationProjector>();
+    builder.Services.AddSingleton<ChatTelemetryRecorder>();
+
+    // ── Execution Kernel（ADR-059）─────────────────
+    builder.Services.AddScoped<IExecutionRunCoordinator, ExecutionRunCoordinator>();
+    builder.Services.AddSingleton<IAgentExecutionSnapshotFactory, AgentExecutionSnapshotFactory>();
 
 // ── Repository pattern (EF Core → Repository → Service) ──
 builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
@@ -301,8 +324,6 @@ builder.Services.AddScoped<IAgentRunProjectionService, AgentRunProjectionService
 builder.Services.AddScoped<IAgentConversationProjectionService, AgentConversationProjectionService>();
 builder.Services.AddScoped<VisionArtifactStorageService>();
 builder.Services.AddScoped<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
-builder.Services.AddScoped<ChatVisualReasoningRequestFactory>();
-builder.Services.AddScoped<ChatVisualReasoningSessionRunner>();
 builder.Services.AddScoped<SessionTitleService>();
 builder.Services.AddScoped<TokenCostService>();
 builder.Services.AddScoped<IVisualReasoningService, DefaultVisualReasoningService>();
@@ -740,6 +761,7 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<SessionArchiver>();
 builder.Services.AddSingleton<AgentExecutionService>();
+builder.Services.AddSingleton<ITurnExecutor, TurnExecutorAdapter>();
 builder.Services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
 
 // ── P2P 发现（局域网 UDP 广播 + HTTP 探活）────────────────
@@ -925,9 +947,9 @@ builder.Services.AddSingleton<BootstrapStateService>(sp =>
 // ── JSON 配置种子服务 ─────────────────────────────
 builder.Services.AddScoped<JsonConfigSeedService>();
 
-// ── Agent 头像服务（ADR-034）────────────────────────
-builder.Services.AddSingleton<AgentAvatarSeedService>();
+// ── Agent 头像服务（ADR-034 revised ─ JSON 内存目录）────
 builder.Services.AddSingleton<AgentAvatarCatalog>();
+builder.Services.AddSingleton<IAgentAvatarCatalog>(sp => sp.GetRequiredService<AgentAvatarCatalog>());
 
 var app = builder.Build();
 Console.WriteLine("[Startup] Host built, configuring middleware...");
@@ -1223,6 +1245,19 @@ try
         await platformDb.Database.EnsureCreatedAsync();
     }
     Console.WriteLine("[Startup] Platform DB tables ensured");
+
+    // ADR-057: Ensure conversation event store tables exist (not lazy).
+    try
+    {
+        using var scope2 = app.Services.CreateScope();
+        var eventStore = scope2.ServiceProvider.GetRequiredService<IConversationEventStore>();
+        await eventStore.EnsureTablesAsync(CancellationToken.None);
+        Console.WriteLine("[Startup] Conversation Event Store tables ensured");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Event Store table ensure failed: {ex.Message}");
+    }
 }
 catch (Exception ex)
 {

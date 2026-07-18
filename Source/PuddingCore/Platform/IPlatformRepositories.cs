@@ -91,6 +91,8 @@ public interface IChatMessageRepository
     Task<IReadOnlyList<ChatMessageRow>> GetMessagesCursorAsync(
         string sessionId, long? beforeId = null, int limit = 50, CancellationToken ct = default);
     Task<bool> AnyBySessionIdAsync(string sessionId, CancellationToken ct = default);
+    /// <summary>ADR-058: Load user message by stable business ID.</summary>
+    Task<ChatMessageRow?> GetByMessageIdAsync(string messageId, CancellationToken ct = default);
 }
 
 /// <summary>

@@ -52,7 +52,14 @@
   <!-- ADR-037: Admin SPA 静态产物由脚本在构建时复制到 wwwroot/admin/ -->
   <!-- 见 build-and-up.ps1（dotnet publish 前复制）和 dev-up.ps1（dotnet watch 前复制） -->
 
-  <!-- ADR-034: Agent 头像资源由 dev-up.ps1/build-and-up.ps1 在启动时复制到输出目录 -->
+  <!-- ADR-034: Agent 头像清单编译时复制到 Config/；PNG 由 PuddingPlatform wwwroot 提供 -->
+  <ItemGroup>
+    <Content Remove="Config\agent-avatars.json" />
+    <Content Include="Config\agent-avatars.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 
   <Target Name="EnsureAdminDistExists" BeforeTargets="Publish" Condition="'$(SkipAdminDistCheck)' != 'true'">
     <Error Condition="!Exists('..\PuddingPlatformAdmin\dist\index.html')" Text="Admin SPA dist is missing. Run pnpm run build in Source/PuddingPlatformAdmin first, or set SkipAdminDistCheck=true for backend-only development." />

@@ -603,6 +603,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         return new SessionEventEnvelope(
             EventId: e.Id.ToString(),
             SessionId: e.SessionId,
+            ConversationId: e.SessionId,  // 当前系统中 conversationId = sessionId
             Sequence: e.SequenceNum,
             EventType: e.EventType,
             SchemaVersion: 1,

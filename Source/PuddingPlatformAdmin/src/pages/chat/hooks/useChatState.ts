@@ -1,4 +1,12 @@
 ﻿// ── 聊天页状态管理 Hook ──────────────────────────────────────
+// 
+// ADR-057 迁移计划：
+//   · activeMessageIds / messageIdToTurnId / completedTurnsRef → 替换为 conversationStore selectors
+//   · reconcileCompletedSessionMessages / replay poll → 替换为 gapRecoveryEngine
+//   · SSE 生命周期 → 替换为 useConversation hook
+//   · 新模块（state/conversationStore, connection/gapRecoveryEngine, hooks/useConversation）
+//     已就绪，渐进迁移中。
+// ─────────────────────────────────────────────────────────────
 import { App, Form, notification } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -376,6 +384,8 @@ export function buildChatMessageRequest(
   targetAgentId: string,
   forceNewSession: boolean,
   metadata?: Record<string, string>,
+  clientRequestId?: string,
+  clientMessageId?: string,
 ): AdminChatRequest {
   return {
     messageText: route.messageText.trim(),
@@ -385,6 +395,8 @@ export function buildChatMessageRequest(
     targetAgentIds: route.targetAgentIds,
     audience: route.audience,
     forceNewSession,
+    clientRequestId,
+    clientMessageId,
     ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
 }
@@ -2595,9 +2607,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         }
       }
 
-      // ADR-056: When turn.accepted pre-populates messageIdToTurnId before metadata,
-      // the metadata handler above is skipped. Ensure loading state and active tracking
-      // are set even for pre-mapped metadata events.
+      // ADR-057: When the POST response pre-populates messageIdToTurnId
+      // (via post.returned.afterApply) before metadata arrives, the metadata
+      // handler above is skipped. Restore active tracking here.
       if (
         eventType === 'metadata' &&
         messageId &&
@@ -2605,14 +2617,22 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         !activeMessageIdsRef.current.has(messageId)
       ) {
         const mappedTurnId = messageIdToTurnIdRef.current.get(messageId)!;
-        const mappedTurn = turnsRef.current.find((t) => t.turnId === mappedTurnId);
-        if (mappedTurn && mappedTurn.assistant.status !== 'success') {
+        const mappedTurn = turnsRef.current.find(
+          (t) => t.turnId === mappedTurnId,
+        );
+        if (mappedTurn?.assistant && mappedTurn.assistant.status !== 'success') {
           activeMessageIdsRef.current.add(messageId);
           setLoading(true);
         }
       }
 
-      const targetTurnId = resolveEventTurnId(ev);
+      // ADR-057: turn.accepted is an acknowledgement, not a turn-creation event.
+      // Only metadata should create the messageId → turnId mapping.
+      // turn.accepted arriving before metadata would pre-populate the map and
+      // cause the metadata handler to skip turn creation and active tracking.
+      const targetTurnId = eventType !== 'turn.accepted'
+        ? resolveEventTurnId(ev)
+        : null;
       if (messageId && targetTurnId) {
         messageIdToTurnIdRef.current.set(messageId, targetTurnId);
       }
@@ -4787,6 +4807,11 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           );
       const turnId = createId();
       markPerf(`chat.post.${turnId}.start`);
+      // ADR-058: Generate stable idempotency keys at send initiation.
+      // - clientRequestId: reused across retries; same send action = same ID.
+      // - clientMessageId: stable user message ID = userMessage.id.
+      const clientRequestId = createId();
+      const clientMessageId = createId();
       const optimisticTurn: ChatTurn = {
         turnId,
         source: {
@@ -4854,6 +4879,8 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               targetAgentId,
               forceNewSessionRef.current,
               options?.metadata,
+              clientRequestId,
+              clientMessageId,
             ),
             ctrl.signal,
           );

@@ -616,25 +616,6 @@ def is_guard_enabled() -> bool:
     return value not in {"0", "false", "off", "disabled", "no"}
 
 
-def copy_avatar_assets() -> None:
-    source = ROOT / "Source" / "PuddingPlatform" / "wwwroot" / "assets" / "agent-avatars"
-    default_source = ROOT / "Source" / "PuddingAgent" / "default-data" / "assets" / "agent-avatars"
-    target = ROOT / "Source" / "PuddingAgent" / "bin" / "Debug" / "net10.0" / "wwwroot" / "assets" / "agent-avatars"
-
-    # 优先使用 Platform wwwroot 中的头像，不存在则使用 default-data 种子
-    effective_source = source if source.exists() else default_source if default_source.exists() else None
-    if effective_source is None:
-        return
-
-    target.mkdir(parents=True, exist_ok=True)
-    for item in effective_source.iterdir():
-        destination = target / item.name
-        if item.is_dir():
-            if destination.exists():
-                shutil.rmtree(destination)
-            shutil.copytree(item, destination)
-        else:
-            shutil.copy2(item, destination)
 
 
 def rotate_log_if_needed(path: Path) -> None:
@@ -1048,6 +1029,11 @@ class ReverseProxyHandler(http.server.BaseHTTPRequestHandler):
             request_path = frontend_spa_fallback_path(self.path)
         target = proxy_target_for_path(request_path, self.backend_url, self.frontend_url)
         diagnostic = should_log_proxy_diagnostics(request_path)
+
+        # SSE/streaming 端点需要长连接保持，不可强制 close
+        event_stream_expected = is_session_events_stream_path(request_path)
+        if event_stream_expected:
+            self.close_connection = False
         if diagnostic:
             self.log_proxy_diagnostic(
                 f"start method={self.command} path={request_path} target={target}")
@@ -1085,7 +1071,8 @@ class ReverseProxyHandler(http.server.BaseHTTPRequestHandler):
                 for key, value in response.headers.items():
                     if key.lower() not in HOP_BY_HOP_HEADERS:
                         self.send_header(key, value)
-                self.send_header("Connection", "close")
+                if not event_stream_expected and not event_stream:
+                    self.send_header("Connection", "close")
                 self.end_headers()
                 if self.command == "HEAD":
                     return
@@ -1341,7 +1328,6 @@ def run_supervisor(no_install: bool, frontend_only: bool = False) -> None:
 
     proxy_port = choose_proxy_port(PROXY_HOST, PREFERRED_PROXY_PORT, FALLBACK_PROXY_PORT)
     prepare_config()
-    copy_avatar_assets()
     write_pid(SUPERVISOR_PID_FILE, os.getpid())
 
     processes = {
@@ -1444,7 +1430,6 @@ def run_init() -> None:
 
     # 1. Copy default config files
     prepare_config()
-    copy_avatar_assets()
 
     # 2. Build backend
     ensure_run_dir()

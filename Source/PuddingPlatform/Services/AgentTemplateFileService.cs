@@ -1,8 +1,8 @@
 using System.Text.Json;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services;
 
@@ -397,13 +397,13 @@ public sealed class AgentTemplateFileService
 
     private async Task<GlobalAgentTemplateDto> MapPresetToDtoAsync(int id, AgentTemplatePreset preset, CancellationToken ct)
     {
-        AgentAvatarEntity? avatar = null;
+        AgentAvatarDefinition? avatar = null;
         if (!string.IsNullOrWhiteSpace(preset.AvatarId))
         {
-            avatar = await _avatarCatalog.GetRequiredEnabledAsync(preset.AvatarId);
+            avatar = _avatarCatalog.Find(preset.AvatarId);
         }
 
-        avatar ??= await _avatarCatalog.GetDefaultAsync();
+        avatar ??= _avatarCatalog.GetDefault();
 
         return new GlobalAgentTemplateDto(
             Id: id,
@@ -487,10 +487,10 @@ public sealed class AgentTemplateFileService
         var memoryPath = Path.Combine(templateDir, "MEMORY.md");
 
         // 解析头像：优先 manifest.avatarId → manifest 内嵌的 legacy fallback → 默认头像
-        AgentAvatarEntity? avatar = null;
+        AgentAvatarDefinition? avatar = null;
         if (!string.IsNullOrWhiteSpace(m.AvatarId))
         {
-            avatar = await _avatarCatalog.GetRequiredEnabledAsync(m.AvatarId);
+            avatar = _avatarCatalog.Find(m.AvatarId);
             if (avatar is null)
             {
                 _logger.LogWarning(
@@ -500,7 +500,7 @@ public sealed class AgentTemplateFileService
             }
         }
 
-        avatar ??= await _avatarCatalog.GetDefaultAsync();
+        avatar ??= _avatarCatalog.GetDefault();
 
         return new GlobalAgentTemplateDto(
             Id: id,

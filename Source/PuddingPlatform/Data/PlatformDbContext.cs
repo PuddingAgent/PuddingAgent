@@ -65,9 +65,6 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // 内部事件持久队列
     public DbSet<EventQueueEntity> EventQueue => Set<EventQueueEntity>();
 
-    // 系统预置头像（ADR-034）
-    public DbSet<AgentAvatarEntity> AgentAvatars => Set<AgentAvatarEntity>();
-
     // 工作区扩展资源
     public DbSet<WorkspaceAgentEntity> WorkspaceAgents => Set<WorkspaceAgentEntity>();
     public DbSet<WorkflowEntity> Workflows => Set<WorkflowEntity>();
@@ -83,6 +80,19 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // 聊天执行命令队列（ADR-056 Phase 1）
     public DbSet<ChatExecutionCommandEntity> ChatExecutionCommands => Set<ChatExecutionCommandEntity>();
 
+    // Conversation Event Store（ADR-057）
+    public DbSet<ConversationHeadEntity> ConversationHeads => Set<ConversationHeadEntity>();
+    public DbSet<ConversationEventEntity> ConversationEvents => Set<ConversationEventEntity>();
+    public DbSet<ConversationProjectionCheckpointEntity> ConversationProjectionCheckpoints => Set<ConversationProjectionCheckpointEntity>();
+
+    // Acceptance Batch（ADR-059）
+    public DbSet<AcceptanceBatchEntity> AcceptanceBatches => Set<AcceptanceBatchEntity>();
+
+    // ADR-059: Execution Kernel entities
+    public DbSet<ConversationTurnEntity> ConversationTurns => Set<ConversationTurnEntity>();
+    public DbSet<ExecutionRunEntity> ExecutionRuns => Set<ExecutionRunEntity>();
+    public DbSet<ControlMessageEntity> ControlMessages => Set<ControlMessageEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -92,15 +102,6 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         modelBuilder.Entity<SkillPackageEntity>(e =>
         {
             e.HasIndex(s => s.SkillPackageId).IsUnique();
-        });
-
-        // ── AgentAvatar（ADR-034）────────────────────────────────────
-        modelBuilder.Entity<AgentAvatarEntity>(e =>
-        {
-            e.ToTable("AgentAvatars", "platform");
-            e.HasIndex(a => a.AvatarId).IsUnique();
-            e.HasIndex(a => new { a.IsEnabled, a.SortOrder });
-            e.Property(a => a.VisualTraitsJson).HasColumnType("TEXT");
         });
 
         // ── Capability ─────────────────────────────────
@@ -317,15 +318,18 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.Property(q => q.Payload).HasColumnType("TEXT");
         });
 
-        // ── ChatMessage ───────────────────────────────────────
+        // ── ChatMessage (ADR-058: stable business ID) ──────────
         modelBuilder.Entity<ChatMessageEntity>(e =>
         {
             e.HasIndex(m => m.SessionId);
+            e.HasIndex(m => m.MessageId).IsUnique();
             e.HasIndex(m => new { m.SessionId, m.CreatedAt });
             e.HasIndex(m => new { m.WorkspaceId, m.AgentInstanceId, m.CreatedAt });
+            e.HasIndex(m => new { m.SessionId, m.TurnId });
             e.Property(m => m.WorkspaceId).HasMaxLength(64);
             e.Property(m => m.AgentInstanceId).HasMaxLength(128);
             e.Property(m => m.AgentTemplateId).HasMaxLength(128);
+            e.Property(m => m.MessageId).HasMaxLength(64);
         });
 
         // ── Message Fabric (ADR-045) ───────────────────────────
@@ -414,10 +418,70 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         {
             e.ToTable("chat_execution_commands");
             e.HasIndex(x => x.CommandId).IsUnique();
-            e.HasIndex(x => new { x.ClientRequestId, x.WorkspaceId });
+            e.HasIndex(x => new { x.BatchId, x.AgentInstanceId }).IsUnique();
+            e.HasIndex(x => new { x.WorkspaceId, x.ClientRequestId });
             e.HasIndex(x => new { x.SessionId, x.Status });
             e.HasIndex(x => new { x.Status, x.LeaseUntil });
             e.HasIndex(x => new { x.Status, x.CreatedAt });
+        });
+
+        // ── Acceptance Batches（ADR-059）───────────────────────────────
+        modelBuilder.Entity<AcceptanceBatchEntity>(e =>
+        {
+            e.ToTable("acceptance_batches");
+            e.HasIndex(x => x.BatchId).IsUnique();
+            e.HasIndex(x => new { x.WorkspaceId, x.ClientRequestId }).IsUnique();
+            e.HasIndex(x => x.ConversationId);
+        });
+
+        // ── Conversation Turns（ADR-059 Execution Kernel）──────────────
+        modelBuilder.Entity<ConversationTurnEntity>(e =>
+        {
+            e.ToTable("conversation_turns");
+            e.HasIndex(x => x.TurnId).IsUnique();
+            e.HasIndex(x => new { x.ConversationId, x.Status });
+            e.HasIndex(x => new { x.ConversationId, x.CreatedAt });
+            e.HasIndex(x => x.CommandId);
+        });
+
+        // ── Execution Runs（ADR-059 Execution Kernel）──────────────────
+        modelBuilder.Entity<ExecutionRunEntity>(e =>
+        {
+            e.ToTable("execution_runs");
+            e.HasIndex(x => x.RunId).IsUnique();
+            e.HasIndex(x => new { x.ConversationId, x.Status });
+            e.HasIndex(x => new { x.CommandId, x.Attempt }).IsUnique();
+            e.HasIndex(x => new { x.Status, x.LeaseUntil });
+        });
+
+        // ── Control Messages（ADR-059 Execution Kernel）────────────────
+        modelBuilder.Entity<ControlMessageEntity>(e =>
+        {
+            e.ToTable("execution_control_messages");
+            e.HasIndex(x => x.ControlId).IsUnique();
+            e.HasIndex(x => new { x.ConversationId, x.Sequence }).IsUnique();
+            e.HasIndex(x => new { x.ConversationId, x.Status });
+            e.HasIndex(x => new { x.ConversationId, x.TurnId, x.Status });
+            e.Property(x => x.Payload).HasColumnType("TEXT");
+        });
+
+        // ── Conversation Event Store（ADR-057）─────────────────────
+        modelBuilder.Entity<ConversationEventEntity>(e =>
+        {
+            e.ToTable("conversation_events");
+            e.HasIndex(x => new { x.ConversationId, x.Sequence }).IsUnique();
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => new { x.TurnId, x.Type });
+        });
+
+        modelBuilder.Entity<ConversationHeadEntity>(e =>
+        {
+            e.ToTable("conversation_heads");
+        });
+
+        modelBuilder.Entity<ConversationProjectionCheckpointEntity>(e =>
+        {
+            e.ToTable("conversation_projection_checkpoints");
         });
 
         // ── 注意：配置类 seed 数据已废弃（ADR-036）────────────────────

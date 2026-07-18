@@ -1,18 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
+using PuddingCode.Platform;
 using PuddingPlatform.Controllers.Api;
-using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Controllers;
 
 [TestClass]
 public sealed class AgentAvatarApiControllerTests
 {
-    private static readonly string[] ExpectedGeneratedAvatarIds =
+    private static readonly string[] ExpectedAvatarIds =
     [
         "neutral",
         "smile",
@@ -25,118 +21,124 @@ public sealed class AgentAvatarApiControllerTests
     ];
 
     [TestMethod]
-    public async Task List_ShouldReturnDefaultAvatar_WhenDatabaseHasNoSeedRows()
+    public void List_ShouldReturnAllAvatars_FromJsonCatalog()
     {
-        using var temp = TemporaryDirectory.Create();
-        var options = await CreateDatabaseAsync(temp.Path);
-        await using var db = new PlatformDbContext(options);
-        var catalog = new AgentAvatarCatalog(
-            new TestDbContextFactory(options),
-            NullLogger<AgentAvatarCatalog>.Instance);
-        var controller = new AgentAvatarApiController(db, catalog);
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = (IAgentAvatarCatalog)fixture.Catalog;
+        var controller = new AgentAvatarApiController(catalog);
 
-        var result = await controller.List(enabledOnly: true, CancellationToken.None);
+        var result = controller.List(CancellationToken.None);
 
         var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
         var avatars = Assert.IsInstanceOfType<List<AgentAvatarDto>>(ok.Value);
-        Assert.HasCount(1, avatars);
-        Assert.AreEqual("default", avatars[0].AvatarId);
-        Assert.AreEqual("/assets/agent-avatars/agent-avatar-default.png", avatars[0].Url);
+        Assert.IsTrue(avatars.Count >= 8, $"Expected at least 8 avatars, got {avatars.Count}");
+
+        foreach (var expectedId in ExpectedAvatarIds)
+        {
+            Assert.IsTrue(
+                avatars.Any(a => a.AvatarId == expectedId),
+                $"Missing avatarId: {expectedId}");
+        }
     }
 
     [TestMethod]
-    public async Task PackagedAvatarManifest_ShouldSeedGeneratedAvatarCatalog()
+    public void GetDefault_ShouldReturnNeutral()
     {
-        using var temp = TemporaryDirectory.Create();
-        var options = await CreateDatabaseAsync(temp.Path);
-        var manifestDir = FindPackagedAvatarManifestDirectory();
-        var seed = new AgentAvatarSeedService(
-            new TestDbContextFactory(options),
-            NullLogger<AgentAvatarSeedService>.Instance);
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = fixture.Catalog;
 
-        await seed.SeedAsync(manifestDir);
+        var def = catalog.GetDefault();
 
-        await using var db = new PlatformDbContext(options);
-        var avatars = await db.AgentAvatars
-            .AsNoTracking()
-            .OrderBy(a => a.SortOrder)
-            .ToListAsync();
-        var ids = avatars.Select(a => a.AvatarId).ToArray();
-
-        foreach (var expectedId in ExpectedGeneratedAvatarIds)
-            CollectionAssert.Contains(ids, expectedId);
-
-        foreach (var avatar in avatars.Where(a => ExpectedGeneratedAvatarIds.Contains(a.AvatarId)))
-            Assert.IsTrue(
-                File.Exists(Path.Combine(manifestDir, avatar.FileName)),
-                $"Missing packaged avatar image for {avatar.AvatarId}: {avatar.FileName}");
+        Assert.IsNotNull(def);
+        Assert.AreEqual("neutral", def.AvatarId);
     }
 
-    private static async Task<DbContextOptions<PlatformDbContext>> CreateDatabaseAsync(string root)
+    [TestMethod]
+    public void Find_ShouldReturnNull_ForUnknownAvatarId()
     {
-        var dbPath = Path.Combine(root, "platform.db");
-        var options = new DbContextOptionsBuilder<PlatformDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
-            .Options;
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = fixture.Catalog;
 
-        await using var db = new PlatformDbContext(options);
-        await db.Database.EnsureCreatedAsync();
-        return options;
+        var result = catalog.Find("non-existent");
+
+        Assert.IsNull(result);
     }
 
-    private static string FindPackagedAvatarManifestDirectory()
+    [TestMethod]
+    public void Find_ShouldReturnAvatar_ForKnownId()
     {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            var candidate = Path.Combine(
-                current.FullName,
-                "Source",
-                "PuddingAgent",
-                "default-data",
-                "assets",
-                "agent-avatars");
-            if (File.Exists(Path.Combine(candidate, "avatars.json")))
-                return candidate;
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = fixture.Catalog;
 
-            current = current.Parent;
-        }
+        var result = catalog.Find("smile");
 
-        Assert.Fail("Could not locate Source/PuddingAgent/default-data/assets/agent-avatars/avatars.json");
-        throw new InvalidOperationException("unreachable");
+        Assert.IsNotNull(result);
+        Assert.AreEqual("Support Agent", result.Name);
+        Assert.AreEqual("/assets/agent-avatars/agent-avatar-smile.png", result.UrlPath);
     }
 
-    private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
-        : IDbContextFactory<PlatformDbContext>
+    [TestMethod]
+    public void ResolveUrl_ShouldReturnUrl_ForKnownId()
     {
-        public PlatformDbContext CreateDbContext() => new(options);
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = fixture.Catalog;
 
-        public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
+        var url = catalog.ResolveUrl("thinking");
+
+        Assert.AreEqual("/assets/agent-avatars/agent-avatar-thinking.png", url);
     }
 
-    private sealed class TemporaryDirectory : IDisposable
+    [TestMethod]
+    public void ResolveUrl_ShouldReturnNull_ForUnknownId()
     {
-        private TemporaryDirectory(string path) => Path = path;
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = fixture.Catalog;
 
-        public string Path { get; }
+        var url = catalog.ResolveUrl("bogus");
 
-        public static TemporaryDirectory Create()
-        {
-            var path = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
-                "pudding-agent-avatar-api-tests",
-                Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(path);
-            return new TemporaryDirectory(path);
-        }
+        Assert.IsNull(url);
+    }
 
-        public void Dispose()
-        {
-            SqliteConnection.ClearAllPools();
+    [TestMethod]
+    public void ControllerGet_ShouldReturnAvatar_ForKnownId()
+    {
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = (IAgentAvatarCatalog)fixture.Catalog;
+        var controller = new AgentAvatarApiController(catalog);
 
-            if (Directory.Exists(Path))
-                Directory.Delete(Path, recursive: true);
-        }
+        var result = controller.Get("amber");
+
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var avatar = Assert.IsInstanceOfType<AgentAvatarDto>(ok.Value);
+        Assert.AreEqual("amber", avatar.AvatarId);
+        Assert.AreEqual("/assets/agent-avatars/agent-avatar-amber.png", avatar.Url);
+        Assert.IsFalse(avatar.IsDefault);
+    }
+
+    [TestMethod]
+    public void ControllerGet_ShouldReturnNotFound_ForUnknownId()
+    {
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = (IAgentAvatarCatalog)fixture.Catalog;
+        var controller = new AgentAvatarApiController(catalog);
+
+        var result = controller.Get("bogus");
+
+        Assert.IsInstanceOfType<NotFoundResult>(result.Result);
+    }
+
+    [TestMethod]
+    public void List_ShouldMarkDefaultAvatar()
+    {
+        using var fixture = new AvatarCatalogTestFixture();
+        var catalog = (IAgentAvatarCatalog)fixture.Catalog;
+        var controller = new AgentAvatarApiController(catalog);
+
+        var result = controller.List(CancellationToken.None);
+
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var avatars = Assert.IsInstanceOfType<List<AgentAvatarDto>>(ok.Value);
+        Assert.HasCount(1, avatars.Where(a => a.IsDefault).ToList());
+        Assert.AreEqual("neutral", avatars.First(a => a.IsDefault).AvatarId);
     }
 }

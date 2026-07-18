@@ -1,0 +1,273 @@
+namespace PuddingPlatform.Data.Dtos;
+
+// ════════════════════════════════════════════════════════════════
+// Agent DTOs — Agent 模板、实例、能力、Skill、Avatar。
+// ════════════════════════════════════════════════════════════════
+
+// ── Agent Avatar 头像 ──────────────────────────────────────────
+
+public record AgentAvatarDto(
+    string AvatarId,
+    string Name,
+    string Url,
+    string? Personality,
+    string? HairColor,
+    string? Expression,
+    List<string> VisualTraits,
+    string? RecommendedUse,
+    bool IsBuiltIn,
+    bool IsEnabled,
+    int SortOrder,
+    bool IsDefault
+);
+
+// ── Global Agent Template 全局模板 ─────────────────────────────
+
+/// <summary>Capability 能力项 DTO。</summary>
+public record CapabilityDto(
+    int Id,
+    string CapabilityId,
+    string Name,
+    string? Description,
+    string ToolName,
+    string? ToolDescription,
+    string? ToolParametersJson,
+    bool RequiresShellExecution,
+    bool RequiresFileWrite,
+    bool RequiresNetworkAccess,
+    bool IsEnabled,
+    int SortOrder,
+    string SourceKind,
+    string? SourceId,
+    string RuntimeStatus,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpsertCapabilityRequest(
+    string CapabilityId,
+    string Name,
+    string? Description,
+    string ToolName,
+    string? ToolDescription,
+    string? ToolParametersJson,
+    bool RequiresShellExecution,
+    bool RequiresFileWrite,
+    bool RequiresNetworkAccess,
+    bool IsEnabled,
+    int SortOrder
+);
+
+// ── Skill Package 技能包 ───────────────────────────────────────
+
+public record SkillPackageDto(
+    int Id,
+    string SkillPackageId,
+    string Name,
+    string? Description,
+    string Version,
+    string FileName,
+    long FileSizeBytes,
+    bool IsEnabled,
+    int SortOrder,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public record UpdateSkillPackageRequest(
+    string Name,
+    string? Description,
+    bool IsEnabled,
+    int SortOrder
+);
+
+/// <summary>全局 Agent 模板完整配置。</summary>
+public record GlobalAgentTemplateDto(
+    int Id,
+    string TemplateId,
+    string Name,
+    string? Description,
+    string Role,
+    string? SystemPrompt,
+    string? UserPromptTemplate,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    int MaxContextTokens,
+    int MaxReplyTokens,
+    string? ContainerImage,
+    List<string> SelectedCapabilityIds,
+    List<string> SelectedSkillPackageIds,
+    bool IsBuiltIn,
+    bool IsEnabled,
+    int SortOrder,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null,
+    string? AvatarId = null,
+    string? AvatarUrl = null,
+    string? AvatarName = null,
+    string? MemoryLlmProviderId = null,
+    string? MemoryLlmModelId = null,
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null,
+    int MaxRounds = 200,
+    int MaxElapsedSeconds = 1200,
+    int MaxToolCallsTotal = 100,
+    string? ConsciousProfileId = null,
+    string? SubconsciousProfileId = null,
+    string? AgentsPrompt = null,
+    string? MemoryPrompt = null,
+    bool AllowFileWrite = false,
+    bool AllowShellExecution = false,
+    bool AllowNetworkAccess = false,
+    List<string>? AllowedToolNames = null
+);
+
+public record UpsertGlobalAgentTemplateRequest(
+    string TemplateId,
+    string Name,
+    string? Description,
+    string Role,
+    string? SystemPrompt,
+    string? UserPromptTemplate,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    int MaxContextTokens,
+    int MaxReplyTokens,
+    string? ContainerImage,
+    List<string>? SelectedCapabilityIds,
+    List<string>? SelectedSkillPackageIds,
+    bool IsEnabled,
+    int SortOrder,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null,
+    string? AvatarId = null,
+    string? MemoryLlmProviderId = null,
+    string? MemoryLlmModelId = null,
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null,
+    int? MaxRounds = null,
+    int? MaxElapsedSeconds = null,
+    int? MaxToolCallsTotal = null,
+    string? ConsciousProfileId = null,
+    string? SubconsciousProfileId = null,
+    string? AgentsPrompt = null,
+    string? MemoryPrompt = null
+);
+
+// ── Workspace Agent Template 工作区级模板 ──────────────────────
+
+public record WorkspaceAgentTemplateDto(
+    int Id,
+    string WorkspaceId,
+    string TemplateId,
+    string Name,
+    string? Description,
+    string Role,
+    string? SystemPrompt,
+    string? UserPromptTemplate,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    int MaxContextTokens,
+    int MaxReplyTokens,
+    string? ContainerImage,
+    string? BaseGlobalTemplateId,
+    List<string> SelectedCapabilityIds,
+    bool IsEnabled,
+    int SortOrder,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null,
+    string? AvatarId = null,
+    string? AvatarUrl = null,
+    string? AvatarName = null,
+    string? MemoryLlmProviderId = null,
+    string? MemoryLlmModelId = null,
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null
+);
+
+public record UpsertWorkspaceAgentTemplateRequest(
+    string WorkspaceId,
+    string TemplateId,
+    string Name,
+    string? Description,
+    string Role,
+    string? SystemPrompt,
+    string? UserPromptTemplate,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    int MaxContextTokens,
+    int MaxReplyTokens,
+    string? ContainerImage,
+    string? BaseGlobalTemplateId,
+    List<string>? SelectedCapabilityIds,
+    bool IsEnabled,
+    int SortOrder,
+    string? PersonaPrompt = null,
+    string? ToolsDescription = null,
+    string? BootstrapTemplate = null,
+    string? AvatarEmoji = null,
+    string? AvatarId = null,
+    string? MemoryLlmProviderId = null,
+    string? MemoryLlmModelId = null,
+    string? MemorySearchMode = null,
+    string? ReasoningEffort = null
+);
+
+// ── WorkspaceAgent 工作区 Agent 实例 ───────────────────────────
+
+/// <summary>工作区 Agent 实例列表项。</summary>
+public record WorkspaceAgentDto(
+    string AgentId,
+    string Name,
+    string? Description,
+    string? DisplayName,
+    string? AvatarId,
+    string? AvatarUrl,
+    string? SourceTemplateId,
+    string? MainSessionId,
+    string? SystemPromptOverride,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    bool IsEnabled,
+    bool IsFrozen,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    string? HeartbeatPrompt = null
+);
+
+public record CreateWorkspaceAgentRequest(
+    string Name,
+    string? Description,
+    string? DisplayName,
+    string? AvatarId,
+    string? AvatarUrl,
+    string? SourceTemplateId,
+    string? SystemPromptOverride,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    string? HeartbeatPrompt = null
+);
+
+public record UpdateWorkspaceAgentRequest(
+    string Name,
+    string? Description,
+    string? DisplayName,
+    string? AvatarId,
+    string? AvatarUrl,
+    string? SourceTemplateId,
+    string? SystemPromptOverride,
+    string? PreferredProviderId,
+    string? PreferredModelId,
+    bool IsEnabled,
+    string? HeartbeatPrompt = null
+);

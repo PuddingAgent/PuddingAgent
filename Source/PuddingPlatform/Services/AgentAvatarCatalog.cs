@@ -1,96 +1,157 @@
-using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using PuddingPlatform.Data;
-using PuddingPlatform.Data.Entities;
+using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// 头像目录查询服务。提供启用头像列表、按 ID 查询、默认头像解析等能力。
-/// 供 Controller 和种子服务使用。
+/// JSON 内存头像目录（ADR-034 revised）。
+/// 启动时从 Config/agent-avatars.json 加载，PNG 由 wwwroot 静态资源提供。
+/// 不依赖数据库、播种或运行时文件复制。
 /// </summary>
-public class AgentAvatarCatalog(
-    IDbContextFactory<PlatformDbContext> dbFactory,
-    ILogger<AgentAvatarCatalog> logger)
+public sealed class AgentAvatarCatalog : IAgentAvatarCatalog
 {
-    /// <summary>获取所有启用头像，按 SortOrder 排序</summary>
-    public async Task<List<AgentAvatarEntity>> ListEnabledAsync()
-    {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var fromDb = await db.AgentAvatars
-            .AsNoTracking()
-            .Where(a => a.IsEnabled)
-            .OrderBy(a => a.SortOrder)
-            .ThenBy(a => a.Id)
-            .ToListAsync();
+    private readonly IReadOnlyDictionary<string, AgentAvatarDefinition> _byId;
+    private readonly IReadOnlyList<AgentAvatarDefinition> _sorted;
+    private readonly AgentAvatarDefinition _default;
 
-        return fromDb.Count > 0 ? fromDb : [HardcodedDefault];
+    public AgentAvatarCatalog(ILogger<AgentAvatarCatalog> logger)
+    {
+        var jsonPath = Path.Combine(AppContext.BaseDirectory, "Config", "agent-avatars.json");
+
+        if (!File.Exists(jsonPath))
+        {
+            throw new InvalidOperationException(
+                $"[AgentAvatarCatalog] agent-avatars.json not found at: {jsonPath}");
+        }
+
+        var json = File.ReadAllText(jsonPath);
+        CatalogJson catalog;
+        try
+        {
+            catalog = JsonSerializer.Deserialize<CatalogJson>(json, JsonOpts)
+                       ?? throw new InvalidOperationException("Deserialization returned null.");
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"[AgentAvatarCatalog] Failed to parse {jsonPath}: {ex.Message}", ex);
+        }
+
+        if (catalog.Avatars is null || catalog.Avatars.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "[AgentAvatarCatalog] agent-avatars.json contains no avatars.");
+        }
+
+        var defaultId = catalog.DefaultAvatarId?.Trim();
+        if (string.IsNullOrWhiteSpace(defaultId))
+        {
+            throw new InvalidOperationException(
+                "[AgentAvatarCatalog] defaultAvatarId is missing or empty.");
+        }
+
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var defs = new List<AgentAvatarDefinition>(catalog.Avatars.Count);
+
+        foreach (var entry in catalog.Avatars)
+        {
+            var id = entry.AvatarId?.Trim();
+            if (string.IsNullOrWhiteSpace(id))
+                throw new InvalidOperationException("[AgentAvatarCatalog] Avatar entry missing avatarId.");
+
+            if (!ids.Add(id))
+                throw new InvalidOperationException(
+                    $"[AgentAvatarCatalog] Duplicate avatarId: {id}");
+
+            var fileName = entry.FileName?.Trim();
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new InvalidOperationException(
+                    $"[AgentAvatarCatalog] Avatar '{id}' missing fileName.");
+
+            // 路径穿越防护
+            if (fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\'))
+                throw new InvalidOperationException(
+                    $"[AgentAvatarCatalog] Avatar '{id}' fileName contains path traversal: {fileName}");
+
+            var sortOrder = entry.SortOrder > 0 ? entry.SortOrder : int.MaxValue;
+            var name = entry.Name?.Trim() ?? id;
+            var isEnabled = entry.IsEnabled;
+
+            defs.Add(new AgentAvatarDefinition(
+                AvatarId: id,
+                Name: name,
+                FileName: fileName,
+                UrlPath: "/assets/agent-avatars/" + fileName,
+                Personality: entry.Personality?.Trim(),
+                RecommendedUse: entry.RecommendedUse?.Trim(),
+                SortOrder: sortOrder,
+                IsEnabled: isEnabled
+            ));
+        }
+
+        var dict = defs.ToDictionary(d => d.AvatarId, StringComparer.OrdinalIgnoreCase);
+        if (!dict.TryGetValue(defaultId, out var defaultDef))
+        {
+            throw new InvalidOperationException(
+                $"[AgentAvatarCatalog] defaultAvatarId '{defaultId}' not found in avatars list.");
+        }
+
+        if (!defs.Any(d => d.IsEnabled))
+        {
+            throw new InvalidOperationException(
+                "[AgentAvatarCatalog] No enabled avatars in catalog.");
+        }
+
+        _default = defaultDef;
+        _byId = dict;
+        _sorted = defs.OrderBy(d => d.SortOrder).ThenBy(d => d.AvatarId).ToList().AsReadOnly();
+
+        logger.LogInformation(
+            "[AgentAvatarCatalog] Loaded {Count} avatars (enabled={Enabled}), default={DefaultId}, version={Version}",
+            _sorted.Count, _sorted.Count(d => d.IsEnabled), _default.AvatarId, catalog.Version);
     }
 
-    /// <summary>
-    /// 按 AvatarId 查找头像，要求启用状态。
-    /// 不存在或已禁用时返回 null。
-    /// </summary>
-    public async Task<AgentAvatarEntity?> GetRequiredEnabledAsync(string avatarId)
+    // ── IAgentAvatarCatalog ────────────────────────────────
+
+    public IReadOnlyList<AgentAvatarDefinition> List() => _sorted;
+
+    public AgentAvatarDefinition GetDefault() => _default;
+
+    public AgentAvatarDefinition? Find(string avatarId)
     {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.AgentAvatars
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.AvatarId == avatarId && a.IsEnabled);
+        if (string.IsNullOrWhiteSpace(avatarId)) return null;
+        return _byId.TryGetValue(avatarId, out var def) ? def : null;
     }
 
-    /// <summary>获取系统默认头像：SortOrder 最小且 IsEnabled 的第一个。DB 无记录时返回硬编码默认。</summary>
-    public async Task<AgentAvatarEntity?> GetDefaultAsync()
+    public string? ResolveUrl(string? avatarId)
     {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var fromDb = await db.AgentAvatars
-            .AsNoTracking()
-            .Where(a => a.IsEnabled)
-            .OrderBy(a => a.SortOrder)
-            .ThenBy(a => a.Id)
-            .FirstOrDefaultAsync();
-
-        if (fromDb is not null)
-            return fromDb;
-
-        // 数据库无头像记录时，返回硬编码默认头像
-        return HardcodedDefault;
+        if (string.IsNullOrWhiteSpace(avatarId)) return null;
+        return _byId.TryGetValue(avatarId, out var def) ? def.UrlPath : null;
     }
 
-    /// <summary>硬编码默认头像。数据库无种子数据时兜底，避免启动报错。</summary>
-    private static AgentAvatarEntity HardcodedDefault { get; } = new()
+    // ── JSON model ────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
     {
-        AvatarId = "default",
-        Name = "Default",
-        FileName = "agent-avatar-default.png",
-        UrlPath = "/assets/agent-avatars/agent-avatar-default.png",
-        IsEnabled = true,
-        SortOrder = 99,
+        PropertyNameCaseInsensitive = true,
     };
 
-    /// <summary>
-    /// 解析头像 URL。优先级：
-    /// avatarId（非空且启用）> legacyUrl > null。
-    /// 都不存在时返回 null（由调用方决定 legacyEmoji fallback）。
-    /// </summary>
-    public async Task<string?> ResolveUrlAsync(string? avatarId, string? legacyUrl = null)
+    private sealed class CatalogJson
     {
-        if (!string.IsNullOrWhiteSpace(avatarId))
-        {
-            var avatar = await GetRequiredEnabledAsync(avatarId);
-            if (avatar is not null)
-                return avatar.UrlPath;
-        }
-        return legacyUrl;
+        public int Version { get; set; }
+        public string? DefaultAvatarId { get; set; }
+        public List<JsonEntry>? Avatars { get; set; }
     }
 
-    /// <summary>
-    /// 获取启用头像的 <see cref="AgentAvatarEntity"/> 字典（AvatarId → Entity），
-    /// 用于批量解析，避免 N+1。
-    /// </summary>
-    public async Task<Dictionary<string, AgentAvatarEntity>> GetEnabledMapAsync()
+    private sealed class JsonEntry
     {
-        var list = await ListEnabledAsync();
-        return list.ToDictionary(a => a.AvatarId, a => a);
+        public string? AvatarId { get; set; }
+        public string? Name { get; set; }
+        public string? FileName { get; set; }
+        public string? Personality { get; set; }
+        public string? RecommendedUse { get; set; }
+        public int SortOrder { get; set; }
+        public bool IsEnabled { get; set; } = true;
     }
 }

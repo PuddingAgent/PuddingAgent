@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-11 | 维护原则: 仅收录核心常用类，不追求全覆盖
+> 最后更新: 2026-07-16 | 维护原则: 仅收录核心常用类，不追求全覆盖
 
 ---
 
@@ -128,13 +128,21 @@ Source/
 | `WorkspaceAgentEntity.cs` | Agent 实例 |
 | `WorkspaceAgentTemplateEntity.cs` | Agent 模板 |
 | `ChatMessageEntity.cs` | 聊天消息 |
+| `ChatExecutionCommandEntity.cs` | Conversation Turn 的可靠执行命令 |
+| `AcceptanceBatchEntity.cs` | 用户提交批次与 `clientRequestId` 幂等事实 |
+| `ConversationTurnEntity.cs` | Conversation Turn 独立实体（ADR-059 Execution Kernel） |
+| `ExecutionRunEntity.cs` | 每次执行尝试独立记录（ADR-059 Execution Kernel） |
+| `ControlMessageEntity.cs` | 统一控制消息收件箱（ADR-059 Cancel/Steering/Approval） |
+| `ConversationEventEntity.cs` | Conversation Event Store 事件 Envelope |
+| `ConversationHeadEntity.cs` | Conversation 内已提交事件 Head Sequence |
+| `ConversationProjectionCheckpointEntity.cs` | 物化视图投影进度 |
 | `LlmProviderEntity.cs` / `LlmModelEntity.cs` | LLM 提供者/模型 |
 | `SessionEventLogEntity.cs` | 会话事件日志 |
 
 ### 核心服务
 | 文件 | 用途 |
 |------|------|
-| `Services/SessionStateManager.cs` | 🔑 会话状态管理（SSM，SSE/WS 推送） |
+| `Services/SessionStateManager.cs` | 遗留 Session 状态与 SSE/WS 推送；Conversation Event Store 迁移完成后退出聊天事实链路 |
 | `Services/SessionStateStore.cs` | 🔑 会话状态持久化 — 重启后恢复（data/sessions/{id}.json） |
 | `Services/SessionCompactionEventEmitter.cs` | 压缩事件发射器 |
 | `Services/SessionRedirectStore.cs` | 会话重定向（压缩后新旧 Session 映射） |
@@ -142,6 +150,21 @@ Source/
 | `Services/ChatHistoryService.cs` | 聊天历史查询 |
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/SubAgentManager.cs` | 子代理管理 |
+| `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
+| `Services/ChatCommandStore.cs` | Command 持久化与查询 |
+| `Services/ConversationEventStore.cs` | Conversation Sequence 分配、事件追加和历史读取 |
+| `Services/ConversationProjector.cs` | Event Store 到 ChatMessages/查询模型的 checkpoint 投影 |
+| `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，组装 Snapshot，执行 Runtime，提交 Journal |
+| `Services/AgentChat/ChatCommandProcessor.cs` | [遗留] 旧命令处理器，待执行 Coordinator 验证后删除 |
+| `Services/Execution/SqliteExecutionLeaseStore.cs` | 原子 CAS 领取：BEGIN IMMEDIATE + 每 Conversation 互斥 + DB 序数 fencing |
+| `Services/Execution/SqliteExecutionJournal.cs` | 统一 fenced 事件写入 + 原子终态提交（验证 runId/workerId/fencingToken/lease） |
+| `Services/Execution/SqliteExecutionEventCommitter.cs` | [遗留] 旧事件写入器，Journal 稳定后删除 |
+| `Services/Execution/SqliteControlInbox.cs` | 统一控制消息收件箱（Cancel/Steering/Approval） |
+| `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | Agent/Template/LLM/Skill 配置快照化工厂 |
+| `Services/Conversation/SubmitTurnHandler.cs` | Submit Turn 应用处理器 |
+| `Services/Conversation/RequestTurnCancellationHandler.cs` | Cancel 处理器 — 写 turn.cancel.requested |
+| `Services/Conversation/CreateSteeringHandler.cs` | Steering 处理器 — 统一 steeringId，三写（Inbox + SessionSteering + Event） |
 
 ### 消息系统
 | 文件 | 用途 |
@@ -156,6 +179,8 @@ Source/
 | `Api/SessionEventsController.cs` | 🔑 Session SSE/WS 事件流（前端连接点） |
 | `Api/SessionApiController.cs` | Session CRUD + `/compact` |
 | `Api/AgentChatApiController.cs` | Agent 聊天 API |
+| `Api/ConversationTurnsController.cs` | ADR-059 Conversation Turn 新入口：Submit / Cancel / Steering / Compaction |
+| `Api/ChatApiController.cs` | 旧 `/api/workspaces/{ws}/chat/message` 协议翻译层，迁移后删除 |
 | `Api/MessageApiController.cs` | 消息 API |
 | `Api/AuthApiController.cs` | 认证（JWT） |
 | `Api/WorkspaceApiController.cs` | 工作区管理 |
@@ -216,6 +241,26 @@ Source/
 | `Services/RuntimeActivity.cs` | 运行时活动记录（Enrich 方法处理 "unknown" 合法阶段） |
 | `Configuration/PuddingDataPaths.cs` | 数据路径配置 |
 
+### Conversation 受理与可靠事件流
+| 文件 | 用途 |
+|------|------|
+| `Platform/ConversationHandlers.cs` | 4 Handler 接口：ISubmitTurn/ICancelTurn/ICreateSteering/IRequestCompaction |
+| `Platform/ConversationTurnContracts.cs` | SubmitTurn、Recipient、ContentPart、AcceptanceResult |
+| `Platform/ConversationEventContracts.cs` | Event Envelope、AppendResult、Cursor 与写入条件 |
+| `Platform/ExecutionRunContracts.cs` | 冻结契约：ExecutionLease、TurnTerminal、AgentExecutionSnapshot |
+| `Platform/IExecutionRunCoordinator.cs` | Execution Kernel 入口契约 |
+| `Platform/IExecutionJournal.cs` | 统一 fenced 事件写入 + 原子终态契约 |
+| `Platform/IExecutionLeaseStore.cs` | 原子 CAS 领取、续租、释放契约 |
+| `Platform/IControlInbox.cs` | 统一控制消息收件箱契约 |
+| `Platform/IAgentExecutionSnapshotFactory.cs` | Agent 执行快照工厂契约 |
+| `Platform/IConversationAcceptanceStore.cs` | Turn 批次幂等受理事务边界契约 |
+| `Platform/IConversationEventStore.cs` | Conversation Event 追加、重放、Head/Sequence 契约 |
+| `Platform/IChatCommandStore.cs` | Command 持久化与查询契约 |
+| `Platform/ConversationContracts.cs` | 状态枚举（CommandStatus/RunStatus/TurnStatus/TurnTerminalKind）和事件类型常量 |
+| `Platform/IChatCommandProcessor.cs` | [遗留] 旧命令处理器契约 |
+| `Platform/IExecutionEventCommitter.cs` | [遗留] 旧事件写入契约，Journal 稳定后删除 |
+| `Runtime/ITurnExecutor.cs` | Runtime 执行端口；不依赖 HTTP/SSE/Platform DTO |
+
 ### Token 预算
 | 文件 | 用途 |
 |------|------|
@@ -226,18 +271,28 @@ Source/
 
 ## 关键流程（调用链路）
 
-### 1. 用户消息 → Agent 响应
+### 1. 用户消息 → Agent 响应（Conversation 可靠事件流, ADR-059 Execution Kernel）
 ```
-前端 HTTP POST → AgentChatApiController
-  → AgentExecutionService.ExecuteAsync()
-    → ContextPipeline.BuildContextAsync()  // 组装上下文
-      → ContextAssemblyService            // System Prompt + 历史 + 记忆
-      → ContextWindowManager.EnsureCapacity()  // token 驱动裁剪/压缩
-    → LlmInvocationService.InvokeAsync()  // 调用 LLM
-      → IRuntimeLlmClient.CompleteAsync() // HTTP → LLM API
-    → ToolInvocationService.InvokeAsync() // 如果有工具调用
-    → CompletionPolicy.ShouldContinue()   // 判断是否继续循环
-  → SSM.AppendAsync() → SSE/WS → 前端
+前端 POST /api/v1/conversations/{conversationId}/turns
+  → ConversationTurnsController                 // HTTP 协议层
+  → ISubmitTurnHandler                          // 应用处理器
+  → IConversationAcceptanceStore                // 原子受理
+    → Message + AcceptanceBatch + ConversationTurn + Command + turn.accepted Event + Head
+  → ChatExecutionWorker v5                      // 后台 Worker
+    → IExecutionLeaseStore.TryAcquireAsync       // 原子 CAS 领取（BEGIN IMMEDIATE + 每 Conv 互斥）
+    → 透传 ExecutionLease 给 IExecutionRunCoordinator
+      → IAgentExecutionSnapshotFactory            // 执行快照
+      → ITurnExecutor                             // Agent Loop Runtime
+      → TurnOutputChunker                         // delta 聚合
+      → IExecutionJournal.AppendOutputAsync       // fenced 输出
+      → IExecutionJournal.CommitTerminalAsync     // 原子终态（验证 runId/workerId/fence/lease）
+        → Turn + Run + Command + Event + Head 同事务更新
+  → ICommittedEventSignal
+  → SSE / Bootstrap 推送
+  → 前端 Reducer 按 sequence 幂等提交
+
+旧 POST /api/workspaces/{workspaceId}/chat/message
+  → ChatApiController 仅 40 行翻译层 → 同一 ISubmitTurnHandler
 ```
 
 ### 2. Token 预算与自动压缩
@@ -303,5 +358,10 @@ Agent 调用 search_memory / grep_memory
 5. **Token 预算准确**: `RecordProviderUsage` 不再覆盖上下文快照；`TrimHistory` 改为 token 驱动（`maxTokenBudget/2500`）
 6. **会话持久化**: `SessionStateStore` 在状态变更时异步写入 `data/sessions/{id}.json`，重启后恢复
 7. **EF Core Migration**: Platform 用 Code-First Migration，MemoryEngine 用 DbInitializer 手动建表
-8. **SSE 推送**: `SessionStateManager` → `SessionEventsController.EventsStream()` → 前端，按 sessionId 隔离
+8. **SSE 双轨迁移**: 新聊天链路以 `ConversationEventStore` 为事实源并按 sequence 重放；`SessionStateManager` 仅保留遗留 Session 流
 9. **工具权限**: `ToolPermissionPolicyService` 检查安全区，高危工具需 `InMemoryToolApprovalService` 审批
+10. **执行配置边界**: Command 只保存稳定引用；LLM/Tool/Skill 配置由 Worker 执行时通过 SnapshotFactory 快照化
+11. **ADR-059 Execution Kernel 已建成**: Worker v5 原子 CAS 领取（BEGIN IMMEDIATE + DB 序数 fencing + 每 Conv 互斥 + 过期 Run 回收）；Journal 原子终态（验证 runId/workerId/fencingToken/lease）；CHUNKER terminal 隔离；snapshot 化执行配置；ControlService 统一 Cancel/Steering 入口
+12. **Chunker 修复**: Terminal event 不再进入普通输出批次，避免双写；Terminal 仅由 `CommitTerminalAsync` 写入
+13. **Steering 修复**: `CreateSteeringHandler` 使用真实 `SessionSteeringService.CreateAsync` 返回的 ID；同步写 `IControlInbox` 为未来统一入口
+14. **遗留组件待替换**: `ChatCommandProcessor` / `SqliteExecutionEventCommitter` / `IExecutionEventCommitter` 待 Coordinator/Journal 验证稳定后删除

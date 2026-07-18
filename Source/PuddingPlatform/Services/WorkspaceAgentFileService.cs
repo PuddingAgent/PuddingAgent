@@ -629,7 +629,7 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
         // 1. 实例级 AvatarId
         if (!string.IsNullOrWhiteSpace(instance.AvatarId))
         {
-            var avatar = await _avatarCatalog.GetRequiredEnabledAsync(instance.AvatarId);
+            var avatar = _avatarCatalog.Find(instance.AvatarId);
             if (avatar is not null) return (avatar.AvatarId, avatar.UrlPath);
         }
 
@@ -642,8 +642,8 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog
         if (!string.IsNullOrWhiteSpace(instance.AvatarUrl))
             return (instance.AvatarId, instance.AvatarUrl);
 
-        // 4. 默认启用头像
-        var fallback = await _avatarCatalog.GetDefaultAsync();
+        // 4. 默认头像（JSON 内存目录，非数据库）
+        var fallback = _avatarCatalog.GetDefault();
         return (fallback?.AvatarId, fallback?.UrlPath);
     }
 

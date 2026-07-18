@@ -13,6 +13,7 @@ namespace PuddingCode.Platform;
 public sealed record SessionEventEnvelope(
     string EventId,           // Guid，追加重试幂等
     string SessionId,         // 所属会话
+    string? ConversationId,   // 对话 ID（= sessionId，前端统一用此字段）
     long Sequence,            // 单调递增事件序号（SSE id）
     string EventType,         // 事件类型标识
     int SchemaVersion,        // Payload 的 schema 版本号（默认 1）
@@ -37,7 +38,8 @@ public sealed record SessionEventDraft(
     string? AgentId,
     JsonElement Payload,
     RuntimeTraceContext? Trace,
-    string? EventId = null       // 如果提供则用于追加重试幂等，不提供则自动生成
+    string? EventId = null,       // 如果提供则用于追加重试幂等，不提供则自动生成
+    string? ConversationId = null // 对话 ID（当前 = sessionId）
 );
 
 /// <summary>

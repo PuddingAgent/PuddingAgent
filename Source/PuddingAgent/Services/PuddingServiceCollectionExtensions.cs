@@ -68,7 +68,6 @@ public static class PuddingServiceCollectionExtensions
     public static IServiceCollection AddPuddingChatExecution(this IServiceCollection services)
     {
         services.AddSingleton<IChatCommandStore, ChatCommandStore>();
-        services.AddSingleton<ChatCommandAcceptanceService>();
         services.AddSingleton<ChatTelemetryRecorder>();
         services.AddHostedService<ChatExecutionWorker>();
 

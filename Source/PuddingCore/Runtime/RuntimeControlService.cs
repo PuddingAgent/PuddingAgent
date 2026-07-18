@@ -180,7 +180,9 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
             var state = GetState(sessionId);
             if (state.State == SessionState.Faulted)
                 return RuntimeControlDecision.Deny(BuildFaultedMessage(sessionId, state));
-            if (state.State is SessionState.Stopping or SessionState.Stopped or SessionState.Terminated or SessionState.Completed)
+            // ADR-057-G: Turn Completed ≠ Conversation Completed.
+            // Only block on truly terminal states, not per-Turn completion.
+            if (state.State is SessionState.Stopping or SessionState.Stopped or SessionState.Terminated)
                 return RuntimeControlDecision.Deny($"Session '{sessionId}' is {state.State}. Start a new session or check `/status`.");
         }
 
@@ -201,7 +203,8 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
         var state = GetState(sessionId);
         if (state.State == SessionState.Faulted)
             return RuntimeControlDecision.Deny(BuildFaultedMessage(sessionId, state));
-        if (state.State is SessionState.Completed or SessionState.Stopping or SessionState.Stopped or SessionState.Terminated)
+        // ADR-057-G: A completed Turn does not prevent starting a new Turn on the same Conversation.
+        if (state.State is SessionState.Stopping or SessionState.Stopped or SessionState.Terminated)
             return RuntimeControlDecision.Deny($"Session '{sessionId}' is {state.State}. Start a new session to continue.");
         return RuntimeControlDecision.Allow();
     }

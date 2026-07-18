@@ -1,11 +1,8 @@
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
-using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
@@ -94,7 +91,7 @@ public sealed class AgentTemplateFileServiceTests
         var saved = await service.GetTemplateAsync("assistant");
 
         Assert.IsNotNull(saved);
-        Assert.AreEqual("avatar-neutral", saved.AvatarId);
+        Assert.AreEqual("neutral", saved.AvatarId);
         Assert.AreEqual("/assets/agent-avatars/agent-avatar-neutral.png", saved.AvatarUrl);
         Assert.IsTrue(logger.WarningMessages.Any(m => m.Contains("avatar-missing", StringComparison.OrdinalIgnoreCase)));
     }
@@ -186,30 +183,8 @@ public sealed class AgentTemplateFileServiceTests
         ILogger<AgentTemplateFileService>? logger = null,
         string? presetTemplatesRoot = null)
     {
-        var dbPath = Path.Combine(root, "platform.db");
-        var options = new DbContextOptionsBuilder<PlatformDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
-            .Options;
-
-        await using (var db = new PlatformDbContext(options))
-        {
-            await db.Database.EnsureCreatedAsync();
-            db.AgentAvatars.Add(new AgentAvatarEntity
-            {
-                AvatarId = "avatar-neutral",
-                Name = "Neutral",
-                FileName = "agent-avatar-neutral.png",
-                UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                VisualTraitsJson = "[]",
-                IsBuiltIn = true,
-                IsEnabled = true,
-                SortOrder = 1,
-            });
-            await db.SaveChangesAsync();
-        }
-
-        var dbFactory = new TestDbContextFactory(options);
-        var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+        using var avatarFixture = new AvatarCatalogTestFixture();
+        var avatarCatalog = avatarFixture.Catalog;
         return new AgentTemplateFileService(
             PuddingDataPaths.FromRoot(root),
             avatarCatalog,
@@ -286,15 +261,6 @@ public sealed class AgentTemplateFileServiceTests
               "avatarId": "avatar-neutral"
             }
             """);
-    }
-
-    private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
-        : IDbContextFactory<PlatformDbContext>
-    {
-        public PlatformDbContext CreateDbContext() => new(options);
-
-        public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
     }
 
     private sealed class TemporaryDirectory : IDisposable

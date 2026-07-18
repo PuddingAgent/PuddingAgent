@@ -613,9 +613,9 @@ public sealed class AgentExecutionService
                             AgentTemplateId = request.AgentTemplateId,
                             Profile = new PuddingCode.Runtime.LlmInvocationProfile
                             {
-                                ProviderId = "legacy.direct",
-                                ProfileId = "legacy.default",
-                                ModelId = effectiveLlmConfig?.ModelId ?? "default",
+                                ProviderId = effectiveLlmConfig?.KeyVaultId ?? "provider",
+                                ProfileId = effectiveLlmConfig?.ModelId ?? "unknown",
+                                ModelId = effectiveLlmConfig?.ModelId ?? "unknown",
                             },
                             Messages = injectedHistory,
                             Tools = llmTools,
@@ -2203,9 +2203,9 @@ public sealed class AgentExecutionService
                         AgentTemplateId = request.AgentTemplateId,
                         Profile = new PuddingCode.Runtime.LlmInvocationProfile
                         {
-                            ProviderId = "legacy.direct",
-                            ProfileId = "legacy.default",
-                            ModelId = effectiveLlmConfig?.ModelId ?? "default",
+                            ProviderId = effectiveLlmConfig?.Endpoint ?? "provider",
+                            ProfileId = effectiveLlmConfig?.ModelId ?? "unknown",
+                            ModelId = effectiveLlmConfig?.ModelId ?? "unknown",
                         },
                         Messages = injectedHistory,
                         Tools = llmTools,

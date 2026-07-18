@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "defaultAvatarId": "neutral",
+  "avatars": [
+    {
+      "avatarId": "neutral",
+      "name": "Neutral Agent",
+      "fileName": "agent-avatar-neutral.png",
+      "personality": "calm, default, balanced",
+      "recommendedUse": "default assistant avatar",
+      "sortOrder": 10,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "smile",
+      "name": "Support Agent",
+      "fileName": "agent-avatar-smile.png",
+      "personality": "friendly, warm, approachable",
+      "recommendedUse": "support, welcome, positive feedback",
+      "sortOrder": 20,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "sleepy",
+      "name": "Night Ops Agent",
+      "fileName": "agent-avatar-sleepy.png",
+      "personality": "lazy, relaxed, low-energy",
+      "recommendedUse": "idle state, waiting, low priority agent",
+      "sortOrder": 30,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "thinking",
+      "name": "Analyst Agent",
+      "fileName": "agent-avatar-thinking.png",
+      "personality": "serious, analytical, thoughtful",
+      "recommendedUse": "analysis, planning, reasoning tasks",
+      "sortOrder": 40,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "angry",
+      "name": "Alert Agent",
+      "fileName": "agent-avatar-angry.png",
+      "personality": "urgent, expressive, energetic",
+      "recommendedUse": "warnings, errors, urgent notifications",
+      "sortOrder": 50,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "silver",
+      "name": "Engineer Agent",
+      "fileName": "agent-avatar-silver.png",
+      "personality": "precise, cool, composed",
+      "recommendedUse": "technical execution, tools, automation",
+      "sortOrder": 60,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "amber",
+      "name": "Cheer Agent",
+      "fileName": "agent-avatar-amber.png",
+      "personality": "bright, upbeat, lively",
+      "recommendedUse": "success states, onboarding, encouraging replies",
+      "sortOrder": 70,
+      "isEnabled": true
+    },
+    {
+      "avatarId": "mint",
+      "name": "Ops Agent",
+      "fileName": "agent-avatar-mint.png",
+      "personality": "reliable, steady, calm",
+      "recommendedUse": "operations, monitoring, stable background tasks",
+      "sortOrder": 80,
+      "isEnabled": true
+    }
+  ]
+}

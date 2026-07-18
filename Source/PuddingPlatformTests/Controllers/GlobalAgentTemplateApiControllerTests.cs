@@ -110,18 +110,7 @@ public sealed class GlobalAgentTemplateApiControllerTests
 
         await using var db = new PlatformDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        db.AgentAvatars.Add(new AgentAvatarEntity
-        {
-            AvatarId = "avatar-neutral",
-            Name = "Neutral",
-            FileName = "agent-avatar-neutral.png",
-            UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-            VisualTraitsJson = "[]",
-            IsBuiltIn = true,
-            IsEnabled = true,
-            SortOrder = 1,
-        });
-        await db.SaveChangesAsync();
+
         return options;
     }
 
@@ -129,8 +118,8 @@ public sealed class GlobalAgentTemplateApiControllerTests
         string root,
         DbContextOptions<PlatformDbContext> options)
     {
-        var dbFactory = new TestDbContextFactory(options);
-        var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+        using var avatarFixture = new AvatarCatalogTestFixture();
+        var avatarCatalog = avatarFixture.Catalog;
         return new AgentTemplateFileService(
             PuddingDataPaths.FromRoot(root),
             avatarCatalog,

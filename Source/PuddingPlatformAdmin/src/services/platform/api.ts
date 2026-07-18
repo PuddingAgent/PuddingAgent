@@ -1792,9 +1792,58 @@ export interface ProjectedCursor {
   projectedThroughSequence: number;
 }
 
-/** 获取会话的投影游标（ChatMessages 已物化到该 Sequence）。用于历史消息加载 + 尾部队列事件的衔接。 */
+/** 获取会话的投影游标（ChatMessages 已物化到该 Sequence）。 */
 export async function getProjectedCursor(sessionId: string): Promise<ProjectedCursor> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/projected-cursor`, {
+    method: 'GET',
+  });
+}
+
+// ── P0: Conversation Bootstrap ─────────────────────────────────
+
+export interface ConversationBootstrapResponse {
+  conversation: { conversationId: string; sessionId: string };
+  turns: Array<{
+    turnId: string;
+    status: 'active' | 'completed' | 'failed' | 'cancelled';
+    userMessageId: string;
+    assistantMessageId: string;
+    createdAt: number;
+  }>;
+  messages: Array<{
+    id: number;
+    role: string;
+    content: string;
+    createdAt: number;
+  }>;
+  snapshotCursor: number;
+  hasMoreHistory: boolean;
+  historyCursor: string | null;
+}
+
+/** P0: 初始化加载 — 获取 conversation 快照、turns、messages、cursor。 */
+export async function getConversationBootstrap(
+  conversationId: string,
+  messageLimit?: number,
+): Promise<ConversationBootstrapResponse> {
+  const params = new URLSearchParams();
+  if (messageLimit) params.set('messageLimit', String(messageLimit));
+  const qs = params.toString();
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/bootstrap${qs ? `?${qs}` : ''}`, {
+    method: 'GET',
+  });
+}
+
+/** ADR-057: 查询会话事件（用于 gap recovery）。 */
+export async function getSessionEvents(
+  sessionId: string,
+  options?: { afterSequence?: number; limit?: number },
+): Promise<{ events: unknown[]; hasMore: boolean }> {
+  const params = new URLSearchParams();
+  if (options?.afterSequence != null) params.set('from', String(options.afterSequence));
+  if (options?.limit) params.set('limit', String(options.limit));
+  const qs = params.toString();
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ''}`, {
     method: 'GET',
   });
 }
@@ -1818,21 +1867,33 @@ function normalizeEventType(rawType: string): string {
   return NEW_TO_LEGACY_EVENT[rawType] ?? rawType;
 }
 
-/** SSE 订阅会话事件流（含 subagent.spawned / subagent.completed） */
+/** SSE 订阅会话事件流（含 subagent.spawned / subagent.completed）。
+ * P0 v3: 支持 Last-Event-ID 重连、generation token、cursor 校验。
+ */
 export function subscribeSessionEvents(
   sessionId: string,
   onEvent: (ev: AdminChatStreamEvent) => void,
   signal?: AbortSignal,
-  options?: { onError?: (error: Error, httpStatus?: number) => void },
+  options?: {
+    onError?: (error: Error, httpStatus?: number) => void;
+    afterSequence?: number;
+    generation?: number;
+  },
 ): void {
   const onError = options?.onError;
+  const generation = options?.generation;
   const url = `/api/sessions/${encodeURIComponent(sessionId)}/events/stream`;
   const token = localStorage.getItem('pudding_token');
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  // P0: Send Last-Event-ID on first connect and reconnects
+  if (options?.afterSequence != null && options.afterSequence > 0) {
+    headers['Last-Event-ID'] = String(options.afterSequence);
+  }
+
   const startedAt = performance.now();
-  recordPerfEvent('chat.sse.fetchStart', { sessionId, url });
+  recordPerfEvent('chat.sse.fetchStart', { sessionId, url, afterSequence: options?.afterSequence, generation });
 
   fetch(url, { headers, signal })
     .then(async (resp) => {
@@ -1858,6 +1919,8 @@ export function subscribeSessionEvents(
       let eventCount = 0;
       let lastEventType = '';
       let lastEventId = '';
+      let lastSequenceNum = options?.afterSequence ?? 0;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1876,7 +1939,6 @@ export function subscribeSessionEvents(
         for (const line of lines) {
           if (line.startsWith('id: ')) {
             // ADR-056: SSE id field carries the committed sequence number.
-            // It replaces the old sequenceNum injection in the JSON data payload.
             lastEventId = line.slice(4).trim();
           } else if (line.startsWith('event: ')) {
             lastEventType = line.slice(7).trim();
@@ -1884,21 +1946,41 @@ export function subscribeSessionEvents(
             try {
               const data = JSON.parse(line.slice(6));
               eventCount++;
-              const seqNum = /^\d+$/.test(lastEventId) ? Number(lastEventId) : undefined;
+
+              // P0: Extract sequence from SSE id (primary) or data payload (fallback)
+              const seqNum = /^\d+$/.test(lastEventId) ? Number(lastEventId) : (data.sequenceNum ?? data.sequence ?? undefined);
+              const seq = typeof seqNum === 'number' && Number.isFinite(seqNum) ? seqNum : undefined;
+
+              // P0: Validate SSE id == envelope sequence (if both present)
+              if (seq !== undefined && data.sequence !== undefined && String(seq) !== String(data.sequence)) {
+                recordPerfEvent('chat.sse.sequenceMismatch', {
+                  sessionId,
+                  sseId: lastEventId,
+                  dataSequence: data.sequence,
+                  eventType: lastEventType,
+                });
+              }
+
+              // P0: Track cursor for reconnection
+              if (seq !== undefined && seq > lastSequenceNum) {
+                lastSequenceNum = seq;
+              }
+
               recordPerfEvent('chat.sse.event', {
                 sessionId,
                 eventType: lastEventType,
                 eventCount,
-                sequenceNum: seqNum,
+                sequenceNum: seq,
                 sseId: lastEventId || undefined,
                 dataChars: line.length,
               });
               // ADR-056: normalize event names (new → legacy) then pass to callback
+              // type must come AFTER ...data so it is not overwritten by data.type
               const normalizedType = normalizeEventType(lastEventType);
               onEvent({
-                type: normalizedType as any,
                 ...data,
-                ...(seqNum !== undefined ? { sequenceNum: seqNum } : {}),
+                type: normalizedType as any,
+                ...(seq !== undefined ? { sequenceNum: seq } : {}),
               });
             } catch (error) {
               recordPerfEvent('chat.sse.parseError', {
@@ -1916,6 +1998,7 @@ export function subscribeSessionEvents(
         sessionId,
         chunkCount,
         eventCount,
+        lastSequenceNum,
         bufferedChars: buf.length,
         elapsedMs: Math.round(performance.now() - startedAt),
       });
@@ -1927,7 +2010,6 @@ export function subscribeSessionEvents(
         aborted: signal?.aborted === true,
         elapsedMs: Math.round(performance.now() - startedAt),
       });
-      // P0: 传播错误给调用方（404/网络错误等），使其能停止轮询/重连
       if (!signal?.aborted) {
         onError?.(error instanceof Error ? error : new Error(String(error)));
       }
@@ -1996,6 +2078,10 @@ export interface AdminChatRequest {
   forceNewSession?: boolean;
   reasoningEffort?: string;
   metadata?: Record<string, string>;
+  /** ADR-058: Frontend-generated idempotency key — reused across retries. */
+  clientRequestId?: string;
+  /** ADR-058: Frontend-generated stable user message ID. */
+  clientMessageId?: string;
 }
 
 export interface AdminChatSteeringRequest {
@@ -2132,17 +2218,20 @@ export interface TurnStep {
 }
 
 export interface AdminChatResponse {
-  /** ADR-056: 命令受理状态 ("accepted" = 已入队, "completed" = 已完成) */
+  success?: boolean;
+  /** ADR-056: 命令受理状态 */
   status?: string;
-  /** ADR-056: 命令 ID（幂等键校验 + 状态跟踪） */
+  /** ADR-056: 命令 ID */
   commandId?: string;
   messageId: string;
+  /** P0: User message ID (distinct from assistant messageId) */
+  userMessageId?: string;
   sessionId: string;
-  /** ADR-056: 轮次 ID（同一 command 内的执行单位） */
+  /** ADR-056: 轮次 ID */
   turnId?: string;
-  /** ADR-056: 事件游标（turn.accepted 的 sequence 号） */
+  /** ADR-056: 事件游标 */
   eventCursor?: number;
-  /** 幂等键（ClientRequestId 回显） */
+  /** 幂等键 */
   clientRequestId?: string;
   reply?: string;
   isSuccess?: boolean;

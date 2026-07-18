@@ -38,6 +38,7 @@ public class SessionEventsController : ControllerBase
     private readonly ILlmConfigService _llmConfigService;
     private readonly IRawSessionLogService _rawLogs;
     private readonly TokenCostService _tokenCostService;
+    private readonly IConversationEventStore _conversationEventStore;
     private readonly ILogger<SessionEventsController> _logger;
 
     public SessionEventsController(
@@ -54,6 +55,7 @@ public class SessionEventsController : ControllerBase
         ILlmConfigService llmConfigService,
         IRawSessionLogService rawLogs,
         TokenCostService tokenCostService,
+        IConversationEventStore conversationEventStore,
         ILogger<SessionEventsController> logger)
     {
         _ssm = ssm;
@@ -69,12 +71,14 @@ public class SessionEventsController : ControllerBase
         _llmConfigService = llmConfigService;
         _rawLogs = rawLogs;
         _tokenCostService = tokenCostService;
+        _conversationEventStore = conversationEventStore;
         _logger = logger;
     }
 
     /// <summary>
     /// 获取会话事件历史（分页/游标加载）。
     /// GET /api/sessions/{sessionId}/events?from={seq}&limit={N}
+    /// ADR-057: 统一从 conversation_events 读取。
     /// </summary>
     [HttpGet("{sessionId}/events")]
     public async Task<ActionResult<SessionEventPage>> GetEvents(
@@ -86,13 +90,32 @@ public class SessionEventsController : ControllerBase
         if (limit < 1 || limit > 200)
             return BadRequest(new { message = "limit 必须在 1-200 之间" });
 
-        var page = await _ssm.GetEventsAsync(sessionId, from, limit, ct);
+        var page = await _conversationEventStore.ReadForwardAsync(
+            sessionId, afterExclusive: from ?? 0, throughInclusive: null, limit, ct);
+
+        var events = page.Events.Select(e => new SessionEventEntry
+        {
+            SequenceNum = e.Sequence,
+            EventType = e.Type,
+            Data = e.Payload.GetRawText(),
+            RecordedAt = e.OccurredAt,
+        }).ToList();
+
+        var minSeq = events is { Count: > 0 } ? events[0].SequenceNum : 0L;
+        var maxSeq = events is { Count: > 0 } ? events[^1].SequenceNum : 0L;
 
         _logger.LogDebug(
             "[SessionEvents] GET history session={Session} from={From} limit={Limit} count={Count} hasMore={HasMore}",
             sessionId, from, limit, page.Events.Count, page.HasMore);
 
-        return Ok(page);
+        return Ok(new SessionEventPage
+        {
+            Events = events,
+            HasMore = page.HasMore,
+            MinSequence = minSeq,
+            MaxSequence = maxSeq,
+            TotalCount = events.Count,
+        });
     }
 
     /// <summary>
@@ -202,7 +225,39 @@ public class SessionEventsController : ControllerBase
                 "[SessionEvents] SSE denied: session is frozen session={Session}",
                 sessionId);
             Response.StatusCode = StatusCodes.Status410Gone;
+            Response.ContentType = "application/json";
+            await Response.WriteAsync(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    code = "conversation_frozen",
+                    message = "This conversation is frozen and no longer accepts events.",
+                }),
+                ct);
             return;
+        }
+
+        // ADR-057: snapshot_required — cursor below minimum available sequence.
+        var cursor = afterSequence ?? 0L;
+        if (cursor > 0)
+        {
+            var bounds = await _conversationEventStore.GetBoundsAsync(sessionId, ct);
+            if (bounds.MinSequence.HasValue && cursor < bounds.MinSequence.Value)
+            {
+                _logger.LogWarning(
+                    "[SessionEvents] SSE snapshot_required session={Session} cursor={Cursor} min={Min}",
+                    sessionId, cursor, bounds.MinSequence.Value);
+                Response.StatusCode = StatusCodes.Status410Gone;
+                Response.ContentType = "application/json";
+                await Response.WriteAsync(
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        code = "snapshot_required",
+                        minimumAvailableSequence = bounds.MinSequence.Value,
+                        snapshotUrl = $"/api/conversations/{sessionId}/bootstrap",
+                    }),
+                    ct);
+                return;
+            }
         }
 
         ConfigureSseResponse(Response);
@@ -225,6 +280,14 @@ public class SessionEventsController : ControllerBase
             var after = afterSequence ?? 0L;
             await foreach (var envelope in _eventStream.FollowAsync(sessionId, after, ct))
             {
+                // Heartbeat: send as SSE comment, don't set id.
+                if (envelope.EventType == "heartbeat")
+                {
+                    await Response.WriteAsync(": heartbeat\n\n", ct);
+                    await Response.Body.FlushAsync(ct);
+                    continue;
+                }
+
                 await WriteEnvelopeAsSseAsync(Response, envelope, sessionId, _logger, ct);
             }
         }
@@ -251,6 +314,144 @@ public class SessionEventsController : ControllerBase
     }
 
     /// <summary>
+    /// P0: Bootstrap — 初始化加载 conversation 快照、turns、messages、投影游标。
+    /// GET /api/conversations/{id}/bootstrap
+    /// <para>
+    /// 前端流程：加载 bootstrap → 用 snapshotCursor 建立本地状态 → SSE 从 snapshotCursor+1 开始。
+    /// P1: 增加投影追平等待——投影落后时等待 projectTimeoutMs 后返回可用 checkpoint。
+    /// </para>
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("/api/conversations/{conversationId}/bootstrap")]
+    public async Task<ActionResult> GetConversationBootstrap(
+        string conversationId,
+        [FromQuery] int messageLimit = 50,
+        [FromQuery] int projectTimeoutMs = 500,
+        CancellationToken ct = default)
+    {
+        // Read projected cursor and actual event head from conversation_events
+        var projectedCursor = await _projectionStore.GetProjectedCursorAsync(conversationId, ct);
+        var eventHead = 0L;
+        try
+        {
+            var bounds = await _conversationEventStore.GetBoundsAsync(conversationId, ct);
+            eventHead = bounds.MaxSequence ?? 0;
+        }
+        catch (Exception) { /* ignore — possible for brand-new sessions */ }
+
+        // If projection is behind, wait for it to catch up (up to projectTimeoutMs)
+        if (projectedCursor < eventHead && eventHead > 0)
+        {
+            var deadline = DateTimeOffset.UtcNow.AddMilliseconds(projectTimeoutMs);
+            while (DateTimeOffset.UtcNow < deadline && projectedCursor < eventHead)
+            {
+                await Task.Delay(50, ct);
+                projectedCursor = await _projectionStore.GetProjectedCursorAsync(conversationId, ct);
+            }
+            _logger.LogInformation(
+                "[Bootstrap] Projection wait session={Session} projected={Projected} head={Head} remaining={Gap}",
+                conversationId, projectedCursor, eventHead, eventHead - projectedCursor);
+        }
+
+        // ADR-059: snapshotCursor = projection checkpoint (not event head).
+        // If projection hasn't caught up, SSE will replay the gap from checkpoint+1.
+        var snapshotCursor = Math.Min(eventHead, projectedCursor);
+
+        // Load recent messages from projected ChatMessages table
+        var messages = await _db.ChatMessages
+            .AsNoTracking()
+            .Where(m => m.SessionId == conversationId)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(messageLimit)
+            .Select(m => new
+            {
+                id = m.Id,
+                role = m.Role,
+                content = m.Content,
+                createdAt = m.CreatedAt,
+            })
+            .ToListAsync(ct);
+
+        messages.Reverse();
+
+        var hasMoreHistory = messages.Count >= messageLimit;
+
+        // ADR-057: Query active turns from Event Store (not yet terminal)
+        var activeTurns = new List<object>();
+        try
+        {
+            var recentEvents = await _conversationEventStore.ReadBackwardAsync(
+                conversationId, long.MaxValue, limit: 500, ct);
+            var activeTurnIds = new HashSet<string>();
+            var terminalTurnIds = new HashSet<string>();
+
+            foreach (var evt in recentEvents.Events)
+            {
+                var tid = evt.TurnId;
+                if (string.IsNullOrEmpty(tid)) continue;
+
+                switch (evt.Type)
+                {
+                    case "turn.completed":
+                    case "turn.failed":
+                    case "turn.cancelled":
+                        terminalTurnIds.Add(tid);
+                        activeTurnIds.Remove(tid);
+                        break;
+                    case "turn.accepted":
+                    case "turn.started":
+                    case "turn.waiting_for_tool":
+                        if (!terminalTurnIds.Contains(tid))
+                            activeTurnIds.Add(tid);
+                        break;
+                }
+            }
+
+            foreach (var tid in activeTurnIds)
+            {
+                var turnEvent = recentEvents.Events.FirstOrDefault(e => e.TurnId == tid && e.Type == "turn.accepted");
+                activeTurns.Add(new
+                {
+                    turnId = tid,
+                    status = "active",
+                    userMessageId = (string?)null,
+                    assistantMessageId = (string?)null,
+                    createdAt = turnEvent?.OccurredAt.ToUnixTimeMilliseconds() ?? 0L,
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Bootstrap] Failed to read active turns conv={ConvId}", conversationId);
+        }
+
+        return Ok(new
+        {
+            conversation = new { conversationId, sessionId = conversationId },
+            turns = activeTurns.ToArray(),
+            messages,
+            snapshotCursor,
+            hasMoreHistory,
+            historyCursor = (long?)null,
+        });
+    }
+
+    /// <summary>
+    /// P2: 获取流指标。
+    /// GET /api/sessions/metrics
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("/api/sessions/metrics")]
+    public ActionResult GetStreamMetrics()
+    {
+        var metrics = HttpContext.RequestServices.GetService<StreamMetrics>();
+        if (metrics is null)
+            return Ok(new { note = "StreamMetrics not registered" });
+
+        return Ok(metrics.Snapshot());
+    }
+
+    /// <summary>
     /// 获取会话的投影游标。
     /// GET /api/sessions/{sessionId}/projected-cursor
     /// <para>
@@ -273,22 +474,34 @@ public class SessionEventsController : ControllerBase
         ILogger logger,
         CancellationToken ct)
     {
-        var payload = envelope.Payload.GetRawText();
-        var sb = new System.Text.StringBuilder(64 + payload.Length);
+        // ADR-057 canonical SSE format:
+        // id: {sequence}
+        // event: {canonicalType}
+        // data: {full ConversationEvent envelope as JSON}
+        var envelopeJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            eventId = envelope.EventId,
+            conversationId = envelope.ConversationId ?? envelope.SessionId,
+            sequence = envelope.Sequence,
+            type = envelope.EventType,
+            schemaVersion = envelope.SchemaVersion,
+            commandId = envelope.CommandId,
+            turnId = envelope.TurnId,
+            messageId = envelope.MessageId,
+            occurredAt = envelope.OccurredAt,
+            payload = envelope.Payload,
+        });
+
+        var sb = new System.Text.StringBuilder(64 + envelopeJson.Length);
 
         sb.Append("id: ").Append(envelope.Sequence).Append('\n');
-        sb.Append("event: ").Append(SessionEventNames.MapLegacy(envelope.EventType)).Append('\n');
-        sb.Append("data: ").Append(payload).Append('\n');
-
-        if (envelope.TurnId is not null)
-            sb.Append("turn: ").Append(envelope.TurnId).Append('\n');
-        if (envelope.MessageId is not null)
-            sb.Append("message: ").Append(envelope.MessageId).Append('\n');
-
+        sb.Append("event: ").Append(envelope.EventType).Append('\n');
+        sb.Append("data: ").Append(envelopeJson).Append('\n');
         sb.Append('\n');
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         await response.Body.WriteAsync(bytes, ct);
+        await response.Body.FlushAsync(ct);
     }
 
     /// <summary>
@@ -880,6 +1093,22 @@ public class SessionEventsController : ControllerBase
         var targetDate = date ?? DateTimeOffset.UtcNow.Date;
         var summary = await _tokenCostService.GetDailySummaryAsync(targetDate, ct);
         return Ok(summary);
+    }
+
+    /// ADR-057 Phase 7: 手动触发投影。
+    /// POST /api/sessions/{sessionId}/project
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("{sessionId}/project")]
+    public async Task<ActionResult<ProjectionResult>> TriggerProjection(
+        string sessionId, CancellationToken ct)
+    {
+        var projector = HttpContext.RequestServices.GetService<ConversationProjector>();
+        if (projector is null)
+            return StatusCode(503, new { error = "projector_unavailable" });
+
+        var result = await projector.ProjectAsync(sessionId, ct);
+        return Ok(result);
     }
 
     private sealed record ContextAgentBindingRow(

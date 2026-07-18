@@ -6,7 +6,6 @@ using PuddingCode.Configuration;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
@@ -30,22 +29,10 @@ public sealed class WorkspaceAgentFileServiceTests
             await using (var db = new PlatformDbContext(options))
             {
                 await db.Database.EnsureCreatedAsync();
-                db.AgentAvatars.Add(new AgentAvatarEntity
-                {
-                    AvatarId = "avatar-neutral",
-                    Name = "Neutral",
-                    FileName = "agent-avatar-neutral.png",
-                    UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                    VisualTraitsJson = "[]",
-                    IsBuiltIn = true,
-                    IsEnabled = true,
-                    SortOrder = 1,
-                });
-                await db.SaveChangesAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -127,8 +114,8 @@ public sealed class WorkspaceAgentFileServiceTests
                 await db.Database.EnsureCreatedAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -219,8 +206,8 @@ public sealed class WorkspaceAgentFileServiceTests
                 await db.Database.EnsureCreatedAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -278,22 +265,10 @@ public sealed class WorkspaceAgentFileServiceTests
             await using (var db = new PlatformDbContext(options))
             {
                 await db.Database.EnsureCreatedAsync();
-                db.AgentAvatars.Add(new AgentAvatarEntity
-                {
-                    AvatarId = "avatar-neutral",
-                    Name = "Neutral",
-                    FileName = "agent-avatar-neutral.png",
-                    UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                    VisualTraitsJson = "[]",
-                    IsBuiltIn = true,
-                    IsEnabled = true,
-                    SortOrder = 1,
-                });
-                await db.SaveChangesAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -348,34 +323,10 @@ public sealed class WorkspaceAgentFileServiceTests
             await using (var db = new PlatformDbContext(options))
             {
                 await db.Database.EnsureCreatedAsync();
-                db.AgentAvatars.AddRange(
-                    new AgentAvatarEntity
-                    {
-                        AvatarId = "neutral",
-                        Name = "Neutral",
-                        FileName = "agent-avatar-neutral.png",
-                        UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                        VisualTraitsJson = "[]",
-                        IsBuiltIn = true,
-                        IsEnabled = true,
-                        SortOrder = 1,
-                    },
-                    new AgentAvatarEntity
-                    {
-                        AvatarId = "smile",
-                        Name = "Support Agent",
-                        FileName = "agent-avatar-smile.png",
-                        UrlPath = "/assets/agent-avatars/agent-avatar-smile.png",
-                        VisualTraitsJson = "[]",
-                        IsBuiltIn = true,
-                        IsEnabled = true,
-                        SortOrder = 2,
-                    });
-                await db.SaveChangesAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -451,22 +402,10 @@ public sealed class WorkspaceAgentFileServiceTests
             await using (var db = new PlatformDbContext(options))
             {
                 await db.Database.EnsureCreatedAsync();
-                db.AgentAvatars.Add(new AgentAvatarEntity
-                {
-                    AvatarId = "neutral",
-                    Name = "Neutral",
-                    FileName = "agent-avatar-neutral.png",
-                    UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                    VisualTraitsJson = "[]",
-                    IsBuiltIn = true,
-                    IsEnabled = true,
-                    SortOrder = 1,
-                });
-                await db.SaveChangesAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -573,22 +512,10 @@ public sealed class WorkspaceAgentFileServiceTests
             await using (var db = new PlatformDbContext(options))
             {
                 await db.Database.EnsureCreatedAsync();
-                db.AgentAvatars.Add(new AgentAvatarEntity
-                {
-                    AvatarId = "neutral",
-                    Name = "Neutral",
-                    FileName = "agent-avatar-neutral.png",
-                    UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                    VisualTraitsJson = "[]",
-                    IsBuiltIn = true,
-                    IsEnabled = true,
-                    SortOrder = 1,
-                });
-                await db.SaveChangesAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -693,22 +620,10 @@ public sealed class WorkspaceAgentFileServiceTests
             await using (var db = new PlatformDbContext(options))
             {
                 await db.Database.EnsureCreatedAsync();
-                db.AgentAvatars.Add(new AgentAvatarEntity
-                {
-                    AvatarId = "neutral",
-                    Name = "Neutral",
-                    FileName = "agent-avatar-neutral.png",
-                    UrlPath = "/assets/agent-avatars/agent-avatar-neutral.png",
-                    VisualTraitsJson = "[]",
-                    IsBuiltIn = true,
-                    IsEnabled = true,
-                    SortOrder = 1,
-                });
-                await db.SaveChangesAsync();
             }
 
-            var dbFactory = new TestDbContextFactory(options);
-            var avatarCatalog = new AgentAvatarCatalog(dbFactory, NullLogger<AgentAvatarCatalog>.Instance);
+            using var avatarFixture = new AvatarCatalogTestFixture();
+            var avatarCatalog = avatarFixture.Catalog;
             var templateService = new AgentTemplateFileService(
                 paths,
                 avatarCatalog,
@@ -825,15 +740,6 @@ public sealed class WorkspaceAgentFileServiceTests
             if (Directory.Exists(root))
                 Directory.Delete(root, recursive: true);
         }
-    }
-
-    private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
-        : IDbContextFactory<PlatformDbContext>
-    {
-        public PlatformDbContext CreateDbContext() => new(options);
-
-        public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
     }
 
     private static IServiceScopeFactory CreateMemoryScopeFactory(
