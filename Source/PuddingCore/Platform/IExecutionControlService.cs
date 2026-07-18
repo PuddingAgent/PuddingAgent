@@ -3,7 +3,8 @@ namespace PuddingCode.Platform;
 /// <summary>
 /// ADR-059: 执行控制服务 — 统一 Cancel/Steering/Approval 入口。
 /// 同事务写 Control Inbox + Conversation Event + 状态更新。
-/// Handler 只依赖此服务，不直接依赖 IChatCommandStore / SessionSteeringService / IConversationEventStore。
+/// Handler 只依赖此服务和只读的 IExecutionCommandReader，
+/// 不直接依赖租约、Journal、SessionSteeringService 或 Event Store 写接口。
 /// </summary>
 public interface IExecutionControlService
 {

@@ -12,7 +12,12 @@ import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ScrollIntent } from '../viewport/types';
 import {
-  type AdminChatRequest,
+  dequeueCommand,
+  enqueueCommand,
+  flushOutbox,
+  markSending,
+} from '../outbox/commandOutbox';
+import {
   type AdminChatStreamEvent,
   type AgentMessageQueueItem,
   archiveSession,
@@ -33,9 +38,10 @@ import {
   listWorkspaceAgents,
   listWorkspaces,
   type MessageListResponse,
+  normalizeConversationEventType,
   renameSession,
   type SessionRecord,
-  sendChatMessage,
+  submitConversationTurn,
   subscribeSessionEvents,
   subscribeWorkspaceNotifications,
   type TokenUsageDto,
@@ -99,8 +105,31 @@ interface SessionEventPageResponse {
   Events?: unknown[];
   hasMore?: boolean;
   HasMore?: boolean;
+  maxSequence?: unknown;
+  MaxSequence?: unknown;
   totalEventCount?: unknown;
   TotalEventCount?: unknown;
+}
+
+export function confirmOptimisticTurn(
+  turns: ChatTurn[],
+  optimisticTurnId: string,
+  confirmedTurnId: string,
+  confirmedMessageId: string,
+): ChatTurn[] {
+  return turns.map((turn) =>
+    turn.turnId !== optimisticTurnId
+      ? turn
+      : {
+          ...turn,
+          turnId: confirmedTurnId,
+          userMessage: {
+            ...turn.userMessage,
+            id: confirmedMessageId,
+            status: 'success' as const,
+          },
+        },
+  );
 }
 
 export function parseSessionEventTimestampMs(
@@ -378,29 +407,6 @@ export function toChatInteractionRuntimeEvent(
   return null;
 }
 
-export function buildChatMessageRequest(
-  route: ResolvedChatRoute,
-  _sessionId: string | undefined,
-  targetAgentId: string,
-  forceNewSession: boolean,
-  metadata?: Record<string, string>,
-  clientRequestId?: string,
-  clientMessageId?: string,
-): AdminChatRequest {
-  return {
-    messageText: route.messageText.trim(),
-    originalMessageText: route.originalText,
-    sessionId: forceNewSession ? undefined : 'main',
-    agentId: targetAgentId,
-    targetAgentIds: route.targetAgentIds,
-    audience: route.audience,
-    forceNewSession,
-    clientRequestId,
-    clientMessageId,
-    ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
-  };
-}
-
 export function getChatRouteSelectionFromSearch(
   search: string,
 ): ChatRouteSelection {
@@ -584,14 +590,14 @@ export function hasTrackedActiveSessionMessages(
   );
 }
 
-function hasMatchingRecentUserTurn(
+function findMatchingRecentUserTurn(
   loadedTurns: ChatTurn[],
   currentTurn: ChatTurn,
-): boolean {
+): ChatTurn | undefined {
   const text = currentTurn.userMessage.text.trim();
-  if (!text) return true;
+  if (!text) return loadedTurns[loadedTurns.length - 1];
   const lowerBound = currentTurn.userMessage.timestamp - 60_000;
-  return loadedTurns.some(
+  return loadedTurns.find(
     (turn) =>
       turn.userMessage.text.trim() === text &&
       turn.userMessage.timestamp >= lowerBound,
@@ -606,13 +612,25 @@ export function getHistoryReconcileBlockReason(
   if (!currentLatest) return null;
 
   const currentHasActiveTurn = currentTurns.some(isActiveAssistantTurn);
-  const loadedHasCurrentLatest = hasMatchingRecentUserTurn(
+  const loadedCurrentLatest = findMatchingRecentUserTurn(
     loadedTurns,
     currentLatest,
   );
+  const loadedHasCurrentLatest = loadedCurrentLatest != null;
 
   if (currentHasActiveTurn && !loadedHasCurrentLatest) {
     return 'active-turn-not-materialized';
+  }
+
+  const currentAnswer = currentLatest.assistant.answerMarkdown?.trim() ?? '';
+  const loadedAnswer =
+    loadedCurrentLatest?.assistant.answerMarkdown?.trim() ?? '';
+  if (
+    currentLatest.assistant.status === 'success' &&
+    currentAnswer.length > 0 &&
+    loadedAnswer !== currentAnswer
+  ) {
+    return 'completed-turn-not-materialized';
   }
 
   if (currentTurns.length > loadedTurns.length && !loadedHasCurrentLatest) {
@@ -696,7 +714,8 @@ export function buildSessionEventReplayUrl(
   from: number,
   limit: number,
 ): string {
-  return `/api/sessions/${encodeURIComponent(sessionId)}/replay?from=${encodeURIComponent(String(from))}&limit=${encodeURIComponent(String(limit))}`;
+  const afterExclusive = Math.max(0, from - 1);
+  return `/api/sessions/${encodeURIComponent(sessionId)}/events?from=${encodeURIComponent(String(afterExclusive))}&limit=${encodeURIComponent(String(limit))}`;
 }
 
 function parseObjectJson(value: unknown): Record<string, unknown> | null {
@@ -714,7 +733,9 @@ function parseObjectJson(value: unknown): Record<string, unknown> | null {
 export function getSessionEventSequenceNum(item: unknown): number | null {
   if (!item || typeof item !== 'object') return null;
   const obj = item as Record<string, unknown>;
-  const direct = Number(obj.sequenceNum ?? obj.SequenceNum);
+  const direct = Number(
+    obj.sequence ?? obj.Sequence ?? obj.sequenceNum ?? obj.SequenceNum,
+  );
   if (Number.isFinite(direct)) return direct;
 
   const payload =
@@ -743,9 +764,15 @@ export function getSessionEventSequenceNum(item: unknown): number | null {
 export function resolveSessionReplayCursorSequence(page: {
   events?: unknown[];
   Events?: unknown[];
+  maxSequence?: unknown;
+  MaxSequence?: unknown;
   totalEventCount?: unknown;
   TotalEventCount?: unknown;
 }): number | null {
+  const rawMax = page.maxSequence ?? page.MaxSequence;
+  const max = Number(rawMax);
+  if (Number.isFinite(max) && max >= 0) return max;
+
   const rawTotal = page.totalEventCount ?? page.TotalEventCount;
   const total = Number(rawTotal);
   if (Number.isFinite(total) && total >= 0) return total;
@@ -1312,6 +1339,27 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     syncSessionIdentity();
   }, [mainSessionId]);
 
+  useEffect(() => {
+    const flushPendingCommands = () => {
+      void flushOutbox(async (record) => {
+        await submitConversationTurn(
+          record.workspaceId,
+          record.conversationId,
+          {
+            clientRequestId: record.id,
+            clientMessageId: record.clientMessageId,
+            recipients: { type: 'agent', agentIds: record.agentIds },
+            content: [{ type: 'text', text: record.messageText }],
+          },
+        );
+      });
+    };
+
+    flushPendingCommands();
+    window.addEventListener('online', flushPendingCommands);
+    return () => window.removeEventListener('online', flushPendingCommands);
+  }, []);
+
   const clearSessionEventTimers = useCallback(() => {
     if (sessionEventsPollTimerRef.current != null) {
       window.clearTimeout(sessionEventsPollTimerRef.current);
@@ -1720,7 +1768,8 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       if (!raw || typeof raw !== 'object') return null;
       const obj = raw as Record<string, unknown>;
 
-      const rawSeq = obj.sequenceNum ?? obj.SequenceNum;
+      const rawSeq =
+        obj.sequence ?? obj.Sequence ?? obj.sequenceNum ?? obj.SequenceNum;
       const sequenceNum = rawSeq == null ? undefined : Number(rawSeq);
       const rawRecordedAt =
         obj.recordedAt ??
@@ -1778,7 +1827,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
 
       const rawType = obj.type ?? obj.Type;
       const wrapperEventType = obj.eventType ?? obj.EventType;
-      const type = String(
+      const canonicalType = String(
         (rawType === 'event' && wrapperEventType
           ? wrapperEventType
           : rawType) ??
@@ -1786,9 +1835,11 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           payload.type ??
           '',
       ).trim();
-      if (!type) return null;
+      if (!canonicalType) return null;
+      const type = normalizeConversationEventType(canonicalType);
 
       return {
+        ...obj,
         ...(payload as Record<string, unknown>),
         type,
         ...(Number.isFinite(sequenceNum) ? { sequenceNum } : {}),
@@ -3638,9 +3689,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       for (const item of res.items || []) {
         if (item.role === 'user') {
           mapped.push({
-            turnId: `hist-turn-${item.id}`,
+            turnId: item.turnId || `hist-turn-${item.id}`,
             userMessage: {
-              id: `hist-user-${item.id}`,
+              id: item.messageId || `hist-user-${item.id}`,
               text: item.content,
               timestamp: item.createdAt,
               status: 'success',
@@ -3686,8 +3737,10 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         }
         mapped[targetIndex] = {
           ...mapped[targetIndex],
+          turnId: item.turnId || mapped[targetIndex].turnId,
           assistant: {
             ...mapped[targetIndex].assistant,
+            id: item.messageId || mapped[targetIndex].assistant.id,
             status: 'success',
             isStreaming: false,
             usage: normalizeUsage(item.usage),
@@ -4785,6 +4838,13 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         await handleCompactCommand();
         return;
       }
+      if (options?.metadata && Object.keys(options.metadata).length > 0) {
+        const unsupportedMessage =
+          '当前 Conversation 命令链尚未支持视觉或其他 metadata 输入，消息未发送。';
+        setError(unsupportedMessage);
+        messageApi.error(unsupportedMessage);
+        return;
+      }
       const route = resolveChatRoute(text, agents, agentId);
       const routedText = route.messageText.trim();
       if (!routedText || route.targetAgentIds.length === 0) return;
@@ -4805,6 +4865,32 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
                 : [targetAgentId],
             ),
           );
+
+      let sendConversationId =
+        sessionIdRef.current
+        ?? selectedSessionIdRef.current
+        ?? mainSessionIdRef.current;
+      if (forceNewSessionRef.current) {
+        const created = await createSession(
+          workspaceId,
+          targetAgent?.sourceTemplateId || `global:${targetAgentId}`,
+          undefined,
+          targetAgent ? getAgentName(targetAgent) : targetAgentId,
+        );
+        sendConversationId = created.sessionId;
+      } else if (!sendConversationId) {
+        const ensureRequest = buildAgentMainSessionRequest(workspaceId, targetAgent);
+        if (!ensureRequest)
+          throw new Error('无法解析 Agent 主会话');
+        const ensured = await ensureMainSession(ensureRequest);
+        sendConversationId = ensured.sessionId;
+        setMainSessionId(ensured.sessionId);
+      }
+
+      sessionIdRef.current = sendConversationId;
+      setSelectedSessionId(sendConversationId);
+      startSessionEventStream(sendConversationId);
+
       const turnId = createId();
       markPerf(`chat.post.${turnId}.start`);
       // ADR-058: Generate stable idempotency keys at send initiation.
@@ -4831,7 +4917,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           avatarUrl: isSystemCommand ? undefined : targetAgent?.avatarUrl,
         },
         userMessage: {
-          id: createId(),
+          id: clientMessageId,
           text: route.originalText,
           timestamp: now,
           status: 'sending',
@@ -4852,8 +4938,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
 
       // 注册当前 turn 为最新，供持久 SSE 事件路由
       latestTurnIdRef.current = turnId;
-      const previousSessionId =
-        sessionIdRef.current ?? selectedSessionIdRef.current ?? null;
+      const previousSessionId = sendConversationId;
       logChatDiag('post.optimistic.appended', {
         turnId,
         previousSessionId,
@@ -4868,22 +4953,44 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       });
 
       try {
+        // Persist before the HTTP request, but only after the optimistic state is
+        // synchronously attached to the conversation that initiated the send.
+        // This closes the selection race where IndexedDB yielded and the turn was
+        // appended to whichever conversation the user selected in the meantime.
+        await enqueueCommand({
+          clientRequestId,
+          clientMessageId,
+          workspaceId,
+          conversationId: sendConversationId,
+          messageText: routedText,
+          agentIds: route.targetAgentIds.length > 0
+            ? route.targetAgentIds
+            : [targetAgentId],
+        });
+        await markSending(clientRequestId);
         // T-102: 非流式 POST — 202 Accepted + { success, status, commandId, messageId, turnId, sessionId, eventCursor }
         // ADR-056: turnId 由后端分配（非前端生成），确保事件系统一致。
-        const { messageId, sessionId: returnedSessionId, turnId: serverTurnId } =
-          await sendChatMessage(
+        const acceptance =
+          await submitConversationTurn(
             workspaceId,
-            buildChatMessageRequest(
-              route,
-              sessionIdRef.current,
-              targetAgentId,
-              forceNewSessionRef.current,
-              options?.metadata,
+            sendConversationId,
+            {
               clientRequestId,
               clientMessageId,
-            ),
+              recipients: {
+                type: 'agent',
+                agentIds: route.targetAgentIds.length > 0
+                  ? route.targetAgentIds
+                  : [targetAgentId],
+              },
+              content: [{ type: 'text', text: routedText }],
+            },
             ctrl.signal,
           );
+        const messageId = acceptance.messageId;
+        const returnedSessionId = acceptance.conversationId;
+        const serverTurnId = acceptance.turnIds[0];
+        await dequeueCommand(clientRequestId);
 
         const stillViewingSendSession =
           (sessionIdRef.current ?? null) === previousSessionId;
@@ -4900,7 +5007,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           activeMessageCount: activeMessageIdsRef.current.size,
         });
 
-        // 更新 sessionId 并绑定 messageId→turnId 映射
+        // The POST acknowledgement confirms the durable Turn identity. Migrate
+        // every turn-keyed frontend structure before restarting replay/SSE so a
+        // fast terminal event cannot target a stale optimistic ID.
         if (stillViewingSendSession) {
           resetStreamCursorForSessionChange(
             previousSessionId,
@@ -4908,6 +5017,36 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           );
           sessionIdRef.current = returnedSessionId;
           setSelectedSessionId(returnedSessionId);
+
+          const confirmedTurns = confirmOptimisticTurn(
+            turnsRef.current,
+            turnId,
+            effectiveTurnId,
+            messageId,
+          );
+          turnsRef.current = confirmedTurns;
+          setTurns((current) =>
+            confirmOptimisticTurn(
+              current,
+              turnId,
+              effectiveTurnId,
+              messageId,
+            ),
+          );
+          if (latestTurnIdRef.current === turnId)
+            latestTurnIdRef.current = effectiveTurnId;
+
+          const migrateTurnKey = <T,>(map: Map<string, T>) => {
+            if (turnId === effectiveTurnId || !map.has(turnId)) return;
+            const value = map.get(turnId)!;
+            map.delete(turnId);
+            map.set(effectiveTurnId, value);
+          };
+          migrateTurnKey(pendingDeltaRef.current);
+          migrateTurnKey(pendingThinkingRef.current);
+          migrateTurnKey(duplicateDeltaReplayOffsetRef.current);
+          if (completedTurnsRef.current.delete(turnId))
+            completedTurnsRef.current.add(effectiveTurnId);
         }
         forceNewSessionRef.current = false;
         messageIdToTurnIdRef.current.set(messageId, effectiveTurnId);
@@ -4976,24 +5115,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         writeDebugSessionState(returnedSessionId, messageId);
         streamStartAtRef.current.set(messageId, perfStart);
         deltaHasFlushedRef.current = false; // 新消息开始，下次 delta 首帧立即 flush
-
-        // 标记用户消息已送达
-        if (stillViewingSendSession) {
-          setTurns((p) =>
-            p.map((t) =>
-              t.turnId === turnId
-                ? {
-                    ...t,
-                    userMessage: {
-                      ...t.userMessage,
-                      id: messageId,
-                      status: 'success' as const,
-                    },
-                  }
-                : t,
-            ),
-          );
-        }
 
         const ttfm = (performance.now() - perfStart).toFixed(0);
         markPerf(`chat.post.${turnId}.returned`);
@@ -5146,6 +5267,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       mainSessionId,
       resetMainSessionEnsureSuppression,
       routeSelection.sessionId,
+      messageApi,
     ],
   );
 

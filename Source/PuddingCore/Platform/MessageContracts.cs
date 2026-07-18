@@ -127,6 +127,11 @@ public sealed record RuntimeDispatchRequest
     public string? MessageId { get; init; }
     public string? AgentInstanceId { get; init; }
     public PermissionSnapshot? PermissionSnapshot { get; init; }
+    /// <summary>
+    /// 由 Agent Profile Resolver 解析后的 LLM 路由身份。
+    /// ProviderId/ProfileId/ModelId 必须保持独立语义，Runtime 不得从 Endpoint 或密钥引用反推。
+    /// </summary>
+    public LlmInvocationProfile? LlmProfile { get; init; }
     /// <summary>由 Platform 解析后下发的 LLM 配置；Runtime 转发给 Controller LLM 代理。</summary>
     public LlmConfig? LlmConfig { get; init; }
     /// <summary>由 Platform 解析 Agent 模板能力策略后下发；Runtime 用于过滤可用 Skill。null 时回走 BuiltIn 模板查找。</summary>

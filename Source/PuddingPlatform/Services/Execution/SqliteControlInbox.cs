@@ -15,37 +15,6 @@ public sealed class SqliteControlInbox(
     IServiceScopeFactory scopeFactory,
     ILogger<SqliteControlInbox> logger) : IControlInbox
 {
-    public async Task<ControlMessageRecord> EnqueueAsync(
-        string conversationId, string? turnId, ControlMessageKind kind,
-        string payload, string? sourceUserId, int priority, CancellationToken ct)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-        var maxSeq = await db.ControlMessages
-            .Where(m => m.ConversationId == conversationId)
-            .MaxAsync(m => (long?)m.Sequence, ct) ?? 0;
-        var seq = maxSeq + 1;
-
-        db.ControlMessages.Add(new ControlMessageEntity
-        {
-            ControlId = Guid.NewGuid().ToString("N"),
-            Sequence = seq,
-            ConversationId = conversationId,
-            TurnId = turnId,
-            Kind = kind.ToString(),
-            Payload = payload,
-            SourceUserId = sourceUserId,
-            Priority = priority,
-            Status = "pending",
-            CreatedAt = nowMs,
-        });
-        await db.SaveChangesAsync(ct);
-
-        return Map(conversationId, turnId, kind, payload, sourceUserId, priority, seq, "pending");
-    }
-
     public async Task<IReadOnlyList<ControlMessageRecord>> ReadPendingAsync(
         ExecutionLease lease, long afterSequence, CancellationToken ct)
     {
@@ -73,7 +42,12 @@ public sealed class SqliteControlInbox(
         var affected = await db.ControlMessages
             .Where(m => m.ControlId == controlId)
             .Where(m => m.ConversationId == lease.ConversationId)
+            .Where(m => m.TurnId == null || m.TurnId == lease.TurnId)
             .Where(m => m.Status == "pending")
+            .Where(_ => db.ExecutionRuns.Any(r =>
+                r.RunId == lease.RunId
+                && r.WorkerId == lease.WorkerId
+                && r.FencingToken == lease.FencingToken))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(m => m.Status, (string)"acknowledged")
                 .SetProperty(m => m.ConsumedAt, nowMs)
@@ -87,10 +61,6 @@ public sealed class SqliteControlInbox(
     private static ControlMessageRecord Map(ControlMessageEntity e) =>
         new(e.ControlId, e.Sequence, e.ConversationId, e.TurnId,
             Enum.TryParse<ControlMessageKind>(e.Kind, out var k) ? k : ControlMessageKind.Steering,
-            e.Payload, e.SourceUserId, e.Priority, e.Status, DateTimeOffset.UtcNow);
-
-    private static ControlMessageRecord Map(
-        string convId, string? turnId, ControlMessageKind kind, string payload,
-        string? src, int pri, long seq, string status) =>
-        new(Guid.NewGuid().ToString("N"), seq, convId, turnId, kind, payload, src, pri, status, DateTimeOffset.UtcNow);
+            e.Payload, e.SourceUserId, e.Priority, e.Status,
+            DateTimeOffset.FromUnixTimeMilliseconds(e.CreatedAt));
 }

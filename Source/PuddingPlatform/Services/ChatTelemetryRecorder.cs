@@ -25,9 +25,9 @@ namespace PuddingPlatform.Services;
 /// </item>
 /// </list>
 ///
-/// <para><b>都通过 SafeRecorder 包裹：异常只记 Warning 不抛出，不阻断主流程（ChatApiController.SendMessage）。</b></para>
+/// <para><b>都通过 SafeRecorder 包裹：异常只记 Warning，不阻断 Conversation 主链路。</b></para>
 ///
-/// <para><b>使用位置：</b>ChatApiController.SendMessage、ChatSystemCommandService、SessionEventsController。</para>
+/// <para><b>使用位置：</b>Conversation 命令服务、ChatSystemCommandService、SessionEventsController。</para>
 /// </remarks>
 public sealed class ChatTelemetryRecorder
 {
@@ -68,7 +68,7 @@ public sealed class ChatTelemetryRecorder
         string? errorMessage = null,
         CancellationToken ct = default)
     {
-        // SafeRecorder 确保 timeline 写入异常不抛出，不阻断 ChatApiController HTTP 响应
+        // Telemetry failure must not block the Conversation command path.
         await SafeRecorder.RunAsync(
             ct2 => _timeline.RecordAsync(new SessionTimelineRecord
             {
@@ -113,7 +113,7 @@ public sealed class ChatTelemetryRecorder
         string? errorMessage = null,
         CancellationToken ct = default)
     {
-        // SafeRecorder 确保 telemetry 写入异常不抛出，不阻断 ChatApiController HTTP 响应
+        // Telemetry failure must not block the Conversation command path.
         await SafeRecorder.RunAsync(
             ct2 => _telemetry.RecordAsync(new TelemetryMetric
             {

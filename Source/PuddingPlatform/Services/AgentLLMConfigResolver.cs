@@ -43,17 +43,23 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         var global = await _templateFileService.GetTemplateAsync(canonicalId, ct);
 
         // 工作区模板已迁移到文件管理，不再从 DB 查询 workspace-specific 覆盖
-        var providerId = global?.PreferredProviderId;
-        var modelId = global?.PreferredModelId;
-        var config = string.IsNullOrWhiteSpace(providerId)
+        var profileId = global?.ConsciousProfileId;
+        var resolvedProfile = string.IsNullOrWhiteSpace(profileId)
             ? null
-            : _llmConfigService.Resolve(providerId, modelId);
+            : _llmConfigService.ResolveProfile(profileId);
+        var providerId = resolvedProfile?.ProviderId ?? global?.PreferredProviderId;
+        var modelId = resolvedProfile?.ModelId ?? global?.PreferredModelId;
+        var config = resolvedProfile?.Config
+            ?? (string.IsNullOrWhiteSpace(providerId)
+                ? null
+                : _llmConfigService.Resolve(providerId, modelId));
         var reasoningEffort = global?.ReasoningEffort;
         if (config is not null && config.ReasoningEffort is null && !string.IsNullOrWhiteSpace(reasoningEffort))
             config = config with { ReasoningEffort = reasoningEffort };
 
         return new LlmRoutingConfig
         {
+            ProfileId = resolvedProfile?.ProfileId ?? profileId,
             ProviderId = providerId,
             ModelId = config?.ModelId ?? modelId,
             Endpoint = config?.Endpoint,

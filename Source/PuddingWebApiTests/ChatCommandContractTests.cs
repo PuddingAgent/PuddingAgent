@@ -1,5 +1,7 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -10,11 +12,11 @@ namespace PuddingWebApiTests;
 [DoNotParallelize]
 public sealed class ChatCommandContractTests
 {
+    private const string WorkspaceId = "default";
+    private const string AgentId = "default-agent";
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private static CustomWebApplicationFactory _factory = null!;
     private HttpClient _client = null!;
-    private static long _workspacePk;
-
-    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     [ClassInitialize]
     public static void ClassInit(TestContext _)
@@ -23,31 +25,29 @@ public sealed class ChatCommandContractTests
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-
-        var ws = db.Workspaces.FirstOrDefault(w => w.WorkspaceId == "default");
-        if (ws is null)
+        var workspace = db.Workspaces.FirstOrDefault(w => w.WorkspaceId == WorkspaceId);
+        if (workspace is null)
         {
-            ws = new WorkspaceEntity
+            workspace = new WorkspaceEntity
             {
-                WorkspaceId = "default",
+                WorkspaceId = WorkspaceId,
                 Name = "Default Workspace",
                 CreatedAt = DateTimeOffset.UtcNow,
             };
-            db.Workspaces.Add(ws);
+            db.Workspaces.Add(workspace);
             db.SaveChanges();
         }
-        _workspacePk = ws.Id;
 
-        var existing = db.WorkspaceAgents.FirstOrDefault(a => a.WorkspaceEntityId == ws.Id);
-        if (existing is null)
+        if (!db.WorkspaceAgents.Any(a =>
+                a.WorkspaceEntityId == workspace.Id && a.AgentId == AgentId))
         {
             db.WorkspaceAgents.Add(new WorkspaceAgentEntity
             {
-                AgentId = "default-agent",
+                AgentId = AgentId,
                 Name = "Default Agent",
                 SourceTemplateId = "global:general-assistant",
                 DisplayName = "Assistant",
-                WorkspaceEntityId = ws.Id,
+                WorkspaceEntityId = workspace.Id,
                 IsEnabled = true,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
@@ -57,10 +57,7 @@ public sealed class ChatCommandContractTests
     }
 
     [ClassCleanup]
-    public static void ClassCleanup()
-    {
-        _factory.Dispose();
-    }
+    public static void ClassCleanup() => _factory.Dispose();
 
     [TestInitialize]
     public void TestInit()
@@ -70,170 +67,177 @@ public sealed class ChatCommandContractTests
     }
 
     [TestCleanup]
-    public void TestCleanup()
+    public void TestCleanup() => _client.Dispose();
+
+    [TestMethod]
+    public async Task SubmitTurn_ReturnsCanonicalAcceptanceContract()
     {
-        _client?.Dispose();
+        var conversationId = NewId("conversation");
+        var response = await PostTurnAsync(conversationId, "Hello");
+
+        Assert.AreEqual(HttpStatusCode.Accepted, response.StatusCode);
+        var acceptance = await ReadAcceptanceAsync(response);
+        Assert.AreEqual(conversationId, acceptance.ConversationId);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(acceptance.MessageId));
+        Assert.AreEqual(1, acceptance.TurnIds.Count);
+        Assert.AreEqual(1, acceptance.CommandIds.Count);
+        Assert.IsTrue(acceptance.AcceptedSequence > 0);
     }
 
     [TestMethod]
-    public async Task PostMessage_Returns_All_Required_Fields()
+    public async Task SubmitTurn_DifferentRequests_CreateDifferentCommands()
     {
-        var workspaceId = "default";
-        var content = JsonContent.Create(new Dictionary<string, string>
+        var conversationId = NewId("conversation");
+        var first = await ReadAcceptanceAsync(
+            await PostTurnAsync(conversationId, "Hello 1"));
+        var second = await ReadAcceptanceAsync(
+            await PostTurnAsync(conversationId, "Hello 2"));
+
+        Assert.AreNotEqual(first.CommandIds.Single(), second.CommandIds.Single());
+        Assert.AreNotEqual(first.TurnIds.Single(), second.TurnIds.Single());
+        Assert.AreNotEqual(first.MessageId, second.MessageId);
+        Assert.IsTrue(second.AcceptedSequence > first.AcceptedSequence);
+    }
+
+    [TestMethod]
+    public async Task SubmitTurn_PreservesRouteConversationId()
+    {
+        var conversationId = NewId("conversation");
+        var acceptance = await ReadAcceptanceAsync(
+            await PostTurnAsync(conversationId, "Hello"));
+
+        Assert.AreEqual(conversationId, acceptance.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task SubmitTurn_SameClientRequestId_IsIdempotent()
+    {
+        var conversationId = NewId("conversation");
+        var clientRequestId = NewId("request");
+        var clientMessageId = NewId("message");
+
+        var first = await ReadAcceptanceAsync(
+            await PostTurnAsync(
+                conversationId,
+                "Hello",
+                clientRequestId,
+                clientMessageId));
+        var second = await ReadAcceptanceAsync(
+            await PostTurnAsync(
+                conversationId,
+                "Hello",
+                clientRequestId,
+                clientMessageId));
+
+        Assert.AreEqual(first.ConversationId, second.ConversationId);
+        Assert.AreEqual(first.MessageId, second.MessageId);
+        CollectionAssert.AreEqual(first.TurnIds.ToArray(), second.TurnIds.ToArray());
+        CollectionAssert.AreEqual(first.CommandIds.ToArray(), second.CommandIds.ToArray());
+        Assert.AreEqual(first.AcceptedSequence, second.AcceptedSequence);
+    }
+
+    [TestMethod]
+    public async Task SubmitTurn_PersistsAcceptanceAtomically()
+    {
+        var conversationId = NewId("conversation");
+        var clientRequestId = NewId("request");
+        var clientMessageId = NewId("message");
+        var acceptance = await ReadAcceptanceAsync(
+            await PostTurnAsync(
+                conversationId,
+                "Persist this",
+                clientRequestId,
+                clientMessageId));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var batch = await db.AcceptanceBatches.AsNoTracking()
+            .SingleAsync(b =>
+                b.WorkspaceId == WorkspaceId &&
+                b.ClientRequestId == clientRequestId);
+        var message = await db.ChatMessages.AsNoTracking()
+            .SingleAsync(m => m.MessageId == clientMessageId);
+        var command = await db.ChatExecutionCommands.AsNoTracking()
+            .SingleAsync(c => c.BatchId == batch.BatchId);
+        var turn = await db.ConversationTurns.AsNoTracking()
+            .SingleAsync(t => t.TurnId == command.TurnId);
+        var acceptedEvent = await db.ConversationEvents.AsNoTracking()
+            .SingleAsync(e =>
+                e.ConversationId == conversationId &&
+                e.TurnId == command.TurnId &&
+                e.Type == "turn.accepted");
+
+        Assert.AreEqual(conversationId, batch.ConversationId);
+        Assert.AreEqual(conversationId, message.SessionId);
+        Assert.AreEqual(AgentId, command.AgentInstanceId);
+        Assert.AreEqual("accepted", turn.Status);
+        Assert.AreEqual(acceptance.AcceptedSequence, acceptedEvent.Sequence);
+    }
+
+    [TestMethod]
+    public async Task SubmitTurn_InvalidRecipient_IsRejectedWithoutAcceptance()
+    {
+        var conversationId = NewId("conversation");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/conversations/{conversationId}/turns");
+        request.Headers.Add("X-Workspace-Id", WorkspaceId);
+        request.Content = JsonContent.Create(new
         {
-            ["messageText"] = "Hello",
+            clientRequestId = NewId("request"),
+            clientMessageId = NewId("message"),
+            recipients = new { type = "all", agentIds = Array.Empty<string>() },
+            content = new[] { new { type = "text", text = "Hello" } },
         });
 
-        var response = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
+        var response = await _client.SendAsync(request);
 
-        var bodyText = await response.Content.ReadAsStringAsync();
-        if ((int)response.StatusCode is not (200 or 202))
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        Assert.IsFalse(await db.AcceptanceBatches.AsNoTracking()
+            .AnyAsync(b => b.ConversationId == conversationId));
+    }
+
+    private async Task<HttpResponseMessage> PostTurnAsync(
+        string conversationId,
+        string text,
+        string? clientRequestId = null,
+        string? clientMessageId = null)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/conversations/{conversationId}/turns");
+        request.Headers.Add("X-Workspace-Id", WorkspaceId);
+        request.Content = JsonContent.Create(new
         {
-            Assert.Fail($"Expected 200, got {(int)response.StatusCode}. Body: {bodyText}");
-        }
+            clientRequestId = clientRequestId ?? NewId("request"),
+            clientMessageId = clientMessageId ?? NewId("message"),
+            recipients = new { type = "agent", agentIds = new[] { AgentId } },
+            content = new[] { new { type = "text", text } },
+        });
+        return await _client.SendAsync(request);
+    }
 
+    private static async Task<AcceptanceDto> ReadAcceptanceAsync(
+        HttpResponseMessage response)
+    {
         var body = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(body);
-
-        Assert.IsTrue(doc.RootElement.TryGetProperty("status", out var status),
-            "Response must contain 'status' field.");
-        Assert.AreEqual("accepted", status.GetString());
-
-        Assert.IsTrue(doc.RootElement.TryGetProperty("commandId", out _),
-            "Response must contain 'commandId' field.");
-        Assert.IsTrue(doc.RootElement.TryGetProperty("messageId", out _),
-            "Response must contain 'messageId' field.");
-        Assert.IsTrue(doc.RootElement.TryGetProperty("turnId", out _),
-            "Response must contain 'turnId' field.");
-        Assert.IsTrue(doc.RootElement.TryGetProperty("sessionId", out _),
-            "Response must contain 'sessionId' field.");
-        Assert.IsTrue(doc.RootElement.TryGetProperty("eventCursor", out _),
-            "Response must contain 'eventCursor' field.");
+        Assert.AreEqual(
+            HttpStatusCode.Accepted,
+            response.StatusCode,
+            $"Unexpected response: {body}");
+        return JsonSerializer.Deserialize<AcceptanceDto>(body, JsonOpts)
+            ?? throw new AssertFailedException($"Invalid acceptance response: {body}");
     }
 
-    [TestMethod]
-    public async Task PostMessage_CommandId_Is_Unique_Per_Request()
-    {
-        var workspaceId = "default";
-        var content = JsonContent.Create(new Dictionary<string, string>
-        {
-            ["messageText"] = "Hello 1",
-        });
+    private static string NewId(string prefix) => $"{prefix}-{Guid.NewGuid():N}";
 
-        var response1 = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
-        var body1 = await ReadString(response1);
-
-        var response2 = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
-        var body2 = await ReadString(response2);
-
-        Assert.AreNotEqual(body1["commandId"], body2["commandId"],
-            "Each request should produce a unique commandId.");
-    }
-
-    [TestMethod]
-    public async Task PostMessage_SessionId_Is_Preserved()
-    {
-        var workspaceId = "default";
-        var sessionId = $"session-{Guid.NewGuid():N}";
-        var content = JsonContent.Create(new Dictionary<string, string>
-        {
-            ["messageText"] = "Hello",
-            ["sessionId"] = sessionId,
-        });
-
-        var response = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
-        var body = await ReadString(response);
-
-        Assert.AreEqual(sessionId, body["sessionId"],
-            "Response sessionId should match the requested sessionId.");
-    }
-
-    [TestMethod]
-    public async Task PostMessage_Idempotency_Same_ClientRequestId()
-    {
-        var workspaceId = "default";
-        var clientRequestId = $"idem-{Guid.NewGuid():N}";
-        var content = JsonContent.Create(new Dictionary<string, string>
-        {
-            ["messageText"] = "Hello",
-            ["clientRequestId"] = clientRequestId,
-        });
-
-        var response1 = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
-        var body1 = await ReadString(response1);
-
-        var response2 = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
-        var body2 = await ReadString(response2);
-
-        Assert.AreEqual(body1["commandId"], body2["commandId"],
-            "Same ClientRequestId should return the identical commandId.");
-        Assert.AreEqual(body1["messageId"], body2["messageId"],
-            "Same ClientRequestId should return the identical messageId.");
-        Assert.AreEqual(body1["turnId"], body2["turnId"],
-            "Same ClientRequestId should return the identical turnId.");
-
-        if (body2.TryGetValue("idempotent", out var idempotent))
-        {
-            Assert.AreEqual("True", idempotent.ToString(),
-                "Second request should be marked as idempotent.");
-        }
-    }
-
-    [TestMethod]
-    public async Task PostMessage_Command_Is_Persisted()
-    {
-        var workspaceId = "default";
-        var content = JsonContent.Create(new Dictionary<string, string>
-        {
-            ["messageText"] = "Hello, persist this!",
-        });
-
-        var response = await _client.PostAsync(
-            $"/api/workspaces/{workspaceId}/chat/message", content);
-        var body = await ReadString(response);
-
-        var commandId = body["commandId"];
-
-        // Small delay to let async persistence complete
-        await Task.Delay(200);
-
-        // The command should appear in session events
-        var sessionId = body["sessionId"];
-        var eventCursor = body.GetValueOrDefault("eventCursor", "0");
-
-        var eventsResponse = await _client.GetAsync(
-            $"/api/sessions/{sessionId}/events?workspaceId={workspaceId}&from={eventCursor}");
-        Assert.AreEqual(200, (int)eventsResponse.StatusCode);
-
-        var eventsBody = await eventsResponse.Content.ReadAsStringAsync();
-        Assert.IsTrue(
-            eventsBody.Contains("turn.accepted", StringComparison.Ordinal) ||
-            eventsBody.Length > 10,
-            $"Session {sessionId} should have events after command acceptance.");
-    }
-
-    private static async Task<Dictionary<string, string>> ReadString(HttpResponseMessage response)
-    {
-        var text = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(text);
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var prop in doc.RootElement.EnumerateObject())
-        {
-            result[prop.Name] = prop.Value.ValueKind switch
-            {
-                JsonValueKind.Number => prop.Value.GetRawText(),
-                JsonValueKind.True => "True",
-                JsonValueKind.False => "False",
-                JsonValueKind.Null => "",
-                _ => prop.Value.ToString(),
-            };
-        }
-        return result;
-    }
+    private sealed record AcceptanceDto(
+        string ConversationId,
+        string MessageId,
+        IReadOnlyList<string> TurnIds,
+        IReadOnlyList<string> CommandIds,
+        long AcceptedSequence);
 }

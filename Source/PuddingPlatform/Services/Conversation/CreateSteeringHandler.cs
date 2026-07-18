@@ -9,13 +9,13 @@ namespace PuddingPlatform.Services.Conversation;
 /// </summary>
 public sealed class CreateSteeringHandler(
     IExecutionControlService controlService,
-    IChatCommandStore commandStore,
+    IExecutionCommandReader commandReader,
     ILogger<CreateSteeringHandler> logger) : ICreateSteeringHandler
 {
     public async Task<CreateSteeringResult> HandleAsync(
         CreateSteeringCommand command, CancellationToken ct)
     {
-        var cmd = await commandStore.FindByTurnIdAsync(command.ConversationId, command.TurnId, ct)
+        var cmd = await commandReader.FindByTurnIdAsync(command.ConversationId, command.TurnId, ct)
             ?? throw new InvalidOperationException(
                 $"Turn '{command.TurnId}' not found.");
 

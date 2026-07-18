@@ -171,16 +171,12 @@ Log.Logger = new LoggerConfiguration()
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(dataPaths);
 
-// Enable scope validation in Development to catch Singleton→Scoped violations
-if (aspnetcoreEnvironment == "Development")
+// The composition root must fail at startup rather than at the first chat request.
+builder.Host.UseDefaultServiceProvider(o =>
 {
-    builder.Host.UseDefaultServiceProvider(o =>
-    {
-        o.ValidateScopes = true;
-        // ValidateOnBuild disabled temporarily due to pre-existing violations in Runtime DI
-        o.ValidateOnBuild = false;
-    });
-}
+    o.ValidateScopes = true;
+    o.ValidateOnBuild = true;
+});
 builder.Host.UseSerilog();
 
 // ── 端口 ─────────────────────────────────────────────
@@ -266,10 +262,12 @@ builder.Services.AddSingleton<StreamMetrics>();
 builder.Services.AddSingleton<ICommittedEventSignal, CommittedEventSignal>();
 
     // ── Execution Lease + Journal + Control（ADR-059）─────────
-    builder.Services.AddSingleton<IExecutionLeaseStore, SqliteExecutionLeaseStore>();
-    builder.Services.AddSingleton<IExecutionJournal, SqliteExecutionJournal>();
-    builder.Services.AddSingleton<IControlInbox, SqliteControlInbox>();
-    builder.Services.AddSingleton<IExecutionControlService, ExecutionControlService>();
+builder.Services.AddSingleton<IExecutionLeaseStore, SqliteExecutionLeaseStore>();
+builder.Services.AddSingleton<IExecutionJournal, SqliteExecutionJournal>();
+builder.Services.AddSingleton<IControlInbox, SqliteControlInbox>();
+builder.Services.AddSingleton<IExecutionControlService, ExecutionControlService>();
+builder.Services.AddSingleton<IExecutionCommandReader, ExecutionCommandReader>();
+builder.Services.AddSingleton<PlatformReadinessProbe>();
 
     // ── Conversation 命令受理（ADR-059）─────────────
     builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
@@ -281,6 +279,7 @@ builder.Services.AddSingleton<ICommittedEventSignal, CommittedEventSignal>();
     // ── Conversation Event Store（ADR-057 Phase 2）────
     builder.Services.AddSingleton<IConversationEventStore, ConversationEventStore>();
     builder.Services.AddSingleton<ConversationProjector>();
+    builder.Services.AddHostedService<ConversationProjectionWorker>();
     builder.Services.AddSingleton<ChatTelemetryRecorder>();
 
     // ── Execution Kernel（ADR-059）─────────────────
@@ -289,9 +288,10 @@ builder.Services.AddSingleton<ICommittedEventSignal, CommittedEventSignal>();
 
 // ── Repository pattern (EF Core → Repository → Service) ──
 builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
-builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
-builder.Services.AddScoped<ICompactionChatMessageStore, ChatMessageRepository>();
-builder.Services.AddScoped<ITokenUsageEventRepository, TokenUsageEventRepository>();
+builder.Services.AddSingleton<ChatMessageRepository>();
+builder.Services.AddSingleton<IChatMessageRepository>(sp => sp.GetRequiredService<ChatMessageRepository>());
+builder.Services.AddSingleton<ICompactionChatMessageStore>(sp => sp.GetRequiredService<ChatMessageRepository>());
+builder.Services.AddSingleton<ITokenUsageEventRepository, TokenUsageEventRepository>();
 
 // ── User/Team/Workspace member repositories ──
 builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();
@@ -365,19 +365,12 @@ var controllerConnStr = builder.Configuration.GetConnectionString("Controller")
 var memoryConnStr = builder.Configuration.GetConnectionString("Memory")
     ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_memory.db")}";
 builder.Services.AddSingleton<PlatformSqliteConnectionInterceptor>();
-builder.Services.AddDbContext<PlatformDbContext>((sp, opt) =>
-{
-    opt.UseSqlite(connStr);
-    opt.AddInterceptors(sp.GetRequiredService<PlatformSqliteConnectionInterceptor>());
-    opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-});
-
 builder.Services.AddDbContextFactory<PlatformDbContext>((sp, opt) =>
 {
     opt.UseSqlite(connStr);
     opt.AddInterceptors(sp.GetRequiredService<PlatformSqliteConnectionInterceptor>());
     opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-});
+}, ServiceLifetime.Singleton);
 
 // ── 双向消息系统（事件系统之上的聊天室/Agent 消息抽象）──────────
 builder.Services.AddScoped<IMessageRouter, MessageRouter>();
@@ -614,8 +607,8 @@ builder.Services.AddPuddingToolRegistry(builder.Configuration);
 builder.Services.AddSingleton<IToolInvocationService, ToolInvocationService>();
 
 // ── 会话历史查询服务 (Repository → Service 分层) ────
-builder.Services.AddScoped<IChatHistoryService, ChatHistoryService>();
-builder.Services.AddScoped<MessageTopicService>();
+builder.Services.AddSingleton<IChatHistoryService, ChatHistoryService>();
+builder.Services.AddSingleton<MessageTopicService>();
 
 builder.Services.AddSingleton<SkillRuntime>();
 builder.Services.AddSingleton<ITerminalProcessManager, TerminalProcessManager>();
@@ -1102,8 +1095,29 @@ app.MapControllerRoute(
     pattern: "platform/{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
 
-// ── 健康检查（含版本/Hash）─────────────────────────
-app.MapGet("/health", () =>
+// ── 健康检查（liveness 只检查进程；readiness 检查 Conversation 执行链）────
+app.MapGet("/health/live", () => Results.Ok(new
+{
+    status = "alive",
+    timestamp = DateTimeOffset.UtcNow
+}));
+
+app.MapGet("/health/ready", async (
+    PlatformReadinessProbe probe,
+    CancellationToken ct) =>
+{
+    var readiness = await probe.CheckAsync(ct);
+    return Results.Json(new
+    {
+        status = readiness.IsReady ? "ready" : "not_ready",
+        errorId = readiness.ErrorId,
+        timestamp = DateTimeOffset.UtcNow
+    }, statusCode: readiness.IsReady ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
+});
+
+app.MapGet("/health", async (
+    PlatformReadinessProbe probe,
+    CancellationToken ct) =>
 {
     var assembly = System.Reflection.Assembly.GetExecutingAssembly();
     var version = assembly.GetName().Version?.ToString() ?? "0.0.0";
@@ -1128,14 +1142,16 @@ app.MapGet("/health", () =>
     }
     catch { imageHash = "unknown"; }
 
-    return Results.Ok(new
+    var readiness = await probe.CheckAsync(ct);
+    return Results.Json(new
     {
-        status = "healthy",
+        status = readiness.IsReady ? "healthy" : "not_ready",
+        errorId = readiness.ErrorId,
         version,
         imageHash,
         buildTime = buildTime ?? "unknown",
         timestamp = DateTimeOffset.UtcNow
-    });
+    }, statusCode: readiness.IsReady ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
 });
 
 // ── 配置热重载接口（文件配置为唯一来源；端点保留向后兼容）───────
@@ -1265,19 +1281,22 @@ catch (Exception ex)
 }
 
 Console.WriteLine("[Startup] Ensuring Memory DB tables...");
-try
+using (var scope = app.Services.CreateScope())
 {
-    using (var scope = app.Services.CreateScope())
-    {
-        var memoryDb = scope.ServiceProvider.GetRequiredService<PuddingMemoryEngine.Data.MemoryLibraryDbContext>();
-        await memoryDb.Database.EnsureCreatedAsync();
-    }
-    Console.WriteLine("[Startup] Memory DB tables ensured");
+    var coreMemoryFactory = scope.ServiceProvider.GetRequiredService<
+        IDbContextFactory<PuddingMemoryEngine.Data.MemoryDbContext>>();
+    var libraryMemoryFactory = scope.ServiceProvider.GetRequiredService<
+        IDbContextFactory<PuddingMemoryEngine.Data.MemoryLibraryDbContext>>();
+    var memoryLogger = scope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("MemoryDatabaseInitialization");
+
+    await PuddingMemoryEngine.Data.MemoryDbInitializer.InitializeAsync(coreMemoryFactory);
+    await PuddingMemoryEngine.Data.MemoryLibraryDbInitializer.InitializeAsync(
+        libraryMemoryFactory,
+        memoryLogger);
 }
-catch (Exception ex)
-{
-    Console.WriteLine($"[Startup] Memory DB ensure failed: {ex.Message}");
-}
+Console.WriteLine("[Startup] Memory DB tables ensured");
 
 // ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
 Console.WriteLine("[Startup] Initializing Workspace Catalog...");

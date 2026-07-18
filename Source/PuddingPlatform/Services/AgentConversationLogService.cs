@@ -52,16 +52,21 @@ public sealed class AgentConversationLogService(
         CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var hasStableMessageId = !string.IsNullOrWhiteSpace(request.MessageId);
         var windowStart = request.CreatedAt - 2_000;
         var windowEnd = request.CreatedAt + 2_000;
 
-        var exists = await db.ChatMessages
-            .AsNoTracking()
-            .AnyAsync(m => m.SessionId == request.SessionId
-                && m.Role == request.Role
-                && m.Content == request.Content
-                && m.CreatedAt >= windowStart
-                && m.CreatedAt <= windowEnd, ct);
+        var exists = hasStableMessageId
+            ? await db.ChatMessages
+                .AsNoTracking()
+                .AnyAsync(m => m.MessageId == request.MessageId, ct)
+            : await db.ChatMessages
+                .AsNoTracking()
+                .AnyAsync(m => m.SessionId == request.SessionId
+                    && m.Role == request.Role
+                    && m.Content == request.Content
+                    && m.CreatedAt >= windowStart
+                    && m.CreatedAt <= windowEnd, ct);
 
         if (exists)
         {
@@ -75,6 +80,9 @@ public sealed class AgentConversationLogService(
 
         var entity = new ChatMessageEntity
         {
+            MessageId = hasStableMessageId
+                ? request.MessageId!
+                : $"transcript-{Guid.NewGuid():N}",
             WorkspaceId = request.WorkspaceId,
             AgentInstanceId = request.AgentInstanceId,
             AgentTemplateId = request.AgentTemplateId,
@@ -83,6 +91,8 @@ public sealed class AgentConversationLogService(
             Content = request.Content,
             ThinkingJson = request.ThinkingJson,
             UsageJson = request.UsageJson,
+            TurnId = request.TurnId,
+            CommandId = request.CommandId,
             CreatedAt = request.CreatedAt,
         };
 
@@ -137,7 +147,10 @@ public sealed record AgentConversationLogWriteRequest(
     string Content,
     long CreatedAt,
     string? ThinkingJson = null,
-    string? UsageJson = null);
+    string? UsageJson = null,
+    string? MessageId = null,
+    string? TurnId = null,
+    string? CommandId = null);
 
 public sealed record AgentConversationLogRecord(
     string WorkspaceId,

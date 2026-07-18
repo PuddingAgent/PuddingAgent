@@ -193,30 +193,60 @@ public sealed class SqliteExecutionLeaseStore(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        // Release Run only if it matches the exact lease ownership
-        await db.ExecutionRuns
-            .Where(r => r.RunId == lease.RunId)
-            .Where(r => r.WorkerId == lease.WorkerId)
-            .Where(r => r.FencingToken == lease.FencingToken)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(r => r.LeaseUntil, nowMs)
-                .SetProperty(r => r.Status, (string)"lease_lost"),
-                ct);
+        try
+        {
+            using var runCmd = conn.CreateCommand();
+            runCmd.Transaction = tx;
+            runCmd.CommandText = @"
+                UPDATE execution_runs
+                SET lease_until = @nowMs,
+                    status = 'lease_lost'
+                WHERE run_id = @runId
+                  AND worker_id = @workerId
+                  AND fencing_token = @fencingToken
+                  AND status IN ('leased', 'running', 'cancel_requested')";
+            AddParam(runCmd, "@nowMs", nowMs);
+            AddParam(runCmd, "@runId", lease.RunId);
+            AddParam(runCmd, "@workerId", lease.WorkerId);
+            AddParam(runCmd, "@fencingToken", lease.FencingToken);
+            var released = await runCmd.ExecuteNonQueryAsync(ct);
 
-        // Release Command — reset to pending for retry
-        await db.ChatExecutionCommands
-            .Where(c => c.CommandId == lease.CommandId)
-            .Where(c => c.LeaseOwner == lease.WorkerId)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(c => c.Status, (string)"pending")
-                .SetProperty(c => c.LeaseOwner, (string?)null)
-                .SetProperty(c => c.LeaseUntil, (long?)null),
-                ct);
+            if (released > 0)
+            {
+                using var commandCmd = conn.CreateCommand();
+                commandCmd.Transaction = tx;
+                commandCmd.CommandText = @"
+                    UPDATE chat_execution_commands
+                    SET status = 'pending',
+                        lease_owner = NULL,
+                        lease_until = NULL
+                    WHERE command_id = @commandId
+                      AND lease_owner = @workerId
+                      AND status IN ('leased', 'running', 'cancel_requested')";
+                AddParam(commandCmd, "@commandId", lease.CommandId);
+                AddParam(commandCmd, "@workerId", lease.WorkerId);
+                await commandCmd.ExecuteNonQueryAsync(ct);
 
-        logger.LogInformation("[LeaseStore] Released run={RunId} cmd={CmdId} → pending",
-            lease.RunId, lease.CommandId);
+                await ResetTurnForRetryAsync(
+                    conn, tx, lease.ConversationId, lease.TurnId, ct);
+            }
+
+            await tx.CommitAsync(ct);
+            logger.LogInformation(
+                "[LeaseStore] Released run={RunId} cmd={CmdId} released={Released} → retryable",
+                lease.RunId, lease.CommandId, released > 0);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
     }
 
     private async Task ReclaimExpiredRunsAsync(
@@ -229,23 +259,27 @@ public sealed class SqliteExecutionLeaseStore(
         using var findCmd = conn.CreateCommand();
         findCmd.Transaction = tx;
         findCmd.CommandText = @"
-            SELECT DISTINCT r.command_id, r.run_id
+            SELECT DISTINCT r.command_id, r.run_id, r.conversation_id, r.turn_id
             FROM execution_runs r
             WHERE r.status IN ('leased', 'running', 'cancel_requested')
               AND r.lease_until IS NOT NULL
               AND r.lease_until < @nowMs";
         AddParam(findCmd, "@nowMs", nowMs);
 
-        var expired = new List<(string cmdId, string runId)>();
+        var expired = new List<(string cmdId, string runId, string conversationId, string turnId)>();
         using (var reader = await findCmd.ExecuteReaderAsync(ct))
         {
             while (await reader.ReadAsync(ct))
             {
-                expired.Add((reader.GetString(0), reader.GetString(1)));
+                expired.Add((
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3)));
             }
         }
 
-        foreach (var (cmdId, runId) in expired)
+        foreach (var (cmdId, runId, conversationId, turnId) in expired)
         {
             // Mark run as lease_lost
             using var runUpd = conn.CreateCommand();
@@ -270,10 +304,33 @@ public sealed class SqliteExecutionLeaseStore(
                   AND status IN ('leased', 'running', 'cancel_requested')";
             AddParam(cmdUpd, "@cmdId", cmdId);
             await cmdUpd.ExecuteNonQueryAsync(ct);
+
+            await ResetTurnForRetryAsync(conn, tx, conversationId, turnId, ct);
         }
 
         if (expired.Count > 0)
             logger.LogInformation("[LeaseStore] Reclaimed {Count} expired runs", expired.Count);
+    }
+
+    private static async Task ResetTurnForRetryAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        string conversationId,
+        string turnId,
+        CancellationToken ct)
+    {
+        using var turnCmd = conn.CreateCommand();
+        turnCmd.Transaction = tx;
+        turnCmd.CommandText = @"
+            UPDATE conversation_turns
+            SET status = 'accepted'
+            WHERE conversation_id = @conversationId
+              AND turn_id = @turnId
+              AND status = 'running'
+              AND terminal_sequence IS NULL";
+        AddParam(turnCmd, "@conversationId", conversationId);
+        AddParam(turnCmd, "@turnId", turnId);
+        await turnCmd.ExecuteNonQueryAsync(ct);
     }
 
     private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)

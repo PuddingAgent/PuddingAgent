@@ -10,10 +10,12 @@ import { Alert, Button, Empty, Input, Modal, Select, Spin } from 'antd';
 import React from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
 import {
+  awaitConversationTurn,
+  ensureMainSession,
   listWorkspaceAgents,
   listSessions,
   listWorkspaces,
-  sendAdminChatMessage,
+  submitConversationTurn,
   subscribeWorkspaceNotifications,
   type SessionRecord,
   type WorkspaceNotification,
@@ -645,20 +647,41 @@ const WorkspaceStudioPage: React.FC = () => {
     setChatPanelSending(true);
 
     try {
-      const response = await sendAdminChatMessage(workspaceId, {
-        agentId: chatPanelAgentId,
-        sessionId: chatPanelSessionIds[chatPanelAgentId],
-        messageText,
-      });
-      if (response.sessionId) {
-        setChatPanelSessionIds((current) => ({ ...current, [chatPanelAgentId]: response.sessionId }));
+      let conversationId = chatPanelSessionIds[chatPanelAgentId];
+      if (!conversationId) {
+        const session = await ensureMainSession({
+          workspaceId,
+          principalKind: 'agent',
+          principalId: chatPanelAgentId,
+          agentTemplateId: chatPanelAgent?.sourceTemplateId || `global:${chatPanelAgentId}`,
+          title: chatPanelAgent?.displayName || chatPanelAgent?.name || chatPanelAgentId,
+        });
+        conversationId = session.sessionId;
+        setChatPanelSessionIds((current) => ({
+          ...current,
+          [chatPanelAgentId]: conversationId,
+        }));
       }
+
+      const acceptance = await submitConversationTurn(
+        workspaceId,
+        conversationId,
+        {
+          clientRequestId: crypto.randomUUID(),
+          clientMessageId: crypto.randomUUID(),
+          recipients: { type: 'agent', agentIds: [chatPanelAgentId] },
+          content: [{ type: 'text', text: messageText }],
+        },
+      );
+      const result = await awaitConversationTurn(
+        conversationId,
+        acceptance.turnIds[0],
+        acceptance.acceptedSequence,
+      );
       const responseMessage: StudioChatMessage = {
-        id: response.messageId || `${Date.now()}:agent`,
-        role: response.isSuccess ? 'agent' : 'system',
-        text: response.isSuccess
-          ? (response.reply?.trim() || '已收到。')
-          : (response.errorMessage || '发送失败，请稍后再试。'),
+        id: acceptance.messageId || `${Date.now()}:agent`,
+        role: 'agent',
+        text: result.reply || '已收到。',
       };
       setChatPanelMessages((current) => ({
         ...current,
@@ -679,6 +702,7 @@ const WorkspaceStudioPage: React.FC = () => {
     }
   }, [
     chatPanelAgentId,
+    chatPanelAgent,
     chatPanelInput,
     chatPanelSending,
     chatPanelSessionIds,

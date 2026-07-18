@@ -1,7 +1,10 @@
 // ── subscribeSessionEvents 404/error 回调单测 ──────────────────────
 // 锁定 SSE 连接遇到 HTTP 错误时通过 onError 通知调用方的行为。
 
-import { subscribeSessionEvents } from './api';
+import {
+  projectConversationEventEnvelope,
+  subscribeSessionEvents,
+} from './api';
 
 // Mock recordPerfEvent to avoid side effects
 jest.mock('@/utils/debug', () => ({
@@ -100,5 +103,28 @@ describe('subscribeSessionEvents error handling', () => {
     expect(onError.mock.calls[0][0].message).toContain('410');
     expect(onError.mock.calls[0][1]).toBe(410);
     expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it('projects a canonical SSE envelope into the chat event shape', () => {
+    expect(
+      projectConversationEventEnvelope(
+        {
+          sequence: 23,
+          turnId: 'turn-1',
+          messageId: 'message-1',
+          payload: { reply: 'OK' },
+        },
+        'turn.completed',
+        23,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'done',
+        sequenceNum: 23,
+        turnId: 'turn-1',
+        messageId: 'message-1',
+        reply: 'OK',
+      }),
+    );
   });
 });

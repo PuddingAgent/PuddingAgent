@@ -6,11 +6,6 @@ namespace PuddingCode.Platform;
 /// </summary>
 public interface IControlInbox
 {
-    /// <summary>写入控制消息。调用方负责同事务写 Conversation Event。</summary>
-    Task<ControlMessageRecord> EnqueueAsync(
-        string conversationId, string? turnId, ControlMessageKind kind,
-        string payload, string? sourceUserId, int priority, CancellationToken ct);
-
     /// <summary>读取 pending 消息（不修改状态）。</summary>
     Task<IReadOnlyList<ControlMessageRecord>> ReadPendingAsync(
         ExecutionLease lease, long afterSequence, CancellationToken ct);

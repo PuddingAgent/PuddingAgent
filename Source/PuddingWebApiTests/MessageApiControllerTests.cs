@@ -160,97 +160,32 @@ public sealed class MessageApiControllerTests
         Assert.AreEqual("materialized user", body.Items[0].Content);
     }
 
-    // ── ADR-031-C: 聊天 API DI 冒烟 ─────────────────
+    // ── ADR-059: Conversation command endpoint authentication ──
     [TestMethod]
     public async Task SendMessage_Unauthenticated_Returns401()
     {
         using var client = _factory.CreateClient();
-        var payload = new { sessionId = "nonexistent", messageText = "你好", agentId = "default" };
+        var payload = NewTurnPayload("你好");
         var response = await client.PostAsJsonAsync(
-            "/api/workspaces/default/chat/message", payload);
+            $"/api/v1/conversations/{NewConversationId()}/turns", payload);
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    // ── ADR-031-C: 聊天 API 路由/DI 激活验证 ───────
+    // ── ADR-059: Conversation command endpoint route/DI validation ──
     [TestMethod]
     public async Task SendMessage_ControllerActivates_DoesNotReturn500()
     {
-        // 验证聊天控制器可被 DI 激活，且路由能正确匹配。
-        // 返回非 500（非 DI 崩溃）即证明 DI 完整。
-        // 注意：由于测试环境可能有 seed data，workspace 可能已存在，
-        // 因此不强求 404，只确保路由匹配 + 控制器激活成功。
-        var payload = new { sessionId = "nonexistent", messageText = "你好", agentId = "default" };
-        var response = await _client.PostAsJsonAsync(
-            "/api/workspaces/default/chat/message", payload);
-        Assert.AreNotEqual(HttpStatusCode.InternalServerError, response.StatusCode,
-            "控制器因 DI 缺失返回 500，请检查 ChatTranscriptWriter 等依赖注册");
-        Assert.IsTrue(
-            response.StatusCode is HttpStatusCode.OK or HttpStatusCode.NotFound or HttpStatusCode.BadRequest,
-            $"预期 200/404/400，实际 {response.StatusCode}");
-    }
+        var conversationId = NewConversationId();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/conversations/{conversationId}/turns");
+        request.Headers.Add("X-Workspace-Id", "default");
+        request.Content = JsonContent.Create(NewTurnPayload("你好"));
 
-    [TestMethod]
-    public async Task SendMessageWithoutSession_UsesAgentMainSession()
-    {
-        var mainResp = await _client.PostAsJsonAsync("/api/sessions/main", new
-        {
-            workspaceId = "default",
-            principalKind = "agent",
-            principalId = "default",
-            agentTemplateId = "global:general-assistant",
-            title = "General Assistant"
-        });
-        mainResp.EnsureSuccessStatusCode();
-        var main = await mainResp.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
 
-        var sendResp = await _client.PostAsJsonAsync(
-            "/api/workspaces/default/chat/message",
-            new { messageText = "你好", agentId = "default" });
-
-        var sendBody = await sendResp.Content.ReadAsStringAsync();
-        Assert.AreEqual(HttpStatusCode.OK, sendResp.StatusCode, sendBody);
-        using var doc = JsonDocument.Parse(sendBody);
-
-        Assert.AreEqual(main!.SessionId, doc.RootElement.GetProperty("sessionId").GetString());
-    }
-
-    [TestMethod]
-    public async Task SendCompactCommand_ReturnsCompactionResultMessage()
-    {
-        var mainResp = await _client.PostAsJsonAsync("/api/sessions/main", new
-        {
-            workspaceId = "default",
-            principalKind = "agent",
-            principalId = "default",
-            agentTemplateId = "global:general-assistant",
-            title = "General Assistant"
-        });
-        mainResp.EnsureSuccessStatusCode();
-        var main = await mainResp.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
-        Assert.IsNotNull(main);
-
-        var sendResp = await _client.PostAsJsonAsync(
-            "/api/workspaces/default/chat/message",
-            new
-            {
-                sessionId = main!.SessionId,
-                messageText = "/compact",
-                agentId = "default"
-            });
-
-        var sendBody = await sendResp.Content.ReadAsStringAsync();
-        Assert.AreEqual(HttpStatusCode.OK, sendResp.StatusCode, sendBody);
-
-        var messagesResp = await _client.GetAsync($"/api/sessions/{main.SessionId}/messages");
-        messagesResp.EnsureSuccessStatusCode();
-        var messages = await messagesResp.Content.ReadFromJsonAsync<MessageListDto>(JsonOpts);
-        Assert.IsNotNull(messages);
-
-        var systemReply = messages!.Items.LastOrDefault(m => m.Role == "agent")?.Content;
-        Assert.IsFalse(
-            systemReply?.Contains("not implemented", StringComparison.OrdinalIgnoreCase) ?? true,
-            systemReply);
-        StringAssert.Contains(systemReply!, "Context compacted");
+        Assert.AreEqual(HttpStatusCode.Accepted, response.StatusCode, body);
     }
 
     [TestMethod]
@@ -317,11 +252,14 @@ public sealed class MessageApiControllerTests
         Assert.AreEqual(2, rows.Count);
         Assert.AreEqual("user", rows[0].Role);
         Assert.AreEqual("hello", rows[0].Content);
+        StringAssert.StartsWith(rows[0].MessageId, "transcript-");
         Assert.AreEqual("default", rows[0].WorkspaceId);
         Assert.AreEqual("agent-1", rows[0].AgentInstanceId);
         Assert.AreEqual("template-1", rows[0].AgentTemplateId);
         Assert.AreEqual("agent", rows[1].Role);
         Assert.AreEqual("world", rows[1].Content);
+        StringAssert.StartsWith(rows[1].MessageId, "transcript-");
+        Assert.AreNotEqual(rows[0].MessageId, rows[1].MessageId);
         Assert.IsNotNull(rows[1].UsageJson);
 
         var paths = _factory.Services.GetRequiredService<PuddingCode.Configuration.PuddingDataPaths>();
@@ -351,6 +289,16 @@ public sealed class MessageApiControllerTests
             Data = data,
             RecordedAt = recordedAt.ToString("O"),
         };
+
+    private static object NewTurnPayload(string text) => new
+    {
+        clientRequestId = $"request-{Guid.NewGuid():N}",
+        clientMessageId = $"message-{Guid.NewGuid():N}",
+        recipients = new { type = "agent", agentIds = new[] { "default" } },
+        content = new[] { new { type = "text", text } },
+    };
+
+    private static string NewConversationId() => $"conversation-{Guid.NewGuid():N}";
 
     /// <summary>
     /// 消息分页返回 DTO。

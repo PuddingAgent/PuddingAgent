@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 
 namespace PuddingRuntime.Services;
 
@@ -96,6 +97,7 @@ public sealed class AgentInvocationDispatchFactory(
                 MessageId = invocation.MessageId,
                 UserId = invocation.UserId,
                 PermissionSnapshot = invocation.PermissionSnapshot,
+                LlmProfile = BuildLlmProfile(profile),
                 LlmConfig = profile.LlmConfig,
                 CapabilityPolicy = profile.CapabilityPolicy,
                 ToolDefinitions = profile.ToolDefinitions,
@@ -114,6 +116,27 @@ public sealed class AgentInvocationDispatchFactory(
             },
         };
     }
+
+    private static LlmInvocationProfile BuildLlmProfile(AgentRuntimeProfile profile)
+    {
+        var providerId = Require(profile.PreferredProviderId, "provider", profile.AgentId);
+        var modelId = Require(profile.PreferredModelId ?? profile.LlmConfig?.ModelId, "model", profile.AgentId);
+        return new LlmInvocationProfile
+        {
+            ProviderId = providerId,
+            ProfileId = string.IsNullOrWhiteSpace(profile.ConsciousProfileId)
+                ? $"agent:{profile.AgentId}:conscious"
+                : profile.ConsciousProfileId!,
+            ModelId = modelId,
+            Role = "conscious",
+        };
+    }
+
+    private static string Require(string? value, string field, string agentId)
+        => !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new InvalidOperationException(
+                $"Agent '{agentId}' does not have a resolved LLM {field}.");
 
     private static MessageOrigin? BuildOrigin(WorkspaceAgentInvocation invocation)
     {

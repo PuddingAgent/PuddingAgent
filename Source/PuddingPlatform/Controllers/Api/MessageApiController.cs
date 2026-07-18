@@ -35,7 +35,10 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         string Content,
         List<ThinkingChunkDto>? Thinking,
         TokenUsageDto? Usage,
-        long CreatedAt
+        long CreatedAt,
+        string? MessageId,
+        string? TurnId,
+        string? CommandId
     );
 
     public record ThinkingChunkDto(
@@ -210,7 +213,10 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
             m.Content,
             thinking,
             usage,
-            m.CreatedAt
+            m.CreatedAt,
+            m.MessageId,
+            m.TurnId,
+            m.CommandId
         );
     }
 
@@ -293,7 +299,10 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
                         content,
                         thinking.Count > 0 ? [.. thinking] : null,
                         DeserializeUsage(doneUsageJson),
-                        firstCreatedAt ?? createdAt));
+                        firstCreatedAt ?? createdAt,
+                        null,
+                        null,
+                        null));
                 }
 
                 replyBuilder.Clear();
@@ -311,7 +320,10 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
                 replyBuilder.ToString(),
                 thinking.Count > 0 ? thinking : null,
                 DeserializeUsage(usageJson),
-                firstCreatedAt ?? lastCreatedAt));
+                firstCreatedAt ?? lastCreatedAt,
+                null,
+                null,
+                null));
         }
 
         var pageCandidates = fallbackMessages.AsEnumerable();

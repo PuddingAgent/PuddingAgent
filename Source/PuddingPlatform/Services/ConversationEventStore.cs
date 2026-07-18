@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +17,6 @@ public sealed class ConversationEventStore(
     ILogger<ConversationEventStore> logger) : IConversationEventStore
 {
     private bool _tableEnsured;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _projectionLocks = new();
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -153,32 +151,6 @@ public sealed class ConversationEventStore(
 
             // ADR-057: Signal SSE notifier after commit
             signal.Signal(conversationId, lastSeq);
-
-            // ADR-057 Phase 7: fire-and-forget projection with per-conversation lock
-            // to prevent concurrent projections from duplicating messages.
-            _ = Task.Run(async () =>
-            {
-                var projLock = _projectionLocks.GetOrAdd(conversationId, _ => new SemaphoreSlim(1, 1));
-                if (!await projLock.WaitAsync(TimeSpan.FromSeconds(30)))
-                {
-                    logger.LogWarning("[ConversationEventStore] Projection lock timeout conv={ConvId}", conversationId);
-                    return;
-                }
-                try
-                {
-                    var projector = scopeFactory.CreateScope().ServiceProvider.GetService<ConversationProjector>();
-                    if (projector is not null)
-                        await projector.ProjectAsync(conversationId, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "[ConversationEventStore] Background projection failed conv={ConvId}", conversationId);
-                }
-                finally
-                {
-                    projLock.Release();
-                }
-            });
 
             return new AppendResult(currentHead + 1, lastSeq, events.Count);
         }

@@ -611,12 +611,7 @@ public sealed class AgentExecutionService
                             SessionId = request.SessionId,
                             AgentInstanceId = instance.AgentInstanceId,
                             AgentTemplateId = request.AgentTemplateId,
-                            Profile = new PuddingCode.Runtime.LlmInvocationProfile
-                            {
-                                ProviderId = effectiveLlmConfig?.KeyVaultId ?? "provider",
-                                ProfileId = effectiveLlmConfig?.ModelId ?? "unknown",
-                                ModelId = effectiveLlmConfig?.ModelId ?? "unknown",
-                            },
+                            Profile = RequireInvocationProfile(request),
                             Messages = injectedHistory,
                             Tools = llmTools,
                             PrefixSnapshot = prefixSnapshot,
@@ -2201,12 +2196,7 @@ public sealed class AgentExecutionService
                         SessionId = request.SessionId,
                         AgentInstanceId = instance.AgentInstanceId,
                         AgentTemplateId = request.AgentTemplateId,
-                        Profile = new PuddingCode.Runtime.LlmInvocationProfile
-                        {
-                            ProviderId = effectiveLlmConfig?.Endpoint ?? "provider",
-                            ProfileId = effectiveLlmConfig?.ModelId ?? "unknown",
-                            ModelId = effectiveLlmConfig?.ModelId ?? "unknown",
-                        },
+                        Profile = RequireInvocationProfile(request),
                         Messages = injectedHistory,
                         Tools = llmTools,
                         PrefixSnapshot = prefixSnapshot,
@@ -3520,6 +3510,12 @@ public sealed class AgentExecutionService
 
         return config with { ApiKey = apiKey };
     }
+
+    private static LlmInvocationProfile RequireInvocationProfile(RuntimeDispatchRequest request)
+        => request.LlmProfile
+            ?? throw new InvalidOperationException(
+                $"Runtime dispatch for agent '{request.AgentInstanceId ?? "(unknown)"}' is missing LlmProfile. " +
+                "The invocation boundary must resolve provider/profile/model before execution.");
 
     private sealed class NoOpKeyVaultService : IKeyVaultService
     {

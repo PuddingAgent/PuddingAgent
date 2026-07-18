@@ -65,12 +65,6 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 
             services.AddSingleton(_platformConnection);
 
-            services.AddDbContext<PlatformDbContext>(options =>
-            {
-                options.UseSqlite(_platformConnection)
-                       .ConfigureWarnings(w => w.Ignore(RelationalEventId.AmbientTransactionWarning));
-            });
-
             services.AddDbContextFactory<PlatformDbContext>(options =>
             {
                 options.UseSqlite(_platformConnection)

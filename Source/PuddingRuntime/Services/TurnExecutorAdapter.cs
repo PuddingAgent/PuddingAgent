@@ -27,6 +27,7 @@ public sealed class TurnExecutorAdapter(
             WorkspaceId = context.WorkspaceId,
             UserId = context.UserId,
             AgentInstanceId = context.AgentInstanceId,
+            LlmProfile = context.LlmProfile,
             LlmConfig = context.LlmConfig,
             CapabilityPolicy = context.CapabilityPolicy,
             ToolDefinitions = context.ToolDefinitions,
@@ -60,7 +61,7 @@ public sealed class TurnExecutorAdapter(
                 ProducerEventId: Guid.NewGuid().ToString("N"),
                 Type: ConversationEventTypes.TurnFailed,
                 SchemaVersion: 1,
-                Payload: errDoc.RootElement,
+                Payload: errDoc.RootElement.Clone(),
                 IsTerminal: true,
                 TerminalInfo: TurnTerminalInfo.Failure(
                     TerminalErrorCodes.ExecutionProtocolError,
@@ -110,8 +111,22 @@ public sealed class TurnExecutorAdapter(
     private static JsonElement ParsePayload(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
-            return JsonDocument.Parse("{}").RootElement;
-        try { return JsonDocument.Parse(json).RootElement; }
-        catch { return JsonDocument.Parse("{}").RootElement; }
+            return EmptyPayload();
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return EmptyPayload();
+        }
+    }
+
+    private static JsonElement EmptyPayload()
+    {
+        using var document = JsonDocument.Parse("{}");
+        return document.RootElement.Clone();
     }
 }

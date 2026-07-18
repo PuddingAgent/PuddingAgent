@@ -7,14 +7,14 @@ namespace PuddingPlatform.Services.Conversation;
 /// ADR-059: Cancel Handler — uses IExecutionControlService for unified control entry.
 /// </summary>
 public sealed class RequestTurnCancellationHandler(
-    IChatCommandStore commandStore,
+    IExecutionCommandReader commandReader,
     IExecutionControlService controlService,
     ILogger<RequestTurnCancellationHandler> logger) : IRequestTurnCancellationHandler
 {
     public async Task<CancelTurnResult> HandleAsync(
         RequestTurnCancellationCommand command, CancellationToken ct)
     {
-        var cmd = await commandStore.FindByTurnIdAsync(command.ConversationId, command.TurnId, ct)
+        var cmd = await commandReader.FindByTurnIdAsync(command.ConversationId, command.TurnId, ct)
             ?? throw new InvalidOperationException(
                 $"Turn '{command.TurnId}' not found in '{command.ConversationId}'.");
 

@@ -17,7 +17,7 @@ public sealed class ExecutionRunCoordinator(
     IAgentRuntimeProfileResolver profileResolver,
     IAgentExecutionSnapshotFactory snapshotFactory,
     IChatMessageRepository messageRepository,
-    IChatCommandStore commandStore,
+    IExecutionCommandReader commandReader,
     IControlInbox controlInbox,
     ILogger<ExecutionRunCoordinator> logger) : IExecutionRunCoordinator
 {
@@ -29,6 +29,12 @@ public sealed class ExecutionRunCoordinator(
     {
         using var ctsRun = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
         using var ctsMonitor = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
+        var chunker = new TurnOutputChunker();
+        var uncommittedOutput = new List<NewConversationEvent>();
+        IReadOnlyList<NewConversationEvent> terminalPending = [];
+        Task<ControlMonitorOutcome>? monitorTask = null;
+        var runStarted = false;
+        ExecutionCommandRecord? command = null;
 
         try
         {
@@ -36,14 +42,25 @@ public sealed class ExecutionRunCoordinator(
                 "[Coordinator] Start run={RunId} cmd={CmdId} turn={TurnId}",
                 lease.RunId, lease.CommandId, lease.TurnId);
 
-            var command = await commandStore.GetAsync(lease.CommandId, ctsRun.Token)
+            command = await commandReader.GetAsync(lease.CommandId, ctsRun.Token)
                 ?? throw new InvalidOperationException($"Command {lease.CommandId} not found.");
 
             var profile = await profileResolver.ResolveAsync(
                 lease.WorkspaceId, command.AgentInstanceId, ctsRun.Token);
 
             var snapshot = await snapshotFactory.CreateAsync(
-                lease.WorkspaceId, command.AgentInstanceId, null, ctsRun.Token);
+                profile, null, ctsRun.Token);
+            var providerId = RequireRoutingValue(snapshot.ProviderId, "provider", command.AgentInstanceId);
+            var modelId = RequireRoutingValue(snapshot.ModelId, "model", command.AgentInstanceId);
+            var llmProfile = new LlmInvocationProfile
+            {
+                ProviderId = providerId,
+                ProfileId = string.IsNullOrWhiteSpace(snapshot.ProfileId)
+                    ? $"agent:{command.AgentInstanceId}:conscious"
+                    : snapshot.ProfileId!,
+                ModelId = modelId,
+                Role = "conscious",
+            };
 
             // StartRun: Run/Command/Turn → running + turn.started
             using var startedDoc = JsonDocument.Parse(
@@ -57,15 +74,16 @@ public sealed class ExecutionRunCoordinator(
                     TurnId: lease.TurnId,
                     CommandId: lease.CommandId,
                     RunId: lease.RunId,
-                    MessageId: null,
+                    MessageId: command.AssistantMessageId,
                     CorrelationId: lease.ConversationId,
                     CausationId: lease.TurnId,
                     ProducerEventId: null,
-                    Payload: startedDoc.RootElement),
+                    Payload: startedDoc.RootElement.Clone()),
                 ctsRun.Token);
+            runStarted = true;
 
             // Start monitor (lease renewal + cancel detection)
-            var monitorTask = MonitorAsync(lease, ctsRun, ctsMonitor.Token);
+            monitorTask = MonitorAsync(lease, ctsRun, ctsMonitor.Token);
 
             // Build execution context
             var userMessage = await messageRepository.GetByMessageIdAsync(
@@ -84,14 +102,22 @@ public sealed class ExecutionRunCoordinator(
                 CapabilityPolicy: snapshot.CapabilityPolicy,
                 ToolDefinitions: profile.ToolDefinitions,
                 SkillPackages: profile.SkillPackages,
+                LlmProfile: llmProfile,
                 LlmConfig: profile.LlmConfig,
                 ChannelId: command.ChannelId,
                 UserExternalId: command.UserId,
                 RunCancellation: new RunCancellation(ctsRun.Token));
 
             // Execute — terminal pending goes directly to CommitTerminalAsync
-            var (terminalPending, terminalInfo) = await ExecuteLoopAsync(
-                lease, context, ctsRun.Token);
+            var loopResult = await ExecuteLoopAsync(
+                lease,
+                context,
+                command.AssistantMessageId,
+                chunker,
+                uncommittedOutput,
+                ctsRun.Token);
+            terminalPending = loopResult.Pending;
+            var terminalInfo = loopResult.Terminal;
 
             await SafeCancelAsync(ctsMonitor);
             try { await monitorTask; } catch { }
@@ -119,14 +145,34 @@ public sealed class ExecutionRunCoordinator(
             await SafeCancelAsync(ctsMonitor);
             try
             {
-                var term = TurnTerminal.Cancelled;
-                var result = await journal.CommitTerminalAsync(lease, term, [], CancellationToken.None);
+                var monitorOutcome = await GetMonitorOutcomeAsync(monitorTask);
+                var term = monitorOutcome.LeaseLost
+                    ? TurnTerminal.LeaseLost
+                    : TurnTerminal.Cancelled;
+                var pending = CollectPendingOutput(
+                    lease,
+                    command?.AssistantMessageId,
+                    chunker,
+                    uncommittedOutput,
+                    terminalPending);
+                var result = await journal.CommitTerminalAsync(
+                    lease, term, pending, CancellationToken.None);
+                if (monitorOutcome.CancelControlId is not null)
+                {
+                    await controlInbox.AcknowledgeAsync(
+                        lease, monitorOutcome.CancelControlId, CancellationToken.None);
+                }
                 return Outcome(lease, term, result.LastSequence);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "[Coordinator] Cancel terminal write failed");
-                return Outcome(lease, TurnTerminal.Cancelled, 0);
+                var fallback = await TryCloseAfterTerminalWriteFailureAsync(
+                    lease, "cancel_terminal_commit_failed", CancellationToken.None);
+                return Outcome(
+                    lease,
+                    fallback?.Terminal ?? TurnTerminal.Cancelled,
+                    fallback?.Sequence ?? 0);
             }
         }
         catch (Exception ex)
@@ -136,18 +182,68 @@ public sealed class ExecutionRunCoordinator(
             try
             {
                 var term = TurnTerminal.ProtocolError(ex.Message);
-                var result = await journal.CommitTerminalAsync(lease, term, [], CancellationToken.None);
+                var pending = CollectPendingOutput(
+                    lease,
+                    command?.AssistantMessageId,
+                    chunker,
+                    uncommittedOutput,
+                    terminalPending);
+                var result = runStarted
+                    ? await journal.CommitTerminalAsync(
+                        lease, term, pending, CancellationToken.None)
+                    : await journal.TryCommitInfrastructureFailureAsync(
+                        lease, term, pending, CancellationToken.None)
+                        ?? throw new InvalidOperationException(
+                            $"Infrastructure terminal fence rejected run={lease.RunId}.");
                 return Outcome(lease, term, result.LastSequence);
             }
             catch (Exception storeEx)
             {
                 logger.LogError(storeEx, "[Coordinator] Error terminal write failed");
-                return Outcome(lease, TurnTerminal.ProtocolError("terminal write failed"), 0);
+                var fallback = await TryCloseAfterTerminalWriteFailureAsync(
+                    lease, "terminal_commit_failed", CancellationToken.None);
+                return Outcome(
+                    lease,
+                    fallback?.Terminal ?? TurnTerminal.ProtocolError("terminal write failed"),
+                    fallback?.Sequence ?? 0);
             }
         }
     }
 
-    private async Task MonitorAsync(
+    private async Task<TerminalFallbackResult?> TryCloseAfterTerminalWriteFailureAsync(
+        ExecutionLease lease,
+        string errorCode,
+        CancellationToken ct)
+    {
+        var terminal = TurnTerminal.Failure(
+            errorCode,
+            "Execution output could not be committed; the run was closed to preserve lifecycle consistency.");
+        try
+        {
+            var result = await journal.TryCommitInfrastructureFailureAsync(
+                lease, terminal, [], ct);
+            return result is null
+                ? null
+                : new TerminalFallbackResult(terminal, result.LastSequence);
+        }
+        catch (Exception fallbackEx)
+        {
+            logger.LogCritical(
+                fallbackEx,
+                "[Coordinator] Infrastructure terminal fallback failed run={RunId} fence={Fence}",
+                lease.RunId,
+                lease.FencingToken);
+            return null;
+        }
+    }
+
+    private static string RequireRoutingValue(string? value, string field, string agentId)
+        => !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new InvalidOperationException(
+                $"Agent '{agentId}' does not have a resolved LLM {field}.");
+
+    private async Task<ControlMonitorOutcome> MonitorAsync(
         ExecutionLease lease, CancellationTokenSource ctsRun, CancellationToken ct)
     {
         var lastLeaseRenew = Environment.TickCount64;
@@ -168,12 +264,12 @@ public sealed class ExecutionRunCoordinator(
                     if (msg.Kind == ControlMessageKind.CancelRequested)
                     {
                         logger.LogWarning("[Coordinator] CancelRequested from inbox run={RunId}", lease.RunId);
-                        await controlInbox.AcknowledgeAsync(lease, msg.ControlId, CancellationToken.None);
                         ctsRun.Cancel();
-                        return;
+                        return new ControlMonitorOutcome(false, msg.ControlId);
                     }
-                    // Steering is acked but not consumed here — Runtime must poll Inbox itself
-                    await controlInbox.AcknowledgeAsync(lease, msg.ControlId, CancellationToken.None);
+                    logger.LogWarning(
+                        "[Coordinator] Control remains pending because Runtime has no consumer kind={Kind} controlId={ControlId}",
+                        msg.Kind, msg.ControlId);
                 }
 
                 // Renew lease based on timer, not control sequence
@@ -186,25 +282,30 @@ public sealed class ExecutionRunCoordinator(
                     {
                         logger.LogWarning("[Coordinator] Lease lost run={RunId}", lease.RunId);
                         ctsRun.Cancel();
-                        return;
+                        return new ControlMonitorOutcome(true, null);
                     }
                 }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        return new ControlMonitorOutcome(false, null);
     }
 
     private async Task<(IReadOnlyList<NewConversationEvent> Pending, TurnTerminalInfo Terminal)> ExecuteLoopAsync(
-        ExecutionLease lease, TurnExecutionContext context, CancellationToken runToken)
+        ExecutionLease lease,
+        TurnExecutionContext context,
+        string assistantMessageId,
+        TurnOutputChunker chunker,
+        List<NewConversationEvent> uncommittedOutput,
+        CancellationToken runToken)
     {
-        var chunker = new TurnOutputChunker();
         TurnTerminalInfo? terminal = null;
         IReadOnlyList<NewConversationEvent> terminalPending = Array.Empty<NewConversationEvent>();
 
         await foreach (var evt in turnExecutor.ExecuteAsync(context, runToken))
         {
             var batch = chunker.Feed(evt, lease.ConversationId, lease.WorkspaceId,
-                lease.TurnId, lease.CommandId, lease.RunId, null);
+                lease.TurnId, lease.CommandId, lease.RunId, assistantMessageId);
 
             if (evt.IsTerminal)
             {
@@ -217,12 +318,17 @@ public sealed class ExecutionRunCoordinator(
 
             // Non-terminal batch → normal output
             if (batch.Count > 0)
+            {
+                uncommittedOutput.Clear();
+                uncommittedOutput.AddRange(batch);
                 await journal.AppendOutputAsync(lease, batch, runToken);
+                uncommittedOutput.Clear();
+            }
         }
 
         // Flush any remaining buffer and combine with terminal batch
         var flush = chunker.Flush(lease.ConversationId, lease.WorkspaceId,
-            lease.TurnId, lease.CommandId, lease.RunId, null);
+            lease.TurnId, lease.CommandId, lease.RunId, assistantMessageId);
 
         var allPending = terminalPending.Concat(flush).ToList();
 
@@ -234,6 +340,44 @@ public sealed class ExecutionRunCoordinator(
         }
 
         return (allPending, terminal);
+    }
+
+    private static IReadOnlyList<NewConversationEvent> CollectPendingOutput(
+        ExecutionLease lease,
+        string? assistantMessageId,
+        TurnOutputChunker chunker,
+        IReadOnlyList<NewConversationEvent> uncommittedOutput,
+        IReadOnlyList<NewConversationEvent> terminalPending)
+    {
+        var buffered = chunker.Flush(
+            lease.ConversationId,
+            lease.WorkspaceId,
+            lease.TurnId,
+            lease.CommandId,
+            lease.RunId,
+            assistantMessageId);
+
+        return terminalPending
+            .Concat(uncommittedOutput)
+            .Concat(buffered)
+            .DistinctBy(e => e.EventId)
+            .ToList();
+    }
+
+    private static async Task<ControlMonitorOutcome> GetMonitorOutcomeAsync(
+        Task<ControlMonitorOutcome>? monitorTask)
+    {
+        if (monitorTask is null)
+            return new ControlMonitorOutcome(false, null);
+
+        try
+        {
+            return await monitorTask;
+        }
+        catch
+        {
+            return new ControlMonitorOutcome(false, null);
+        }
     }
 
     private static TurnTerminal ConvertTerminalInfo(TurnTerminalInfo? info)
@@ -258,4 +402,12 @@ public sealed class ExecutionRunCoordinator(
     {
         try { await cts.CancelAsync(); } catch { }
     }
+
+    private sealed record ControlMonitorOutcome(
+        bool LeaseLost,
+        string? CancelControlId);
+
+    private sealed record TerminalFallbackResult(
+        TurnTerminal Terminal,
+        long Sequence);
 }

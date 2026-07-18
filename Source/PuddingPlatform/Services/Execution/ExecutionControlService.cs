@@ -15,7 +15,6 @@ namespace PuddingPlatform.Services.Execution;
 public sealed class ExecutionControlService(
     IServiceScopeFactory scopeFactory,
     ICommittedEventSignal signal,
-    IChatCommandStore commandStore,
     ILogger<ExecutionControlService> logger) : IExecutionControlService
 {
     public async Task<ControlReceipt> SubmitAsync(
@@ -30,13 +29,23 @@ public sealed class ExecutionControlService(
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
-            // 1. Allocate control sequence
-            var maxSeq = await db.ControlMessages
-                .Where(m => m.ConversationId == command.ConversationId)
-                .MaxAsync(m => (long?)m.Sequence, ct) ?? 0;
-            var controlSeq = maxSeq + 1;
+            // Control and its Conversation Event share one sequence allocation.
+            var head = await db.ConversationHeads
+                .FirstOrDefaultAsync(h => h.ConversationId == command.ConversationId, ct);
+            if (head is null)
+            {
+                head = new ConversationHeadEntity
+                {
+                    ConversationId = command.ConversationId,
+                    HeadSequence = 0
+                };
+                db.ConversationHeads.Add(head);
+            }
+            var eventSeq = head.HeadSequence + 1;
+            head.HeadSequence = eventSeq;
+            var controlSeq = eventSeq;
 
-            // 2. Write control message
+            // 1. Write control message
             db.ControlMessages.Add(new ControlMessageEntity
             {
                 ControlId = controlId,
@@ -51,32 +60,19 @@ public sealed class ExecutionControlService(
                 CreatedAt = nowMs,
             });
 
-            // 3. Update Command status if Cancel
+            // 2. Update Command status if Cancel
             if (command.Kind == ControlMessageKind.CancelRequested && command.TurnId is not null)
             {
-                var cmd = await commandStore.FindByTurnIdAsync(
-                    command.ConversationId, command.TurnId, ct);
-                if (cmd is not null)
-                {
-                    await db.ChatExecutionCommands
-                        .Where(c => c.CommandId == cmd.CommandId)
-                        .Where(c => c.Status == "running")
-                        .ExecuteUpdateAsync(s => s
-                            .SetProperty(c => c.Status, (string)"cancel_requested"), ct);
-                }
+                await db.ChatExecutionCommands
+                    .Where(c =>
+                        c.SessionId == command.ConversationId &&
+                        c.TurnId == command.TurnId &&
+                        c.Status == "running")
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(c => c.Status, (string)"cancel_requested"), ct);
             }
 
-            // 4. Allocate event sequence + write event
-            var head = await db.ConversationHeads
-                .FirstOrDefaultAsync(h => h.ConversationId == command.ConversationId, ct);
-            if (head is null)
-            {
-                head = new ConversationHeadEntity { ConversationId = command.ConversationId, HeadSequence = 0 };
-                db.ConversationHeads.Add(head);
-            }
-            var eventSeq = head.HeadSequence + 1;
-            head.HeadSequence = eventSeq;
-
+            // 3. Write the corresponding event with the same sequence.
             var eventType = command.Kind switch
             {
                 ControlMessageKind.CancelRequested => ConversationEventTypes.TurnCancelRequested,

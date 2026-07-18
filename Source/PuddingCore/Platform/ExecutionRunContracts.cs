@@ -117,6 +117,7 @@ public sealed record AgentExecutionSnapshot(
     string? SystemPrompt,
     string? PersonaJson,
     string? ProviderId,
+    string? ProfileId,
     string? ModelId,
     CapabilityPolicy? CapabilityPolicy,
     IReadOnlyList<SnapshotToolRef>? ToolDefinitions,

@@ -97,6 +97,44 @@ public sealed class AgentConversationLogServiceTests
     }
 
     [TestMethod]
+    public async Task PersistMessageAsync_UsesStableExecutionIdentityIdempotently()
+    {
+        await using var scope = await CreateScopeAsync();
+        using var temp = new TempDataRoot();
+        var service = new AgentConversationLogService(
+            scope.Factory,
+            temp.Paths,
+            NullLogger<AgentConversationLogService>.Instance);
+        var createdAt = DateTimeOffset.Parse("2026-06-16T01:02:03Z")
+            .ToUnixTimeMilliseconds();
+        var request = new AgentConversationLogWriteRequest(
+            WorkspaceId: "workspace-1",
+            AgentInstanceId: "",
+            AgentTemplateId: "",
+            SessionId: "session-identity",
+            Role: "agent",
+            Content: "stable reply",
+            CreatedAt: createdAt,
+            MessageId: "assistant-message-1",
+            TurnId: "turn-1",
+            CommandId: "command-1");
+
+        await service.PersistMessageAsync(request);
+        await service.PersistMessageAsync(request with
+        {
+            Content = "retry must not replace the original fact",
+            CreatedAt = createdAt + 5_000,
+        });
+
+        var rows = await scope.Db.ChatMessages.AsNoTracking().ToListAsync();
+        Assert.AreEqual(1, rows.Count);
+        Assert.AreEqual("assistant-message-1", rows[0].MessageId);
+        Assert.AreEqual("turn-1", rows[0].TurnId);
+        Assert.AreEqual("command-1", rows[0].CommandId);
+        Assert.AreEqual("stable reply", rows[0].Content);
+    }
+
+    [TestMethod]
     public async Task ChatTranscriptWriter_WithAgentLogService_WritesAgentPrivateMessageLogIdempotently()
     {
         await using var scope = await CreateScopeAsync();

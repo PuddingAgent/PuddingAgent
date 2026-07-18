@@ -16,10 +16,17 @@ import {
 } from '../state/conversationStore';
 import { createConnectionManager } from '../connection/connectionManager';
 import { recoverGap } from '../connection/gapRecoveryEngine';
-import { getConversationBootstrap, sendChatMessage } from '@/services/platform/api';
+import {
+  getConversationBootstrap,
+  submitConversationTurn,
+} from '@/services/platform/api';
 import type { ConversationEvent, ConversationTurn } from '../reducer/conversationReducer';
 
-export function useConversation(conversationId: string | null) {
+export function useConversation(
+  workspaceId: string | null,
+  conversationId: string | null,
+  recipientAgentIds: string[],
+) {
   const store = useConversationStore();
   const managerRef = useRef<ReturnType<typeof createConnectionManager> | null>(null);
 
@@ -92,20 +99,36 @@ export function useConversation(conversationId: string | null) {
 
   const sendMessageFn = useCallback(
     async (text: string) => {
-      if (!conversationId || !selectCanSend(store)) return;
+      if (
+        !workspaceId ||
+        !conversationId ||
+        recipientAgentIds.length === 0 ||
+        !selectCanSend(store)
+      ) return;
 
       try {
-        const result = await sendChatMessage('default', {
-          sessionId: conversationId,
-          messageText: text,
-        });
+        const clientRequestId = crypto.randomUUID();
+        const clientMessageId = crypto.randomUUID();
+        const result = await submitConversationTurn(
+          workspaceId,
+          conversationId,
+          {
+            clientRequestId,
+            clientMessageId,
+            recipients: {
+              type: 'agent',
+              agentIds: recipientAgentIds,
+            },
+            content: [{ type: 'text', text }],
+          },
+        );
         return result;
       } catch (err) {
         console.error('[useConversation] Send failed:', err);
         throw err;
       }
     },
-    [conversationId, store],
+    [conversationId, recipientAgentIds, store, workspaceId],
   );
 
   return {

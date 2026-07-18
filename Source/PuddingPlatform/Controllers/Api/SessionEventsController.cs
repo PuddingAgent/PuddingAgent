@@ -81,7 +81,7 @@ public class SessionEventsController : ControllerBase
     /// ADR-057: 统一从 conversation_events 读取。
     /// </summary>
     [HttpGet("{sessionId}/events")]
-    public async Task<ActionResult<SessionEventPage>> GetEvents(
+    public async Task<ActionResult> GetEvents(
         string sessionId,
         [FromQuery] long? from,
         [FromQuery] int limit = 50,
@@ -93,28 +93,37 @@ public class SessionEventsController : ControllerBase
         var page = await _conversationEventStore.ReadForwardAsync(
             sessionId, afterExclusive: from ?? 0, throughInclusive: null, limit, ct);
 
-        var events = page.Events.Select(e => new SessionEventEntry
+        // The replay endpoint uses the same canonical envelope as SSE. Keeping
+        // turn/message identity outside the payload is required for deterministic
+        // frontend projection after reconnect.
+        var events = page.Events.Select(e => new
         {
-            SequenceNum = e.Sequence,
-            EventType = e.Type,
-            Data = e.Payload.GetRawText(),
-            RecordedAt = e.OccurredAt,
+            eventId = e.EventId,
+            conversationId = e.ConversationId,
+            sequence = e.Sequence,
+            type = e.Type,
+            schemaVersion = e.SchemaVersion,
+            commandId = e.CommandId,
+            turnId = e.TurnId,
+            messageId = e.MessageId,
+            occurredAt = e.OccurredAt,
+            payload = e.Payload,
         }).ToList();
 
-        var minSeq = events is { Count: > 0 } ? events[0].SequenceNum : 0L;
-        var maxSeq = events is { Count: > 0 } ? events[^1].SequenceNum : 0L;
+        var minSeq = events is { Count: > 0 } ? events[0].sequence : 0L;
+        var maxSeq = events is { Count: > 0 } ? events[^1].sequence : 0L;
 
         _logger.LogDebug(
             "[SessionEvents] GET history session={Session} from={From} limit={Limit} count={Count} hasMore={HasMore}",
             sessionId, from, limit, page.Events.Count, page.HasMore);
 
-        return Ok(new SessionEventPage
+        return Ok(new
         {
-            Events = events,
-            HasMore = page.HasMore,
-            MinSequence = minSeq,
-            MaxSequence = maxSeq,
-            TotalCount = events.Count,
+            events,
+            hasMore = page.HasMore,
+            minSequence = minSeq,
+            maxSequence = maxSeq,
+            count = events.Count,
         });
     }
 

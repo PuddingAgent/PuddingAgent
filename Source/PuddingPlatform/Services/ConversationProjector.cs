@@ -45,6 +45,9 @@ public sealed class ConversationProjector(
                         workspaceId: evt.WorkspaceId,
                         agentInstanceId: null,
                         agentTemplateId: null,
+                        messageId: evt.MessageId,
+                        turnId: evt.TurnId,
+                        commandId: evt.CommandId,
                         ct: ct);
                     projectedCount++;
                 }

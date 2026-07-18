@@ -88,8 +88,9 @@ CREATE TABLE IF NOT EXISTS Chapters (
 );
 """);
 
-        // ADR-042: Agent 记忆隔离 (幂等：IGNORE on duplicate column)
-        await ExecuteIgnoreDuplicateColumnAsync(conn, "ALTER TABLE Chapters ADD COLUMN AgentInstanceId TEXT", logger);
+        // ADR-042: Agent 记忆隔离。共享数据库初始化必须先检查元数据，
+        // 不能把预期的 duplicate-column 异常当作正常控制流。
+        await EnsureColumnAsync(conn, "Chapters", "AgentInstanceId", "TEXT", logger);
 
         await ExecuteAsync(conn, """
 CREATE TABLE IF NOT EXISTS Pointers (
@@ -593,22 +594,37 @@ CREATE TABLE IF NOT EXISTS ChapterRelations (
         }
     }
 
-    /// <summary>
-    /// 执行 ALTER TABLE ADD COLUMN，若列已存在则忽略错误（幂等）。
-    /// </summary>
-    private static async Task ExecuteIgnoreDuplicateColumnAsync(SqliteConnection conn, string sql, ILogger? logger)
+    private static async Task EnsureColumnAsync(
+        SqliteConnection conn,
+        string tableName,
+        string columnName,
+        string columnDefinition,
+        ILogger? logger)
     {
-        try
+        using (var checkCmd = conn.CreateCommand())
         {
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = sql;
-            await cmd.ExecuteNonQueryAsync();
+            checkCmd.CommandText = $"PRAGMA table_info('{tableName}');";
+            await using var reader = await checkCmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (string.Equals(
+                        reader.GetString(1),
+                        columnName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
         }
-        catch (SqliteException ex) when (ex.Message.Contains("duplicate column name"))
-        {
-            // 幂等：列已存在，跳过
-            logger?.LogDebug(ex, "[MemoryLibrary] 跳过重复列: {Sql}", sql[..Math.Min(sql.Length, 80)]);
-        }
+
+        using var alterCmd = conn.CreateCommand();
+        alterCmd.CommandText =
+            $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};";
+        await alterCmd.ExecuteNonQueryAsync();
+        logger?.LogInformation(
+            "[MemoryLibrary] 已补 {Table}.{Column} 列",
+            tableName,
+            columnName);
     }
 
     /// <summary>

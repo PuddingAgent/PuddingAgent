@@ -35,6 +35,7 @@ public sealed record AgentRuntimeProfile
     public string? AvatarUrl { get; init; }
     public string? MainSessionId { get; init; }
     public string? SourceTemplateId { get; init; }
+    public string? ConsciousProfileId { get; init; }
     public string? PreferredProviderId { get; init; }
     public string? PreferredModelId { get; init; }
     public LlmConfig? LlmConfig { get; init; }

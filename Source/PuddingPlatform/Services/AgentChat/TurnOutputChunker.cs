@@ -138,6 +138,8 @@ public sealed class TurnOutputChunker
             CorrelationId: conversationId,
             CausationId: turnId,
             ProducerEventId: producerEventId,
-            Payload: payload
+            // NewConversationEvent may outlive the JsonDocument that produced the
+            // runtime payload. Persist an owned value at this boundary.
+            Payload: payload.Clone()
         );
 }

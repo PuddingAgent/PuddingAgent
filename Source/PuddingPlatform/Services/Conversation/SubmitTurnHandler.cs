@@ -12,9 +12,27 @@ public sealed class SubmitTurnHandler(
 {
     public async Task<AcceptanceResult> HandleAsync(SubmitTurnCommand command, CancellationToken ct)
     {
-        // ── @all 拒绝 ──
-        if (string.Equals(command.Recipients.Type, "all", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException("@all broadcast is not yet supported. Use explicit agent IDs.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.ConversationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.WorkspaceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.ClientRequestId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.ClientMessageId);
+
+        if (!string.Equals(command.Recipients.Type, "agent", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException(
+                "Only explicit agent recipients are supported. Broadcast is not accepted.");
+        if (command.Recipients.AgentIds is null ||
+            command.Recipients.AgentIds.Count == 0 ||
+            command.Recipients.AgentIds.Any(string.IsNullOrWhiteSpace))
+            throw new ArgumentException(
+                "At least one explicit agent ID is required.",
+                nameof(command.Recipients));
+        if (command.Content.Count == 0 ||
+            command.Content.Any(part =>
+                !string.Equals(part.Type, "text", StringComparison.OrdinalIgnoreCase)) ||
+            !command.Content.Any(part => !string.IsNullOrWhiteSpace(part.Text)))
+            throw new ArgumentException(
+                "At least one non-empty text content part is required.",
+                nameof(command.Content));
 
         logger.LogInformation(
             "[SubmitTurn] conv={ConvId} msg={MsgId} agents={Agents}",

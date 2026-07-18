@@ -9,7 +9,7 @@ import {
   listSessions,
   listWorkspaceAgents,
   listWorkspaces,
-  sendChatMessage,
+  submitConversationTurn,
   subscribeSessionEvents,
 } from '@/services/platform/api';
 import { useChatState } from './useChatState';
@@ -40,9 +40,16 @@ jest.mock('@/services/platform/api', () => ({
   listWorkspaceAgents: jest.fn(),
   listWorkspaces: jest.fn(),
   renameSession: jest.fn(),
-  sendChatMessage: jest.fn(),
+  submitConversationTurn: jest.fn(),
   subscribeSessionEvents: jest.fn(),
   subscribeWorkspaceNotifications: jest.fn(),
+}));
+
+jest.mock('../outbox/commandOutbox', () => ({
+  dequeueCommand: jest.fn().mockResolvedValue(undefined),
+  enqueueCommand: jest.fn().mockResolvedValue(undefined),
+  flushOutbox: jest.fn().mockResolvedValue({ sent: 0, failed: 0 }),
+  markSending: jest.fn().mockResolvedValue(undefined),
 }));
 
 type Deferred<T> = {
@@ -351,8 +358,14 @@ describe('useChatState session selection races', () => {
     (listSessionMessages as jest.Mock).mockResolvedValue(
       messagePage('history'),
     );
-    const sendResult = deferred<{ messageId: string; sessionId: string }>();
-    (sendChatMessage as jest.Mock).mockReturnValue(sendResult.promise);
+    const sendResult = deferred<{
+      messageId: string;
+      conversationId: string;
+      turnIds: string[];
+      commandIds: string[];
+      acceptedSequence: number;
+    }>();
+    (submitConversationTurn as jest.Mock).mockReturnValue(sendResult.promise);
 
     const { result } = renderHook(() => useChatState('?workspaceId=default'), {
       wrapper,
@@ -379,7 +392,13 @@ describe('useChatState session selection races', () => {
     expect(result.current.loading).toBe(false);
 
     await act(async () => {
-      sendResult.resolve({ messageId: 'message-a', sessionId: 'session-a' });
+      sendResult.resolve({
+        messageId: 'message-a',
+        conversationId: 'session-a',
+        turnIds: ['turn-a'],
+        commandIds: ['command-a'],
+        acceptedSequence: 1,
+      });
       await sendPromise;
     });
 
@@ -394,8 +413,14 @@ describe('useChatState session selection races', () => {
     (listSessionMessages as jest.Mock).mockResolvedValue(
       messagePage('history'),
     );
-    const sendResult = deferred<{ messageId: string; sessionId: string }>();
-    (sendChatMessage as jest.Mock).mockReturnValue(sendResult.promise);
+    const sendResult = deferred<{
+      messageId: string;
+      conversationId: string;
+      turnIds: string[];
+      commandIds: string[];
+      acceptedSequence: number;
+    }>();
+    (submitConversationTurn as jest.Mock).mockReturnValue(sendResult.promise);
 
     const { result } = renderHook(() => useChatState('?workspaceId=default'), {
       wrapper,
@@ -420,7 +445,10 @@ describe('useChatState session selection races', () => {
     await act(async () => {
       sendResult.resolve({
         messageId: 'message-current',
-        sessionId: 'session-a',
+        conversationId: 'session-a',
+        turnIds: ['turn-current'],
+        commandIds: ['command-current'],
+        acceptedSequence: 1,
       });
       await sendPromise;
     });
@@ -428,6 +456,7 @@ describe('useChatState session selection races', () => {
     const optimisticTurn = result.current.turns.find(
       (turn) => turn.userMessage.text === 'current prompt',
     );
+    expect(optimisticTurn?.turnId).toBe('turn-current');
     expect(optimisticTurn?.userMessage.id).toBe('message-current');
     expect(optimisticTurn?.userMessage.status).toBe('success');
   });
@@ -436,8 +465,14 @@ describe('useChatState session selection races', () => {
     (listSessionMessages as jest.Mock).mockResolvedValue(
       messagePage('history'),
     );
-    const sendResult = deferred<{ messageId: string; sessionId: string }>();
-    (sendChatMessage as jest.Mock).mockReturnValue(sendResult.promise);
+    const sendResult = deferred<{
+      messageId: string;
+      conversationId: string;
+      turnIds: string[];
+      commandIds: string[];
+      acceptedSequence: number;
+    }>();
+    (submitConversationTurn as jest.Mock).mockReturnValue(sendResult.promise);
     localStorage.setItem(
       'pudding_pinned_message',
       JSON.stringify({
@@ -468,14 +503,19 @@ describe('useChatState session selection races', () => {
     const optimisticTurn = result.current.turns.at(-1);
     expect(optimisticTurn?.userMessage.text).toBe('目前状态怎么样');
 
-    const request = (sendChatMessage as jest.Mock).mock.calls[0][1];
-    expect(request.messageText).toBe('目前状态怎么样');
-    expect(request.originalMessageText).toBe('目前状态怎么样');
+    await waitFor(() =>
+      expect(submitConversationTurn).toHaveBeenCalledTimes(1),
+    );
+    const request = (submitConversationTurn as jest.Mock).mock.calls[0][2];
+    expect(request.content[0].text).toBe('目前状态怎么样');
 
     await act(async () => {
       sendResult.resolve({
         messageId: 'message-current',
-        sessionId: 'session-a',
+        conversationId: 'session-a',
+        turnIds: ['turn-current'],
+        commandIds: ['command-current'],
+        acceptedSequence: 1,
       });
       await sendPromise;
     });

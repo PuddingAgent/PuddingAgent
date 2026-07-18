@@ -16,6 +16,9 @@ public interface IChatTranscriptWriter
         string? workspaceId = null,
         string? agentInstanceId = null,
         string? agentTemplateId = null,
+        string? messageId = null,
+        string? turnId = null,
+        string? commandId = null,
         CancellationToken ct = default);
 }
 

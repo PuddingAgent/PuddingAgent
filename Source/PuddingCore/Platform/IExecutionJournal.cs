@@ -52,6 +52,17 @@ public interface IExecutionJournal
         TurnTerminal terminal,
         IReadOnlyList<NewConversationEvent> pendingEvents,
         CancellationToken ct);
+
+    /// <summary>
+    /// Worker 的最后一道 fail-closed 边界。
+    /// Coordinator 在启动前或运行中意外逃逸时，将 leased/running 状态原子收敛为失败终态。
+    /// 如果 fence 已丢失或 Turn 已终态，返回 null，不覆盖新的 Worker 或既有终态。
+    /// </summary>
+    Task<AppendResult?> TryCommitInfrastructureFailureAsync(
+        ExecutionLease lease,
+        TurnTerminal terminal,
+        IReadOnlyList<NewConversationEvent> pendingEvents,
+        CancellationToken ct);
 }
 
 /// <summary>

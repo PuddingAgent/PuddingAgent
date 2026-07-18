@@ -16,6 +16,7 @@ public sealed class ChatExecutionWorker : BackgroundService
     private const string WorkerId = "chat-execution-worker";
 
     private readonly IExecutionLeaseStore _leaseStore;
+    private readonly IExecutionJournal _journal;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ChatExecutionWorker> _logger;
     private readonly int _maxConcurrency;
@@ -23,11 +24,13 @@ public sealed class ChatExecutionWorker : BackgroundService
 
     public ChatExecutionWorker(
         IExecutionLeaseStore leaseStore,
+        IExecutionJournal journal,
         IServiceScopeFactory scopeFactory,
         ILogger<ChatExecutionWorker> logger,
         IConfiguration? configuration = null)
     {
         _leaseStore = leaseStore;
+        _journal = journal;
         _scopeFactory = scopeFactory;
         _logger = logger;
         _maxConcurrency = configuration?.GetValue<int?>("Pudding:ChatExecutionMaxConcurrency") ?? 3;
@@ -52,9 +55,25 @@ public sealed class ChatExecutionWorker : BackgroundService
 
                     var task = ProcessWithSessionLockAsync(lease, stoppingToken);
                     running.TryAdd(lease.CommandId, task);
-                    _ = task.ContinueWith(_ =>
-                        running.TryRemove(lease.CommandId, out _), CancellationToken.None);
                 }
+
+                foreach (var entry in running.Where(x => x.Value.IsCompleted).ToArray())
+                {
+                    if (!running.TryRemove(entry.Key, out var completedTask))
+                        continue;
+
+                    try
+                    {
+                        await completedTask;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex,
+                            "[ChatWorker] Observed unexpected task escape command={CommandId}",
+                            entry.Key);
+                    }
+                }
+
                 await Task.Delay(IdlePollDelayMs, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -78,15 +97,46 @@ public sealed class ChatExecutionWorker : BackgroundService
         await sessionLock.WaitAsync(stoppingToken);
         try
         {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var coordinator = scope.ServiceProvider
-                .GetRequiredService<IExecutionRunCoordinator>();
+            try
+            {
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var coordinator = scope.ServiceProvider
+                    .GetRequiredService<IExecutionRunCoordinator>();
 
-            // Pass real Lease through — Coordinator must NOT recreate it
-            var outcome = await coordinator.ExecuteAsync(lease, stoppingToken);
-            _logger.LogInformation(
-                "[ChatWorker] Run finished run={RunId} kind={Kind} seq={Seq}",
-                outcome.RunId, outcome.Terminal.Kind, outcome.TerminalSequence);
+                // Pass real Lease through — Coordinator must NOT recreate it
+                var outcome = await coordinator.ExecuteAsync(lease, stoppingToken);
+                _logger.LogInformation(
+                    "[ChatWorker] Run finished run={RunId} kind={Kind} seq={Seq}",
+                    outcome.RunId, outcome.Terminal.Kind, outcome.TerminalSequence);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                await _leaseStore.ReleaseAsync(lease, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                var errorId = Guid.NewGuid().ToString("N")[..12];
+                _logger.LogError(ex,
+                    "[ChatWorker] Execution escaped coordinator run={RunId} command={CommandId} errorId={ErrorId}",
+                    lease.RunId, lease.CommandId, errorId);
+
+                try
+                {
+                    await _journal.TryCommitInfrastructureFailureAsync(
+                        lease,
+                        TurnTerminal.Failure(
+                            "execution_infrastructure_error",
+                            $"Execution infrastructure failed. errorId={errorId}"),
+                        [],
+                        CancellationToken.None);
+                }
+                catch (Exception commitEx)
+                {
+                    _logger.LogCritical(commitEx,
+                        "[ChatWorker] Failed to close escaped run={RunId} command={CommandId} errorId={ErrorId}",
+                        lease.RunId, lease.CommandId, errorId);
+                }
+            }
         }
         finally
         {

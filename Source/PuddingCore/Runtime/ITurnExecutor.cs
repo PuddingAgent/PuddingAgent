@@ -35,6 +35,7 @@ public sealed record TurnExecutionContext(
     CapabilityPolicy? CapabilityPolicy,
     IReadOnlyList<LlmToolDefinition>? ToolDefinitions,
     IReadOnlyList<SkillPackageInfo>? SkillPackages,
+    LlmInvocationProfile LlmProfile,
     LlmConfig? LlmConfig,
     string? ChannelId,
     string? UserExternalId,

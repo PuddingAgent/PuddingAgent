@@ -1,3 +1,5 @@
+using PuddingCode.Abstractions;
+
 namespace PuddingCode.Platform;
 
 /// <summary>
@@ -9,16 +11,14 @@ namespace PuddingCode.Platform;
 public interface IAgentExecutionSnapshotFactory
 {
     /// <summary>
-    /// 为指定 Agent 创建执行快照。
+    /// 从已由应用服务统一解析的运行时 Profile 创建执行快照。
     /// 如果 previousSnapshot 非空（重试场景），应尽力复用原快照中的配置。
     /// </summary>
-    /// <param name="workspaceId">工作区。</param>
-    /// <param name="agentId">Agent 实例 ID。</param>
+    /// <param name="profile">不含明文密钥的快照来源；调用方不得自行再次读取配置文件。</param>
     /// <param name="previousSnapshot">前次运行的快照（重试场景），首次运行为 null。</param>
     /// <param name="ct">取消令牌。</param>
     Task<AgentExecutionSnapshot> CreateAsync(
-        string workspaceId,
-        string agentId,
+        AgentRuntimeProfile profile,
         AgentExecutionSnapshot? previousSnapshot,
         CancellationToken ct);
 

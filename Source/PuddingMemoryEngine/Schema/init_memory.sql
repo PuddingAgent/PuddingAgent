@@ -161,12 +161,6 @@ CREATE TABLE IF NOT EXISTS MemoryPreferences (
 CREATE INDEX IF NOT EXISTS IX_MemoryPreferences_Workspace
     ON MemoryPreferences(WorkspaceId, Category);
 
--- ADR-042: Agent 记忆隔离
-ALTER TABLE MemoryPreferences ADD COLUMN AgentInstanceId TEXT;
-
--- ADR-042: Agent 记忆隔离 (LegacyMemoryFacts)
-ALTER TABLE LegacyMemoryFacts ADD COLUMN AgentInstanceId TEXT;
-
 CREATE TABLE IF NOT EXISTS SubconsciousJobLogs (
     JobId             TEXT PRIMARY KEY,
     SessionId         TEXT NOT NULL,
@@ -223,3 +217,70 @@ CREATE INDEX IF NOT EXISTS IX_SubconsciousJobs_LeaseUntil
 
 CREATE INDEX IF NOT EXISTS IX_SubconsciousJobs_Workspace_Session
     ON SubconsciousJobs(WorkspaceId, SessionId);
+
+CREATE TABLE IF NOT EXISTS EventQueue (
+    Id            TEXT PRIMARY KEY,
+    Priority      INTEGER NOT NULL DEFAULT 0,
+    EventType     TEXT NOT NULL,
+    SourceType    TEXT,
+    SourceId      TEXT,
+    WorkspaceId   TEXT NOT NULL,
+    AgentId       TEXT,
+    Payload       TEXT NOT NULL DEFAULT '{}',
+    IsolationMode TEXT NOT NULL DEFAULT 'isolated',
+    Status        TEXT NOT NULL DEFAULT 'pending',
+    CreatedAt     INTEGER NOT NULL,
+    StartedAt     INTEGER,
+    CompletedAt   INTEGER,
+    RetryCount    INTEGER NOT NULL DEFAULT 0,
+    ErrorMessage  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS IX_EventQueue_Status_Priority_CreatedAt
+    ON EventQueue(Status, Priority, CreatedAt);
+CREATE INDEX IF NOT EXISTS IX_EventQueue_WorkspaceId
+    ON EventQueue(WorkspaceId);
+
+CREATE TABLE IF NOT EXISTS EventDiagnosticLogs (
+    LogId      TEXT PRIMARY KEY,
+    EventId    TEXT NOT NULL,
+    Stage      TEXT NOT NULL,
+    Timestamp  INTEGER NOT NULL,
+    Detail     TEXT,
+    DurationMs INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS IX_EventDiagnosticLogs_EventId
+    ON EventDiagnosticLogs(EventId);
+CREATE INDEX IF NOT EXISTS IX_EventDiagnosticLogs_Timestamp
+    ON EventDiagnosticLogs(Timestamp);
+
+CREATE TABLE IF NOT EXISTS AgentCheckpoints (
+    CheckpointId    TEXT PRIMARY KEY,
+    SessionId       TEXT NOT NULL,
+    AgentId         TEXT NOT NULL,
+    WorkspaceId     TEXT NOT NULL,
+    CallStack       TEXT NOT NULL DEFAULT '{}',
+    PendingTools    TEXT,
+    ContextSnapshot TEXT,
+    CreatedAt       INTEGER NOT NULL,
+    Status          TEXT NOT NULL DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS IX_AgentCheckpoints_Workspace_Agent_Status
+    ON AgentCheckpoints(WorkspaceId, AgentId, Status);
+
+CREATE TABLE IF NOT EXISTS EventSubscriptions (
+    SubscriptionId  TEXT PRIMARY KEY,
+    AgentId          TEXT NOT NULL,
+    WorkspaceId      TEXT NOT NULL,
+    EventTypePattern TEXT NOT NULL,
+    FilterExpression TEXT,
+    CreatedAt        INTEGER NOT NULL,
+    Status           TEXT NOT NULL DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS IX_EventSubscriptions_Workspace_Agent_Pattern
+    ON EventSubscriptions(WorkspaceId, AgentId, EventTypePattern);
+CREATE INDEX IF NOT EXISTS IX_EventSubscriptions_Status
+    ON EventSubscriptions(Status);

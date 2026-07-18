@@ -31,6 +31,7 @@ public interface ILLMConfigResolver
 /// <summary>显意识 LLM 路由配置。</summary>
 public sealed record LlmRoutingConfig
 {
+    public string? ProfileId { get; init; }
     public string? ProviderId { get; init; }
     public string? ModelId { get; init; }
     public string? Endpoint { get; init; }

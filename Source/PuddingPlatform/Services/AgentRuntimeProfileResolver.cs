@@ -64,6 +64,7 @@ public sealed class AgentRuntimeProfileResolver(
             AvatarUrl = agent.AvatarUrl,
             MainSessionId = agent.MainSessionId,
             SourceTemplateId = agent.SourceTemplateId,
+            ConsciousProfileId = llm.ProfileId,
             PreferredProviderId = llm.ProviderId,
             PreferredModelId = llm.ModelId,
             LlmConfig = llm.Config,
@@ -93,7 +94,7 @@ public sealed class AgentRuntimeProfileResolver(
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(agent.SourceTemplateId))
-            return new ResolvedLlmRouting(null, null, null);
+            return new ResolvedLlmRouting(null, null, null, null);
 
         var templateRouting = await templateLlmResolver.ResolveConsciousAsync(
             agent.SourceTemplateId!,
@@ -115,7 +116,11 @@ public sealed class AgentRuntimeProfileResolver(
                 modelId ?? "(none)");
         }
 
-        return new ResolvedLlmRouting(providerId, modelId, config);
+        return new ResolvedLlmRouting(
+            TrimToNull(templateRouting?.ProfileId),
+            providerId,
+            modelId,
+            config);
     }
 
     private async Task<ResolvedCapabilities> ResolveCapabilitiesAsync(
@@ -356,6 +361,7 @@ public sealed class AgentRuntimeProfileResolver(
         => $"cap-{toolId.Trim().Replace('_', '-').ToLowerInvariant()}";
 
     private sealed record ResolvedLlmRouting(
+        string? ProfileId,
         string? ProviderId,
         string? ModelId,
         LlmConfig? Config);

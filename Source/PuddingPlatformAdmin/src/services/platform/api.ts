@@ -206,6 +206,9 @@ export interface ChatMessageDto {
   thinking?: ThinkingChunkDto[];
   usage?: TokenUsageDto;
   createdAt: number;
+  messageId?: string | null;
+  turnId?: string | null;
+  commandId?: string | null;
 }
 
 export interface ThinkingChunkDto {
@@ -1863,8 +1866,27 @@ const NEW_TO_LEGACY_EVENT: Record<string, string> = {
   'tool.call.failed': 'tool_error',
 };
 
-function normalizeEventType(rawType: string): string {
+export function normalizeConversationEventType(rawType: string): string {
   return NEW_TO_LEGACY_EVENT[rawType] ?? rawType;
+}
+
+export function projectConversationEventEnvelope(
+  data: Record<string, unknown>,
+  rawType: string,
+  sequenceNum?: number,
+): AdminChatStreamEvent {
+  const payload =
+    data.payload &&
+    typeof data.payload === 'object' &&
+    !Array.isArray(data.payload)
+      ? (data.payload as Record<string, unknown>)
+      : {};
+  return {
+    ...data,
+    ...payload,
+    type: normalizeConversationEventType(rawType) as AdminChatStreamEvent['type'],
+    ...(sequenceNum !== undefined ? { sequenceNum } : {}),
+  } as AdminChatStreamEvent;
 }
 
 /** SSE 订阅会话事件流（含 subagent.spawned / subagent.completed）。
@@ -1976,12 +1998,7 @@ export function subscribeSessionEvents(
               });
               // ADR-056: normalize event names (new → legacy) then pass to callback
               // type must come AFTER ...data so it is not overwritten by data.type
-              const normalizedType = normalizeEventType(lastEventType);
-              onEvent({
-                ...data,
-                type: normalizedType as any,
-                ...(seq !== undefined ? { sequenceNum: seq } : {}),
-              });
+              onEvent(projectConversationEventEnvelope(data, lastEventType, seq));
             } catch (error) {
               recordPerfEvent('chat.sse.parseError', {
                 sessionId,
@@ -2066,23 +2083,6 @@ export function subscribeWorkspaceNotifications(
 }
 
 // ─── Chat types ───────────────────────────────────────────────
-
-export interface AdminChatRequest {
-  messageText: string;
-  originalMessageText?: string;
-  sessionId?: string;
-  agentId?: string;
-  targetAgentIds?: string[];
-  audience?: 'agent' | 'all';
-  suppressUserTranscript?: boolean;
-  forceNewSession?: boolean;
-  reasoningEffort?: string;
-  metadata?: Record<string, string>;
-  /** ADR-058: Frontend-generated idempotency key — reused across retries. */
-  clientRequestId?: string;
-  /** ADR-058: Frontend-generated stable user message ID. */
-  clientMessageId?: string;
-}
 
 export interface AdminChatSteeringRequest {
   messageText: string;
@@ -2217,28 +2217,29 @@ export interface TurnStep {
   durationMs?: number;
 }
 
-export interface AdminChatResponse {
-  success?: boolean;
-  /** ADR-056: 命令受理状态 */
-  status?: string;
-  /** ADR-056: 命令 ID */
-  commandId?: string;
+export interface ConversationRecipientRequest {
+  type: 'agent';
+  agentIds: string[];
+}
+
+export interface ConversationContentPart {
+  type: 'text';
+  text: string;
+}
+
+export interface SubmitConversationTurnRequest {
+  clientRequestId: string;
+  clientMessageId: string;
+  recipients: ConversationRecipientRequest;
+  content: ConversationContentPart[];
+}
+
+export interface ConversationAcceptanceResult {
+  conversationId: string;
   messageId: string;
-  /** P0: User message ID (distinct from assistant messageId) */
-  userMessageId?: string;
-  sessionId: string;
-  /** ADR-056: 轮次 ID */
-  turnId?: string;
-  /** ADR-056: 事件游标 */
-  eventCursor?: number;
-  /** 幂等键 */
-  clientRequestId?: string;
-  reply?: string;
-  isSuccess?: boolean;
-  errorMessage?: string;
-  usage?: TokenUsageDto;
-  /** 本次执行产生的逐轮步骤（包含工具调用记录）。 */
-  turnSteps?: TurnStep[];
+  turnIds: string[];
+  commandIds: string[];
+  acceptedSequence: number;
 }
 
 export interface VisionArtifactUploadResponse {
@@ -2327,24 +2328,74 @@ export async function getAgentMessageQueue(
   );
 }
 
-export async function sendAdminChatMessage(
-  workspaceId: string, req: AdminChatRequest,
-): Promise<AdminChatResponse> {
-  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
-    method: 'POST', data: req,
-  });
+/** Canonical Conversation command endpoint. HTTP 202 means accepted, never completed. */
+export async function submitConversationTurn(
+  workspaceId: string,
+  conversationId: string,
+  req: SubmitConversationTurnRequest,
+  signal?: AbortSignal,
+): Promise<ConversationAcceptanceResult> {
+  return request(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns`,
+    {
+      method: 'POST',
+      data: req,
+      headers: { 'X-Workspace-Id': workspaceId },
+      signal,
+    },
+  );
 }
 
-/** T-102: 非流式消息提交 — POST 返回 202 Accepted + { status, commandId, messageId, turnId, sessionId, eventCursor } */
-export async function sendChatMessage(
-  workspaceId: string,
-  req: AdminChatRequest,
-  signal?: AbortSignal,
-): Promise<AdminChatResponse> {
-  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/message`, {
-    method: 'POST',
-    data: req,
-    signal,
+export async function awaitConversationTurn(
+  conversationId: string,
+  turnId: string,
+  afterSequence: number,
+  timeoutMs = 120_000,
+): Promise<{ reply: string }> {
+  const controller = new AbortController();
+  let accumulatedReply = '';
+
+  return new Promise((resolve, reject) => {
+    const finish = (action: () => void) => {
+      window.clearTimeout(timeout);
+      controller.abort();
+      action();
+    };
+    const timeout = window.setTimeout(
+      () => finish(() => reject(new Error('等待 Agent 回复超时'))),
+      timeoutMs,
+    );
+
+    subscribeSessionEvents(
+      conversationId,
+      (event) => {
+        const eventTurnId = 'turnId' in event ? event.turnId : undefined;
+        if (eventTurnId && eventTurnId !== turnId) return;
+
+        if (event.type === 'delta') {
+          accumulatedReply += event.delta;
+          return;
+        }
+        if (event.type === 'done') {
+          finish(() => resolve({
+            reply: event.reply?.trim() || accumulatedReply.trim(),
+          }));
+          return;
+        }
+        if (event.type === 'error') {
+          finish(() => reject(new Error(event.message || 'Agent 执行失败')));
+          return;
+        }
+        if (event.type === 'cancelled') {
+          finish(() => reject(new Error(event.message || 'Agent 执行已取消')));
+        }
+      },
+      controller.signal,
+      {
+        afterSequence,
+        onError: (error) => finish(() => reject(error)),
+      },
+    );
   });
 }
 

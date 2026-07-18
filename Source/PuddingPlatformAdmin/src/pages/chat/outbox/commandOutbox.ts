@@ -4,15 +4,16 @@
 // ───────────────────────────────────────────────────────────────
 
 const DB_NAME = 'pudding-command-outbox';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'pending-commands';
 
 export interface OutboxRecord {
   id: string; // clientRequestId
+  clientMessageId: string;
   workspaceId: string;
+  conversationId: string;
   messageText: string;
-  sessionId?: string;
-  agentId?: string;
+  agentIds: string[];
   createdAt: number;
   attemptCount: number;
   lastAttemptAt?: number;
@@ -24,9 +25,9 @@ function openDb(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
+      if (db.objectStoreNames.contains(STORE_NAME))
+        db.deleteObjectStore(STORE_NAME);
+      db.createObjectStore(STORE_NAME, { keyPath: 'id' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -35,10 +36,11 @@ function openDb(): Promise<IDBDatabase> {
 
 export async function enqueueCommand(params: {
   clientRequestId: string;
+  clientMessageId: string;
   workspaceId: string;
+  conversationId: string;
   messageText: string;
-  sessionId?: string;
-  agentId?: string;
+  agentIds: string[];
 }): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -46,10 +48,11 @@ export async function enqueueCommand(params: {
 
   const record: OutboxRecord = {
     id: params.clientRequestId,
+    clientMessageId: params.clientMessageId,
     workspaceId: params.workspaceId,
+    conversationId: params.conversationId,
     messageText: params.messageText,
-    sessionId: params.sessionId,
-    agentId: params.agentId,
+    agentIds: params.agentIds,
     createdAt: Date.now(),
     attemptCount: 0,
     status: 'pending',

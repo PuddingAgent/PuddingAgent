@@ -184,6 +184,8 @@ public sealed class SqliteExecutionJournal(
             var now = DateTimeOffset.UtcNow;
             var nowMs = now.ToUnixTimeMilliseconds();
             var committedAt = now.ToString("O");
+            var assistantMessageId = await ReadAssistantMessageIdAsync(
+                conn, tx, lease.CommandId, ct);
 
             var terminalEvent = new NewConversationEvent(
                 EventId: Guid.NewGuid().ToString("N"),
@@ -193,7 +195,7 @@ public sealed class SqliteExecutionJournal(
                 TurnId: lease.TurnId,
                 CommandId: lease.CommandId,
                 RunId: lease.RunId,
-                MessageId: null,
+                MessageId: assistantMessageId,
                 CorrelationId: lease.ConversationId,
                 CausationId: lease.TurnId,
                 ProducerEventId: null,
@@ -287,6 +289,122 @@ public sealed class SqliteExecutionJournal(
         }
     }
 
+    public async Task<AppendResult?> TryCommitInfrastructureFailureAsync(
+        ExecutionLease lease,
+        TurnTerminal terminal,
+        IReadOnlyList<NewConversationEvent> pendingEvents,
+        CancellationToken ct)
+    {
+        if (terminal.Kind != TurnTerminalKind.Failed)
+            throw new ArgumentException("Infrastructure fallback only accepts a failed terminal.", nameof(terminal));
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        try
+        {
+            if (!await ValidateRunAsync(conn, tx, lease, ct)
+                || !await VerifyTurnNotTerminalAsync(conn, tx, lease.TurnId, ct))
+            {
+                await tx.RollbackAsync(ct);
+                return null;
+            }
+
+            var events = pendingEvents
+                .Where(e => !IsTerminalType(e.Type))
+                .ToList();
+            var assistantMessageId = await ReadAssistantMessageIdAsync(
+                conn, tx, lease.CommandId, ct);
+            events.Add(new NewConversationEvent(
+                EventId: Guid.NewGuid().ToString("N"),
+                Type: terminal.TerminalEventType,
+                SchemaVersion: 1,
+                WorkspaceId: lease.WorkspaceId,
+                TurnId: lease.TurnId,
+                CommandId: lease.CommandId,
+                RunId: lease.RunId,
+                MessageId: assistantMessageId,
+                CorrelationId: lease.ConversationId,
+                CausationId: lease.TurnId,
+                ProducerEventId: null,
+                Payload: BuildTerminalPayload(terminal)));
+
+            var result = await AppendEventsInternalAsync(conn, tx, lease, events, ct);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            using var turnCmd = conn.CreateCommand();
+            turnCmd.Transaction = tx;
+            turnCmd.CommandText = @"
+                UPDATE conversation_turns
+                SET status = 'failed',
+                    terminal_sequence = @termSeq,
+                    terminal_kind = 'failed',
+                    completed_at = @completedAt
+                WHERE turn_id = @turnId
+                  AND status IN ('accepted', 'running')";
+            AddParam(turnCmd, "@termSeq", result.LastSequence);
+            AddParam(turnCmd, "@completedAt", nowMs);
+            AddParam(turnCmd, "@turnId", lease.TurnId);
+
+            using var runCmd = conn.CreateCommand();
+            runCmd.Transaction = tx;
+            runCmd.CommandText = @"
+                UPDATE execution_runs
+                SET status = 'failed',
+                    terminal_sequence = @termSeq,
+                    completed_at = @completedAt
+                WHERE run_id = @runId
+                  AND fencing_token = @fenceToken
+                  AND worker_id = @workerId
+                  AND status IN ('leased', 'running', 'cancel_requested')";
+            AddParam(runCmd, "@termSeq", result.LastSequence);
+            AddParam(runCmd, "@completedAt", nowMs);
+            AddParam(runCmd, "@runId", lease.RunId);
+            AddParam(runCmd, "@fenceToken", lease.FencingToken);
+            AddParam(runCmd, "@workerId", lease.WorkerId);
+
+            using var commandCmd = conn.CreateCommand();
+            commandCmd.Transaction = tx;
+            commandCmd.CommandText = @"
+                UPDATE chat_execution_commands
+                SET status = 'failed',
+                    terminal_sequence = @termSeq,
+                    completed_at = @completedAt,
+                    lease_owner = NULL,
+                    lease_until = NULL,
+                    last_error = @lastError
+                WHERE command_id = @commandId
+                  AND status IN ('leased', 'running', 'cancel_requested')";
+            AddParam(commandCmd, "@termSeq", result.LastSequence);
+            AddParam(commandCmd, "@completedAt", nowMs);
+            AddParam(commandCmd, "@lastError", $"{terminal.ErrorCode}: {terminal.ErrorMessage}");
+            AddParam(commandCmd, "@commandId", lease.CommandId);
+
+            var turnAffected = await turnCmd.ExecuteNonQueryAsync(ct);
+            var runAffected = await runCmd.ExecuteNonQueryAsync(ct);
+            var commandAffected = await commandCmd.ExecuteNonQueryAsync(ct);
+            if (turnAffected != 1 || runAffected != 1 || commandAffected != 1)
+                throw new InvalidOperationException(
+                    $"Infrastructure failure transition rejected turn={turnAffected} run={runAffected} command={commandAffected}.");
+
+            await tx.CommitAsync(ct);
+            signal.Signal(lease.ConversationId, result.LastSequence);
+            logger.LogError(
+                "[Journal] Infrastructure failure committed run={RunId} command={CommandId} seq={Sequence}",
+                lease.RunId, lease.CommandId, result.LastSequence);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
     private static async Task<bool> ValidateRunAsync(
         System.Data.Common.DbConnection conn,
         System.Data.Common.DbTransaction tx,
@@ -322,6 +440,23 @@ public sealed class SqliteExecutionJournal(
         if (leaseUntil > 0 && leaseUntil < nowMs) return false;
 
         return true;
+    }
+
+    private static async Task<string?> ReadAssistantMessageIdAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        string commandId,
+        CancellationToken ct)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = @"
+            SELECT message_id
+            FROM chat_execution_commands
+            WHERE command_id = @commandId";
+        AddParam(cmd, "@commandId", commandId);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null or DBNull ? null : Convert.ToString(result);
     }
 
     private static async Task<bool> VerifyTurnNotTerminalAsync(

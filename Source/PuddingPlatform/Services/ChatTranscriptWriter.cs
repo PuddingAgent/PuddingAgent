@@ -53,7 +53,7 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
             workspaceId: null,
             agentInstanceId: null,
             agentTemplateId: null,
-            ct);
+            ct: ct);
 
     /// <summary>
     /// 幂等写入一条携带 Agent 身份的聊天转录消息。返回生成的 messageId，重复消息返回 null。
@@ -68,6 +68,9 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
         string? workspaceId = null,
         string? agentInstanceId = null,
         string? agentTemplateId = null,
+        string? messageId = null,
+        string? turnId = null,
+        string? commandId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(content))
@@ -75,11 +78,11 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
 
         try
         {
-            long? messageId = null;
+            long? persistedId = null;
 
             if (_agentConversationLogService is not null)
             {
-                messageId = await _agentConversationLogService.PersistMessageAsync(
+                persistedId = await _agentConversationLogService.PersistMessageAsync(
                     new AgentConversationLogWriteRequest(
                         workspaceId ?? string.Empty,
                         agentInstanceId ?? string.Empty,
@@ -89,14 +92,17 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
                         content,
                         createdAt,
                         thinkingJson,
-                        usageJson),
+                        usageJson,
+                        messageId,
+                        turnId,
+                        commandId),
                     ct);
 
                 // 话题检测：仅对用户消息且未持久化通过 _agentConversationLogService 的情况
                 // 如果 _agentConversationLogService 返回了 ID，这里统一检测
             }
 
-            if (messageId is null)
+            if (persistedId is null)
             {
 
                 using var scope = _scopeFactory.CreateScope();
@@ -104,13 +110,18 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
                 var windowStart = createdAt - 2_000;
                 var windowEnd = createdAt + 2_000;
 
-                var exists = await transcriptDb.ChatMessages
-                    .AsNoTracking()
-                    .AnyAsync(m => m.SessionId == sessionId
-                        && m.Role == role
-                        && m.Content == content
-                        && m.CreatedAt >= windowStart
-                        && m.CreatedAt <= windowEnd, ct);
+                var hasStableMessageId = !string.IsNullOrWhiteSpace(messageId);
+                var exists = hasStableMessageId
+                    ? await transcriptDb.ChatMessages
+                        .AsNoTracking()
+                        .AnyAsync(m => m.MessageId == messageId, ct)
+                    : await transcriptDb.ChatMessages
+                        .AsNoTracking()
+                        .AnyAsync(m => m.SessionId == sessionId
+                            && m.Role == role
+                            && m.Content == content
+                            && m.CreatedAt >= windowStart
+                            && m.CreatedAt <= windowEnd, ct);
 
                 if (exists)
                 {
@@ -122,23 +133,31 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
 
                 var entity = new ChatMessageEntity
                 {
+                    MessageId = hasStableMessageId
+                        ? messageId!
+                        : $"transcript-{Guid.NewGuid():N}",
                     SessionId = sessionId,
+                    WorkspaceId = workspaceId ?? string.Empty,
+                    AgentInstanceId = agentInstanceId ?? string.Empty,
+                    AgentTemplateId = agentTemplateId ?? string.Empty,
                     Role = role,
                     Content = content,
                     ThinkingJson = thinkingJson,
                     UsageJson = usageJson,
+                    TurnId = turnId,
+                    CommandId = commandId,
                     CreatedAt = createdAt,
                 };
                 transcriptDb.ChatMessages.Add(entity);
                 await transcriptDb.SaveChangesAsync(ct);
-                messageId = entity.Id;
+                persistedId = entity.Id;
 
                 _logger.LogInformation(
                     "[Chat:Transcript] Persisted transcript session={Session} role={Role} contentLen={ContentLen}",
                     sessionId, role, content.Length);
             }
 
-            return messageId;
+            return persistedId;
         }
         catch (Exception ex)
         {

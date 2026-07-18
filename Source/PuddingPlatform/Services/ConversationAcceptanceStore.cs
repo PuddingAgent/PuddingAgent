@@ -59,7 +59,9 @@ public sealed class ConversationAcceptanceStore(
         try
         {
             var batchId = Guid.NewGuid().ToString("N");
-            var agentIds = request.Recipients.AgentIds ?? ["default"];
+            var agentIds = request.Recipients.AgentIds
+                ?? throw new InvalidOperationException(
+                    "Validated turn acceptance requires explicit agent IDs.");
             var textContent = request.Content
                 .FirstOrDefault(c => c.Type == "text")?.Text ?? "";
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

@@ -10,14 +10,16 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionChatMessageStore
 {
-    private readonly PlatformDbContext _db;
+    private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
 
-    public ChatMessageRepository(PlatformDbContext db) => _db = db;
+    public ChatMessageRepository(IDbContextFactory<PlatformDbContext> dbFactory) =>
+        _dbFactory = dbFactory;
 
     public async Task<IReadOnlyList<ChatMessageRow>> GetMessagesCursorAsync(
         string sessionId, long? beforeId = null, int limit = 50, CancellationToken ct = default)
     {
-        var query = _db.ChatMessages.AsNoTracking()
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var query = db.ChatMessages.AsNoTracking()
             .Where(m => m.SessionId == sessionId);
 
         if (beforeId.HasValue)
@@ -32,7 +34,10 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
     }
 
     public async Task<bool> AnyBySessionIdAsync(string sessionId, CancellationToken ct = default)
-        => await _db.ChatMessages.AnyAsync(m => m.SessionId == sessionId, ct);
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.ChatMessages.AnyAsync(m => m.SessionId == sessionId, ct);
+    }
 
     /// <summary>
     /// ADR-058: 按稳定业务 ID 加载用户消息。
@@ -40,7 +45,8 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
     /// </summary>
     public async Task<ChatMessageRow?> GetByMessageIdAsync(string messageId, CancellationToken ct = default)
     {
-        var entity = await _db.ChatMessages.AsNoTracking()
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var entity = await db.ChatMessages.AsNoTracking()
             .FirstOrDefaultAsync(m => m.MessageId == messageId, ct);
         return entity is null ? null : Map(entity);
     }
@@ -59,7 +65,8 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
 
     public async Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default)
     {
-        var messages = await _db.ChatMessages.AsNoTracking()
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var messages = await db.ChatMessages.AsNoTracking()
             .Where(m => m.SessionId == sessionId && !string.IsNullOrWhiteSpace(m.Content))
             .OrderBy(m => m.CreatedAt)
             .ThenBy(m => m.Id)
@@ -68,5 +75,8 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
     }
 
     public async Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default)
-        => await _db.ChatMessages.CountAsync(m => m.SessionId == sessionId, ct);
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.ChatMessages.CountAsync(m => m.SessionId == sessionId, ct);
+    }
 }

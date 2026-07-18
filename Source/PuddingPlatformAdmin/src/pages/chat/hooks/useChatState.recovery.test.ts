@@ -7,7 +7,6 @@ import { getChatRouteLabel, resolveChatRoute } from './chatRouting';
 import {
   applyBufferedDeltaToTurn,
   buildAgentMainSessionRequest,
-  buildChatMessageRequest,
   buildSessionEventReplayUrl,
   canBindUnknownMetadataToTurn,
   filterSubAgentCardsForSession,
@@ -316,6 +315,38 @@ describe('chat session recovery decisions', () => {
     expect(getHistoryReconcileBlockReason(current, freshHistory)).toBeNull();
   });
 
+  it('does not let delayed history erase a completed SSE answer', () => {
+    const timestamp = Date.now();
+    const current = [
+      {
+        ...turn('OK'),
+        turnId: 'turn-current',
+        userMessage: {
+          id: 'user-current',
+          text: '请只回复：OK',
+          timestamp,
+          status: 'success' as const,
+        },
+      },
+    ];
+    const staleHistory = [
+      {
+        ...turn(''),
+        turnId: 'hist-turn-current',
+        userMessage: {
+          id: 'hist-user-current',
+          text: '请只回复：OK',
+          timestamp,
+          status: 'success' as const,
+        },
+      },
+    ];
+
+    expect(getHistoryReconcileBlockReason(current, staleHistory)).toBe(
+      'completed-turn-not-materialized',
+    );
+  });
+
   it('hydrates completed event replays instead of visually streaming them again', () => {
     expect(
       shouldHydrateSessionEventReplay([{ type: 'delta' }, { type: 'done' }]),
@@ -383,7 +414,7 @@ describe('chat session recovery decisions', () => {
 
   it('uses the forward replay endpoint for missed session events', () => {
     expect(buildSessionEventReplayUrl('session/a b', 42, 100)).toBe(
-      '/api/sessions/session%2Fa%20b/replay?from=42&limit=100',
+      '/api/sessions/session%2Fa%20b/events?from=41&limit=100',
     );
   });
 
@@ -691,31 +722,6 @@ describe('chat session recovery decisions', () => {
       primaryAgentId: 'assistant',
     });
     expect(getChatRouteLabel(route, agents)).toBe('all');
-  });
-
-  it('uses main session alias while preserving camera metadata', () => {
-    const route = resolveChatRoute(
-      '请分析这张图。',
-      [agentDto({ agentId: 'assistant', name: '默认助手' })],
-      'assistant',
-    );
-
-    expect(
-      buildChatMessageRequest(route, 'session-1', 'assistant', false, {
-        inputMode: 'camera',
-        cameraSessionId: 'camera-session-1',
-        visionArtifactId: 'vision-frame-1',
-      }),
-    ).toMatchObject({
-      messageText: '请分析这张图。',
-      sessionId: 'main',
-      agentId: 'assistant',
-      metadata: {
-        inputMode: 'camera',
-        cameraSessionId: 'camera-session-1',
-        visionArtifactId: 'vision-frame-1',
-      },
-    });
   });
 
   it('projects realtime voice and camera session events into avatar runtime events', () => {

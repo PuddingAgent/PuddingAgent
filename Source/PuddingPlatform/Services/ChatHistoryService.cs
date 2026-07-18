@@ -10,19 +10,20 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public sealed class ChatHistoryService : IChatHistoryService
 {
-    private readonly PlatformDbContext _db;
+    private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
 
-    public ChatHistoryService(PlatformDbContext db)
+    public ChatHistoryService(IDbContextFactory<PlatformDbContext> dbFactory)
     {
-        _db = db;
+        _dbFactory = dbFactory;
     }
 
     public async Task<ChatHistoryPage> GetMessagesAsync(string sessionId, long? before = null, int limit = 20, CancellationToken ct = default)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var beforeTs = before ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         limit = Math.Clamp(limit, 1, 50);
 
-        var messages = await _db.ChatMessages
+        var messages = await db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId && m.CreatedAt < beforeTs)
             .OrderByDescending(m => m.CreatedAt)
@@ -38,7 +39,7 @@ public sealed class ChatHistoryService : IChatHistoryService
 
         var oldest = messages.Count > 0 ? messages.Min(m => m.CreatedAt) : (long?)null;
         var hasMore = oldest is not null
-            && await _db.ChatMessages.AnyAsync(m => m.SessionId == sessionId && m.CreatedAt < oldest, ct);
+            && await db.ChatMessages.AnyAsync(m => m.SessionId == sessionId && m.CreatedAt < oldest, ct);
 
         return new ChatHistoryPage
         {
@@ -50,10 +51,11 @@ public sealed class ChatHistoryService : IChatHistoryService
 
     public async Task<ChatHistoryPage> GetRecentMessagesAsync(long? before = null, int limit = 20, CancellationToken ct = default)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var beforeTs = before ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         limit = Math.Clamp(limit, 1, 50);
 
-        var messages = await _db.ChatMessages
+        var messages = await db.ChatMessages
             .AsNoTracking()
             .Where(m => m.CreatedAt < beforeTs)
             .OrderByDescending(m => m.CreatedAt)
