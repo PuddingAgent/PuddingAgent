@@ -852,6 +852,7 @@ public sealed class AgentExecutionService
                                         CapabilityPolicy = effectiveCapability,
                                         Trace = execTrace,
                                         ExecutionIdentity = request.ExecutionIdentity,
+                                        ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
                                         DelegationDepth = request.DelegationDepth,
                                         MaxDelegationDepth = request.MaxDelegationDepth,
                                         AllowSubDelegation = request.AllowSubDelegation,
@@ -1340,6 +1341,7 @@ public sealed class AgentExecutionService
                                 CapabilityPolicy = effectiveCapability,
                                 Trace = execTrace,
                                 ExecutionIdentity = request.ExecutionIdentity,
+                                ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
                                 DelegationDepth = request.DelegationDepth,
                                 MaxDelegationDepth = request.MaxDelegationDepth,
                                 AllowSubDelegation = request.AllowSubDelegation,
@@ -2347,7 +2349,12 @@ public sealed class AgentExecutionService
                     var cancelledFrame = deadlineReached
                         ? ServerSentEventFrame.Json(
                             SseEventTypes.Error,
-                            new { message = $"执行超时 ({maxElapsed.TotalSeconds}s)", status = terminalStreamStatus })
+                            new
+                            {
+                                code = TerminalErrorCodes.ExecutionTimeout,
+                                message = $"执行超时 ({maxElapsed.TotalSeconds}s)",
+                                status = terminalStreamStatus,
+                            })
                         : ServerSentEventFrame.Json(
                             SseEventTypes.Cancelled,
                             new { message = "已取消", status = terminalStreamStatus });
@@ -2362,7 +2369,12 @@ public sealed class AgentExecutionService
                     _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", maxElapsed);
                     var timeoutFrame = ServerSentEventFrame.Json(
                         SseEventTypes.Error,
-                        new { message = $"执行超时 ({maxElapsed.TotalSeconds}s)", status = terminalStreamStatus });
+                        new
+                        {
+                            code = TerminalErrorCodes.ExecutionTimeout,
+                            message = $"执行超时 ({maxElapsed.TotalSeconds}s)",
+                            status = terminalStreamStatus,
+                        });
                     await Append(timeoutFrame);
                     yield return timeoutFrame;
                     break;
@@ -2592,7 +2604,12 @@ public sealed class AgentExecutionService
                     var terminationFrame = deadlineReached
                         ? ServerSentEventFrame.Json(
                             SseEventTypes.Error,
-                            new { message = reply, status = terminalStreamStatus })
+                            new
+                            {
+                                code = TerminalErrorCodes.ExecutionTimeout,
+                                message = reply,
+                                status = terminalStreamStatus,
+                            })
                         : ServerSentEventFrame.Json(
                             SseEventTypes.Cancelled,
                             new { message = reply, status = terminalStreamStatus });
@@ -2801,6 +2818,7 @@ public sealed class AgentExecutionService
                             CapabilityPolicy = effectiveCapability,
                             Trace = null, // Streaming local function scope
                             ExecutionIdentity = request.ExecutionIdentity,
+                            ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
                             DelegationDepth = request.DelegationDepth,
                             MaxDelegationDepth = request.MaxDelegationDepth,
                             AllowSubDelegation = request.AllowSubDelegation,

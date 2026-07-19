@@ -169,6 +169,8 @@ public sealed record ToolExecutionContext
     /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
     /// </summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>当前 Runtime Run 的绝对截止时间；派生工具和子代理不得越过。</summary>
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? DelegationDepth { get; init; }
     public int? MaxDelegationDepth { get; init; }
     public bool? AllowSubDelegation { get; init; }

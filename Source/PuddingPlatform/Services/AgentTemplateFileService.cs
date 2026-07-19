@@ -219,7 +219,7 @@ public sealed class AgentTemplateFileService
                 MaxContextTokens = req.MaxContextTokens,
                 MaxReplyTokens = req.MaxReplyTokens,
                 MaxRounds = req.MaxRounds ?? 200,
-                MaxElapsedSeconds = req.MaxElapsedSeconds ?? 1200,
+                MaxElapsedSeconds = req.MaxElapsedSeconds ?? 2400,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? 100,
                 ContainerImage = req.ContainerImage,
                 IsBuiltIn = false,
@@ -464,7 +464,7 @@ public sealed class AgentTemplateFileService
             MaxContextTokens = preset.MaxContextTokens <= 0 ? 8192 : preset.MaxContextTokens,
             MaxReplyTokens = preset.MaxReplyTokens <= 0 ? 2048 : preset.MaxReplyTokens,
             MaxRounds = preset.MaxRounds <= 0 ? 200 : preset.MaxRounds,
-            MaxElapsedSeconds = preset.MaxElapsedSeconds <= 0 ? 1200 : preset.MaxElapsedSeconds,
+            MaxElapsedSeconds = preset.MaxElapsedSeconds <= 0 ? 2400 : preset.MaxElapsedSeconds,
             MaxToolCallsTotal = preset.MaxToolCallsTotal <= 0 ? 100 : preset.MaxToolCallsTotal,
         };
 
@@ -575,7 +575,7 @@ public sealed class AgentTemplateFileService
         public string? ConsciousProfileId { get; init; }
         public string? SubconsciousProfileId { get; init; }
         public int MaxRounds { get; init; } = 200;
-        public int MaxElapsedSeconds { get; init; } = 1200;
+        public int MaxElapsedSeconds { get; init; } = 2400;
         public int MaxToolCallsTotal { get; init; } = 100;
         public int MaxContextTokens { get; init; } = 8192;
         public int MaxReplyTokens { get; init; } = 2048;

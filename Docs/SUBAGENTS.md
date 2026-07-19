@@ -84,7 +84,8 @@ The seven `smart_*` workflow wrappers use a stricter contract:
 - a response such as `done`, `completed`, or a bare status sentence is a failed Smart workflow result,
   not successful work;
 - the wrapper does not automatically retry an invalid report because that could silently double model
-  cost. The failure includes a bounded raw-output preview for diagnosis.
+  cost. The failure exposes `subAgentId`, `runId`, and the validation reason while preserving the complete
+  child result envelope and `rawOutput` for diagnosis.
 
 ## Runtime Controls
 
@@ -114,6 +115,15 @@ Timeout:
 - `timeout_seconds` may be passed per call.
 - It must not exceed `maxTimeoutSeconds`.
 - If omitted, `defaultTimeoutSeconds` is used.
+- A conversation Turn freezes one absolute execution deadline. Tool and sub-agent boundaries propagate
+  that timestamp; no child may replace it with a later `now + timeout`.
+- Smart workflows have an 1800-second child-task ceiling and reserve the last 120 seconds of the parent
+  Turn for report consumption, final response generation, and terminal commit.
+- The effective child timeout is the minimum of the requested timeout, the Smart ceiling, and the
+  remaining parent budget after the reserve.
+- Waiting for workspace/template concurrency gates consumes the same deadline budget.
+- If the reserve cannot be satisfied, the Smart wrapper returns `insufficient_execution_budget` before
+  creating a child run.
 
 ## Design Notes
 

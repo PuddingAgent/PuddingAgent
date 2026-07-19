@@ -35,6 +35,7 @@ public sealed class ExecutionRunCoordinator(
         Task<ControlMonitorOutcome>? monitorTask = null;
         var runStarted = false;
         ExecutionCommandRecord? command = null;
+        DateTimeOffset? executionDeadlineUtc = null;
 
         try
         {
@@ -50,6 +51,11 @@ public sealed class ExecutionRunCoordinator(
 
             var snapshot = await snapshotFactory.CreateAsync(
                 profile, null, ctsRun.Token);
+            if (snapshot.Timeout is { } configuredTimeout && configuredTimeout > TimeSpan.Zero)
+            {
+                executionDeadlineUtc = DateTimeOffset.UtcNow.Add(configuredTimeout);
+                ctsRun.CancelAfter(configuredTimeout);
+            }
             var providerId = RequireRoutingValue(snapshot.ProviderId, "provider", command.AgentInstanceId);
             var modelId = RequireRoutingValue(snapshot.ModelId, "model", command.AgentInstanceId);
             var llmProfile = new LlmInvocationProfile
@@ -113,6 +119,7 @@ public sealed class ExecutionRunCoordinator(
                 UserExternalId: command.UserId,
                 RunCancellation: new RunCancellation(ctsRun.Token))
             {
+                ExecutionDeadlineUtc = executionDeadlineUtc,
                 ExecutionIdentity = new RuntimeExecutionIdentity
                 {
                     Kind = RuntimeExecutionKind.ConversationTurn,
@@ -162,9 +169,17 @@ public sealed class ExecutionRunCoordinator(
             try
             {
                 var monitorOutcome = await GetMonitorOutcomeAsync(monitorTask);
+                var deadlineReached = executionDeadlineUtc is { } deadlineUtc
+                                      && DateTimeOffset.UtcNow >= deadlineUtc.AddMilliseconds(-250);
                 var term = monitorOutcome.LeaseLost
                     ? TurnTerminal.LeaseLost
-                    : TurnTerminal.Cancelled;
+                    : monitorOutcome.CancelControlId is not null
+                        ? TurnTerminal.Cancelled
+                        : deadlineReached
+                            ? TurnTerminal.Failure(
+                                TerminalErrorCodes.ExecutionTimeout,
+                                $"Execution timed out at {executionDeadlineUtc:O}.")
+                            : TurnTerminal.Cancelled;
                 var pending = CollectPendingOutput(
                     lease,
                     command?.AssistantMessageId,

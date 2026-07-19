@@ -106,7 +106,8 @@ public sealed class MemoryLlmInvocationClientUsageTests
             string? providerId,
             string? modelId,
             PromptPrefixSnapshot? prefixSnapshot = null,
-            DateTimeOffset? occurredAtUtc = null)
+            DateTimeOffset? occurredAtUtc = null,
+            string? parentSessionId = null)
         {
             BestEffortCalls++;
             return Task.CompletedTask;
@@ -121,7 +122,8 @@ public sealed class MemoryLlmInvocationClientUsageTests
             string? providerId,
             string? modelId,
             PromptPrefixSnapshot? prefixSnapshot = null,
-            DateTimeOffset? occurredAtUtc = null)
+            DateTimeOffset? occurredAtUtc = null,
+            string? parentSessionId = null)
         {
             RequiredCalls++;
             SourceId = sourceId;

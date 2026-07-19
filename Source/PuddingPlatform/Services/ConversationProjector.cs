@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -120,6 +120,8 @@ public sealed class ConversationProjector(
             return;
         }
 
+                var parentSessionId = await ResolveParentSessionAsync(evt.ConversationId);
+
         await tokenUsageRecorder.RecordRequiredAsync(
             usage,
             sourceType: "agent_llm",
@@ -128,7 +130,27 @@ public sealed class ConversationProjector(
             sessionId: evt.ConversationId,
             providerId: providerId,
             modelId: modelId,
-            occurredAtUtc: evt.OccurredAt);
+            occurredAtUtc: evt.OccurredAt,
+            parentSessionId: parentSessionId);
+    }
+
+    private async Task<string?> ResolveParentSessionAsync(string conversationId)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var sub = await db.SessionSubAgents
+                .AsNoTracking()
+                .Where(s => s.SubSessionId == conversationId)
+                .Select(s => s.ParentSessionId)
+                .FirstOrDefaultAsync();
+            return sub;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static (string role, string? content, string? thinking, string? usage) ExtractFields(ConversationEvent evt)

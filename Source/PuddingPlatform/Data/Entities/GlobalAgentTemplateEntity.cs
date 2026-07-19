@@ -96,7 +96,7 @@ public class GlobalAgentTemplateEntity
     public int MaxRounds { get; set; } = 200;
 
     /// <summary>Agent Loop 最大总耗时（秒）</summary>
-    public int MaxElapsedSeconds { get; set; } = 1200;
+    public int MaxElapsedSeconds { get; set; } = 2400;
 
     /// <summary>Agent Loop 最大工具调用次数</summary>
     public int MaxToolCallsTotal { get; set; } = 100;

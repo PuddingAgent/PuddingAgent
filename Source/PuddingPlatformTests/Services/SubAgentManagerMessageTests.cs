@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
@@ -187,6 +187,33 @@ public sealed class SubAgentManagerMessageTests
     }
 
     [TestMethod]
+    public async Task ExecuteSyncAsync_ClampsChildDeadlineToParentDeadline()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+        var parentDeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(10);
+
+        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Respect the parent deadline.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            TimeoutSeconds = 1800,
+            ParentExecutionDeadlineUtc = parentDeadlineUtc,
+        });
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(parentDeadlineUtc, dispatcher.LastRequest!.ExecutionDeadlineUtc);
+        Assert.IsGreaterThanOrEqualTo(595, dispatcher.LastRequest.MaxElapsedSeconds);
+        Assert.IsLessThanOrEqualTo(600, dispatcher.LastRequest.MaxElapsedSeconds);
+    }
+
+    [TestMethod]
     public async Task ExecuteSyncAsync_RejectsMissingLlmProfile_BeforeDispatch()
     {
         var dispatcher = new RecordingRuntimeAgentDispatcher();
@@ -365,7 +392,7 @@ public sealed class SubAgentManagerMessageTests
                 SessionId = sessionId,
                 IsConsistent = true,
             });
-        public Task<SessionTraceReport> GetTraceReportAsync(string sessionId, CancellationToken ct = default) =>
+        public Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default) =>
             Task.FromResult(new SessionTraceReport
             {
                 SessionId = sessionId,
@@ -403,12 +430,17 @@ public sealed class SubAgentManagerMessageTests
 
     private sealed class RecordingSubAgentRunStore : ISubAgentRunStore
     {
-        public Task<SubAgentRunHandle> CreateRunAsync(SubAgentRunCreateRequest request, CancellationToken ct = default) =>
-            Task.FromResult(new SubAgentRunHandle
+        public SubAgentRunCreateRequest? LastCreateRequest { get; private set; }
+
+        public Task<SubAgentRunHandle> CreateRunAsync(SubAgentRunCreateRequest request, CancellationToken ct = default)
+        {
+            LastCreateRequest = request;
+            return Task.FromResult(new SubAgentRunHandle
             {
                 RunId = "run-1",
                 ArchivePath = "archive",
             });
+        }
 
         public Task AppendEventAsync(string runId, string eventType, object payload, CancellationToken ct = default) =>
             Task.CompletedTask;

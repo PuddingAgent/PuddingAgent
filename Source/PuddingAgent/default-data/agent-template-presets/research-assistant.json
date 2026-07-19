@@ -22,7 +22,7 @@
   "maxContextTokens": 131072,
   "maxReplyTokens": 4096,
   "maxRounds": 200,
-  "maxElapsedSeconds": 1200,
+  "maxElapsedSeconds": 2400,
   "maxToolCallsTotal": 100,
   "isEnabled": true,
   "sortOrder": 10,

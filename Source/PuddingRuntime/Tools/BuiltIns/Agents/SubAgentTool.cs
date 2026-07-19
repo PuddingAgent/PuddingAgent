@@ -328,6 +328,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     AllowAgentCreation = taskPlanning.AllowAgentCreation,
                     PermissionMode = permissionMode,
                     TimeoutSeconds = timeoutSeconds,
+                    ParentExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
                     BatchId = GetStringProp(json, "batch_id")
                            ?? GetStringProp(json, "batchId"),
                     OriginToolId = originToolId,
@@ -385,6 +386,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ExpectedOutputContract = taskPlanning.ExpectedOutputContract,
                 PermissionMode = permissionMode,
                 TimeoutSeconds = timeoutSeconds,
+                ParentExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
                 InvocationId = GetStringProp(json, "invocation_id")
                             ?? GetStringProp(json, "invocationId"),
                 OriginToolId = originToolId,
@@ -608,6 +610,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             schema = "pudding-subagent-result",
             version = 1,
             subAgentId = result.SubSessionId,
+            runId = result.RunId,
             taskId = result.TaskId,
             status = result.Status,
             summary = GetSectionOrFallback(sections, "SUMMARY", result.Reply),
@@ -841,6 +844,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             AssignedObjective = taskPlanning.AssignedObjective,
             ExpectedOutputContract = taskPlanning.ExpectedOutputContract,
             TimeoutSeconds = timeoutSeconds,
+            ParentExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
             InvocationId = GetStringProp(json, "invocation_id")
                         ?? GetStringProp(json, "invocationId"),
             OriginToolId = originToolId,

@@ -108,12 +108,15 @@ public sealed class FileSubAgentRunStoreTests
             AllowAgentCreation = false,
             AssignedObjective = "Research the current architecture",
             ExpectedOutputContract = "Return findings.",
+            TimeoutSeconds = 1800,
+            ExecutionDeadlineUtc = new DateTimeOffset(2026, 7, 19, 12, 34, 56, TimeSpan.Zero),
         });
 
         var runJsonPath = Path.Combine(handle.ArchivePath, "run.json");
         var runJson = await File.ReadAllTextAsync(runJsonPath);
         Assert.IsTrue(runJson.Contains('\n'));
         StringAssert.Contains(runJson, "\"parentSessionId\"");
+        StringAssert.Contains(runJson, "\"executionDeadlineUtc\"");
 
         await store.AppendEventAsync(handle.RunId, "subagent.run.started", new
         {
@@ -187,6 +190,9 @@ public sealed class FileSubAgentRunStoreTests
             PuddingJsonContracts.PrettyJson);
         Assert.IsNotNull(manifest);
         Assert.AreEqual("completed", manifest.Status);
+        Assert.AreEqual(
+            new DateTimeOffset(2026, 7, 19, 12, 34, 56, TimeSpan.Zero),
+            manifest.ExecutionDeadlineUtc);
         Assert.AreEqual("plan_1", manifest.TaskPlanning["task_plan_id"]);
         Assert.AreEqual("task_1", manifest.TaskPlanning["task_node_id"]);
         Assert.AreEqual("2", manifest.TaskPlanning["max_delegation_depth"]);

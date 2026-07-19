@@ -172,7 +172,8 @@ public interface ISessionStateManager
     /// 获取会话级 Trace 聚合报告。
     /// 从 session_event_log 中查询该会话的所有事件，按 traceId 和 component 聚合。
     /// </summary>
-    Task<SessionTraceReport> GetTraceReportAsync(string sessionId, CancellationToken ct = default);
+    /// <param name="includeSubAgents">是否递归包含子代理的 Token 统计（默认 false，仅统计本会话）</param>
+    Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -329,6 +330,18 @@ public sealed record SubAgentStatus
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ResultSummary { get; init; }
     public bool? Success { get; init; }
+    /// <summary>子代理 Token 用量摘要（如不可用则为 null）。</summary>
+    public SubAgentTokenSummary? TokenSummary { get; init; }
+}
+
+/// <summary>子代理 Token 用量摘要。</summary>
+public sealed record SubAgentTokenSummary
+{
+    public long TotalTokens { get; init; }
+    public long CacheHitTokens { get; init; }
+    public long CacheMissTokens { get; init; }
+    public decimal TotalCost { get; init; }
+    public int RequestCount { get; init; }
 }
 
 // ════════════════════════════════════════════════════════════

@@ -29,6 +29,10 @@ public class TokenUsageEventEntity
     [MaxLength(64)]
     public string? SessionId { get; set; }
 
+    /// <summary>父会话 ID（子代理 token 归因到父会话）</summary>
+    [MaxLength(64)]
+    public string? ParentSessionId { get; set; }
+
     /// <summary>服务商 ID（slug）</summary>
     [MaxLength(64)]
     public string? ProviderId { get; set; }

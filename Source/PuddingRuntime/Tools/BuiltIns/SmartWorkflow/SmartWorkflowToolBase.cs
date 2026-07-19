@@ -19,6 +19,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
     protected const int SmartWorkflowTimeoutSeconds = 30 * 60;
+    protected const int ParentFinalizationReserveSeconds = 2 * 60;
     private const int MinimumDetailedReportLength = 300;
     private static readonly string[] RequiredReportSections =
         ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
@@ -57,9 +58,35 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         int? timeoutSeconds = null)
     {
         var task = BuildTaskPrompt(args, context);
-        var timeout = timeoutSeconds ?? DefaultTimeoutSeconds;
         var toolName = GetType().Name;
         var workingDirectory = ResolveWorkingDirectory(args);
+        var requestedTimeout = timeoutSeconds ?? DefaultTimeoutSeconds;
+        if (requestedTimeout <= 0)
+            return ToolExecutionResult.Fail($"{toolName} timeout_seconds must be greater than 0.");
+
+        // Smart 的 30 分钟是子任务上限，不是从调用时重新获得的独立预算。
+        // 父 Run deadline 是唯一上界，并预留两分钟让父 Agent 消化工具结果和提交终态。
+        var timeout = Math.Min(requestedTimeout, DefaultTimeoutSeconds);
+        if (context.ExecutionDeadlineUtc is { } parentDeadlineUtc)
+        {
+            var remainingSeconds = (int)Math.Floor(
+                (parentDeadlineUtc - DateTimeOffset.UtcNow).TotalSeconds
+                - ParentFinalizationReserveSeconds);
+            if (remainingSeconds <= 0)
+            {
+                return ToolExecutionResult.Fail(JsonSerializer.Serialize(new
+                {
+                    errorCode = "insufficient_execution_budget",
+                    tool = Descriptor.ToolId,
+                    role = RoleName,
+                    parentDeadlineUtc,
+                    reserveSeconds = ParentFinalizationReserveSeconds,
+                    message = "The parent run has insufficient time remaining to start this Smart workflow.",
+                }));
+            }
+
+            timeout = Math.Min(timeout, remainingSeconds);
+        }
 
         // 从父 Agent manifest 解析角色对应的模型
         var configurationAgentId =
@@ -101,15 +128,14 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             {
                 if (!TryValidateDetailedReport(result.Output, out var validationError, out var rawReport))
                 {
-                    var preview = string.IsNullOrWhiteSpace(rawReport)
-                        ? "(empty)"
-                        : rawReport.Length <= 800 ? rawReport : rawReport[..800] + "...";
                     logger.LogError(
                         "[{Tool}] agent={Agent} INVALID_REPORT reason={Reason} output={OutputLen} chars",
                         toolName, context.AgentInstanceId, validationError, rawReport?.Length ?? 0);
-                    return ToolExecutionResult.Fail(
-                        $"{toolName} returned an incomplete work report: {validationError}\n" +
-                        $"Raw output preview:\n{preview}");
+                    return BuildInvalidReportFailure(
+                        result.Output,
+                        rawReport,
+                        validationError,
+                        toolName);
                 }
 
                 logger.LogInformation(
@@ -122,6 +148,11 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             var failMsg = $"❌ {toolName} sub-agent FAILED.\n   Error: {result.Error}\n   Role: {RoleName}\n   Duration: {sw.ElapsedMilliseconds}ms";
             logger.LogError("[{Tool}] agent={Agent} FAILED error={Error}", toolName, context.AgentInstanceId, result.Error);
             return ToolExecutionResult.Fail(failMsg);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 父 Run 取消或 deadline 到达必须沿执行链传播，不能伪装成普通工具失败。
+            throw;
         }
         catch (TaskCanceledException)
         {
@@ -137,6 +168,57 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             return ToolExecutionResult.Fail($"{toolName} EXCEPTION: {ex.GetType().Name}: {ex.Message}");
         }
     }
+
+    private ToolExecutionResult BuildInvalidReportFailure(
+        string? toolOutput,
+        string? rawReport,
+        string validationError,
+        string toolName)
+    {
+        string? subAgentId = null;
+        string? runId = null;
+        if (!string.IsNullOrWhiteSpace(toolOutput))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(toolOutput);
+                var root = document.RootElement;
+                subAgentId = TryGetString(root, "subAgentId");
+                runId = TryGetString(root, "runId");
+            }
+            catch (JsonException)
+            {
+                // Alternative tool implementations may return the report directly.
+            }
+        }
+
+        return new ToolExecutionResult
+        {
+            Success = false,
+            // Preserve the complete spawn_sub_agent envelope, including rawOutput and stable IDs.
+            Output = toolOutput ?? string.Empty,
+            Error = JsonSerializer.Serialize(new
+            {
+                errorCode = "invalid_smart_workflow_report",
+                tool = Descriptor.ToolId,
+                implementation = toolName,
+                role = RoleName,
+                subAgentId,
+                runId,
+                message = $"{toolName} returned an incomplete work report.",
+                validationError,
+                rawOutputLength = rawReport?.Length ?? 0,
+            }),
+            ExitCode = 1,
+        };
+    }
+
+    private static string? TryGetString(JsonElement element, string propertyName)
+        => element.ValueKind == JsonValueKind.Object
+           && element.TryGetProperty(propertyName, out var value)
+           && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private static bool TryValidateDetailedReport(
         string? toolOutput,

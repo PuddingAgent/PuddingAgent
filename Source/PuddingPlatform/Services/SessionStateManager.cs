@@ -956,11 +956,43 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
 
         await ReconcileSubAgentTerminalStatesAsync(db, sessionId, ct);
 
-        var entities = await db.SessionSubAgents
+                var entities = await db.SessionSubAgents
             .AsNoTracking()
             .Where(e => e.ParentSessionId == sessionId)
             .OrderByDescending(e => e.SpawnedAt)
             .ToListAsync(ct);
+
+        // Batch lookup token summaries
+        var subSessionIds = entities.Select(e => e.SubSessionId).ToList();
+        Dictionary<string, SubAgentTokenSummary>? tokenDict = null;
+        if (subSessionIds.Count > 0)
+        {
+            var summaries = await db.TokenUsageEvents
+                .AsNoTracking()
+                .Where(t => t.SessionId != null && subSessionIds.Contains(t.SessionId))
+                .GroupBy(t => t.SessionId!)
+                .Select(g => new
+                {
+                    SessionId = g.Key,
+                    TotalTokens = g.Sum(t => t.TotalTokens),
+                    CacheHitTokens = g.Sum(t => t.CacheHitTokens),
+                    CacheMissTokens = g.Sum(t => t.CacheMissTokens),
+                    TotalCost = g.Sum(t => t.TotalCost),
+                    RequestCount = g.Count(),
+                })
+                .ToListAsync(ct);
+            tokenDict = summaries.ToDictionary(
+                s => s.SessionId,
+                s => new SubAgentTokenSummary
+                {
+                    TotalTokens = s.TotalTokens,
+                    CacheHitTokens = s.CacheHitTokens,
+                    CacheMissTokens = s.CacheMissTokens,
+                    TotalCost = s.TotalCost,
+                    RequestCount = s.RequestCount,
+                });
+        }
+        tokenDict ??= new Dictionary<string, SubAgentTokenSummary>();
 
         return entities.Select(e => new SubAgentStatus
         {
@@ -973,6 +1005,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             CompletedAt = e.CompletedAt != null ? DateTimeOffset.Parse(e.CompletedAt) : null,
             ResultSummary = e.ReplySummary,
             Success = e.Success,
+            TokenSummary = tokenDict.TryGetValue(e.SubSessionId, out var ts) ? ts : null,
         }).ToList();
     }
 
@@ -1692,7 +1725,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     /// 从 session_event_log 查询该会话的所有事件，按 traceId、component 等维度聚合。
     /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
     /// </summary>
-    public async Task<SessionTraceReport> GetTraceReportAsync(string sessionId, CancellationToken ct = default)
+    public async Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -1864,9 +1897,22 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             }
         }
 
+                long subAgentTokens = 0;
+        if (includeSubAgents)
+        {
+            var subSessionIds = subAgents.Select(s => s.SubAgentId).ToList();
+            if (subSessionIds.Count > 0)
+            {
+                subAgentTokens = await db.TokenUsageEvents
+                    .AsNoTracking()
+                    .Where(t => t.SessionId != null && subSessionIds.Contains(t.SessionId))
+                    .SumAsync(t => t.TotalTokens, ct);
+            }
+        }
+
         _logger.LogDebug(
-            "[SSM] Trace report session={Session} events={EventCount} traces={TraceCount} llmCalls={LlmCount} toolCalls={ToolCount} subAgents={SubCount} durationMs={DurationMs} tokens={Tokens}",
-            sessionId, events.Count, traceIds.Count, llmCalls.Count, toolCalls.Count, subAgents.Count, totalDurationMs, totalTokens);
+            "[SSM] Trace report session={Session} events={EventCount} traces={TraceCount} llmCalls={LlmCount} toolCalls={ToolCount} subAgents={SubCount} durationMs={DurationMs} tokens={Tokens} subAgentTokens={SubTokens}",
+            sessionId, events.Count, traceIds.Count, llmCalls.Count, toolCalls.Count, subAgents.Count, totalDurationMs, totalTokens, subAgentTokens);
 
         return new SessionTraceReport
         {
@@ -1877,7 +1923,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             ToolCalls = toolCalls,
             SubAgents = subAgents,
             TotalDurationMs = totalDurationMs,
-            TotalTokens = totalTokens,
+            TotalTokens = totalTokens + subAgentTokens,
         };
     }
 

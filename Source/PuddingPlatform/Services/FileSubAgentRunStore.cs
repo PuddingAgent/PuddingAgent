@@ -67,6 +67,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             ProfileId = request.ProfileId,
             ModelId = request.ModelId,
             TimeoutSeconds = request.TimeoutSeconds,
+            ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
             MaxRounds = request.MaxRounds,
             ParentExecutionIdentity = request.ParentExecutionIdentity,
         };
@@ -95,6 +96,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             limits = new
             {
                 timeoutSeconds = request.TimeoutSeconds,
+                executionDeadlineUtc = request.ExecutionDeadlineUtc,
                 maxRounds = request.MaxRounds,
             },
             parentExecution = request.ParentExecutionIdentity,
@@ -129,6 +131,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             profile_id = request.ProfileId,
             model_id = request.ModelId,
             timeout_seconds = request.TimeoutSeconds,
+            execution_deadline_utc = request.ExecutionDeadlineUtc,
             max_rounds = request.MaxRounds,
             status = "created",
         }, ct);

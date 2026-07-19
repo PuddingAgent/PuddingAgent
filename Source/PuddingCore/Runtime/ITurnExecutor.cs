@@ -47,6 +47,12 @@ public sealed record TurnExecutionContext(
 {
     /// <summary>由 Execution Kernel 创建的稳定身份。</summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+
+    /// <summary>
+    /// Execution Kernel 在 Run 启动时冻结的绝对截止时间。
+    /// Runtime、工具与子代理只能缩短该预算，禁止重新从当前时间放宽。
+    /// </summary>
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
 }
 
 /// <summary>

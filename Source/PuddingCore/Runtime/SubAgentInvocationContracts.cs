@@ -68,6 +68,8 @@ public sealed record SubAgentInvocationRequest
     public string? ExpectedOutputContract { get; init; }
     public string PermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
     public int? TimeoutSeconds { get; init; }
+    /// <summary>父执行的绝对截止时间；子代理调度只能在其之前结束。</summary>
+    public DateTimeOffset? ParentExecutionDeadlineUtc { get; init; }
     public string? InvocationId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
@@ -117,6 +119,8 @@ public sealed record SubAgentBatchInvocationRequest
     public bool? AllowAgentCreation { get; init; }
     public string PermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
     public int? TimeoutSeconds { get; init; }
+    /// <summary>父执行的绝对截止时间；批次内每个子代理都必须服从。</summary>
+    public DateTimeOffset? ParentExecutionDeadlineUtc { get; init; }
     public string? BatchId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }

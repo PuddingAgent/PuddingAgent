@@ -296,6 +296,20 @@ MemoryLibraryDbInitializer
 - 增加列前先查询 `PRAGMA table_info`，不要用预期异常实现幂等；
 - 修复测试必须覆盖“数据库已被另一个 DbContext 创建”的场景。
 
+Platform 的 `TokenUsageEvents` 增加字段时，不要只修改 Entity 和
+`OnModelCreating`：`Database.EnsureCreatedAsync()` 不会升级已经存在的表。当前由
+`TokenUsageSchemaBootstrapper` 在启动阶段完成 `ParentSessionId` 列与索引的幂等升级。
+诊断顺序：
+
+1. 先检查 `backend.out.log` 是否存在编译错误；例如 `CS0103 platformDb` 是启动代码的
+   变量作用域错误，DDL 尚未执行，不能归类为数据库迁移失败。
+2. 从当前启动周期查找
+   `[Startup] Platform DB tables and token usage schema ensured`。
+3. 必要时用 `PRAGMA table_info("TokenUsageEvents")` 验证列，并从
+   `sqlite_master` 验证 `IX_TokenUsageEvents_ParentSessionId`。
+4. Schema Bootstrapper 不允许吞掉 DDL 异常继续启动；否则 EF 模型已访问新字段时，
+   请求阶段才会以 `no such column` 失败。
+
 针对性测试：
 
 ```powershell
@@ -514,7 +528,8 @@ BuiltIn provider 以及 fallback 不得分别暴露不同路径格式。
    字段。例如 Developer 必须有文件/符号/命令/构建测试证据，Tester 必须有测试命令、
    计数、失败复现与覆盖缺口。
 3. 查看 Runtime 日志中的 `INVALID_REPORT`。日志包含工具、Agent、失败原因和输出长度；
-   返回给主 Agent 的错误包含最多 800 字符的原始结果预览。
+   返回给主 Agent 的结构化错误包含 `subAgentId/runId/validationError`，工具
+   `Output` 必须保留完整 `spawn_sub_agent` 结果信封和 `rawOutput`。
 4. 如果报告已有五段仍被拒绝，检查每段是否真的有内容；`SUMMARY` 少于 40 字符或
    `EVIDENCE` 少于 60 字符也会失败。
 5. 不要在主 Agent 侧把短结果补写成成功报告，也不要自动无限重试。修正对应角色的
@@ -574,6 +589,49 @@ deadline reached  => timed_out
 explicit cancel   => cancelled
 terminal totals   => 与此前持久 run 事件一致
 terminal count    => 1
+```
+
+### 7.7 主 Agent 显示“异常”，子代理预算却还没有结束
+
+典型症状：Smart 工具声明 1800 秒，但主 Agent 在约 1200 秒先进入“异常”；子代理
+检查器仍显示 Running，或者子代理刚完成而父 Turn 已写
+`runtime_execution_failed / 执行超时 (1200s)`。
+
+这不是“把子代理超时再加长”可以解决的问题。根因是父 Turn 与子代理分别从各自调用
+时刻计算相对 timeout：子预算晚于父预算，父取消令牌会在子代理提交结果前切断整条
+工具链。
+
+诊断顺序：
+
+1. 查 `execution_commands / execution_runs / execution_journal`，先确认父 Turn 的
+   `terminal_code` 和实际耗时；`执行超时 (1200s)` 表示父级预算先耗尽。
+2. 查活动 Agent 的 `manifest.json.maxElapsedSeconds`，不要只看 Smart 工具常量。
+3. 查子 run 的 `run.json.deadlineUtc`，验证它是否晚于父 Turn deadline。晚于即是
+   deadline 传播断裂。
+4. 沿以下字段逐层检查，任一层为 null 都会导致下游重新计时：
+
+   ```text
+   TurnExecutionContext.ExecutionDeadlineUtc
+     -> RuntimeDispatchRequest.ExecutionDeadlineUtc
+     -> ToolInvocationRequest.ExecutionDeadlineUtc
+     -> ToolExecutionContext.ExecutionDeadlineUtc
+     -> SubAgentInvocationRequest.ParentExecutionDeadlineUtc
+     -> SubAgentSpawnRequest.ParentExecutionDeadlineUtc
+   ```
+
+5. `SubAgentManager` 的并发门等待也必须使用 deadline token；不能先无限等待信号量，
+   拿到槽位后再启动 timeout。
+6. 正确终态必须为 `execution_timeout`，而不是
+   `runtime_execution_failed` 或普通 `cancelled`。
+
+当前预算不变量：
+
+```text
+parent deadline = Turn 启动时冻结一次
+smart ceiling   = 1800s
+parent reserve  = 120s
+child deadline <= parent deadline - reserve
+downstream      = 只能收紧，禁止放宽
 ```
 
 ## 8. 浏览器验收

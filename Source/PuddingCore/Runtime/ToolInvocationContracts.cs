@@ -18,6 +18,8 @@ public sealed record ToolInvocationRequest
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>父 Runtime Run 的绝对截止时间；工具及其派生执行只能缩短。</summary>
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? DelegationDepth { get; init; }
     public int? MaxDelegationDepth { get; init; }
     public bool? AllowSubDelegation { get; init; }

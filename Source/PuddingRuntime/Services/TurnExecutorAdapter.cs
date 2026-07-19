@@ -34,6 +34,7 @@ public sealed class TurnExecutorAdapter(
             SkillPackages = context.SkillPackages,
             MaxRounds = context.MaxRounds ?? 0,
             MaxElapsedSeconds = context.MaxElapsedSeconds ?? 0,
+            ExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
             MaxToolCallsTotal = context.MaxToolCallsTotal ?? 0,
             ExecutionIdentity = context.ExecutionIdentity,
         };

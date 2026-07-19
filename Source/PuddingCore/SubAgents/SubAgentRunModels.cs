@@ -39,6 +39,7 @@ public sealed record SubAgentRunManifest
     public string? ProfileId { get; init; }
     public string? ModelId { get; init; }
     public int? TimeoutSeconds { get; init; }
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? MaxRounds { get; init; }
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }
@@ -69,6 +70,7 @@ public sealed record SubAgentRunCreateRequest
     public string? ProfileId { get; init; }
     public string? ModelId { get; init; }
     public int? TimeoutSeconds { get; init; }
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? MaxRounds { get; init; }
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }

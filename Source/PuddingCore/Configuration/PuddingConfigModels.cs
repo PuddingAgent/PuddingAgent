@@ -216,7 +216,7 @@ public sealed record AgentTemplateManifest
     public int MaxContextTokens { get; init; } = 65536;
     public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
-    public int MaxElapsedSeconds { get; init; } = 1200;
+    public int MaxElapsedSeconds { get; init; } = 2400;
     public int MaxToolCallsTotal { get; init; } = 100;
     public string? ContainerImage { get; init; }
     public bool IsBuiltIn { get; init; }
@@ -276,7 +276,7 @@ public sealed record AgentInstanceManifest
     public string? ReasoningEffort { get; init; }
     public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
-    public int MaxElapsedSeconds { get; init; } = 1200;
+    public int MaxElapsedSeconds { get; init; } = 2400;
     public int MaxToolCallsTotal { get; init; } = 100;
     public string? ContainerImage { get; init; }
     public AgentDefaultLlmProfiles DefaultLlmProfiles { get; init; } = new();

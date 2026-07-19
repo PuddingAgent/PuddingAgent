@@ -582,6 +582,9 @@ builder.Services.AddSingleton<SubAgentPool>();
 var codeMapPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "code_map.md"));
 builder.Services.AddSingleton<ICodeMapService>(sp =>
     new CodeMapService(codeMapPath, sp.GetRequiredService<ILogger<CodeMapService>>()));
+// ContextPipeline 构造函数参数为 CodeMapService 具体类型，需额外注册自身类型
+builder.Services.AddSingleton<CodeMapService>(sp =>
+    (CodeMapService)sp.GetRequiredService<ICodeMapService>());
 builder.Services.AddSingleton<MemoryExplorerSubAgent>();
 builder.Services.AddPuddingTool<MemoryLibraryTool>();
 
@@ -1288,9 +1291,17 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var schemaLogger = scope.ServiceProvider
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("TokenUsageSchema");
+
         await platformDb.Database.EnsureCreatedAsync();
+        await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(
+            platformDb,
+            schemaLogger,
+            CancellationToken.None);
     }
-    Console.WriteLine("[Startup] Platform DB tables ensured");
+    Console.WriteLine("[Startup] Platform DB tables and token usage schema ensured");
 
     // ADR-057: Ensure conversation event store tables exist (not lazy).
     try
@@ -1537,60 +1548,6 @@ static void EnsureAgentSkillDirectory(PuddingDataPaths paths, string agentInstan
     """;
     File.WriteAllText(indexPath, index);
 }
-
-/// <summary>
-/// 确保 SQLite 表包含指定列；列已存在时跳过，避免直接执行 ALTER TABLE 触发 EF Core Error 日志。
-/// </summary>
-static async Task EnsureSqliteColumnAsync(DbContext db, Microsoft.Extensions.Logging.ILogger logger, string tableName, string columnName, string ddl, string successMessage)
-{
-    try
-    {
-        if (await SqliteColumnExistsAsync(db, tableName, columnName))
-            return;
-
-        await db.Database.ExecuteSqlRawAsync(ddl);
-        logger.LogInformation("{Message}：{Ddl}", successMessage, ddl);
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "[Schema] SQLite 列补齐失败（将继续启动）：{Table}.{Column}", tableName, columnName);
-    }
-}
-
-/// <summary>
-/// 通过 PRAGMA table_info 查询 SQLite 列是否存在。
-/// </summary>
-static async Task<bool> SqliteColumnExistsAsync(DbContext db, string tableName, string columnName)
-{
-    var connection = db.Database.GetDbConnection();
-    var shouldClose = connection.State != System.Data.ConnectionState.Open;
-    if (shouldClose)
-        await connection.OpenAsync();
-
-    try
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"PRAGMA table_info({QuoteSqliteIdentifier(tableName)});";
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            if (reader.FieldCount > 1 && string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-    finally
-    {
-        if (shouldClose)
-            await connection.CloseAsync();
-    }
-}
-
-/// <summary>
-/// 转义 SQLite 标识符，避免 PRAGMA 查询表名时出现特殊字符问题。
-/// </summary>
-static string QuoteSqliteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
 public sealed record ChatRequest
 {

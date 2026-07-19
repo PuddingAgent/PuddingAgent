@@ -9,8 +9,10 @@ public sealed record AgentExecutionGuardrails
     /// <summary>最大迭代轮次（每轮 = 一次 LLM 调用）。默认 200。</summary>
     public int MaxRounds { get; init; } = 200;
 
-    /// <summary>整体执行的最大允许总耗时。超出后强制停止。默认 20 分钟。</summary>
-    public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromMinutes(20);
+    /// <summary>
+    /// 整体执行的最大允许总耗时。默认 40 分钟，为 30 分钟 Smart 子任务保留父级收口预算。
+    /// </summary>
+    public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromMinutes(40);
 
     /// <summary>整次执行内工具调用总次数上限。默认 100。</summary>
     public int MaxToolCallsTotal { get; init; } = 100;

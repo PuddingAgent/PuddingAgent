@@ -43,7 +43,7 @@ describe('buildGlobalAgentTemplateRequest', () => {
     expect(normalized.selectedSkillPackageIds).toEqual(['skill-a']);
     expect(normalized.memorySearchMode).toBe('deep');
     expect(normalized.maxRounds).toBe(200);
-    expect(normalized.maxElapsedSeconds).toBe(1200);
+    expect(normalized.maxElapsedSeconds).toBe(2400);
     expect(normalized.maxToolCallsTotal).toBe(100);
     expect(normalized.maxContextTokens).toBe(131_072);
     expect(normalized.maxReplyTokens).toBe(4096);

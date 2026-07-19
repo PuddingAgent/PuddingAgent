@@ -128,7 +128,7 @@ export function buildGlobalAgentTemplateRequest(
     selectedSkillPackageIds: uniqueStrings(defaults.skillTargetKeys),
     memorySearchMode: values.memorySearchMode || 'deep',
     maxRounds: values.maxRounds ?? 200,
-    maxElapsedSeconds: values.maxElapsedSeconds ?? 1200,
+    maxElapsedSeconds: values.maxElapsedSeconds ?? 2400,
     maxToolCallsTotal: values.maxToolCallsTotal ?? 100,
     maxContextTokens: values.maxContextTokens ?? defaults.legacyMaxContextTokens ?? 8192,
     maxReplyTokens: values.maxReplyTokens ?? defaults.legacyMaxReplyTokens ?? 2048,
@@ -270,7 +270,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
       isEnabled: true,
       sortOrder: 100,
       maxRounds: 200,
-      maxElapsedSeconds: 1200,
+      maxElapsedSeconds: 2400,
       maxToolCallsTotal: 100,
       avatarId: avatars[0]?.avatarId,
       selectedCapabilityIds: defaultCapIds,
@@ -424,7 +424,7 @@ const GlobalAgentTemplatePage: React.FC = () => {
       render: (_, r) => (
         <Space size={4}>
           <Tag>{r.maxRounds ?? 200}R</Tag>
-          <Tag>{Math.round((r.maxElapsedSeconds ?? 1200) / 60)}min</Tag>
+          <Tag>{Math.round((r.maxElapsedSeconds ?? 2400) / 60)}min</Tag>
           <Tag>{r.maxToolCallsTotal ?? 100}T</Tag>
         </Space>
       ),

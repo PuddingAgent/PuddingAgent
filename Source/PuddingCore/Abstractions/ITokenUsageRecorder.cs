@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 using PuddingCode.Runtime;
 
 namespace PuddingCode.Abstractions;
@@ -21,7 +21,8 @@ public interface ITokenUsageRecorder
         string? providerId,
         string? modelId,
         PromptPrefixSnapshot? prefixSnapshot = null,
-        DateTimeOffset? occurredAtUtc = null);
+        DateTimeOffset? occurredAtUtc = null,
+        string? parentSessionId = null);
 
     /// <summary>
     /// Required usage-fact recording. Persistence failures must propagate so
@@ -36,5 +37,6 @@ public interface ITokenUsageRecorder
         string? providerId,
         string? modelId,
         PromptPrefixSnapshot? prefixSnapshot = null,
-        DateTimeOffset? occurredAtUtc = null);
+        DateTimeOffset? occurredAtUtc = null,
+        string? parentSessionId = null);
 }

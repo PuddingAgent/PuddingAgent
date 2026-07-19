@@ -250,6 +250,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(ev => ev.PrefixHash);
             e.HasIndex(ev => new { ev.ProviderId, ev.ModelId });
             e.HasIndex(ev => ev.OccurredAtUtc);
+            e.HasIndex(ev => ev.ParentSessionId);
             e.Property(ev => ev.InputCost).HasColumnType("decimal(18,10)");
             e.Property(ev => ev.OutputCost).HasColumnType("decimal(18,10)");
             e.Property(ev => ev.CacheHitCost).HasColumnType("decimal(18,10)");

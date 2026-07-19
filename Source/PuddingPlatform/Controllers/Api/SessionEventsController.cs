@@ -813,10 +813,10 @@ public class SessionEventsController : ControllerBase
     /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
     /// </summary>
     [HttpGet("{sessionId}/trace-report")]
-    public async Task<ActionResult<SessionTraceReport>> GetTraceReport(
-        string sessionId, CancellationToken ct)
+        public async Task<ActionResult<SessionTraceReport>> GetTraceReport(
+        string sessionId, [FromQuery] bool includeSubAgents = false, CancellationToken ct = default)
     {
-        var report = await _ssm.GetTraceReportAsync(sessionId, ct);
+        var report = await _ssm.GetTraceReportAsync(sessionId, includeSubAgents, ct);
         _logger.LogDebug(
             "[SessionEvents] GET trace-report session={Session} traces={TraceCount} llmCalls={LlmCount} toolCalls={ToolCount} subAgents={SubCount} durationMs={DurationMs} tokens={Tokens}",
             sessionId, report.TraceIds.Count, report.LlmCalls.Count, report.ToolCalls.Count, report.SubAgents.Count, report.TotalDurationMs, report.TotalTokens);

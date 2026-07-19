@@ -124,6 +124,10 @@ public sealed record SubAgentSpawnRequest
     public string? AssignedObjective { get; init; }
     public string? ExpectedOutputContract { get; init; }
     public int? TimeoutSeconds { get; init; }
+    /// <summary>父执行冻结的绝对截止时间；子代理 deadline 不得晚于它。</summary>
+    public DateTimeOffset? ParentExecutionDeadlineUtc { get; init; }
+    /// <summary>调度边界归一化后的子代理绝对截止时间。</summary>
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public string? InvocationId { get; init; }
     public string? BatchId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";

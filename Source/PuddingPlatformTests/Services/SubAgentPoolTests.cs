@@ -205,14 +205,20 @@ public sealed class SubAgentPoolTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_ThrowsWhenAgentDead()
+    public async Task ExecuteAsync_AutoCreatesAfterDestroy()
     {
+        // After Destroy removes the entry from pool, ExecuteAsync auto-creates.
+        // This is by design: auto-create provides a simpler API without explicit CreateAsync.
         var pool = CreatePool();
         await pool.CreateAsync("dev-agent", CreateSpawnRequest());
         await pool.DestroyAsync("dev-agent");
+        Assert.AreEqual(0, pool.Count);
 
-        await AssertThrowsAsync<InvalidOperationException>(
-            () => pool.ExecuteAsync("dev-agent", CreateSpawnRequest()));
+        // Execute after destroy → auto-create
+        var result = await pool.ExecuteAsync("dev-agent", CreateSpawnRequest("task after destroy"));
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(1, pool.Count);
     }
 
     [TestMethod]
@@ -430,20 +436,20 @@ public sealed class TestSubAgentManager : ISubAgentManager
         });
     }
 
-    public Task<SubAgentExecuteResult> ExecuteSyncAsync(SubAgentSpawnRequest request, CancellationToken ct = default)
+    public async Task<SubAgentExecuteResult> ExecuteSyncAsync(SubAgentSpawnRequest request, CancellationToken ct = default)
     {
         if (ShouldFail)
             throw new InvalidOperationException("Simulated execution failure");
 
         if (DelayMs > 0)
-            Task.Delay(DelayMs, ct).GetAwaiter().GetResult();
+            await Task.Delay(DelayMs, ct);
 
-        return Task.FromResult(new SubAgentExecuteResult
+        return new SubAgentExecuteResult
         {
             SubSessionId = request.ReuseSubSessionId ?? $"exec-sub-{Interlocked.Increment(ref _spawnCounter)}",
             Success = true,
             Reply = $"ok: {request.TaskDescription}",
-        });
+        };
     }
 
     public Task<int> CancelAllAsync(string parentSessionId, CancellationToken ct = default)

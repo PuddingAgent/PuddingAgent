@@ -64,6 +64,7 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
+        request = NormalizeExecutionBudget(request);
         var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
             ? request.ReuseSubSessionId
             : $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
@@ -160,11 +161,12 @@ public sealed class SubAgentManager : ISubAgentManager
             {
                 var r = await ExecuteAsyncSubAgentWithLimitsAsync(
                     request,
-                    (timeoutSeconds, runCt) => DispatchChildAgentAsync(
+                    (timeoutSeconds, executionDeadlineUtc, runCt) => DispatchChildAgentAsync(
                         subSessionId,
                         runId,
                         request,
                         timeoutSeconds,
+                        executionDeadlineUtc,
                         runCt),
                     CancellationToken.None);
                 var completedAt = DateTimeOffset.UtcNow;
@@ -359,6 +361,7 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
+        request = NormalizeExecutionBudget(request);
         var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
             ? request.ReuseSubSessionId
             : $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
@@ -394,11 +397,12 @@ public sealed class SubAgentManager : ISubAgentManager
         {
             r = await ExecuteAsyncSubAgentWithLimitsAsync(
                 request,
-                (timeoutSeconds, runCt) => DispatchChildAgentAsync(
+                (timeoutSeconds, executionDeadlineUtc, runCt) => DispatchChildAgentAsync(
                     subSessionId,
                     runHandle.RunId,
                     request,
                     timeoutSeconds,
+                    executionDeadlineUtc,
                     runCt),
                 ct);
         }
@@ -615,7 +619,7 @@ public sealed class SubAgentManager : ISubAgentManager
 
     private async Task<T> ExecuteAsyncSubAgentWithLimitsAsync<T>(
         SubAgentSpawnRequest request,
-        Func<int, CancellationToken, Task<T>> action,
+        Func<int, DateTimeOffset, CancellationToken, Task<T>> action,
         CancellationToken ct)
     {
         var options = ResolveRuntimeExecutionOptions().SubAgents;
@@ -626,35 +630,38 @@ public sealed class SubAgentManager : ISubAgentManager
             $"{request.WorkspaceId}\u001f{request.TemplateId}",
             _ => new SemaphoreSlim(options.MaxConcurrentPerTemplate));
 
-        await workspaceGate.WaitAsync(ct);
-        await templateGate.WaitAsync(ct);
+        var timeoutSeconds = request.TimeoutSeconds ?? options.DefaultTimeoutSeconds;
+        var executionDeadlineUtc = request.ExecutionDeadlineUtc
+            ?? DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds);
+        var remaining = executionDeadlineUtc - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+            throw new TimeoutException("Sub-agent execution deadline elapsed before scheduling.");
+
+        using var deadlineCts = new CancellationTokenSource(remaining);
+        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadlineCts.Token);
+        var workspaceAcquired = false;
+        var templateAcquired = false;
         try
         {
-            var timeoutSeconds = request.TimeoutSeconds ?? options.DefaultTimeoutSeconds;
-            if (timeoutSeconds <= 0)
-                timeoutSeconds = options.DefaultTimeoutSeconds;
-            if (timeoutSeconds > options.MaxTimeoutSeconds)
-            {
-                throw new InvalidOperationException(
-                    $"Sub-agent timeout_seconds={timeoutSeconds} exceeds configured maxTimeoutSeconds={options.MaxTimeoutSeconds}.");
-            }
+            await workspaceGate.WaitAsync(runCts.Token);
+            workspaceAcquired = true;
+            await templateGate.WaitAsync(runCts.Token);
+            templateAcquired = true;
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-            try
-            {
-                return await action(timeoutSeconds, timeoutCts.Token);
-            }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Sub-agent timed out after {timeoutSeconds} seconds.");
-            }
+            return await action(timeoutSeconds, executionDeadlineUtc, runCts.Token);
+        }
+        catch (OperationCanceledException) when (
+            deadlineCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Sub-agent timed out at {executionDeadlineUtc:O} (budget={timeoutSeconds}s).");
         }
         finally
         {
-            templateGate.Release();
-            workspaceGate.Release();
+            if (templateAcquired)
+                templateGate.Release();
+            if (workspaceAcquired)
+                workspaceGate.Release();
         }
     }
 
@@ -663,12 +670,14 @@ public sealed class SubAgentManager : ISubAgentManager
         string runId,
         SubAgentSpawnRequest request,
         int timeoutSeconds,
+        DateTimeOffset executionDeadlineUtc,
         CancellationToken ct)
         => DispatchChildAgentImpl(
             subSessionId,
             runId,
             request,
             timeoutSeconds,
+            executionDeadlineUtc,
             _services,
             ct);
 
@@ -854,6 +863,7 @@ public sealed class SubAgentManager : ISubAgentManager
         string runId,
         SubAgentSpawnRequest request,
         int timeoutSeconds,
+        DateTimeOffset executionDeadlineUtc,
         IServiceProvider services,
         CancellationToken ct)
     {
@@ -879,7 +889,7 @@ public sealed class SubAgentManager : ISubAgentManager
             ParentContextSnapshot = request.ParentContextSnapshot,
             MaxRounds = request.MaxRounds,
             MaxElapsedSeconds = timeoutSeconds,
-            ExecutionDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds),
+            ExecutionDeadlineUtc = executionDeadlineUtc,
             TaskPlanId = request.TaskPlanId,
             TaskNodeId = request.TaskNodeId,
             ParentTaskNodeId = request.ParentTaskNodeId,
@@ -924,6 +934,38 @@ public sealed class SubAgentManager : ISubAgentManager
                 : request.OriginToolId.Trim(),
         };
 
+    private SubAgentSpawnRequest NormalizeExecutionBudget(SubAgentSpawnRequest request)
+    {
+        var options = ResolveRuntimeExecutionOptions().SubAgents;
+        var requestedSeconds = request.TimeoutSeconds ?? options.DefaultTimeoutSeconds;
+        if (requestedSeconds <= 0)
+            throw new InvalidOperationException("Sub-agent timeout_seconds must be greater than 0.");
+        if (requestedSeconds > options.MaxTimeoutSeconds)
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent timeout_seconds={requestedSeconds} exceeds configured maxTimeoutSeconds={options.MaxTimeoutSeconds}.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var requestedDeadlineUtc = now.AddSeconds(requestedSeconds);
+        var effectiveDeadlineUtc = request.ParentExecutionDeadlineUtc is { } parentDeadlineUtc
+            && parentDeadlineUtc < requestedDeadlineUtc
+                ? parentDeadlineUtc
+                : requestedDeadlineUtc;
+        var effectiveSeconds = (int)Math.Floor((effectiveDeadlineUtc - now).TotalSeconds);
+        if (effectiveSeconds <= 0)
+        {
+            throw new TimeoutException(
+                $"Parent execution deadline {request.ParentExecutionDeadlineUtc:O} leaves no sub-agent execution budget.");
+        }
+
+        return request with
+        {
+            TimeoutSeconds = effectiveSeconds,
+            ExecutionDeadlineUtc = effectiveDeadlineUtc,
+        };
+    }
+
     private static SubAgentRunCreateRequest BuildRunCreateRequest(
         SubAgentSpawnRequest request,
         string subSessionId) => new()
@@ -952,6 +994,7 @@ public sealed class SubAgentManager : ISubAgentManager
         ProfileId = request.LlmProfile.ProfileId,
         ModelId = request.LlmProfile.ModelId,
         TimeoutSeconds = request.TimeoutSeconds,
+        ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
         MaxRounds = request.MaxRounds,
         ParentExecutionIdentity = request.ParentExecutionIdentity,
     };

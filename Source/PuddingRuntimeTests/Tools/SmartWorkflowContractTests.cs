@@ -222,7 +222,15 @@ public sealed class SmartWorkflowContractTests
     {
         var recorder = new RecordingToolExecutionService
         {
-            ResponseOutput = "completed",
+            ResponseOutput = JsonSerializer.Serialize(new
+            {
+                schema = "pudding-subagent-result",
+                version = 1,
+                subAgentId = "sub-session-1",
+                runId = "run-1",
+                status = "completed",
+                rawOutput = "completed",
+            }),
         };
         var services = new ServiceCollection()
             .AddSingleton<IPuddingToolExecutionService>(recorder)
@@ -246,6 +254,71 @@ public sealed class SmartWorkflowContractTests
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error, "incomplete work report");
         StringAssert.Contains(result.Error, "report is too short");
+        StringAssert.Contains(result.Error, "invalid_smart_workflow_report");
+        StringAssert.Contains(result.Error, "sub-session-1");
+        StringAssert.Contains(result.Error, "run-1");
+        Assert.AreEqual(recorder.ResponseOutput, result.Output);
+    }
+
+    [TestMethod]
+    public async Task SmartWorkflowClampsChildBudgetToParentDeadlineAndReservesFinalizationTime()
+    {
+        var recorder = new RecordingToolExecutionService();
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartResearchTool(
+            services,
+            NullLogger<SmartResearchTool>.Instance);
+
+        var parentDeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(10);
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-parent-deadline",
+            ArgumentsJson = """{"task":"Research the runtime deadline contract","timeout_seconds":1800}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+                ExecutionDeadlineUtc = parentDeadlineUtc,
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
+        var timeoutSeconds = document.RootElement.GetProperty("timeout_seconds").GetInt32();
+        Assert.IsGreaterThanOrEqualTo(475, timeoutSeconds);
+        Assert.IsLessThanOrEqualTo(480, timeoutSeconds);
+    }
+
+    [TestMethod]
+    public async Task SmartWorkflowRejectsDispatchWhenParentHasNoFinalizationBudget()
+    {
+        var recorder = new RecordingToolExecutionService();
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartResearchTool(
+            services,
+            NullLogger<SmartResearchTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-no-budget",
+            ArgumentsJson = """{"task":"Research the runtime deadline contract"}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+                ExecutionDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(60),
+            },
+        });
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "insufficient_execution_budget");
+        Assert.IsNull(recorder.ArgumentsJson);
     }
 
     private sealed class RecordingToolExecutionService : IPuddingToolExecutionService

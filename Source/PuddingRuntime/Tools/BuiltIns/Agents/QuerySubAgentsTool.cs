@@ -67,8 +67,6 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
             sb.AppendLine($"   模板: {sa.TemplateId ?? "默认"} | 模型: {sa.ModelId ?? "默认"}");
             sb.AppendLine($"   任务: {sa.TaskSummary}");
             sb.AppendLine($"   创建: {sa.SpawnedAt:HH:mm:ss} | 完成: {sa.CompletedAt?.ToString("HH:mm:ss") ?? "-"}");
-            if (sa.ResultSummary is not null) sb.AppendLine($"   结果: {sa.ResultSummary}");
-            sb.AppendLine();
         }
         return Ok(sb.ToString().Trim());
     }
@@ -83,7 +81,6 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         sb.AppendLine($"   已完成: {stats.Completed}");
         sb.AppendLine($"   已失败: {stats.Failed}");
         if (stats.LastCompletedId is not null) sb.AppendLine($"   最近完成: {stats.LastCompletedId[^16..]}");
-        if (stats.LastFailedId is not null) sb.AppendLine($"   最近失败: {stats.LastFailedId[^16..]}");
         return Ok(sb.ToString().Trim());
     }
 
@@ -105,7 +102,6 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         sb.AppendLine($"   创建: {status.SpawnedAt:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"   完成: {status.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"}");
         if (status.ResultSummary is not null) sb.AppendLine($"   结果: {status.ResultSummary}");
-        if (status.Success.HasValue) sb.AppendLine($"   成功: {status.Success.Value}");
         return Ok(sb.ToString().Trim());
     }
 
@@ -137,7 +133,7 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         foreach (var sa in results)
         {
             var icon = sa.Status switch { "running" => "🔄", "completed" => "✅", "failed" => "❌", _ => "❓" };
-            sb.AppendLine($"{icon} {sa.SpawnedAt:MM-dd HH:mm} [{sa.Status}] {sa.TaskSummary[..Math.Min(sa.TaskSummary.Length, 50)]}");
+
         }
         return Ok(sb.ToString().Trim());
     }

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -58,8 +58,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         string? sessionId,
         string? providerId,
         string? modelId,
-        PromptPrefixSnapshot? prefixSnapshot = null,
-        DateTimeOffset? occurredAtUtc = null)
+                PromptPrefixSnapshot? prefixSnapshot = null,
+        DateTimeOffset? occurredAtUtc = null,
+        string? parentSessionId = null)
     {
         try
         {
@@ -71,8 +72,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 sessionId,
                 providerId,
                 modelId,
-                prefixSnapshot,
-                occurredAtUtc);
+                                prefixSnapshot,
+                occurredAtUtc,
+                parentSessionId);
         }
         catch (Exception ex)
         {
@@ -93,8 +95,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         string? sessionId,
         string? providerId,
         string? modelId,
-        PromptPrefixSnapshot? prefixSnapshot = null,
-        DateTimeOffset? occurredAtUtc = null)
+                PromptPrefixSnapshot? prefixSnapshot = null,
+        DateTimeOffset? occurredAtUtc = null,
+        string? parentSessionId = null)
         => RecordCoreAsync(
             usage,
             sourceType,
@@ -103,8 +106,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             sessionId,
             providerId,
             modelId,
-            prefixSnapshot,
-            occurredAtUtc);
+                        prefixSnapshot,
+            occurredAtUtc,
+            parentSessionId);
 
     private async Task RecordCoreAsync(
         TokenUsageDto usage,
@@ -114,8 +118,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         string? sessionId,
         string? providerId,
         string? modelId,
-        PromptPrefixSnapshot? prefixSnapshot,
-        DateTimeOffset? occurredAtUtc)
+                PromptPrefixSnapshot? prefixSnapshot,
+        DateTimeOffset? occurredAtUtc,
+        string? parentSessionId = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -205,7 +210,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 FewShotHash = resolvedPrefixSnapshot?.FewShotHash,
                 PrefixChangeReason = resolvedPrefixSnapshot?.PrefixChangeReason,
                 PrefixMessageCount = resolvedPrefixSnapshot?.MessageCount,
-                PrefixToolCount = resolvedPrefixSnapshot?.ToolCount,
+                                PrefixToolCount = resolvedPrefixSnapshot?.ToolCount,
+                ParentSessionId = parentSessionId,
                 CreatedAtUtc = DateTimeOffset.UtcNow,
         });
 

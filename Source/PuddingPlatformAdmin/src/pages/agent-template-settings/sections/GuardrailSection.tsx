@@ -31,7 +31,7 @@ const GuardrailSection: React.FC<GuardrailSectionProps> = ({ id }) => {
             label="最大耗时(秒)"
             min={10}
             max={7200}
-            initialValue={1200}
+            initialValue={2400}
           />
         </Col>
         <Col xs={24} sm={12} md={8}>

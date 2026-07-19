@@ -42,7 +42,7 @@ Source/
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计 |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计 |
 | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs` | 主 Agent、工具调用和子代理共用的稳定执行身份；贯穿 Conversation/Turn/Command/Run/Tool/Invocation |
 | `Services/SessionExecutionGate.cs` + `PuddingCore/Runtime/ISessionExecutionGate.cs` | Runtime 会话进程内单写者；统一串行化 Conversation Worker、MessageDelivery、Heartbeat 与直接 Runtime 调度对同一 session 的状态修改 |
 | `Services/AgentLoop/CompletionPolicy.cs` | 判断 Agent 何时完成（stop reason 处理） |
@@ -84,7 +84,7 @@ Source/
 |------|------|------|
 | `Tools/BuiltIns/Files/` | `FileTools.cs` + `FileSearchTool.cs` | 文件读写、搜索、grep；`file_search` 在工具边界统一把任意 provider/fallback 结果规范化为绝对路径 |
 | `Tools/BuiltIns/Memory/` | `MemoryTools.cs` | 记忆读写（save/manage/search/grep） |
-| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth` 执行快照 |
+| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc` 执行快照 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
 | `Tools/BuiltIns/Search/` | `SmartSearchTool.cs` | 🔑 语义代码搜索 — 薄包装子代理，三层搜索协议，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | 通用搜索（Web/文档） |
@@ -92,7 +92,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型、1800 秒默认预算和执行快照；仅允许有界 `smart_plan → smart_explore` 委派；共享 `SUMMARY/CHANGES/EVIDENCE/RISKS/BLOCKERS` 顶层合同并由基类拒绝空/短/缺段结果 |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和 1800 秒子任务上限，以父 deadline 收紧并预留 120 秒收尾；仅允许有界 `smart_plan → smart_explore` 委派；共享 `SUMMARY/CHANGES/EVIDENCE/RISKS/BLOCKERS` 顶层合同，失败时保留完整子代理结果信封和稳定 ID |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
@@ -163,8 +163,8 @@ Source/
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；从实例 manifest + `config/llm.json` 读取快照，并用 `llm.providers.json` 补齐连接配置 |
 | `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，并实现 `IAgentSelfMaintenanceService` 的受控自维护写入 |
-| `Services/SubAgentManager.cs` | 子代理统一调度边界；同步/异步均先创建 run，并共享并发、绝对截止时间和 Runtime 派发链 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；先写自带 `run_id` 的 events.jsonl，再按持久游标投影 canonical Conversation Event |
+| `Services/SubAgentManager.cs` | 子代理统一调度边界；同步/异步统一按父 deadline 归一化子 deadline，把并发门等待计入预算，再创建 run 并进入同一 Runtime 派发链 |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，先写自带 `run_id` 的 events.jsonl，再按持久游标投影 canonical Conversation Event |
 | `Services/SubAgentConversationProjectionWorker.cs` | 启动时将上一进程遗留的非终态 run 仲裁为 `interrupted`，随后扫描 run archive 投影积压 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
 | `Services/ExecutionCommandReader.cs` | Command 稳定执行引用的只读适配器；不拥有任何状态转换 |
@@ -172,6 +172,7 @@ Source/
 | `Services/ConversationProjector.cs` | Event Store 到查询模型的 checkpoint 投影；除按稳定身份物化 ChatMessages 外，还将带不可变 Provider/Model 归因的 `usage.recorded` v2 必达写入 Token 明细账本 |
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
 | `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync` |
+| `Services/TokenUsageSchemaBootstrapper.cs` | Platform SQLite 的 Token 用量 Schema 升级边界；启动时幂等补齐 `TokenUsageEvents.ParentSessionId` 与索引，DDL 失败直接阻止启动，避免 EF 模型与旧数据库静默失配 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
@@ -405,8 +406,10 @@ Controller SessionRepository 是 Main Session 归属的事实源；Agent manifes
 
 ### 4. Smart* 工具 — 子代理薄包装与有界委派模式
 ```
+ExecutionRunCoordinator（Turn 启动时冻结唯一 parent deadline）
+  → Turn / Runtime / Tool contract 逐层透传（只能收紧）
 主 Agent 调用 smart_plan(task="...")
-  → SmartPlanTool（默认 1800s，AllowSubDelegation=true）
+  → SmartPlanTool（上限 1800s，父级预留 120s，AllowSubDelegation=true）
     → Planner 子代理 capability whitelist 仅增加 smart_explore
       → 可选调用 smart_explore(task="...")
         → SmartExploreTool（DelegatedSubAgent，AllowSubDelegation=false）
@@ -423,7 +426,9 @@ Controller SessionRepository 是 Main Session 归属的事实源；Agent manifes
       → SubAgentTool 仅补充调用语义 ProfileId=subagent.conscious、Role=conscious
     → ISubAgentInvocationService（只映射，不重新解析）
       → SubAgentManager.ValidateLlmRoute()
-      → 同步/异步统一创建 runId + 并发/超时门
+      → 同步/异步统一以 parent deadline 收紧预算
+      → 并发门等待计入同一个绝对 deadline
+      → 创建 runId + Runtime 派发
       → RuntimeExecutionIdentity 派生 child execution
       → AgentExecutionService 发出 round/LLM/tool 运行事实
       → FileSubAgentRunStore events.jsonl
@@ -524,8 +529,8 @@ WorkspaceAgentSettingsDrawer
   Embedding、Smart 子代理模型和执行护栏
 - `sourceTemplateId` 创建后只作为来源审计信息，运行时不得据此读取模板
 - `maxContextTokens` 不进入 Agent 表单或 Agent 配置，容量只由 Provider Model 解析
-- 最大轮次、最大耗时、最大工具调用进入不可变执行快照；Runtime 以实例值和平台
-  `AgentExecutionGuardrails` 中较小者为有效上限
+- 最大轮次、最大耗时、最大工具调用进入不可变执行快照；默认父 Turn 最大耗时为
+  2400 秒，Runtime 以实例值和平台 `AgentExecutionGuardrails` 中较小者为有效上限
 
 ---
 
