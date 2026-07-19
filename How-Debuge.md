@@ -602,6 +602,27 @@ BuiltIn provider 以及 fallback 不得分别暴露不同路径格式。
 - 历史 prepend 后，正常文档流的 `scrollTop` 增量应等于新增内容高度，第一条可见 row 的屏幕位置不变；
 - 不要在 `MessageList`、`useChatState` 或子组件再注册第二套滚动修正逻辑。
 
+### 10.2 后端突然停止且登录返回 502
+
+先执行：
+
+```powershell
+python .\dev-up.py --status
+Get-Content .\tmp\dev\backend.out.log -Tail 200
+```
+
+若状态为 `Backend: stopped`，但日志在停止前没有未处理异常，应检查最后一条
+`[HostShell]` / `[Terminal]` 记录。曾出现子代理执行
+`taskkill /PID <PuddingAgent host pid> /F`，直接终止宿主，表现为代理和登录接口同时
+返回 502，而不是登录控制器故障。
+
+修复后的安全约束：
+
+- `TerminalSecurity` 在 Normal/YOLO 之前执行宿主安全不变量；
+- 原始进程终止命令必须被拒绝；
+- 只允许使用 `terminal_cancel(job_id)` 终止当前会话创建的后台任务；
+- 恢复后必须同时验证 `dev-up.py --status` 为 HTTP 200、登录成功以及 Chat 页面可加载。
+
 ## 11. 测试诊断
 
 ### 11.1 DI 接口未注册导致 Null Service

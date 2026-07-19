@@ -380,16 +380,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             {shouldShowPreAnswerWaiting && (
               <div
                 className={cx(
-                  styles.preAnswerThinkingPanel,
+                  styles.agentBubbleNew,
+                  styles.agentBubbleStreaming,
                   styles.agentActiveOutputSurface,
+                  styles.agentWaitingBubble,
                 )}
               >
-                <div className={styles.firstTokenLoading}>
-                  <span
-                    className={cx(styles.pulseDot, styles.mainStatusDotActive)}
-                  />
-                  <span className={styles.pulseLabel}>等待运行事件...</span>
-                </div>
+                <span
+                  className={cx(styles.pulseDot, styles.mainStatusDotActive)}
+                />
+                <span className={styles.pulseLabel}>等待运行事件...</span>
               </div>
             )}
 

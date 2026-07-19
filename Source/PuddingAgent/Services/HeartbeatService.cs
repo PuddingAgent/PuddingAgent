@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -33,7 +34,8 @@ public sealed class HeartbeatOrchestrator : IHostedService
     private readonly ILogger<HeartbeatOrchestrator> _logger;
     private readonly string? _configuredAgentId;
     private readonly string _workspaceId;
-    private string? _currentAgentId;
+        private string? _currentAgentId;
+    private readonly ConcurrentDictionary<string, int> _heartbeatRetryCounts = new(StringComparer.OrdinalIgnoreCase);
 
     public HeartbeatOrchestrator(
         IIdleDetector idleDetector,
@@ -61,16 +63,19 @@ public sealed class HeartbeatOrchestrator : IHostedService
         Console.WriteLine("[Startup] HeartbeatOrchestrator.StartAsync — resolving agent id...");
         _currentAgentId = await ResolveDefaultAgentIdAsync(cancellationToken);
         Console.WriteLine($"[Startup] HeartbeatOrchestrator — agentId={_currentAgentId ?? "(null)"}");
+                // R1 fix: Always subscribe to IdleDetector events.
+        // If no agent is configured yet, OnIdleTickAsync will retry resolution on each tick.
         if (string.IsNullOrWhiteSpace(_currentAgentId))
         {
             _logger.LogWarning(
-                "[HeartbeatOrchestrator] No enabled workspace agent found for workspace={WorkspaceId}; heartbeat dispatch disabled until agents are configured",
+                "[HeartbeatOrchestrator] No enabled workspace agent found for workspace={WorkspaceId}; will retry resolution on each idle tick",
                 _workspaceId);
-            return;
         }
-
-        // 等待从磁盘恢复上次 Agent 设置的心跳频率，避免与 EnsureDefaultAsync 竞态
-        await RestoreHeartbeatPreferenceAsync(cancellationToken);
+        else
+        {
+            // 等待从磁盘恢复上次 Agent 设置的心跳频率，避免与 EnsureDefaultAsync 竞态
+            await RestoreHeartbeatPreferenceAsync(cancellationToken);
+        }
 
         _idleDetector.OnIdleThresholdReached += OnIdleTickAsync;
         _logger.LogInformation("[HeartbeatOrchestrator] Registered on IdleDetector");
@@ -91,18 +96,45 @@ public sealed class HeartbeatOrchestrator : IHostedService
     /// </summary>
     private async Task OnIdleTickAsync(TimeSpan idleDuration, CancellationToken ct)
     {
-        // ── 队列空时自动填充默认心跳 ──
+                // ── 队列空时自动为所有启用 Agent 填充默认心跳 ──
         var currentAgentId = _currentAgentId;
+
+        // R1 fix: Retry agent resolution on each tick if none was found at startup.
+        // This allows dynamic recovery when agents are added after the service starts.
         if (string.IsNullOrWhiteSpace(currentAgentId))
-            return;
+        {
+            currentAgentId = await ResolveDefaultAgentIdAsync(ct);
+            if (string.IsNullOrWhiteSpace(currentAgentId))
+                return;
+            _currentAgentId = currentAgentId;
+        }
 
         var count = await _wakeQueue.CountAsync(ct);
         if (count == 0)
         {
-            await _wakeQueue.EnsureDefaultAsync(currentAgentId, ct);
-            _logger.LogDebug(
-                "[HeartbeatOrchestrator] Queue was empty, default-enqueued agent={Agent}",
-                currentAgentId);
+            using var fillScope = _scopeFactory.CreateScope();
+            var catalog = fillScope.ServiceProvider.GetService<IWorkspaceAgentCatalog>();
+            if (catalog is not null)
+            {
+                var allAgents = await catalog.ListAgentsAsync(_workspaceId, ct);
+                var enabledAgents = allAgents
+                    .Where(a => a.IsEnabled && !a.IsFrozen)
+                    .ToList();
+                foreach (var agent in enabledAgents)
+                {
+                    await _wakeQueue.EnsureDefaultAsync(agent.AgentId, ct);
+                }
+                _logger.LogDebug(
+                    "[HeartbeatOrchestrator] Queue was empty, default-enqueued {Count} agent(s)",
+                    enabledAgents.Count);
+            }
+            else
+            {
+                await _wakeQueue.EnsureDefaultAsync(currentAgentId, ct);
+                _logger.LogDebug(
+                    "[HeartbeatOrchestrator] Queue was empty, default-enqueued agent={Agent} (catalog unavailable)",
+                    currentAgentId);
+            }
         }
 
         // ── 尝试出队 ──
@@ -142,13 +174,14 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 return;
             }
 
-            var agentConfig = scope.ServiceProvider.GetRequiredService<WorkspaceAgentFileService>();
+                        var agentConfig = scope.ServiceProvider.GetRequiredService<WorkspaceAgentFileService>();
             var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
             var heartbeatPrompt = await agentConfig.GetAgentHeartbeatPromptAsync(workspaceId, request.AgentId, ct);
+            var queuedSeconds = (int)(DateTime.UtcNow - request.EnqueuedAt).TotalSeconds;
             var heartbeatContent = FormatHeartbeatPrompt(
                 heartbeatPrompt,
                 request.AgentId,
-                (int)(DateTime.UtcNow - request.EnqueuedAt).TotalSeconds);
+                queuedSeconds);
 
             var promptContent = heartbeatContent;
             var heartbeatContentWithPrefix = $"── 系统心跳 ──\n\n{promptContent}";
@@ -186,12 +219,15 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 },
             };
 
-            var result = await messageSystem.SendAsync(envelope, ct);
+                        var result = await messageSystem.SendAsync(envelope, ct);
             _logger.LogInformation(
                 "[HeartbeatOrchestrator] Heartbeat sent to agent={Agent} messageId={MsgId} idle={Idle}s deliveries={Dlv}",
                 request.AgentId, result.MessageId,
                 ((int)idleDuration.TotalSeconds).ToString(),
                 string.Join(",", result.DeliveryIds));
+
+            // 成功发送 → 重置失败重试计数
+            _heartbeatRetryCounts.TryRemove(request.AgentId, out _);
 
             // ── 出队成功后检查队列是否还有待处理 agent ──
             var remaining = await _wakeQueue.CountAsync(ct);
@@ -202,10 +238,15 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 _logger.LogDebug("[HeartbeatOrchestrator] ReArmed IdleDetector, remaining={Remaining}", remaining);
             }
         }
-        catch (Exception ex)
+                catch (Exception ex)
         {
             _logger.LogError(ex, "[HeartbeatOrchestrator] Failed to send heartbeat to agent={Agent}",
                 request.AgentId);
+
+            // 指数退避重试：30s → 60s → 120s，最多 3 次
+            var retryCount = _heartbeatRetryCounts.AddOrUpdate(
+                request.AgentId, 1, (_, c) => c + 1);
+            await _wakeQueue.EnqueueRetryAsync(request.AgentId, retryCount - 1, ct);
         }
     }
 
@@ -214,15 +255,25 @@ public sealed class HeartbeatOrchestrator : IHostedService
     ///
     /// 兼容旧 prompt 中可能存在的 string.Format 占位符：{0}=AgentId，{1}=排队等待秒数。
     /// 格式错误时直接使用原文，避免单个 Agent 配置错误导致心跳调度整体失败。
-    /// </summary>
-    private static string FormatHeartbeatPrompt(string prompt, string agentId, int queuedSeconds)
+        /// </summary>
+    private static string FormatHeartbeatPrompt(string? prompt, string agentId, int queuedSeconds)
     {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return $"当前时间 (UTC): {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}\n"
+                + $"空闲时长: {queuedSeconds} 秒\n"
+                + $"Agent ID: {agentId}\n\n"
+                + "请检查是否有待处理的任务或需要主动执行的操作。";
+        }
+
         try
         {
             return string.Format(prompt, agentId, queuedSeconds);
         }
         catch (FormatException)
         {
+            // R6: Log format errors instead of silently swallowing them
+            _logger.LogWarning("[HeartbeatOrchestrator] Invalid format in heartbeat prompt for agent={Agent}: {Prompt}", agentId, prompt);
             return prompt;
         }
     }

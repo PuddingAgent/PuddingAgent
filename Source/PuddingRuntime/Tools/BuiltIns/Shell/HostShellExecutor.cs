@@ -20,11 +20,26 @@ public static class HostShellExecutor
     public static async Task<HostShellResult> ExecuteAsync(
         HostShellRequest request,
         ILogger logger,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        ITerminalCommandPolicy? commandPolicy = null)
     {
         var command = request.Command?.Trim();
         if (string.IsNullOrWhiteSpace(command))
             return Fail("Command is required.");
+
+        try
+        {
+            (commandPolicy ?? DefaultTerminalCommandPolicy.Instance)
+                .EnsureInvariantAllowed(command);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            logger.LogWarning(
+                "[HostShell] Security invariant blocked cmd={Command}: {Reason}",
+                command.Length > 120 ? command[..120] + "..." : command,
+                ex.Message);
+            return Fail(ex.Message);
+        }
 
         var requestedShell = string.IsNullOrWhiteSpace(request.Shell)
             ? "auto"

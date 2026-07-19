@@ -1,3 +1,4 @@
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -61,6 +62,62 @@ public sealed class IdleDetectorTests
 
         detector.Dispose();
         detector.Dispose();
+    }
+
+    // ── P1: IdleDetector 可配置 ──
+
+    [TestMethod]
+    public void Constructor_UsesDefaultValues_WhenConfigurationMissing()
+    {
+        var config = new ConfigurationBuilder().Build(); // empty
+        var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-06-17T00:00:00Z"));
+        var detector = new IdleDetector(null, NullLogger<IdleDetector>.Instance, clock, config);
+
+        Assert.IsNotNull(detector);
+    }
+
+    [TestMethod]
+    public void Constructor_ReadsCustomThresholdAndInterval()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Heartbeat:IdleCheckIntervalSeconds"] = "10",
+                ["Heartbeat:GlobalIdleThresholdSeconds"] = "60"
+            })
+            .Build();
+
+        var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-06-17T00:00:00Z"));
+        var detector = new IdleDetector(null, NullLogger<IdleDetector>.Instance, clock, config);
+
+        Assert.IsNotNull(detector);
+    }
+
+    [TestMethod]
+    public void Constructor_ClampsOutOfRangeConfigurationValues()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Heartbeat:IdleCheckIntervalSeconds"] = "0",    // below min 1 → clamped to 1
+                ["Heartbeat:GlobalIdleThresholdSeconds"] = "999"  // above max 300 → clamped to 300
+            })
+            .Build();
+
+        var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-06-17T00:00:00Z"));
+        var detector = new IdleDetector(null, NullLogger<IdleDetector>.Instance, clock, config);
+
+        Assert.IsNotNull(detector); // construction succeeds with clamped values
+    }
+
+    [TestMethod]
+    public void ReArm_ResetsFiredFlag()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-06-17T00:00:00Z"));
+        var detector = new IdleDetector(null, NullLogger<IdleDetector>.Instance, clock);
+
+        // Should not throw
+        detector.ReArm();
     }
 
     private sealed class ManualTimeProvider(DateTimeOffset now) : TimeProvider

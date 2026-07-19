@@ -2,6 +2,7 @@
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingRuntime.Services;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -22,12 +23,18 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
     private readonly PuddingDataPaths _dataPaths;
     private readonly AuditLogger _audit;
     private readonly ILogger<HostShellTool> _logger;
+    private readonly ITerminalCommandPolicy _commandPolicy;
 
-    public HostShellTool(PuddingDataPaths dataPaths, AuditLogger audit, ILogger<HostShellTool> logger)
+    public HostShellTool(
+        PuddingDataPaths dataPaths,
+        AuditLogger audit,
+        ILogger<HostShellTool> logger,
+        ITerminalCommandPolicy? commandPolicy = null)
     {
         _dataPaths = dataPaths;
         _audit = audit;
         _logger = logger;
+        _commandPolicy = commandPolicy ?? DefaultTerminalCommandPolicy.Instance;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -58,7 +65,8 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
                 TimeoutSeconds = args.TimeoutSeconds,
             },
             _logger,
-            ct);
+            ct,
+            _commandPolicy);
 
                 _audit.Write(zone, "shell", context.AgentInstanceId,
             args.Command, args.Reason, result.Success, sw.ElapsedMilliseconds, context.Trace);

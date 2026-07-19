@@ -28,9 +28,13 @@ public sealed class WakeRequest
 /// </summary>
 public sealed class AgentWakeQueue
 {
-    // ── 系统默认心跳参数（1小时）──
+        // ── 系统默认心跳参数（1小时）──
     private static readonly TimeSpan DefaultMinIdle = TimeSpan.FromHours(1);
     private static readonly TimeSpan DefaultMaxIdle = TimeSpan.FromHours(1);
+
+    // ── 心跳重试指数退避延迟（30s → 60s → 120s）──
+    private static readonly int[] RetryDelaySeconds = [30, 60, 120];
+    private const int MaxRetryCount = 3;
 
     private readonly PriorityQueue<WakeRequest, DateTime> _queue = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -286,6 +290,53 @@ public sealed class AgentWakeQueue
             foreach (var (req, pri) in entries)
                 _queue.Enqueue(req, pri);
             return found;
+        }
+                finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// 心跳发送失败后重新入队，使用指数退避延迟。
+    /// 最多重试 3 次；延迟依次为 30s、60s、120s。
+    /// </summary>
+    public async Task<bool> EnqueueRetryAsync(
+        string agentId,
+        int retryCount,
+        CancellationToken ct = default)
+    {
+        if (retryCount >= MaxRetryCount)
+        {
+            _logger.LogWarning(
+                "[AgentWakeQueue] Max retries ({Max}) exceeded for agent={Agent}; dropping heartbeat",
+                MaxRetryCount, agentId);
+            return false;
+        }
+
+        // 指数退避：30s → 60s → 120s
+        var delaySeconds = RetryDelaySeconds[Math.Min(retryCount, RetryDelaySeconds.Length - 1)];
+        var retryDelay = TimeSpan.FromSeconds(delaySeconds);
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            // R3: Clean up stale custom sleep entry to avoid blocking EnsureDefaultAsync
+            _customSleepAgents.TryRemove(agentId, out _);
+
+            var now = DateTime.UtcNow;
+            var request = new WakeRequest
+            {
+                AgentId = agentId,
+                EnqueuedAt = now,
+                MinIdle = retryDelay,
+                MaxIdle = retryDelay,
+                EarliestWakeAt = now.Add(retryDelay),
+                LatestWakeAt = now.Add(retryDelay),
+            };
+            _queue.Enqueue(request, request.LatestWakeAt);
+
+            _logger.LogInformation(
+                "[AgentWakeQueue] Retry #{RetryCount} enqueued agent={Agent} delay={Delay}s",
+                retryCount + 1, agentId, delaySeconds);
+            return true;
         }
         finally { _gate.Release(); }
     }

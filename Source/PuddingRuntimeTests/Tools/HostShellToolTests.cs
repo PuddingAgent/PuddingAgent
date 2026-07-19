@@ -73,6 +73,24 @@ public sealed class HostShellToolTests
     }
 
     [TestMethod]
+    public async Task HostShellExecutor_Blocks_Process_Termination_At_Execution_Boundary()
+    {
+        var command = OperatingSystem.IsWindows()
+            ? $"taskkill /PID {Environment.ProcessId} /F"
+            : $"kill -9 {Environment.ProcessId}";
+
+        var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
+        {
+            Command = command,
+            Shell = "auto",
+            TimeoutSeconds = 10,
+        }, NullLogger.Instance);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error ?? string.Empty, "terminal_cancel");
+    }
+
+    [TestMethod]
     public async Task HostShellTool_Executes_With_Host_Shell_Parameters()
     {
         var tool = CreateHostShellTool();
@@ -110,7 +128,7 @@ public sealed class HostShellToolTests
         Assert.IsTrue(descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresShell));
         CollectionAssert.AreEqual(new[] { "command" }, descriptor.Parameters.Required.ToArray());
         CollectionAssert.AreEquivalent(
-            new[] { "command", "shell", "working_directory", "timeout_seconds", "reason" },
+            new[] { "command", "shell", "working_directory", "timeout_seconds", "reason", "tail_lines" },
             descriptor.Parameters.Properties.Select(p => p.Name).ToArray());
     }
 

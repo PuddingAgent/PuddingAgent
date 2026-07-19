@@ -218,6 +218,35 @@ public sealed class TerminalToolsTests
     }
 
     [TestMethod]
+    public async Task TerminalStart_Blocks_Process_Termination_In_Yolo_Mode()
+    {
+        using var scope = CreateScope();
+        var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
+        var command = OperatingSystem.IsWindows()
+            ? $"taskkill /PID {Environment.ProcessId} /F"
+            : $"kill -9 {Environment.ProcessId}";
+
+        var startResult = await ExecuteAsync(start, $$"""
+        {
+          "command": "{{JsonEncodedText(command)}}"
+        }
+        """, isYoloMode: true);
+
+        Assert.IsFalse(startResult.Success);
+        StringAssert.Contains(startResult.Error ?? string.Empty, "terminal_cancel");
+    }
+
+    [TestMethod]
+    public void TerminalPolicy_Allows_Process_Termination_Terms_As_Diagnostic_Data()
+    {
+        var decision = DefaultTerminalCommandPolicy.Instance.Evaluate(
+            "rg -n \"taskkill|Stop-Process|kill\" Source",
+            isYoloMode: true);
+
+        Assert.IsTrue(decision.Allowed, decision.Message);
+    }
+
+    [TestMethod]
     public async Task TerminalWait_Returns_Read_Handle_When_Output_Is_Truncated()
     {
         using var scope = CreateScope();

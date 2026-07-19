@@ -357,6 +357,13 @@ data: {
 └─────────┘
 ```
 
+进程生命周期必须遵守以下不可绕过的宿主安全不变量：
+
+- 原始 `shell`、`terminal_start`、`terminal_execute` 不允许执行 `taskkill`、`Stop-Process`、`kill`、`killall`、`pkill` 等任意 OS 进程终止命令；
+- YOLO 只能绕过用户权限检查，不能绕过宿主安全不变量；
+- Agent 只能调用 `terminal_cancel(job_id)` 终止由当前会话通过终端管理器创建的进程；
+- `job_id` 是运行时能力句柄，终止动作必须由 `ITerminalProcessManager` 验证归属并执行，不能让 Agent 直接持有并操作宿主 PID。
+
 ### 6.4 关键接口定义
 
 ```csharp

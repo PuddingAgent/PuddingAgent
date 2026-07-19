@@ -96,8 +96,8 @@ Source/
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
-| `Tools/BuiltIns/Shell/` | Shell 工具 | 终端命令执行（支持 tail_lines） |
-| `Tools/BuiltIns/Terminal/` | `TerminalTools.cs` | 后台终端执行 |
+| `Tools/BuiltIns/Shell/` | Shell 工具 | 终端命令执行（支持 tail_lines）；执行边界强制应用不可绕过的宿主进程保护 |
+| `Tools/BuiltIns/Terminal/` + `Services/TerminalSecurity.cs` | 后台终端与命令策略 | Normal/YOLO 共享宿主安全不变量；任意进程终止命令必须改用当前会话持有 job id 的 `terminal_cancel` |
 | `Tools/BuiltIns/CodeIntelligence/` | `CodeQueryTools.cs` | 代码索引查询 |
 | `Tools/BuiltIns/Documents/` | `ReadOfficeDocumentTool.cs` | Office 文档读取（NPOI 2.8.0） |
 
@@ -121,6 +121,7 @@ Source/
 |------|------|
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
 | `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
+| `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
 
 ---
 

@@ -1,3 +1,4 @@
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -49,8 +50,8 @@ public interface IIdleDetector
 /// </summary>
 public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
 {
-    private const int IdleCheckIntervalSeconds = 5;
-    private static readonly TimeSpan GlobalIdleThreshold = TimeSpan.FromSeconds(30);
+        private readonly int _idleCheckIntervalSeconds;
+    private readonly TimeSpan _globalIdleThreshold;
 
     private readonly IInternalEventBus? _eventBus;
     private readonly ILogger<IdleDetector> _logger;
@@ -63,15 +64,21 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
     private Task? _loopTask;
     private int _started;
 
-    public IdleDetector(
+        public IdleDetector(
         IInternalEventBus? eventBus = null,
         ILogger<IdleDetector>? logger = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IConfiguration? configuration = null)
     {
         _eventBus = eventBus;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<IdleDetector>.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _lastActiveUtcTicks = _timeProvider.GetUtcNow().UtcTicks;
+
+        _idleCheckIntervalSeconds = Math.Clamp(
+            configuration?.GetValue<int?>("Heartbeat:IdleCheckIntervalSeconds") ?? 5, 1, 30);
+        _globalIdleThreshold = TimeSpan.FromSeconds(Math.Clamp(
+            configuration?.GetValue<int?>("Heartbeat:GlobalIdleThresholdSeconds") ?? 30, 10, 300));
     }
 
     public DateTimeOffset LastActiveAt =>
@@ -186,12 +193,12 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Polls idle duration every <see cref="IdleCheckIntervalSeconds"/> seconds.
+    /// Polls idle duration based on the configured check interval.
     /// Fires the callback once per idle window — reset on any activity.
     /// </summary>
     private async Task RunIdleLoopAsync(CancellationToken ct)
     {
-        var interval = TimeSpan.FromSeconds(IdleCheckIntervalSeconds);
+        var interval = TimeSpan.FromSeconds(_idleCheckIntervalSeconds);
         while (!ct.IsCancellationRequested)
         {
             try { await Task.Delay(interval, ct); }
@@ -201,7 +208,7 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
             if (callback is null) continue;
 
             var idle = IdleDuration;
-            if (idle >= GlobalIdleThreshold && !_firedForCurrentWindow)
+            if (idle >= _globalIdleThreshold && !_firedForCurrentWindow)
             {
                 _firedForCurrentWindow = true;
                 _logger.LogInformation(
@@ -214,7 +221,7 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
                     _logger.LogError(ex, "[IdleDetector] Callback failed");
                 }
             }
-            else if (idle < GlobalIdleThreshold && _firedForCurrentWindow)
+            else if (idle < _globalIdleThreshold && _firedForCurrentWindow)
             {
                 _firedForCurrentWindow = false;
             }

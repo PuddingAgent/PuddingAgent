@@ -122,7 +122,7 @@ describe('AgentMessageBubble streaming presentation', () => {
   });
 
   it('shows the thinking placeholder before metadata marks the answer as streaming', () => {
-    render(
+    const { container } = render(
       <AgentMessageBubble
         {...baseProps}
         status="thinking"
@@ -133,6 +133,12 @@ describe('AgentMessageBubble streaming presentation', () => {
 
     expect(screen.queryByTestId('message-item')).toBeNull();
     expect(screen.getByText('等待运行事件...')).toBeTruthy();
+    expect(
+      container.querySelector(
+        '.agentBubbleNew.agentBubbleStreaming.agentWaitingBubble',
+      ),
+    ).toBeTruthy();
+    expect(container.querySelector('.preAnswerThinkingPanel')).toBeNull();
   });
 
   it('shows the current tool interaction as the default visible activity', () => {

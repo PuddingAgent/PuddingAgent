@@ -3157,23 +3157,7 @@ export const useChatStyles = createStyles(({ token }) => ({
     borderRadius: 6,
   },
 
-  /* ── First-token loading (animation removed for visual calm; @keyframes preserved) ── */
-  preAnswerThinkingPanel: {
-    width: '100%',
-    border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
-    borderRadius: 8,
-    borderTopLeftRadius: 4,
-    background: 'color-mix(in srgb, var(--soft-white) 92%, transparent)',
-    padding: '4px 0 10px',
-    contain: 'paint',
-  },
-  firstTokenLoading: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '12px 16px',
-  },
+  /* ── First-token loading ── */
   pulseDot: {
     width: 8,
     height: 8,
@@ -3460,6 +3444,12 @@ export const useChatStyles = createStyles(({ token }) => ({
   },
   agentBubbleStreaming: {
     borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
+  },
+  agentWaitingBubble: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: 'fit-content',
   },
   agentBubbleError: {
     borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
