@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -653,7 +653,11 @@ if (builder.Configuration.GetValue<bool>(
     builder.Services.AddSingleton<SubconsciousConsolidationHook>();
     builder.Services.AddSingleton<IAgentLoopHook>(sp => sp.GetRequiredService<SubconsciousConsolidationHook>());
 }
-// HOSTED-DISABLED: builder.Services.AddHostedService<SubconsciousWorkerService>();
+if (builder.Configuration.GetValue<bool>(
+        $"{SubconsciousOptions.SectionName}:{nameof(SubconsciousOptions.EnableWorker)}"))
+{
+    builder.Services.AddHostedService<SubconsciousWorkerService>();
+}
 
 // ── 流式事件总线（可观测性基础设施）────────────────────────────
 builder.Services.AddSingleton<StreamingEventBus>();

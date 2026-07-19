@@ -27,8 +27,9 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
     }
 
     protected override string RoleName => "developer";
-    protected override int DefaultTimeoutSeconds => 600;
-    protected override int DefaultMaxRounds => 150;
+    protected override int DefaultTimeoutSeconds => 1200;
+    protected override int DefaultMaxRounds => 200;
+    protected override string AllowedTools => "file_read,file_search,list_dir,search_grep,code_outline,code_symbol_search,code_explore,code_callers,code_callees,code_summary,project_map,file_patch,apply_patch,file_write,shell,terminal_start,terminal_wait,terminal_read,terminal_status,terminal_cancel,search_memory";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDevelopArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -62,12 +63,34 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
         if (!string.IsNullOrWhiteSpace(args.Scope))
             sb.AppendLine($"## 📁 CWD: {args.Scope}");
         sb.AppendLine();
-        sb.AppendLine("## OUTPUT:");
+        AppendCanonicalReportRules(sb);
+        sb.AppendLine("## OUTPUT CONTRACT:");
         sb.AppendLine("```");
-        sb.AppendLine("FILES_CHANGED: path:line-range — what + why");
-        sb.AppendLine("BUILD_RESULT: PASS|FAIL");
-        sb.AppendLine("TEST_RESULT: PASS|FAIL|SKIPPED");
-        sb.AppendLine("SUMMARY: 2-3 sentences on what was done");
+        sb.AppendLine("SUMMARY:");
+        sb.AppendLine("  STATUS: complete|partial|blocked");
+        sb.AppendLine("  OUTCOME: user-visible and architectural behavior now achieved");
+        sb.AppendLine("  SCOPE_COMPLETED: what was implemented versus requested");
+        sb.AppendLine("CHANGES:");
+        sb.AppendLine("  FILES:");
+        sb.AppendLine("    - PATH: absolute path");
+        sb.AppendLine("      ACTION: added|modified|deleted|moved");
+        sb.AppendLine("      SYMBOLS: classes/functions/members/config keys");
+        sb.AppendLine("      LINES: resulting line/range when available");
+        sb.AppendLine("      LOGIC: exact behavior changed and why");
+        sb.AppendLine("  CONTRACT_CHANGES: API/schema/config/event changes, or none");
+        sb.AppendLine("EVIDENCE:");
+        sb.AppendLine("  BASELINE: exact command, exit code, and relevant result before editing");
+        sb.AppendLine("  BUILD: exact command, exit code, error/warning counts");
+        sb.AppendLine("  TESTS:");
+        sb.AppendLine("    - COMMAND: exact command");
+        sb.AppendLine("      RESULT: pass|fail|skipped with passed/failed/skipped counts and duration");
+        sb.AppendLine("      COVERAGE: behavior or regression protected");
+        sb.AppendLine("  MANUAL_VERIFICATION: API/UI/runtime checks and observed results, or not_run with reason");
+        sb.AppendLine("RISKS:");
+        sb.AppendLine("  REMAINING: known limitations, untested paths, compatibility or operational risks");
+        sb.AppendLine("  DEVIATIONS: differences from the requested design and why");
+        sb.AppendLine("BLOCKERS:");
+        sb.AppendLine("  none, or unresolved error plus attempts made and exact next action");
         sb.AppendLine("```");
         return sb.ToString();
     }

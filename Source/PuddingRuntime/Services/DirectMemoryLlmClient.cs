@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -163,6 +163,36 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
         }
     }
 
+    /// <summary>
+    /// 带 token 用量追踪的对话接口。直接从 HTTP 响应中解析 usage 字段。
+    /// </summary>
+    public async Task<(string Text, TokenUsageDto? Usage)> ChatWithUsageAsync(
+        string systemPrompt,
+        string userMessage,
+        MemoryLlmConfig? memoryLlmConfig,
+        IReadOnlyList<object>? tools = null,
+        CancellationToken ct = default)
+    {
+        var dedicatedConfig = RequireDedicatedConfig(memoryLlmConfig);
+
+        try
+        {
+            if (tools is { Count: > 0 })
+            {
+                // tool 模式返回原始 JSON，无法可靠提取 usage
+                var rawJson = await CompleteByDedicatedModelWithToolsAsync(systemPrompt, userMessage, tools, dedicatedConfig, ct);
+                return (rawJson, null);
+            }
+
+            return await CompleteByDedicatedModelWithUsageAsync(systemPrompt, userMessage, 1024, dedicatedConfig, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[MemoryLlm] Dedicated memory model failed (with-usage).");
+            throw;
+        }
+    }
+
     private async Task<string> CompleteAsync(
         string systemPrompt,
         string userPrompt,
@@ -183,7 +213,21 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
         }
     }
 
-    private async Task<string> CompleteByDedicatedModelAsync(
+        private async Task<string> CompleteByDedicatedModelAsync(
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens,
+        LlmConfig dedicatedConfig,
+        CancellationToken ct)
+    {
+        var (text, _) = await CompleteByDedicatedModelWithUsageAsync(systemPrompt, userPrompt, maxTokens, dedicatedConfig, ct);
+        return text;
+    }
+
+    /// <summary>
+    /// 执行 LLM 调用并返回文本内容 + TokenUsageDto。
+    /// </summary>
+    private async Task<(string Text, TokenUsageDto? Usage)> CompleteByDedicatedModelWithUsageAsync(
         string systemPrompt,
         string userPrompt,
         int maxTokens,
@@ -270,9 +314,9 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
         _logger.LogDebug(
             "[MemoryLlm] Response received model={Model} textLen={TextLen} tokens={Tokens}",
             model, text?.Length ?? 0, usageTokens);
-
-        // 记录 Subconscious LLM 调用的 Token 使用
-        if (_tokenUsageRecorder is not null && body.TryGetProperty("usage", out var usageEl))
+                        // 从 HTTP 响应中解析 Token 使用
+        TokenUsageDto? capturedUsage = null;
+        if (body.TryGetProperty("usage", out var usageEl))
         {
             try
             {
@@ -280,27 +324,33 @@ public sealed class DirectMemoryLlmClient : IMemoryLlmClient
                     usageEl.GetRawText(), JsonOptions);
                 if (usageDto is not null && HasTokenValues(usageDto))
                 {
-                    _ = Task.Run(async () =>
+                    capturedUsage = usageDto;
+
+                    // 记录 Subconscious LLM 调用的 Token 使用
+                                        if (_tokenUsageRecorder is not null)
                     {
-                        try
+                        _ = Task.Run(async () =>
                         {
-                            await _tokenUsageRecorder.RecordAsync(
-                                usageDto,
-                                sourceType: "subconscious_memory",
-                                sourceId: $"mem:{Guid.NewGuid():N}",
-                                workspaceId: null,
-                                sessionId: null,
-                                providerId: _memoryProviderId,
-                                modelId: dedicatedConfig.ModelId);
-                        }
-                        catch { /* fire-and-forget best-effort */ }
-                    });
+                            try
+                            {
+                                await _tokenUsageRecorder.RecordAsync(
+                                    usageDto,
+                                    sourceType: "subconscious_memory",
+                                    sourceId: $"mem:{Guid.NewGuid():N}",
+                                    workspaceId: null,
+                                    sessionId: null,
+                                    providerId: _memoryProviderId,
+                                    modelId: dedicatedConfig.ModelId);
+                            }
+                            catch { /* fire-and-forget best-effort */ }
+                        });
+                    }
                 }
             }
             catch { /* best-effort */ }
         }
 
-        return text!;
+        return (text!, capturedUsage);
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -128,7 +128,26 @@ public sealed class MemoryLlmInvocationClient(
                 "Memory LLM tool calls must be modeled as LlmToolDefinition before routing through ILlmInvocationService.");
         }
 
-        return CompleteAsync(systemPrompt, userMessage, memoryLlmConfig, ct);
+                return CompleteAsync(systemPrompt, userMessage, memoryLlmConfig, ct);
+    }
+
+    /// <summary>
+    /// 带 token 用量追踪的对话接口。从 LlmInvocationResult.Usage 中提取 token 用量。
+    /// </summary>
+    public async Task<(string Text, TokenUsageDto? Usage)> ChatWithUsageAsync(
+        string systemPrompt,
+        string userMessage,
+        MemoryLlmConfig? memoryLlmConfig,
+        IReadOnlyList<object>? tools = null,
+        CancellationToken ct = default)
+    {
+        if (tools is { Count: > 0 })
+        {
+            throw new NotSupportedException(
+                "Memory LLM tool calls must be modeled as LlmToolDefinition before routing through ILlmInvocationService.");
+        }
+
+        return await CompleteWithUsageAsync(systemPrompt, userMessage, memoryLlmConfig, ct);
     }
 
     public Task<string> ChatWithScopedConfigAsync(
@@ -145,7 +164,57 @@ public sealed class MemoryLlmInvocationClient(
                 "Memory LLM tool calls must be modeled as LlmToolDefinition before routing through ILlmInvocationService.");
         }
 
-        return CompleteAsync(systemPrompt, userMessage, memoryLlmConfig, ct, targetScope);
+                return CompleteAsync(systemPrompt, userMessage, memoryLlmConfig, ct, targetScope);
+    }
+
+    private async Task<(string Text, TokenUsageDto? Usage)> CompleteWithUsageAsync(
+        string systemPrompt,
+        string userPrompt,
+        MemoryLlmConfig? overrideConfig,
+        CancellationToken ct)
+    {
+        var profile = ResolveSubconsciousProfile(overrideConfig);
+        var workspaceId = DefaultWorkspaceId;
+        var sessionId = DefaultSessionId;
+        var invocationRequest = new LlmInvocationRequest
+        {
+            WorkspaceId = workspaceId,
+            SessionId = sessionId,
+            AgentInstanceId = DefaultAgentInstanceId,
+            AgentTemplateId = DefaultAgentTemplateId,
+            Profile = profile,
+            ConfigOverride = ToOverrideConfig(overrideConfig),
+            Messages =
+            [
+                new ChatMessage(ChatRole.System, systemPrompt),
+                new ChatMessage(ChatRole.User, userPrompt),
+            ],
+        };
+        var result = await invocationService.InvokeAsync(invocationRequest, ct);
+
+        if (!result.Success)
+            throw new InvalidOperationException($"Memory LLM call failed: {result.Error}");
+
+        if (result.Usage is not null && HasTokenValues(result.Usage))
+        {
+            if (tokenUsageRecorder is null)
+            {
+                throw new InvalidOperationException(
+                    "Token usage recorder is required for subconscious LLM invocations.");
+            }
+
+            await tokenUsageRecorder.RecordRequiredAsync(
+                result.Usage,
+                sourceType: "subconscious_memory",
+                sourceId: $"llm:{invocationRequest.InvocationId}",
+                workspaceId: workspaceId,
+                sessionId: sessionId,
+                providerId: result.ProviderId,
+                modelId: result.ModelId,
+                prefixSnapshot: result.PrefixSnapshot);
+        }
+
+        return (result.ReplyText ?? string.Empty, result.Usage);
     }
 
     private async Task<string> CompleteAsync(

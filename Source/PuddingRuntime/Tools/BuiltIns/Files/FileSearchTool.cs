@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_search",
     name: "Search files",
-    description: "Search file names. Defaults to Everything Provider if available. Everything requires an absolute directory; validation errors include available drive roots enumerated from the host. To search multiple drives, call once per drive root. If Everything is unavailable, falls back to BuiltInRecursiveFileSearch. Use action=list to inspect providers.",
+    description: "Search file names and return normalized absolute paths. Defaults to Everything Provider if available. Everything requires an absolute directory; validation errors include available drive roots enumerated from the host. To search multiple drives, call once per drive root. If Everything is unavailable, falls back to BuiltInRecursiveFileSearch. Use action=list to inspect providers.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     SortOrder = 41)]
@@ -139,7 +139,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         try
         {
-            var results = await provider.SearchAsync(directory, pattern, recursive, maxResults, ct);
+            var providerResults = await provider.SearchAsync(directory, pattern, recursive, maxResults, ct);
+            var results = NormalizeAbsolutePaths(providerResults, directory);
             var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
             if (results.Count == 0)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
@@ -153,7 +154,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             var builtInFallback = FindBuiltInProvider()!;
             try
             {
-                var results = await builtInFallback.SearchAsync(directory, pattern, recursive, maxResults, ct);
+                var providerResults = await builtInFallback.SearchAsync(directory, pattern, recursive, maxResults, ct);
+                var results = NormalizeAbsolutePaths(providerResults, directory);
                 var output = BuildSearchOutput(
                     results,
                     providerId,
@@ -204,6 +206,19 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         return output + Environment.NewLine + Environment.NewLine +
                $"Provider fallback: {fallbackFrom} -> {selectedProvider}. Reason: {fallbackReason}.";
+    }
+
+    private static IReadOnlyList<string> NormalizeAbsolutePaths(
+        IReadOnlyList<string> results,
+        string searchRoot)
+    {
+        return results
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Path.IsPathRooted(path)
+                ? Path.GetFullPath(path)
+                : Path.GetFullPath(Path.Combine(searchRoot, path)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static bool IsEverythingProvider(string providerId) =>
@@ -290,6 +305,7 @@ public interface IFileSearchProvider
     string ProviderId { get; }
     string DisplayName { get; }
     bool IsAvailable { get; }
+    /// <summary>Returns normalized absolute file paths.</summary>
     Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct);
 }
 
@@ -304,7 +320,7 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
         var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
         var results = Directory.EnumerateFiles(directory, pattern, searchOption)
             .Take(maxResults)
-            .Select(path => Path.GetFileName(path) ?? path)
+            .Select(Path.GetFullPath)
             .ToArray();
         return Task.FromResult<IReadOnlyList<string>>(results);
     }
@@ -346,7 +362,7 @@ internal sealed class EverythingSearchProvider : IFileSearchProvider
         var rootTrimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         return result.Items
-            .Select(i => i.FullPath)
+            .Select(i => Path.GetFullPath(i.FullPath))
             .Where(path => FileSearchPathHelpers.IsInsideDirectory(path, root))
             .Where(path => recursive || IsDirectChild(path, rootTrimmed))
             .Where(path => FileSearchPatternMatcher.Matches(path, root, pattern))

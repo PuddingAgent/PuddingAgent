@@ -1,4 +1,4 @@
-namespace PuddingCode.Configuration;
+﻿namespace PuddingCode.Configuration;
 
 /// <summary>Feature flags and scheduling controls for subconscious memory maintenance.</summary>
 public sealed class SubconsciousOptions
@@ -25,6 +25,9 @@ public sealed class SubconsciousOptions
     /// Keep this route isolated from normal admin APIs so it can be closed as one unit.
     /// </summary>
     public bool DebugApiEnabled { get; init; } = true;
+
+    /// <summary>Enable SubconsciousWorkerService as a hosted service. Default false (opt-in).</summary>
+    public bool EnableWorker { get; set; } = false;
 }
 
 /// <summary>Runtime scheduling controls for durable subconscious background jobs.</summary>

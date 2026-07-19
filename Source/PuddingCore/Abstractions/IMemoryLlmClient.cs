@@ -1,3 +1,4 @@
+﻿using PuddingCode.Models;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Abstractions;
@@ -41,6 +42,21 @@ public interface IMemoryLlmClient
         IReadOnlyList<object>? tools = null,
         CancellationToken ct = default)
         => ChatAsync(systemPrompt, userMessage, tools, ct);
+
+    /// <summary>
+    /// 通用对话接口（带可选记忆模型覆盖配置），同时返回 LLM token 用量。
+    /// 默认实现忽略 usage（返回 null），由支持 token 追踪的实现覆盖。
+    /// </summary>
+    async Task<(string Text, TokenUsageDto? Usage)> ChatWithUsageAsync(
+        string systemPrompt,
+        string userMessage,
+        MemoryLlmConfig? memoryLlmConfig,
+        IReadOnlyList<object>? tools = null,
+        CancellationToken ct = default)
+    {
+        var text = await ChatWithConfigAsync(systemPrompt, userMessage, memoryLlmConfig, tools, ct);
+        return (text, null);
+    }
 
     /// <summary>
     /// 通用对话接口（带目标记忆所有权边界）。

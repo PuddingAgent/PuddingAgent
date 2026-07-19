@@ -368,6 +368,9 @@ describe('ChatMain workbench header', () => {
     });
 
     expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(1);
+    expect(_mockLatestMessageListProps.subAgentCards).toBeUndefined();
+    expect(screen.getByTestId('subagent-activity-dock')).toBeTruthy();
+    expect(screen.queryByTestId('subagent-anchor')).toBeNull();
   });
 
   it('keeps voice interaction inside the main input surface without a side rail', () => {

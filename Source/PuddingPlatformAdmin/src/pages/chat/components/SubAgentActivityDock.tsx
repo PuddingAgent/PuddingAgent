@@ -27,6 +27,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { getSubAgentRunOutput } from '@/services/platform/api';
 import type {
   SubAgentActivity,
   SubAgentCard,
@@ -46,6 +47,14 @@ interface SubAgentActivityDockProps {
 }
 
 type InspectorFilter = 'active' | 'recent' | 'errors' | 'all';
+type RunOutputLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
+interface RunOutputState {
+  runId?: string;
+  status: RunOutputLoadStatus;
+  output?: string;
+  error?: string;
+}
 
 const SUCCESS_LINGER_MS = 12_000;
 const DOCK_VISIBLE_LIMIT = 4;
@@ -220,6 +229,23 @@ const useStyles = createStyles(() => ({
     flexDirection: 'column' as const,
     minHeight: 0,
     height: '100%',
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  detailLayout: {
+    display: 'grid',
+    gridTemplateRows: 'minmax(0, 1fr) clamp(240px, 36vh, 380px)',
+    minHeight: 0,
+    height: '100%',
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  detailScroll: {
+    minHeight: 0,
+    minWidth: 0,
+    paddingRight: 4,
+    overflowY: 'auto' as const,
+    overflowX: 'hidden' as const,
   },
   filterBar: {
     display: 'flex',
@@ -327,13 +353,49 @@ const useStyles = createStyles(() => ({
     fontSize: 12,
   },
   output: {
-    maxHeight: 180,
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
     overflowY: 'auto' as const,
+    overflowX: 'hidden' as const,
     padding: '10px 12px',
     borderRadius: 8,
     background: 'var(--pudding-chat-surface-muted)',
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
+    overflowWrap: 'anywhere' as const,
+    fontSize: 12,
+    lineHeight: 1.6,
+  },
+  resultPanel: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    minHeight: 0,
+    minWidth: 0,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTop: '1px solid var(--pudding-chat-border)',
+    overflow: 'hidden',
+  },
+  resultHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    minWidth: 0,
+    marginBottom: 10,
+  },
+  resultTitle: {
+    minWidth: 0,
+    fontSize: 12,
+    fontWeight: 700,
+    color: 'var(--pudding-chat-text)',
+  },
+  resultHint: {
+    padding: '12px',
+    borderRadius: 8,
+    background: 'var(--pudding-chat-surface-muted)',
+    color: 'var(--pudding-chat-text-subtle)',
     fontSize: 12,
     lineHeight: 1.6,
   },
@@ -466,6 +528,9 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
     () => new Set(),
   );
   const [filter, setFilter] = useState<InspectorFilter>('active');
+  const [runOutput, setRunOutput] = useState<RunOutputState>({
+    status: 'idle',
+  });
 
   useEffect(() => {
     visibleSinceRef.current = Date.now();
@@ -522,6 +587,48 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
   const selectedRun = runs.find(
     (run) => (run.runId ?? run.subSessionId) === selectedRunId,
   );
+
+  useEffect(() => {
+    if (!inspectorOpen || !selectedRun) {
+      setRunOutput({ status: 'idle' });
+      return undefined;
+    }
+
+    const runId = selectedRun.runId ?? selectedRun.subSessionId;
+    if (!terminalStatuses.has(selectedRun.status)) {
+      setRunOutput({ runId, status: 'idle' });
+      return undefined;
+    }
+
+    let disposed = false;
+    setRunOutput({ runId, status: 'loading' });
+    void getSubAgentRunOutput(runId)
+      .then((response) => {
+        if (disposed) return;
+        setRunOutput({
+          runId,
+          status: 'loaded',
+          output: response.output ?? undefined,
+        });
+      })
+      .catch((error: unknown) => {
+        if (disposed) return;
+        setRunOutput({
+          runId,
+          status: 'error',
+          error: error instanceof Error ? error.message : '完整结果加载失败',
+        });
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [
+    inspectorOpen,
+    selectedRun?.runId,
+    selectedRun?.status,
+    selectedRun?.subSessionId,
+  ]);
   const filteredRuns = useMemo(() => {
     const cutoff = now - RECENT_WINDOW_MS;
     switch (filter) {
@@ -611,6 +718,11 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
 
   const renderRunDetail = (run: SubAgentCard) => {
     const cfg = statusConfig[run.status];
+    const runId = run.runId ?? run.subSessionId;
+    const loadedOutput =
+      runOutput.runId === runId && runOutput.status === 'loaded'
+        ? runOutput.output
+        : undefined;
     const endAt = run.completedAt ?? now;
     const elapsedMs = Math.max(0, endAt - run.spawnedAt);
     const timeoutMs = (run.timeoutSeconds ?? 0) * 1000;
@@ -619,144 +731,188 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
         ? Math.min(100, Math.round((elapsedMs / timeoutMs) * 100))
         : undefined;
     return (
-      <>
-        <div className={styles.detailHeader}>
-          <Button
-            type="text"
-            size="small"
-            icon={<ArrowLeftOutlined />}
-            onClick={() => onSelectedRunIdChange(null)}
-          >
-            返回运行列表
-          </Button>
-        </div>
-        <div className={styles.detailHero}>
-          <Space size={6} wrap>
-            <Tag color={cfg.color}>{cfg.label}</Tag>
-            <Tag>{phaseLabel[run.phase ?? ''] ?? run.phase ?? '运行中'}</Tag>
-            {run.originToolId && <Tag color="geekblue">{run.originToolId}</Tag>}
-            {run.role && <Tag color="cyan">{run.role}</Tag>}
-          </Space>
-          <Paragraph style={{ margin: '10px 0 0' }}>
-            {taskSummary(run)}
-          </Paragraph>
-          <div className={styles.previewActivity}>{currentActivity(run)}</div>
-          <div className={styles.metricGrid}>
-            <span>模型：{run.modelId ?? '-'}</span>
-            <span>Provider：{run.providerId ?? '-'}</span>
-            <span>
-              轮次：{run.currentRound ?? 0}
-              {run.maxRounds ? `/${run.maxRounds}` : ''}
-            </span>
-            <span>耗时：{formatDuration(elapsedMs)}</span>
-            <span>Token：{formatTokens(run.totalTokens)}</span>
-            <span>
-              工具：{run.toolCount ?? 0}
-              {run.failedToolCount ? ` / 失败 ${run.failedToolCount}` : ''}
-            </span>
-          </div>
-          <div className={styles.identifierGrid}>
-            <div className={styles.identifierRow}>
-              <Text type="secondary">Session ID</Text>
-              <Text
-                code
-                copyable={{ text: run.subSessionId }}
-                className={styles.identifierValue}
-              >
-                {run.subSessionId}
-              </Text>
-            </div>
-            <div className={styles.identifierRow}>
-              <Text type="secondary">Run ID</Text>
-              <Text
-                code
-                copyable={{ text: run.runId ?? run.subSessionId }}
-                className={styles.identifierValue}
-              >
-                {run.runId ?? run.subSessionId}
-              </Text>
-            </div>
-          </div>
-          {timeoutPercent !== undefined && (
-            <Progress
-              style={{ marginTop: 10 }}
+      <div
+        className={styles.detailLayout}
+        data-testid="subagent-run-detail-layout"
+      >
+        <div
+          className={styles.detailScroll}
+          data-testid="subagent-run-timeline-region"
+        >
+          <div className={styles.detailHeader}>
+            <Button
+              type="text"
               size="small"
-              percent={timeoutPercent}
-              status={timeoutPercent >= 90 ? 'exception' : 'active'}
-              format={() =>
-                `${formatDuration(elapsedMs)} / ${formatDuration(timeoutMs)}`
-              }
+              icon={<ArrowLeftOutlined />}
+              onClick={() => onSelectedRunIdChange(null)}
+            >
+              返回运行列表
+            </Button>
+          </div>
+          <div className={styles.detailHero}>
+            <Space size={6} wrap>
+              <Tag color={cfg.color}>{cfg.label}</Tag>
+              <Tag>{phaseLabel[run.phase ?? ''] ?? run.phase ?? '运行中'}</Tag>
+              {run.originToolId && (
+                <Tag color="geekblue">{run.originToolId}</Tag>
+              )}
+              {run.role && <Tag color="cyan">{run.role}</Tag>}
+            </Space>
+            <Paragraph style={{ margin: '10px 0 0' }}>
+              {taskSummary(run)}
+            </Paragraph>
+            <div className={styles.previewActivity}>{currentActivity(run)}</div>
+            <div className={styles.metricGrid}>
+              <span>模型：{run.modelId ?? '-'}</span>
+              <span>Provider：{run.providerId ?? '-'}</span>
+              <span>
+                轮次：{run.currentRound ?? 0}
+                {run.maxRounds ? `/${run.maxRounds}` : ''}
+              </span>
+              <span>耗时：{formatDuration(elapsedMs)}</span>
+              <span>Token：{formatTokens(run.totalTokens)}</span>
+              <span>
+                工具：{run.toolCount ?? 0}
+                {run.failedToolCount ? ` / 失败 ${run.failedToolCount}` : ''}
+              </span>
+            </div>
+            <div className={styles.identifierGrid}>
+              <div className={styles.identifierRow}>
+                <Text type="secondary">Session ID</Text>
+                <Text
+                  code
+                  copyable={{ text: run.subSessionId }}
+                  className={styles.identifierValue}
+                >
+                  {run.subSessionId}
+                </Text>
+              </div>
+              <div className={styles.identifierRow}>
+                <Text type="secondary">Run ID</Text>
+                <Text
+                  code
+                  copyable={{ text: runId }}
+                  className={styles.identifierValue}
+                >
+                  {runId}
+                </Text>
+              </div>
+            </div>
+            {timeoutPercent !== undefined && (
+              <Progress
+                style={{ marginTop: 10 }}
+                size="small"
+                percent={timeoutPercent}
+                status={timeoutPercent >= 90 ? 'exception' : 'active'}
+                format={() =>
+                  `${formatDuration(elapsedMs)} / ${formatDuration(timeoutMs)}`
+                }
+              />
+            )}
+            {run.error && <div className={styles.error}>{run.error}</div>}
+          </div>
+
+          <div className={styles.sectionTitle}>运行时间线</div>
+          {run.activities?.length ? (
+            <Timeline
+              items={run.activities.map((activity) => ({
+                color: activityColor(activity),
+                children: (
+                  <div>
+                    <div style={{ fontSize: 12 }}>{activity.label}</div>
+                    <div className={styles.activityMeta}>
+                      <span>
+                        {new Date(activity.occurredAt).toLocaleTimeString()}
+                      </span>
+                      {activity.round ? (
+                        <span>第 {activity.round} 轮</span>
+                      ) : null}
+                      {activity.durationMs ? (
+                        <span>{formatDuration(activity.durationMs)}</span>
+                      ) : null}
+                      {activity.totalTokens ? (
+                        <span>{formatTokens(activity.totalTokens)} tokens</span>
+                      ) : null}
+                      {activity.toolCallId ? (
+                        <Text
+                          copyable={{ text: activity.toolCallId }}
+                          type="secondary"
+                          style={{ fontSize: 10 }}
+                        >
+                          Call ID: {activity.toolCallId}
+                        </Text>
+                      ) : null}
+                    </div>
+                    {activity.details?.map((detail) => (
+                      <details
+                        className={styles.activityDetail}
+                        key={detail.kind}
+                      >
+                        <summary className={styles.activityDetailSummary}>
+                          {detail.label}
+                          {detail.truncated ? '（已截断）' : ''}
+                        </summary>
+                        <pre className={styles.activityDetailContent}>
+                          {detail.content}
+                        </pre>
+                      </details>
+                    ))}
+                    {activity.error && (
+                      <div className={styles.error}>{activity.error}</div>
+                    )}
+                  </div>
+                ),
+              }))}
+            />
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无运行事件"
             />
           )}
-          {run.error && <div className={styles.error}>{run.error}</div>}
         </div>
 
-        <div className={styles.sectionTitle}>运行时间线</div>
-        {run.activities?.length ? (
-          <Timeline
-            items={run.activities.map((activity) => ({
-              color: activityColor(activity),
-              children: (
-                <div>
-                  <div style={{ fontSize: 12 }}>{activity.label}</div>
-                  <div className={styles.activityMeta}>
-                    <span>
-                      {new Date(activity.occurredAt).toLocaleTimeString()}
-                    </span>
-                    {activity.round ? (
-                      <span>第 {activity.round} 轮</span>
-                    ) : null}
-                    {activity.durationMs ? (
-                      <span>{formatDuration(activity.durationMs)}</span>
-                    ) : null}
-                    {activity.totalTokens ? (
-                      <span>{formatTokens(activity.totalTokens)} tokens</span>
-                    ) : null}
-                    {activity.toolCallId ? (
-                      <Text
-                        copyable={{ text: activity.toolCallId }}
-                        type="secondary"
-                        style={{ fontSize: 10 }}
-                      >
-                        Call ID: {activity.toolCallId}
-                      </Text>
-                    ) : null}
-                  </div>
-                  {activity.details?.map((detail) => (
-                    <details
-                      className={styles.activityDetail}
-                      key={detail.kind}
-                    >
-                      <summary className={styles.activityDetailSummary}>
-                        {detail.label}
-                        {detail.truncated ? '（已截断）' : ''}
-                      </summary>
-                      <pre className={styles.activityDetailContent}>
-                        {detail.content}
-                      </pre>
-                    </details>
-                  ))}
-                  {activity.error && (
-                    <div className={styles.error}>{activity.error}</div>
-                  )}
-                </div>
-              ),
-            }))}
-          />
-        ) : (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="暂无运行事件"
-          />
-        )}
-
-        {run.output && (
-          <>
-            <div className={styles.sectionTitle}>结果摘要</div>
-            <div className={styles.output}>{run.output}</div>
-          </>
-        )}
-      </>
+        <section
+          className={styles.resultPanel}
+          aria-label="返回主 Agent 的完整结果"
+          data-testid="subagent-run-output-region"
+        >
+          <div className={styles.resultHeader}>
+            <span className={styles.resultTitle}>返回主 Agent 的完整结果</span>
+            {loadedOutput ? (
+              <Text
+                type="secondary"
+                copyable={{ text: loadedOutput }}
+                style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+              >
+                {loadedOutput.length.toLocaleString()} 字符
+              </Text>
+            ) : null}
+          </div>
+          {!terminalStatuses.has(run.status) ? (
+            <div className={styles.resultHint}>
+              子代理提交终态后，将从运行归档的 output.md 加载完整结果。
+              实时时间线中的模型消息和工具输出仅是脱敏后的有界预览。
+            </div>
+          ) : runOutput.runId === runId && runOutput.status === 'loading' ? (
+            <div className={styles.resultHint}>
+              <LoadingOutlined spin style={{ marginRight: 8 }} />
+              正在读取运行归档…
+            </div>
+          ) : runOutput.runId === runId && runOutput.status === 'error' ? (
+            <div className={styles.error}>
+              完整结果加载失败：{runOutput.error}
+              {'\n'}事件投影中的摘要不会被用来冒充完整结果。
+            </div>
+          ) : loadedOutput ? (
+            <div className={styles.output}>{loadedOutput}</div>
+          ) : (
+            <div className={styles.resultHint}>
+              该运行没有写入最终输出。请结合终态错误与运行时间线诊断。
+            </div>
+          )}
+        </section>
+      </div>
     );
   };
 
@@ -839,7 +995,7 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
         placement="right"
         width="min(520px, 100vw)"
         mask={false}
-        styles={{ body: { padding: 16, overflowY: 'auto' } }}
+        styles={{ body: { padding: 16, overflow: 'hidden' } }}
       >
         <div className={styles.drawerBody}>
           {selectedRun ? (

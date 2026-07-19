@@ -417,7 +417,6 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       turns={turns}
                       conversationView={conversationView}
                       sessionId={selectedSessionId}
-                      subAgentCards={subAgentCards}
                       agentId={agentId}
                       selectedAgent={selectedAgent}
                       error={error}
@@ -437,7 +436,6 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       currentUser={currentUser}
                       viewportScrollIntent={viewportScrollIntent}
                       onViewportScrollIntentHandled={onViewportScrollIntentHandled}
-                      onOpenSubAgentInspector={handleOpenSubAgentInspector}
                     />
                   </section>
                   <IntentConsole

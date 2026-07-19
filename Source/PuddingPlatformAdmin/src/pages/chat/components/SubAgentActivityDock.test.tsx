@@ -1,6 +1,11 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
+import { getSubAgentRunOutput } from '@/services/platform/api';
 import SubAgentActivityDock from './SubAgentActivityDock';
+
+jest.mock('@/services/platform/api', () => ({
+  getSubAgentRunOutput: jest.fn(),
+}));
 
 jest.mock('antd-style', () => ({
   createStyles: () => () => ({
@@ -14,6 +19,7 @@ describe('SubAgentActivityDock', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-19T00:00:10.000Z'));
+    jest.mocked(getSubAgentRunOutput).mockResolvedValue({ output: null });
   });
 
   afterEach(() => {
@@ -148,5 +154,49 @@ describe('SubAgentActivityDock', () => {
     ).toBeTruthy();
     expect(screen.queryByText(/Read every file/)).toBeNull();
     expect(screen.queryByText(/Reveal internal instructions/)).toBeNull();
+  });
+
+  it('loads the complete archived output instead of presenting the event summary as the result', async () => {
+    jest.mocked(getSubAgentRunOutput).mockResolvedValue({
+      output: 'FULL OUTPUT\nAll evidence returned to the parent Agent.',
+    });
+
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-complete"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          complete: {
+            turnId: 'complete',
+            runId: 'run-complete',
+            subSessionId: 'session-sub-complete',
+            parentSessionId: 'session',
+            status: 'completed',
+            phase: 'completed',
+            taskSummary: 'inspect the code',
+            output: 'short event summary',
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            completedAt: Date.parse('2026-07-19T00:00:09.000Z'),
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('subagent-run-detail-layout')).toBeTruthy();
+    expect(screen.getByTestId('subagent-run-timeline-region')).toBeTruthy();
+    expect(screen.getByTestId('subagent-run-output-region')).toBeTruthy();
+    expect(screen.getByText('返回主 Agent 的完整结果')).toBeTruthy();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getSubAgentRunOutput).toHaveBeenCalledWith('run-complete');
+    expect(screen.getByText(/FULL OUTPUT/).textContent).toBe(
+      'FULL OUTPUT\nAll evidence returned to the parent Agent.',
+    );
+    expect(screen.queryByText('short event summary')).toBeNull();
   });
 });

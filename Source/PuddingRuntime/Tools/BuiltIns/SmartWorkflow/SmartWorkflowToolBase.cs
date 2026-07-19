@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Agents;
 using PuddingCode.Tools;
@@ -17,6 +18,9 @@ namespace PuddingRuntime.Services.Tools;
 public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> where TArgs : class, new()
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
+    private const int MinimumDetailedReportLength = 300;
+    private static readonly string[] RequiredReportSections =
+        ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
 
     protected abstract string RoleName { get; }
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
@@ -24,6 +28,21 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected virtual int DefaultMaxRounds => 15;
     /// <summary>子代理允许的工具列表，逗号分隔。null = 继承父代理全部工具。</summary>
     protected virtual string? AllowedTools => null;
+
+    /// <summary>
+    /// Appends the canonical report rules understood by <c>spawn_sub_agent</c>.
+    /// Role prompts must add their role-specific fields under these five sections.
+    /// </summary>
+    protected static void AppendCanonicalReportRules(StringBuilder sb)
+    {
+        sb.AppendLine("### REQUIRED WORK REPORT");
+        sb.AppendLine("- Return a complete, self-contained work report. The parent Agent must not repeat your work to understand the result.");
+        sb.AppendLine("- Never answer only \"done\", \"completed\", \"success\", or another progress/status sentence.");
+        sb.AppendLine("- Use all five canonical top-level sections exactly as `SUMMARY:`, `CHANGES:`, `EVIDENCE:`, `RISKS:`, and `BLOCKERS:` with no Markdown prefix.");
+        sb.AppendLine("- Every section is mandatory. For a genuinely empty section, write `none` plus a short reason.");
+        sb.AppendLine("- Claims must be tied to concrete files, symbols, sources, commands, test names, runtime observations, or produced artifacts.");
+        sb.AppendLine();
+    }
 
     protected async Task<ToolExecutionResult> RunSubAgentAsync(
         TArgs args,
@@ -72,6 +91,19 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 
             if (result.Success)
             {
+                if (!TryValidateDetailedReport(result.Output, out var validationError, out var rawReport))
+                {
+                    var preview = string.IsNullOrWhiteSpace(rawReport)
+                        ? "(empty)"
+                        : rawReport.Length <= 800 ? rawReport : rawReport[..800] + "...";
+                    logger.LogError(
+                        "[{Tool}] agent={Agent} INVALID_REPORT reason={Reason} output={OutputLen} chars",
+                        toolName, context.AgentInstanceId, validationError, rawReport?.Length ?? 0);
+                    return ToolExecutionResult.Fail(
+                        $"{toolName} returned an incomplete work report: {validationError}\n" +
+                        $"Raw output preview:\n{preview}");
+                }
+
                 logger.LogInformation(
                     "[{Tool}] agent={Agent} SUCCESS duration={Duration}ms output={OutputLen} chars",
                     toolName, context.AgentInstanceId, sw.ElapsedMilliseconds,
@@ -96,6 +128,108 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             logger.LogError(ex, "[{Tool}] EXCEPTION", toolName);
             return ToolExecutionResult.Fail($"{toolName} EXCEPTION: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private static bool TryValidateDetailedReport(
+        string? toolOutput,
+        out string error,
+        out string? rawReport)
+    {
+        rawReport = ExtractRawReport(toolOutput);
+        if (string.IsNullOrWhiteSpace(rawReport))
+        {
+            error = "rawOutput is empty.";
+            return false;
+        }
+
+        if (rawReport.Trim().Length < MinimumDetailedReportLength)
+        {
+            error = $"report is too short ({rawReport.Trim().Length} chars; minimum {MinimumDetailedReportLength}).";
+            return false;
+        }
+
+        var sections = ParseCanonicalSections(rawReport);
+        var missing = RequiredReportSections
+            .Where(section => !sections.TryGetValue(section, out var content)
+                              || string.IsNullOrWhiteSpace(content))
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            error = $"missing or empty canonical sections: {string.Join(", ", missing)}.";
+            return false;
+        }
+
+        if (sections["SUMMARY"].Trim().Length < 40)
+        {
+            error = "SUMMARY is too short to explain the outcome.";
+            return false;
+        }
+
+        if (sections["EVIDENCE"].Trim().Length < 60)
+        {
+            error = "EVIDENCE is too short to support the reported outcome.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static string? ExtractRawReport(string? toolOutput)
+    {
+        if (string.IsNullOrWhiteSpace(toolOutput))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(toolOutput);
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("rawOutput", out var rawOutput)
+                && rawOutput.ValueKind == JsonValueKind.String)
+            {
+                return rawOutput.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Tests and alternative tool implementations may return the raw report directly.
+        }
+
+        return toolOutput;
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseCanonicalSections(string report)
+    {
+        var sections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? current = null;
+        var content = new StringBuilder();
+
+        foreach (var line in report.Replace("\r\n", "\n").Split('\n'))
+        {
+            var trimmed = line.Trim();
+            var matched = RequiredReportSections.FirstOrDefault(section =>
+                trimmed.StartsWith(section + ":", StringComparison.OrdinalIgnoreCase));
+            if (matched is not null)
+            {
+                if (current is not null)
+                    sections[current] = content.ToString().Trim();
+
+                current = matched;
+                content.Clear();
+                var inline = trimmed[(matched.Length + 1)..].Trim();
+                if (inline.Length > 0)
+                    content.AppendLine(inline);
+                continue;
+            }
+
+            if (current is not null)
+                content.AppendLine(line);
+        }
+
+        if (current is not null)
+            sections[current] = content.ToString().Trim();
+
+        return sections;
     }
 
     private static string? ResolveWorkingDirectory(TArgs args)

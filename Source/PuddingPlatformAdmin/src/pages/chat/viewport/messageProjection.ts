@@ -1,12 +1,11 @@
 import type { AgentConversationView } from '../client/types';
-import type { ChatTurn, SubAgentCardMap } from '../types';
+import type { ChatTurn } from '../types';
 import { buildMessageBlocks } from '../types';
 import type { VirtualMessageItem, VirtualMessageHeightHint } from './types';
 
 export interface BuildVirtualMessageItemsInput {
   turns: ChatTurn[];
   conversationView?: AgentConversationView | null;
-  subAgentCards?: SubAgentCardMap;
   agentName: string;
   sessionId?: string | null;
   hasMoreBefore?: boolean;
@@ -19,9 +18,6 @@ export interface BuildVirtualMessageItemsOutput {
   lastMessageItemId?: string;
   activeItemId?: string;
 }
-
-const getSubAgentCreatedAt = (card: SubAgentCardMap[string]): number =>
-  card.spawnedAt ?? card.completedAt ?? 0;
 
 const getHeightHint = (content: string, streaming?: boolean): VirtualMessageHeightHint => {
   if (streaming) return 'streaming';
@@ -57,38 +53,7 @@ export function buildVirtualMessageItems(
     });
   }
 
-  const subAgentGroups = new Map<
-    string,
-    { createdAt: number; cards: SubAgentCardMap[string][] }
-  >();
-  for (const card of Object.values(input.subAgentCards ?? {})) {
-    const groupId =
-      card.batchId ??
-      card.invocationId ??
-      card.parentToolCallId ??
-      card.runId ??
-      card.turnId;
-    const createdAt = getSubAgentCreatedAt(card);
-    const group = subAgentGroups.get(groupId);
-    if (group) {
-      group.cards.push(card);
-      group.createdAt = Math.min(group.createdAt, createdAt);
-    } else {
-      subAgentGroups.set(groupId, { createdAt, cards: [card] });
-    }
-  }
-
-  for (const [groupId, group] of subAgentGroups) {
-    items.push({
-      kind: 'subagent-anchor',
-      id: `subagent-anchor:${groupId}`,
-      createdAt: group.createdAt,
-      cards: group.cards.sort((a, b) => a.spawnedAt - b.spawnedAt),
-      heightHint: 'compact',
-    });
-  }
-
-  const kindOrder = { loader: 0, message: 1, 'subagent-anchor': 2 };
+  const kindOrder = { loader: 0, message: 1 };
   const roleOrder = { user: 0, agent: 1, system: 2, heartbeat: 3 };
 
   items.sort((a, b) => {

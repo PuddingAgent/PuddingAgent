@@ -166,8 +166,10 @@ public enum FileSearchProviderKind
 - `Pattern` 不含通配符时枚举 `*` 后按文件名和相对路径 `Contains` 模糊匹配。
 - `**/` 前缀保持当前兼容处理，转换为普通 glob。
 - `Directory` 由 tool 层解析为绝对路径并校验目录存在；允许 workspace 外部目录。
-- 输出格式保持现有 `relative/path  (size)  yyyy-MM-dd HH:mm`。
-- 当 `RootDirectory` 位于 workspace 外部时，输出路径使用绝对路径，并在结果顶部追加 workspace 外部范围警告。
+- provider 返回文件路径；`FileSearchTool` 在序列化前统一执行 `Path.GetFullPath`，
+  对 Agent 暴露的所有结果一律为规范化绝对路径。
+- workspace 内外不再使用不同的路径格式；当 `RootDirectory` 位于 workspace 外部时，
+  仍需在结果顶部追加 workspace 外部范围警告。
 
 错误：
 
@@ -353,6 +355,8 @@ Everything SDK 是全局搜索状态模型。Everything provider 必须串行执
 9. Everything provider 对 fake SDK 返回的全盘结果执行目录过滤，只返回 agent 指定目录内文件。
 10. Everything provider 对 `Recursive=false` 执行直属目录过滤。
 11. Everything SDK wrapper 可用 fake 实现单元测试，不依赖本机安装 Everything 本体。
+12. 任意 provider 返回相对路径时，`FileSearchTool` 以已解析的搜索根目录为基准转换为绝对路径。
+13. Everything 与 BuiltIn provider 的成功结果均为绝对路径，fallback 不得改变路径格式。
 
 Everything provider 的 native 集成测试默认不启用。后续可增加显式环境变量门控：
 
@@ -373,6 +377,7 @@ PUDDING_TEST_EVERYTHING_SDK=1
 - `Everything` provider 不直接引用 NuGet 包。
 - `Everything64.dll` 纳入运行时输出；不支持 `Everything32.dll`。
 - `Everything` provider 只返回 agent 指定目录范围内的文件，不返回无关全盘结果。
+- 所有 provider 和 fallback 路径对 Agent 暴露的搜索结果均为规范化绝对路径。
 - Everything 不可用时 agent 收到明确错误和替代示例。
 - 所有 provider 异常都被包装为 `ToolExecutionResult.Fail(...)`。
 - 现有 tool registry 自动发现链路不需要改动。

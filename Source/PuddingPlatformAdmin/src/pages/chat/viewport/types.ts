@@ -1,4 +1,4 @@
-import type { ChatMessageBlock, SubAgentCard } from '../types';
+import type { ChatMessageBlock } from '../types';
 
 export type VirtualMessageHeightHint = 'compact' | 'normal' | 'rich' | 'streaming';
 
@@ -9,13 +9,6 @@ export type VirtualMessageItem =
       createdAt: number;
       block: ChatMessageBlock;
       heightHint: VirtualMessageHeightHint;
-    }
-  | {
-      kind: 'subagent-anchor';
-      id: string;
-      createdAt: number;
-      cards: SubAgentCard[];
-      heightHint: 'compact';
     }
   | {
       kind: 'loader';

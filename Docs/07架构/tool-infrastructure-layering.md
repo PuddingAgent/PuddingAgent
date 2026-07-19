@@ -80,7 +80,9 @@ flowchart LR
 - `auto` prefers Everything and falls back to `BuiltInRecursiveFileSearch`.
 - An explicit Everything request also falls back when the provider is unavailable or its query fails. Set `RequireProvider=true` only when the selected implementation itself is part of the caller's requirement.
 - `Directory` must resolve to an existing directory. Everything requires an absolute directory; the built-in provider accepts paths relative to the execution snapshot's `WorkingDirectory`.
-- The tool searches file names and relative paths under the requested directory. It does not search file contents.
+- The tool searches file names and paths under the requested directory. It does not search file contents.
+- Every successful search result is normalized by `FileSearchTool` to an absolute path, regardless of provider, fallback, or whether the provider returned a relative path. Provider changes must not change the path contract observed by an Agent.
+- The built-in provider may accept a relative `Directory`, but the tool resolves it against the execution snapshot's `WorkingDirectory` before searching and still returns absolute result paths.
 - Searches outside the current workspace are allowed, but the result includes a warning that the agent must ask for explicit user approval before reading, modifying, deleting, executing, or patching out-of-workspace results.
 
 Runtime registration flow:

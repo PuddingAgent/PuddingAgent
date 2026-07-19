@@ -61,13 +61,31 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
         if (!string.IsNullOrWhiteSpace(args.Environment))
             sb.AppendLine($"## 🌐 Env: {args.Environment}");
         sb.AppendLine();
-        sb.AppendLine("## OUTPUT:");
+        AppendCanonicalReportRules(sb);
+        sb.AppendLine("## OUTPUT CONTRACT:");
         sb.AppendLine("```");
-        sb.AppendLine("DEPLOYMENT_STATUS: SUCCESS|PARTIAL|FAILED");
-        sb.AppendLine("STEPS: step → result");
-        sb.AppendLine("VERSION: hash/tag");
-        sb.AppendLine("ROLLBACK: how to revert");
-        sb.AppendLine("HEALTH: status");
+        sb.AppendLine("SUMMARY:");
+        sb.AppendLine("  DEPLOYMENT_STATUS: SUCCESS|PARTIAL|FAILED|BLOCKED");
+        sb.AppendLine("  ENVIRONMENT: exact target");
+        sb.AppendLine("  VERSION: artifact version, image digest, tag, or commit hash");
+        sb.AppendLine("  OUTCOME: externally observable deployment result");
+        sb.AppendLine("CHANGES:");
+        sb.AppendLine("  EXECUTED_STEPS:");
+        sb.AppendLine("    - STEP: ordered action");
+        sb.AppendLine("      COMMAND_OR_OPERATION: exact command/API/operation with secrets redacted");
+        sb.AppendLine("      RESULT: success|failed|skipped plus exit/status code");
+        sb.AppendLine("      ARTIFACT: deployed artifact/config and absolute local path or remote identifier");
+        sb.AppendLine("  CONFIG_CHANGES: keys/resources changed without secret values, or none");
+        sb.AppendLine("EVIDENCE:");
+        sb.AppendLine("  PRECHECKS: prerequisite checks and observed results");
+        sb.AppendLine("  HEALTH_CHECKS: endpoint/probe/metric, expected value, observed value, timestamp");
+        sb.AppendLine("  SMOKE_TESTS: exact command/request and observed result");
+        sb.AppendLine("  LOGS: relevant deployment/runtime log identifiers or absolute paths");
+        sb.AppendLine("RISKS:");
+        sb.AppendLine("  ROLLBACK: exact rollback trigger, procedure, and whether it was tested");
+        sb.AppendLine("  RESIDUAL_RISKS: partial rollout, propagation, monitoring, or data migration risks");
+        sb.AppendLine("BLOCKERS:");
+        sb.AppendLine("  none, or failed step/prerequisite with impact and safe next action");
         sb.AppendLine("```");
         return sb.ToString();
     }

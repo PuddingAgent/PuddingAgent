@@ -478,6 +478,75 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task FileSearchTool_Normalizes_Provider_Results_To_Absolute_Paths()
+    {
+        var directory = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "file-search-absolute-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var provider = new FakeFileSearchProvider("BuiltInRecursiveFileSearch")
+                .WithItem(Path.Combine("nested", "result.cs"));
+            var tool = new FileSearchTool([provider]);
+
+            var result = await ExecuteFileSearchAsync(tool, $$"""
+            {
+              "provider": "BuiltInRecursiveFileSearch",
+              "pattern": "*.cs",
+              "directory": "{{JsonEscape(directory)}}"
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            var paths = JsonSerializer.Deserialize<string[]>(result.Output);
+            Assert.IsNotNull(paths);
+            Assert.AreEqual(
+                Path.GetFullPath(Path.Combine(directory, "nested", "result.cs")),
+                paths.Single());
+            Assert.IsTrue(Path.IsPathRooted(paths.Single()));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task BuiltInRecursiveFileSearchProvider_Returns_Absolute_Paths()
+    {
+        var directory = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "file-search-built-in-absolute-" + Guid.NewGuid().ToString("N"));
+        var nested = Path.Combine(directory, "nested");
+        Directory.CreateDirectory(nested);
+        try
+        {
+            var file = Path.Combine(nested, "result.cs");
+            await File.WriteAllTextAsync(file, "class Result {}");
+            var provider = new BuiltInRecursiveFileSearchProvider();
+
+            var results = await provider.SearchAsync(
+                directory,
+                "*.cs",
+                recursive: true,
+                maxResults: 10,
+                CancellationToken.None);
+
+            CollectionAssert.AreEqual(new[] { Path.GetFullPath(file) }, results.ToArray());
+            Assert.IsTrue(results.All(Path.IsPathRooted));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task FileSearchTool_Rejects_Empty_Directory_For_BuiltIn_Provider()
     {
         var provider = new FakeFileSearchProvider("BuiltInRecursiveFileSearch");

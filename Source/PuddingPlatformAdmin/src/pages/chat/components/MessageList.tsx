@@ -21,7 +21,6 @@ import type {
   ChatQuotedMessage,
   ChatTurn,
   MessageStatus,
-  SubAgentCardMap,
   TimelineItem,
 } from '../types';
 import { buildVirtualMessageItems } from '../viewport/messageProjection';
@@ -32,7 +31,6 @@ import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
 import MessageStream from './MessageStream';
 import PinnedMessageButton from './PinnedMessageButton';
-import SubAgentAnchor from './SubAgentAnchor';
 
 interface MessageListProps {
   turns: ChatTurn[];
@@ -58,13 +56,11 @@ interface MessageListProps {
   onPinnedQuote?: (quoteText: string) => void;
   messageListRef: React.RefObject<HTMLDivElement | null>;
   listEndRef: React.RefObject<HTMLDivElement | null>;
-  subAgentCards?: SubAgentCardMap;
   conversationView?: AgentConversationView | null;
   /** 当前登录用户信息 */
   currentUser?: { name?: string; avatar?: string };
   viewportScrollIntent?: ScrollIntent;
   onViewportScrollIntentHandled?: () => void;
-  onOpenSubAgentInspector?: (runId?: string) => void;
 }
 
 const toTimestamp = (value: string) => {
@@ -549,12 +545,10 @@ const MessageList: React.FC<MessageListProps> = ({
   onPinnedQuote,
   messageListRef,
   listEndRef,
-  subAgentCards,
   conversationView,
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
-  onOpenSubAgentInspector,
 }) => {
   const { styles } = useChatStyles();
   const activeRun = conversationView?.activeRun ?? null;
@@ -604,13 +598,12 @@ const MessageList: React.FC<MessageListProps> = ({
     () =>
       buildVirtualMessageItems({
         turns: visibleTurns,
-        subAgentCards,
         agentName: selectedAgent?.name || 'Pudding',
         sessionId,
         hasMoreBefore: hasMoreMessages,
         currentUser,
       }),
-    [visibleTurns, subAgentCards, selectedAgent?.name, sessionId, hasMoreMessages, currentUser],
+    [visibleTurns, selectedAgent?.name, sessionId, hasMoreMessages, currentUser],
   );
 
   const viewport = useMessageViewportRuntime({
@@ -643,15 +636,6 @@ const MessageList: React.FC<MessageListProps> = ({
         >
           {loadingMore ? <Spin size="small" /> : '加载更多历史消息'}
         </div>
-      );
-    }
-
-    if (item.kind === 'subagent-anchor') {
-      return (
-        <SubAgentAnchor
-          cards={item.cards}
-          onOpen={onOpenSubAgentInspector}
-        />
       );
     }
 

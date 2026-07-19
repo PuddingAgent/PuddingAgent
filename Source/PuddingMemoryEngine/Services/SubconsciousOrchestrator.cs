@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -326,7 +326,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             log.Status = "completed";
             log.FactsMerged = factsMerged;
             log.FactsDiscarded = factsDiscarded;
-            log.LlmTokensUsed = 0;
+            log.LlmTokensUsed = summary.LlmUsage?.TotalTokens ?? 0;
             log.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             log.ElapsedMs = (int)Math.Min(int.MaxValue, sw.ElapsedMilliseconds);
 
@@ -570,7 +570,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             "Output: {\"facts\":[{\"statement\":\"用户喜欢的水果是苹果\",\"confidence\":0.95}],\"preferences\":[{\"category\":\"food\",\"key\":\"favorite_fruit\",\"value\":\"苹果\"}],\"one_line_summary\":\"用户喜欢苹果\",\"suggested_tags\":[\"preferences\",\"food\"]}\n\n" +
             "Now process this conversation:\n" + conversationMessages;
 
-        var raw = await _memoryLlmClient.ChatWithConfigAsync(
+        var (raw, usage) = await _memoryLlmClient.ChatWithUsageAsync(
             systemPrompt,
             userPrompt,
             memoryLlmConfig,
@@ -603,6 +603,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             return new SessionSummary
             {
                 SessionId = sessionId,
+                LlmUsage = usage,
                 OneLineSummary = payload.OneLineSummary,
                 SuggestedTags = payload.SuggestedTags?.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList() ?? [],
                 Facts = payload.Facts?.Where(f => !string.IsNullOrWhiteSpace(f.Statement))

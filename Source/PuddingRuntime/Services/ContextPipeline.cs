@@ -537,10 +537,9 @@ public sealed class ContextPipeline
     /// <summary>剪枝会话消息：仅保留最近 N 条 user/assistant 正文，移除 tool_call/tool_result/thinking/heartbeat。</summary>
     private static List<PrunedMessage> PruneSessionMessages(IReadOnlyList<ChatMessage> history, int maxMessages)
     {
-        var pruned = new List<PrunedMessage>();
+        var candidates = new List<PrunedMessage>();
         foreach (var msg in history)
         {
-            if (pruned.Count >= maxMessages) break;
             // 只保留 user 和 assistant 角色的消息正文
             if (msg.Role != ChatRole.User && msg.Role != ChatRole.Assistant)
                 continue;
@@ -554,14 +553,15 @@ public sealed class ContextPipeline
             // 截断过长消息
             if (content.Length > 2000)
                 content = content[..2000] + "...";
-            pruned.Add(new PrunedMessage
+            candidates.Add(new PrunedMessage
             {
                 Role = msg.Role == ChatRole.User ? "user" : "assistant",
                 Content = content,
                 Timestamp = DateTimeOffset.UtcNow,
             });
         }
-        return pruned;
+        // SessionHistory[0] 是最早的消息，取最后 maxMessages 条即最近的对话
+        return candidates.TakeLast(maxMessages).ToList();
     }
 
     /// <summary>从完整组装字符串中提取指定层的文本内容。</summary>

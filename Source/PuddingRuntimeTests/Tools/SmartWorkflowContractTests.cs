@@ -10,6 +10,19 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class SmartWorkflowContractTests
 {
+    private const string ValidDetailedReport = """
+        SUMMARY:
+        The requested work completed with a concrete outcome, a bounded scope, and enough detail for the parent Agent to use without repeating the delegated task.
+        CHANGES:
+        none — this contract-test response does not mutate files, but it explicitly records the inspected scope and intended behavior.
+        EVIDENCE:
+        Verified the delegated behavior using an exact command and a concrete source reference at E:\workspace\Source\Component.cs:42; the observed result matched the expected contract and produced a reproducible record.
+        RISKS:
+        The response is synthetic test evidence; live provider formatting and runtime integration remain covered by their dedicated execution tests.
+        BLOCKERS:
+        none — all required inputs and execution services were available to the test.
+        """;
+
     [TestMethod]
     public void AllSmartWorkflowArgumentsUseTaskAsPrimaryInstruction()
     {
@@ -48,7 +61,10 @@ public sealed class SmartWorkflowContractTests
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "smart-plan",
-            ArgumentsJson = """{"task":"Plan the runtime hardening work"}""",
+            ArgumentsJson = JsonSerializer.Serialize(new
+            {
+                task = "Plan the runtime hardening work. " + new string('x', 520),
+            }),
             Context = new ToolExecutionContext
             {
                 WorkspaceId = "workspace",
@@ -59,13 +75,143 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        Assert.AreEqual(20, document.RootElement.GetProperty("max_rounds").GetInt32());
-        Assert.AreEqual(240, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.AreEqual(150, document.RootElement.GetProperty("max_rounds").GetInt32());
+        Assert.AreEqual(600, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task SmartExploreRequiresSelfContainedVerifiedEvidencePackage()
+    {
+        var recorder = new RecordingToolExecutionService();
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartExploreTool(
+            services,
+            NullLogger<SmartExploreTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-explore",
+            ArgumentsJson = """{"task":"Locate and explain the heartbeat implementation","max_results":8}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
+        var task = document.RootElement.GetProperty("task").GetString();
+        Assert.IsNotNull(task);
+        StringAssert.Contains(task, "without repeating file_search");
+        StringAssert.Contains(task, "normalized absolute path");
+        StringAssert.Contains(task, "RESPONSIBILITY:");
+        StringAssert.Contains(task, "RELATIONSHIPS:");
+        StringAssert.Contains(task, "DIRECT_ANSWER:");
+        StringAssert.Contains(task, "Maximum verified artifacts: 8");
+    }
+
+    [TestMethod]
+    public async Task OtherSmartWorkflowPromptsRequireRoleSpecificDetailedReports()
+    {
+        var recorder = new RecordingToolExecutionService();
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var context = new ToolExecutionContext
+        {
+            WorkspaceId = "workspace",
+            SessionId = "session",
+            AgentInstanceId = "agent",
+        };
+        var longPlanTask = "Produce an implementation-ready architecture plan. " + new string('p', 520);
+        (IPuddingTool Tool, string ArgumentsJson, string RoleMarker)[] cases =
+        [
+            (new SmartResearchTool(services, NullLogger<SmartResearchTool>.Instance),
+                """{"task":"Research the runtime execution contract"}""", "CLAIMS_SUPPORTED:"),
+            (new SmartPlanTool(services, NullLogger<SmartPlanTool>.Instance),
+                JsonSerializer.Serialize(new { task = longPlanTask }), "DETAILED_TASKS:"),
+            (new SmartReviewTool(services, NullLogger<SmartReviewTool>.Instance),
+                """{"task":"Review the runtime execution contract"}""", "POSITIVE_OBSERVATIONS:"),
+            (new SmartDevelopTool(services, NullLogger<SmartDevelopTool>.Instance),
+                """{"task":"Implement the runtime execution contract"}""", "MANUAL_VERIFICATION:"),
+            (new SmartTestTool(services, NullLogger<SmartTestTool>.Instance),
+                """{"task":"Test the runtime execution contract"}""", "COVERAGE_GAPS:"),
+            (new SmartDeployTool(services, NullLogger<SmartDeployTool>.Instance),
+                """{"task":"Deploy the runtime execution contract"}""", "HEALTH_CHECKS:"),
+        ];
+
+        foreach (var testCase in cases)
+        {
+            var result = await testCase.Tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "smart-report-contract",
+                ArgumentsJson = testCase.ArgumentsJson,
+                Context = context,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
+            var task = document.RootElement.GetProperty("task").GetString();
+            Assert.IsNotNull(task);
+            StringAssert.Contains(task, "Return a complete, self-contained work report");
+            StringAssert.Contains(task, "SUMMARY:");
+            StringAssert.Contains(task, "CHANGES:");
+            StringAssert.Contains(task, "EVIDENCE:");
+            StringAssert.Contains(task, "RISKS:");
+            StringAssert.Contains(task, "BLOCKERS:");
+            StringAssert.Contains(task, testCase.RoleMarker);
+            Assert.IsLessThanOrEqualTo(
+                document.RootElement.GetProperty("max_rounds").GetInt32(),
+                200,
+                $"{testCase.Tool.Descriptor.ToolId} exceeds spawn_sub_agent's max_rounds contract.");
+        }
+    }
+
+    [TestMethod]
+    public async Task SmartWorkflowRejectsTerseCompletionWithoutDetailedReport()
+    {
+        var recorder = new RecordingToolExecutionService
+        {
+            ResponseOutput = "completed",
+        };
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartResearchTool(
+            services,
+            NullLogger<SmartResearchTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-terse-report",
+            ArgumentsJson = """{"task":"Research the runtime execution contract"}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+            },
+        });
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "incomplete work report");
+        StringAssert.Contains(result.Error, "report is too short");
     }
 
     private sealed class RecordingToolExecutionService : IPuddingToolExecutionService
     {
         public string? ArgumentsJson { get; private set; }
+        public string ResponseOutput { get; set; } = JsonSerializer.Serialize(new
+        {
+            schema = "pudding-subagent-result",
+            version = 1,
+            status = "completed",
+            rawOutput = ValidDetailedReport,
+        });
 
         public Task<ToolExecutionResult> ExecuteAsync(
             string toolId,
@@ -76,7 +222,7 @@ public sealed class SmartWorkflowContractTests
         {
             Assert.AreEqual("spawn_sub_agent", toolId);
             ArgumentsJson = argumentsJson;
-            return Task.FromResult(ToolExecutionResult.Ok("completed"));
+            return Task.FromResult(ToolExecutionResult.Ok(ResponseOutput));
         }
     }
 }

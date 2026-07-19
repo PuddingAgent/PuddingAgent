@@ -1902,6 +1902,23 @@ export async function getSessionSubAgents(sessionId: string): Promise<SubAgentSt
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/sub-agents`, { method: 'GET' });
 }
 
+export interface SubAgentRunOutputResponse {
+  output?: string | null;
+}
+
+/**
+ * 读取子代理运行归档中的最终原始输出（output.md）。
+ * Conversation Event 只承载有界摘要，不能替代这里的完整终态结果。
+ */
+export async function getSubAgentRunOutput(
+  runId: string,
+): Promise<SubAgentRunOutputResponse> {
+  return request(
+    `/api/sub-agents/runs/${encodeURIComponent(runId)}/output`,
+    { method: 'GET' },
+  );
+}
+
 // ── ADR-056: projected cursor ──────────────────────────────────
 
 export interface ProjectedCursor {

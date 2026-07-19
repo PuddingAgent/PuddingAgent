@@ -201,6 +201,8 @@ public record SessionSummary
     public List<ExtractedPreference> Preferences { get; init; } = [];
     public string? OneLineSummary { get; init; }
     public List<string> SuggestedTags { get; init; } = [];
+    /// <summary>LLM token 用量（来自 ChatWithUsageAsync，不可用时为 null）</summary>
+    public TokenUsageDto? LlmUsage { get; init; }
 }
 
 /// <summary>

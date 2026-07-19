@@ -82,7 +82,7 @@ Source/
 ### 核心工具
 | 目录 | 工具 | 用途 |
 |------|------|------|
-| `Tools/BuiltIns/Files/` | `FileTools.cs` | 文件读写、搜索、grep |
+| `Tools/BuiltIns/Files/` | `FileTools.cs` + `FileSearchTool.cs` | 文件读写、搜索、grep；`file_search` 在工具边界统一把任意 provider/fallback 结果规范化为绝对路径 |
 | `Tools/BuiltIns/Memory/` | `MemoryTools.cs` | 记忆读写（save/manage/search/grep） |
 | `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory` 执行快照 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
@@ -92,7 +92,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task` 主参数，通过 manifest.{Role}Model 选定模型，并冻结角色 timeout/maxRounds/真实目录 scope |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task` 主参数，通过 manifest.{Role}Model 选定模型，并冻结角色 timeout/maxRounds/真实目录 scope；`SmartExploreTool` 要求输出含绝对路径、符号、职责、关联和证据的自包含探索包，供主 Agent 直接消费 |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
@@ -216,8 +216,8 @@ Source/
 |------|------|
 | `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份 |
 | `PuddingPlatformAdmin/src/pages/chat/reducer/subAgentReducer.ts` | 子代理 UI 唯一纯投影：只接受带稳定 runId 的 ADR-060 canonical 事件，按 eventId 幂等折叠 bootstrap/replay/live 的 created/round/LLM/tool/terminal；拒绝会复活历史孤儿的旧事件 |
-| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；绝对定位覆盖、不占消息布局宽度，显示可复制 Session/Run ID、活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线，只消费 Conversation 事件投影 |
-| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentAnchor.tsx` | 消息流中的轻量子代理因果锚点；按 invocation/batch 聚合，只记录启动与终态摘要，点击定位运行检查器 |
+| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；绝对定位覆盖、不占消息布局宽度，显示可复制 Session/Run ID、活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线；实时状态只消费 Conversation 事件投影，终态详情按 Run ID 懒加载归档 `output.md`，以独立固定高度区域显示返回主 Agent 的完整结果 |
+| `PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts` | 纯消息虚拟项投影；只生成用户、主 Agent、系统消息和历史加载项，不投影子代理 run，避免多子代理调用污染文档流 |
 | `Services/MessageFabric/MessageSystem.cs` | 消息系统核心 |
 | `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room） |
 | `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；从 `queued/retrying` 投递发现待处理 Agent 目标 |

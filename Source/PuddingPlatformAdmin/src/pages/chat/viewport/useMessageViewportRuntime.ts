@@ -85,16 +85,6 @@ export const getVirtualMessageContentFingerprint = (
     ].join(':');
   }
 
-  if (last.kind === 'subagent-anchor') {
-    return [
-      items.length,
-      last.id,
-      last.cards
-        .map((card) => `${card.runId ?? card.turnId}:${card.status}`)
-        .join(','),
-    ].join(':');
-  }
-
   return `${items.length}:${last.id}`;
 };
 
