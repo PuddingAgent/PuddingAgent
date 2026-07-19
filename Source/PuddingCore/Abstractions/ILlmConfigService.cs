@@ -92,7 +92,7 @@ public sealed record LlmProviderStrategy
     public long? TokensPerMinute { get; init; }
     public int? RequestsPerMinute { get; init; }
 
-    public int EffectiveRequestTimeoutSeconds => RequestTimeoutSeconds ?? 120;
+    public int EffectiveRequestTimeoutSeconds => RequestTimeoutSeconds ?? 240;
     public int EffectiveMaxConcurrentRequests => MaxConcurrentRequests ?? 50;
     public int EffectiveStreamTimeoutSeconds => StreamTimeoutSeconds ?? 300;
     public int EffectiveMaxRetries => MaxRetries ?? 2;

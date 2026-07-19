@@ -1,4 +1,4 @@
-namespace PuddingPlatform.Data.Dtos;
+﻿namespace PuddingPlatform.Data.Dtos;
 
 // ════════════════════════════════════════════════════════════════
 // LLM / Voice Provider DTOs — AI 服务商配置、模型、配额。
@@ -53,7 +53,9 @@ public record UpsertLlmProviderRequest(
     bool IsEnabled,
     int? MaxConcurrentRequests = null,
     long? TokensPerMinute = null,
-    int? RequestsPerMinute = null
+    int? RequestsPerMinute = null,
+    int? RequestTimeoutSeconds = null,
+    int? StreamTimeoutSeconds = null
 );
 
 // ── LLM Provider Quota 配额 ────────────────────────────────────

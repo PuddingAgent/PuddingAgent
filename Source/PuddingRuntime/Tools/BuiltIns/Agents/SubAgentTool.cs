@@ -9,6 +9,7 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
+using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -184,7 +185,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var childDelegationDepth = (taskPlanning.DelegationDepth ?? 0) + 1;
         var childAllowSubDelegation = taskPlanning.AllowSubDelegation == true;
 
-        _logger.LogInformation(
+                _logger.LogInformation(
             "[SubAgent] Spawning sync={Sync} template={Template} provider={Provider} profile={Profile} model={Model} session={Session}",
             isSync,
             template.TemplateId,
@@ -192,6 +193,110 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             childLlmRoute.Profile.ProfileId,
             childLlmRoute.Profile.ModelId,
             request.SessionId);
+
+        // === 池化子代理路由 ===
+        // 当 pool_name 非空时，走池化复用路径；否则走原有一次性子代理逻辑。
+        if (!string.IsNullOrWhiteSpace(args.PoolName))
+        {
+            var pool = _services.GetService<SubAgentPool>();
+            if (pool == null)
+                return ToolExecutionResult.Fail(
+                    "❌ SubAgentPool 服务未注册。请检查 DI 配置。");
+
+            // 批量模式不支持池化（语义冲突）
+            if (batchTasksResult.Tasks is not null)
+                return Fail("批量任务模式 (tasks) 不支持池化子代理。请使用单任务 (task) + pool_name。");
+
+            var action = args.PoolAction?.ToLowerInvariant() ?? "execute";
+
+            try
+            {
+                switch (action)
+                {
+                    case "create":
+                    {
+                        // 仅创建池化子代理，不执行任务
+                        var spawnRequest = BuildSpawnRequest(
+                            args, request, context, json, task!,
+                            template, childLlmRoute, childCapability,
+                            taskPlanning, permissionMode, timeoutSeconds,
+                            maxRounds, workingDirectory, originToolId,
+                            parentContextSnapshot, delegation);
+                        var createResult = await pool.CreateAsync(
+                            args.PoolName, spawnRequest, ct);
+                        return Success(
+                            $"✅ 池化子代理 '{args.PoolName}' 已创建。",
+                            new
+                            {
+                                status = createResult.Status.ToString(),
+                                subSessionId = createResult.SubSessionId,
+                                role = args.PoolRole ?? "(未指定)",
+                                hint = $"使用 pool_name=\"{args.PoolName}\" (不带 pool_action) 来执行任务。",
+                            });
+                    }
+
+                    case "destroy":
+                    {
+                        var destroyed = await pool.DestroyAsync(args.PoolName, ct);
+                        return destroyed
+                            ? Success($"✅ 池化子代理 '{args.PoolName}' 已销毁。")
+                            : Fail($"❌ 子代理 '{args.PoolName}' 不存在或已销毁。");
+                    }
+
+                    case "sleep":
+                    {
+                        var slept = await pool.SleepAsync(args.PoolName, ct);
+                        return slept
+                            ? Success($"✅ 池化子代理 '{args.PoolName}' 已休眠。")
+                            : Fail($"❌ 子代理 '{args.PoolName}' 不存在或已销毁。");
+                    }
+
+                    case "list":
+                    {
+                        var agents = pool.List();
+                        if (agents.Count == 0)
+                            return Success("池为空。使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
+                        var sb = new StringBuilder();
+                        sb.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
+                        sb.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
+                        sb.AppendLine("|------|------|------|--------|----------|-------------|");
+                        foreach (var a in agents)
+                            sb.AppendLine($"| {a.Name} | {a.Status} | {a.Role ?? "-"} | {a.TaskCount} | {a.LastUsedAt:HH:mm:ss} | {a.SubSessionId?.Substring(0, Math.Min(8, a.SubSessionId.Length))}... |");
+                        return Success(sb.ToString());
+                    }
+
+                    case "execute":
+                    default:
+                    {
+                        // 执行任务（自动创建或复用）
+                        var execSpawnRequest = BuildSpawnRequest(
+                            args, request, context, json, task!,
+                            template, childLlmRoute, childCapability,
+                            taskPlanning, permissionMode, timeoutSeconds,
+                            maxRounds, workingDirectory, originToolId,
+                            parentContextSnapshot, delegation);
+                        var result = await pool.ExecuteAsync(
+                            args.PoolName, execSpawnRequest, ct);
+
+                        return new ToolExecutionResult
+                        {
+                            Success = result.Success,
+                            Output = result.Reply ?? result.Error ?? "(无输出)",
+                            Error = result.Success ? null : result.Error,
+                            ExitCode = result.Success ? 0 : 1,
+                        };
+                    }
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 池满/忙/不存在等业务异常
+                return Fail(
+                    $"❌ 池操作失败: {ex.Message}\n\n提示: 使用 pool_name=\"{args.PoolName}\" pool_action=\"list\" 查看当前池状态。");
+            }
+        }
+
+        // === 原有一次性子代理逻辑（pool_name 为空时） ===
 
         if (batchTasksResult.Tasks is not null)
         {
@@ -683,11 +788,66 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         return null;
     }
 
-    /// <summary>解析模板 ID，支持精确匹配 + 模糊回退。</summary>
+        /// <summary>解析模板 ID，支持精确匹配 + 模糊回退。</summary>
     private static AgentTemplateDefinition? ResolveTemplate(string templateId)
     {
         return BuiltInAgentTemplates.ResolveBest(templateId);
     }
+
+    /// <summary>
+    /// 构造 SubAgentSpawnRequest，供池化路径（Create/Execute）使用。
+    /// 复用与一次性路径相同的解析结果（模板、LLM 路由、能力策略等）。
+    /// </summary>
+    private static SubAgentSpawnRequest BuildSpawnRequest(
+        SubAgentToolArgs args,
+        SubAgentToolRequest request,
+        ToolExecutionContext context,
+        JsonObject? json,
+        string task,
+        AgentTemplateDefinition template,
+        ResolvedChildLlmRoute llmRoute,
+        CapabilityPolicy capability,
+        TaskPlanningSpawnContext taskPlanning,
+        string permissionMode,
+        int? timeoutSeconds,
+        int maxRounds,
+        string? workingDirectory,
+        string originToolId,
+        string? parentContextSnapshot,
+        DelegationProtocolInput delegation)
+    {
+        return new SubAgentSpawnRequest
+        {
+            ParentSessionId = request.SessionId,
+            ParentAgentId = request.AgentInstanceId,
+            ConfigurationAgentInstanceId = context.ConfigurationAgentInstanceId,
+            WorkspaceId = request.WorkspaceId,
+            WorkingDirectory = workingDirectory,
+            TaskDescription = task,
+            TemplateId = template.TemplateId,
+            LlmConfig = llmRoute.Config,
+            LlmProfile = llmRoute.Profile,
+            ParentContextSnapshot = parentContextSnapshot,
+            MaxRounds = maxRounds,
+            CapabilityPolicy = capability,
+            TaskPlanId = taskPlanning.TaskPlanId,
+            TaskNodeId = taskPlanning.TaskNodeId,
+            ParentTaskNodeId = taskPlanning.ParentTaskNodeId,
+            DelegationDepth = (taskPlanning.DelegationDepth ?? 0) + 1,
+            MaxDelegationDepth = taskPlanning.MaxDelegationDepth,
+            RoleInPlan = args.PoolRole ?? taskPlanning.RoleInPlan,
+            AllowSubDelegation = taskPlanning.AllowSubDelegation == true,
+            AllowAgentCreation = taskPlanning.AllowAgentCreation,
+            AssignedObjective = taskPlanning.AssignedObjective,
+            ExpectedOutputContract = taskPlanning.ExpectedOutputContract,
+            TimeoutSeconds = timeoutSeconds,
+            InvocationId = GetStringProp(json, "invocation_id")
+                        ?? GetStringProp(json, "invocationId"),
+            OriginToolId = originToolId,
+            ParentExecutionIdentity = context.ExecutionIdentity,
+        };
+    }
+
 
     /// <summary>
     /// 子代理能力：继承父代理策略，可下调不可升级。
@@ -1098,8 +1258,27 @@ public sealed record SubAgentToolArgs
     [ToolParam("Assigned objective for task planning delegation.")]
     public string? AssignedObjective { get; init; }
 
-    [ToolParam("Expected output contract for task planning delegation.")]
+        [ToolParam("Expected output contract for task planning delegation.")]
     public string? ExpectedOutputContract { get; init; }
+
+    /// <summary>
+    /// 池化子代理名称。指定后使用池化复用（保持会话连续以利用 KV-cache），
+    /// 否则创建一次性子代理（每次新建会话）。
+    /// </summary>
+    [ToolParam("池化子代理名称。指定后使用池化复用，否则创建一次性子代理。")]
+    public string? PoolName { get; init; }
+
+    /// <summary>
+    /// 池操作: create(仅创建不执行), execute(执行任务,默认), destroy(销毁子代理), sleep(休眠), list(列出池状态)
+    /// </summary>
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list")]
+    public string? PoolAction { get; init; }
+
+    /// <summary>
+    /// 池化子代理角色描述（可选，用于区分用途，如 dev-agent, reviewer, explorer）
+    /// </summary>
+    [ToolParam("池化子代理角色描述（可选，用于区分用途）")]
+    public string? PoolRole { get; init; }
 }
 
 public sealed record SubAgentToolTaskArgs

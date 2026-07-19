@@ -78,7 +78,7 @@ const SessionBenchmarkDrawer: React.FC<SessionBenchmarkDrawerProps> = ({
 
   return (
     <Drawer
-      title="Hermes 基准诊断"
+      title="pudding 基准诊断"
       width={560}
       open={open}
       onClose={onClose}

@@ -121,7 +121,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             if (config.Providers.Any(p => string.Equals(p.ProviderId, req.ProviderId, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException($"ProviderId '{req.ProviderId}' 已存在");
 
-            var newProvider = new PuddingLlmProviderConfig
+                        var newProvider = new PuddingLlmProviderConfig
             {
                 ProviderId = req.ProviderId,
                 Name = req.Name,
@@ -133,6 +133,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
                 TokensPerMinute = req.TokensPerMinute,
                 RequestsPerMinute = req.RequestsPerMinute,
+                RequestTimeoutSeconds = req.RequestTimeoutSeconds,
+                StreamTimeoutSeconds = req.StreamTimeoutSeconds,
             };
 
             config.Providers.Add(newProvider);
@@ -174,7 +176,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 throw new KeyNotFoundException($"Provider '{providerId}' 不存在");
 
             config.Providers.Remove(p);
-            var updated = p with
+                        var updated = p with
             {
                 Name = req.Name,
                 Protocol = req.Protocol,
@@ -185,6 +187,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
                 TokensPerMinute = req.TokensPerMinute,
                 RequestsPerMinute = req.RequestsPerMinute,
+                RequestTimeoutSeconds = req.RequestTimeoutSeconds ?? p.RequestTimeoutSeconds,
+                StreamTimeoutSeconds = req.StreamTimeoutSeconds ?? p.StreamTimeoutSeconds,
             };
             config.Providers.Add(updated);
 
@@ -230,7 +234,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 ProviderId = providerRequest.ProviderId,
             };
 
-            provider = provider with
+                        provider = provider with
             {
                 Name = providerRequest.Name,
                 Protocol = providerRequest.Protocol,
@@ -241,6 +245,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests = providerRequest.MaxConcurrentRequests,
                 TokensPerMinute = providerRequest.TokensPerMinute,
                 RequestsPerMinute = providerRequest.RequestsPerMinute,
+                RequestTimeoutSeconds = providerRequest.RequestTimeoutSeconds ?? provider.RequestTimeoutSeconds,
+                StreamTimeoutSeconds = providerRequest.StreamTimeoutSeconds ?? provider.StreamTimeoutSeconds,
                 Models = MergeModels(provider.Models, modelRequests),
             };
 

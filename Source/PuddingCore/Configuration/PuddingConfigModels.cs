@@ -100,7 +100,7 @@ public sealed record PuddingLlmProviderConfig
     public int? RequestsPerMinute { get; init; }
 
     // ── 超时策略 ──────────────────────────────────────
-    /// <summary>非流式请求超时秒数（默认 120）</summary>
+    /// <summary>非流式请求超时秒数（默认 240）</summary>
     public int? RequestTimeoutSeconds { get; init; }
     /// <summary>流式请求超时秒数（默认 300）</summary>
     public int? StreamTimeoutSeconds { get; init; }

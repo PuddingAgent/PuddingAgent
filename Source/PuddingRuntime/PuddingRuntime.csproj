@@ -29,8 +29,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+        <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+    <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
   </ItemGroup>
 
   <ItemGroup>

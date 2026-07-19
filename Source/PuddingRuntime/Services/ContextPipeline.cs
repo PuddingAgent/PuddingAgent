@@ -12,6 +12,7 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingMemoryEngine.Services;
+using PuddingPlatform.Services;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
@@ -50,8 +51,9 @@ public sealed class ContextPipeline
     private readonly AgentLogRecallService? _agentLogRecallService;
     private readonly IImportantMemoryService? _importantMemory;
     private readonly PuddingDataPaths _dataPaths;
-    private readonly CroppedLayersProvider? _croppedLayersProvider;
+        private readonly CroppedLayersProvider? _croppedLayersProvider;
     private readonly SubconsciousRecallPipeline? _subconsciousRecallPipeline;
+    private readonly CodeMapService? _codeMapService;
 
     // 静态层缓存：sessionId → StaticContextCache
     private readonly ConcurrentDictionary<string, StaticContextCache> _staticCache = new();
@@ -95,8 +97,9 @@ public sealed class ContextPipeline
         AgentLogRecallService? agentLogRecallService = null,
         IImportantMemoryService? importantMemory = null,
         PuddingDataPaths? dataPaths = null,
-        CroppedLayersProvider? croppedLayersProvider = null,
-        SubconsciousRecallPipeline? subconsciousRecallPipeline = null)
+                CroppedLayersProvider? croppedLayersProvider = null,
+        SubconsciousRecallPipeline? subconsciousRecallPipeline = null,
+        CodeMapService? codeMapService = null)
     {
         _memory = memory;
         _skillRuntime = skillRuntime;
@@ -122,7 +125,8 @@ public sealed class ContextPipeline
         _agentLogRecallService = agentLogRecallService;
         _importantMemory = importantMemory;
         _croppedLayersProvider = croppedLayersProvider;
-        _subconsciousRecallPipeline = subconsciousRecallPipeline;
+                _subconsciousRecallPipeline = subconsciousRecallPipeline;
+        _codeMapService = codeMapService;
         _dataPaths = dataPaths ?? PuddingDataPaths.FromRoot(
             Environment.GetEnvironmentVariable("PUDDING_DATA_ROOT") ?? "data");
     }
@@ -200,6 +204,17 @@ public sealed class ContextPipeline
         usedBudget += userProfileTokens;
         ctx.UsedBudget = usedBudget;
         budget.UpdateAvailable(ctx);
+
+                // ── L0-CODE-MAP: 项目代码地图（静态，利用 KV-cache）──
+        if (_codeMapService is not null)
+        {
+            var codeMapTier1 = _codeMapService.GetTier1Content();
+            if (!string.IsNullOrWhiteSpace(codeMapTier1))
+            {
+                var codeMapCtx = "--- LAYER: CODE-MAP ---\n" + codeMapTier1 + "\n";
+                RecordLayer(sb, codeMapCtx, "代码地图", "L0-CODE-MAP", ref usedBudget, totalBudget, layers, layerInfos);
+            }
+        }
 
         // ── L1: 动态工具（5%）──
         var toolsCtx = await BuildToolsLayerAsync(request, ct);
@@ -499,7 +514,7 @@ public sealed class ContextPipeline
         // 静态层名称集合：这些层的文本内容在父子代理间逐字节一致
         var staticLayerNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "L0-STATIC", "L0-ENVIRONMENT", "L0-AGENTS-ROSTER",
+            "L0-STATIC", "L0-ENVIRONMENT", "L0-AGENTS-ROSTER", "L0-CODE-MAP",
             "L1-TOOLS", "L2-SKILLS", "L4-PINNED",
         };
 
