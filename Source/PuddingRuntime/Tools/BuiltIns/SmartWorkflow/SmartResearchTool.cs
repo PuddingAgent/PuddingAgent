@@ -11,7 +11,7 @@ namespace PuddingRuntime.Services.Tools;
                  "anysearch_search + http_fetch + file_read 多源信息收集，返回综合分析报告。" +
                  "参数：task（研究任务）、scope（可选，研究边界）、" +
                  "domain（可选，搜索领域如 code/academic/news）、" +
-                 "timeout_seconds（可选，默认 180s）。模型由 Agent 配置的 Researcher_Model 决定。",
+                 "timeout_seconds（可选，默认 600s）。模型由 Agent 配置的 Researcher_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

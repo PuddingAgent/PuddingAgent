@@ -108,7 +108,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                     "[{Tool}] agent={Agent} SUCCESS duration={Duration}ms output={OutputLen} chars",
                     toolName, context.AgentInstanceId, sw.ElapsedMilliseconds,
                     result.Output?.Length ?? 0);
-                return ToolExecutionResult.Ok(result.Output);
+                return ToolExecutionResult.Ok(result.Output!);
             }
 
             var failMsg = $"❌ {toolName} sub-agent FAILED.\n   Error: {result.Error}\n   Role: {RoleName}\n   Duration: {sw.ElapsedMilliseconds}ms";

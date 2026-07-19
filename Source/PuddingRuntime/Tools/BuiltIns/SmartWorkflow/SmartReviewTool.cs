@@ -11,7 +11,7 @@ namespace PuddingRuntime.Services.Tools;
                  "质量、安全性、最佳实践，返回结构化的审查报告。" +
                  "参数：task（审查任务）、scope（文件/目录范围）、" +
                  "aspects（可选，关注的安全/质量/性能方面）、" +
-                 "timeout_seconds（可选，默认 180s）。模型由 Agent 配置的 Reviewer_Model 决定。",
+                 "timeout_seconds（可选，默认 600s）。模型由 Agent 配置的 Reviewer_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

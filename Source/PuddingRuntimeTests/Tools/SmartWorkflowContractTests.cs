@@ -165,8 +165,8 @@ public sealed class SmartWorkflowContractTests
             StringAssert.Contains(task, "BLOCKERS:");
             StringAssert.Contains(task, testCase.RoleMarker);
             Assert.IsLessThanOrEqualTo(
-                document.RootElement.GetProperty("max_rounds").GetInt32(),
                 200,
+                document.RootElement.GetProperty("max_rounds").GetInt32(),
                 $"{testCase.Tool.Descriptor.ToolId} exceeds spawn_sub_agent's max_rounds contract.");
         }
     }

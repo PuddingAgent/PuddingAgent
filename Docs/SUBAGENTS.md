@@ -72,7 +72,19 @@ Section meaning:
 - `RISKS`: Remaining risks, uncertainty, or follow-up risks.
 - `BLOCKERS`: Blocking issues that prevented completion, or `none`.
 
-The tool wraps child output into a JSON result envelope. If a child does not follow the section format, the raw output is still preserved in `rawOutput`, but structured fields may be incomplete.
+The tool wraps child output into a JSON result envelope. A direct `spawn_sub_agent` call still preserves
+non-conforming child output in `rawOutput`, but structured fields may be incomplete.
+
+The seven `smart_*` workflow wrappers use a stricter contract:
+
+- each role defines detailed, role-specific fields inside the same five top-level sections;
+- `SmartWorkflowToolBase` extracts `rawOutput` from the result envelope and rejects reports shorter than
+  the minimum useful size or missing/empty canonical sections;
+- `SUMMARY` and `EVIDENCE` must contain substantive content;
+- a response such as `done`, `completed`, or a bare status sentence is a failed Smart workflow result,
+  not successful work;
+- the wrapper does not automatically retry an invalid report because that could silently double model
+  cost. The failure includes a bounded raw-output preview for diagnosis.
 
 ## Runtime Controls
 

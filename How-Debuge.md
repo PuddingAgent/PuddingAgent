@@ -501,6 +501,25 @@ BuiltIn provider 以及 fallback 不得分别暴露不同路径格式。
 5. 主 Agent 收到符合契约的证据包后，不应为确认同一事实重复调用上述探索工具；若仍
    重复搜索，先检查 Explorer 的 `GAPS` 是否明确声明了未验证项。
 
+### 7.5 Smart 工具显示成功但只返回 `done/completed`
+
+所有 `smart_*` 工具必须返回 canonical 五段报告：
+`SUMMARY / CHANGES / EVIDENCE / RISKS / BLOCKERS`。角色细节不同，但不能只报告状态。
+
+诊断顺序：
+
+1. 从子代理检查器复制 Run ID，读取归档 `output.md`，确认是模型原始回复过短，还是
+   `spawn_sub_agent` 结果封装丢失了 `rawOutput`。
+2. 检查 Smart 角色 Prompt 是否调用了 `AppendCanonicalReportRules`，并包含本角色产物
+   字段。例如 Developer 必须有文件/符号/命令/构建测试证据，Tester 必须有测试命令、
+   计数、失败复现与覆盖缺口。
+3. 查看 Runtime 日志中的 `INVALID_REPORT`。日志包含工具、Agent、失败原因和输出长度；
+   返回给主 Agent 的错误包含最多 800 字符的原始结果预览。
+4. 如果报告已有五段仍被拒绝，检查每段是否真的有内容；`SUMMARY` 少于 40 字符或
+   `EVIDENCE` 少于 60 字符也会失败。
+5. 不要在主 Agent 侧把短结果补写成成功报告，也不要自动无限重试。修正对应角色的
+   Prompt/模型后重新调用，避免悄悄重复消耗 Token。
+
 ## 8. 浏览器验收
 
 每次修改聊天链路后至少完成：

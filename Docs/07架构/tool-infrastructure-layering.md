@@ -123,3 +123,25 @@ RuntimeDispatchRequest
 ```
 
 Smart workflow tools only promote `scope` to `WorkingDirectory` when it resolves to an existing file or directory. Semantic scope text remains prompt-only. Relative file operations are resolved under this root, and directory/write operations cannot escape it unless the existing explicit YOLO boundary allows the operation.
+
+## Smart Workflow Result Contract
+
+`smart_explore`, `smart_research`, `smart_plan`, `smart_review`, `smart_develop`,
+`smart_test`, and `smart_deploy` share the canonical top-level result sections defined by
+`spawn_sub_agent`: `SUMMARY`, `CHANGES`, `EVIDENCE`, `RISKS`, and `BLOCKERS`.
+
+The shared shape is only the transport contract. Each role owns a different detailed artifact:
+
+- Explorer: verified absolute paths, symbols, responsibilities, relationships, and findings.
+- Researcher: sources, supported claims, confidence, synthesis, conflicts, and gaps.
+- Planner: decisions, code-level actions, dependencies, deliverables, verification, and risks.
+- Reviewer: reviewed scope and evidence-backed findings with location, impact, proof, and fix.
+- Developer: exact changed files/symbols, behavior, commands, build/test evidence, and deviations.
+- Tester: environment, exact commands, counts, failure reproduction/root cause, and coverage gaps.
+- Deployer: target/version, executed operations, artifacts, health evidence, rollback, and residual risk.
+
+`SmartWorkflowToolBase` validates the returned `rawOutput` before reporting success. Empty, terse,
+or structurally incomplete reports fail explicitly and include a bounded diagnostic preview. This
+prevents a child status such as `completed` from being accepted as a usable deliverable. Validation
+does not create a second result format and does not mutate the run archive; the canonical child output
+remains owned by `spawn_sub_agent` and the sub-agent run store.

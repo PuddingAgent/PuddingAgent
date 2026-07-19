@@ -15,7 +15,7 @@ namespace PuddingRuntime.Services.Tools;
                  "③ 通用文件系统浏览 — list_dir + file_search + project_map\n" +
                  "参数：task（探索任务，自然语言描述）、scope（可选，目录/会话范围）、" +
                  "session_id（可选，目标会话ID）、focus（可选，重点关注哪些方面）、" +
-                 "max_results（可选，默认 15）、timeout_seconds（可选，默认 120s）。" +
+                 "max_results（可选，默认 15）、timeout_seconds（可选，默认 600s）。" +
                  "模型由 Agent 配置的 Explorer_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,

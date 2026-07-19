@@ -10,7 +10,7 @@ namespace PuddingRuntime.Services.Tools;
     description: "智能代码实现。用自然语言描述开发任务，内部委托 Developer 子代理自动实现代码，" +
                  "包括文件编辑、构建验证。需要显式授权（High 权限）。" +
                  "参数：task（开发任务描述）、scope（可选，工作目录）、" +
-                 "timeout_seconds（可选，默认 300s）。模型由 Agent 配置的 Developer_Model 决定。",
+                 "timeout_seconds（可选，默认 1200s）。模型由 Agent 配置的 Developer_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.None,
