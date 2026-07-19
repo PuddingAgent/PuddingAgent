@@ -1,4 +1,4 @@
-using PuddingCode.Observability;
+﻿using PuddingCode.Observability;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
@@ -50,7 +50,9 @@ public sealed record SubAgentInvocationRequest
     /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
     public required LlmConfig LlmConfig { get; init; }
     /// <summary>调用入口已解析的不可变 Provider/Profile/Model 路由身份。</summary>
-    public required LlmInvocationProfile LlmProfile { get; init; }
+        public required LlmInvocationProfile LlmProfile { get; init; }
+    /// <summary>父代理上下文快照（Fork + 剪枝后）。</summary>
+    public string? ParentContextSnapshot { get; init; }
     public int? MaxRounds { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
@@ -66,6 +68,9 @@ public sealed record SubAgentInvocationRequest
     public string? ExpectedOutputContract { get; init; }
     public string PermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
     public int? TimeoutSeconds { get; init; }
+    public string? InvocationId { get; init; }
+    public string OriginToolId { get; init; } = "spawn_sub_agent";
+    public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }
 
 /// <summary>子代理调用结果。</summary>
@@ -96,7 +101,9 @@ public sealed record SubAgentBatchInvocationRequest
     /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
     public required LlmConfig LlmConfig { get; init; }
     /// <summary>批次内所有任务共用的不可变 Provider/Profile/Model 路由身份。</summary>
-    public required LlmInvocationProfile LlmProfile { get; init; }
+        public required LlmInvocationProfile LlmProfile { get; init; }
+    /// <summary>父代理上下文快照（Fork + 剪枝后）。</summary>
+    public string? ParentContextSnapshot { get; init; }
     public int? MaxRounds { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
@@ -110,6 +117,9 @@ public sealed record SubAgentBatchInvocationRequest
     public bool? AllowAgentCreation { get; init; }
     public string PermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
     public int? TimeoutSeconds { get; init; }
+    public string? BatchId { get; init; }
+    public string OriginToolId { get; init; } = "spawn_sub_agent";
+    public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }
 
 /// <summary>批量子代理调用聚合结果。</summary>

@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.ML.Tokenizers;
 using PuddingCode.Models;
@@ -20,15 +21,26 @@ namespace PuddingCode.Platform.Options
 namespace PuddingCode.Platform
 {
     /// <summary>上下文组装快照存储（线程安全，供调试端点读取）。</summary>
-    public sealed class ContextAssemblyStore
+        public sealed class ContextAssemblyStore
     {
         private readonly ConcurrentDictionary<string, ContextAssemblySnapshot> _snapshots = new();
+        private const int MaxSnapshots = 10;
 
         public void Set(ContextAssemblySnapshot snapshot)
         {
             if (string.IsNullOrWhiteSpace(snapshot.SessionId))
                 return;
             _snapshots[snapshot.SessionId] = snapshot;
+
+            // LRU eviction: keep at most MaxSnapshots, evict oldest by AssembledAt
+            if (_snapshots.Count > MaxSnapshots)
+            {
+                var oldest = _snapshots
+                    .OrderBy(kv => kv.Value.AssembledAt)
+                    .FirstOrDefault();
+                if (oldest.Key is not null)
+                    _snapshots.TryRemove(oldest.Key, out _);
+            }
         }
 
         public bool TryGet(string sessionId, out ContextAssemblySnapshot? snapshot)
@@ -45,15 +57,31 @@ namespace PuddingCode.Platform
         public string SessionId { get; set; } = string.Empty;
         public DateTimeOffset AssembledAt { get; set; }
         public List<ContextLayerInfo> Layers { get; set; } = [];
-        public int TotalTokens { get; set; }
+                public int TotalTokens { get; set; }
+        /// <summary>父代理最近 N 轮对话的剪枝消息（仅 user/assistant 正文）。</summary>
+        public List<PrunedMessage> RecentMessages { get; set; } = [];
+        /// <summary>静态上下文层（L0-L2）内容的 SHA-256 指纹（hex 小写）。用于 KV-cache 复用校验；未计算时为 null。</summary>
+        public string? StaticLayersFingerprint { get; set; }
     }
 
-    /// <summary>单层上下文诊断信息。</summary>
+    /// <summary>剪枝后的对话消息（移除工具调用、思维链、心跳等噪声）。</summary>
+    public class PrunedMessage
+    {
+        public string Role { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public DateTimeOffset Timestamp { get; set; }
+    }
+
+        /// <summary>单层上下文诊断信息。</summary>
     public class ContextLayerInfo
     {
         public string LayerName { get; set; } = string.Empty;
         public int TokenCount { get; set; }
         public string ContentPreview { get; set; } = string.Empty;
+        /// <summary>静态层（L0-L2）的全量文本内容。动态层为 null。</summary>
+        public string? FullContent { get; set; }
+        /// <summary>该层是否为静态层（L0-STATIC, L0-ENV, L0-AGENTS, L1-TOOLS, L2-SKILLS, L4-PINNED）。</summary>
+        public bool IsStatic { get; set; }
     }
 
     /// <summary>最近一次发往 LLM 的上下文占用快照。</summary>

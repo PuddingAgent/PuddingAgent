@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Serialization;
 using PuddingCode.SubAgents;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 
@@ -82,10 +83,12 @@ public sealed class FileSubAgentRunStoreTests
             await db.Database.EnsureCreatedAsync();
         }
 
+        var conversationEvents = new RecordingConversationEventStore();
         var store = new FileSubAgentRunStore(
             paths,
             NullLogger<FileSubAgentRunStore>.Instance,
-            new TestDbContextFactory(options));
+            new TestDbContextFactory(options),
+            conversationEvents);
 
         var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
         {
@@ -129,10 +132,11 @@ public sealed class FileSubAgentRunStoreTests
         });
 
         var eventsLines = await File.ReadAllLinesAsync(Path.Combine(handle.ArchivePath, "events.jsonl"));
-        Assert.AreEqual(1, eventsLines.Length);
-        Assert.IsFalse(eventsLines[0].Contains('\r'));
-        Assert.IsFalse(eventsLines[0].Contains('\n'));
-        StringAssert.Contains(eventsLines[0], "\\n");
+        Assert.AreEqual(2, eventsLines.Length);
+        Assert.IsTrue(eventsLines.All(static line => !line.Contains('\r')));
+        Assert.IsTrue(eventsLines.All(static line => !line.Contains('\n')));
+        StringAssert.Contains(eventsLines[1], "\\n");
+        StringAssert.Contains(eventsLines[1], $"\"run_id\":\"{handle.RunId}\"");
 
         var applied = await store.CompleteRunAsync(handle.RunId, new SubAgentRunCompletion
         {
@@ -154,9 +158,19 @@ public sealed class FileSubAgentRunStoreTests
         var archive = await store.GetRunArchiveAsync(handle.RunId);
         Assert.IsNotNull(archive);
         Assert.AreEqual("completed", archive.Manifest.Status);
-        Assert.AreEqual(1, archive.Events.Count);
+        Assert.AreEqual(3, archive.Events.Count);
         Assert.AreEqual(1, archive.Tools.Count);
         Assert.AreEqual("final output", archive.Output);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                ConversationEventTypes.SubAgentRunCreated,
+                ConversationEventTypes.SubAgentRunStarted,
+                ConversationEventTypes.SubAgentRunCompleted,
+            },
+            conversationEvents.Appended.Select(static item => item.Event.Type).ToArray());
+        Assert.IsTrue(
+            conversationEvents.Appended.All(static item => item.ConversationId == "parent-session"));
 
         await using var verifyDb = new PlatformDbContext(options);
         var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
@@ -178,6 +192,63 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual("2", manifest.TaskPlanning["max_delegation_depth"]);
     }
 
+    [TestMethod]
+    public async Task Recovery_Marks_Previous_Process_NonTerminal_Run_As_Interrupted()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var conversationEvents = new RecordingConversationEventStore();
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            conversationEvents);
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "researcher",
+            Task = "Recover me after restart",
+        });
+        await store.AppendEventAsync(handle.RunId, ConversationEventTypes.SubAgentRoundStarted, new
+        {
+            round = 2,
+        });
+        await store.AppendEventAsync(handle.RunId, ConversationEventTypes.SubAgentToolCompleted, new
+        {
+            round = 2,
+            tool_call_id = "tool-1",
+            tool_name = "file_read",
+            output_length = 42,
+        });
+
+        var recovered = await store.RecoverInterruptedRunsAsync(
+            DateTimeOffset.UtcNow.AddSeconds(1),
+            maxRuns: 100);
+
+        Assert.AreEqual(1, recovered);
+        var archive = await store.GetRunArchiveAsync(handle.RunId);
+        Assert.IsNotNull(archive);
+        Assert.AreEqual("interrupted", archive.Manifest.Status);
+        Assert.AreEqual(ConversationEventTypes.SubAgentRunInterrupted, conversationEvents.Appended[^1].Event.Type);
+
+        await using var verifyDb = new PlatformDbContext(options);
+        var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
+        Assert.AreEqual("interrupted", index.Status);
+        Assert.AreEqual(2, index.TotalRounds);
+        Assert.AreEqual(1, index.TotalToolCalls);
+    }
+
     private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
         : IDbContextFactory<PlatformDbContext>
     {
@@ -185,6 +256,58 @@ public sealed class FileSubAgentRunStoreTests
 
         public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CreateDbContext());
+    }
+
+    private sealed class RecordingConversationEventStore : IConversationEventStore
+    {
+        public List<(string ConversationId, NewConversationEvent Event)> Appended { get; } = [];
+
+        public Task<AppendResult> AppendAsync(
+            string conversationId,
+            long expectedVersion,
+            IReadOnlyList<NewConversationEvent> events,
+            EventWriteCondition condition,
+            CancellationToken ct)
+        {
+            foreach (var item in events)
+            {
+                if (Appended.All(existing => existing.Event.EventId != item.EventId))
+                    Appended.Add((conversationId, item));
+            }
+
+            var last = Appended.Count;
+            return Task.FromResult(new AppendResult(last, last, events.Count));
+        }
+
+        public Task<EventPage> ReadForwardAsync(
+            string conversationId,
+            long afterExclusive,
+            long? throughInclusive,
+            int limit,
+            CancellationToken ct) =>
+            Task.FromResult(new EventPage([], null, false));
+
+        public Task<EventPage> ReadBackwardAsync(
+            string conversationId,
+            long beforeExclusive,
+            int limit,
+            CancellationToken ct) =>
+            Task.FromResult(new EventPage([], null, false));
+
+        public Task<EventPage> ReadByTypePrefixBackwardAsync(
+            string conversationId,
+            string typePrefix,
+            long beforeExclusive,
+            int limit,
+            CancellationToken ct) =>
+            Task.FromResult(new EventPage([], null, false));
+
+        public Task<EventBounds> GetBoundsAsync(
+            string conversationId,
+            CancellationToken ct) =>
+            Task.FromResult(new EventBounds(null, null));
+
+        public Task EnsureTablesAsync(CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class TemporaryDirectory : IDisposable

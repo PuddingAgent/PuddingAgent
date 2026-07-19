@@ -184,6 +184,7 @@ public sealed class SessionEventStreamService : ISessionEventStream
             SchemaVersion: evt.SchemaVersion,
             CommandId: evt.CommandId,
             TurnId: evt.TurnId,
+            RunId: evt.RunId,
             MessageId: evt.MessageId,
             AgentId: null,
             OccurredAt: evt.OccurredAt,
@@ -201,6 +202,7 @@ public sealed class SessionEventStreamService : ISessionEventStream
             SchemaVersion: 1,
             CommandId: null,
             TurnId: null,
+            RunId: null,
             MessageId: null,
             AgentId: null,
             OccurredAt: DateTimeOffset.UtcNow,
@@ -216,4 +218,3 @@ public sealed record SnapshotRequiredInfo(
     long MinimumAvailableSequence,
     string SnapshotUrl
 );
-

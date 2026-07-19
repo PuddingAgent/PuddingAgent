@@ -304,6 +304,7 @@ builder.Services.AddHostedService<ChatExecutionWorker>();
 builder.Services.AddSingleton<SubAgentManager>();
 builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
 builder.Services.AddSingleton<ISubAgentRunStore, FileSubAgentRunStore>();
+builder.Services.AddHostedService<SubAgentConversationProjectionWorker>();
 builder.Services.TryAddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();
 builder.Services.TryAddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
 builder.Services.AddSingleton<IRuntimeTraceAccessor, AmbientRuntimeTraceAccessor>();

@@ -28,7 +28,8 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
     }
 
     protected override string RoleName => "researcher";
-    protected override int DefaultTimeoutSeconds => 180;
+    protected override int DefaultTimeoutSeconds => 600;
+    protected override int DefaultMaxRounds => 150;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartResearchArgs args, ToolExecutionContext context, CancellationToken ct)

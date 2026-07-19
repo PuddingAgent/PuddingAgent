@@ -27,8 +27,11 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 
     protected override string RoleName => "planner";
-    protected override int DefaultTimeoutSeconds => 240;
-    protected override int DefaultMaxRounds => 20;
+    protected override int DefaultTimeoutSeconds => 600;
+    protected override int DefaultMaxRounds => 150;
+
+    /// <summary>Planner 只暴露只读工具，禁止代码探索和写操作。</summary>
+    protected override string? AllowedTools => "file_read,search_grep,list_dir,project_map,search_memory,query_session_logs";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartPlanArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -53,9 +56,15 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
         sb.AppendLine("4. Estimate effort per task: quick (<5min), medium (5-30min), thorough (30min+).");
         sb.AppendLine("5. Identify top 3 risks + mitigation.");
         sb.AppendLine();
-        sb.AppendLine("### ⚠️ Read-only only: file_read, search_memory, query_session_logs, list_dir.");
+        sb.AppendLine("### ⚠️ CONSTRAINTS");
+        sb.AppendLine("- You are a PLANNER, not an explorer. Do NOT list_dir or file_read unless explicitly needed.");
+        sb.AppendLine("- Generate the plan from the task description and context. Do not explore code for extra information.");
+        sb.AppendLine("- If context is insufficient, note the gap in RISKS, do not try to fill it.");
+        sb.AppendLine("- Allowed tools: file_read, search_grep, list_dir, project_map, search_memory, query_session_logs.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
+        if (!string.IsNullOrWhiteSpace(args.Scope))
+            sb.AppendLine($"## 📁 Scope: {args.Scope}");
         if (!string.IsNullOrWhiteSpace(args.Context))
             sb.AppendLine($"## 📋 Context: {args.Context}");
         sb.AppendLine();
@@ -74,7 +83,7 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 }
 
-public sealed class SmartPlanArgs : SmartWorkflowArgs
+public sealed class SmartPlanArgs : ScopedSmartWorkflowArgs
 {
     [ToolParam("已有上下文或约束条件")]
     public string? Context { get; set; }

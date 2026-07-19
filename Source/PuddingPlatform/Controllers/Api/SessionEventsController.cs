@@ -105,6 +105,7 @@ public class SessionEventsController : ControllerBase
             schemaVersion = e.SchemaVersion,
             commandId = e.CommandId,
             turnId = e.TurnId,
+            runId = e.RunId,
             messageId = e.MessageId,
             occurredAt = e.OccurredAt,
             payload = e.Payload,
@@ -390,6 +391,7 @@ public class SessionEventsController : ControllerBase
         // turn.failed before snapshotCursor can never be reconstructed by replay.
         var projectedTurns = new List<object>();
         var lifecycleEvents = new List<object>();
+        var subAgentEvents = new List<object>();
         try
         {
             var recentEvents = await _conversationEventStore.ReadBackwardAsync(
@@ -410,6 +412,7 @@ public class SessionEventsController : ControllerBase
                         schemaVersion = e.SchemaVersion,
                         commandId = e.CommandId,
                         turnId = e.TurnId,
+                        runId = e.RunId,
                         messageId = e.MessageId,
                         occurredAt = e.OccurredAt,
                         payload = e.Payload,
@@ -473,12 +476,48 @@ public class SessionEventsController : ControllerBase
             _logger.LogWarning(ex, "[Bootstrap] Failed to read turn snapshot conv={ConvId}", conversationId);
         }
 
+        try
+        {
+            // A 150-round child can produce hundreds of internal events. Query
+            // by type prefix so message deltas cannot evict the run snapshot.
+            var recentSubAgentEvents =
+                await _conversationEventStore.ReadByTypePrefixBackwardAsync(
+                    conversationId,
+                    "subagent.",
+                    long.MaxValue,
+                    limit: 5000,
+                    ct);
+            subAgentEvents.AddRange(
+                recentSubAgentEvents.Events.Select(e => (object)new
+                {
+                    eventId = e.EventId,
+                    conversationId = e.ConversationId,
+                    sequence = e.Sequence,
+                    type = e.Type,
+                    schemaVersion = e.SchemaVersion,
+                    commandId = e.CommandId,
+                    turnId = e.TurnId,
+                    runId = e.RunId,
+                    messageId = e.MessageId,
+                    occurredAt = e.OccurredAt,
+                    payload = e.Payload,
+                }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[Bootstrap] Failed to read sub-agent snapshot conv={ConvId}",
+                conversationId);
+        }
+
         return Ok(new
         {
             conversation = new { conversationId, sessionId = conversationId },
             turns = projectedTurns.ToArray(),
             messages,
             lifecycleEvents = lifecycleEvents.ToArray(),
+            subAgentEvents = subAgentEvents.ToArray(),
             snapshotCursor,
             hasMoreHistory,
             historyCursor = (long?)null,
@@ -543,6 +582,7 @@ public class SessionEventsController : ControllerBase
             schemaVersion = envelope.SchemaVersion,
             commandId = envelope.CommandId,
             turnId = envelope.TurnId,
+            runId = envelope.RunId,
             messageId = envelope.MessageId,
             occurredAt = envelope.OccurredAt,
             payload = envelope.Payload,

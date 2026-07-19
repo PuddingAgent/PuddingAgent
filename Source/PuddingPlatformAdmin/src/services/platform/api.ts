@@ -1937,6 +1937,7 @@ export interface ConversationBootstrapResponse {
     createdAt: number;
   }>;
   lifecycleEvents: unknown[];
+  subAgentEvents: unknown[];
   snapshotCursor: number;
   hasMoreHistory: boolean;
   historyCursor: string | null;

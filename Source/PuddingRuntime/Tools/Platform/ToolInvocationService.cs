@@ -83,6 +83,9 @@ public sealed class ToolInvocationService : IToolInvocationService
                 WorkingDirectory = request.WorkingDirectory,
                 AgentTemplateId = request.AgentTemplateId,
                 Trace = request.Trace,
+                ExecutionIdentity = request.ExecutionIdentity is null
+                    ? null
+                    : request.ExecutionIdentity with { ToolCallId = request.ToolCallId },
             };
 
             var result = await _toolExecutionService.ExecuteAsync(

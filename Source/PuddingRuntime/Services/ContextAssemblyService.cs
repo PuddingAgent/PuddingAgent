@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -60,9 +60,10 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             MaxDelegationDepth = request.MaxDelegationDepth,
             RoleInPlan = request.RoleInPlan,
             AllowSubDelegation = request.AllowSubDelegation,
-            AllowAgentCreation = request.AllowAgentCreation,
+                        AllowAgentCreation = request.AllowAgentCreation,
             AssignedObjective = request.AssignedObjective,
             ExpectedOutputContract = request.ExpectedOutputContract,
+            ParentContextSnapshot = request.ParentContextSnapshot,
         };
 
         var pipelineResult = await _pipeline.AssembleAsync(contextRequest, ct);

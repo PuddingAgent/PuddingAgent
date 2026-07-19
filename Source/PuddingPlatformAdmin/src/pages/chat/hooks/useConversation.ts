@@ -47,6 +47,7 @@ export function useConversation(
           snapshotCursor,
           bootstrap.messages ?? [],
           bootstrap.turns as ConversationTurn[] | undefined,
+          bootstrap.subAgentEvents as ConversationEvent[] | undefined,
         );
 
         // Start SSE from snapshotCursor (server's projection checkpoint),

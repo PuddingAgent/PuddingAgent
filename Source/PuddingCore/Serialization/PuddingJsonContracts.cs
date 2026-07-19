@@ -13,6 +13,7 @@ public static class PuddingJsonContracts
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
     };
 
     /// <summary>紧凑格式 — 用于 .jsonl 文件（每行一个完整 JSON object，不换行）</summary>
@@ -20,5 +21,6 @@ public static class PuddingJsonContracts
     {
         WriteIndented = false,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
     };
 }

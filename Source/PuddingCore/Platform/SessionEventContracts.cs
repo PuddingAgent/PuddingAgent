@@ -19,6 +19,7 @@ public sealed record SessionEventEnvelope(
     int SchemaVersion,        // Payload 的 schema 版本号（默认 1）
     string? CommandId,        // 关联的 Command（如果是 turn 级事件）
     string? TurnId,           // 关联的 Turn
+    string? RunId,            // 关联的执行 Run（主代理或子代理）
     string? MessageId,        // 关联的消息
     string? AgentId,          // 产生此事件的 Agent
     DateTimeOffset OccurredAt,// 事件发生时间
@@ -108,4 +109,3 @@ public static class SessionEventNames
     public static string MapLegacy(string eventType)
         => LegacyToNew.TryGetValue(eventType, out var mapped) ? mapped : eventType;
 }
-

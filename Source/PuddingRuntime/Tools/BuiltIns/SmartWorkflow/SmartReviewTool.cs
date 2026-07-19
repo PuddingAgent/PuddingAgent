@@ -28,7 +28,10 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
     }
 
     protected override string RoleName => "reviewer";
-    protected override int DefaultTimeoutSeconds => 180;
+    // K3 Reviewer: 600s timeout, read-only tools only — avoid exploration, focus on review
+    protected override int DefaultTimeoutSeconds => 600;
+    protected override int DefaultMaxRounds => 150;
+    protected override string? AllowedTools => "file_read,file_search,code_outline,search_grep,list_dir,project_map,code_explore,code_summary";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartReviewArgs args, ToolExecutionContext context, CancellationToken ct)

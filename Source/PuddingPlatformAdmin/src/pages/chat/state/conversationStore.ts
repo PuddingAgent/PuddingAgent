@@ -11,6 +11,7 @@ import {
   type ConversationState,
   type ConversationEvent,
 } from '../reducer/conversationReducer';
+import { reduceSubAgentRunEvent } from '../reducer/subAgentReducer';
 import type { ConnectionState } from '../connection/connectionManager';
 import type { OutboxRecord } from '../outbox/commandOutbox';
 
@@ -106,13 +107,18 @@ export function applyBootstrap(
     assistantMessageId: string;
     createdAt: number;
   }>,
+  subAgentEvents?: ConversationEvent[],
 ): void {
   const state = createInitialState(conversationId);
   const withSnapshot = setSnapshotCursor(state, snapshotCursor, messages, turns);
+  const subAgentRuns = (subAgentEvents ?? []).reduce(
+    (current, event) => reduceSubAgentRunEvent(current, event),
+    withSnapshot.subAgentRuns,
+  );
 
   canonicalState = {
     ...canonicalState,
-    entities: withSnapshot,
+    entities: { ...withSnapshot, subAgentRuns },
     snapshotCursor,
     bootstrapped: true,
     connection: {
@@ -206,4 +212,8 @@ export function selectMessageById(
   messageId: string,
 ) {
   return state.entities.messages.get(messageId);
+}
+
+export function selectSubAgentRuns(state: CanonicalConversationState) {
+  return state.entities.subAgentRuns;
 }

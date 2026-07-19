@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
+using PuddingCode.Runtime;
 
 namespace PuddingCode.Tools;
 
@@ -154,6 +155,10 @@ public sealed record ToolExecutionContext
     public string? WorkingDirectory { get; init; }
     public string? AgentTemplateId { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
+    /// <summary>
+    /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
+    /// </summary>
+    public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
     public bool IsYoloMode { get; init; }
 }
 

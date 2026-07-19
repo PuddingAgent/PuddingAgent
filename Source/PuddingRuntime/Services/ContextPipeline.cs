@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
@@ -210,7 +211,15 @@ public sealed class ContextPipeline
         var skillsCtx = await BuildSkillsLayerAsync(request, ct);
         var skillsBudget = budget.AllocatePercent(ctx, 0.05);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
-        RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
+                RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
+
+        // ── L2-INHERITED: 父代理上下文快照（Session Fork）──
+        if (!string.IsNullOrWhiteSpace(request.ParentContextSnapshot))
+        {
+            var inheritedBudget = budget.AllocatePercent(ctx, 0.20);
+            var inheritedTrimmed = TrimToTokenBudget(request.ParentContextSnapshot, inheritedBudget);
+            RecordLayer(sb, inheritedTrimmed, "继承上下文", "L2-INHERITED", ref usedBudget, totalBudget, layers, layerInfos);
+        }
 
         // ── L2-MEMORY-SUMMARY ──
         var memorySummaryCtx = _agentMemorySummaryContextBuilder is null
@@ -403,15 +412,24 @@ public sealed class ContextPipeline
             sb.AppendLine("更早的消息可通过记忆图书馆 Tool 召回摘要知识；需要核实会话内容时使用 query_session_logs 默认查询消息转录，只有诊断工具调用/事件证据时才显式读取 raw events。");
         }
 
-        var result = sb.ToString();
+                var result = sb.ToString();
         var estimatedTotalTokens = layerInfos.Sum(x => x.TokenCount);
 
+        // 标记静态层并截取 FullContent（在存储前处理，避免修改 RecordLayer 签名）
+        MarkStaticLayers(layerInfos, result);
+
+        // P2 KV-cache 指纹校验：拼接所有静态层 FullContent 计算 SHA-256 hex
+        var staticLayersFingerprint = ComputeStaticLayersFingerprint(layerInfos);
+
+        var recentMessages = PruneSessionMessages(request.SessionHistory, maxMessages: 20);
         _contextAssemblyStore.Set(new ContextAssemblySnapshot
         {
             SessionId = request.SessionId,
             AssembledAt = DateTimeOffset.UtcNow,
             Layers = layerInfos,
             TotalTokens = estimatedTotalTokens,
+            RecentMessages = recentMessages,
+            StaticLayersFingerprint = staticLayersFingerprint,
         });
 
         assemblySw.Stop();
@@ -463,15 +481,102 @@ public sealed class ContextPipeline
         ref int usedBudget, int totalBudget, List<ContextLayerSnapshot> layers, List<ContextLayerInfo> layerInfos)
     {
         var tokens = EstimateTokens(content);
+                sb.AppendLine($"--- CONTEXT-LAYER: {layerName} ---");
         AppendLayer(sb, content);
         usedBudget += tokens;
         layers.Add(new ContextLayerSnapshot(snapshotLabel, tokens, (double)tokens / totalBudget * 100));
-        layerInfos.Add(new ContextLayerInfo
+                layerInfos.Add(new ContextLayerInfo
         {
             LayerName = layerName,
             TokenCount = tokens,
             ContentPreview = BuildPreview(content),
         });
+    }
+
+    /// <summary>标记静态层（L0-L2, L4-PINNED）并截取 FullContent 用于 Session Fork。</summary>
+    private static void MarkStaticLayers(List<ContextLayerInfo> layerInfos, string fullAssembly)
+    {
+        // 静态层名称集合：这些层的文本内容在父子代理间逐字节一致
+        var staticLayerNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "L0-STATIC", "L0-ENVIRONMENT", "L0-AGENTS-ROSTER",
+            "L1-TOOLS", "L2-SKILLS", "L4-PINNED",
+        };
+
+        foreach (var layer in layerInfos)
+        {
+            if (staticLayerNames.Contains(layer.LayerName))
+            {
+                layer.IsStatic = true;
+                // 从完整组装字符串中截取该层内容
+                layer.FullContent = ExtractLayerContent(fullAssembly, layer.LayerName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 计算静态层指纹：拼接所有 IsStatic=true 层的 FullContent（按层顺序，换行分隔），
+    /// 计算 SHA-256 hex（小写）。用于 KV-cache 复用校验。
+    /// 只拼接纯静态层文本，排除时间戳、SessionId、AssembledAt 等动态注入部分。
+    /// </summary>
+    private static string? ComputeStaticLayersFingerprint(List<ContextLayerInfo> layerInfos)
+    {
+        var staticContents = layerInfos
+            .Where(l => l.IsStatic && !string.IsNullOrEmpty(l.FullContent))
+            .Select(l => l.FullContent!)
+            .ToList();
+
+        if (staticContents.Count == 0)
+            return null;
+
+        var combined = string.Join('\n', staticContents);
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(combined));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>剪枝会话消息：仅保留最近 N 条 user/assistant 正文，移除 tool_call/tool_result/thinking/heartbeat。</summary>
+    private static List<PrunedMessage> PruneSessionMessages(IReadOnlyList<ChatMessage> history, int maxMessages)
+    {
+        var pruned = new List<PrunedMessage>();
+        foreach (var msg in history)
+        {
+            if (pruned.Count >= maxMessages) break;
+            // 只保留 user 和 assistant 角色的消息正文
+            if (msg.Role != ChatRole.User && msg.Role != ChatRole.Assistant)
+                continue;
+            if (string.IsNullOrWhiteSpace(msg.Content))
+                continue;
+            // 跳过心跳/系统消息
+            var content = msg.Content.Trim();
+            if (content.StartsWith("[HEARTBEAT]", StringComparison.OrdinalIgnoreCase) ||
+                content.StartsWith("[SYSTEM]", StringComparison.OrdinalIgnoreCase))
+                continue;
+            // 截断过长消息
+            if (content.Length > 2000)
+                content = content[..2000] + "...";
+            pruned.Add(new PrunedMessage
+            {
+                Role = msg.Role == ChatRole.User ? "user" : "assistant",
+                Content = content,
+                Timestamp = DateTimeOffset.UtcNow,
+            });
+        }
+        return pruned;
+    }
+
+    /// <summary>从完整组装字符串中提取指定层的文本内容。</summary>
+    private static string? ExtractLayerContent(string fullAssembly, string layerName)
+    {
+        var marker = $"--- CONTEXT-LAYER: {layerName} ---";
+        var idx = fullAssembly.IndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0) return null;
+
+        // 找到下一个上下文层标记或结束（跳过内部子层标记如 LAYER: IDENTITY）
+        var nextMarker = "--- CONTEXT-LAYER:";
+        var nextIdx = fullAssembly.IndexOf(nextMarker, idx + marker.Length, StringComparison.Ordinal);
+        if (nextIdx < 0) nextIdx = fullAssembly.Length;
+
+        return fullAssembly[idx..nextIdx].TrimEnd();
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1678,8 +1783,10 @@ public sealed record ContextRequest
     public string? InboundSourceKind { get; init; }
     /// <summary>ADR-042: 入站消息发送者 ID。</summary>
     public string? InboundSourceId { get; init; }
-    /// <summary>ADR-042: 入站消息发送者名称。</summary>
+        /// <summary>ADR-042: 入站消息发送者名称。</summary>
     public string? InboundSourceName { get; init; }
+    /// <summary>从父代理 Fork 并剪枝后的上下文快照。非空时 ContextPipeline 注入 INHERITED-CONTEXT 层。</summary>
+    public string? ParentContextSnapshot { get; init; }
 }
 
 /// <summary>上下文压缩级别。</summary>

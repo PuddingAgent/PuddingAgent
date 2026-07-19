@@ -609,6 +609,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             SchemaVersion: 1,
             CommandId: null,
             TurnId: null,
+            RunId: null,
             MessageId: null,
             AgentId: e.AgentInstanceId,
             OccurredAt: DateTimeOffset.TryParse(e.RecordedAt, out var dt) ? dt : DateTimeOffset.UtcNow,

@@ -282,6 +282,61 @@ public sealed class ConversationEventStore(
         return new EventPage(events, nextCursor, hasMore);
     }
 
+    public async Task<EventPage> ReadByTypePrefixBackwardAsync(
+        string conversationId,
+        string typePrefix,
+        long beforeExclusive,
+        int limit,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(typePrefix);
+        if (limit <= 0)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+
+        await EnsureTableAsync(ct);
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT * FROM conversation_events
+            WHERE conversation_id = @cid
+              AND sequence < @before
+              AND type LIKE @typePrefix
+            ORDER BY sequence DESC LIMIT @limit";
+
+        var pCid = cmd.CreateParameter();
+        pCid.ParameterName = "@cid";
+        pCid.Value = conversationId;
+        cmd.Parameters.Add(pCid);
+
+        var pBefore = cmd.CreateParameter();
+        pBefore.ParameterName = "@before";
+        pBefore.Value = beforeExclusive;
+        cmd.Parameters.Add(pBefore);
+
+        var pTypePrefix = cmd.CreateParameter();
+        pTypePrefix.ParameterName = "@typePrefix";
+        pTypePrefix.Value = typePrefix + "%";
+        cmd.Parameters.Add(pTypePrefix);
+
+        var pLimit = cmd.CreateParameter();
+        pLimit.ParameterName = "@limit";
+        pLimit.Value = limit;
+        cmd.Parameters.Add(pLimit);
+
+        var events = new List<ConversationEvent>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            events.Add(MapFromReader(reader));
+
+        events.Reverse();
+        long? nextCursor = events.Count > 0 ? events[0].Sequence : null;
+        return new EventPage(events, nextCursor, events.Count >= limit);
+    }
+
     public async Task<EventBounds> GetBoundsAsync(
         string conversationId,
         CancellationToken ct)

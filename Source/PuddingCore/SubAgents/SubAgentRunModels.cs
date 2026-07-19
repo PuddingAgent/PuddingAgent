@@ -1,3 +1,5 @@
+using PuddingCode.Runtime;
+
 namespace PuddingCode.SubAgents;
 
 /// <summary>
@@ -29,6 +31,16 @@ public sealed record SubAgentRunManifest
     public Dictionary<string, string> LlmProfiles { get; init; } = new();
     public Dictionary<string, string> Trace { get; init; } = new();
     public Dictionary<string, string> TaskPlanning { get; init; } = new();
+    public string? InvocationId { get; init; }
+    public string? BatchId { get; init; }
+    public string? OriginToolId { get; init; }
+    public string? Role { get; init; }
+    public string? ProviderId { get; init; }
+    public string? ProfileId { get; init; }
+    public string? ModelId { get; init; }
+    public int? TimeoutSeconds { get; init; }
+    public int? MaxRounds { get; init; }
+    public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }
 
 // 创建请求
@@ -50,17 +62,30 @@ public sealed record SubAgentRunCreateRequest
     public bool? AllowAgentCreation { get; init; }
     public string? AssignedObjective { get; init; }
     public string? ExpectedOutputContract { get; init; }
+    public string? InvocationId { get; init; }
+    public string? BatchId { get; init; }
+    public string? OriginToolId { get; init; }
+    public string? ProviderId { get; init; }
+    public string? ProfileId { get; init; }
+    public string? ModelId { get; init; }
+    public int? TimeoutSeconds { get; init; }
+    public int? MaxRounds { get; init; }
+    public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }
 
 // 完成信息
 public sealed record SubAgentRunCompletion
 {
-    public required string Status { get; init; }  // completed, failed, cancelled
+    public required string Status { get; init; }  // completed, failed, cancelled, timed_out, interrupted
     public string? Output { get; init; }
     public string? ErrorMessage { get; init; }
     public int TotalRounds { get; init; }
     public int TotalToolCalls { get; init; }
     public long TotalDurationMs { get; init; }
+    public int ToolFailureCount { get; init; }
+    public int ToolOutputTruncatedCount { get; init; }
+    public long ToolOutputChars { get; init; }
+    public string? ToolFailureSummary { get; init; }
 }
 
 // 工具审计条目

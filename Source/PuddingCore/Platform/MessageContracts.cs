@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 using PuddingCode.Runtime;
 
 namespace PuddingCode.Platform;
@@ -129,6 +129,10 @@ public sealed record RuntimeDispatchRequest
     public string? UserId { get; init; }
     /// <summary>Controller 为本次用户消息分配的消息 ID，用于将流式事件稳定绑定到前端 turn。</summary>
     public string? MessageId { get; init; }
+    /// <summary>
+    /// 当前执行的稳定业务身份。不得从 SessionId、TraceId 或 AgentInstanceId 反推。
+    /// </summary>
+    public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
     public string? AgentInstanceId { get; init; }
     public PermissionSnapshot? PermissionSnapshot { get; init; }
     /// <summary>
@@ -136,6 +140,8 @@ public sealed record RuntimeDispatchRequest
     /// ProviderId/ProfileId/ModelId 必须保持独立语义，Runtime 不得从 Endpoint 或密钥引用反推。
     /// </summary>
     public LlmInvocationProfile? LlmProfile { get; init; }
+    /// <summary>从父代理 Fork 并剪枝后的上下文快照。非空时 ContextPipeline 注入 INHERITED-CONTEXT 层。</summary>
+    public string? ParentContextSnapshot { get; init; }
     /// <summary>由 Platform 解析后下发的 LLM 配置；Runtime 转发给 Controller LLM 代理。</summary>
     public LlmConfig? LlmConfig { get; init; }
     /// <summary>由 Platform 解析 Agent 模板能力策略后下发；Runtime 用于过滤可用 Skill。null 时回走 BuiltIn 模板查找。</summary>
@@ -170,6 +176,11 @@ public sealed record RuntimeDispatchRequest
     public int MaxRounds { get; init; }
     /// <summary>Agent Loop 最大总耗时秒数。0 或负数表示使用平台护栏默认值。</summary>
     public int MaxElapsedSeconds { get; init; }
+    /// <summary>
+    /// 本次执行的绝对截止时间。子代理调度器必须在创建运行时一次性确定，
+    /// Runtime 据此区分用户取消与超时取消，禁止从异常文本推断。
+    /// </summary>
+    public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     /// <summary>Agent Loop 最大工具调用总数。0 或负数表示使用平台护栏默认值。</summary>
     public int MaxToolCallsTotal { get; init; }
     /// <summary>ADR-042: 入站消息的发送 Agent ID（agent-to-agent 消息时非空）。</summary>

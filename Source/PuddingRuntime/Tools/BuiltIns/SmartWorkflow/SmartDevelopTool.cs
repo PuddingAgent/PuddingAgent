@@ -27,8 +27,8 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
     }
 
     protected override string RoleName => "developer";
-    protected override int DefaultTimeoutSeconds => 300;
-    protected override int DefaultMaxRounds => 24;
+    protected override int DefaultTimeoutSeconds => 600;
+    protected override int DefaultMaxRounds => 150;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDevelopArgs args, ToolExecutionContext context, CancellationToken ct)

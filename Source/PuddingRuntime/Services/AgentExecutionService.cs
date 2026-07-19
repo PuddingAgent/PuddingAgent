@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -327,7 +327,8 @@ public sealed class AgentExecutionService
                         ExpectedOutputContract = request.ExpectedOutputContract,
                         InboundSourceKind = request.Origin?.FromKind,
                         InboundSourceId = request.Origin?.FromId,
-                        InboundSourceName = request.Origin?.FromDisplayName,
+                                                InboundSourceName = request.Origin?.FromDisplayName,
+                        ParentContextSnapshot = request.ParentContextSnapshot,
                     }, ct);
                     systemPromptText = pipelineResult.SystemPrompt;
                 }
@@ -352,7 +353,7 @@ public sealed class AgentExecutionService
                     ct: CancellationToken.None);
 
                 // 子代理上下文装配完毕事件（ADR-021）
-                await TryEmitContextAssembledAsync(subAgentRunId, request.SessionId, CancellationToken.None);
+                await TryEmitContextAssembledAsync(subAgentRunId, request, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -413,7 +414,8 @@ public sealed class AgentExecutionService
                         ExpectedOutputContract = request.ExpectedOutputContract,
                         InboundSourceKind = request.Origin?.FromKind,
                         InboundSourceId = request.Origin?.FromId,
-                        InboundSourceName = request.Origin?.FromDisplayName,
+                                                InboundSourceName = request.Origin?.FromDisplayName,
+                        ParentContextSnapshot = request.ParentContextSnapshot,
                     }, ct);
                     ctxReAssembleSw.Stop();
                     await RecordActivityAsync(
@@ -436,7 +438,7 @@ public sealed class AgentExecutionService
                         ct: CancellationToken.None);
 
                 // 子代理上下文重新装配完毕事件（ADR-021）
-                await TryEmitContextAssembledAsync(subAgentRunId, request.SessionId, CancellationToken.None);
+                await TryEmitContextAssembledAsync(subAgentRunId, request, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -489,6 +491,7 @@ public sealed class AgentExecutionService
         var                stopReason     = AgentLoopStopReason.MaxRoundsReached;
         var                execState      = AgentExecutionState.Running;
         string?            executionError = null;
+        string?            subAgentTerminalStatus = null;
         string?            resumeAnchorId = null;
         TokenUsageDto?     usage          = null;
         PromptPrefixSnapshot? lastPrefixSnapshot = null;
@@ -516,8 +519,18 @@ public sealed class AgentExecutionService
                 // ── 检查点 A：取消 / 冻结 ─────────────────────────────
                 if (ct.IsCancellationRequested || _controlRegistry.IsFrozen(request.SessionId))
                 {
-                    stopReason = AgentLoopStopReason.Cancelled;
-                    execState  = AgentExecutionState.Cancelled;
+                    var deadlineReached =
+                        request.ExecutionDeadlineUtc is { } deadline &&
+                        DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
+                    stopReason = deadlineReached
+                        ? AgentLoopStopReason.MaxElapsedReached
+                        : AgentLoopStopReason.Cancelled;
+                    execState = deadlineReached
+                        ? AgentExecutionState.Failed
+                        : AgentExecutionState.Cancelled;
+                    subAgentTerminalStatus = deadlineReached
+                        ? "timed_out"
+                        : "cancelled";
                     await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, ct));
                     break;
                 }
@@ -530,12 +543,20 @@ public sealed class AgentExecutionService
                         maxElapsed, request.SessionId);
                     stopReason = AgentLoopStopReason.MaxElapsedReached;
                     execState  = AgentExecutionState.Failed;
+                    subAgentTerminalStatus = "timed_out";
                     await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
                     break;
                 }
 
                 await FireHooksAsync(h => h.OnRoundStartAsync(loopCtx, round, ct));
                 var turnStart = DateTimeOffset.UtcNow;
+                await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.started", new
+                {
+                    sub_agent_id = request.SessionId,
+                    round = round + 1,
+                    max_rounds = maxRounds,
+                    tool_calls = totalToolCalls,
+                });
 
                 // ── LLM 调用 ──────────────────────────────────────────
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
@@ -608,6 +629,17 @@ public sealed class AgentExecutionService
                     llmTools,
                     effectiveLlmConfig?.ModelId);
                 lastPrefixSnapshot = prefixSnapshot;
+                await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.started", new
+                {
+                    sub_agent_id = request.SessionId,
+                    round = round + 1,
+                    provider_id = request.LlmProfile?.ProviderId,
+                    profile_id = request.LlmProfile?.ProfileId,
+                    model_id = request.LlmProfile?.ModelId,
+                    message_count = injectedHistory.Count,
+                    tool_count = llmTools.Count,
+                    estimated_context_tokens = contextUsageSnapshot?.UsedTokens,
+                });
                 LlmResponse llmResp;
                 try
                 {
@@ -645,6 +677,13 @@ public sealed class AgentExecutionService
                                 ToolError = executionError,
                             });
                             await FireHooksAsync(h => h.OnFailedAsync(loopCtx, executionError, null, ct));
+                            await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.failed", new
+                            {
+                                sub_agent_id = request.SessionId,
+                                round = round + 1,
+                                duration_ms = llmSw.ElapsedMilliseconds,
+                                error = Truncate(facadeResult.Error ?? "LLM invocation failed.", 500),
+                            });
                             break;
                         }
 
@@ -675,6 +714,13 @@ public sealed class AgentExecutionService
                         ToolError = executionError,
                     });
                     await FireHooksAsync(h => h.OnFailedAsync(loopCtx, executionError, ex, ct));
+                    await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.failed", new
+                    {
+                        sub_agent_id = request.SessionId,
+                        round = round + 1,
+                        duration_ms = llmSw.ElapsedMilliseconds,
+                        error = Truncate(ex.Message, 500),
+                    });
                     break;
                 }
                 if (llmResp.Usage is not null)
@@ -683,6 +729,18 @@ public sealed class AgentExecutionService
                     RecordProviderContextUsageSnapshot(request.SessionId, usage);
                 }
                 llmSw.Stop();
+                await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.completed", new
+                {
+                    sub_agent_id = request.SessionId,
+                    round = round + 1,
+                    duration_ms = llmSw.ElapsedMilliseconds,
+                    prompt_tokens = usage?.PromptTokens,
+                    completion_tokens = usage?.CompletionTokens,
+                    total_tokens = usage?.TotalTokens,
+                    cache_hit_tokens = usage?.PromptCacheHitTokens,
+                    cache_miss_tokens = usage?.PromptCacheMissTokens,
+                    tool_call_count = llmResp.ToolCalls?.Count ?? 0,
+                });
 
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
                 _logger.LogInformation(
@@ -730,6 +788,17 @@ public sealed class AgentExecutionService
 
                         totalToolCalls++;
                         await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, call.Name, safeToolArgs, ct));
+                        var subAgentToolSw = System.Diagnostics.Stopwatch.StartNew();
+                        var subAgentToolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
+                        await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.started", new
+                        {
+                            sub_agent_id = request.SessionId,
+                            round = round + 1,
+                            tool_call_id = call.Id,
+                            tool_name = call.Name,
+                            args_hash = subAgentToolArgsHash,
+                            tool_call_index = totalToolCalls,
+                        });
 
                         // 统一 Tool 执行服务已经按 CapabilityPolicy 做模板授权门控。
                         // 仅 legacy fallback 保留旧的用户确认占位逻辑，避免非流式路径绕过新工具注册表。
@@ -767,6 +836,7 @@ public sealed class AgentExecutionService
                                         ArgumentsJson = injectedArgsJson,
                                         CapabilityPolicy = effectiveCapability,
                                         Trace = execTrace,
+                                        ExecutionIdentity = request.ExecutionIdentity,
                                     }, ct);
                                     skillResult = new SkillResult
                                     {
@@ -931,6 +1001,36 @@ public sealed class AgentExecutionService
                                     ref toolOutputTruncatedCount,
                                     ref toolOutputChars,
                                     ref firstToolFailureSummary);
+                                subAgentToolSw.Stop();
+                                await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.failed", new
+                                {
+                                    sub_agent_id = request.SessionId,
+                                    round = round + 1,
+                                    tool_call_id = call.Id,
+                                    tool_name = call.Name,
+                                    success = false,
+                                    duration_ms = subAgentToolSw.ElapsedMilliseconds,
+                                    args_hash = subAgentToolArgsHash,
+                                    output_length = 0,
+                                    error = Truncate(ex.Message, 500),
+                                    tool_call_index = totalToolCalls,
+                                });
+                                if (_subAgentRunStore is not null && subAgentRunId is not null)
+                                {
+                                    await _subAgentRunStore.AppendToolAuditAsync(
+                                        subAgentRunId,
+                                        new SubAgentToolAuditEntry
+                                        {
+                                            ToolCallId = call.Id,
+                                            ToolName = call.Name,
+                                            ArgsHash = subAgentToolArgsHash,
+                                            Success = false,
+                                            DurationMs = subAgentToolSw.ElapsedMilliseconds,
+                                            OutputLength = 0,
+                                            ErrorMessage = Truncate(ex.Message, 500),
+                                        },
+                                        CancellationToken.None);
+                                }
                                 throw;
                             }
                         }
@@ -944,6 +1044,46 @@ public sealed class AgentExecutionService
                             ref toolOutputTruncatedCount,
                             ref toolOutputChars,
                             ref firstToolFailureSummary);
+                        subAgentToolSw.Stop();
+
+                        await TryAppendSubAgentEventAsync(
+                            subAgentRunId,
+                            skillResult.Success
+                                ? "subagent.tool.completed"
+                                : "subagent.tool.failed",
+                            new
+                            {
+                                sub_agent_id = request.SessionId,
+                                round = round + 1,
+                                tool_call_id = call.Id,
+                                tool_name = call.Name,
+                                success = skillResult.Success,
+                                duration_ms = subAgentToolSw.ElapsedMilliseconds,
+                                args_hash = subAgentToolArgsHash,
+                                output_length = skillResult.Output?.Length ?? 0,
+                                error = string.IsNullOrWhiteSpace(skillResult.Error)
+                                    ? null
+                                    : Truncate(skillResult.Error, 500),
+                                tool_call_index = totalToolCalls,
+                            });
+                        if (_subAgentRunStore is not null && subAgentRunId is not null)
+                        {
+                            await _subAgentRunStore.AppendToolAuditAsync(
+                                subAgentRunId,
+                                new SubAgentToolAuditEntry
+                                {
+                                    ToolCallId = call.Id,
+                                    ToolName = call.Name,
+                                    ArgsHash = subAgentToolArgsHash,
+                                    Success = skillResult.Success,
+                                    DurationMs = subAgentToolSw.ElapsedMilliseconds,
+                                    OutputLength = skillResult.Output?.Length ?? 0,
+                                    ErrorMessage = string.IsNullOrWhiteSpace(skillResult.Error)
+                                        ? null
+                                        : Truncate(skillResult.Error, 500),
+                                },
+                                CancellationToken.None);
+                        }
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
 
@@ -983,6 +1123,13 @@ public sealed class AgentExecutionService
                     // atomic unit so cancellation/guardrail failures cannot
                     // expose a half-written round to the next execution.
                     history.AddRange(toolRoundMessages);
+                    await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.completed", new
+                    {
+                        sub_agent_id = request.SessionId,
+                        round = round + 1,
+                        status = "continue",
+                        tool_calls = totalToolCalls,
+                    });
                     continue;
                 }
 
@@ -993,6 +1140,13 @@ public sealed class AgentExecutionService
                 finalMessage = loopResp.Message ?? rawText;
 
                 await FireHooksAsync(h => h.OnRoundCompleteAsync(loopCtx, round, loopResp, ct));
+                await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.completed", new
+                {
+                    sub_agent_id = request.SessionId,
+                    round = round + 1,
+                    status = loopResp.Status,
+                    tool_calls = totalToolCalls,
+                });
 
                 // ── CompletionPolicy 裁决 ─────────────────────────────
                 var verdict = _completionPolicy.Evaluate(
@@ -1160,6 +1314,7 @@ public sealed class AgentExecutionService
                                 ArgumentsJson = injectedArgsJson,
                                 CapabilityPolicy = effectiveCapability,
                                 Trace = execTrace,
+                                ExecutionIdentity = request.ExecutionIdentity,
                             }, ct);
                             skillResult = new SkillResult
                             {
@@ -1396,16 +1551,32 @@ public sealed class AgentExecutionService
         }
         catch (OperationCanceledException)
         {
-            stopReason = AgentLoopStopReason.Cancelled;
-            execState  = AgentExecutionState.Cancelled;
-            _logger.LogInformation("[AgentExec] Cancelled session={Session}", request.SessionId);
+            var deadlineReached =
+                request.ExecutionDeadlineUtc is { } deadline &&
+                DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
+            stopReason = deadlineReached
+                ? AgentLoopStopReason.MaxElapsedReached
+                : AgentLoopStopReason.Cancelled;
+            execState = deadlineReached
+                ? AgentExecutionState.Failed
+                : AgentExecutionState.Cancelled;
+            subAgentTerminalStatus = deadlineReached ? "timed_out" : "cancelled";
+            executionError = deadlineReached
+                ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
+                : "Cancelled";
+            _logger.LogInformation(
+                "[AgentExec] {Termination} session={Session}",
+                deadlineReached ? "Timed out" : "Cancelled",
+                request.SessionId);
             await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
 
             // 完成子代理运行归档（ADR-021）
             await TryCompleteSubAgentRunAsync(
                 subAgentRunId, request.SessionId, false,
-                finalMessage, "Cancelled", 0, totalToolCalls, totalSw.ElapsedMilliseconds,
+                finalMessage, executionError, 0, totalToolCalls, totalSw.ElapsedMilliseconds,
                 toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
+                subAgentTerminalStatus,
+                request.ExecutionIdentity,
                 CancellationToken.None);
         }
         catch (Exception ex)
@@ -1421,6 +1592,8 @@ public sealed class AgentExecutionService
                 subAgentRunId, request.SessionId, false,
                 finalMessage, ex.Message, 0, totalToolCalls, totalSw.ElapsedMilliseconds,
                 toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
+                "failed",
+                request.ExecutionIdentity,
                 CancellationToken.None);
 
             return new RuntimeDispatchResult
@@ -1580,6 +1753,8 @@ public sealed class AgentExecutionService
             finalMessage, executeIsSuccess ? null : finalErrorMessage,
             newTurnCount, totalToolCalls, totalSw.ElapsedMilliseconds,
             toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
+            subAgentTerminalStatus,
+            request.ExecutionIdentity,
             CancellationToken.None);
 
         var isSuccess = executeIsSuccess;
@@ -1763,7 +1938,8 @@ public sealed class AgentExecutionService
                 ExpectedOutputContract = request.ExpectedOutputContract,
                 InboundSourceKind = request.Origin?.FromKind,
                 InboundSourceId = request.Origin?.FromId,
-                InboundSourceName = request.Origin?.FromDisplayName,
+                                        InboundSourceName = request.Origin?.FromDisplayName,
+                        ParentContextSnapshot = request.ParentContextSnapshot,
             }, ct);
             perfContextSw.Stop();
             await RecordActivityAsync(
@@ -1812,7 +1988,7 @@ public sealed class AgentExecutionService
             request.SessionId, perfContextSw.ElapsedMilliseconds, streamingSystemPrompt.SystemPrompt.Length);
 
         // 子代理上下文装配完毕事件（ADR-021）
-        await TryEmitContextAssembledAsync(streamSubAgentRunId, request.SessionId, CancellationToken.None);
+        await TryEmitContextAssembledAsync(streamSubAgentRunId, request, CancellationToken.None);
 
         if (history.Count == 0 || history[0].Role != ChatRole.System)
         {
@@ -2548,6 +2724,7 @@ public sealed class AgentExecutionService
                             ArgumentsJson = injectedArgsJson,
                             CapabilityPolicy = effectiveCapability,
                             Trace = null, // Streaming local function scope
+                            ExecutionIdentity = request.ExecutionIdentity,
                         }, ct);
                         result = new SkillResult
                         {
@@ -2782,6 +2959,10 @@ public sealed class AgentExecutionService
                 reply, streamError,
                 0, totalToolCalls, perfTotalSw.ElapsedMilliseconds,
                 toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
+                terminalStreamError is OperationCanceledException
+                    ? "cancelled"
+                    : null,
+                request.ExecutionIdentity,
                 CancellationToken.None);
 
             // T-301: voice.enabled 默认 false，仅当 Agent 显式请求时才开启自动 TTS。
@@ -3698,7 +3879,7 @@ public sealed class AgentExecutionService
 
     private static bool ShouldExposeSubAgentTool(RuntimeDispatchRequest request)
     {
-        if (!IsSubAgentSession(request.SessionId))
+        if (request.ExecutionIdentity?.Kind != RuntimeExecutionKind.SubAgent)
             return true;
 
         if (request.AllowSubDelegation != true)
@@ -4063,92 +4244,83 @@ public sealed class AgentExecutionService
     // 子代理运行归档辅助方法（ADR-021）
     // ════════════════════════════════════════════════════════
 
-    /// <summary>判断会话 ID 是否属于子代理（包含 "-sub-" 前缀）。</summary>
-    private static bool IsSubAgentSession(string sessionId) =>
-        sessionId.Contains("-sub-", StringComparison.Ordinal);
-
-    /// <summary>从子代理会话 ID 提取父会话 ID。</summary>
-    private static string? ExtractParentSessionId(string subSessionId)
-    {
-        var idx = subSessionId.IndexOf("-sub-", StringComparison.Ordinal);
-        return idx > 0 ? subSessionId[..idx] : null;
-    }
-
     /// <summary>
-    /// 为子代理会话创建运行归档并发出 subagent.run.started 事件。
-    /// 纯 fire-and-forget，不阻断主执行路径。
+    /// 获取编排层已创建的子代理 Run，并发出 started 事件。
+    /// Runtime 不再从 SessionId 推断父子关系，也不拥有 Run 创建职责。
     /// </summary>
     private async Task<string?> TryCreateSubAgentRunAndEmitStartedAsync(
         RuntimeDispatchRequest request,
         string agentInstanceId,
         CancellationToken ct)
     {
-        if (_subAgentRunStore is null || !IsSubAgentSession(request.SessionId))
+        if (_subAgentRunStore is null
+            || request.ExecutionIdentity is not
+            {
+                Kind: RuntimeExecutionKind.SubAgent,
+                RunId: { Length: > 0 } runId,
+            })
             return null;
 
-        var parentSessionId = ExtractParentSessionId(request.SessionId) ?? request.SessionId;
-
-        // 异步子代理路径：SubAgentManager.SpawnAsync 已创建 run，跳过重复创建
-        var existingRunId = _subAgentManager?.TryGetRunId(request.SessionId);
-        if (existingRunId != null)
+        await _subAgentRunStore.AppendEventAsync(runId, "subagent.run.started", new
         {
-            // run 已存在，只补发 subagent.run.started 事件
-            await _subAgentRunStore.AppendEventAsync(existingRunId, "subagent.run.started", new
-            {
-                parent_session_id = parentSessionId,
-                sub_agent_id = request.SessionId,
-            }, CancellationToken.None);
-
-            _logger.LogInformation(
-                "[AgentExec:SubAgent] Run already exists (async spawn) runId={RunId} sub={Sub}",
-                existingRunId, request.SessionId);
-
-            return existingRunId;
-        }
-
-        // 同步子代理路径：此处首次创建 run
-        var runHandle = await _subAgentRunStore.CreateRunAsync(new SubAgentRunCreateRequest
-        {
-            ParentSessionId = parentSessionId,
-            SubSessionId = request.SessionId,
-            WorkspaceId = request.WorkspaceId ?? string.Empty,
-            AgentInstanceId = agentInstanceId,
-            TemplateId = request.AgentTemplateId,
-            Task = request.MessageText,
-        }, ct);
-
-        // 发出 subagent.run.started
-        await _subAgentRunStore.AppendEventAsync(runHandle.RunId, "subagent.run.started", new
-        {
-            parent_session_id = parentSessionId,
+            parent_session_id = request.ExecutionIdentity.ConversationId,
             sub_agent_id = request.SessionId,
+            run_id = runId,
+            invocation_id = request.ExecutionIdentity.InvocationId,
+            origin_tool_id = request.ExecutionIdentity.OriginToolId,
+            role = request.ExecutionIdentity.Role,
+            provider_id = request.LlmProfile?.ProviderId,
+            profile_id = request.LlmProfile?.ProfileId,
+            model_id = request.LlmProfile?.ModelId,
+            max_rounds = request.MaxRounds,
+            max_elapsed_seconds = request.MaxElapsedSeconds,
+            max_tool_calls = request.MaxToolCallsTotal,
         }, CancellationToken.None);
 
         _logger.LogInformation(
-            "[AgentExec:SubAgent] Run created + started runId={RunId} sub={Sub} parent={Parent}",
-            runHandle.RunId, request.SessionId, parentSessionId);
+            "[AgentExec:SubAgent] Run started runId={RunId} sub={Sub} parent={Parent}",
+            runId, request.SessionId, request.ExecutionIdentity.ConversationId);
 
-        return runHandle.RunId;
+        return runId;
     }
 
     /// <summary>
     /// 发出 subagent.run.context_assembled 事件（如果存在 runId）。
     /// </summary>
-    private async Task TryEmitContextAssembledAsync(string? runId, string subSessionId, CancellationToken ct)
+    private async Task TryEmitContextAssembledAsync(
+        string? runId,
+        RuntimeDispatchRequest request,
+        CancellationToken ct)
     {
         if (_subAgentRunStore is null || runId is null)
             return;
 
         await _subAgentRunStore.AppendEventAsync(runId, "subagent.run.context_assembled", new
         {
-            parent_session_id = ExtractParentSessionId(subSessionId) ?? subSessionId,
-            sub_agent_id = subSessionId,
+            parent_session_id = request.ExecutionIdentity?.ConversationId,
+            sub_agent_id = request.SessionId,
+            run_id = runId,
         }, CancellationToken.None);
     }
 
+    private async Task TryAppendSubAgentEventAsync(
+        string? runId,
+        string eventType,
+        object payload)
+    {
+        if (_subAgentRunStore is null || string.IsNullOrWhiteSpace(runId))
+            return;
+
+        await _subAgentRunStore.AppendEventAsync(
+            runId,
+            eventType,
+            payload,
+            CancellationToken.None);
+    }
+
     /// <summary>
-    /// 完成子代理运行归档并发出 subagent.run.completed / subagent.run.failed 事件。
-    /// AgentExecutionService 是 terminal 状态的唯一写入者。
+    /// 提交子代理终态。ISubAgentRunStore 负责唯一性、稳定终态事件与幂等投影；
+    /// Runtime 和调度器都可在各自异常边界尝试提交。
     /// </summary>
     private async Task TryCompleteSubAgentRunAsync(
         string? runId,
@@ -4163,12 +4335,16 @@ public sealed class AgentExecutionService
         int toolOutputTruncatedCount,
         long toolOutputChars,
         string? toolFailureSummary,
+        string? terminalStatusOverride,
+        RuntimeExecutionIdentity? executionIdentity,
         CancellationToken ct)
     {
         if (_subAgentRunStore is null || runId is null)
             return;
 
-        var status = success ? "completed" : "failed";
+        var status = success
+            ? "completed"
+            : terminalStatusOverride ?? "failed";
         var result = await _subAgentRunStore.CompleteRunAsync(runId, new SubAgentRunCompletion
         {
             Status = status,
@@ -4177,6 +4353,10 @@ public sealed class AgentExecutionService
             TotalRounds = totalRounds,
             TotalToolCalls = totalToolCalls,
             TotalDurationMs = totalDurationMs,
+            ToolFailureCount = toolFailureCount,
+            ToolOutputTruncatedCount = toolOutputTruncatedCount,
+            ToolOutputChars = toolOutputChars,
+            ToolFailureSummary = toolFailureSummary,
         }, CancellationToken.None);
 
         if (result != SubAgentRunTerminalWriteResult.Applied)
@@ -4186,21 +4366,6 @@ public sealed class AgentExecutionService
                 result, runId, subSessionId);
             return;
         }
-
-        // 发出最终事件（仅在 Applied 时）
-        var eventType = success ? "subagent.run.completed" : "subagent.run.failed";
-        await _subAgentRunStore.AppendEventAsync(runId, eventType, new
-        {
-            parent_session_id = ExtractParentSessionId(subSessionId) ?? subSessionId,
-            sub_agent_id = subSessionId,
-            success,
-            reply = output,
-            error = errorMessage,
-            tool_failure_count = toolFailureCount,
-            tool_output_truncated_count = toolOutputTruncatedCount,
-            tool_output_chars = toolOutputChars,
-            tool_failure_summary = toolFailureSummary,
-        }, CancellationToken.None);
 
         _logger.LogInformation(
             "[AgentExec:SubAgent] Run completed runId={RunId} sub={Sub} status={Status} rounds={Rounds} tools={Tools}",

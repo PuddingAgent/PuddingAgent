@@ -1,0 +1,212 @@
+# ADR-060：子代理运行可观测性与会话事件投影
+
+状态：已实施第一纵向切片（2026-07-19）
+
+关联：ADR-016、ADR-021、ADR-057、ADR-059
+
+## 1. 目标
+
+当主 Agent 调用 `spawn_sub_agent` 或其 Smart 薄包装
+`smart_explore / smart_research / smart_plan / smart_review /
+smart_develop / smart_test / smart_deploy` 时，浏览器必须实时获知：
+
+- 子代理稳定运行身份、来源工具、角色和父 Turn；
+- Provider/Profile/Model 执行快照；
+- 超时、最大轮次等运行限制；
+- 上下文装配、当前轮次、LLM 调用和工具调用阶段；
+- Token、工具耗时、失败和最终状态；
+- 断线或进程重启后可以从 Conversation sequence 补读。
+
+子代理是否可见不得依赖 Smart 工具同步返回，也不得依赖浏览器轮询一张易失状态表。
+
+## 2. 根因
+
+旧实现存在四套不一致身份和状态：
+
+1. Smart 工具使用 `sync=true`，而旧状态登记主要覆盖异步 `SpawnAsync`。
+2. `subSessionId` 同时被当作会话、运行和 UI 卡片身份，代码还从字符串格式反推父会话。
+3. `AgentExecutionService` 只保存少量运行归档事件，LLM 轮次和工具内部状态不可见。
+4. Chat 卡片消费易失 `subagent.spawned/completed` 帧，状态栏每五秒查询
+   `session_sub_agents`；断线补读和 live SSE 不是同一事实源。
+
+因此“工具超时”“子代理仍在运行”“终态丢失”在 UI 中表现相同。
+
+## 3. 决策
+
+### 3.1 稳定执行身份
+
+所有 Runtime 和 Tool 边界透传 `RuntimeExecutionIdentity`：
+
+```text
+kind
+conversationId
+turnId / commandId / messageId
+runId
+toolCallId
+parentRunId
+invocationId / batchId
+originToolId / role
+```
+
+主 Agent 身份由 `ExecutionRunCoordinator` 创建；工具调用只补充
+`toolCallId`；`SubAgentManager` 创建唯一 `runId` 并派生子代理身份。
+禁止再从 `sessionId` 字符串猜测父会话或运行 ID。
+
+### 3.2 同步和异步共享一个生命周期
+
+`SubAgentManager` 在实际调度前统一：
+
+1. 校验不可变 `LlmProfile + LlmConfig`；
+2. 分配 `subSessionId` 和 `runId`；
+3. 写 `run.json / input.json / events.jsonl`；
+4. 进入相同 workspace/template 并发门和超时门；
+5. 派发带子代理 `RuntimeExecutionIdentity` 的 `RuntimeDispatchRequest`。
+
+`ExecuteSyncAsync` 不再绕过运行登记和限制器。Smart 工具和直接
+`spawn_sub_agent` 共享同一执行路径。
+
+绝对 `ExecutionDeadlineUtc` 由调度器一次确定并传给 Runtime。
+Runtime 用它区分 `timed_out` 与用户 `cancelled`，禁止解析异常字符串。
+
+### 3.3 运行事件日志与 Conversation 投影
+
+子代理细节的本地持久事实源仍是 run archive：
+
+```text
+data/workspaces/{workspaceId}/agents/{agentId}/runs/{runId}/
+  run.json
+  input.json
+  events.jsonl
+  tools.jsonl
+  output.md
+  errors.jsonl
+  conversation-projection.cursor
+```
+
+`FileSubAgentRunStore.AppendEventAsync` 先追加 `events.jsonl`，再将尚未投影的
+事件按顺序写入 canonical `IConversationEventStore`。游标只在 Conversation
+追加成功后推进。`SubAgentConversationProjectionWorker` 周期扫描积压，恢复
+“本地已提交、Conversation 尚未提交”的窗口。
+
+投影使用 run 事件原始 `eventId` 作为 Conversation `eventId` 和
+`producerEventId`；重复重放由 Event Store 幂等消除。
+
+第一切片保留文件事件日志作为子代理详细审计主存储，数据库只保存 run 查询索引；
+后续若需要跨节点高吞吐，可把 `events.jsonl + cursor` 替换为数据库 Outbox，
+但不得改变上层事件和 UI 契约。
+
+### 3.4 事件词汇
+
+```text
+subagent.run.created
+subagent.run.started
+subagent.run.context_assembled
+subagent.round.started
+subagent.round.completed
+subagent.llm.started
+subagent.llm.completed
+subagent.llm.failed
+subagent.tool.started
+subagent.tool.completed
+subagent.tool.failed
+subagent.run.completed
+subagent.run.failed
+subagent.run.cancelled
+subagent.run.timed_out
+subagent.run.interrupted
+```
+
+`llm.completed` 只记录用量和时长；工具事件只记录工具名、参数哈希、时长、
+输出长度和错误摘要。不得写 API Key、完整 Prompt、完整工具参数或敏感输出。
+
+### 3.5 终态唯一性
+
+`ISubAgentRunStore.CompleteRunAsync` 是终态仲裁边界：
+
+- Runtime 正常/异常边界和 Manager 调度异常边界都可以尝试提交；
+- Store 只接受第一次有效终态；
+- Store 先写带稳定 ID `{runId}:{terminalEventType}` 的终态事件，再推进
+  `run.json` 和数据库索引；
+- 进程在两步之间退出时，重试只会幂等补齐同一个 Conversation 事件；
+- `completed/failed/cancelled/timed_out/interrupted` 均为终态。
+
+这样不会出现归档已经终态但 UI 永久 Running，也不会由晚到的失败覆盖已完成运行。
+
+子代理是进程内执行，不具备跨进程续跑能力。`SubAgentConversationProjectionWorker`
+在服务启动时以进程启动时间为 fence，扫描此前创建但仍为非终态的 run，并通过同一个
+`CompleteRunAsync` 仲裁边界提交 `subagent.run.interrupted`。恢复过程从持久事件
+计算已完成轮次和工具统计，不直接篡改 UI，也不把旧 run 猜测为仍在执行。
+
+### 3.6 前端状态权威
+
+`subAgentReducer.ts` 是子代理 UI 投影的唯一纯函数。它同时接入：
+
+- canonical `conversationReducer`，用于 ADR-057 Store；
+- 尚未完全退出的 `useChatState` 兼容桥，保证当前 Chat 主链立即可用。
+
+`SubAgentIndicator` 只消费该投影，不再调用
+`GET /api/sessions/{id}/sub-agents`，也不再启动网络轮询。
+面板自己的秒级计时器只更新本地耗时显示，不产生请求。
+
+旧 `subagent.spawned/delta/completed` 不进入新 UI 投影。它们没有稳定 `runId`
+和可靠终态，历史重放会把孤儿事件错误恢复为永久 Running。开发阶段不为这套易失
+协议增加兼容层；只有本 ADR 定义的 canonical 事件可以创建或推进子代理卡片。
+
+### 3.7 断线补读与刷新恢复
+
+Conversation Event 的 `RunId` 是事件信封字段，不得只依赖业务 payload：
+
+- live SSE、gap replay 和 bootstrap 序列化都必须输出 `runId`；
+- 新写入的 run archive payload 同时包含 `run_id`，使 `events.jsonl` 自描述；
+- bootstrap 通过 Event Store 的类型前缀查询单独加载最近 5000 条
+  `subagent.*` 事件，不得让普通消息的分页上限挤掉子代理运行事实；
+- 前端在建立 SSE 前用同一个 `subAgentReducer` 折叠 bootstrap 事件，随后再按
+  Conversation sequence 接续 live/replay 事件；
+- reducer 按 Conversation `eventId` 记录每个 run 已应用事件，bootstrap、gap
+  replay 和 live SSE 窗口重叠时不得重复累计 Token、耗时或工具调用；
+- bootstrap 与已到达的 live 状态发生竞态时，以每个 run 的
+  `lastActivityAt` 较新者为准，禁止累加 Token 或工具次数。
+
+5000 条是当前开发阶段的有界恢复窗口，不是新的事实源。超过窗口的完整审计仍在
+run archive；后续若需要任意历史区间浏览，应增加按 run 查询的诊断接口，而不是
+恢复旧 `/sub-agents` 轮询。
+
+## 4. 组件边界
+
+| 组件 | 负责 | 不负责 |
+|---|---|---|
+| `SmartWorkflowToolBase` | 选择角色模型、声明预算和来源工具 | 创建 run、持久状态 |
+| `SubAgentTool` | 参数/权限/路由快照映射 | 重新解析 Provider、写 UI 状态 |
+| `SubAgentInvocationService` | 生成 invocation/batch 身份、映射请求 | 执行或归档 |
+| `SubAgentManager` | 并发、超时、run 创建、Runtime 派发 | 解析会话字符串、维护第二套终态 |
+| `AgentExecutionService` | 发出真实轮次/LLM/工具执行事实 | 直接写 Conversation SSE |
+| `ISubAgentRunStore` | 运行审计、终态仲裁、可靠投影 | Agent 编排 |
+| `SubAgentConversationProjectionWorker` | 启动时仲裁旧非终态 run 为 interrupted，并补投积压事件 | 创建或执行 run |
+| `Conversation Event Store/SSE` | sequence、补读、实时分发 | 子代理业务状态推断 |
+| `subAgentReducer` | 幂等 UI 投影 | 网络请求 |
+| `SubAgentIndicator` | 展示与本地筛选 | 轮询后端、修正状态 |
+
+## 5. 验收
+
+1. 七个 Smart 工具和直接 `spawn_sub_agent` 都产生稳定 `runId`。
+2. `run.created` 在第一次 LLM 调用前包含模型、角色、超时和最大轮次。
+3. 每次 LLM 与工具调用产生 started + completed/failed 配对事件。
+4. 同步调用也实时显示轮次和工具，而不是等待工具返回后一次出现。
+5. 超时显示 `timed_out`，用户取消显示 `cancelled`。
+6. 刷新或 SSE 重连后按 Conversation sequence 恢复相同运行状态，Token、
+   工具次数、模型、轮次和终态不归零。
+7. 终态重复提交不会产生第二个可见终态。
+8. Chat 状态面板不再请求旧 `/sub-agents` 轮询接口。
+9. run archive 不包含密钥、完整 Prompt 或明文工具参数。
+10. 服务重启后，上一进程遗留的非终态 run 显示 `interrupted`，不得永久 Running。
+11. 同一 `eventId` 经 bootstrap/replay/live 重复到达时，Token 和工具次数只计算一次。
+
+## 6. 后续清理
+
+完成当前 Chat 到 ADR-057 canonical Store 的整体迁移后：
+
+1. 删除 `useChatState` 的子代理兼容桥；
+2. 删除旧 `SessionStateManager` 子代理写路径和 `/sub-agents` UI 查询；
+3. 让诊断详情 API 直接读取 `ISubAgentRunStore`；
+4. 增加运行树、批量子代理聚合、Token 速率和停滞告警；
+5. 评估把文件投影游标升级为数据库 Outbox，但保持本 ADR 事件契约不变。

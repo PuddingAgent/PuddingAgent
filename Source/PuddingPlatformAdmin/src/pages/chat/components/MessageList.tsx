@@ -555,6 +555,21 @@ const SubAgentCard: React.FC<{ card: SubAgentCardType }> = ({ card }) => {
       label: '已完成',
     },
     failed: { icon: <CloseCircleOutlined />, color: '#ff4d4f', label: '失败' },
+    cancelled: {
+      icon: <CloseCircleOutlined />,
+      color: '#8c8c8c',
+      label: '已取消',
+    },
+    timed_out: {
+      icon: <CloseCircleOutlined />,
+      color: '#fa8c16',
+      label: '已超时',
+    },
+    interrupted: {
+      icon: <CloseCircleOutlined />,
+      color: '#722ed1',
+      label: '已中断',
+    },
   };
   const sc = statusConfig[card.status] || statusConfig.spawning;
   return (
@@ -594,6 +609,38 @@ const SubAgentCard: React.FC<{ card: SubAgentCardType }> = ({ card }) => {
       {card.taskSummary && (
         <div style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
           任务：{card.taskSummary}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          marginTop: 6,
+          color: 'var(--ant-color-text-secondary)',
+          fontSize: 11,
+        }}
+      >
+        {card.originToolId && <span>入口：{card.originToolId}</span>}
+        {card.modelId && <span>模型：{card.modelId}</span>}
+        {card.phase && <span>阶段：{card.phase}</span>}
+        <span>
+          轮次：{card.currentRound ?? 0}
+          {card.maxRounds ? `/${card.maxRounds}` : ''}
+        </span>
+        <span>Token：{card.totalTokens ?? 0}</span>
+        <span>工具：{card.toolCount ?? 0}</span>
+        {card.activeToolName && <span>正在调用：{card.activeToolName}</span>}
+      </div>
+      {card.error && (
+        <div
+          style={{
+            marginTop: 8,
+            color: 'var(--ant-color-error)',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {card.error}
         </div>
       )}
       {card.output && (

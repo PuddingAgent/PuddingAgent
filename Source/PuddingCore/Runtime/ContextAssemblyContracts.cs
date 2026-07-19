@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 
 namespace PuddingCode.Runtime;
 
@@ -27,7 +27,9 @@ public sealed record ContextAssemblyRequest
     public bool? AllowSubDelegation { get; init; }
     public bool? AllowAgentCreation { get; init; }
     public string? AssignedObjective { get; init; }
-    public string? ExpectedOutputContract { get; init; }
+        public string? ExpectedOutputContract { get; init; }
+    /// <summary>从父代理 Fork 并剪枝后的上下文快照。非空时 ContextPipeline 注入 INHERITED-CONTEXT 层。</summary>
+    public string? ParentContextSnapshot { get; init; }
 }
 
 /// <summary>上下文合成结果，包含消息列表、token 估算、层级摘要。</summary>

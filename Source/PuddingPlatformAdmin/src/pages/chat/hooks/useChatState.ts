@@ -92,6 +92,11 @@ import {
   SessionNotFoundError,
   type SessionRuntimeRefs,
 } from './sessionRuntimeCleanup';
+import {
+  projectSubAgentRunsToCards,
+  reduceSubAgentRunEvent,
+  type SubAgentRunMap,
+} from '../reducer/subAgentReducer';
 const MESSAGE_PAGE_SIZE = 20;
 const SESSION_EVENT_PAGE_SIZE = 50;
 const ACTIVE_SESSION_REPLAY_POLL_INTERVAL_MS = 900;
@@ -1209,7 +1214,11 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
   }, []);
   const [chatInteractionRuntimeEvents, setChatInteractionRuntimeEvents] =
     useState<ChatInteractionRuntimeEvent[]>([]);
-  const [subAgentCards, setSubAgentCards] = useState<SubAgentCardMap>({});
+  const [subAgentRuns, setSubAgentRuns] = useState<SubAgentRunMap>({});
+  const subAgentCards = useMemo(
+    () => projectSubAgentRunsToCards(subAgentRuns),
+    [subAgentRuns],
+  );
   const [historyLoading, setHistoryLoading] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [oldestMessageCursor, setOldestMessageCursor] = useState<number | null>(
@@ -1606,7 +1615,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         turnsRef.current = [];
         setTurns([]);
         setChatInteractionRuntimeEvents([]);
-        setSubAgentCards({});
+        setSubAgentRuns({});
         setHasMoreMessages(false);
         setOldestMessageCursor(null);
         messageIdToTurnIdRef.current.clear();
@@ -1972,6 +1981,25 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
             notify: false,
           });
         }
+        let snapshotRuns: SubAgentRunMap = {};
+        for (const rawEvent of bootstrap.subAgentEvents ?? []) {
+          if (!rawEvent || typeof rawEvent !== 'object') continue;
+          const event = rawEvent as Record<string, unknown>;
+          if (typeof event.type !== 'string') continue;
+          snapshotRuns = reduceSubAgentRunEvent(snapshotRuns, {
+            ...event,
+            type: event.type,
+          });
+        }
+        setSubAgentRuns((current) => {
+          const merged = { ...snapshotRuns };
+          for (const [runId, run] of Object.entries(current)) {
+            const snapshot = merged[runId];
+            if (!snapshot || run.lastActivityAt > snapshot.lastActivityAt)
+              merged[runId] = run;
+          }
+          return merged;
+        });
         const cursor = Number(bootstrap.snapshotCursor);
         if (!Number.isFinite(cursor) || cursor < 0) return;
         lastSequenceNumRef.current = Math.max(
@@ -2340,17 +2368,9 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
             const saData = ev as any;
             const subAgentId = saData.sub_agent_id || saData.id || 'sub';
             if (!subAgentId || subAgentId === 'sub') return turn;
-            const cardId = `sa-${subAgentId}`;
             const eventTimestamp = parseSessionEventTimestampMs(
               saData.recordedAt ?? saData.timestamp,
             );
-            const parentSessionId =
-              typeof saData.parent_session_id === 'string'
-                ? saData.parent_session_id
-                : (inferParentSessionIdFromSubSessionId(subAgentId) ??
-                  sessionIdRef.current ??
-                  selectedSessionId ??
-                  undefined);
             const taskSummary = resolveSubAgentTaskSummary(saData);
             const appendOrUpdateSubAgentActivity = (
               items: TimelineItem[],
@@ -2387,30 +2407,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
             if (mappedType === 'delta') {
               const innerText = tryExtractDelta(saData);
               if (!innerText) return turn;
-              setSubAgentCards((prev) => {
-                const existing = prev[cardId];
-                if (existing) {
-                  return {
-                    ...prev,
-                    [cardId]: {
-                      ...existing,
-                      output: (existing.output ?? '') + innerText,
-                    },
-                  };
-                }
-                return {
-                  ...prev,
-                  [cardId]: {
-                    turnId: cardId,
-                    subSessionId: subAgentId,
-                    parentSessionId,
-                    taskSummary,
-                    status: 'running',
-                    spawnedAt: eventTimestamp,
-                    output: innerText,
-                  },
-                };
-              });
               return {
                 ...turn,
                 assistant: {
@@ -2435,20 +2431,11 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               };
             }
             // 子代理 spawned → 创建卡片
-            if (mappedType === 'spawned') {
-              setSubAgentCards((prev) => ({
-                ...prev,
-                [cardId]: {
-                  turnId: cardId,
-                  subSessionId: subAgentId,
-                  parentSessionId,
-                  templateId: saData.template,
-                  modelId: saData.model,
-                  taskSummary,
-                  status: 'running',
-                  spawnedAt: eventTimestamp,
-                },
-              }));
+            if (
+              mappedType === 'spawned' ||
+              mappedType === 'run.created' ||
+              mappedType === 'run.started'
+            ) {
               return {
                 ...turn,
                 assistant: {
@@ -2472,24 +2459,18 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               };
             }
             // 子代理 completed → 更新卡片
-            if (mappedType === 'completed') {
+            if (
+              mappedType === 'completed' ||
+              mappedType === 'run.completed' ||
+              mappedType === 'run.failed' ||
+              mappedType === 'run.cancelled' ||
+              mappedType === 'run.timed_out' ||
+              mappedType === 'run.interrupted'
+            ) {
               const terminalOutput = resolveSubAgentTerminalOutput(saData);
-              setSubAgentCards((prev) => {
-                const existing = prev[cardId];
-                if (!existing) return prev;
-                return {
-                  ...prev,
-                  [cardId]: {
-                    ...existing,
-                    status: saData.success ? 'completed' : 'failed',
-                    parentSessionId:
-                      existing.parentSessionId ?? parentSessionId,
-                    completedAt: eventTimestamp,
-                    success: !!saData.success,
-                    output: existing.output || terminalOutput,
-                  },
-                };
-              });
+              const terminalSuccess =
+                mappedType === 'run.completed' ||
+                (mappedType === 'completed' && saData.success === true);
               return {
                 ...turn,
                 assistant: {
@@ -2501,11 +2482,62 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
                     {
                       id: `subagent-completed-${subAgentId}`,
                       type: 'subagent_completed' as const,
-                      status: saData.success ? 'success' : 'error',
+                      status: terminalSuccess ? 'success' : 'error',
                       name: subAgentId,
                       arguments: taskSummary,
                       output: terminalOutput,
                       message: terminalOutput || taskSummary,
+                      timestamp: eventTimestamp,
+                      collapsed: false,
+                    },
+                  ),
+                },
+              };
+            }
+            if (
+              mappedType === 'run.context_assembled' ||
+              mappedType === 'round.started' ||
+              mappedType === 'round.completed' ||
+              mappedType === 'llm.started' ||
+              mappedType === 'llm.completed' ||
+              mappedType === 'llm.failed' ||
+              mappedType === 'tool.started' ||
+              mappedType === 'tool.completed' ||
+              mappedType === 'tool.failed'
+            ) {
+              const round =
+                typeof saData.round === 'number' ? saData.round : undefined;
+              const toolName =
+                typeof saData.tool_name === 'string'
+                  ? saData.tool_name
+                  : undefined;
+              const phaseMessage = toolName
+                ? `工具 ${toolName}`
+                : mappedType.startsWith('llm.')
+                  ? '模型调用'
+                  : mappedType.startsWith('round.')
+                    ? `第 ${round ?? '?'} 轮`
+                    : '上下文已装配';
+              const phaseFailed = mappedType.endsWith('.failed');
+              return {
+                ...turn,
+                assistant: {
+                  ...turn.assistant,
+                  status: 'executing' as const,
+                  renderMode: 'structured' as const,
+                  timelineItems: appendOrUpdateSubAgentActivity(
+                    turn.assistant.timelineItems ?? [],
+                    {
+                      id: `subagent-progress-${subAgentId}`,
+                      type: 'subagent_progress' as const,
+                      status: phaseFailed ? 'error' : 'running',
+                      name: subAgentId,
+                      arguments: taskSummary,
+                      message: phaseMessage,
+                      output:
+                        typeof saData.error === 'string'
+                          ? saData.error
+                          : phaseMessage,
                       timestamp: eventTimestamp,
                       collapsed: false,
                     },
@@ -2676,6 +2708,14 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       const applyStart = performance.now();
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
+      if (eventType.startsWith('subagent.')) {
+        setSubAgentRuns((current) =>
+          reduceSubAgentRunEvent(current, {
+            ...anyEv,
+            type: eventType,
+          }),
+        );
+      }
       const messageId =
         typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
       const count = (eventCountsRef.current.get(eventType) ?? 0) + 1;

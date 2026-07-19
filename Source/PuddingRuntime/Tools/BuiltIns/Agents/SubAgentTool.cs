@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -114,6 +115,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var permissionMode = GetStringProp(json, "permission_mode")
                           ?? GetStringProp(json, "permissionMode")
                           ?? SubAgentPermissionModes.Inherit;
+        var originToolId = GetStringProp(json, "origin_tool_id")
+                        ?? GetStringProp(json, "originToolId")
+                        ?? "spawn_sub_agent";
         var timeoutSeconds = GetIntArg(json, request, "timeout_seconds", "timeoutSeconds");
         var workingDirectory = GetStringArg(
             json,
@@ -127,9 +131,26 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             return Fail(
                 $"max_rounds must be between 1 and {MaximumSubAgentMaxRounds}. Received: {maxRounds}.");
         }
-        var capabilityRequirements = GetStringProp(json, "capability_requirements")
+                var capabilityRequirements = GetStringProp(json, "capability_requirements")
                                  ?? GetStringProp(json, "capabilityRequirements")
                                  ?? request.Parameters.GetValueOrDefault("capability_requirements");
+
+        // ── Session Fork: 复用父代理上下文 ──
+        var reuseParentCtx = GetBoolProp(json, "reuse_parent_context")
+            ?? GetBoolProp(json, "reuseParentContext")
+            ?? args.ReuseParentContext;
+        string? parentContextSnapshot = null;
+        if (reuseParentCtx == true)
+        {
+            var ctxStore = _services.GetService<ContextAssemblyStore>();
+            if (ctxStore?.TryGet(request.SessionId, out var snapshot) == true && snapshot is not null)
+            {
+                parentContextSnapshot = BuildParentContextSnapshot(snapshot);
+                _logger.LogInformation(
+                    "[SubAgent] SessionFork parentSession={Session} snapshotLayers={Layers}",
+                    request.SessionId, snapshot.Layers.Count);
+            }
+        }
 
         // 确定子代理模板
         var template = ResolveTemplate(templateId);
@@ -187,10 +208,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     Tasks = batchTasksResult.Tasks,
                     IsAsync = !isSync,
                     LlmConfig = childLlmRoute.Config,
-                    LlmProfile = childLlmRoute.Profile,
-                    MaxRounds = maxRounds,
-                    CapabilityPolicy = childCapability,
-                    ParentTaskId = GetStringProp(json, "parent_task_id") ?? GetStringProp(json, "parentTaskId"),
+                                    LlmProfile = childLlmRoute.Profile,
+                ParentContextSnapshot = parentContextSnapshot,
+                MaxRounds = maxRounds,
+                CapabilityPolicy = childCapability,
+                ParentTaskId = GetStringProp(json, "parent_task_id") ?? GetStringProp(json, "parentTaskId"),
                     TaskPlanId = taskPlanning.TaskPlanId,
                     ParentTaskNodeId = taskPlanning.ParentTaskNodeId,
                     DelegationDepth = childDelegationDepth,
@@ -200,6 +222,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     AllowAgentCreation = taskPlanning.AllowAgentCreation,
                     PermissionMode = permissionMode,
                     TimeoutSeconds = timeoutSeconds,
+                    BatchId = GetStringProp(json, "batch_id")
+                           ?? GetStringProp(json, "batchId"),
+                    OriginToolId = originToolId,
+                    ParentExecutionIdentity = context.ExecutionIdentity,
                 }, ct);
 
                 return new ToolExecutionResult
@@ -236,7 +262,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 OutputContract = delegation.Output,
                 IsAsync = !isSync,
                 LlmConfig = childLlmRoute.Config,
-                LlmProfile = childLlmRoute.Profile,
+                                LlmProfile = childLlmRoute.Profile,
+                ParentContextSnapshot = parentContextSnapshot,
                 MaxRounds = maxRounds,
                 CapabilityPolicy = childCapability,
                 TaskPlanId = taskPlanning.TaskPlanId,
@@ -251,6 +278,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ExpectedOutputContract = taskPlanning.ExpectedOutputContract,
                 PermissionMode = permissionMode,
                 TimeoutSeconds = timeoutSeconds,
+                InvocationId = GetStringProp(json, "invocation_id")
+                            ?? GetStringProp(json, "invocationId"),
+                OriginToolId = originToolId,
+                ParentExecutionIdentity = context.ExecutionIdentity,
             }, ct);
 
             if (isSync)
@@ -900,7 +931,80 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             || !string.IsNullOrWhiteSpace(StopCondition);
     }
 
-    private sealed record BatchTaskParseResult(IReadOnlyList<SubAgentBatchTask>? Tasks, string? Error);
+        private sealed record BatchTaskParseResult(IReadOnlyList<SubAgentBatchTask>? Tasks, string? Error);
+
+    /// <summary>从父代理上下文快照构建子代理继承的上下文字符串。</summary>
+    /// <remarks>
+    /// v2: 静态层（L0-L2）输出 FullContent 原文（零剪枝，保证 KV-cache 前缀一致）；
+    /// 动态层仅输出摘要元数据。
+    /// </remarks>
+    private static string BuildParentContextSnapshot(ContextAssemblySnapshot snapshot)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("--- LAYER: INHERITED-CONTEXT ---");
+        sb.AppendLine("[以下上下文从父代理会话 Fork，已剪枝：移除工具调用、思维链、心跳]");
+        sb.AppendLine($"父会话: {snapshot.SessionId}");
+        sb.AppendLine($"组装时间: {snapshot.AssembledAt:O}");
+        sb.AppendLine($"总 Token 数: {snapshot.TotalTokens}");
+        sb.AppendLine($"静态层指纹(SHA-256): {snapshot.StaticLayersFingerprint ?? "无"}");
+        if (!string.IsNullOrEmpty(snapshot.StaticLayersFingerprint))
+            sb.AppendLine("子代理可对比自身静态层指纹确认 KV-cache 是否可命中。");
+        sb.AppendLine();
+
+        // 静态层：原样输出 FullContent
+        var staticLayers = snapshot.Layers
+            .Where(l => l.IsStatic && !string.IsNullOrWhiteSpace(l.FullContent))
+            .ToList();
+        if (staticLayers.Count > 0)
+        {
+            sb.AppendLine("## 继承静态层（逐字节一致，保证 KV-cache 命中）");
+            sb.AppendLine();
+            foreach (var layer in staticLayers)
+            {
+                sb.AppendLine($"--- LAYER: {layer.LayerName} ---");
+                sb.AppendLine(layer.FullContent);
+                sb.AppendLine();
+            }
+        }
+
+        // 动态层：仅输出摘要
+        var dynamicLayers = snapshot.Layers
+            .Where(l => !l.IsStatic && !string.IsNullOrWhiteSpace(l.ContentPreview))
+            .ToList();
+        if (dynamicLayers.Count > 0)
+        {
+            sb.AppendLine("## 父代理动态层摘要");
+            foreach (var layer in dynamicLayers)
+            {
+                sb.AppendLine($"- [{layer.LayerName}] ({layer.TokenCount} tokens): {TruncatePreview(layer.ContentPreview, 500)}");
+            }
+        }
+
+        // P1: 父代理最近 N 轮对话（两级传递：最近消息全文 + 更早摘要）
+        if (snapshot.RecentMessages is { Count: > 0 })
+        {
+            sb.AppendLine();
+            sb.AppendLine("## 父代理对话历史（剪枝后）");
+            var recentCount = Math.Min(snapshot.RecentMessages.Count, 6);
+            for (int i = 0; i < recentCount; i++)
+            {
+                var msg = snapshot.RecentMessages[i];
+                sb.AppendLine($"[{msg.Role}]: {TruncatePreview(msg.Content, 1000)}");
+            }
+            if (snapshot.RecentMessages.Count > 6)
+            {
+                sb.AppendLine($"... (共 {snapshot.RecentMessages.Count} 条剪枝消息，以上为最近 {recentCount} 条)");
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static string TruncatePreview(string text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLen)
+            return text ?? string.Empty;
+        return text[..maxLen] + "...";
+    }
 }
 
 public sealed record SubAgentToolArgs
@@ -938,8 +1042,11 @@ public sealed record SubAgentToolArgs
     [ToolParam("true to wait for completion, false to run asynchronously.")]
     public bool? Sync { get; init; }
 
-    [ToolParam("Optional model id or provider/model id.")]
+        [ToolParam("Optional model id or provider/model id.")]
     public string? Model { get; init; }
+
+    [ToolParam("复用父代理已组装的上下文（Fork + 剪枝后注入子代理）。默认 false。")]
+    public bool? ReuseParentContext { get; init; }
 
     [ToolParam("Optional comma-separated allowed tool id subset for the child agent.")]
     public string? Tools { get; init; }

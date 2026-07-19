@@ -14,4 +14,14 @@ public interface ISubAgentRunStore
     Task AppendToolAuditAsync(string runId, SubAgentToolAuditEntry entry, CancellationToken ct = default);
     Task<SubAgentRunTerminalWriteResult> CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default);
     Task<SubAgentRunArchive?> GetRunArchiveAsync(string runId, CancellationToken ct = default);
+    /// <summary>
+    /// 将本次进程启动前遗留的非终态运行提交为 interrupted。
+    /// 子代理执行是进程内任务，进程重启后不得继续显示为 Running。
+    /// </summary>
+    Task<int> RecoverInterruptedRunsAsync(
+        DateTimeOffset startedBeforeUtc,
+        int maxRuns,
+        CancellationToken ct = default);
+    /// <summary>重放尚未投影到 canonical Conversation Event Store 的持久运行事件。</summary>
+    Task<int> ReplayPendingConversationEventsAsync(int maxRuns, CancellationToken ct = default);
 }

@@ -14,6 +14,10 @@
 //   turn.failed       → 失败指定 Turn
 //   turn.cancelled    → 取消指定 Turn
 // ─────────────────────────────────────────────────────────────────
+import {
+  reduceSubAgentRunEvent,
+  type SubAgentRunMap,
+} from './subAgentReducer';
 
 export interface ConversationState {
   conversationId: string;
@@ -21,6 +25,7 @@ export interface ConversationState {
   turns: ConversationTurn[];
   messages: Map<string, ConversationMessage>;
   turnOrder: string[]; // ordered turn IDs
+  subAgentRuns: SubAgentRunMap;
   gapDetected: boolean;
 }
 
@@ -56,6 +61,7 @@ export interface ConversationEvent {
   messageId?: string;
   conversationId?: string;
   commandId?: string;
+  runId?: string;
   clientRequestId?: string;
   userMessageId?: string;
   assistantMessageId?: string;
@@ -82,6 +88,7 @@ export function createInitialState(conversationId?: string): ConversationState {
     turns: [],
     messages: new Map(),
     turnOrder: [],
+    subAgentRuns: {},
     gapDetected: false,
   };
 }
@@ -187,6 +194,14 @@ function applyEvent(
   type: string,
   seq: number,
 ): ConversationState {
+  const nextSubAgentRuns = reduceSubAgentRunEvent(
+    state.subAgentRuns,
+    event,
+  );
+  if (nextSubAgentRuns !== state.subAgentRuns) {
+    return { ...state, subAgentRuns: nextSubAgentRuns };
+  }
+
   switch (type) {
     case 'turn.accepted': {
       const turnId = event.turnId ?? `turn-${seq}`;

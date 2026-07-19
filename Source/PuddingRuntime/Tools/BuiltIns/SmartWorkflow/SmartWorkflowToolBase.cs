@@ -22,6 +22,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
     protected abstract int DefaultTimeoutSeconds { get; }
     protected virtual int DefaultMaxRounds => 15;
+    /// <summary>子代理允许的工具列表，逗号分隔。null = 继承父代理全部工具。</summary>
+    protected virtual string? AllowedTools => null;
 
     protected async Task<ToolExecutionResult> RunSubAgentAsync(
         TArgs args,
@@ -54,6 +56,9 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 max_rounds = DefaultMaxRounds,
                 working_directory = workingDirectory,
                 allow_sub_delegation = false,
+                tools = AllowedTools,
+                reuse_parent_context = true,
+                origin_tool_id = Descriptor.ToolId,
             });
 
             logger.LogInformation(

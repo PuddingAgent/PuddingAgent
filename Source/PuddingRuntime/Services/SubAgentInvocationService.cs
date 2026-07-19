@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Observability;
@@ -31,6 +31,12 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
 
     public async Task<SubAgentInvocationResult> InvokeAsync(SubAgentInvocationRequest request, CancellationToken ct = default)
     {
+        request = request with
+        {
+            InvocationId = string.IsNullOrWhiteSpace(request.InvocationId)
+                ? $"subinv-{Guid.NewGuid():N}"
+                : request.InvocationId.Trim(),
+        };
         _logger.LogDebug(
             "[SubAgentInvocation] Invoke template={TemplateId} task={Task} async={IsAsync} parentSession={ParentSessionId}",
             request.TemplateId, request.Task, request.IsAsync, request.ParentSessionId);
@@ -59,11 +65,15 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         ValidateBatchTasks(request.Tasks, options);
 
         var timeoutSeconds = ResolveTimeoutSeconds(request.TimeoutSeconds, options);
-        var batchId = string.IsNullOrWhiteSpace(request.ParentTaskId)
-            ? $"subbatch-{Guid.NewGuid():N}"[..22]
-            : request.ParentTaskId.Trim();
+        var batchId = !string.IsNullOrWhiteSpace(request.BatchId)
+            ? request.BatchId.Trim()
+            : string.IsNullOrWhiteSpace(request.ParentTaskId)
+                ? $"subbatch-{Guid.NewGuid():N}"
+                : request.ParentTaskId.Trim();
 
-        var childRequests = request.Tasks.Select(task => BuildSpawnRequest(request, task, timeoutSeconds)).ToArray();
+        var childRequests = request.Tasks
+            .Select(task => BuildSpawnRequest(request, task, batchId, timeoutSeconds))
+            .ToArray();
 
         if (request.IsAsync)
         {
@@ -123,6 +133,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         return new SubAgentInvocationResult
         {
             SubSessionId = result.SubSessionId,
+            RunId = result.RunId,
             TaskId = spawnRequest.TaskNodeId,
             Status = result.Success ? "running" : "failed",
             Error = result.Error,
@@ -155,6 +166,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
                 return new SubAgentInvocationResult
                 {
                     SubSessionId = result.SubSessionId,
+                    RunId = result.RunId,
                     TaskId = spawnRequest.TaskNodeId,
                     Status = result.Success ? "completed" : "failed",
                     Reply = result.Reply,
@@ -188,7 +200,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         TaskDescription = request.Task,
         TemplateId = request.TemplateId,
         LlmConfig = request.LlmConfig,
-        LlmProfile = request.LlmProfile,
+                LlmProfile = request.LlmProfile,
+        ParentContextSnapshot = request.ParentContextSnapshot,
         MaxRounds = request.MaxRounds ?? 10,
         CapabilityPolicy = request.CapabilityPolicy,
         TaskPlanId = request.TaskPlanId,
@@ -202,11 +215,15 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         AssignedObjective = request.AssignedObjective,
         ExpectedOutputContract = request.OutputContract ?? request.ExpectedOutputContract,
         TimeoutSeconds = timeoutSeconds,
+        InvocationId = request.InvocationId,
+        OriginToolId = request.OriginToolId,
+        ParentExecutionIdentity = request.ParentExecutionIdentity,
     };
 
     private static SubAgentSpawnRequest BuildSpawnRequest(
         SubAgentBatchInvocationRequest request,
         SubAgentBatchTask task,
+        string batchId,
         int timeoutSeconds) => new()
     {
         ParentSessionId = request.ParentSessionId,
@@ -216,7 +233,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         TaskDescription = task.Task,
         TemplateId = request.TemplateId,
         LlmConfig = request.LlmConfig,
-        LlmProfile = request.LlmProfile,
+                LlmProfile = request.LlmProfile,
+        ParentContextSnapshot = request.ParentContextSnapshot,
         MaxRounds = request.MaxRounds ?? 10,
         CapabilityPolicy = request.CapabilityPolicy,
         TaskPlanId = request.TaskPlanId,
@@ -230,6 +248,10 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         AssignedObjective = task.Task,
         ExpectedOutputContract = task.OutputContract ?? task.ExpectedOutput,
         TimeoutSeconds = timeoutSeconds,
+        InvocationId = $"subinv-{Guid.NewGuid():N}",
+        BatchId = batchId,
+        OriginToolId = request.OriginToolId,
+        ParentExecutionIdentity = request.ParentExecutionIdentity,
     };
 
     private static int ResolveTimeoutSeconds(int? requested, SubAgentExecutionOptions options)

@@ -43,6 +43,7 @@ import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
 import SubAgentIndicator from './SubAgentIndicator';
+import type { SubAgentCardMap } from '../types';
 
 /** Composer 的聊天状态 */
 export type ChatStatus =
@@ -115,6 +116,8 @@ interface IntentConsoleProps {
   cacheHitRate?: number;
   /** 当前会话可见的子任务数 */
   subAgentsRunning?: number;
+  /** canonical 子代理运行事件投影；不得在组件内另行轮询。 */
+  subAgentCards?: SubAgentCardMap;
   /** 浏览器语音输入适配器；测试与后续 ASR Provider 接入可替换该适配器 */
   voiceInputAdapter?: BrowserVoiceInputAdapter;
   /** 浏览器语音输出适配器；测试与后续 TTS Provider 接入可替换该适配器 */
@@ -160,6 +163,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   cacheMissTokens,
   cacheHitRate,
   subAgentsRunning = 0,
+  subAgentCards = {},
   voiceInputAdapter = createDashScopeVoiceInputAdapter(),
   voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
   latestAssistantText,
@@ -672,6 +676,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 
       <SubAgentIndicator
         sessionId={sessionId}
+        subAgentCards={subAgentCards}
         open={showSubAgentPanel}
         onOpenChange={setShowSubAgentPanel}
         renderTrigger={false}

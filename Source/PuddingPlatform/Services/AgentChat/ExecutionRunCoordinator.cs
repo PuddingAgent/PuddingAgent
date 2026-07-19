@@ -111,7 +111,18 @@ public sealed class ExecutionRunCoordinator(
                 MaxToolCallsTotal: snapshot.BudgetMaxToolCalls,
                 ChannelId: command.ChannelId,
                 UserExternalId: command.UserId,
-                RunCancellation: new RunCancellation(ctsRun.Token));
+                RunCancellation: new RunCancellation(ctsRun.Token))
+            {
+                ExecutionIdentity = new RuntimeExecutionIdentity
+                {
+                    Kind = RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = lease.ConversationId,
+                    TurnId = lease.TurnId,
+                    CommandId = lease.CommandId,
+                    RunId = lease.RunId,
+                    MessageId = command.AssistantMessageId,
+                },
+            };
 
             // Execute — terminal pending goes directly to CommitTerminalAsync
             var loopResult = await ExecuteLoopAsync(

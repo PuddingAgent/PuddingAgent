@@ -455,6 +455,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     cacheMissTokens={cacheMissTokens}
                     cacheHitRate={cacheHitRate}
                     subAgentsRunning={subAgentCount}
+                    subAgentCards={subAgentCards}
                     latestAssistantText={latestAssistantText}
                   />
                 </div>

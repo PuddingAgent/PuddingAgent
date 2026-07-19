@@ -27,8 +27,8 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
     }
 
     protected override string RoleName => "tester";
-    protected override int DefaultTimeoutSeconds => 300;
-    protected override int DefaultMaxRounds => 30;
+    protected override int DefaultTimeoutSeconds => 600;
+    protected override int DefaultMaxRounds => 150;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartTestArgs args, ToolExecutionContext context, CancellationToken ct)

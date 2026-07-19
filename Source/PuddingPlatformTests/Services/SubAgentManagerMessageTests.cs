@@ -390,6 +390,17 @@ public sealed class SubAgentManagerMessageTests
 
         public Task<SubAgentRunArchive?> GetRunArchiveAsync(string runId, CancellationToken ct = default) =>
             Task.FromResult<SubAgentRunArchive?>(null);
+
+        public Task<int> RecoverInterruptedRunsAsync(
+            DateTimeOffset startedBeforeUtc,
+            int maxRuns,
+            CancellationToken ct = default) =>
+            Task.FromResult(0);
+
+        public Task<int> ReplayPendingConversationEventsAsync(
+            int maxRuns,
+            CancellationToken ct = default) =>
+            Task.FromResult(0);
     }
 
     private sealed class RecordingRuntimeActivitySink : IRuntimeActivitySink

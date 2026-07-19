@@ -35,6 +35,7 @@ public sealed class TurnExecutorAdapter(
             MaxRounds = context.MaxRounds ?? 0,
             MaxElapsedSeconds = context.MaxElapsedSeconds ?? 0,
             MaxToolCallsTotal = context.MaxToolCallsTotal ?? 0,
+            ExecutionIdentity = context.ExecutionIdentity,
         };
 
         var sawTerminal = false;

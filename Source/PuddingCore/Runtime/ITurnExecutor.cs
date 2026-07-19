@@ -43,7 +43,11 @@ public sealed record TurnExecutionContext(
     string? ChannelId,
     string? UserExternalId,
     RunCancellation RunCancellation
-);
+)
+{
+    /// <summary>由 Execution Kernel 创建的稳定身份。</summary>
+    public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+}
 
 /// <summary>
 /// 执行取消信号。ITurnExecutor 使用此对象获取 CancellationToken。

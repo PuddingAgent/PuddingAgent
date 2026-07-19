@@ -16,6 +16,7 @@ public sealed record ToolInvocationRequest
     public required string ArgumentsJson { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
+    public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
 }
 
 /// <summary>工具调用结果。</summary>

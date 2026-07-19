@@ -33,7 +33,8 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     }
 
     protected override string RoleName => "explorer";
-    protected override int DefaultTimeoutSeconds => 120;
+    protected override int DefaultTimeoutSeconds => 600;
+    protected override int DefaultMaxRounds => 150;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartExploreArgs args, ToolExecutionContext context, CancellationToken ct)

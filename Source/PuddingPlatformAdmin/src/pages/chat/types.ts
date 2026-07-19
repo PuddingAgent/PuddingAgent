@@ -301,18 +301,43 @@ export type SubAgentCardStatus =
   | 'spawning'
   | 'running'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'interrupted';
 
 export interface SubAgentCard {
   /** 该子代理对应的 turnId */
   turnId: string;
+  runId?: string;
+  invocationId?: string;
+  batchId?: string;
   subSessionId: string;
   /** 父会话 ID，用于会话切换时隔离子代理卡片 */
   parentSessionId?: string;
   templateId?: string;
   modelId?: string;
+  providerId?: string;
+  profileId?: string;
+  originToolId?: string;
+  role?: string;
   taskSummary: string;
   status: SubAgentCardStatus;
+  phase?: string;
+  currentRound?: number;
+  maxRounds?: number;
+  timeoutSeconds?: number;
+  lastActivityAt?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  llmDurationMs?: number;
+  toolDurationMs?: number;
+  toolCount?: number;
+  failedToolCount?: number;
+  activeToolName?: string;
+  lastToolName?: string;
+  error?: string;
   spawnedAt: number;
   completedAt?: number;
   /** 子代理完成后的输出摘要 */

@@ -317,6 +317,61 @@ dotnet test .\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj `
 
 投影调度必须由持久化 head/checkpoint 驱动，不能只依赖事件写入线程中的 fire-and-forget 调用。
 
+### 6.8 Smart 工具一直等待或子代理永久 Running
+
+先取得 `runId`，不要只用 `subSessionId` 猜测执行状态。标准链路：
+
+```text
+SmartWorkflowToolBase(originToolId/model/limits)
+  -> SubAgentTool
+  -> SubAgentInvocationService(invocationId/batchId)
+  -> SubAgentManager(runId + deadline)
+  -> AgentExecutionService(round/llm/tool)
+  -> runs/{runId}/events.jsonl
+  -> conversation-projection.cursor
+  -> Conversation Event Store
+  -> Session SSE
+  -> subAgentReducer
+```
+
+检查运行归档：
+
+```powershell
+Get-ChildItem D:\data\workspaces -Recurse -Directory -Filter "run_*"
+Get-Content <run-dir>\run.json
+Get-Content <run-dir>\events.jsonl -Tail 50
+Get-Content <run-dir>\conversation-projection.cursor
+Get-Content <run-dir>\errors.jsonl -ErrorAction SilentlyContinue
+```
+
+诊断顺序：
+
+1. `run.json` 是否包含 `originToolId / role / providerId / modelId /
+   timeoutSeconds / maxRounds`；
+2. `events.jsonl` 是否有 `run.created` 和 `run.started`；
+3. 是否停在 `context_assembled`、`llm.started` 或 `tool.started`；
+4. started 是否有对应 completed/failed；
+5. `conversation-projection.cursor` 是否等于 `events.jsonl` 行数；
+6. Conversation Event Store 是否出现同一 `runId`；
+7. SSE sequence 是否送达浏览器；
+8. 前端 `subAgentReducer` 是否按 `runId` 归并。
+
+判断：
+
+- `events.jsonl` 不增长：Runtime 内部卡住或未携带 `RuntimeExecutionIdentity`；
+- 文件增长而 cursor 不前进：Conversation 投影失败，检查
+  `SubAgentConversationProjectionWorker` 日志；
+- cursor 前进而浏览器不可见：检查 Session SSE 的 Last-Event-ID 和 gap recovery；
+- UI 有 `llm.started` 无 completed/failed：Provider 调用或取消传播卡住；
+- UI 有 `tool.started` 无 completed/failed：工具执行、审批或终端进程卡住；
+- `run.json=running` 但已有终态事件：进程曾在事件和 manifest 更新之间退出，
+  再次终态提交应使用稳定 eventId 幂等修复；
+- 超时显示 failed 而非 timed_out：检查 Manager 是否传递
+  `ExecutionDeadlineUtc`，Runtime 不得从错误文本猜测超时。
+
+`SubAgentIndicator` 不允许通过恢复 5 秒轮询“修复”Running。轮询只会掩盖
+事件链断点；应修复产生、归档、投影或 reducer 中真实断裂的一层。
+
 ## 7. 延迟问题的定位
 
 不要用“点击发送到看到回复”的总时间直接归因 LLM。应拆分：
@@ -343,6 +398,32 @@ frontend render
 - Conversation event sequence/checkpoint：投影延迟。
 
 只有在证据表明 Provider 阶段最长时，才处理 LLM 超时或 Provider 稳定性。
+
+### 7.1 子代理刷新后 Token/工具指标归零
+
+先区分“执行事件没有产生”和“bootstrap 没有恢复”：
+
+1. 查看
+   `data/workspaces/{workspaceId}/agents/{agentId}/runs/{runId}/events.jsonl`，
+   确认 `subagent.llm.completed`、`subagent.tool.completed` 和终态存在。
+2. 查询 `conversation_events`，确认相同事件具有 `run_id` 和连续 sequence。
+3. 检查 `/api/conversations/{id}/bootstrap` 的 `subAgentEvents`，确认内部
+   round/LLM/tool 事件的顶层 `runId` 没有丢失。
+4. 检查 live SSE 与 gap replay JSON 是否同样输出顶层 `runId`。
+5. 刷新前后打开子代理面板，对比 Token、工具次数、模型、轮次和终态。
+
+如果 live 正常而刷新后归零，通常不是 reducer 计算错误，而是 Event Store
+信封的 `RunId` 没有经过 bootstrap/replay 序列化，或者 bootstrap 只分页普通
+消息、未单独加载 `subagent.*` 事件。不要恢复旧 `/sub-agents` 轮询作为补偿。
+
+如果刷新后 Token 恰好成倍增长，检查相同 `eventId` 是否同时经 bootstrap、
+gap replay 和 live SSE 到达，以及 `subAgentReducer` 是否已记录并拒绝重复事件。
+不要按事件来源分别维护三套计数器。
+
+如果服务重启后仍显示历史 run 为 Running，检查
+`ISubAgentRunStore.RecoverInterruptedRunsAsync` 和
+`SubAgentConversationProjectionWorker` 启动日志。上一进程的进程内任务不能续跑，
+必须经终态仲裁提交 `subagent.run.interrupted`，不能只在前端按时间隐藏。
 
 ## 8. 浏览器验收
 
@@ -402,6 +483,7 @@ frontend render
 | Worker 不领取 | `ChatExecutionWorker`、`SqliteExecutionLeaseStore.TryAcquireAsync` |
 | 快照/LLM 配置错误 | `AgentExecutionSnapshotFactory`、`AgentRuntimeProfileResolver`、`AgentLLMConfigResolver` |
 | Agent 循环不结束 | `ExecutionRunCoordinator`、`TurnExecutorAdapter`、`AgentExecutionService` |
+| Smart/子代理卡住 | `SubAgentManager`、`AgentExecutionService`、`FileSubAgentRunStore`、`SubAgentConversationProjectionWorker`、前端 `subAgentReducer` |
 | 取消/Steering 无效 | `SqliteControlInbox`、`ExecutionControlService` |
 | 终态丢失 | `SqliteExecutionJournal.CommitTerminalAsync` |
 | 历史缺失 | `ConversationProjectionWorker`、`ConversationProjector`、`ChatTranscriptWriter` |

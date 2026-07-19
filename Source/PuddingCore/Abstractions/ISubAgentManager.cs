@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
@@ -103,7 +103,9 @@ public sealed record SubAgentSpawnRequest
     /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
     public required LlmConfig LlmConfig { get; init; }
     /// <summary>调用入口已解析的不可变 Provider/Profile/Model 路由身份。</summary>
-    public required LlmInvocationProfile LlmProfile { get; init; }
+        public required LlmInvocationProfile LlmProfile { get; init; }
+    /// <summary>父代理上下文快照（Fork + 剪枝后）。非空时 ContextPipeline 注入 INHERITED-CONTEXT 层。</summary>
+    public string? ParentContextSnapshot { get; init; }
     public int MaxRounds { get; init; } = 10;
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public string? TaskPlanId { get; init; }
@@ -117,12 +119,17 @@ public sealed record SubAgentSpawnRequest
     public string? AssignedObjective { get; init; }
     public string? ExpectedOutputContract { get; init; }
     public int? TimeoutSeconds { get; init; }
+    public string? InvocationId { get; init; }
+    public string? BatchId { get; init; }
+    public string OriginToolId { get; init; } = "spawn_sub_agent";
+    public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
 }
 
 /// <summary>子代理创建结果。</summary>
 public sealed record SubAgentSpawnResult
 {
     public required string SubSessionId { get; init; }
+    public string? RunId { get; init; }
     public bool Success { get; init; }
     public string? Error { get; init; }
 }
@@ -131,6 +138,7 @@ public sealed record SubAgentSpawnResult
 public sealed record SubAgentExecuteResult
 {
     public required string SubSessionId { get; init; }
+    public string? RunId { get; init; }
     public bool Success { get; init; }
     public string? Reply { get; init; }
     public string? Error { get; init; }

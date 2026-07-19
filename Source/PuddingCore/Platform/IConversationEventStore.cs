@@ -42,6 +42,17 @@ public interface IConversationEventStore
         CancellationToken ct);
 
     /// <summary>
+    /// 按事件类型前缀反向读取；用于 bootstrap 恢复独立运行投影，
+    /// 避免从大量 message.delta 中猜测或截断子系统状态。
+    /// </summary>
+    Task<EventPage> ReadByTypePrefixBackwardAsync(
+        string conversationId,
+        string typePrefix,
+        long beforeExclusive,
+        int limit,
+        CancellationToken ct);
+
+    /// <summary>
     /// 获取 conversation 的事件边界。
     /// </summary>
     Task<EventBounds> GetBoundsAsync(

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -62,6 +62,7 @@ public sealed class SubAgentManager : ISubAgentManager
         SubAgentSpawnRequest request,
         CancellationToken ct = default)
     {
+        request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
         var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var spawnedAt = DateTimeOffset.UtcNow;
@@ -87,25 +88,9 @@ public sealed class SubAgentManager : ISubAgentManager
         }, ct);
 
         // 2. 创建子代理运行归档（ADR-021）
-        var runHandle = await _runStore.CreateRunAsync(new SubAgentRunCreateRequest
-        {
-            ParentSessionId = request.ParentSessionId,
-            SubSessionId = subSessionId,
-            WorkspaceId = request.WorkspaceId,
-            AgentInstanceId = request.ParentAgentId ?? subSessionId,
-            TemplateId = request.TemplateId,
-            Task = request.TaskDescription,
-            TaskPlanId = request.TaskPlanId,
-            TaskNodeId = request.TaskNodeId,
-            ParentTaskNodeId = request.ParentTaskNodeId,
-            DelegationDepth = request.DelegationDepth,
-            MaxDelegationDepth = request.MaxDelegationDepth,
-            RoleInPlan = request.RoleInPlan,
-            AllowSubDelegation = request.AllowSubDelegation,
-            AllowAgentCreation = request.AllowAgentCreation,
-            AssignedObjective = request.AssignedObjective,
-            ExpectedOutputContract = request.ExpectedOutputContract,
-        }, ct);
+        var runHandle = await _runStore.CreateRunAsync(
+            BuildRunCreateRequest(request, subSessionId),
+            ct);
 
         // 将 runId 存入内存映射（供完成回调使用）
         _runIdMap[subSessionId] = runHandle.RunId;
@@ -173,7 +158,12 @@ public sealed class SubAgentManager : ISubAgentManager
             {
                 var r = await ExecuteAsyncSubAgentWithLimitsAsync(
                     request,
-                    runCt => DispatchChildAgentAsync(subSessionId, request, runCt),
+                    (timeoutSeconds, runCt) => DispatchChildAgentAsync(
+                        subSessionId,
+                        runId,
+                        request,
+                        timeoutSeconds,
+                        runCt),
                     CancellationToken.None);
                 var completedAt = DateTimeOffset.UtcNow;
                 bool success = r.IsSuccess;
@@ -198,8 +188,8 @@ public sealed class SubAgentManager : ISubAgentManager
                     CompletedAt = completedAt,
                 }, CancellationToken.None);
 
-                // AgentExecutionService 是 execution terminal 状态的唯一写入者；
-                // Manager 只清理 subSessionId -> runId 映射，并保留 run_id 供事件诊断。
+                // 正常路径由 Runtime 提交终态；异常边界由 Manager 兜底尝试。
+                // ISubAgentRunStore 负责终态唯一性与幂等投影。
                 string? completedRunId = null;
                 if (_runIdMap.TryRemove(subSessionId, out var removedRunId))
                 {
@@ -356,6 +346,7 @@ public sealed class SubAgentManager : ISubAgentManager
         return new SubAgentSpawnResult
         {
             SubSessionId = subSessionId,
+            RunId = runHandle.RunId,
             Success = true,
         };
     }
@@ -364,26 +355,109 @@ public sealed class SubAgentManager : ISubAgentManager
         SubAgentSpawnRequest request,
         CancellationToken ct = default)
     {
+        request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
         var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var trace = ResolveTrace(request, subSessionId);
+        var spawnedAt = DateTimeOffset.UtcNow;
+        var runHandle = await _runStore.CreateRunAsync(
+            BuildRunCreateRequest(request, subSessionId),
+            ct);
+        _runIdMap[subSessionId] = runHandle.RunId;
 
         _logger.LogInformation("[SubAgentMgr] Execute sync parent={Parent} sub={Sub} template={Template}",
             request.ParentSessionId, subSessionId, request.TemplateId);
 
+        // 旧查询接口在前端切换到 canonical Conversation 投影前继续作为只读兼容视图。
+        await _ssm.TrackSubAgentStartAsync(request.ParentSessionId, new SubAgentSpawnInfo
+        {
+            SubSessionId = subSessionId,
+            ParentSessionId = request.ParentSessionId,
+            ParentAgentId = request.ParentAgentId,
+            TemplateId = request.TemplateId,
+            ModelId = request.LlmProfile.ModelId,
+            TaskSummary = request.TaskDescription.Length > 200
+                ? request.TaskDescription[..200] + "..."
+                : request.TaskDescription,
+            SpawnedAt = spawnedAt,
+        }, ct);
+
         await RecordActivityAsync(trace, "execute_sync", RuntimeActivityStatuses.Started,
             $"Executing sync sub-agent {subSessionId}", ct);
 
-        var r = await DispatchChildAgentAsync(subSessionId, request, ct);
+        dynamic r;
+        try
+        {
+            r = await ExecuteAsyncSubAgentWithLimitsAsync(
+                request,
+                (timeoutSeconds, runCt) => DispatchChildAgentAsync(
+                    subSessionId,
+                    runHandle.RunId,
+                    request,
+                    timeoutSeconds,
+                    runCt),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _runIdMap.TryRemove(subSessionId, out _);
+            var status = ex is TimeoutException
+                ? "timed_out"
+                : ex is OperationCanceledException
+                    ? "cancelled"
+                    : "failed";
+            await _runStore.CompleteRunAsync(
+                runHandle.RunId,
+                new SubAgentRunCompletion
+                {
+                    Status = status,
+                    ErrorMessage = ex.Message,
+                },
+                CancellationToken.None);
+            await _ssm.TrackSubAgentCompleteAsync(
+                subSessionId,
+                new SubAgentResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                },
+                CancellationToken.None);
+            await RecordActivityAsync(
+                trace,
+                "execute_sync",
+                ex is OperationCanceledException
+                    ? RuntimeActivityStatuses.Cancelled
+                    : RuntimeActivityStatuses.Failed,
+                ex.Message,
+                CancellationToken.None);
+            throw;
+        }
 
         await RecordActivityAsync(trace, "execute_sync",
             r.IsSuccess ? RuntimeActivityStatuses.Succeeded : RuntimeActivityStatuses.Failed,
             r.IsSuccess ? $"Sync sub-agent {subSessionId} completed" : r.ErrorMessage,
             ct);
 
+        await _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
+        {
+            Success = r.IsSuccess,
+            Reply = r.ReplyText,
+            Error = r.ErrorMessage,
+            Usage = r.Usage,
+            ToolFailureCount = r.ToolFailureCount,
+            ToolOutputTruncatedCount = r.ToolOutputTruncatedCount,
+            ToolOutputChars = r.ToolOutputChars,
+            ToolFailureSummary = r.ToolFailureSummary,
+            CompletedAt = DateTimeOffset.UtcNow,
+        }, CancellationToken.None);
+        _runIdMap.TryRemove(subSessionId, out _);
+
         return new SubAgentExecuteResult
         {
-            SubSessionId = subSessionId, Success = r.IsSuccess,
+            SubSessionId = subSessionId,
+            RunId = runHandle.RunId,
+            Success = r.IsSuccess,
             Reply = r.ReplyText, Error = r.ErrorMessage, Usage = r.Usage,
         };
     }
@@ -536,7 +610,7 @@ public sealed class SubAgentManager : ISubAgentManager
 
     private async Task<T> ExecuteAsyncSubAgentWithLimitsAsync<T>(
         SubAgentSpawnRequest request,
-        Func<CancellationToken, Task<T>> action,
+        Func<int, CancellationToken, Task<T>> action,
         CancellationToken ct)
     {
         var options = ResolveRuntimeExecutionOptions().SubAgents;
@@ -565,7 +639,7 @@ public sealed class SubAgentManager : ISubAgentManager
 
             try
             {
-                return await action(timeoutCts.Token);
+                return await action(timeoutSeconds, timeoutCts.Token);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
@@ -579,8 +653,19 @@ public sealed class SubAgentManager : ISubAgentManager
         }
     }
 
-    private Task<dynamic> DispatchChildAgentAsync(string subSessionId, SubAgentSpawnRequest request, CancellationToken ct)
-        => DispatchChildAgentImpl(subSessionId, request, _services, ct);
+    private Task<dynamic> DispatchChildAgentAsync(
+        string subSessionId,
+        string runId,
+        SubAgentSpawnRequest request,
+        int timeoutSeconds,
+        CancellationToken ct)
+        => DispatchChildAgentImpl(
+            subSessionId,
+            runId,
+            request,
+            timeoutSeconds,
+            _services,
+            ct);
 
     private RuntimeExecutionOptions ResolveRuntimeExecutionOptions()
     {
@@ -761,7 +846,9 @@ public sealed class SubAgentManager : ISubAgentManager
 
     private static async Task<dynamic> DispatchChildAgentImpl(
         string subSessionId,
+        string runId,
         SubAgentSpawnRequest request,
+        int timeoutSeconds,
         IServiceProvider services,
         CancellationToken ct)
     {
@@ -781,8 +868,11 @@ public sealed class SubAgentManager : ISubAgentManager
             WorkingDirectory = request.WorkingDirectory,
             CapabilityPolicy = request.CapabilityPolicy,
             LlmConfig = request.LlmConfig,
-            LlmProfile = request.LlmProfile,
+                        LlmProfile = request.LlmProfile,
+            ParentContextSnapshot = request.ParentContextSnapshot,
             MaxRounds = request.MaxRounds,
+            MaxElapsedSeconds = timeoutSeconds,
+            ExecutionDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds),
             TaskPlanId = request.TaskPlanId,
             TaskNodeId = request.TaskNodeId,
             ParentTaskNodeId = request.ParentTaskNodeId,
@@ -793,9 +883,74 @@ public sealed class SubAgentManager : ISubAgentManager
             AllowAgentCreation = request.AllowAgentCreation,
             AssignedObjective = request.AssignedObjective,
             ExpectedOutputContract = request.ExpectedOutputContract,
+            ExecutionIdentity = BuildChildExecutionIdentity(request, runId),
         };
 
         return await dispatcher.DispatchAsync(childReq, ct);
+    }
+
+    private static SubAgentSpawnRequest NormalizeRequestIdentity(SubAgentSpawnRequest request)
+        => request with
+        {
+            InvocationId = string.IsNullOrWhiteSpace(request.InvocationId)
+                ? $"subinv-{Guid.NewGuid():N}"
+                : request.InvocationId.Trim(),
+            OriginToolId = string.IsNullOrWhiteSpace(request.OriginToolId)
+                ? "spawn_sub_agent"
+                : request.OriginToolId.Trim(),
+        };
+
+    private static SubAgentRunCreateRequest BuildRunCreateRequest(
+        SubAgentSpawnRequest request,
+        string subSessionId) => new()
+    {
+        ParentSessionId = request.ParentSessionId,
+        SubSessionId = subSessionId,
+        WorkspaceId = request.WorkspaceId,
+        AgentInstanceId = request.ParentAgentId ?? subSessionId,
+        TemplateId = request.TemplateId,
+        Task = request.TaskDescription,
+        TaskPlanId = request.TaskPlanId,
+        TaskNodeId = request.TaskNodeId,
+        ParentTaskNodeId = request.ParentTaskNodeId,
+        DelegationDepth = request.DelegationDepth,
+        MaxDelegationDepth = request.MaxDelegationDepth,
+        RoleInPlan = request.RoleInPlan,
+        AllowSubDelegation = request.AllowSubDelegation,
+        AllowAgentCreation = request.AllowAgentCreation,
+        AssignedObjective = request.AssignedObjective,
+        ExpectedOutputContract = request.ExpectedOutputContract,
+        InvocationId = request.InvocationId,
+        BatchId = request.BatchId,
+        OriginToolId = request.OriginToolId,
+        ProviderId = request.LlmProfile.ProviderId,
+        ProfileId = request.LlmProfile.ProfileId,
+        ModelId = request.LlmProfile.ModelId,
+        TimeoutSeconds = request.TimeoutSeconds,
+        MaxRounds = request.MaxRounds,
+        ParentExecutionIdentity = request.ParentExecutionIdentity,
+    };
+
+    private static RuntimeExecutionIdentity BuildChildExecutionIdentity(
+        SubAgentSpawnRequest request,
+        string runId)
+    {
+        var parent = request.ParentExecutionIdentity;
+        return new RuntimeExecutionIdentity
+        {
+            Kind = RuntimeExecutionKind.SubAgent,
+            ConversationId = parent?.ConversationId ?? request.ParentSessionId,
+            TurnId = parent?.TurnId,
+            CommandId = parent?.CommandId,
+            RunId = runId,
+            MessageId = parent?.MessageId,
+            ToolCallId = parent?.ToolCallId,
+            ParentRunId = parent?.RunId,
+            InvocationId = request.InvocationId,
+            BatchId = request.BatchId,
+            OriginToolId = request.OriginToolId,
+            Role = request.RoleInPlan,
+        };
     }
 
     private static void ValidateLlmRoute(SubAgentSpawnRequest request)

@@ -1,46 +1,46 @@
-// ── SubAgentIndicator：状态栏子代理运行状态指示器 + 点击弹出管理器面板 ────
-
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   CloseOutlined,
-  ReloadOutlined,
+  ClockCircleOutlined,
   SendOutlined,
   SyncOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
-import {
-  Button,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  getSessionSubAgents,
-  type SubAgentStatusDto,
-} from '../../../services/platform/api';
+import { Modal, Progress, Select, Space, Tag, Tooltip, Typography } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type {
+  SubAgentCard,
+  SubAgentCardMap,
+  SubAgentCardStatus,
+} from '../types';
 import { useChatStyles } from '../styles';
 
 const { Text } = Typography;
 
 interface SubAgentIndicatorProps {
   sessionId?: string | null;
+  subAgentCards?: SubAgentCardMap;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   renderTrigger?: boolean;
 }
 
-const POLL_INTERVAL = 5000;
 type TimeRangeFilter = '1d' | '7d' | '30d' | 'all';
 
+const terminalStatuses = new Set<SubAgentCardStatus>([
+  'completed',
+  'failed',
+  'cancelled',
+  'timed_out',
+  'interrupted',
+]);
+
 const statusConfig: Record<
-  string,
+  SubAgentCardStatus,
   { color: string; label: string; icon: React.ReactNode }
 > = {
+  spawning: { color: '#faad14', label: '创建中', icon: <SyncOutlined spin /> },
   running: { color: '#22c55e', label: '运行中', icon: <SyncOutlined spin /> },
   completed: {
     color: '#3b82f6',
@@ -48,99 +48,226 @@ const statusConfig: Record<
     icon: <CheckCircleOutlined />,
   },
   failed: { color: '#ef4444', label: '失败', icon: <CloseCircleOutlined /> },
+  cancelled: {
+    color: '#8c8c8c',
+    label: '已取消',
+    icon: <CloseCircleOutlined />,
+  },
+  timed_out: {
+    color: '#fa8c16',
+    label: '已超时',
+    icon: <ClockCircleOutlined />,
+  },
+  interrupted: {
+    color: '#722ed1',
+    label: '已中断',
+    icon: <CloseCircleOutlined />,
+  },
 };
+
+const phaseLabel: Record<string, string> = {
+  created: '已登记',
+  starting: '启动运行时',
+  context: '装配上下文',
+  round: '处理轮次',
+  llm: '调用模型',
+  tool: '执行工具',
+  completed: '运行结束',
+};
+
+const formatDuration = (durationMs: number): string => {
+  if (durationMs < 1000) return `${Math.max(0, Math.round(durationMs))}ms`;
+  const seconds = Math.floor(durationMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remain = seconds % 60;
+  return `${minutes}m ${remain}s`;
+};
+
+const formatTokens = (tokens?: number): string => {
+  if (!tokens) return '0';
+  if (tokens < 1000) return String(tokens);
+  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}K`;
+  return `${(tokens / 1_000_000).toFixed(2)}M`;
+};
+
+const shortId = (id: string): string =>
+  id.length > 18 ? `${id.slice(0, 7)}…${id.slice(-7)}` : id;
 
 const SubAgentIndicator: React.FC<SubAgentIndicatorProps> = ({
   sessionId,
+  subAgentCards = {},
   open,
   onOpenChange,
   renderTrigger = true,
 }) => {
   const { styles } = useChatStyles();
-  const [runningCount, setRunningCount] = useState(0);
-  const [lastCompleted, setLastCompleted] = useState<string | undefined>();
   const [internalPanelOpen, setInternalPanelOpen] = useState(false);
-  const [subAgents, setSubAgents] = useState<SubAgentStatusDto[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<string>('all');
+  const [filter, setFilter] = useState<SubAgentCardStatus | 'all'>('all');
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('7d');
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [now, setNow] = useState(Date.now());
   const panelOpen = open ?? internalPanelOpen;
+
   const setPanelOpen = useCallback(
     (nextOpen: boolean) => {
-      if (open === undefined) {
-        setInternalPanelOpen(nextOpen);
-      }
+      if (open === undefined) setInternalPanelOpen(nextOpen);
       onOpenChange?.(nextOpen);
     },
     [onOpenChange, open],
   );
 
-  const fetchSubAgents = useCallback(async () => {
-    if (!sessionId) return undefined;
-    try {
-      setLoading(true);
-      const data = await getSessionSubAgents(sessionId);
-      setSubAgents(data);
-      setRunningCount(data.filter((s) => s.status === 'running').length);
-      const lastDone = data.find((s) => s.status === 'completed');
-      setLastCompleted(lastDone?.subSessionId?.slice(-12));
-    } catch {
-      // silent fail
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId]);
+  const subAgents = useMemo(
+    () =>
+      Object.values(subAgentCards)
+        .filter(
+          (card) =>
+            !sessionId ||
+            !card.parentSessionId ||
+            card.parentSessionId === sessionId,
+        )
+        .sort((a, b) => b.spawnedAt - a.spawnedAt),
+    [sessionId, subAgentCards],
+  );
 
-  // 面板打开时定时轮询
-  useEffect(() => {
-    if (panelOpen && sessionId) {
-      fetchSubAgents();
-      timerRef.current = setInterval(fetchSubAgents, POLL_INTERVAL);
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-    return undefined;
-  }, [panelOpen, sessionId, fetchSubAgents]);
-
-  // sessionId 变化时刷新
-  useEffect(() => {
-    fetchSubAgents();
-  }, [sessionId, fetchSubAgents]);
-
+  const runningCount = subAgents.filter(
+    (item) => item.status === 'running' || item.status === 'spawning',
+  ).length;
   const active = runningCount > 0;
+  const lastCompleted = subAgents.find((item) =>
+    terminalStatuses.has(item.status),
+  );
 
-  const timeFilteredAgents = React.useMemo(() => {
+  useEffect(() => {
+    if (!panelOpen || !active) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active, panelOpen]);
+
+  const timeFilteredAgents = useMemo(() => {
     if (timeRange === 'all') return subAgents;
     const days = timeRange === '1d' ? 1 : timeRange === '30d' ? 30 : 7;
-    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-    return subAgents.filter((item) => {
-      if (item.status === 'running') return true;
-      const ts = Date.parse(item.completedAt ?? item.spawnedAt);
-      return Number.isFinite(ts) && ts >= cutoff;
-    });
-  }, [subAgents, timeRange]);
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    return subAgents.filter(
+      (item) => !terminalStatuses.has(item.status) || item.spawnedAt >= cutoff,
+    );
+  }, [now, subAgents, timeRange]);
 
   const filteredAgents =
     filter === 'all'
       ? timeFilteredAgents
-      : timeFilteredAgents.filter((s) => s.status === filter);
+      : timeFilteredAgents.filter((item) => item.status === filter);
 
-  const shortId = (id: string) => (id.length > 16 ? '...' + id.slice(-12) : id);
+  const renderRun = (run: SubAgentCard) => {
+    const cfg = statusConfig[run.status] ?? statusConfig.failed;
+    const endAt = run.completedAt ?? now;
+    const elapsedMs = Math.max(0, endAt - run.spawnedAt);
+    const timeoutMs = (run.timeoutSeconds ?? 0) * 1000;
+    const timeoutPercent =
+      timeoutMs > 0 && !terminalStatuses.has(run.status)
+        ? Math.min(100, Math.round((elapsedMs / timeoutMs) * 100))
+        : undefined;
+    const roundText = run.maxRounds
+      ? `${run.currentRound ?? 0}/${run.maxRounds}`
+      : String(run.currentRound ?? 0);
 
-  const formatTime = (iso?: string) => {
-    if (!iso) return '-';
-    return new Date(iso).toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+    return (
+      <div
+        key={run.runId ?? run.subSessionId}
+        data-testid={`subagent-run-${run.runId ?? run.subSessionId}`}
+        style={{
+          padding: '12px 14px',
+          marginBottom: 10,
+          borderRadius: 8,
+          background: 'var(--ant-color-fill-secondary)',
+          borderLeft: `3px solid ${cfg.color}`,
+          fontSize: 12,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 12,
+            alignItems: 'flex-start',
+          }}
+        >
+          <Space size={6} wrap>
+            <span>{cfg.icon}</span>
+            <Tag color={cfg.color} style={{ margin: 0 }}>
+              {cfg.label}
+            </Tag>
+            <Tag style={{ margin: 0 }}>
+              {phaseLabel[run.phase ?? ''] ?? run.phase ?? '运行中'}
+            </Tag>
+            {run.originToolId && <Tag color="geekblue">{run.originToolId}</Tag>}
+            {run.role && <Tag color="cyan">{run.role}</Tag>}
+          </Space>
+          <Text code style={{ fontSize: 10 }} copyable={Boolean(run.runId)}>
+            {shortId(run.runId ?? run.subSessionId)}
+          </Text>
+        </div>
+
+        <div style={{ marginTop: 8, lineHeight: 1.55 }}>
+          {run.taskSummary}
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: '6px 12px',
+            marginTop: 10,
+            color: 'var(--ant-color-text-secondary)',
+          }}
+        >
+          <span>模型：{run.modelId ?? '-'}</span>
+          <span>Provider：{run.providerId ?? '-'}</span>
+          <span>轮次：{roundText}</span>
+          <span>耗时：{formatDuration(elapsedMs)}</span>
+          <span>Token：{formatTokens(run.totalTokens)}</span>
+          <span>
+            工具：{run.toolCount ?? 0}
+            {run.failedToolCount ? ` / 失败 ${run.failedToolCount}` : ''}
+          </span>
+        </div>
+
+        {run.activeToolName && (
+          <div style={{ marginTop: 8 }}>
+            <ToolOutlined /> 正在调用：<Text code>{run.activeToolName}</Text>
+          </div>
+        )}
+        {!run.activeToolName && run.lastToolName && (
+          <div style={{ marginTop: 8, color: 'var(--ant-color-text-secondary)' }}>
+            最近工具：<Text code>{run.lastToolName}</Text>
+          </div>
+        )}
+
+        {timeoutPercent !== undefined && (
+          <div style={{ marginTop: 8 }}>
+            <Progress
+              size="small"
+              percent={timeoutPercent}
+              status={timeoutPercent >= 90 ? 'exception' : 'active'}
+              format={() =>
+                `超时预算 ${formatDuration(elapsedMs)} / ${formatDuration(timeoutMs)}`
+              }
+            />
+          </div>
+        )}
+
+        {run.error && (
+          <div
+            style={{
+              marginTop: 8,
+              color: 'var(--ant-color-error)',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {run.error}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -149,9 +276,9 @@ const SubAgentIndicator: React.FC<SubAgentIndicatorProps> = ({
         <Tooltip
           title={
             active
-              ? `${runningCount} 个子代理运行中${lastCompleted ? ' · 最近完成: ' + lastCompleted : ''}`
+              ? `${runningCount} 个子代理运行中`
               : lastCompleted
-                ? '子代理空闲 · 最近完成: ' + lastCompleted
+                ? `子代理空闲 · 最近 ${statusConfig[lastCompleted.status].label}`
                 : '子代理空闲'
           }
         >
@@ -175,7 +302,7 @@ const SubAgentIndicator: React.FC<SubAgentIndicatorProps> = ({
                 fontWeight: active ? 600 : undefined,
               }}
             >
-              {active ? `${runningCount}` : '0'}
+              {runningCount}
             </span>
           </span>
         </Tooltip>
@@ -187,20 +314,18 @@ const SubAgentIndicator: React.FC<SubAgentIndicatorProps> = ({
             <SendOutlined
               style={{ color: active ? '#22c55e' : 'var(--earth-brown)' }}
             />
-            <span>子代理管理器</span>
-            {sessionId && (
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {shortId(sessionId)}
-              </Text>
-            )}
+            <span>子代理运行</span>
+            <Tag color={active ? 'green' : 'default'}>
+              {active ? `${runningCount} 运行中` : '实时事件已连接'}
+            </Tag>
           </Space>
         }
         open={panelOpen}
         onCancel={() => setPanelOpen(false)}
         footer={null}
-        width={560}
+        width={760}
         styles={{
-          body: { maxHeight: '60vh', overflowY: 'auto', padding: '12px 16px' },
+          body: { maxHeight: '68vh', overflowY: 'auto', padding: '12px 16px' },
         }}
         closeIcon={<CloseOutlined />}
       >
@@ -226,14 +351,11 @@ const SubAgentIndicator: React.FC<SubAgentIndicatorProps> = ({
               { value: 'all', label: '全部记录' },
             ]}
           />
-          <Button
-            size="small"
-            icon={<ReloadOutlined spin={loading} />}
-            onClick={fetchSubAgents}
-          >
-            刷新
-          </Button>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            状态来自会话 SSE；断线后按 sequence 自动补放
+          </Text>
         </div>
+
         <div
           style={{
             marginBottom: 12,
@@ -242,137 +364,45 @@ const SubAgentIndicator: React.FC<SubAgentIndicatorProps> = ({
             flexWrap: 'wrap',
           }}
         >
-          {(['all', 'running', 'completed', 'failed'] as const).map((f) => (
+          {(
+            [
+              'all',
+              'running',
+              'completed',
+              'failed',
+              'timed_out',
+              'cancelled',
+            ] as const
+          ).map((value) => (
             <Tag
-              key={f}
-              color={
-                filter === f
-                  ? f === 'running'
-                    ? 'green'
-                    : f === 'failed'
-                      ? 'red'
-                      : f === 'completed'
-                        ? 'blue'
-                        : undefined
-                  : undefined
-              }
-              style={{ cursor: 'pointer', opacity: filter === f ? 1 : 0.5 }}
-              onClick={() => setFilter(f)}
+              key={value}
+              color={filter === value ? 'blue' : undefined}
+              style={{ cursor: 'pointer', opacity: filter === value ? 1 : 0.6 }}
+              onClick={() => setFilter(value)}
             >
-              {f === 'all'
+              {value === 'all'
                 ? `全部 (${timeFilteredAgents.length})`
-                : f === 'running'
-                  ? `运行中 (${timeFilteredAgents.filter((s) => s.status === 'running').length})`
-                  : f === 'completed'
-                    ? `已完成 (${timeFilteredAgents.filter((s) => s.status === 'completed').length})`
-                    : `失败 (${timeFilteredAgents.filter((s) => s.status === 'failed').length})`}
+                : `${statusConfig[value].label} (${
+                    timeFilteredAgents.filter((item) => item.status === value)
+                      .length
+                  })`}
             </Tag>
           ))}
         </div>
 
-        {loading && filteredAgents.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 20 }}>
-            <Spin />
-          </div>
-        )}
-
-        {!loading && filteredAgents.length === 0 && (
+        {filteredAgents.length === 0 ? (
           <div
             style={{
               textAlign: 'center',
-              padding: 20,
-              color: 'var(--earth-brown)',
-              opacity: 0.5,
+              padding: 24,
+              color: 'var(--ant-color-text-secondary)',
             }}
           >
-            暂无子代理记录
+            暂无子代理运行事件
           </div>
+        ) : (
+          filteredAgents.map(renderRun)
         )}
-
-        {filteredAgents.map((sa) => {
-          const cfg = statusConfig[sa.status] || statusConfig.failed;
-          return (
-            <div
-              key={sa.subSessionId}
-              style={{
-                padding: '8px 12px',
-                marginBottom: 6,
-                borderRadius: 6,
-                background: 'var(--ant-color-fill-secondary)',
-                borderLeft: `3px solid ${cfg.color}`,
-                fontSize: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 4,
-                }}
-              >
-                <Space size={4}>
-                  <span>{cfg.icon}</span>
-                  <Tag
-                    color={cfg.color}
-                    style={{ margin: 0, fontSize: 10, lineHeight: '16px' }}
-                  >
-                    {cfg.label}
-                  </Tag>
-                  <Text code style={{ fontSize: 10 }}>
-                    {shortId(sa.subSessionId)}
-                  </Text>
-                </Space>
-                <Space size={4}>
-                  {sa.templateId && (
-                    <Tag style={{ fontSize: 10 }}>{sa.templateId}</Tag>
-                  )}
-                  {sa.modelId && (
-                    <Tag style={{ fontSize: 10 }} color="purple">
-                      {sa.modelId}
-                    </Tag>
-                  )}
-                </Space>
-              </div>
-              <div
-                style={{
-                  color: 'var(--earth-brown)',
-                  marginBottom: 4,
-                  lineHeight: 1.5,
-                }}
-              >
-                {sa.taskSummary}
-              </div>
-              <Space
-                size={8}
-                style={{
-                  fontSize: 10,
-                  color: 'var(--earth-brown)',
-                  opacity: 0.6,
-                }}
-              >
-                <span>创建: {formatTime(sa.spawnedAt)}</span>
-                {sa.completedAt && (
-                  <span>完成: {formatTime(sa.completedAt)}</span>
-                )}
-              </Space>
-              {sa.resultSummary && (
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: 10,
-                    color: 'var(--earth-brown)',
-                    opacity: 0.5,
-                    maxHeight: 40,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {sa.resultSummary}
-                </div>
-              )}
-            </div>
-          );
-        })}
       </Modal>
     </>
   );
