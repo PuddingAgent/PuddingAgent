@@ -215,6 +215,15 @@ Channel 生命周期状态机：
 - 子代理状态查询（"当前有几个在运行"）需要 O(1)，不应扫描事件日志
 - 子代理表的字段（status/running→completed）比事件日志更适合状态机管理
 
+**2026-07-19 演进：池化复用语义**
+
+- `session_sub_agents` 是按 `SubSessionId` 唯一的当前状态投影，不是执行历史表。
+- 池化子代理创建只预留会话身份，不创建空 run，也不触发后台执行。
+- 每次执行生成新的 `runId`；同一 `SubSessionId` 启动时用原子 UPSERT 重置为
+  `running`，清空上一轮终态字段。
+- 禁止通过捕获全部数据库异常或跳过 `TrackSubAgentStartAsync` 绕开唯一约束；真实
+  Schema/存储错误必须失败并进入诊断链路。
+
 ---
 
 ## 3. 领域模型

@@ -51,14 +51,16 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         }
     }
 
-    private async Task<ToolExecutionResult> HandleListAsync(string sessionId)
+        private async Task<ToolExecutionResult> HandleListAsync(string sessionId)
     {
         var agents = await _mgr.GetSubAgentsAsync(sessionId);
         if (agents.Count == 0)
             return Ok("当前会话没有任何子代理记录。");
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"📊 子代理列表（共 {agents.Count} 个）:\n");
+        var totalTokens = agents.Sum(a => a.TokenSummary?.TotalTokens ?? 0);
+        var totalCost = agents.Sum(a => a.TokenSummary?.TotalCost ?? 0);
+        sb.AppendLine($"📊 子代理列表（共 {agents.Count} 个，合计 {totalTokens:N0} tokens / ${totalCost:F4}）:\n");
         foreach (var sa in agents)
         {
             var icon = sa.Status switch { "running" => "🔄", "completed" => "✅", "failed" => "❌", _ => "❓" };
@@ -67,24 +69,33 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
             sb.AppendLine($"   模板: {sa.TemplateId ?? "默认"} | 模型: {sa.ModelId ?? "默认"}");
             sb.AppendLine($"   任务: {sa.TaskSummary}");
             sb.AppendLine($"   创建: {sa.SpawnedAt:HH:mm:ss} | 完成: {sa.CompletedAt?.ToString("HH:mm:ss") ?? "-"}");
+            if (sa.TokenSummary is { } ts)
+            {
+                var hitRate = ts.TotalTokens > 0 ? (double)ts.CacheHitTokens / ts.TotalTokens * 100 : 0;
+                sb.AppendLine($"   Token: {ts.TotalTokens:N0} | 缓存命中: {hitRate:F1}% | 费用: ${ts.TotalCost:F4} | 请求: {ts.RequestCount}");
+            }
         }
         return Ok(sb.ToString().Trim());
     }
 
-    private async Task<ToolExecutionResult> HandleStatsAsync(string sessionId)
+        private async Task<ToolExecutionResult> HandleStatsAsync(string sessionId)
     {
         var stats = await _mgr.GetStatsAsync(sessionId);
+        var agents = await _mgr.GetSubAgentsAsync(sessionId);
+        var totalTokens = agents.Sum(a => a.TokenSummary?.TotalTokens ?? 0);
+        var totalCost = agents.Sum(a => a.TokenSummary?.TotalCost ?? 0);
+        var totalCacheHit = agents.Sum(a => a.TokenSummary?.CacheHitTokens ?? 0);
+        var overallHitRate = totalTokens > 0 ? (double)totalCacheHit / totalTokens * 100 : 0;
+
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("📈 子代理统计:");
-        sb.AppendLine($"   总计: {stats.Total}");
-        sb.AppendLine($"   运行中: {stats.Running}");
-        sb.AppendLine($"   已完成: {stats.Completed}");
-        sb.AppendLine($"   已失败: {stats.Failed}");
+        sb.AppendLine($"   总计: {stats.Total} | 运行中: {stats.Running} | 已完成: {stats.Completed} | 失败: {stats.Failed}");
+        sb.AppendLine($"   Token 合计: {totalTokens:N0} | 缓存命中率: {overallHitRate:F1}% | 费用合计: ${totalCost:F4}");
         if (stats.LastCompletedId is not null) sb.AppendLine($"   最近完成: {stats.LastCompletedId[^16..]}");
         return Ok(sb.ToString().Trim());
     }
 
-    private async Task<ToolExecutionResult> HandleStatusAsync(string? subId, string sessionId)
+        private async Task<ToolExecutionResult> HandleStatusAsync(string? subId, string sessionId)
     {
         if (string.IsNullOrWhiteSpace(subId))
             return Fail("status 操作需要 sub_agent_id 参数");
@@ -102,6 +113,13 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         sb.AppendLine($"   创建: {status.SpawnedAt:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"   完成: {status.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"}");
         if (status.ResultSummary is not null) sb.AppendLine($"   结果: {status.ResultSummary}");
+        if (status.TokenSummary is { } ts)
+        {
+            var hitRate = ts.TotalTokens > 0 ? (double)ts.CacheHitTokens / ts.TotalTokens * 100 : 0;
+            sb.AppendLine($"   ── Token 用量 ──");
+            sb.AppendLine($"   总 Token: {ts.TotalTokens:N0} | 缓存命中: {ts.CacheHitTokens:N0} | 未命中: {ts.CacheMissTokens:N0}");
+            sb.AppendLine($"   缓存命中率: {hitRate:F1}% | 费用: ${ts.TotalCost:F4} | 请求数: {ts.RequestCount}");
+        }
         return Ok(sb.ToString().Trim());
     }
 
@@ -121,19 +139,27 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         return Ok(sb.ToString().Trim());
     }
 
-    private async Task<ToolExecutionResult> HandleRecentAsync(string daysStr, string sessionId)
+        private async Task<ToolExecutionResult> HandleRecentAsync(string daysStr, string sessionId)
     {
         if (!int.TryParse(daysStr, out var days) || days < 1) days = 7;
         var results = await _mgr.GetRecentAsync(sessionId, days);
         if (results.Count == 0)
             return Ok($"最近 {days} 天没有子代理记录。");
 
+        var totalTokens = results.Sum(a => a.TokenSummary?.TotalTokens ?? 0);
+        var totalCost = results.Sum(a => a.TokenSummary?.TotalCost ?? 0);
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"📅 最近 {days} 天的子代理（共 {results.Count} 个）:\n");
+        sb.AppendLine($"📅 最近 {days} 天的子代理（共 {results.Count} 个，合计 {totalTokens:N0} tokens / ${totalCost:F4}）:\n");
         foreach (var sa in results)
         {
             var icon = sa.Status switch { "running" => "🔄", "completed" => "✅", "failed" => "❌", _ => "❓" };
-
+            var shortId = sa.SubSessionId.Length > 20 ? "..." + sa.SubSessionId[^16..] : sa.SubSessionId;
+            sb.AppendLine($"{icon} `{shortId}` [{sa.Status}] {sa.TaskSummary[..Math.Min(sa.TaskSummary.Length, 60)]}");
+            if (sa.TokenSummary is { } ts)
+            {
+                var hitRate = ts.TotalTokens > 0 ? (double)ts.CacheHitTokens / ts.TotalTokens * 100 : 0;
+                sb.AppendLine($"   Token: {ts.TotalTokens:N0} | 命中: {hitRate:F1}% | ${ts.TotalCost:F4}");
+            }
         }
         return Ok(sb.ToString().Trim());
     }

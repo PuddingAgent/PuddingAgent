@@ -140,7 +140,7 @@ metadata → delta* → [thinking → tool_call → tool_result]* → subagent.s
 | `id` | INTEGER PK | 自动递增主键 |
 | `parent_session_id` | TEXT(64) | 父会话 ID |
 | `parent_agent_id` | TEXT(64) | 父代理 ID（可为空） |
-| `sub_session_id` | TEXT(64) | 子会话 ID |
+| `sub_session_id` | TEXT(64), UNIQUE | 子会话 ID；同一池化子代理跨多次执行复用 |
 | `status` | TEXT | running / completed / failed / cancelled / timed_out |
 | `template_id` | TEXT | 子代理模板 ID |
 | `model_id` | TEXT | 使用的模型 ID |
@@ -155,7 +155,9 @@ metadata → delta* → [thinking → tool_call → tool_result]* → subagent.s
 
 ```
 TrackSubAgentStartAsync(parentSessionId, info)
-  → INSERT INTO session_sub_agents (status='running')
+  → INSERT ... ON CONFLICT(sub_session_id) DO UPDATE
+  → 首次执行：创建当前状态行
+  → 复用执行：同一父会话下重置为 running，并清空上一轮终态字段
 
 子代理执行中...
 
@@ -167,8 +169,11 @@ TrackSubAgentCompleteAsync(subSessionId, result)
 
 ### 3.3 关键约束
 
+- **当前状态与运行历史分离**：`session_sub_agents` 每个 `SubSessionId` 只保存一条可变当前状态；每次执行的不可变历史由新的 `runId` 和 `sub_agent_runs`/run archive 保存
+- **启动幂等**：`TrackSubAgentStartAsync` 必须使用数据库原子 UPSERT，禁止 query-then-insert，也禁止因复用而跳过启动状态
+- **父会话所有权**：已存在的 `SubSessionId` 只能由相同 `parent_session_id` 重置，禁止跨父会话重绑定
 - **幂等性**：`TrackSubAgentCompleteAsync` 对已处于终态（completed/failed/cancelled/timed_out）的记录不重复更新
-- **防重复终止态**：已处于终态的子代理忽略后续 complete 调用
+- **防重复终止态**：已处于终态的子代理忽略后续 complete 调用；下一次合法执行必须先由 start UPSERT 重置为 running
 - **会话关闭条件**：仅当 `GetRunningSubAgentCountAsync` 返回 0 时触发 `MarkSessionClosedAsync`
 
 ---

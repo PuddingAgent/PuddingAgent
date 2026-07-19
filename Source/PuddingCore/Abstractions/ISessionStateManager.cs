@@ -106,7 +106,11 @@ public interface ISessionStateManager
     // 子代理追踪
     // ════════════════════════════════════════════════════════
 
-    /// <summary>追踪子代理创建。</summary>
+    /// <summary>
+    /// 将子代理当前状态投影为 running。
+    /// 首次启动创建记录；复用同一 SubSessionId 时原子重置上一轮终态。
+    /// 每次执行的不可变历史由独立 runId 记录。
+    /// </summary>
     Task TrackSubAgentStartAsync(
         string parentSessionId, SubAgentSpawnInfo info,
         CancellationToken ct = default);

@@ -154,7 +154,7 @@ Source/
 ### 核心服务
 | 文件 | 用途 |
 |------|------|
-| `Services/SessionStateManager.cs` | 遗留 Session 状态与 SSE/WS 推送；Conversation Event Store 迁移完成后退出聊天事实链路 |
+| `Services/SessionStateManager.cs` | 遗留 Session 状态与 SSE/WS 推送；`session_sub_agents` 作为按 SubSessionId 唯一的当前状态投影，池化复用时用原子 UPSERT 重置终态并拒绝跨父会话重绑定 |
 | `Services/SessionStateStore.cs` | 🔑 会话状态持久化 — 重启后恢复（data/sessions/{id}.json） |
 | `Services/SessionCompactionEventEmitter.cs` | 自动压缩生命周期适配器；只写 canonical Conversation Event Store |
 | `Services/SessionRedirectStore.cs` | 会话重定向（压缩后新旧 Session 映射） |
@@ -163,7 +163,8 @@ Source/
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；从实例 manifest + `config/llm.json` 读取快照，并用 `llm.providers.json` 补齐连接配置 |
 | `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，并实现 `IAgentSelfMaintenanceService` 的受控自维护写入 |
-| `Services/SubAgentManager.cs` | 子代理统一调度边界；同步/异步统一按父 deadline 归一化子 deadline，把并发门等待计入预算，再创建 run 并进入同一 Runtime 派发链 |
+| `Services/SubAgentManager.cs` | 子代理统一调度边界；同步/异步统一按父 deadline 归一化子 deadline，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
+| `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，先写自带 `run_id` 的 events.jsonl，再按持久游标投影 canonical Conversation Event |
 | `Services/SubAgentConversationProjectionWorker.cs` | 启动时将上一进程遗留的非终态 run 仲裁为 `interrupted`，随后扫描 run archive 投影积压 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
@@ -294,6 +295,7 @@ Source/
 | 文件 | 用途 |
 |------|------|
 | `Abstractions/ISessionStateManager.cs` | 会话状态管理接口（含 Restore 方法） |
+| `Platform/SubAgentSessionId.cs` | 子代理会话 ID 唯一生成器；池预留和普通调度共用，不通过创建空 run 获取身份 |
 | `Models/SwarmSessionState.cs` | 会话状态枚举 |
 | `Services/RuntimeActivity.cs` | 运行时活动记录（Enrich 方法处理 "unknown" 合法阶段） |
 | `Configuration/PuddingDataPaths.cs` | 数据路径配置 |
@@ -428,7 +430,10 @@ ExecutionRunCoordinator（Turn 启动时冻结唯一 parent deadline）
       → SubAgentManager.ValidateLlmRoute()
       → 同步/异步统一以 parent deadline 收紧预算
       → 并发门等待计入同一个绝对 deadline
-      → 创建 runId + Runtime 派发
+      → 非池化：生成 SubSessionId；池化：复用预留 SubSessionId
+      → 每次执行创建全新 runId
+      → SessionStateManager 原子 UPSERT SubSessionId 当前状态（首次创建/复用重置）
+      → Runtime 派发
       → RuntimeExecutionIdentity 派生 child execution
       → AgentExecutionService 发出 round/LLM/tool 运行事实
       → FileSubAgentRunStore events.jsonl

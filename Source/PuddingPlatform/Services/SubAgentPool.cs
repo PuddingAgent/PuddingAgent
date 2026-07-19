@@ -151,6 +151,7 @@ public sealed class SubAgentPool
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Sub-agent pool name cannot be null or empty.", nameof(name));
 
+        PoolEntry entry;
         await _stateLock.WaitAsync(ct);
         try
         {
@@ -166,27 +167,25 @@ public sealed class SubAgentPool
                     $"Sub-agent pool is full (capacity={_maxCapacity}). " +
                     $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
             }
+
+            // 池创建只预留稳定会话标识，不创建 run，也不执行任务。
+            // 真正执行统一由 ExecuteSyncAsync 完成，否则 create → execute 会对同一
+            // SubSessionId 重叠启动两次，并污染当前状态投影与 runId 映射。
+            entry = new PoolEntry(
+                name: name,
+                subSessionId: SubAgentSessionId.Create(request.ParentSessionId),
+                templateId: request.TemplateId,
+                role: request.RoleInPlan);
+            _pool[name] = entry;
         }
         finally
         {
             _stateLock.Release();
         }
 
-        // 执行实际子代理创建（在锁外，避免长时间持锁）
-        var spawnResult = await _subAgentManager.SpawnAsync(request, ct);
-
-        var entry = new PoolEntry(
-            name: name,
-            subSessionId: spawnResult.SubSessionId,
-            templateId: request.TemplateId,
-            role: request.RoleInPlan);
-
-        // 使用 add-or-update 模式确保线程安全插入
-        _pool[name] = entry;
-
         _logger.LogInformation(
-            "[SubAgentPool] Created sub-agent '{Name}' subSessionId={Sub} template={Template}",
-            name, spawnResult.SubSessionId, request.TemplateId);
+            "[SubAgentPool] Reserved sub-agent '{Name}' subSessionId={Sub} template={Template}",
+            name, entry.SubSessionId, request.TemplateId);
 
         return entry.ToSnapshot();
     }
@@ -223,40 +222,50 @@ public sealed class SubAgentPool
             throw new ArgumentException("Sub-agent pool name cannot be null or empty.", nameof(name));
 
         // 获取或创建池条目
-        PoolEntry? entry;
-        bool needsCreate = false;
+        PoolEntry entry;
+        bool autoReserved = false;
 
         await _stateLock.WaitAsync(ct);
         try
         {
-            if (_pool.TryGetValue(name, out entry))
+            if (_pool.TryGetValue(name, out var existing))
             {
-                if (entry.Status == PooledSubAgentStatus.Busy)
+                if (existing.Status == PooledSubAgentStatus.Busy)
                 {
                     throw new InvalidOperationException(
                         $"Sub-agent '{name}' is currently busy. Wait for the current task to complete.");
                 }
-                if (entry.Status == PooledSubAgentStatus.Dead)
+                if (existing.Status == PooledSubAgentStatus.Dead)
                 {
                     throw new InvalidOperationException(
                         $"Sub-agent '{name}' has been destroyed and cannot be reused.");
                 }
 
                 // 标记为 Busy（在锁内，确保状态变更原子性）
-                entry.Status = PooledSubAgentStatus.Busy;
-                entry.LastUsedAt = DateTimeOffset.UtcNow;
+                existing.Status = PooledSubAgentStatus.Busy;
+                existing.LastUsedAt = DateTimeOffset.UtcNow;
+                entry = existing;
             }
             else
             {
-                // 不存在，需要创建
-                needsCreate = true;
-
                 if (_pool.Count >= _maxCapacity)
                 {
                     throw new InvalidOperationException(
                         $"Sub-agent pool is full (capacity={_maxCapacity}). " +
                         $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
                 }
+
+                entry = new PoolEntry(
+                    name: name,
+                    subSessionId: SubAgentSessionId.Create(request.ParentSessionId),
+                    templateId: request.TemplateId,
+                    role: request.RoleInPlan)
+                {
+                    Status = PooledSubAgentStatus.Busy,
+                    LastUsedAt = DateTimeOffset.UtcNow,
+                };
+                _pool[name] = entry;
+                autoReserved = true;
             }
         }
         finally
@@ -264,26 +273,11 @@ public sealed class SubAgentPool
             _stateLock.Release();
         }
 
-        // 自动创建路径
-        if (needsCreate)
+        if (autoReserved)
         {
-            var spawnResult = await _subAgentManager.SpawnAsync(request, ct);
-
-            entry = new PoolEntry(
-                name: name,
-                subSessionId: spawnResult.SubSessionId,
-                templateId: request.TemplateId,
-                role: request.RoleInPlan);
-
-            // 标记为 Busy
-            entry.Status = PooledSubAgentStatus.Busy;
-            entry.LastUsedAt = DateTimeOffset.UtcNow;
-
-            _pool[name] = entry;
-
             _logger.LogInformation(
-                "[SubAgentPool] Auto-created sub-agent '{Name}' subSessionId={Sub}",
-                name, spawnResult.SubSessionId);
+                "[SubAgentPool] Auto-reserved sub-agent '{Name}' subSessionId={Sub}",
+                name, entry.SubSessionId);
         }
 
         // 构建复用会话的请求：保持相同的 SubSessionId 以复用会话历史
@@ -304,7 +298,7 @@ public sealed class SubAgentPool
             await _stateLock.WaitAsync(CancellationToken.None);
             try
             {
-                if (entry != null && _pool.TryGetValue(name, out var current))
+                if (_pool.TryGetValue(name, out var current))
                 {
                     current.Status = PooledSubAgentStatus.Sleeping;
                     current.TaskCount++;
@@ -319,7 +313,7 @@ public sealed class SubAgentPool
 
             _logger.LogError(ex,
                 "[SubAgentPool] Execute failed for '{Name}' subSessionId={Sub}",
-                name, entry?.SubSessionId);
+                name, entry.SubSessionId);
 
             throw;
         }
@@ -343,7 +337,7 @@ public sealed class SubAgentPool
 
         _logger.LogInformation(
             "[SubAgentPool] Execute completed for '{Name}' success={Success} taskCount={TaskCount}",
-            name, result.Success, entry?.TaskCount + 1 ?? 0);
+            name, result.Success, entry.TaskCount);
 
         return result;
     }

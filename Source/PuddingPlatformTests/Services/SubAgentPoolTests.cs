@@ -67,7 +67,8 @@ public sealed class SubAgentPoolTests
     [TestMethod]
     public async Task CreateAsync_CreatesIdleSubAgent()
     {
-        var pool = CreatePool();
+        var manager = new TestSubAgentManager();
+        var pool = CreatePool(manager);
         var result = await pool.CreateAsync("dev-agent", CreateSpawnRequest());
 
         Assert.AreEqual("dev-agent", result.Name);
@@ -75,6 +76,8 @@ public sealed class SubAgentPoolTests
         Assert.AreEqual(0, result.TaskCount);
         Assert.IsNull(result.LastSuccess);
         Assert.IsNotNull(result.SubSessionId);
+        Assert.AreEqual(0, manager.SpawnCallCount,
+            "Pool create must reserve an identity without launching an asynchronous run.");
     }
 
     [TestMethod]
@@ -166,6 +169,9 @@ public sealed class SubAgentPoolTests
         Assert.IsNotNull(snapshot);
         Assert.AreEqual(PooledSubAgentStatus.Sleeping, snapshot!.Status);
         Assert.AreEqual(1, snapshot.TaskCount);
+        Assert.AreEqual(0, manager.SpawnCallCount,
+            "Pool create must not launch a hidden asynchronous run before ExecuteSyncAsync.");
+        Assert.AreEqual(snapshot.SubSessionId, manager.LastExecuteRequest?.ReuseSubSessionId);
         Assert.IsTrue(snapshot.LastSuccess);
     }
 
@@ -184,6 +190,9 @@ public sealed class SubAgentPoolTests
         Assert.IsNotNull(snapshot);
         Assert.AreEqual(PooledSubAgentStatus.Sleeping, snapshot!.Status);
         Assert.AreEqual(1, snapshot.TaskCount);
+        Assert.AreEqual(0, manager.SpawnCallCount,
+            "Auto-create must not launch a hidden asynchronous run before ExecuteSyncAsync.");
+        Assert.AreEqual(snapshot.SubSessionId, manager.LastExecuteRequest?.ReuseSubSessionId);
     }
 
     [TestMethod]
@@ -296,11 +305,10 @@ public sealed class SubAgentPoolTests
 
         var result = await pool.DestroyAsync("dev-agent");
         Assert.IsTrue(result);
-        Assert.AreEqual(1, pool.Count); // Count 不减，条目标记 Dead 但仍在字典
+        Assert.AreEqual(0, pool.Count);
 
         var snapshot = await pool.GetAsync("dev-agent");
-        Assert.IsNull(snapshot); // GetAsync 不过滤 Dead，但 TryGetValue 返回 true...
-        // 实际上 Count 不会减（ConcurrentDictionary 计数），但 List 中包含 Dead 条目
+        Assert.IsNull(snapshot);
     }
 
     [TestMethod]
@@ -312,7 +320,7 @@ public sealed class SubAgentPoolTests
     }
 
     [TestMethod]
-    public async Task DestroyAsync_MarksAsDead()
+    public async Task DestroyAsync_RemovesAgentFromList()
     {
         var pool = CreatePool();
         await pool.CreateAsync("dev-agent", CreateSpawnRequest());
@@ -320,8 +328,7 @@ public sealed class SubAgentPoolTests
 
         var allAgents = pool.List();
         var deadAgent = allAgents.FirstOrDefault(a => a.Name == "dev-agent");
-        Assert.IsNotNull(deadAgent);
-        Assert.AreEqual(PooledSubAgentStatus.Dead, deadAgent!.Status);
+        Assert.IsNull(deadAgent);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -425,9 +432,14 @@ public sealed class TestSubAgentManager : ISubAgentManager
     public int DelayMs { get; set; }
     public bool ShouldFail { get; set; }
     private int _spawnCounter;
+    private int _spawnCallCount;
+
+    public int SpawnCallCount => Volatile.Read(ref _spawnCallCount);
+    public SubAgentSpawnRequest? LastExecuteRequest { get; private set; }
 
     public Task<SubAgentSpawnResult> SpawnAsync(SubAgentSpawnRequest request, CancellationToken ct = default)
     {
+        Interlocked.Increment(ref _spawnCallCount);
         var id = Interlocked.Increment(ref _spawnCounter);
         return Task.FromResult(new SubAgentSpawnResult
         {
@@ -438,6 +450,7 @@ public sealed class TestSubAgentManager : ISubAgentManager
 
     public async Task<SubAgentExecuteResult> ExecuteSyncAsync(SubAgentSpawnRequest request, CancellationToken ct = default)
     {
+        LastExecuteRequest = request;
         if (ShouldFail)
             throw new InvalidOperationException("Simulated execution failure");
 

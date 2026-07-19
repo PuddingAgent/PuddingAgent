@@ -386,6 +386,60 @@ Get-Content <run-dir>\errors.jsonl -ErrorAction SilentlyContinue
 `SubAgentIndicator` 不允许通过恢复 5 秒轮询“修复”Running。轮询只会掩盖
 事件链断点；应修复产生、归档、投影或 reducer 中真实断裂的一层。
 
+### 6.9 池化子代理 Create 成功、Execute 报 `saving entity changes`
+
+典型错误：
+
+```text
+SubAgentPool.CreateAsync -> 成功
+SubAgentPool.ExecuteAsync(ReuseSubSessionId=...)
+  -> SessionStateManager.TrackSubAgentStartAsync
+  -> UNIQUE constraint failed: session_sub_agents.sub_session_id
+```
+
+先区分两个身份：
+
+- `SubSessionId`：池化会话身份，可跨多次任务复用；`session_sub_agents` 只允许一条
+  当前状态行。
+- `RunId`：单次执行身份；每次 Execute 必须新建，用于 run archive 和审计。
+
+正确链路：
+
+```text
+pool create
+  -> SubAgentSessionId.Create
+  -> Idle（不创建 run、不调用 SpawnAsync）
+
+pool execute
+  -> new RunId
+  -> TrackSubAgentStartAsync
+     -> INSERT ... ON CONFLICT(sub_session_id) DO UPDATE
+     -> 同 parentSessionId 重置为 running，并清空旧终态
+  -> Runtime dispatch
+```
+
+诊断顺序：
+
+1. 过滤日志 `[SubAgentPool] Reserved`、`[SubAgentMgr] Execute sync`、
+   `[SSM] Sub-agent current state set to running`，确认一次 execute 只有一个 Runtime
+   派发。
+2. 查询 `session_sub_agents`，同一 `sub_session_id` 必须恰好一行；复用启动后应为
+   `running`，`completed_at/Success/reply_summary/error_summary/full_result_json`
+   必须清空。
+3. 查询 `sub_agent_runs` 或 run archive：同一 `sub_session_id` 可以有多个不同
+   `run_id`，每次任务一个。
+4. 若 create 后已经出现 run archive 或 LLM 调用，说明 Pool 又把“预留身份”实现成了
+   `SpawnAsync`，会导致首轮双执行。
+5. 若同一 `sub_session_id` 的 `parent_session_id` 改变，必须拒绝执行；不能允许跨父
+   会话抢占。
+
+禁止以下修复：
+
+- 捕获所有 `SaveChangesAsync` 异常并继续执行：会掩盖 Schema、磁盘和连接故障。
+- 复用时跳过 `TrackSubAgentStartAsync`：上一轮仍保持 completed/failed，后续终态会
+  被幂等检查忽略。
+- 删除 UNIQUE 索引：会让当前状态出现多行，运行数、取消和 UI 投影全部失真。
+
 ## 7. 延迟问题的定位
 
 不要用“点击发送到看到回复”的总时间直接归因 LLM。应拆分：

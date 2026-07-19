@@ -44,6 +44,8 @@
 - 不能再只用 `subSessionId` 代表所有子代理概念。
 - 后续所有子代理事件必须携带 `subAgentRunId`。
 - 父会话只负责展示聚合状态，不负责保存全部子代理运行细节。
+- 池化 `create` 只分配稳定 `subSessionId`，不得通过 `SpawnAsync` 创建一个隐藏 run。
+- 同一池化会话每次 `execute` 都生成新的 `subAgentRunId`，禁止复用 runId。
 
 ### ADR-021-B：子代理 workspace 与 run archive 分离
 
@@ -232,16 +234,31 @@ public interface ISubAgentRunStore
 
 ### 3.2 数据写入顺序
 
-子代理启动：
+池化子代理预留：
 
 ```text
-SubAgentTool
-  -> SubAgentManager.SpawnAsync
-  -> SubAgentRunStore.CreateRunAsync
+SubAgentTool(pool_action=create)
+  -> SubAgentPool.CreateAsync
+  -> SubAgentSessionId.Create
+  -> 仅写入进程内 Idle 池条目
+  -> 不创建 run / 不派发 Runtime / 不写 session_sub_agents
+```
+
+每次子代理执行：
+
+```text
+SubAgentTool / SmartWorkflowTool
+  -> SubAgentManager.SpawnAsync 或 ExecuteSyncAsync
+  -> SubAgentRunStore.CreateRunAsync（每次生成新 runId）
   -> SessionStateManager.TrackSubAgentStartAsync
+       -> session_sub_agents 原子 UPSERT 当前状态
+       -> 首次 INSERT；复用时仅允许同 parentSessionId 并重置终态字段
   -> InternalEventBus.Publish(subagent.run.created)
   -> AgentExecutionService.ExecuteAsync(child request)
 ```
+
+若当前状态投影失败，Manager 必须把刚创建的 run 终结为 `failed/cancelled` 后抛出，
+不得留下永久 `running` 的孤儿归档；也不得吞掉数据库异常继续执行。
 
 子代理完成：
 

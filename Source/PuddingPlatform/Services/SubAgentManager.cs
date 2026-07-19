@@ -67,7 +67,7 @@ public sealed class SubAgentManager : ISubAgentManager
         request = NormalizeExecutionBudget(request);
         var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
             ? request.ReuseSubSessionId
-            : $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
+            : SubAgentSessionId.Create(request.ParentSessionId);
         var spawnedAt = DateTimeOffset.UtcNow;
         var trace = ResolveTrace(request, subSessionId);
 
@@ -76,29 +76,14 @@ public sealed class SubAgentManager : ISubAgentManager
             request.ParentSessionId, subSessionId, request.TemplateId,
             request.TaskDescription.Length > 80 ? request.TaskDescription[..80] + "..." : request.TaskDescription);
 
-        // 1. 追踪创建
-        await _ssm.TrackSubAgentStartAsync(request.ParentSessionId, new SubAgentSpawnInfo
-        {
-            SubSessionId = subSessionId,
-            ParentSessionId = request.ParentSessionId,
-            ParentAgentId = request.ParentAgentId,
-            TemplateId = request.TemplateId,
-            ModelId = request.LlmProfile.ModelId,
-            TaskSummary = request.TaskDescription.Length > 200
-                ? request.TaskDescription[..200] + "..."
-                : request.TaskDescription,
-            SpawnedAt = spawnedAt,
-        }, ct);
-
-        // 2. 创建子代理运行归档（ADR-021）
-        var runHandle = await _runStore.CreateRunAsync(
-            BuildRunCreateRequest(request, subSessionId),
-            ct);
+        // 先创建每次执行的 canonical run，再投影可复用 SubSessionId 的当前状态。
+        // 投影失败时立即终结 run，避免留下无法解释的永久 running 归档。
+        var runHandle = await CreateTrackedRunAsync(request, subSessionId, spawnedAt, ct);
 
         // 将 runId 存入内存映射（供完成回调使用）
         _runIdMap[subSessionId] = runHandle.RunId;
 
-        // 3. 发布内部事件 subagent.run.created（替代旧的 agent.sub_completed styled 事件）
+        // 发布内部事件 subagent.run.created（替代旧的 agent.sub_completed styled 事件）
         await _eventBus.PublishAsync(new InternalEvent
         {
             Type = "subagent.run.created",
@@ -364,30 +349,16 @@ public sealed class SubAgentManager : ISubAgentManager
         request = NormalizeExecutionBudget(request);
         var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
             ? request.ReuseSubSessionId
-            : $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
+            : SubAgentSessionId.Create(request.ParentSessionId);
         var trace = ResolveTrace(request, subSessionId);
         var spawnedAt = DateTimeOffset.UtcNow;
-        var runHandle = await _runStore.CreateRunAsync(
-            BuildRunCreateRequest(request, subSessionId),
-            ct);
+        var runHandle = await CreateTrackedRunAsync(request, subSessionId, spawnedAt, ct);
         _runIdMap[subSessionId] = runHandle.RunId;
 
-        _logger.LogInformation("[SubAgentMgr] Execute sync parent={Parent} sub={Sub} template={Template}",
-            request.ParentSessionId, subSessionId, request.TemplateId);
+        var isReusedSession = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId);
 
-        // 旧查询接口在前端切换到 canonical Conversation 投影前继续作为只读兼容视图。
-        await _ssm.TrackSubAgentStartAsync(request.ParentSessionId, new SubAgentSpawnInfo
-        {
-            SubSessionId = subSessionId,
-            ParentSessionId = request.ParentSessionId,
-            ParentAgentId = request.ParentAgentId,
-            TemplateId = request.TemplateId,
-            ModelId = request.LlmProfile.ModelId,
-            TaskSummary = request.TaskDescription.Length > 200
-                ? request.TaskDescription[..200] + "..."
-                : request.TaskDescription,
-            SpawnedAt = spawnedAt,
-        }, ct);
+        _logger.LogInformation("[SubAgentMgr] Execute sync parent={Parent} sub={Sub} template={Template} reused={Reused}",
+            request.ParentSessionId, subSessionId, request.TemplateId, isReusedSession);
 
         await RecordActivityAsync(trace, "execute_sync", RuntimeActivityStatuses.Started,
             $"Executing sync sub-agent {subSessionId}", ct);
@@ -964,6 +935,62 @@ public sealed class SubAgentManager : ISubAgentManager
             TimeoutSeconds = effectiveSeconds,
             ExecutionDeadlineUtc = effectiveDeadlineUtc,
         };
+    }
+
+    private async Task<SubAgentRunHandle> CreateTrackedRunAsync(
+        SubAgentSpawnRequest request,
+        string subSessionId,
+        DateTimeOffset startedAt,
+        CancellationToken ct)
+    {
+        var runHandle = await _runStore.CreateRunAsync(
+            BuildRunCreateRequest(request, subSessionId),
+            ct);
+
+        try
+        {
+            // session_sub_agents 是每个 SubSessionId 的当前状态投影。
+            // 首次执行创建；池化复用时原子重置上一轮终态。
+            await _ssm.TrackSubAgentStartAsync(request.ParentSessionId, new SubAgentSpawnInfo
+            {
+                SubSessionId = subSessionId,
+                ParentSessionId = request.ParentSessionId,
+                ParentAgentId = request.ParentAgentId,
+                TemplateId = request.TemplateId,
+                ModelId = request.LlmProfile.ModelId,
+                TaskSummary = request.TaskDescription.Length > 200
+                    ? request.TaskDescription[..200] + "..."
+                    : request.TaskDescription,
+                SpawnedAt = startedAt,
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            var status = ex is OperationCanceledException ? "cancelled" : "failed";
+            try
+            {
+                await _runStore.CompleteRunAsync(
+                    runHandle.RunId,
+                    new SubAgentRunCompletion
+                    {
+                        Status = status,
+                        ErrorMessage = $"Failed to project sub-agent start state: {ex.Message}",
+                    },
+                    CancellationToken.None);
+            }
+            catch (Exception completionEx)
+            {
+                _logger.LogError(
+                    completionEx,
+                    "[SubAgentMgr] Failed to finalize run after start projection failure runId={RunId} sub={Sub}",
+                    runHandle.RunId,
+                    subSessionId);
+            }
+
+            throw;
+        }
+
+        return runHandle;
     }
 
     private static SubAgentRunCreateRequest BuildRunCreateRequest(

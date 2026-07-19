@@ -103,6 +103,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 agent_template = SubAgentTemplateId,
                 sync = true,
                 model,
+                pool_name = RoleName,
+                pool_role = RoleName,
                 role_in_plan = RoleName,
                 timeout_seconds = timeout,
                 max_rounds = DefaultMaxRounds,

@@ -849,27 +849,58 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         string parentSessionId, SubAgentSpawnInfo info,
         CancellationToken ct = default)
     {
-        using var scope = _scopeFactory.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-
-        var entity = new SessionSubAgentEntity
+        if (!string.Equals(parentSessionId, info.ParentSessionId, StringComparison.Ordinal))
         {
-            ParentSessionId = info.ParentSessionId,
-            ParentAgentId = info.ParentAgentId,
-            SubSessionId = info.SubSessionId,
-            Status = "running",
-            TemplateId = info.TemplateId,
-            ModelId = info.ModelId,
-            TaskSummary = info.TaskSummary,
-            SpawnedAt = info.SpawnedAt.ToString("O"),
-        };
-        db.SessionSubAgents.Add(entity);
-        await db.SaveChangesAsync(ct);
+            throw new ArgumentException(
+                $"Parent session mismatch: argument '{parentSessionId}' does not match spawn info '{info.ParentSessionId}'.",
+                nameof(parentSessionId));
+        }
 
-        _logger.LogDebug("[SSM] SubAgent spawned parent={Parent} sub={Sub} template={Template} task={Task}",
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var spawnedAt = info.SpawnedAt.ToString("O");
+
+        // session_sub_agents 是“每个子会话的当前状态投影”，不是每次调用的历史表。
+        // 池化子代理复用 SubSessionId 时必须把上一轮终态重新置为 running；
+        // 每次调用的不可变历史由 sub_agent_runs/runId 独立保存。
+        //
+        // 使用 SQLite 原子 UPSERT，避免 query-then-insert 在多实例/并发启动时再次触发
+        // SubSessionId UNIQUE 约束。WHERE 禁止同一 SubSessionId 被重绑定到其他父会话。
+        var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "session_sub_agents"
+                ("parent_session_id", "parent_agent_id", "sub_session_id", "Status",
+                 "template_id", "model_id", "task_summary", "spawned_at",
+                 "completed_at", "Success", "reply_summary", "error_summary", "full_result_json")
+            VALUES
+                ({info.ParentSessionId}, {info.ParentAgentId}, {info.SubSessionId}, {"running"},
+                 {info.TemplateId}, {info.ModelId}, {info.TaskSummary}, {spawnedAt},
+                 NULL, NULL, NULL, NULL, NULL)
+            ON CONFLICT("sub_session_id") DO UPDATE SET
+                "parent_agent_id" = excluded."parent_agent_id",
+                "Status" = excluded."Status",
+                "template_id" = excluded."template_id",
+                "model_id" = excluded."model_id",
+                "task_summary" = excluded."task_summary",
+                "spawned_at" = excluded."spawned_at",
+                "completed_at" = NULL,
+                "Success" = NULL,
+                "reply_summary" = NULL,
+                "error_summary" = NULL,
+                "full_result_json" = NULL
+            WHERE "session_sub_agents"."parent_session_id" = excluded."parent_session_id";
+            """, ct);
+
+        if (affected != 1)
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent session '{info.SubSessionId}' is already owned by a different parent session.");
+        }
+
+        _logger.LogDebug("[SSM] SubAgent started parent={Parent} sub={Sub} template={Template} task={Task}",
             info.ParentSessionId, info.SubSessionId, info.TemplateId, info.TaskSummary);
 
         _logger.LogInformation(
-            "[SSM] Sub-agent spawned parent={Parent} sub={Sub} template={Template}",
+            "[SSM] Sub-agent current state set to running parent={Parent} sub={Sub} template={Template}",
             parentSessionId, info.SubSessionId, info.TemplateId ?? "default");
     }
 

@@ -421,6 +421,163 @@ public sealed class SessionStateManagerSequenceTests
         }
     }
 
+    [TestMethod]
+    public async Task TrackSubAgentStartAsync_ReusedSession_ResetsTerminalProjectionWithoutDuplicate()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string parentSessionId = "parent-session";
+            const string subSessionId = "parent-session-sub-reused";
+            var firstStartedAt = DateTimeOffset.Parse("2026-07-19T08:00:00+00:00");
+            var secondStartedAt = DateTimeOffset.Parse("2026-07-19T08:05:00+00:00");
+
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                ParentAgentId = "agent-a",
+                SubSessionId = subSessionId,
+                TemplateId = "planner",
+                ModelId = "kimi-k3",
+                TaskSummary = "first task",
+                SpawnedAt = firstStartedAt,
+            });
+            await ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
+            {
+                Success = true,
+                Reply = "first reply",
+                Error = null,
+                CompletedAt = firstStartedAt.AddMinutes(1),
+            });
+
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                ParentAgentId = "agent-a",
+                SubSessionId = subSessionId,
+                TemplateId = "reviewer",
+                ModelId = "deepseek-v4-pro",
+                TaskSummary = "second task",
+                SpawnedAt = secondStartedAt,
+            });
+
+            using var scope = CreateScopeFactory(dbPath).CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var rows = await db.SessionSubAgents
+                .Where(e => e.SubSessionId == subSessionId)
+                .ToListAsync();
+
+            Assert.AreEqual(1, rows.Count, "A reusable SubSessionId must have one current-state row.");
+            var current = rows.Single();
+            Assert.AreEqual(parentSessionId, current.ParentSessionId);
+            Assert.AreEqual("running", current.Status);
+            Assert.AreEqual("reviewer", current.TemplateId);
+            Assert.AreEqual("deepseek-v4-pro", current.ModelId);
+            Assert.AreEqual("second task", current.TaskSummary);
+            Assert.AreEqual(secondStartedAt.ToString("O"), current.SpawnedAt);
+            Assert.IsNull(current.CompletedAt);
+            Assert.IsNull(current.Success);
+            Assert.IsNull(current.ReplySummary);
+            Assert.IsNull(current.ErrorSummary);
+            Assert.IsNull(current.FullResultJson);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task TrackSubAgentStartAsync_SameSubSessionDifferentParent_RejectsRebinding()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string subSessionId = "shared-sub-session";
+            var startedAt = DateTimeOffset.Parse("2026-07-19T08:00:00+00:00");
+
+            await ssm.TrackSubAgentStartAsync("parent-a", new SubAgentSpawnInfo
+            {
+                ParentSessionId = "parent-a",
+                ParentAgentId = "agent-a",
+                SubSessionId = subSessionId,
+                TaskSummary = "owned by parent-a",
+                SpawnedAt = startedAt,
+            });
+
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                ssm.TrackSubAgentStartAsync("parent-b", new SubAgentSpawnInfo
+                {
+                    ParentSessionId = "parent-b",
+                    ParentAgentId = "agent-b",
+                    SubSessionId = subSessionId,
+                    TaskSummary = "must not rebind",
+                    SpawnedAt = startedAt.AddMinutes(1),
+                }));
+
+            using var scope = CreateScopeFactory(dbPath).CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var rows = await db.SessionSubAgents
+                .Where(e => e.SubSessionId == subSessionId)
+                .ToListAsync();
+
+            Assert.AreEqual(1, rows.Count);
+            Assert.AreEqual("parent-a", rows[0].ParentSessionId);
+            Assert.AreEqual("owned by parent-a", rows[0].TaskSummary);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task TrackSubAgentStartAsync_ConcurrentSameSession_UsesSingleCurrentStateRow()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string parentSessionId = "parent-session";
+            const string subSessionId = "parent-session-sub-concurrent";
+            var startedAt = DateTimeOffset.Parse("2026-07-19T08:00:00+00:00");
+
+            var starts = Enumerable.Range(0, 8)
+                .Select(index => ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+                {
+                    ParentSessionId = parentSessionId,
+                    ParentAgentId = "agent-a",
+                    SubSessionId = subSessionId,
+                    TemplateId = "explorer",
+                    ModelId = "deepseek-v4-flash",
+                    TaskSummary = $"task-{index}",
+                    SpawnedAt = startedAt.AddSeconds(index),
+                }))
+                .ToArray();
+
+            await Task.WhenAll(starts);
+
+            using var scope = CreateScopeFactory(dbPath).CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var rows = await db.SessionSubAgents
+                .Where(e => e.SubSessionId == subSessionId)
+                .ToListAsync();
+
+            Assert.AreEqual(1, rows.Count, "Atomic UPSERT must not create duplicate current-state rows.");
+            Assert.AreEqual(parentSessionId, rows[0].ParentSessionId);
+            Assert.AreEqual("running", rows[0].Status);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
     private static async Task<ServerSentEventFrame> ReadOneAsync(ChannelReader<ServerSentEventFrame> reader)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));

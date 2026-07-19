@@ -578,13 +578,7 @@ builder.Services.AddPuddingAgentTool<ReadOfficeDocumentTool>();
 builder.Services.AddPuddingAgentTool<TaskManagerTool>();
 builder.Services.AddPuddingTool<SubAgentTool>();
 builder.Services.AddSingleton<SubAgentPool>();
-// ── CodeMap 服务：加载 code_map.md Tier1 索引 (~2-5KB) ──
-var codeMapPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "code_map.md"));
-builder.Services.AddSingleton<ICodeMapService>(sp =>
-    new CodeMapService(codeMapPath, sp.GetRequiredService<ILogger<CodeMapService>>()));
-// ContextPipeline 构造函数参数为 CodeMapService 具体类型，需额外注册自身类型
-builder.Services.AddSingleton<CodeMapService>(sp =>
-    (CodeMapService)sp.GetRequiredService<ICodeMapService>());
+
 builder.Services.AddSingleton<MemoryExplorerSubAgent>();
 builder.Services.AddPuddingTool<MemoryLibraryTool>();
 
