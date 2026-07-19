@@ -42,8 +42,6 @@ import ComposerFeedbackStrip, {
 import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
-import SubAgentIndicator from './SubAgentIndicator';
-import type { SubAgentCardMap } from '../types';
 
 /** Composer 的聊天状态 */
 export type ChatStatus =
@@ -116,8 +114,8 @@ interface IntentConsoleProps {
   cacheHitRate?: number;
   /** 当前会话可见的子任务数 */
   subAgentsRunning?: number;
-  /** canonical 子代理运行事件投影；不得在组件内另行轮询。 */
-  subAgentCards?: SubAgentCardMap;
+  /** 打开 ChatMain 持有的固定子代理运行检查器。 */
+  onOpenSubAgentInspector?: () => void;
   /** 浏览器语音输入适配器；测试与后续 ASR Provider 接入可替换该适配器 */
   voiceInputAdapter?: BrowserVoiceInputAdapter;
   /** 浏览器语音输出适配器；测试与后续 TTS Provider 接入可替换该适配器 */
@@ -163,7 +161,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   cacheMissTokens,
   cacheHitRate,
   subAgentsRunning = 0,
-  subAgentCards = {},
+  onOpenSubAgentInspector,
   voiceInputAdapter = createDashScopeVoiceInputAdapter(),
   voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
   latestAssistantText,
@@ -188,8 +186,6 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   );
   const [cacheDiagnostics, setCacheDiagnostics] =
     useState<CacheDiagnosticsReport | null>(null);
-  /** 子代理管理器 */
-  const [showSubAgentPanel, setShowSubAgentPanel] = useState(false);
   /** 摄像头视觉输入弹窗 */
   const [showCameraInput, setShowCameraInput] = useState(false);
   /** 输入交互模式：键盘保留传统 composer，语音进入独立会话工作台。 */
@@ -674,14 +670,6 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         onClose={handleClosePalette}
       />
 
-      <SubAgentIndicator
-        sessionId={sessionId}
-        subAgentCards={subAgentCards}
-        open={showSubAgentPanel}
-        onOpenChange={setShowSubAgentPanel}
-        renderTrigger={false}
-      />
-
       {interactionQueue.length > 0 && (
         <div className={styles.composerQueue} data-testid="interaction-queue">
           <div className={styles.composerQueueHeader}>
@@ -843,7 +831,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <ComposerFeedbackStrip
                   state={feedbackState}
                   onClick={() => handleStatusDetailsOpenChange(true)}
-                  onSubAgentsClick={() => setShowSubAgentPanel(true)}
+                  onSubAgentsClick={onOpenSubAgentInspector}
                 />
                 {shouldShowStatus && (
                   <span

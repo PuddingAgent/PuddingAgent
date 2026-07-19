@@ -11,11 +11,11 @@ export type VirtualMessageItem =
       heightHint: VirtualMessageHeightHint;
     }
   | {
-      kind: 'subagent';
+      kind: 'subagent-anchor';
       id: string;
       createdAt: number;
-      card: SubAgentCard;
-      heightHint: VirtualMessageHeightHint;
+      cards: SubAgentCard[];
+      heightHint: 'compact';
     }
   | {
       kind: 'loader';

@@ -1,10 +1,6 @@
 // ── MessageList：消息列表容器（虚拟滚动）───────────────────────────────
 import {
   ArrowDownOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LoadingOutlined,
-  RobotOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Spin, Tooltip } from 'antd';
@@ -26,17 +22,17 @@ import type {
   ChatTurn,
   MessageStatus,
   SubAgentCardMap,
-  SubAgentCard as SubAgentCardType,
   TimelineItem,
 } from '../types';
 import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
-import type { ScrollIntent } from '../viewport/types';
+import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { inboundDebug } from '../utils/inboundDebug';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
 import MessageStream from './MessageStream';
 import PinnedMessageButton from './PinnedMessageButton';
+import SubAgentAnchor from './SubAgentAnchor';
 
 interface MessageListProps {
   turns: ChatTurn[];
@@ -68,6 +64,7 @@ interface MessageListProps {
   currentUser?: { name?: string; avatar?: string };
   viewportScrollIntent?: ScrollIntent;
   onViewportScrollIntentHandled?: () => void;
+  onOpenSubAgentInspector?: (runId?: string) => void;
 }
 
 const toTimestamp = (value: string) => {
@@ -533,140 +530,6 @@ const mergeActiveRunIntoTurns = (
   return [...turns, activeTurn];
 };
 
-/** 子代理独立卡片 */
-const SubAgentCard: React.FC<{ card: SubAgentCardType }> = ({ card }) => {
-  const statusConfig: Record<
-    string,
-    { icon: React.ReactNode; color: string; label: string }
-  > = {
-    spawning: {
-      icon: <LoadingOutlined spin />,
-      color: '#faad14',
-      label: '创建中',
-    },
-    running: {
-      icon: <LoadingOutlined spin />,
-      color: '#1890ff',
-      label: '运行中',
-    },
-    completed: {
-      icon: <CheckCircleOutlined />,
-      color: '#52c41a',
-      label: '已完成',
-    },
-    failed: { icon: <CloseCircleOutlined />, color: '#ff4d4f', label: '失败' },
-    cancelled: {
-      icon: <CloseCircleOutlined />,
-      color: '#8c8c8c',
-      label: '已取消',
-    },
-    timed_out: {
-      icon: <CloseCircleOutlined />,
-      color: '#fa8c16',
-      label: '已超时',
-    },
-    interrupted: {
-      icon: <CloseCircleOutlined />,
-      color: '#722ed1',
-      label: '已中断',
-    },
-  };
-  const sc = statusConfig[card.status] || statusConfig.spawning;
-  return (
-    <div
-      style={{
-        margin: '12px 16px 12px 48px',
-        padding: 12,
-        borderRadius: 10,
-        border: '1px solid var(--ant-color-border-secondary, #e8e8e8)',
-        borderLeft: `4px solid ${sc.color}`,
-        background: 'var(--ant-color-bg-elevated, #fafafa)',
-        fontSize: 13,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 4,
-        }}
-      >
-        <RobotOutlined style={{ color: sc.color }} />
-        <span style={{ color: sc.color, fontWeight: 600 }}>子代理</span>
-        <span
-          style={{ color: 'var(--ant-color-text-secondary)', fontSize: 11 }}
-        >
-          {card.subSessionId?.slice(-12) || '?'}
-        </span>
-        <span style={{ color: sc.color }}>{sc.icon}</span>
-        <span
-          style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}
-        >
-          {sc.label}
-        </span>
-      </div>
-      {card.taskSummary && (
-        <div style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
-          任务：{card.taskSummary}
-        </div>
-      )}
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          flexWrap: 'wrap',
-          marginTop: 6,
-          color: 'var(--ant-color-text-secondary)',
-          fontSize: 11,
-        }}
-      >
-        {card.originToolId && <span>入口：{card.originToolId}</span>}
-        {card.modelId && <span>模型：{card.modelId}</span>}
-        {card.phase && <span>阶段：{card.phase}</span>}
-        <span>
-          轮次：{card.currentRound ?? 0}
-          {card.maxRounds ? `/${card.maxRounds}` : ''}
-        </span>
-        <span>Token：{card.totalTokens ?? 0}</span>
-        <span>工具：{card.toolCount ?? 0}</span>
-        {card.activeToolName && <span>正在调用：{card.activeToolName}</span>}
-      </div>
-      {card.error && (
-        <div
-          style={{
-            marginTop: 8,
-            color: 'var(--ant-color-error)',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {card.error}
-        </div>
-      )}
-      {card.output && (
-        <div
-          style={{
-            marginTop: 8,
-            padding: '8px 12px',
-            background: 'var(--ant-color-bg-container, #fff)',
-            borderRadius: 6,
-            border: '1px solid var(--ant-color-border-secondary, #e8e8e8)',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            maxHeight: 200,
-            overflowY: 'auto',
-            fontSize: 12,
-            lineHeight: 1.6,
-            color: 'var(--ant-color-text, #333)',
-          }}
-        >
-          {card.output}
-        </div>
-      )}
-    </div>
-  );
-};
-
 const MessageList: React.FC<MessageListProps> = ({
   turns,
   sessionId,
@@ -691,6 +554,7 @@ const MessageList: React.FC<MessageListProps> = ({
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
+  onOpenSubAgentInspector,
 }) => {
   const { styles } = useChatStyles();
   const activeRun = conversationView?.activeRun ?? null;
@@ -763,6 +627,77 @@ const MessageList: React.FC<MessageListProps> = ({
     }
   }, [viewport, viewportScrollIntent, onViewportScrollIntentHandled]);
 
+  const renderProjectionItem = (item: VirtualMessageItem) => {
+    if (item.kind === 'loader') {
+      return (
+        <div
+          style={{
+            textAlign: 'center',
+            padding: 8,
+            cursor: loadingMore ? 'default' : 'pointer',
+            color: 'var(--ant-color-primary)',
+          }}
+          onClick={
+            loadingMore ? undefined : viewport.requestLoadBefore
+          }
+        >
+          {loadingMore ? <Spin size="small" /> : '加载更多历史消息'}
+        </div>
+      );
+    }
+
+    if (item.kind === 'subagent-anchor') {
+      return (
+        <SubAgentAnchor
+          cards={item.cards}
+          onOpen={onOpenSubAgentInspector}
+        />
+      );
+    }
+
+    return (
+      <MessageStream
+        turns={[{
+          turnId: item.block.turnId,
+          source: item.block.role === 'agent' ? {
+            sourceId: item.block.agentId || 'agent',
+            sourceType: item.block.sourceType || 'agent',
+            displayName: item.block.agentName || selectedAgent?.name || 'Pudding',
+            avatarEmoji: item.block.agentAvatarEmoji || '🤖',
+            avatarColor: item.block.agentAvatarColor || '#7c3aed',
+            avatarUrl: item.block.agentAvatarUrl,
+          } : undefined,
+          userMessage: item.block.role === 'user' ? {
+            id: item.block.id,
+            text: item.block.content,
+            timestamp: item.block.createdAt,
+            status: item.block.status === 'sending' ? 'sending' : 'success',
+            metadata: item.block.metadata,
+          } : { id: '', text: '', timestamp: item.block.createdAt, status: 'success' },
+          assistant: item.block.role === 'agent' ? {
+            id: item.block.id,
+            status: item.block.status === 'streaming' ? 'streaming' : item.block.status === 'error' ? 'error' : 'success',
+            timelineItems: item.block.processItems ?? [],
+            answerMarkdown: item.block.content,
+            isStreaming: item.block.isStreaming ?? false,
+            renderMode: 'structured',
+            usage: item.block.usage,
+            quotedMessage: item.block.quotedMessage,
+          } : { id: '', status: 'success', timelineItems: [], answerMarkdown: '', isStreaming: false, renderMode: 'structured' },
+        }]}
+        sessionId={sessionId}
+        agentName={selectedAgent?.name || 'Pudding'}
+        defaultAvatarUrl={selectedAgent?.avatarUrl}
+        currentUser={currentUser}
+        formatTime={formatTime}
+        onContextMenu={onContextMenu}
+        onRerunTurn={onRerunTurn}
+        onPinTurn={onPinTurn}
+        onDeleteTurn={onDeleteTurn}
+      />
+    );
+  };
+
   return (
     <div
       className={styles.messageList}
@@ -805,82 +740,50 @@ const MessageList: React.FC<MessageListProps> = ({
       {projection.items.length > 0 && (
         <div
           ref={viewport.contentRef}
-          style={{ height: `${viewport.totalSize}px`, width: '100%', position: 'relative' }}
-        >
-          {viewport.virtualRows.map((virtualRow) => {
-            const item = projection.items[virtualRow.index];
-            if (!item) return null;
-            return (
-              <div
-                key={item.id}
-                data-index={virtualRow.index}
-                ref={viewport.virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
+          data-testid="chat-message-viewport-content"
+          data-virtualized={viewport.virtualizationEnabled ? 'true' : 'false'}
+          style={
+            viewport.virtualizationEnabled
+              ? {
+                  height: `${viewport.totalSize}px`,
                   width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {item.kind === 'loader' ? (
+                  position: 'relative',
+                }
+              : { width: '100%', position: 'relative' }
+          }
+        >
+          {viewport.virtualizationEnabled
+            ? viewport.virtualRows.map((virtualRow) => {
+                const item = projection.items[virtualRow.index];
+                if (!item) return null;
+                return (
                   <div
+                    key={item.id}
+                    data-index={virtualRow.index}
+                    data-viewport-item-id={item.id}
+                    ref={viewport.virtualizer.measureElement}
                     style={{
-                      textAlign: 'center',
-                      padding: 8,
-                      cursor: loadingMore ? 'default' : 'pointer',
-                      color: 'var(--ant-color-primary)',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
                     }}
-                    onClick={loadingMore ? undefined : onLoadMore}
                   >
-                    {loadingMore ? <Spin size="small" /> : '加载更多历史消息'}
+                    {renderProjectionItem(item)}
                   </div>
-                ) : item.kind === 'message' ? (
-                  <MessageStream
-                    turns={[{
-                      turnId: item.block.turnId,
-                      source: item.block.role === 'agent' ? {
-                        sourceId: item.block.agentId || 'agent',
-                        sourceType: item.block.sourceType || 'agent',
-                        displayName: item.block.agentName || selectedAgent?.name || 'Pudding',
-                        avatarEmoji: item.block.agentAvatarEmoji || '🤖',
-                        avatarColor: item.block.agentAvatarColor || '#7c3aed',
-                        avatarUrl: item.block.agentAvatarUrl,
-                      } : undefined,
-                      userMessage: item.block.role === 'user' ? {
-                        id: item.block.id,
-                        text: item.block.content,
-                        timestamp: item.block.createdAt,
-                        status: item.block.status === 'sending' ? 'sending' : 'success',
-                        metadata: item.block.metadata,
-                      } : { id: '', text: '', timestamp: item.block.createdAt, status: 'success' },
-                      assistant: item.block.role === 'agent' ? {
-                        id: item.block.id,
-                        status: item.block.status === 'streaming' ? 'streaming' : item.block.status === 'error' ? 'error' : 'success',
-                        timelineItems: item.block.processItems ?? [],
-                        answerMarkdown: item.block.content,
-                        isStreaming: item.block.isStreaming ?? false,
-                        renderMode: 'structured',
-                        usage: item.block.usage,
-                        quotedMessage: item.block.quotedMessage,
-                      } : { id: '', status: 'success', timelineItems: [], answerMarkdown: '', isStreaming: false, renderMode: 'structured' },
-                    }]}
-                    sessionId={sessionId}
-                    agentName={selectedAgent?.name || 'Pudding'}
-                    defaultAvatarUrl={selectedAgent?.avatarUrl}
-                    currentUser={currentUser}
-                    formatTime={formatTime}
-                    onContextMenu={onContextMenu}
-                    onRerunTurn={onRerunTurn}
-                    onPinTurn={onPinTurn}
-                    onDeleteTurn={onDeleteTurn}
-                  />
-                ) : (
-                  <SubAgentCard card={item.card} />
-                )}
-              </div>
-            );
-          })}
+                );
+              })
+            : projection.items.map((item, index) => (
+                <div
+                  key={item.id}
+                  data-index={index}
+                  data-viewport-item-id={item.id}
+                  style={{ width: '100%', position: 'relative', display: 'flow-root' }}
+                >
+                  {renderProjectionItem(item)}
+                </div>
+              ))}
         </div>
       )}
       {error && (

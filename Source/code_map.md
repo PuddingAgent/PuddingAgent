@@ -119,8 +119,8 @@ Source/
 ### Chat 前端 Viewport
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；virtualizer 负责测量/锚点，真实容器负责贴底，并在 pinned 模式下对延迟布局增长持续收敛 |
-| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息虚拟列表与 viewport overlay；不直接拥有滚动策略 |
+| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
 
 ---
 
@@ -216,7 +216,8 @@ Source/
 |------|------|
 | `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份 |
 | `PuddingPlatformAdmin/src/pages/chat/reducer/subAgentReducer.ts` | 子代理 UI 唯一纯投影：只接受带稳定 runId 的 ADR-060 canonical 事件，按 eventId 幂等折叠 bootstrap/replay/live 的 created/round/LLM/tool/terminal；拒绝会复活历史孤儿的旧事件 |
-| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentIndicator.tsx` | 子代理实时运行面板；只消费 Conversation 事件投影，不轮询旧 `/sub-agents` 接口 |
+| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；绝对定位覆盖、不占消息布局宽度，显示可复制 Session/Run ID、活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线，只消费 Conversation 事件投影 |
+| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentAnchor.tsx` | 消息流中的轻量子代理因果锚点；按 invocation/batch 聚合，只记录启动与终态摘要，点击定位运行检查器 |
 | `Services/MessageFabric/MessageSystem.cs` | 消息系统核心 |
 | `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room） |
 | `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；从 `queued/retrying` 投递发现待处理 Agent 目标 |

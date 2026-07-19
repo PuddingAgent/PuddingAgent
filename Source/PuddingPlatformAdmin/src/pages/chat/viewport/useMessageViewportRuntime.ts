@@ -17,12 +17,23 @@ interface UseMessageViewportRuntimeOptions {
 const NEAR_TOP_PX = 64;
 const BOTTOM_THRESHOLD_PX = 80;
 const MESSAGE_VIEWPORT_BOTTOM_PADDING_PX = 32;
+const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 40;
 type MessageVirtualItem = Extract<VirtualMessageItem, { kind: 'message' }>;
+
+interface PendingViewportAnchor {
+  itemId: string;
+  offset: number;
+  scrollHeight: number;
+  measurable: boolean;
+}
 
 const initialState: MessageViewportState = {
   atBottom: true,
   nearTop: false,
-  followMode: 'auto',
+  // Opening an existing conversation is a reading action. Bottom following is
+  // entered only after a user send, an explicit bottom action, or a real scroll
+  // event confirms that the reader is already at the bottom.
+  followMode: 'off',
   showBottomButton: false,
   pendingIntent: { type: 'none' },
 };
@@ -74,17 +85,28 @@ export const getVirtualMessageContentFingerprint = (
     ].join(':');
   }
 
-  if (last.kind === 'subagent') {
+  if (last.kind === 'subagent-anchor') {
     return [
       items.length,
       last.id,
-      last.card.status ?? '',
-      last.card.output?.length ?? 0,
+      last.cards
+        .map((card) => `${card.runId ?? card.turnId}:${card.status}`)
+        .join(','),
     ].join(':');
   }
 
   return `${items.length}:${last.id}`;
 };
+
+/**
+ * Virtualization pays for itself when the timeline contains many independent
+ * rows. Short conversations with very tall Markdown/tool rows are more stable
+ * in normal document flow because there is no estimate -> measurement
+ * correction while the user is scrolling.
+ */
+export const shouldVirtualizeMessageViewport = (
+  items: VirtualMessageItem[],
+): boolean => items.length >= MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS;
 
 export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOptions) {
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -95,8 +117,14 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     initialState.followMode,
   );
   const suppressOnScrollRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
   const settleBottomFrameRef = useRef<number | null>(null);
   const releaseScrollSuppressionFrameRef = useRef<number | null>(null);
+  const restoreAnchorFrameRef = useRef<number | null>(null);
+  const pendingViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
+  const preUpdateViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
+  const firstTimelineItemIdRef = useRef<string | null>(null);
+  const previousScrollHeightRef = useRef<number | null>(null);
 
   // Fingerprint tracks both item count and last item content length,
   // so streaming content growth also triggers the auto-follow effect.
@@ -104,10 +132,12 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     () => getVirtualMessageContentFingerprint(options.items),
     [options.items],
   );
+  const virtualizationEnabled = shouldVirtualizeMessageViewport(options.items);
 
   const virtualizer = useVirtualizer({
     count: options.items.length,
     getScrollElement: () => parentRef.current,
+    enabled: virtualizationEnabled,
     estimateSize: (index) => {
       const hint = options.items[index]?.heightHint;
       if (hint === 'compact') return 96;
@@ -133,14 +163,6 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     return { nearTop, atBottom, scrollTop: el.scrollTop };
   }, []);
 
-  const requestLoadBefore = useCallback(() => {
-    if (!options.hasMoreBefore || options.loadingBefore || options.items.length === 0) return;
-    const anchorItem = options.items.find((item) => item.kind !== 'loader') ?? options.items[0];
-    if (!anchorItem || lastLoadAnchorRef.current === anchorItem.id) return;
-    lastLoadAnchorRef.current = anchorItem.id;
-    options.onRequestLoadBefore({ anchor: { itemId: anchorItem.id, offset: 0 } });
-  }, [options]);
-
   const suppressProgrammaticScroll = useCallback(() => {
     suppressOnScrollRef.current = true;
     if (releaseScrollSuppressionFrameRef.current !== null) {
@@ -153,6 +175,75 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       });
     });
   }, []);
+
+  const readVisibleAnchor = useCallback((): PendingViewportAnchor | null => {
+    const parent = parentRef.current;
+    if (!parent) return null;
+    const parentRect = parent.getBoundingClientRect();
+    const rows = Array.from(
+      parent.querySelectorAll<HTMLElement>('[data-viewport-item-id]'),
+    );
+    const visible =
+      rows.find((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.bottom > parentRect.top && rect.top < parentRect.bottom;
+      }) ?? rows[0];
+    if (!visible) return null;
+    const itemId = visible.dataset.viewportItemId;
+    if (!itemId) return null;
+    return {
+      itemId,
+      offset: visible.getBoundingClientRect().top - parentRect.top,
+      scrollHeight: parent.scrollHeight,
+      measurable:
+        parentRect.height > 0 || visible.getBoundingClientRect().height > 0,
+    };
+  }, []);
+
+  const restoreVisibleAnchor = useCallback(
+    (anchor: PendingViewportAnchor): boolean => {
+      const parent = parentRef.current;
+      if (!parent) return false;
+      const row = Array.from(
+        parent.querySelectorAll<HTMLElement>('[data-viewport-item-id]'),
+      ).find((candidate) => candidate.dataset.viewportItemId === anchor.itemId);
+      if (!row) return false;
+
+      const currentOffset =
+        row.getBoundingClientRect().top - parent.getBoundingClientRect().top;
+      const delta = anchor.measurable
+        ? currentOffset - anchor.offset
+        : parent.scrollHeight - anchor.scrollHeight;
+      if (Math.abs(delta) > 0.5) {
+        suppressProgrammaticScroll();
+        parent.scrollTop = Math.max(0, parent.scrollTop + delta);
+      }
+      return true;
+    },
+    [suppressProgrammaticScroll],
+  );
+
+  const requestLoadBefore = useCallback(() => {
+    if (!options.hasMoreBefore || options.loadingBefore || options.items.length === 0) return;
+    const fallbackItem =
+      options.items.find((item) => item.kind !== 'loader') ?? options.items[0];
+    const anchor =
+      readVisibleAnchor() ??
+      (fallbackItem
+        ? {
+            itemId: fallbackItem.id,
+            offset: 0,
+            scrollHeight: parentRef.current?.scrollHeight ?? 0,
+            measurable: false,
+          }
+        : null);
+    if (!anchor || lastLoadAnchorRef.current === anchor.itemId) return;
+    lastLoadAnchorRef.current = anchor.itemId;
+    pendingViewportAnchorRef.current = anchor;
+    options.onRequestLoadBefore({
+      anchor: { itemId: anchor.itemId, offset: anchor.offset },
+    });
+  }, [options, readVisibleAnchor]);
 
   const writeBottomPosition = useCallback(
     (behavior: ScrollBehavior) => {
@@ -179,10 +270,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     });
   }, [writeBottomPosition]);
 
-  const onScroll = useCallback(() => {
-    if (suppressOnScrollRef.current) {
-      return;
-    }
+  const processScroll = useCallback(() => {
     const next = readScroll();
     if (next.nearTop) requestLoadBefore();
     setState((current) => {
@@ -212,6 +300,16 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       };
     });
   }, [readScroll, requestLoadBefore, scheduleBottomSettlement]);
+
+  const onScroll = useCallback(() => {
+    if (suppressOnScrollRef.current || scrollFrameRef.current !== null) {
+      return;
+    }
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      processScroll();
+    });
+  }, [processScroll]);
 
   // Bottom following owns the real scroll container. The virtualizer only owns
   // item measurement and anchor restoration; it must not estimate the bottom.
@@ -246,6 +344,83 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     return () => observer.disconnect();
   }, [options.items.length, scheduleBottomSettlement]);
 
+  // Capture a DOM anchor in the cleanup phase, before React mutates the row
+  // tree. This also protects programmatic history prepends and keeps the
+  // invariant intact if a caller bypasses the visible loader button.
+  React.useLayoutEffect(() => {
+    const firstTimelineItemId =
+      options.items.find((item) => item.kind !== 'loader')?.id ?? null;
+    const previousFirstTimelineItemId = firstTimelineItemIdRef.current;
+    const isPrepend =
+      previousFirstTimelineItemId !== null &&
+      firstTimelineItemId !== previousFirstTimelineItemId &&
+      options.items.some((item) => item.id === previousFirstTimelineItemId);
+    const parent = parentRef.current;
+    const currentScrollHeight = parent?.scrollHeight ?? null;
+
+    if (isPrepend && parent && !virtualizationEnabled) {
+      const previousScrollHeight = previousScrollHeightRef.current;
+      if (previousScrollHeight !== null && currentScrollHeight !== null) {
+        const delta = currentScrollHeight - previousScrollHeight;
+        if (Math.abs(delta) > 0.5) {
+          suppressProgrammaticScroll();
+          parent.scrollTop = Math.max(0, parent.scrollTop + delta);
+        }
+      }
+      pendingViewportAnchorRef.current = null;
+    } else if (
+      isPrepend &&
+      pendingViewportAnchorRef.current === null &&
+      preUpdateViewportAnchorRef.current !== null
+    ) {
+      pendingViewportAnchorRef.current = preUpdateViewportAnchorRef.current;
+    }
+    firstTimelineItemIdRef.current = firstTimelineItemId;
+    previousScrollHeightRef.current = currentScrollHeight;
+
+    return () => {
+      preUpdateViewportAnchorRef.current = readVisibleAnchor();
+    };
+  }, [
+    options.items,
+    readVisibleAnchor,
+    suppressProgrammaticScroll,
+    virtualizationEnabled,
+  ]);
+
+  // Historical prepend is a viewport transaction: keep the first visible row
+  // at the same pixel offset after React inserts older items. Normal-flow rows
+  // can be restored immediately. In virtual mode the anchor may first need to
+  // be materialized, then the same DOM offset correction is applied next frame.
+  React.useLayoutEffect(() => {
+    const anchor = pendingViewportAnchorRef.current;
+    if (!anchor) return;
+    if (restoreVisibleAnchor(anchor)) {
+      pendingViewportAnchorRef.current = null;
+      return;
+    }
+
+    if (!virtualizationEnabled) return;
+    const index = options.items.findIndex((item) => item.id === anchor.itemId);
+    if (index < 0) return;
+    virtualizer.scrollToIndex(index, { align: 'start', behavior: 'auto' });
+    if (restoreAnchorFrameRef.current !== null) {
+      cancelAnimationFrame(restoreAnchorFrameRef.current);
+    }
+    restoreAnchorFrameRef.current = requestAnimationFrame(() => {
+      restoreAnchorFrameRef.current = null;
+      if (restoreVisibleAnchor(anchor)) {
+        pendingViewportAnchorRef.current = null;
+      }
+    });
+  }, [
+    options.items,
+    restoreVisibleAnchor,
+    totalSize,
+    virtualizationEnabled,
+    virtualizer,
+  ]);
+
   React.useLayoutEffect(() => {
     followModeRef.current = state.followMode;
   }, [state.followMode]);
@@ -255,8 +430,14 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       if (settleBottomFrameRef.current !== null) {
         cancelAnimationFrame(settleBottomFrameRef.current);
       }
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+      }
       if (releaseScrollSuppressionFrameRef.current !== null) {
         cancelAnimationFrame(releaseScrollSuppressionFrameRef.current);
+      }
+      if (restoreAnchorFrameRef.current !== null) {
+        cancelAnimationFrame(restoreAnchorFrameRef.current);
       }
     },
     [],
@@ -319,6 +500,12 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       }
       if (intent.type === 'restore-anchor') {
         followModeRef.current = 'off';
+        pendingViewportAnchorRef.current = {
+          itemId: intent.itemId,
+          offset: intent.offset,
+          scrollHeight: parentRef.current?.scrollHeight ?? 0,
+          measurable: false,
+        };
         setState((current) => ({
           ...current,
           anchorItemId: intent.itemId,
@@ -334,14 +521,6 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     [scrollToBottom, options.items, virtualizer],
   );
 
-  React.useLayoutEffect(() => {
-    const intent = state.pendingIntent;
-    if (intent.type !== 'restore-anchor') return;
-    const index = options.items.findIndex((item) => item.id === intent.itemId);
-    if (index < 0) return;
-    virtualizer.scrollToIndex(index, { align: 'start', behavior: 'auto' });
-  }, [options.items, state.pendingIntent, virtualizer]);
-
   return useMemo(
     () => ({
       parentRef,
@@ -349,12 +528,25 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       virtualizer,
       virtualRows,
       totalSize,
+      virtualizationEnabled,
       state,
       onScroll,
+      requestLoadBefore,
       scrollToBottom,
       setPinnedBottom,
       applyIntent,
     }),
-    [applyIntent, onScroll, scrollToBottom, setPinnedBottom, state, totalSize, virtualRows, virtualizer],
+    [
+      applyIntent,
+      onScroll,
+      requestLoadBefore,
+      scrollToBottom,
+      setPinnedBottom,
+      state,
+      totalSize,
+      virtualizationEnabled,
+      virtualRows,
+      virtualizer,
+    ],
   );
 }

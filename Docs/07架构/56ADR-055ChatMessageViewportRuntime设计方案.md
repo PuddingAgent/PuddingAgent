@@ -134,6 +134,10 @@ IDLE
 7. `useChatState` 不注册 message list 的 scroll listener。
 8. `PINNED_BOTTOM` 只能由用户显式关闭；普通/程序化 `scroll`、`user-send` 和 streaming 更新都不能把它降级为 `auto/off`。
 9. 底部跟随以滚动容器的实际 `scrollHeight - clientHeight` 为准；virtualizer 只负责 item 测量和 anchor 恢复。虚拟内容、Markdown、图片或工具面板延迟增高时，由 ResizeObserver 触发下一帧底部收敛。
+10. 打开会话的初始 `followMode` 必须为 `off`；只有用户发送、显式回到底部或真实滚动确认已经位于底部后，才能进入自动跟随。
+11. `scroll` 事件按 animation frame 合并；同一帧只允许读取一次 `scrollTop/scrollHeight/clientHeight` 并执行一次状态迁移。
+12. 采用自适应渲染：少于 40 个 timeline row 时使用正常文档流，避免高 Markdown/tool row 的估高与实测差触发滚动校正；40 个及以上才启用 virtualizer。
+13. 历史前插是 viewport transaction：更新前捕获第一条可见 row 的稳定 id、像素 offset 和 scrollHeight，更新后由 runtime 恢复。正常文档流使用新增高度差恢复，虚拟模式使用 `itemId + offset` 恢复；组件不得绕过 runtime 直接加载。
 
 ## 视觉与交互
 
@@ -156,7 +160,9 @@ IDLE
 ## 验收条件
 
 - 1000 条消息下只渲染视口附近 rows，滚动无明显掉帧。
+- 短会话中的超高 Markdown、表格和工具输出使用正常文档流，连续上下滚动时 `scrollHeight` 不因 row 进入视口而变化。
 - 历史 prepend 后当前第一条可见消息不跳动。
+- 同一动画帧内多个 scroll event 只触发一次布局读取。
 - 打开已有长会话不自动贴底。
 - 用户主动发送后自动跟随到底部。
 - 用户手动向上阅读时 streaming 不抢滚动。

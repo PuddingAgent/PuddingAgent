@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import {
   getVirtualMessageContentFingerprint,
+  shouldVirtualizeMessageViewport,
   useMessageViewportRuntime,
 } from './useMessageViewportRuntime';
 import type { VirtualMessageItem } from './types';
@@ -23,6 +24,18 @@ const makeItem = (id: string, createdAt: number): MessageItem => ({
 });
 
 describe('useMessageViewportRuntime', () => {
+  it('uses normal document flow for short dynamic timelines', () => {
+    const shortTimeline = Array.from({ length: 12 }, (_, index) =>
+      makeItem(`m${index}`, index),
+    );
+    const longTimeline = Array.from({ length: 40 }, (_, index) =>
+      makeItem(`m${index}`, index),
+    );
+
+    expect(shouldVirtualizeMessageViewport(shortTimeline)).toBe(false);
+    expect(shouldVirtualizeMessageViewport(longTimeline)).toBe(true);
+  });
+
   it('tracks active process item growth for bottom-follow updates', () => {
     const baseItem = {
       ...makeItem('m1', 1),
@@ -63,6 +76,12 @@ describe('useMessageViewportRuntime', () => {
   it('requests older history with the first visible item anchor', () => {
     const onRequestLoadBefore = jest.fn();
     const items = [makeItem('m1', 1), makeItem('m2', 2)];
+    const originalRaf = window.requestAnimationFrame;
+    let scrollFrame: FrameRequestCallback | undefined;
+    window.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      scrollFrame = callback;
+      return 1;
+    });
     const { result } = renderHook(() =>
       useMessageViewportRuntime({
         items,
@@ -78,14 +97,19 @@ describe('useMessageViewportRuntime', () => {
     Object.defineProperty(node, 'scrollHeight', { value: 1200, writable: true });
     result.current.parentRef.current = node;
 
-    act(() => {
-      result.current.onScroll();
-      result.current.onScroll();
-    });
+    try {
+      act(() => {
+        result.current.onScroll();
+        result.current.onScroll();
+        scrollFrame?.(performance.now());
+      });
 
-    expect(onRequestLoadBefore).toHaveBeenCalledWith({
-      anchor: { itemId: 'm1', offset: 0 },
-    });
+      expect(onRequestLoadBefore).toHaveBeenCalledWith({
+        anchor: { itemId: 'm1', offset: 0 },
+      });
+    } finally {
+      window.requestAnimationFrame = originalRaf;
+    }
   });
 
   it('manual bottom intent marks viewport as bottom-following', () => {

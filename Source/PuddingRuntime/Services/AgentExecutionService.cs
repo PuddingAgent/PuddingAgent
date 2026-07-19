@@ -729,6 +729,8 @@ public sealed class AgentExecutionService
                     RecordProviderContextUsageSnapshot(request.SessionId, usage);
                 }
                 llmSw.Stop();
+                var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
+                const int subAgentMessagePreviewLimit = 2048;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.completed", new
                 {
                     sub_agent_id = request.SessionId,
@@ -740,9 +742,12 @@ public sealed class AgentExecutionService
                     cache_hit_tokens = usage?.PromptCacheHitTokens,
                     cache_miss_tokens = usage?.PromptCacheMissTokens,
                     tool_call_count = llmResp.ToolCalls?.Count ?? 0,
+                    message_preview = Truncate(rawText, subAgentMessagePreviewLimit),
+                    message_truncated = rawText.Length > subAgentMessagePreviewLimit,
+                    reasoning_available = !string.IsNullOrWhiteSpace(llmResp.ReasoningContent),
+                    reasoning_chars = llmResp.ReasoningContent?.Length ?? 0,
                 });
 
-                var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
                 _logger.LogInformation(
                     "[AgentExec] LLM round={Round}/{Max} session={Session} elapsed={Ms}ms",
                     round + 1, maxRounds, request.SessionId, llmSw.ElapsedMilliseconds);
@@ -797,6 +802,8 @@ public sealed class AgentExecutionService
                             tool_call_id = call.Id,
                             tool_name = call.Name,
                             args_hash = subAgentToolArgsHash,
+                            arguments_preview = Truncate(safeToolArgs, 1024),
+                            arguments_truncated = safeToolArgs.Length > 1024,
                             tool_call_index = totalToolCalls,
                         });
 
@@ -1045,6 +1052,12 @@ public sealed class AgentExecutionService
                             ref toolOutputChars,
                             ref firstToolFailureSummary);
                         subAgentToolSw.Stop();
+                        var safeSubAgentToolOutput = string.IsNullOrEmpty(skillResult.Output)
+                            ? skillResult.Output ?? ""
+                            : await _keyVaultService.StripAsync(skillResult.Output, ct);
+                        var safeToolError = string.IsNullOrWhiteSpace(skillResult.Error)
+                            ? skillResult.Error
+                            : await _keyVaultService.StripAsync(skillResult.Error, ct);
 
                         await TryAppendSubAgentEventAsync(
                             subAgentRunId,
@@ -1061,9 +1074,11 @@ public sealed class AgentExecutionService
                                 duration_ms = subAgentToolSw.ElapsedMilliseconds,
                                 args_hash = subAgentToolArgsHash,
                                 output_length = skillResult.Output?.Length ?? 0,
-                                error = string.IsNullOrWhiteSpace(skillResult.Error)
+                                output_preview = Truncate(safeSubAgentToolOutput, 2048),
+                                output_truncated = safeSubAgentToolOutput.Length > 2048,
+                                error = string.IsNullOrWhiteSpace(safeToolError)
                                     ? null
-                                    : Truncate(skillResult.Error, 500),
+                                    : Truncate(safeToolError, 500),
                                 tool_call_index = totalToolCalls,
                             });
                         if (_subAgentRunStore is not null && subAgentRunId is not null)
@@ -1078,9 +1093,9 @@ public sealed class AgentExecutionService
                                     Success = skillResult.Success,
                                     DurationMs = subAgentToolSw.ElapsedMilliseconds,
                                     OutputLength = skillResult.Output?.Length ?? 0,
-                                    ErrorMessage = string.IsNullOrWhiteSpace(skillResult.Error)
+                                    ErrorMessage = string.IsNullOrWhiteSpace(safeToolError)
                                         ? null
-                                        : Truncate(skillResult.Error, 500),
+                                        : Truncate(safeToolError, 500),
                                 },
                                 CancellationToken.None);
                         }
@@ -1094,10 +1109,6 @@ public sealed class AgentExecutionService
                                 skillResult.Error?.Contains("not allowed", StringComparison.OrdinalIgnoreCase) == true ||
                                 skillResult.Error?.Contains("rejected", StringComparison.OrdinalIgnoreCase) == true);
                         var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
-
-                        var safeToolError = string.IsNullOrWhiteSpace(skillResult.Error)
-                            ? skillResult.Error
-                            : await _keyVaultService.StripAsync(skillResult.Error, ct);
 
                         toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id));
 

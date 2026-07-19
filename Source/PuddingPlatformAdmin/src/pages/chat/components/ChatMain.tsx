@@ -31,6 +31,7 @@ import DevPanel from './DevPanel';
 import HistorySearchModal from './HistorySearchModal';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
+import SubAgentActivityDock from './SubAgentActivityDock';
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
@@ -174,6 +175,15 @@ const ChatMain: React.FC<ChatMainProps> = ({
   );
   const [autoTtsEnabled, setAutoTtsEnabled] = useState<boolean>(true);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [subAgentInspectorOpen, setSubAgentInspectorOpen] = useState(false);
+  const [selectedSubAgentRunId, setSelectedSubAgentRunId] = useState<
+    string | null
+  >(null);
+
+  const handleOpenSubAgentInspector = useCallback((runId?: string) => {
+    setSelectedSubAgentRunId(runId ?? null);
+    setSubAgentInspectorOpen(true);
+  }, []);
 
   const handleHistoryQuote = useCallback(
     (quoteText: string) => {
@@ -427,6 +437,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       currentUser={currentUser}
                       viewportScrollIntent={viewportScrollIntent}
                       onViewportScrollIntentHandled={onViewportScrollIntentHandled}
+                      onOpenSubAgentInspector={handleOpenSubAgentInspector}
                     />
                   </section>
                   <IntentConsole
@@ -455,10 +466,20 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     cacheMissTokens={cacheMissTokens}
                     cacheHitRate={cacheHitRate}
                     subAgentsRunning={subAgentCount}
-                    subAgentCards={subAgentCards}
+                    onOpenSubAgentInspector={() =>
+                      handleOpenSubAgentInspector()
+                    }
                     latestAssistantText={latestAssistantText}
                   />
                 </div>
+                <SubAgentActivityDock
+                  sessionId={inferredSessionId ?? selectedSessionId}
+                  subAgentCards={subAgentCards}
+                  inspectorOpen={subAgentInspectorOpen}
+                  onInspectorOpenChange={setSubAgentInspectorOpen}
+                  selectedRunId={selectedSubAgentRunId}
+                  onSelectedRunIdChange={setSelectedSubAgentRunId}
+                />
               </div>
             </div>
 

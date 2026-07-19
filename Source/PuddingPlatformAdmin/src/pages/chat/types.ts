@@ -306,6 +306,28 @@ export type SubAgentCardStatus =
   | 'timed_out'
   | 'interrupted';
 
+export interface SubAgentActivityDetail {
+  kind: 'model_message' | 'reasoning_notice' | 'tool_input' | 'tool_output';
+  label: string;
+  content: string;
+  truncated?: boolean;
+}
+
+/** canonical 子代理事件的安全、有界 UI 投影；不包含隐藏原始思维链。 */
+export interface SubAgentActivity {
+  eventId?: string;
+  type: string;
+  label: string;
+  occurredAt: number;
+  round?: number;
+  toolName?: string;
+  durationMs?: number;
+  totalTokens?: number;
+  error?: string;
+  toolCallId?: string;
+  details?: SubAgentActivityDetail[];
+}
+
 export interface SubAgentCard {
   /** 该子代理对应的 turnId */
   turnId: string;
@@ -315,6 +337,9 @@ export interface SubAgentCard {
   subSessionId: string;
   /** 父会话 ID，用于会话切换时隔离子代理卡片 */
   parentSessionId?: string;
+  parentTurnId?: string;
+  parentRunId?: string;
+  parentToolCallId?: string;
   templateId?: string;
   modelId?: string;
   providerId?: string;
@@ -344,6 +369,8 @@ export interface SubAgentCard {
   output?: string;
   /** 是否成功 */
   success?: boolean;
+  /** 最近的运行活动，供运行坞和详情检查器消费。 */
+  activities?: SubAgentActivity[];
 }
 
 /** 子代理卡片注册表：turnId → SubAgentCard */

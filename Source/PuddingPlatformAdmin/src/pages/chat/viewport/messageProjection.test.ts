@@ -83,7 +83,7 @@ describe('buildVirtualMessageItems', () => {
     });
   });
 
-  it('keeps sub-agent cards as independent virtual items ordered by time', () => {
+  it('projects sub-agent runs into a stable lightweight anchor', () => {
     const subAgentCards: SubAgentCardMap = {
       sub1: {
         turnId: 'sub1',
@@ -103,7 +103,42 @@ describe('buildVirtualMessageItems', () => {
     expect(result.items.map((item) => item.id)).toEqual([
       'message:user:t1:user',
       'message:agent:t1:assistant:0',
-      'subagent:sub1',
+      'subagent-anchor:sub1',
     ]);
+  });
+
+  it('groups batch child runs into one anchor', () => {
+    const result = buildVirtualMessageItems({
+      turns: [makeTurn('t1', 1000)],
+      agentName: 'Agent',
+      subAgentCards: {
+        one: {
+          turnId: 'one',
+          runId: 'run-1',
+          batchId: 'batch-1',
+          subSessionId: 'sub-1',
+          taskSummary: 'one',
+          status: 'running',
+          spawnedAt: 1500,
+        },
+        two: {
+          turnId: 'two',
+          runId: 'run-2',
+          batchId: 'batch-1',
+          subSessionId: 'sub-2',
+          taskSummary: 'two',
+          status: 'running',
+          spawnedAt: 1600,
+        },
+      },
+    });
+
+    const anchor = result.items.find(
+      (item) => item.kind === 'subagent-anchor',
+    );
+    expect(anchor).toMatchObject({
+      id: 'subagent-anchor:batch-1',
+      cards: [{ runId: 'run-1' }, { runId: 'run-2' }],
+    });
   });
 });

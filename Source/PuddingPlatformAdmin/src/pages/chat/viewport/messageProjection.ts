@@ -57,17 +57,38 @@ export function buildVirtualMessageItems(
     });
   }
 
+  const subAgentGroups = new Map<
+    string,
+    { createdAt: number; cards: SubAgentCardMap[string][] }
+  >();
   for (const card of Object.values(input.subAgentCards ?? {})) {
+    const groupId =
+      card.batchId ??
+      card.invocationId ??
+      card.parentToolCallId ??
+      card.runId ??
+      card.turnId;
+    const createdAt = getSubAgentCreatedAt(card);
+    const group = subAgentGroups.get(groupId);
+    if (group) {
+      group.cards.push(card);
+      group.createdAt = Math.min(group.createdAt, createdAt);
+    } else {
+      subAgentGroups.set(groupId, { createdAt, cards: [card] });
+    }
+  }
+
+  for (const [groupId, group] of subAgentGroups) {
     items.push({
-      kind: 'subagent',
-      id: `subagent:${card.turnId}`,
-      createdAt: getSubAgentCreatedAt(card),
-      card,
-      heightHint: card.output && card.output.length > 1200 ? 'rich' : 'normal',
+      kind: 'subagent-anchor',
+      id: `subagent-anchor:${groupId}`,
+      createdAt: group.createdAt,
+      cards: group.cards.sort((a, b) => a.spawnedAt - b.spawnedAt),
+      heightHint: 'compact',
     });
   }
 
-  const kindOrder = { loader: 0, message: 1, subagent: 2 };
+  const kindOrder = { loader: 0, message: 1, 'subagent-anchor': 2 };
   const roleOrder = { user: 0, agent: 1, system: 2, heartbeat: 3 };
 
   items.sort((a, b) => {

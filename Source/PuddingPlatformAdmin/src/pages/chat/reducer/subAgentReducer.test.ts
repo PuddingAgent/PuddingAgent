@@ -40,6 +40,10 @@ describe('subAgentReducer', () => {
         prompt_tokens: 1200,
         completion_tokens: 300,
         total_tokens: 1500,
+        message_preview: 'I will inspect the architecture next.',
+        message_truncated: false,
+        reasoning_available: true,
+        reasoning_chars: 2048,
       },
       {
         eventId: 'event-tool-started-1',
@@ -50,6 +54,7 @@ describe('subAgentReducer', () => {
         round: 1,
         tool_call_id: 'tool-1',
         tool_name: 'file_read',
+        arguments_preview: '{"path":"Source/code_map.md"}',
       },
       {
         eventId: 'event-tool-completed-1',
@@ -62,6 +67,8 @@ describe('subAgentReducer', () => {
         tool_name: 'file_read',
         duration_ms: 1000,
         output_length: 500,
+        output_preview: '# code map',
+        output_truncated: true,
       },
       {
         eventId: 'event-completed',
@@ -84,17 +91,48 @@ describe('subAgentReducer', () => {
     expect(run.totalTokens).toBe(1500);
     expect(run.tools).toHaveLength(1);
     expect(run.tools[0].status).toBe('completed');
+    expect(run.activities.map((activity) => activity.label)).toEqual([
+      '子代理已登记',
+      '第 1 轮开始',
+      '模型返回 · 1500 tokens',
+      '开始执行 file_read',
+      'file_read 执行完成',
+      '子代理执行完成',
+    ]);
 
     const card = projectSubAgentRunsToCards(state)['sa-run-1'];
     expect(card.originToolId).toBe('smart_plan');
     expect(card.modelId).toBe('kimi-k3');
     expect(card.totalTokens).toBe(1500);
     expect(card.output).toBe('done');
+    expect(card.activities).toHaveLength(6);
+    expect(card.subSessionId).toBe('sub-1');
+    expect(card.runId).toBe('run-1');
+    expect(card.activities?.[2].details).toEqual([
+      {
+        kind: 'model_message',
+        label: '模型消息输出',
+        content: 'I will inspect the architecture next.',
+        truncated: false,
+      },
+      {
+        kind: 'reasoning_notice',
+        label: '内部推理',
+        content:
+          '模型产生了内部推理（2048 字符）。为避免泄露隐藏思维链，仅展示可审计的模型消息与执行事实。',
+      },
+    ]);
+    expect(card.activities?.[3].details?.[0]).toMatchObject({
+      kind: 'tool_input',
+      content: '{"path":"Source/code_map.md"}',
+    });
+    expect(card.activities?.[4].details?.[0]).toMatchObject({
+      kind: 'tool_output',
+      content: '# code map',
+      truncated: true,
+    });
 
-    const replayed = reduceSubAgentRunEvent(
-      state,
-      events[2],
-    );
+    const replayed = reduceSubAgentRunEvent(state, events[2]);
     expect(replayed).toBe(state);
     expect(replayed['run-1'].totalTokens).toBe(1500);
   });

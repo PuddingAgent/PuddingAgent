@@ -1,4 +1,8 @@
-import type { SubAgentCardMap, SubAgentCardStatus } from '../types';
+import type {
+  SubAgentActivity,
+  SubAgentCardMap,
+  SubAgentCardStatus,
+} from '../types';
 
 export type SubAgentRunStatus =
   | 'created'
@@ -60,6 +64,7 @@ export interface SubAgentRunView {
   cacheHitTokens: number;
   cacheMissTokens: number;
   tools: SubAgentToolRun[];
+  activities: SubAgentActivity[];
   /** Conversation event ids already folded into this run. Prevents bootstrap/replay/live overlap from double-counting usage. */
   appliedEventIds: string[];
   output?: string;
@@ -77,12 +82,11 @@ export interface SubAgentConversationEvent {
   [key: string]: unknown;
 }
 
-const read = (
-  event: SubAgentConversationEvent,
-  ...keys: string[]
-): unknown => {
+const read = (event: SubAgentConversationEvent, ...keys: string[]): unknown => {
   const payload =
-    event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
+    event.payload &&
+    typeof event.payload === 'object' &&
+    !Array.isArray(event.payload)
       ? (event.payload as Record<string, unknown>)
       : undefined;
   for (const key of keys) {
@@ -107,6 +111,19 @@ const number = (
   const value = read(event, ...keys);
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const boolean = (
+  event: SubAgentConversationEvent,
+  ...keys: string[]
+): boolean | undefined => {
+  const value = read(event, ...keys);
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
+  }
+  return undefined;
 };
 
 const timestamp = (event: SubAgentConversationEvent): number => {
@@ -141,6 +158,109 @@ const isTerminalType = (type: string): boolean =>
   type === 'subagent.run.timed_out' ||
   type === 'subagent.run.interrupted';
 
+const activityLabel = (
+  event: SubAgentConversationEvent,
+  run: SubAgentRunView,
+): string => {
+  const round = number(event, 'round') ?? run.currentRound;
+  const toolName = text(event, 'tool_name', 'toolName') ?? '工具';
+  switch (event.type) {
+    case 'subagent.run.created':
+      return '子代理已登记';
+    case 'subagent.run.started':
+      return '运行时已启动';
+    case 'subagent.run.context_assembled':
+      return '上下文装配完成';
+    case 'subagent.round.started':
+      return `第 ${round} 轮开始`;
+    case 'subagent.round.completed':
+      return `第 ${round} 轮完成`;
+    case 'subagent.llm.started':
+      return `调用 ${run.modelId ?? '模型'}`;
+    case 'subagent.llm.completed':
+      return `模型返回 · ${number(event, 'total_tokens', 'totalTokens') ?? 0} tokens`;
+    case 'subagent.llm.failed':
+      return '模型调用失败';
+    case 'subagent.tool.started':
+      return `开始执行 ${toolName}`;
+    case 'subagent.tool.completed':
+      return `${toolName} 执行完成`;
+    case 'subagent.tool.failed':
+      return `${toolName} 执行失败`;
+    case 'subagent.run.completed':
+      return '子代理执行完成';
+    case 'subagent.run.cancelled':
+      return '子代理已取消';
+    case 'subagent.run.timed_out':
+      return '子代理执行超时';
+    case 'subagent.run.interrupted':
+      return '子代理运行中断';
+    default:
+      return '子代理执行失败';
+  }
+};
+
+const projectActivity = (
+  event: SubAgentConversationEvent,
+  run: SubAgentRunView,
+  at: number,
+): SubAgentActivity => {
+  const details: NonNullable<SubAgentActivity['details']> = [];
+  const messagePreview = text(event, 'message_preview', 'messagePreview');
+  if (messagePreview) {
+    details.push({
+      kind: 'model_message',
+      label: '模型消息输出',
+      content: messagePreview,
+      truncated: boolean(event, 'message_truncated', 'messageTruncated'),
+    });
+  }
+
+  if (boolean(event, 'reasoning_available', 'reasoningAvailable')) {
+    const reasoningChars =
+      number(event, 'reasoning_chars', 'reasoningChars') ?? 0;
+    details.push({
+      kind: 'reasoning_notice',
+      label: '内部推理',
+      content: `模型产生了内部推理${reasoningChars ? `（${reasoningChars} 字符）` : ''}。为避免泄露隐藏思维链，仅展示可审计的模型消息与执行事实。`,
+    });
+  }
+
+  const argumentsPreview = text(event, 'arguments_preview', 'argumentsPreview');
+  if (argumentsPreview) {
+    details.push({
+      kind: 'tool_input',
+      label: '工具输入',
+      content: argumentsPreview,
+      truncated: boolean(event, 'arguments_truncated', 'argumentsTruncated'),
+    });
+  }
+
+  const outputPreview = text(event, 'output_preview', 'outputPreview');
+  if (outputPreview) {
+    details.push({
+      kind: 'tool_output',
+      label: '工具输出',
+      content: outputPreview,
+      truncated: boolean(event, 'output_truncated', 'outputTruncated'),
+    });
+  }
+
+  return {
+    eventId: text(event, 'event_id', 'eventId'),
+    type: event.type,
+    label: activityLabel(event, run),
+    occurredAt: at,
+    round: number(event, 'round'),
+    toolName: text(event, 'tool_name', 'toolName'),
+    durationMs: number(event, 'duration_ms', 'durationMs'),
+    totalTokens: number(event, 'total_tokens', 'totalTokens'),
+    error: text(event, 'error', 'error_message', 'errorMessage'),
+    toolCallId: text(event, 'tool_call_id', 'toolCallId'),
+    details: details.length ? details : undefined,
+  };
+};
+
 const terminalStatus = (
   event: SubAgentConversationEvent,
 ): SubAgentRunStatus => {
@@ -166,16 +286,11 @@ const createRun = (
   runId,
   invocationId: text(event, 'invocation_id', 'invocationId'),
   batchId: text(event, 'batch_id', 'batchId'),
-  subSessionId:
-    text(event, 'sub_agent_id', 'subAgentId') ?? runId,
+  subSessionId: text(event, 'sub_agent_id', 'subAgentId') ?? runId,
   parentSessionId: text(event, 'parent_session_id', 'parentSessionId'),
   parentTurnId: text(event, 'parent_turn_id', 'parentTurnId', 'turnId'),
   parentRunId: text(event, 'parent_run_id', 'parentRunId'),
-  parentToolCallId: text(
-    event,
-    'parent_tool_call_id',
-    'parentToolCallId',
-  ),
+  parentToolCallId: text(event, 'parent_tool_call_id', 'parentToolCallId'),
   originToolId: text(event, 'origin_tool_id', 'originToolId'),
   role: text(event, 'role'),
   templateId: text(event, 'template', 'template_id', 'templateId'),
@@ -199,6 +314,7 @@ const createRun = (
   cacheHitTokens: 0,
   cacheMissTokens: 0,
   tools: [],
+  activities: [],
   appliedEventIds: [],
 });
 
@@ -227,18 +343,13 @@ const mergeIdentity = (
     text(event, 'origin_tool_id', 'originToolId') ?? current.originToolId,
   role: text(event, 'role') ?? current.role,
   templateId:
-    text(event, 'template', 'template_id', 'templateId') ??
-    current.templateId,
-  providerId:
-    text(event, 'provider_id', 'providerId') ?? current.providerId,
+    text(event, 'template', 'template_id', 'templateId') ?? current.templateId,
+  providerId: text(event, 'provider_id', 'providerId') ?? current.providerId,
   profileId: text(event, 'profile_id', 'profileId') ?? current.profileId,
-  modelId:
-    text(event, 'model_id', 'modelId', 'model') ?? current.modelId,
+  modelId: text(event, 'model_id', 'modelId', 'model') ?? current.modelId,
   taskSummary:
-    text(event, 'task_summary', 'taskSummary', 'task') ??
-    current.taskSummary,
-  maxRounds:
-    number(event, 'max_rounds', 'maxRounds') ?? current.maxRounds,
+    text(event, 'task_summary', 'taskSummary', 'task') ?? current.taskSummary,
+  maxRounds: number(event, 'max_rounds', 'maxRounds') ?? current.maxRounds,
   timeoutSeconds:
     number(event, 'timeout_seconds', 'timeoutSeconds') ??
     current.timeoutSeconds,
@@ -265,10 +376,7 @@ export function reduceSubAgentRunEvent(
   if (eventId && current?.appliedEventIds.includes(eventId)) return state;
 
   const at = timestamp(event);
-  let next = mergeIdentity(
-    current ?? createRun(event, runId, at),
-    event,
-  );
+  let next = mergeIdentity(current ?? createRun(event, runId, at), event);
   if (next.runId !== runId) next = { ...next, runId };
   next = { ...next, lastActivityAt: at };
 
@@ -303,14 +411,17 @@ export function reduceSubAgentRunEvent(
         phase: 'round',
         currentRound: number(event, 'round') ?? next.currentRound,
         llmDurationMs:
-          next.llmDurationMs + (number(event, 'duration_ms', 'durationMs') ?? 0),
+          next.llmDurationMs +
+          (number(event, 'duration_ms', 'durationMs') ?? 0),
         promptTokens:
-          next.promptTokens + (number(event, 'prompt_tokens', 'promptTokens') ?? 0),
+          next.promptTokens +
+          (number(event, 'prompt_tokens', 'promptTokens') ?? 0),
         completionTokens:
           next.completionTokens +
           (number(event, 'completion_tokens', 'completionTokens') ?? 0),
         totalTokens:
-          next.totalTokens + (number(event, 'total_tokens', 'totalTokens') ?? 0),
+          next.totalTokens +
+          (number(event, 'total_tokens', 'totalTokens') ?? 0),
         cacheHitTokens:
           next.cacheHitTokens +
           (number(event, 'cache_hit_tokens', 'cacheHitTokens') ?? 0),
@@ -326,7 +437,8 @@ export function reduceSubAgentRunEvent(
         phase: 'llm',
         error: text(event, 'error', 'error_message', 'errorMessage'),
         llmDurationMs:
-          next.llmDurationMs + (number(event, 'duration_ms', 'durationMs') ?? 0),
+          next.llmDurationMs +
+          (number(event, 'duration_ms', 'durationMs') ?? 0),
       };
       break;
     case 'subagent.tool.started': {
@@ -382,7 +494,7 @@ export function reduceSubAgentRunEvent(
         status: 'running',
         phase: 'round',
         toolDurationMs: next.toolDurationMs + durationMs,
-        error: failed ? tool.error ?? next.error : next.error,
+        error: failed ? (tool.error ?? next.error) : next.error,
         tools: [
           ...next.tools.filter((item) => item.toolCallId !== toolCallId),
           tool,
@@ -401,11 +513,9 @@ export function reduceSubAgentRunEvent(
           output:
             text(event, 'reply', 'output', 'result_summary') ?? next.output,
           error:
-            text(event, 'error', 'error_message', 'errorMessage') ??
-            next.error,
+            text(event, 'error', 'error_message', 'errorMessage') ?? next.error,
           currentRound:
-            number(event, 'total_rounds', 'totalRounds') ??
-            next.currentRound,
+            number(event, 'total_rounds', 'totalRounds') ?? next.currentRound,
         };
       }
       break;
@@ -417,6 +527,12 @@ export function reduceSubAgentRunEvent(
       appliedEventIds: [...next.appliedEventIds, eventId].slice(-5000),
     };
   }
+  next = {
+    ...next,
+    activities: [...next.activities, projectActivity(event, next, at)].slice(
+      -100,
+    ),
+  };
 
   const output = { ...state, [runId]: next };
   if (existingEntry && existingEntry[0] !== runId)
@@ -443,6 +559,9 @@ export function projectSubAgentRunsToCards(
       batchId: run.batchId,
       subSessionId: run.subSessionId,
       parentSessionId: run.parentSessionId,
+      parentTurnId: run.parentTurnId,
+      parentRunId: run.parentRunId,
+      parentToolCallId: run.parentToolCallId,
       templateId: run.templateId,
       modelId: run.modelId,
       providerId: run.providerId,
@@ -471,6 +590,7 @@ export function projectSubAgentRunsToCards(
       output: run.output,
       success: run.status === 'completed',
       error: run.error,
+      activities: run.activities,
     };
   }
   return cards;

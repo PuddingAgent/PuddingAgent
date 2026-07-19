@@ -335,6 +335,7 @@ export const useChatStyles = createStyles(({ token }) => ({
     minHeight: 0,
   },
   chatInteractionShell: {
+    position: 'relative' as const,
     display: 'flex',
     flex: 1,
     minWidth: 0,
