@@ -166,6 +166,37 @@ public sealed class SubAgentToolTaskPlanningTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_NestedDelegationKeepsPersistentConfigurationOwner()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "completed",
+        };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 1, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+        var request = CreateRequest(
+            """{"task":"Inspect missing evidence","sync":true,"depth":1,"max_depth":2}""");
+        request = request with
+        {
+            Context = request.Context with
+            {
+                AgentInstanceId = "ephemeral-planner-session",
+                ConfigurationAgentInstanceId = "persistent-root-agent",
+            },
+        };
+
+        var result = await tool.ExecuteAsync(request);
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual("persistent-root-agent", invocation.LastRequest!.ParentAgentInstanceId);
+        Assert.AreEqual("ephemeral-planner-session", invocation.LastRequest.ParentAgentId);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_RejectsOutOfRangeMaxRounds()
     {
         var invocation = new RecordingSubAgentInvocationService();

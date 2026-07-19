@@ -153,6 +153,40 @@ public sealed class SubAgentManagerMessageTests
     }
 
     [TestMethod]
+    public async Task ExecuteSyncAsync_PreservesTimeoutTerminalStateAndConfigurationOwner()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher(new RuntimeDispatchResult
+        {
+            SessionId = "overwritten",
+            AgentInstanceId = "overwritten",
+            IsSuccess = false,
+            ErrorMessage = "Execution timed out.",
+            StopReason = "MaxElapsedReached",
+            ExecutionState = AgentExecutionState.Failed,
+        });
+        var manager = CreateManager(dispatcher);
+
+        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "ephemeral-planner",
+            ConfigurationAgentInstanceId = "persistent-root-agent",
+            WorkspaceId = "default",
+            TaskDescription = "Explore missing evidence.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("timed_out", result.Status);
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(
+            "persistent-root-agent",
+            dispatcher.LastRequest!.ConfigurationAgentInstanceId);
+    }
+
+    [TestMethod]
     public async Task ExecuteSyncAsync_RejectsMissingLlmProfile_BeforeDispatch()
     {
         var dispatcher = new RecordingRuntimeAgentDispatcher();

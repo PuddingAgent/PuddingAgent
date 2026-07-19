@@ -134,6 +134,11 @@ public sealed record RuntimeDispatchRequest
     /// </summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
     public string? AgentInstanceId { get; init; }
+    /// <summary>
+    /// Persistent Agent whose manifest owns configuration for this execution.
+    /// Delegated executions keep their ephemeral AgentInstanceId but inherit this stable owner.
+    /// </summary>
+    public string? ConfigurationAgentInstanceId { get; init; }
     public PermissionSnapshot? PermissionSnapshot { get; init; }
     /// <summary>
     /// 由 Agent Profile Resolver 解析后的 LLM 路由身份。

@@ -29,11 +29,12 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 
     protected override string RoleName => "planner";
-    protected override int DefaultTimeoutSeconds => 600;
     protected override int DefaultMaxRounds => 150;
+    protected override bool AllowNestedSmartDelegation => true;
 
-    /// <summary>Planner 只暴露只读工具，禁止代码探索和写操作。</summary>
-    protected override string? AllowedTools => "file_read,search_grep,list_dir,project_map,search_memory,query_session_logs";
+    /// <summary>Planner 只允许一个单向 Smart DAG 边：planner → explorer。</summary>
+    protected override string? AllowedTools =>
+        "file_read,search_grep,list_dir,project_map,search_memory,query_session_logs,smart_explore";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartPlanArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -67,6 +68,7 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
         sb.AppendLine("### PROCESS");
         sb.AppendLine("1. Restate the problem and constraints to confirm understanding.");
         sb.AppendLine("2. Use search_memory to check for relevant historical plans or known context.");
+        sb.AppendLine("   If and only if critical code evidence is missing, call smart_explore once with a bounded question and reuse its complete report.");
         sb.AppendLine("3. For each major decision point, apply ADR format: Context → Decision → Rationale → Alternatives Rejected.");
         sb.AppendLine("4. Break into SEQUENTIAL (depends) + PARALLEL (independent) tasks with precise deliverables.");
         sb.AppendLine("5. For each task: what files are touched, what the change is, how to verify success.");
@@ -75,7 +77,9 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
         sb.AppendLine("### ⚠️ CONSTRAINTS");
         sb.AppendLine("- The task description already contains background, file paths, and constraints gathered by the caller. Trust it.");
         sb.AppendLine("- Use search_memory first. Use file tools only to verify specific claims in the task.");
-        sb.AppendLine("- If you believe critical context is missing, note it in RISKS — do NOT go exploring yourself.");
+        sb.AppendLine("- Never call smart_plan or any Smart tool other than smart_explore.");
+        sb.AppendLine("- smart_explore may be called at most once and only for missing evidence that materially changes the plan.");
+        sb.AppendLine("- Do not repeat exploration after smart_explore returns; consume its evidence package directly.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
         if (!string.IsNullOrWhiteSpace(args.Scope))

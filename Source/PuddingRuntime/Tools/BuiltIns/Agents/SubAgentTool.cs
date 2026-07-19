@@ -200,7 +200,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 var batch = await subAgentInvocation.InvokeBatchAsync(new SubAgentBatchInvocationRequest
                 {
                     ParentSessionId = request.SessionId,
-                    ParentAgentInstanceId = request.AgentInstanceId,
+                    ParentAgentInstanceId =
+                        context.ConfigurationAgentInstanceId ?? request.AgentInstanceId,
                     ParentAgentId = request.AgentInstanceId,
                     WorkspaceId = request.WorkspaceId,
                     WorkingDirectory = workingDirectory,
@@ -247,7 +248,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             var invocationResult = await subAgentInvocation.InvokeAsync(new SubAgentInvocationRequest
             {
                 ParentSessionId = request.SessionId,
-                ParentAgentInstanceId = request.AgentInstanceId,
+                ParentAgentInstanceId =
+                    context.ConfigurationAgentInstanceId ?? request.AgentInstanceId,
                 ParentAgentId = request.AgentInstanceId,
                 WorkspaceId = request.WorkspaceId,
                 WorkingDirectory = workingDirectory,

@@ -64,7 +64,9 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
-        var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
+        var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
+            ? request.ReuseSubSessionId
+            : $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var spawnedAt = DateTimeOffset.UtcNow;
         var trace = ResolveTrace(request, subSessionId);
 
@@ -357,7 +359,9 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
-        var subSessionId = $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
+        var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
+            ? request.ReuseSubSessionId
+            : $"{request.ParentSessionId}-sub-{Guid.NewGuid().ToString("N")[..8]}";
         var trace = ResolveTrace(request, subSessionId);
         var spawnedAt = DateTimeOffset.UtcNow;
         var runHandle = await _runStore.CreateRunAsync(
@@ -385,7 +389,7 @@ public sealed class SubAgentManager : ISubAgentManager
         await RecordActivityAsync(trace, "execute_sync", RuntimeActivityStatuses.Started,
             $"Executing sync sub-agent {subSessionId}", ct);
 
-        dynamic r;
+        RuntimeDispatchResult r;
         try
         {
             r = await ExecuteAsyncSubAgentWithLimitsAsync(
@@ -458,6 +462,7 @@ public sealed class SubAgentManager : ISubAgentManager
             SubSessionId = subSessionId,
             RunId = runHandle.RunId,
             Success = r.IsSuccess,
+            Status = ResolveRuntimeTerminalStatus(r),
             Reply = r.ReplyText, Error = r.ErrorMessage, Usage = r.Usage,
         };
     }
@@ -653,7 +658,7 @@ public sealed class SubAgentManager : ISubAgentManager
         }
     }
 
-    private Task<dynamic> DispatchChildAgentAsync(
+    private Task<RuntimeDispatchResult> DispatchChildAgentAsync(
         string subSessionId,
         string runId,
         SubAgentSpawnRequest request,
@@ -844,7 +849,7 @@ public sealed class SubAgentManager : ISubAgentManager
         return envelope;
     }
 
-    private static async Task<dynamic> DispatchChildAgentImpl(
+    private static async Task<RuntimeDispatchResult> DispatchChildAgentImpl(
         string subSessionId,
         string runId,
         SubAgentSpawnRequest request,
@@ -864,6 +869,8 @@ public sealed class SubAgentManager : ISubAgentManager
             // 使用 subSessionId 作为执行身份，避免同模板并发任务被 RuntimeAgentDispatcher
             // 误判为同一个 Agent 实例 busy；模板并发额度由上层调度配置负责。
             AgentInstanceId = subSessionId,
+            ConfigurationAgentInstanceId =
+                request.ConfigurationAgentInstanceId ?? request.ParentAgentId,
             MessageText = request.TaskDescription,
             WorkingDirectory = request.WorkingDirectory,
             CapabilityPolicy = request.CapabilityPolicy,
@@ -889,6 +896,23 @@ public sealed class SubAgentManager : ISubAgentManager
         return await dispatcher.DispatchAsync(childReq, ct);
     }
 
+    private static string ResolveRuntimeTerminalStatus(RuntimeDispatchResult result)
+    {
+        if (result.IsSuccess)
+            return "completed";
+        if (string.Equals(
+                result.StopReason,
+                "MaxElapsedReached",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "timed_out";
+        }
+
+        return result.ExecutionState == AgentExecutionState.Cancelled
+            ? "cancelled"
+            : "failed";
+    }
+
     private static SubAgentSpawnRequest NormalizeRequestIdentity(SubAgentSpawnRequest request)
         => request with
         {
@@ -907,7 +931,8 @@ public sealed class SubAgentManager : ISubAgentManager
         ParentSessionId = request.ParentSessionId,
         SubSessionId = subSessionId,
         WorkspaceId = request.WorkspaceId,
-        AgentInstanceId = request.ParentAgentId ?? subSessionId,
+        AgentInstanceId =
+            request.ConfigurationAgentInstanceId ?? request.ParentAgentId ?? subSessionId,
         TemplateId = request.TemplateId,
         Task = request.TaskDescription,
         TaskPlanId = request.TaskPlanId,

@@ -386,3 +386,4 @@ FodyWeavers.xsd
 Resources/
 /.codex-out
 /.tmp-build
+/.tmp-test-out

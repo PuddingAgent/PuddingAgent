@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools;
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
-    SubAgentExposure = SubAgentExposure.MainAgentOnly)]
+    SubAgentExposure = SubAgentExposure.DelegatedSubAgent)]
 public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
 {
     private readonly IServiceProvider _serviceProvider;
@@ -33,7 +33,6 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     }
 
     protected override string RoleName => "explorer";
-    protected override int DefaultTimeoutSeconds => 600;
     protected override int DefaultMaxRounds => 150;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(

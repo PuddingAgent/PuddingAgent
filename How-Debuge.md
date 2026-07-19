@@ -520,6 +520,62 @@ BuiltIn provider 以及 fallback 不得分别暴露不同路径格式。
 5. 不要在主 Agent 侧把短结果补写成成功报告，也不要自动无限重试。修正对应角色的
    Prompt/模型后重新调用，避免悄悄重复消耗 Token。
 
+### 7.6 Smart 子代理在截止时间显示 cancelled，且轮次/工具统计归零
+
+已复现样本：
+
+```text
+Session ID: 861ce7e80f0749c491afd75593763731-sub-2e58232a
+Run ID:     run_20260719_071437_a0a21510e3fd
+```
+
+症状是运行恰好在约 600 秒结束，检查器显示 `The operation was canceled.`，但归档
+已有 28 轮和多次工具调用，terminal 却被写成 `cancelled` 且统计为 0。该现象不是
+Provider 主动取消，而是调用方 deadline 取消在 LLM 边界被转换成普通失败，并且外层
+提前提交了一个缺少 journal 统计的终态。
+
+诊断顺序：
+
+1. 在子代理检查器复制 Session ID 和 Run ID，定位
+   `data/workspaces/{workspaceId}/agents/{configurationAgentId}/runs/{runId}/`。
+2. 检查 `run.json` 的 `maxElapsedSeconds/deadlineUtc/status`，确认结束时间是否贴近
+   deadline。
+3. 检查 `events.jsonl` 最后的 `subagent.round.*`、`subagent.tool.*` 和 terminal。
+   已有 round/tool 事件但 terminal 为零，说明是终态累计链路错误，不是子代理没工作。
+4. 过滤日志关键词：
+
+   ```text
+   [LlmInvocation]
+   [AgentExec]
+   CompleteRun
+   run_20260719_071437_a0a21510e3fd
+   ```
+
+5. `LlmInvocationService` 必须在 caller token 已取消时重新抛出
+   `OperationCanceledException`；只有 Provider 自身失败才返回普通 failed result。
+6. `AgentExecutionService` 必须用 `ExecutionDeadlineUtc` 分类：
+   deadline 到达为 `timed_out`，用户控制取消为 `cancelled`。同步与 SSE 都必须走公共
+   terminal 路径，从 journal/事件累计真实轮次、工具次数和 Token。
+7. 取消或超时后不得继续使用已取消 token 启动 memory writeback、compaction 或
+   subconscious fallback；否则会产生第二次取消噪声并掩盖首个终态。
+
+Smart 嵌套调用还要检查：
+
+- 默认预算应为 1800 秒；
+- 只有 Planner 执行快照设置 `AllowSubDelegation=true`；
+- Planner capability whitelist 只包含 `smart_explore`；
+- Explorer 的下一层委派开关必须为 false；
+- `DelegationDepth >= MaxDelegationDepth` 时，`PuddingToolRegistry` 必须在调用前拒绝。
+
+正确终态不变量：
+
+```text
+deadline reached  => timed_out
+explicit cancel   => cancelled
+terminal totals   => 与此前持久 run 事件一致
+terminal count    => 1
+```
+
 ## 8. 浏览器验收
 
 每次修改聊天链路后至少完成：

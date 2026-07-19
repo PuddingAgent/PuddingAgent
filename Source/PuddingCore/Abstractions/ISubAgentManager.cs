@@ -1,4 +1,4 @@
-﻿using PuddingCode.Models;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
@@ -96,6 +96,8 @@ public sealed record SubAgentSpawnRequest
 {
     public required string ParentSessionId { get; init; }
     public string? ParentAgentId { get; init; }
+    /// <summary>Root Agent manifest used to resolve Smart role model configuration.</summary>
+    public string? ConfigurationAgentInstanceId { get; init; }
     public required string WorkspaceId { get; init; }
     public string? WorkingDirectory { get; init; }
     public required string TaskDescription { get; init; }
@@ -106,6 +108,9 @@ public sealed record SubAgentSpawnRequest
         public required LlmInvocationProfile LlmProfile { get; init; }
     /// <summary>父代理上下文快照（Fork + 剪枝后）。非空时 ContextPipeline 注入 INHERITED-CONTEXT 层。</summary>
     public string? ParentContextSnapshot { get; init; }
+    /// <summary>复用已有子代理会话 ID。非空时跳过新 ID 生成，直接使用此 ID。
+    /// 用于子代理池复用场景，保持会话连续以利用 KV-cache。</summary>
+    public string? ReuseSubSessionId { get; init; }
     public int MaxRounds { get; init; } = 10;
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public string? TaskPlanId { get; init; }
@@ -140,6 +145,8 @@ public sealed record SubAgentExecuteResult
     public required string SubSessionId { get; init; }
     public string? RunId { get; init; }
     public bool Success { get; init; }
+    /// <summary>Canonical terminal state: completed, failed, timed_out or cancelled.</summary>
+    public string? Status { get; init; }
     public string? Reply { get; init; }
     public string? Error { get; init; }
     public TokenUsageDto? Usage { get; init; }

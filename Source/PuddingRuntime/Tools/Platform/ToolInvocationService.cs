@@ -80,9 +80,14 @@ public sealed class ToolInvocationService : IToolInvocationService
                 WorkspaceId = request.WorkspaceId,
                 SessionId = request.SessionId,
                 AgentInstanceId = request.AgentInstanceId,
+                ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
                 WorkingDirectory = request.WorkingDirectory,
                 AgentTemplateId = request.AgentTemplateId,
                 Trace = request.Trace,
+                DelegationDepth = request.DelegationDepth,
+                MaxDelegationDepth = request.MaxDelegationDepth,
+                AllowSubDelegation = request.AllowSubDelegation,
+                RoleInPlan = request.RoleInPlan,
                 ExecutionIdentity = request.ExecutionIdentity is null
                     ? null
                     : request.ExecutionIdentity with { ToolCallId = request.ToolCallId },

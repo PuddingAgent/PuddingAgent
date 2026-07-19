@@ -27,7 +27,6 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
     }
 
     protected override string RoleName => "developer";
-    protected override int DefaultTimeoutSeconds => 1200;
     protected override int DefaultMaxRounds => 200;
     protected override string AllowedTools => "file_read,file_search,list_dir,search_grep,code_outline,code_symbol_search,code_explore,code_callers,code_callees,code_summary,project_map,file_patch,apply_patch,file_write,shell,terminal_start,terminal_wait,terminal_read,terminal_status,terminal_cancel,search_memory";
 

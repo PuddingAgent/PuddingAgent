@@ -168,7 +168,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
                     SubSessionId = result.SubSessionId,
                     RunId = result.RunId,
                     TaskId = spawnRequest.TaskNodeId,
-                    Status = result.Success ? "completed" : "failed",
+                    Status = result.Status ?? (result.Success ? "completed" : "failed"),
                     Reply = result.Reply,
                     Error = result.Error,
                 };
@@ -195,6 +195,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
     {
         ParentSessionId = request.ParentSessionId,
         ParentAgentId = request.ParentAgentId,
+        ConfigurationAgentInstanceId = request.ParentAgentInstanceId,
         WorkspaceId = request.WorkspaceId,
         WorkingDirectory = request.WorkingDirectory,
         TaskDescription = request.Task,
@@ -228,6 +229,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
     {
         ParentSessionId = request.ParentSessionId,
         ParentAgentId = request.ParentAgentId,
+        ConfigurationAgentInstanceId = request.ParentAgentInstanceId,
         WorkspaceId = request.WorkspaceId,
         WorkingDirectory = request.WorkingDirectory,
         TaskDescription = task.Task,

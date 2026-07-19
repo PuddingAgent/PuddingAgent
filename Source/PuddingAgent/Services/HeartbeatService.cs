@@ -256,7 +256,7 @@ public sealed class HeartbeatOrchestrator : IHostedService
     /// 兼容旧 prompt 中可能存在的 string.Format 占位符：{0}=AgentId，{1}=排队等待秒数。
     /// 格式错误时直接使用原文，避免单个 Agent 配置错误导致心跳调度整体失败。
         /// </summary>
-    private static string FormatHeartbeatPrompt(string? prompt, string agentId, int queuedSeconds)
+    private string FormatHeartbeatPrompt(string? prompt, string agentId, int queuedSeconds)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {

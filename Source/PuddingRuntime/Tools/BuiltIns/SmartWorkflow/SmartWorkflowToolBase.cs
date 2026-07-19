@@ -12,22 +12,26 @@ namespace PuddingRuntime.Services.Tools;
 /// 设计原则：
 ///   · Agent = Function — 工具签名即自然语言
 ///   · 薄包装 — 核心逻辑在 role_in_plan 驱动的子代理中
-///   · MainAgentOnly — 不暴露给子代理，防止循环
+///   · 有界委派 — 仅显式白名单 Smart 边可委派，深度由 Runtime 强制限制
 ///   · 模型选择 — 通过 role_in_plan → manifest.{Role}Model 推导
 /// </summary>
 public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> where TArgs : class, new()
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
+    protected const int SmartWorkflowTimeoutSeconds = 30 * 60;
     private const int MinimumDetailedReportLength = 300;
     private static readonly string[] RequiredReportSections =
         ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
 
     protected abstract string RoleName { get; }
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
-    protected abstract int DefaultTimeoutSeconds { get; }
+    protected virtual int DefaultTimeoutSeconds => SmartWorkflowTimeoutSeconds;
     protected virtual int DefaultMaxRounds => 15;
     /// <summary>子代理允许的工具列表，逗号分隔。null = 继承父代理全部工具。</summary>
     protected virtual string? AllowedTools => null;
+    /// <summary>仅由明确设计为 DAG 父节点的 Smart 工具覆盖为 true。</summary>
+    protected virtual bool AllowNestedSmartDelegation => false;
+    protected virtual int MaxDelegationDepth => 2;
 
     /// <summary>
     /// Appends the canonical report rules understood by <c>spawn_sub_agent</c>.
@@ -58,7 +62,9 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         var workingDirectory = ResolveWorkingDirectory(args);
 
         // 从父 Agent manifest 解析角色对应的模型
-        var model = await ResolveRoleModelAsync(context.AgentInstanceId, services, logger);
+        var configurationAgentId =
+            context.ConfigurationAgentInstanceId ?? context.AgentInstanceId;
+        var model = await ResolveRoleModelAsync(configurationAgentId, services, logger);
 
         var sw = Stopwatch.StartNew();
 
@@ -74,7 +80,9 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 timeout_seconds = timeout,
                 max_rounds = DefaultMaxRounds,
                 working_directory = workingDirectory,
-                allow_sub_delegation = false,
+                allow_sub_delegation = AllowNestedSmartDelegation,
+                depth = context.DelegationDepth ?? 0,
+                max_depth = context.MaxDelegationDepth ?? MaxDelegationDepth,
                 tools = AllowedTools,
                 reuse_parent_context = true,
                 origin_tool_id = Descriptor.ToolId,
@@ -82,7 +90,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 
             logger.LogInformation(
                 "[{Tool}] agent={Agent} role={Role} spawning sub-agent timeout={Timeout}s",
-                toolName, context.AgentInstanceId, RoleName, timeout);
+                toolName, configurationAgentId, RoleName, timeout);
 
             var toolExec = services.GetRequiredService<IPuddingToolExecutionService>();
             var result = await toolExec.ExecuteAsync("spawn_sub_agent", spawnArgs, context, null, ct);

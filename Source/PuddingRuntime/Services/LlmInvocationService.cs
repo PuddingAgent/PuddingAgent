@@ -76,6 +76,12 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 PrefixSnapshot = request.PrefixSnapshot,
             };
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Cancellation is execution control, not an ordinary provider failure.
+            // The Agent loop owns the timeout-vs-user-cancel classification.
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[LlmInvocation] LLM API error session={SessionId}", request.SessionId);

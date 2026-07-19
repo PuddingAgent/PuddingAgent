@@ -9,9 +9,8 @@ public sealed record LlmToolDefinition
     public required string Description { get; init; }
     public required ToolParameterSchema Parameters { get; init; }
     /// <summary>
-    /// When <see cref="PuddingCode.Tools.SubAgentExposure.MainAgentOnly"/>, the tool
-    /// MUST NOT be exposed to sub-agents. Runtime pipeline uses this to filter Smart*
-    /// wrapper tools that internally delegate to sub-agents, preventing circular calls.
+    /// Runtime exposure policy. MainAgentOnly is never exposed to sub-agents;
+    /// DelegatedSubAgent additionally requires an allowed delegation depth and capability whitelist.
     /// </summary>
     public SubAgentExposure SubAgentExposure { get; init; } = SubAgentExposure.Default;
 }

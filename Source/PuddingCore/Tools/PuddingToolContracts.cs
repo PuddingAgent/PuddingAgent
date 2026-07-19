@@ -36,15 +36,19 @@ public enum ToolSafetyFlags
     RequiresNetwork = 1 << 5,
 }
 
-/// <summary>Controls whether a tool is exposed to sub-agents. Smart* wrappers that
-/// internally delegate to sub-agents must be marked MainAgentOnly to prevent circular calls.</summary>
+/// <summary>Controls whether a tool is exposed to sub-agents.</summary>
 public enum SubAgentExposure
 {
     /// <summary>Default — tool is exposed to both main agents and sub-agents.</summary>
     Default,
-    /// <summary>Tool is excluded from sub-agent tool lists. Use for Smart* wrappers that
-    /// internally use spawn_sub_agent to avoid sub-agents calling back into SmartSearch.</summary>
+    /// <summary>Tool is excluded from every sub-agent tool list.</summary>
     MainAgentOnly,
+    /// <summary>
+    /// Tool is exposed to a sub-agent only when that execution explicitly allows another
+    /// delegation level and has not reached its maximum depth. CapabilityPolicy must still
+    /// whitelist the tool. This supports bounded Smart-to-Smart DAG edges without recursion.
+    /// </summary>
+    DelegatedSubAgent,
 }
 
 /// <summary>声明一个可由 Agent 调用的 Pudding Tool。</summary>
@@ -150,6 +154,12 @@ public sealed record ToolExecutionContext
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }
     /// <summary>
+    /// Persistent Agent instance whose manifest owns runtime configuration for this execution.
+    /// For delegated runs AgentInstanceId is the ephemeral sub-session identity, while this value
+    /// remains the root Agent whose Smart role model bindings must be read.
+    /// </summary>
+    public string? ConfigurationAgentInstanceId { get; init; }
+    /// <summary>
     /// 本次执行快照确定的文件工具根目录。它是文件系统边界，不等同于 WorkspaceId。
     /// </summary>
     public string? WorkingDirectory { get; init; }
@@ -159,6 +169,10 @@ public sealed record ToolExecutionContext
     /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
     /// </summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    public int? DelegationDepth { get; init; }
+    public int? MaxDelegationDepth { get; init; }
+    public bool? AllowSubDelegation { get; init; }
+    public string? RoleInPlan { get; init; }
     public bool IsYoloMode { get; init; }
 }
 

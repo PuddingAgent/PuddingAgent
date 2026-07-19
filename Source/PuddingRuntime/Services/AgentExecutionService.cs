@@ -531,7 +531,11 @@ public sealed class AgentExecutionService
                     subAgentTerminalStatus = deadlineReached
                         ? "timed_out"
                         : "cancelled";
-                    await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, ct));
+                    executionError = deadlineReached
+                        ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
+                        : "Execution cancelled.";
+                    finalMessage = executionError;
+                    await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
                     break;
                 }
 
@@ -544,6 +548,8 @@ public sealed class AgentExecutionService
                     stopReason = AgentLoopStopReason.MaxElapsedReached;
                     execState  = AgentExecutionState.Failed;
                     subAgentTerminalStatus = "timed_out";
+                    executionError = $"Execution exceeded max elapsed time ({maxElapsed.TotalSeconds}s).";
+                    finalMessage = executionError;
                     await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
                     break;
                 }
@@ -836,6 +842,8 @@ public sealed class AgentExecutionService
                                         WorkspaceId = request.WorkspaceId,
                                         SessionId = request.SessionId,
                                         AgentInstanceId = instance.AgentInstanceId,
+                                        ConfigurationAgentInstanceId =
+                                            request.ConfigurationAgentInstanceId ?? instance.AgentInstanceId,
                                         WorkingDirectory = request.WorkingDirectory,
                                         AgentTemplateId = request.AgentTemplateId,
                                         ToolCallId = call.Id,
@@ -844,6 +852,10 @@ public sealed class AgentExecutionService
                                         CapabilityPolicy = effectiveCapability,
                                         Trace = execTrace,
                                         ExecutionIdentity = request.ExecutionIdentity,
+                                        DelegationDepth = request.DelegationDepth,
+                                        MaxDelegationDepth = request.MaxDelegationDepth,
+                                        AllowSubDelegation = request.AllowSubDelegation,
+                                        RoleInPlan = request.RoleInPlan,
                                     }, ct);
                                     skillResult = new SkillResult
                                     {
@@ -1318,6 +1330,8 @@ public sealed class AgentExecutionService
                                 WorkspaceId = request.WorkspaceId,
                                 SessionId = request.SessionId,
                                 AgentInstanceId = instance.AgentInstanceId,
+                                ConfigurationAgentInstanceId =
+                                    request.ConfigurationAgentInstanceId ?? instance.AgentInstanceId,
                                 WorkingDirectory = request.WorkingDirectory,
                                 AgentTemplateId = request.AgentTemplateId,
                                 ToolCallId = toolName, // CONTINUE 路径没有独立 toolCallId
@@ -1326,6 +1340,10 @@ public sealed class AgentExecutionService
                                 CapabilityPolicy = effectiveCapability,
                                 Trace = execTrace,
                                 ExecutionIdentity = request.ExecutionIdentity,
+                                DelegationDepth = request.DelegationDepth,
+                                MaxDelegationDepth = request.MaxDelegationDepth,
+                                AllowSubDelegation = request.AllowSubDelegation,
+                                RoleInPlan = request.RoleInPlan,
                             }, ct);
                             skillResult = new SkillResult
                             {
@@ -1580,15 +1598,8 @@ public sealed class AgentExecutionService
                 deadlineReached ? "Timed out" : "Cancelled",
                 request.SessionId);
             await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
-
-            // 完成子代理运行归档（ADR-021）
-            await TryCompleteSubAgentRunAsync(
-                subAgentRunId, request.SessionId, false,
-                finalMessage, executionError, 0, totalToolCalls, totalSw.ElapsedMilliseconds,
-                toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
-                subAgentTerminalStatus,
-                request.ExecutionIdentity,
-                CancellationToken.None);
+            // Do not write a terminal run here. The common terminal path below computes the
+            // real round/tool totals and performs the single first-writer-wins commit.
         }
         catch (Exception ex)
         {
@@ -1599,9 +1610,11 @@ public sealed class AgentExecutionService
             await FireHooksAsync(h => h.OnFailedAsync(loopCtx, ex.Message, ex, default));
 
             // 完成子代理运行归档（ADR-021）
+            var failedTurnCount =
+                _journal.GetTurns(request.SessionId).Count - journalStartCount;
             await TryCompleteSubAgentRunAsync(
                 subAgentRunId, request.SessionId, false,
-                finalMessage, ex.Message, 0, totalToolCalls, totalSw.ElapsedMilliseconds,
+                finalMessage, ex.Message, failedTurnCount, totalToolCalls, totalSw.ElapsedMilliseconds,
                 toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
                 "failed",
                 request.ExecutionIdentity,
@@ -1635,9 +1648,14 @@ public sealed class AgentExecutionService
             _contextManager.MarkSessionExecutionCompleted(request.SessionId);
         }
 
+        var terminatedByCancellationOrTimeout =
+            subAgentTerminalStatus is "cancelled" or "timed_out";
+
         // ── 记忆写回 ──────────────────────────────────────────────────
-        if (template.Memory?.EnableSessionMemory == true
-         || template.Memory?.EnableWorkspaceMemory == true)
+        // A cancelled/timed-out run must not start new post-loop work with an already cancelled token.
+        if (!terminatedByCancellationOrTimeout
+            && (template.Memory?.EnableSessionMemory == true
+             || template.Memory?.EnableWorkspaceMemory == true))
         {
             _memory.WriteBack(
                 finalMessage,
@@ -1647,7 +1665,8 @@ public sealed class AgentExecutionService
                 instance.AgentInstanceId);
         }
 
-        if (!request.SuppressContextAutoCompaction)
+        if (!terminatedByCancellationOrTimeout
+            && !request.SuppressContextAutoCompaction)
         {
             await _contextManager.TrimHistoryAsync(
                 request.SessionId,
@@ -1688,8 +1707,13 @@ public sealed class AgentExecutionService
             ?? firstToolFailureSummary
             ?? $"Execution ended with state={execState}";
 
-        await FireHooksAsync(h => h.OnLoopCompleteAsync(loopCtx, finalMessage, stopReason, ct));
-        TryEnqueueSubconsciousConsolidationFallback(request, instance.AgentInstanceId, finalMessage);
+        await FireHooksAsync(h => h.OnLoopCompleteAsync(
+            loopCtx,
+            finalMessage,
+            stopReason,
+            terminatedByCancellationOrTimeout ? default : ct));
+        if (!terminatedByCancellationOrTimeout)
+            TryEnqueueSubconsciousConsolidationFallback(request, instance.AgentInstanceId, finalMessage);
 
         _logger.LogInformation(
             "[AgentExec] End session={Session} state={State} reason={Reason} replyLen={Len}",
@@ -2300,6 +2324,8 @@ public sealed class AgentExecutionService
             // 连续 LLM 失败计数：外部 API 瞬时故障时，同一故障导致的多次重试只计 1 次 fuse 错误
             var consecutiveLlmFailures = 0;
             StreamErrorDiagnostic? terminalStreamError = null;
+            string? terminalStreamStatus = null;
+            var streamRoundsStarted = 0;
 
             for (int round = 0; round < maxRounds; round++)
             {
@@ -2310,18 +2336,33 @@ public sealed class AgentExecutionService
                 // ── 检查点：取消 / 最大耗时 / 最大工具调用 ──
                 if (ct.IsCancellationRequested)
                 {
-                    _logger.LogInformation("[AgentExec:Stream] Cancelled session={Session}", request.SessionId);
-                    var cancelledFrame = ServerSentEventFrame.Json(SseEventTypes.Cancelled, new { message = "已取消" });
+                    var deadlineReached =
+                        request.ExecutionDeadlineUtc is { } deadline &&
+                        DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
+                    terminalStreamStatus = deadlineReached ? "timed_out" : "cancelled";
+                    _logger.LogInformation(
+                        "[AgentExec:Stream] {Termination} session={Session}",
+                        deadlineReached ? "Timed out" : "Cancelled",
+                        request.SessionId);
+                    var cancelledFrame = deadlineReached
+                        ? ServerSentEventFrame.Json(
+                            SseEventTypes.Error,
+                            new { message = $"执行超时 ({maxElapsed.TotalSeconds}s)", status = terminalStreamStatus })
+                        : ServerSentEventFrame.Json(
+                            SseEventTypes.Cancelled,
+                            new { message = "已取消", status = terminalStreamStatus });
                     await Append(cancelledFrame);
                     yield return cancelledFrame;
                     break;
                 }
                 if (perfTotalSw.Elapsed > maxElapsed)
                 {
+                    terminalStreamStatus = "timed_out";
+                    reply = $"Execution exceeded max elapsed time ({maxElapsed.TotalSeconds}s).";
                     _logger.LogWarning("[AgentExec:Stream] MaxElapsed={Max} exceeded", maxElapsed);
                     var timeoutFrame = ServerSentEventFrame.Json(
                         SseEventTypes.Error,
-                        new { message = $"执行超时 ({maxElapsed.TotalSeconds}s)" });
+                        new { message = $"执行超时 ({maxElapsed.TotalSeconds}s)", status = terminalStreamStatus });
                     await Append(timeoutFrame);
                     yield return timeoutFrame;
                     break;
@@ -2339,10 +2380,11 @@ public sealed class AgentExecutionService
                     break;
                 }
 
+                streamRoundsStarted = round + 1;
+
                 // 发送 context 帧（仅第1轮）
                 if (round == 0)
                 {
-                    perfTotalSw.Stop();
                     _logger.LogInformation(
                         "[AgentExec:Perf] FIRST_TOKEN session={Session} totalElapsed={Ms}ms historyLoad={HistoryMs}ms contextBuild={ContextMs}ms",
                         request.SessionId, perfTotalSw.ElapsedMilliseconds,
@@ -2538,6 +2580,27 @@ public sealed class AgentExecutionService
                     await llmEnumerator.DisposeAsync();
                 }
 
+                if (llmException is OperationCanceledException && ct.IsCancellationRequested)
+                {
+                    var deadlineReached =
+                        request.ExecutionDeadlineUtc is { } deadline &&
+                        DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
+                    terminalStreamStatus = deadlineReached ? "timed_out" : "cancelled";
+                    reply = deadlineReached
+                        ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
+                        : "Execution cancelled.";
+                    var terminationFrame = deadlineReached
+                        ? ServerSentEventFrame.Json(
+                            SseEventTypes.Error,
+                            new { message = reply, status = terminalStreamStatus })
+                        : ServerSentEventFrame.Json(
+                            SseEventTypes.Cancelled,
+                            new { message = reply, status = terminalStreamStatus });
+                    await Append(terminationFrame);
+                    yield return terminationFrame;
+                    break;
+                }
+
                 // LLM API 出错 → 发送结构化 error，并将本 turn 标记为终止错误。
                 if (llmException != null)
                 {
@@ -2728,6 +2791,8 @@ public sealed class AgentExecutionService
                             WorkspaceId = request.WorkspaceId ?? string.Empty,
                             SessionId = request.SessionId,
                             AgentInstanceId = instance.AgentInstanceId,
+                            ConfigurationAgentInstanceId =
+                                request.ConfigurationAgentInstanceId ?? instance.AgentInstanceId,
                             WorkingDirectory = request.WorkingDirectory,
                             AgentTemplateId = request.AgentTemplateId,
                             ToolCallId = tc.Id,
@@ -2736,6 +2801,10 @@ public sealed class AgentExecutionService
                             CapabilityPolicy = effectiveCapability,
                             Trace = null, // Streaming local function scope
                             ExecutionIdentity = request.ExecutionIdentity,
+                            DelegationDepth = request.DelegationDepth,
+                            MaxDelegationDepth = request.MaxDelegationDepth,
+                            AllowSubDelegation = request.AllowSubDelegation,
+                            RoleInPlan = request.RoleInPlan,
                         }, ct);
                         result = new SkillResult
                         {
@@ -2862,10 +2931,12 @@ public sealed class AgentExecutionService
             {
                 history.Add(new ChatMessage(ChatRole.Assistant, faultSummary));
             }
-            TryEnqueueStreamJsonl(request, instance.AgentInstanceId, reply, usage);
+            if (terminalStreamStatus is null)
+                TryEnqueueStreamJsonl(request, instance.AgentInstanceId, reply, usage);
 
-            if (template.Memory?.EnableSessionMemory == true
-             || template.Memory?.EnableWorkspaceMemory == true)
+            if (terminalStreamStatus is null
+                && (template.Memory?.EnableSessionMemory == true
+                 || template.Memory?.EnableWorkspaceMemory == true))
             {
                 _memory.WriteBack(
                     reply,
@@ -2876,7 +2947,7 @@ public sealed class AgentExecutionService
             }
 
             // 终端执行记录持久化到记忆图书馆（fire-and-forget）
-            if (_libraryConvenience is not null)
+            if (terminalStreamStatus is null && _libraryConvenience is not null)
             {
                 var terminalProcesses = _terminalManager.ListProcesses(request.SessionId);
                 foreach (var tp in terminalProcesses.Where(p => p.Status != TerminalProcessStatus.Running))
@@ -2895,8 +2966,12 @@ public sealed class AgentExecutionService
                 }
             }
 
-            var postLoopCt = faultedByFuse ? CancellationToken.None : ct;
-            if (!request.SuppressContextAutoCompaction)
+            var postLoopCt =
+                faultedByFuse || terminalStreamStatus is not null
+                    ? CancellationToken.None
+                    : ct;
+            if (terminalStreamStatus is null
+                && !request.SuppressContextAutoCompaction)
             {
                 await _contextManager.TrimHistoryAsync(
                     request.SessionId,
@@ -2911,9 +2986,12 @@ public sealed class AgentExecutionService
             _sessionManager.Touch(request.SessionId);
             _runtimeSessionStore.Touch(request.SessionId);
 
-            await FireHooksAsync(h => h.OnCompletedAsync(loopCtx, reply, postLoopCt));
-            await FireHooksAsync(h => h.OnLoopCompleteAsync(loopCtx, reply, AgentLoopStopReason.Done, postLoopCt));
-            TryEnqueueSubconsciousConsolidationFallback(request, instance.AgentInstanceId, reply);
+            if (terminalStreamStatus is null)
+            {
+                await FireHooksAsync(h => h.OnCompletedAsync(loopCtx, reply, postLoopCt));
+                await FireHooksAsync(h => h.OnLoopCompleteAsync(loopCtx, reply, AgentLoopStopReason.Done, postLoopCt));
+                TryEnqueueSubconsciousConsolidationFallback(request, instance.AgentInstanceId, reply);
+            }
 
             _logger.LogInformation(
                 "[AgentExec] STREAM end session={Session} replyLen={Len} usage={Usage}",
@@ -2957,7 +3035,8 @@ public sealed class AgentExecutionService
             // 子代理的 terminal 状态必须来自执行事实，而不是只看最终是否有文本。
             // 这能阻止 “工具超时/失败后 LLM 输出一段解释文本” 被上层误标为成功。
             var streamHasFailureReply = LooksLikeFailureReply(reply);
-            var streamSuccess = terminalStreamError is null
+            var streamSuccess = terminalStreamStatus is null
+                && terminalStreamError is null
                 && (reply != "(no response)" || hasExecutedAnyTool)
                 && !(toolFailureCount > 0 && streamHasFailureReply);
             var streamError = streamSuccess
@@ -2968,11 +3047,9 @@ public sealed class AgentExecutionService
             await TryCompleteSubAgentRunAsync(
                 streamSubAgentRunId, request.SessionId, streamSuccess,
                 reply, streamError,
-                0, totalToolCalls, perfTotalSw.ElapsedMilliseconds,
+                streamRoundsStarted, totalToolCalls, perfTotalSw.ElapsedMilliseconds,
                 toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
-                terminalStreamError is OperationCanceledException
-                    ? "cancelled"
-                    : null,
+                terminalStreamStatus,
                 request.ExecutionIdentity,
                 CancellationToken.None);
 
@@ -2989,10 +3066,12 @@ public sealed class AgentExecutionService
                 traceId = streamTrace.TraceId,
                 sessionId = request.SessionId,
                 messageId = request.MessageId,
-                isError = terminalStreamError is not null,
+                isError = terminalStreamError is not null || terminalStreamStatus is not null,
                 error = terminalStreamError,
                 errorId = terminalStreamError?.ErrorId,
-                errorMessage = terminalStreamError?.Message,
+                errorMessage = terminalStreamError?.Message
+                    ?? (terminalStreamStatus is null ? null : reply),
+                terminalStatus = terminalStreamStatus,
                 errorLocation = terminalStreamError?.Location,
                 errorTimestampUtc = terminalStreamError?.TimestampUtc,
                 errorCode = terminalStreamError?.ErrorCode,
@@ -3003,8 +3082,11 @@ public sealed class AgentExecutionService
                 voice = voiceEnabled ? new { enabled = true, tts_text = voiceTtsText } : new { enabled = false, tts_text = (string?)null },
             });
             await Append(doneFrame);
-            streamCompletedSuccessfully = terminalStreamError is null;
-            if (!faultedByFuse && terminalStreamError is null)
+            streamCompletedSuccessfully =
+                terminalStreamError is null && terminalStreamStatus is null;
+            if (!faultedByFuse
+                && terminalStreamError is null
+                && terminalStreamStatus is null)
                 _runtimeControl?.MarkSessionCompleted(request.SessionId);
             yield return doneFrame;
         }
@@ -3839,12 +3921,21 @@ public sealed class AgentExecutionService
         var registryToolCount = tools.Count;
         var removedSubAgentTool = false;
 
-        // For sub-agents: remove spawn_sub_agent (unless delegation allowed) AND all MainAgentOnly tools
-        if (!ShouldExposeSubAgentTool(request))
+        var isSubAgent = request.ExecutionIdentity?.Kind == RuntimeExecutionKind.SubAgent;
+        var canSubDelegate = ShouldExposeSubAgentTool(request);
+
+        // Main agents keep the complete schema. Sub-agents only receive tools allowed by the
+        // explicit exposure class, capability whitelist and delegation-depth gate.
+        if (isSubAgent && !canSubDelegate)
         {
             removedSubAgentTool = tools.RemoveAll(t => t.Name.Equals("spawn_sub_agent", StringComparison.OrdinalIgnoreCase)) > 0;
         }
-        tools.RemoveAll(t => t.SubAgentExposure == SubAgentExposure.MainAgentOnly);
+        if (isSubAgent)
+        {
+            tools.RemoveAll(t => t.SubAgentExposure == SubAgentExposure.MainAgentOnly);
+            if (!canSubDelegate)
+                tools.RemoveAll(t => t.SubAgentExposure == SubAgentExposure.DelegatedSubAgent);
+        }
 
         if (template?.AllowedSkillIds is not { Count: > 0 })
         {

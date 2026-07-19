@@ -2,7 +2,9 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingCode.Tools;
+using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -76,7 +78,12 @@ public sealed class SmartWorkflowContractTests
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
         Assert.AreEqual(150, document.RootElement.GetProperty("max_rounds").GetInt32());
-        Assert.AreEqual(600, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.AreEqual(1800, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.IsTrue(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
+        Assert.AreEqual(0, document.RootElement.GetProperty("depth").GetInt32());
+        Assert.AreEqual(2, document.RootElement.GetProperty("max_depth").GetInt32());
+        StringAssert.Contains(document.RootElement.GetProperty("tools").GetString(), "smart_explore");
+        Assert.AreEqual(SubAgentExposure.MainAgentOnly, tool.Descriptor.SubAgentExposure);
     }
 
     [TestMethod]
@@ -104,6 +111,9 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
+        Assert.AreEqual(1800, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
+        Assert.AreEqual(SubAgentExposure.DelegatedSubAgent, tool.Descriptor.SubAgentExposure);
         var task = document.RootElement.GetProperty("task").GetString();
         Assert.IsNotNull(task);
         StringAssert.Contains(task, "without repeating file_search");
@@ -168,7 +178,43 @@ public sealed class SmartWorkflowContractTests
                 200,
                 document.RootElement.GetProperty("max_rounds").GetInt32(),
                 $"{testCase.Tool.Descriptor.ToolId} exceeds spawn_sub_agent's max_rounds contract.");
+            Assert.AreEqual(
+                1800,
+                document.RootElement.GetProperty("timeout_seconds").GetInt32(),
+                $"{testCase.Tool.Descriptor.ToolId} must use the shared 30-minute default.");
         }
+    }
+
+    [TestMethod]
+    public void DelegatedSmartExposureRequiresExplicitPermissionAndRemainingDepth()
+    {
+        var descriptor = new SmartExploreTool(
+            new ServiceCollection().BuildServiceProvider(),
+            NullLogger<SmartExploreTool>.Instance).Descriptor;
+        var subAgentIdentity = new RuntimeExecutionIdentity
+        {
+            Kind = RuntimeExecutionKind.SubAgent,
+            ConversationId = "conversation",
+            RunId = "run",
+        };
+
+        string? Denial(bool allow, int depth, int maxDepth) =>
+            PuddingToolExecutionService.GetSubAgentExposureDenial(
+                descriptor,
+                new ToolExecutionContext
+                {
+                    WorkspaceId = "workspace",
+                    SessionId = "sub-session",
+                    AgentInstanceId = "sub-session",
+                    ExecutionIdentity = subAgentIdentity,
+                    AllowSubDelegation = allow,
+                    DelegationDepth = depth,
+                    MaxDelegationDepth = maxDepth,
+                });
+
+        Assert.IsNull(Denial(allow: true, depth: 1, maxDepth: 2));
+        StringAssert.Contains(Denial(allow: false, depth: 1, maxDepth: 2), "explicit sub-delegation");
+        StringAssert.Contains(Denial(allow: true, depth: 2, maxDepth: 2), "depth=2");
     }
 
     [TestMethod]

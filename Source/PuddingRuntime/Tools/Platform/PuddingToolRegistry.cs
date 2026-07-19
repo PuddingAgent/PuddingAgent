@@ -585,6 +585,14 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
             return result;
         }
 
+        var exposureDenied = GetSubAgentExposureDenial(tool.Descriptor, context);
+        if (exposureDenied is not null)
+        {
+            var result = ToolExecutionResult.Fail(exposureDenied);
+            await RecordTelemetryAsync(toolId, argumentsJson, context, startedAt, result, "subagent_exposure", ct);
+            return result;
+        }
+
         // Set YOLO mode on context (backward compat for tools that read context.IsYoloMode)
         if (_runtimeControl?.Mode == RuntimeExecutionMode.Yolo)
             context = context with { IsYoloMode = true };
@@ -636,6 +644,29 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
                 ct);
             throw;
         }
+    }
+
+    internal static string? GetSubAgentExposureDenial(
+        ToolDescriptor descriptor,
+        ToolExecutionContext context)
+    {
+        if (context.ExecutionIdentity?.Kind != RuntimeExecutionKind.SubAgent)
+            return null;
+
+        if (descriptor.SubAgentExposure == SubAgentExposure.MainAgentOnly)
+        {
+            return $"Tool '{descriptor.ToolId}' is main-agent-only and cannot be invoked by a sub-agent.";
+        }
+
+        if (descriptor.SubAgentExposure != SubAgentExposure.DelegatedSubAgent)
+            return null;
+
+        var depth = Math.Max(0, context.DelegationDepth ?? 0);
+        var maxDepth = context.MaxDelegationDepth ?? 1;
+        return context.AllowSubDelegation == true && depth < maxDepth
+            ? null
+            : $"Tool '{descriptor.ToolId}' requires explicit sub-delegation permission " +
+              $"below max depth (depth={depth}, maxDepth={maxDepth}).";
     }
 
     private async Task RecordTelemetryAsync(

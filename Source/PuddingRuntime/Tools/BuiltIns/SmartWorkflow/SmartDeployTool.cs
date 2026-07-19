@@ -27,7 +27,6 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
     }
 
     protected override string RoleName => "deployer";
-    protected override int DefaultTimeoutSeconds => 600;
     protected override int DefaultMaxRounds => 150;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
