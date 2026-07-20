@@ -29,10 +29,12 @@ public sealed class AgentExecutionStateRegistry : IAgentExecutionStateRegistry
 
         while (true)
         {
-            if (!_states.TryGetValue(key, out var current))
+                        if (!_states.TryGetValue(key, out var current))
                 return _states.TryAdd(key, busy);
 
-            if (!current.CanStartMessageDelivery)
+            // 仅拒绝 busy 状态（已在执行中），idle 允许立即开始
+            // heartbeat avoidance cooldown 由 MessageDeliveryDispatcher 单独检查（IAgentExecutionAvailabilityProvider.Get + CanStartMessageDelivery）
+            if (string.Equals(current.Status, "busy", StringComparison.OrdinalIgnoreCase))
                 return false;
 
             if (_states.TryUpdate(key, busy, current))
