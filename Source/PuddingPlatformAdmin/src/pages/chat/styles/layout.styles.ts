@@ -1,0 +1,151 @@
+// ── layout styles ─────────────────────────────────
+import { createStyles } from 'antd-style';
+
+export const useLayoutStyles = createStyles(({ token }) => ({
+  layout: {
+    display: 'flex',
+    height: '100vh',
+    overflow: 'hidden',
+    background: 'var(--pudding-chat-bg)',
+  },
+  mainArea: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  workbenchShell: {
+    flexDirection: 'row' as const,
+    alignItems: 'stretch',
+    background: 'var(--pudding-chat-bg)',
+  },
+  workbenchCenter: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '12px 16px',
+    borderBottom: '1px solid',
+    borderColor: 'var(--pudding-chat-border)',
+    background: 'var(--pudding-chat-header-bg)',
+    backdropFilter: 'blur(12px)',
+    minHeight: 44,
+    flexShrink: 0,
+  },
+  headerSelect: { minWidth: 110, maxWidth: 180, fontSize: 12 },
+  headerSwitchSelect: {
+    '@media (max-width: 920px)': { display: 'none' },
+  },
+  headerSelectPopup: {
+    background: 'var(--pudding-chat-surface) !important',
+    border: '1px solid var(--pudding-chat-border)',
+    borderRadius: 8,
+    boxShadow: 'var(--pudding-chat-shadow)',
+    padding: 4,
+    '& .ant-select-item': {
+      borderRadius: 6,
+      padding: '5px 12px',
+      fontSize: 13,
+      color: 'var(--pudding-chat-text)',
+      transition: 'background 0.15s, color 0.15s',
+    },
+    '& .ant-select-item-option-active': {
+      background: 'var(--pudding-chat-surface-muted) !important',
+    },
+    '& .ant-select-item-option-selected': {
+      background: 'var(--pudding-chat-accent-soft) !important',
+      color: 'var(--pudding-chat-accent) !important',
+      fontWeight: 500,
+    },
+    '& .ant-select-item-option-disabled': {
+      color: 'var(--pudding-chat-text-subtle) !important',
+      opacity: 0.5,
+    },
+    '& .ant-select-item-empty': {
+      color: 'var(--pudding-chat-text-subtle)',
+    },
+    '& .ant-divider': {
+      margin: '4px 0',
+      borderColor: 'var(--pudding-chat-border)',
+    },
+    '& .ant-btn-link': {
+      color: 'var(--pudding-chat-accent)',
+      fontSize: 12,
+      height: 32,
+      width: '100%',
+      borderRadius: 6,
+      transition: 'background 0.15s',
+      '&:hover': {
+        background: 'var(--pudding-chat-accent-soft) !important',
+      },
+    },
+  },
+  devModeActive: { color: token.colorPrimary },
+  /** 移动端隐藏元素 */
+  hideOnMobile: {
+    '@media (max-width: 767px)': { display: 'none' },
+  },
+  hideOnTablet: {
+    '@media (min-width: 768px) and (max-width: 1023px)': { display: 'none' },
+  },
+  chatBody: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+    padding: '0 20px',
+    background: 'var(--pudding-chat-bg)',
+  },
+  chatBodyWithDev: {
+    display: 'flex',
+    flexDirection: 'row' as const,
+    gap: 12,
+    minHeight: 0,
+    height: '100%',
+  },
+  chatBodyMain: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+  },
+  chatInteractionShell: {
+    position: 'relative' as const,
+    display: 'flex',
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    height: '100%',
+    gap: 12,
+    alignItems: 'stretch',
+    overflow: 'hidden',
+  },
+  chatConversationColumn: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+  },
+  messageList: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto' as const,
+    overscrollBehavior: 'contain',
+    scrollbarGutter: 'stable',
+    overflowAnchor: 'none',
+    padding: '16px 0 8px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 12,
+  },
+}));

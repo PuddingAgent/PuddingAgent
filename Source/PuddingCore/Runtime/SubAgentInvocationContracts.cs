@@ -9,8 +9,9 @@ namespace PuddingCode.Runtime;
 /// </summary>
 public static class SubAgentPermissionModes
 {
-    public const string Inherit = "inherit";
+        public const string Inherit = "inherit";
     public const string Low = "low";
+    public const string None = "none";
 }
 
 /// <summary>单个批量子代理任务的结构化输入。</summary>

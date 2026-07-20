@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
@@ -608,7 +608,9 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             }
 
             var parent = manifest.ParentExecutionIdentity;
-            var conversationId = parent?.ConversationId ?? manifest.ParentSessionId;
+            // ADR-058 FIX: Use sub-agent's own SessionId so ConversationProjector
+            // can resolve the parent via SessionSubAgents → ParentSessionId correctly.
+            var conversationId = manifest.SubSessionId;
             var payload = archivedEvent.Payload.Clone();
             var draft = new NewConversationEvent(
                 EventId: archivedEvent.EventId,

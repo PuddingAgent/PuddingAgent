@@ -993,15 +993,18 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             .OrderByDescending(e => e.SpawnedAt)
             .ToListAsync(ct);
 
-        // Batch lookup token summaries
+        // Batch lookup token summaries — query by ParentSessionId (covers
+        // records where ConversationProjector attributed parent session),
+        // falling back to SessionId (sub-agent session id direct match).
         var subSessionIds = entities.Select(e => e.SubSessionId).ToList();
         Dictionary<string, SubAgentTokenSummary>? tokenDict = null;
         if (subSessionIds.Count > 0)
         {
             var summaries = await db.TokenUsageEvents
                 .AsNoTracking()
-                .Where(t => t.SessionId != null && subSessionIds.Contains(t.SessionId))
-                .GroupBy(t => t.SessionId!)
+                .Where(t => t.ParentSessionId == sessionId
+                    || (t.SessionId != null && subSessionIds.Contains(t.SessionId)))
+                .GroupBy(t => t.SessionId ?? string.Empty)
                 .Select(g => new
                 {
                     SessionId = g.Key,

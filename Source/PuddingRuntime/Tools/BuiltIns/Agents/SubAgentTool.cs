@@ -278,10 +278,22 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var result = await pool.ExecuteAsync(
                             args.PoolName, execSpawnRequest, ct);
 
+                        // 包装为结构化 JSON，确保与 SmartWorkflowToolBase.ExtractRawReport 兼容
+                        var wrapped = JsonSerializer.Serialize(new
+                        {
+                            schema = "pudding-subagent-result",
+                            version = 1,
+                            subAgentId = result.SubSessionId,
+                            runId = result.RunId,
+                            status = result.Status,
+                            rawOutput = result.Reply,
+                            error = result.Error,
+                        }, JsonOpts);
+
                         return new ToolExecutionResult
                         {
                             Success = result.Success,
-                            Output = result.Reply ?? result.Error ?? "(无输出)",
+                            Output = wrapped,
                             Error = result.Success ? null : result.Error,
                             ExitCode = result.Success ? 0 : 1,
                         };
@@ -618,8 +630,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             evidence = SplitSectionList(sections.GetValueOrDefault("EVIDENCE")),
             risks = SplitSectionList(sections.GetValueOrDefault("RISKS")),
             blockers = SplitSectionList(sections.GetValueOrDefault("BLOCKERS")),
-            error = result.Error,
+                        error = result.Error,
             rawOutput = result.Reply,
+            rawOutputLength = result.Reply?.Length ?? 0,
         };
     }
 
@@ -878,6 +891,20 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 .ToList();
 
             basePolicy = basePolicy with { AllowedToolNames = allowedTools };
+        }
+
+                // ── none mode: zero tools, pure reasoning ──
+        if (string.Equals(permissionMode, SubAgentPermissionModes.None, StringComparison.OrdinalIgnoreCase))
+        {
+            return basePolicy with
+            {
+                AllowShellExecution = false,
+                AllowFileWrite = false,
+                AllowNetworkAccess = false,
+                AllowedToolNames = Array.Empty<string>(),
+                DefaultToolNames = Array.Empty<string>(),
+                RequiresGrantToolNames = Array.Empty<string>(),
+            };
         }
 
         if (!string.Equals(permissionMode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase))

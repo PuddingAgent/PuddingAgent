@@ -71,7 +71,8 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
             sb.AppendLine($"   创建: {sa.SpawnedAt:HH:mm:ss} | 完成: {sa.CompletedAt?.ToString("HH:mm:ss") ?? "-"}");
             if (sa.TokenSummary is { } ts)
             {
-                var hitRate = ts.TotalTokens > 0 ? (double)ts.CacheHitTokens / ts.TotalTokens * 100 : 0;
+                var cacheEligible = ts.CacheHitTokens + ts.CacheMissTokens;
+                var hitRate = cacheEligible > 0 ? (double)ts.CacheHitTokens / cacheEligible * 100 : 0;
                 sb.AppendLine($"   Token: {ts.TotalTokens:N0} | 缓存命中: {hitRate:F1}% | 费用: ${ts.TotalCost:F4} | 请求: {ts.RequestCount}");
             }
         }
@@ -85,7 +86,9 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         var totalTokens = agents.Sum(a => a.TokenSummary?.TotalTokens ?? 0);
         var totalCost = agents.Sum(a => a.TokenSummary?.TotalCost ?? 0);
         var totalCacheHit = agents.Sum(a => a.TokenSummary?.CacheHitTokens ?? 0);
-        var overallHitRate = totalTokens > 0 ? (double)totalCacheHit / totalTokens * 100 : 0;
+        var totalCacheMiss = agents.Sum(a => a.TokenSummary?.CacheMissTokens ?? 0);
+        var totalCacheEligible = totalCacheHit + totalCacheMiss;
+        var overallHitRate = totalCacheEligible > 0 ? (double)totalCacheHit / totalCacheEligible * 100 : 0;
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("📈 子代理统计:");
@@ -115,7 +118,8 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         if (status.ResultSummary is not null) sb.AppendLine($"   结果: {status.ResultSummary}");
         if (status.TokenSummary is { } ts)
         {
-            var hitRate = ts.TotalTokens > 0 ? (double)ts.CacheHitTokens / ts.TotalTokens * 100 : 0;
+            var cacheEligible = ts.CacheHitTokens + ts.CacheMissTokens;
+            var hitRate = cacheEligible > 0 ? (double)ts.CacheHitTokens / cacheEligible * 100 : 0;
             sb.AppendLine($"   ── Token 用量 ──");
             sb.AppendLine($"   总 Token: {ts.TotalTokens:N0} | 缓存命中: {ts.CacheHitTokens:N0} | 未命中: {ts.CacheMissTokens:N0}");
             sb.AppendLine($"   缓存命中率: {hitRate:F1}% | 费用: ${ts.TotalCost:F4} | 请求数: {ts.RequestCount}");
@@ -157,7 +161,8 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
             sb.AppendLine($"{icon} `{shortId}` [{sa.Status}] {sa.TaskSummary[..Math.Min(sa.TaskSummary.Length, 60)]}");
             if (sa.TokenSummary is { } ts)
             {
-                var hitRate = ts.TotalTokens > 0 ? (double)ts.CacheHitTokens / ts.TotalTokens * 100 : 0;
+                var cacheEligible = ts.CacheHitTokens + ts.CacheMissTokens;
+                var hitRate = cacheEligible > 0 ? (double)ts.CacheHitTokens / cacheEligible * 100 : 0;
                 sb.AppendLine($"   Token: {ts.TotalTokens:N0} | 命中: {hitRate:F1}% | ${ts.TotalCost:F4}");
             }
         }

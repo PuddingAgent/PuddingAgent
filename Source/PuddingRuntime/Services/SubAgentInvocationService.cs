@@ -277,14 +277,15 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         if (string.IsNullOrWhiteSpace(mode))
             return;
 
-        if (string.Equals(mode, SubAgentPermissionModes.Inherit, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(mode, SubAgentPermissionModes.Inherit, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, SubAgentPermissionModes.None, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         throw new InvalidOperationException(
-            $"Invalid sub-agent permission_mode '{mode}'. Valid values: inherit, low.");
+            $"Invalid sub-agent permission_mode '{mode}'. Valid values: inherit, low, none.");
     }
 
     private static void ValidateBatchTasks(IReadOnlyList<SubAgentBatchTask> tasks, SubAgentExecutionOptions options)

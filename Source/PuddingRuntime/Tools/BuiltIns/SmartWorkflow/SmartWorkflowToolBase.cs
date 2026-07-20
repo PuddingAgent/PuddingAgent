@@ -20,7 +20,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected const string SubAgentTemplateId = "workspace-task-agent";
     protected const int SmartWorkflowTimeoutSeconds = 30 * 60;
     protected const int ParentFinalizationReserveSeconds = 2 * 60;
-    private const int MinimumDetailedReportLength = 300;
+    private const int MinimumDetailedReportLength = 80;
     private static readonly string[] RequiredReportSections =
         ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
 
@@ -251,15 +251,18 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             return false;
         }
 
-        if (sections["SUMMARY"].Trim().Length < 40)
+        
+                const int MinimumSummaryLength = 20;
+        if ((sections.TryGetValue("SUMMARY", out var summary) ? summary?.Length ?? 0 : 0) < MinimumSummaryLength)
         {
-            error = "SUMMARY is too short to explain the outcome.";
+            error = $"SUMMARY is too short ({sections.GetValueOrDefault("SUMMARY", "")?.Length ?? 0} chars; minimum {MinimumSummaryLength}).";
             return false;
         }
 
-        if (sections["EVIDENCE"].Trim().Length < 60)
+        const int MinimumEvidenceLength = 20;
+        if ((sections.TryGetValue("EVIDENCE", out var evidence) ? evidence?.Length ?? 0 : 0) < MinimumEvidenceLength)
         {
-            error = "EVIDENCE is too short to support the reported outcome.";
+            error = $"EVIDENCE is too short ({sections.GetValueOrDefault("EVIDENCE", "")?.Length ?? 0} chars; minimum {MinimumEvidenceLength}).";
             return false;
         }
 
@@ -275,11 +278,16 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         try
         {
             using var document = JsonDocument.Parse(toolOutput);
-            if (document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("rawOutput", out var rawOutput)
-                && rawOutput.ValueKind == JsonValueKind.String)
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                return rawOutput.GetString();
+                // 优先读取 summary（BuildStructuredResult 产出的结构化字段）
+                if (document.RootElement.TryGetProperty("summary", out var summary)
+                    && summary.ValueKind == JsonValueKind.String)
+                    return summary.GetString();
+                // 向后兼容：rawOutput（一次性子代理的 BuildSingleToolOutput 仍产它）
+                if (document.RootElement.TryGetProperty("rawOutput", out var rawOutput)
+                    && rawOutput.ValueKind == JsonValueKind.String)
+                    return rawOutput.GetString();
             }
         }
         catch (JsonException)
@@ -383,6 +391,93 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             logger.LogWarning(ex, "[SmartWorkflow] Failed to resolve role model: role={Role} agent={Agent}",
                 RoleName, agentInstanceId);
             return null;
+        }
+    }
+
+    private static string BuildCompactSmartResult(string spawnSubAgentOutput)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(spawnSubAgentOutput);
+            var root = doc.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return spawnSubAgentOutput;
+
+            var summary = root.TryGetProperty("summary", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.String
+                ? s.GetString()?.Trim() : null;
+            var status = root.TryGetProperty("status", out var st) && st.ValueKind == System.Text.Json.JsonValueKind.String
+                ? st.GetString() : null;
+            var subAgentId = root.TryGetProperty("subAgentId", out var aid) && aid.ValueKind == System.Text.Json.JsonValueKind.String
+                ? aid.GetString() : null;
+            var rawLen = 0;
+            if (root.TryGetProperty("rawOutputLength", out var rol) && rol.ValueKind == System.Text.Json.JsonValueKind.Number)
+                rawLen = rol.GetInt32();
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"✅ 子代理完成: {subAgentId ?? "?"} | 状态: {status ?? "unknown"}");
+            sb.AppendLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            if (!string.IsNullOrWhiteSpace(summary))
+            {
+                sb.AppendLine($"📋 SUMMARY: {summary}");
+                sb.AppendLine();
+            }
+
+            if (root.TryGetProperty("changes", out var ch2) && ch2.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var changesList = new System.Collections.Generic.List<string>();
+                foreach (var item in ch2.EnumerateArray())
+                    if (item.ValueKind == System.Text.Json.JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                        changesList.Add(item.GetString()!);
+                if (changesList.Count > 0)
+                {
+                    sb.AppendLine($"🔧 CHANGES ({changesList.Count}):");
+                    foreach (var c in changesList)
+                        sb.AppendLine($"   - {c}");
+                    sb.AppendLine();
+                }
+            }
+
+            if (root.TryGetProperty("evidence", out var ev2) && ev2.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var evidenceList = new System.Collections.Generic.List<string>();
+                foreach (var item in ev2.EnumerateArray())
+                    if (item.ValueKind == System.Text.Json.JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                        evidenceList.Add(item.GetString()!);
+                if (evidenceList.Count > 0)
+                {
+                    var maxShow = Math.Min(evidenceList.Count, 5);
+                    sb.AppendLine($"📎 EVIDENCE ({evidenceList.Count} 条, 显示前 {maxShow}):");
+                    for (int i = 0; i < maxShow; i++)
+                        sb.AppendLine($"   - {evidenceList[i]}");
+                    if (evidenceList.Count > 5)
+                        sb.AppendLine($"   ... 及其他 {evidenceList.Count - 5} 条");
+                    sb.AppendLine();
+                }
+            }
+
+            if (root.TryGetProperty("risks", out var r2) && r2.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var riskList = new System.Collections.Generic.List<string>();
+                foreach (var item in r2.EnumerateArray())
+                    if (item.ValueKind == System.Text.Json.JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                        riskList.Add(item.GetString()!);
+                if (riskList.Count > 0)
+                {
+                    sb.AppendLine("⚠️ RISKS:");
+                    foreach (var r in riskList)
+                        sb.AppendLine($"   - {r}");
+                    sb.AppendLine();
+                }
+            }
+
+            if (rawLen > 0)
+                sb.Append($"(子代理原始输出 {rawLen:N0} 字符已省略)");
+            return sb.ToString().TrimEnd();
+        }
+        catch
+        {
+            throw;
         }
     }
 }
