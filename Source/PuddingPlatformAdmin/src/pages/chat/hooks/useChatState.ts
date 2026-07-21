@@ -1903,7 +1903,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         }
       }
 
-      const targetTurnId = resolveEventTurnId(ev);
+      let targetTurnId = resolveEventTurnId(ev);
       if (messageId && targetTurnId) {
         messageIdToTurnIdRef.current.set(messageId, targetTurnId);
       }
@@ -2010,7 +2010,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         }
         return;
       }
-      const targetTurnExists = turnsRef.current.some(
+      let targetTurnExists = turnsRef.current.some(
         (turn) => turn.turnId === targetTurnId,
       );
       if (!targetTurnExists) {
@@ -2024,36 +2024,66 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
           },
           { throttleMs: 500 },
         );
-        // 埋点：terminal 事件的目标 turn 已不存在
+        // terminal 事件的目标 turn 不存在 → 尝试恢复
         if (
           eventType === 'done' ||
           eventType === 'error' ||
           eventType === 'cancelled'
         ) {
-          console.warn(
-            '[Pudding Chat] terminal event staleTarget (turn gone) — 消息可能被吞',
-            {
-              eventType,
-              messageId,
-              targetTurnId,
+          // 尝试 1: 通过 messageId→turnId 映射查找
+          let recoveryTurnId: string | null = null;
+          if (messageId && messageIdToTurnIdRef.current.has(messageId)) {
+            recoveryTurnId =
+              messageIdToTurnIdRef.current.get(messageId) ?? null;
+          }
+          // 尝试 2: 查找当前正在流式输出的 turn
+          if (!recoveryTurnId) {
+            const streamingTurn = turnsRef.current.find(
+              (t) => t.assistant.isStreaming,
+            );
+            if (streamingTurn) {
+              recoveryTurnId = streamingTurn.turnId;
+            }
+          }
+          if (recoveryTurnId) {
+            console.warn(
+              '[Pudding Chat] terminal event staleTarget — recovered',
+              {
+                eventType, messageId, oldTarget: targetTurnId,
+                recoveryTurnId,
+                recoveryMethod: messageId && messageIdToTurnIdRef.current.has(messageId) ? 'messageIdMap' : 'isStreaming',
+              },
+            );
+            logChatDiag('event.terminal.recovered', {
+              eventType, messageId, oldTarget: targetTurnId,
+              recoveryTurnId, sessionId: sseSessionIdRef.current,
+            });
+            targetTurnId = recoveryTurnId;
+            targetTurnExists = true;
+            // 继续后续处理（fall through）
+          } else {
+            console.warn(
+              '[Pudding Chat] terminal event staleTarget — unrecoverable (消息被吞)',
+              {
+                eventType, messageId, targetTurnId,
+                sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
+                currentTurns: turnsRef.current.length,
+                streamingTurns: turnsRef.current.filter((t) => t.assistant.isStreaming).length,
+              },
+            );
+            logChatDiag('event.terminal.staleTarget', {
+              eventType, messageId, targetTurnId,
+              sessionId: sseSessionIdRef.current,
+              selectedSessionId: selectedSessionIdRef.current,
+              sessionIdRef: sessionIdRef.current,
               sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
               currentTurns: turnsRef.current.length,
-              currentTurnIds: turnsRef.current.map((t) => t.turnId),
-            },
-          );
-          logChatDiag('event.terminal.staleTarget', {
-            eventType,
-            messageId,
-            targetTurnId,
-            sessionId: sseSessionIdRef.current,
-            selectedSessionId: selectedSessionIdRef.current,
-            sessionIdRef: sessionIdRef.current,
-            sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
-            currentTurns: turnsRef.current.length,
-            currentTurnIds: turnsRef.current.map((t) => t.turnId),
-          });
+            });
+            return;
+          }
+        } else {
+          return;
         }
-        return;
       }
 
       if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
