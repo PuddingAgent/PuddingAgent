@@ -119,6 +119,11 @@ Source/
 ### Chat 前端 Viewport
 | 文件 | 用途 |
 |------|------|
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts` | Chat 页面组合与运行时协调入口；Phase 0 起不再内嵌模块级纯函数，P1-6 起委托 Workspace/Agent 初始化，并通过兼容导出维持现有调用方 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useWorkspaceAgentSelection.ts` | Workspace/Agent 选择域：路由解析、列表加载、默认 Agent 创建、选择项投影、`creatingSession` 与一次性主会话重建抑制 |
+| `PuddingPlatformAdmin/src/pages/chat/types/chatStateTypes.ts` | Chat 主 hook 的共享常量、跨模块状态类型与 `UseChatStateReturn` 接口 |
+| `PuddingPlatformAdmin/src/pages/chat/utils/chatStateUtils.ts` | Chat 状态纯转换、格式化与 replay/cursor 判定的无 React 边界 |
+| `PuddingPlatformAdmin/src/pages/chat/utils/chatDiagnostics.ts` | ChatDiag 有界序列化、错误终态识别与可检索 Markdown 格式化、控制台记录和 sessionStorage 持久化边界；诊断失败不得影响聊天流程 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
 | `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
 | `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |

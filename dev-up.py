@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Pudding Agent local development launcher.
 
@@ -1510,6 +1510,74 @@ def run_init() -> None:
     info("V Initialization complete. Run 'python dev-up.py' to start the development environment.")
 
 
+def do_auto_yolo(args: argparse.Namespace) -> None:
+    """Wait for services to be healthy, then send /yolo and notification."""
+    proxy_port = PREFERRED_PROXY_PORT
+    try:
+        port_text = PROXY_PORT_FILE.read_text(encoding="ascii").strip()
+        if port_text.isdigit():
+            proxy_port = int(port_text)
+    except FileNotFoundError:
+        pass
+
+    health_url = build_health_url("127.0.0.1", proxy_port, HEALTH_PATH)
+    info(f"Waiting for health check at {health_url} ...")
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        status = probe_health(health_url, timeout_seconds=3)
+        if status["ok"]:
+            info(f"V Health check passed (HTTP {status['status_code']})")
+            break
+        time.sleep(2)
+    else:
+        info("! Health check did not pass within 60s, skipping auto-yolo")
+        return
+
+    conversation_id = args.yolo_conversation_id
+    if not conversation_id:
+        try:
+            cp = json.loads(Path("checkpoint.json").read_text(encoding="utf-8"))
+            conversation_id = cp.get("conversation_id", "")
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+    if not conversation_id:
+        info("! No conversation_id available, skipping auto-yolo")
+        return
+
+    base_url = f"http://127.0.0.1:{proxy_port}"
+    user_id = args.yolo_user_id or "admin"
+    agent_id = args.yolo_agent_id or "default.global_general-assistant.6a8"
+
+    yolo_url = f"{base_url}/api/sessions/{conversation_id}/commands"
+    yolo_payload = json.dumps({"command": "/yolo", "userId": user_id}).encode("utf-8")
+    try:
+        req = urllib.request.Request(yolo_url, data=yolo_payload, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            info(f"V /yolo sent: HTTP {resp.status}")
+    except Exception as exc:
+        info(f"! /yolo failed: {exc}")
+
+    msg_url = f"{base_url}/api/messages"
+    msg_payload = json.dumps({"to": f"agent:{agent_id}", "content": "\u2705 \u91cd\u542f\u5b8c\u6210\uff0cYOLO \u5df2\u6388\u6743\u3002\u7ee7\u7eed\u63a8\u8fdb\u3002", "roomId": "default", "priority": 5}).encode("utf-8")
+    try:
+        req = urllib.request.Request(msg_url, data=msg_payload, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            info(f"V Notification sent: HTTP {resp.status}")
+    except Exception as exc:
+        info(f"! Notification failed: {exc}")
+
+    try:
+        cp_path = Path("checkpoint.json")
+        cp = json.loads(cp_path.read_text(encoding="utf-8"))
+        cp["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        cp["status"] = "restarted"
+        cp["proxy_port"] = proxy_port
+        cp_path.write_text(json.dumps(cp, ensure_ascii=False, indent=2), encoding="utf-8")
+        info("V checkpoint.json updated")
+    except Exception as exc:
+        info(f"! checkpoint.json update failed: {exc}")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start Pudding Agent local development services.")
     parser.add_argument("--down", action="store_true", help="Stop tracked development processes.")
@@ -1535,6 +1603,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--proxy-port", type=int, default=PREFERRED_PROXY_PORT, help=argparse.SUPPRESS)
     parser.add_argument("--backend-url", default=f"http://{LOCAL_CONNECT_HOST}:{BACKEND_PORT}", help=argparse.SUPPRESS)
     parser.add_argument("--frontend-url", default=f"http://{LOCAL_CONNECT_HOST}:{FRONTEND_PORT}", help=argparse.SUPPRESS)
+    parser.add_argument("--auto-yolo", action="store_true", help="After restart, auto-send /yolo command and notify agent.")
+    parser.add_argument("--yolo-conversation-id", default=None, help="Conversation ID for auto-yolo")
+    parser.add_argument("--yolo-agent-id", default="default.global_general-assistant.6a8", help="Agent ID for notification")
+    parser.add_argument("--yolo-user-id", default="admin", help="User ID for /yolo command")
     return parser.parse_args(argv)
 
 
@@ -1585,6 +1657,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
     start_all(no_install=args.no_install, frontend_only=args.frontend_only)
+
+    if args.auto_yolo:
+        do_auto_yolo(args)
+
     return 0
 
 

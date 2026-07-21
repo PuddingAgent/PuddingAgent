@@ -3,6 +3,31 @@
 namespace PuddingCode.Configuration;
 
 /// <summary>
+/// Provider compatibility settings for non-standard OpenAI-compatible APIs.
+/// Stored in llm.providers.json under "compat" on a provider entry.
+/// </summary>
+public sealed record PuddingProviderCompatConfig
+{
+    /// <summary>Override the max tokens field name (e.g., "max_tokens" for Kimi K3). Default: "max_completion_tokens".</summary>
+    public string MaxTokensField { get; init; } = "max_completion_tokens";
+
+    /// <summary>Message content must be a plain string, not an array of content parts.</summary>
+    public bool RequiresStringContent { get; init; }
+
+    /// <summary>Use top-level "reasoning_effort" instead of nested "thinking" object.</summary>
+    public bool UseReasoningEffort { get; init; }
+
+    /// <summary>Default reasoning effort when UseReasoningEffort=true (K3: "max").</summary>
+    public string? DefaultReasoningEffort { get; init; }
+
+    /// <summary>Streaming responses include usage statistics. Default: true.</summary>
+    public bool SupportsUsageInStreaming { get; init; } = true;
+
+    /// <summary>Require reasoning_content field in assistant messages with tool_calls.</summary>
+    public bool RequiresReasoningContentInToolMessages { get; init; }
+}
+
+/// <summary>
 /// 结构化配置加载结果 — 包含成功标志、配置数据、验证错误列表。
 /// 验证错误不抛异常，由调用方决定如何处理。
 /// </summary>
@@ -116,6 +141,9 @@ public sealed record PuddingLlmProviderConfig
     public int? CircuitBreakerFailureThreshold { get; init; }
     /// <summary>熔断恢复等待秒数（默认 60）</summary>
     public int? CircuitBreakerRecoverySeconds { get; init; }
+
+    /// <summary>Provider compatibility settings for non-standard APIs (e.g., Kimi K3).</summary>
+    public PuddingProviderCompatConfig? Compat { get; init; }
 }
 
 public sealed record PuddingLlmModelConfig

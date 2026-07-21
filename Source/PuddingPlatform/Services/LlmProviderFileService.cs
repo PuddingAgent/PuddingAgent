@@ -133,8 +133,9 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
                 TokensPerMinute = req.TokensPerMinute,
                 RequestsPerMinute = req.RequestsPerMinute,
-                RequestTimeoutSeconds = req.RequestTimeoutSeconds,
+                                RequestTimeoutSeconds = req.RequestTimeoutSeconds,
                 StreamTimeoutSeconds = req.StreamTimeoutSeconds,
+                Compat = MapCompatFromRequest(req.Compat),
             };
 
             config.Providers.Add(newProvider);
@@ -187,8 +188,9 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
                 TokensPerMinute = req.TokensPerMinute,
                 RequestsPerMinute = req.RequestsPerMinute,
-                RequestTimeoutSeconds = req.RequestTimeoutSeconds ?? p.RequestTimeoutSeconds,
+                                RequestTimeoutSeconds = req.RequestTimeoutSeconds ?? p.RequestTimeoutSeconds,
                 StreamTimeoutSeconds = req.StreamTimeoutSeconds ?? p.StreamTimeoutSeconds,
+                Compat = MapCompatFromRequest(req.Compat) ?? p.Compat,
             };
             config.Providers.Add(updated);
 
@@ -245,8 +247,9 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests = providerRequest.MaxConcurrentRequests,
                 TokensPerMinute = providerRequest.TokensPerMinute,
                 RequestsPerMinute = providerRequest.RequestsPerMinute,
-                RequestTimeoutSeconds = providerRequest.RequestTimeoutSeconds ?? provider.RequestTimeoutSeconds,
+                                RequestTimeoutSeconds = providerRequest.RequestTimeoutSeconds ?? provider.RequestTimeoutSeconds,
                 StreamTimeoutSeconds = providerRequest.StreamTimeoutSeconds ?? provider.StreamTimeoutSeconds,
+                Compat = MapCompatFromRequest(providerRequest.Compat) ?? provider.Compat,
                 Models = MergeModels(provider.Models, modelRequests),
             };
 
@@ -595,6 +598,20 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             }
         }
 
-        return config;
+                return config;
+    }
+
+    private static PuddingProviderCompatConfig? MapCompatFromRequest(ProviderCompatRequest? src)
+    {
+        if (src is null) return null;
+        return new PuddingProviderCompatConfig
+        {
+            MaxTokensField = src.MaxTokensField ?? "max_completion_tokens",
+            RequiresStringContent = src.RequiresStringContent,
+            UseReasoningEffort = src.UseReasoningEffort,
+            DefaultReasoningEffort = src.DefaultReasoningEffort,
+            SupportsUsageInStreaming = src.SupportsUsageInStreaming,
+            RequiresReasoningContentInToolMessages = src.RequiresReasoningContentInToolMessages,
+        };
     }
 }

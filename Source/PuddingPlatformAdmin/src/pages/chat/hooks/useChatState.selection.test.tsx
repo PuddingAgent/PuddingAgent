@@ -41,6 +41,7 @@ jest.mock('@/services/platform/api', () => ({
   listTeams: jest.fn(),
   listWorkspaceAgents: jest.fn(),
   listWorkspaces: jest.fn(),
+  normalizeConversationEventType: (rawType: string) => rawType,
   renameSession: jest.fn(),
   submitConversationTurn: jest.fn(),
   subscribeSessionEvents: jest.fn(),

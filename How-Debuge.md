@@ -803,6 +803,35 @@ Get-Content .\tmp\dev\backend.out.log -Tail 200
 
 **检索关键词**: `Sequence contains no elements`, `IChatTranscriptWriter`, `transcriptWriter is null`
 
+### 11.2 Chat 回放测试返回空 turns，但事件路由代码没有日志
+
+**症状**：空历史 active replay 用例期望恢复一个 Turn，实际为 `[]`；既没有
+`replayLatestTurn align`，也没有 `event.terminal.unmapped/staleTarget`。
+
+**先查证据**：筛选 `[Pudding ChatDiag] session.select.error`。如果其中出现
+`normalizeConversationEventType is not a function`，说明回放尚未进入事件路由，不能先改
+React state/ref 竞态。
+
+**根因**：Jest 对 `@/services/platform/api` 使用整模块 mock；生产代码新增命名导出后，
+测试 fixture 没同步。`handleSelectSession` 捕获归一化阶段的 `TypeError`，于是 turns 保持
+空数组。
+
+**修复与防回归**：在 mock 中补齐与生产入口同语义的
+`normalizeConversationEventType`，再单跑空历史 replay 用例，并确认日志依次出现
+`session.select.history.loaded`、`replayLatestTurn align`、`event.terminal.apply`、
+`event.done.applied`。这类失败应先区分“fixture 漂移”和“运行时竞态”。
+
+### 11.3 Chat 错误终态必须保留日志检索字段
+
+`error` 事件以及带 `isError/errorId/errorCode` 的 `done` 事件都必须投影为 error 气泡，
+不能把后一类误标为 success。最终 Markdown 至少保留当前事件中已有的 Session、
+Message/Turn、Trace、Error ID、Location、Error Code、Round、Model 和 Endpoint Host；
+禁止记录 API Key、Authorization Header 或完整请求体。
+
+若服务端已经持久化 `## 请求失败` 诊断 Markdown 或 Session fuse 文本，前端应原样保留；
+否则使用统一格式化器生成。排查时以 `errorId` 为第一检索键，再关联 `traceId`、
+`sessionId` 与 `messageId/turnId`。
+
 ## 12. 修改后的最低验收
 
 ```powershell

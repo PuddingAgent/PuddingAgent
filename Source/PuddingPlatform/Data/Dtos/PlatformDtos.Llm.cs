@@ -42,6 +42,16 @@ public record LlmProviderDetailDto(
     DateTimeOffset UpdatedAt
 );
 
+/// <summary>Provider 兼容性配置请求（K3 等）。</summary>
+public record ProviderCompatRequest(
+    string? MaxTokensField = null,
+    bool RequiresStringContent = false,
+    bool UseReasoningEffort = false,
+    string? DefaultReasoningEffort = null,
+    bool SupportsUsageInStreaming = true,
+    bool RequiresReasoningContentInToolMessages = false
+);
+
 /// <summary>创建/更新 LLM 服务商请求。</summary>
 public record UpsertLlmProviderRequest(
     string ProviderId,
@@ -55,7 +65,8 @@ public record UpsertLlmProviderRequest(
     long? TokensPerMinute = null,
     int? RequestsPerMinute = null,
     int? RequestTimeoutSeconds = null,
-    int? StreamTimeoutSeconds = null
+    int? StreamTimeoutSeconds = null,
+    ProviderCompatRequest? Compat = null
 );
 
 // ── LLM Provider Quota 配额 ────────────────────────────────────

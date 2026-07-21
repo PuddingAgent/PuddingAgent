@@ -1,0 +1,14 @@
+﻿{
+  "version": 1,
+  "updated_at": "",
+  "status": "idle",
+  "task": "",
+  "agent_id": "default.global_general-assistant.6a8",
+  "session_id": "861ce7e80f0749c491afd75593763731",
+  "conversation_id": "861ce7e80f0749c491afd75593763731",
+  "last_git_commit": "",
+  "auto_yolo": true,
+  "proxy_port": 80,
+  "base_url": "http://127.0.0.1:80",
+  "user_id": "admin"
+}

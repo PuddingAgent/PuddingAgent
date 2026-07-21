@@ -5,6 +5,10 @@
 > 范围：`Source/PuddingPlatformAdmin/src/pages/chat`、Admin Chat runtime、消息渲染、交互体验、视觉系统  
 > 关联：ADR-050 会话层统一投影与前端观察者模型、ADR-053 前端会话引用生命周期与 SSE 清理边界
 
+> 2026-07-21 演进说明：具体文件拆分顺序与当前实施状态由
+> [ADR-062](62ADR-062前端ChatUI模块化审计与渐进拆分ADR.md) 细化；本文定义的 Runtime
+> Store 和性能目标仍然有效。
+
 ## 1. 背景
 
 Admin Chat 已经从单一会话聊天演进为多 Agent 工作台，包含 workspace/agent 选择、main session、legacy SSE、agent conversation projection、replay poll、消息历史、工具过程、子代理卡片、语音/相机输入、DevPanel 诊断和本地缓存。当前功能已经可用，但状态和渲染复杂度集中在少数巨型模块中，导致性能治理、视觉统一和交互体验优化都缺少清晰边界。

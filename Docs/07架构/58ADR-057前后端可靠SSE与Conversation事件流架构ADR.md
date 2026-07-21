@@ -4,6 +4,10 @@
 
 Proposed
 
+> 2026-07-21 实施说明：前端 `useChatState` 的模块化拆分遵循
+> [ADR-062](62ADR-062前端ChatUI模块化审计与渐进拆分ADR.md)，但 Conversation Event
+> Log、sequence、幂等 reducer 与 gap recovery 语义仍以本文为准。
+
 ## 日期
 
 2026-07-15

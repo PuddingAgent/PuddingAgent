@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -16,6 +16,9 @@ namespace PuddingCode.Core;
 /// </summary>
 public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) : ILlmGateway
 {
+    /// <summary>Provider compatibility settings (K3, etc.). Set after construction.</summary>
+    public ProviderCompatConfig? Compat { get; set; }
+
     private string? _thinkingMode = NormalizeThinkingMode(options.EnableThinking switch
     {
         true => "enabled",
@@ -270,18 +273,28 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             };
         }
 
+        var compat = Compat;
+        string maxTokensKey = compat?.MaxTokensField ?? "max_tokens";
+
         if (options.Temperature.HasValue)
             requestObj["temperature"] = options.Temperature.Value;
         if (options.MaxTokens.HasValue)
-            requestObj["max_tokens"] = options.MaxTokens.Value;
+            requestObj[maxTokensKey] = options.MaxTokens.Value;
         if (options.ReasoningEffort is not null)
             requestObj["reasoning_effort"] = options.ReasoningEffort;
         if (!string.IsNullOrWhiteSpace(_thinkingMode))
         {
-            requestObj["thinking"] = new JsonObject
+            if (compat?.UseReasoningEffort != true)
             {
-                ["type"] = _thinkingMode
-            };
+                requestObj["thinking"] = new JsonObject
+                {
+                    ["type"] = _thinkingMode
+                };
+            }
+            else if (compat?.DefaultReasoningEffort is not null && options.ReasoningEffort is null)
+            {
+                requestObj["reasoning_effort"] = compat.DefaultReasoningEffort;
+            }
         }
 
         if (tools.Count > 0)

@@ -3,6 +3,33 @@
 namespace PuddingCode.Abstractions;
 
 /// <summary>
+/// Provider-specific compatibility settings for non-standard OpenAI-compatible APIs.
+/// Based on reference implementations: Pi Agent (@earendil-works/pi-ai) and DeepSeek-Reasonix.
+/// </summary>
+public sealed record ProviderCompatConfig
+{
+    /// <summary>Override the max tokens field name (e.g., "max_tokens" for Kimi K3). Default: "max_completion_tokens".</summary>
+    public string MaxTokensField { get; init; } = "max_completion_tokens";
+
+    /// <summary>Message content must be a plain string, not an array of content parts.</summary>
+    public bool RequiresStringContent { get; init; }
+
+    /// <summary>Use top-level "reasoning_effort" instead of nested "thinking" object.</summary>
+    public bool UseReasoningEffort { get; init; }
+
+    /// <summary>Default reasoning effort when UseReasoningEffort=true (K3: "max").</summary>
+    public string? DefaultReasoningEffort { get; init; }
+
+    /// <summary>Streaming responses include usage statistics. Default: true.</summary>
+    public bool SupportsUsageInStreaming { get; init; } = true;
+
+    /// <summary>Require reasoning_content field in assistant messages with tool_calls.</summary>
+    public bool RequiresReasoningContentInToolMessages { get; init; }
+
+    public static readonly ProviderCompatConfig None = new();
+}
+
+/// <summary>
 /// 统一 LLM 配置服务 — 所有 LLM 服务商、模型、密钥的唯一数据入口。
 /// 
 /// 设计原则：
@@ -91,6 +118,9 @@ public sealed record LlmProviderStrategy
     public int? MaxConcurrentRequests { get; init; }
     public long? TokensPerMinute { get; init; }
     public int? RequestsPerMinute { get; init; }
+
+    /// <summary>Provider-specific compatibility settings. Null = use defaults.</summary>
+    public ProviderCompatConfig? Compat { get; init; }
 
     public int EffectiveRequestTimeoutSeconds => RequestTimeoutSeconds ?? 240;
     public int EffectiveMaxConcurrentRequests => MaxConcurrentRequests ?? 50;

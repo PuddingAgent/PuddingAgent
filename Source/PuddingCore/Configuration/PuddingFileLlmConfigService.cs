@@ -209,6 +209,21 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             MaxConcurrentRequests = provider.MaxConcurrentRequests,
             TokensPerMinute = provider.TokensPerMinute,
             RequestsPerMinute = provider.RequestsPerMinute,
+            Compat = MapCompat(provider.Compat),
+        };
+    }
+
+    private static ProviderCompatConfig? MapCompat(PuddingProviderCompatConfig? src)
+    {
+        if (src is null) return null;
+        return new ProviderCompatConfig
+        {
+            MaxTokensField = src.MaxTokensField,
+            RequiresStringContent = src.RequiresStringContent,
+            UseReasoningEffort = src.UseReasoningEffort,
+            DefaultReasoningEffort = src.DefaultReasoningEffort,
+            SupportsUsageInStreaming = src.SupportsUsageInStreaming,
+            RequiresReasoningContentInToolMessages = src.RequiresReasoningContentInToolMessages,
         };
     }
 
@@ -233,6 +248,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             MaxConcurrentRequests = model?.MaxConcurrentRequests ?? provider?.MaxConcurrentRequests,
             TokensPerMinute = provider?.TokensPerMinute,
             RequestsPerMinute = provider?.RequestsPerMinute,
+            Compat = MapCompat(provider?.Compat),
         };
     }
 

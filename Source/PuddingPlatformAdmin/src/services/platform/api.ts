@@ -2459,8 +2459,8 @@ export type AdminChatStreamEvent =
   | { type: 'context.compaction.started'; compactionId?: string; sessionId?: string; mode?: ContextCompactionMode; level?: ContextCompactionLevel; reason?: string; [key: string]: unknown }
   | { type: 'context.compaction.completed'; compactionId?: string; sessionId?: string; sourceSessionId?: string; newSessionId?: string; newSessionTitle?: string; compaction?: ContextCompactionResult; [key: string]: unknown }
   | { type: 'context.compaction.failed'; compactionId?: string; sessionId?: string; error?: string; errorType?: string; [key: string]: unknown }
-  | { type: 'done'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string }
-  | { type: 'error'; message: string }
+  | { type: 'done'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string; [key: string]: unknown }
+  | { type: 'error'; message: string; [key: string]: unknown }
   | { type: 'cancelled'; message?: string }
   | { type: 'subconscious_step'; status: 'loading' | 'thinking' | 'done'; message: string; [key: string]: unknown }
   // T-102: 子代理事件（ADR-016）

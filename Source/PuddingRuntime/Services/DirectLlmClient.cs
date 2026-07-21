@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
@@ -574,7 +574,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
     private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config)
     {
-        return new OpenAiLlmGateway(
+        var gateway = new OpenAiLlmGateway(
             _httpClientFactory.CreateClient("DirectLlm"),
             new PuddingCode.Platform.Options.LlmOptions(
                 config.Endpoint,
@@ -582,6 +582,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 config.Model,
                 ReasoningEffort: config.ReasoningEffort,
                 ThinkingMode: config.ThinkingMode));
+        gateway.Compat = config.Strategy.Compat;
+        return gateway;
     }
 
     private static List<ITool> ToToolSpecs(IReadOnlyList<LlmToolDefinition>? tools)

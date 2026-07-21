@@ -19,26 +19,18 @@ import {
 } from '../outbox/commandOutbox';
 import {
   type AdminChatStreamEvent,
-  type AgentMessageQueueItem,
   archiveSession,
-  type CompactSessionResponse,
   type ContextCompactionResult,
   compactSession,
   createChatSteeringMessage,
   createSession,
-  createWorkspace,
-  createWorkspaceAgent,
   deleteSession,
-  type EnsureMainSessionRequest,
   ensureMainSession,
   executeConversationSystemCommand,
   getAgentMessageQueue,
   getConversationBootstrap,
   listSessionMessages,
   listSessions,
-  listTeams,
-  listWorkspaceAgents,
-  listWorkspaces,
   type MessageListResponse,
   normalizeConversationEventType,
   renameSession,
@@ -47,9 +39,7 @@ import {
   subscribeSessionEvents,
   subscribeWorkspaceNotifications,
   type TokenUsageDto,
-  type WorkspaceAgentDto,
   type WorkspaceNotification,
-  type WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import {
   installPerfDiagnostics,
@@ -64,25 +54,19 @@ import {
   getThinkingRawText,
   sanitizeProcessText,
 } from '../components/processPreview';
-import {
-  createSessionTerminalEvent,
-  reduceSessionLifecycle,
-} from '../runtime/sessionLifecycleStore';
+import { createSessionTerminalEvent } from '../runtime/sessionLifecycleStore';
 import type {
   AssistantStatus,
   ChatSource,
   ChatTurn,
   SessionGroup,
   SessionListItem,
-  SubAgentCard,
   SubAgentCardMap,
   TimelineItem,
 } from '../types';
 import { assistantStatusLabel } from '../types';
-import type { AgentAvatarRuntimeEvent } from './agentAvatarRuntime';
 import {
   getChatRouteLabel,
-  type ResolvedChatRoute,
   resolveChatRoute,
 } from './chatRouting';
 import {
@@ -97,1108 +81,162 @@ import {
   reduceSubAgentRunEvent,
   type SubAgentRunMap,
 } from '../reducer/subAgentReducer';
-const MESSAGE_PAGE_SIZE = 20;
-const SESSION_EVENT_PAGE_SIZE = 50;
-const ACTIVE_SESSION_REPLAY_POLL_INTERVAL_MS = 900;
-const IDLE_SESSION_REPLAY_POLL_INTERVAL_MS = 8000;
-const SSE_HEALTHY_REPLAY_SUPPRESSION_MS = 2500;
-const MAX_CHAT_INTERACTION_RUNTIME_EVENTS = 16;
-export const STEERING_INJECTED_QUEUE_RETENTION_MS = 8000;
-const CHAT_DIAG_STORAGE_KEY = 'pudding_chat_diag_events';
-const CHAT_DIAG_MAX_EVENTS = 200;
+import {
+  applyBufferedDeltaToTurn,
+  buildAgentMainSessionRequest,
+  buildSessionEventReplayUrl,
+  canBindUnknownMetadataToTurn,
+  COMPACT_COMMAND,
+  COMPACTION_TURN_PREFIX,
+  compactionTurnId,
+  confirmOptimisticTurn,
+  countCompletedAssistantTurns,
+  createAssistant,
+  createId,
+  filterSubAgentCardsForSession,
+  formatCompactSuccessMessage,
+  formatTime,
+  getAgentName,
+  getChatRouteSelectionFromSearch,
+  getHistoryReconcileBlockReason,
+  getSessionEventSequenceNum,
+  getStepMessage,
+  getStepTone,
+  getTrackedActiveMessageIds,
+  groupSessions,
+  hasBlockingActiveTurn,
+  hasTrackedActiveSessionMessages,
+  HISTORICAL_REPLAY_TERMINAL_EVENTS,
+  inferParentSessionIdFromSubSessionId,
+  isActiveAssistantTurn,
+  isReasoningStep,
+  mergeHistoryWithLifecycleTurns,
+  normalizeUsage,
+  parseSessionEventTimestampMs,
+  removeInjectedSteeringQueueItem,
+  removeTrackedActiveMessageIdsForTurn,
+  resolveActiveSessionReplayFromSequence,
+  resolveInitialAgentId,
+  resolveInitialWorkspaceId,
+  resolveSessionReplayCursorSequence,
+  resolveSessionReplayPollInterval,
+  resolveSubAgentTaskSummary,
+  resolveSubAgentTerminalOutput,
+  resolveTerminalAssistantMarkdown,
+  resolveTurnIdForEvent,
+  shouldAdvanceSequenceForSessionEvent,
+  shouldHydrateSessionEventReplay,
+  shouldReplayEventsAfterHistory,
+  shouldResetSequenceForSessionChange,
+  shouldRunSessionReplayCompensation,
+  stringToColor,
+  toChatInteractionQueueItem,
+  toChatInteractionRuntimeEvent,
+  toSessionListItem,
+  tryExtractDelta,
+} from '../utils/chatStateUtils';
+import {
+  MAX_CHAT_INTERACTION_RUNTIME_EVENTS,
+  MESSAGE_PAGE_SIZE,
+  SESSION_EVENT_PAGE_SIZE,
+  STEERING_INJECTED_QUEUE_RETENTION_MS,
+} from '../types/chatStateTypes';
+import type {
+  ChatInteractionQueueItem,
+  ChatInteractionQueueStatus,
+  ChatInteractionRuntimeEvent,
+  ChatInteractionRuntimeType,
+  ChatRouteSelection,
+  ChatSendOptions,
+  SessionEventPageResponse,
+  UseChatStateReturn,
+} from '../types/chatStateTypes';
+import {
+  formatChatErrorDiagnostic,
+  isChatStreamErrorEvent,
+  logChatDiag,
+  looksLikePersistedErrorDiagnostic,
+} from '../utils/chatDiagnostics';
+import { useWorkspaceAgentSelection } from './useWorkspaceAgentSelection';
 
-interface SessionEventPageResponse {
-  events?: unknown[];
-  Events?: unknown[];
-  hasMore?: boolean;
-  HasMore?: boolean;
-  maxSequence?: unknown;
-  MaxSequence?: unknown;
-  totalEventCount?: unknown;
-  TotalEventCount?: unknown;
-}
-
-export function confirmOptimisticTurn(
-  turns: ChatTurn[],
-  optimisticTurnId: string,
-  confirmedTurnId: string,
-  confirmedMessageId: string,
-): ChatTurn[] {
-  return turns.map((turn) =>
-    turn.turnId !== optimisticTurnId
-      ? turn
-      : {
-          ...turn,
-          turnId: confirmedTurnId,
-          userMessage: {
-            ...turn.userMessage,
-            id: confirmedMessageId,
-            status: 'success' as const,
-          },
-        },
-  );
-}
-
-export function parseSessionEventTimestampMs(
-  value: unknown,
-  fallback = Date.now(),
-): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'string' || !value.trim()) return fallback;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) return numeric;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-export const stringToColor = (str: string) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++)
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  const colors = [
-    'var(--avatar-0)',
-    'var(--avatar-1)',
-    'var(--avatar-2)',
-    'var(--avatar-3)',
-    'var(--avatar-4)',
-    'var(--avatar-5)',
-    'var(--avatar-6)',
-    'var(--avatar-7)',
-    'var(--avatar-8)',
-    'var(--avatar-9)',
-  ];
-  return colors[Math.abs(hash) % colors.length];
+export {
+  applyBufferedDeltaToTurn,
+  buildAgentMainSessionRequest,
+  buildSessionEventReplayUrl,
+  canBindUnknownMetadataToTurn,
+  confirmOptimisticTurn,
+  filterSubAgentCardsForSession,
+  formatChatErrorDiagnostic,
+  formatCompactSuccessMessage,
+  getAgentName,
+  getChatRouteSelectionFromSearch,
+  getHistoryReconcileBlockReason,
+  getSessionEventSequenceNum,
+  getTrackedActiveMessageIds,
+  groupSessions,
+  hasBlockingActiveTurn,
+  hasTrackedActiveSessionMessages,
+  inferParentSessionIdFromSubSessionId,
+  isActiveAssistantTurn,
+  isChatStreamErrorEvent,
+  looksLikePersistedErrorDiagnostic,
+  mergeHistoryWithLifecycleTurns,
+  parseSessionEventTimestampMs,
+  removeInjectedSteeringQueueItem,
+  removeTrackedActiveMessageIdsForTurn,
+  resolveActiveSessionReplayFromSequence,
+  resolveInitialAgentId,
+  resolveInitialWorkspaceId,
+  resolveSessionReplayCursorSequence,
+  resolveSessionReplayPollInterval,
+  resolveSubAgentTaskSummary,
+  resolveSubAgentTerminalOutput,
+  resolveTerminalAssistantMarkdown,
+  resolveTurnIdForEvent,
+  shouldAdvanceSequenceForSessionEvent,
+  shouldHydrateSessionEventReplay,
+  shouldReplayEventsAfterHistory,
+  shouldResetSequenceForSessionChange,
+  shouldRunSessionReplayCompensation,
+  STEERING_INJECTED_QUEUE_RETENTION_MS,
+  stringToColor,
+  toChatInteractionQueueItem,
+  toChatInteractionRuntimeEvent,
+  toSessionListItem,
 };
-
-export const getAgentName = (a: WorkspaceAgentDto) =>
-  a.displayName || a.name || 'Agent';
-
-export const formatCompactSuccessMessage = (
-  result: Pick<
-    ContextCompactionResult,
-    'beforeTokens' | 'afterTokens' | 'compactedMessageCount'
-  > &
-    Partial<ContextCompactionResult>,
-  successor?: {
-    newSessionId?: string | null;
-    newSessionTitle?: string | null;
-  },
-) => {
-  const diagnostics = result.diagnostics;
-  const tokenLine =
-    result.beforeTokens > 0
-      ? `\n\nToken 估算：${result.beforeTokens} → ${result.afterTokens}`
-      : '';
-  const hasSummary =
-    diagnostics === undefined ||
-    Boolean(result.summaryMessageId) ||
-    Boolean(result.summaryPreview?.trim()) ||
-    diagnostics.summaryCharacterCount > 0;
-  const headline =
-    result.compactedMessageCount > 0
-      ? `上下文已压缩，覆盖 ${result.compactedMessageCount} 条历史消息。`
-      : hasSummary
-        ? '已生成当前会话摘要。'
-        : '当前没有可压缩的会话内容。';
-
-  if (!diagnostics) return `${headline}${tokenLine}`;
-
-  const nextSessionId =
-    successor?.newSessionId ?? diagnostics.newSessionId ?? null;
-  const lines = [
-    `${headline}${tokenLine}`,
-    '',
-    '### 压缩诊断',
-    `- Compaction ID：\`${diagnostics.compactionId}\``,
-    `- 旧 Session：\`${diagnostics.previousSessionId}\``,
-    diagnostics.previousLastMessageId
-      ? `- 最后消息：\`${diagnostics.previousLastMessageId}\``
-      : null,
-    `- 旧 Session 大小：${diagnostics.beforeTokens} tokens / ${diagnostics.activeMessageCountBefore} messages`,
-    `- 摘要大小：${diagnostics.summaryCharacterCount} chars / ${diagnostics.summaryEstimatedTokens} tokens`,
-    diagnostics.summaryGenerator
-      ? `- 摘要生成器：\`${diagnostics.summaryGenerator}\``
-      : null,
-    nextSessionId ? `- 新 Session：\`${nextSessionId}\`` : null,
-    `- 完成时间：\`${diagnostics.completedAtUtc}\``,
-  ].filter((line): line is string => line !== null);
-  return lines.join('\n');
+export type {
+  ChatInteractionQueueItem,
+  ChatInteractionQueueStatus,
+  ChatInteractionRuntimeEvent,
+  ChatInteractionRuntimeType,
+  ChatRouteSelection,
+  ChatSendOptions,
+  UseChatStateReturn,
 };
-
-export interface ChatRouteSelection {
-  workspaceId?: string;
-  agentId?: string;
-  sessionId?: string;
-}
-
-export interface ChatSendOptions {
-  metadata?: Record<string, string>;
-}
-
-export type ChatInteractionQueueStatus =
-  | 'queued'
-  | 'delivering'
-  | 'retrying'
-  | 'delivered'
-  | 'dead_letter'
-  | 'failed'
-  | 'cancelled'
-  | 'expired'
-  | 'steering_pending'
-  | 'steering_injected'
-  | 'steering_failed';
-
-export interface ChatInteractionQueueItem {
-  id: string;
-  text: string;
-  createdAt: number;
-  status: ChatInteractionQueueStatus | string;
-  source?: 'backend_message_queue' | 'steering';
-  metadata?: Record<string, string>;
-  steeringId?: string;
-  submittedAt?: number;
-  injectedAt?: number;
-  injectedRound?: number;
-  injectionLatencyMs?: number;
-  error?: string;
-}
-
-export function removeInjectedSteeringQueueItem(
-  queue: ChatInteractionQueueItem[],
-  steeringId: string,
-): ChatInteractionQueueItem[] {
-  return queue.filter(
-    (item) =>
-      item.steeringId !== steeringId || item.status !== 'steering_injected',
-  );
-}
-
-export type ChatInteractionRuntimeType =
-  | 'voice_capture_status'
-  | 'voice_playback_status'
-  | 'camera_capture_status'
-  | 'visual_reasoning_status';
-
-export type ChatInteractionRuntimeEvent = Extract<
-  AgentAvatarRuntimeEvent,
-  { type: ChatInteractionRuntimeType }
->;
-
-const CHAT_INTERACTION_RUNTIME_EVENT_TYPES = new Set<string>([
-  'voice_capture_status',
-  'voice_playback_status',
-  'camera_capture_status',
-  'visual_reasoning_status',
-]);
-
-const getStringValue = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() ? value.trim() : undefined;
-
-type ChatDiagPayload = Record<string, unknown>;
-type ChatDiagWindow = Window & {
-  __PUDDING_CHAT_DIAG__?: Array<Record<string, unknown>>;
-};
-
-function toChatDiagValue(value: unknown, depth = 0): unknown {
-  if (value == null) return value;
-  if (typeof value === 'string')
-    return value.length > 300 ? `${value.slice(0, 300)}...` : value;
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (value instanceof Error)
-    return { name: value.name, message: value.message };
-  if (Array.isArray(value))
-    return depth >= 2
-      ? `[array:${value.length}]`
-      : value.slice(0, 12).map((item) => toChatDiagValue(item, depth + 1));
-  if (typeof value === 'object') {
-    if (depth >= 2) return '[object]';
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .slice(0, 24)
-        .map(([key, item]) => [key, toChatDiagValue(item, depth + 1)]),
-    );
-  }
-  return String(value);
-}
-
-function logChatDiag(label: string, payload: ChatDiagPayload = {}) {
-  const entry = {
-    at: new Date().toISOString(),
-    label,
-    payload: toChatDiagValue(payload),
-  };
-  const line = `[Pudding ChatDiag] ${JSON.stringify(entry)}`;
-  console.warn(line);
-  if (typeof window === 'undefined') return;
-  try {
-    const w = window as ChatDiagWindow;
-    const current = Array.isArray(w.__PUDDING_CHAT_DIAG__)
-      ? w.__PUDDING_CHAT_DIAG__
-      : [];
-    const next = [...current, entry].slice(-CHAT_DIAG_MAX_EVENTS);
-    w.__PUDDING_CHAT_DIAG__ = next;
-    window.sessionStorage.setItem(CHAT_DIAG_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // Diagnostics must never affect chat behavior.
-  }
-}
-
-export function resolveSubAgentTaskSummary(
-  event: Record<string, unknown>,
-): string {
-  return (
-    getStringValue(event.task_summary) ??
-    getStringValue(event.task) ??
-    getStringValue(event.taskSummary) ??
-    getStringValue(event.template) ??
-    '处理中...'
-  );
-}
-
-export function toChatInteractionQueueItem(
-  item: AgentMessageQueueItem,
-): ChatInteractionQueueItem {
-  return {
-    id: item.deliveryId,
-    text: item.content,
-    createdAt: item.createdAt,
-    status: item.status,
-    source: 'backend_message_queue',
-    error: item.lastError,
-    metadata: {
-      deliveryId: item.deliveryId,
-      messageId: item.messageId,
-      priority: String(item.priority),
-      attemptCount: String(item.attemptCount),
-      roomId: item.roomId ?? '',
-    },
-  };
-}
-
-export function resolveSubAgentTerminalOutput(
-  event: Record<string, unknown>,
-): string {
-  return (
-    getStringValue(event.result_summary) ??
-    getStringValue(event.resultSummary) ??
-    getStringValue(event.reply) ??
-    getStringValue(event.error) ??
-    ''
-  );
-}
-
-export function toChatInteractionRuntimeEvent(
-  event: AdminChatStreamEvent,
-  agentId?: string,
-): ChatInteractionRuntimeEvent | null {
-  if (!agentId || !CHAT_INTERACTION_RUNTIME_EVENT_TYPES.has(event.type))
-    return null;
-  const anyEvent = event as Record<string, unknown>;
-  const status = getStringValue(anyEvent.status)?.toLowerCase();
-  if (!status) return null;
-
-  const now = Date.now();
-  if (event.type === 'voice_capture_status') {
-    return {
-      type: event.type,
-      agentId,
-      status,
-      sessionId:
-        getStringValue(anyEvent.voiceSessionId) ??
-        getStringValue(anyEvent.sessionId),
-      now,
-    };
-  }
-  if (event.type === 'voice_playback_status') {
-    return {
-      type: event.type,
-      agentId,
-      status,
-      deliveryId:
-        getStringValue(anyEvent.deliveryId) ??
-        getStringValue(anyEvent.voiceSessionId) ??
-        getStringValue(anyEvent.sessionId),
-      now,
-    };
-  }
-  if (event.type === 'camera_capture_status') {
-    return {
-      type: event.type,
-      agentId,
-      status,
-      sessionId:
-        getStringValue(anyEvent.cameraSessionId) ??
-        getStringValue(anyEvent.sessionId),
-      artifactId:
-        getStringValue(anyEvent.artifactId) ??
-        getStringValue(anyEvent.visionArtifactId),
-      now,
-    };
-  }
-  if (event.type === 'visual_reasoning_status') {
-    return {
-      type: event.type,
-      agentId,
-      status,
-      sessionId:
-        getStringValue(anyEvent.visionSessionId) ??
-        getStringValue(anyEvent.sessionId),
-      now,
-    };
-  }
-  return null;
-}
-
-export function getChatRouteSelectionFromSearch(
-  search: string,
-): ChatRouteSelection {
-  const params = new URLSearchParams(search);
-  const workspaceId = params.get('workspaceId')?.trim() || undefined;
-  const agentId = params.get('agentId')?.trim() || undefined;
-  const sessionId = params.get('sessionId')?.trim() || undefined;
-  return {
-    ...(workspaceId ? { workspaceId } : {}),
-    ...(agentId ? { agentId } : {}),
-    ...(sessionId ? { sessionId } : {}),
-  };
-}
-
-export function resolveInitialWorkspaceId(
-  workspaces: WorkspaceWithPermDto[],
-  requestedWorkspaceId?: string,
-): string | undefined {
-  if (
-    requestedWorkspaceId &&
-    workspaces.some(
-      (workspace) => workspace.workspaceId === requestedWorkspaceId,
-    )
-  ) {
-    return requestedWorkspaceId;
-  }
-  return (
-    workspaces.find(
-      (workspace) =>
-        workspace.workspaceId === 'default' &&
-        workspace.isEnabled &&
-        !workspace.isFrozen,
-    )?.workspaceId ??
-    workspaces.find((workspace) => workspace.workspaceId === 'default')
-      ?.workspaceId ??
-    workspaces.find((workspace) => workspace.isEnabled && !workspace.isFrozen)
-      ?.workspaceId ??
-    workspaces[0]?.workspaceId
-  );
-}
-
-export function resolveInitialAgentId(
-  agents: WorkspaceAgentDto[],
-  requestedAgentId?: string,
-): string | undefined {
-  if (
-    requestedAgentId &&
-    agents.some((agent) => agent.agentId === requestedAgentId)
-  )
-    return requestedAgentId;
-  return (
-    agents.find((agent) => agent.isEnabled && !agent.isFrozen)?.agentId ??
-    agents.find((agent) => agent.isEnabled)?.agentId ??
-    agents[0]?.agentId
-  );
-}
-
-export function buildAgentMainSessionRequest(
-  workspaceId: string | undefined,
-  agent: WorkspaceAgentDto | undefined,
-): EnsureMainSessionRequest | null {
-  if (!workspaceId || !agent?.agentId) return null;
-  return {
-    workspaceId,
-    principalKind: 'agent',
-    principalId: agent.agentId,
-    agentTemplateId: agent.sourceTemplateId || `global:${agent.agentId}`,
-    title: getAgentName(agent),
-  };
-}
-
-export function toSessionListItem(
-  session: SessionRecord,
-  fallbackTitle = '对话',
-): SessionListItem {
-  return {
-    sessionId: session.sessionId,
-    title:
-      session.title?.trim() ||
-      session.agentTemplateId?.replace('global:', '') ||
-      fallbackTitle,
-    timestamp:
-      new Date(session.lastActiveAt || session.createdAt).getTime() ||
-      Date.now(),
-    agentTemplateId: session.agentTemplateId,
-    channelId: session.channelId,
-    sessionRole: session.sessionRole,
-    principalKind: session.principalKind,
-    principalId: session.principalId,
-  };
-}
-
-export const groupSessions = (raw: SessionListItem[]): SessionGroup[] => {
-  const now = dayjs();
-  const groups: Record<string, SessionListItem[]> = {};
-  for (const s of raw) {
-    const d = dayjs(s.timestamp);
-    let key: string;
-    if (d.isSame(now, 'day')) key = '今天';
-    else if (d.isSame(now.subtract(1, 'day'), 'day')) key = '昨天';
-    else if (d.isAfter(now.subtract(7, 'day'))) key = '本周';
-    else key = '更早';
-    (groups[key] ??= []).push(s);
-  }
-  return ['今天', '昨天', '本周', '更早']
-    .filter((k) => groups[k]?.length)
-    .map((label) => ({
-      label,
-      items: groups[label]!.sort((a, b) => b.timestamp - a.timestamp),
-    }));
-};
-
-export function shouldAdvanceSequenceForSessionEvent(
-  type: string,
-  hasTargetTurn: boolean,
-): boolean {
-  if (CHAT_INTERACTION_RUNTIME_EVENT_TYPES.has(type)) return true;
-  if (type === 'steering.created' || type === 'steering.injected') return true;
-  return hasTargetTurn;
-}
-
-export function shouldReplayEventsAfterHistory(turns: ChatTurn[]): boolean {
-  const latest = turns[turns.length - 1];
-  if (!latest) return true;
-  const assistant = latest.assistant;
-  return (
-    assistant.isStreaming ||
-    assistant.status === 'thinking' ||
-    assistant.status === 'executing' ||
-    assistant.status === 'streaming' ||
-    assistant.answerMarkdown.trim().length === 0
-  );
-}
-
-export function isActiveAssistantTurn(turn: ChatTurn): boolean {
-  return (
-    turn.assistant.isStreaming ||
-    turn.assistant.status === 'thinking' ||
-    turn.assistant.status === 'executing' ||
-    turn.assistant.status === 'streaming'
-  );
-}
-
-export function hasBlockingActiveTurn(
-  turns: ChatTurn[],
-  activeMessageIds: Iterable<string>,
-  messageIdToTurnId: ReadonlyMap<string, string>,
-): boolean {
-  return (
-    turns.some(isActiveAssistantTurn) ||
-    hasTrackedActiveSessionMessages(activeMessageIds, messageIdToTurnId, turns)
-  );
-}
-
-export function getTrackedActiveMessageIds(
-  activeMessageIds: Iterable<string>,
-  messageIdToTurnId: ReadonlyMap<string, string>,
-  turns: ChatTurn[],
-): string[] {
-  const activeTurnIds = new Set(
-    turns.filter(isActiveAssistantTurn).map((turn) => turn.turnId),
-  );
-  const tracked: string[] = [];
-  for (const messageId of activeMessageIds) {
-    const turnId = messageIdToTurnId.get(messageId);
-    if (turnId && activeTurnIds.has(turnId)) {
-      tracked.push(messageId);
-    }
-  }
-  return tracked;
-}
-
-export function hasTrackedActiveSessionMessages(
-  activeMessageIds: Iterable<string>,
-  messageIdToTurnId: ReadonlyMap<string, string>,
-  turns: ChatTurn[],
-): boolean {
-  return (
-    getTrackedActiveMessageIds(activeMessageIds, messageIdToTurnId, turns)
-      .length > 0
-  );
-}
-
-export function removeTrackedActiveMessageIdsForTurn(
-  activeMessageIds: Set<string>,
-  messageIdToTurnId: ReadonlyMap<string, string>,
-  turnId: string,
-  terminalMessageId?: string | null,
-): number {
-  let removed = 0;
-  for (const [trackedMessageId, trackedTurnId] of messageIdToTurnId) {
-    if (trackedTurnId !== turnId) continue;
-    if (activeMessageIds.delete(trackedMessageId)) removed++;
-  }
-  if (terminalMessageId && activeMessageIds.delete(terminalMessageId))
-    removed++;
-  return removed;
-}
-
-function findMatchingRecentUserTurn(
-  loadedTurns: ChatTurn[],
-  currentTurn: ChatTurn,
-): ChatTurn | undefined {
-  const text = currentTurn.userMessage.text.trim();
-  if (!text) return loadedTurns[loadedTurns.length - 1];
-  const lowerBound = currentTurn.userMessage.timestamp - 60_000;
-  return loadedTurns.find(
-    (turn) =>
-      turn.userMessage.text.trim() === text &&
-      turn.userMessage.timestamp >= lowerBound,
-  );
-}
-
-export function getHistoryReconcileBlockReason(
-  currentTurns: ChatTurn[],
-  loadedTurns: ChatTurn[],
-): string | null {
-  const currentLatest = currentTurns[currentTurns.length - 1];
-  if (!currentLatest) return null;
-
-  const currentHasActiveTurn = currentTurns.some(isActiveAssistantTurn);
-  const loadedCurrentLatest = findMatchingRecentUserTurn(
-    loadedTurns,
-    currentLatest,
-  );
-  const loadedHasCurrentLatest = loadedCurrentLatest != null;
-
-  if (currentHasActiveTurn && !loadedHasCurrentLatest) {
-    return 'active-turn-not-materialized';
-  }
-
-  const currentAnswer = currentLatest.assistant.answerMarkdown?.trim() ?? '';
-  const loadedAnswer =
-    loadedCurrentLatest?.assistant.answerMarkdown?.trim() ?? '';
-  if (
-    currentLatest.assistant.status === 'success' &&
-    currentAnswer.length > 0 &&
-    loadedAnswer !== currentAnswer
-  ) {
-    return 'completed-turn-not-materialized';
-  }
-
-  if (currentTurns.length > loadedTurns.length && !loadedHasCurrentLatest) {
-    return 'history-older-than-visible-turns';
-  }
-
-  // 修复：当前端 turns 数量 > 服务端且最新消息一致时，
-  // 说明前端有额外数据（来自 event replay 的中间 turns），不应被覆盖
-  if (currentTurns.length > loadedTurns.length && loadedHasCurrentLatest) {
-    return 'frontend-ahead-of-server';
-  }
-
-  return null;
-}
-
-const HISTORICAL_REPLAY_TERMINAL_EVENTS = new Set([
-  'done',
-  'error',
-  'cancelled',
-  'session.closed',
-  'context.compaction.completed',
-  'context.compaction.failed',
-]);
-
-export function shouldHydrateSessionEventReplay(
-  events: Array<{ type: string }>,
-): boolean {
-  return events.some((event) =>
-    HISTORICAL_REPLAY_TERMINAL_EVENTS.has(event.type),
-  );
-}
-
-export function resolveTerminalAssistantMarkdown(
-  currentMarkdown: string,
-  terminalReply?: string | null,
-): string {
-  const current = currentMarkdown ?? '';
-  const reply = terminalReply ?? '';
-  if (!current) return reply || '(无回复)';
-  if (!reply) return current;
-  if (current.includes(reply)) return current;
-  if (reply.includes(current)) return reply;
-  if (reply.startsWith(current)) return reply;
-  const maxOverlap = Math.min(current.length, reply.length);
-  for (let n = maxOverlap; n > 0; n--) {
-    if (current.endsWith(reply.slice(0, n))) {
-      return current + reply.slice(n);
-    }
-  }
-  const separator =
-    current.endsWith('\n') || reply.startsWith('\n') ? '' : '\n\n';
-  return `${current}${separator}${reply}`;
-}
-
-export function applyBufferedDeltaToTurn(
-  turn: ChatTurn,
-  delta: string,
-): ChatTurn {
-  if (!delta) return turn;
-  return {
-    ...turn,
-    assistant: {
-      ...turn.assistant,
-      renderMode: 'structured' as const,
-      answerMarkdown: turn.assistant.answerMarkdown + delta,
-    },
-  };
-}
-
-export function shouldResetSequenceForSessionChange(
-  previousSessionId?: string | null,
-  nextSessionId?: string | null,
-): boolean {
-  return Boolean(
-    previousSessionId && nextSessionId && previousSessionId !== nextSessionId,
-  );
-}
-
-export function buildSessionEventReplayUrl(
-  sessionId: string,
-  from: number,
-  limit: number,
-): string {
-  const afterExclusive = Math.max(0, from - 1);
-  return `/api/sessions/${encodeURIComponent(sessionId)}/events?from=${encodeURIComponent(String(afterExclusive))}&limit=${encodeURIComponent(String(limit))}`;
-}
-
-function parseObjectJson(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'string' || !value.trim()) return null;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object'
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export function getSessionEventSequenceNum(item: unknown): number | null {
-  if (!item || typeof item !== 'object') return null;
-  const obj = item as Record<string, unknown>;
-  const direct = Number(
-    obj.sequence ?? obj.Sequence ?? obj.sequenceNum ?? obj.SequenceNum,
-  );
-  if (Number.isFinite(direct)) return direct;
-
-  const payload =
-    typeof obj.payload === 'object' && obj.payload
-      ? (obj.payload as Record<string, unknown>)
-      : typeof obj.Payload === 'object' && obj.Payload
-        ? (obj.Payload as Record<string, unknown>)
-        : parseObjectJson(obj.payload ?? obj.Payload);
-  const payloadSeq = Number(payload?.sequenceNum ?? payload?.SequenceNum);
-  if (Number.isFinite(payloadSeq)) return payloadSeq;
-
-  const dataJson = parseObjectJson(obj.dataJson ?? obj.DataJson);
-  const dataJsonSeq = Number(dataJson?.sequenceNum ?? dataJson?.SequenceNum);
-  if (Number.isFinite(dataJsonSeq)) return dataJsonSeq;
-
-  const data =
-    typeof obj.data === 'object' && obj.data
-      ? (obj.data as Record<string, unknown>)
-      : typeof obj.Data === 'object' && obj.Data
-        ? (obj.Data as Record<string, unknown>)
-        : parseObjectJson(obj.data ?? obj.Data);
-  const dataSeq = Number(data?.sequenceNum ?? data?.SequenceNum);
-  return Number.isFinite(dataSeq) ? dataSeq : null;
-}
-
-export function resolveSessionReplayCursorSequence(page: {
-  events?: unknown[];
-  Events?: unknown[];
-  maxSequence?: unknown;
-  MaxSequence?: unknown;
-  totalEventCount?: unknown;
-  TotalEventCount?: unknown;
-}): number | null {
-  const rawMax = page.maxSequence ?? page.MaxSequence;
-  const max = Number(rawMax);
-  if (Number.isFinite(max) && max >= 0) return max;
-
-  const rawTotal = page.totalEventCount ?? page.TotalEventCount;
-  const total = Number(rawTotal);
-  if (Number.isFinite(total) && total >= 0) return total;
-
-  const events = Array.isArray(page.events)
-    ? page.events
-    : Array.isArray(page.Events)
-      ? page.Events
-      : [];
-  const maxSeq = events
-    .map(getSessionEventSequenceNum)
-    .filter((seq): seq is number => seq !== null)
-    .reduce((max, seq) => Math.max(max, seq), -Infinity);
-  return Number.isFinite(maxSeq) ? maxSeq : null;
-}
-
-export function resolveActiveSessionReplayFromSequence(
-  lastSequenceNum: number,
-  pageSize: number,
-): number {
-  const cursor = Number.isFinite(lastSequenceNum)
-    ? Math.max(0, Math.floor(lastSequenceNum))
-    : 0;
-  const size = Number.isFinite(pageSize)
-    ? Math.max(1, Math.floor(pageSize))
-    : SESSION_EVENT_PAGE_SIZE;
-  return Math.max(1, cursor - size + 1);
-}
-
-export function resolveSessionReplayPollInterval(
-  hasActiveMessages: boolean,
-): number {
-  return hasActiveMessages
-    ? ACTIVE_SESSION_REPLAY_POLL_INTERVAL_MS
-    : IDLE_SESSION_REPLAY_POLL_INTERVAL_MS;
-}
-
-export function shouldRunSessionReplayCompensation(input: {
-  hasActiveMessages: boolean;
-  lastSseEventAt: number | null | undefined;
-  now: number;
-  healthyWindowMs?: number;
-}): boolean {
-  if (!input.hasActiveMessages) return false;
-  if (input.lastSseEventAt === null || input.lastSseEventAt === undefined)
-    return true;
-  const healthyWindowMs =
-    input.healthyWindowMs ?? SSE_HEALTHY_REPLAY_SUPPRESSION_MS;
-  return input.now - input.lastSseEventAt >= healthyWindowMs;
-}
-
-export function resolveTurnIdForEvent(
-  event: {
-    type?: unknown;
-    turnId?: unknown;
-    messageId?: unknown;
-    fanout_index?: unknown;
-  },
-  messageIdToTurnId: ReadonlyMap<string, string>,
-  latestTurnId: string | null,
-  latestTurnCanReceiveUnknownMetadata = true,
-): string | null {
-  const directTurnId = typeof event.turnId === 'string' ? event.turnId : null;
-  if (directTurnId) return directTurnId;
-
-  const messageId =
-    typeof event.messageId === 'string' ? event.messageId : null;
-  if (messageId) {
-    const mapped = messageIdToTurnId.get(messageId);
-    if (mapped) return mapped;
-    const fanoutIndex = Number(event.fanout_index ?? 0);
-    if (
-      event.type === 'metadata' &&
-      Number.isFinite(fanoutIndex) &&
-      fanoutIndex > 0
-    )
-      return null;
-    return event.type === 'metadata' && latestTurnCanReceiveUnknownMetadata
-      ? latestTurnId
-      : null;
-  }
-
-  return latestTurnId;
-}
-
-export function canBindUnknownMetadataToTurn(
-  turn: ChatTurn | undefined,
-): boolean {
-  if (!turn) return false;
-  return (
-    turn.assistant.answerMarkdown.trim().length === 0 ||
-    turn.assistant.isStreaming ||
-    turn.assistant.status === 'thinking' ||
-    turn.assistant.status === 'executing' ||
-    turn.assistant.status === 'streaming'
-  );
-}
-
-export function inferParentSessionIdFromSubSessionId(
-  subSessionId?: string | null,
-): string | null {
-  if (!subSessionId) return null;
-  const markerIndex = subSessionId.lastIndexOf('-sub-');
-  if (markerIndex <= 0) return null;
-  return subSessionId.slice(0, markerIndex);
-}
-
-export function filterSubAgentCardsForSession(
-  cards: SubAgentCardMap,
-  sessionId: string | null | undefined,
-): SubAgentCardMap {
-  if (!sessionId) return {};
-  return Object.fromEntries(
-    Object.entries(cards).filter(([, card]) => {
-      const parentSessionId =
-        card.parentSessionId ??
-        inferParentSessionIdFromSubSessionId(card.subSessionId);
-      return parentSessionId === sessionId;
-    }),
-  );
-}
-
-function countCompletedAssistantTurns(turns: ChatTurn[]): number {
-  return turns.filter((turn) => turn.assistant.answerMarkdown.trim().length > 0)
-    .length;
-}
-
-/** 从 subagent.* 事件的 data 字段中提取 delta 文本 */
-function tryExtractDelta(ev: { data?: string; delta?: string }): string | null {
-  if (ev.delta) return ev.delta;
-  if (ev.data) {
-    try {
-      const d = JSON.parse(ev.data);
-      return d?.delta ?? null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-const createId = () =>
-  `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-const COMPACT_COMMAND = '/compact';
-const COMPACTION_TURN_PREFIX = 'compaction:';
-
-function compactionTurnId(compactionId: string): string {
-  return `${COMPACTION_TURN_PREFIX}${compactionId}`;
-}
-
-export function mergeHistoryWithLifecycleTurns(
-  historyTurns: ChatTurn[],
-  currentTurns: ChatTurn[],
-): ChatTurn[] {
-  const lifecycleTurns = currentTurns.filter((turn) =>
-    turn.turnId.startsWith(COMPACTION_TURN_PREFIX),
-  );
-  if (lifecycleTurns.length === 0) return historyTurns;
-
-  const historyIds = new Set(historyTurns.map((turn) => turn.turnId));
-  return [
-    ...lifecycleTurns.filter((turn) => !historyIds.has(turn.turnId)),
-    ...historyTurns,
-  ];
-}
-
-const createAssistant = (
-  id: string,
-  renderMode: 'legacy' | 'structured',
-  status: AssistantStatus,
-  isStreaming: boolean,
-): ChatTurn['assistant'] => ({
-  id,
-  status,
-  timelineItems: [],
-  answerMarkdown: '',
-  isStreaming,
-  renderMode,
-});
-
-const normalizeUsage = (usage?: TokenUsageDto): TokenUsageDto | undefined =>
-  usage
-    ? {
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        totalTokens: usage.totalTokens,
-        contextWindowTokens: usage.contextWindowTokens,
-        promptCacheHitTokens: usage.promptCacheHitTokens,
-        promptCacheMissTokens: usage.promptCacheMissTokens,
-      }
-    : undefined;
-
-const isReasoningStep = (status?: string) => {
-  const key = (status || '').toLowerCase();
-  return key.startsWith('thinking') || key.startsWith('reasoning');
-};
-
-const getStepTone = (status?: string): 'executing' | 'success' | 'error' => {
-  const key = (status || '').toLowerCase();
-  if (key.includes('error') || key.includes('fail') || key.includes('cancel'))
-    return 'error';
-  if (
-    key.includes('done') ||
-    key.includes('success') ||
-    key.includes('complete')
-  )
-    return 'success';
-  if (key.includes('tool_call')) return 'executing';
-  return 'executing';
-};
-
-const getStepMessage = (payload: {
-  message?: string;
-  [key: string]: unknown;
-}) => {
-  if (typeof payload.message === 'string' && payload.message.trim())
-    return payload.message;
-  const fallback = Object.entries(payload)
-    .filter(
-      ([k, v]) =>
-        k !== 'status' &&
-        k !== 'type' &&
-        v !== undefined &&
-        v !== null &&
-        v !== '',
-    )
-    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-    .join(' | ');
-  return fallback || '执行步骤更新';
-};
-
-const formatTime = (ts: number) => {
-  const diff = dayjs().diff(dayjs(ts), 'minute');
-  if (diff < 1) return '刚刚';
-  if (diff < 60) return `${diff}分钟前`;
-  return dayjs(ts).format('MM-DD HH:mm');
-};
-
-export interface UseChatStateReturn {
-  // workspace
-  workspaces: WorkspaceWithPermDto[];
-  workspaceId: string | undefined;
-  workspaceLoading: boolean;
-  setWorkspaceId: (v: string | undefined) => void;
-  setWorkspaces: (v: WorkspaceWithPermDto[]) => void;
-  // agent
-  agents: WorkspaceAgentDto[];
-  agentId: string | undefined;
-  agentLoading: boolean;
-  setAgentId: (v: string | undefined) => void;
-  selectedAgent: WorkspaceAgentDto | undefined;
-  // session
-  sidebarOpen: boolean;
-  setSidebarOpen: (v: boolean) => void;
-  sessions: SessionListItem[];
-  selectedSessionId: string | null;
-  sessionsLoading: boolean;
-  groups: SessionGroup[];
-  // chat
-  turns: ChatTurn[];
-  chatInteractionRuntimeEvents: ChatInteractionRuntimeEvent[];
-  historyLoading: boolean;
-  hasMoreMessages: boolean;
-  loadingMore: boolean;
-  inputValue: string;
-  setInputValue: (v: string) => void;
-  loading: boolean;
-  workingAgentIds: string[];
-  interactionQueue: ChatInteractionQueueItem[];
-  error: string | null;
-  setError: (v: string | null) => void;
-  latestUsage: TokenUsageDto | undefined;
-  // sub-agent
-  subAgentCards: SubAgentCardMap;
-  // T-201: workspace notifications
-  sessionUnreadCounts: Record<string, number>;
-  startWorkspaceNotificationStream: (workspaceId: string) => void;
-  stopWorkspaceNotificationStream: () => void;
-  clearSessionUnread: (sessionId: string) => void;
-  // token
-  tLimit: number;
-  tUsed: number;
-  tPct: number;
-  // cache
-  mainSessionId: string | null;
-  sessionCacheHitTokens: number;
-  sessionCacheMissTokens: number;
-  cacheHitRate?: number;
-  handleSetMainSession: (sessionId: string) => void;
-  // modals
-  createSceneOpen: boolean;
-  setCreateSceneOpen: (v: boolean) => void;
-  createSceneLoading: boolean;
-  createSceneForm: ReturnType<typeof Form.useForm<{ name: string }>>[0];
-  renameModalOpen: boolean;
-  setRenameModalOpen: (v: boolean) => void;
-  renameTitle: string;
-  setRenameTitle: (v: string) => void;
-  renameSessionId: string | null;
-  // actions
-  handleSelectSession: (
-    sid: string,
-    options?: { agentId?: string },
-  ) => Promise<number | undefined>;
-  handleDeleteSession: (sid: string) => Promise<void>;
-  handleArchiveSession: (sid: string) => Promise<void>;
-  handleRenameStart: (sid: string, title: string) => void;
-  handleRenameSubmit: () => Promise<void>;
-  ensureAgentMainSession: (
-    nextWorkspaceId?: string,
-    nextAgentId?: string,
-    options?: { isCurrent?: () => boolean; selectSession?: boolean },
-  ) => Promise<string | undefined>;
-  sendMessage: (text: string, options?: ChatSendOptions) => Promise<void>;
-  submitInteraction: (text: string, options?: ChatSendOptions) => Promise<void>;
-  enqueueInteraction: (
-    text: string,
-    options?: ChatSendOptions,
-  ) => string | null;
-  updateQueuedInteraction: (id: string, text: string) => void;
-  deleteQueuedInteraction: (id: string) => void;
-  sendQueuedInteractionNow: (id: string) => Promise<void>;
-  steerQueuedInteraction: (id: string) => Promise<void>;
-  handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  loadMoreMessages: () => Promise<void>;
-  resetConversation: (
-    nextWorkspaceId?: string,
-    nextAgentId?: string,
-  ) => Promise<string | undefined>;
-  handleExport: () => void;
-  onDeleteTurn: (turnId: string) => void;
-  onToggleReasoning: (turnId: string, blockId: string) => void;
-  // refs
-  messageListRef: React.RefObject<HTMLDivElement | null>;
-  listEndRef: React.RefObject<HTMLDivElement | null>;
-  abortRef: React.RefObject<AbortController | null>;
-  // utils
-  formatTime: (ts: number) => string;
-  getStepTone: (status?: string) => 'executing' | 'success' | 'error';
-  assistantStatusLabel: Record<AssistantStatus, string>;
-  // helper
-  getAgentName: (a: WorkspaceAgentDto) => string;
-  stringToColor: (str: string) => string;
-  // select options
-  wsOpts: { value: string; label: string; disabled: boolean }[];
-  agOpts: { value: string; label: React.ReactNode; disabled: boolean }[];
-  creatingSession: boolean;
-  viewportScrollIntent: ScrollIntent;
-  clearViewportScrollIntent: () => void;
-}
-
 export function useChatState(routeSearch?: string): UseChatStateReturn {
   const { message: messageApi } = App.useApp();
-  const routeSelection = useMemo(
-    () =>
-      getChatRouteSelectionFromSearch(
-        routeSearch ??
-          (typeof window === 'undefined' ? '' : window.location.search),
-      ),
-    [routeSearch],
-  );
-
-  const [workspaces, setWorkspaces] = useState<WorkspaceWithPermDto[]>([]);
-  const [workspaceId, setWorkspaceId] = useState<string>();
-  const [workspaceLoading, setWorkspaceLoading] = useState(false);
-  const [agents, setAgents] = useState<WorkspaceAgentDto[]>([]);
-  const [agentId, setAgentId] = useState<string>();
-  const [agentLoading, setAgentLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const {
+    routeSelection,
+    workspaces,
+    setWorkspaces,
+    workspaceId,
+    setWorkspaceId,
+    workspaceLoading,
+    agents,
+    setAgents,
+    agentId,
+    setAgentId,
+    agentLoading,
+    selectedAgent,
+    wsOpts,
+    agOpts,
+    creatingSession,
+    setCreatingSession,
+    suppressMainSessionEnsure,
+    consumeMainSessionEnsureSuppression,
+    resetMainSessionEnsureSuppression,
+  } = useWorkspaceAgentSelection({ routeSearch, onError: setError });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
@@ -1225,7 +263,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     null,
   );
   const [loadingMore, setLoadingMore] = useState(false);
-  const [creatingSession, setCreatingSession] = useState(false);
 
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1236,7 +273,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
   const [steeringInteractionQueue, setSteeringInteractionQueue] = useState<
     ChatInteractionQueueItem[]
   >([]);
-  const [error, setError] = useState<string | null>(null);
   const [latestUsage, setLatestUsage] = useState<TokenUsageDto | undefined>();
   const [mainSessionId, setMainSessionId] = useState<string | null>(null);
   const [sessionCacheHitTokens, setSessionCacheHitTokens] = useState(0);
@@ -1277,7 +313,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     };
   }, []);
 
-  const suppressMainSessionEnsureRef = useRef(false);
   const lastSseEventAtRef = useRef<number | null>(null);
   // Ref to break circular dependency: applySessionEvent → startSessionEventStream
   const startSessionEventStreamRef = useRef<(sessionId: string) => void>(
@@ -1397,8 +432,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     },
     [setAgentIdsWorking],
   );
-
-  const selectedAgent = agents.find((a) => a.agentId === agentId);
 
   useEffect(() => {
     installPerfDiagnostics();
@@ -1624,7 +657,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
 
       // 4. 如果是 main session → 清除 mainSessionId 和 agent 缓存，并抑制自动重建
       if (isMain) {
-        suppressMainSessionEnsureRef.current = true;
+        suppressMainSessionEnsure();
         setMainSessionId(null);
         setAgents((prev) =>
           prev.map((a) =>
@@ -1646,14 +679,8 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
         isMain,
       });
     },
-    [runtimeRefs, stopSessionEventStream],
+    [runtimeRefs, stopSessionEventStream, suppressMainSessionEnsure],
   );
-
-  const resetMainSessionEnsureSuppression = useCallback((reason: string) => {
-    if (!suppressMainSessionEnsureRef.current) return;
-    suppressMainSessionEnsureRef.current = false;
-    logChatDiag('main.ensure.suppressionCleared', { reason });
-  }, []);
 
   const clearInjectedSteeringDismissTimer = useCallback(
     (steeringId: string) => {
@@ -2617,6 +1644,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
             completedTurnsRef.current.add(turnId);
             duplicateDeltaReplayOffsetRef.current.delete(turnId);
             if (ev.traceId) writeDebugTrace(ev.traceId);
+            const isErrorEvent = isChatStreamErrorEvent(ev);
             // 埋点：done 事件到达，记录 turn 完成状态
             console.debug('[Pudding Chat] done event applied', {
               turnId,
@@ -2639,12 +1667,19 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               ...turn,
               assistant: {
                 ...turn.assistant,
-                status: 'success' as const,
+                status: isErrorEvent
+                  ? ('error' as const)
+                  : ('success' as const),
                 isStreaming: false,
-                answerMarkdown: resolveTerminalAssistantMarkdown(
-                  turn.assistant.answerMarkdown,
-                  ev.reply,
-                ),
+                answerMarkdown: isErrorEvent
+                  ? formatChatErrorDiagnostic(ev, {
+                      sessionId: sseSessionIdRef.current,
+                      turnId,
+                    })
+                  : resolveTerminalAssistantMarkdown(
+                      turn.assistant.answerMarkdown,
+                      ev.reply,
+                    ),
                 usage: normalizeUsage(ev.usage) ?? turn.assistant.usage,
                 voice: (ev as Record<string, unknown>).voice as
                   | { enabled?: boolean; tts_text?: string }
@@ -2676,12 +1711,17 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
             };
           }
           if (ev.type === 'error') {
+            const diagnosticMarkdown = formatChatErrorDiagnostic(ev, {
+              sessionId: sseSessionIdRef.current,
+              turnId,
+            });
             return {
               ...turn,
               assistant: {
                 ...turn.assistant,
                 status: 'error' as const,
                 isStreaming: false,
+                answerMarkdown: diagnosticMarkdown,
                 timelineItems: [
                   ...(turn.assistant.timelineItems ?? []),
                   {
@@ -4210,80 +3250,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     ],
   );
 
-  // ── Effects: load workspaces ───────────────────────────────
-  useEffect(() => {
-    let a = true;
-    (async () => {
-      setWorkspaceLoading(true);
-      try {
-        const items = await listWorkspaces();
-        if (!a) return;
-        setWorkspaces(items);
-        const wid = resolveInitialWorkspaceId(
-          items,
-          routeSelection.workspaceId,
-        );
-        setWorkspaceId(wid);
-        if (!wid) setError('无可用工作空间');
-      } catch (e: unknown) {
-        if (a) setError(e instanceof Error ? e.message : '加载失败');
-      } finally {
-        if (a) setWorkspaceLoading(false);
-      }
-    })();
-    return () => {
-      a = false;
-    };
-  }, [routeSelection.workspaceId]);
-
-  // ── Effects: load agents ───────────────────────────────────
-  useEffect(() => {
-    let a = true;
-    (async () => {
-      if (!workspaceId) {
-        setAgents([]);
-        setAgentId(undefined);
-        return;
-      }
-      setAgentLoading(true);
-      try {
-        const items = await listWorkspaceAgents(workspaceId);
-        if (!a) return;
-        if (items.length === 0) {
-          try {
-            const c = await createWorkspaceAgent(workspaceId, {
-              name: 'Pudding 助手',
-              displayName: '布丁',
-              sourceTemplateId: 'global:general-assistant',
-            });
-            setAgents([c]);
-            setAgentId(c.agentId);
-          } catch {
-            setAgents([]);
-            setAgentId(undefined);
-          }
-        } else {
-          setAgents(items);
-          setAgentId(resolveInitialAgentId(items, routeSelection.agentId));
-        }
-      } catch (e: unknown) {
-        if (a) setError(e instanceof Error ? e.message : '加载Agent失败');
-      } finally {
-        if (a) setAgentLoading(false);
-      }
-    })();
-    return () => {
-      a = false;
-    };
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (!routeSelection.agentId || agents.length === 0) return;
-    if (agentId) return;
-    const nextAgentId = resolveInitialAgentId(agents, routeSelection.agentId);
-    if (nextAgentId && nextAgentId !== agentId) setAgentId(nextAgentId);
-  }, [routeSelection.agentId, agents, agentId]);
-
   // ── refreshSessions ────────────────────────────────────────
   const refreshSessions = useCallback(
     async (options?: { preserveSessionId?: string }) => {
@@ -4985,8 +3951,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
 
   useEffect(() => {
     if (!workspaceId || !agentId || routeSelection.sessionId) return;
-    if (suppressMainSessionEnsureRef.current) {
-      suppressMainSessionEnsureRef.current = false;
+    if (consumeMainSessionEnsureSuppression()) {
       logChatDiag('main.ensure.effectSkipped.suppressed', {
         workspaceId,
         agentId,
@@ -5009,6 +3974,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     void ensureAgentMainSession(workspaceId, agentId);
   }, [
     agentId,
+    consumeMainSessionEnsureSuppression,
     ensureAgentMainSession,
     mainSessionId,
     routeSelection.sessionId,
@@ -6068,24 +5034,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
   }, []);
 
   // ── derived ────────────────────────────────────────────────
-  const wsOpts = useMemo(
-    () =>
-      workspaces.map((w) => ({
-        value: w.workspaceId,
-        label: w.name || w.workspaceId,
-        disabled: !w.isEnabled || w.isFrozen,
-      })),
-    [workspaces],
-  );
-  const agOpts = useMemo(
-    () =>
-      agents.map((a) => ({
-        value: a.agentId,
-        label: getAgentName(a),
-        disabled: !a.isEnabled || a.isFrozen,
-      })),
-    [agents, getAgentName],
-  );
   const groups = useMemo(
     () =>
       groupSessions(sessions).map((g) => ({
