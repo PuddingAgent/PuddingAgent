@@ -28,13 +28,7 @@ import {
   Typography,
 } from 'antd';
 import dayjs from 'dayjs';
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  type BenchmarkCaseSummaryDto,
-  getBenchmarkCase,
-  listBenchmarkCases,
-  prepareBenchmarkCase,
-} from '@/services/platform/api';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildPerfDiagnosticSnapshot,
   clearPerfEvents,
@@ -48,6 +42,11 @@ import {
   summarizePerfEvents,
 } from '@/utils/debug';
 import { useChatStyles } from '../styles';
+import { usePollingLoader } from '../hooks/usePollingLoader';
+import BenchmarkTab from './DevPanel/BenchmarkTab';
+import ContextTab from './DevPanel/ContextTab';
+import CountsWorkflowPanel from './DevPanel/CountsWorkflowPanel';
+import SubconsciousTab from './DevPanel/SubconsciousTab';
 import type {
   ContextSnapshot,
   DevRawEvent,
@@ -143,102 +142,28 @@ const DevPanel: React.FC<DevPanelProps> = ({
   const [diagnosticsEnabled, setDiagnosticsEnabledState] = useState(() =>
     isPerfDiagnosticsEnabled(),
   );
-  const [benchmarkCases, setBenchmarkCases] = useState<
-    BenchmarkCaseSummaryDto[]
-  >([]);
-  const [selectedBenchmarkCaseId, setSelectedBenchmarkCaseId] = useState<
-    string | undefined
-  >();
-  const [loadingBenchmarkCases, setLoadingBenchmarkCases] = useState(false);
-  const [sendingBenchmarkCase, setSendingBenchmarkCase] = useState(false);
-  const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
-
-  useEffect(() => {
+    useEffect(() => {
     setResolvedSessionId(sessionId ?? null);
   }, [sessionId]);
 
+    const perfRefresh = useCallback(() => {
+    setPerfSummary(summarizePerfEvents());
+    setPerfEvents(getPerfEvents().slice(-40).reverse());
+  }, []);
+
   useEffect(() => {
     if (!diagnosticsEnabled) {
-      setPerfSummary(summarizePerfEvents());
-      setPerfEvents(getPerfEvents().slice(-40).reverse());
-      return undefined;
+      perfRefresh();
+      return;
     }
-
     installPerfDiagnostics();
+    perfRefresh();
+  }, [diagnosticsEnabled, perfRefresh]);
 
-    const refresh = () => {
-      setPerfSummary(summarizePerfEvents());
-      setPerfEvents(getPerfEvents().slice(-40).reverse());
-    };
-    refresh();
+  usePollingLoader(perfRefresh, inspectorOpen && diagnosticsEnabled, 1000, [
+    diagnosticsEnabled,
+  ]);
 
-    // P2-perf: 仅在面板展开且页面可见时刷新，避免后台轮询压力
-    let timer: number | null = null;
-    const schedule = () => {
-      if (timer != null) return;
-      timer = window.setInterval(refresh, 1000);
-    };
-    const cancel = () => {
-      if (timer != null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-
-    if (inspectorOpen && document.visibilityState !== 'hidden') {
-      schedule();
-    }
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        cancel();
-      } else if (inspectorOpen) {
-        schedule();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      cancel();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [diagnosticsEnabled, inspectorOpen]);
-
-  useEffect(() => {
-    if (!inspectorOpen) return;
-    let alive = true;
-    setLoadingBenchmarkCases(true);
-    setBenchmarkError(null);
-
-    const loadBenchmarkCases = async () => {
-      try {
-        const result = await listBenchmarkCases();
-        if (!alive) return;
-        const sorted = [...(result || [])].sort(
-          (a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
-        );
-        setBenchmarkCases(sorted);
-        setSelectedBenchmarkCaseId((current) =>
-          current && sorted.some((item) => item.id === current)
-            ? current
-            : sorted[0]?.id,
-        );
-      } catch {
-        if (alive) {
-          setBenchmarkCases([]);
-          setSelectedBenchmarkCaseId(undefined);
-          setBenchmarkError('试题列表加载失败');
-        }
-      } finally {
-        if (alive) setLoadingBenchmarkCases(false);
-      }
-    };
-
-    void loadBenchmarkCases();
-    return () => {
-      alive = false;
-    };
-  }, [inspectorOpen]);
 
   useEffect(() => {
     if (resolvedSessionId || !workspaceId) return;
@@ -264,105 +189,88 @@ const DevPanel: React.FC<DevPanelProps> = ({
     };
   }, [workspaceId, resolvedSessionId]);
 
+    const contextAliveRef = useRef(true);
+
+  const loadContext = useCallback(async () => {
+    if (!workspaceId || !resolvedSessionId) return;
+    try {
+      const result = await request<ContextSnapshot>(
+          `/api/workspaces/${encodeURIComponent(workspaceId)}/debug/context/${encodeURIComponent(resolvedSessionId)}`,
+          { method: 'GET' },
+        );
+        if (contextAliveRef.current) setContextData(result);
+      } catch {
+        if (contextAliveRef.current) setContextData(null);
+      } finally {
+        if (contextAliveRef.current) setLoadingContext(false);
+      }
+    },
+    [workspaceId, resolvedSessionId],
+  );
+
+  const { schedule, cancel } = usePollingLoader(
+    () => {
+      void loadContext();
+    },
+    true,
+    4000,
+    [workspaceId, resolvedSessionId],
+  );
+
   useEffect(() => {
     if (!workspaceId || !resolvedSessionId) {
       setContextData(null);
       return;
     }
-    let alive = true;
+    contextAliveRef.current = true;
     setLoadingContext(true);
-    const loadContext = async () => {
-      try {
-        const result = await request<ContextSnapshot>(
-          `/api/workspaces/${encodeURIComponent(workspaceId)}/debug/context/${encodeURIComponent(resolvedSessionId)}`,
-          { method: 'GET' },
-        );
-        if (alive) setContextData(result);
-      } catch {
-        if (alive) setContextData(null);
-      } finally {
-        if (alive) setLoadingContext(false);
-      }
-    };
-
     void loadContext();
-    // P2-perf: 仅面板展开且页面可见时轮询
-    let timer: number | null = null;
-    const schedule = () => {
-      if (timer != null) return;
-      timer = window.setInterval(() => {
-        void loadContext();
-      }, 4000);
-    };
-    const cancel = () => {
-      if (timer != null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-    if (document.visibilityState !== 'hidden') schedule();
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') cancel();
-      else schedule();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
     return () => {
-      alive = false;
+      contextAliveRef.current = false;
       cancel();
-      document.removeEventListener('visibilitychange', onVisibility);
     };
+  }, [workspaceId, resolvedSessionId, loadContext, cancel]);
+
+  const subconsciousAliveRef = useRef(true);
+
+  const loadSubconscious = useCallback(async () => {
+    if (!workspaceId || !resolvedSessionId) {
+      return;
+    }
+    try {
+      const result = await request<SubconsciousResult>(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/debug/subconscious/${encodeURIComponent(resolvedSessionId)}`,
+        { method: 'GET' },
+      );
+      if (subconsciousAliveRef.current) setSubconsciousData(result);
+    } catch {
+      if (subconsciousAliveRef.current) setSubconsciousData(null);
+    } finally {
+      if (subconsciousAliveRef.current) setLoadingSubconscious(false);
+    }
   }, [workspaceId, resolvedSessionId]);
+
+  usePollingLoader(
+    () => {
+      void loadSubconscious();
+    },
+    true,
+    5000,
+    [workspaceId, resolvedSessionId],
+  );
 
   useEffect(() => {
     if (!workspaceId || !resolvedSessionId) {
       setSubconsciousData(null);
       return;
     }
-    let alive = true;
+    subconsciousAliveRef.current = true;
     setLoadingSubconscious(true);
-    const loadSubconscious = async () => {
-      try {
-        const result = await request<SubconsciousResult>(
-          `/api/workspaces/${encodeURIComponent(workspaceId)}/debug/subconscious/${encodeURIComponent(resolvedSessionId)}`,
-          { method: 'GET' },
-        );
-        if (alive) setSubconsciousData(result);
-      } catch {
-        if (alive) setSubconsciousData(null);
-      } finally {
-        if (alive) setLoadingSubconscious(false);
-      }
-    };
-
     void loadSubconscious();
-    // P2-perf: 仅页面可见时轮询
-    let timer: number | null = null;
-    const schedule = () => {
-      if (timer != null) return;
-      timer = window.setInterval(() => {
-        void loadSubconscious();
-      }, 5000);
-    };
-    const cancel = () => {
-      if (timer != null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-    if (document.visibilityState !== 'hidden') schedule();
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') cancel();
-      else schedule();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
     return () => {
-      alive = false;
-      cancel();
-      document.removeEventListener('visibilitychange', onVisibility);
+      subconsciousAliveRef.current = false;
     };
-  }, [workspaceId, resolvedSessionId]);
+  }, [workspaceId, resolvedSessionId, loadSubconscious]);
 
   // 过滤噪音事件
   const filteredEvents = useMemo(
@@ -492,33 +400,6 @@ const DevPanel: React.FC<DevPanelProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const sendSelectedBenchmarkCase = async () => {
-    if (!selectedBenchmarkCaseId || !onRunBenchmarkPrompt) return;
-    setSendingBenchmarkCase(true);
-    setBenchmarkError(null);
-    try {
-      const prepared = workspaceId
-        ? await prepareBenchmarkCase(
-            selectedBenchmarkCaseId,
-            workspaceId,
-            resolvedSessionId,
-          )
-        : null;
-      const detail = await getBenchmarkCase(selectedBenchmarkCaseId);
-      await onRunBenchmarkPrompt(detail.prompt, {
-        source: 'benchmark_launcher',
-        benchmarkCaseId: detail.id,
-        benchmarkTitle: detail.title,
-        benchmarkRunId: prepared?.runId ?? '',
-        benchmarkSeedId: prepared?.seed.seedId ?? '',
-        benchmarkSeedFiles: String(prepared?.seed.files.length ?? 0),
-      });
-    } catch {
-      setBenchmarkError('发送试题失败');
-    } finally {
-      setSendingBenchmarkCase(false);
-    }
-  };
 
   return (
     <aside className={styles.devPanel}>
@@ -773,99 +654,11 @@ const DevPanel: React.FC<DevPanelProps> = ({
                     />
                   </div>
 
-                  <Collapse
-                    size="small"
-                    ghost
-                    items={[
-                      {
-                        key: 'counts',
-                        label: '事件计数',
-                        children: (
-                          <div className={styles.devPerfCounts}>
-                            {Object.entries(
-                              (perfSummary?.counts ?? {}) as Record<
-                                string,
-                                number
-                              >,
-                            )
-                              .sort((a, b) => b[1] - a[1])
-                              .map(([name, count]) => (
-                                <Tag key={name} color={getEventTone(name)}>
-                                  {name}: {count}
-                                </Tag>
-                              ))}
-                          </div>
-                        ),
-                      },
-                      {
-                        key: 'workflow',
-                        label: '最慢流程步骤',
-                        children:
-                          diagnosticSnapshot.top.workflowSteps.length === 0 ? (
-                            <Empty
-                              image={Empty.PRESENTED_IMAGE_SIMPLE}
-                              description="暂无流程步骤"
-                            />
-                          ) : (
-                            <div className={styles.devPerfCounts}>
-                              {diagnosticSnapshot.top.workflowSteps.map(
-                                (event, index) => {
-                                  const payload = event.payload ?? {};
-                                  const workflow =
-                                    typeof payload.workflow === 'string'
-                                      ? payload.workflow
-                                      : 'workflow';
-                                  const step =
-                                    typeof payload.step === 'string'
-                                      ? payload.step
-                                      : 'step';
-                                  const durationMs =
-                                    typeof payload.durationMs === 'number'
-                                      ? payload.durationMs
-                                      : null;
-                                  const traceId =
-                                    typeof payload.traceId === 'string'
-                                      ? payload.traceId
-                                      : '';
-                                  const status =
-                                    typeof payload.status === 'string'
-                                      ? payload.status
-                                      : 'ok';
-                                  return (
-                                    <div
-                                      key={`${traceId}-${workflow}-${step}-${index}`}
-                                      className={styles.devPerfEventItem}
-                                    >
-                                      <div
-                                        className={styles.devPerfEventHeader}
-                                      >
-                                        <Tag
-                                          color={
-                                            status === 'error'
-                                              ? 'red'
-                                              : durationMs != null &&
-                                                  durationMs > 800
-                                                ? 'orange'
-                                                : 'blue'
-                                          }
-                                        >
-                                          {workflow}.{step}
-                                        </Tag>
-                                        <Text className={styles.devEventTime}>
-                                          {formatMetric(durationMs, 'ms')}
-                                        </Text>
-                                      </div>
-                                      <pre className={styles.devEventPayload}>
-                                        {JSON.stringify(payload, null, 2)}
-                                      </pre>
-                                    </div>
-                                  );
-                                },
-                              )}
-                            </div>
-                          ),
-                      },
-                    ]}
+                  <CountsWorkflowPanel
+                    perfSummary={perfSummary}
+                    topWorkflowSteps={diagnosticSnapshot.top.workflowSteps}
+                    formatMetric={formatMetric}
+                    getEventTone={getEventTone}
                   />
 
                   <div className={styles.devEventList}>
@@ -908,231 +701,24 @@ const DevPanel: React.FC<DevPanelProps> = ({
             },
             {
               key: 'cases',
-              label: `Cases (${benchmarkCases.length})`,
+              label: 'Cases',
               children: (
-                <div className={styles.devPanelSection}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    从服务端配置拉取试题；发送时只提交题面文本。
-                  </Text>
-                  <Select
-                    size="small"
-                    loading={loadingBenchmarkCases}
-                    value={selectedBenchmarkCaseId}
-                    placeholder="选择试题"
-                    aria-label="选择试题"
-                    onChange={setSelectedBenchmarkCaseId}
-                    options={benchmarkCases.map((item) => ({
-                      value: item.id,
-                      label: item.title,
-                    }))}
-                    style={{ width: '100%' }}
-                    disabled={
-                      loadingBenchmarkCases || benchmarkCases.length === 0
-                    }
-                  />
-                  {selectedBenchmarkCaseId && (
-                    <div className={styles.devPerfDiagnosisList}>
-                      {benchmarkCases
-                        .filter((item) => item.id === selectedBenchmarkCaseId)
-                        .map((item) => (
-                          <div
-                            key={item.id}
-                            className={styles.devPerfDiagnosisItem}
-                            data-severity="info"
-                          >
-                            <Text strong>{item.title}</Text>
-                            <Text type="secondary">
-                              {item.category}
-                              {' · '}
-                              {item.difficulty}
-                              {item.estimatedRounds
-                                ? ` · ${item.estimatedRounds} 轮`
-                                : ''}
-                            </Text>
-                            <div className={styles.devPerfCounts}>
-                              {item.coverage.map((tag) => (
-                                <Tag key={tag} color="blue">
-                                  {tag}
-                                </Tag>
-                              ))}
-                              {item.seedId && <Tag color="purple">seed</Tag>}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                  {benchmarkError && (
-                    <Text type="danger" style={{ fontSize: 12 }}>
-                      {benchmarkError}
-                    </Text>
-                  )}
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<PlayCircleOutlined />}
-                    loading={sendingBenchmarkCase}
-                    disabled={
-                      !selectedBenchmarkCaseId ||
-                      !onRunBenchmarkPrompt ||
-                      loadingBenchmarkCases
-                    }
-                    onClick={() => {
-                      void sendSelectedBenchmarkCase();
-                    }}
-                  >
-                    发送题面
-                  </Button>
-                </div>
+                <BenchmarkTab
+                  workspaceId={workspaceId}
+                  resolvedSessionId={resolvedSessionId}
+                  inspectorOpen={inspectorOpen}
+                  onRunBenchmarkPrompt={onRunBenchmarkPrompt}
+                />
               ),
             },
             {
               key: 'thought',
               label: 'Thought',
-              children: loadingSubconscious ? (
-                <div className={styles.devPanelLoading}>
-                  <Spin size="small" />
-                </div>
-              ) : !subconsciousData ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无思考数据"
+              children: (
+                <SubconsciousTab
+                  subconsciousData={subconsciousData}
+                  loadingSubconscious={loadingSubconscious}
                 />
-              ) : (
-                <div className={styles.devPanelSection}>
-                  <div className={styles.subconsciousTimeline}>
-                    <Timeline
-                      items={[
-                        {
-                          color: subconsciousData.job?.startedAt
-                            ? 'blue'
-                            : 'gray',
-                          dot: subconsciousData.job?.startedAt ? (
-                            <LoadingOutlined />
-                          ) : (
-                            <ExclamationCircleOutlined />
-                          ),
-                          children: (
-                            <div>
-                              <Text strong>开始处理</Text>
-                              <br />
-                              <Text
-                                type="secondary"
-                                className={styles.devEventTime}
-                              >
-                                {subconsciousData.job?.startedAt
-                                  ? dayjs(
-                                      subconsciousData.job.startedAt,
-                                    ).format('HH:mm:ss')
-                                  : '-'}
-                              </Text>
-                            </div>
-                          ),
-                        },
-                        {
-                          color:
-                            subconsciousData.job?.factsExtracted != null
-                              ? 'blue'
-                              : 'gray',
-                          dot:
-                            subconsciousData.job?.factsExtracted != null ? (
-                              <BulbOutlined />
-                            ) : undefined,
-                          children: (
-                            <div>
-                              <Text strong>LLM 分析中</Text>
-                              <br />
-                              <Text type="secondary">
-                                提取了{' '}
-                                {subconsciousData.job?.factsExtracted ?? 0}{' '}
-                                条事实， 合并{' '}
-                                {subconsciousData.job?.factsMerged ?? 0} 条
-                              </Text>
-                            </div>
-                          ),
-                        },
-                        {
-                          color:
-                            subconsciousData.job?.status === 'completed'
-                              ? 'green'
-                              : subconsciousData.job?.status === 'failed'
-                                ? 'red'
-                                : 'gray',
-                          dot:
-                            subconsciousData.job?.status === 'completed' ? (
-                              <CheckCircleOutlined />
-                            ) : subconsciousData.job?.status === 'failed' ? (
-                              <ExclamationCircleOutlined />
-                            ) : undefined,
-                          children: (
-                            <div>
-                              <Text strong>
-                                {subconsciousData.job?.status === 'completed'
-                                  ? '处理完成'
-                                  : subconsciousData.job?.status === 'failed'
-                                    ? '处理失败'
-                                    : '等待中...'}
-                              </Text>
-                              <br />
-                              <Text type="secondary">
-                                耗时 {subconsciousData.job?.elapsedMs ?? 0}ms
-                                {subconsciousData.job?.llmModelId
-                                  ? ` · ${subconsciousData.job.llmModelId}`
-                                  : ''}
-                              </Text>
-                              {subconsciousData.job?.errorMessage && (
-                                <Paragraph className={styles.devErrorText}>
-                                  {subconsciousData.job.errorMessage}
-                                </Paragraph>
-                              )}
-                            </div>
-                          ),
-                        },
-                      ]}
-                    />
-                  </div>
-                  <Collapse
-                    size="small"
-                    ghost
-                    items={[
-                      {
-                        key: 'facts',
-                        label: `抽取事实 (${subconsciousData.facts.length})`,
-                        children: (
-                          <div className={styles.devList}>
-                            {subconsciousData.facts.map((f) => (
-                              <div
-                                key={f.factId}
-                                className={styles.devListItem}
-                              >
-                                <Tag>{f.category}</Tag>
-                                <Text>{f.statement}</Text>
-                              </div>
-                            ))}
-                          </div>
-                        ),
-                      },
-                      {
-                        key: 'prefs',
-                        label: `偏好 (${subconsciousData.preferences.length})`,
-                        children: (
-                          <div className={styles.devList}>
-                            {subconsciousData.preferences.map((p) => (
-                              <div
-                                key={p.preferenceId}
-                                className={styles.devListItem}
-                              >
-                                <Tag>{p.category}</Tag>
-                                <Text>
-                                  {p.key} = {p.value}
-                                </Text>
-                              </div>
-                            ))}
-                          </div>
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
               ),
             },
             {
@@ -1185,90 +771,11 @@ const DevPanel: React.FC<DevPanelProps> = ({
             {
               key: 'context',
               label: 'Context',
-              children: loadingContext ? (
-                <div className={styles.devPanelLoading}>
-                  <Spin size="small" />
-                </div>
-              ) : !contextData ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无上下文诊断"
+              children: (
+                <ContextTab
+                  loadingContext={loadingContext}
+                  contextData={contextData}
                 />
-              ) : (
-                <div className={styles.devPanelSection}>
-                  <SpaceLine
-                    label="组装时间"
-                    value={
-                      contextData.assembledAt
-                        ? dayjs(contextData.assembledAt).format(
-                            'YYYY-MM-DD HH:mm:ss',
-                          )
-                        : '-'
-                    }
-                  />
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      上下文预算
-                    </Text>
-                    <Progress
-                      percent={Math.min(
-                        ((contextData.totalTokens || 0) / 200) * 100,
-                        100,
-                      )}
-                      size="small"
-                      strokeColor={
-                        (contextData.totalTokens || 0) > 160
-                          ? 'var(--warning-signal, #F97316)'
-                          : 'var(--memory-glow, #A78BFA)'
-                      }
-                      format={() => `${contextData.totalTokens || 0} tokens`}
-                    />
-                  </div>
-                  {contextData.message && (
-                    <Paragraph className={styles.devPanelHint}>
-                      {contextData.message}
-                    </Paragraph>
-                  )}
-                  {/* 上下文分层摘要，不展示完整 JSON dump */}
-                  <div
-                    style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
-                  >
-                    {(contextData.layers || []).map((layer) => (
-                      <div
-                        key={layer.layerName}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '4px 8px',
-                          background: 'var(--ant-colorFillQuaternary)',
-                          borderRadius: 6,
-                          fontSize: 12,
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          {layer.layerName.toLowerCase().includes('system') ? (
-                            <SettingOutlined style={{ fontSize: 11 }} />
-                          ) : layer.layerName
-                              .toLowerCase()
-                              .includes('memory') ? (
-                            <DatabaseOutlined style={{ fontSize: 11 }} />
-                          ) : (
-                            <CodeOutlined style={{ fontSize: 11 }} />
-                          )}
-                          {layer.layerName}
-                        </span>
-                        <Tag>{layer.tokenCount} tk</Tag>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               ),
             },
             {

@@ -1,8 +1,8 @@
 ﻿{
   "version": 1,
-  "updated_at": "",
-  "status": "idle",
-  "task": "",
+  "updated_at": "2026-07-21T00:00:00Z",
+  "status": "in-progress",
+  "task": "测试心跳自主推进",
   "agent_id": "default.global_general-assistant.6a8",
   "session_id": "861ce7e80f0749c491afd75593763731",
   "conversation_id": "861ce7e80f0749c491afd75593763731",

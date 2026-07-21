@@ -158,6 +158,7 @@ import {
   looksLikePersistedErrorDiagnostic,
 } from '../utils/chatDiagnostics';
 import { useWorkspaceAgentSelection } from './useWorkspaceAgentSelection';
+import { useSubAgentActivity } from './useSubAgentActivity';
 
 export {
   applyBufferedDeltaToTurn,
@@ -432,6 +433,8 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     },
     [setAgentIdsWorking],
   );
+
+  const { appendOrUpdateSubAgentActivity } = useSubAgentActivity();
 
   useEffect(() => {
     installPerfDiagnostics();
@@ -1399,38 +1402,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
               saData.recordedAt ?? saData.timestamp,
             );
             const taskSummary = resolveSubAgentTaskSummary(saData);
-            const appendOrUpdateSubAgentActivity = (
-              items: TimelineItem[],
-              next: TimelineItem,
-              appendOutput?: string,
-            ): TimelineItem[] => {
-              const idx = items.findIndex(
-                (item) =>
-                  item.name === subAgentId &&
-                  (item.type === 'subagent_spawned' ||
-                    item.type === 'subagent_progress') &&
-                  next.type !== 'subagent_spawned',
-              );
-              if (idx < 0) return [...items, next];
-              const existing = items[idx];
-              const mergedOutput = sanitizeProcessText(
-                `${existing.output ?? ''}${appendOutput ?? next.output ?? ''}`,
-                { compact: false },
-              );
-              const updated: TimelineItem = {
-                ...existing,
-                ...next,
-                output:
-                  mergedOutput.length > 900
-                    ? mergedOutput.slice(mergedOutput.length - 900)
-                    : mergedOutput,
-                arguments: next.arguments || existing.arguments,
-                timestamp: next.timestamp,
-              };
-              return [...items.slice(0, idx), updated, ...items.slice(idx + 1)];
-            };
 
-            // 子代理 delta → 追加到独立卡片 output
             if (mappedType === 'delta') {
               const innerText = tryExtractDelta(saData);
               if (!innerText) return turn;
@@ -1441,6 +1413,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
                   status: 'executing' as const,
                   renderMode: 'structured' as const,
                   timelineItems: appendOrUpdateSubAgentActivity(
+                    subAgentId,
                     turn.assistant.timelineItems ?? [],
                     {
                       id: `subagent-progress-${subAgentId}`,
@@ -1470,6 +1443,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
                   status: 'executing' as const,
                   renderMode: 'structured' as const,
                   timelineItems: appendOrUpdateSubAgentActivity(
+                    subAgentId,
                     turn.assistant.timelineItems ?? [],
                     {
                       id: `subagent-spawned-${subAgentId}`,
@@ -1505,6 +1479,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
                   status: turn.assistant.status,
                   renderMode: 'structured' as const,
                   timelineItems: appendOrUpdateSubAgentActivity(
+                    subAgentId,
                     turn.assistant.timelineItems ?? [],
                     {
                       id: `subagent-completed-${subAgentId}`,
@@ -1553,6 +1528,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
                   status: 'executing' as const,
                   renderMode: 'structured' as const,
                   timelineItems: appendOrUpdateSubAgentActivity(
+                    subAgentId,
                     turn.assistant.timelineItems ?? [],
                     {
                       id: `subagent-progress-${subAgentId}`,
