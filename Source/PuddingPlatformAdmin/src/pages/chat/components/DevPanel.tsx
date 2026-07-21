@@ -46,6 +46,8 @@ import { usePollingLoader } from '../hooks/usePollingLoader';
 import BenchmarkTab from './DevPanel/BenchmarkTab';
 import ContextTab from './DevPanel/ContextTab';
 import CountsWorkflowPanel from './DevPanel/CountsWorkflowPanel';
+import PerfMetricsGrid from './DevPanel/PerfMetricsGrid';
+import PerfEventList from './DevPanel/PerfEventList';
 import SubconsciousTab from './DevPanel/SubconsciousTab';
 import type {
   ContextSnapshot,
@@ -525,130 +527,9 @@ const DevPanel: React.FC<DevPanelProps> = ({
                     ))}
                   </div>
 
-                  <div className={styles.devPerfGrid}>
-                    <PerfMetric
-                      label="到达速率"
-                      value={formatMetric(
-                        getNestedNumber(
-                          perfSummary,
-                          'stream.incomingCharsPerSecond',
-                        ),
-                        ' chars/s',
-                      )}
-                      tone="ok"
-                    />
-                    <PerfMetric
-                      label="可见速率"
-                      value={formatMetric(
-                        getNestedNumber(
-                          perfSummary,
-                          'output.activeCharsPerSecond',
-                        ),
-                        ' chars/s',
-                      )}
-                      tone="ok"
-                    />
-                    <PerfMetric
-                      label="DOM 字符"
-                      value={`${formatMetric(getNestedNumber(perfSummary, 'output.lastDomChars'))} / ${formatMetric(getNestedNumber(perfSummary, 'output.maxDomChars'))}`}
-                    />
-                    <PerfMetric
-                      label="Commit→Paint 平均"
-                      value={formatMetric(
-                        getNestedNumber(
-                          perfSummary,
-                          'output.avgCommitToPaintMs',
-                        ),
-                        'ms',
-                      )}
-                      tone={
-                        (getNestedNumber(
-                          perfSummary,
-                          'output.maxCommitToPaintMs',
-                        ) ?? 0) > 50
-                          ? 'warn'
-                          : 'normal'
-                      }
-                    />
-                    <PerfMetric
-                      label="Commit→Paint 峰值"
-                      value={formatMetric(
-                        getNestedNumber(
-                          perfSummary,
-                          'output.maxCommitToPaintMs',
-                        ),
-                        'ms',
-                      )}
-                      tone={
-                        (getNestedNumber(
-                          perfSummary,
-                          'output.maxCommitToPaintMs',
-                        ) ?? 0) > 50
-                          ? 'warn'
-                          : 'normal'
-                      }
-                    />
-                    <PerfMetric
-                      label="事件应用峰值"
-                      value={formatMetric(
-                        getNestedNumber(perfSummary, 'react.maxEventApplyMs'),
-                        'ms',
-                      )}
-                      tone={
-                        (getNestedNumber(
-                          perfSummary,
-                          'react.maxEventApplyMs',
-                        ) ?? 0) > 30
-                          ? 'warn'
-                          : 'normal'
-                      }
-                    />
-                    <PerfMetric
-                      label="Markdown 峰值"
-                      value={formatMetric(
-                        getNestedNumber(
-                          perfSummary,
-                          'react.maxMarkdownCommitMs',
-                        ),
-                        'ms',
-                      )}
-                      tone={
-                        (getNestedNumber(
-                          perfSummary,
-                          'react.maxMarkdownCommitMs',
-                        ) ?? 0) > 50
-                          ? 'warn'
-                          : 'normal'
-                      }
-                    />
-                    <PerfMetric
-                      label="长任务"
-                      value={`${formatMetric(getNestedNumber(perfSummary, 'browser.longTasks'))} · ${formatMetric(getNestedNumber(perfSummary, 'browser.maxLongTaskMs'), 'ms')}`}
-                      tone={
-                        (getNestedNumber(perfSummary, 'browser.longTasks') ??
-                          0) > 0
-                          ? 'warn'
-                          : 'normal'
-                      }
-                    />
-                    <PerfMetric
-                      label="活跃窗口"
-                      value={`${formatMetric(getNestedNumber(perfSummary, 'output.activeWindowMs'), 'ms')} / ${formatMetric(getNestedNumber(perfSummary, 'stream.incomingWindowMs'), 'ms')}`}
-                    />
-                    <PerfMetric
-                      label="流程步骤"
-                      value={`${formatMetric(getNestedNumber(perfSummary, 'workflow.steps'))} · ${formatMetric(getNestedNumber(perfSummary, 'workflow.traces'))} traces`}
-                    />
-                    <PerfMetric
-                      label="流程峰值"
-                      value={formatMetric(
-                        getNestedNumber(perfSummary, 'workflow.maxStepMs'),
-                        'ms',
-                      )}
-                      tone={
-                        (getNestedNumber(perfSummary, 'workflow.maxStepMs') ??
-                          0) > 800
-                          ? 'warn'
+                  <PerfMetricsGrid
+                    perfSummary={perfSummary}
+                  />
                           : 'normal'
                       }
                     />
@@ -661,34 +542,10 @@ const DevPanel: React.FC<DevPanelProps> = ({
                     getEventTone={getEventTone}
                   />
 
-                  <div className={styles.devEventList}>
-                    {perfEvents.length === 0 ? (
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="等待性能事件"
-                      />
-                    ) : (
-                      perfEvents.map((event) => (
-                        <div
-                          key={`${event.name}-${event.at}-${JSON.stringify(event.payload ?? {})}`}
-                          className={styles.devPerfEventItem}
-                        >
-                          <div className={styles.devPerfEventHeader}>
-                            <Tag color={getEventTone(event.name)}>
-                              {event.name}
-                            </Tag>
-                            <Text className={styles.devEventTime}>
-                              {Math.round(event.at)}ms
-                            </Text>
-                          </div>
-                          <pre className={styles.devEventPayload}>
-                            {JSON.stringify(event.payload ?? {}, null, 2)}
-                          </pre>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
+                  <PerfEventList
+                    perfEvents={perfEvents}
+                    getEventTone={getEventTone}
+                  />
                   <Paragraph className={styles.devPanelHint}>
                     复制诊断会包含摘要、瓶颈判断、间隔抖动、Top
                     慢记录和最近原始事件。 Console
