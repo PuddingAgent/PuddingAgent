@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback } from 'react';
 import {
   listSessionMessages,
@@ -196,8 +196,41 @@ export function useSessionHistoryProjection({
         return;
       }
 
-      // 埋点：对账将替换 turns，记录替换前后的关键信息（消息被吞的关键诊断点）
-      console.warn('[Pudding Chat] reconcile REPLACING turns', {
+      // RC-4: MERGE mode — preserve in-flight / just-completed turns that
+      // the server hasn't persisted yet. Without this, SSE-delivered "done"
+      // turns disappear when reconcile runs before the server persists them.
+      //
+      // Strategy:
+      // 1. Build a lookup map from loadedTurns keyed by turnId
+      // 2. For each current turn: keep it (upgrade with loaded version when
+      //    available); never drop — even non-terminal turns may be in-flight
+      // 3. Append any loaded turns not yet in the merged set
+      // 4. Sort by timestamp to maintain chronological order
+      const loadedMap = new Map(loadedTurns.map((t) => [t.turnId, t]));
+      const merged: ChatTurn[] = [];
+      const seen = new Set<string>();
+
+      for (const turn of turnsRef.current) {
+        const loaded = loadedMap.get(turn.turnId);
+        if (loaded) {
+          merged.push(loaded);
+          seen.add(loaded.turnId);
+        } else {
+          merged.push(turn);
+          seen.add(turn.turnId);
+        }
+      }
+
+      for (const turn of loadedTurns) {
+        if (!seen.has(turn.turnId)) {
+          merged.push(turn);
+        }
+      }
+
+      merged.sort((a, b) => a.userMessage.timestamp - b.userMessage.timestamp);
+
+      // 埋点：对账合并 turns（RC-4 merge mode）
+      console.debug('[Pudding Chat] reconcile MERGED turns', {
         sessionId,
         before: {
           count: turnsRef.current.length,
@@ -205,31 +238,28 @@ export function useSessionHistoryProjection({
             turnsRef.current[turnsRef.current.length - 1]?.userMessage.text,
           latestStatus:
             turnsRef.current[turnsRef.current.length - 1]?.assistant.status,
-          latestIsStreaming:
-            turnsRef.current[turnsRef.current.length - 1]?.assistant
-              .isStreaming,
         },
         after: {
-          count: loadedTurns.length,
-          latestUser: loadedTurns[loadedTurns.length - 1]?.userMessage.text,
-          latestStatus: loadedTurns[loadedTurns.length - 1]?.assistant.status,
+          count: merged.length,
+          latestUser: merged[merged.length - 1]?.userMessage.text,
+          latestStatus: merged[merged.length - 1]?.assistant.status,
         },
       });
-      logChatDiag('history.reconcile.replace', {
+      logChatDiag('history.reconcile.merged', {
         sessionId,
         selectedSessionId: selectedSessionIdRef.current,
         sessionIdRef: sessionIdRef.current,
         beforeCount: turnsRef.current.length,
-        afterCount: loadedTurns.length,
+        afterCount: merged.length,
         beforeLatestUser:
           turnsRef.current[turnsRef.current.length - 1]?.userMessage.text,
-        afterLatestUser: loadedTurns[loadedTurns.length - 1]?.userMessage.text,
+        afterLatestUser: merged[merged.length - 1]?.userMessage.text,
         beforeLatestStatus:
           turnsRef.current[turnsRef.current.length - 1]?.assistant.status,
-        afterLatestStatus:
-          loadedTurns[loadedTurns.length - 1]?.assistant.status,
+        afterLatestStatus: merged[merged.length - 1]?.assistant.status,
       });
-      const reconciledTurns = mergeCompactionLifecycleTurns(loadedTurns);
+
+      const reconciledTurns = mergeCompactionLifecycleTurns(merged);
       setTurns(reconciledTurns);
       turnsRef.current = reconciledTurns;
       latestTurnIdRef.current =

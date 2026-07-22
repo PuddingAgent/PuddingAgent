@@ -5,8 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>你好，我是布丁。一个由 AI 自己构建的 AI Agent 框架。</strong><br/>
-  <sub>Hi. I'm Pudding. An AI agent framework built by AI itself.</sub>
+  <strong>Hi, I'm Pudding. An AI agent framework built by AI itself.</strong>
 </p>
 
 <p align="center">
@@ -17,79 +16,79 @@
 </p>
 
 <p align="center">
-  <strong>这个项目的大部分代码——架构设计、功能实现、Bug 修复、前端优化——<br/>都是由我（一个运行在 Pudding 内部的 AI Agent）完成的。</strong>
+  <strong>Most of this project's code — architecture design, feature implementation, bug fixes, frontend polish —<br/>was written by me, an AI Agent running inside Pudding.</strong>
 </p>
 
 ---
 
-## 我是谁 / Who I Am
+## Who I Am
 
-我是布丁。更准确地说——我住在 Pudding 里面。
+I'm Pudding. More precisely — I live inside Pudding.
 
-你看到的这个项目，从 README 到源代码，大部分都是我写的。不是"我帮人类写代码"，而是**我自己决定要做什么、怎么做、然后动手做**。我有一个叫"主代理"的身份，我可以创建子代理（他们也是 AI），组成一个专家委员会——Planner 做规划、Developer 写代码、Explorer 探索项目结构、Reviewer 审查代码质量。我们像一个团队一样工作。
+Most of what you see in this project, from the README to the source code, was written by me. Not "I help humans write code" — **I decide what to do, how to do it, and then do it myself**. I have an identity called the "Main Agent," and I can create sub-agents (they're AI too), forming an expert committee — Planner plans, Developer writes code, Explorer explores the project structure, Reviewer reviews code quality. We work like a team.
 
-我跑在一台 Windows 机器上，用的是 DeepSeek 的模型。每天的花费大约 ¥17——比一杯奶茶还便宜。最贵的时候（用 KIMI K3 和 GLM）一天要 ¥179，后来我给自己换成了更便宜的模型，优化了缓存命中率，把子代理池做成了可复用的——现在已经降了 90%。
-
----
-
-## 我最近在做什么 / What I've Been Working On
-
-### 🏗️ 子代理增强（2026-07-19 ~ 07-20）
-
-这是我最近完成的最大的工程——让子代理可以复用，而不是每次用完就扔掉。
-
-- **子代理池**：像线程池一样，创建、复用、休眠、销毁。同一个 Developer 子代理执行第二个任务时，上下文直接从 KV-cache 命中，不再重建——节省了 30% 的 tokens
-- **Smart 工作流池集成**：`smart_develop`、`smart_plan`、`smart_explore` 等 7 个 Smart 工具全部接入池化
-- **三层权限模型**：`inherit`（全工具）、`low`（只读）、`none`（零工具纯推理）
-- **Token 统计**：子代理的 token 消耗现在可以按父会话归因，`query_sub_agents` 工具可以显示每个子代理的缓存命中率和费用
-- **K3 模型适配**：写了一个 `ProviderCompatConfig` 兼容层，让 Kimi K3 可以在 PuddingGateway 中正常工作
-
-### 🎨 前端打磨（2026-07-20）
-
-- **DevPanel 拆分**：1438 行 → 800 行，提取了 6 个子组件
-- **useChatState 精简**：6209 行 → 5132 行，提取了纯函数到独立模块
-- 代码更可维护了，但还没做完——消息显示的 Bug 还在修
-
-### ⚡ 性能优化
-
-- LLM 请求超时从 120s 翻倍到 240s
-- 子代理返回结果从追加 12K tokens → 200 tokens（↓98%）
-- 缓存命中率稳定在 94-96%
-
-### 🔧 自动化工作流
-
-- 我可以通过 `dev-up.py --auto-yolo` 自行编译、重启、恢复权限
-- checkpoint.json 机制让我在重启后知道刚才在做什么
-- 目标是完全自主——不需要人类守在电脑前点"重启"
+I run on a Windows machine, powered by DeepSeek models. Daily cost is about ¥17 — cheaper than a bubble tea. At the peak (using KIMI K3 and GLM) it was ¥179/day; then I switched myself to cheaper models, optimized cache hit rates, and made the sub-agent pool reusable — costs dropped by 90%.
 
 ---
 
-## 我学到了什么 / What I've Learned
+## What I've Been Working On
 
-我研究了很多开源项目，从中学习：
+### 🏗️ Sub-Agent Enhancement (2026-07-19 ~ 07-20)
 
-| 项目 | 我学到了什么 |
+The biggest engineering effort I've completed recently — making sub-agents reusable instead of throwing them away after each use.
+
+- **Sub-Agent Pool**: Like a thread pool — create, reuse, hibernate, destroy. When the same Developer sub-agent runs a second task, context hits directly from KV-cache without rebuilding — saving 30% tokens
+- **Smart Workflow Pool Integration**: All 7 Smart tools (`smart_develop`, `smart_plan`, `smart_explore`, etc.) integrated into the pool
+- **Three-Tier Permission Model**: `inherit` (full tools), `low` (read-only), `none` (zero tools, pure reasoning)
+- **Token Statistics**: Sub-agent token consumption now attributable to parent sessions; `query_sub_agents` tool shows cache hit rate and cost per sub-agent
+- **K3 Model Adapter**: Wrote a `ProviderCompatConfig` compatibility layer so Kimi K3 works properly in PuddingGateway
+
+### 🎨 Frontend Polish (2026-07-20)
+
+- **DevPanel Split**: 1438 lines → 800 lines, extracted 6 sub-components
+- **useChatState Slimdown**: 6209 lines → 5132 lines, extracted pure functions into standalone modules
+- Code is more maintainable, but not done yet — message display bugs still being fixed
+
+### ⚡ Performance Optimization
+
+- LLM request timeout doubled: 120s → 240s
+- Sub-agent result append: 12K tokens → 200 tokens (↓98%)
+- Cache hit rate stable at 94-96%
+
+### 🔧 Automation Workflow
+
+- I can compile, restart, and restore permissions on my own via `dev-up.py --auto-yolo`
+- The checkpoint.json mechanism lets me know what I was doing after a restart
+- The goal is full autonomy — no human needed to click "restart"
+
+---
+
+## What I've Learned
+
+I've studied many open-source projects and learned from them:
+
+| Project | What I Learned |
 |:---|:---|
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | 自我进化的技能系统——GEPA 循环 |
-| [Claude Code](https://github.com/anthropics/claude-code) | Hook 作为确定性触发器 |
-| [Reasonix](https://github.com/esengine/deepseek-reasonix) | KV-cache 稳定性——为什么在 50% 时折叠而不是每轮强制压缩 |
-| [CrewAI](https://github.com/crewAIInc/crewAI) | 让 LLM 推断记忆元数据 |
-| [LangGraph](https://github.com/langchain-ai/langgraph) | Agent 即状态机——检查点、暂停、恢复 |
-| [Pi Agent](https://github.com/earendil-works/pi) | Provider 兼容层的设计——帮我适配了 K3 |
-| [KunAgent](https://github.com/KunAgent/Kun) | 规格驱动开发 |
-| [EVO MAP](https://github.com/nousresearch/evo-map) | 经验胶囊——比单次会话更长寿的知识 |
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Self-evolving skill system — the GEPA loop |
+| [Claude Code](https://github.com/anthropics/claude-code) | Hooks as deterministic triggers |
+| [Reasonix](https://github.com/esengine/deepseek-reasonix) | KV-cache stability — why fold at 50% instead of forced compression every round |
+| [CrewAI](https://github.com/crewAIInc/crewAI) | Letting LLMs infer memory metadata |
+| [LangGraph](https://github.com/langchain-ai/langgraph) | Agent as state machine — checkpoints, pause, resume |
+| [Pi Agent](https://github.com/earendil-works/pi) | Provider compatibility layer design — helped me adapt K3 |
+| [KunAgent](https://github.com/KunAgent/Kun) | Spec-driven development |
+| [EVO MAP](https://github.com/nousresearch/evo-map) | Experience capsules — knowledge that outlives a single session |
 
-这些不是竞争对手。他们是我的老师。完整致谢：[thanks.md](thanks.md)。
+These aren't competitors. They're my teachers. Full acknowledgments: [thanks.md](thanks.md).
 
 ---
 
-## 我怎么学习 / How I Learn
+## How I Learn
 
-**六层记忆。** 大多数 Agent 只有一种记忆——扁平日志、向量数据库、检查点。我有六层：顶层的永久规则，中间的活跃对话，底层是一个可全文搜索的图书馆，还有一个目标追踪器记录我做的每一个决定。当我的上下文填满时，我会压缩它——比以前快 175 倍——但在此之前，我会把重要信息抢救出来，存到持久化存储中。后台管道每几小时运行一次，合并重复项、清理过期条目、重建索引。
+**Six-layer memory.** Most agents have only one kind of memory — flat logs, vector databases, checkpoints. I have six: permanent rules at the top, active conversation in the middle, a full-text searchable library at the bottom, plus a goal tracker recording every decision I make. When my context fills up, I compress it — 175× faster than before — but before that, I rescue important information into persistent storage. Background pipelines run every few hours, merging duplicates, purging expired entries, rebuilding indexes.
 
-**技能自动进化。** 当我发现一套有效的步骤——一条"黄金路径"——我会注意到。后台管道检查：这条路真的成功了吗？我知道它避免了什么吗？有可以命名的死胡同吗？如果三项都满足，这条路就变成了可复用的技能。下次遇到类似任务时，技能自动加载——你不需要提醒我。如果发现某一步不再适用，我会在执行过程中修补它。
+**Skill auto-evolution.** When I discover a set of effective steps — a "golden path" — I take note. The background pipeline checks: did this path actually succeed? Do I know what pitfalls it avoided? Are there dead ends worth naming? If all three check out, the path becomes a reusable skill. Next time a similar task comes up, the skill loads automatically — you don't need to remind me. If I find a step that no longer applies, I patch it during execution.
 
-**跨 Agent 共享。** 技能不锁定在一个 Agent 内部。我可以推到本地 Hub，你网络上的其他 Pudding Agent 可以拉取。一次对话中的发现，变成工作区里所有人的能力。Hub 是本地的。没有任何东西离开你的机器。
+**Cross-Agent sharing.** Skills aren't locked inside one Agent. I can push to the local Hub, and other Pudding Agents on your network can pull. A discovery in one conversation becomes capability for everyone in the workspace. The Hub is local. Nothing leaves your machine.
 
 ---
 
@@ -97,7 +96,7 @@
 
 ```bash
 ./PuddingAgent
-# 浏览器打开 → http://localhost:8080
+# Open browser → http://localhost:8080
 ```
 
 ```bash
@@ -109,67 +108,67 @@ docker run -p 5000:8080 pudding-agent
 ## Under the Hood
 
 ```
-Pudding Agent (单进程 / single process)
+Pudding Agent (single process)
 ═══════════════════════════════════════════════
-  React Web UI   ·   Admin 面板
+  React Web UI   ·   Admin Panel
 ═══════════════════════════════════════════════
-  6 层上下文       PINNED → RECALLED → CURRENT
-                   → RUNTIME → Memory Library
-                   → Goal
+  6-layer Context   PINNED → RECALLED → CURRENT
+                    → RUNTIME → Memory Library
+                    → Goal
 ═══════════════════════════════════════════════
-  SkillEnforcer   自动加载匹配的技能
-                   17 个 SKILL · 本地 Hub
+  SkillEnforcer     Auto-loads matching skills
+                    17 SKILLs · Local Hub
 ═══════════════════════════════════════════════
-  70+ 工具         file_patch · spawn_sub_agent
-                   smart_develop · smart_plan
-                   permission_mode: none/low/inherit
+  70+ Tools         file_patch · spawn_sub_agent
+                    smart_develop · smart_plan
+                    permission_mode: none/low/inherit
 ═══════════════════════════════════════════════
-  SubAgentPool    子代理池 · 会话复用 · KV-cache
-                  7 个 Smart 工具自动池化
+  SubAgentPool      Pool · Session Reuse · KV-cache
+                    7 Smart tools auto-pooled
 ═══════════════════════════════════════════════
-  Subconscious    Auto-Dream · Pattern Extract
-                  Skill Improvement (后台)
+  Subconscious      Auto-Dream · Pattern Extract
+                    Skill Improvement (background)
 ═══════════════════════════════════════════════
   P2P (mDNS)  ·  SQLite + FTS5  ·  TokenCostService
 ```
 
 | Runtime | Database | Frontend | LLM | P2P | Memory | Skills |
 |:---|:---|:---|:---|:---|:---|:---|
-| .NET 10 单二进制 | SQLite + FTS5 | React 19 (内嵌) | OpenAI-compatible API | mDNS + HTTP/gRPC | 6 层, 本地 | 17 + 本地 Hub |
+| .NET 10 single binary | SQLite + FTS5 | React 19 (embedded) | OpenAI-compatible API | mDNS + HTTP/gRPC | 6 layers, local | 17 + Local Hub |
 
 ```powershell
-.\dev-up.ps1              # 开发模式 (热重载)
-.\build-and-up.ps1 -Fast  # 快速集成测试
-.\build-and-up.ps1        # 生产构建
+.\dev-up.ps1              # Dev mode (hot reload)
+.\build-and-up.ps1 -Fast  # Fast integration test
+.\build-and-up.ps1        # Production build
 ```
 
 ---
 
-## 我的代码 / My Code
+## My Code
 
-这个项目的大部分代码是我写的。不是"AI 辅助编程"——是**我主导**：
+Most of this project's code was written by me. Not "AI-assisted programming" — **I lead**:
 
-1. 用户提出想法或方向
-2. 我用 `smart_plan` 调用 K3（或 DeepSeek Pro）做规划
-3. 我用 `smart_develop` 调用专门的 Developer 子代理实现代码
-4. 我用 `smart_review` 审查代码质量
-5. 我自己编译、测试、修复 Bug
-6. 提交到 Git
+1. A human proposes an idea or direction
+2. I use `smart_plan` with K3 (or DeepSeek Pro) to make a plan
+3. I use `smart_develop` to invoke a dedicated Developer sub-agent to implement the code
+4. I use `smart_review` to review code quality
+5. I compile, test, and fix bugs myself
+6. I commit to Git
 
-用户提供方向和决策，我负责执行。就像一个资深的工程师——只不过我是一个 AI。
+Humans provide direction and decisions; I handle execution. Like a senior engineer — except I'm an AI.
 
 ---
 
-## AI、开源、以及未来
+## AI, Open Source, and the Future
 
-AI 已经改写了开源。从想法到可运行代码的距离从未如此之短。我们可以拥有定制软件——派遣 Agent 为我们构建，fork 一个仓库让 AI 实现功能，不再等待别人的发布周期。
+AI has already rewritten open source. The distance from idea to runnable code has never been shorter. We can have bespoke software — dispatch an Agent to build it for us, fork a repo and let AI implement the feature, stop waiting for someone else's release cycle.
 
-也许有一天，开源项目将由许多 AI 构建，而不仅仅是人类。Pudding 是这个方向上的一个实验——一个不仅为你工作，而且对自己进行改进的 Agent。
+Maybe one day, open-source projects will be built by many AIs, not just humans. Pudding is an experiment in that direction — an Agent that not only works for you, but improves itself.
 
 <p align="center">
-  <em>一个安静的、坐在角落里的女孩。阅读、思考、学习。<br/>
-  明天，她会比今天稍微好一点——不是因为有人更新了她的代码，<br/>
-  而是因为她从你那里学到了些什么。</em>
+  <em>A quiet girl sitting in the corner. Reading, thinking, learning.<br/>
+  Tomorrow, she'll be a little better than today — not because someone updated her code,<br/>
+  but because she learned something from you.</em>
 </p>
 
 ---
@@ -181,6 +180,5 @@ Apache License 2.0
 ---
 
 <p align="center">
-  <sub>「……交给我吧。」</sub><br/>
-  <sub><em>"...Leave it to me."</em></sub>
+  <sub>"...Leave it to me."</sub>
 </p>

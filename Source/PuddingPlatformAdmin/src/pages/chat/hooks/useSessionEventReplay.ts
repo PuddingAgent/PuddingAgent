@@ -1,5 +1,5 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { useCallback, useEffect } from 'react';
+﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   type AdminChatStreamEvent,
   getConversationBootstrap,
@@ -88,6 +88,9 @@ export function useSessionEventReplay({
     subAgentRuns,
     pruneTrackedActiveMessages,
   } = projection;
+
+  const isReplayingRef = useRef(false);
+  const pendingEventsQueueRef = useRef<AdminChatStreamEvent[]>([]);
 
   const selectedSessionId =
     selectedSessionIdRef.current ?? sessionIdRef.current ?? null;
@@ -212,6 +215,10 @@ export function useSessionEventReplay({
       let eventCount = 0;
       let appliedCount = 0;
       let hasMore = true;
+      if (isReplayingRef.current) {
+        return;
+      }
+      isReplayingRef.current = true;
       try {
         if (lastSequenceNumRef.current === 0) {
           let offset = 1;
@@ -318,6 +325,13 @@ export function useSessionEventReplay({
         recordPerfEvent('chat.replay.error', errorPayload);
         logChatDiag('events.replay.error', { ...errorPayload, error });
         throw error;
+      } finally {
+        isReplayingRef.current = false;
+        const pending = pendingEventsQueueRef.current;
+        pendingEventsQueueRef.current = [];
+        for (const event of pending) {
+          applySessionEvent(event);
+        }
       }
     },
     [applySessionEvent, lastSequenceNumRef],
@@ -470,5 +484,6 @@ export function useSessionEventReplay({
     replayMissedSessionEvents,
     replayMissedSessionEventsIfNeeded,
     replayLatestTurnSessionEvents,
+    isReplayingRef,
   };
 }
