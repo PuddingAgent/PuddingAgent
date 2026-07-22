@@ -1,4 +1,4 @@
-// ── AgentMessageBubble：Agent 消息气泡（左对齐）─────────────
+﻿// ── AgentMessageBubble：Agent 消息气泡（左对齐）─────────────
 
 import { Tooltip } from 'antd';
 import React from 'react';
@@ -326,12 +326,27 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const shouldShowCurrentActivity = Boolean(isRunActive && currentActivity);
   const shouldShowPreAnswerWaiting = isBeforeFirstToken && !currentActivity;
   const [activityNow, setActivityNow] = React.useState(() => Date.now());
+  const waitStartRef = React.useRef(Date.now());
+  const [waitSeconds, setWaitSeconds] = React.useState(0);
 
   React.useEffect(() => {
     if (!shouldShowCurrentActivity) return undefined;
     const timer = window.setInterval(() => setActivityNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [shouldShowCurrentActivity]);
+
+  // B1: TTFB 计时 — 首 token 前等待超过阈值时改变视觉提示
+  React.useEffect(() => {
+    if (shouldShowPreAnswerWaiting) {
+      waitStartRef.current = Date.now();
+      setWaitSeconds(0);
+      const timer = window.setInterval(() => {
+        setWaitSeconds(Math.floor((Date.now() - waitStartRef.current) / 1000));
+      }, 1000);
+      return () => window.clearInterval(timer);
+    }
+    // not waiting: do nothing (keep stale value hidden)
+  }, [shouldShowPreAnswerWaiting]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (turnId) {
@@ -377,21 +392,32 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             )}
 
             {/* 首 token 前且暂无运行事件：保留轻量等待态，不编造具体思维阶段。 */}
-            {shouldShowPreAnswerWaiting && (
-              <div
-                className={cx(
-                  styles.agentBubbleNew,
-                  styles.agentBubbleStreaming,
-                  styles.agentActiveOutputSurface,
-                  styles.agentWaitingBubble,
-                )}
-              >
-                <span
-                  className={cx(styles.pulseDot, styles.mainStatusDotActive)}
-                />
-                <span className={styles.pulseLabel}>等待运行事件...</span>
-              </div>
-            )}
+            {shouldShowPreAnswerWaiting && (() => {
+              const isSlow = waitSeconds >= 3;
+              const isVerySlow = waitSeconds >= 10;
+              const msg = isVerySlow
+                ? `响应时间较长（${waitSeconds}s），请耐心等待...`
+                : isSlow
+                  ? `模型响应较慢（${waitSeconds}s）...`
+                  : '等待运行事件...';
+              return (
+                <div
+                  className={cx(
+                    styles.agentBubbleNew,
+                    styles.agentBubbleStreaming,
+                    styles.agentActiveOutputSurface,
+                    styles.agentWaitingBubble,
+                    isVerySlow && styles.agentBubbleWarning,
+                  )}
+                >
+                  <span
+                    className={cx(styles.pulseDot, styles.mainStatusDotActive,
+                      isVerySlow && styles.pulseDotWarning)}
+                  />
+                  <span className={styles.pulseLabel}>{msg}</span>
+                </div>
+              );
+            })()}
 
             {/* 消息气泡 */}
             {shouldRenderAnswerBubble &&
