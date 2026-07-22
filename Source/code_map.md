@@ -205,6 +205,7 @@ Source/
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
 | `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync` |
 | `Services/TokenUsageSchemaBootstrapper.cs` | Platform SQLite 的 Token 用量 Schema 升级边界；启动时幂等补齐 `TokenUsageEvents.ParentSessionId` 与索引，DDL 失败直接阻止启动，避免 EF 模型与旧数据库静默失配 |
+| `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json`，避免已有数据库在 Turn 受理事务中因 EF 模型漂移返回 500 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |

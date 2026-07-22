@@ -1,4 +1,4 @@
-using PuddingCode.Platform;
+﻿using PuddingCode.Platform;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -215,7 +215,8 @@ public sealed class SessionRouter
             AllowSubDelegation = GetMetadataBool(request.Metadata, "allow_sub_delegation", "allowSubDelegation", "AllowSubDelegation"),
             AllowAgentCreation = GetMetadataBool(request.Metadata, "allow_agent_creation", "allowAgentCreation", "AllowAgentCreation"),
             AssignedObjective = GetMetadataValue(request.Metadata, "assigned_objective", "assignedObjective", "AssignedObjective"),
-            ExpectedOutputContract = GetMetadataValue(request.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
+                        ExpectedOutputContract = GetMetadataValue(request.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
+            VisualArtifactIds = GetMetadataList(request.Metadata, "vision_artifact_id", "visionArtifactId", "VisionArtifactId"),
         };
 
         _logger.LogInformation(
@@ -430,7 +431,8 @@ public sealed class SessionRouter
             AllowSubDelegation = GetMetadataBool(request.Metadata, "allow_sub_delegation", "allowSubDelegation", "AllowSubDelegation"),
             AllowAgentCreation = GetMetadataBool(request.Metadata, "allow_agent_creation", "allowAgentCreation", "AllowAgentCreation"),
             AssignedObjective = GetMetadataValue(request.Metadata, "assigned_objective", "assignedObjective", "AssignedObjective"),
-            ExpectedOutputContract = GetMetadataValue(request.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
+                        ExpectedOutputContract = GetMetadataValue(request.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
+            VisualArtifactIds = GetMetadataList(request.Metadata, "vision_artifact_id", "visionArtifactId", "VisionArtifactId"),
         };
 
         _logger.LogInformation(
@@ -523,8 +525,16 @@ public sealed class SessionRouter
         return null;
     }
 
-    private static int? GetMetadataInt(IReadOnlyDictionary<string, string>? metadata, params string[] keys)
+        private static int? GetMetadataInt(IReadOnlyDictionary<string, string>? metadata, params string[] keys)
         => int.TryParse(GetMetadataValue(metadata, keys), out var value) ? value : null;
+
+    private static IReadOnlyList<string>? GetMetadataList(IReadOnlyDictionary<string, string>? metadata, params string[] keys)
+    {
+        var raw = GetMetadataValue(metadata, keys);
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
 
     private static bool? GetMetadataBool(IReadOnlyDictionary<string, string>? metadata, params string[] keys)
         => bool.TryParse(GetMetadataValue(metadata, keys), out var value) ? value : null;

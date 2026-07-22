@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
@@ -34,7 +34,8 @@ public class ConversationTurnsController : ControllerBase
             ClientRequestId: request.ClientRequestId,
             ClientMessageId: request.ClientMessageId,
             Recipients: request.Recipients,
-            Content: request.Content);
+            Content: request.Content,
+            Metadata: request.Metadata);
 
         var result = await handler.HandleAsync(command, ct);
         return Accepted(result);
@@ -146,6 +147,8 @@ public sealed record SubmitTurnHttpRequest
     public required string ClientMessageId { get; init; }
     public required RecipientRequest Recipients { get; init; }
     public required IReadOnlyList<ContentPart> Content { get; init; }
+    /// <summary>附加元数据（如 vision_artifact_id），透传至控制链。</summary>
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }
 
 /// <summary>Steering HTTP DTO — Controller 层专用。</summary>

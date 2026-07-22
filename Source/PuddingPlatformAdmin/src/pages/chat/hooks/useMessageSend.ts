@@ -1,4 +1,4 @@
-import type { MessageInstance } from 'antd/es/message/interface';
+﻿import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useRef } from 'react';
 import {
@@ -197,11 +197,7 @@ export function useMessageSend({
         return;
       }
       if (options?.metadata && Object.keys(options.metadata).length > 0) {
-        const unsupportedMessage =
-          '当前 Conversation 命令链尚未支持视觉或其他 metadata 输入，消息未发送。';
-        setError(unsupportedMessage);
-        messageApi.error(unsupportedMessage);
-        return;
+        logChatDiag('send.withMetadata', { keys: Object.keys(options.metadata) });
       }
       const route = resolveChatRoute(text, agents, agentId);
       const routedText = route.messageText.trim();
@@ -429,6 +425,7 @@ export function useMessageSend({
                   : [targetAgentId],
             },
             content: [{ type: 'text', text: routedText }],
+            metadata: options?.metadata,
           },
           ctrl.signal,
         );

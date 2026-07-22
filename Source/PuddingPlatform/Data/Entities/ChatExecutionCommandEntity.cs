@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PuddingPlatform.Data.Entities;
@@ -85,4 +85,8 @@ public class ChatExecutionCommandEntity
 
     [MaxLength(64), Column("fence_token")]
     public string? FenceToken { get; set; }
+
+    /// <summary>JSON 格式的附加元数据（如 vision_artifact_id）。</summary>
+    [MaxLength(4096), Column("metadata_json")]
+    public string? MetadataJson { get; set; }
 }

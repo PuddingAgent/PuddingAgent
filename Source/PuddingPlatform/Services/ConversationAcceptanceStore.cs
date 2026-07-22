@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Platform;
@@ -76,6 +76,7 @@ public sealed class ConversationAcceptanceStore(
                 Content = textContent,
                 UserId = userId,
                 CreatedAt = now,
+                MetadataJson = SerializeMetadata(request.Metadata),
             };
             db.ChatMessages.Add(message);
 
@@ -114,6 +115,7 @@ public sealed class ConversationAcceptanceStore(
                     UserId = userId,
                     Status = "pending",
                     CreatedAt = now,
+                    MetadataJson = SerializeMetadata(request.Metadata),
                 });
             }
             db.ChatExecutionCommands.AddRange(commands);
@@ -134,6 +136,7 @@ public sealed class ConversationAcceptanceStore(
                     userMessageId = request.ClientMessageId,
                     clientRequestId = request.ClientRequestId,
                     agentId = cmd.AgentInstanceId,
+                    metadata = request.Metadata?.ToDictionary(kv => kv.Key, kv => (object)kv.Value),
                 }, JsonOpts);
 
                 events.Add(new ConversationEventEntity
@@ -247,5 +250,18 @@ public sealed class ConversationAcceptanceStore(
         await db.SaveChangesAsync(ct);
 
         return prev;
+    }
+
+    private static string? SerializeMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null || metadata.Count == 0) return null;
+        try
+        {
+            return JsonSerializer.Serialize(metadata, JsonOpts);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

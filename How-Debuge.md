@@ -301,6 +301,14 @@ MemoryLibraryDbInitializer
 Platform 的 `TokenUsageEvents` 增加字段时，不要只修改 Entity 和
 `OnModelCreating`：`Database.EnsureCreatedAsync()` 不会升级已经存在的表。当前由
 `TokenUsageSchemaBootstrapper` 在启动阶段完成 `ParentSessionId` 列与索引的幂等升级。
+
+同样地，`chat_execution_commands` 是 Turn 受理事务的事实表。新增命令字段时必须同步维护
+`ConversationCommandSchemaBootstrapper`。如果 `POST /api/v1/conversations/{id}/turns`
+返回 500，且 `backend.out.log` 出现
+`table chat_execution_commands has no column named metadata_json`，说明 Entity 已写入新字段、
+但已有 Platform SQLite 尚未升级。先确认启动日志包含
+`[ConversationCommandSchema] Added chat_execution_commands.metadata_json`，再用
+`PRAGMA table_info("chat_execution_commands")` 验证；不要把该错误归因到 LLM、SSE 或 Worker。
 诊断顺序：
 
 1. 先检查 `backend.out.log` 是否存在编译错误；例如 `CS0103 platformDb` 是启动代码的

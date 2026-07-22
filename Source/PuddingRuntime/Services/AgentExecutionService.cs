@@ -469,7 +469,7 @@ public sealed class AgentExecutionService
                 history[0] = new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt);
             }
         }
-        history.Add(new ChatMessage(ChatRole.User, BuildUserMessageForLlm(request)));
+                history.Add(new ChatMessage(ChatRole.User, BuildUserMessageForLlm(request), VisualArtifactIds: request.VisualArtifactIds));
 
         // ── 初始化 Loop 上下文 ────────────────────────────────────────
         var maxRounds = request.MaxRounds > 0
@@ -2058,7 +2058,8 @@ public sealed class AgentExecutionService
             history[0] = new ChatMessage(ChatRole.System, streamingSystemPrompt.SystemPrompt);
         }
 
-        history.Add(new ChatMessage(ChatRole.User, BuildUserMessageForLlm(request)));
+        
+        history.Add(new ChatMessage(ChatRole.User, BuildUserMessageForLlm(request), VisualArtifactIds: request.VisualArtifactIds));
 
         var loopCtx = new AgentLoopContext
         {

@@ -2403,6 +2403,7 @@ export interface SubmitConversationTurnRequest {
   clientMessageId: string;
   recipients: ConversationRecipientRequest;
   content: ConversationContentPart[];
+  metadata?: Record<string, string>;
 }
 
 export interface ConversationAcceptanceResult {

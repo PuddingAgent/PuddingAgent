@@ -1290,15 +1290,19 @@ try
         var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var schemaLogger = scope.ServiceProvider
             .GetRequiredService<ILoggerFactory>()
-            .CreateLogger("TokenUsageSchema");
+            .CreateLogger("PlatformSchema");
 
         await platformDb.Database.EnsureCreatedAsync();
         await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(
             platformDb,
             schemaLogger,
             CancellationToken.None);
+        await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(
+            platformDb,
+            schemaLogger,
+            CancellationToken.None);
     }
-    Console.WriteLine("[Startup] Platform DB tables and token usage schema ensured");
+    Console.WriteLine("[Startup] Platform DB tables and schema upgrades ensured");
 
     // ADR-057: Ensure conversation event store tables exist (not lazy).
     try
@@ -1316,6 +1320,7 @@ try
 catch (Exception ex)
 {
     Console.WriteLine($"[Startup] Platform DB ensure failed: {ex.Message}");
+    throw;
 }
 
 Console.WriteLine("[Startup] Ensuring Memory DB tables...");

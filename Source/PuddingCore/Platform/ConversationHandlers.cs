@@ -1,4 +1,4 @@
-using PuddingCode.Runtime;
+﻿using PuddingCode.Runtime;
 
 namespace PuddingCode.Platform;
 
@@ -42,7 +42,8 @@ public sealed record SubmitTurnCommand(
     string ClientRequestId,
     string ClientMessageId,
     RecipientRequest Recipients,
-    IReadOnlyList<ContentPart> Content);
+    IReadOnlyList<ContentPart> Content,
+    IReadOnlyDictionary<string, string>? Metadata);
 
 public sealed record RequestTurnCancellationCommand(
     string ConversationId,

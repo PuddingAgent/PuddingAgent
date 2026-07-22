@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services.Conversation;
@@ -46,6 +46,7 @@ public sealed class SubmitTurnHandler(
                 ClientMessageId = command.ClientMessageId,
                 Recipients = command.Recipients,
                 Content = command.Content,
+                Metadata = command.Metadata,
             },
             command.WorkspaceId,
             command.ConversationId,
