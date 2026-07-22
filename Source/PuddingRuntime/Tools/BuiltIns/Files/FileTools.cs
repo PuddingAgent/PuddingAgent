@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -82,15 +83,26 @@ internal static class HostFileToolPaths
     SortOrder = 40)]
 public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 {
+    private readonly FileChunkService _chunk;
+    private readonly ILogger<FileReadTool> _logger;
+
     public FileReadTool()
+        : this(NullLogger<FileReadTool>.Instance, new FileChunkService())
     {
     }
 
     public FileReadTool(ILogger<FileReadTool> logger)
+        : this(logger, new FileChunkService())
     {
     }
 
-    protected override Task<ToolExecutionResult> ExecuteCoreAsync(
+    public FileReadTool(ILogger<FileReadTool> logger, FileChunkService chunk)
+    {
+        _logger = logger;
+        _chunk = chunk;
+    }
+
+    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         FileReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         // file_read �ǵͷ���ֻ�����ߣ�����������·������

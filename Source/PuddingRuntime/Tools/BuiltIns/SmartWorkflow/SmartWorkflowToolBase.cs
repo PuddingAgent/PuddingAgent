@@ -30,6 +30,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected virtual int DefaultMaxRounds => 15;
     /// <summary>子代理允许的工具列表，逗号分隔。null = 继承父代理全部工具。</summary>
     protected virtual string? AllowedTools => null;
+    /// <summary>主模型失败时的降级模型 ID 列表（按优先级）。null = 不启用 fallback。</summary>
+    protected virtual IReadOnlyList<string>? FallbackModelIds => null;
     /// <summary>仅由明确设计为 DAG 父节点的 Smart 工具覆盖为 true。</summary>
     protected virtual bool AllowNestedSmartDelegation => false;
     protected virtual int MaxDelegationDepth => 2;
@@ -124,6 +126,43 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             var toolExec = services.GetRequiredService<IPuddingToolExecutionService>();
             var result = await toolExec.ExecuteAsync("spawn_sub_agent", spawnArgs, context, null, ct);
 
+            // Fallback: if primary model failed with transient error, try fallback models
+            if (!result.Success && FallbackModelIds is { Count: > 0 } fallbacks 
+                && IsTransientSmartFailure(result.Error))
+            {
+                foreach (var fallbackModel in fallbacks)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    
+                    logger.LogWarning(
+                        "[{Tool}] agent={Agent} role={Role} FALLBACK primary={Primary} -> fallback={Fallback}",
+                        toolName, configurationAgentId, RoleName, model, fallbackModel);
+
+                    var fallbackArgs = JsonSerializer.Serialize(new
+                    {
+                        task,
+                        agent_template = SubAgentTemplateId,
+                        sync = true,
+                        model = fallbackModel,
+                        pool_name = RoleName,
+                        pool_role = RoleName,
+                        role_in_plan = RoleName,
+                        timeout_seconds = timeout / 2, // shorter timeout for fallback
+                        max_rounds = DefaultMaxRounds / 2,
+                        working_directory = workingDirectory,
+                        allow_sub_delegation = AllowNestedSmartDelegation,
+                        depth = context.DelegationDepth ?? 0,
+                        max_depth = context.MaxDelegationDepth ?? MaxDelegationDepth,
+                        tools = AllowedTools,
+                        reuse_parent_context = true,
+                        origin_tool_id = Descriptor.ToolId,
+                    });
+
+                    result = await toolExec.ExecuteAsync("spawn_sub_agent", fallbackArgs, context, null, ct);
+                    if (result.Success) break;
+                }
+            }
+
             sw.Stop();
 
             if (result.Success)
@@ -169,6 +208,20 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             logger.LogError(ex, "[{Tool}] EXCEPTION", toolName);
             return ToolExecutionResult.Fail($"{toolName} EXCEPTION: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private static bool IsTransientSmartFailure(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error)) return false;
+        return error.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("canceled", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("cancelled", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("circuit breaker", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("task was canceled", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("stream_idle", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("HTTP 5", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("HTTP 429", StringComparison.OrdinalIgnoreCase);
     }
 
     private ToolExecutionResult BuildInvalidReportFailure(

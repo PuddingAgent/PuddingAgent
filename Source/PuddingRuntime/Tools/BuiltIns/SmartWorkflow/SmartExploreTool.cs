@@ -35,6 +35,8 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     protected override string RoleName => "explorer";
     protected override int DefaultTimeoutSeconds => 30 * 60;
     protected override int DefaultMaxRounds => 64;
+    protected override IReadOnlyList<string>? FallbackModelIds =>
+        new[] { "deepseek/deepseek-v4-flash" };
     protected override string? AllowedTools =>
         "file_read,file_search,code_outline,search_grep,list_dir,project_map," +
         "code_explore,code_summary,code_symbol_search,code_callers,code_callees," +
