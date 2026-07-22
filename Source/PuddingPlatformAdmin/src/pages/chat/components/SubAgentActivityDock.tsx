@@ -57,6 +57,7 @@ interface RunOutputState {
 }
 
 const SUCCESS_LINGER_MS = 12_000;
+const ERROR_LINGER_MS = 30_000;
 const DOCK_VISIBLE_LIMIT = 4;
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -562,9 +563,9 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
         if (dismissedRunIds.has(runId)) return false;
         const terminalAt = run.completedAt ?? run.lastActivityAt ?? 0;
         if (terminalAt < visibleSinceRef.current - 1000) return false;
-        if (run.status === 'completed')
-          return now - terminalAt <= SUCCESS_LINGER_MS;
-        return true;
+        const lingerMs =
+          run.status === 'completed' ? SUCCESS_LINGER_MS : ERROR_LINGER_MS;
+        return now - terminalAt <= lingerMs;
       }),
     [dismissedRunIds, now, runs],
   );

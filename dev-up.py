@@ -43,17 +43,12 @@ PROXY_HOST = "0.0.0.0"
 PREFERRED_PROXY_PORT = 80
 FALLBACK_PROXY_PORT = None
 HEALTH_PATH = "/health"
-HEALTH_INITIAL_DELAY_SECONDS = 5
-HEALTH_INTERVAL_SECONDS = 5
 PROCESS_STOP_TIMEOUT_SECONDS = 10.0
 
 BACKEND_PID_FILE = RUN_DIR / "backend.pid"
 FRONTEND_PID_FILE = RUN_DIR / "frontend.pid"
 PROXY_PID_FILE = RUN_DIR / "proxy.pid"
-SUPERVISOR_PID_FILE = RUN_DIR / "supervisor.pid"
 PROXY_PORT_FILE = RUN_DIR / "proxy.port"
-HEALTH_STATUS_FILE = RUN_DIR / "health.status.json"
-GUARD_STATE_FILE = RUN_DIR / "guard.enabled"
 
 BACKEND_OUT_LOG = RUN_DIR / "backend.out.log"
 BACKEND_ERR_LOG = RUN_DIR / "backend.err.log"
@@ -61,8 +56,6 @@ FRONTEND_OUT_LOG = RUN_DIR / "frontend.out.log"
 FRONTEND_ERR_LOG = RUN_DIR / "frontend.err.log"
 PROXY_OUT_LOG = RUN_DIR / "proxy.out.log"
 PROXY_ERR_LOG = RUN_DIR / "proxy.err.log"
-SUPERVISOR_OUT_LOG = RUN_DIR / "supervisor.out.log"
-SUPERVISOR_ERR_LOG = RUN_DIR / "supervisor.err.log"
 DEV_LOG_ROTATE_MAX_BYTES = int(os.environ.get("PUDDING_DEV_LOG_ROTATE_MAX_BYTES", str(20 * 1024 * 1024)))
 DEV_LOG_ROTATE_BACKUPS = int(os.environ.get("PUDDING_DEV_LOG_ROTATE_BACKUPS", "3"))
 DEFAULT_LOG_TAIL_LINES = int(os.environ.get("PUDDING_DEV_LOG_TAIL_LINES", "80"))
@@ -422,38 +415,6 @@ def is_port_free(host: str, port: int) -> bool:
     return can_bind(host, port)
 
 
-def should_restart_role(role: str, exit_code: int | None, stopping: bool) -> bool:
-    return role in {"backend", "frontend", "proxy"} and not stopping
-
-
-class ChangeDebouncer:
-    """Debounces file change events: restarts only fire after *delay_seconds* of silence.
-
-    The ``primed`` flag ensures that repeated changes during the quiet window
-    silently reset the deadline without repeatedly logging."""
-    def __init__(self, delay_seconds: float) -> None:
-        self.delay_seconds = delay_seconds
-        self.deadline: float | None = None
-        self.primed = False
-
-    def changed(self, now: float) -> bool:
-        """Returns True the first time a change arrives in a fresh debounce cycle."""
-        first = not self.primed
-        self.primed = True
-        self.deadline = now + self.delay_seconds
-        return first
-
-    def ready(self, now: float) -> bool:
-        return self.deadline is not None and now >= self.deadline
-
-    def consume(self) -> bool:
-        if self.deadline is None:
-            return False
-        self.deadline = None
-        self.primed = False
-        return True
-
-
 def build_health_url(host: str, port: int, path: str) -> str:
     if not path.startswith("/"):
         path = "/" + path
@@ -560,6 +521,7 @@ def utc_timestamp() -> str:
 
 
 def probe_health(url: str, timeout_seconds: int = 3) -> dict[str, object]:
+    """Check backend health endpoint; used by --init bootstrap flow."""
     checked_at = utc_timestamp()
     request = urllib.request.Request(url, method="GET")
     try:
@@ -590,32 +552,6 @@ def probe_health(url: str, timeout_seconds: int = 3) -> dict[str, object]:
             "checked_at": checked_at,
             "error": str(exc),
         }
-
-
-def write_health_status(status: dict[str, object]) -> None:
-    HEALTH_STATUS_FILE.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def read_health_status() -> dict[str, object] | None:
-    try:
-        return json.loads(HEALTH_STATUS_FILE.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-
-
-def set_guard_enabled(enabled: bool) -> None:
-    ensure_run_dir()
-    GUARD_STATE_FILE.write_text("1" if enabled else "0", encoding="ascii")
-
-
-def is_guard_enabled() -> bool:
-    try:
-        value = GUARD_STATE_FILE.read_text(encoding="ascii").strip().lower()
-    except FileNotFoundError:
-        return False  # 默认禁用：文件变化不再自动编译重启，必须手动 --restart
-    return value not in {"0", "false", "off", "disabled", "no"}
-
-
 
 
 def rotate_log_if_needed(path: Path) -> None:
@@ -782,15 +718,12 @@ def start_proxy(port: int) -> subprocess.Popen:
 
 def format_status_lines(snapshot: dict[str, dict[str, object]]) -> list[str]:
     labels = {
-        "supervisor": "Supervisor",
-        "guard": "Guard     ",
         "backend": "Backend   ",
         "frontend": "Frontend  ",
         "proxy": "Proxy     ",
     }
     lines: list[str] = []
-    guard = snapshot.get("guard", {})
-    for role in ("supervisor", "backend", "frontend", "proxy"):
+    for role in ("backend", "frontend", "proxy"):
         state = snapshot.get(role, {})
         pid = state.get("pid")
         alive = bool(state.get("alive"))
@@ -799,15 +732,6 @@ def format_status_lines(snapshot: dict[str, dict[str, object]]) -> list[str]:
         if role == "proxy" and alive and port:
             line += f" on {proxy_display_url(int(port))}"
         lines.append(line)
-        if role == "supervisor":
-            lines.append(f"{labels['guard']}: {'enabled' if guard.get('enabled', True) else 'disabled'}")
-    health = snapshot.get("health")
-    if not health:
-        lines.append("Health    : pending")
-    elif health.get("status_code") is not None:
-        lines.append(f"Health    : HTTP {health.get('status_code')} from {health.get('url')} at {health.get('checked_at')}")
-    else:
-        lines.append(f"Health    : ERROR {health.get('error')} from {health.get('url')} at {health.get('checked_at')}")
     return lines
 
 
@@ -819,16 +743,11 @@ def status_snapshot() -> dict[str, dict[str, object]]:
     backend_pid = read_pid(BACKEND_PID_FILE)
     frontend_pid = read_pid(FRONTEND_PID_FILE)
     proxy_pid = read_pid(PROXY_PID_FILE)
-    supervisor_pid = read_pid(SUPERVISOR_PID_FILE)
     proxy_port_value = int(proxy_port) if proxy_port.isdigit() else None
     backend_owner = port_owner_pid(BACKEND_PORT)
     frontend_owner = port_owner_pid(FRONTEND_PORT)
     proxy_owner = port_owner_pid(proxy_port_value) if proxy_port_value else None
     return {
-        "supervisor": {
-            "pid": supervisor_pid,
-            "alive": is_process_alive(supervisor_pid),
-        },
         "backend": {
             "pid": backend_pid if is_process_alive(backend_pid) else backend_owner,
             "alive": is_process_alive(backend_pid) or backend_owner is not None,
@@ -848,8 +767,6 @@ def status_snapshot() -> dict[str, dict[str, object]]:
             "port_owner_pid": proxy_owner,
             "port": proxy_port_value,
         },
-        "guard": {"enabled": is_guard_enabled()},
-        "health": read_health_status(),
     }
 
 
@@ -900,8 +817,6 @@ def tail_file_lines(path: Path, line_count: int, block_size: int = 8192) -> list
 def follow_logs(tail_lines: int = 0) -> None:
     paths = [
         launcher_log_path(),
-        SUPERVISOR_OUT_LOG,
-        SUPERVISOR_ERR_LOG,
         BACKEND_OUT_LOG,
         BACKEND_ERR_LOG,
         FRONTEND_OUT_LOG,
@@ -948,21 +863,10 @@ def stop_all() -> None:
         proxy_port = int(PROXY_PORT_FILE.read_text(encoding="ascii").strip())
     except (FileNotFoundError, ValueError):
         proxy_port = PREFERRED_PROXY_PORT
-    stop_tracked_process("Supervisor", SUPERVISOR_PID_FILE)
     stop_tracked_process("Proxy", PROXY_PID_FILE, proxy_port)
     stop_tracked_process("Frontend", FRONTEND_PID_FILE, FRONTEND_PORT)
     stop_tracked_process("Backend", BACKEND_PID_FILE, BACKEND_PORT)
     PROXY_PORT_FILE.unlink(missing_ok=True)
-
-
-def enable_guard() -> None:
-    set_guard_enabled(True)
-    info("Guard enabled")
-
-
-def disable_guard() -> None:
-    set_guard_enabled(False)
-    info("Guard disabled")
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -1280,42 +1184,7 @@ def run_proxy(host: str, port: int, backend_url: str, frontend_url: str) -> None
         server.server_close()
 
 
-def restart_child(role: str, processes: dict[str, subprocess.Popen], no_install: bool, proxy_port: int, frontend_only: bool = False) -> None:
-    info(f"! {role} exited; restarting")
-    if role == "backend":
-        if frontend_only:
-            info("! Backend exited but --frontend-only, not restarting")
-            return
-        force_release_port(BACKEND_PORT)
-        stop_port_owner("Backend", BACKEND_PORT)
-        wait_until_port_free(BACKEND_PORT)
-        processes[role] = start_backend()
-    elif role == "frontend":
-        force_release_port(FRONTEND_PORT)
-        stop_port_owner("Frontend", FRONTEND_PORT)
-        wait_until_port_free(FRONTEND_PORT)
-        processes[role] = start_frontend(no_install=True)
-    elif role == "proxy":
-        force_release_port(proxy_port)
-        stop_port_owner("Proxy", proxy_port)
-        wait_until_port_free(proxy_port)
-        processes[role] = start_proxy(proxy_port)
-
-
-def health_monitor_loop(url: str, stop_event: threading.Event) -> None:
-    if stop_event.wait(HEALTH_INITIAL_DELAY_SECONDS):
-        return
-    while not stop_event.is_set():
-        status = probe_health(url)
-        write_health_status(status)
-        if status["status_code"] is not None:
-            info(f"Health check: HTTP {status['status_code']} from {url}")
-        else:
-            info(f"Health check: ERROR {status['error']} from {url}")
-        stop_event.wait(HEALTH_INTERVAL_SECONDS)
-
-
-def run_supervisor(no_install: bool, frontend_only: bool = False) -> None:
+def start_all(no_install: bool, frontend_only: bool = False) -> None:
     ensure_run_dir()
     if not frontend_only:
         require_command("dotnet")
@@ -1328,7 +1197,6 @@ def run_supervisor(no_install: bool, frontend_only: bool = False) -> None:
 
     proxy_port = choose_proxy_port(PROXY_HOST, PREFERRED_PROXY_PORT, FALLBACK_PROXY_PORT)
     prepare_config()
-    write_pid(SUPERVISOR_PID_FILE, os.getpid())
 
     processes = {
         "frontend": start_frontend(no_install=no_install),
@@ -1338,11 +1206,6 @@ def run_supervisor(no_install: bool, frontend_only: bool = False) -> None:
         info("Frontend-only mode (skip backend)")
     else:
         processes["backend"] = start_backend()
-    health_url = build_health_url("127.0.0.1", proxy_port, HEALTH_PATH)
-    HEALTH_STATUS_FILE.unlink(missing_ok=True)
-    health_stop = threading.Event()
-    health_thread = threading.Thread(target=health_monitor_loop, args=(health_url, health_stop), daemon=True)
-    health_thread.start()
 
     proxy_url = proxy_display_url(proxy_port)
     info(
@@ -1371,55 +1234,30 @@ def run_supervisor(no_install: bool, frontend_only: bool = False) -> None:
 
     try:
         while not stopping:
-            guard_enabled = is_guard_enabled()
             for role, process in list(processes.items()):
                 exit_code = process.poll()
                 if exit_code is None:
                     continue
-                if guard_enabled and should_restart_role(role, exit_code, stopping):
-                    info(f"! {role} exited; restarting")
-                    restart_child(role, processes, no_install=True, proxy_port=proxy_port, frontend_only=frontend_only)
+                if role == "backend":
+                    info(f"! {role} exited with code {exit_code}, stopping all")
+                    stopping = True
+                elif role == "proxy":
+                    info(f"! {role} exited with code {exit_code}, restarting")
+                    force_release_port(proxy_port)
+                    processes[role] = start_proxy(proxy_port)
+                elif role == "frontend":
+                    info(f"! {role} exited with code {exit_code}, restarting")
+                    force_release_port(FRONTEND_PORT)
+                    wait_until_port_free(FRONTEND_PORT)
+                    processes[role] = start_frontend(no_install=True)
             time.sleep(2)
     finally:
-        health_stop.set()
-        health_thread.join(timeout=2)
         for role, process in list(processes.items()):
             if process.poll() is None:
                 stop_process_tree(process.pid)
-        for pid_file in (BACKEND_PID_FILE, FRONTEND_PID_FILE, PROXY_PID_FILE, SUPERVISOR_PID_FILE):
+        for pid_file in (BACKEND_PID_FILE, FRONTEND_PID_FILE, PROXY_PID_FILE):
             pid_file.unlink(missing_ok=True)
         PROXY_PORT_FILE.unlink(missing_ok=True)
-        HEALTH_STATUS_FILE.unlink(missing_ok=True)
-
-
-def start_supervisor(no_install: bool, frontend_only: bool = False) -> None:
-    supervisor_pid = read_pid(SUPERVISOR_PID_FILE)
-    if supervisor_pid and is_process_alive(supervisor_pid):
-        fail(f"Development supervisor is already running (PID {supervisor_pid}). Use --status, --restart, or --down.")
-
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            str(Path(__file__).resolve()),
-            "--supervisor",
-            *(["--no-install"] if no_install else []),
-            *(["--frontend-only"] if frontend_only else []),
-        ],
-        cwd=ROOT,
-        stdout=open_log(SUPERVISOR_OUT_LOG),
-        stderr=open_log(SUPERVISOR_ERR_LOG),
-        **popen_kwargs(),
-    )
-    write_pid(SUPERVISOR_PID_FILE, proc.pid)
-    info(f"V Development supervisor started (PID {proc.pid})")
-    info("  Status: python dev-up.py --status")
-    info("  Logs:   python dev-up.py --logs")
-    info("  Stop:   python dev-up.py --down")
-
-
-def start_all(no_install: bool, frontend_only: bool = False) -> None:
-    ensure_run_dir()
-    start_supervisor(no_install=no_install, frontend_only=frontend_only)
 
 
 # ── Bootstrap / Init ──────────────────────────────────────────
@@ -1593,12 +1431,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--restart", action="store_true", help="Stop and start development processes.")
     parser.add_argument("--rebuild", action="store_true", help="Stop, full rebuild (--no-incremental), and start.")
     parser.add_argument("--no-install", action="store_true", help="Skip frontend dependency installation.")
-    parser.add_argument("--guard-on", action="store_true", help="Enable supervisor auto-restart and file-change restarts.")
-    parser.add_argument("--guard-off", action="store_true", help="Disable supervisor auto-restart and file-change restarts.")
     parser.add_argument("--frontend-only", action="store_true", help="Start frontend + proxy only (backend started manually).")
     parser.add_argument("--init", action="store_true", help="Initialize/bootstrap a fresh development environment (create admin, default workspace, etc.).")
     parser.add_argument("--proxy", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--supervisor", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--proxy-host", default=PROXY_HOST, help=argparse.SUPPRESS)
     parser.add_argument("--proxy-port", type=int, default=PREFERRED_PROXY_PORT, help=argparse.SUPPRESS)
     parser.add_argument("--backend-url", default=f"http://{LOCAL_CONNECT_HOST}:{BACKEND_PORT}", help=argparse.SUPPRESS)
@@ -1616,20 +1451,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.proxy:
         run_proxy(args.proxy_host, args.proxy_port, args.backend_url, args.frontend_url)
-        return 0
-
-    if args.supervisor:
-        run_supervisor(no_install=args.no_install, frontend_only=args.frontend_only)
-        return 0
-
-    if args.guard_on and args.guard_off:
-        fail("Use only one of --guard-on or --guard-off.")
-    if args.guard_on:
-        enable_guard()
-        return 0
-
-    if args.guard_off:
-        disable_guard()
         return 0
 
     if args.init:

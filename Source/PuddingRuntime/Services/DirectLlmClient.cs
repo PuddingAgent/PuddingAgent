@@ -1,6 +1,7 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -17,7 +18,7 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class DirectLlmClient : IRuntimeLlmClient
 {
-        private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILlmConfigService _llmConfigService;
     private readonly ILogger<DirectLlmClient> _logger;
     private readonly IKeyVaultService? _keyVaultService;
@@ -27,15 +28,15 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly ProviderRateLimiter? _rateLimiter;
     private readonly ConcurrentDictionary<string, CircuitBreakerState> _circuitBreakers = new();
 
-        public DirectLlmClient(
-        IHttpClientFactory httpClientFactory,
-        ILlmConfigService llmConfigService,
-        ILogger<DirectLlmClient> logger,
-        IKeyVaultService? keyVaultService = null,
-        IRuntimeActivitySink? activitySink = null,
-        ITelemetryMetricSink? telemetrySink = null,
-        IRuntimeTraceAccessor? traceAccessor = null,
-        ProviderRateLimiter? rateLimiter = null)
+    public DirectLlmClient(
+    IHttpClientFactory httpClientFactory,
+    ILlmConfigService llmConfigService,
+    ILogger<DirectLlmClient> logger,
+    IKeyVaultService? keyVaultService = null,
+    IRuntimeActivitySink? activitySink = null,
+    ITelemetryMetricSink? telemetrySink = null,
+    IRuntimeTraceAccessor? traceAccessor = null,
+    ProviderRateLimiter? rateLimiter = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -330,6 +331,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         var terminalRecorded = false;
         var streamDiagnostics = new LlmStreamDiagnosticsAccumulator();
+        var maxRetries = strategy.EffectiveMaxRetries;
+        var retryDelay = TimeSpan.FromSeconds(strategy.EffectiveRetryDelaySeconds);
+        var retryAttempt = 0;
+        var hasYieldedDelta = false;
 
         // ── 并发限流（流式请求在整个流生命周期内持有槽位）──
         var rateLimitLease = _rateLimiter is not null
@@ -337,115 +342,166 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             : null;
         using var _ = rateLimitLease;
 
-        var enumerator = gateway.ChatStreamAsync(messages, toolSpecs, effectiveCt).GetAsyncEnumerator(effectiveCt);
+        IAsyncEnumerator<StreamDelta>? enumerator = null;
 
         try
         {
             while (true)
             {
-                StreamDelta delta;
-                try
+                enumerator = gateway.ChatStreamAsync(messages, toolSpecs, effectiveCt).GetAsyncEnumerator(effectiveCt);
+                Exception? retryException = null;
+
+                while (true)
                 {
-                    if (!await enumerator.MoveNextAsync())
+                    StreamDelta delta;
+                    try
+                    {
+                        if (!await enumerator.MoveNextAsync())
+                            break;
+
+                        delta = enumerator.Current;
+                        streamDiagnostics.Observe(delta);
+                    }
+                    catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+                    {
+                        terminalRecorded = true;
+                        sw.Stop();
+                        var metadata = MergeMetadata(
+                            BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                            streamDiagnostics.ToMetadata());
+                        await RecordActivityAsync(
+                            trace,
+                            operation: "chat_stream",
+                            status: RuntimeActivityStatuses.Cancelled,
+                            startedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: sw.ElapsedMilliseconds,
+                            summary: "Direct LLM streaming request cancelled.",
+                            metadata,
+                            error: ex,
+                            CancellationToken.None);
+                        await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Cancelled, CancellationToken.None);
+                        throw;
+                    }
+                    catch (OperationCanceledException ex) when (streamTimeoutCts.IsCancellationRequested)
+                    {
+                        terminalRecorded = true;
+                        sw.Stop();
+                        _logger.LogError(ex, "[DirectLlm] STREAM TIMEOUT provider={Provider} elapsed={Elapsed}ms",
+                            config.ProviderId, sw.ElapsedMilliseconds);
+                        var metadata = MergeMetadata(
+                            BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                            streamDiagnostics.ToMetadata());
+                        await RecordActivityAsync(
+                            trace,
+                            operation: "chat_stream",
+                            status: RuntimeActivityStatuses.Failed,
+                            startedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: sw.ElapsedMilliseconds,
+                            summary: "Direct LLM streaming timeout.",
+                            metadata,
+                            error: ex,
+                            CancellationToken.None);
+                        await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
+                        throw;
+                    }
+
+                    catch (OperationCanceledException ex) when (
+                        !hasYieldedDelta &&
+                        retryAttempt < maxRetries &&
+                        IsTransientError(ex, isTimeout: true))
+                    {
+                        retryException = ex;
                         break;
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        // HttpClient.Timeout 触发的 TaskCanceledException
+                        // （既不是外部取消也不是流式超时策略，归类为 HTTP 层超时）
+                        terminalRecorded = true;
+                        sw.Stop();
+                        _logger.LogError(ex, "[DirectLlm] STREAM HTTPCLIENT_TIMEOUT provider={Provider} elapsed={Elapsed}ms streamTimeout={StreamTimeout}s",
+                            config.ProviderId, sw.ElapsedMilliseconds, strategy.EffectiveStreamTimeoutSeconds);
+                        var metadata = MergeMetadata(
+                            BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                            streamDiagnostics.ToMetadata());
+                        await RecordActivityAsync(
+                            trace,
+                            operation: "chat_stream",
+                            status: RuntimeActivityStatuses.Failed,
+                            startedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: sw.ElapsedMilliseconds,
+                            summary: "Direct LLM streaming HTTP client timeout.",
+                            metadata,
+                            error: ex,
+                            CancellationToken.None);
+                        await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
+                        throw;
+                    }
+                    catch (Exception ex) when (
+                        !hasYieldedDelta &&
+                        retryAttempt < maxRetries &&
+                        IsTransientError(ex, isTimeout: false))
+                    {
+                        retryException = ex;
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        terminalRecorded = true;
+                        sw.Stop();
+                        _logger.LogError(ex, "[DirectLlm] STREAM ERROR elapsed={Elapsed}ms", sw.ElapsedMilliseconds);
+                        var metadata = MergeMetadata(
+                            BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                            streamDiagnostics.ToMetadata());
+                        await RecordActivityAsync(
+                            trace,
+                            operation: "chat_stream",
+                            status: RuntimeActivityStatuses.Failed,
+                            startedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: sw.ElapsedMilliseconds,
+                            summary: "Direct LLM streaming request failed.",
+                            metadata,
+                            error: ex,
+                            CancellationToken.None);
+                        await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
+                        throw;
+                    }
 
-                    delta = enumerator.Current;
-                    streamDiagnostics.Observe(delta);
-                }
-                catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
-                {
-                    terminalRecorded = true;
-                    sw.Stop();
-                    var metadata = MergeMetadata(
-                        BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
-                        streamDiagnostics.ToMetadata());
-                    await RecordActivityAsync(
-                        trace,
-                        operation: "chat_stream",
-                        status: RuntimeActivityStatuses.Cancelled,
-                        startedAt,
-                        endedAt: DateTimeOffset.UtcNow,
-                        durationMs: sw.ElapsedMilliseconds,
-                        summary: "Direct LLM streaming request cancelled.",
-                        metadata,
-                        error: ex,
-                        CancellationToken.None);
-                    await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Cancelled, CancellationToken.None);
-                    throw;
-                }
-                catch (OperationCanceledException ex) when (streamTimeoutCts.IsCancellationRequested)
-                {
-                    terminalRecorded = true;
-                    sw.Stop();
-                    _logger.LogError(ex, "[DirectLlm] STREAM TIMEOUT provider={Provider} elapsed={Elapsed}ms",
-                        config.ProviderId, sw.ElapsedMilliseconds);
-                    var metadata = MergeMetadata(
-                        BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
-                        streamDiagnostics.ToMetadata());
-                    await RecordActivityAsync(
-                        trace,
-                        operation: "chat_stream",
-                        status: RuntimeActivityStatuses.Failed,
-                        startedAt,
-                        endedAt: DateTimeOffset.UtcNow,
-                        durationMs: sw.ElapsedMilliseconds,
-                        summary: "Direct LLM streaming timeout.",
-                        metadata,
-                        error: ex,
-                        CancellationToken.None);
-                    await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
-                    throw;
-                }
-
-                catch (OperationCanceledException ex)
-                {
-                    // HttpClient.Timeout 触发的 TaskCanceledException
-                    // （既不是外部取消也不是流式超时策略，归类为 HTTP 层超时）
-                    terminalRecorded = true;
-                    sw.Stop();
-                    _logger.LogError(ex, "[DirectLlm] STREAM HTTPCLIENT_TIMEOUT provider={Provider} elapsed={Elapsed}ms streamTimeout={StreamTimeout}s",
-                        config.ProviderId, sw.ElapsedMilliseconds, strategy.EffectiveStreamTimeoutSeconds);
-                    var metadata = MergeMetadata(
-                        BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
-                        streamDiagnostics.ToMetadata());
-                    await RecordActivityAsync(
-                        trace,
-                        operation: "chat_stream",
-                        status: RuntimeActivityStatuses.Failed,
-                        startedAt,
-                        endedAt: DateTimeOffset.UtcNow,
-                        durationMs: sw.ElapsedMilliseconds,
-                        summary: "Direct LLM streaming HTTP client timeout.",
-                        metadata,
-                        error: ex,
-                        CancellationToken.None);
-                    await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    terminalRecorded = true;
-                    sw.Stop();
-                    _logger.LogError(ex, "[DirectLlm] STREAM ERROR elapsed={Elapsed}ms", sw.ElapsedMilliseconds);
-                    var metadata = MergeMetadata(
-                        BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
-                        streamDiagnostics.ToMetadata());
-                    await RecordActivityAsync(
-                        trace,
-                        operation: "chat_stream",
-                        status: RuntimeActivityStatuses.Failed,
-                        startedAt,
-                        endedAt: DateTimeOffset.UtcNow,
-                        durationMs: sw.ElapsedMilliseconds,
-                        summary: "Direct LLM streaming request failed.",
-                        metadata,
-                        error: ex,
-                        CancellationToken.None);
-                    await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
-                    throw;
+                    hasYieldedDelta = true;
+                    yield return delta;
                 }
 
-                yield return delta;
+                if (retryException is null)
+                    break;
+
+                await enumerator.DisposeAsync();
+                enumerator = null;
+                retryAttempt++;
+                _logger.LogWarning(
+                    retryException,
+                    "[DirectLlm] STREAM RETRY before first delta attempt={Attempt}/{Max} provider={Provider}",
+                    retryAttempt,
+                    maxRetries,
+                    config.ProviderId);
+                var retryMetadata = MergeMetadata(
+                    BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                    streamDiagnostics.ToMetadata());
+                await RecordActivityAsync(
+                    trace,
+                    operation: "chat_stream",
+                    status: RuntimeActivityStatuses.Retried,
+                    startedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: sw.ElapsedMilliseconds,
+                    summary: $"LLM stream retry before first delta {retryAttempt}/{maxRetries}.",
+                    retryMetadata,
+                    error: retryException,
+                    CancellationToken.None);
+                await Task.Delay(retryDelay, ct);
             }
 
             terminalRecorded = true;
@@ -468,7 +524,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         }
         finally
         {
-            await enumerator.DisposeAsync();
+            if (enumerator is not null)
+                await enumerator.DisposeAsync();
 
             if (!terminalRecorded)
             {
@@ -768,15 +825,20 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     /// 判断是否为可重试的瞬态错误（HTTP 5xx、timeout、网络错误）。
     /// HTTP 4xx（认证失败、rate limit 等）不可重试。
     /// </summary>
-    private static bool IsTransientError(Exception ex, bool isTimeout)
+    internal static bool IsTransientError(Exception ex, bool isTimeout)
     {
         return ex switch
         {
-            HttpRequestException hrex => (int?)hrex.StatusCode >= 500,
+            HttpRequestException { StatusCode: { } statusCode } => (int)statusCode >= 500,
+            HttpRequestException hrex => hrex.InnerException is not null && IsTransientTransportError(hrex.InnerException),
             OperationCanceledException => isTimeout, // timeout 可重试，外部取消不可重试
-            _ => true, // 其他未知网络错误视为瞬态
+            _ => IsTransientTransportError(ex),
         };
     }
+
+    private static bool IsTransientTransportError(Exception ex)
+        => ex is HttpIOException or IOException or SocketException
+           || ex.InnerException is not null && IsTransientTransportError(ex.InnerException);
 
     // ── Circuit Breaker Types ──────────────────────────────────────
 

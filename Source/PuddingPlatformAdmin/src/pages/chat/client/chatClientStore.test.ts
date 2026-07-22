@@ -264,6 +264,66 @@ describe('agent chat client store', () => {
     ).resolves.toMatchObject({ eventCursor: 12 });
   });
 
+  it('forces a full catch-up when a terminal cursor snapshot still ends with the user message', async () => {
+    const cache = createMemoryAgentChatCache();
+    const knownCursors: Array<number | undefined> = [];
+    let callCount = 0;
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: async (_workspaceId, agentId, knownCursor) => {
+          knownCursors.push(knownCursor);
+          callCount += 1;
+          const messages: AgentConversationView['messages'] = [
+            {
+              messageId: 'user-terminal-race',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '2026-06-07T00:00:00.000Z',
+              content: 'long task',
+              status: 'sent',
+              processItems: [],
+            },
+          ];
+          if (callCount > 1) {
+            messages.push({
+              messageId: 'agent-terminal-race',
+              runId: 'run-terminal-race',
+              role: 'agent',
+              sourceId: agentId,
+              sourceName: 'Agent A',
+              createdAt: '2026-06-07T00:00:01.000Z',
+              content: 'terminal answer',
+              status: 'succeeded',
+              processItems: [],
+            });
+          }
+          return {
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId,
+            mainSessionId: `session-${agentId}`,
+            messages,
+            activeRun: null,
+            eventCursor: 12,
+            updatedAt: '2026-06-07T00:00:01.000Z',
+          };
+        },
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+    await store.syncSelectedAgent();
+
+    expect(knownCursors).toEqual([undefined, undefined]);
+    expect(store.getSnapshot().conversation?.messages.at(-1)).toMatchObject({
+      role: 'agent',
+      content: 'terminal answer',
+    });
+  });
+
   it('ignores stale background sync after switching agents', async () => {
     const cache = createMemoryAgentChatCache();
     let resolveAgentA: (value: AgentConversationView) => void = () => undefined;

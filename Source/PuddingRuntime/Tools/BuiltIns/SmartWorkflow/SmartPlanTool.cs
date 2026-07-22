@@ -29,11 +29,14 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 
     protected override string RoleName => "planner";
-    protected override int DefaultMaxRounds => 150;
-    protected override bool AllowNestedSmartDelegation => true;
+    protected override int DefaultTimeoutSeconds => 10 * 60;
+    protected override int DefaultMaxRounds => 48;
 
-    /// <summary>K3 Planner 拥有全量工具（读+写+终端），用于深度探索和直接产出报告文件。</summary>
-    protected override string? AllowedTools => null;
+    /// <summary>Planner is read-only. The descriptor and runtime capability set must agree.</summary>
+    protected override string? AllowedTools =>
+        "file_read,file_search,code_outline,search_grep,list_dir,project_map," +
+        "code_explore,code_summary,code_symbol_search,code_callers,code_callees," +
+        "code_impact,query_session_logs,query_sessions,grep_memory,search_memory,agent_status";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartPlanArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -59,31 +62,26 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     protected override string BuildTaskPrompt(SmartPlanArgs args, ToolExecutionContext context)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("## 📋 PLANNER (K3) — Produce a comprehensive engineering design plan and WRITE IT TO FILE.");
+        sb.AppendLine("## 📋 PLANNER (K3) — Produce a comprehensive, evidence-backed engineering design plan.");
         sb.AppendLine();
-        sb.AppendLine("You are a world-class software architect. You have FULL ACCESS to the codebase — read, search, explore, and WRITE.");
+        sb.AppendLine("You are a software architect operating in a strictly read-only planning role.");
         sb.AppendLine("Your output must be a **Software Design Specification + ADR** that an engineer can execute without asking a single question.");
-        sb.AppendLine();
-        sb.AppendLine("### 🔑 CRITICAL: Write the final report to file");
-        sb.AppendLine("- After you finish research and reasoning, use `file_write` to save the COMPLETE plan to `memory/plans/{topic-slug}.md`.");
-        sb.AppendLine("- The written file must contain ALL five sections (SUMMARY/CHANGES/EVIDENCE/RISKS/BLOCKERS) in full detail.");
-        sb.AppendLine("- Then return a brief summary in your reply pointing to the file.");
         sb.AppendLine();
         sb.AppendLine("### PROCESS");
         sb.AppendLine("1. Read `code_map.md` to understand the project structure.");
         sb.AppendLine("2. Use `search_memory` to retrieve relevant historical context or prior plans.");
         sb.AppendLine("3. Explore the codebase thoroughly — read files, search for patterns, analyze architecture.");
-        sb.AppendLine("   You have `file_read`, `search_grep`, `list_dir`, `project_map`, `smart_explore` — USE THEM.");
+        sb.AppendLine("   Use the available read-only search and code-intelligence tools directly.");
         sb.AppendLine("   Do NOT guess. Verify claims with evidence from the actual code.");
         sb.AppendLine("4. Apply ADR format for every major decision: Context → Decision → Rationale → Alternatives Rejected.");
         sb.AppendLine("5. Break work into SEQUENTIAL + PARALLEL tasks with exact file paths, class names, and method signatures.");
         sb.AppendLine("6. Identify risks with probability (low/medium/high) and concrete mitigation.");
-        sb.AppendLine("7. Write the complete plan to `memory/plans/` using `file_write`.");
+        sb.AppendLine("7. Return the complete plan directly in the five-section report below.");
         sb.AppendLine();
         sb.AppendLine("### ⚠️ RULES");
-        sb.AppendLine("- You have FULL tools: read, write, search, terminal. Use them to gather evidence.");
-        sb.AppendLine("- Do NOT rush. Take the time you need (you have up to 150 rounds).");
-        sb.AppendLine("- Do NOT call smart_plan (recursive planning is forbidden).");
+        sb.AppendLine("- Read-only means no file writes, patches, shell commands, terminal sessions, or sub-agent delegation.");
+        sb.AppendLine("- Finish within the bounded round and timeout budget; prioritize verified high-value evidence.");
+        sb.AppendLine("- Do NOT call any Smart workflow tool recursively.");
         sb.AppendLine("- The task description above already contains background and constraints from the caller — trust it as a starting point, but verify critical claims.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
@@ -93,25 +91,17 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
             sb.AppendLine($"## 📋 Context: {args.Context}");
         sb.AppendLine();
         AppendCanonicalReportRules(sb);
-        sb.AppendLine("## OUTPUT CONTRACT (five-section specification — MUST be in written file):");
+        sb.AppendLine("## OUTPUT CONTRACT (return as plain text):");
         sb.AppendLine();
-        sb.AppendLine("SUMMARY:");
-        sb.AppendLine("  PROBLEM_STATEMENT: what is being solved and why now");
-        sb.AppendLine("  GOALS_AND_NON_GOALS: explicit scope boundaries");
-        sb.AppendLine("  SUCCESS_CRITERIA: observable acceptance outcomes");
-        sb.AppendLine("  ESTIMATED_TOTAL: effort and critical path");
+        sb.AppendLine("SUMMARY: <goals, scope, success criteria, effort estimate — 3-5 lines>");
         sb.AppendLine("CHANGES:");
-        sb.AppendLine("  ARCHITECTURE_DECISIONS: for each — Decision, Context, Rationale, Alternatives Rejected");
-        sb.AppendLine("  DETAILED_TASKS: each with ID, NAME, ACTIONS (exact files/classes/methods), LOGIC, DEPENDENCIES, DELIVERABLES, VERIFY");
-        sb.AppendLine("  EXECUTION_ORDER: dependency graph + parallel groups");
-        sb.AppendLine("EVIDENCE:");
-        sb.AppendLine("  CONFIRMED_CONSTRAINTS: verified facts from code, memory, or exploration");
-        sb.AppendLine("  AFFECTED_COMPONENTS: exact file paths and symbols");
-        sb.AppendLine("  VERIFICATION_PLAN: integration scenarios, edge cases, rollback proof");
-        sb.AppendLine("RISKS:");
-        sb.AppendLine("  Each: RISK description, PROBABILITY (low/medium/high), IMPACT, MITIGATION");
-        sb.AppendLine("BLOCKERS:");
-        sb.AppendLine("  ASSUMPTIONS_AND_MISSING_INPUTS: what must be resolved before implementation");
+        sb.AppendLine("  ARCHITECTURE_DECISIONS: <Context, Decision, Rationale, Alternatives Rejected>");
+        sb.AppendLine("  DETAILED_TASKS: <number each task with exact files/actions/dependencies/deliverables/verify>");
+        sb.AppendLine("EVIDENCE: <confirmed constraints, affected file paths and symbols, verification plan>");
+        sb.AppendLine("RISKS: <each: description, probability, impact, mitigation>");
+        sb.AppendLine("BLOCKERS: <assumptions to resolve before implementation, or \"none\">");
+        sb.AppendLine();
+        sb.AppendLine("Keep each section concise. Return as plain text, not JSON.");
         return sb.ToString();
     }
 }

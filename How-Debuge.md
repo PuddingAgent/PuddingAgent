@@ -383,8 +383,17 @@ Get-Content <run-dir>\errors.jsonl -ErrorAction SilentlyContinue
 - 超时显示 failed 而非 timed_out：检查 Manager 是否传递
   `ExecutionDeadlineUtc`，Runtime 不得从错误文本猜测超时。
 
-`SubAgentIndicator` 不允许通过恢复 5 秒轮询“修复”Running。轮询只会掩盖
-事件链断点；应修复产生、归档、投影或 reducer 中真实断裂的一层。
+Smart 工作流是同步工具调用，父 Agent 会等待子 run 返回。诊断“模型交互卡死”时还要区分：
+
+- 同一 `runId` 长时间停在 `llm.started/tool.started`：检查 Provider、工具或取消传播；
+- 连续出现多个不同 `runId`，且每个都正常 completed：父模型在重复调用 Smart 工具，
+  不是单个工具死锁；应检查 Prompt 是否要求自包含结果，以及角色的 round/timeout 上限；
+- 标记为 `ReadOnly` 的 Smart 工具仍拿到 `file_write/shell/spawn_sub_agent`：描述符与
+  capability 白名单不一致，会放大耗时和副作用，必须改为显式只读白名单。
+
+`SubAgentIndicator` 不允许按前端经过时间猜测终态。对于仍为 Running 的卡片，可以低频查询
+`GET /api/sessions/{sessionId}/sub-agents`，只用持久化终态校正事件快照；活动明细仍以
+Conversation Event 为准。若发生校正，仍要继续定位事件产生、归档、投影或 reducer 中的断点。
 
 ### 6.9 池化子代理 Create 成功、Execute 报 `saving entity changes`
 
@@ -682,11 +691,40 @@ terminal count    => 1
 
 ```text
 parent deadline = Turn 启动时冻结一次
-smart ceiling   = 1800s
+shared ceiling  = 1800s
+smart_plan cap  = 600s / 48 rounds / read-only
+smart_explore   = 180s / 32 rounds / read-only
 parent reserve  = 120s
 child deadline <= parent deadline - reserve
 downstream      = 只能收紧，禁止放宽
 ```
+
+### 7.8 `ResponseEnded` 后 Agent 联系人持续显示“异常”
+
+典型日志：`[DirectLlm] STREAM ERROR`，异常为
+`HttpIOException: The response ended prematurely. (ResponseEnded)`；对应 Conversation
+终态为 `turn.failed / runtime_execution_failed`，而 `/api/workspaces/{workspaceId}/agents/status`
+在 Run 已结束后仍返回 `failed`。
+
+诊断时先区分两个层次：
+
+1. `ResponseEnded` 是 Provider/网络在响应未完整结束前断开，先查同一时刻是否多个模型或
+   潜意识请求同时失败；若是，优先判断为传输层瞬态故障，不要归因前端 SSE。
+2. 联系人状态表示“当前是否仍在运行”，不能把历史 `turn.failed` 永久当成当前异常。
+   `TurnFailed`、`TurnCancelled`、`RunLeaseLost` 都是终态；Run 结束后联系人应回到
+   `idle`，失败详情由聊天终态事件保留。
+
+重试安全边界：
+
+- 只允许在尚未产生任何 `StreamDelta` 时重试传输错误；
+- 一旦已产生正文、思考、usage 或工具调用增量，禁止重试，避免重复正文和重复工具调用；
+- HTTP 5xx、无状态码且带网络/IO 内因的 `HttpRequestException`、`HttpIOException`、
+  HTTP client timeout 可重试；HTTP 4xx、协议解析错误不可重试；
+- `OpenAiLlmGateway` 抛出 HTTP 错误时必须保留 `StatusCode`，否则重试策略无法区分
+  4xx 与 5xx。
+
+验证日志应出现首块前的 `[DirectLlm] STREAM RETRY before first delta`，最终成功时不应
+写入 `turn.failed`；若首块后断流，则应直接失败且只能看到一次 Provider 请求。
 
 ## 8. 浏览器验收
 
@@ -831,6 +869,77 @@ Message/Turn、Trace、Error ID、Location、Error Code、Round、Model 和 Endp
 若服务端已经持久化 `## 请求失败` 诊断 Markdown 或 Session fuse 文本，前端应原样保留；
 否则使用统一格式化器生成。排查时以 `errorId` 为第一检索键，再关联 `traceId`、
 `sessionId` 与 `messageId/turnId`。
+
+### 11.4 Umi/Jest 报 imported binding 无法转换
+
+**症状**：新增 Hook 测试在收集阶段失败，错误包含
+`Cannot transform the imported binding "X" since it's also used in a type annotation`，业务断言尚未执行。
+
+**根因**：当前 Umi/Jest Babel 链对同一个 import binding 同时出现在运行时 import 重写和
+TypeScript 类型标注中的场景处理不稳定；这不是 Hook 运行时错误。
+
+**修复**：测试 fixture 使用测试文件内的窄类型，或让 TypeScript 从局部值推断；不要为了
+修测试去修改生产 API 类型。修复后先单跑该测试文件，再合入 Chat 定向集。
+
+### 11.5 Chat Hook 拆分后的依赖与时序诊断
+
+`useChatState` 的复杂生命周期现在通过分组 port object 和 bindable callback ref 协作。
+出现“函数已执行但调用的是旧会话/旧 projector”时，依次检查：
+
+1. binder 是否在每次 render 同步写入稳定 ref，而不是只在 mount effect 绑定；
+2. identity port 的 `sessionIdRef`、`selectedSessionIdRef`、`sseSessionIdRef` 是否指向同一事务；
+3. buffer/reset 是否由 `useSessionEventBuffers` 单一所有，切会话时是否同时清理 delta/thinking timer；
+4. history projector 是否先绑定，再允许分页或 selection effect 发起历史请求；
+5. 用 `useChatState.selection.test.tsx` 覆盖“发送未返回时切会话”“空历史 replay”“快速终态”竞态，
+   不要只给搬迁后的内部函数写静态快照测试。
+
+### 11.6 Agent 已完成但回复气泡必须刷新才出现
+
+**症状**：用户消息立即出现，Agent 也确实完成；浏览器可能已经记录
+`[Pudding ChatDiag] event.done.applied`，但页面仍停在首 Token 等待态，刷新后回复才出现。
+
+**诊断顺序**：
+
+1. 用同一 `conversationId/turnId` 查询 `conversation_events` 和 `ChatMessages`，确认终态事件、
+   回复正文与稳定身份都已落库；
+2. 检查浏览器 `event.done.applied` 的 `replyLen/currentAnswerLen/isStreaming`，区分 SSE 未到达与
+   本地 Turn 已完成但被另一套视图遮蔽；
+3. 对比 Agent conversation 查询的 `eventCursor` 与最后一条 `messages.role`；
+4. 检查代理日志是否对同一 cursor 连续返回 `304`。
+
+已出现过的竞态是：canonical event cursor 先推进到终态，助手消息读模型稍后才物化。
+此时 conversation 快照可能暂时以 `user` 消息结尾；如果客户端把该快照当作完全追平，并继续携带
+相同 `knownCursor`，服务端会稳定返回 `304`，不完整快照直到刷新都不会更新。
+
+前端应同时守住两层：
+
+- `chatClientStore` 发现 conversation 以用户消息结尾时，暂不使用条件 GET，并以活跃频率继续
+  拉取，直到助手消息投影出现；
+- `MessageList` 在 canonical 投影落后期间保留并覆盖本地 SSE 已完成的助手 Turn，同时抑制同一
+  `commandClientId` 的陈旧 `activeRun` 等待占位。
+
+回归测试至少覆盖“终态 cursor + user-only 快照强制全量追平”和“本地终态回复覆盖 user-only
+canonical 快照且不显示等待占位”两个场景。浏览器验收必须在不刷新页面的前提下观察运行气泡和
+最终回复出现，再刷新确认持久化投影一致。
+
+### 11.7 子代理早已结束，但运行坞仍显示 Running
+
+**症状**：右侧运行坞或输入框状态条长期显示一个或多个子代理运行中；运行归档和
+`sub_agent_runs` 已有 `completed/failed` 终态。
+
+先比对三份事实：
+
+1. `runs/{runId}/events.jsonl` 是否有 `subagent.run.*` 终态；
+2. `GET /api/sessions/{sessionId}/sub-agents` 是否返回终态与 `completedAt`；
+3. 浏览器 `subAgentReducer` 中同一 `subSessionId/runId` 是否仍为 `running`。
+
+长会话的 bootstrap 只携带最近 5000 条 `subagent.*` 事件，窗口可能从历史 run 中间开始，
+也可能完全排除旧 run 的终态。前端应只对本地 active run 使用会话状态快照做终态校正，不能
+让快照把已经终态的卡片重新降级为 running。成功终态在运行坞停留 12 秒，异常终态停留
+30 秒；历史与完整 `output.md` 仍可在检查器中查看。
+
+回归测试至少覆盖：事件快照只有 `run.started`、状态 API 已 `completed`；校正后卡片立即终态，
+且成功/异常均在各自停留窗口后从运行坞隐藏。
 
 ## 12. 修改后的最低验收
 

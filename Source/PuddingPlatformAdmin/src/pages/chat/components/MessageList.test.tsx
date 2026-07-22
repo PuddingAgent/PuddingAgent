@@ -1363,6 +1363,145 @@ describe('MessageList scroll performance', () => {
     expect(screen.getByText('new local prompt')).toBeTruthy();
   });
 
+  it('keeps a realtime terminal reply visible while the canonical projection is still user-only', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[
+          {
+            turnId: 'terminal-turn',
+            userMessage: {
+              id: 'terminal-user',
+              text: 'long task',
+              timestamp: 2_000,
+              status: 'success',
+            },
+            assistant: {
+              id: 'terminal-agent',
+              status: 'success',
+              timelineItems: [],
+              answerMarkdown: 'LIVE_TERMINAL_REPLY',
+              isStreaming: false,
+              renderMode: 'structured',
+            },
+          },
+        ]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'terminal-user',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '1970-01-01T00:00:02.000Z',
+              content: 'long task',
+              status: 'sent',
+              processItems: [],
+            },
+          ],
+          activeRun: {
+            runId: 'terminal-run',
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-a',
+            commandClientId: 'terminal-user',
+            status: 'running',
+            statusText: '正在输出',
+            summary: '',
+            eventCursor: 12,
+            outputSnapshot: { markdown: '', processItems: [] },
+            startedAt: '1970-01-01T00:00:02.000Z',
+            updatedAt: '1970-01-01T00:00:02.000Z',
+          },
+          eventCursor: 12,
+          updatedAt: '1970-01-01T00:00:02.000Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('long task')).toBeTruthy();
+    expect(screen.getByText('LIVE_TERMINAL_REPLY')).toBeTruthy();
+    expect(screen.queryByText('等待运行事件...')).toBeNull();
+  });
+
+  it('keeps a realtime running reply visible after a later system command clears activeRun', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[
+          {
+            turnId: 'long-running-turn',
+            userMessage: {
+              id: 'long-running-user',
+              text: 'audit the frontend',
+              timestamp: 2_000,
+              status: 'success',
+            },
+            assistant: {
+              id: 'long-running-agent',
+              status: 'executing',
+              timelineItems: [],
+              answerMarkdown: 'LIVE_RUNNING_PROGRESS',
+              isStreaming: true,
+              renderMode: 'structured',
+            },
+          },
+        ]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'long-running-user',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '1970-01-01T00:00:02.000Z',
+              content: 'audit the frontend',
+              status: 'sent',
+              processItems: [],
+            },
+            {
+              messageId: 'runtime-command-user',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '1970-01-01T00:00:03.000Z',
+              content: '/yolo',
+              status: 'succeeded',
+              processItems: [],
+            },
+            {
+              messageId: 'runtime-command-agent',
+              role: 'agent',
+              sourceId: 'agent-a',
+              sourceName: 'Agent A',
+              createdAt: '1970-01-01T00:00:03.001Z',
+              content: 'Runtime mode is now Yolo',
+              status: 'succeeded',
+              processItems: [],
+            },
+          ],
+          activeRun: null,
+          eventCursor: 13,
+          updatedAt: '1970-01-01T00:00:03.001Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('audit the frontend')).toBeTruthy();
+    expect(screen.getByText('LIVE_RUNNING_PROGRESS')).toBeTruthy();
+    expect(screen.getByText('Runtime mode is now Yolo')).toBeTruthy();
+    expect(screen.queryByText('等待运行事件...')).toBeNull();
+  });
+
   it('keeps a repeated pending prompt visible when older projection has the same text', () => {
     render(
       <MessageList

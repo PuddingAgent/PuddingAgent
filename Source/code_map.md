@@ -54,7 +54,7 @@ Source/
 | 文件 | 用途 |
 |------|------|
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
-| `Services/DirectLlmClient.cs` | 直连 LLM 客户端 |
+| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用 |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
 | `Services/LlmProfileResolver.cs` | 解析 Agent 的 LLM 配置 |
@@ -92,7 +92,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和 1800 秒子任务上限，以父 deadline 收紧并预留 120 秒收尾；仅允许有界 `smart_plan → smart_explore` 委派；共享 `SUMMARY/CHANGES/EVIDENCE/RISKS/BLOCKERS` 顶层合同，失败时保留完整子代理结果信封和稳定 ID |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；`smart_plan` 为 600 秒/48 轮只读规划，`smart_explore` 为 180 秒/32 轮只读探索，二者均禁止嵌套委派且使用显式只读工具白名单；共享五段顶层报告合同 |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
@@ -119,13 +119,28 @@ Source/
 ### Chat 前端 Viewport
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts` | Chat 页面组合与运行时协调入口；Phase 0 起不再内嵌模块级纯函数，P1-6 起委托 Workspace/Agent 初始化，并通过兼容导出维持现有调用方 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts` | Chat 页面组合与跨域协调入口（1,314 行）；P0/P1 业务逻辑已委托专用 hook，并通过兼容导出维持现有调用方 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useWorkspaceAgentSelection.ts` | Workspace/Agent 选择域：路由解析、列表加载、默认 Agent 创建、选择项投影、`creatingSession` 与一次性主会话重建抑制 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionCatalog.ts` | Session 目录与身份 ref 所有者：列表刷新、主/选中会话、重命名、删除、归档 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionSelection.ts` | Session 切换事务：取消旧请求、加载历史、恢复 replay、同步 route 与 unread；通过分组端口协调其他域 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionHistoryProjection.ts` | 持久消息到 `ChatTurn` 的投影与安全历史对账；完成后同步事件 cursor |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts` | delta/thinking 批处理缓冲与 timer 所有者 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 输入、服务端命令队列、steering 队列、快捷键与定时刷新 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useCompaction.ts` | Compaction lifecycle、手工 compact、生命周期 Turn 与压缩后会话切换 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageHistoryPagination.ts` | 历史分页状态、旧消息前插与 projector 绑定 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useWorkspaceNotifications.ts` | Workspace 通知 SSE、未读计数与通知流生命周期 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useChatModals.ts` / `useChatRuntimeEvents.ts` | Chat Modal 状态与有界 interaction runtime event 通道 |
 | `PuddingPlatformAdmin/src/pages/chat/types/chatStateTypes.ts` | Chat 主 hook 的共享常量、跨模块状态类型与 `UseChatStateReturn` 接口 |
 | `PuddingPlatformAdmin/src/pages/chat/utils/chatStateUtils.ts` | Chat 状态纯转换、格式化与 replay/cursor 判定的无 React 边界 |
 | `PuddingPlatformAdmin/src/pages/chat/utils/chatDiagnostics.ts` | ChatDiag 有界序列化、错误终态识别与可检索 Markdown 格式化、控制台记录和 sessionStorage 持久化边界；诊断失败不得影响聊天流程 |
+| `PuddingPlatformAdmin/src/pages/chat/utils/sessionEventReplay.ts` | 持久事件 wrapper 规范化与 replay page HTTP/404 边界 |
+| `PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts` | Agent conversation 查询缓存与轮询收敛；终态 cursor 暂时领先消息读模型、快照仍以 user 结尾时禁用条件 GET，避免相同 cursor 的 304 固化不完整投影 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
-| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
 | `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
 
 ---
@@ -184,7 +199,7 @@ Source/
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按稳定 `messageId/runId` 关联 `ChatMessages` |
-| `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人状态投影；状态与 cursor 均来自 canonical Conversation Event sequence |
+| `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |
 | `Services/Execution/SqliteExecutionLeaseStore.cs` | 原子 CAS 领取与恢复：BEGIN IMMEDIATE + fencing；释放/过期时事务恢复 Run、Command、Turn |
 | `Services/Execution/SqliteExecutionJournal.cs` | 统一 fenced 事件写入、原子终态和 Worker 基础设施失败兜底；终态从 Command 读取 assistant MessageId |
 | `Services/Execution/SqliteControlInbox.cs` | 控制消息只读/确认端口；写入只允许经 ExecutionControlService |
@@ -223,8 +238,8 @@ Source/
 | 文件 | 用途 |
 |------|------|
 | `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份 |
-| `PuddingPlatformAdmin/src/pages/chat/reducer/subAgentReducer.ts` | 子代理 UI 唯一纯投影：只接受带稳定 runId 的 ADR-060 canonical 事件，按 eventId 幂等折叠 bootstrap/replay/live 的 created/round/LLM/tool/terminal；拒绝会复活历史孤儿的旧事件 |
-| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；绝对定位覆盖、不占消息布局宽度，显示可复制 Session/Run ID、活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线；实时状态只消费 Conversation 事件投影，终态详情按 Run ID 懒加载归档 `output.md`，以独立固定高度区域显示返回主 Agent 的完整结果 |
+| `PuddingPlatformAdmin/src/pages/chat/reducer/subAgentReducer.ts` | 子代理 UI 唯一纯投影：按 eventId 幂等折叠 bootstrap/replay/live 的 created/round/LLM/tool/terminal，并允许 canonical session status 只把 active run 推进到终态；拒绝旧事件或快照把终态降级为 running |
+| `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；显示活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线；成功/异常终态分别停留 12/30 秒后自动隐藏，完整结果仍按 Run ID 从归档 `output.md` 懒加载 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts` | 纯消息虚拟项投影；只生成用户、主 Agent、系统消息和历史加载项，不投影子代理 run，避免多子代理调用污染文档流 |
 | `Services/MessageFabric/MessageSystem.cs` | 消息系统核心 |
 | `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room） |
@@ -416,11 +431,12 @@ Controller SessionRepository 是 Main Session 归属的事实源；Agent manifes
 ExecutionRunCoordinator（Turn 启动时冻结唯一 parent deadline）
   → Turn / Runtime / Tool contract 逐层透传（只能收紧）
 主 Agent 调用 smart_plan(task="...")
-  → SmartPlanTool（上限 1800s，父级预留 120s，AllowSubDelegation=true）
-    → Planner 子代理 capability whitelist 仅增加 smart_explore
-      → 可选调用 smart_explore(task="...")
-        → SmartExploreTool（DelegatedSubAgent，AllowSubDelegation=false）
-        → Explorer 子代理不能继续派生 Smart 子代理
+  → SmartPlanTool（上限 600s / 48 rounds，父级预留 120s）
+    → Planner 使用显式只读 capability whitelist
+    → 不写计划文件、不执行 shell、不继续派生 Smart 子代理
+主 Agent 或获授权子代理调用 smart_explore(task="...")
+  → SmartExploreTool（上限 180s / 32 rounds，DelegatedSubAgent）
+    → Explorer 使用同类只读 whitelist，不能继续派生子代理
   → 其他 Smart 工具保持 MainAgentOnly
   → PuddingToolRegistry 在执行边界强制 exposure + allow + depth 三项检查
 

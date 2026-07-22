@@ -156,23 +156,18 @@ public sealed class AgentRunProjectionService(
         SessionStatus sessionStatus,
         ConversationEventEntity? latestLifecycleEvent)
     {
-        if (sessionStatus == SessionStatus.Failed)
-            return "failed";
         if (sessionStatus == SessionStatus.Frozen)
             return "offline";
         if (latestLifecycleEvent is null)
-            return "idle";
-
-        if (latestLifecycleEvent.Type is
-            ConversationEventTypes.TurnFailed or
-            ConversationEventTypes.RunLeaseLost or
-            ConversationEventTypes.ErrorRecorded)
-        {
-            return "failed";
-        }
+            return sessionStatus == SessionStatus.Failed ? "failed" : "idle";
 
         if (IsTerminalEvent(latestLifecycleEvent.Type))
             return "idle";
+        if (sessionStatus == SessionStatus.Failed ||
+            latestLifecycleEvent.Type == ConversationEventTypes.ErrorRecorded)
+        {
+            return "failed";
+        }
         if (DateTimeOffset.UtcNow - ParseOccurredAt(latestLifecycleEvent.OccurredAt) > ActiveRunStaleAfter)
             return "idle";
 

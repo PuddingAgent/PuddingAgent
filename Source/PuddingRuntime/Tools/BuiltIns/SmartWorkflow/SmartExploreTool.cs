@@ -33,7 +33,12 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     }
 
     protected override string RoleName => "explorer";
-    protected override int DefaultMaxRounds => 150;
+    protected override int DefaultTimeoutSeconds => 3 * 60;
+    protected override int DefaultMaxRounds => 32;
+    protected override string? AllowedTools =>
+        "file_read,file_search,code_outline,search_grep,list_dir,project_map," +
+        "code_explore,code_summary,code_symbol_search,code_callers,code_callees," +
+        "code_impact,query_session_logs,query_sessions,grep_memory,search_memory,agent_status";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartExploreArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -88,7 +93,11 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
         sb.AppendLine("```");
         sb.AppendLine("SUMMARY: <1-3 sentence answer. Start with 'found' or 'not_found'>");
         sb.AppendLine("CHANGES: none (explorer is read-only)");
-        sb.AppendLine("EVIDENCE: <list key findings, one per line. Include file paths and line numbers.>");
+        sb.AppendLine("EVIDENCE:");
+        sb.AppendLine("  DIRECT_ANSWER: <answer the exploration question>");
+        sb.AppendLine("  RESPONSIBILITY: <what each relevant artifact owns>");
+        sb.AppendLine("  RELATIONSHIPS: <important callers, callees, and data flow>");
+        sb.AppendLine("  FINDINGS: <key findings with file paths and line numbers>");
         sb.AppendLine("RISKS: none, or <what was not verified and why>");
         sb.AppendLine("BLOCKERS: none, or <exact blocker>");
         sb.AppendLine("```");

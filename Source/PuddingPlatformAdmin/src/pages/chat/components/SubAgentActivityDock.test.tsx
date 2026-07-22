@@ -124,6 +124,36 @@ describe('SubAgentActivityDock', () => {
     expect(screen.queryByTestId('subagent-dock-item-run-done')).toBeNull();
   });
 
+  it('automatically removes an error completion while retaining it in the inspector data', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen={false}
+        onInspectorOpenChange={jest.fn()}
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          failed: {
+            turnId: 'failed',
+            runId: 'run-failed',
+            subSessionId: 'session-sub-failed',
+            parentSessionId: 'session',
+            status: 'failed',
+            phase: 'completed',
+            taskSummary: 'failed',
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            completedAt: Date.parse('2026-07-19T00:00:09.000Z'),
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('subagent-dock-item-run-failed')).toBeTruthy();
+    act(() => {
+      jest.advanceTimersByTime(31_000);
+    });
+    expect(screen.queryByTestId('subagent-dock-item-run-failed')).toBeNull();
+  });
+
   it('summarizes a role wrapper instead of exposing the complete prompt', () => {
     render(
       <SubAgentActivityDock

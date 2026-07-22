@@ -235,6 +235,58 @@ public sealed class AgentChatApiControllerTests
     }
 
     [TestMethod]
+    public async Task AgentStatusEndpoint_MapsFailedTurnTerminalToIdle()
+    {
+        var agentId = await CreateWorkspaceAgentAsync("agent-failed-terminal");
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = agentId,
+            agentTemplateId = "global:general-assistant",
+            title = "Failed Terminal Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var api = scope.ServiceProvider.GetRequiredService<PlatformApiClient>();
+            await api.UpdateSessionAsync(
+                session!.SessionId,
+                new UpdateSessionRequest { Status = SessionStatus.Failed },
+                CancellationToken.None);
+
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"partial\"}",
+                    now,
+                    runId: "run-status-failed"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.TurnFailed,
+                    "{\"message\":\"provider transport failed\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-status-failed"));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync("/api/workspaces/default/agents/status");
+        response.EnsureSuccessStatusCode();
+
+        var list = await response.Content.ReadFromJsonAsync<List<AgentStatusProjectionDto>>(JsonOpts);
+        var projection = list!.Single(item => item.AgentId == agentId);
+        Assert.AreEqual("idle", projection.Status);
+    }
+
+    [TestMethod]
     public async Task AgentStatusEndpoint_IgnoresUsageEventsAfterTerminalExecution()
     {
         var agentId = await CreateWorkspaceAgentAsync("agent-terminal-usage-events");

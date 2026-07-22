@@ -73,6 +73,13 @@ export interface SubAgentRunView {
 
 export type SubAgentRunMap = Record<string, SubAgentRunView>;
 
+export interface SubAgentStatusSnapshot {
+  subSessionId: string;
+  status: string;
+  completedAt?: string;
+  resultSummary?: string;
+}
+
 export interface SubAgentConversationEvent {
   type: string;
   occurredAt?: unknown;
@@ -80,6 +87,62 @@ export interface SubAgentConversationEvent {
   timestamp?: unknown;
   payload?: unknown;
   [key: string]: unknown;
+}
+
+const terminalSnapshotStatuses = new Set<SubAgentRunStatus>([
+  'completed',
+  'failed',
+  'cancelled',
+  'timed_out',
+  'interrupted',
+]);
+
+/**
+ * Corrects an event-derived active run with the canonical session status.
+ * A bounded event bootstrap can start inside an old run and omit its terminal
+ * event; the session status endpoint is the durable authority for that case.
+ */
+export function reconcileSubAgentRunStatuses(
+  runs: SubAgentRunMap,
+  snapshots: SubAgentStatusSnapshot[],
+): SubAgentRunMap {
+  const bySubSessionId = new Map(
+    snapshots.map((snapshot) => [snapshot.subSessionId, snapshot]),
+  );
+  let changed = false;
+  const next = { ...runs };
+
+  for (const [runId, run] of Object.entries(runs)) {
+    if (run.status !== 'created' && run.status !== 'running') continue;
+    const snapshot = bySubSessionId.get(run.subSessionId);
+    const status = snapshot?.status as SubAgentRunStatus | undefined;
+    if (!snapshot || !status || !terminalSnapshotStatuses.has(status)) continue;
+
+    const parsedCompletedAt = snapshot.completedAt
+      ? Date.parse(snapshot.completedAt)
+      : Number.NaN;
+    const completedAt = Number.isFinite(parsedCompletedAt)
+      ? parsedCompletedAt
+      : run.lastActivityAt;
+    next[runId] = {
+      ...run,
+      status,
+      phase: 'completed',
+      completedAt,
+      lastActivityAt: Math.max(run.lastActivityAt, completedAt),
+      output:
+        status === 'completed'
+          ? (snapshot.resultSummary ?? run.output)
+          : run.output,
+      error:
+        status === 'completed'
+          ? run.error
+          : (snapshot.resultSummary ?? run.error),
+    };
+    changed = true;
+  }
+
+  return changed ? next : runs;
 }
 
 const read = (event: SubAgentConversationEvent, ...keys: string[]): unknown => {

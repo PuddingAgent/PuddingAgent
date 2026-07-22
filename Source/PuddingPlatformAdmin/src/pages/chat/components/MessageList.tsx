@@ -414,21 +414,92 @@ const hasProjectedUserTurn = (
   const localTimestamp = localTurn.userMessage.timestamp;
   return projectedTurns.some(
     (turn) =>
-      turn.userMessage.text.trim() === localText &&
-      turn.userMessage.timestamp >=
-        localTimestamp - SERVER_PROJECTION_CLOCK_SKEW_MS,
+      turn.userMessage.id === localTurn.userMessage.id ||
+      (turn.userMessage.text.trim() === localText &&
+        Math.abs(turn.userMessage.timestamp - localTimestamp) <=
+          SERVER_PROJECTION_CLOCK_SKEW_MS),
   );
 };
 
-const mergePendingLocalTurns = (
+const mergeLocalTurnsAwaitingProjection = (
   projectedTurns: ChatTurn[],
   localTurns: ChatTurn[],
 ): ChatTurn[] => {
-  const pending = localTurns.filter(
+  let merged = projectedTurns;
+
+  for (const localTurn of localTurns) {
+    const projectedUserIndex = merged.findIndex((projectedTurn) =>
+      hasProjectedUserTurn([projectedTurn], localTurn),
+    );
+
+    if (isPendingLocalTurn(localTurn)) {
+      if (projectedUserIndex < 0) {
+        merged = [...merged, localTurn];
+        continue;
+      }
+
+      const projectedTurn = merged[projectedUserIndex];
+      const projectedAssistantIsTerminal =
+        Boolean(projectedTurn.assistant.answerMarkdown.trim()) &&
+        !isPendingLocalTurn(projectedTurn);
+      if (!projectedAssistantIsTerminal) {
+        // Materializing the user message must not hide the live local assistant
+        // state. This matters when a later system command temporarily becomes
+        // the newest canonical projection and activeRun is unavailable even
+        // though the original Agent Turn (and its subagents) is still running.
+        merged = merged.map((candidate, index) =>
+          index === projectedUserIndex
+            ? {
+                ...candidate,
+                turnId: localTurn.turnId,
+                source: localTurn.source ?? candidate.source,
+                assistant: localTurn.assistant,
+              }
+            : candidate,
+        );
+      }
+      continue;
+    }
+
+    const localAnswer = localTurn.assistant.answerMarkdown.trim();
+    if (!localAnswer || projectedUserIndex < 0) continue;
+
+    const terminalAlreadyProjected = merged.some(
+      (projectedTurn) =>
+        projectedTurn.assistant.answerMarkdown.trim() === localAnswer,
+    );
+    if (terminalAlreadyProjected) continue;
+
+    // The SSE projection is authoritative for the just-completed local Turn
+    // while the canonical conversation read model is still user-only. Overlay
+    // the terminal assistant state on the matching projected user Turn instead
+    // of hiding it until a refresh materializes the assistant message row.
+    merged = merged.map((projectedTurn, index) =>
+      index === projectedUserIndex
+        ? {
+            ...projectedTurn,
+            turnId: localTurn.turnId,
+            source: localTurn.source ?? projectedTurn.source,
+            assistant: localTurn.assistant,
+          }
+        : projectedTurn,
+    );
+  }
+
+  return merged;
+};
+
+const isActiveRunCoveredByLocalTerminal = (
+  activeRun: ActiveRunView | null,
+  localTurns: ChatTurn[],
+): boolean => {
+  if (!activeRun?.commandClientId) return false;
+  return localTurns.some(
     (turn) =>
-      isPendingLocalTurn(turn) && !hasProjectedUserTurn(projectedTurns, turn),
+      turn.userMessage.id === activeRun.commandClientId &&
+      !isPendingLocalTurn(turn) &&
+      Boolean(turn.assistant.answerMarkdown.trim()),
   );
-  return pending.length > 0 ? [...projectedTurns, ...pending] : projectedTurns;
 };
 
 const ACTIVE_RUN_PENDING_ATTACH_SKEW_MS = 1_000;
@@ -577,9 +648,15 @@ const MessageList: React.FC<MessageListProps> = ({
   );
   const visibleTurns = useMemo(() => {
     if (!hasProjectedConversation) return turns;
-    const merged = mergeActiveRunIntoTurns(
-      mergePendingLocalTurns(projectedTurns, turns),
+    const activeRunForProjection = isActiveRunCoveredByLocalTerminal(
       activeRun,
+      turns,
+    )
+      ? null
+      : activeRun;
+    const merged = mergeActiveRunIntoTurns(
+      mergeLocalTurnsAwaitingProjection(projectedTurns, turns),
+      activeRunForProjection,
       selectedAgent?.name || 'Pudding',
       activeRunMarkdown,
     );

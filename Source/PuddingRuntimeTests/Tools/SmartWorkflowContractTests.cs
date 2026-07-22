@@ -77,12 +77,16 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        Assert.AreEqual(150, document.RootElement.GetProperty("max_rounds").GetInt32());
-        Assert.AreEqual(1800, document.RootElement.GetProperty("timeout_seconds").GetInt32());
-        Assert.IsTrue(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
+        Assert.AreEqual(48, document.RootElement.GetProperty("max_rounds").GetInt32());
+        Assert.AreEqual(600, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
         Assert.AreEqual(0, document.RootElement.GetProperty("depth").GetInt32());
         Assert.AreEqual(2, document.RootElement.GetProperty("max_depth").GetInt32());
-        StringAssert.Contains(document.RootElement.GetProperty("tools").GetString(), "smart_explore");
+        var planTools = document.RootElement.GetProperty("tools").GetString();
+        StringAssert.Contains(planTools, "file_read");
+        Assert.IsFalse(planTools!.Contains("file_write", StringComparison.Ordinal));
+        Assert.IsFalse(planTools.Contains("shell", StringComparison.Ordinal));
+        Assert.IsFalse(planTools.Contains("smart_explore", StringComparison.Ordinal));
         Assert.AreEqual(SubAgentExposure.MainAgentOnly, tool.Descriptor.SubAgentExposure);
     }
 
@@ -111,8 +115,14 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        Assert.AreEqual(1800, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.AreEqual(180, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.AreEqual(32, document.RootElement.GetProperty("max_rounds").GetInt32());
         Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
+        var exploreTools = document.RootElement.GetProperty("tools").GetString();
+        StringAssert.Contains(exploreTools, "file_read");
+        Assert.IsFalse(exploreTools!.Contains("file_write", StringComparison.Ordinal));
+        Assert.IsFalse(exploreTools.Contains("shell", StringComparison.Ordinal));
+        Assert.IsFalse(exploreTools.Contains("spawn_sub_agent", StringComparison.Ordinal));
         Assert.AreEqual(SubAgentExposure.DelegatedSubAgent, tool.Descriptor.SubAgentExposure);
         var task = document.RootElement.GetProperty("task").GetString();
         Assert.IsNotNull(task);
@@ -178,10 +188,14 @@ public sealed class SmartWorkflowContractTests
                 200,
                 document.RootElement.GetProperty("max_rounds").GetInt32(),
                 $"{testCase.Tool.Descriptor.ToolId} exceeds spawn_sub_agent's max_rounds contract.");
-            Assert.AreEqual(
-                1800,
-                document.RootElement.GetProperty("timeout_seconds").GetInt32(),
-                $"{testCase.Tool.Descriptor.ToolId} must use the shared 30-minute default.");
+            var timeoutSeconds = document.RootElement.GetProperty("timeout_seconds").GetInt32();
+            if (testCase.Tool.Descriptor.ToolId == "smart_plan")
+                Assert.AreEqual(600, timeoutSeconds);
+            else
+                Assert.AreEqual(
+                    1800,
+                    timeoutSeconds,
+                    $"{testCase.Tool.Descriptor.ToolId} must use the shared default.");
         }
     }
 

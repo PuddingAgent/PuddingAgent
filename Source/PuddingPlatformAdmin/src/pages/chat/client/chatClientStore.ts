@@ -22,6 +22,19 @@ export interface AgentChatClientSnapshot {
   error: string | null;
 }
 
+/**
+ * The event cursor can reach a terminal event before the assistant message row
+ * becomes visible in the conversation read model.  A snapshot ending with a
+ * user message is therefore not safe to treat as fully caught up, even when
+ * its cursor matches the Agent status cursor.
+ */
+export const conversationNeedsProjectionCatchUp = (
+  conversation: AgentConversationView | null | undefined,
+): boolean => {
+  const messages = conversation?.messages ?? [];
+  return messages.length > 0 && messages[messages.length - 1].role === 'user';
+};
+
 export function createAgentChatClientStore(input: {
   cache: AgentChatLocalCache;
   api: AgentChatApiPort;
@@ -318,12 +331,15 @@ export function createAgentChatClientStore(input: {
         (s) => s.agentId === agentId,
       );
       const existingConv = snapshot.conversation;
+      const projectionCatchUpPending =
+        conversationNeedsProjectionCatchUp(existingConv);
       if (
         matchingStatus &&
         existingConv &&
         matchingStatus.eventCursor === existingConv.eventCursor &&
         !matchingStatus.activeRunId &&
-        !existingConv.activeRun
+        !existingConv.activeRun &&
+        !projectionCatchUpPending
       ) {
         recordPerfStep(
           'agent.selectedSync',
@@ -346,7 +362,13 @@ export function createAgentChatClientStore(input: {
       const syncStartedAt = performance.now();
       try {
         const apiStartedAt = performance.now();
-        const knownCursor = snapshot.conversation?.eventCursor;
+        // Do not use conditional GET while the read model is visibly behind
+        // the terminal event. A cursor-only 304 would otherwise make the
+        // incomplete user-only snapshot permanent until a page refresh.
+        const knownCursor =
+          projectionCatchUpPending || existingConv?.activeRun
+            ? undefined
+            : existingConv?.eventCursor;
         const fresh = await input.api.getConversation(
           workspaceId,
           agentId,

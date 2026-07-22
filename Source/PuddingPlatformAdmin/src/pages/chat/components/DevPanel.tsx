@@ -530,10 +530,6 @@ const DevPanel: React.FC<DevPanelProps> = ({
                   <PerfMetricsGrid
                     perfSummary={perfSummary}
                   />
-                          : 'normal'
-                      }
-                    />
-                  </div>
 
                   <CountsWorkflowPanel
                     perfSummary={perfSummary}

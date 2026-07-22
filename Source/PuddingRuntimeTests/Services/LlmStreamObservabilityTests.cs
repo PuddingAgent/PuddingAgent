@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -11,6 +13,94 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class LlmStreamObservabilityTests
 {
+    [TestMethod]
+    public async Task ChatStreamAsync_WhenTransportEndsBeforeFirstDelta_RetriesAndCompletes()
+    {
+        var telemetry = new RecordingTelemetrySink();
+        var handler = new FailOnceThenSseHandler();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(maxRetries: 1, retryDelaySeconds: 0),
+            NullLogger<DirectLlmClient>.Instance,
+            telemetrySink: telemetry);
+        var deltas = new List<StreamDelta>();
+
+        await foreach (var delta in client.ChatStreamAsync(
+                           "default",
+                           "session-retry",
+                           "template-1",
+                           [new ChatMessage(ChatRole.User, "hello")],
+                           llmConfig: new LlmConfig
+                           {
+                               Endpoint = "https://provider.test/v1",
+                               ApiKey = "test-key",
+                               ModelId = "test-model",
+                           }))
+        {
+            deltas.Add(delta);
+        }
+
+        Assert.AreEqual(2, handler.RequestCount);
+        Assert.HasCount(1, deltas);
+        Assert.AreEqual("recovered", deltas[0].ContentDelta);
+        Assert.IsTrue(telemetry.Metrics.Any(metric =>
+            metric.Name == "llm.chat_stream" && metric.Status == TelemetryMetricStatuses.Retried));
+        Assert.AreEqual(
+            TelemetryMetricStatuses.Succeeded,
+            telemetry.Metrics.Last(metric => metric.Name == "llm.chat_stream").Status);
+    }
+
+    [TestMethod]
+    public async Task ChatStreamAsync_WhenTransportEndsAfterFirstDelta_DoesNotRetry()
+    {
+        var handler = new FailAfterFirstDeltaHandler();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(maxRetries: 2, retryDelaySeconds: 0),
+            NullLogger<DirectLlmClient>.Instance);
+        var deltas = new List<StreamDelta>();
+
+        await Assert.ThrowsExactlyAsync<HttpIOException>(async () =>
+        {
+            await foreach (var delta in client.ChatStreamAsync(
+                               "default",
+                               "session-no-retry",
+                               "template-1",
+                               [new ChatMessage(ChatRole.User, "hello")],
+                               llmConfig: new LlmConfig
+                               {
+                                   Endpoint = "https://provider.test/v1",
+                                   ApiKey = "test-key",
+                                   ModelId = "test-model",
+                               }))
+            {
+                deltas.Add(delta);
+            }
+        });
+
+        Assert.AreEqual(1, handler.RequestCount);
+        Assert.HasCount(1, deltas);
+        Assert.AreEqual("partial", deltas[0].ContentDelta);
+    }
+
+    [TestMethod]
+    public void IsTransientError_DistinguishesTransportFailuresFromProtocolErrors()
+    {
+        var responseEnded = new HttpIOException(HttpRequestError.ResponseEnded, "response ended");
+
+        Assert.IsTrue(DirectLlmClient.IsTransientError(responseEnded, isTimeout: false));
+        Assert.IsTrue(DirectLlmClient.IsTransientError(
+            new HttpRequestException("transport", responseEnded),
+            isTimeout: false));
+        Assert.IsTrue(DirectLlmClient.IsTransientError(
+            new HttpRequestException("server", inner: null, HttpStatusCode.ServiceUnavailable),
+            isTimeout: false));
+        Assert.IsFalse(DirectLlmClient.IsTransientError(
+            new HttpRequestException("bad request", inner: null, HttpStatusCode.BadRequest),
+            isTimeout: false));
+        Assert.IsFalse(DirectLlmClient.IsTransientError(new JsonException("invalid SSE"), isTimeout: false));
+    }
+
     [TestMethod]
     public async Task ChatStreamAsync_WhenProviderNeverYieldsChunk_RecordsFirstChunkWaitMetric()
     {
@@ -122,6 +212,101 @@ public sealed class LlmStreamObservabilityTests
         public HttpClient CreateClient(string name) => client;
     }
 
+    private sealed class FailOnceThenSseHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        public int RequestCount => _requestCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _requestCount) == 1)
+            {
+                return Task.FromException<HttpResponseMessage>(
+                    new HttpRequestException(
+                        "The response ended prematurely.",
+                        new HttpIOException(HttpRequestError.ResponseEnded, "ResponseEnded")));
+            }
+
+            const string sse =
+                "data: {\"choices\":[{\"delta\":{\"content\":\"recovered\"},\"finish_reason\":null}]}\n\n" +
+                "data: [DONE]\n\n";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+            });
+        }
+    }
+
+    private sealed class FailAfterFirstDeltaHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        public int RequestCount => _requestCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _requestCount);
+            const string firstDelta =
+                "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\n";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new FailAfterPayloadStream(Encoding.UTF8.GetBytes(firstDelta))),
+            });
+        }
+    }
+
+    private sealed class FailAfterPayloadStream(byte[] payload) : Stream
+    {
+        private bool _payloadRead;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_payloadRead)
+                throw new HttpIOException(HttpRequestError.ResponseEnded, "ResponseEnded");
+
+            _payloadRead = true;
+            var copied = Math.Min(count, payload.Length);
+            payload.AsSpan(0, copied).CopyTo(buffer.AsSpan(offset, copied));
+            return copied;
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_payloadRead)
+            {
+                return ValueTask.FromException<int>(
+                    new HttpIOException(HttpRequestError.ResponseEnded, "ResponseEnded"));
+            }
+
+            _payloadRead = true;
+            var copied = Math.Min(buffer.Length, payload.Length);
+            payload.AsMemory(0, copied).CopyTo(buffer);
+            return ValueTask.FromResult(copied);
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private sealed class HangingStreamHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -195,7 +380,9 @@ public sealed class LlmStreamObservabilityTests
 
     private sealed class TestLlmConfigService(
         int streamTimeoutSeconds = 300,
-        int maxConcurrentRequests = 50) : ILlmConfigService
+        int maxConcurrentRequests = 50,
+        int maxRetries = 2,
+        int retryDelaySeconds = 1) : ILlmConfigService
     {
         public IReadOnlyList<LlmProviderInfo> GetEnabledProviders() =>
         [
@@ -238,6 +425,8 @@ public sealed class LlmStreamObservabilityTests
         {
             StreamTimeoutSeconds = streamTimeoutSeconds,
             MaxConcurrentRequests = maxConcurrentRequests,
+            MaxRetries = maxRetries,
+            RetryDelaySeconds = retryDelaySeconds,
         };
 
         public LlmProviderStrategy? GetModelStrategy(string providerId, string modelId) => null;

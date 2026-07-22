@@ -21,6 +21,7 @@ import {
 } from '@/utils/workspaceNavigation';
 import { shouldIgnoreAgentContactClick } from './agentMainSessionSelection';
 import { getAgentConversation, listAgentStatuses } from './client/agentChatApi';
+import { conversationNeedsProjectionCatchUp } from './client/chatClientStore';
 import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
 import ChatLayout from './components/ChatLayout';
@@ -151,6 +152,7 @@ const ChatPageContent: React.FC = () => {
       return;
     const isActive =
       projectedConversation?.activeRun ||
+      conversationNeedsProjectionCatchUp(projectedConversation) ||
       selectedAgentStatus?.status === 'running' ||
       selectedAgentStatus?.status === 'waiting';
     const intervalMs = isActive ? 1200 : 5000;

@@ -6,28 +6,27 @@
 
 IMPLEMENTATION_PROGRESS:
   UPDATED_AT: 2026-07-21
-  CURRENT_MILESTONE: P1-6 useWorkspaceAgentSelection complete; P1-7 next
+  CURRENT_MILESTONE: P1 useChatState modularization complete; P2 pending
   COMPLETED: |
-    - P0-1: 将 useChatState.ts 的模块级纯函数实现接入 utils/chatStateUtils.ts。
-    - P0-2: 将共享类型、常量与 UseChatStateReturn 接口迁移到 types/chatStateTypes.ts。
-    - P0-3: 将 ChatDiag 序列化与持久化逻辑迁移到 utils/chatDiagnostics.ts。
-    - 保留 useChatState.ts 原有函数/类型导出，避免现有调用方和测试导入断裂。
-    - 新增纯函数与诊断模块测试，直接验证新模块边界。
-    - 补齐 error diagnostic 格式化、终态识别和气泡落盘契约，恢复 Chat 定向基线。
-    - 修复 useChatState.selection 测试的 api 全模块 mock 漂移，空历史 active replay 路径恢复通过。
-    - P1-6: 将路由解析、Workspace/Agent 加载、默认 Agent 创建、选择项 memo、creatingSession 与主会话重建抑制器提取到 hooks/useWorkspaceAgentSelection.ts。
-    - useChatState.ts 从 6,209 行降至 5,156 行；UseChatStateReturn 保持不变。
+    - P0-1/P0-2/P0-3: 纯函数、共享类型/常量、诊断工具已迁出，并保留 useChatState 兼容导出。
+    - P1-1: Session 域拆为 useSessionCatalog、useSessionSelection 与 useSessionHistoryProjection。
+    - P1-2: SSE 域按生命周期进一步拆为 useSessionEventBuffers、useSessionEventConnection、useSessionEventReplay 与 useSessionEventProjection；持久事件规范化/分页请求迁到 utils/sessionEventReplay.ts。
+    - P1-3: 发送事务迁到 useMessageSend；输入、服务端队列与 steering 队列迁到 useMessageInteractionQueue。
+    - P1-4/P1-5: Compaction 与 Workspace 通知分别迁到 useCompaction、useWorkspaceNotifications。
+    - P1-6/P1-7/P1-8: Workspace/Agent、Modal、Runtime Event 分别迁到专用 hook。
+    - 历史分页迁到 useMessageHistoryPagination；useChatState 只保留跨域组合、兼容导出与少量页面级协调。
+    - 复杂 hook 使用分组 port object 和 bindable callback ref 连接，避免 8-15 个散乱参数，也避免额外状态仓库。
+    - useChatState.ts 从审计基线 6,209 行降至 1,314 行；UseChatStateReturn 与后端 API 契约保持不变。
   VERIFICATION_SNAPSHOT: |
-    - Chat 定向集: 63/63 passed（从 60/63 恢复）。
-    - Chat 定向集 + Phase 0/P1-6 新模块测试: 73/73 passed。
-    - 全量 Jest 未全绿；only-failures 稳定为 5 suites / 9 tests：IntentConsole、InputArea、MessageList、TokenStats 与 agentTemplateOwnership 的既有 UI/日期/文案基线，均未触及本轮文件。
+    - Chat 重构定向集: 16 suites / 94 tests passed。
     - npm run build: passed。
-    - P1-6 与诊断模块的 Biome check: passed；主 hook 仍有 1 error / 6 warnings / 1 info 的既有 lint 基线。
-    - 全量 tsc 仍有仓库基线错误；本次筛选只命中 useChatState.updateSystemTurn 的 2 条既有类型错误，新 hook 与诊断模块无新增错误。
-    - 浏览器刷新验证: 默认工作空间/默认助手恢复、Workspace 下拉选中正确、控制台无 error；当前数据仅 1 个 Agent，未执行跨 Agent 点击。
+    - 本轮核心组合/发送/历史/SSE 投影模块 Biome check 无 error。
+    - 全量 tsc 仍有仓库其他页面与 fixture 的既有错误；筛选本轮 useChatState 及新模块无命中。
+    - Jest 完成后仍报告既有 open-handle 提示，但退出码为 0；本轮未把它误记为断言失败。
+    - 全量 Jest 的旧快照为 5 suites / 9 tests 的无关 UI/日期/文案基线；本轮未重跑该噪声集。
   NEXT: |
-    - 按推荐顺序开始 P1-7 useChatModals，保持 public hook 返回契约不变。
-    - P1-7 后继续 P1-8 useChatRuntimeEvents。
+    - P2-1: 在不覆盖当前 DevPanel 用户改动的前提下，单独冻结边界后拆分 DevPanel tabs。
+    - P2-2/P2-3: 完成 residual styles 迁移，再评估 Chat Context 分层。
 
 ---
 
@@ -111,6 +110,12 @@ CHANGES:
       Alternatives Rejected:
         - 保持 props drilling: 随着功能增加，props 链会越来越长
         - 引入全局状态管理库: 过度设计，React Context 足够
+
+    - ADR-062-005: 复杂生命周期使用分组端口与可绑定回调
+      Context: applySessionEvent、sendMessage、handleSelectSession 等函数各自依赖 8-15 个 state/ref/callback；直接平铺参数只会把闭包复杂度改写成参数复杂度。
+      Decision: 按 identity、turns、stream、catalog、feedback 等职责定义 port object；遇到初始化顺序环时，以稳定 callback ref 提供 bind 接口。SSE 不再收拢为单个 1,200 行 hook，而拆成 buffers、connection、replay、projection 四个所有者。
+      Rationale: 端口对象显式暴露跨域依赖，保留 React 状态的单一所有者；binder 只连接行为，不复制 state，不引入第三套 store。
+      Guardrails: binder 必须保存到稳定 ref，调用方每次 render 同步绑定；不得把事件历史放入 Channel/ref 充当持久事实；复杂协调路径必须由 useChatState.selection 集成测试覆盖。
 
   DETAILED_TASKS:
     - ID: P0-1

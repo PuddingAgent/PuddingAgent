@@ -21,6 +21,7 @@ describe('canonical Turn identity convergence', () => {
           timelineItems: [],
           answerMarkdown: '',
           isStreaming: true,
+          renderMode: 'structured',
         },
       },
     ];

@@ -59,7 +59,10 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         var json = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"LLM API error ({response.StatusCode}): {json}");
+            throw new HttpRequestException(
+                $"LLM API error ({response.StatusCode}): {json}",
+                inner: null,
+                response.StatusCode);
 
         return ParseResponse(json);
     }
@@ -84,7 +87,10 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         if (!response.IsSuccessStatusCode)
         {
             var errorJson = await response.Content.ReadAsStringAsync(ct);
-            throw new HttpRequestException($"LLM API error ({response.StatusCode}): {errorJson}");
+            throw new HttpRequestException(
+                $"LLM API error ({response.StatusCode}): {errorJson}",
+                inner: null,
+                response.StatusCode);
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -207,6 +213,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     {
         var messagesArray = new JsonArray();
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
+        // K3 compat: read compat config once before message loop
+        var compat = Compat;
 
         foreach (var msg in protocolSafeMessages)
         {
@@ -227,9 +235,11 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             else
                 msgObj["content"] = (JsonNode?)null;
 
-            // DeepSeek Reasoner: include reasoning_content in assistant messages
+            // DeepSeek Reasoner / K3 compat: include reasoning_content in messages
             if (msg.ReasoningContent is not null)
                 msgObj["reasoning_content"] = msg.ReasoningContent;
+            else if (compat?.RequiresReasoningContentInToolMessages == true && msg.Role == ChatRole.Assistant && msg.ToolCalls is { Count: > 0 })
+                msgObj["reasoning_content"] = ""; // K3 requires reasoning_content when tool_calls present
 
             if (msg.ToolCallId is not null)
                 msgObj["tool_call_id"] = msg.ToolCallId;
@@ -267,13 +277,16 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         {
             // OpenAI-compatible providers only emit final usage in streaming mode
             // when explicitly requested via stream_options.include_usage.
-            requestObj["stream_options"] = new JsonObject
+            // K3 compat: skip when provider does not support usage in streaming
+            if (compat?.SupportsUsageInStreaming != false)
             {
-                ["include_usage"] = true
-            };
+                requestObj["stream_options"] = new JsonObject
+                {
+                    ["include_usage"] = true
+                };
+            }
         }
 
-        var compat = Compat;
         string maxTokensKey = compat?.MaxTokensField ?? "max_tokens";
 
         if (options.Temperature.HasValue)

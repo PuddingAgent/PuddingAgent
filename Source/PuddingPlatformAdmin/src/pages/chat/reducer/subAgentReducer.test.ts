@@ -1,5 +1,6 @@
 import {
   projectSubAgentRunsToCards,
+  reconcileSubAgentRunStatuses,
   reduceSubAgentRunEvent,
   type SubAgentRunMap,
 } from './subAgentReducer';
@@ -148,5 +149,35 @@ describe('subAgentReducer', () => {
     );
 
     expect(state).toEqual({});
+  });
+
+  it('reconciles an active event snapshot with the canonical session terminal status', () => {
+    const running = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-started',
+        type: 'subagent.run.started',
+        occurredAt: '2026-07-19T00:00:00Z',
+        run_id: 'run-stale',
+        sub_agent_id: 'session-sub-stale',
+        task_summary: 'stale run',
+      },
+    );
+
+    const reconciled = reconcileSubAgentRunStatuses(running, [
+      {
+        subSessionId: 'session-sub-stale',
+        status: 'completed',
+        completedAt: '2026-07-19T00:01:00Z',
+        resultSummary: 'canonical result',
+      },
+    ]);
+
+    expect(reconciled['run-stale']).toMatchObject({
+      status: 'completed',
+      phase: 'completed',
+      completedAt: Date.parse('2026-07-19T00:01:00Z'),
+      output: 'canonical result',
+    });
   });
 });

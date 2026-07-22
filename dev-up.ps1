@@ -17,9 +17,7 @@ param(
     [switch]$Status,
     [switch]$Restart,
     [switch]$Rebuild,
-    [switch]$NoInstall,
-    [switch]$GuardOn,
-    [switch]$GuardOff
+    [switch]$NoInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,8 +30,6 @@ if ($Status) { $ArgsList += "--status" }
 if ($Restart) { $ArgsList += "--restart" }
 if ($Rebuild) { $ArgsList += "--rebuild" }
 if ($NoInstall) { $ArgsList += "--no-install" }
-if ($GuardOn) { $ArgsList += "--guard-on" }
-if ($GuardOff) { $ArgsList += "--guard-off" }
 
 python (Join-Path $Root "dev-up.py") @ArgsList
 exit $LASTEXITCODE
