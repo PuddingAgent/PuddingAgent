@@ -923,7 +923,7 @@ builder.Services.AddSingleton<ILlmResolver>(sp =>
 
 builder.Services.AddHttpClient("DirectLlm", client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(300);
+    client.Timeout = TimeSpan.FromHours(2);
 });
 
 builder.Services.AddHttpClient("HttpFetchSkill", client =>

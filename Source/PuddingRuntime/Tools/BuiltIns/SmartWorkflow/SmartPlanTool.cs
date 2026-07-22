@@ -29,8 +29,8 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 
     protected override string RoleName => "planner";
-    protected override int DefaultTimeoutSeconds => 10 * 60;
-    protected override int DefaultMaxRounds => 48;
+    protected override int DefaultTimeoutSeconds => 120 * 60;
+    protected override int DefaultMaxRounds => 96;
 
     /// <summary>Planner is read-only. The descriptor and runtime capability set must agree.</summary>
     protected override string? AllowedTools =>

@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services.Tools;
 public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> where TArgs : class, new()
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
-    protected const int SmartWorkflowTimeoutSeconds = 30 * 60;
+    protected const int SmartWorkflowTimeoutSeconds = 120 * 60;
     protected const int ParentFinalizationReserveSeconds = 2 * 60;
     private const int MinimumDetailedReportLength = 80;
     private static readonly string[] RequiredReportSections =

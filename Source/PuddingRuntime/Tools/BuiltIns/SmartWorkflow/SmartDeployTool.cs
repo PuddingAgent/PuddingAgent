@@ -27,7 +27,7 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
     }
 
     protected override string RoleName => "deployer";
-    protected override int DefaultMaxRounds => 150;
+    protected override int DefaultMaxRounds => 300;
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDeployArgs args, ToolExecutionContext context, CancellationToken ct)
