@@ -10,6 +10,8 @@ import MessageRow from './MessageRow';
 interface MessageStreamProps {
   turns: ChatTurn[];
   sessionId?: string | null;
+  /** 当前工作空间 ID，用于用户视觉消息的图片加载 */
+  workspaceId?: string;
   agentName?: string;
   defaultAvatarUrl?: string;
   /** 当前登录用户信息，用于用户消息头像和名称 */
@@ -29,6 +31,7 @@ interface MessageStreamProps {
 const MessageStream: React.FC<MessageStreamProps> = ({
   turns,
   sessionId,
+  workspaceId,
   agentName,
   defaultAvatarUrl,
   currentUser,
@@ -48,10 +51,11 @@ const MessageStream: React.FC<MessageStreamProps> = ({
   return (
     <div className={styles.messageStream}>
       {blocks.map((block) => (
-        <MessageRow
+                <MessageRow
           key={block.id}
           block={block}
           sessionId={sessionId}
+          workspaceId={workspaceId}
           defaultAvatarUrl={defaultAvatarUrl}
           formatTime={formatTime}
           onContextMenu={onContextMenu}

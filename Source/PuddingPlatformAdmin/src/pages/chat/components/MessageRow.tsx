@@ -1,4 +1,4 @@
-// ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
+﻿// ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
 import { HeartOutlined } from '@ant-design/icons';
 import React from 'react';
 import { useChatStyles } from '../styles';
@@ -10,6 +10,8 @@ import UserMessageBubble from './UserMessageBubble';
 interface MessageRowProps {
   block: ChatMessageBlock;
   sessionId?: string | null;
+  /** 当前工作空间 ID，用于用户视觉消息的图片加载 */
+  workspaceId?: string;
   defaultAvatarUrl?: string;
   formatTime: (ts: number) => string;
   onContextMenu?: (
@@ -26,6 +28,7 @@ interface MessageRowProps {
 const MessageRow: React.FC<MessageRowProps> = ({
   block,
   sessionId,
+  workspaceId,
   defaultAvatarUrl,
   formatTime,
   onContextMenu,
@@ -38,11 +41,13 @@ const MessageRow: React.FC<MessageRowProps> = ({
   if (block.role === 'user') {
     return (
       <div className={cx(styles.messageRow, styles.messageRowUser)}>
-        <UserMessageBubble
+                <UserMessageBubble
           content={block.content}
           createdAt={block.createdAt}
           status={block.status}
           modality={block.modality}
+          visionArtifactId={block.visionArtifactId}
+          workspaceId={workspaceId}
           userName={block.userName}
           userAvatarUrl={block.userAvatarUrl}
           formatTime={formatTime}

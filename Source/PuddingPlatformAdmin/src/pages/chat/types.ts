@@ -1,4 +1,4 @@
-// ── 聊天页共享类型 ─────────────────────────────────────────────
+﻿// ── 聊天页共享类型 ─────────────────────────────────────────────
 import type {
   TokenUsageDto,
   WorkspaceAgentDto,
@@ -95,7 +95,9 @@ export interface ChatMessageBlock {
   status: ChatMessageStatus;
   createdAt: number;
   metadata?: Record<string, string>;
-  modality?: 'text' | 'voice' | 'camera';
+  modality?: 'text' | 'voice' | 'camera' | 'image';
+  /** 视觉制品 ID（image/camera modality），用于从后端加载图片 */
+  visionArtifactId?: string;
 
   /** 用户信息（仅 role='user' 时有效） */
   userName?: string;
@@ -161,7 +163,10 @@ export function buildMessageBlocks(
             ? 'voice'
             : turn.userMessage.metadata?.inputMode === 'camera'
               ? 'camera'
-              : 'text',
+              : turn.userMessage.metadata?.inputMode === 'image'
+                ? 'image'
+                : 'text',
+        visionArtifactId: turn.userMessage.metadata?.visionArtifactId,
         userName: currentUser?.name || '我',
         userAvatarUrl: currentUser?.avatar,
       });

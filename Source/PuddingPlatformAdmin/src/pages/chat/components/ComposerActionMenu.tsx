@@ -1,4 +1,4 @@
-// ── ComposerActionMenu：`+` 菜单，只展示输入动作与会话动作 ──
+﻿// ── ComposerActionMenu：`+` 菜单，只展示输入动作与会话动作 ──
 import {
   CameraOutlined,
   DownloadOutlined,
@@ -13,6 +13,8 @@ interface ComposerActionMenuProps {
   onExport: () => void;
   onOpenCamera?: () => void;
   cameraEnabled?: boolean;
+  onOpenImage?: () => void;
+  imageEnabled?: boolean;
   onClose: () => void;
 }
 
@@ -20,6 +22,8 @@ const ComposerActionMenu: React.FC<ComposerActionMenuProps> = ({
   onExport,
   onOpenCamera,
   cameraEnabled = false,
+  onOpenImage,
+  imageEnabled = false,
   onClose,
 }) => {
   const { styles } = useChatStyles();
@@ -64,17 +68,26 @@ const ComposerActionMenu: React.FC<ComposerActionMenuProps> = ({
           <CameraOutlined />
           <span>摄像头</span>
         </button>
-        <button
+                <button
           className={
-            styles.composerMenuItem + ' ' + styles.composerMenuItemDisabled
+            styles.composerMenuItem +
+            (imageEnabled ? '' : ' ' + styles.composerMenuItemDisabled)
           }
-          disabled
-          title="即将开放"
-          aria-label="上传图片，即将开放"
+          disabled={!imageEnabled}
+          title={
+            imageEnabled
+              ? '上传图片并发送视觉请求'
+              : '请选择工作空间和 Agent 后使用'
+          }
+          aria-label={imageEnabled ? '上传图片视觉输入' : '图片视觉输入不可用'}
+          onClick={() => {
+            if (!imageEnabled) return;
+            onOpenImage?.();
+            onClose();
+          }}
         >
           <PictureOutlined />
           <span>图片</span>
-          <span className={styles.composerMenuComingSoon}>即将开放</span>
         </button>
       </div>
 

@@ -1,4 +1,4 @@
-// ── Message Projection [EXPERIMENTAL] ────────────────────────────
+﻿// ── Message Projection [EXPERIMENTAL] ────────────────────────────
 // ADR-054 Step 1 scaffold. 尚未接入生产主链路，仅被测试引用。
 // ────────────────────────────────────────────────────────────────
 // 把 turns + conversationView + activeRun + subAgentCards 转成 VirtualMessageItem[]。
@@ -102,13 +102,16 @@ export function buildMessageBlocks(
         content: turn.userMessage.text,
         status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
         createdAt: turn.userMessage.timestamp,
-        metadata: turn.userMessage.metadata,
+                metadata: turn.userMessage.metadata,
         modality:
           turn.userMessage.metadata?.inputMode === 'voice'
             ? 'voice'
             : turn.userMessage.metadata?.inputMode === 'camera'
               ? 'camera'
-              : 'text',
+              : turn.userMessage.metadata?.inputMode === 'image'
+                ? 'image'
+                : 'text',
+        visionArtifactId: turn.userMessage.metadata?.visionArtifactId,
         userName: currentUser?.name || '我',
         userAvatarUrl: currentUser?.avatar,
       });

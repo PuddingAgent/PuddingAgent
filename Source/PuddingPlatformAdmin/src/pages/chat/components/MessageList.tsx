@@ -37,6 +37,8 @@ import PinnedMessageButton from './PinnedMessageButton';
 interface MessageListProps {
   turns: ChatTurn[];
   sessionId?: string | null;
+  /** 当前工作空间 ID，用于用户视觉消息的图片加载 */
+  workspaceId?: string;
   agentId: string | undefined;
   selectedAgent?: WorkspaceAgentDto;
   error: string | null;
@@ -600,8 +602,9 @@ const mergeActiveRunIntoTurns = (
 };
 
 const MessageList: React.FC<MessageListProps> = ({
-  turns,
+    turns,
   sessionId,
+  workspaceId,
   agentId,
   selectedAgent,
   error,
@@ -750,6 +753,7 @@ const MessageList: React.FC<MessageListProps> = ({
           } : { id: '', status: 'success', timelineItems: [], answerMarkdown: '', isStreaming: false, renderMode: 'structured' },
         }]}
         sessionId={sessionId}
+        workspaceId={workspaceId}
         agentName={selectedAgent?.name || 'Pudding'}
         defaultAvatarUrl={selectedAgent?.avatarUrl}
         currentUser={currentUser}

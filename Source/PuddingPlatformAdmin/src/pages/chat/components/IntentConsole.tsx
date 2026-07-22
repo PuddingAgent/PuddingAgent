@@ -1,4 +1,4 @@
-// ── InputArea：安静胶囊 Composer + 轻反馈带 ────────
+﻿// ── InputArea：安静胶囊 Composer + 轻反馈带 ────────
 import {
   AudioMutedOutlined,
   AudioOutlined,
@@ -10,13 +10,14 @@ import {
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Popover, Tooltip } from 'antd';
+import { Button, Input, Popover, Tooltip, message } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
   type ContextHealthSnapshot,
   getCacheDiagnostics,
   getContextHealth,
+  uploadVisionArtifact,
 } from '@/services/platform/api';
 import {
   type BrowserCameraInputAdapter,
@@ -83,6 +84,24 @@ const getRequestErrorMessage = (error: unknown, fallback: string): string => {
 
   return fallback;
 };
+
+/** 读取图片尺寸；解析失败或非图片时返回 undefined */
+const readImageDimensions = (
+  file: File,
+): Promise<{ width: number; height: number } | undefined> =>
+  new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve(undefined);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
 
 interface IntentConsoleProps {
   inputValue: string;
@@ -204,9 +223,16 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [draftValue, setDraftValue] = useState(inputValue);
   const isTextComposingRef = useRef(false);
   /** 容器是否处于 active（focus 或 非空输入 或 正在录音） */
-  const [recording, setRecording] = useState(false);
+    const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const voiceHandleRef = useRef<BrowserVoiceInputHandle | null>(null);
+  /** 图片上传隐藏文件选择器 */
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  /** 图片上传进行中 */
+  const [imageUploading, setImageUploading] = useState(false);
+  /** 拖拽悬停高亮 */
+  const [imageDragActive, setImageDragActive] = useState(false);
+  const dragDepthRef = useRef(0);
 
   const refreshContextHealth = useCallback(async () => {
     if (!sessionId) return;
@@ -251,12 +277,16 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const composerActive =
     composerFocused || draftValue.trim().length > 0 || recording;
   const cameraSupported = cameraInputAdapter.isSupported();
-  const cameraEnabled = Boolean(
+    const cameraEnabled = Boolean(
     cameraSupported &&
       workspaceId &&
       onSendWithMetadata &&
       !disabled &&
       !loading,
+  );
+  /** 图片上传可用条件：工作空间 + 发送通道 + 非禁用/生成中 */
+  const imageEnabled = Boolean(
+    workspaceId && onSendWithMetadata && !disabled && !loading,
   );
   const executionModeLabel =
     executionMode === 'deep'
@@ -441,7 +471,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     requestAnimationFrame(() => textAreaRef.current?.focus());
   }, [onInputChange]);
 
-  const handleCameraSend = useCallback(
+    const handleCameraSend = useCallback(
     async (content: string, metadata: Record<string, string>) => {
       if (!onSendWithMetadata) return;
       await onSendWithMetadata(content, metadata);
@@ -449,6 +479,114 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       onInputChange('');
     },
     [onInputChange, onSendWithMetadata],
+  );
+
+  // ── 图片上传（菜单选择 / 粘贴 / 拖拽共用）──
+  const handleImageFile = useCallback(
+    async (file: File) => {
+      if (!workspaceId || !onSendWithMetadata) {
+        message.warning('请先选择工作空间和 Agent');
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        message.warning('仅支持图片文件');
+        return;
+      }
+      setImageUploading(true);
+      try {
+        const dimensions = await readImageDimensions(file);
+        const uploaded = await uploadVisionArtifact(
+          workspaceId,
+          file,
+          {
+            width: dimensions?.width,
+            height: dimensions?.height,
+            capturedAt: Date.now(),
+          },
+        );
+        const prompt = draftValue.trim() || '请分析这张图片。';
+        const metadata: Record<string, string> = {
+          inputMode: 'image',
+          visionArtifactId: uploaded.artifactId,
+          fileName: file.name,
+          mimeType: uploaded.mimeType || file.type,
+        };
+        if (uploaded.width ?? dimensions?.width)
+          metadata.width = String(uploaded.width ?? dimensions?.width);
+        if (uploaded.height ?? dimensions?.height)
+          metadata.height = String(uploaded.height ?? dimensions?.height);
+        await onSendWithMetadata(prompt, metadata);
+        setDraftValue('');
+        onInputChange('');
+      } catch (err) {
+        message.error(getRequestErrorMessage(err, '图片上传失败'));
+      } finally {
+        setImageUploading(false);
+      }
+    },
+    [draftValue, onInputChange, onSendWithMetadata, workspaceId],
+  );
+
+  const handleOpenImagePicker = useCallback(() => {
+    imageFileInputRef.current?.click();
+  }, []);
+
+  const handleImageInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      // 重置 value，允许连续选择同一文件
+      e.target.value = '';
+      if (file) void handleImageFile(file);
+    },
+    [handleImageFile],
+  );
+
+  /** 粘贴图片（Ctrl+V）：优先检测剪贴板中的图片文件 */
+  const handlePasteImage = useCallback(
+    (e: React.ClipboardEvent) => {
+      const file = e.clipboardData?.files?.[0];
+      if (file && file.type.startsWith('image/')) {
+        e.preventDefault();
+        void handleImageFile(file);
+      }
+    },
+    [handleImageFile],
+  );
+
+  // ── 拖拽图片 ──
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setImageDragActive(true);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setImageDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
+      e.preventDefault();
+      dragDepthRef.current = 0;
+      setImageDragActive(false);
+      const file = e.dataTransfer.files?.[0];
+      if (file && file.type.startsWith('image/')) {
+        void handleImageFile(file);
+      } else if (file) {
+        message.warning('仅支持拖入图片文件');
+      }
+    },
+    [handleImageFile],
   );
 
   // ── Inline 语音录音 ──
@@ -655,12 +793,28 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     [formatQueueLatency],
   );
 
-  return (
+    return (
     <div
       className={`${styles.composerSurface} ${recording ? styles.composerRecording : ''}`}
       data-active={composerActive && !loading ? 'true' : undefined}
       data-error={status === 'error' ? 'true' : undefined}
+      data-image-drag={imageDragActive ? 'true' : undefined}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
+      {/* 隐藏的图片文件选择器：由 `+` 菜单触发 */}
+      <input
+        ref={imageFileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleImageInputChange}
+        aria-hidden="true"
+        tabIndex={-1}
+        data-testid="image-file-input"
+      />
       <CommandPalette
         visible={paletteVisible}
         filterText={slashFilterText}
@@ -774,11 +928,12 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       )}
 
       <div className={styles.composerCapsuleBody}>
-        <Input.TextArea
+                <Input.TextArea
           ref={textAreaRef as any}
           value={draftValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePasteImage}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           onFocus={handleTextAreaFocus}
@@ -794,10 +949,12 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           <div className={styles.composerToolbarLeft}>
             <Popover
               content={
-                <ComposerActionMenu
+                                <ComposerActionMenu
                   onExport={onExport}
                   onOpenCamera={() => setShowCameraInput(true)}
                   cameraEnabled={cameraEnabled}
+                  onOpenImage={handleOpenImagePicker}
+                  imageEnabled={imageEnabled}
                   onClose={() => setShowComposerMenu(false)}
                 />
               }
@@ -904,7 +1061,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <DownOutlined />
               </button>
             </Popover>
-            <Tooltip
+                        <Tooltip
               title={
                 recording ? '停止录音' : recognizing ? '识别中...' : '语音输入'
               }
@@ -930,17 +1087,25 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 )}
               </button>
             </Tooltip>
-            <Tooltip title={loading ? '停止生成' : '发送'}>
+            <Tooltip title={loading ? '停止生成' : imageUploading ? '图片上传中…' : '发送'}>
               <button
                 type="button"
                 className={styles.composerSendButton}
                 data-loading={loading ? 'true' : undefined}
                 onClick={loading ? onStop : onSend}
-                disabled={loading ? false : !draftValue.trim() || disabled}
+                disabled={
+                  loading ? false : !draftValue.trim() || disabled || imageUploading
+                }
                 data-testid="chat-send"
                 aria-label={loading ? '停止生成' : '发送'}
               >
-                {loading ? <StopOutlined /> : <SendOutlined />}
+                {loading ? (
+                  <StopOutlined />
+                ) : imageUploading ? (
+                  <LoadingOutlined spin />
+                ) : (
+                  <SendOutlined />
+                )}
               </button>
             </Tooltip>
           </div>

@@ -416,10 +416,11 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     className={styles.timelineRegion}
                     aria-label="会话时间线"
                   >
-                    <MessageList
+                                        <MessageList
                       turns={turns}
                       conversationView={conversationView}
                       sessionId={selectedSessionId}
+                      workspaceId={workspaceId}
                       agentId={agentId}
                       selectedAgent={selectedAgent}
                       error={error}

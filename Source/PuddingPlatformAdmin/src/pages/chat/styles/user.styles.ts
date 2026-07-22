@@ -1,4 +1,4 @@
-// ── user styles ─────────────────────────────────
+﻿// ── user styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useUserStyles = createStyles(({ token }) => ({
@@ -79,7 +79,37 @@ export const useUserStyles = createStyles(({ token }) => ({
         'color-mix(in srgb, var(--accent-purple) 14%, var(--soft-white))',
     },
   },
-  userBubbleSending: {
+    userBubbleSending: {
+    opacity: 0.7,
+  },
+  /** 视觉输入（图片/摄像头）气泡内嵌图片 */
+  userVisionImageWrap: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+  },
+  userVisionImage: {
+    display: 'block',
+    maxWidth: 280,
+    maxHeight: 200,
+    borderRadius: 8,
+    objectFit: 'cover' as const,
+    cursor: 'zoom-in' as const,
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 22%, transparent)',
+    transition: 'transform 200ms ease, box-shadow 200ms ease',
+    '&:hover': {
+      transform: 'scale(1.02)',
+      boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
+    },
+  },
+  userVisionImageFallback: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '8px 12px',
+    fontSize: 12,
+    color: 'var(--earth-brown)',
     opacity: 0.7,
   },
   userSendingIndicator: {
