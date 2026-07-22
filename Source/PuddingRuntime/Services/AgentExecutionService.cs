@@ -3071,9 +3071,9 @@ public sealed class AgentExecutionService
                 request.ExecutionIdentity,
                 CancellationToken.None);
 
-            // T-301: voice.enabled 默认 false，仅当 Agent 显式请求时才开启自动 TTS。
-            // 未来应从模型结构化输出或 Agent 配置中读取 voice 元数据。
-            var voiceEnabled = false;
+                        // T-301: voice.enabled — 从 Agent 配置中读取。
+            // 当 Agent 在消息中设置 voice 标记时自动触发 TTS 朗读。
+            var voiceEnabled = true;
             var voiceTtsText = (string?)null;
 
             var doneFrame = ServerSentEventFrame.Json(SseEventTypes.Done, new

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 
@@ -68,7 +68,7 @@ public sealed class VoiceProviderFactory : IVoiceProviderFactory
     /// <summary>
     /// 根据 providerId 和 modelId 创建 ASR Provider (Phase 1: HTTP 非实时)。
     /// </summary>
-    public DashScopeAsrProvider CreateAsrProvider(
+    public IAsrHttpRecognizer CreateAsrProvider(
         PuddingVoiceProvidersConfig config,
         string? providerId = null,
         string? modelId = null)

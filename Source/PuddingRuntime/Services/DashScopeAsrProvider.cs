@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services;
 /// Phase 2 将实现 IAsrProvider 的 WebSocket 实时接口。
 /// 读取 voice/providers.json 配置，接收 Base64 音频，返回识别文本 + 情感标签。
 /// </summary>
-public sealed class DashScopeAsrProvider
+public sealed class DashScopeAsrProvider : IAsrHttpRecognizer
 {
     private readonly HttpClient _httpClient;
     private readonly PuddingVoiceProviderConfig _providerConfig;
@@ -40,7 +40,7 @@ public sealed class DashScopeAsrProvider
     /// ② 轮询 GET /api/v1/tasks/{task_id} 直到 SUCCEEDED 或超时
     /// ③ 解析最终结果
     /// </remarks>
-    public async Task<VoiceRecognitionResult> RecognizeAsync(
+        public async Task<AsrRecognizeResult> RecognizeAsync(
         byte[] audioData,
         string format = "wav",
         string? language = null,
@@ -214,7 +214,7 @@ public sealed class DashScopeAsrProvider
     }
 
     /// <summary>解析 DashScope 同步响应（含 task 完成后轮询得到的最终结果）。</summary>
-    private static VoiceRecognitionResult ParseSyncResponse(string json)
+    private static AsrRecognizeResult ParseSyncResponse(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -256,15 +256,7 @@ public sealed class DashScopeAsrProvider
             }
         }
 
-        return new VoiceRecognitionResult
-        {
-            SessionId = Guid.NewGuid().ToString("N"),
-            WorkspaceId = "default",
-            RoomId = "default",
-            ParticipantId = "user",
-            Text = text,
-            Emotion = emotion,
-        };
+        return new AsrRecognizeResult(text, emotion);
     }
 
 }
