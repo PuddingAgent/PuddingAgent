@@ -363,13 +363,42 @@ public sealed class AgentChatApiControllerTests
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            db.ChatMessages.Add(new ChatMessageEntity
+            var createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            const string turnId = "conversation-renderable-turn";
+            const string userMessageId = "conversation-renderable-user";
+            const string agentMessageId = "conversation-renderable-agent";
+            db.ChatMessages.AddRange(
+                new ChatMessageEntity
+                {
+                    MessageId = userMessageId,
+                    SessionId = session!.SessionId,
+                    Role = "user",
+                    Content = "hello agent",
+                    CreatedAt = createdAt,
+                },
+                new ChatMessageEntity
+                {
+                    MessageId = agentMessageId,
+                    SessionId = session.SessionId,
+                    Role = "agent",
+                    Content = "hello user",
+                    TurnId = turnId,
+                    CreatedAt = createdAt + 1,
+                });
+            db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
             {
-                MessageId = "conversation-renderable-user",
-                SessionId = session!.SessionId,
-                Role = "user",
-                Content = "hello agent",
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                CommandId = "conversation-renderable-command",
+                BatchId = "conversation-renderable-batch",
+                ClientRequestId = "conversation-renderable-request",
+                WorkspaceId = "default",
+                SessionId = session.SessionId,
+                MessageId = agentMessageId,
+                UserMessageId = userMessageId,
+                TurnId = turnId,
+                AgentInstanceId = "agent-conversation",
+                UserId = "admin",
+                Status = "succeeded",
+                CreatedAt = createdAt,
             });
             await db.SaveChangesAsync();
         }
@@ -385,7 +414,10 @@ public sealed class AgentChatApiControllerTests
         Assert.AreEqual("single-user", view.OwnerUserId);
         Assert.AreEqual("agent-conversation", view.AgentId);
         Assert.AreEqual(session.SessionId, view.MainSessionId);
-        Assert.AreEqual("hello agent", view.Messages.Single().Content);
+        Assert.HasCount(2, view.Messages);
+        Assert.AreEqual("hello agent", view.Messages[0].Content);
+        Assert.AreEqual("hello user", view.Messages[1].Content);
+        Assert.IsTrue(view.Messages.All(message => message.TurnId == "conversation-renderable-turn"));
     }
 
     [TestMethod]
@@ -980,6 +1012,7 @@ public sealed class AgentChatApiControllerTests
 
     private sealed record ConversationMessageViewDto(
         string MessageId,
+        string? TurnId,
         string? RunId,
         string Role,
         string SourceId,

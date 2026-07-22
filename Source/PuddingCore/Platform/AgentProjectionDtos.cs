@@ -71,6 +71,9 @@ public sealed record ConversationMessageView(
     string Status,
     IReadOnlyList<ProcessSummaryItem> ProcessItems)
 {
+    /// <summary>Canonical conversation Turn identity shared by the user message and Agent reply.</summary>
+    public string? TurnId { get; init; }
+
     /// <summary>Business/UI source kind. This is distinct from the LLM transcript role.</summary>
     public string SourceKind { get; init; } = "";
 

@@ -4,12 +4,29 @@ import {
 } from '@/services/platform/api';
 import { SessionNotFoundError } from '../hooks/sessionRuntimeCleanup';
 import type { SessionEventPageResponse } from '../types/chatStateTypes';
-import { buildSessionEventReplayUrl } from './chatStateUtils';
+import {
+  buildSessionEventReplayUrl,
+  getSessionEventSequenceNum,
+} from './chatStateUtils';
 
 export type NormalizedSessionEvent = AdminChatStreamEvent & {
   sequenceNum?: number;
   recordedAt?: string;
 };
+
+/** Returns the greatest durable sequence in a replay page. */
+export function getMaxSessionEventSequenceNum(
+  events: readonly unknown[],
+): number | null {
+  const maxSequence = events
+    .map(getSessionEventSequenceNum)
+    .filter((value): value is number => value !== null)
+    .reduce(
+      (maximum, value) => Math.max(maximum, value),
+      Number.NEGATIVE_INFINITY,
+    );
+  return Number.isFinite(maxSequence) ? maxSequence : null;
+}
 
 /** Normalizes persisted event wrappers and live events into one shape. */
 export function normalizeSessionEvent(

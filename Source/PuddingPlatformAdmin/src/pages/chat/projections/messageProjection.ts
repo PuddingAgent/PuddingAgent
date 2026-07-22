@@ -96,7 +96,7 @@ export function buildMessageBlocks(
     // 用户消息
     if (turn.userMessage.text.trim()) {
       blocks.push({
-        id: `${turn.turnId}:user`,
+        id: `${turn.userMessage.id}:user`,
         turnId: turn.turnId,
         role: 'user',
         content: turn.userMessage.text,
@@ -117,7 +117,7 @@ export function buildMessageBlocks(
     // 心跳消息
     if (turn.assistant.renderMode === 'heartbeat') {
       blocks.push({
-        id: `${turn.turnId}:heartbeat`,
+        id: `${turn.assistant.id}:heartbeat`,
         turnId: turn.turnId,
         role: 'heartbeat',
         content: turn.assistant.answerMarkdown,
@@ -143,7 +143,7 @@ export function buildMessageBlocks(
       const blockAgentName =
         turn.source?.displayName || agentName || 'Pudding';
       const block: ChatMessageBlock = {
-        id: `${turn.turnId}:assistant:0`,
+        id: `${turn.assistant.id}:assistant:0`,
         turnId: turn.turnId,
         role: 'agent',
         content: turn.assistant.answerMarkdown,

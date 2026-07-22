@@ -83,6 +83,22 @@ public sealed class AgentConversationProjectionService(
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
             .ToList();
+        var messageTurnRows = messageIds.Count == 0
+            ? []
+            : await db.ChatExecutionCommands
+                .AsNoTracking()
+                .Where(c => c.SessionId == main.SessionId)
+                .Where(c => messageIds.Contains(c.UserMessageId) || messageIds.Contains(c.MessageId))
+                .Select(c => new { c.UserMessageId, c.MessageId, c.TurnId })
+                .ToListAsync(ct);
+        var turnIdByMessageId = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var command in messageTurnRows)
+        {
+            if (!string.IsNullOrWhiteSpace(command.UserMessageId))
+                turnIdByMessageId[command.UserMessageId] = command.TurnId;
+            if (!string.IsNullOrWhiteSpace(command.MessageId))
+                turnIdByMessageId[command.MessageId] = command.TurnId;
+        }
         var messageEvents = messageIds.Count == 0
             ? []
             : await db.ConversationEvents
@@ -100,6 +116,9 @@ public sealed class AgentConversationProjectionService(
                 ownerUserId,
                 agentId,
                 main.Title,
+                !string.IsNullOrWhiteSpace(m.TurnId)
+                    ? m.TurnId
+                    : turnIdByMessageId.GetValueOrDefault(m.MessageId),
                 completedProcessByMessageId))
             .ToList();
 
@@ -275,6 +294,7 @@ public sealed class AgentConversationProjectionService(
         string ownerUserId,
         string agentId,
         string? agentTitle,
+        string? turnId,
         IReadOnlyDictionary<string, CompletedMessageProcess> completedProcessByMessageId)
     {
         var metadata = ParsePuddingMessageMetadata(message.Content);
@@ -304,6 +324,7 @@ public sealed class AgentConversationProjectionService(
             "succeeded",
             BuildMessageProcessItems(message, completedProcess?.Items))
         {
+            TurnId = turnId,
             SourceKind = sourceKind,
             MessageType = messageType,
             LlmRole = message.Role,

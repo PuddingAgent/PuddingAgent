@@ -17,7 +17,8 @@ interface UseMessageViewportRuntimeOptions {
 const NEAR_TOP_PX = 64;
 const BOTTOM_THRESHOLD_PX = 80;
 const MESSAGE_VIEWPORT_BOTTOM_PADDING_PX = 32;
-const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 40;
+const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 80;
+const MESSAGE_VIEWPORT_RICH_VIRTUALIZATION_MIN_ITEMS = 200;
 type MessageVirtualItem = Extract<VirtualMessageItem, { kind: 'message' }>;
 
 interface PendingViewportAnchor {
@@ -96,7 +97,18 @@ export const getVirtualMessageContentFingerprint = (
  */
 export const shouldVirtualizeMessageViewport = (
   items: VirtualMessageItem[],
-): boolean => items.length >= MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS;
+): boolean => {
+  if (items.length < MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS) return false;
+  const hasDynamicTallRows = items.some(
+    (item) =>
+      item.kind === 'message' &&
+      item.heightHint !== 'compact',
+  );
+  return (
+    !hasDynamicTallRows ||
+    items.length >= MESSAGE_VIEWPORT_RICH_VIRTUALIZATION_MIN_ITEMS
+  );
+};
 
 export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOptions) {
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -119,7 +131,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   const smoothScrollActiveRef = useRef(false);
   const smoothScrollTimerRef = useRef<number | null>(null);
   // A3: Cache measured row heights to avoid estimate→measure correction jitter
-  const measuredHeightsRef = useRef<Map<number, number>>(new Map());
+  const measuredHeightsRef = useRef<Map<string, number>>(new Map());
 
   // Fingerprint tracks both item count and last item content length,
   // so streaming content growth also triggers the auto-follow effect.
@@ -134,8 +146,12 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     getScrollElement: () => parentRef.current,
     enabled: virtualizationEnabled,
     estimateSize: (index) => {
-      // A3: Return cached measured height if available
-      const cached = measuredHeightsRef.current.get(index);
+      // Height follows stable message identity. Index-based caches corrupt
+      // estimates when history is prepended or timestamp ordering changes.
+      const itemId = options.items[index]?.id;
+      const cached = itemId
+        ? measuredHeightsRef.current.get(itemId)
+        : undefined;
       if (cached !== undefined) return cached;
       const hint = options.items[index]?.heightHint;
       if (hint === 'compact') return 96;
@@ -148,10 +164,11 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     getItemKey: (index) => options.items[index]?.id ?? index,
     // A3: Cache actual DOM measurements for future estimateSize calls
     measureElement: (element) => {
-      const idx = Number((element as HTMLElement).dataset.index);
-      const height = element.getBoundingClientRect().height;
-      if (!Number.isNaN(idx) && height > 0) {
-        measuredHeightsRef.current.set(idx, height);
+      const row = element as HTMLElement;
+      const itemId = row.dataset.viewportItemId;
+      const height = row.getBoundingClientRect().height;
+      if (itemId && height > 0) {
+        measuredHeightsRef.current.set(itemId, height);
       }
       return height;
     },

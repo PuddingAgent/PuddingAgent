@@ -183,6 +183,9 @@ public sealed class ConversationEventStore(
         int limit,
         CancellationToken ct)
     {
+        if (limit <= 0)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+
         await EnsureTableAsync(ct);
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -222,7 +225,7 @@ public sealed class ConversationEventStore(
 
         var pLimit = cmd.CreateParameter();
         pLimit.ParameterName = "@limit";
-        pLimit.Value = limit;
+        pLimit.Value = checked(limit + 1);
         cmd.Parameters.Add(pLimit);
 
         var events = new List<ConversationEvent>();
@@ -232,8 +235,10 @@ public sealed class ConversationEventStore(
             events.Add(MapFromReader(reader));
         }
 
+        var hasMore = events.Count > limit;
+        if (hasMore)
+            events.RemoveAt(events.Count - 1);
         long? nextCursor = events.Count > 0 ? events[^1].Sequence : afterExclusive;
-        var hasMore = events.Count >= limit;
 
         return new EventPage(events, nextCursor, hasMore);
     }
@@ -244,6 +249,9 @@ public sealed class ConversationEventStore(
         int limit,
         CancellationToken ct)
     {
+        if (limit <= 0)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+
         await EnsureTableAsync(ct);
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -265,7 +273,7 @@ public sealed class ConversationEventStore(
         cmd.Parameters.Add(pBefore);
         var pLimit = cmd.CreateParameter();
         pLimit.ParameterName = "@limit";
-        pLimit.Value = limit;
+        pLimit.Value = checked(limit + 1);
         cmd.Parameters.Add(pLimit);
 
         var events = new List<ConversationEvent>();
@@ -274,10 +282,12 @@ public sealed class ConversationEventStore(
         {
             events.Add(MapFromReader(reader));
         }
+        var hasMore = events.Count > limit;
+        if (hasMore)
+            events.RemoveAt(events.Count - 1);
         events.Reverse(); // We queried DESC, return ASC
 
         long? nextCursor = events.Count > 0 ? events[0].Sequence : null;
-        var hasMore = events.Count >= limit;
 
         return new EventPage(events, nextCursor, hasMore);
     }
@@ -324,7 +334,7 @@ public sealed class ConversationEventStore(
 
         var pLimit = cmd.CreateParameter();
         pLimit.ParameterName = "@limit";
-        pLimit.Value = limit;
+        pLimit.Value = checked(limit + 1);
         cmd.Parameters.Add(pLimit);
 
         var events = new List<ConversationEvent>();
@@ -332,9 +342,12 @@ public sealed class ConversationEventStore(
         while (await reader.ReadAsync(ct))
             events.Add(MapFromReader(reader));
 
+        var hasMore = events.Count > limit;
+        if (hasMore)
+            events.RemoveAt(events.Count - 1);
         events.Reverse();
         long? nextCursor = events.Count > 0 ? events[0].Sequence : null;
-        return new EventPage(events, nextCursor, events.Count >= limit);
+        return new EventPage(events, nextCursor, hasMore);
     }
 
     public async Task<EventBounds> GetBoundsAsync(

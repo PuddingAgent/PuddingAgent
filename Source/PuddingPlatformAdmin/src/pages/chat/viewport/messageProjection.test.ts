@@ -34,8 +34,31 @@ describe('buildVirtualMessageItems', () => {
     });
 
     expect(result.items.map((item) => item.id)).toEqual([
-      'message:user:t1:user',
-      'message:agent:t1:assistant:0',
+      'message:user:user-t1:user',
+      'message:agent:assistant-t1:assistant:0',
+    ]);
+  });
+
+  it('keeps message keys unique when several messages share a canonical turn', () => {
+    const first = makeTurn('shared-turn', 1000, 'first answer');
+    first.userMessage.id = 'user-first';
+    first.assistant.id = 'assistant-first';
+    const second = makeTurn('shared-turn', 2000, 'second answer');
+    second.userMessage.id = 'user-second';
+    second.assistant.id = 'assistant-second';
+
+    const result = buildVirtualMessageItems({
+      turns: [first, second],
+      agentName: 'Agent',
+    });
+    const ids = result.items.map((item) => item.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([
+      'message:user:user-first:user',
+      'message:agent:assistant-first:assistant:0',
+      'message:user:user-second:user',
+      'message:agent:assistant-second:assistant:0',
     ]);
   });
 

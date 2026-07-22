@@ -14,39 +14,45 @@ import { sanitizeProcessText } from '../components/processPreview';
  */
 export function useSubAgentActivity() {
   const appendOrUpdateSubAgentActivity = useCallback(
-    (
-      subAgentId: string,
-      items: TimelineItem[],
-      next: TimelineItem,
-      appendOutput?: string,
-    ): TimelineItem[] => {
-      const idx = items.findIndex(
-        (item) =>
-          item.name === subAgentId &&
-          (item.type === 'subagent_spawned' ||
-            item.type === 'subagent_progress') &&
-          next.type !== 'subagent_spawned',
-      );
-      if (idx < 0) return [...items, next];
-      const existing = items[idx];
-      const mergedOutput = sanitizeProcessText(
-        `${existing.output ?? ''}${appendOutput ?? next.output ?? ''}`,
-        { compact: false },
-      );
-      const updated: TimelineItem = {
-        ...existing,
-        ...next,
-        output:
-          mergedOutput.length > 900
-            ? mergedOutput.slice(mergedOutput.length - 900)
-            : mergedOutput,
-        arguments: next.arguments || existing.arguments,
-        timestamp: next.timestamp,
-      };
-      return [...items.slice(0, idx), updated, ...items.slice(idx + 1)];
-    },
+    mergeSubAgentActivity,
     [],
   );
 
   return { appendOrUpdateSubAgentActivity };
+}
+
+export function mergeSubAgentActivity(
+  subAgentId: string,
+  items: TimelineItem[],
+  next: TimelineItem,
+  appendOutput?: string,
+): TimelineItem[] {
+  const idx = items.findIndex(
+    (item) =>
+      item.id === next.id ||
+      (item.name === subAgentId &&
+        (item.type === 'subagent_spawned' ||
+          item.type === 'subagent_progress') &&
+        next.type !== 'subagent_spawned'),
+  );
+  if (idx < 0) return [...items, next];
+  const existing = items[idx];
+  const isExactReplay = existing.id === next.id && appendOutput === undefined;
+  const mergedOutput = sanitizeProcessText(
+    isExactReplay
+      ? (next.output ?? existing.output ?? '')
+      : `${existing.output ?? ''}${appendOutput ?? next.output ?? ''}`,
+    { compact: false },
+  );
+  const updated: TimelineItem = {
+    ...existing,
+    ...next,
+    output:
+      mergedOutput.length > 900
+        ? mergedOutput.slice(mergedOutput.length - 900)
+        : mergedOutput,
+    arguments: next.arguments || existing.arguments,
+    timestamp: next.timestamp,
+  };
+  return [...items.slice(0, idx), updated, ...items.slice(idx + 1)];
 }

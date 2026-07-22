@@ -196,7 +196,9 @@ describe('MessageList scroll performance', () => {
       act(() => {
         while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
       });
-      expect(screen.getByText('回到底部 ↓')).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: '回到底部' }),
+      ).toBeTruthy();
 
       node.scrollTop = 1_500;
       fireEvent.scroll(node);
@@ -204,7 +206,9 @@ describe('MessageList scroll performance', () => {
         while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
       });
 
-      expect(screen.queryByText('回到底部 ↓')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: '回到底部' }),
+      ).toBeNull();
     } finally {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     }
@@ -584,9 +588,6 @@ describe('MessageList scroll performance', () => {
   });
 
   it('can toggle bottom anchor mode for streaming output', () => {
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-    const scrollIntoView = jest.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
     const props = {
       ...baseProps,
       sessionId: 'session-anchor-streaming',
@@ -619,64 +620,74 @@ describe('MessageList scroll performance', () => {
         updatedAt: '2026-06-07T00:00:00.000Z',
       },
     };
-    try {
-      const { rerender } = render(<MessageList {...props} />);
-      expect(scrollIntoView).not.toHaveBeenCalled();
+    let scrollHeight = 1_200;
+    const { rerender } = render(<MessageList {...props} />);
+    const node = props.messageListRef.current!;
+    Object.defineProperty(node, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+    Object.defineProperty(node, 'clientHeight', {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(node, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
 
-      fireEvent.click(screen.getByRole('button', { name: '开启贴底跟随' }));
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'end',
-      });
-      scrollIntoView.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '开启贴底跟随' }));
+    expect(node.scrollTop).toBe(800);
 
-      rerender(
-        <MessageList
-          {...props}
-          conversationView={{
-            ...props.conversationView,
-            activeRun: {
-              ...props.conversationView.activeRun,
-              outputSnapshot: {
-                markdown: 'streaming answer grows',
-                processItems: [],
-              },
+    scrollHeight = 1_600;
+    rerender(
+      <MessageList
+        {...props}
+        conversationView={{
+          ...props.conversationView,
+          activeRun: {
+            ...props.conversationView.activeRun,
+            outputSnapshot: {
+              markdown: 'streaming answer grows',
+              processItems: [],
             },
-          }}
-        />,
-      );
-      act(() => {
-        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
-      });
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'auto',
-        block: 'end',
-      });
+          },
+        }}
+      />,
+    );
+    act(() => {
+      while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+    });
+    expect(node.scrollTop).toBe(1_200);
 
-      scrollIntoView.mockClear();
-      fireEvent.click(screen.getByRole('button', { name: '取消贴底跟随' }));
-      rerender(
-        <MessageList
-          {...props}
-          conversationView={{
-            ...props.conversationView,
-            activeRun: {
-              ...props.conversationView.activeRun,
-              outputSnapshot: {
-                markdown: 'streaming answer grows again',
-                processItems: [],
-              },
+    fireEvent.click(screen.getByRole('button', { name: '取消贴底跟随' }));
+    expect(
+      screen.getByRole('button', { name: '开启贴底跟随' }),
+    ).toBeTruthy();
+
+    scrollHeight = 2_000;
+    rerender(
+      <MessageList
+        {...props}
+        conversationView={{
+          ...props.conversationView,
+          activeRun: {
+            ...props.conversationView.activeRun,
+            outputSnapshot: {
+              markdown: 'streaming answer grows again',
+              processItems: [],
             },
-          }}
-        />,
-      );
-      act(() => {
-        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
-      });
-      expect(scrollIntoView).not.toHaveBeenCalled();
-    } finally {
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
-    }
+          },
+        }}
+      />,
+    );
+    act(() => {
+      while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+    });
+    // Cancelling pinned mode returns to ordinary auto-follow while the reader
+    // is still at the bottom; a later real upward scroll can turn auto off.
+    expect(node.scrollTop).toBe(1_600);
   });
 
   it('pins bottom controls to the browser viewport', () => {
@@ -700,9 +711,6 @@ describe('MessageList scroll performance', () => {
   });
 
   it('keeps bottom anchor mode on for newly appended local turns', () => {
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-    const scrollIntoView = jest.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
     const ref = React.createRef<HTMLDivElement>();
     const props = {
       ...baseProps,
@@ -725,25 +733,35 @@ describe('MessageList scroll performance', () => {
         isStreaming: true,
       },
     };
-    try {
-      const { rerender } = render(<MessageList {...props} />);
-      fireEvent.click(screen.getByRole('button', { name: '开启贴底跟随' }));
-      scrollIntoView.mockClear();
+    let scrollHeight = 1_000;
+    const { rerender } = render(<MessageList {...props} />);
+    const node = ref.current!;
+    Object.defineProperty(node, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+    Object.defineProperty(node, 'clientHeight', {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(node, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
 
-      rerender(
-        <MessageList {...props} turns={[...props.turns, pendingTurn]} />,
-      );
-      act(() => {
-        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
-      });
+    fireEvent.click(screen.getByRole('button', { name: '开启贴底跟随' }));
+    expect(node.scrollTop).toBe(600);
 
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'auto',
-        block: 'end',
-      });
-    } finally {
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
-    }
+    scrollHeight = 1_400;
+    rerender(
+      <MessageList {...props} turns={[...props.turns, pendingTurn]} />,
+    );
+    act(() => {
+      while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+    });
+
+    expect(node.scrollTop).toBe(1_000);
   });
 
   it('settles bottom anchor across delayed layout growth', () => {
@@ -1112,6 +1130,85 @@ describe('MessageList scroll performance', () => {
     expect(screen.getByText('persisted user prompt')).toBeTruthy();
     expect(screen.getByText('persisted agent answer')).toBeTruthy();
     expect(screen.queryByTestId('empty-state')).toBeNull();
+  });
+
+  it('replaces the local running shell when the canonical turn reply is projected', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[
+          {
+            turnId: 'turn-current',
+            userMessage: {
+              id: 'user-current',
+              text: 'current prompt',
+              timestamp: 2_000,
+              status: 'success',
+            },
+            assistant: {
+              id: 'local-assistant',
+              status: 'executing',
+              timelineItems: [
+                {
+                  id: 'stale-subagent',
+                  type: 'subagent_completed',
+                  status: 'error',
+                  text: 'stale running shell',
+                  timestamp: 2_001,
+                  collapsed: false,
+                },
+              ],
+              answerMarkdown: '',
+              isStreaming: true,
+              renderMode: 'structured',
+            },
+          },
+        ]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'user-current',
+              turnId: 'turn-current',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '1970-01-01T00:00:02.000Z',
+              content: 'current prompt',
+              status: 'sent',
+              processItems: [],
+            },
+            {
+              messageId: 'agent-current',
+              turnId: 'turn-current',
+              runId: 'run-current',
+              role: 'agent',
+              sourceId: 'agent-a',
+              sourceName: 'Agent A',
+              createdAt: '1970-01-01T00:00:02.001Z',
+              content: 'FINAL_REPLY',
+              status: 'succeeded',
+              processItems: [],
+            },
+          ],
+          activeRun: null,
+          eventCursor: 2,
+          updatedAt: '1970-01-01T00:00:02.001Z',
+        }}
+      />,
+    );
+
+    const rows = screen.getAllByTestId('message-row');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.getAttribute('data-role'))).toEqual([
+      'user',
+      'agent',
+    ]);
+    expect(screen.getByText('FINAL_REPLY')).toBeTruthy();
+    expect(screen.queryByText('stale running shell')).toBeNull();
   });
 
   it('renders agent-origin inbound messages as a quote on the agent reply', () => {

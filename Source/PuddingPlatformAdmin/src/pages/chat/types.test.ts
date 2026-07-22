@@ -26,10 +26,12 @@ describe('buildMessageBlocks', () => {
 
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toMatchObject({
+      id: 'user-1:user',
       role: 'user',
       content: '测试同步子代理',
     });
     expect(blocks[1]).toMatchObject({
+      id: 'assistant-1:assistant:0',
       role: 'agent',
       content: '',
       status: 'thinking',

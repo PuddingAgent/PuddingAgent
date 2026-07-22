@@ -1,6 +1,7 @@
 import { normalizeConversationEventType } from '@/services/platform/api';
 import { SessionNotFoundError } from '../hooks/sessionRuntimeCleanup';
 import {
+  getMaxSessionEventSequenceNum,
   listSessionEventsPage,
   normalizeSessionEvent,
 } from './sessionEventReplay';
@@ -36,6 +37,17 @@ describe('sessionEventReplay', () => {
   it('returns null for values without an event type', () => {
     expect(normalizeSessionEvent(null)).toBeNull();
     expect(normalizeSessionEvent({ Payload: '{}' })).toBeNull();
+  });
+
+  it('advances a full replay page to its greatest durable sequence', () => {
+    expect(
+      getMaxSessionEventSequenceNum([
+        { sequence: 90182 },
+        { SequenceNum: '90231' },
+        { payload: {} },
+      ]),
+    ).toBe(90231);
+    expect(getMaxSessionEventSequenceNum([{ payload: {} }])).toBeNull();
   });
 
   it('maps replay 404 responses to SessionNotFoundError', async () => {

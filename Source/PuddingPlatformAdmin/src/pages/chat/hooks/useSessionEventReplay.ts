@@ -23,6 +23,7 @@ import {
   shouldRunSessionReplayCompensation,
 } from '../utils/chatStateUtils';
 import {
+  getMaxSessionEventSequenceNum,
   listSessionEventsPage,
   type NormalizedSessionEvent,
   normalizeSessionEvent,
@@ -290,12 +291,9 @@ export function useSessionEventReplay({
             appliedCount += 1;
           }
 
-          const maxSequence = list
-            .map(getSessionEventSequenceNum)
-            .filter((value): value is number => value !== null)
-            .reduce((maximum, value) => Math.max(maximum, value), Number.NaN);
-          if (Number.isFinite(maxSequence)) {
-            from = Math.max(from, Number(maxSequence) + 1);
+          const maxSequence = getMaxSessionEventSequenceNum(list);
+          if (maxSequence !== null) {
+            from = Math.max(from, maxSequence + 1);
           } else {
             hasMore = false;
           }
@@ -419,7 +417,7 @@ export function useSessionEventReplay({
         );
         const list = pageEvents(page);
         if (list.length === 0) break;
-        let maxSequence = Number.NaN;
+        let maxSequence: number | null = null;
         for (const item of list) {
           const event = normalizeSessionEvent(item);
           if (!event) continue;
@@ -428,11 +426,14 @@ export function useSessionEventReplay({
             typeof event.sequenceNum === 'number' &&
             Number.isFinite(event.sequenceNum)
           ) {
-            maxSequence = Math.max(maxSequence, event.sequenceNum);
+            maxSequence =
+              maxSequence === null
+                ? event.sequenceNum
+                : Math.max(maxSequence, event.sequenceNum);
           }
         }
-        if (Number.isFinite(maxSequence)) {
-          from = Number(maxSequence) + 1;
+        if (maxSequence !== null) {
+          from = maxSequence + 1;
         } else {
           hasMore = false;
         }

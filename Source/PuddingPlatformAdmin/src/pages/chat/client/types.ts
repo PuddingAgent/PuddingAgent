@@ -56,6 +56,7 @@ export interface AgentRunView {
 
 export interface ConversationMessageView {
   messageId: string;
+  turnId?: string | null;
   runId?: string | null;
   role: 'user' | 'agent' | 'system';
   sourceKind?: 'user' | 'agent' | 'system';

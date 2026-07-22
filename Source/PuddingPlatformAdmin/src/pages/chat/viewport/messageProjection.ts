@@ -42,16 +42,22 @@ export function buildVirtualMessageItems(
   }
 
   const blocks = buildMessageBlocks(input.turns, input.agentName, input.currentUser);
+  const messageItemsById = new Map<string, VirtualMessageItem>();
   for (const block of blocks) {
     const prefix = block.role === 'user' ? 'message:user' : 'message:agent';
-    items.push({
+    const id = `${prefix}:${block.id}`;
+    // A canonical Turn can legitimately contain more than one persisted
+    // message. Virtual row identity therefore belongs to the message, not the
+    // Turn. Replayed copies of the same message are idempotently replaced.
+    messageItemsById.set(id, {
       kind: 'message',
-      id: `${prefix}:${block.id}`,
+      id,
       createdAt: block.createdAt,
       block,
       heightHint: getHeightHint(block.content, block.isStreaming),
     });
   }
+  items.push(...messageItemsById.values());
 
   const kindOrder = { loader: 0, message: 1 };
   const roleOrder = { user: 0, agent: 1, system: 2, heartbeat: 3 };

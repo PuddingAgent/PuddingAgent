@@ -133,7 +133,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionHistoryProjection.ts` | 持久消息到 `ChatTurn` 的投影与安全历史对账；完成后同步事件 cursor |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts` | delta/thinking 批处理缓冲与 timer 所有者 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期 |
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；分页最大 sequence 必须以有限哨兵归并并单调推进，不能以 `NaN` 为 reduce 初值；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 输入、服务端命令队列、steering 队列、快捷键与定时刷新 |
@@ -146,8 +146,8 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/utils/chatDiagnostics.ts` | ChatDiag 有界序列化、错误终态识别与可检索 Markdown 格式化、控制台记录和 sessionStorage 持久化边界；诊断失败不得影响聊天流程 |
 | `PuddingPlatformAdmin/src/pages/chat/utils/sessionEventReplay.ts` | 持久事件 wrapper 规范化与 replay page HTTP/404 边界 |
 | `PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts` | Agent conversation 查询缓存与轮询收敛；终态 cursor 暂时领先消息读模型、快照仍以 user 结尾时禁用条件 GET，避免相同 cursor 的 304 固化不完整投影 |
-| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
-| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
+| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，按 message id 缓存行高，80/200 阈值自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，但 React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；不直接拥有滚动策略 |
 | `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
 | `PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx` | Chat 工作台布局壳层；`chatBody`/开发面板/历史搜索保持合法 JSX 嵌套，并展示 SSE 重连提示 |
 
@@ -197,7 +197,7 @@ Source/
 | `Services/SubAgentConversationProjectionWorker.cs` | 启动时将上一进程遗留的非终态 run 仲裁为 `interrupted`，随后扫描 run archive 投影积压 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
 | `Services/ExecutionCommandReader.cs` | Command 稳定执行引用的只读适配器；不拥有任何状态转换 |
-| `Services/ConversationEventStore.cs` | Conversation Sequence 分配、事件追加、历史读取和 `subagent.*` 类型前缀补读 |
+| `Services/ConversationEventStore.cs` | Conversation Sequence 分配、事件追加、历史读取和 `subagent.*` 类型前缀补读；事件分页读取 `limit + 1` 条并准确计算 `hasMore` |
 | `Services/ConversationProjector.cs` | Event Store 到查询模型的 checkpoint 投影；除按稳定身份物化 ChatMessages 外，还将带不可变 Provider/Model 归因的 `usage.recorded` v2 必达写入 Token 明细账本 |
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
 | `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync` |
@@ -206,7 +206,7 @@ Source/
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
-| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按稳定 `messageId/runId` 关联 `ChatMessages` |
+| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`，再以稳定 `messageId/runId` 关联过程事实 |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |
 | `Services/Execution/SqliteExecutionLeaseStore.cs` | 原子 CAS 领取与恢复：BEGIN IMMEDIATE + fencing；释放/过期时事务恢复 Run、Command、Turn |
 | `Services/Execution/SqliteExecutionJournal.cs` | 统一 fenced 事件写入、原子终态和 Worker 基础设施失败兜底；终态从 Command 读取 assistant MessageId |

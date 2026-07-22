@@ -250,7 +250,7 @@ const createProjectedTurn = (
   agentName: string,
 ): ChatTurn => {
   const timestamp = toTimestamp(message.createdAt);
-  const turnId = message.runId || message.messageId;
+  const turnId = message.turnId || message.runId || message.messageId;
   const isUser = message.role === 'user';
   const isHeartbeat = isHeartbeatMessage(message);
   const quotedMessage = parseAgentQuotedMessage(message, timestamp);
@@ -366,7 +366,7 @@ const mergeProjectedMessageIntoTurns = (
   const previous = turns[turns.length - 1];
   if (
     !previous ||
-    previous.turnId !== message.runId ||
+    previous.turnId !== projected.turnId ||
     previous.assistant.answerMarkdown
   ) {
     turns.push(projected);
@@ -827,7 +827,7 @@ const MessageList: React.FC<MessageListProps> = ({
                 if (!item) return null;
                 return (
                   <div
-                    key={item.id}
+                    key={virtualRow.key}
                     data-index={virtualRow.index}
                     data-viewport-item-id={item.id}
                     ref={viewport.virtualizer.measureElement}

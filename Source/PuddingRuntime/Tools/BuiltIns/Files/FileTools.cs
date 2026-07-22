@@ -112,14 +112,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 out var error,
                 skipWorkspaceCheck: true,
                 executionWorkingDirectory: context.WorkingDirectory))
-            return Task.FromResult(ToolExecutionResult.Fail(error));
+            return ToolExecutionResult.Fail(error);
 
         if (!File.Exists(fullPath))
-            return Task.FromResult(ToolExecutionResult.Fail($"File not found: {args.Path}"));
+            return ToolExecutionResult.Fail($"File not found: {args.Path}");
 
         try
         {
-            var content = File.ReadAllText(fullPath, Encoding.UTF8);
+            var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
             var totalChars = content.Length;
             var totalLines = content.Count(c => c == '\n') + 1;
 
@@ -128,8 +128,8 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
             {
                 content = content[..args.MaxChars.Value];
-                return Task.FromResult(ToolExecutionResult.Ok(
-                    $"{meta}\n{content}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)"));
+                return ToolExecutionResult.Ok(
+                    $"{meta}\n{content}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)");
             }
 
             if (args.HeadLines.HasValue)
@@ -149,11 +149,11 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 content = string.Join("\n", lines.Skip(args.OffsetLines.Value).Take(limit));
             }
 
-            return Task.FromResult(ToolExecutionResult.Ok($"{meta}\n{content}"));
+            return ToolExecutionResult.Ok($"{meta}\n{content}");
         }
         catch (Exception ex)
         {
-            return Task.FromResult(ToolExecutionResult.Fail($"Failed to read file '{args.Path}': {ex.Message}"));
+            return ToolExecutionResult.Fail($"Failed to read file '{args.Path}': {ex.Message}");
         }
     }
 }

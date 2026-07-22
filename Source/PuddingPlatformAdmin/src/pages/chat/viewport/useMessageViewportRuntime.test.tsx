@@ -28,12 +28,27 @@ describe('useMessageViewportRuntime', () => {
     const shortTimeline = Array.from({ length: 12 }, (_, index) =>
       makeItem(`m${index}`, index),
     );
-    const longTimeline = Array.from({ length: 40 }, (_, index) =>
-      makeItem(`m${index}`, index),
-    );
+    const longTimeline = Array.from({ length: 80 }, (_, index) => ({
+      ...makeItem(`m${index}`, index),
+      heightHint: 'compact' as const,
+    }));
 
     expect(shouldVirtualizeMessageViewport(shortTimeline)).toBe(false);
     expect(shouldVirtualizeMessageViewport(longTimeline)).toBe(true);
+  });
+
+  it('keeps medium rich timelines in normal flow until virtualization is necessary', () => {
+    const richTimeline = Array.from({ length: 100 }, (_, index) => ({
+      ...makeItem(`rich-${index}`, index),
+      heightHint: 'rich' as const,
+    }));
+    const veryLongRichTimeline = Array.from({ length: 200 }, (_, index) => ({
+      ...makeItem(`very-rich-${index}`, index),
+      heightHint: 'rich' as const,
+    }));
+
+    expect(shouldVirtualizeMessageViewport(richTimeline)).toBe(false);
+    expect(shouldVirtualizeMessageViewport(veryLongRichTimeline)).toBe(true);
   });
 
   it('tracks active process item growth for bottom-follow updates', () => {
