@@ -471,6 +471,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         throw;
                     }
 
+                    if (!hasYieldedDelta)
+                    {
+                        _logger.LogDebug(
+                            "[DirectLlm] STREAM FIRST_CHUNK provider={Provider} model={Model} ttftMs={TtftMs}",
+                            config.ProviderId, config.Model, sw.ElapsedMilliseconds);
+                    }
                     hasYieldedDelta = true;
                     yield return delta;
                 }
@@ -909,12 +915,19 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         private long _contentChars;
         private long _reasoningChars;
         private long _toolDeltaCount;
-        private long _usageChunkCount;
+                private long _usageChunkCount;
+        private long _timeToFirstTokenMs;
 
         public long ChunkCount { get; private set; }
 
+                public long TimeToFirstTokenMs => _timeToFirstTokenMs;
+
         public void Observe(StreamDelta delta)
         {
+            if (ChunkCount == 0)
+            {
+                _timeToFirstTokenMs = delta.ProviderReadMs ?? 0;
+            }
             ChunkCount++;
             ObserveValue(delta.ProviderReadMs, ref _readTotalMs, ref _readMaxMs);
             if (delta.ProviderChunkGapMs.HasValue)
@@ -950,7 +963,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ["stream_content_chars"] = _contentChars.ToString(),
                 ["stream_reasoning_chars"] = _reasoningChars.ToString(),
                 ["stream_tool_delta_count"] = _toolDeltaCount.ToString(),
-                ["stream_usage_chunk_count"] = _usageChunkCount.ToString(),
+                                ["stream_usage_chunk_count"] = _usageChunkCount.ToString(),
+                ["stream_ttft_ms"] = _timeToFirstTokenMs.ToString(),
             };
         }
 

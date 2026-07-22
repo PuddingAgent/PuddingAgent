@@ -360,13 +360,13 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             return whitespace;
 
         // P2-4: CSS-aware normalization
-        if (CssPatchHelpers.LooksLikeCssSource(oldText) || CssPatchHelpers.LooksLikeCssSource(original))
+        if (LooksLikeCssSource(oldText) || LooksLikeCssSource(original))
         {
             var cssMatches = FindNormalizedMatches(
                 original,
                 oldText,
                 "css-aware",
-                CssPatchHelpers.NormalizeCssChar);
+                NormalizeCssChar);
             if (cssMatches.Count > 0)
                 return cssMatches;
         }
