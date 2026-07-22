@@ -1,4 +1,4 @@
-// ── ChatPage 壳：路由入口，组装布局 + 模态框 ────────────────
+﻿// ── ChatPage 壳：路由入口，组装布局 + 模态框 ────────────────
 
 import { history, useLocation, useModel } from '@umijs/max';
 import { App, ConfigProvider, Form, Input, Modal } from 'antd';
@@ -660,6 +660,7 @@ const ChatPageContent: React.FC = () => {
         messageListRef={chat.messageListRef}
         listEndRef={chat.listEndRef}
         subAgentCards={chat.subAgentCards}
+        reconnectCountRef={chat.reconnectCountRef}
         currentUser={currentUser}
         viewportScrollIntent={chat.viewportScrollIntent}
         onViewportScrollIntentHandled={chat.clearViewportScrollIntent}

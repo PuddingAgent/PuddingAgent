@@ -7,7 +7,7 @@ import {
   SoundOutlined,
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
-import { Button, Divider, Select, Switch, Tooltip } from 'antd';
+import { Alert, Button, Divider, Select, Switch, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
 import type {
@@ -37,8 +37,7 @@ const HistorySearchModal = React.lazy(() => import('./HistorySearchModal'));
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
-  // layout
-  sidebarOpen: boolean;
+  reconnectCountRef?: React.MutableRefObject<number>;
   onToggleSidebar: () => void;
   // workspace
   workspaces: WorkspaceWithPermDto[];
@@ -117,6 +116,7 @@ interface ChatMainProps {
 const DEV_MODE_KEY = 'pudding-dev-mode';
 
 const ChatMain: React.FC<ChatMainProps> = ({
+  reconnectCountRef,
   sidebarOpen,
   onToggleSidebar,
   workspaceId,
@@ -313,11 +313,19 @@ const ChatMain: React.FC<ChatMainProps> = ({
       }
     };
 
-    void loadSession();
+        void loadSession();
     return () => {
       alive = false;
     };
   }, [selectedSessionId, workspaceId]);
+
+  // SSE 断流状态轮询
+  const [reconnectCount, setReconnectCount] = React.useState(0);
+  React.useEffect(() => {
+    if (!reconnectCountRef) return;
+    const timer = setInterval(() => setReconnectCount(reconnectCountRef.current), 500);
+    return () => clearInterval(timer);
+  }, [reconnectCountRef]);
 
   return (
     <main
@@ -325,6 +333,11 @@ const ChatMain: React.FC<ChatMainProps> = ({
       aria-label="Agent 工作台"
     >
       <div className={styles.workbenchCenter}>
+        {reconnectCount > 0 && (
+          <Alert type="warning" banner showIcon={false}
+            message={`连接中断，正在重连（第 ${reconnectCount} 次）...`}
+            style={{ marginBottom: 0, borderRadius: 0 }} />
+        )}
         <WorkspaceNavigationHeader
           leading={
             !sidebarOpen ? (
@@ -391,8 +404,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
           }
         />
 
-        {/* Chat Body */}
-        <div className={styles.chatBody}>
+        
           <div
             className={devMode ? styles.chatBodyWithDev : styles.chatBodyMain}
           >

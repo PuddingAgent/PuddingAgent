@@ -67,6 +67,7 @@ export function useSessionEventConnection() {
   const sessionEventsWatchdogTimerRef = useRef<number | null>(null);
   const sseSessionIdRef = useRef<string | null>(null);
   const lastSseEventAtRef = useRef<number | null>(null);
+  const reconnectCountRef = useRef(0);
 
   const bindSessionEventConnection = useCallback(
     (ports: SessionEventConnectionPorts) => {
@@ -98,6 +99,7 @@ export function useSessionEventConnection() {
     sessionEventsAbortRef.current = null;
     sseSessionIdRef.current = null;
     lastSseEventAtRef.current = null;
+    reconnectCountRef.current = 0;
     ports.syncSessionIdentity();
   }, [clearSessionEventTimers]);
 
@@ -129,7 +131,8 @@ export function useSessionEventConnection() {
 
       const scheduleReconnect = () => {
         if (sessionEventsReconnectTimerRef.current != null) return;
-        recordPerfEvent('chat.sse.reconnectScheduled', { sessionId });
+        reconnectCountRef.current += 1;
+        recordPerfEvent('chat.sse.reconnectScheduled', { sessionId, attempt: reconnectCountRef.current });
         sessionEventsReconnectTimerRef.current = window.setTimeout(async () => {
           sessionEventsReconnectTimerRef.current = null;
           if (sseSessionIdRef.current !== sessionId) return;
@@ -333,6 +336,7 @@ export function useSessionEventConnection() {
     sessionEventsReconnectTimerRef,
     sseSessionIdRef,
     lastSseEventAtRef,
+    reconnectCountRef,
     startSessionEventStream,
     stopSessionEventStream,
     bindSessionEventConnection,

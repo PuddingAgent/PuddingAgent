@@ -252,6 +252,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     sessionEventsReconnectTimerRef,
     sseSessionIdRef,
     lastSseEventAtRef,
+    reconnectCountRef,
     startSessionEventStream,
     stopSessionEventStream,
     bindSessionEventConnection,
@@ -1314,5 +1315,6 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     wsOpts,
     agOpts,
     creatingSession,
+    reconnectCountRef,
   };
 }
