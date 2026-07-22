@@ -301,6 +301,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     resetCompaction,
     mergeCompactionLifecycleTurns,
     bindCompactedSessionSwitch,
+    markManualSessionSwitch,
   } = useCompaction({
     identity: {
       workspaceId,
@@ -823,6 +824,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       clearRuntimeEvents: clearChatInteractionRuntimeEvents,
       resetCompaction,
     },
+    onManualSwitch: markManualSessionSwitch,
     setViewportScrollIntent,
     messageApi,
   });

@@ -203,12 +203,15 @@ export function useSessionEventReplay({
     ) => {
       const backfillActiveTerminalEvents =
         options?.backfillActiveTerminalEvents === true;
+      // Snapshot lastSequenceNumRef to prevent SSE updates during replay
+      // from causing event-skip (RC-7).
+      const snapshotSequence = lastSequenceNumRef.current;
       let from = backfillActiveTerminalEvents
         ? resolveActiveSessionReplayFromSequence(
-            lastSequenceNumRef.current,
+            snapshotSequence,
             SESSION_EVENT_PAGE_SIZE,
           )
-        : Math.max(0, lastSequenceNumRef.current + 1);
+        : Math.max(0, snapshotSequence + 1);
       const startedAt = performance.now();
       const initialFrom = from;
       let pageCount = 0;
@@ -277,7 +280,7 @@ export function useSessionEventReplay({
             if (
               typeof sequence === 'number' &&
               Number.isFinite(sequence) &&
-              sequence <= lastSequenceNumRef.current &&
+              sequence <= snapshotSequence &&
               (!backfillActiveTerminalEvents ||
                 !HISTORICAL_REPLAY_TERMINAL_EVENTS.has(event.type))
             ) {

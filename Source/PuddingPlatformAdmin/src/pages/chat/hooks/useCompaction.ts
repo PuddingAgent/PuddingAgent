@@ -1,4 +1,4 @@
-import type { MessageInstance } from 'antd/es/message/interface';
+﻿import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useRef } from 'react';
 import {
@@ -71,6 +71,12 @@ export function useCompaction({
   const compactionLifecycleTurnsRef = useRef<Map<string, ChatTurn>>(new Map());
   const activeCompactionTurnIdRef = useRef<string | null>(null);
   const compactedSessionSwitchRef = useRef<CompactedSessionSwitch>(() => {});
+  const lastManualSwitchAtRef = useRef<number>(0);
+
+  /** Called by handleSelectSession to prevent compaction from overriding manual selection (RC-6). */
+  const markManualSessionSwitch = useCallback(() => {
+    lastManualSwitchAtRef.current = performance.now();
+  }, []);
 
   const formatCompactAnswer = useCallback(
     (result: ContextCompactionResult) => formatCompactSuccessMessage(result),
@@ -279,8 +285,17 @@ export function useCompaction({
         newSessionId &&
         sessionIdRef.current !== newSessionId
       ) {
-        messageApi.success(`上下文压缩完成，已切换到「${newSessionTitle}」`, 4);
-        compactedSessionSwitchRef.current(newSessionId, newSessionTitle);
+        // RC-6: Don't override a recent manual session switch
+        const msSinceManualSwitch = performance.now() - lastManualSwitchAtRef.current;
+        if (msSinceManualSwitch < 2000) {
+          messageApi.info(
+            `上下文压缩完成，新会话「${newSessionTitle}」已就绪（未自动切换）`,
+            4,
+          );
+        } else {
+          messageApi.success(`上下文压缩完成，已切换到「${newSessionTitle}」`, 4);
+          compactedSessionSwitchRef.current(newSessionId, newSessionTitle);
+        }
       }
     },
     [
@@ -395,5 +410,6 @@ export function useCompaction({
     resetCompaction,
     mergeCompactionLifecycleTurns,
     bindCompactedSessionSwitch,
+    markManualSessionSwitch,
   };
 }

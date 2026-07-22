@@ -1,4 +1,4 @@
-import type { MessageInstance } from 'antd/es/message/interface';
+﻿import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
 import {
@@ -81,6 +81,7 @@ interface UseSessionSelectionOptions {
   lifecycle: SessionSelectionLifecyclePort;
   setViewportScrollIntent: Dispatch<SetStateAction<ScrollIntent>>;
   messageApi: MessageInstance;
+  onManualSwitch?: () => void;
 }
 
 /** Owns the atomic session-selection transaction and route-driven selection. */
@@ -92,6 +93,7 @@ export function useSessionSelection({
   lifecycle,
   setViewportScrollIntent,
   messageApi,
+  onManualSwitch,
 }: UseSessionSelectionOptions) {
   const historyAbortRef = useRef<AbortController | null>(null);
   const {
@@ -134,6 +136,9 @@ export function useSessionSelection({
 
   const handleSelectSession = useCallback(
     async (sessionId: string, options?: { agentId?: string }) => {
+      // RC-6: Mark manual switch to prevent compaction from overriding
+      onManualSwitch?.();
+
       if (sessionId === selectedSessionId && currentTurns.length > 0) {
         logChatDiag('session.select.noop', {
           sessionId,
@@ -380,6 +385,7 @@ export function useSessionSelection({
       syncCompletedCursor,
       toTurnsFromHistory,
       turnsRef,
+      onManualSwitch,
     ],
   );
 
