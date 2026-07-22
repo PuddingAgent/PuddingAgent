@@ -740,7 +740,7 @@ const MessageList: React.FC<MessageListProps> = ({
           } : { id: '', text: '', timestamp: item.block.createdAt, status: 'success' },
           assistant: item.block.role === 'agent' ? {
             id: item.block.id,
-            status: item.block.status === 'streaming' ? 'streaming' : item.block.status === 'error' ? 'error' : 'success',
+            status: item.block.status === 'streaming' ? 'streaming' : item.block.status === 'error' ? 'error' : item.block.status === 'cancelled' ? 'cancelled' : item.block.status === 'thinking' ? 'thinking' : 'success',
             timelineItems: item.block.processItems ?? [],
             answerMarkdown: item.block.content,
             isStreaming: item.block.isStreaming ?? false,
