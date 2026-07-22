@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
@@ -42,7 +42,8 @@ public sealed record TurnExecutionContext(
     int? MaxToolCallsTotal,
     string? ChannelId,
     string? UserExternalId,
-    RunCancellation RunCancellation
+    RunCancellation RunCancellation,
+    IReadOnlyList<string>? VisualArtifactIds
 )
 {
     /// <summary>由 Execution Kernel 创建的稳定身份。</summary>

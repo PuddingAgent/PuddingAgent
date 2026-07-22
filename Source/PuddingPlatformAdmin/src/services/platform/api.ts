@@ -212,6 +212,7 @@ export interface ChatMessageDto {
   sourceType?: string | null;
   sourceId?: string | null;
   sourceName?: string | null;
+  metadata?: Record<string, string> | null;
 }
 
 export interface ThinkingChunkDto {

@@ -1,4 +1,4 @@
-namespace PuddingCode.Platform;
+﻿namespace PuddingCode.Platform;
 
 /// <summary>
 /// Lightweight workspace projection for repository queries.
@@ -27,6 +27,7 @@ public sealed class ChatMessageRow
     public string? ThinkingJson { get; init; }
     public long CreatedAt { get; init; }
     public string? AgentInstanceId { get; init; }
+    public string? MetadataJson { get; init; }
 }
 
 /// <summary>

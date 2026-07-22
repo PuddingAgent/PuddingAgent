@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
@@ -328,6 +328,7 @@ public sealed class AgentConversationProjectionService(
             SourceKind = sourceKind,
             MessageType = messageType,
             LlmRole = message.Role,
+            Metadata = ParseMetadataJson(message.MetadataJson),
         };
     }
 
@@ -582,4 +583,19 @@ public sealed class AgentConversationProjectionService(
         string? SourceId,
         string? SourceName,
         string? MessageType);
+
+    private static IReadOnlyDictionary<string, string>? ParseMetadataJson(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

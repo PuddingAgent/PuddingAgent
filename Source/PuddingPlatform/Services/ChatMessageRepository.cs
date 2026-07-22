@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -61,6 +61,7 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
         ThinkingJson = e.ThinkingJson,
         CreatedAt = e.CreatedAt,
         AgentInstanceId = e.AgentInstanceId,
+        MetadataJson = e.MetadataJson,
     };
 
     public async Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default)

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -117,6 +117,8 @@ public sealed class ExecutionRunCoordinator(
             var userMessage = await messageRepository.GetByMessageIdAsync(
                 command.UserMessageId, ctsRun.Token);
 
+            var visualArtifactIds = ExtractVisualArtifactIds(userMessage?.MetadataJson);
+
             var context = new TurnExecutionContext(
                 ConversationId: lease.ConversationId,
                 WorkspaceId: lease.WorkspaceId,
@@ -137,7 +139,8 @@ public sealed class ExecutionRunCoordinator(
                 MaxToolCallsTotal: snapshot.BudgetMaxToolCalls,
                 ChannelId: command.ChannelId,
                 UserExternalId: command.UserId,
-                RunCancellation: new RunCancellation(ctsRun.Token))
+                RunCancellation: new RunCancellation(ctsRun.Token),
+                VisualArtifactIds: visualArtifactIds)
             {
                 ExecutionDeadlineUtc = executionDeadlineUtc,
                 ExecutionIdentity = new RuntimeExecutionIdentity
@@ -541,6 +544,37 @@ public sealed class ExecutionRunCoordinator(
     private static async Task SafeCancelAsync(CancellationTokenSource cts)
     {
         try { await cts.CancelAsync(); } catch { }
+    }
+
+    private static IReadOnlyList<string>? ExtractVisualArtifactIds(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            var result = new List<string>();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                var key = prop.Name;
+                if (string.Equals(key, "visionArtifactId", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "vision_artifact_id", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                        result.Add(prop.Value.GetString()!);
+                    else if (prop.Value.ValueKind == JsonValueKind.Array)
+                        foreach (var item in prop.Value.EnumerateArray())
+                            if (item.ValueKind == JsonValueKind.String)
+                                result.Add(item.GetString()!);
+                }
+            }
+            return result.Count > 0 ? result : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private sealed record ControlMonitorOutcome(

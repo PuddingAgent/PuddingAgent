@@ -1,4 +1,4 @@
-namespace PuddingCode.Platform;
+﻿namespace PuddingCode.Platform;
 
 /// <summary>Workspace contact-list projection for an Agent in the chat client.</summary>
 public sealed record AgentStatusProjection(
@@ -80,6 +80,9 @@ public sealed record ConversationMessageView(
     /// <summary>Message fabric or UI message type, for example user_message, agent_message, or agent_reply.</summary>
     public string MessageType { get; init; } = "";
 
-    /// <summary>Role used when feeding the message to the LLM, when it differs from UI/business role.</summary>
+        /// <summary>Role used when feeding the message to the LLM, when it differs from UI/business role.</summary>
     public string LlmRole { get; init; } = "";
+
+    /// <summary>Optional message-level metadata (e.g. visionArtifactId, inputMode).</summary>
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

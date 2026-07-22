@@ -71,6 +71,7 @@ export function useSessionHistoryProjection({
               timestamp: item.createdAt,
               status: 'success',
               dbMessageId: item.id,
+              metadata: item.metadata ?? undefined,
             },
             assistant: createAssistant(
               `hist-assistant-${item.id}`,
