@@ -1,4 +1,4 @@
-import type { MutableRefObject } from 'react';
+﻿import type { MutableRefObject } from 'react';
 import { useCallback, useRef } from 'react';
 import {
   type AdminChatStreamEvent,
@@ -64,6 +64,7 @@ export function useSessionEventConnection() {
   const sessionEventsAbortRef = useRef<AbortController | null>(null);
   const sessionEventsPollTimerRef = useRef<number | null>(null);
   const sessionEventsReconnectTimerRef = useRef<number | null>(null);
+  const sessionEventsWatchdogTimerRef = useRef<number | null>(null);
   const sseSessionIdRef = useRef<string | null>(null);
   const lastSseEventAtRef = useRef<number | null>(null);
 
@@ -82,6 +83,10 @@ export function useSessionEventConnection() {
     if (sessionEventsReconnectTimerRef.current != null) {
       window.clearTimeout(sessionEventsReconnectTimerRef.current);
       sessionEventsReconnectTimerRef.current = null;
+    }
+    if (sessionEventsWatchdogTimerRef.current != null) {
+      window.clearTimeout(sessionEventsWatchdogTimerRef.current);
+      sessionEventsWatchdogTimerRef.current = null;
     }
   }, []);
 
@@ -223,6 +228,25 @@ export function useSessionEventConnection() {
       };
       scheduleReplayPoll();
 
+      const scheduleWatchdog = () => {
+        sessionEventsWatchdogTimerRef.current = window.setTimeout(() => {
+          if (
+            sseSessionIdRef.current !== sessionId ||
+            controller.signal.aborted
+          ) {
+            return;
+          }
+          const lastEvent = lastSseEventAtRef.current;
+          if (lastEvent && performance.now() - lastEvent > 90_000) {
+            recordPerfEvent('chat.sse.watchdog', { sessionId, idleMs: Math.round(performance.now() - lastEvent) });
+            scheduleReconnect();
+            return;
+          }
+          scheduleWatchdog();
+        }, 30_000);
+      };
+      scheduleWatchdog();
+
       try {
         subscribeSessionEvents(
           sessionId,
@@ -287,6 +311,10 @@ export function useSessionEventConnection() {
       const originalAbort = controller.abort.bind(controller);
       controller.abort = () => {
         window.removeEventListener('online', onOnline);
+        if (sessionEventsWatchdogTimerRef.current != null) {
+          window.clearTimeout(sessionEventsWatchdogTimerRef.current);
+          sessionEventsWatchdogTimerRef.current = null;
+        }
         recordPerfEvent('chat.sse.stop', { sessionId });
         logChatDiag('sse.stop', {
           sessionId,
