@@ -27,7 +27,9 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
     }
 
     protected override string RoleName => "deployer";
-    protected override int DefaultMaxRounds => 300;
+    protected override int DefaultMaxRounds => 200;
+    protected override IReadOnlyList<string>? FallbackModelIds =>
+        new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDeployArgs args, ToolExecutionContext context, CancellationToken ct)
