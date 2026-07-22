@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PuddingPlatform.Data;
@@ -43,11 +43,33 @@ public sealed class VisionArtifactApiController(
             capturedAt,
             ct);
 
-        return Ok(new VisionArtifactUploadResponse(
+                return Ok(new VisionArtifactUploadResponse(
             result.ArtifactId,
             result.MimeType,
             result.Width,
             result.Height,
             result.CapturedAt));
+    }
+
+    /// <summary>读取视觉工件图片供前端渲染。</summary>
+    [HttpGet("{artifactId}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetArtifact(
+        string workspaceId,
+        string artifactId,
+        CancellationToken ct)
+    {
+        var reference = await storage.ResolveAsync(workspaceId, artifactId, ct);
+        if (reference is null)
+            return NotFound(new { message = $"视觉工件 '{artifactId}' 不存在" });
+
+        // reference.Uri is "data:image/jpeg;base64,..."
+        const string base64Prefix = "base64,";
+        var uri = reference.Uri;
+        var idx = uri.IndexOf(base64Prefix, StringComparison.Ordinal);
+        if (idx < 0)
+            return Problem("视觉工件数据格式异常", statusCode: 500);
+        var bytes = Convert.FromBase64String(uri[(idx + base64Prefix.Length)..]);
+        return File(bytes, reference.MimeType);
     }
 }
