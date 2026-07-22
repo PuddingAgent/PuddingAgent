@@ -1,4 +1,4 @@
-// ── MessageGroup：Runtime Timeline 容器（连续信息流，不是卡片堆叠）──
+﻿// ── MessageGroup：Runtime Timeline 容器（连续信息流，不是卡片堆叠）──
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -486,15 +486,30 @@ const MessageGroup: React.FC<MessageGroupProps> = ({
                   {userMessage.status === 'sending' && (
                     <Text className={styles.sendingText}>发送中...</Text>
                   )}
+                  {userMessage.status === 'failed' && (
+                    <Text className={styles.sendingText} style={{ color: 'var(--ant-color-error)' }}>发送失败</Text>
+                  )}
                 </div>
                 <div
-                  className={cx(styles.bubble, styles.userBubble)}
+                  className={cx(styles.bubble, styles.userBubble, userMessage.status === 'failed' && styles.errorBubble)}
                   onContextMenu={(e) =>
                     onContextMenu(e, turn.turnId, 'user', turn.userMessage.text)
                   }
                 >
                   {userMessage.text}
                 </div>
+                {userMessage.status === 'failed' && (
+                  <Space size={4} style={{ marginTop: 4 }}>
+                    <Tooltip title="复制内容">
+                      <Button size="small" type="text" icon={<CopyOutlined />}
+                        onClick={() => navigator.clipboard.writeText(userMessage.text)} />
+                    </Tooltip>
+                    <Tooltip title="重试发送">
+                      <Button size="small" type="text" icon={<ReloadOutlined />}
+                        onClick={() => onRerunTurn?.(turn.turnId)} />
+                    </Tooltip>
+                  </Space>
+                )}
               </div>
             </div>
           )}

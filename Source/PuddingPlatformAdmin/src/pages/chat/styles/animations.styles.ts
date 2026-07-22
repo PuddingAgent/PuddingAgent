@@ -59,6 +59,23 @@ export const useAnimationStyles = createStyles(({ token }) => ({
     '0%, 100%': { opacity: 1 },
     '50%': { opacity: 0.92 },
   },
+  // Phase 1: 启用已定义未使用的 keyframes (messageIn/stepIn/blockCondense/glowSettle)
+  '@keyframes messageIn': {
+    '0%': { opacity: 0, transform: 'translateY(8px)' },
+    '100%': { opacity: 1, transform: 'translateY(0)' },
+  },
+  '@keyframes stepIn': {
+    '0%': { opacity: 0, transform: 'translateY(4px)' },
+    '100%': { opacity: 1, transform: 'translateY(0)' },
+  },
+  '@keyframes blockCondense': {
+    '0%': { maxHeight: '2000px', opacity: 1 },
+    '100%': { maxHeight: 0, opacity: 0 },
+  },
+  '@keyframes glowSettle': {
+    '0%': { boxShadow: '0 0 12px 2px rgba(124,58,237,0.25)' },
+    '100%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
+  },
   streamingCursor: {
     display: 'inline-block',
     width: 8,
