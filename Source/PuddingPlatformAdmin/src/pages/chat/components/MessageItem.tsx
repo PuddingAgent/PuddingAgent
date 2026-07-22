@@ -149,6 +149,40 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const styles = rawStyles as Record<string, string>;
   const outputRef = useRef<HTMLDivElement | null>(null);
   const renderStart = performance.now();
+
+  // B3: Settle FLIP transition — smooth the DOM jump when streaming ends
+  const wasStreamingRef = useRef(false);
+  const preSettleHeightRef = useRef<number | null>(null);
+
+  // Capture height before settle (while still streaming)
+  useLayoutEffect(() => {
+    if (isStreaming && outputRef.current) {
+      preSettleHeightRef.current = outputRef.current.getBoundingClientRect().height;
+    }
+    if (wasStreamingRef.current && !isStreaming && outputRef.current && preSettleHeightRef.current !== null) {
+      // FLIP: streaming just ended — animate from old height to new
+      const el = outputRef.current;
+      const firstHeight = preSettleHeightRef.current;
+      const lastHeight = el.getBoundingClientRect().height;
+      const delta = firstHeight - lastHeight;
+      if (Math.abs(delta) > 2) {
+        el.style.transform = `translateY(${delta}px)`;
+        el.style.transition = 'none';
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 200ms ease-out';
+          el.style.transform = '';
+          // Clean up inline styles after transition
+          const onEnd = () => {
+            el.style.transition = '';
+            el.removeEventListener('transitionend', onEnd);
+          };
+          el.addEventListener('transitionend', onEnd);
+        });
+      }
+      preSettleHeightRef.current = null;
+    }
+    wasStreamingRef.current = Boolean(isStreaming);
+  }, [isStreaming]);
   const totalTextChars = markdownText.length;
   const stableChars =
     stableMarkdown?.length ?? (isStreaming ? 0 : markdownText.length);

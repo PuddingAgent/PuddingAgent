@@ -10,6 +10,13 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 
 技术栈: .NET 10 / SQLite (EF Core) / React + TypeScript / Serilog
 
+### 开发启动与诊断
+
+| 文件 | 用途 |
+|------|------|
+| `../dev-up.py` | 本地 Backend/Frontend/Proxy 启动器；前端短时间连续退出时熔断并指向 `tmp/dev/frontend.err.log`，避免编译错误触发无限重启；`--auto-yolo` 以后台健康等待执行，不受前台监督循环阻塞 |
+| `../How-Debuge.md` | 可重复使用的启动、会话、SSE、子代理与工具诊断路径 |
+
 ---
 
 ## 顶层目录结构
@@ -142,6 +149,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
 | `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；为 row 提供稳定 `data-viewport-item-id`，不直接拥有滚动策略 |
 | `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
+| `PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx` | Chat 工作台布局壳层；`chatBody`/开发面板/历史搜索保持合法 JSX 嵌套，并展示 SSE 重连提示 |
 
 ---
 

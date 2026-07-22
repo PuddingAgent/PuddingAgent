@@ -5,13 +5,15 @@
   PlayCircleOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { Button, Paragraph, Switch, Text } from 'antd';
+import { Button, Switch, Typography } from 'antd';
 import React from 'react';
 import type { PuddingPerfEvent } from '@/utils/debug';
 import { useChatStyles } from '../../styles';
-import CountsWorkflowPanel from './DevPanel/CountsWorkflowPanel';
-import PerfEventList from './DevPanel/PerfEventList';
-import PerfMetricsGrid from './DevPanel/PerfMetricsGrid';
+import CountsWorkflowPanel from './CountsWorkflowPanel';
+import PerfEventList from './PerfEventList';
+import PerfMetricsGrid from './PerfMetricsGrid';
+
+const { Paragraph, Text } = Typography;
 
 interface DiagnosisItem {
   code: string;

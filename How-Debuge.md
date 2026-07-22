@@ -42,15 +42,17 @@ $runtimeLogs = Join-Path $dataRoot "logs"
 
 | 文件 | 用途 |
 |---|---|
-| `tmp/dev/supervisor.out.log` | 守护进程启动、重启、健康检查 |
-| `tmp/dev/supervisor.err.log` | 守护进程异常 |
+| `data/logs/dev-up-YYYY-MM-DD.log` | 启动器生命周期、子进程退出与重启熔断 |
 | `tmp/dev/backend.out.log` | 后端控制台日志，排查启动与聊天链路的首选 |
 | `tmp/dev/backend.err.log` | 后端进程级错误和启动失败 |
 | `tmp/dev/frontend.out.log` | 前端编译与开发服务器输出 |
 | `tmp/dev/frontend.err.log` | 前端编译、模块加载错误 |
 | `tmp/dev/proxy.out.log` | 反向代理请求与上游状态 |
 | `tmp/dev/proxy.err.log` | 端口占用、代理连接失败 |
-| `tmp/dev/health.status.json` | 最近一次健康探测结果 |
+
+若终端连续出现 `frontend exited ... restarting`，先查看
+`tmp/dev/frontend.err.log` 的第一条编译错误。前端在 30 秒内连续退出 3 次后，
+`dev-up.py` 会停止整组进程并打印错误日志路径，避免确定性编译错误形成无限重启循环。
 
 ### 3.2 应用结构化日志
 
@@ -87,7 +89,7 @@ python .\dev-up.py --restart
 
 ```powershell
 python .\dev-up.py --status
-Get-Content .\tmp\dev\health.status.json
+Invoke-WebRequest http://localhost/health -UseBasicParsing
 ```
 
 如果健康检查不是 200，先检查启动、编译、DI 和端口，不要先调试聊天 Controller：
@@ -95,7 +97,7 @@ Get-Content .\tmp\dev\health.status.json
 ```powershell
 Get-Content .\tmp\dev\backend.err.log -Tail 200
 Get-Content .\tmp\dev\backend.out.log -Tail 400
-Get-Content .\tmp\dev\supervisor.err.log -Tail 100
+Get-Content .\tmp\dev\frontend.err.log -Tail 200
 Get-Content .\tmp\dev\proxy.err.log -Tail 100
 ```
 

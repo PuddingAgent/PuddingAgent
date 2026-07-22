@@ -44,6 +44,8 @@ PREFERRED_PROXY_PORT = 80
 FALLBACK_PROXY_PORT = None
 HEALTH_PATH = "/health"
 PROCESS_STOP_TIMEOUT_SECONDS = 10.0
+FRONTEND_RESTART_LIMIT = int(os.environ.get("PUDDING_FRONTEND_RESTART_LIMIT", "3"))
+FRONTEND_RESTART_WINDOW_SECONDS = float(os.environ.get("PUDDING_FRONTEND_RESTART_WINDOW_SECONDS", "30"))
 
 BACKEND_PID_FILE = RUN_DIR / "backend.pid"
 FRONTEND_PID_FILE = RUN_DIR / "frontend.pid"
@@ -413,6 +415,25 @@ def choose_proxy_port(host: str, preferred_port: int, fallback_port: int | None)
 
 def is_port_free(host: str, port: int) -> bool:
     return can_bind(host, port)
+
+
+class RapidRestartLimiter:
+    """Stops deterministic startup failures from becoming an infinite restart loop."""
+
+    def __init__(self, max_restarts: int, window_seconds: float) -> None:
+        self.max_restarts = max_restarts
+        self.window_seconds = window_seconds
+        self._attempts: dict[str, list[float]] = {}
+
+    def allow(self, role: str, now: float) -> bool:
+        cutoff = now - self.window_seconds
+        attempts = [value for value in self._attempts.get(role, []) if value >= cutoff]
+        if len(attempts) >= self.max_restarts:
+            self._attempts[role] = attempts
+            return False
+        attempts.append(now)
+        self._attempts[role] = attempts
+        return True
 
 
 def build_health_url(host: str, port: int, path: str) -> str:
@@ -1223,6 +1244,10 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
     )
 
     stopping = False
+    restart_limiter = RapidRestartLimiter(
+        max_restarts=FRONTEND_RESTART_LIMIT,
+        window_seconds=FRONTEND_RESTART_WINDOW_SECONDS,
+    )
 
     def request_stop(signum, frame) -> None:
         nonlocal stopping
@@ -1246,6 +1271,15 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
                     force_release_port(proxy_port)
                     processes[role] = start_proxy(proxy_port)
                 elif role == "frontend":
+                    if not restart_limiter.allow(role, time.monotonic()):
+                        info(
+                            f"! {role} exited with code {exit_code} more than "
+                            f"{FRONTEND_RESTART_LIMIT} times in "
+                            f"{FRONTEND_RESTART_WINDOW_SECONDS:g}s; stopping all. "
+                            f"See {FRONTEND_ERR_LOG.relative_to(ROOT)}"
+                        )
+                        stopping = True
+                        break
                     info(f"! {role} exited with code {exit_code}, restarting")
                     force_release_port(FRONTEND_PORT)
                     wait_until_port_free(FRONTEND_PORT)
@@ -1477,10 +1511,15 @@ def main(argv: list[str] | None = None) -> int:
             follow_logs(args.logs)
             return 0
 
-    start_all(no_install=args.no_install, frontend_only=args.frontend_only)
-
     if args.auto_yolo:
-        do_auto_yolo(args)
+        threading.Thread(
+            target=do_auto_yolo,
+            args=(args,),
+            name="dev-up-auto-yolo",
+            daemon=True,
+        ).start()
+
+    start_all(no_install=args.no_install, frontend_only=args.frontend_only)
 
     return 0
 

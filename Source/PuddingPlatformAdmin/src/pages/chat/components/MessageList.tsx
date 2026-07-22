@@ -8,6 +8,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
 import type {
@@ -27,6 +28,7 @@ import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
 import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { inboundDebug } from '../utils/inboundDebug';
+import { getPerfEvents } from '@/utils/debug';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
 import MessageStream from './MessageStream';
@@ -622,6 +624,7 @@ const MessageList: React.FC<MessageListProps> = ({
   onViewportScrollIntentHandled,
 }) => {
   const { styles } = useChatStyles();
+  const [diagCopied, setDiagCopied] = useState(false);
   const activeRun = conversationView?.activeRun ?? null;
   const activeRunMarkdownCacheRef = useRef<{ runId: string; markdown: string } | null>(null);
   const activeRunMarkdown = useMemo(() => {
@@ -852,13 +855,43 @@ const MessageList: React.FC<MessageListProps> = ({
               ))}
         </div>
       )}
-      {error && (
+            {error && (
         <Alert
           type="error"
           message={error}
           closable
           onClose={onClearError}
           className={styles.errorAlert}
+          action={
+            <Button
+              size="small"
+              type="link"
+              onClick={() => {
+                const payload = {
+                  timestamp: new Date().toISOString(),
+                  userAgent: navigator.userAgent,
+                  url: window.location.href,
+                  sessionId: sessionId ?? null,
+                  agentId: agentId ?? null,
+                  turnsCount: turns.length,
+                  lastTurnStatus:
+                    turns.length > 0
+                      ? (turns[turns.length - 1] as { status?: string }).status ?? null
+                      : null,
+                  error,
+                  recentPerfEvents: getPerfEvents().slice(-5),
+                };
+                navigator.clipboard
+                  .writeText(JSON.stringify(payload, null, 2))
+                  .then(() => {
+                    setDiagCopied(true);
+                    setTimeout(() => setDiagCopied(false), 2000);
+                  });
+              }}
+            >
+              {diagCopied ? '✓ 已复制' : '复制诊断信息'}
+            </Button>
+          }
         />
       )}
       {/* 底部滚动控制 */}

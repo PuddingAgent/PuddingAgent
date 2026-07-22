@@ -1,4 +1,4 @@
-// ── useTypewriterStreaming: Ink Bloom Typewriter 渲染调度 ──
+﻿// ── useTypewriterStreaming: Ink Bloom Typewriter 渲染调度 ──
 // 职责：将完整累积文本分为「稳定 Markdown 块」和「正在键入的尾段」，
 //       并按视觉节奏逐 chunk 显示 liveText。
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,14 +33,29 @@ export interface TypewriterStreamingOptions {
 /**
  * 找到稳定 Markdown 提交边界。
  * 只提交已闭合段落/代码块/表格，不提交半截语法。
+ * @param fromOffset 增量扫描起始偏移（默认 0 = 全量扫描）。
+ *   传入 stableLenRef.current 可跳过已提交文本，将 O(n) 降为 O(delta)。
+ *   内部会回退到最近的段落边界（\n\n）以确保语法完整性。
  */
-function findStableMarkdownBoundary(text: string): number {
+function findStableMarkdownBoundary(text: string, fromOffset: number = 0): number {
   if (!text) return 0;
 
-  // 从后向前扫描安全边界
-  const lines = text.split('\n');
-  let lastSafeEnd = 0;
-  let accumulatedLen = 0;
+  // 增量优化：从 fromOffset 回退到最近的段落边界开始扫描
+  let scanStart = 0;
+  if (fromOffset > 0 && fromOffset < text.length) {
+    // 找到 fromOffset 之前最近的 \n\n（段落边界）
+    const paraBreak = text.lastIndexOf('\n\n', fromOffset);
+    if (paraBreak > 0) {
+      scanStart = paraBreak + 1; // 从第二个 \n 之后开始（即新段落起始）
+    }
+    // 如果没找到段落边界，保持从 0 扫描（安全回退）
+  }
+
+  // 从 scanStart 向后扫描安全边界
+  const slice = text.slice(scanStart);
+  const lines = slice.split('\n');
+  let lastSafeEnd = scanStart;
+  let accumulatedLen = scanStart;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -79,7 +94,8 @@ function findStableMarkdownBoundary(text: string): number {
     accumulatedLen += line.length + 1; // +1 for \n
   }
 
-  // 检查未闭合的 fenced code block: 如果 ``` 数量为奇数，退回上一个安全点
+    // 检查未闭合的 fenced code block: 如果 ``` 数量为奇数，退回上一个安全点
+  // 注意：fence 检查必须对全文进行（奇偶性依赖完整文本）
   const fenceMatches = text.match(/```/g);
   if (fenceMatches && fenceMatches.length % 2 !== 0) {
     // 有未闭合代码块，只能提交到最近的```之前的安全边界
@@ -159,7 +175,7 @@ export function useTypewriterStreaming({
   });
   const [isSettling, setIsSettling] = useState(false);
 
-  const prevTextRef = useRef(isStreaming ? '' : text);
+    const prevTextRef = useRef(isStreaming ? '' : text);
   const prevIncomingLengthRef = useRef(isStreaming ? text.length : 0);
   const stableLenRef = useRef(isStreaming ? 0 : text.length);
   const visiblePosRef = useRef(0);
@@ -170,6 +186,11 @@ export function useTypewriterStreaming({
   const lastTickScheduledAtRef = useRef<number>(0);
   const wasStreamingRef = useRef(isStreaming);
 
+  // B2: Adaptive typewriter speed — track incoming stream rate (chars/sec)
+  const streamRateRef = useRef(0);
+  const lastDeltaTimestampRef = useRef(0);
+  const rateWindowRef = useRef<{ chars: number; elapsed: number }[]>([]);
+
   // 清除 tick 定时器
   const clearTick = useCallback(() => {
     if (tickTimerRef.current != null) {
@@ -179,9 +200,10 @@ export function useTypewriterStreaming({
     tickActiveRef.current = false;
   }, []);
 
-  const commitStableUpToVisible = useCallback(
+    const commitStableUpToVisible = useCallback(
     (fullText: string, visibleAbsolutePos: number) => {
-      const safeBoundary = findStableMarkdownBoundary(fullText);
+      // A1 增量优化：从 stableLenRef.current 开始扫描，跳过已提交文本
+      const safeBoundary = findStableMarkdownBoundary(fullText, stableLenRef.current);
       if (safeBoundary > visibleAbsolutePos) return;
       const commitBoundary = Math.min(safeBoundary, fullText.length);
       if (commitBoundary <= stableLenRef.current) return;
@@ -319,9 +341,37 @@ export function useTypewriterStreaming({
         ),
       }));
 
-      // 如果 live 长度增长超过 maxLagChars，强制推进 visiblePos
-      if (newLive.length - visiblePosRef.current > maxLagChars) {
-        const forceAdvance = newLive.length - maxLagChars;
+            // B2: Compute adaptive maxLagChars from recent stream speed
+      const now = performance.now();
+      if (incomingDelta > 0 && lastDeltaTimestampRef.current > 0) {
+        const dt = now - lastDeltaTimestampRef.current;
+        if (dt > 0 && dt < 5000) {
+          rateWindowRef.current.push({ chars: incomingDelta, elapsed: dt });
+          // Keep only last 2 seconds of samples
+          let totalElapsed = 0;
+          const window = rateWindowRef.current;
+          while (window.length > 1 && totalElapsed < 2000) {
+            totalElapsed += window[window.length - 1].elapsed;
+            if (totalElapsed >= 2000) break;
+            window.shift();
+          }
+          // Compute chars/sec over the window
+          const totalChars = window.reduce((s, w) => s + w.chars, 0);
+          const totalTime = window.reduce((s, w) => s + w.elapsed, 0);
+          streamRateRef.current = totalTime > 0 ? (totalChars / totalTime) * 1000 : 0;
+        }
+      }
+      lastDeltaTimestampRef.current = now;
+
+      // B2: adaptiveMaxLag — ~1.5s buffer of incoming text, clamped [48, 200]
+      const adaptiveMaxLag = Math.max(
+        48,
+        Math.min(200, Math.round(streamRateRef.current * 1.5)),
+      );
+
+      // 如果 live 长度增长超过 adaptiveMaxLag，强制推进 visiblePos
+      if (newLive.length - visiblePosRef.current > adaptiveMaxLag) {
+        const forceAdvance = newLive.length - adaptiveMaxLag;
         if (forceAdvance > visiblePosRef.current) {
           visiblePosRef.current = forceAdvance;
           setTwState((s) => ({

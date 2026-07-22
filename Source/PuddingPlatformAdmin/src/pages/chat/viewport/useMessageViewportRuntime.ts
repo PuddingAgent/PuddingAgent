@@ -115,6 +115,11 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   const preUpdateViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
   const firstTimelineItemIdRef = useRef<string | null>(null);
   const previousScrollHeightRef = useRef<number | null>(null);
+  // C2: Suspend auto-follow while smooth scroll animation is in progress
+  const smoothScrollActiveRef = useRef(false);
+  const smoothScrollTimerRef = useRef<number | null>(null);
+  // A3: Cache measured row heights to avoid estimate→measure correction jitter
+  const measuredHeightsRef = useRef<Map<number, number>>(new Map());
 
   // Fingerprint tracks both item count and last item content length,
   // so streaming content growth also triggers the auto-follow effect.
@@ -124,11 +129,14 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   );
   const virtualizationEnabled = shouldVirtualizeMessageViewport(options.items);
 
-  const virtualizer = useVirtualizer({
+    const virtualizer = useVirtualizer({
     count: options.items.length,
     getScrollElement: () => parentRef.current,
     enabled: virtualizationEnabled,
     estimateSize: (index) => {
+      // A3: Return cached measured height if available
+      const cached = measuredHeightsRef.current.get(index);
+      if (cached !== undefined) return cached;
       const hint = options.items[index]?.heightHint;
       if (hint === 'compact') return 96;
       if (hint === 'rich') return 520;
@@ -138,6 +146,15 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     overscan: 6,
     paddingEnd: MESSAGE_VIEWPORT_BOTTOM_PADDING_PX,
     getItemKey: (index) => options.items[index]?.id ?? index,
+    // A3: Cache actual DOM measurements for future estimateSize calls
+    measureElement: (element) => {
+      const idx = Number((element as HTMLElement).dataset.index);
+      const height = element.getBoundingClientRect().height;
+      if (!Number.isNaN(idx) && height > 0) {
+        measuredHeightsRef.current.set(idx, height);
+      }
+      return height;
+    },
   });
 
   const virtualRows = virtualizer.getVirtualItems();
@@ -305,6 +322,8 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   // item measurement and anchor restoration; it must not estimate the bottom.
   React.useLayoutEffect(() => {
     if (options.items.length === 0) return;
+    // C2: Skip auto-follow while smooth scroll animation is in progress
+    if (smoothScrollActiveRef.current) return;
     if (state.followMode === 'auto' || state.followMode === 'pinned') {
       writeBottomPosition('auto');
       scheduleBottomSettlement();
@@ -382,6 +401,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   // at the same pixel offset after React inserts older items. Normal-flow rows
   // can be restored immediately. In virtual mode the anchor may first need to
   // be materialized, then the same DOM offset correction is applied next frame.
+  // C3: Double-retry with scrollHeight delta fallback for robustness.
   React.useLayoutEffect(() => {
     const anchor = pendingViewportAnchorRef.current;
     if (!anchor) return;
@@ -393,6 +413,10 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     if (!virtualizationEnabled) return;
     const index = options.items.findIndex((item) => item.id === anchor.itemId);
     if (index < 0) return;
+
+    // C3: Save scrollHeight before first attempt for delta fallback
+    const scrollHeightBefore = parentRef.current?.scrollHeight ?? 0;
+
     virtualizer.scrollToIndex(index, { align: 'start', behavior: 'auto' });
     if (restoreAnchorFrameRef.current !== null) {
       cancelAnimationFrame(restoreAnchorFrameRef.current);
@@ -401,11 +425,31 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       restoreAnchorFrameRef.current = null;
       if (restoreVisibleAnchor(anchor)) {
         pendingViewportAnchorRef.current = null;
+        return;
       }
+      // C3: Second retry — re-materialize and attempt restore again
+      virtualizer.scrollToIndex(index, { align: 'start', behavior: 'auto' });
+      requestAnimationFrame(() => {
+        if (restoreVisibleAnchor(anchor)) {
+          pendingViewportAnchorRef.current = null;
+          return;
+        }
+        // C3: Final fallback — scrollHeight delta compensation
+        const el = parentRef.current;
+        if (el) {
+          const delta = el.scrollHeight - scrollHeightBefore;
+          if (Math.abs(delta) > 0.5) {
+            suppressProgrammaticScroll();
+            el.scrollTop = Math.max(0, el.scrollTop + delta);
+          }
+        }
+        pendingViewportAnchorRef.current = null;
+      });
     });
   }, [
     options.items,
     restoreVisibleAnchor,
+    suppressProgrammaticScroll,
     totalSize,
     virtualizationEnabled,
     virtualizer,
@@ -429,6 +473,10 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       if (restoreAnchorFrameRef.current !== null) {
         cancelAnimationFrame(restoreAnchorFrameRef.current);
       }
+      // C2: Clean up smooth scroll safety timer
+      if (smoothScrollTimerRef.current !== null) {
+        clearTimeout(smoothScrollTimerRef.current);
+      }
     },
     [],
   );
@@ -436,6 +484,17 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   const scrollToBottom = useCallback(
     ({ behavior }: { behavior: ScrollBehavior; reason: string }) => {
       if (options.items.length === 0) return;
+      // C2: Suspend auto-follow during smooth scroll animation
+      if (behavior === 'smooth') {
+        smoothScrollActiveRef.current = true;
+        if (smoothScrollTimerRef.current !== null) {
+          clearTimeout(smoothScrollTimerRef.current);
+        }
+        smoothScrollTimerRef.current = window.setTimeout(() => {
+          smoothScrollActiveRef.current = false;
+          smoothScrollTimerRef.current = null;
+        }, 500);
+      }
       writeBottomPosition(behavior);
       if (behavior === 'auto') scheduleBottomSettlement();
       setState((current) => ({

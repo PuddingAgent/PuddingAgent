@@ -372,6 +372,30 @@ class DevUpSupervisorTests(unittest.TestCase):
         self.assertEqual(5, policy.next_delay("backend", now=5))
         self.assertEqual(0, policy.next_delay("backend", now=10))
 
+    def test_rapid_restart_limiter_stops_fourth_attempt_inside_window(self):
+        dev_up = load_dev_up_module()
+        limiter = dev_up.RapidRestartLimiter(max_restarts=3, window_seconds=30)
+
+        self.assertTrue(limiter.allow("frontend", now=0))
+        self.assertTrue(limiter.allow("frontend", now=5))
+        self.assertTrue(limiter.allow("frontend", now=10))
+        self.assertFalse(limiter.allow("frontend", now=15))
+        self.assertTrue(limiter.allow("frontend", now=31))
+
+    def test_auto_yolo_worker_starts_before_blocking_supervisor(self):
+        dev_up = load_dev_up_module()
+
+        with (
+            patch.object(dev_up, "stop_all"),
+            patch.object(dev_up, "start_all") as start_all,
+            patch.object(dev_up.threading, "Thread") as thread_factory,
+        ):
+            worker = thread_factory.return_value
+            self.assertEqual(0, dev_up.main(["--restart", "--auto-yolo"]))
+
+        worker.start.assert_called_once_with()
+        start_all.assert_called_once_with(no_install=False, frontend_only=False)
+
     def test_watch_snapshot_ignores_frontend_generated_umi_files(self):
         dev_up = load_dev_up_module()
 

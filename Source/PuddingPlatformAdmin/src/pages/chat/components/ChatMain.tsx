@@ -37,6 +37,7 @@ const HistorySearchModal = React.lazy(() => import('./HistorySearchModal'));
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
+  sidebarOpen: boolean;
   reconnectCountRef?: React.MutableRefObject<number>;
   onToggleSidebar: () => void;
   // workspace
@@ -404,7 +405,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
           }
         />
 
-        
+        <div className={styles.chatBody}>
           <div
             className={devMode ? styles.chatBodyWithDev : styles.chatBodyMain}
           >
