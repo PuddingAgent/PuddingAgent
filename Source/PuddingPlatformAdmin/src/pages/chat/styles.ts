@@ -1,4 +1,4 @@
-// ── 聊天页样式（antd-style createStyles — 组合模式）─────────────────────
+﻿// ── 聊天页样式（antd-style createStyles — 组合模式）─────────────────────
 import { createStyles } from 'antd-style';
 import { useLayoutStyles } from './styles/layout.styles';
 import { useMessageStyles } from './styles/message.styles';
@@ -10,6 +10,11 @@ import { useMarkdownStyles } from './styles/markdown.styles';
 import { useComposerStyles } from './styles/composer.styles';
 import { usePanelStyles } from './styles/panel.styles';
 import { useVoiceStyles } from './styles/voice.styles';
+import { useHeartbeatStyles } from './styles/heartbeat.styles';
+import { useStatusStyles } from './styles/status.styles';
+import { useDevpanelStyles } from './styles/devpanel.styles';
+import { useAnimationStyles } from './styles/animations.styles';
+import { useSidebarStyles } from './styles/sidebar.styles';
 
 export const SIDEBAR_WIDTH = 260;
 
@@ -2140,11 +2145,7 @@ const useResidualStyles = createStyles(({ token }) => ({
       color: 'var(--text-primary)',
     },
   },
-  '@keyframes emptyFadeIn': {
-    '0%': { opacity: 0, transform: 'translateY(4px)' },
-    '100%': { opacity: 1, transform: 'translateY(0)' },
-  },
-  errorAlert: { margin: '8px 0' },
+    errorAlert: { margin: '8px 0' },
   sidebarEmpty: {
     flex: 1,
     display: 'flex',
@@ -2155,23 +2156,7 @@ const useResidualStyles = createStyles(({ token }) => ({
     padding: '0 16px',
     textAlign: 'center' as const,
   },
-  streamingCursor: {
-    display: 'inline-block',
-    width: 8,
-    marginLeft: 2,
-    color: token.colorPrimary,
-    animation: 'cursorBlink 1s steps(1) infinite',
-  },
-  '@keyframes cursorBlink': {
-    '0%, 100%': { opacity: 1 },
-    '50%': { opacity: 0 },
-  },
-  latestTurn: { animation: 'messageIn 300ms ease-out' },
-  stepCardAnimated: {
-    animation: 'stepIn 200ms ease-out',
-    opacity: 0,
-    animationFillMode: 'forwards' as const,
-  },
+  
   stepCardCompleteIcon: {
     transition: 'color 300ms ease-in-out',
     color: 'var(--desaturated-green)',
@@ -2444,112 +2429,7 @@ const useResidualStyles = createStyles(({ token }) => ({
     fontSize: 12,
     lineHeight: 1.5,
   },
-  /* ── Stateful Motion: thinking, searching, memory, tool, error, success ── */
-  '@keyframes neuralPulse': {
-    '0%, 100%': { opacity: 0.4, transform: 'scale(1)' },
-    '50%': { opacity: 0.8, transform: 'scale(1.02)' },
-  },
-  '@keyframes particleFlow': {
-    '0%': { backgroundPosition: '0% 50%' },
-    '100%': { backgroundPosition: '200% 50%' },
-  },
-  '@keyframes tokenStream': {
-    '0%': { opacity: 0, transform: 'translateY(4px)' },
-    '100%': { opacity: 1, transform: 'translateY(0)' },
-  },
-  '@keyframes waveScan': {
-    '0%': { backgroundPosition: '-200% 50%' },
-    '100%': { backgroundPosition: '200% 50%' },
-  },
-  '@keyframes breathe': {
-    '0%, 100%': { opacity: 0.6, transform: 'scale(0.98)' },
-    '50%': { opacity: 1, transform: 'scale(1)' },
-  },
-  '@keyframes ambientFloat': {
-    '0%, 100%': { transform: 'translateY(0)' },
-    '50%': { transform: 'translateY(-6px)' },
-  },
-  '@keyframes glitchShake': {
-    '0%, 100%': { transform: 'translateX(0)' },
-    '10%': { transform: 'translateX(-2px)' },
-    '30%': { transform: 'translateX(2px)' },
-    '50%': { transform: 'translateX(-1px)' },
-    '70%': { transform: 'translateX(1px)' },
-  },
-  '@keyframes softDiffuse': {
-    '0%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
-    '50%': { boxShadow: '0 0 20px 4px rgba(124,58,237,0.12)' },
-    '100%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
-  },
-  ambientLayer: {
-    display: 'none',
-  },
-  tokenStreaming: {
-    animation: 'tokenStream 0.2s ease-out',
-    opacity: 1,
-  },
-  breathingCard: {
-    transition: 'all 0.3s ease',
-  },
-  progressiveReveal: {
-    overflow: 'hidden' as const,
-    animation: 'revealDown 0.4s ease-out',
-  },
-  '@keyframes revealDown': {
-    '0%': { maxHeight: 0, opacity: 0 },
-    '100%': { maxHeight: 2000, opacity: 1 },
-  },
-  pulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    background: 'var(--accent-purple)',
-  },
-  pulseLabel: {
-    fontSize: 13,
-    color:
-      'color-mix(in srgb, var(--accent-purple) 50%, var(--text-secondary))',
-    fontStyle: 'italic',
-  },
-  heartbeatContainer: {
-    maxWidth: 'min(720px, 100%)',
-    width: '100%',
-    background: 'var(--soft-white)',
-    border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
-    borderLeft: '3px solid',
-    borderLeftColor:
-      'color-mix(in srgb, var(--accent-purple) 22%, transparent)',
-    borderRadius: 8,
-    borderTopLeftRadius: 4,
-    padding: '12px 16px',
-  },
-  heartbeatHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-    paddingBottom: 0,
-  },
-  heartbeatIcon: {
-    fontSize: 13,
-    lineHeight: 1,
-    color: 'var(--accent-purple)',
-    opacity: 0.7,
-  },
-  heartbeatLabel: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--pudding-chat-text-muted)',
-    lineHeight: '20px',
-  },
-  heartbeatBody: {
-    fontSize: 13,
-    lineHeight: 1.65,
-    color: 'var(--pudding-chat-text-muted)',
-    '& p': { marginBottom: 4 },
-    '& p:last-child': { marginBottom: 0 },
-  },
+  
   tokenUsageLine: {
     fontSize: 10,
     color: 'var(--earth-brown)',
@@ -2608,24 +2488,7 @@ const useResidualStyles = createStyles(({ token }) => ({
   activeRunOutput: {
     margin: '0 0 4px 0',
   },
-  blockCondensing: {
-    animation: 'blockCondense 360ms ease-out',
-  },
-  charFadeIn: {
-    animation: 'charFade 120ms ease-out',
-  },
-  '@keyframes charFade': {
-    '0%': { opacity: 0 },
-    '100%': { opacity: 1 },
-  },
-  answerSettled: {
-    animation: 'glowSettle 800ms ease-out',
-  },
-  streamingBreathe: {},
-  '@keyframes streamBreathe': {
-    '0%, 100%': { opacity: 1 },
-    '50%': { opacity: 0.92 },
-  },
+  
   paperStreaming: {
     background: 'color-mix(in srgb, var(--soft-white) 92%, #fff7df)',
     borderColor: 'color-mix(in srgb, var(--earth-brown) 8%, transparent)',
@@ -2648,48 +2511,7 @@ const useResidualStyles = createStyles(({ token }) => ({
       'auto !important' as unknown as React.CSSProperties['pointerEvents'],
     transition: 'opacity 400ms ease-out, transform 400ms ease-out',
   },
-  runtimeStateThinking: {
-    borderLeft: '2px solid var(--memory-glow, #A78BFA)',
-    background: 'color-mix(in srgb, var(--memory-glow) 2%, transparent)',
-  },
-  runtimeStateMemory: {
-    borderLeft: '2px solid var(--memory-glow, #A78BFA)',
-    animation: 'softDiffuse 2s ease-in-out infinite',
-  },
-  runtimeStateTool: {
-    borderLeft: '3px solid var(--tool-signal, #22D3EE)',
-  },
-  runtimeStateToolRunning: {
-    borderLeft: '3px solid var(--tool-signal, #22D3EE)',
-    '&::before': {
-      content: '""',
-      position: 'absolute' as const,
-      left: -3,
-      top: 0,
-      bottom: 0,
-      width: 3,
-      background:
-        'linear-gradient(180deg, transparent, var(--tool-signal, #22D3EE), transparent)',
-      backgroundSize: '100% 200%',
-      animation: 'signalFlow 1.5s linear infinite',
-    },
-  },
-  runtimeStateStreaming: {
-    borderLeft: '3px solid var(--accent-purple, #7c3aed)',
-  },
-  runtimeStateSuccess: {
-    borderLeftColor: 'var(--success-signal, #22C55E)',
-    transition: 'border-left-color 400ms ease',
-  },
-  runtimeStateError: {
-    borderLeftColor: 'var(--error-signal, #EF4444)',
-  },
-  statusTextThinking: { color: 'var(--earth-brown)' },
-  statusTextMemory: { color: 'var(--earth-brown)' },
-  statusTextTool: { color: 'var(--tool-signal, #22D3EE)' },
-  statusTextStreaming: { color: 'var(--accent-purple, #7c3aed)' },
-  statusTextSuccess: { color: 'var(--success-signal, #22C55E)' },
-  statusTextError: { color: 'var(--error-signal, #EF4444)' },
+  
 }));
 
 export const useChatStyles = () => {
@@ -2702,7 +2524,12 @@ export const useChatStyles = () => {
   const { styles: markdown } = useMarkdownStyles();
   const { styles: composer } = useComposerStyles();
   const { styles: panel } = usePanelStyles();
-  const { styles: voice } = useVoiceStyles();
+    const { styles: voice } = useVoiceStyles();
+    const { styles: heartbeat } = useHeartbeatStyles();
+  const { styles: status } = useStatusStyles();
+  const { styles: devpanel } = useDevpanelStyles();
+  const { styles: animation } = useAnimationStyles();
+  const { styles: sidebar } = useSidebarStyles();
   const { styles: residual } = useResidualStyles();
 
   return {
@@ -2716,7 +2543,12 @@ export const useChatStyles = () => {
       ...markdown,
       ...composer,
       ...panel,
-      ...voice,
+            ...voice,
+            ...heartbeat,
+      ...status,
+      ...devpanel,
+      ...animation,
+      ...sidebar,
       ...residual,
     },
     cx,
