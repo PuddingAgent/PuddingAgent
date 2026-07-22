@@ -348,7 +348,13 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         {
             while (true)
             {
-                enumerator = gateway.ChatStreamAsync(messages, toolSpecs, effectiveCt).GetAsyncEnumerator(effectiveCt);
+                // 流式空闲看门狗：最后 chunk 后 120s 无新数据 → 判定卡死 → 取消重试
+                using var watchdog = new StreamWatchdog(TimeSpan.FromSeconds(120), _logger, config.ProviderId);
+                using var watchdogLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(effectiveCt, watchdog.Token);
+                watchdog.Start();
+
+                enumerator = gateway.ChatStreamAsync(messages, toolSpecs, watchdogLinkedCts.Token)
+                    .GetAsyncEnumerator(watchdogLinkedCts.Token);
                 Exception? retryException = null;
 
                 while (true)
@@ -478,6 +484,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             config.ProviderId, config.Model, sw.ElapsedMilliseconds);
                     }
                     hasYieldedDelta = true;
+                    watchdog.Feed();
                     yield return delta;
                 }
 
