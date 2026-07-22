@@ -1,9 +1,9 @@
-// ── MessageList：消息列表容器（虚拟滚动）───────────────────────────────
+﻿// ── MessageList：消息列表容器（虚拟滚动）───────────────────────────────
 import {
   ArrowDownOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Spin, Tooltip } from 'antd';
+import { Alert, Button, Skeleton, Spin, Tooltip } from 'antd';
 import React, {
   useEffect,
   useMemo,
@@ -792,7 +792,12 @@ const MessageList: React.FC<MessageListProps> = ({
           />
         ) : null;
       })()}
-      {historyLoading && (
+      {historyLoading && turns.length === 0 && (
+        <div className={styles.historyLoading}>
+          <Skeleton active avatar paragraph={{ rows: 4 }} style={{ padding: 16 }} />
+        </div>
+      )}
+      {historyLoading && turns.length > 0 && (
         <div className={styles.historyLoading}>
           <Spin />
         </div>

@@ -27,11 +27,12 @@ import type {
 import { useNotificationSound } from '../hooks/useNotificationSound';
 import { useChatStyles } from '../styles';
 import type { ChatTurn, SubAgentCardMap } from '../types';
-import DevPanel from './DevPanel';
-import HistorySearchModal from './HistorySearchModal';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
-import SubAgentActivityDock from './SubAgentActivityDock';
+
+const DevPanel = React.lazy(() => import('./DevPanel'));
+const HistorySearchModal = React.lazy(() => import('./HistorySearchModal'));
+const SubAgentActivityDock = React.lazy(() => import('./SubAgentActivityDock'));
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
@@ -458,6 +459,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     latestAssistantText={latestAssistantText}
                   />
                 </div>
+                <React.Suspense fallback={null}>
                 <SubAgentActivityDock
                   sessionId={inferredSessionId ?? selectedSessionId}
                   subAgentCards={subAgentCards}
@@ -466,10 +468,12 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   selectedRunId={selectedSubAgentRunId}
                   onSelectedRunIdChange={setSelectedSubAgentRunId}
                 />
+                </React.Suspense>
               </div>
             </div>
 
             {devMode && (
+              <React.Suspense fallback={null}>
               <DevPanel
                 workspaceId={workspaceId}
                 sessionId={inferredSessionId}
@@ -481,16 +485,19 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   }
                 }}
               />
+              </React.Suspense>
             )}
           </div>
         </div>
       </div>
+      <React.Suspense fallback={null}>
       <HistorySearchModal
         open={historyModalOpen}
         workspaceId={workspaceId ?? ''}
         onClose={() => setHistoryModalOpen(false)}
         onQuote={handleHistoryQuote}
       />
+      </React.Suspense>
     </main>
   );
 };
