@@ -348,6 +348,23 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     // not waiting: do nothing (keep stale value hidden)
   }, [shouldShowPreAnswerWaiting]);
 
+  // E2: 流式停滞检测 — 15s 无内容增量触发琥珀色警告
+  const lastDeltaRef = React.useRef(Date.now());
+  const [stallSeconds, setStallSeconds] = React.useState(0);
+  const stallCheckRef = React.useRef<ReturnType<typeof setInterval>>();
+  React.useEffect(() => {
+    lastDeltaRef.current = Date.now();
+  }, [content]);
+  React.useEffect(() => {
+    if (isStreaming) {
+      stallCheckRef.current = setInterval(() => {
+        setStallSeconds(Math.floor((Date.now() - lastDeltaRef.current) / 1000));
+      }, 1000);
+      return () => clearInterval(stallCheckRef.current);
+    }
+    setStallSeconds(0);
+  }, [isStreaming]);
+
   const handleContextMenu = (e: React.MouseEvent) => {
     if (turnId) {
       onContextMenu?.(e, turnId, 'assistant', content);
@@ -422,6 +439,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             {/* 消息气泡 */}
             {shouldRenderAnswerBubble &&
               (() => {
+                const isStalled = isStreaming && stallSeconds >= 15;
                 const bubbleClassName = cx(
                   styles.agentBubbleNew,
                   groupedWithPrevious && styles.agentBubbleGrouped,
@@ -429,6 +447,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   isStreaming && styles.agentActiveOutputSurface,
                   isStreaming && styles.paperStreaming,
                   !isStreaming && styles.paperSettled,
+                  isStalled && styles.agentBubbleWarning,
                   isError && styles.agentBubbleError,
                 );
                 return shouldUseTypewriter ? (

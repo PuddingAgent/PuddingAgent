@@ -1,4 +1,4 @@
-// ── agent styles ─────────────────────────────────
+﻿// ── agent styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useAgentStyles = createStyles(({ token }) => ({
@@ -166,6 +166,15 @@ export const useAgentStyles = createStyles(({ token }) => ({
   agentBubbleError: {
     borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
     background: 'color-mix(in srgb, #ef4444 4%, var(--soft-white))',
+  },
+  // E2: 流式停滞警告（琥珀色慢脉冲边框）
+  agentBubbleWarning: {
+    borderColor: 'color-mix(in srgb, #d97706 35%, transparent)',
+    animation: 'stallPulse 2s ease-in-out infinite',
+  },
+  pulseDotWarning: {
+    background: '#d97706',
+    boxShadow: '0 0 8px rgba(217,119,6,.5)',
   },
   agentQuotedMessage: {
     margin: '0 0 10px',
