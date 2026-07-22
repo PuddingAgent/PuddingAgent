@@ -627,6 +627,7 @@ builder.Services.AddPuddingToolsFromAssembly(typeof(Program).Assembly);
 builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingRuntime.RuntimeServiceExtensions).Assembly);
 builder.Services.AddPuddingToolRegistry(builder.Configuration);
 builder.Services.AddSingleton<IToolInvocationService, ToolInvocationService>();
+builder.Services.AddSingleton<FileMutationQueue>();
 
 // ── 会话历史查询服务 (Repository → Service 分层) ────
 builder.Services.AddSingleton<IChatHistoryService, ChatHistoryService>();

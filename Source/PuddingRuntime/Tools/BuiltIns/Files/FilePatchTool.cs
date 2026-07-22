@@ -24,25 +24,27 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
     private readonly PuddingDataPaths _dataPaths;
     private readonly AuditLogger _audit;
     private readonly ILogger<FilePatchTool> _logger;
+    private readonly FileMutationQueue _mutationQueue;
 
     public FilePatchTool()
-        : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), NullLogger<FilePatchTool>.Instance)
+        : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), NullLogger<FilePatchTool>.Instance, new FileMutationQueue())
     {
     }
 
     public FilePatchTool(ILogger<FilePatchTool> logger)
-        : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), logger)
+        : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), logger, new FileMutationQueue())
     {
     }
 
-    public FilePatchTool(PuddingDataPaths dataPaths, AuditLogger audit, ILogger<FilePatchTool> logger)
+    public FilePatchTool(PuddingDataPaths dataPaths, AuditLogger audit, ILogger<FilePatchTool> logger, FileMutationQueue mutationQueue)
     {
         _dataPaths = dataPaths;
         _audit = audit;
         _logger = logger;
+        _mutationQueue = mutationQueue;
     }
 
-    protected override Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         FilePatchArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
@@ -52,7 +54,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
         var patches = ResolvePatches(args).ToArray();
         if (patches.Length == 0)
-            return Task.FromResult(ToolExecutionResult.Fail("At least one patch with operations is required."));
+            return ToolExecutionResult.Fail($"At least one patch with operations is required.");
 
         var summaries = new List<string>();
         var batchResults = new List<(string FullPath, string Original, string Current, OperationZone Zone, string RelPath, int ReplacementCount, List<string> Errors, string RequestedPath, long ElapsedMs)>();
@@ -67,7 +69,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 _audit.Write(OperationZone.External, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, 0, context.Trace);
-                return Task.FromResult(ToolExecutionResult.Fail(resolveError));
+                return ToolExecutionResult.Fail(resolveError);
             }
 
             if (!File.Exists(fullPath))
@@ -76,7 +78,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                     fullPath, _dataPaths, context.WorkspaceId, context.AgentInstanceId);
                 _audit.Write(zone, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, 0, context.Trace);
-                return Task.FromResult(ToolExecutionResult.Fail($"File not found: {patch.Path}"));
+                return ToolExecutionResult.Fail($"File not found: {patch.Path}");
             }
 
             var zone2 = OperationZoneClassifier.ClassifyPath(
@@ -86,8 +88,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 _audit.Write(zone2, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, 0, context.Trace);
-                return Task.FromResult(ToolExecutionResult.Fail(
-                    "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch."));
+                return ToolExecutionResult.Fail(
+                    "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch.");
             }
 
             var sw = Stopwatch.StartNew();
@@ -110,7 +112,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 {
                     if (string.IsNullOrEmpty(op.OldText))
                     {
-                        return Task.FromResult(ToolExecutionResult.Fail(
+                        return ToolExecutionResult.Fail(
                             $"replace operation in {relPath} requires 'old_text'. " +
                             "Provide the exact text to find before replacing. " +
                             "Example: operations=[{type='replace', old_text='old code', new_text='new code'}]"));
@@ -120,7 +122,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 {
                     if (string.IsNullOrEmpty(op.Pattern))
                     {
-                        return Task.FromResult(ToolExecutionResult.Fail(
+                        return ToolExecutionResult.Fail(
                             $"regexReplace operation in {relPath} requires 'pattern'. " +
                             "Provide the regex pattern to match. " +
                             "Example: operations=[{type='regexReplace', pattern='Console.WriteLine', replacement='logger.Log'}]"));
@@ -147,7 +149,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 _logger.LogError(ex, "[FilePatchTool] failed path={Path}", fullPath);
                 _audit.Write(zone2, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, sw.ElapsedMilliseconds, context.Trace);
-                return Task.FromResult(ToolExecutionResult.Fail($"Failed to patch file '{patch.Path}': {ex.Message}"));
+                return ToolExecutionResult.Fail($"Failed to patch file '{patch.Path}': {ex.Message}");
             }
         }
 
@@ -171,7 +173,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 summaries.Add($"{relPath}: (preview - set dry_run=false to apply)\n{diff}");
             }
 
-            return Task.FromResult(ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries)));
+            return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
         }
 
         // Write phase with rollback on any failure
@@ -218,7 +220,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 catch { }
             }
 
-            return Task.FromResult(ToolExecutionResult.Fail($"Atomic patch commit failed, rolled back: {ex.Message}"));
+            return ToolExecutionResult.Fail($"Atomic patch commit failed, rolled back: {ex.Message}");
         }
         finally
         {
@@ -229,7 +231,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             }
         }
 
-        return Task.FromResult(ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries)));
+        return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
     }
 
     private ToolExecutionResult ApplyUnifiedDiffPatch(FilePatchArgs args, ToolExecutionContext context)

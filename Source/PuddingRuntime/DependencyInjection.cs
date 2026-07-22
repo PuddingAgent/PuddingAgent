@@ -133,6 +133,7 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IContextCompactionSummaryGenerator, CompositeContextCompactionSummaryGenerator>();
         services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         services.AddSingleton<IToolInvocationService, ToolInvocationService>();
+        services.AddSingleton<FileMutationQueue>();
         services.AddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();
         services.AddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
         services.AddSingleton<ContextWindowManager>();
