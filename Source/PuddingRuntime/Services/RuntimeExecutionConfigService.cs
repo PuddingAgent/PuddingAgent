@@ -78,6 +78,18 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
 
     private static RuntimeExecutionOptions Normalize(RuntimeExecutionOptions options)
     {
+        var turns = options.Turns ?? new TurnExecutionOptions();
+        var maxHardTimeout = Math.Max(1, turns.MaxHardTimeoutSeconds);
+        var defaultHardTimeout = turns.DefaultHardTimeoutSeconds <= 0
+            ? maxHardTimeout
+            : Math.Min(turns.DefaultHardTimeoutSeconds, maxHardTimeout);
+        var noProgressTimeout = Math.Max(1, turns.NoProgressTimeoutSeconds);
+        var watchdogPollInterval = Math.Clamp(
+            turns.WatchdogPollIntervalSeconds,
+            1,
+            noProgressTimeout);
+        var firstChunkTimeout = Math.Max(1, turns.LlmFirstChunkTimeoutSeconds);
+        var streamIdleTimeout = Math.Max(1, turns.LlmStreamIdleTimeoutSeconds);
         var subAgents = options.SubAgents ?? new SubAgentExecutionOptions();
         var maxPerTemplate = Math.Max(1, subAgents.MaxConcurrentPerTemplate);
         var maxPerWorkspace = Math.Max(maxPerTemplate, subAgents.MaxConcurrentPerWorkspace);
@@ -85,18 +97,29 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
         var defaultTimeout = subAgents.DefaultTimeoutSeconds <= 0
             ? maxTimeout
             : Math.Min(subAgents.DefaultTimeoutSeconds, maxTimeout);
+        var parentFinalizationReserve = Math.Max(0, subAgents.ParentFinalizationReserveSeconds);
         var permissionMode = string.Equals(subAgents.DefaultPermissionMode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase)
             ? SubAgentPermissionModes.Low
             : SubAgentPermissionModes.Inherit;
 
         return options with
         {
+            Turns = turns with
+            {
+                DefaultHardTimeoutSeconds = defaultHardTimeout,
+                MaxHardTimeoutSeconds = maxHardTimeout,
+                NoProgressTimeoutSeconds = noProgressTimeout,
+                WatchdogPollIntervalSeconds = watchdogPollInterval,
+                LlmFirstChunkTimeoutSeconds = firstChunkTimeout,
+                LlmStreamIdleTimeoutSeconds = streamIdleTimeout,
+            },
             SubAgents = subAgents with
             {
                 MaxConcurrentPerTemplate = maxPerTemplate,
                 MaxConcurrentPerWorkspace = maxPerWorkspace,
                 DefaultTimeoutSeconds = defaultTimeout,
                 MaxTimeoutSeconds = maxTimeout,
+                ParentFinalizationReserveSeconds = parentFinalizationReserve,
                 DefaultPermissionMode = permissionMode,
             },
         };

@@ -9,6 +9,7 @@ using PuddingCode.Core;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 
 namespace PuddingRuntime.Services;
 
@@ -27,6 +28,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IRuntimeTraceAccessor? _traceAccessor;
     private readonly ProviderRateLimiter? _rateLimiter;
     private readonly ConcurrentDictionary<string, CircuitBreakerState> _circuitBreakers = new();
+    private readonly IVisualArtifactResolver? _visualArtifactResolver;
+    private readonly IRuntimeExecutionConfigService? _executionConfig;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -36,7 +39,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     IRuntimeActivitySink? activitySink = null,
     ITelemetryMetricSink? telemetrySink = null,
     IRuntimeTraceAccessor? traceAccessor = null,
-    ProviderRateLimiter? rateLimiter = null)
+    ProviderRateLimiter? rateLimiter = null,
+    IVisualArtifactResolver? visualArtifactResolver = null,
+    IRuntimeExecutionConfigService? executionConfig = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -46,6 +51,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _telemetrySink = telemetrySink;
         _traceAccessor = traceAccessor;
         _rateLimiter = rateLimiter;
+        _visualArtifactResolver = visualArtifactResolver;
+        _executionConfig = executionConfig;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -58,7 +65,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         CancellationToken ct = default)
     {
         var config = await ResolveGatewayConfigAsync(llmConfig, ct);
-        var gateway = CreateGateway(config);
+        var gateway = CreateGateway(config, workspaceId);
         var toolSpecs = ToToolSpecs(tools);
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
@@ -138,7 +145,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         // ── 重试循环 ──────────────────────────────────────
         var maxRetries = strategy.EffectiveMaxRetries;
         var retryDelay = TimeSpan.FromSeconds(strategy.EffectiveRetryDelaySeconds);
-        var timeoutSeconds = strategy.EffectiveRequestTimeoutSeconds;
+        var timeoutSeconds = (_executionConfig?.GetOptions().Turns ?? new TurnExecutionOptions())
+            .LlmFirstChunkTimeoutSeconds;
 
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
@@ -286,17 +294,28 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var config = await ResolveGatewayConfigAsync(llmConfig, ct);
-        var gateway = CreateGateway(config);
+        var gateway = CreateGateway(config, workspaceId);
         var toolSpecs = ToToolSpecs(tools);
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
 
-        // 流式超时：整个流生命周期
-        using var streamTimeoutCts = new CancellationTokenSource(
-            TimeSpan.FromSeconds(strategy.EffectiveStreamTimeoutSeconds));
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, streamTimeoutCts.Token);
+        // 首块预算覆盖并发队列、网络握手和第一次 provider 输出；收到首块后停止该计时器。
+        // 后续只使用相邻块空闲窗口，不再设置固定流总时长。
+        var turnOptions = _executionConfig?.GetOptions().Turns ?? new TurnExecutionOptions();
+        var providerIdleCeilingSeconds = Math.Max(1, strategy.EffectiveStreamTimeoutSeconds);
+        var firstChunkTimeoutSeconds = Math.Min(
+            turnOptions.LlmFirstChunkTimeoutSeconds,
+            providerIdleCeilingSeconds);
+        var streamIdleTimeoutSeconds = Math.Min(
+            turnOptions.LlmStreamIdleTimeoutSeconds,
+            providerIdleCeilingSeconds);
+        using var firstChunkTimeoutCts = new CancellationTokenSource(
+            TimeSpan.FromSeconds(firstChunkTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            ct,
+            firstChunkTimeoutCts.Token);
         var effectiveCt = linkedCts.Token;
 
         _logger.LogInformation(
@@ -348,8 +367,11 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         {
             while (true)
             {
-                // 流式空闲看门狗：最后 chunk 后 120s 无新数据 → 判定卡死 → 取消重试
-                using var watchdog = new StreamWatchdog(TimeSpan.FromSeconds(120), _logger, config.ProviderId);
+                using var watchdog = new StreamWatchdog(
+                    TimeSpan.FromSeconds(firstChunkTimeoutSeconds),
+                    TimeSpan.FromSeconds(streamIdleTimeoutSeconds),
+                    _logger,
+                    config.ProviderId);
                 using var watchdogLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(effectiveCt, watchdog.Token);
                 watchdog.Start();
 
@@ -389,11 +411,11 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Cancelled, CancellationToken.None);
                         throw;
                     }
-                    catch (OperationCanceledException ex) when (streamTimeoutCts.IsCancellationRequested)
+                    catch (OperationCanceledException ex) when (firstChunkTimeoutCts.IsCancellationRequested)
                     {
                         terminalRecorded = true;
                         sw.Stop();
-                        _logger.LogError(ex, "[DirectLlm] STREAM TIMEOUT provider={Provider} elapsed={Elapsed}ms",
+                        _logger.LogError(ex, "[DirectLlm] STREAM FIRST CHUNK TIMEOUT provider={Provider} elapsed={Elapsed}ms",
                             config.ProviderId, sw.ElapsedMilliseconds);
                         var metadata = MergeMetadata(
                             BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
@@ -405,14 +427,52 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             startedAt,
                             endedAt: DateTimeOffset.UtcNow,
                             durationMs: sw.ElapsedMilliseconds,
-                            summary: "Direct LLM streaming timeout.",
+                            summary: "Direct LLM stream produced no first chunk before its deadline.",
+                            metadata,
+                            error: ex,
+                            CancellationToken.None);
+                        await RecordLlmStreamDiagnosticsMetricsAsync(
+                            trace,
+                            streamDiagnostics,
+                            RuntimeActivityStatuses.Failed,
+                            CancellationToken.None);
+                        throw;
+                    }
+                    catch (OperationCanceledException ex) when (
+                        watchdog.Token.IsCancellationRequested &&
+                        !hasYieldedDelta &&
+                        retryAttempt < maxRetries)
+                    {
+                        retryException = new TimeoutException(
+                            "LLM stream produced no first chunk before the watchdog deadline.",
+                            ex);
+                        break;
+                    }
+                    catch (OperationCanceledException ex) when (watchdog.Token.IsCancellationRequested)
+                    {
+                        terminalRecorded = true;
+                        sw.Stop();
+                        _logger.LogError(ex, "[DirectLlm] STREAM IDLE TIMEOUT provider={Provider} elapsed={Elapsed}ms",
+                            config.ProviderId, sw.ElapsedMilliseconds);
+                        var metadata = MergeMetadata(
+                            BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                            streamDiagnostics.ToMetadata());
+                        await RecordActivityAsync(
+                            trace,
+                            operation: "chat_stream",
+                            status: RuntimeActivityStatuses.Failed,
+                            startedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: sw.ElapsedMilliseconds,
+                            summary: "Direct LLM stream idle watchdog timed out.",
                             metadata,
                             error: ex,
                             CancellationToken.None);
                         await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Failed, CancellationToken.None);
-                        throw;
+                        throw new TimeoutException(
+                            "LLM stream stopped producing chunks before the watchdog deadline.",
+                            ex);
                     }
-
                     catch (OperationCanceledException ex) when (
                         !hasYieldedDelta &&
                         retryAttempt < maxRetries &&
@@ -427,8 +487,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         // （既不是外部取消也不是流式超时策略，归类为 HTTP 层超时）
                         terminalRecorded = true;
                         sw.Stop();
-                        _logger.LogError(ex, "[DirectLlm] STREAM HTTPCLIENT_TIMEOUT provider={Provider} elapsed={Elapsed}ms streamTimeout={StreamTimeout}s",
-                            config.ProviderId, sw.ElapsedMilliseconds, strategy.EffectiveStreamTimeoutSeconds);
+                        _logger.LogError(ex, "[DirectLlm] STREAM TRANSPORT CANCELLATION provider={Provider} elapsed={Elapsed}ms",
+                            config.ProviderId, sw.ElapsedMilliseconds);
                         var metadata = MergeMetadata(
                             BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                             streamDiagnostics.ToMetadata());
@@ -439,7 +499,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             startedAt,
                             endedAt: DateTimeOffset.UtcNow,
                             durationMs: sw.ElapsedMilliseconds,
-                            summary: "Direct LLM streaming HTTP client timeout.",
+                            summary: "Direct LLM streaming transport was cancelled.",
                             metadata,
                             error: ex,
                             CancellationToken.None);
@@ -484,6 +544,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             config.ProviderId, config.Model, sw.ElapsedMilliseconds);
                     }
                     hasYieldedDelta = true;
+                    firstChunkTimeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
                     watchdog.Feed();
                     yield return delta;
                 }
@@ -642,7 +703,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             strategy);
     }
 
-    private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config)
+    private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)
     {
         var gateway = new OpenAiLlmGateway(
             _httpClientFactory.CreateClient("DirectLlm"),
@@ -653,6 +714,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ReasoningEffort: config.ReasoningEffort,
                 ThinkingMode: config.ThinkingMode));
         gateway.Compat = config.Strategy.Compat;
+        gateway.VisualArtifactResolver = _visualArtifactResolver;
+        gateway.WorkspaceId = workspaceId;
         return gateway;
     }
 

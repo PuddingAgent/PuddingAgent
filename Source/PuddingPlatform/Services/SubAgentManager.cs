@@ -67,7 +67,7 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
-        request = NormalizeExecutionBudget(request);
+        request = NormalizeExecutionBudget(request, reserveParentFinalization: false);
         var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
             ? request.ReuseSubSessionId
             : SubAgentSessionId.Create(request.ParentSessionId);
@@ -371,7 +371,7 @@ public sealed class SubAgentManager : ISubAgentManager
     {
         request = NormalizeRequestIdentity(request);
         ValidateLlmRoute(request);
-        request = NormalizeExecutionBudget(request);
+        request = NormalizeExecutionBudget(request, reserveParentFinalization: true);
         var subSessionId = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId)
             ? request.ReuseSubSessionId
             : SubAgentSessionId.Create(request.ParentSessionId);
@@ -952,7 +952,9 @@ public sealed class SubAgentManager : ISubAgentManager
                 : request.OriginToolId.Trim(),
         };
 
-    private SubAgentSpawnRequest NormalizeExecutionBudget(SubAgentSpawnRequest request)
+    private SubAgentSpawnRequest NormalizeExecutionBudget(
+        SubAgentSpawnRequest request,
+        bool reserveParentFinalization)
     {
         var options = ResolveRuntimeExecutionOptions().SubAgents;
         var requestedSeconds = request.TimeoutSeconds ?? options.DefaultTimeoutSeconds;
@@ -966,15 +968,23 @@ public sealed class SubAgentManager : ISubAgentManager
 
         var now = DateTimeOffset.UtcNow;
         var requestedDeadlineUtc = now.AddSeconds(requestedSeconds);
-        var effectiveDeadlineUtc = request.ParentExecutionDeadlineUtc is { } parentDeadlineUtc
-            && parentDeadlineUtc < requestedDeadlineUtc
-                ? parentDeadlineUtc
+        var parentChildDeadlineUtc = request.ParentExecutionDeadlineUtc is { } parentDeadlineUtc
+            ? parentDeadlineUtc.AddSeconds(
+                reserveParentFinalization
+                    ? -options.ParentFinalizationReserveSeconds
+                    : 0)
+            : (DateTimeOffset?)null;
+        var effectiveDeadlineUtc = parentChildDeadlineUtc is { } childDeadlineUtc
+            && childDeadlineUtc < requestedDeadlineUtc
+                ? childDeadlineUtc
                 : requestedDeadlineUtc;
         var effectiveSeconds = (int)Math.Floor((effectiveDeadlineUtc - now).TotalSeconds);
         if (effectiveSeconds <= 0)
         {
-            throw new TimeoutException(
-                $"Parent execution deadline {request.ParentExecutionDeadlineUtc:O} leaves no sub-agent execution budget.");
+            throw new InvalidOperationException(
+                "insufficient_execution_budget: " +
+                $"Parent execution deadline {request.ParentExecutionDeadlineUtc:O} leaves no synchronous " +
+                $"sub-agent budget after reserving {options.ParentFinalizationReserveSeconds}s for parent finalization.");
         }
 
         return request with

@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Agents;
+using PuddingCode.Runtime;
 using PuddingCode.Tools;
 
 namespace PuddingRuntime.Services.Tools;
@@ -18,8 +19,8 @@ namespace PuddingRuntime.Services.Tools;
 public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> where TArgs : class, new()
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
-    protected const int SmartWorkflowTimeoutSeconds = 120 * 60;
-    protected const int ParentFinalizationReserveSeconds = 2 * 60;
+    protected const int SmartWorkflowTimeoutSeconds = 60 * 60;
+    protected const int DefaultParentFinalizationReserveSeconds = 2 * 60;
     private const int MinimumDetailedReportLength = 80;
     private static readonly string[] RequiredReportSections =
         ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
@@ -66,14 +67,20 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         if (requestedTimeout <= 0)
             return ToolExecutionResult.Fail($"{toolName} timeout_seconds must be greater than 0.");
 
-        // Smart 的 30 分钟是子任务上限，不是从调用时重新获得的独立预算。
+        // Smart 的角色预算是子任务上限，不是从调用时重新获得的独立父级预算。
         // 父 Run deadline 是唯一上界，并预留两分钟让父 Agent 消化工具结果和提交终态。
         var timeout = Math.Min(requestedTimeout, DefaultTimeoutSeconds);
+        var parentFinalizationReserveSeconds =
+            services.GetService<IRuntimeExecutionConfigService>()?
+                .GetOptions()
+                .SubAgents
+                .ParentFinalizationReserveSeconds
+            ?? DefaultParentFinalizationReserveSeconds;
         if (context.ExecutionDeadlineUtc is { } parentDeadlineUtc)
         {
             var remainingSeconds = (int)Math.Floor(
                 (parentDeadlineUtc - DateTimeOffset.UtcNow).TotalSeconds
-                - ParentFinalizationReserveSeconds);
+                - parentFinalizationReserveSeconds);
             if (remainingSeconds <= 0)
             {
                 return ToolExecutionResult.Fail(JsonSerializer.Serialize(new
@@ -82,7 +89,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                     tool = Descriptor.ToolId,
                     role = RoleName,
                     parentDeadlineUtc,
-                    reserveSeconds = ParentFinalizationReserveSeconds,
+                    reserveSeconds = parentFinalizationReserveSeconds,
                     message = "The parent run has insufficient time remaining to start this Smart workflow.",
                 }));
             }

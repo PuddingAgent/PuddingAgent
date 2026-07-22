@@ -217,6 +217,12 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         // 终态事件必须先持久化并投影，再推进 run.json。
         // 即使进程在两步之间退出，重试也会使用稳定 eventId 幂等补齐，不会让 UI 永久停在 Running。
         var completedAt = DateTimeOffset.UtcNow;
+        completion = await EnrichCompletionFromArchivedEventsAsync(
+            runDir,
+            manifest,
+            completion,
+            completedAt,
+            ct);
         var terminalEventType = ToTerminalEventType(completion.Status);
         await AppendEventCoreAsync(
             runId,
@@ -487,10 +493,32 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         DateTimeOffset interruptedAtUtc,
         CancellationToken ct)
     {
-        var totalRounds = 0;
-        var totalToolCalls = 0;
-        var toolFailureCount = 0;
-        long toolOutputChars = 0;
+        return await EnrichCompletionFromArchivedEventsAsync(
+            runDir,
+            manifest,
+            new SubAgentRunCompletion
+            {
+                Status = "interrupted",
+                ErrorMessage = "Runtime process restarted before the sub-agent committed a terminal state.",
+            },
+            interruptedAtUtc,
+            ct);
+    }
+
+    private static async Task<SubAgentRunCompletion> EnrichCompletionFromArchivedEventsAsync(
+        string runDir,
+        SubAgentRunManifest manifest,
+        SubAgentRunCompletion completion,
+        DateTimeOffset completedAtUtc,
+        CancellationToken ct)
+    {
+        var totalRounds = completion.TotalRounds;
+        var archivedToolCalls = 0;
+        var archivedToolFailureCount = 0;
+        var archivedToolOutputTruncatedCount = 0;
+        long archivedToolOutputChars = 0;
+        var firstToolFailureSummary = completion.ToolFailureSummary;
+        var countedToolCalls = new HashSet<string>(StringComparer.Ordinal);
         var eventsPath = Path.Combine(runDir, "events.jsonl");
         if (File.Exists(eventsPath))
         {
@@ -520,13 +548,36 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                         ConversationEventTypes.SubAgentToolCompleted or
                         ConversationEventTypes.SubAgentToolFailed)
                     {
-                        totalToolCalls++;
+                        var toolCallKey = archivedEvent.Payload.TryGetProperty("tool_call_id", out var toolCallId)
+                            && toolCallId.ValueKind == JsonValueKind.String
+                                ? toolCallId.GetString()
+                                : archivedEvent.EventId;
+                        if (string.IsNullOrWhiteSpace(toolCallKey)
+                            || !countedToolCalls.Add(toolCallKey))
+                        {
+                            continue;
+                        }
+
+                        archivedToolCalls++;
                         if (archivedEvent.EventType == ConversationEventTypes.SubAgentToolFailed)
-                            toolFailureCount++;
+                        {
+                            archivedToolFailureCount++;
+                            if (string.IsNullOrWhiteSpace(firstToolFailureSummary)
+                                && archivedEvent.Payload.TryGetProperty("error", out var error)
+                                && error.ValueKind == JsonValueKind.String)
+                            {
+                                firstToolFailureSummary = error.GetString();
+                            }
+                        }
                         if (archivedEvent.Payload.TryGetProperty("output_length", out var outputLength)
                             && outputLength.TryGetInt64(out var outputChars))
                         {
-                            toolOutputChars += Math.Max(0, outputChars);
+                            archivedToolOutputChars += Math.Max(0, outputChars);
+                        }
+                        if (archivedEvent.Payload.TryGetProperty("output_truncated", out var outputTruncated)
+                            && outputTruncated.ValueKind is JsonValueKind.True)
+                        {
+                            archivedToolOutputTruncatedCount++;
                         }
                     }
                 }
@@ -537,16 +588,22 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             }
         }
 
-        var duration = interruptedAtUtc - manifest.StartedAt;
-        return new SubAgentRunCompletion
+        var elapsedMs = Math.Max(
+            0,
+            (long)(completedAtUtc - manifest.StartedAt).TotalMilliseconds);
+        return completion with
         {
-            Status = "interrupted",
-            ErrorMessage = "Runtime process restarted before the sub-agent committed a terminal state.",
             TotalRounds = totalRounds,
-            TotalToolCalls = totalToolCalls,
-            TotalDurationMs = Math.Max(0, (long)duration.TotalMilliseconds),
-            ToolFailureCount = toolFailureCount,
-            ToolOutputChars = toolOutputChars,
+            TotalToolCalls = Math.Max(completion.TotalToolCalls, archivedToolCalls),
+            TotalDurationMs = completion.TotalDurationMs > 0
+                ? completion.TotalDurationMs
+                : elapsedMs,
+            ToolFailureCount = Math.Max(completion.ToolFailureCount, archivedToolFailureCount),
+            ToolOutputTruncatedCount = Math.Max(
+                completion.ToolOutputTruncatedCount,
+                archivedToolOutputTruncatedCount),
+            ToolOutputChars = Math.Max(completion.ToolOutputChars, archivedToolOutputChars),
+            ToolFailureSummary = firstToolFailureSummary,
         };
     }
 

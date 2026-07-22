@@ -208,9 +208,34 @@ public sealed class SubAgentManagerMessageTests
 
         Assert.IsTrue(result.Success);
         Assert.IsNotNull(dispatcher.LastRequest);
-        Assert.AreEqual(parentDeadlineUtc, dispatcher.LastRequest!.ExecutionDeadlineUtc);
-        Assert.IsGreaterThanOrEqualTo(595, dispatcher.LastRequest.MaxElapsedSeconds);
-        Assert.IsLessThanOrEqualTo(600, dispatcher.LastRequest.MaxElapsedSeconds);
+        Assert.AreEqual(parentDeadlineUtc.AddSeconds(-120), dispatcher.LastRequest!.ExecutionDeadlineUtc);
+        Assert.IsGreaterThanOrEqualTo(475, dispatcher.LastRequest.MaxElapsedSeconds);
+        Assert.IsLessThanOrEqualTo(480, dispatcher.LastRequest.MaxElapsedSeconds);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_RejectsWhenOnlyParentFinalizationReserveRemains()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+            {
+                ParentSessionId = "parent-session",
+                ParentAgentId = "agent-parent",
+                WorkspaceId = "default",
+                TaskDescription = "Must leave time for the parent response.",
+                TemplateId = "workspace-task-agent",
+                LlmConfig = CreateLlmConfig(),
+                LlmProfile = CreateLlmProfile(),
+                TimeoutSeconds = 600,
+                ParentExecutionDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(90),
+            }));
+
+        StringAssert.Contains(error.Message, "insufficient_execution_budget");
+        StringAssert.Contains(error.Message, "reserving 120s");
+        Assert.IsNull(dispatcher.LastRequest);
     }
 
     [TestMethod]

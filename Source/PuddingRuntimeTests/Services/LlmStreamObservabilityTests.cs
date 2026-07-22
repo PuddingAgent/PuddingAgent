@@ -84,6 +84,40 @@ public sealed class LlmStreamObservabilityTests
     }
 
     [TestMethod]
+    public async Task ChatStreamAsync_WithContinuousChunks_CanExceedLegacyTotalStreamTimeout()
+    {
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(new ScheduledSseHandler())),
+            new TestLlmConfigService(streamTimeoutSeconds: 1, maxRetries: 0),
+            NullLogger<DirectLlmClient>.Instance);
+        var deltas = new List<StreamDelta>();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        await foreach (var delta in client.ChatStreamAsync(
+                           "default",
+                           "session-sliding-stream",
+                           "template-1",
+                           [new ChatMessage(ChatRole.User, "hello")],
+                           llmConfig: new LlmConfig
+                           {
+                               Endpoint = "https://provider.test/v1",
+                               ApiKey = "test-key",
+                               ModelId = "test-model",
+                           }))
+        {
+            deltas.Add(delta);
+        }
+
+        stopwatch.Stop();
+        Assert.HasCount(3, deltas);
+        Assert.AreEqual("ABC", string.Concat(deltas.Select(delta => delta.ContentDelta)));
+        Assert.IsGreaterThan(
+            TimeSpan.FromSeconds(1),
+            stopwatch.Elapsed,
+            "Continuous chunks should outlive the old fixed total stream timeout.");
+    }
+
+    [TestMethod]
     public void IsTransientError_DistinguishesTransportFailuresFromProtocolErrors()
     {
         var responseEnded = new HttpIOException(HttpRequestError.ResponseEnded, "response ended");
@@ -317,6 +351,57 @@ public sealed class LlmStreamObservabilityTests
             };
             return Task.FromResult(response);
         }
+    }
+
+    private sealed class ScheduledSseHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new ScheduledSseStream()),
+            });
+    }
+
+    private sealed class ScheduledSseStream : Stream
+    {
+        private static readonly byte[][] Frames =
+        [
+            Encoding.UTF8.GetBytes("data: {\"choices\":[{\"delta\":{\"content\":\"A\"},\"finish_reason\":null}]}\n\n"),
+            Encoding.UTF8.GetBytes("data: {\"choices\":[{\"delta\":{\"content\":\"B\"},\"finish_reason\":null}]}\n\n"),
+            Encoding.UTF8.GetBytes("data: {\"choices\":[{\"delta\":{\"content\":\"C\"},\"finish_reason\":null}]}\n\n"),
+            Encoding.UTF8.GetBytes("data: [DONE]\n\n"),
+        ];
+
+        private int _index;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (_index >= Frames.Length)
+                return 0;
+
+            await Task.Delay(
+                _index == 0 ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromMilliseconds(450),
+                cancellationToken);
+            var frame = Frames[_index++];
+            frame.AsMemory().CopyTo(buffer);
+            return frame.Length;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private sealed class HangingStreamContent : HttpContent

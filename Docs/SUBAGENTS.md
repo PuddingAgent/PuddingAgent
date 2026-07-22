@@ -95,11 +95,20 @@ Current defaults:
 
 ```json
 {
+  "turns": {
+    "defaultHardTimeoutSeconds": 86400,
+    "maxHardTimeoutSeconds": 86400,
+    "noProgressTimeoutSeconds": 3600,
+    "watchdogPollIntervalSeconds": 5,
+    "llmFirstChunkTimeoutSeconds": 300,
+    "llmStreamIdleTimeoutSeconds": 120
+  },
   "subAgents": {
     "maxConcurrentPerTemplate": 3,
     "maxConcurrentPerWorkspace": 6,
     "defaultTimeoutSeconds": 3600,
     "maxTimeoutSeconds": 3600,
+    "parentFinalizationReserveSeconds": 120,
     "defaultPermissionMode": "inherit"
   }
 }
@@ -117,13 +126,25 @@ Timeout:
 - If omitted, `defaultTimeoutSeconds` is used.
 - A conversation Turn freezes one absolute execution deadline. Tool and sub-agent boundaries propagate
   that timestamp; no child may replace it with a later `now + timeout`.
-- Smart workflows have an 1800-second child-task ceiling and reserve the last 120 seconds of the parent
-  Turn for report consumption, final response generation, and terminal commit.
-- The effective child timeout is the minimum of the requested timeout, the Smart ceiling, and the
-  remaining parent budget after the reserve.
+- The absolute deadline is a 24-hour final safety ceiling. Normal stall detection uses the one-hour
+  sliding meaningful-progress window. Lease renewals, SSE keepalives, and empty provider frames do not
+  renew it; new LLM output, tool results, or child-agent progress do.
+- Identical progress fingerprints for the same run and stage do not renew the window. A no-progress
+  cancellation commits `execution_stalled`; reaching the hard ceiling commits `execution_timeout`.
+- Provider streaming has its own operation watchdog: 300 seconds to the first chunk, then 120 seconds
+  between chunks.
+- Every synchronous sub-agent invocation reserves `parentFinalizationReserveSeconds` at the end of the
+  parent Turn for result consumption, final response generation, and terminal commit. Asynchronous
+  children are still bounded by the parent deadline but do not consume this synchronous reserve.
+- Smart workflows additionally have a 3600-second child-task ceiling; `smart_plan` is capped at
+  3600 seconds / 48 rounds and `smart_explore` at 1800 seconds / 32 rounds. The effective synchronous child
+  timeout is the minimum of the requested timeout, the Smart ceiling when applicable, and the remaining
+  parent budget after the reserve.
 - Waiting for workspace/template concurrency gates consumes the same deadline budget.
-- If the reserve cannot be satisfied, the Smart wrapper returns `insufficient_execution_budget` before
-  creating a child run.
+- If the reserve cannot be satisfied, scheduling returns `insufficient_execution_budget` before creating
+  a child run. This also prevents a retry from consuming the parent's final two minutes.
+- Terminal totals are reconciled from the durable run event archive. A cancellation or timeout after many
+  rounds must not reset visible round/tool/duration counters to zero.
 
 ## Design Notes
 

@@ -44,24 +44,26 @@ Source/
 | `DependencyInjection.cs` | Runtime 服务注册入口 |
 | `Services/PuddingConfigLoader.cs` | 加载 JSON 配置文件 |
 | `Services/PuddingJsonConfig.cs` | 配置模型定义 |
-| `Services/RuntimeExecutionConfigService.cs` | 运行时执行配置 |
+| `Services/RuntimeExecutionConfigService.cs` | 运行时执行配置；统一归一化父 Turn 24h 硬上限、1h 无进展窗口、LLM 首块/流空闲窗口，以及子代理并发、timeout 与父 Turn 收尾预留 |
 
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计 |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计 |
 | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs` | 主 Agent、工具调用和子代理共用的稳定执行身份；贯穿 Conversation/Turn/Command/Run/Tool/Invocation |
+| `PuddingCore/Runtime/ExecutionProgressRegistry.cs` | 主 Run 进程内进展注册表；按 Conversation 汇聚子执行信号，区分 liveness/meaningful，并拒绝相同 Run+阶段+指纹的重复续期 |
 | `Services/SessionExecutionGate.cs` + `PuddingCore/Runtime/ISessionExecutionGate.cs` | Runtime 会话进程内单写者；统一串行化 Conversation Worker、MessageDelivery、Heartbeat 与直接 Runtime 调度对同一 session 的状态修改 |
 | `Services/AgentLoop/CompletionPolicy.cs` | 判断 Agent 何时完成（stop reason 处理） |
 | `Services/AgentLoop/ExecutionJournal.cs` | 执行日志记录 |
 | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 执行护栏（最大轮次等） |
 | `Services/AgentLoop/ExecutionControlRegistry.cs` | 注册执行控制策略 |
+| `Services/StreamWatchdog.cs` + `DirectLlmClient.cs` | LLM 流操作级滑动看门狗；首块默认 300 秒，首块后相邻流块默认 120 秒，Provider 配置只能收紧空闲窗口，不再施加固定流总时长；使用 Stopwatch 单调时钟 |
 
 ### LLM 调用
 | 文件 | 用途 |
 |------|------|
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
-| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用 |
+| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；以 workspace 上下文解析服务端授权的视觉制品引用 |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
 | `Services/LlmProfileResolver.cs` | 解析 Agent 的 LLM 配置 |
@@ -91,7 +93,7 @@ Source/
 |------|------|------|
 | `Tools/BuiltIns/Files/` | `FileTools.cs` + `FileSearchTool.cs` | 文件读写、搜索、grep；`file_search` 在工具边界统一把任意 provider/fallback 结果规范化为绝对路径 |
 | `Tools/BuiltIns/Memory/` | `MemoryTools.cs` | 记忆读写（save/manage/search/grep） |
-| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc` 执行快照 |
+| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc` 执行快照；同步委派由 Manager 统一保留父级收尾时间 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
 | `Tools/BuiltIns/Search/` | `SmartSearchTool.cs` | 🔑 语义代码搜索 — 薄包装子代理，三层搜索协议，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | 通用搜索（Web/文档） |
@@ -99,7 +101,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；`smart_plan` 为 600 秒/48 轮只读规划，`smart_explore` 为 180 秒/32 轮只读探索，二者均禁止嵌套委派且使用显式只读工具白名单；共享五段顶层报告合同 |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索，二者均禁止嵌套委派且使用显式只读工具白名单；共享五段顶层报告合同 |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
@@ -191,9 +193,10 @@ Source/
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；从实例 manifest + `config/llm.json` 读取快照，并用 `llm.providers.json` 补齐连接配置 |
 | `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，并实现 `IAgentSelfMaintenanceService` 的受控自维护写入 |
-| `Services/SubAgentManager.cs` | 子代理统一调度边界；同步/异步统一按父 deadline 归一化子 deadline，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
+| `Services/VisionArtifactStorageService.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；将 workspace 内授权 artifact 转为 LLM 可消费引用，并与 singleton Runtime LLM 客户端保持合法 DI 生命周期 |
+| `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，先写自带 `run_id` 的 events.jsonl，再按持久游标投影 canonical Conversation Event |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件再按持久游标投影 canonical Conversation Event |
 | `Services/SubAgentConversationProjectionWorker.cs` | 启动时将上一进程遗留的非终态 run 仲裁为 `interrupted`，随后扫描 run archive 投影积压 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
 | `Services/ExecutionCommandReader.cs` | Command 稳定执行引用的只读适配器；不拥有任何状态转换 |
@@ -204,7 +207,7 @@ Source/
 | `Services/TokenUsageSchemaBootstrapper.cs` | Platform SQLite 的 Token 用量 Schema 升级边界；启动时幂等补齐 `TokenUsageEvents.ParentSessionId` 与索引，DDL 失败直接阻止启动，避免 EF 模型与旧数据库静默失配 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` | Execution Kernel 入口 — 接收 Lease，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`，再以稳定 `messageId/runId` 关联过程事实 |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |
@@ -436,14 +439,14 @@ Controller SessionRepository 是 Main Session 归属的事实源；Agent manifes
 
 ### 4. Smart* 工具 — 子代理薄包装与有界委派模式
 ```
-ExecutionRunCoordinator（Turn 启动时冻结唯一 parent deadline）
+ExecutionRunCoordinator（Turn 启动时冻结 24h parent hard deadline，并注册 1h meaningful-progress 窗口）
   → Turn / Runtime / Tool contract 逐层透传（只能收紧）
 主 Agent 调用 smart_plan(task="...")
-  → SmartPlanTool（上限 600s / 48 rounds，父级预留 120s）
+  → SmartPlanTool（上限 3600s / 48 rounds，父级预留 120s）
     → Planner 使用显式只读 capability whitelist
     → 不写计划文件、不执行 shell、不继续派生 Smart 子代理
 主 Agent 或获授权子代理调用 smart_explore(task="...")
-  → SmartExploreTool（上限 180s / 32 rounds，DelegatedSubAgent）
+  → SmartExploreTool（上限 1800s / 32 rounds，DelegatedSubAgent）
     → Explorer 使用同类只读 whitelist，不能继续派生子代理
   → 其他 Smart 工具保持 MainAgentOnly
   → PuddingToolRegistry 在执行边界强制 exposure + allow + depth 三项检查
@@ -564,7 +567,8 @@ WorkspaceAgentSettingsDrawer
 - `sourceTemplateId` 创建后只作为来源审计信息，运行时不得据此读取模板
 - `maxContextTokens` 不进入 Agent 表单或 Agent 配置，容量只由 Provider Model 解析
 - 最大轮次、最大耗时、最大工具调用进入不可变执行快照；默认父 Turn 最大耗时为
-  2400 秒，Runtime 以实例值和平台 `AgentExecutionGuardrails` 中较小者为有效上限
+  86400 秒最终安全上限，Runtime 以实例值和平台 `AgentExecutionGuardrails` 中较小者为
+  有效硬上限；正常停滞由 3600 秒滑动 meaningful-progress 窗口终结
 
 ---
 
@@ -663,7 +667,7 @@ Orchestrator:
 
 1. **双轨工具系统**: 正在从 `IAgentSkill`（Legacy）迁移到 `IPuddingTool`（新），两套接口并存
 2. **双轨记忆系统**: 传统图书馆（Book/Chapter）+ 结构化事实库（Fact）并存，未来融合
-3. **Smart* 工具有界委派模式**: 七个工具统一 `task` 合同和 1800 秒默认预算；除 `smart_explore=DelegatedSubAgent` 外保持 `MainAgentOnly`，唯一嵌套边为 `smart_plan → smart_explore`，并由 capability whitelist、委派开关和深度硬门共同防循环
+3. **Smart* 工具有界委派模式**: 七个工具统一 `task` 合同；单次共享上限 3600 秒，`smart_plan=3600 秒/48 轮`，`smart_explore=1800 秒/32 轮`；除 `smart_explore=DelegatedSubAgent` 外保持 `MainAgentOnly`，唯一嵌套边为 `smart_plan → smart_explore`，并由 capability whitelist、委派开关和深度硬门共同防循环
 4. **能力标签系统 (P2)**: `ILlmResolver.ResolveRouteAsync(requiredCapabilityTags)` 按标签选择唯一配置源中的模型；显式 model 路由优先
 5. **Token 预算准确**: `RecordProviderUsage` 不再覆盖上下文快照；`TrimHistory` 改为 token 驱动（`maxTokenBudget/2500`）
 6. **会话持久化**: `SessionStateStore` 在状态变更时异步写入 `data/sessions/{id}.json`，重启后恢复

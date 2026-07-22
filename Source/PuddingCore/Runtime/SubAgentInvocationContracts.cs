@@ -147,11 +147,31 @@ public sealed record SubAgentExecutionOptions
     public int MaxConcurrentPerWorkspace { get; init; } = 6;
     public int DefaultTimeoutSeconds { get; init; } = 3600;
     public int MaxTimeoutSeconds { get; init; } = 3600;
+    /// <summary>
+    /// 同步子代理必须在父 Turn 截止时间前释放的收尾窗口。
+    /// 用于让父 Agent 消化结果、生成最终回复并提交唯一终态。
+    /// </summary>
+    public int ParentFinalizationReserveSeconds { get; init; } = 120;
     public string DefaultPermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
+}
+
+/// <summary>
+/// Conversation Turn 的执行预算。Hard timeout 是不可续期的最终保险丝；
+/// no-progress timeout 由有效运行进度形成滑动窗口。
+/// </summary>
+public sealed record TurnExecutionOptions
+{
+    public int DefaultHardTimeoutSeconds { get; init; } = 24 * 60 * 60;
+    public int MaxHardTimeoutSeconds { get; init; } = 24 * 60 * 60;
+    public int NoProgressTimeoutSeconds { get; init; } = 60 * 60;
+    public int WatchdogPollIntervalSeconds { get; init; } = 5;
+    public int LlmFirstChunkTimeoutSeconds { get; init; } = 5 * 60;
+    public int LlmStreamIdleTimeoutSeconds { get; init; } = 2 * 60;
 }
 
 public sealed record RuntimeExecutionOptions
 {
+    public TurnExecutionOptions Turns { get; init; } = new();
     public SubAgentExecutionOptions SubAgents { get; init; } = new();
 }
 

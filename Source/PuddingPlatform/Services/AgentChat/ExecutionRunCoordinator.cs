@@ -19,10 +19,14 @@ public sealed class ExecutionRunCoordinator(
     IChatMessageRepository messageRepository,
     IExecutionCommandReader commandReader,
     IControlInbox controlInbox,
-    ILogger<ExecutionRunCoordinator> logger) : IExecutionRunCoordinator
+    ILogger<ExecutionRunCoordinator> logger,
+    IRuntimeExecutionConfigService? executionConfig = null,
+    IExecutionProgressRegistry? progressRegistry = null,
+    TimeProvider? timeProvider = null) : IExecutionRunCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan CancelPollInterval = TimeSpan.FromMilliseconds(500);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<ExecutionRunOutcome> ExecuteAsync(
         ExecutionLease lease, CancellationToken hostStoppingToken)
@@ -36,9 +40,17 @@ public sealed class ExecutionRunCoordinator(
         var runStarted = false;
         ExecutionCommandRecord? command = null;
         DateTimeOffset? executionDeadlineUtc = null;
+        var hardTimeout = TimeSpan.Zero;
+        var turnOptions = new TurnExecutionOptions();
+        var noProgressTimeout = TimeSpan.FromSeconds(turnOptions.NoProgressTimeoutSeconds);
+        var watchdogPollInterval = TimeSpan.FromSeconds(turnOptions.WatchdogPollIntervalSeconds);
 
         try
         {
+            turnOptions = executionConfig?.GetOptions().Turns ?? turnOptions;
+            noProgressTimeout = TimeSpan.FromSeconds(turnOptions.NoProgressTimeoutSeconds);
+            watchdogPollInterval = TimeSpan.FromSeconds(turnOptions.WatchdogPollIntervalSeconds);
+
             logger.LogInformation(
                 "[Coordinator] Start run={RunId} cmd={CmdId} turn={TurnId}",
                 lease.RunId, lease.CommandId, lease.TurnId);
@@ -51,11 +63,14 @@ public sealed class ExecutionRunCoordinator(
 
             var snapshot = await snapshotFactory.CreateAsync(
                 profile, null, ctsRun.Token);
-            if (snapshot.Timeout is { } configuredTimeout && configuredTimeout > TimeSpan.Zero)
-            {
-                executionDeadlineUtc = DateTimeOffset.UtcNow.Add(configuredTimeout);
-                ctsRun.CancelAfter(configuredTimeout);
-            }
+            var requestedHardTimeout = snapshot.Timeout is { } configuredTimeout
+                                       && configuredTimeout > TimeSpan.Zero
+                ? configuredTimeout
+                : TimeSpan.FromSeconds(turnOptions.DefaultHardTimeoutSeconds);
+            hardTimeout = TimeSpan.FromSeconds(Math.Min(
+                requestedHardTimeout.TotalSeconds,
+                turnOptions.MaxHardTimeoutSeconds));
+            executionDeadlineUtc = _timeProvider.GetUtcNow().Add(hardTimeout);
             var providerId = RequireRoutingValue(snapshot.ProviderId, "provider", command.AgentInstanceId);
             var modelId = RequireRoutingValue(snapshot.ModelId, "model", command.AgentInstanceId);
             var llmProfile = new LlmInvocationProfile
@@ -87,9 +102,16 @@ public sealed class ExecutionRunCoordinator(
                     Payload: startedDoc.RootElement.Clone()),
                 ctsRun.Token);
             runStarted = true;
+            progressRegistry?.RegisterRoot(lease.RunId, lease.ConversationId);
 
-            // Start monitor (lease renewal + cancel detection)
-            monitorTask = MonitorAsync(lease, ctsRun, ctsMonitor.Token);
+            // Start monitor (lease renewal + cancel + hard ceiling + sliding no-progress window)
+            monitorTask = MonitorAsync(
+                lease,
+                ctsRun,
+                executionDeadlineUtc,
+                noProgressTimeout,
+                watchdogPollInterval,
+                ctsMonitor.Token);
 
             // Build execution context
             var userMessage = await messageRepository.GetByMessageIdAsync(
@@ -111,9 +133,7 @@ public sealed class ExecutionRunCoordinator(
                 LlmProfile: llmProfile,
                 LlmConfig: profile.LlmConfig,
                 MaxRounds: snapshot.BudgetMaxRounds,
-                MaxElapsedSeconds: snapshot.Timeout is { } timeout
-                    ? (int)Math.Ceiling(timeout.TotalSeconds)
-                    : null,
+                MaxElapsedSeconds: (int)Math.Ceiling(hardTimeout.TotalSeconds),
                 MaxToolCallsTotal: snapshot.BudgetMaxToolCalls,
                 ChannelId: command.ChannelId,
                 UserExternalId: command.UserId,
@@ -143,9 +163,13 @@ public sealed class ExecutionRunCoordinator(
             var terminalInfo = loopResult.Terminal;
 
             await SafeCancelAsync(ctsMonitor);
-            try { await monitorTask; } catch { }
+            var monitorOutcome = await GetMonitorOutcomeAsync(monitorTask);
 
-            var terminal = ConvertTerminalInfo(terminalInfo);
+            var terminal = ApplyMonitorOutcome(
+                ConvertTerminalInfo(terminalInfo),
+                monitorOutcome,
+                executionDeadlineUtc,
+                noProgressTimeout);
             var result = await journal.CommitTerminalAsync(
                 lease, terminal, terminalPending, CancellationToken.None);
 
@@ -170,12 +194,15 @@ public sealed class ExecutionRunCoordinator(
             {
                 var monitorOutcome = await GetMonitorOutcomeAsync(monitorTask);
                 var deadlineReached = executionDeadlineUtc is { } deadlineUtc
-                                      && DateTimeOffset.UtcNow >= deadlineUtc.AddMilliseconds(-250);
+                                      && _timeProvider.GetUtcNow() >= deadlineUtc.AddMilliseconds(-250);
                 var term = monitorOutcome.LeaseLost
                     ? TurnTerminal.LeaseLost
                     : monitorOutcome.CancelControlId is not null
                         ? TurnTerminal.Cancelled
+                        : monitorOutcome.WatchdogDecision.Kind == ExecutionWatchdogDecisionKind.Stalled
+                            ? BuildStalledTerminal(monitorOutcome.WatchdogDecision, noProgressTimeout)
                         : deadlineReached
+                          || monitorOutcome.WatchdogDecision.Kind == ExecutionWatchdogDecisionKind.HardTimeout
                             ? TurnTerminal.Failure(
                                 TerminalErrorCodes.ExecutionTimeout,
                                 $"Execution timed out at {executionDeadlineUtc:O}.")
@@ -243,6 +270,10 @@ public sealed class ExecutionRunCoordinator(
                     fallback?.Sequence ?? 0);
             }
         }
+        finally
+        {
+            progressRegistry?.UnregisterRoot(lease.RunId);
+        }
     }
 
     private async Task<TerminalFallbackResult?> TryCloseAfterTerminalWriteFailureAsync(
@@ -280,10 +311,17 @@ public sealed class ExecutionRunCoordinator(
                 $"Agent '{agentId}' does not have a resolved LLM {field}.");
 
     private async Task<ControlMonitorOutcome> MonitorAsync(
-        ExecutionLease lease, CancellationTokenSource ctsRun, CancellationToken ct)
+        ExecutionLease lease,
+        CancellationTokenSource ctsRun,
+        DateTimeOffset? hardDeadlineUtc,
+        TimeSpan noProgressTimeout,
+        TimeSpan watchdogPollInterval,
+        CancellationToken ct)
     {
         var lastLeaseRenew = Environment.TickCount64;
         var leaseIntervalMs = (long)LeaseDuration.TotalMilliseconds / 2;
+        var lastWatchdogCheck = Environment.TickCount64;
+        var watchdogIntervalMs = Math.Max(1L, (long)watchdogPollInterval.TotalMilliseconds);
         long controlCursor = 0;
 
         try
@@ -301,7 +339,10 @@ public sealed class ExecutionRunCoordinator(
                     {
                         logger.LogWarning("[Coordinator] CancelRequested from inbox run={RunId}", lease.RunId);
                         ctsRun.Cancel();
-                        return new ControlMonitorOutcome(false, msg.ControlId);
+                        return new ControlMonitorOutcome(
+                            false,
+                            msg.ControlId,
+                            ExecutionWatchdogDecision.Continue);
                     }
                     logger.LogWarning(
                         "[Coordinator] Control remains pending because Runtime has no consumer kind={Kind} controlId={ControlId}",
@@ -318,13 +359,37 @@ public sealed class ExecutionRunCoordinator(
                     {
                         logger.LogWarning("[Coordinator] Lease lost run={RunId}", lease.RunId);
                         ctsRun.Cancel();
-                        return new ControlMonitorOutcome(true, null);
+                        return new ControlMonitorOutcome(
+                            true,
+                            null,
+                            ExecutionWatchdogDecision.Continue);
+                    }
+                }
+
+                if (nowTicks - lastWatchdogCheck >= watchdogIntervalMs)
+                {
+                    lastWatchdogCheck = nowTicks;
+                    var decision = ExecutionWatchdogPolicy.Evaluate(
+                        _timeProvider.GetUtcNow(),
+                        hardDeadlineUtc,
+                        noProgressTimeout,
+                        progressRegistry?.GetSnapshot(lease.RunId));
+                    if (decision.Kind != ExecutionWatchdogDecisionKind.Continue)
+                    {
+                        logger.LogWarning(
+                            "[Coordinator] Watchdog cancelled run={RunId} kind={Kind} idleSeconds={IdleSeconds:F0} lastStage={LastStage}",
+                            lease.RunId,
+                            decision.Kind,
+                            decision.IdleFor.TotalSeconds,
+                            decision.LastStage);
+                        ctsRun.Cancel();
+                        return new ControlMonitorOutcome(false, null, decision);
                     }
                 }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-        return new ControlMonitorOutcome(false, null);
+        return new ControlMonitorOutcome(false, null, ExecutionWatchdogDecision.Continue);
     }
 
     private async Task<(IReadOnlyList<NewConversationEvent> Pending, TurnTerminalInfo Terminal)> ExecuteLoopAsync(
@@ -404,7 +469,10 @@ public sealed class ExecutionRunCoordinator(
         Task<ControlMonitorOutcome>? monitorTask)
     {
         if (monitorTask is null)
-            return new ControlMonitorOutcome(false, null);
+            return new ControlMonitorOutcome(
+                false,
+                null,
+                ExecutionWatchdogDecision.Continue);
 
         try
         {
@@ -412,7 +480,10 @@ public sealed class ExecutionRunCoordinator(
         }
         catch
         {
-            return new ControlMonitorOutcome(false, null);
+            return new ControlMonitorOutcome(
+                false,
+                null,
+                ExecutionWatchdogDecision.Continue);
         }
     }
 
@@ -431,6 +502,39 @@ public sealed class ExecutionRunCoordinator(
         };
     }
 
+    private static TurnTerminal ApplyMonitorOutcome(
+        TurnTerminal terminal,
+        ControlMonitorOutcome monitorOutcome,
+        DateTimeOffset? hardDeadlineUtc,
+        TimeSpan noProgressTimeout)
+    {
+        if (monitorOutcome.LeaseLost)
+            return TurnTerminal.LeaseLost;
+        if (monitorOutcome.CancelControlId is not null)
+            return TurnTerminal.Cancelled;
+
+        return monitorOutcome.WatchdogDecision.Kind switch
+        {
+            ExecutionWatchdogDecisionKind.HardTimeout => TurnTerminal.Failure(
+                TerminalErrorCodes.ExecutionTimeout,
+                $"Execution timed out at {hardDeadlineUtc:O}."),
+            ExecutionWatchdogDecisionKind.Stalled => BuildStalledTerminal(
+                monitorOutcome.WatchdogDecision,
+                noProgressTimeout),
+            _ => terminal,
+        };
+    }
+
+    private static TurnTerminal BuildStalledTerminal(
+        ExecutionWatchdogDecision decision,
+        TimeSpan noProgressTimeout)
+        => TurnTerminal.Failure(
+            TerminalErrorCodes.ExecutionStalled,
+            $"Execution made no meaningful progress for {noProgressTimeout.TotalSeconds:F0}s" +
+            (string.IsNullOrWhiteSpace(decision.LastStage)
+                ? "."
+                : $" (last stage: {decision.LastStage})."));
+
     private static ExecutionRunOutcome Outcome(ExecutionLease lease, TurnTerminal terminal, long seq) =>
         new(lease.CommandId, lease.TurnId, lease.RunId, terminal, seq, 0, seq, 0);
 
@@ -441,7 +545,8 @@ public sealed class ExecutionRunCoordinator(
 
     private sealed record ControlMonitorOutcome(
         bool LeaseLost,
-        string? CancelControlId);
+        string? CancelControlId,
+        ExecutionWatchdogDecision WatchdogDecision);
 
     private sealed record TerminalFallbackResult(
         TurnTerminal Terminal,

@@ -173,7 +173,8 @@ public sealed class FileSubAgentRunStoreTests
             },
             conversationEvents.Appended.Select(static item => item.Event.Type).ToArray());
         Assert.IsTrue(
-            conversationEvents.Appended.All(static item => item.ConversationId == "parent-session"));
+            conversationEvents.Appended.All(
+                static item => item.ConversationId == "parent-session/sub/sub-agent"));
 
         await using var verifyDb = new PlatformDbContext(options);
         var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
@@ -253,6 +254,81 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual("interrupted", index.Status);
         Assert.AreEqual(2, index.TotalRounds);
         Assert.AreEqual(1, index.TotalToolCalls);
+    }
+
+    [TestMethod]
+    public async Task CompleteRunAsync_Recovers_Observed_Totals_When_Cancellation_Loses_Runtime_Result()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var conversationEvents = new RecordingConversationEventStore();
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            conversationEvents);
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Preserve observed work on timeout",
+        });
+        await store.AppendEventAsync(handle.RunId, ConversationEventTypes.SubAgentRoundStarted, new
+        {
+            round = 3,
+        });
+        await store.AppendEventAsync(handle.RunId, ConversationEventTypes.SubAgentToolCompleted, new
+        {
+            round = 3,
+            tool_call_id = "tool-1",
+            output_length = 42,
+            output_truncated = true,
+        });
+        await store.AppendEventAsync(handle.RunId, ConversationEventTypes.SubAgentToolFailed, new
+        {
+            round = 3,
+            tool_call_id = "tool-2",
+            output_length = 7,
+            output_truncated = false,
+            error = "build failed",
+        });
+        await Task.Delay(5);
+
+        var result = await store.CompleteRunAsync(handle.RunId, new SubAgentRunCompletion
+        {
+            Status = "timed_out",
+            ErrorMessage = "deadline reached",
+        });
+
+        Assert.AreEqual(SubAgentRunTerminalWriteResult.Applied, result);
+        await using var verifyDb = new PlatformDbContext(options);
+        var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
+        Assert.AreEqual("timed_out", index.Status);
+        Assert.AreEqual(3, index.TotalRounds);
+        Assert.AreEqual(2, index.TotalToolCalls);
+        Assert.IsGreaterThan(0, index.TotalDurationMs);
+
+        var terminalLine = (await File.ReadAllLinesAsync(
+            Path.Combine(handle.ArchivePath, "events.jsonl")))[^1];
+        using var terminalJson = JsonDocument.Parse(terminalLine);
+        var payload = terminalJson.RootElement.GetProperty("payload");
+        Assert.AreEqual(3, payload.GetProperty("total_rounds").GetInt32());
+        Assert.AreEqual(2, payload.GetProperty("total_tool_calls").GetInt32());
+        Assert.AreEqual(1, payload.GetProperty("tool_failure_count").GetInt32());
+        Assert.AreEqual(1, payload.GetProperty("tool_output_truncated_count").GetInt32());
+        Assert.AreEqual(49L, payload.GetProperty("tool_output_chars").GetInt64());
+        Assert.AreEqual("build failed", payload.GetProperty("tool_failure_summary").GetString());
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)

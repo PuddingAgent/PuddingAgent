@@ -11,7 +11,7 @@ namespace PuddingRuntime.Services.Tools;
                  "质量、安全性、最佳实践，返回结构化的审查报告。" +
                  "参数：task（审查任务）、scope（文件/目录范围）、" +
                  "aspects（可选，关注的安全/质量/性能方面）、" +
-                 "timeout_seconds（可选，默认 600s）。模型由 Agent 配置的 Reviewer_Model 决定。",
+                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Reviewer_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -28,7 +28,7 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
     }
 
     protected override string RoleName => "reviewer";
-    // K3 Reviewer: 600s timeout, read-only tools only — avoid exploration, focus on review
+    // K3 Reviewer: bounded by the shared one-hour timeout, read-only tools only.
     protected override int DefaultMaxRounds => 200;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };

@@ -10,7 +10,7 @@ namespace PuddingRuntime.Services.Tools;
     description: "智能部署运维。用自然语言描述部署任务，内部委托 Deployer 子代理执行部署操作。" +
                  "需要显式授权（High 权限）。" +
                  "参数：task（部署任务描述）、scope（可选，工作目录）、environment（可选，目标环境）、" +
-                 "timeout_seconds（可选，默认 600s）。模型由 Agent 配置的 Deployer_Model 决定。",
+                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Deployer_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.None,

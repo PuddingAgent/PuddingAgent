@@ -10,9 +10,10 @@ public sealed record AgentExecutionGuardrails
     public int MaxRounds { get; init; } = 200;
 
     /// <summary>
-    /// 整体执行的最大允许总耗时。默认 40 分钟，为 30 分钟 Smart 子任务保留父级收口预算。
+    /// 整体执行的最大允许总耗时。它是不可续期的最终保险丝；
+    /// 正常的卡死检测由 Run 级滑动无进展看门狗负责。
     /// </summary>
-    public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromMinutes(40);
+    public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromHours(24);
 
     /// <summary>整次执行内工具调用总次数上限。默认 100。</summary>
     public int MaxToolCallsTotal { get; init; } = 100;

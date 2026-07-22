@@ -78,7 +78,7 @@ public sealed class SmartWorkflowContractTests
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
         Assert.AreEqual(48, document.RootElement.GetProperty("max_rounds").GetInt32());
-        Assert.AreEqual(600, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.AreEqual(3600, document.RootElement.GetProperty("timeout_seconds").GetInt32());
         Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
         Assert.AreEqual(0, document.RootElement.GetProperty("depth").GetInt32());
         Assert.AreEqual(2, document.RootElement.GetProperty("max_depth").GetInt32());
@@ -115,7 +115,7 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        Assert.AreEqual(180, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.AreEqual(1800, document.RootElement.GetProperty("timeout_seconds").GetInt32());
         Assert.AreEqual(32, document.RootElement.GetProperty("max_rounds").GetInt32());
         Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
         var exploreTools = document.RootElement.GetProperty("tools").GetString();
@@ -189,13 +189,10 @@ public sealed class SmartWorkflowContractTests
                 document.RootElement.GetProperty("max_rounds").GetInt32(),
                 $"{testCase.Tool.Descriptor.ToolId} exceeds spawn_sub_agent's max_rounds contract.");
             var timeoutSeconds = document.RootElement.GetProperty("timeout_seconds").GetInt32();
-            if (testCase.Tool.Descriptor.ToolId == "smart_plan")
-                Assert.AreEqual(600, timeoutSeconds);
-            else
-                Assert.AreEqual(
-                    1800,
-                    timeoutSeconds,
-                    $"{testCase.Tool.Descriptor.ToolId} must use the shared default.");
+            Assert.AreEqual(
+                3600,
+                timeoutSeconds,
+                $"{testCase.Tool.Descriptor.ToolId} must use the shared one-hour ceiling.");
         }
     }
 

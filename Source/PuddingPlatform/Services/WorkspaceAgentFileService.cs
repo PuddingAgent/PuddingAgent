@@ -549,7 +549,7 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSe
                 ReasoningEffort = req.ReasoningEffort ?? template?.ReasoningEffort,
                 MaxReplyTokens = req.MaxReplyTokens ?? template?.MaxReplyTokens ?? 4096,
                 MaxRounds = req.MaxRounds ?? template?.MaxRounds ?? 200,
-                MaxElapsedSeconds = req.MaxElapsedSeconds ?? template?.MaxElapsedSeconds ?? 2400,
+                MaxElapsedSeconds = req.MaxElapsedSeconds ?? template?.MaxElapsedSeconds ?? 86400,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? template?.MaxToolCallsTotal ?? 100,
                 ContainerImage = req.ContainerImage ?? template?.ContainerImage,
                 DefaultLlmProfiles = new AgentDefaultLlmProfiles

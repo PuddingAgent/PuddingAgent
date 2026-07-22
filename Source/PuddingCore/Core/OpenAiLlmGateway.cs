@@ -19,6 +19,12 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     /// <summary>Provider compatibility settings (K3, etc.). Set after construction.</summary>
     public ProviderCompatConfig? Compat { get; set; }
 
+    /// <summary>Vision artifact resolver — injected by the runtime before each call. Set after construction.</summary>
+    public IVisualArtifactResolver? VisualArtifactResolver { get; set; }
+
+    /// <summary>Workspace ID for vision artifact resolution. Set after construction alongside VisualArtifactResolver.</summary>
+    public string? WorkspaceId { get; set; }
+
     private string? _thinkingMode = NormalizeThinkingMode(options.EnableThinking switch
     {
         true => "enabled",
@@ -48,7 +54,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         IReadOnlyList<ITool> tools,
         CancellationToken ct = default)
     {
-        var requestBody = BuildRequestBody(messages, tools, stream: false);
+        var requestBody = await BuildRequestBody(messages, tools, stream: false, ct);
         var request = new HttpRequestMessage(HttpMethod.Post, _chatEndpoint)
         {
             Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
@@ -74,7 +80,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         IReadOnlyList<ITool> tools,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var requestBody = BuildRequestBody(messages, tools, stream: true);
+        var requestBody = await BuildRequestBody(messages, tools, stream: true, ct);
         var request = new HttpRequestMessage(HttpMethod.Post, _chatEndpoint)
         {
             Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
@@ -206,10 +212,11 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         return url + "/chat/completions";
     }
 
-    private string BuildRequestBody(
+    private async Task<string> BuildRequestBody(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
-        bool stream)
+        bool stream,
+        CancellationToken ct = default)
     {
         var messagesArray = new JsonArray();
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
@@ -231,7 +238,28 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             };
 
             if (msg.Content is not null)
-                msgObj["content"] = msg.Content;
+            {
+                // ── Vision multimodal content ──
+                if (msg.Role == ChatRole.User
+                    && msg.VisualArtifactIds is { Count: > 0 }
+                    && VisualArtifactResolver is not null
+                    && !string.IsNullOrWhiteSpace(WorkspaceId))
+                {
+                    var visionContent = await BuildVisionContentArrayAsync(msg, ct);
+                    if (visionContent is not null)
+                    {
+                        msgObj["content"] = visionContent;
+                    }
+                    else
+                    {
+                        msgObj["content"] = msg.Content;
+                    }
+                }
+                else
+                {
+                    msgObj["content"] = msg.Content;
+                }
+            }
             else
                 msgObj["content"] = (JsonNode?)null;
 
@@ -349,6 +377,61 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         }
 
         return requestObj.ToJsonString();
+    }
+
+    /// <summary>
+    /// Build OpenAI vision multimodal content array for a user message with artifact references.
+    /// Returns null when resolution fails for all artifacts.
+    /// </summary>
+    private async Task<JsonArray?> BuildVisionContentArrayAsync(
+        ChatMessage msg,
+        CancellationToken ct)
+    {
+        if (msg.VisualArtifactIds is null || VisualArtifactResolver is null || string.IsNullOrWhiteSpace(WorkspaceId))
+            return null;
+
+        var content = new JsonArray();
+        var resolvedAny = false;
+
+        foreach (var artifactId in msg.VisualArtifactIds)
+        {
+            try
+            {
+                var resolved = await VisualArtifactResolver.ResolveAsync(WorkspaceId!, artifactId, ct);
+                if (resolved is not null)
+                {
+                    content.Add(new JsonObject
+                    {
+                        ["type"] = "image_url",
+                        ["image_url"] = new JsonObject
+                        {
+                            ["url"] = resolved.DataUri,
+                        },
+                    });
+                    resolvedAny = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Degrade gracefully — skip unresolvable artifacts
+                System.Diagnostics.Debug.WriteLine($"[OpenAiLlmGateway] Failed to resolve vision artifact '{artifactId}': {ex.Message}");
+            }
+        }
+
+        if (!resolvedAny)
+            return null;
+
+        // Prepend text content before images
+        if (!string.IsNullOrWhiteSpace(msg.Content))
+        {
+            content.Insert(0, new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = msg.Content,
+            });
+        }
+
+        return content;
     }
 
     private static LlmResponse ParseResponse(string json)

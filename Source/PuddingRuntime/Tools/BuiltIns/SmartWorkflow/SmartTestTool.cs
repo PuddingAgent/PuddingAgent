@@ -10,7 +10,7 @@ namespace PuddingRuntime.Services.Tools;
     description: "智能测试执行。用自然语言描述测试需求，内部委托 Tester 子代理自动运行测试、" +
                  "分析失败原因、生成测试报告。需要显式授权（High 权限）。" +
                  "参数：task（测试任务）、scope（可选，测试范围/项目）、" +
-                 "timeout_seconds（可选，默认 600s）。模型由 Agent 配置的 Tester_Model 决定。",
+                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Tester_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.None,

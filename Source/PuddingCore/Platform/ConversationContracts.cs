@@ -72,6 +72,7 @@ public static class TerminalErrorCodes
     public const string ExecutionProtocolError = "execution_protocol_error";
     public const string ExecutionCancelled = "execution_cancelled";
     public const string ExecutionTimeout = "execution_timeout";
+    public const string ExecutionStalled = "execution_stalled";
     public const string LeaseLost = "lease_lost";
     public const string EventCommitFailed = "event_commit_failed";
 }

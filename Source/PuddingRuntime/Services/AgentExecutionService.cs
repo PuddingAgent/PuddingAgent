@@ -84,6 +84,7 @@ public sealed class AgentExecutionService
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly SkillEnforcerService? _skillEnforcer;
     private readonly ISessionExecutionGate _sessionExecutionGate;
+    private readonly IExecutionProgressRegistry? _executionProgress;
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -129,7 +130,8 @@ public sealed class AgentExecutionService
         IIdleDetector? idleDetector = null,
         ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         SkillEnforcerService? skillEnforcer = null,
-        IOptions<SubconsciousOptions>? subconsciousOptions = null)
+        IOptions<SubconsciousOptions>? subconsciousOptions = null,
+        IExecutionProgressRegistry? executionProgress = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -177,6 +179,7 @@ public sealed class AgentExecutionService
         _idleDetector              = idleDetector;
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
         _skillEnforcer             = skillEnforcer;
+        _executionProgress         = executionProgress;
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -200,6 +203,7 @@ public sealed class AgentExecutionService
             request.SessionId, request.AgentTemplateId,
             request.MessageText.Length, request.LlmConfig is not null);
         _idleDetector?.RecordUserMessage();
+        ReportMeaningfulProgress(request, "run.started", request.MessageText);
 
         using var logScope = LogContext.PushProperty("SessionId", request.SessionId);
 
@@ -566,6 +570,7 @@ public sealed class AgentExecutionService
 
                 // ── LLM 调用 ──────────────────────────────────────────
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
+                ReportLiveness(request, "llm.started");
                 var runtimeTools = BuildRuntimeToolDefinitions(effectiveCapability, template, request);
                 var availableToolNames = runtimeTools
                     .Select(t => t.Name)
@@ -736,6 +741,12 @@ public sealed class AgentExecutionService
                 }
                 llmSw.Stop();
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
+                ReportMeaningfulProgress(
+                    request,
+                    "llm.completed",
+                    rawText + "\u001f" + string.Join(
+                        "\u001e",
+                        llmResp.ToolCalls?.Select(call => $"{call.Name}:{call.ArgumentsJson}") ?? []));
                 const int subAgentMessagePreviewLimit = 2048;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.completed", new
                 {
@@ -799,6 +810,7 @@ public sealed class AgentExecutionService
 
                         totalToolCalls++;
                         await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, call.Name, safeToolArgs, ct));
+                        ReportLiveness(request, $"tool.started:{call.Name}");
                         var subAgentToolSw = System.Diagnostics.Stopwatch.StartNew();
                         var subAgentToolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
                         await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.started", new
@@ -1071,6 +1083,10 @@ public sealed class AgentExecutionService
                         var safeToolError = string.IsNullOrWhiteSpace(skillResult.Error)
                             ? skillResult.Error
                             : await _keyVaultService.StripAsync(skillResult.Error, ct);
+                        ReportMeaningfulProgress(
+                            request,
+                            $"tool.completed:{call.Name}",
+                            $"{call.Name}\u001f{safeToolArgs}\u001f{safeSubAgentToolOutput}\u001f{safeToolError}");
 
                         await TryAppendSubAgentEventAsync(
                             subAgentRunId,
@@ -1310,6 +1326,7 @@ public sealed class AgentExecutionService
                     toolRepeatMap[repeatKey] = repeatCount + 1;
 
                     await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, toolName, toolArgs, ct));
+                    ReportLiveness(request, $"tool.started:{toolName}");
                     totalToolCalls++;
 
                     // 检查点 E：工具执行前再次检查取消
@@ -1371,6 +1388,10 @@ public sealed class AgentExecutionService
                                 effectiveCapability, ct);
                         }
                         toolSw2.Stop();
+                        ReportMeaningfulProgress(
+                            request,
+                            $"tool.completed:{toolName}",
+                            $"{toolName}\u001f{toolArgs}\u001f{skillResult.Output}\u001f{skillResult.Error}");
                         var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
                         if (skillResult.Success)
                         {
@@ -1834,6 +1855,7 @@ public sealed class AgentExecutionService
             request.SessionId, request.AgentTemplateId,
             request.MessageText.Length, request.LlmConfig is not null);
         _idleDetector?.RecordUserMessage();
+        ReportMeaningfulProgress(request, "run.started", request.MessageText);
 
         using var logScope = LogContext.PushProperty("SessionId", request.SessionId);
 
@@ -2472,6 +2494,7 @@ public sealed class AgentExecutionService
                     llmTools,
                     effectiveLlmConfig?.ModelId);
                 IAsyncEnumerator<StreamDelta> llmEnumerator;
+                ReportLiveness(request, "llm.started");
                 if (_llmInvocationService is not null)
                 {
                     llmEnumerator = _llmInvocationService.InvokeStreamAsync(new PuddingCode.Runtime.LlmInvocationRequest
@@ -2545,6 +2568,10 @@ public sealed class AgentExecutionService
                         {
                             roundThinkingFrames++;
                             reasoningBuf.Append(delta.ReasoningDelta);
+                            ReportMeaningfulProgress(
+                                request,
+                                "llm.streaming.reasoning",
+                                delta.ReasoningDelta);
                             var thinkingFrame = ServerSentEventFrame.Json(SseEventTypes.Thinking,
                                 new { delta = delta.ReasoningDelta });
                             await Append(thinkingFrame);
@@ -2562,6 +2589,10 @@ public sealed class AgentExecutionService
                             roundDeltaFrames++;
                             var safeDelta = await StripWithDiagnosticsAsync(delta.ContentDelta, "delta", ct);
                             replyBuf.Append(safeDelta);
+                            ReportMeaningfulProgress(
+                                request,
+                                "llm.streaming.content",
+                                safeDelta);
                             var deltaFrame = ServerSentEventFrame.Json(SseEventTypes.Delta,
                                 new { delta = safeDelta });
                             await Append(deltaFrame);
@@ -2578,6 +2609,11 @@ public sealed class AgentExecutionService
                         {
                             AccumulateToolCall(accumulatedToolCalls, delta);
                             hasToolCalls = true;
+                            ReportMeaningfulProgress(
+                                request,
+                                "llm.streaming.tool_call",
+                                $"{delta.ToolCallIndex}\u001f{delta.ToolCallId}\u001f" +
+                                $"{delta.ToolCallNameDelta}\u001f{delta.ToolCallArgsDelta}");
                         }
 
                         if (delta.Usage is not null)
@@ -2585,6 +2621,11 @@ public sealed class AgentExecutionService
                             usage = ApplyResolvedModelCapacity(delta.Usage, effectiveLlmConfig);
                             RecordProviderContextUsageSnapshot(request.SessionId, usage);
                         }
+
+                        if (string.IsNullOrEmpty(delta.ReasoningDelta)
+                            && string.IsNullOrEmpty(delta.ContentDelta)
+                            && delta.ToolCallIndex is null)
+                            ReportLiveness(request, "llm.streaming.keepalive");
                     }
                 }
                 finally
@@ -2701,6 +2742,12 @@ public sealed class AgentExecutionService
 
                 // LLM 调用成功 → 重置连续失败计数
                 consecutiveLlmFailures = 0;
+                ReportMeaningfulProgress(
+                    request,
+                    "llm.completed",
+                    replyBuf + "\u001f" + string.Join(
+                        "\u001e",
+                        accumulatedToolCalls.Select(call => $"{call.Name}:{call.Arguments}")));
 
                 // 发送 usage
                 if (usage is not null)
@@ -2789,6 +2836,7 @@ public sealed class AgentExecutionService
 
                     var toolCallFrame = ServerSentEventFrame.Json(SseEventTypes.ToolCall,
                         new { name = tc.Name, arguments = tc.Arguments });
+                    ReportLiveness(request, $"tool.started:{tc.Name}");
                     await Append(toolCallFrame);
                     yield return toolCallFrame;
 
@@ -2863,6 +2911,10 @@ public sealed class AgentExecutionService
                     lastToolResult = result.Success
                         ? $"已完成: {(result.Output?.Length > 0 ? Truncate(result.Output!, 200) : "(空输出)")}"
                         : $"执行失败: {(result.Error?.Length > 0 ? Truncate(result.Error!, 200) : "(未知错误)")}";
+                    ReportMeaningfulProgress(
+                        request,
+                        $"tool.completed:{tc.Name}",
+                        $"{tc.Name}\u001f{injectedArgsJson}\u001f{result.Output}\u001f{result.Error}");
 
                     var toolResultFrame = ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
                     {
@@ -4201,6 +4253,48 @@ public sealed class AgentExecutionService
 
     private static string Truncate(string s, int maxLen) =>
         s.Length <= maxLen ? s : s[..maxLen] + "…";
+
+    private void ReportLiveness(RuntimeDispatchRequest request, string stage)
+        => ReportExecutionProgress(request, ExecutionProgressKind.Liveness, stage, null);
+
+    private void ReportMeaningfulProgress(
+        RuntimeDispatchRequest request,
+        string stage,
+        string fingerprintMaterial)
+        => ReportExecutionProgress(
+            request,
+            ExecutionProgressKind.Meaningful,
+            stage,
+            ComputeSha256Hash(fingerprintMaterial));
+
+    private void ReportExecutionProgress(
+        RuntimeDispatchRequest request,
+        ExecutionProgressKind kind,
+        string stage,
+        string? fingerprint)
+    {
+        if (_executionProgress is null || request.ExecutionIdentity is null)
+            return;
+
+        try
+        {
+            _executionProgress.Report(new ExecutionProgressSignal
+            {
+                Identity = request.ExecutionIdentity,
+                Kind = kind,
+                Stage = stage,
+                Fingerprint = fingerprint,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[AgentExec] Failed to report execution progress run={RunId} stage={Stage}",
+                request.ExecutionIdentity.RunId,
+                stage);
+        }
+    }
 
     /// <summary>
     /// 构建工具失败消息，包含熔断预警信息——提醒 Agent 连续失败会触发熔断，引导其申请权限。

@@ -11,7 +11,7 @@ namespace PuddingRuntime.Services.Tools;
                  "结构化任务计划，包含步骤、依赖、预估工作量。" +
                  "⚠️ task 必须 ≥500 字，需包含：任务背景、项目地址、相关文件路径、项目约束等。" +
                  "上下文越充足，规划质量越高。参数：task（规划任务）、scope（范围）、" +
-                 "context（可选，已有的上下文/约束）、timeout_seconds（可选）。" +
+                 "context（可选，已有的上下文/约束）、timeout_seconds（可选，默认 3600s）。" +
                  "模型由 Agent 配置的 Planner_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
@@ -29,8 +29,8 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     }
 
     protected override string RoleName => "planner";
-    protected override int DefaultTimeoutSeconds => 120 * 60;
-    protected override int DefaultMaxRounds => 96;
+    protected override int DefaultTimeoutSeconds => 60 * 60;
+    protected override int DefaultMaxRounds => 48;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
 

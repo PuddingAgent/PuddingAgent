@@ -9,7 +9,7 @@ namespace PuddingRuntime.Services;
 /// 仅在最后 chunk 后超过 idleThreshold 无新数据时判定卡死，取消流。
 /// 
 /// 使用方式：
-///   using var watchdog = new StreamWatchdog(TimeSpan.FromSeconds(120), logger, provider);
+///   using var watchdog = new StreamWatchdog(firstChunkTimeout, streamIdleTimeout, logger, provider);
 ///   watchdog.Start();
 ///   // 将 watchdog.Token 链接到流式请求的 CancellationToken
 ///   // 每次收到 chunk 时调用 watchdog.Feed()
@@ -19,9 +19,11 @@ internal sealed class StreamWatchdog : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ILogger _logger;
     private readonly string _provider;
-    private readonly long _idleThresholdTicks;
+    private readonly long _initialIdleThresholdTicks;
+    private readonly long _streamIdleThresholdTicks;
     private readonly int _pollIntervalMs;
     private long _lastFeedTimestamp;
+    private int _hasReceivedFirstChunk;
     private Task? _pollTask;
     private bool _disposed;
 
@@ -30,21 +32,33 @@ internal sealed class StreamWatchdog : IDisposable
     /// </summary>
     public CancellationToken Token => _cts.Token;
 
-    /// <param name="idleThreshold">无 chunk 的最大容忍时间</param>
+    /// <param name="initialIdleThreshold">首个 chunk 的最大等待时间</param>
+    /// <param name="streamIdleThreshold">首块后相邻 chunk 的最大间隔</param>
     /// <param name="logger">日志记录器</param>
     /// <param name="provider">Provider 名称（用于日志）</param>
     /// <param name="pollIntervalMs">轮询间隔，默认 30 秒</param>
-    public StreamWatchdog(TimeSpan idleThreshold, ILogger logger, string provider, int pollIntervalMs = 30_000)
+    public StreamWatchdog(
+        TimeSpan initialIdleThreshold,
+        TimeSpan streamIdleThreshold,
+        ILogger logger,
+        string provider,
+        int pollIntervalMs = 30_000)
     {
-        if (idleThreshold <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(idleThreshold), "Idle threshold must be positive.");
+        if (initialIdleThreshold <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(initialIdleThreshold), "Initial idle threshold must be positive.");
+        if (streamIdleThreshold <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(streamIdleThreshold), "Stream idle threshold must be positive.");
 
-        _idleThresholdTicks = idleThreshold.Ticks;
+        _initialIdleThresholdTicks = ToStopwatchTicks(initialIdleThreshold);
+        _streamIdleThresholdTicks = ToStopwatchTicks(streamIdleThreshold);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _provider = provider ?? "unknown";
         _pollIntervalMs = pollIntervalMs;
         _lastFeedTimestamp = Stopwatch.GetTimestamp();
     }
+
+    private static long ToStopwatchTicks(TimeSpan value)
+        => checked((long)Math.Ceiling(value.TotalSeconds * Stopwatch.Frequency));
 
     /// <summary>启动后台轮询。</summary>
     public void Start()
@@ -57,6 +71,7 @@ internal sealed class StreamWatchdog : IDisposable
     public void Feed()
     {
         Volatile.Write(ref _lastFeedTimestamp, Stopwatch.GetTimestamp());
+        Volatile.Write(ref _hasReceivedFirstChunk, 1);
     }
 
     private async Task PollAsync()
@@ -69,13 +84,16 @@ internal sealed class StreamWatchdog : IDisposable
 
                 var lastFeed = Volatile.Read(ref _lastFeedTimestamp);
                 var elapsedTicks = Stopwatch.GetTimestamp() - lastFeed;
+                var thresholdTicks = Volatile.Read(ref _hasReceivedFirstChunk) == 0
+                    ? _initialIdleThresholdTicks
+                    : _streamIdleThresholdTicks;
 
-                if (elapsedTicks >= _idleThresholdTicks && !_cts.IsCancellationRequested)
+                if (elapsedTicks >= thresholdTicks && !_cts.IsCancellationRequested)
                 {
                     var elapsedSec = elapsedTicks / (double)Stopwatch.Frequency;
                     _logger.LogWarning(
                         "[StreamWatchdog] provider={Provider}: idle for {Elapsed:F1}s (threshold={Threshold:F0}s) — cancelling stream",
-                        _provider, elapsedSec, _idleThresholdTicks / (double)Stopwatch.Frequency);
+                        _provider, elapsedSec, thresholdTicks / (double)Stopwatch.Frequency);
 
                     _cts.Cancel();
                     return;
