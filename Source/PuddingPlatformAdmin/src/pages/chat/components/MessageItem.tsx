@@ -1,4 +1,4 @@
-// ── MessageItem：轻量 Markdown 文本块（用于 Timeline Answer 和旧版兼容）──
+﻿// ── MessageItem：轻量 Markdown 文本块（用于 Timeline Answer 和旧版兼容）──
 import { CopyOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import Prism from 'prismjs';
@@ -85,9 +85,10 @@ const preprocessMarkdown = (md: string): string => {
 };
 
 // ── 内部 CodeBlock 组件 ──────────────────────────────────────
-const CodeBlock: React.FC<{ code: string; className?: string }> = ({
+const CodeBlock: React.FC<{ code: string; className?: string; isStreaming?: boolean }> = ({
   code,
   className,
+  isStreaming,
 }) => {
   const { styles: rawStyles } = useChatStyles();
   const styles = rawStyles as Record<string, string>;
@@ -95,12 +96,14 @@ const CodeBlock: React.FC<{ code: string; className?: string }> = ({
   const lastHighlightRef = useRef(0);
   useEffect(() => {
     if (!ref.current) return;
-    // 流式输出时 code 频繁变化，限制 Prism 高亮频率为每 300ms 最多一次
+    // 流式输出时跳过Prism高亮: DOM频繁重建, 高亮无意义且浪费CPU
+    if (isStreaming) return;
+    // 非流式: 限制 Prism 高亮频率为每 300ms 最多一次
     const now = performance.now();
     if (now - lastHighlightRef.current < 300) return;
     lastHighlightRef.current = now;
     Prism.highlightElement(ref.current);
-  }, [code, className]);
+  }, [code, className, isStreaming]);
   return (
     <div className={styles.codeBlockWrap}>
       <Button
@@ -212,7 +215,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
     return (
       <div ref={outputRef} className={styles.markdownBody}>
         {stableMarkdown ? (
-          <MarkdownBlock markdownText={stableMarkdown} styles={styles} />
+          <MarkdownBlock markdownText={stableMarkdown} styles={styles} isStreaming />
         ) : null}
         {liveTextToRender ? (
           <span className={styles.liveTextSpan}>{liveTextToRender}</span>
@@ -227,6 +230,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       <MarkdownBlock
         markdownText={markdownText || (isStreaming ? ' ' : '')}
         styles={styles}
+        isStreaming={isStreaming}
       />
       {isStreaming && <span className={styles.streamingCursor}>▌</span>}
     </div>
@@ -237,9 +241,11 @@ const MarkdownBlock = React.memo(
   function MarkdownBlock({
     markdownText,
     styles,
+    isStreaming,
   }: {
     markdownText: string;
     styles: Record<string, string>;
+    isStreaming?: boolean;
   }) {
     const renderStart = performance.now();
     const preprocessMsRef = React.useRef(0);
@@ -249,7 +255,7 @@ const MarkdownBlock = React.memo(
       preprocessMsRef.current = performance.now() - start;
       return processed;
     }, [markdownText]);
-    const components = React.useMemo(() => sharedComponents(styles), [styles]);
+    const components = React.useMemo(() => sharedComponents(styles, isStreaming), [styles, isStreaming]);
     React.useEffect(() => {
       recordPerfEvent(
         'chat.markdown.render',
@@ -276,7 +282,7 @@ const MarkdownBlock = React.memo(
 );
 
 /** 共享的 ReactMarkdown components 配置 */
-function sharedComponents(styles: Record<string, string>) {
+function sharedComponents(styles: Record<string, string>, isStreaming?: boolean) {
   return {
     table: ({
       children,
@@ -321,7 +327,7 @@ function sharedComponents(styles: Record<string, string>) {
             {children}
           </code>
         );
-      return <CodeBlock code={c} className={className} />;
+      return <CodeBlock code={c} className={className} isStreaming={isStreaming} />;
     },
   };
 }
