@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -55,6 +55,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             return Task.FromResult(ToolExecutionResult.Fail("At least one patch with operations is required."));
 
         var summaries = new List<string>();
+        var batchResults = new List<(string FullPath, string Original, string Current, OperationZone Zone, string RelPath, int ReplacementCount, List<string> Errors, string RequestedPath, long ElapsedMs)>();
         foreach (var patch in patches)
         {
             if (!HostFileToolPaths.TryResolveInsideWorkspace(
@@ -139,34 +140,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
 
                 current = ApplyLineOperations(current, ops, ref replacementCount, errors, relPath);
 
-                var isDryRun = args.DryRun != false;
-                var previewPrefix = isDryRun ? "(preview - set dry_run=false to apply)" : "";
-                if (current == original)
-                {
-                    var msg = $"{relPath}: unchanged {previewPrefix}".TrimEnd();
-                    if (errors.Count > 0)
-                        msg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
-                    summaries.Add(msg);
-                    continue;
-                }
-
-                var diff = GenerateSimpleDiff(original, current);
-                if (isDryRun)
-                {
-                    summaries.Add($"{relPath}: (preview - set dry_run=false to apply)\n{diff}");
-                    continue;
-                }
-
-                File.WriteAllText(fullPath, current, Encoding.UTF8);
-                var successMsg = $"{relPath}: patched ({replacementCount} replacements)";
-                if (errors.Count > 0)
-                    successMsg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
-                if (!string.IsNullOrWhiteSpace(diff))
-                    successMsg += $"\n{diff}";
-                summaries.Add(successMsg);
-                _logger.LogInformation("[FilePatchTool] path={Path} replacements={Replacements}", fullPath, replacementCount);
-                _audit.Write(zone2, "file_patch", context.AgentInstanceId,
-                    patch.Path, args.Reason, true, sw.ElapsedMilliseconds, context.Trace);
+                batchResults.Add((fullPath, original, current, zone2, relPath, replacementCount, errors, patch.Path, sw.ElapsedMilliseconds));
             }
             catch (Exception ex)
             {
@@ -174,6 +148,84 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 _audit.Write(zone2, "file_patch", context.AgentInstanceId,
                     patch.Path, args.Reason, false, sw.ElapsedMilliseconds, context.Trace);
                 return Task.FromResult(ToolExecutionResult.Fail($"Failed to patch file '{patch.Path}': {ex.Message}"));
+            }
+        }
+
+        // Phase 2: Atomic commit
+        var isDryRun = args.DryRun != false;
+        if (isDryRun)
+        {
+            // Dry-run: show all previews without writing
+            foreach (var (fullPath, original, current, zone, relPath, replacementCount, errors, requestedPath, elapsedMs) in batchResults)
+            {
+                if (current == original)
+                {
+                    var msg = $"{relPath}: unchanged (preview - set dry_run=false to apply)".TrimEnd();
+                    if (errors.Count > 0)
+                        msg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
+                    summaries.Add(msg);
+                    continue;
+                }
+
+                var diff = GenerateSimpleDiff(original, current);
+                summaries.Add($"{relPath}: (preview - set dry_run=false to apply)\n{diff}");
+            }
+
+            return Task.FromResult(ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries)));
+        }
+
+        // Write phase with rollback on any failure
+        var backups = new List<(string FullPath, string BackupPath)>();
+        try
+        {
+            foreach (var (fullPath, original, current, zone, relPath, replacementCount, errors, requestedPath, elapsedMs) in batchResults)
+            {
+                if (current == original)
+                {
+                    summaries.Add($"{relPath}: unchanged");
+                    continue;
+                }
+
+                var backup = fullPath + ".bak." + Guid.NewGuid().ToString("N")[..8];
+                File.Copy(fullPath, backup, overwrite: false);
+                backups.Add((fullPath, backup));
+
+                File.WriteAllText(fullPath, current, Encoding.UTF8);
+
+                var diff = GenerateSimpleDiff(original, current);
+                var successMsg = $"{relPath}: patched ({replacementCount} replacements)";
+                if (errors.Count > 0)
+                    successMsg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
+                if (!string.IsNullOrWhiteSpace(diff))
+                    successMsg += $"\n{diff}";
+                summaries.Add(successMsg);
+                _logger.LogInformation("[FilePatchTool] path={Path} replacements={Replacements}", fullPath, replacementCount);
+                _audit.Write(zone, "file_patch", context.AgentInstanceId,
+                    requestedPath, args.Reason, true, elapsedMs, context.Trace);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[FilePatchTool] atomic commit failed — rolling back");
+            // Rollback restored files
+            foreach (var (fullPath, backupPath) in backups)
+            {
+                try
+                {
+                    if (File.Exists(backupPath))
+                        File.Move(backupPath, fullPath, overwrite: true);
+                }
+                catch { }
+            }
+
+            return Task.FromResult(ToolExecutionResult.Fail($"Atomic patch commit failed, rolled back: {ex.Message}"));
+        }
+        finally
+        {
+            // Cleanup backup files
+            foreach (var (_, backupPath) in backups)
+            {
+                try { if (File.Exists(backupPath)) File.Delete(backupPath); } catch { }
             }
         }
 
