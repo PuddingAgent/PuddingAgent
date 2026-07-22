@@ -46,6 +46,7 @@ import { usePollingLoader } from '../hooks/usePollingLoader';
 import BenchmarkTab from './DevPanel/BenchmarkTab';
 import ContextTab from './DevPanel/ContextTab';
 import CountsWorkflowPanel from './DevPanel/CountsWorkflowPanel';
+import PerfTab from './DevPanel/PerfTab';
 import PerfMetricsGrid from './DevPanel/PerfMetricsGrid';
 import PerfEventList from './DevPanel/PerfEventList';
 import SubconsciousTab from './DevPanel/SubconsciousTab';
@@ -426,130 +427,33 @@ const DevPanel: React.FC<DevPanelProps> = ({
           className={styles.devPanelTabs}
           defaultActiveKey="perf"
           items={[
-            {
+                        {
               key: 'perf',
               label: `Perf (${perfEvents.length})`,
               children: (
-                <div className={styles.devPanelSection}>
-                  <div className={styles.devPerfToolbar}>
-                    <div
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        前端输出性能 · 最近{' '}
-                        {formatMetric(
-                          getNestedNumber(perfSummary, 'totalEvents'),
-                        )}{' '}
-                        条事件
-                      </Text>
-                      <Text style={{ fontSize: 12 }}>诊断模式</Text>
-                      <Switch
-                        size="small"
-                        aria-label="诊断模式"
-                        checked={diagnosticsEnabled}
-                        checkedChildren="开"
-                        unCheckedChildren="关"
-                        onChange={updateDiagnosticsEnabled}
-                      />
-                    </div>
-                    <div className={styles.devPerfToolbarActions}>
-                      <Button
-                        size="small"
-                        icon={<CopyOutlined />}
-                        disabled={!diagnosticsEnabled}
-                        onClick={() => {
-                          void copyDiagnosticSnapshot();
-                        }}
-                      >
-                        {diagnosticCopiedAt ? '已复制' : '复制诊断'}
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<PlayCircleOutlined />}
-                        disabled={
-                          !diagnosticsEnabled ||
-                          captureState.status === 'recording'
-                        }
-                        onClick={startCapture}
-                      >
-                        开始采集
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<PauseCircleOutlined />}
-                        disabled={
-                          !diagnosticsEnabled ||
-                          captureState.status !== 'recording'
-                        }
-                        onClick={stopCapture}
-                      >
-                        停止采集
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<DownloadOutlined />}
-                        disabled={!diagnosticsEnabled}
-                        onClick={downloadDiagnosticSnapshot}
-                      >
-                        下载快照
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<SyncOutlined />}
-                        onClick={() => {
-                          clearPerfEvents();
-                          setPerfSummary(summarizePerfEvents());
-                          setPerfEvents([]);
-                          setDiagnosticCopiedAt(null);
-                          setCaptureState({ status: 'idle' });
-                        }}
-                      >
-                        清空
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className={styles.devPerfDiagnosisList}>
-                    {diagnosticSnapshot.diagnosis.map((item) => (
-                      <div
-                        key={item.code}
-                        className={styles.devPerfDiagnosisItem}
-                        data-severity={item.severity}
-                      >
-                        <Text strong>{item.title}</Text>
-                        <Text type="secondary">{item.evidence}</Text>
-                      </div>
-                    ))}
-                  </div>
-
-                  <PerfMetricsGrid
-                    perfSummary={perfSummary}
-                  />
-
-                  <CountsWorkflowPanel
-                    perfSummary={perfSummary}
-                    topWorkflowSteps={diagnosticSnapshot.top.workflowSteps}
-                    formatMetric={formatMetric}
-                    getEventTone={getEventTone}
-                  />
-
-                  <PerfEventList
-                    perfEvents={perfEvents}
-                    getEventTone={getEventTone}
-                  />
-                  <Paragraph className={styles.devPanelHint}>
-                    复制诊断会包含摘要、瓶颈判断、间隔抖动、Top
-                    慢记录和最近原始事件。 Console
-                    输出默认关闭；如需同时打印，设置
-                    localStorage.pudding_perf_console = "1"。 摘要 API:
-                    window.__PUDDING_PERF__.summary() / snapshot()
-                  </Paragraph>
-                </div>
+                <PerfTab
+                  perfEvents={perfEvents}
+                  perfSummary={perfSummary}
+                  diagnosticsEnabled={diagnosticsEnabled}
+                  diagnosticSnapshot={diagnosticSnapshot}
+                  diagnosticCopiedAt={diagnosticCopiedAt}
+                  captureState={captureState}
+                  updateDiagnosticsEnabled={updateDiagnosticsEnabled}
+                  copyDiagnosticSnapshot={copyDiagnosticSnapshot}
+                  startCapture={startCapture}
+                  stopCapture={stopCapture}
+                  downloadDiagnosticSnapshot={downloadDiagnosticSnapshot}
+                  clearPerf={() => {
+                    clearPerfEvents();
+                    setPerfSummary(summarizePerfEvents());
+                    setPerfEvents([]);
+                    setDiagnosticCopiedAt(null);
+                    setCaptureState({ status: 'idle' });
+                  }}
+                  formatMetric={formatMetric}
+                  getEventTone={getEventTone}
+                  getNestedNumber={getNestedNumber}
+                />
               ),
             },
             {

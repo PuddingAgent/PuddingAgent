@@ -1,9 +1,9 @@
-// ── ChatMain：右侧主聊天区（Header + MessageList + InputArea）─
+﻿// ── ChatMain：右侧主聊天区（Header + MessageList + InputArea）─
 import {
   BugOutlined,
   HistoryOutlined,
   MenuUnfoldOutlined,
-  RobotOutlined,
+  
   SoundOutlined,
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
@@ -15,7 +15,7 @@ import type {
   WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import {
-  buildWorkspaceStudioPath,
+  
   rememberWorkspaceVisit,
 } from '@/utils/workspaceNavigation';
 import type { AgentConversationView } from '../client/types';
@@ -351,19 +351,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                 popupRender={dropdownRender}
                 classNames={{ popup: { root: styles.headerSelectPopup } }}
               />
-              <Tooltip title="工作空间视图">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<RobotOutlined />}
-                  aria-label="工作空间视图"
-                  onClick={() =>
-                    history.push(
-                      buildWorkspaceStudioPath({ workspaceId, agentId }),
-                    )
-                  }
-                />
-              </Tooltip>
+              
             </>
           }
           extraActions={
