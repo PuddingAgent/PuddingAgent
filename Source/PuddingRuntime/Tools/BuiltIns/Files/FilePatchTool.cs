@@ -50,7 +50,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(args.PatchText))
-            return Task.FromResult(ApplyUnifiedDiffPatch(args, context));
+            return ApplyUnifiedDiffPatch(args, context);
 
         var patches = ResolvePatches(args).ToArray();
         if (patches.Length == 0)
@@ -115,7 +115,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                         return ToolExecutionResult.Fail(
                             $"replace operation in {relPath} requires 'old_text'. " +
                             "Provide the exact text to find before replacing. " +
-                            "Example: operations=[{type='replace', old_text='old code', new_text='new code'}]"));
+                            "Example: operations=[{type='replace', old_text='old code', new_text='new code'}]");
                     }
                 }
                 if (opType.Contains("regex", StringComparison.OrdinalIgnoreCase))
@@ -125,7 +125,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                         return ToolExecutionResult.Fail(
                             $"regexReplace operation in {relPath} requires 'pattern'. " +
                             "Provide the regex pattern to match. " +
-                            "Example: operations=[{type='regexReplace', pattern='Console.WriteLine', replacement='logger.Log'}]"));
+                            "Example: operations=[{type='regexReplace', pattern='Console.WriteLine', replacement='logger.Log'}]");
                     }
                 }
             }
@@ -260,7 +260,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return [];
     }
 
-    private static List<(int Index, int Length, string NewText)> CollectReplacements(
+    private List<(int Index, int Length, string NewText)> CollectReplacements(
         string original, IReadOnlyList<FilePatchOperation> ops, ref int replacementCount,
         List<string> errors, string relPath, int? scopeStartLine, int? scopeEndLine)
     {
@@ -358,6 +358,18 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             static c => char.IsWhiteSpace(c) ? null : c.ToString());
         if (whitespace.Count > 0)
             return whitespace;
+
+        // P2-4: CSS-aware normalization
+        if (CssPatchHelpers.LooksLikeCssSource(oldText) || CssPatchHelpers.LooksLikeCssSource(original))
+        {
+            var cssMatches = FindNormalizedMatches(
+                original,
+                oldText,
+                "css-aware",
+                CssPatchHelpers.NormalizeCssChar);
+            if (cssMatches.Count > 0)
+                return cssMatches;
+        }
 
         return FindNormalizedMatches(
             original,
@@ -474,6 +486,25 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             '\u00A0' => null,
             _ => c.ToString(),
         };
+    }
+
+    // P2-4: CSS-aware normalization — collapses whitespace AND structural chars ({ } ; , :)
+    private static string? NormalizeCssChar(char c)
+    {
+        if (char.IsWhiteSpace(c)) return null;
+        if (c is '{' or '}' or ';' or ',' or ':') return null;
+        return c.ToString();
+    }
+
+    // P2-4: Heuristic — true when text contains CSS-like tokens
+    private static bool LooksLikeCssSource(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var hits = 0;
+        if (Regex.IsMatch(text, @"[-\w]+\s*:\s*[^;{}]+")) hits++;
+        if (Regex.IsMatch(text, @"[.#]?[-\w]+\s*\{", RegexOptions.None)) hits++;
+        if (Regex.IsMatch(text, @"-webkit-|-moz-|-ms-|-o-")) hits++;
+        return hits >= 2;
     }
 
     private static string ApplyReplacements(string original, List<(int Index, int Length, string NewText)> replacements)
@@ -731,10 +762,13 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return ln.Length;
     }
 
-    private static (int line, string text, double similarity, string beforeContext, string afterContext)? FindClosestMatch(string fileContent, string searchText)
+    private (int line, string text, double similarity, string beforeContext, string afterContext)? FindClosestMatch(string fileContent, string searchText)
     {
         if (string.IsNullOrEmpty(searchText) || searchText.Length < 3) return null;
         var clines = fileContent.Replace("\r\n", "\n").Split('\n');
+        if (clines.Length > 2000)
+            _logger?.LogDebug("[FilePatchTool] FindClosestMatch scanning {LineCount} lines for: {Preview}",
+                clines.Length, searchText.Length > 60 ? searchText[..60] + "..." : searchText);
         var searchLines = searchText.Split('\n');
         var bestSim = 0.0;
         var bestStartLine = 0;
