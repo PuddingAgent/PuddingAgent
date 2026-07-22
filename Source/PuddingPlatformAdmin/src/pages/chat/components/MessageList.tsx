@@ -3,7 +3,7 @@ import {
   ArrowDownOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Skeleton, Spin, Tooltip } from 'antd';
+import { Alert, Badge, Button, Skeleton, Spin, Tooltip } from 'antd';
 import React, {
   useEffect,
   useMemo,
@@ -885,13 +885,15 @@ const MessageList: React.FC<MessageListProps> = ({
           </Tooltip>
           {viewport.state.showBottomButton && (
             <Tooltip title="回到底部">
-              <Button
-                type="default"
-                icon={<ArrowDownOutlined />}
-                onClick={() => viewport.scrollToBottom({ behavior: 'smooth', reason: 'manual-bottom' })}
-                aria-label="回到底部"
-                className={styles.messageViewportControlButton}
-              />
+              <Badge dot offset={[-3, 3]}>
+                <Button
+                  type="default"
+                  icon={<ArrowDownOutlined />}
+                  onClick={() => viewport.scrollToBottom({ behavior: 'smooth', reason: 'manual-bottom' })}
+                  aria-label="回到底部"
+                  className={styles.messageViewportControlButton}
+                />
+              </Badge>
             </Tooltip>
           )}
         </div>
