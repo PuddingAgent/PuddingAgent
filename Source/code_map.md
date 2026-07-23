@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-19 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Subconscious 系统
+> 最后更新: 2026-07-23 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Subconscious 系统
 
 ---
 
@@ -63,7 +63,7 @@ Source/
 | 文件 | 用途 |
 |------|------|
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
-| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；以 workspace 上下文解析服务端授权的视觉制品引用 |
+| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；仅当当前模型带 `vision` 能力标签时才把 workspace 授权视觉制品序列化为多模态内容，文本模型不再接收 `image_url` |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
 | `Services/LlmProfileResolver.cs` | 解析 Agent 的 LLM 配置 |
@@ -109,6 +109,7 @@ Source/
 | `Tools/BuiltIns/Terminal/` + `Services/TerminalSecurity.cs` | 后台终端与命令策略 | Normal/YOLO 共享宿主安全不变量；任意进程终止命令必须改用当前会话持有 job id 的 `terminal_cancel` |
 | `Tools/BuiltIns/CodeIntelligence/` | `CodeQueryTools.cs` | 代码索引查询 |
 | `Tools/BuiltIns/Documents/` | `ReadOfficeDocumentTool.cs` | Office 文档读取（NPOI 2.8.0） |
+| `PuddingAgent/Tools/` | `ImageReaderTool.cs` | 文本主 Agent 的显式视觉回退：读取受控本地 PNG/JPEG/WebP 路径，以 `vision` 能力解析模型并返回文字观察；不会替换主 Agent 自身 Provider/Model |
 
 ### 事件系统
 | 文件 | 用途 |
@@ -138,6 +139,8 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；分页最大 sequence 必须以有限哨兵归并并单调推进，不能以 `NaN` 为 reduce 初值；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收 |
+| `PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx` | Composer 图片暂存边界：多选、Ctrl+V/拖放、发送前预览与移除；提交时先上传全部图片，再用单次消息携带 `visionArtifactIds` |
+| `PuddingPlatformAdmin/src/pages/chat/components/UserMessageBubble.tsx` + `types.ts` + `viewport/messageProjection.ts` | 用户多图气泡与历史/实时元数据投影；按 artifact id 渲染图片画廊并保留单图兼容字段 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 输入、服务端命令队列、steering 队列、快捷键与定时刷新 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useCompaction.ts` | Compaction lifecycle、手工 compact、生命周期 Turn 与压缩后会话切换 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageHistoryPagination.ts` | 历史分页状态、旧消息前插与 projector 绑定 |
@@ -149,7 +152,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/utils/sessionEventReplay.ts` | 持久事件 wrapper 规范化与 replay page HTTP/404 边界 |
 | `PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts` | Agent conversation 查询缓存与轮询收敛；终态 cursor 暂时领先消息读模型、快照仍以 user 结尾时禁用条件 GET，避免相同 cursor 的 304 固化不完整投影 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，按 message id 缓存行高，80/200 阈值自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
-| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，但 React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；不直接拥有滚动策略 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，同时保留 canonical 用户消息 metadata 以在刷新后恢复图片/语音模态；React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；不直接拥有滚动策略 |
 | `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
 | `PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx` | Chat 工作台布局壳层；`chatBody`/开发面板/历史搜索保持合法 JSX 嵌套，并展示 SSE 重连提示 |
 
@@ -193,7 +196,7 @@ Source/
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；从实例 manifest + `config/llm.json` 读取快照，并用 `llm.providers.json` 补齐连接配置 |
 | `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，并实现 `IAgentSelfMaintenanceService` 的受控自维护写入 |
-| `Services/VisionArtifactStorageService.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；将 workspace 内授权 artifact 转为 LLM 可消费引用，并与 singleton Runtime LLM 客户端保持合法 DI 生命周期 |
+| `Services/VisionArtifactStorageService.cs` + `Services/VisualArtifactReference.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；同时提供 LLM 可消费引用与经过 workspace 根目录校验的受控本地路径，供文本主 Agent 调用 `image_reader` |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件再按持久游标投影 canonical Conversation Event |
@@ -208,7 +211,7 @@ Source/
 | `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json`，避免已有数据库在 Turn 受理事务中因 EF 模型漂移返回 500 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；终态写入失败时执行 fenced 基础设施兜底 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；附图不会改写主模型路由，文本模型收到受控本地路径与 `image_reader` 提示，视觉模型继续由 DirectLlm 直接消费；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`，再以稳定 `messageId/runId` 关联过程事实 |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |

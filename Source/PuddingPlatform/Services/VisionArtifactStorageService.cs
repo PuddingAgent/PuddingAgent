@@ -17,7 +17,9 @@ public sealed record VisionArtifactUploadResult(
 /// </summary>
 public sealed partial class VisionArtifactStorageService(
     PuddingDataPaths dataPaths,
-    ILogger<VisionArtifactStorageService> logger) : IVisualArtifactReferenceResolver
+    ILogger<VisionArtifactStorageService> logger) :
+    IVisualArtifactReferenceResolver,
+    IVisualArtifactLocalFileResolver
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -83,6 +85,26 @@ public sealed partial class VisionArtifactStorageService(
         string artifactId,
         CancellationToken ct = default)
     {
+        var localFile = await ResolveLocalFileAsync(workspaceId, artifactId, ct);
+        if (localFile is null)
+            return null;
+
+        var bytes = await File.ReadAllBytesAsync(localFile.Path, ct);
+        var dataUri = $"data:{localFile.MimeType};base64,{Convert.ToBase64String(bytes)}";
+        return new VisualArtifactReference(
+            localFile.ArtifactId,
+            dataUri,
+            localFile.MimeType,
+            localFile.Width,
+            localFile.Height,
+            localFile.CapturedAt);
+    }
+
+    public async Task<VisualArtifactLocalFile?> ResolveLocalFileAsync(
+        string workspaceId,
+        string artifactId,
+        CancellationToken ct = default)
+    {
         if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(artifactId))
             return null;
         if (!ArtifactIdRegex().IsMatch(artifactId))
@@ -107,17 +129,17 @@ public sealed partial class VisionArtifactStorageService(
         if (metadata is null || !string.Equals(metadata.ArtifactId, artifactId, StringComparison.Ordinal))
             return null;
 
-        var bytesPath = Path.Combine(WorkspaceVisionRoot(workspaceId), metadata.FileName);
         var fullRoot = Path.GetFullPath(WorkspaceVisionRoot(workspaceId));
-        var fullBytesPath = Path.GetFullPath(bytesPath);
-        if (!fullBytesPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullBytesPath))
+        var fullBytesPath = Path.GetFullPath(Path.Combine(fullRoot, metadata.FileName));
+        if (!fullBytesPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(fullBytesPath))
+        {
             return null;
+        }
 
-        var bytes = await File.ReadAllBytesAsync(fullBytesPath, ct);
-        var dataUri = $"data:{metadata.MimeType};base64,{Convert.ToBase64String(bytes)}";
-        return new VisualArtifactReference(
+        return new VisualArtifactLocalFile(
             metadata.ArtifactId,
-            dataUri,
+            fullBytesPath,
             metadata.MimeType,
             metadata.Width,
             metadata.Height,

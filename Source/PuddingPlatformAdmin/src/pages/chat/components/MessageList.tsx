@@ -290,6 +290,7 @@ const createProjectedTurn = (
       text: isUser && !isInboundAgentMessage ? message.content : '',
       timestamp,
       status: isUser ? toUserMessageStatus(message.status) : 'success',
+      metadata: isUser ? message.metadata : undefined,
     },
     assistant: {
       id: isUser ? `${turnId}:placeholder-assistant` : message.messageId,

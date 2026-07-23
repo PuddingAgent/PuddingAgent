@@ -328,6 +328,7 @@ builder.Services.AddScoped<IAgentRunProjectionService, AgentRunProjectionService
 builder.Services.AddScoped<IAgentConversationProjectionService, AgentConversationProjectionService>();
 builder.Services.AddSingleton<VisionArtifactStorageService>();
 builder.Services.AddSingleton<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
+builder.Services.AddSingleton<IVisualArtifactLocalFileResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
 builder.Services.AddSingleton<IVisualArtifactResolver, VisualArtifactResolverBridge>();
 builder.Services.AddScoped<SessionTitleService>();
 builder.Services.AddScoped<TokenCostService>();

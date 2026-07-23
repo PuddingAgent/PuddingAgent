@@ -361,6 +361,7 @@ export function useMessageSend({
           text: route.originalText,
           timestamp: now,
           status: 'sending',
+          metadata: options?.metadata,
         },
         assistant: createAssistant(createId(), 'structured', 'thinking', true),
       };
@@ -407,6 +408,7 @@ export function useMessageSend({
             route.targetAgentIds.length > 0
               ? route.targetAgentIds
               : [targetAgentId],
+          metadata: options?.metadata,
         });
         await markSending(clientRequestId);
         // T-102: 非流式 POST — 202 Accepted + { success, status, commandId, messageId, turnId, sessionId, eventCursor }

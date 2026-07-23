@@ -47,6 +47,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
           status={block.status}
           modality={block.modality}
           visionArtifactId={block.visionArtifactId}
+          visionArtifactIds={block.visionArtifactIds}
           workspaceId={workspaceId}
           userName={block.userName}
           userAvatarUrl={block.userAvatarUrl}

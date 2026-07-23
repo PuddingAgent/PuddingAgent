@@ -112,6 +112,14 @@ export function buildMessageBlocks(
                 ? 'image'
                 : 'text',
         visionArtifactId: turn.userMessage.metadata?.visionArtifactId,
+        visionArtifactIds: (
+          turn.userMessage.metadata?.visionArtifactIds ??
+          turn.userMessage.metadata?.visionArtifactId ??
+          ''
+        )
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean),
         userName: currentUser?.name || '我',
         userAvatarUrl: currentUser?.avatar,
       });

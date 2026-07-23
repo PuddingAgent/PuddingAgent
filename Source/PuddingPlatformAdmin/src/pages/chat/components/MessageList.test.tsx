@@ -28,6 +28,11 @@ jest.mock('./MessageRow', () => ({ block, onContextMenu }: any) => (
     }
   >
     <span>{block.content}</span>
+    {block.visionArtifactIds?.length ? (
+      <span data-testid="vision-artifact-ids">
+        {block.visionArtifactIds.join(',')}
+      </span>
+    ) : null}
     {block.quotedMessage && (
       <span data-testid="quoted-message">
         {block.quotedMessage.sourceName}: {block.quotedMessage.content}
@@ -1209,6 +1214,46 @@ describe('MessageList scroll performance', () => {
     ]);
     expect(screen.getByText('FINAL_REPLY')).toBeTruthy();
     expect(screen.queryByText('stale running shell')).toBeNull();
+  });
+
+  it('preserves multi-image metadata from the canonical conversation projection', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'user-image',
+              turnId: 'turn-image',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '2026-07-23T00:00:00.000Z',
+              content: 'describe both images',
+              metadata: {
+                inputMode: 'image',
+                visionArtifactId: 'vision-a',
+                visionArtifactIds: 'vision-a,vision-b',
+              },
+              status: 'sent',
+              processItems: [],
+            },
+          ],
+          activeRun: null,
+          eventCursor: 1,
+          updatedAt: '2026-07-23T00:00:00.000Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('vision-artifact-ids').textContent).toBe(
+      'vision-a,vision-b',
+    );
   });
 
   it('renders agent-origin inbound messages as a quote on the agent reply', () => {

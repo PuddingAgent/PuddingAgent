@@ -19,6 +19,7 @@ public sealed class ExecutionRunCoordinator(
     IChatMessageRepository messageRepository,
     IExecutionCommandReader commandReader,
     IControlInbox controlInbox,
+    IVisualArtifactLocalFileResolver visualArtifactLocalFileResolver,
     ILogger<ExecutionRunCoordinator> logger,
     IRuntimeExecutionConfigService? executionConfig = null,
     IExecutionProgressRegistry? progressRegistry = null,
@@ -63,6 +64,15 @@ public sealed class ExecutionRunCoordinator(
 
             var snapshot = await snapshotFactory.CreateAsync(
                 profile, null, ctsRun.Token);
+            var userMessage = await messageRepository.GetByMessageIdAsync(
+                command.UserMessageId, ctsRun.Token);
+            var visualArtifactIds = ExtractVisualArtifactIds(userMessage?.MetadataJson);
+            var messageText = await BuildMessageTextAsync(
+                lease.WorkspaceId,
+                userMessage?.Content ?? "",
+                visualArtifactIds,
+                visualArtifactLocalFileResolver,
+                ctsRun.Token);
             var requestedHardTimeout = snapshot.Timeout is { } configuredTimeout
                                        && configuredTimeout > TimeSpan.Zero
                 ? configuredTimeout
@@ -114,11 +124,6 @@ public sealed class ExecutionRunCoordinator(
                 ctsMonitor.Token);
 
             // Build execution context
-            var userMessage = await messageRepository.GetByMessageIdAsync(
-                command.UserMessageId, ctsRun.Token);
-
-            var visualArtifactIds = ExtractVisualArtifactIds(userMessage?.MetadataJson);
-
             var context = new TurnExecutionContext(
                 ConversationId: lease.ConversationId,
                 WorkspaceId: lease.WorkspaceId,
@@ -127,7 +132,7 @@ public sealed class ExecutionRunCoordinator(
                 RunId: lease.RunId,
                 AgentInstanceId: command.AgentInstanceId,
                 AgentTemplateId: profile.SourceTemplateId,
-                MessageText: userMessage?.Content ?? "",
+                MessageText: messageText,
                 UserId: command.UserId,
                 CapabilityPolicy: snapshot.CapabilityPolicy,
                 ToolDefinitions: profile.ToolDefinitions,
@@ -559,22 +564,64 @@ public sealed class ExecutionRunCoordinator(
             {
                 var key = prop.Name;
                 if (string.Equals(key, "visionArtifactId", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "vision_artifact_id", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(key, "visionArtifactIds", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "vision_artifact_id", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "vision_artifact_ids", StringComparison.OrdinalIgnoreCase))
                 {
                     if (prop.Value.ValueKind == JsonValueKind.String)
-                        result.Add(prop.Value.GetString()!);
+                        result.AddRange(prop.Value.GetString()!
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
                     else if (prop.Value.ValueKind == JsonValueKind.Array)
                         foreach (var item in prop.Value.EnumerateArray())
                             if (item.ValueKind == JsonValueKind.String)
                                 result.Add(item.GetString()!);
                 }
             }
-            return result.Count > 0 ? result : null;
+            var unique = result
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return unique.Length > 0 ? unique : null;
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    private static async Task<string> BuildMessageTextAsync(
+        string workspaceId,
+        string content,
+        IReadOnlyList<string>? visualArtifactIds,
+        IVisualArtifactLocalFileResolver localFileResolver,
+        CancellationToken ct)
+    {
+        if (visualArtifactIds is not { Count: > 0 })
+            return content;
+
+        var paths = new List<string>(visualArtifactIds.Count);
+        foreach (var artifactId in visualArtifactIds)
+        {
+            var localFile = await localFileResolver.ResolveLocalFileAsync(
+                workspaceId,
+                artifactId,
+                ct);
+            if (localFile is not null)
+                paths.Add(localFile.Path);
+        }
+
+        var notice = paths.Count > 0
+            ? string.Join(Environment.NewLine, paths.Select((path, index) => $"{index + 1}. {path}"))
+            : string.Join(Environment.NewLine, visualArtifactIds.Select((id, index) => $"{index + 1}. artifact:{id}"));
+
+        return $"""
+            {content}
+
+            [Attached image notice]
+            The user attached {visualArtifactIds.Count} image(s):
+            {notice}
+            If the current model cannot inspect images directly, call the image_reader tool with a local path before answering. Do not guess image contents.
+            """;
     }
 
     private sealed record ControlMonitorOutcome(

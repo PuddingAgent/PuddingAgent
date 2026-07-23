@@ -467,6 +467,7 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
             clientMessageId: record.clientMessageId,
             recipients: { type: 'agent', agentIds: record.agentIds },
             content: [{ type: 'text', text: record.messageText }],
+            metadata: record.metadata,
           },
         );
       });

@@ -1,6 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
+import { uploadVisionArtifact } from '@/services/platform/api';
 import IntentConsole from './IntentConsole';
+
+jest.mock('@/services/platform/api', () => ({
+  getCacheDiagnostics: jest.fn(),
+  getContextHealth: jest.fn(),
+  uploadVisionArtifact: jest.fn(),
+}));
 
 jest.mock('../styles', () => {
   const styles = new Proxy(
@@ -64,6 +71,23 @@ const baseProps = {
 };
 
 describe('IntentConsole', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (URL.createObjectURL as jest.Mock).mockImplementation(
+      (file: File) => `blob:${file.name}`,
+    );
+    URL.revokeObjectURL = jest.fn();
+    global.Image = class {
+      naturalWidth = 64;
+      naturalHeight = 64;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        this.onload?.();
+      }
+    } as unknown as typeof Image;
+  });
+
   afterEach(() => {
     window.history.pushState({}, '', '/');
   });
@@ -196,5 +220,65 @@ describe('IntentConsole', () => {
     expect(
       screen.getByLabelText('队列消息').getAttribute('aria-readonly'),
     ).toBe('true');
+  });
+
+  it('stages multiple images, allows removal and sends remaining images with edited text', async () => {
+    const sendWithMetadata = jest.fn(async () => {});
+    const upload = uploadVisionArtifact as jest.Mock;
+    upload
+      .mockResolvedValueOnce({
+        artifactId: 'vision-first',
+        mimeType: 'image/png',
+        capturedAt: 1,
+      })
+      .mockResolvedValueOnce({
+        artifactId: 'vision-second',
+        mimeType: 'image/png',
+        capturedAt: 2,
+      });
+
+    function ControlledIntentConsole() {
+      const [value, setValue] = React.useState('');
+      return (
+        <IntentConsole
+          {...baseProps}
+          workspaceId="default"
+          inputValue={value}
+          onInputChange={setValue}
+          onSendWithMetadata={sendWithMetadata}
+        />
+      );
+    }
+
+    render(<ControlledIntentConsole />);
+    const first = new File(['first'], 'first.png', { type: 'image/png' });
+    const second = new File(['second'], 'second.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('image-file-input'), {
+      target: { files: [first, second] },
+    });
+
+    expect(screen.getAllByTestId('image-preview-item')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: '移除图片 first.png' }));
+    expect(screen.getAllByTestId('image-preview-item')).toHaveLength(1);
+    fireEvent.change(screen.getByTestId('image-file-input'), {
+      target: { files: [first] },
+    });
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: '比较这两张图' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => expect(sendWithMetadata).toHaveBeenCalledTimes(1));
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(sendWithMetadata).toHaveBeenCalledWith(
+      '比较这两张图',
+      expect.objectContaining({
+        inputMode: 'image',
+        visionArtifactId: 'vision-first',
+        visionArtifactIds: 'vision-first,vision-second',
+        imageCount: '2',
+      }),
+    );
+    expect(screen.queryByTestId('image-preview-list')).toBeNull();
   });
 });

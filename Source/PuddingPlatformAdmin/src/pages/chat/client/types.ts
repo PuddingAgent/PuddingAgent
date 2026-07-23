@@ -72,6 +72,7 @@ export interface ConversationMessageView {
   llmRole?: 'system' | 'user' | 'assistant' | 'tool' | string;
   createdAt: string;
   content: string;
+  metadata?: Record<string, string>;
   status:
     | 'sending'
     | 'sent'

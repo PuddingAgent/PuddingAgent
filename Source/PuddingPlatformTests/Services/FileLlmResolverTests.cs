@@ -57,6 +57,18 @@ public sealed class FileLlmResolverTests
     }
 
     [TestMethod]
+    public async Task ResolveRouteAsync_MissingRequiredCapability_RejectsDefaultFallback()
+    {
+        var resolver = CreateResolver(CreateConfig());
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync(requiredCapabilityTags: ["vision"]));
+
+        StringAssert.Contains(error.Message, "No enabled LLM model matches required capabilities");
+        StringAssert.Contains(error.Message, "vision");
+    }
+
+    [TestMethod]
     public async Task ResolveRouteAsync_RejectsConfigSnapshotWithDifferentModel()
     {
         var resolver = new FileLlmResolver(

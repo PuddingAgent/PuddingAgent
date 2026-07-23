@@ -12,6 +12,8 @@ interface UserMessageBubbleProps {
   modality?: 'text' | 'voice' | 'camera' | 'image';
   /** 视觉制品 ID，用于从后端加载图片（image/camera modality） */
   visionArtifactId?: string;
+  /** 同一消息包含的全部图片；为空时回退到 visionArtifactId。 */
+  visionArtifactIds?: string[];
   /** 当前工作空间 ID，用于拼接视觉制品 GET 地址 */
   workspaceId?: string;
   userName?: string;
@@ -26,6 +28,7 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   status,
   modality,
   visionArtifactId,
+  visionArtifactIds,
   workspaceId,
   userName,
   userAvatarUrl,
@@ -33,15 +36,21 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   onContextMenu,
 }) => {
   const { styles, cx } = useChatStyles();
-  const [imageFailed, setImageFailed] = React.useState(false);
+  const [failedImageIds, setFailedImageIds] = React.useState<Set<string>>(
+    () => new Set(),
+  );
   const isSending = status === 'sending';
   const displayName = userName || '我';
 
   const isVisionModality = modality === 'image' || modality === 'camera';
-  const visionSrc =
-    isVisionModality && visionArtifactId && workspaceId
-      ? `/api/workspaces/${encodeURIComponent(workspaceId)}/vision-artifacts/${encodeURIComponent(visionArtifactId)}`
-      : undefined;
+  const artifactIds = React.useMemo(() => {
+    const ids = visionArtifactIds?.length
+      ? visionArtifactIds
+      : visionArtifactId
+        ? [visionArtifactId]
+        : [];
+    return Array.from(new Set(ids.filter(Boolean)));
+  }, [visionArtifactId, visionArtifactIds]);
 
   return (
     <div className={styles.userMessageContainer}>
@@ -69,19 +78,43 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
           >
             {isVisionModality ? (
               <div className={styles.userVisionImageWrap}>
-                {visionSrc && !imageFailed ? (
-                  <img
-                    src={visionSrc}
-                    alt={content || '用户上传图片'}
-                    className={styles.userVisionImage}
-                    onError={() => setImageFailed(true)}
-                  />
-                ) : (
-                  <span className={styles.userVisionImageFallback}>
-                    <PictureOutlined />
-                    {visionSrc ? '图片加载失败' : '图片'}
-                  </span>
-                )}
+                <div className={styles.userVisionGallery}>
+                  {artifactIds.length > 0 ? (
+                    artifactIds.map((artifactId, index) => {
+                      const visionSrc = workspaceId
+                        ? `/api/workspaces/${encodeURIComponent(workspaceId)}/vision-artifacts/${encodeURIComponent(artifactId)}`
+                        : undefined;
+                      return visionSrc && !failedImageIds.has(artifactId) ? (
+                        <img
+                          key={artifactId}
+                          src={visionSrc}
+                          alt={`${content || '用户上传图片'} ${index + 1}/${artifactIds.length}`}
+                          className={styles.userVisionImage}
+                          onError={() =>
+                            setFailedImageIds((current) => {
+                              const next = new Set(current);
+                              next.add(artifactId);
+                              return next;
+                            })
+                          }
+                        />
+                      ) : (
+                        <span
+                          key={artifactId}
+                          className={styles.userVisionImageFallback}
+                        >
+                          <PictureOutlined />
+                          {visionSrc ? '图片加载失败' : '图片'}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span className={styles.userVisionImageFallback}>
+                      <PictureOutlined />
+                      图片
+                    </span>
+                  )}
+                </div>
                 {content ? <span>{content}</span> : null}
               </div>
             ) : (

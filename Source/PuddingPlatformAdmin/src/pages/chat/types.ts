@@ -98,6 +98,8 @@ export interface ChatMessageBlock {
   modality?: 'text' | 'voice' | 'camera' | 'image';
   /** 视觉制品 ID（image/camera modality），用于从后端加载图片 */
   visionArtifactId?: string;
+  /** 同一条消息的全部视觉制品 ID。 */
+  visionArtifactIds?: string[];
 
   /** 用户信息（仅 role='user' 时有效） */
   userName?: string;
@@ -167,6 +169,14 @@ export function buildMessageBlocks(
                 ? 'image'
                 : 'text',
         visionArtifactId: turn.userMessage.metadata?.visionArtifactId,
+        visionArtifactIds: (
+          turn.userMessage.metadata?.visionArtifactIds ??
+          turn.userMessage.metadata?.visionArtifactId ??
+          ''
+        )
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean),
         userName: currentUser?.name || '我',
         userAvatarUrl: currentUser?.avatar,
       });

@@ -103,6 +103,14 @@ const readImageDimensions = (
     img.src = url;
   });
 
+interface PendingComposerImage {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
+
+const MAX_PENDING_IMAGES = 8;
+
 interface IntentConsoleProps {
   inputValue: string;
   onInputChange: (v: string) => void;
@@ -191,6 +199,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const handleComposerSendRef = useRef<() => void>(() => undefined);
   const [paletteVisible, setPaletteVisible] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
   /** `+` 动作菜单 Popover */
@@ -230,6 +239,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   /** 图片上传进行中 */
   const [imageUploading, setImageUploading] = useState(false);
+  /** 等待用户确认发送的本地图片；选择、粘贴、拖拽都只进入这里。 */
+  const [pendingImages, setPendingImages] = useState<PendingComposerImage[]>([]);
+  const pendingImagesRef = useRef<PendingComposerImage[]>([]);
   /** 拖拽悬停高亮 */
   const [imageDragActive, setImageDragActive] = useState(false);
   const dragDepthRef = useRef(0);
@@ -275,7 +287,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   );
   const voiceAdapterRef = useRef(createDashScopeVoiceInputAdapter());
   const composerActive =
-    composerFocused || draftValue.trim().length > 0 || recording;
+    composerFocused ||
+    draftValue.trim().length > 0 ||
+    pendingImages.length > 0 ||
+    recording;
   const cameraSupported = cameraInputAdapter.isSupported();
     const cameraEnabled = Boolean(
     cameraSupported &&
@@ -330,6 +345,19 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       }
     }
   }, [draftValue, inputValue]);
+
+  React.useEffect(() => {
+    pendingImagesRef.current = pendingImages;
+  }, [pendingImages]);
+
+  React.useEffect(
+    () => () => {
+      pendingImagesRef.current.forEach((item) =>
+        URL.revokeObjectURL(item.previewUrl),
+      );
+    },
+    [],
+  );
 
   const updateCommandPaletteState = useCallback(
     (value: string, selectionStart?: number | null) => {
@@ -442,6 +470,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           return;
         }
       }
+      if (e.key === 'Enter' && !e.shiftKey && pendingImages.length > 0) {
+        e.preventDefault();
+        handleComposerSendRef.current();
+        return;
+      }
       onKeyDown(e);
     },
     [
@@ -450,6 +483,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       selectedIdx,
       onKeyDown,
       handleCommandSelect,
+      pendingImages.length,
     ],
   );
 
@@ -481,51 +515,107 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     [onInputChange, onSendWithMetadata],
   );
 
-  // ── 图片上传（菜单选择 / 粘贴 / 拖拽共用）──
-  const handleImageFile = useCallback(
-    async (file: File) => {
-      if (!workspaceId || !onSendWithMetadata) {
-        message.warning('请先选择工作空间和 Agent');
-        return;
-      }
-      if (!file.type.startsWith('image/')) {
-        message.warning('仅支持图片文件');
-        return;
-      }
-      setImageUploading(true);
-      try {
-        const dimensions = await readImageDimensions(file);
-        const uploaded = await uploadVisionArtifact(
-          workspaceId,
+  // ── 图片暂存与发送（菜单选择 / 粘贴 / 拖拽共用）──
+  const stageImageFiles = useCallback((files: File[]) => {
+    const images = files.filter((file) => file.type.startsWith('image/'));
+    if (images.length !== files.length)
+      message.warning('已忽略非图片文件');
+    if (images.length === 0) return;
+
+    setPendingImages((current) => {
+      const available = Math.max(0, MAX_PENDING_IMAGES - current.length);
+      if (images.length > available)
+        message.warning(`每轮最多发送 ${MAX_PENDING_IMAGES} 张图片`);
+      return [
+        ...current,
+        ...images.slice(0, available).map((file) => ({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           file,
-          {
-            width: dimensions?.width,
-            height: dimensions?.height,
-            capturedAt: Date.now(),
-          },
-        );
-        const prompt = draftValue.trim() || '请分析这张图片。';
-        const metadata: Record<string, string> = {
-          inputMode: 'image',
-          visionArtifactId: uploaded.artifactId,
-          fileName: file.name,
-          mimeType: uploaded.mimeType || file.type,
-        };
-        if (uploaded.width ?? dimensions?.width)
-          metadata.width = String(uploaded.width ?? dimensions?.width);
-        if (uploaded.height ?? dimensions?.height)
-          metadata.height = String(uploaded.height ?? dimensions?.height);
-        await onSendWithMetadata(prompt, metadata);
-        setDraftValue('');
-        onInputChange('');
-      } catch (err) {
-        message.error(getRequestErrorMessage(err, '图片上传失败'));
-      } finally {
-        setImageUploading(false);
-      }
-    },
-    [draftValue, onInputChange, onSendWithMetadata, workspaceId],
-  );
+          previewUrl: URL.createObjectURL(file),
+        })),
+      ];
+    });
+  }, []);
+
+  const handleRemovePendingImage = useCallback((id: string) => {
+    setPendingImages((current) => {
+      const removed = current.find((item) => item.id === id);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return current.filter((item) => item.id !== id);
+    });
+  }, []);
+
+  const handleComposerSend = useCallback(async () => {
+    if (loading) {
+      onStop();
+      return;
+    }
+    if (pendingImages.length === 0) {
+      onSend();
+      return;
+    }
+    if (!workspaceId || !onSendWithMetadata || disabled || imageUploading)
+      return;
+
+    setImageUploading(true);
+    try {
+      const uploaded = await Promise.all(
+        pendingImages.map(async (item) => {
+          const dimensions = await readImageDimensions(item.file);
+          const artifact = await uploadVisionArtifact(
+            workspaceId,
+            item.file,
+            {
+              width: dimensions?.width,
+              height: dimensions?.height,
+              capturedAt: Date.now(),
+            },
+          );
+          return {
+            artifactId: artifact.artifactId,
+            fileName: item.file.name,
+            mimeType: artifact.mimeType || item.file.type,
+            width: artifact.width ?? dimensions?.width,
+            height: artifact.height ?? dimensions?.height,
+          };
+        }),
+      );
+      const artifactIds = uploaded.map((item) => item.artifactId);
+      const metadata: Record<string, string> = {
+        inputMode: 'image',
+        visionArtifactId: artifactIds[0],
+        visionArtifactIds: artifactIds.join(','),
+        imageCount: String(uploaded.length),
+        imageManifest: JSON.stringify(uploaded),
+      };
+      const prompt =
+        draftValue.trim() ||
+        (uploaded.length > 1 ? '请分析这些图片。' : '请分析这张图片。');
+      await onSendWithMetadata(prompt, metadata);
+      pendingImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      setPendingImages([]);
+      setDraftValue('');
+      onInputChange('');
+    } catch (err) {
+      message.error(getRequestErrorMessage(err, '图片上传失败'));
+    } finally {
+      setImageUploading(false);
+    }
+  }, [
+    disabled,
+    draftValue,
+    imageUploading,
+    loading,
+    onInputChange,
+    onSend,
+    onSendWithMetadata,
+    onStop,
+    pendingImages,
+    workspaceId,
+  ]);
+  handleComposerSendRef.current = () => {
+    void handleComposerSend();
+  };
 
   const handleOpenImagePicker = useCallback(() => {
     imageFileInputRef.current?.click();
@@ -533,24 +623,26 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 
   const handleImageInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+      const files = Array.from(e.target.files ?? []);
       // 重置 value，允许连续选择同一文件
       e.target.value = '';
-      if (file) void handleImageFile(file);
+      stageImageFiles(files);
     },
-    [handleImageFile],
+    [stageImageFiles],
   );
 
   /** 粘贴图片（Ctrl+V）：优先检测剪贴板中的图片文件 */
   const handlePasteImage = useCallback(
     (e: React.ClipboardEvent) => {
-      const file = e.clipboardData?.files?.[0];
-      if (file && file.type.startsWith('image/')) {
+      const files = Array.from(e.clipboardData?.files ?? []).filter((file) =>
+        file.type.startsWith('image/'),
+      );
+      if (files.length > 0) {
         e.preventDefault();
-        void handleImageFile(file);
+        stageImageFiles(files);
       }
     },
-    [handleImageFile],
+    [stageImageFiles],
   );
 
   // ── 拖拽图片 ──
@@ -579,14 +671,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       e.preventDefault();
       dragDepthRef.current = 0;
       setImageDragActive(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file && file.type.startsWith('image/')) {
-        void handleImageFile(file);
-      } else if (file) {
-        message.warning('仅支持拖入图片文件');
-      }
+      stageImageFiles(Array.from(e.dataTransfer.files ?? []));
     },
-    [handleImageFile],
+    [stageImageFiles],
   );
 
   // ── Inline 语音录音 ──
@@ -809,6 +896,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         ref={imageFileInputRef}
         type="file"
         accept="image/*"
+        multiple
         style={{ display: 'none' }}
         onChange={handleImageInputChange}
         aria-hidden="true"
@@ -924,6 +1012,37 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {pendingImages.length > 0 && (
+        <div
+          className={styles.composerImagePreviewList}
+          data-testid="image-preview-list"
+          aria-label={`待发送图片 ${pendingImages.length} 张`}
+        >
+          {pendingImages.map((item, index) => (
+            <div
+              key={item.id}
+              className={styles.composerImagePreviewItem}
+              data-testid="image-preview-item"
+            >
+              <img
+                src={item.previewUrl}
+                alt={`待发送图片 ${index + 1}: ${item.file.name}`}
+                className={styles.composerImagePreview}
+              />
+              <button
+                type="button"
+                className={styles.composerImageRemoveButton}
+                onClick={() => handleRemovePendingImage(item.id)}
+                aria-label={`移除图片 ${item.file.name}`}
+                disabled={imageUploading}
+              >
+                <DeleteOutlined />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -1092,9 +1211,13 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 type="button"
                 className={styles.composerSendButton}
                 data-loading={loading ? 'true' : undefined}
-                onClick={loading ? onStop : onSend}
+                onClick={() => void handleComposerSend()}
                 disabled={
-                  loading ? false : !draftValue.trim() || disabled || imageUploading
+                  loading
+                    ? false
+                    : (!draftValue.trim() && pendingImages.length === 0) ||
+                      disabled ||
+                      imageUploading
                 }
                 data-testid="chat-send"
                 aria-label={loading ? '停止生成' : '发送'}

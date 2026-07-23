@@ -692,6 +692,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         }
 
         var strategy = _llmConfigService.GetProviderStrategy(matched.ProviderId) ?? LlmProviderStrategy.Default;
+        var supportsVision = _llmConfigService.GetAllModels().Any(candidate =>
+            string.Equals(candidate.ProviderId, matched.ProviderId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.ModelId, model, StringComparison.OrdinalIgnoreCase)
+            && candidate.CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase));
 
         return new ResolvedGatewayConfig(
             endpoint,
@@ -700,7 +704,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             reasoningEffort,
             thinkingMode,
             matched.ProviderId,
-            strategy);
+            strategy,
+            supportsVision);
     }
 
     private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)
@@ -714,7 +719,13 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ReasoningEffort: config.ReasoningEffort,
                 ThinkingMode: config.ThinkingMode));
         gateway.Compat = config.Strategy.Compat;
-        gateway.VisualArtifactResolver = _visualArtifactResolver;
+        // Historical ChatMessage instances may still carry artifact ids after a
+        // visual turn. Only a model explicitly tagged as vision-capable may
+        // receive OpenAI image content parts; text-only providers keep string
+        // content and therefore cannot be poisoned by an earlier image turn.
+        gateway.VisualArtifactResolver = config.SupportsVision
+            ? _visualArtifactResolver
+            : null;
         gateway.WorkspaceId = workspaceId;
         return gateway;
     }
@@ -970,7 +981,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string? ReasoningEffort,
         string? ThinkingMode,
         string ProviderId,
-        LlmProviderStrategy Strategy);
+        LlmProviderStrategy Strategy,
+        bool SupportsVision);
 
     private sealed class LlmStreamDiagnosticsAccumulator
     {

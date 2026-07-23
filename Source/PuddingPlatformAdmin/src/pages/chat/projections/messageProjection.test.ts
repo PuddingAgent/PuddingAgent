@@ -69,6 +69,20 @@ describe('buildMessageBlocks', () => {
     const agentBlock = blocks.find((b) => b.role === 'agent');
     expect(agentBlock?.isStreaming).toBe(true);
   });
+
+  it('projects all visual artifact ids from a multi-image user message', () => {
+    const turn = makeTurn('t1', 'compare', 'done');
+    turn.userMessage.metadata = {
+      inputMode: 'image',
+      visionArtifactId: 'vision-a',
+      visionArtifactIds: 'vision-a,vision-b',
+    };
+
+    const userBlock = buildMessageBlocks([turn]).find(
+      (block) => block.role === 'user',
+    );
+    expect(userBlock?.visionArtifactIds).toEqual(['vision-a', 'vision-b']);
+  });
 });
 
 describe('buildVirtualMessageItems', () => {

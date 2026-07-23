@@ -39,6 +39,12 @@ public sealed class VisionArtifactStorageServiceTests
         Assert.AreEqual(480, resolved.Height);
         Assert.AreEqual(1234, resolved.CapturedAt);
         Assert.AreEqual("data:image/jpeg;base64,AQIDBA==", resolved.Uri);
+
+        var localFile = await service.ResolveLocalFileAsync("default", saved.ArtifactId);
+        Assert.IsNotNull(localFile);
+        Assert.IsTrue(Path.IsPathFullyQualified(localFile.Path));
+        Assert.IsTrue(File.Exists(localFile.Path));
+        Assert.AreEqual(saved.ArtifactId, localFile.ArtifactId);
     }
 
     [TestMethod]

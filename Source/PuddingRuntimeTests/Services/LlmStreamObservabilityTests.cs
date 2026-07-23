@@ -136,6 +136,67 @@ public sealed class LlmStreamObservabilityTests
     }
 
     [TestMethod]
+    public async Task ChatAsync_TextOnlyModel_DoesNotSerializeHistoricalVisualArtifact()
+    {
+        var handler = new CapturingJsonHandler();
+        var resolver = new FixedVisualArtifactResolver();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(supportsVision: false),
+            NullLogger<DirectLlmClient>.Instance,
+            visualArtifactResolver: resolver);
+
+        await client.ChatAsync(
+            "default",
+            "session-text-only",
+            "template-1",
+            [new ChatMessage(ChatRole.User, "hello", VisualArtifactIds: ["artifact-1"])],
+            llmConfig: new LlmConfig
+            {
+                Endpoint = "https://provider.test/v1",
+                ApiKey = "test-key",
+                ModelId = "test-model",
+            });
+
+        using var body = JsonDocument.Parse(handler.RequestBody!);
+        var content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
+        Assert.AreEqual(JsonValueKind.String, content.ValueKind);
+        Assert.AreEqual("hello", content.GetString());
+        Assert.AreEqual(0, resolver.ResolveCount);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_VisionModel_SerializesResolvedVisualArtifact()
+    {
+        var handler = new CapturingJsonHandler();
+        var resolver = new FixedVisualArtifactResolver();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(supportsVision: true),
+            NullLogger<DirectLlmClient>.Instance,
+            visualArtifactResolver: resolver);
+
+        await client.ChatAsync(
+            "default",
+            "session-vision",
+            "template-1",
+            [new ChatMessage(ChatRole.User, "hello", VisualArtifactIds: ["artifact-1"])],
+            llmConfig: new LlmConfig
+            {
+                Endpoint = "https://provider.test/v1",
+                ApiKey = "test-key",
+                ModelId = "test-model",
+            });
+
+        using var body = JsonDocument.Parse(handler.RequestBody!);
+        var content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
+        Assert.AreEqual(JsonValueKind.Array, content.ValueKind);
+        Assert.AreEqual("text", content[0].GetProperty("type").GetString());
+        Assert.AreEqual("image_url", content[1].GetProperty("type").GetString());
+        Assert.AreEqual(1, resolver.ResolveCount);
+    }
+
+    [TestMethod]
     public async Task ChatStreamAsync_WhenProviderNeverYieldsChunk_RecordsFirstChunkWaitMetric()
     {
         var telemetry = new RecordingTelemetrySink();
@@ -244,6 +305,42 @@ public sealed class LlmStreamObservabilityTests
     private sealed class FixedHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class CapturingJsonHandler : HttpMessageHandler
+    {
+        public string? RequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"choices\":[{\"message\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        }
+    }
+
+    private sealed class FixedVisualArtifactResolver : IVisualArtifactResolver
+    {
+        public int ResolveCount { get; private set; }
+
+        public Task<VisualArtifactResolveResult?> ResolveAsync(
+            string workspaceId,
+            string artifactId,
+            CancellationToken ct = default)
+        {
+            ResolveCount++;
+            return Task.FromResult<VisualArtifactResolveResult?>(new(
+                artifactId,
+                "data:image/png;base64,iVBORw0KGgo=",
+                "image/png"));
+        }
     }
 
     private sealed class FailOnceThenSseHandler : HttpMessageHandler
@@ -467,7 +564,8 @@ public sealed class LlmStreamObservabilityTests
         int streamTimeoutSeconds = 300,
         int maxConcurrentRequests = 50,
         int maxRetries = 2,
-        int retryDelaySeconds = 1) : ILlmConfigService
+        int retryDelaySeconds = 1,
+        bool supportsVision = false) : ILlmConfigService
     {
         public IReadOnlyList<LlmProviderInfo> GetEnabledProviders() =>
         [
@@ -481,7 +579,15 @@ public sealed class LlmStreamObservabilityTests
             },
         ];
 
-        public IReadOnlyList<LlmModelInfo> GetAllModels() => [];
+        public IReadOnlyList<LlmModelInfo> GetAllModels() =>
+        [
+            new()
+            {
+                ProviderId = "provider-a",
+                ModelId = "test-model",
+                CapabilityTags = supportsVision ? ["vision"] : ["text"],
+            },
+        ];
 
         public LlmConfig? Resolve(string providerId, string? modelId = null) => null;
 

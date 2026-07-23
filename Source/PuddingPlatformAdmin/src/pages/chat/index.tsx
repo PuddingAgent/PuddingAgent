@@ -577,7 +577,7 @@ const ChatPageContent: React.FC = () => {
   }, [chat.inputValue, chat.setInputValue, chat.submitInteraction]);
 
   const handleSendWithMetadata = useCallback(
-    async (content: string, metadata?: Record<string, unknown>) => {
+    async (content: string, metadata?: Record<string, string>) => {
       const text = content.trim();
       if (!text) return;
       chat.setInputValue('');

@@ -88,10 +88,19 @@ export const useUserStyles = createStyles(({ token }) => ({
     flexDirection: 'column' as const,
     gap: 6,
   },
+  userVisionGallery: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 6,
+    '&:has(> :only-child)': {
+      gridTemplateColumns: 'minmax(0, 1fr)',
+    },
+  },
   userVisionImage: {
     display: 'block',
     maxWidth: 280,
     maxHeight: 200,
+    width: '100%',
     borderRadius: 8,
     objectFit: 'cover' as const,
     cursor: 'zoom-in' as const,

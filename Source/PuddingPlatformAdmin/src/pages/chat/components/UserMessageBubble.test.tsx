@@ -29,4 +29,22 @@ describe('UserMessageBubble voice metadata', () => {
     expect(screen.getByText('Voice')).toBeTruthy();
     expect(screen.getByText('请总结今天的工作')).toBeTruthy();
   });
+
+  it('renders every image attached to one user message', () => {
+    render(
+      <UserMessageBubble
+        content="比较图片"
+        createdAt={1000}
+        status="success"
+        userName="我"
+        modality="image"
+        visionArtifactIds={['vision-a', 'vision-b']}
+        workspaceId="default"
+        formatTime={() => '10:24'}
+      />,
+    );
+
+    expect(screen.getByAltText('比较图片 1/2')).toBeTruthy();
+    expect(screen.getByAltText('比较图片 2/2')).toBeTruthy();
+  });
 });

@@ -472,6 +472,67 @@ describe('useChatState session selection races', () => {
     expect(optimisticTurn?.userMessage.status).toBe('success');
   });
 
+  it('projects visual metadata into the optimistic user message before acceptance returns', async () => {
+    (listSessionMessages as jest.Mock).mockResolvedValue(
+      messagePage('history'),
+    );
+    const sendResult = deferred<{
+      messageId: string;
+      conversationId: string;
+      turnIds: string[];
+      commandIds: string[];
+      acceptedSequence: number;
+    }>();
+    (submitConversationTurn as jest.Mock).mockReturnValue(sendResult.promise);
+
+    const { result } = renderHook(() => useChatState('?workspaceId=default'), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.agentId).toBe('agent-a'));
+
+    await act(async () => {
+      await result.current.handleSelectSession('session-a', {
+        agentId: 'agent-a',
+      });
+    });
+
+    let sendPromise!: Promise<void>;
+    act(() => {
+      sendPromise = result.current.sendMessage('请分析这张图片。', {
+        metadata: {
+          inputMode: 'image',
+          visionArtifactId: 'vision-artifact-1',
+          mimeType: 'image/png',
+        },
+      });
+    });
+
+    const optimisticTurn = result.current.turns.at(-1);
+    expect(optimisticTurn?.userMessage.metadata).toEqual({
+      inputMode: 'image',
+      visionArtifactId: 'vision-artifact-1',
+      mimeType: 'image/png',
+    });
+
+    await waitFor(() =>
+      expect(submitConversationTurn).toHaveBeenCalledTimes(1),
+    );
+    expect((submitConversationTurn as jest.Mock).mock.calls[0][2].metadata).toEqual(
+      optimisticTurn?.userMessage.metadata,
+    );
+
+    await act(async () => {
+      sendResult.resolve({
+        messageId: 'message-vision',
+        conversationId: 'session-a',
+        turnIds: ['turn-vision'],
+        commandIds: ['command-vision'],
+        acceptedSequence: 1,
+      });
+      await sendPromise;
+    });
+  });
+
   it('does not prepend pinned message context during normal send', async () => {
     (listSessionMessages as jest.Mock).mockResolvedValue(
       messagePage('history'),

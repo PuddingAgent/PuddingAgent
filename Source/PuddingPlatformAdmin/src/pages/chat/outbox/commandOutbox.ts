@@ -4,7 +4,7 @@
 // ───────────────────────────────────────────────────────────────
 
 const DB_NAME = 'pudding-command-outbox';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'pending-commands';
 
 export interface OutboxRecord {
@@ -14,6 +14,7 @@ export interface OutboxRecord {
   conversationId: string;
   messageText: string;
   agentIds: string[];
+  metadata?: Record<string, string>;
   createdAt: number;
   attemptCount: number;
   lastAttemptAt?: number;
@@ -41,6 +42,7 @@ export async function enqueueCommand(params: {
   conversationId: string;
   messageText: string;
   agentIds: string[];
+  metadata?: Record<string, string>;
 }): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -53,6 +55,7 @@ export async function enqueueCommand(params: {
     conversationId: params.conversationId,
     messageText: params.messageText,
     agentIds: params.agentIds,
+    metadata: params.metadata,
     createdAt: Date.now(),
     attemptCount: 0,
     status: 'pending',

@@ -94,8 +94,11 @@ public sealed class FileLlmResolver : ILlmResolver
             }
 
             _logger.LogWarning(
-                "[LlmResolver] No model matched required capabilities={Required}; using configured default route",
+                "[LlmResolver] No model matched required capabilities={Required}",
                 string.Join(",", requiredTags));
+            throw new InvalidOperationException(
+                $"No enabled LLM model matches required capabilities: {string.Join(", ", requiredTags)}. " +
+                "Add a matching model capabilityTags entry to data/config/llm.providers.json.");
         }
 
         var defaultProfile = _llmConfigService.GetDefaultProfile();
