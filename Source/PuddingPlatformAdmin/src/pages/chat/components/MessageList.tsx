@@ -491,6 +491,17 @@ const mergeLocalTurnsAwaitingProjection = (
     );
   }
 
+  // Filter out projected-only turns from other sessions whose user
+  // message doesn't match any local turn (conversationView.messages
+  // includes all sessions, not just the current one).
+  merged = merged.filter(
+    (turn) =>
+      isPendingLocalTurn(turn) ||
+      localTurns.some((localTurn) =>
+        hasProjectedUserTurn([turn], localTurn),
+      ),
+  );
+
   return merged;
 };
 

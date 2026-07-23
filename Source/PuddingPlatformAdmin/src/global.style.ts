@@ -1,4 +1,4 @@
-import { injectGlobal } from 'antd-style';
+﻿import { injectGlobal } from 'antd-style';
 
 injectGlobal`
   :root {
@@ -223,6 +223,18 @@ injectGlobal`
   @keyframes pageEnterAdmin {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+
+  /* 等待气泡：三点波浪弹跳 */
+  @keyframes waitingBounce {
+    0%, 80%, 100% {
+      transform: translateY(0) scale(0.7);
+      opacity: 0.35;
+    }
+    40% {
+      transform: translateY(-7px) scale(1);
+      opacity: 0.9;
+    }
   }
 
   .runtime-page-enter {

@@ -197,16 +197,7 @@ export const useAgentStyles = createStyles(({ token }) => ({
   waitingLabelWarning: {
     color: 'color-mix(in srgb, #d97706 65%, var(--text-secondary))',
   },
-  '@keyframes waitingBounce': {
-    '0%, 80%, 100%': {
-      transform: 'translateY(0) scale(0.7)',
-      opacity: 0.35,
-    },
-    '40%': {
-      transform: 'translateY(-7px) scale(1)',
-      opacity: 0.9,
-    },
-  },
+
   agentBubbleError: {
     borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
     background: 'color-mix(in srgb, #ef4444 4%, var(--soft-white))',
