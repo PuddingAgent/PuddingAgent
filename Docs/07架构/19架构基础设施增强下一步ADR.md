@@ -91,6 +91,12 @@ data/
 3. Global role default：`data/config/llm.providers.json.roles`
 4. 启动失败并报告明确错误；不静默回退到隐藏默认模型。
 
+> **演进说明（2026-07-23，ADR-059）**：上述主 Agent 解析顺序已被替代。
+> 主 Agent 只接受实例 `manifest.json` 的
+> `preferredProviderId + preferredModelId`；`llm.providers.json` 仅注册 Provider/Model，
+> 不提供 profile/role/default 回退。字段缺失或精确模型无效时返回
+> `agent_configuration_invalid`。`config/llm.json` 不再是主 Agent 路由权威。
+
 核心概念：
 
 - `provider`：OpenAI、DeepSeek、Anthropic-compatible、本地 fake provider 等服务商。

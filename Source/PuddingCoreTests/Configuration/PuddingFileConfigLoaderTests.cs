@@ -99,7 +99,7 @@ public sealed class PuddingFileConfigLoaderTests
     }
 
     [TestMethod]
-    public async Task LoadLlmProvidersAsync_Fails_When_Role_Profile_Is_Missing()
+    public async Task LoadLlmProvidersAsync_Ignores_Legacy_Role_Aliases()
     {
         using var temp = new TempDirectory();
         var paths = PuddingDataPaths.FromRoot(temp.Path);
@@ -143,9 +143,50 @@ public sealed class PuddingFileConfigLoaderTests
 
         var result = await loader.LoadLlmProvidersAsync();
 
-        Assert.IsFalse(result.Success);
-        Assert.IsTrue(result.Errors.Any(e =>
-            e.Contains("roles.subconscious") && e.Contains("missing-subconscious")));
+        Assert.IsTrue(result.Success);
+        Assert.IsEmpty(result.Errors);
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_Allows_ProviderRegistry_Without_Profiles()
+    {
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "qwen",
+                  "name": "Qwen",
+                  "protocol": "openai",
+                  "baseUrl": "https://example.invalid/v1",
+                  "apiKey": "test-only",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "qwen-max",
+                      "name": "Qwen Max",
+                      "isDeprecated": false
+                    }
+                  ]
+                }
+              ],
+              "profiles": {},
+              "roles": {
+                "conscious": "removed-default",
+                "subconscious": "removed-memory-default"
+              }
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsTrue(result.Success);
+        Assert.IsEmpty(result.Errors);
+        Assert.HasCount(1, result.Config!.Providers);
     }
 
     [TestMethod]

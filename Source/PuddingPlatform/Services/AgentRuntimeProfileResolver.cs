@@ -19,7 +19,7 @@ namespace PuddingPlatform.Services;
 public sealed class AgentRuntimeProfileResolver(
     IWorkspaceAgentCatalog agentCatalog,
     AgentProfileProvider profileProvider,
-    ILLMConfigResolver llmConfigResolver,
+    ILlmConfigService llmConfigService,
     PlatformDbContext db,
     MinioStorageService minio,
     IPuddingToolCatalogService toolCatalog,
@@ -43,11 +43,14 @@ public sealed class AgentRuntimeProfileResolver(
     {
         var agent = await ResolveAgentAsync(workspaceId, agentId, ct);
         var definition = await LoadDefinitionAsync(workspaceId, agent, ct);
-        var llm = await ResolveLlmAsync(
-            definition.LlmConfig.Conscious,
-            workspaceId,
+        var manifestPath = definition.SourcePaths.GetValueOrDefault(
+            "instance.manifest",
+            $"data/agents/{agent.AgentId}/manifest.json");
+        var llm = ResolveConsciousLlm(
+            definition.Instance,
             agent.AgentId,
-            ct);
+            manifestPath,
+            llmConfigService);
         var capabilities = BuildCapabilitiesFromInstance(definition.Instance);
         var skillPackages = await ResolveSkillPackagesFromInstanceAsync(
             definition.Instance,
@@ -120,37 +123,62 @@ public sealed class AgentRuntimeProfileResolver(
     }
 
     /// <summary>
-    /// Resolve LLM config from the Agent instance's config/llm.json snapshot.
-    /// Provider credentials and endpoint details are enriched from llm.providers.json.
+    /// Resolve the main Agent route exclusively from its instance manifest.
+    /// The provider registry only supplies the matching endpoint/credentials snapshot.
     /// </summary>
-    private async Task<ResolvedLlmRouting> ResolveLlmAsync(
-        AgentLlmBinding? binding,
-        string workspaceId,
+    internal static ResolvedLlmRouting ResolveConsciousLlm(
+        AgentInstanceManifest manifest,
         string agentId,
-        CancellationToken ct)
+        string manifestPath,
+        ILlmConfigService llmConfigService)
     {
-        if (binding is null)
+        var providerId = TrimToNull(manifest.PreferredProviderId);
+        if (providerId is null)
         {
             throw new AgentConfigurationException(
                 agentId,
-                $"Agent '{agentId}' is missing config/llm.json conscious binding.");
+                $"Agent '{agentId}' manifest '{manifestPath}' is missing required " +
+                "'preferredProviderId'. Configure both preferredProviderId and preferredModelId.");
         }
 
-        var routing = await llmConfigResolver.ResolveAsync(binding, ct);
-
-        var providerId = routing?.ProviderId;
-        var modelId = routing?.Config?.ModelId ?? routing?.ModelId;
-        if (routing?.Config is null)
+        var modelId = TrimToNull(manifest.PreferredModelId);
+        if (modelId is null)
         {
-            logger.LogWarning(
-                "[AgentRuntimeProfile] LLM config unresolved workspace={WorkspaceId} agent={AgentId} provider={ProviderId} model={ModelId}",
-                workspaceId, agentId, providerId ?? "(none)", modelId ?? "(none)");
             throw new AgentConfigurationException(
                 agentId,
-                $"Agent '{agentId}' conscious LLM binding cannot be resolved from llm.providers.json.");
+                $"Agent '{agentId}' manifest '{manifestPath}' is missing required " +
+                "'preferredModelId'. Configure both preferredProviderId and preferredModelId.");
         }
 
-        return new ResolvedLlmRouting(routing?.ProfileId, providerId, modelId, routing?.Config);
+        var config = llmConfigService.Resolve(providerId, modelId);
+        if (config is null)
+        {
+            var providerExists = llmConfigService.GetEnabledProviders().Any(provider =>
+                string.Equals(provider.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+            var reason = providerExists
+                ? $"preferredModelId '{modelId}' is not registered as an enabled, non-deprecated model for provider '{providerId}'"
+                : $"preferredProviderId '{providerId}' is not registered or is disabled";
+            throw new AgentConfigurationException(
+                agentId,
+                $"Agent '{agentId}' manifest '{manifestPath}' is invalid: {reason} in " +
+                "data/config/llm.providers.json. No fallback model was selected.");
+        }
+
+        if (!string.Equals(config.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new AgentConfigurationException(
+                agentId,
+                $"Agent '{agentId}' manifest '{manifestPath}' resolved model '{config.ModelId}', " +
+                $"but explicitly configured preferredModelId is '{modelId}'.");
+        }
+
+        if (config.ReasoningEffort is null
+            && !string.IsNullOrWhiteSpace(manifest.ReasoningEffort))
+        {
+            config = config with { ReasoningEffort = manifest.ReasoningEffort.Trim() };
+        }
+
+        return new ResolvedLlmRouting(null, providerId, modelId, config);
     }
 
     /// <summary>
@@ -353,11 +381,11 @@ public sealed class AgentRuntimeProfileResolver(
     private static string ToolIdToCapabilityId(string toolId)
         => $"cap-{toolId.Trim().Replace('_', '-').ToLowerInvariant()}";
 
-    private sealed record ResolvedLlmRouting(
+    internal sealed record ResolvedLlmRouting(
         string? ProfileId,
-        string? ProviderId,
-        string? ModelId,
-        LlmConfig? Config);
+        string ProviderId,
+        string ModelId,
+        LlmConfig Config);
 
     private sealed record ResolvedCapabilities(
         CapabilityPolicy? Policy,

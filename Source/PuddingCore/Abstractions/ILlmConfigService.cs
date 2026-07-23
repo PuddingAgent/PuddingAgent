@@ -41,11 +41,12 @@ public interface ILlmConfigService
 {
     IReadOnlyList<LlmProviderInfo> GetEnabledProviders();
     IReadOnlyList<LlmModelInfo> GetAllModels();
-    LlmConfig? Resolve(string providerId, string? modelId = null);
+    /// <summary>
+    /// Resolves one explicitly configured provider/model pair.
+    /// This registry never chooses a default model on behalf of an Agent.
+    /// </summary>
+    LlmConfig? Resolve(string providerId, string modelId);
     LlmProfileInfo? ResolveProfile(string profileId);
-    /// <summary>返回配置源显式解析的默认 Provider/Profile/Model 与调用配置。</summary>
-    LlmProfileInfo GetDefaultProfile();
-    LlmConfig GetDefault();
     LlmConfig? GetMemoryConfig();
     LlmConfig? GetEmbeddingConfig();
     LlmProviderStrategy? GetProviderStrategy(string providerId);

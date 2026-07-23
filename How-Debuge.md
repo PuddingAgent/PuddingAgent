@@ -910,6 +910,28 @@ Get-Content .\tmp\dev\backend.out.log -Tail 200
 - 只允许使用 `terminal_cancel(job_id)` 终止当前会话创建的后台任务；
 - 恢复后必须同时验证 `dev-up.py --status` 为 HTTP 200、登录成功以及 Chat 页面可加载。
 
+### 10.3 LLM 注册表启动失败，或 Agent 使用了错误模型
+
+先检查最新启动日志和 Agent manifest：
+
+```powershell
+python .\dev-up.py --status
+Get-Content .\tmp\dev\backend.out.log -Tail 200
+Get-Content D:\data\agents\<agentId>\manifest.json
+```
+
+- 若启动日志包含 `llm.providers.json must define at least one profile`，说明仍在把
+  Provider/Model 注册表误当成默认路由配置。`profiles` 可以为空；遗留 `roles`
+  也不能阻止 Provider 注册表启动。
+- 主 Agent 只读取 manifest 的 `preferredProviderId + preferredModelId`。用这两个值
+  精确核对 `D:\data\config\llm.providers.json` 中已启用、未废弃的 Provider/Model；
+  不要把 `config/llm.json` 当成执行期真相源。
+- 字段缺失或注册表中不存在时，预期终态为 `agent_configuration_invalid`；错误消息应
+  包含 Agent ID、manifest 路径、缺失或无效的字段，并明确说明没有选择 fallback。
+- `config/llm.json` 仅是管理兼容镜像。即使其中保留旧 Provider/Model，也不得改变主
+  Agent 的执行模型。确认日志中的 `[AgentInvocation] resolved` Provider/Model 与
+  manifest 完全一致。
+
 ## 11. 测试诊断
 
 ### 11.1 DI 接口未注册导致 Null Service
@@ -1083,6 +1105,10 @@ bootstrap、gap replay 与 live SSE 都折叠到同一个 run。
 
 1. 浏览器发送前应出现“待发送图片 N 张”，发送后同一用户气泡立即出现 N 个图片元素；刷新后仍应由
    `visionArtifactIds` 恢复。若只有文字，检查 `useMessageSend` 的乐观消息和离线 Outbox 是否保留 metadata。
+   若 `POST /vision-artifacts` 返回 500，先按 `errorId` 查日志。`Unsupported vision artifact MIME type
+   'image/bmp'` 表示前端漏掉了 provider-safe 转码：`IntentConsole` 应通过
+   `visionArtifactImage.normalizeVisionArtifactFile` 将 BMP/GIF/AVIF 等浏览器可解码格式转成 PNG。
+   后端只接收 JPEG/PNG/WebP；绕过前端提交其它 MIME 时必须返回 415 和支持列表，不能抛出 500。
 2. 日志中的主调用必须仍是实例快照的 Provider/Model，例如
    `[LlmInvocation] ... provider=deepseek ... model=deepseek-v4-pro`。上传图片不能把主 Agent 强制路由到
    某个固定视觉模型。
@@ -1099,6 +1125,27 @@ Agent 的工具定义。可用以下命令快速确认：
 ```powershell
 Invoke-WebRequest http://localhost:5000/api/tools/image_reader -UseBasicParsing
 rg -n "LlmInvocation|DirectLlm:Tools|tool=image_reader|ImageReader" .\tmp\dev\backend.out.log
+```
+
+### 11.10 连续压缩后会话标题重复出现“压缩 - ”
+
+先调用 `GET /api/sessions/{sessionId}` 检查 `title`。如果 API 已返回
+`压缩 - 压缩 - ...`，问题发生在后端持久化，不是前端渲染。标题的唯一生成权威是
+`CompactionSessionSuccessor.BuildSuccessorTitle`：它必须剥离全部既有连续前缀，再添加一次
+`压缩 - `。不要在 Controller、事件投影或前端分别补前缀，否则重放和刷新会产生不同标题。
+
+如果 Session API 已经是单前缀，但消息气泡仍显示重复前缀，再检查
+`GET /api/workspaces/{workspaceId}/agents/{agentId}/conversation` 的 `messages[].sourceName`。
+普通 Agent 输出必须使用实例 manifest 的 `displayName/name`，不能使用 `main.Title`；
+只有消息信封显式携带来源身份时才保留信封中的 `sourceName`。
+
+修复代码后，历史污染数据不会自动改名。开发环境可先列出受影响会话，再通过现有 Rename API
+逐条归一化；只修改 `title`，不要删除会话、消息或压缩事件：
+
+```powershell
+$sessions = Invoke-RestMethod 'http://localhost:5000/api/sessions?workspaceId=default'
+$sessions | Where-Object { $_.title -match '^(压缩\s*-\s*){2,}' } |
+    Select-Object sessionId, title
 ```
 
 ## 12. 修改后的最低验收

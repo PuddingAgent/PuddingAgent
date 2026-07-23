@@ -51,7 +51,7 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         var providerId = resolvedProfile?.ProviderId ?? global?.PreferredProviderId;
         var modelId = resolvedProfile?.ModelId ?? global?.PreferredModelId;
         var config = resolvedProfile?.Config
-            ?? (string.IsNullOrWhiteSpace(providerId)
+            ?? (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId)
                 ? null
                 : _llmConfigService.Resolve(providerId, modelId));
         var reasoningEffort = global?.ReasoningEffort;
@@ -90,30 +90,20 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         var modelId = global?.MemoryLlmModelId;
         var searchMode = global?.MemorySearchMode ?? "deep";
 
-        LlmConfig? providerConfig;
         if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
         {
-            providerConfig = _llmConfigService.GetMemoryConfig();
-            if (providerConfig is null)
-            {
-                throw new InvalidOperationException(
-                    $"Memory LLM provider/model is not configured. template={canonicalId} workspace={workspaceId ?? "(none)"} provider={providerId ?? "(none)"} model={modelId ?? "(none)"}.");
-            }
-
-            modelId = providerConfig.ModelId;
-            providerId = null;
+            throw new InvalidOperationException(
+                $"Memory LLM provider/model must be configured explicitly. template={canonicalId} " +
+                $"workspace={workspaceId ?? "(none)"} provider={providerId ?? "(none)"} model={modelId ?? "(none)"}.");
         }
-        else
+
+        var providerConfig = _llmConfigService.Resolve(providerId, modelId);
+        if (providerConfig is null)
         {
-            providerConfig = _llmConfigService.Resolve(providerId, modelId);
-            if (providerConfig is null)
-            {
-                throw new InvalidOperationException(
-                    $"Memory LLM provider/model not found or disabled in data/config/llm.providers.json. provider={providerId} model={modelId}.");
-            }
-
-            modelId = providerConfig.ModelId;
+            throw new InvalidOperationException(
+                $"Memory LLM provider/model not found or disabled in data/config/llm.providers.json. provider={providerId} model={modelId}.");
         }
+        modelId = providerConfig.ModelId;
 
         if (string.IsNullOrWhiteSpace(providerConfig.Endpoint)
             || string.IsNullOrWhiteSpace(providerConfig.ApiKey)
@@ -149,15 +139,16 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         AgentLlmBinding binding,
         CancellationToken ct = default)
     {
-        // Agents now define their own provider/model directly in config/llm.json.
-        // Profile lookup via global resource pool is no longer the primary path.
+        // Callers must supply an explicit provider/model pair. The provider registry
+        // enriches the pair with endpoint/credentials but never selects a default.
         var providerId = binding.ProviderId;
         var modelId = binding.ModelId;
 
         LlmRoutingConfig? result = null;
 
         // Resolve endpoint/credentials from llm.providers.json by provider/model
-        if (!string.IsNullOrWhiteSpace(providerId))
+        if (!string.IsNullOrWhiteSpace(providerId)
+            && !string.IsNullOrWhiteSpace(modelId))
         {
             var config = _llmConfigService.Resolve(providerId, modelId);
             if (config is not null)
@@ -196,21 +187,7 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         var modelId = binding.ModelId;
 
         if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
-        {
-            var memoryConfig = _llmConfigService.GetMemoryConfig();
-            if (memoryConfig is null)
-                return Task.FromResult<MemoryLlmRoutingConfig?>(null);
-
-            return Task.FromResult<MemoryLlmRoutingConfig?>(new MemoryLlmRoutingConfig
-            {
-                Endpoint = memoryConfig.Endpoint,
-#pragma warning disable CS0618
-                ApiKey = memoryConfig.ApiKey,
-#pragma warning restore CS0618
-                ModelId = memoryConfig.ModelId,
-                SearchMode = "deep",
-            });
-        }
+            return Task.FromResult<MemoryLlmRoutingConfig?>(null);
 
         var config = _llmConfigService.Resolve(providerId, modelId);
         if (config is null)

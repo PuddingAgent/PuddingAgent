@@ -281,4 +281,56 @@ describe('IntentConsole', () => {
     );
     expect(screen.queryByTestId('image-preview-list')).toBeNull();
   });
+
+  it('converts BMP images to PNG before uploading', async () => {
+    const sendWithMetadata = jest.fn(async () => {});
+    const upload = uploadVisionArtifact as jest.Mock;
+    upload.mockResolvedValue({
+      artifactId: 'vision-bmp-converted',
+      mimeType: 'image/png',
+      capturedAt: 1,
+    });
+    const drawImage = jest.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    const createElement = jest
+      .spyOn(document, 'createElement')
+      .mockImplementation((tagName: string, options?: ElementCreationOptions) => {
+        if (tagName.toLowerCase() !== 'canvas') {
+          return originalCreateElement(tagName, options);
+        }
+        return {
+          width: 0,
+          height: 0,
+          getContext: () => ({ drawImage }),
+          toBlob: (callback: BlobCallback) =>
+            callback(new Blob(['png'], { type: 'image/png' })),
+        } as unknown as HTMLCanvasElement;
+      });
+
+    try {
+      render(
+        <IntentConsole
+          {...baseProps}
+          workspaceId="default"
+          onSendWithMetadata={sendWithMetadata}
+        />,
+      );
+      const bmp = new File(['bitmap'], 'clipboard.bmp', {
+        type: 'image/bmp',
+      });
+      fireEvent.change(screen.getByTestId('image-file-input'), {
+        target: { files: [bmp] },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+      await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+      const uploadedFile = upload.mock.calls[0][1] as File;
+      expect(uploadedFile.name).toBe('clipboard.png');
+      expect(uploadedFile.type).toBe('image/png');
+      expect(drawImage).toHaveBeenCalledTimes(1);
+      expect(sendWithMetadata).toHaveBeenCalledTimes(1);
+    } finally {
+      createElement.mockRestore();
+    }
+  });
 });

@@ -33,22 +33,41 @@ public sealed class VisionArtifactApiController(
         if (file.Length <= 0)
             return BadRequest(new { message = "视觉输入文件不能为空" });
 
-        await using var stream = file.OpenReadStream();
-        var result = await storage.SaveAsync(
-            workspaceId,
-            stream,
-            file.ContentType,
-            width,
-            height,
-            capturedAt,
-            ct);
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var result = await storage.SaveAsync(
+                workspaceId,
+                stream,
+                file.ContentType,
+                width,
+                height,
+                capturedAt,
+                ct);
 
-                return Ok(new VisionArtifactUploadResponse(
-            result.ArtifactId,
-            result.MimeType,
-            result.Width,
-            result.Height,
-            result.CapturedAt));
+            return Ok(new VisionArtifactUploadResponse(
+                result.ArtifactId,
+                result.MimeType,
+                result.Width,
+                result.Height,
+                result.CapturedAt));
+        }
+        catch (UnsupportedVisionArtifactMediaTypeException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status415UnsupportedMediaType,
+                new
+                {
+                    message = ex.Message,
+                    receivedMimeType = ex.MimeType,
+                    supportedMimeTypes = new[]
+                    {
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp",
+                    },
+                });
+        }
     }
 
     /// <summary>读取视觉工件图片供前端渲染。</summary>

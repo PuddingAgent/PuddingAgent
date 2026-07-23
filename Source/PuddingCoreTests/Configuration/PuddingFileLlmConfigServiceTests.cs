@@ -8,17 +8,17 @@ namespace PuddingCoreTests.Configuration;
 public sealed class PuddingFileLlmConfigServiceTests
 {
     [TestMethod]
-    public void GetDefault_Uses_Conscious_Role_Profile()
+    public void Resolve_Uses_Exact_Provider_And_Model()
     {
         var service = new PuddingFileLlmConfigService(CreateConfig());
 
-        var config = service.GetDefault();
+        var config = service.Resolve("mimo", "mimo-v2.5-pro");
 
         Assert.IsNotNull(config);
         Assert.AreEqual("https://token-plan-cn.xiaomimimo.com/v1", config.Endpoint);
         Assert.AreEqual("mimo-key", config.ApiKey);
         Assert.AreEqual("mimo-v2.5-pro", config.ModelId);
-        Assert.AreEqual("medium", config.ReasoningEffort);
+        Assert.IsNull(config.ReasoningEffort);
     }
 
     [TestMethod]
@@ -33,20 +33,6 @@ public sealed class PuddingFileLlmConfigServiceTests
         Assert.AreEqual("mimo-key", config.ApiKey);
         Assert.AreEqual("mimo-v2.5", config.ModelId);
         Assert.AreEqual("low", config.ReasoningEffort);
-    }
-
-    [TestMethod]
-    public void Resolve_Uses_Provider_Default_Model_When_Model_Is_Not_Provided()
-    {
-        var service = new PuddingFileLlmConfigService(CreateConfig());
-
-        var config = service.Resolve("openai");
-
-        Assert.IsNotNull(config);
-        Assert.AreEqual("https://api.openai.com/v1", config.Endpoint);
-        Assert.IsNull(config.ApiKey);
-        Assert.AreEqual("openai", config.KeyVaultId);
-        Assert.AreEqual("gpt-4o-mini", config.ModelId);
     }
 
     [TestMethod]
@@ -90,8 +76,6 @@ public sealed class PuddingFileLlmConfigServiceTests
     {
         return new PuddingLlmProvidersConfig
         {
-            DefaultProviderId = "mimo",
-            DefaultModelId = "mimo-v2.5-pro",
             Providers =
             [
                 new PuddingLlmProviderConfig

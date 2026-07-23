@@ -142,8 +142,6 @@ public sealed class LlmProfileResolverTests
     {
         return new PuddingLlmProvidersConfig
         {
-            DefaultProviderId = "mimo",
-            DefaultModelId = "mimo-v2.5-pro",
             Providers =
             [
                 new PuddingLlmProviderConfig

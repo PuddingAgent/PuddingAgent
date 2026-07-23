@@ -2,6 +2,7 @@
 using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
 using System.Text;
 using System.Text.Json;
@@ -54,7 +55,14 @@ public sealed class AgentConversationProjectionService(
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
         var sessions = await api.GetSessionsAsync(workspaceId, ct);
-        var main = await ResolveAgentMainSessionAsync(workspaceId, ownerUserId, agentId, sessions, ct);
+        var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
+        var main = await ResolveAgentMainSessionAsync(
+            workspaceId,
+            ownerUserId,
+            agentId,
+            agent,
+            sessions,
+            ct);
 
         if (main is null)
         {
@@ -69,6 +77,7 @@ public sealed class AgentConversationProjectionService(
                 DateTimeOffset.UtcNow);
         }
 
+        var agentDisplayName = ResolveAgentDisplayName(agent, agentId);
         var messageRows = await db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == main.SessionId)
@@ -115,7 +124,7 @@ public sealed class AgentConversationProjectionService(
                 m,
                 ownerUserId,
                 agentId,
-                main.Title,
+                agentDisplayName,
                 !string.IsNullOrWhiteSpace(m.TurnId)
                     ? m.TurnId
                     : turnIdByMessageId.GetValueOrDefault(m.MessageId),
@@ -179,7 +188,14 @@ public sealed class AgentConversationProjectionService(
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
         var sessions = await api.GetSessionsAsync(workspaceId, ct);
-        var main = await ResolveAgentMainSessionAsync(workspaceId, ownerUserId, agentId, sessions, ct);
+        var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
+        var main = await ResolveAgentMainSessionAsync(
+            workspaceId,
+            ownerUserId,
+            agentId,
+            agent,
+            sessions,
+            ct);
 
         return main is null ? 0 : await GetEventCursorAsync(main.SessionId, ct);
     }
@@ -202,10 +218,10 @@ public sealed class AgentConversationProjectionService(
         string workspaceId,
         string ownerUserId,
         string agentId,
+        WorkspaceAgentDto? agent,
         IReadOnlyList<SessionRecord> sessions,
         CancellationToken ct)
     {
-        var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
         var redirectedSessionId = redirectStore.Resolve("main", workspaceId, agentId);
         var preferredSessionIds = new[]
             {
@@ -231,6 +247,17 @@ public sealed class AgentConversationProjectionService(
             .Where(s => string.Equals(NormalizeOwnerUserId(s.OwnerUserId), ownerUserId, StringComparison.Ordinal))
             .OrderByDescending(s => s.LastActiveAt)
             .FirstOrDefault();
+    }
+
+    private static string ResolveAgentDisplayName(
+        WorkspaceAgentDto? agent,
+        string agentId)
+    {
+        if (!string.IsNullOrWhiteSpace(agent?.DisplayName))
+            return agent.DisplayName.Trim();
+        if (!string.IsNullOrWhiteSpace(agent?.Name))
+            return agent.Name.Trim();
+        return agentId;
     }
 
     private static AgentRunView? BuildActiveRun(
@@ -293,7 +320,7 @@ public sealed class AgentConversationProjectionService(
         ChatMessageEntity message,
         string ownerUserId,
         string agentId,
-        string? agentTitle,
+        string agentDisplayName,
         string? turnId,
         IReadOnlyDictionary<string, CompletedMessageProcess> completedProcessByMessageId)
     {
@@ -303,7 +330,7 @@ public sealed class AgentConversationProjectionService(
         var sourceId = metadata?.SourceId
             ?? (string.Equals(sourceKind, "agent", StringComparison.OrdinalIgnoreCase) ? agentId : ownerUserId);
         var sourceName = metadata?.SourceName
-            ?? (string.Equals(sourceKind, "agent", StringComparison.OrdinalIgnoreCase) ? agentTitle ?? agentId : "Pudding Admin");
+            ?? (string.Equals(sourceKind, "agent", StringComparison.OrdinalIgnoreCase) ? agentDisplayName : "Pudding Admin");
         var messageType = metadata?.MessageType
             ?? (string.Equals(message.Role, "agent", StringComparison.OrdinalIgnoreCase) ? "agent_output" : "user_message");
         var uiRole = string.Equals(sourceKind, "agent", StringComparison.OrdinalIgnoreCase)

@@ -13,6 +13,9 @@ public sealed class CompactionSessionSuccessor(
     SessionRedirectStore redirects,
     ILogger<CompactionSessionSuccessor> logger) : ICompactionSessionSuccessor
 {
+    private const string CompactionTitlePrefix = "压缩 -";
+    private const string UntitledCompactionTitle = "压缩后的新会话";
+
     public async Task<CompactionSuccessor> CreateAsync(
         CreateCompactionSuccessorCommand command,
         CancellationToken ct)
@@ -32,9 +35,7 @@ public sealed class CompactionSessionSuccessor(
                 $"Agent '{command.AgentId}' has no source template identity for successor creation.");
         }
 
-        var title = string.IsNullOrWhiteSpace(previous.Title)
-            ? "压缩后的新会话"
-            : $"压缩 - {previous.Title}";
+        var title = BuildSuccessorTitle(previous.Title);
         var created = await platformApi.CreateSessionAsync(
             command.WorkspaceId,
             templateId,
@@ -75,5 +76,19 @@ public sealed class CompactionSessionSuccessor(
             rebound.SessionId);
 
         return new CompactionSuccessor(rebound.SessionId, rebound.Title);
+    }
+
+    internal static string BuildSuccessorTitle(string? previousTitle)
+    {
+        var titleBase = previousTitle?.Trim();
+        while (!string.IsNullOrWhiteSpace(titleBase)
+               && titleBase.StartsWith(CompactionTitlePrefix, StringComparison.Ordinal))
+        {
+            titleBase = titleBase[CompactionTitlePrefix.Length..].TrimStart();
+        }
+
+        return string.IsNullOrWhiteSpace(titleBase)
+            ? UntitledCompactionTitle
+            : $"{CompactionTitlePrefix} {titleBase}";
     }
 }

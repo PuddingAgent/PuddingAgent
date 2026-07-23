@@ -70,8 +70,9 @@ Workspace Agent 实例负责场景化与个性化字段：
 
 Agent 实例目录保存：
 
-- `manifest.json`：身份、角色、权限、Skill、执行护栏、模型引用和 Smart 角色模型
-- `config/llm.json`：主模型与潜意识模型的执行期 Binding 快照
+- `manifest.json`：身份、角色、权限、Skill、执行护栏、主模型显式引用和 Smart 角色模型；
+  其中 `preferredProviderId + preferredModelId` 是主 Agent 执行模型的唯一真相源
+- `config/llm.json`：潜意识/管理兼容配置；不得覆盖主 Agent 的 manifest 模型引用
 - `SOUL.md`、`AGENTS.md`、`TOOLS.md`、`BOOTSTRAP.md`、`MEMORY.md`
 - `heartbeatPrompt.md`
 

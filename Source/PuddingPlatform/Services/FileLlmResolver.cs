@@ -101,11 +101,9 @@ public sealed class FileLlmResolver : ILlmResolver
                 "Add a matching model capabilityTags entry to data/config/llm.providers.json.");
         }
 
-        var defaultProfile = _llmConfigService.GetDefaultProfile();
-        return Task.FromResult(CreateRoute(
-            defaultProfile.ProviderId,
-            defaultProfile.ModelId,
-            defaultProfile.Config));
+        throw new InvalidOperationException(
+            "An explicit LLM route is required. Configure providerId/modelId on the Agent manifest " +
+            "or pass modelRoute as 'providerId/modelId'; the LLM resource pool does not select defaults.");
 
         ResolvedLlmRoute ResolveRequired(string providerId, string modelId)
         {

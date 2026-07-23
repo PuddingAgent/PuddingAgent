@@ -6,7 +6,8 @@
 /// 不抛异常：缺失角色返回 null profile。
 /// 
 /// [Obsolete] 全局 roles（roles.conscious / roles.subconscious）不再作为回退。
-/// Agent 应通过自己的 config/llm.json 直接指定 providerId/modelId。
+/// 主 Agent 运行时不使用此解析器；其模型身份来自实例 manifest.json 的
+/// preferredProviderId/preferredModelId。
 /// </summary>
 public static class LlmProfileResolver
 {

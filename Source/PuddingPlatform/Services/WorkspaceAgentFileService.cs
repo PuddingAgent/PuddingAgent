@@ -594,7 +594,7 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSe
                 JsonOptions,
                 ct);
 
-            // 写入 LLM 快照到 config/llm.json（Agent 独立于模板运行）
+            // 写入管理兼容镜像；主 Agent 执行路由只以 manifest preferred* 字段为准。
             var llmSnapshot = new AgentInstanceLlmConfig
             {
                 Conscious = new AgentLlmBinding

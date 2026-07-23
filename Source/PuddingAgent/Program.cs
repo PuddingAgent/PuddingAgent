@@ -1245,36 +1245,17 @@ app.MapGet("/health/subconscious", async (
     }
 });
 
-// ── Chat API ─────────────────────────────────────────
-app.MapPost("/api/chat", async (
-    ChatRequest request,
-    AgentExecutionService executor,
-    CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Message))
-        return Results.BadRequest(new { error = "Message is required" });
-
-    var sessionId = request.SessionId ?? Guid.NewGuid().ToString("N")[..8];
-
-    var dispatchRequest = new RuntimeDispatchRequest
-    {
-        SessionId = sessionId,
-        WorkspaceId = request.WorkspaceId ?? "default",
-        AgentTemplateId = "workspace-service-agent",
-        MessageText = request.Message,
-            LlmConfig = llmConfigService.GetDefault()
-        ?? throw new InvalidOperationException("No enabled LLM provider found. Enable at least one provider with at least one non-deprecated model in data/config/llm.providers.json."),
-    };
-
-    var result = await executor.ExecuteAsync(dispatchRequest, ct);
-
-    return Results.Ok(new
-    {
-        sessionId,
-        reply = result.ReplyText ?? result.ErrorMessage ?? "(empty)",
-        isSuccess = result.IsSuccess,
-    });
-});
+// ── Legacy Chat API ──────────────────────────────────
+// This route cannot identify an Agent instance and therefore cannot resolve the
+// explicit manifest-owned provider/model pair. Keep a diagnostic response instead
+// of silently selecting a model from the provider registry.
+app.MapPost("/api/chat", () => Results.Problem(
+    statusCode: StatusCodes.Status410Gone,
+    title: "Legacy chat endpoint is not executable",
+    detail:
+        "Use POST /api/v1/conversations/{conversationId}/turns with an Agent instance. " +
+        "Agent LLM routing is read from manifest.json preferredProviderId/preferredModelId; " +
+        "the LLM resource pool has no default route."));
 
 // ── Admin SPA fallback（/admin 下的前端路由回退）───────────
 app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
@@ -1500,12 +1481,14 @@ static void EnsureDefaultAgentInstance(PuddingDataPaths paths)
       "templateId": "general-assistant",
       "displayName": "布丁",
       "workspaceId": "default",
+      "preferredProviderId": "deepseek",
+      "preferredModelId": "deepseek-v4-pro",
       "isEnabled": true
     }
     """;
     File.WriteAllText(manifestPath, manifest);
 
-    // config/llm.json
+    // 管理兼容镜像；主 Agent 执行模型由 manifest preferred* 字段决定。
     var configDir = paths.AgentInstanceConfigRoot(instanceId);
     Directory.CreateDirectory(configDir);
     var llmConfig = """
@@ -1552,13 +1535,6 @@ static void EnsureAgentSkillDirectory(PuddingDataPaths paths, string agentInstan
     }
     """;
     File.WriteAllText(indexPath, index);
-}
-
-public sealed record ChatRequest
-{
-    public string Message { get; init; } = "";
-    public string? SessionId { get; init; }
-    public string? WorkspaceId { get; init; }
 }
 
 public partial class Program { }

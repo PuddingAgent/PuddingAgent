@@ -22,15 +22,15 @@ public sealed class FileLlmResolverTests
     }
 
     [TestMethod]
-    public async Task ResolveRouteAsync_DefaultProfile_PreservesConfiguredProviderIdentity()
+    public async Task ResolveRouteAsync_WithoutRoute_RejectsDefaultSelection()
     {
         var resolver = CreateResolver(CreateConfig(duplicateDefaultModel: true));
 
-        var route = await resolver.ResolveRouteAsync();
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync());
 
-        Assert.AreEqual("provider-b", route.ProviderId);
-        Assert.AreEqual("shared-model", route.ModelId);
-        Assert.AreEqual("shared-model", route.Config.ModelId);
+        StringAssert.Contains(error.Message, "explicit LLM route is required");
+        StringAssert.Contains(error.Message, "does not select defaults");
     }
 
     [TestMethod]
@@ -91,8 +91,6 @@ public sealed class FileLlmResolverTests
         var providerAModelId = duplicateDefaultModel ? "shared-model" : "model-a";
         return new PuddingLlmProvidersConfig
         {
-            DefaultProviderId = "provider-a",
-            DefaultModelId = providerAModelId,
             Providers =
             [
                 new PuddingLlmProviderConfig
@@ -163,14 +161,12 @@ public sealed class FileLlmResolverTests
             },
         ];
 
-        public LlmConfig? Resolve(string providerId, string? modelId = null) => new()
+        public LlmConfig? Resolve(string providerId, string modelId) => new()
         {
             ModelId = "different-model",
         };
 
         public LlmProfileInfo? ResolveProfile(string profileId) => null;
-        public LlmProfileInfo GetDefaultProfile() => throw new NotImplementedException();
-        public LlmConfig GetDefault() => throw new NotImplementedException();
         public LlmConfig? GetMemoryConfig() => null;
         public LlmConfig? GetEmbeddingConfig() => null;
         public LlmProviderStrategy? GetProviderStrategy(string providerId) => null;

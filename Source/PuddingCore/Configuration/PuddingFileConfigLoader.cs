@@ -150,12 +150,6 @@ public sealed class PuddingFileConfigLoader
             }
         }
 
-        if (config.Profiles.Count == 0)
-        {
-            errors.Add("llm.providers.json must define at least one profile.");
-            return errors;
-        }
-
         foreach (var (profileId, profile) in config.Profiles)
         {
             if (string.IsNullOrWhiteSpace(profileId))
@@ -171,23 +165,11 @@ public sealed class PuddingFileConfigLoader
                 errors.Add($"llm.providers.json profile '{profileId}' references missing provider/model '{profile.ProviderId}/{profile.ModelId}'.");
         }
 
-                // Roles (conscious/subconscious) are no longer required.
-        // Agents now define their own provider/model directly in config/llm.json.
-        // ValidateRole is only called when roles are actually configured.
-        if (!string.IsNullOrWhiteSpace(config.Roles.Conscious))
-            ValidateRole(errors, config, "roles.conscious", config.Roles.Conscious);
-        if (!string.IsNullOrWhiteSpace(config.Roles.Subconscious))
-            ValidateRole(errors, config, "roles.subconscious", config.Roles.Subconscious);
+        // Profiles and role aliases are optional legacy metadata. Agent execution
+        // is bound explicitly by manifest.json preferredProviderId/preferredModelId,
+        // so dangling role aliases must not prevent the provider/model registry from starting.
 
         return errors;
-    }
-
-    private static void ValidateRole(List<string> errors, PuddingLlmProvidersConfig config, string roleName, string? profileId)
-    {
-        if (string.IsNullOrWhiteSpace(profileId))
-            errors.Add($"llm.providers.json {roleName} must reference a profile.");
-        else if (!config.Profiles.ContainsKey(profileId))
-            errors.Add($"llm.providers.json {roleName} references missing profile '{profileId}'.");
     }
 
     private static bool ProviderHasModel(PuddingLlmProvidersConfig config, string providerId, string modelId)

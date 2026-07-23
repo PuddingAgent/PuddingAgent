@@ -589,24 +589,9 @@ public sealed class LlmStreamObservabilityTests
             },
         ];
 
-        public LlmConfig? Resolve(string providerId, string? modelId = null) => null;
+        public LlmConfig? Resolve(string providerId, string modelId) => null;
 
         public LlmProfileInfo? ResolveProfile(string profileId) => null;
-
-        public LlmProfileInfo GetDefaultProfile() => new()
-        {
-            ProfileId = "default-conscious",
-            ProviderId = "provider-a",
-            ModelId = "test-model",
-            Config = GetDefault(),
-        };
-
-        public LlmConfig GetDefault() => new()
-        {
-            Endpoint = "https://provider.test/v1",
-            ApiKey = "test-key",
-            ModelId = "test-model",
-        };
 
         public LlmConfig? GetMemoryConfig() => null;
 

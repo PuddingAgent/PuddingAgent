@@ -176,11 +176,11 @@ public sealed record PuddingLlmProfileConfig
 }
 
 /// <summary>
-/// [Obsolete] LLM 角色→Profile 映射。Agent 应直接在自己的 config/llm.json
-/// 中指定 providerId/modelId，不再通过全局资源池的 profiles/roles 间接寻址。
+/// [Obsolete] LLM 角色→Profile 映射。主 Agent 应直接在自己的 manifest.json
+/// 中指定 preferredProviderId/preferredModelId，不再通过全局资源池的 profiles/roles 间接寻址。
 /// 保留该类型仅为兼容已有配置文件的反序列化，新配置应整体留空。
 /// </summary>
-[Obsolete("Agent should define its own LLM provider/model directly in config/llm.json. Global roles are no longer required.")]
+[Obsolete("Agent should define preferredProviderId/preferredModelId directly in manifest.json. Global roles are no longer required.")]
 public sealed record PuddingLlmRoleConfig
 {
     public string? Conscious { get; init; }

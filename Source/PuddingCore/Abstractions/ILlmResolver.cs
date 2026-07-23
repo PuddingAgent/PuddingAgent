@@ -15,8 +15,9 @@ public interface ILlmResolver
 {
     /// <summary>
     /// 从唯一配置源解析不可变 Provider/Model 身份和调用配置。
-    /// modelRoute 支持 providerId/modelId 或唯一的纯 modelId；为空时解析平台默认路由。
-    /// requiredCapabilityTags 仅在 modelRoute 为空时参与模型选择。
+    /// modelRoute 支持 providerId/modelId 或唯一的纯 modelId。
+    /// modelRoute 为空时只允许按显式 requiredCapabilityTags 选择工具专用模型；
+    /// 两者均为空时拒绝解析，不存在平台默认路由。
     /// </summary>
     Task<ResolvedLlmRoute> ResolveRouteAsync(
         string? modelRoute = null,

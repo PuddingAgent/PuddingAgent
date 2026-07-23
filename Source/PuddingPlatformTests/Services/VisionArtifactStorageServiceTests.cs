@@ -69,10 +69,11 @@ public sealed class VisionArtifactStorageServiceTests
             NullLogger<VisionArtifactStorageService>.Instance);
         await using var stream = new MemoryStream([1, 2, 3]);
 
-        var ex = await ThrowsInvalidOperationAsync(() =>
+        var ex = await ThrowsUnsupportedMediaTypeAsync(() =>
             service.SaveAsync("default", stream, "text/plain"));
 
         StringAssert.Contains(ex.Message, "Unsupported");
+        Assert.AreEqual("text/plain", ex.MimeType);
     }
 
     private static string CreateTempRoot()
@@ -82,18 +83,19 @@ public sealed class VisionArtifactStorageServiceTests
         return root;
     }
 
-    private static async Task<InvalidOperationException> ThrowsInvalidOperationAsync(Func<Task> action)
+    private static async Task<UnsupportedVisionArtifactMediaTypeException>
+        ThrowsUnsupportedMediaTypeAsync(Func<Task> action)
     {
         try
         {
             await action();
         }
-        catch (InvalidOperationException ex)
+        catch (UnsupportedVisionArtifactMediaTypeException ex)
         {
             return ex;
         }
 
-        Assert.Fail("Expected InvalidOperationException.");
+        Assert.Fail("Expected UnsupportedVisionArtifactMediaTypeException.");
         throw new InvalidOperationException("unreachable");
     }
 }

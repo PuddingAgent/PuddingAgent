@@ -69,65 +69,34 @@ public class JsonLlmConfigService : ILlmConfigService
             .ToList();
     }
 
-    public LlmConfig? Resolve(string providerId, string? modelId = null)
+    public LlmConfig? Resolve(string providerId, string modelId)
     {
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
+            return null;
+
         var data = GetData();
         var provider = data.Providers.FirstOrDefault(p =>
             p.IsEnabled && p.ProviderId.Equals(providerId, StringComparison.OrdinalIgnoreCase));
         if (provider == null) return null;
 
-        var resolvedModelId = modelId;
-        if (string.IsNullOrWhiteSpace(resolvedModelId))
-        {
-            var defaultModel = data.Models.FirstOrDefault(m =>
-                m.ProviderId == provider.ProviderId && m.IsDefault && !m.IsDeprecated);
-            resolvedModelId = defaultModel?.ModelId
-                ?? data.Models.FirstOrDefault(m =>
-                    m.ProviderId == provider.ProviderId && !m.IsDeprecated)?.ModelId;
-        }
-
         var model = data.Models.FirstOrDefault(m =>
             m.ProviderId == provider.ProviderId
             && !m.IsDeprecated
-            && string.Equals(m.ModelId, resolvedModelId, StringComparison.OrdinalIgnoreCase));
+            && string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
+        if (model is null) return null;
 
         return new LlmConfig
         {
             Endpoint = provider.BaseUrl,
             ApiKey = provider.ApiKey,
-            ModelId = resolvedModelId ?? "gpt-4o-mini",
-            MaxContextTokens = model?.MaxContextTokens,
-            MaxOutputTokens = model?.MaxOutputTokens,
+            ModelId = model.ModelId,
+            MaxContextTokens = model.MaxContextTokens,
+            MaxOutputTokens = model.MaxOutputTokens,
         };
     }
 
     public LlmProfileInfo? ResolveProfile(string profileId)
         => null;
-
-        public LlmProfileInfo GetDefaultProfile()
-    {
-        var data = GetData();
-        var providerId = data.Providers.FirstOrDefault(p => p.IsEnabled)?.ProviderId;
-
-        if (string.IsNullOrWhiteSpace(providerId))
-            throw new InvalidOperationException(
-                "No enabled LLM provider found. Configure at least one provider in data/config/llm.providers.json.");
-
-        var resolved = Resolve(providerId);
-        var config = resolved
-            ?? throw new InvalidOperationException(
-                $"Default provider '{providerId}' could not be resolved.");
-        return new LlmProfileInfo
-        {
-            ProfileId = null,
-            ProviderId = providerId,
-            ModelId = config.ModelId
-                ?? throw new InvalidOperationException("Default LLM config resolved without a model identity."),
-            Config = config,
-        };
-    }
-
-    public LlmConfig GetDefault() => GetDefaultProfile().Config;
 
     public LlmConfig? GetMemoryConfig()
     {

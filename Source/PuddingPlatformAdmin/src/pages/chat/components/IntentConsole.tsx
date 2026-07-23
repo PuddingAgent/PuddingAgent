@@ -43,6 +43,7 @@ import ComposerFeedbackStrip, {
 import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
+import { normalizeVisionArtifactFile } from './visionArtifactImage';
 
 /** Composer 的聊天状态 */
 export type ChatStatus =
@@ -562,9 +563,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       const uploaded = await Promise.all(
         pendingImages.map(async (item) => {
           const dimensions = await readImageDimensions(item.file);
+          const uploadFile = await normalizeVisionArtifactFile(item.file);
           const artifact = await uploadVisionArtifact(
             workspaceId,
-            item.file,
+            uploadFile,
             {
               width: dimensions?.width,
               height: dimensions?.height,

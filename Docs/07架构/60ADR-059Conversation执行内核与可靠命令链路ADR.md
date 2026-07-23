@@ -113,11 +113,14 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 
 ### 3.5 LLM 路由身份
 
-- `data/agents/{agentId}/config/llm.json` 是 Agent 执行期 LLM Binding 的唯一真相源。
-- `manifest.json` 中用于管理界面展示的 Provider/Model 字段必须由同一写入服务同步维护，
-  但 Resolver 不得以它们替代缺失的 `config/llm.json`。
-- `llm.providers.json` 只负责根据 Binding 补齐 Provider 凭证、Endpoint 和模型配置；
-  Binding 缺失时产生 `agent_configuration_invalid`，不得回退系统默认模型。
+- `data/agents/{agentId}/manifest.json` 中的 `preferredProviderId` 与
+  `preferredModelId` 是主 Agent 执行模型的唯一真相源，二者必须同时显式配置。
+- `config/llm.json` 仅是管理兼容镜像，不参与主 Agent 的执行路由；其陈旧值不得覆盖
+  manifest。
+- `llm.providers.json` 只注册和管理 Provider/Model，并根据 manifest 中的精确身份补齐
+  凭证、Endpoint 和模型参数；它不拥有默认模型选择职责。
+- manifest 字段缺失，或 Provider/Model 未注册、禁用、废弃时产生可诊断的
+  `agent_configuration_invalid`，不得发起 LLM 请求或回退任何系统默认模型。
 - `ProviderId`、`ProfileId`、`ModelId` 是三个独立字段，从 Agent Profile 一直传递到
   `LlmInvocationService`。
 - Runtime 不得从 `Endpoint`、`KeyVaultId`、`ApiKey` 或 `ModelId` 猜测
@@ -193,6 +196,12 @@ Tool 与 Skill；运行时不得再次读取来源模板；
   canonical Main 所有权、持久化 Agent `mainSessionId` 镜像、注册旧 Session 到
   新 Session 的进程内重定向。任何一步失败都必须形成
   `context.compaction.failed`，不能返回伪成功。
+- 后继 Session 标题由该边界统一生成，必须先剥离既有的连续 `压缩 - ` 前缀，
+  再添加且只添加一个前缀。连续压缩不得把会话标题累积成
+  `压缩 - 压缩 - ...`，前端也不得再次拼接压缩标记。
+- Session title 只描述会话，不是消息发送者身份。Conversation 查询投影中的
+  Agent `sourceName` 必须来自 Agent 实例 manifest 的 `displayName/name`；
+  不得用 `main.Title` 填充气泡头部，否则压缩命名会污染全部历史消息。
 - Controller SessionRepository 是 Main Session 归属的事实源。Agent manifest
   只是文件运行时镜像，`SessionRedirectStore` 只是进程内加速；重启后
   `EnsureMainSession` 必须直接返回已 rebind 的后继 Session，不能依赖 redirect
@@ -242,8 +251,9 @@ Tool 与 Skill；运行时不得再次读取来源模板；
     已显示回答消失。
 13. 无论事件由 Acceptance、Journal、Control 或 EventStore 写入，Projection Worker
     都能仅依据持久 head/checkpoint 在重启后追平 ChatMessages。
-14. Agent 缺少 `config/llm.json.conscious` 时产生可诊断的
-    `agent_configuration_invalid`，不得发起 LLM 请求或回退系统默认配置。
+14. Agent manifest 缺少 `preferredProviderId` / `preferredModelId`，或该精确
+    Provider/Model 不可用时产生可诊断的 `agent_configuration_invalid`；错误包含
+    Agent ID、manifest 路径和无效字段，不得发起 LLM 请求或回退系统默认配置。
 15. 快速 `turn.failed` 先于 POST continuation 到达时，前端仍能映射到同一 Turn，
     结束 loading 并显示错误；刷新页面后 Bootstrap 仍保留该失败终态。
 16. `/compact` 成功时，旧 Conversation 包含 started/completed，后继

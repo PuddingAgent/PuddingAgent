@@ -73,8 +73,11 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             .ToList();
     }
 
-    public LlmConfig? Resolve(string providerId, string? modelId = null)
+    public LlmConfig? Resolve(string providerId, string modelId)
     {
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
+            return null;
+
         var config = Snapshot();
         var provider = config.Providers.FirstOrDefault(p =>
             p.IsEnabled && string.Equals(p.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
@@ -106,34 +109,6 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             Config = ToLlmConfig(provider, model, profile),
         };
     }
-
-    public LlmProfileInfo GetDefaultProfile()
-    {
-        var config = Snapshot();
-
-        // Use the first enabled provider and its first non-deprecated model as default.
-        var provider = config.Providers.FirstOrDefault(c => c.IsEnabled);
-        if (provider is null)
-            throw new InvalidOperationException(
-                "No enabled LLM provider found in data/config/llm.providers.json. " +
-                "Enable at least one provider.");
-
-        var model = ResolveModel(provider, modelId: null);
-        if (model is null)
-            throw new InvalidOperationException(
-                $"No non-deprecated model found for provider '{provider.ProviderId}'. " +
-                "Add at least one model to the first enabled provider.");
-
-        return new LlmProfileInfo
-        {
-            ProfileId = null,
-            ProviderId = provider.ProviderId,
-            ModelId = model.ModelId,
-            Config = ToLlmConfig(provider, model, profile: null),
-        };
-    }
-
-    public LlmConfig GetDefault() => GetDefaultProfile().Config;
 
     public LlmConfig? GetMemoryConfig()
     {
@@ -273,11 +248,11 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
 
     private static PuddingLlmModelConfig? ResolveModel(PuddingLlmProviderConfig provider, string? modelId)
     {
-        if (!string.IsNullOrWhiteSpace(modelId))
-            return provider.Models.FirstOrDefault(m =>
-                !m.IsDeprecated && string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
-        return provider.Models.FirstOrDefault(m => m.IsDefault && !m.IsDeprecated)
-            ?? provider.Models.FirstOrDefault(m => !m.IsDeprecated);
+        if (string.IsNullOrWhiteSpace(modelId))
+            return null;
+
+        return provider.Models.FirstOrDefault(m =>
+            !m.IsDeprecated && string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static LlmConfig ToLlmConfig(

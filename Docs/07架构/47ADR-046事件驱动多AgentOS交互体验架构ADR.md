@@ -418,6 +418,9 @@ Provider 侧建议抽象：
 - `VisualReasoningStreamEvent`：标准化 `reasoning_delta` 与 `answer_delta`，把视觉推理的思考过程和最终回答分开投影；不向 UI 暴露厂商原始 JSON。
 - `VisualReasoningResult`：包含最终 `answer`、可选 `reasoningSummary`、provider/model/requestId、token usage 和 `metadata.inputMode=vision`。
 - 当前 Platform 已落地 `VisionArtifactStorageService` 和 `/api/workspaces/{workspaceId}/vision-artifacts`：浏览器摄像头上传图片字节，后端生成 `visionArtifactId`、保存 metadata，并在视觉模型调用前解析为受控 data URI。客户端传入的 `visionArtifactUri` 一律不可信，不参与 provider 请求。
+- **演进说明（2026-07-23）**：视觉制品持久层只接受 provider-safe 的 JPEG/PNG/WebP。
+  Composer 对 BMP、GIF、AVIF 等浏览器可解码格式先在本地画布转为 PNG；绕过前端提交不支持
+  MIME 时 API 返回 HTTP 415 及支持列表，不得让格式校验异常升级为 500。
 - 当前 Core 已落地 `DefaultVisualReasoningService`：按显式 provider 或 model capability 选择 `IVisualReasoningProvider`，在厂商调用前校验 workspace/room/participant/session/prompt/input，并拒绝尚未解析为受控 URI 的 `VisualInputArtifact`。这使摄像头 artifact 授权、持久化、URI 签发保持在 Platform/Application 层，Core service 只接受可安全调用 provider 的引用。
 - 当前 Platform 已落地 `ChatVisualReasoningSessionRunner`：把视觉推理流投影回现有聊天 SSE 协议，`reasoning_delta` 映射为 `thinking`，`answer_delta` 映射为 `delta`，完成时写 `done`，失败时写 `error`；所有帧补齐同一个 `messageId/sessionId`，因此前端可以复用既有聊天 timeline、思考区、loading 终止逻辑，而不需要为摄像头推理另建并行通道。
 - 当前 Chat API 已把 `metadata.inputMode=camera` 分流到视觉推理 runner；普通文本仍走原 Runtime 文本通道。平台转发 runtime ingress metadata 时会保留前端的 `inputMode`、`voiceSessionId`、`cameraSessionId` 等输入模式字段，再由服务端覆盖 agent/source/fanout 字段，避免客户端伪造来源。

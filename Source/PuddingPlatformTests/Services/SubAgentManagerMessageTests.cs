@@ -492,6 +492,9 @@ public sealed class SubAgentManagerMessageTests
             int maxRuns,
             CancellationToken ct = default) =>
             Task.FromResult(0);
+
+        public Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default) =>
+            Task.FromResult(false);
     }
 
     private sealed class RecordingRuntimeActivitySink : IRuntimeActivitySink

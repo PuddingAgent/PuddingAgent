@@ -348,13 +348,14 @@ public sealed class AgentChatApiControllerTests
     [TestMethod]
     public async Task AgentConversationEndpoint_ReturnsRenderableConversationView()
     {
+        var agentId = await CreateWorkspaceAgentAsync("agent-conversation");
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
         {
             workspaceId = "default",
             principalKind = "agent",
-            principalId = "agent-conversation",
+            principalId = agentId,
             agentTemplateId = "global:general-assistant",
-            title = "Conversation Agent"
+            title = "压缩 - 压缩 - Conversation Agent"
         });
         createResponse.EnsureSuccessStatusCode();
         var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
@@ -395,7 +396,7 @@ public sealed class AgentChatApiControllerTests
                 MessageId = agentMessageId,
                 UserMessageId = userMessageId,
                 TurnId = turnId,
-                AgentInstanceId = "agent-conversation",
+                AgentInstanceId = agentId,
                 UserId = "admin",
                 Status = "succeeded",
                 CreatedAt = createdAt,
@@ -403,7 +404,7 @@ public sealed class AgentChatApiControllerTests
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.GetAsync("/api/workspaces/default/agents/agent-conversation/conversation");
+        var response = await _client.GetAsync($"/api/workspaces/default/agents/{agentId}/conversation");
 
         Assert.AreNotEqual(HttpStatusCode.NotFound, response.StatusCode);
         response.EnsureSuccessStatusCode();
@@ -412,11 +413,14 @@ public sealed class AgentChatApiControllerTests
         Assert.IsNotNull(view);
         Assert.AreEqual("default", view!.WorkspaceId);
         Assert.AreEqual("single-user", view.OwnerUserId);
-        Assert.AreEqual("agent-conversation", view.AgentId);
+        Assert.AreEqual(agentId, view.AgentId);
         Assert.AreEqual(session.SessionId, view.MainSessionId);
         Assert.HasCount(2, view.Messages);
         Assert.AreEqual("hello agent", view.Messages[0].Content);
         Assert.AreEqual("hello user", view.Messages[1].Content);
+        Assert.AreEqual(
+            "agent-conversation",
+            view.Messages.Single(message => message.Role == "agent").SourceName);
         Assert.IsTrue(view.Messages.All(message => message.TurnId == "conversation-renderable-turn"));
     }
 

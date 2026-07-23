@@ -3888,9 +3888,8 @@ public sealed class AgentExecutionService
         if (config is null)
         {
             throw new InvalidOperationException(
-                "Agent LLM config is null. The agent must have a PreferredProviderId configured " +
-                "in its template manifest (data/agent-templates/{templateId}/manifest.json) " +
-                "or in its instance config (data/agents/{agentId}/config/llm.json).");
+                "Agent LLM config is null. The Agent instance manifest must explicitly configure " +
+                "preferredProviderId and preferredModelId. No default or fallback model is selected.");
         }
 
         var apiKey = config.ApiKey;

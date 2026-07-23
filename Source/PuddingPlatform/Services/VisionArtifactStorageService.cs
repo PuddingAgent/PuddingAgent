@@ -11,6 +11,14 @@ public sealed record VisionArtifactUploadResult(
     int? Height,
     long CapturedAt);
 
+public sealed class UnsupportedVisionArtifactMediaTypeException(string? mimeType)
+    : InvalidOperationException(
+        $"Unsupported vision artifact MIME type '{mimeType}'. " +
+        "Supported types are image/jpeg, image/png, and image/webp.")
+{
+    public string? MimeType { get; } = mimeType;
+}
+
 /// <summary>
 /// Stores browser-captured vision frames under the server data root and resolves them
 /// into provider-safe references. Client supplied image URLs are intentionally ignored.
@@ -159,7 +167,7 @@ public sealed partial class VisionArtifactStorageService(
         {
             "image/jpg" => "image/jpeg",
             "image/jpeg" or "image/png" or "image/webp" => normalized,
-            _ => throw new InvalidOperationException($"Unsupported vision artifact MIME type '{mimeType}'."),
+            _ => throw new UnsupportedVisionArtifactMediaTypeException(mimeType),
         };
     }
 

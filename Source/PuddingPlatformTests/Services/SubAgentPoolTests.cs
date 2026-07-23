@@ -480,4 +480,9 @@ public sealed class TestSubAgentManager : ISubAgentManager
     public Task<SubAgentStats> GetStatsAsync(string parentSessionId, CancellationToken ct = default)
         => Task.FromResult(new SubAgentStats());
     public string? TryGetRunId(string subSessionId) => null;
+    public Task<int> CleanupAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct = default)
+        => Task.FromResult(0);
 }
