@@ -688,3 +688,53 @@ Orchestrator:
 17. **Agent 不复制模型容量**: `maxContextTokens` 只从 `llm.providers.json` 的 Provider Model 解析；Agent manifest、Agent DTO 和 `config/llm.json` binding 不保存该字段
 18. **前端终态游标**: `turn.accepted` 负责尽早迁移 optimistic Turn 身份；终态按 Turn 清除全部关联 messageId，事件只有成功归并后才能推进 cursor
 19. **Agent 执行护栏生效链**: Agent manifest → RuntimeProfile → ExecutionSnapshot → TurnExecutionContext → RuntimeDispatchRequest；实例上限不得超过平台 Guardrails
+
+---
+
+## 🆕 新增模块 (2026-07-22)
+
+### 多模型协作与 Fallback
+| 文件 | 用途 |
+|------|------|
+| `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 7 个 Smart 工具的 Fallback 链：Qwen → DeepSeek Pro → Flash；每个工具可覆写 `FallbackModelIds`；`IsTransientSmartFailure` 判定瞬态故障触发降级 |
+| `PuddingCore/Abstractions/ILlmConfigService.cs` (`ProviderCompatConfig`) | 6 个 Provider 兼容性开关；K3 Gateway 适配：`maxTokensField→max_tokens`、`requiresStringContent`、`useReasoningEffort`、`supportsUsageInStreaming→false`、`requiresReasoningContentInToolMessages` |
+| `PuddingGateway/Services/OpenAiLlmGateway.cs` | `BuildRequestBody` 中消费 6 个 compat 字段 |
+
+### 大文件支持
+| 文件 | 用途 |
+|------|------|
+| `PuddingPlatform/Services/FileChunkService.cs` | 大文件分块读取基础 — 支持滑动窗口流式读取 >100KB 文件；为后续大文件工具操作提供基础 |
+
+### Chat 前端 — 交互体验优化 (Phase 1+2+3)
+| 文件 | 优化 | 说明 |
+|------|------|------|
+| `hooks/useSessionEventConnection.ts` | SSE 断流状态条 | `reconnectCountRef` → ChatMain Alert banner |
+| `components/AgentMessageBubble.tsx` | TTFB + 停滞检测 + 语音气泡 | 3s/10s 阈值；15s 琥珀脉冲；`modality='voice'` 波形 |
+| `components/MessageItem.tsx` | 代码懒高亮 + Settle FLIP | 流式跳过 Prism；200ms transform 平滑切换 |
+| `hooks/useTypewriterStreaming.ts` | 增量扫描 + 自适应打字机 | O(n)→O(delta)；48-200 chars 动态缓冲 |
+| `viewport/useMessageViewportRuntime.ts` | 高度缓存 + 滚动锚定 | Map 缓存；500ms 挂起；rAF×2 重试 |
+| `components/MessageList.tsx` | 未读 badge + 诊断导出 + 骨架屏 | 红点计数；Alert 诊断复制；Skeleton |
+| `components/MessageGroup.tsx` | 发送失败保护 | 红色边框 + 复制内容 + 重试发送 |
+| `styles/animations.styles.ts` | 动画复活 | 5 keyframes：messageIn/stepIn/blockCondense/glowSettle/charFadeIn |
+| `components/ChatMain.tsx` | React.lazy 懒加载 | DevPanel/SubAgentDock/HistorySearchModal 延迟加载 |
+| `components/IntentConsole.tsx` + `VoiceConversationPanel.tsx` | 语音面板集成 | 麦克风 → 530 行语音面板 (ASR+TTS) |
+
+### Chat 前端 — 多模态图片支持
+| 文件 | 用途 |
+|------|------|
+| `components/UserMessageBubble.tsx` | 用户多图气泡：`visionArtifactIds` → GET API → `<img>` 画廊；加载失败回退 |
+| `components/IntentConsole.tsx` | 图片暂存：多选/粘贴/拖放 → `onSendWithMetadata(visionArtifactId)` |
+| `hooks/useMessageSend.ts` | `submitConversationTurn` 携带 `metadata: { visionArtifactId }` |
+| `hooks/useSessionHistoryProjection.ts` | `toTurnsFromHistory` 映射 `item.metadata` → 历史图片渲染 |
+| `client/api.ts` | `ChatMessageDto.metadata` + `SubmitConversationTurnRequest.metadata` |
+| `PuddingPlatform/Services/ConversationCommandSchemaBootstrapper.cs` | SQLite Schema 升级：`PRAGMA table_info` 幂等补齐 `metadata_json` 列 |
+
+### 死代码审计 (2026-07-22)
+| 文件 | 状态 | 说明 |
+|------|:--:|------|
+| `PuddingMemoryEngine/Class1.cs` | 🗑️ 待删除 | 空白占位类，零引用 |
+| `PuddingCore/Swarm/` (10 文件) | 🗑️ 待归档 | Swarm 原型，DI 中零引用 |
+| `PuddingCoreTests/Test1.cs` | 🗑️ 待删除 | 占位测试 |
+| `PuddingWebApiTests/Test1.cs` | 🗑️ 待删除 | 占位测试 |
+| `ILLMConfigResolver.cs:13-32` | `[Obsolete]` | 旧版 ResolveAsync 方法 |
+| `AgentTemplateProvider.cs` | `[Obsolete]` | 已迁移到 manifest |
