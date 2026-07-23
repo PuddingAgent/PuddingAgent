@@ -408,15 +408,18 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               />
             )}
 
-            {/* 首 token 前且暂无运行事件：保留轻量等待态，不编造具体思维阶段。 */}
+            {/* 首 token 前且暂无运行事件：轻量等待态，不编造具体思维阶段。 */}
             {shouldShowPreAnswerWaiting && (() => {
               const isSlow = waitSeconds >= 3;
               const isVerySlow = waitSeconds >= 10;
-              const msg = isVerySlow
-                ? `响应时间较长（${waitSeconds}s），请耐心等待...`
-                : isSlow
-                  ? `模型响应较慢（${waitSeconds}s）...`
-                  : '等待运行事件...';
+              const isExtreme = waitSeconds >= 30;
+              const msg = isExtreme
+                ? `模型正在进行复杂推理（${waitSeconds}s），请稍候...`
+                : isVerySlow
+                  ? `深入分析中（${waitSeconds}s），请耐心等待...`
+                  : isSlow
+                    ? `模型响应较慢（${waitSeconds}s）...`
+                    : '正在思考...';
               return (
                 <div
                   className={cx(
@@ -427,11 +430,12 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                     isVerySlow && styles.agentBubbleWarning,
                   )}
                 >
-                  <span
-                    className={cx(styles.pulseDot, styles.mainStatusDotActive,
-                      isVerySlow && styles.pulseDotWarning)}
-                  />
-                  <span className={styles.pulseLabel}>{msg}</span>
+                  <div className={styles.waitingDots}>
+                    <span className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)} style={{ animationDelay: '0s' }} />
+                    <span className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)} style={{ animationDelay: '0.2s' }} />
+                    <span className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)} style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  <span className={cx(styles.waitingLabel, isVerySlow && styles.waitingLabelWarning)}>{msg}</span>
                 </div>
               );
             })()}

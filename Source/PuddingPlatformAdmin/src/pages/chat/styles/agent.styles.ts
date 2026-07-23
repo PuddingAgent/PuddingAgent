@@ -157,11 +157,55 @@ export const useAgentStyles = createStyles(({ token }) => ({
   agentBubbleStreaming: {
     borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
   },
-  agentWaitingBubble: {
+    agentWaitingBubble: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     width: 'fit-content',
+    minHeight: 44,
+    background: 'color-mix(in srgb, var(--soft-white) 85%, transparent)',
+    backdropFilter: 'blur(6px)',
+  },
+  waitingDots: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    height: 20,
+  },
+  waitingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: '50%',
+    background: 'var(--accent-purple)',
+    opacity: 0.4,
+    animation: 'waitingBounce 1.4s ease-in-out infinite',
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      opacity: 0.55,
+    },
+  },
+  waitingDotSlow: {
+    background: '#d97706',
+    boxShadow: '0 0 6px rgba(217,119,6,.45)',
+  },
+  waitingLabel: {
+    fontSize: 13,
+    color: 'color-mix(in srgb, var(--accent-purple) 48%, var(--text-secondary))',
+    fontStyle: 'italic',
+    lineHeight: '20px',
+  },
+  waitingLabelWarning: {
+    color: 'color-mix(in srgb, #d97706 65%, var(--text-secondary))',
+  },
+  '@keyframes waitingBounce': {
+    '0%, 80%, 100%': {
+      transform: 'translateY(0) scale(0.7)',
+      opacity: 0.35,
+    },
+    '40%': {
+      transform: 'translateY(-7px) scale(1)',
+      opacity: 0.9,
+    },
   },
   agentBubbleError: {
     borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
