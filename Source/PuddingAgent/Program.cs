@@ -1262,8 +1262,8 @@ app.MapPost("/api/chat", async (
         WorkspaceId = request.WorkspaceId ?? "default",
         AgentTemplateId = "workspace-service-agent",
         MessageText = request.Message,
-        LlmConfig = llmConfigService.GetDefault()
-            ?? throw new InvalidOperationException("Global LLM default (profiles.conscious) is not configured in data/config/llm.providers.json. Configure profiles.conscious.providerId and profiles.conscious.modelId to match an enabled provider."),
+            LlmConfig = llmConfigService.GetDefault()
+        ?? throw new InvalidOperationException("No enabled LLM provider found. Enable at least one provider with at least one non-deprecated model in data/config/llm.providers.json."),
     };
 
     var result = await executor.ExecuteAsync(dispatchRequest, ct);
@@ -1511,10 +1511,12 @@ static void EnsureDefaultAgentInstance(PuddingDataPaths paths)
     var llmConfig = """
     {
       "conscious": {
-        "profileId": "default-conscious"
+        "providerId": "deepseek",
+        "modelId": "deepseek-v4-pro"
       },
       "subconscious": {
-        "profileId": "default-subconscious"
+        "providerId": "deepseek",
+        "modelId": "deepseek-v4-flash"
       }
     }
     """;

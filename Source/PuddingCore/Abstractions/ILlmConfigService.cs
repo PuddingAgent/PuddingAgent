@@ -95,7 +95,7 @@ public sealed record LlmModelInfo
 /// <summary>显式 LLM profile 解析结果。</summary>
 public sealed record LlmProfileInfo
 {
-    public required string ProfileId { get; init; }
+    public string? ProfileId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public required LlmConfig Config { get; init; }

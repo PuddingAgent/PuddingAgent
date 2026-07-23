@@ -149,35 +149,15 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         AgentLlmBinding binding,
         CancellationToken ct = default)
     {
+        // Agents now define their own provider/model directly in config/llm.json.
+        // Profile lookup via global resource pool is no longer the primary path.
         var providerId = binding.ProviderId;
         var modelId = binding.ModelId;
 
         LlmRoutingConfig? result = null;
 
-        // 优先使用 profile 解析
-        if (!string.IsNullOrWhiteSpace(binding.ProfileId))
-        {
-            var profile = _llmConfigService.ResolveProfile(binding.ProfileId);
-            if (profile is not null)
-            {
-                providerId ??= profile.ProviderId;
-                modelId ??= profile.ModelId;
-                result = new LlmRoutingConfig
-                {
-                    ProfileId = binding.ProfileId,
-                    ProviderId = providerId,
-                    ModelId = modelId,
-                    Endpoint = profile.Config?.Endpoint,
-#pragma warning disable CS0618
-                    ApiKey = profile.Config?.ApiKey,
-#pragma warning restore CS0618
-                    Config = profile.Config,
-                };
-            }
-        }
-
-        // 从 llm.providers.json 解析 provider/model
-        if (result is null && !string.IsNullOrWhiteSpace(providerId))
+        // Resolve endpoint/credentials from llm.providers.json by provider/model
+        if (!string.IsNullOrWhiteSpace(providerId))
         {
             var config = _llmConfigService.Resolve(providerId, modelId);
             if (config is not null)
@@ -196,7 +176,7 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
             }
         }
 
-        // 应用 agent 级别的 reasoning effort 和 token 限制
+        // Apply agent-level reasoning effort override
         if (result?.Config is not null)
         {
             var cfg = result.Config;

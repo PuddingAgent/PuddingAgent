@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace PuddingCode.Configuration;
 
@@ -171,8 +171,13 @@ public sealed class PuddingFileConfigLoader
                 errors.Add($"llm.providers.json profile '{profileId}' references missing provider/model '{profile.ProviderId}/{profile.ModelId}'.");
         }
 
-        ValidateRole(errors, config, "roles.conscious", config.Roles.Conscious);
-        ValidateRole(errors, config, "roles.subconscious", config.Roles.Subconscious);
+                // Roles (conscious/subconscious) are no longer required.
+        // Agents now define their own provider/model directly in config/llm.json.
+        // ValidateRole is only called when roles are actually configured.
+        if (!string.IsNullOrWhiteSpace(config.Roles.Conscious))
+            ValidateRole(errors, config, "roles.conscious", config.Roles.Conscious);
+        if (!string.IsNullOrWhiteSpace(config.Roles.Subconscious))
+            ValidateRole(errors, config, "roles.subconscious", config.Roles.Subconscious);
 
         return errors;
     }

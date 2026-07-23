@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using PuddingCode.Platform;
 
@@ -95,7 +95,7 @@ public class JsonLlmConfigService : ILlmConfigService
         {
             Endpoint = provider.BaseUrl,
             ApiKey = provider.ApiKey,
-            ModelId = resolvedModelId ?? data.DefaultModelId ?? "gpt-4o-mini",
+            ModelId = resolvedModelId ?? "gpt-4o-mini",
             MaxContextTokens = model?.MaxContextTokens,
             MaxOutputTokens = model?.MaxOutputTokens,
         };
@@ -104,23 +104,22 @@ public class JsonLlmConfigService : ILlmConfigService
     public LlmProfileInfo? ResolveProfile(string profileId)
         => null;
 
-    public LlmProfileInfo GetDefaultProfile()
+        public LlmProfileInfo GetDefaultProfile()
     {
         var data = GetData();
-        var providerId = data.DefaultProviderId
-            ?? data.Providers.FirstOrDefault(p => p.IsEnabled)?.ProviderId;
+        var providerId = data.Providers.FirstOrDefault(p => p.IsEnabled)?.ProviderId;
 
         if (string.IsNullOrWhiteSpace(providerId))
             throw new InvalidOperationException(
                 "No enabled LLM provider found. Configure at least one provider in data/config/llm.providers.json.");
 
-        var resolved = Resolve(providerId, data.DefaultModelId);
+        var resolved = Resolve(providerId);
         var config = resolved
             ?? throw new InvalidOperationException(
-                $"Default provider '{providerId}' with model '{data.DefaultModelId}' could not be resolved.");
+                $"Default provider '{providerId}' could not be resolved.");
         return new LlmProfileInfo
         {
-            ProfileId = "default-conscious",
+            ProfileId = null,
             ProviderId = providerId,
             ModelId = config.ModelId
                 ?? throw new InvalidOperationException("Default LLM config resolved without a model identity."),
@@ -137,14 +136,14 @@ public class JsonLlmConfigService : ILlmConfigService
         if (mem == null) return null;
 
         // 若独立配置了 memory endpoint/key，使用独立配置
-        var providerId = mem.ProviderId ?? data.DefaultProviderId;
+        var providerId = mem.ProviderId;
         if (string.IsNullOrWhiteSpace(providerId)) return null;
 
         var provider = data.Providers.FirstOrDefault(p =>
             p.IsEnabled && p.ProviderId.Equals(providerId, StringComparison.OrdinalIgnoreCase));
         if (provider == null) return null;
 
-        var resolvedModelId = mem.ModelId ?? data.DefaultModelId ?? "gpt-4o-mini";
+        var resolvedModelId = mem.ModelId ?? "gpt-4o-mini";
         var model = data.Models.FirstOrDefault(m =>
             m.ProviderId == provider.ProviderId
             && !m.IsDeprecated
@@ -263,8 +262,7 @@ public class JsonLlmConfigService : ILlmConfigService
 {
     public List<LlmProviderEntry> Providers { get; init; } = [];
     public List<LlmModelEntry> Models { get; init; } = [];
-    public string? DefaultProviderId { get; init; }
-    public string? DefaultModelId { get; init; }
+        // NOTE: DefaultProviderId/DefaultModelId removed. Agents define their own models directly.
     public LlmMemoryConfig? Memory { get; init; }
 }
 

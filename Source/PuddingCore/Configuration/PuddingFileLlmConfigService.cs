@@ -110,29 +110,23 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
     public LlmProfileInfo GetDefaultProfile()
     {
         var config = Snapshot();
-        if (!string.IsNullOrWhiteSpace(config.Roles.Conscious))
-        {
-            var conscious = ResolveProfile(config.Roles.Conscious);
-            if (conscious is not null)
-                return conscious;
-        }
 
-        var providerId = config.DefaultProviderId;
-        var provider = config.Providers.FirstOrDefault(candidate =>
-            candidate.IsEnabled
-            && string.Equals(candidate.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
-        var model = provider is null ? null : ResolveModel(provider, config.DefaultModelId);
-        if (provider is null || model is null)
-        {
+        // Use the first enabled provider and its first non-deprecated model as default.
+        var provider = config.Providers.FirstOrDefault(c => c.IsEnabled);
+        if (provider is null)
             throw new InvalidOperationException(
-                "LLM provider 'profiles.conscious' is not configured or its provider/model is not found " +
-                "in data/config/llm.providers.json. Ensure profiles.conscious.providerId and profiles.conscious.modelId " +
-                "match an enabled provider.");
-        }
+                "No enabled LLM provider found in data/config/llm.providers.json. " +
+                "Enable at least one provider.");
+
+        var model = ResolveModel(provider, modelId: null);
+        if (model is null)
+            throw new InvalidOperationException(
+                $"No non-deprecated model found for provider '{provider.ProviderId}'. " +
+                "Add at least one model to the first enabled provider.");
 
         return new LlmProfileInfo
         {
-            ProfileId = "default-conscious",
+            ProfileId = null,
             ProviderId = provider.ProviderId,
             ModelId = model.ModelId,
             Config = ToLlmConfig(provider, model, profile: null),
@@ -143,20 +137,23 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
 
     public LlmConfig? GetMemoryConfig()
     {
+        // Agents now define their own memory LLM provider/model directly.
+        // This method only serves as a global fallback when an agent has no memory config.
         var config = Snapshot();
-        return ResolveRoleProfileConfig(config, config.Roles.Subconscious);
+        if (!string.IsNullOrWhiteSpace(config.Roles.Subconscious))
+            return ResolveRoleProfileConfig(config, config.Roles.Subconscious);
+        return null;
     }
 
     public LlmConfig? GetEmbeddingConfig()
     {
         var config = Snapshot();
 
-        // ① 确定 provider：Embedding 节默认 > 扫描 isEmbedding 模型 > Roles.Subconscious > 第一个 enabled
+        // 确定 provider：Embedding 节默认 > 扫描 isEmbedding 模型 > 第一个 enabled
         var resolvedProviderId = config.Embedding?.ProviderId
             ?? config.Providers.FirstOrDefault(p =>
                 p.IsEnabled && p.Models.Any(m => !m.IsDeprecated && m.IsEmbedding))?.ProviderId
-            ?? config.Roles.Subconscious
-            ?? config.DefaultProviderId;
+            ?? config.Providers.FirstOrDefault(p => p.IsEnabled)?.ProviderId;
 
         if (string.IsNullOrWhiteSpace(resolvedProviderId)) return null;
 

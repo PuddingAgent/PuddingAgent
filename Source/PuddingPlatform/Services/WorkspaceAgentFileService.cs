@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
@@ -599,7 +599,7 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSe
             {
                 Conscious = new AgentLlmBinding
                 {
-                    ProfileId = instanceManifest.DefaultLlmProfiles.Conscious,
+                    ProfileId = null,
                     ProviderId = instanceManifest.PreferredProviderId,
                     ModelId = instanceManifest.PreferredModelId,
                     ReasoningEffort = instanceManifest.ReasoningEffort,
@@ -607,7 +607,7 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSe
                 },
                 Subconscious = new AgentLlmBinding
                 {
-                    ProfileId = instanceManifest.DefaultLlmProfiles.Subconscious,
+                    ProfileId = null,
                     ProviderId = instanceManifest.MemoryLlmProviderId,
                     ModelId = instanceManifest.MemoryLlmModelId,
                 },

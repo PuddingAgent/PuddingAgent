@@ -1,10 +1,12 @@
-namespace PuddingCode.Configuration;
+﻿namespace PuddingCode.Configuration;
 
 /// <summary>
 /// Agent LLM Profile 解析器 — 按优先级链解析 Conscious/Subconscious 绑定：
 ///   1. 模板默认 profiles
-///   2. 全局角色默认（roles.conscious / roles.subconscious）
 /// 不抛异常：缺失角色返回 null profile。
+/// 
+/// [Obsolete] 全局 roles（roles.conscious / roles.subconscious）不再作为回退。
+/// Agent 应通过自己的 config/llm.json 直接指定 providerId/modelId。
 /// </summary>
 public static class LlmProfileResolver
 {
@@ -28,17 +30,16 @@ public static class LlmProfileResolver
                 template?.DefaultLlmProfiles.Subconscious));
     }
 
-    /// <summary>解析单个角色的 LLM 绑定，失败返回 null（不抛异常）。</summary>
+    /// <summary>
+    /// 解析单个角色的 LLM 绑定，失败返回 null（不抛异常）。
+    /// 不再回退到全局 roles.conscious/roles.subconscious。
+    /// </summary>
     private static ResolvedLlmProfile? ResolveRole(
         string roleName,
         PuddingLlmProvidersConfig llmConfig,
         string? templateProfileId)
     {
-        var roleProfileId = string.Equals(roleName, "conscious", StringComparison.OrdinalIgnoreCase)
-            ? llmConfig.Roles.Conscious
-            : llmConfig.Roles.Subconscious;
-
-        var profileId = FirstNonBlank(templateProfileId, roleProfileId);
+        var profileId = templateProfileId;
         if (string.IsNullOrWhiteSpace(profileId))
             return null;
 
@@ -96,7 +97,7 @@ public sealed record ResolvedAgentLlmProfiles(
 public sealed record ResolvedLlmProfile
 {
     public required string Role { get; init; }
-    public required string ProfileId { get; init; }
+    public string? ProfileId { get; init; }
     public required string ProviderId { get; init; }
     public required string ModelId { get; init; }
     public required string Endpoint { get; init; }

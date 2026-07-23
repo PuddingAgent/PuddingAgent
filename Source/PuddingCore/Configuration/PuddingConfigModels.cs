@@ -94,8 +94,6 @@ public sealed record PuddingPathConfig
 
 public sealed record PuddingLlmProvidersConfig
 {
-    public string? DefaultProviderId { get; init; }
-    public string? DefaultModelId { get; init; }
     public List<PuddingLlmProviderConfig> Providers { get; init; } = [];
     public Dictionary<string, PuddingLlmProfileConfig> Profiles { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public PuddingLlmRoleConfig Roles { get; init; } = new();
@@ -177,6 +175,12 @@ public sealed record PuddingLlmProfileConfig
     public float? Temperature { get; init; }
 }
 
+/// <summary>
+/// [Obsolete] LLM 角色→Profile 映射。Agent 应直接在自己的 config/llm.json
+/// 中指定 providerId/modelId，不再通过全局资源池的 profiles/roles 间接寻址。
+/// 保留该类型仅为兼容已有配置文件的反序列化，新配置应整体留空。
+/// </summary>
+[Obsolete("Agent should define its own LLM provider/model directly in config/llm.json. Global roles are no longer required.")]
 public sealed record PuddingLlmRoleConfig
 {
     public string? Conscious { get; init; }
