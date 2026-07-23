@@ -1,4 +1,8 @@
-import { getAgentConversation, listAgentStatuses } from './agentChatApi';
+import {
+  getAgentConversation,
+  getAgentMessageProcessItems,
+  listAgentStatuses,
+} from './agentChatApi';
 
 const mockRequest = jest.fn();
 
@@ -43,6 +47,17 @@ describe('agentChatApi', () => {
         method: 'GET',
         skipErrorHandler: true,
       },
+    );
+  });
+
+  it('loads historical process items only for the selected message', async () => {
+    mockRequest.mockResolvedValueOnce({ processItems: [] });
+
+    await getAgentMessageProcessItems('workspace/a', 'agent/a', 'message/a');
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/workspace%2Fa/agents/agent%2Fa/conversation/messages/message%2Fa/process-items',
+      { method: 'GET' },
     );
   });
 });

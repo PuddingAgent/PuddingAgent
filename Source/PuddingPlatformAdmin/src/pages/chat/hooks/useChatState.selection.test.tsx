@@ -183,6 +183,28 @@ describe('useChatState session selection races', () => {
     }) as jest.Mock;
   });
 
+  it('lets the agent projection own initial main-session loading', async () => {
+    (listSessionMessages as jest.Mock).mockResolvedValue(
+      messagePage('legacy-history'),
+    );
+
+    const { result } = renderHook(
+      () =>
+        useChatState('?workspaceId=default', {
+          agentProjectionOwnsMainSession: true,
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() =>
+      expect(result.current.selectedSessionId).toBe('session-a'),
+    );
+
+    expect(listSessionMessages).not.toHaveBeenCalled();
+    expect(subscribeSessionEvents).not.toHaveBeenCalled();
+    expect(result.current.turns).toEqual([]);
+  });
+
   it('keeps the latest agent session when an older history request resolves later', async () => {
     const slowA = deferred<ReturnType<typeof messagePage>>();
     const fastB = deferred<ReturnType<typeof messagePage>>();

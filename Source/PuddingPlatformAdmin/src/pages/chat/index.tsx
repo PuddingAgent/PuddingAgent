@@ -63,7 +63,13 @@ function shallowEqualRecord(
 
 const ChatPageContent: React.FC = () => {
   const location = useLocation();
-  const chat = useChatState(location.search);
+  const useAgentClientArchitecture = useMemo(
+    isAgentClientArchitectureEnabled,
+    [],
+  );
+  const chat = useChatState(location.search, {
+    agentProjectionOwnsMainSession: useAgentClientArchitecture,
+  });
   const { message: messageApi } = App.useApp();
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
@@ -72,10 +78,6 @@ const ChatPageContent: React.FC = () => {
   const projectedStatusesRef = useRef<
     Record<string, { status: string; summary?: string }>
   >({});
-  const useAgentClientArchitecture = useMemo(
-    isAgentClientArchitectureEnabled,
-    [],
-  );
   const agentChatCache = useMemo(() => createIndexedDbAgentChatCache(), []);
   const agentChatApi = useMemo(
     () => ({
@@ -623,7 +625,10 @@ const ChatPageContent: React.FC = () => {
         onCreateWorkspace={handleCreateWorkspaceClick}
         turns={chat.turns}
         chatInteractionRuntimeEvents={chat.chatInteractionRuntimeEvents}
-        historyLoading={chat.historyLoading}
+        historyLoading={
+          chat.historyLoading ||
+          (useAgentClientArchitecture && agentClient.snapshot.isRefreshing)
+        }
         loadingMore={chat.loadingMore}
         hasMoreMessages={chat.hasMoreMessages}
         error={chat.error}

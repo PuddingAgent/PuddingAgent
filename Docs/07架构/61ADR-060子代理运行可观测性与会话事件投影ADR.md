@@ -233,6 +233,18 @@ min(显式 timeout_seconds, roleCap, parentDeadlineUtc - now - 120s)
 并把并发信号量等待时间计入同一预算；等待期间超时也必须写成 `timed_out`，不得在
 拿到并发槽后重新开始计时。Runtime 不得再从异常文本猜测超时。
 
+每次 `smart_*` 调用都是一个自包含的原子工作单元，默认创建一次性子代理：
+
+- 不传 `pool_name`，避免同一角色的历史轮次跨原子任务累积；
+- 固定 `reuse_parent_context=false`，父 Agent 必须在 `task/scope` 中提供完成任务所需事实；
+- 子代理只获得该角色显式声明的工具白名单；`smart_develop` 不继承父 Agent 的全部工具；
+- 主角色模型瞬态失败时不得自动切换 Provider/Model。只有调用方显式传
+  `allow_fallback=true`，才按该角色声明的 `FallbackModelIds` 尝试备用模型。
+
+直接调用 `spawn_sub_agent` 仍可显式选择 `pool_name` 或
+`reuse_parent_context=true`；typed 参数边界必须完整保留
+`origin_tool_id/reuse_parent_context/pool_*`，不得在反序列化后重建请求时丢失。
+
 Smart 工具之间不采用任意递归，而采用静态有向无环调用图：
 
 ```text
@@ -297,8 +309,8 @@ LLM 单次流另有更短的操作级看门狗：默认首块等待 300 秒，�
 |---|---|---|
 | `ExecutionRunCoordinator` | 冻结 24 小时硬上限，运行 1 小时滑动无进展看门狗并仲裁 `execution_timeout/execution_stalled/cancelled` | 把 lease 或 SSE 活跃度当成任务进展 |
 | `IExecutionProgressRegistry` | 按稳定 Runtime identity 汇聚主 Agent、工具与同 Conversation 子代理的 liveness/meaningful 信号并拒绝相同指纹重复续期 | 持久化 Conversation 事实、解析输出语义 |
-| `SmartWorkflowToolBase` | 从配置所有者选择角色模型、以父 deadline 收紧单次 3600 秒子任务上限并读取统一父级收尾预留、声明有界委派元数据；校验 Smart 子代理返回的 canonical 详细工作报告并保留失败结果信封 | 创建 run、持久状态、任意递归或发明第二种结果格式 |
-| `SubAgentTool` | 参数/权限/路由快照映射 | 重新解析 Provider、写 UI 状态 |
+| `SmartWorkflowToolBase` | 从配置所有者选择角色模型、以父 deadline 收紧单次 3600 秒子任务上限并读取统一父级收尾预留、以一次性独立上下文运行原子任务、仅在调用方显式授权时 fallback；校验 Smart 子代理返回的 canonical 详细工作报告并保留失败结果信封 | 创建 run、持久状态、静默切换模型、任意递归或发明第二种结果格式 |
+| `SubAgentTool` | 完整保留 typed delegation 参数并映射权限/路由快照；显式 pool 请求才进入池化路径 | 重新解析 Provider、隐式启用池化、写 UI 状态 |
 | `SubAgentInvocationService` | 生成 invocation/batch 身份、映射请求 | 执行或归档 |
 | `SubAgentManager` | 归一化子代理绝对 deadline、为所有同步委派保留父级收尾窗口、把并发等待计入预算、创建 run 并派发 Runtime | 放宽父 deadline、解析会话字符串、维护第二套终态 |
 | `AgentExecutionService` | 发出真实轮次/LLM/工具执行事实 | 直接写 Conversation SSE |
@@ -354,6 +366,12 @@ LLM 单次流另有更短的操作级看门狗：默认首块等待 300 秒，�
     工具或同 Conversation 子代理有效进展会续期，相同指纹重复输出不会续期。
 26. LLM 流首块等待超过 300 秒或首块后连续 120 秒没有新流块时，操作级看门狗取消该
     Provider 调用；持续收到有效流块时不得误触发父 Turn 的无进展窗口。
+27. 连续调用两个 `smart_develop` 时产生两个独立 `subSessionId`，第二次调用的上下文
+    不包含第一次子代理的对话历史；其工具集合等于 Developer 显式白名单。
+28. Smart 主模型返回瞬态错误且未传 `allow_fallback` 时只产生一个 run；显式传
+    `allow_fallback=true` 时才允许产生备用模型 run，并在日志中记录模型切换。
+29. 主 Agent 正文和状态不变、只有 `timelineItems` 新增或更新时，消息气泡必须实时重渲染
+    当前工具活动；刷新或虚拟列表重挂载后等待秒数继续以 Turn 服务端时间计算，不得归零。
 
 ## 6. 后续清理
 

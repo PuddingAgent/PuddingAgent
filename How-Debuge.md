@@ -400,6 +400,18 @@ Smart 工作流是同步工具调用，父 Agent 会等待子 run 返回。诊�
   不是单个工具死锁；应检查 Prompt 是否要求自包含结果，以及角色的 round/timeout 上限；
 - 标记为 `ReadOnly` 的 Smart 工具仍拿到 `file_write/shell/spawn_sub_agent`：描述符与
   capability 白名单不一致，会放大耗时和副作用，必须改为显式只读白名单。
+- 后续原子 Smart 调用的 prompt token 持续增长：检查请求是否意外携带
+  `pool_name` 或 `reuse_parent_context=true`。标准 `smart_*` 调用应是一次性
+  `subSessionId` 且 `reuse_parent_context=false`；只有直接 `spawn_sub_agent`
+  的显式请求可以选择池化或父上下文。
+- 一次 Smart 失败后连续出现不同 Provider/Model 的 run：检查调用是否显式传入
+  `allow_fallback=true`。默认调用不得静默切换模型；没有该参数仍发生切换就是执行契约回归。
+
+若 run archive 和右上角运行坞都在更新，但主消息气泡仍停在“深入分析中”，检查前端
+`MessageStream` 的 memo 比较。正文和 assistant status 在同步 Smart 等待期间通常保持不变，
+但 `timelineItems` 会从 thinking 更新为 `tool_call(smart_*)`；memo 必须比较 timeline
+内容和 process summary。刷新后等待秒数明显归零，则检查 `AgentMessageBubble` 是否仍从
+组件 mount 时刻计时；正确锚点是该 Turn 的服务端 `createdAt`。
 
 `SubAgentIndicator` 不允许按前端经过时间猜测终态。对于仍为 Running 的卡片，可以低频查询
 `GET /api/sessions/{sessionId}/sub-agents`，只用持久化终态校正事件快照；活动明细仍以
@@ -877,7 +889,7 @@ Turn 派生的 `dotnet test` / `testhost` 是否在父 Runtime 退出后仍存�
 
 先区分三类原因：
 
-1. **中等富文本会话仍被虚拟化**：检查 `chat-message-viewport-content` 的 `data-virtualized`。少于 80 个 timeline row 应为 `false`；80-199 个 row 只在全部为 compact 稳定短行时虚拟化；否则高 Markdown/tool row 会经历估高到实测的短暂覆盖。
+1. **富文本会话的虚拟化决策错误**：检查 `chat-message-viewport-content` 的 `data-virtualized`。短会话保持正常文档流；中等会话若累计 Markdown/process 内容已经达到高渲染重量，应提前虚拟化，不能只等 row 数达到 80/200。刷新后 DOM 中 `[data-viewport-item-id]` 应只保留可见行和少量 overscan。
 2. **历史前插未恢复锚点**：滚动到顶部加载旧消息前后，记录第一条可见 row 的 `data-viewport-item-id` 和相对 viewport top。二者应保持不变；不能只比较 `scrollTop`。
 3. **贴底抢滚动**：用户阅读历史时 `followMode` 必须为 `off`；仅 `user-send`、手动回底部或 pinned 模式允许写入底部位置。
 4. **虚拟行 key 冲突**：统计 `[data-viewport-item-id]` 总数与唯一值数量，并检查控制台 `Encountered two children with the same key`。row id 必须来自 user/assistant message id，不能只使用 canonical `turnId`；高度缓存同样必须按 message id，避免历史前插后下标复用。
@@ -1147,6 +1159,33 @@ $sessions = Invoke-RestMethod 'http://localhost:5000/api/sessions?workspaceId=de
 $sessions | Where-Object { $_.title -match '^(压缩\s*-\s*){2,}' } |
     Select-Object sessionId, title
 ```
+
+### 11.11 刷新 Chat 后历史消息长时间空白
+
+先把耗时拆成三段，不要只看浏览器转圈：
+
+1. 测量
+   `GET /api/workspaces/{workspaceId}/agents/{agentId}/conversation`
+   的耗时和响应字节数。若几十条消息达到数 MB，统计
+   `messages[].processItems`；初始历史只能携带 `processSummary`，完整事件 payload
+   必须在用户展开“查看过程”时经
+   `/conversation/messages/{messageId}/process-items` 单独加载。
+2. 查看 `tmp/dev/proxy.out.log` 的 `sse-line ... events=N`。刷新一次若从 sequence 0
+   重放数千事件，检查主会话是否被 legacy `useChatState` 和 Agent canonical projection
+   同时加载；Agent projection 拥有主会话时，legacy 历史/SSE 必须跳过。需要建立 legacy
+   SSE 时，应等待历史 cursor 同步完成并发送 `Last-Event-ID`。
+3. 接口已很快但首屏仍慢时，检查
+   `chat-message-viewport-content[data-virtualized]` 和实际挂载 row 数。几十条包含表格、
+   代码块或图片的消息不能一次性全部 Markdown 渲染；虚拟化应只挂载可见行与 overscan。
+
+刷新/首次打开的正确视口语义是从最新一条消息开始。Agent canonical 架构下应先等
+`AgentChatClientSnapshot.isRefreshing=false`，不能先按 IndexedDB 旧快照定位；随后在虚拟行
+分批测量或图片延迟撑高期间以有界窗口收敛到底部。程序化 `scrollTop` 引发的 `scroll` 事件
+不是用户意图；只有 wheel/touch/pointer/滚动键输入才终止初始收敛。用户第一次真实向上滚动
+后，后续历史前插必须恢复可见 DOM 锚点，不能再次抢回底部。
+
+推荐记录修复前后四个量：conversation 响应字节、API duration、SSE replay event 数、
+首屏挂载 row 数。只减少接口耗时而仍同步渲染全部历史，不能视为完成修复。
 
 ## 12. 修改后的最低验收
 

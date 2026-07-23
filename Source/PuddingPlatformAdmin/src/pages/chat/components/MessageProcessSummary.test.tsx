@@ -19,6 +19,44 @@ jest.mock('../styles', () => {
 });
 
 describe('MessageProcessSummary', () => {
+  it('renders a compact historical summary and loads full details on expansion', async () => {
+    const onLoadDetails = jest.fn().mockResolvedValue([
+      {
+        id: 'thinking-lazy',
+        type: 'thinking',
+        text: '按需加载的过程内容',
+        timestamp: 1,
+        collapsed: true,
+      },
+    ]);
+    render(
+      <MessageProcessSummary
+        status="success"
+        items={[]}
+        summary={{
+          totalItems: 3,
+          thinkingRounds: 1,
+          thinkingSteps: 1,
+          toolCalls: 1,
+          toolResults: 1,
+          failedTools: 0,
+          durationMs: 1200,
+          hasDetails: true,
+        }}
+        onLoadDetails={onLoadDetails}
+      />,
+    );
+
+    expect(screen.getByText(/已思考 1 轮/)).toBeTruthy();
+    expect(screen.getByText(/调用 1 个工具/)).toBeTruthy();
+    expect(screen.queryByText('按需加载的过程内容')).toBeNull();
+
+    fireEvent.click(screen.getByText('查看过程'));
+
+    expect(onLoadDetails).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('按需加载的过程内容')).toBeTruthy();
+  });
+
   it('shows sanitized raw thinking text when the process details are expanded', () => {
     render(
       <MessageProcessSummary

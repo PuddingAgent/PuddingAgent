@@ -32,6 +32,23 @@ export interface ProcessSummaryItem {
   message?: string | null;
 }
 
+export interface ConversationProcessSummary {
+  totalItems: number;
+  thinkingRounds: number;
+  thinkingSteps: number;
+  toolCalls: number;
+  toolResults: number;
+  failedTools: number;
+  durationMs: number;
+  hasDetails: boolean;
+}
+
+export interface MessageProcessDetailsView {
+  messageId: string;
+  runId?: string | null;
+  processItems: ProcessSummaryItem[];
+}
+
 export interface AgentOutputSnapshot {
   markdown: string;
   processItems: ProcessSummaryItem[];
@@ -81,6 +98,7 @@ export interface ConversationMessageView {
     | 'failed'
     | 'cancelled';
   processItems: ProcessSummaryItem[];
+  processSummary?: ConversationProcessSummary | null;
 }
 
 export interface AgentConversationView {

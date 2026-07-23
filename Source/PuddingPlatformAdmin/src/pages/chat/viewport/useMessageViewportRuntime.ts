@@ -19,6 +19,8 @@ const BOTTOM_THRESHOLD_PX = 80;
 const MESSAGE_VIEWPORT_BOTTOM_PADDING_PX = 32;
 const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 80;
 const MESSAGE_VIEWPORT_RICH_VIRTUALIZATION_MIN_ITEMS = 200;
+const MESSAGE_VIEWPORT_WEIGHTED_MIN_ITEMS = 24;
+const MESSAGE_VIEWPORT_CONTENT_WEIGHT_THRESHOLD = 16_000;
 type MessageVirtualItem = Extract<VirtualMessageItem, { kind: 'message' }>;
 
 interface PendingViewportAnchor {
@@ -98,6 +100,34 @@ export const getVirtualMessageContentFingerprint = (
 export const shouldVirtualizeMessageViewport = (
   items: VirtualMessageItem[],
 ): boolean => {
+  // A medium timeline can be more expensive than a long compact timeline when
+  // every row contains Markdown tables, code blocks or images. Counting rows
+  // alone made a 50-message conversation synchronously mount tens of thousands
+  // of DOM nodes during refresh. Keep genuinely short conversations in normal
+  // flow, but virtualize medium timelines once their aggregate render weight is
+  // high enough to block the first usable frame.
+  if (items.length >= MESSAGE_VIEWPORT_WEIGHTED_MIN_ITEMS) {
+    const contentWeight = items.reduce(
+      (total, item) =>
+        total +
+        (item.kind === 'message'
+          ? item.block.content.length +
+            (item.block.processItems?.reduce(
+              (processTotal, processItem) =>
+                processTotal +
+                textLength(processItem.text) +
+                textLength(processItem.output) +
+                textLength(processItem.message),
+              0,
+            ) ?? 0)
+          : 0),
+      0,
+    );
+    if (contentWeight >= MESSAGE_VIEWPORT_CONTENT_WEIGHT_THRESHOLD) {
+      return true;
+    }
+  }
+
   if (items.length < MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS) return false;
   const hasDynamicTallRows = items.some(
     (item) =>
@@ -130,6 +160,15 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   // C2: Suspend auto-follow while smooth scroll animation is in progress
   const smoothScrollActiveRef = useRef(false);
   const smoothScrollTimerRef = useRef<number | null>(null);
+  // Initial navigation owns bottom settlement until the first real user
+  // scroll. This lets virtual-row measurements and late image/Markdown layout
+  // growth converge on the latest message without permanently pinning bottom.
+  const initialBottomSettlingRef = useRef(false);
+  const initialBottomSettleDeadlineRef = useRef(0);
+  const initialBottomSettleStartedAtRef = useRef(0);
+  const initialBottomSettleTimerRef = useRef<number | null>(null);
+  const initialBottomSettleLastHeightRef = useRef<number | null>(null);
+  const initialBottomSettleStableTicksRef = useRef(0);
   // A3: Cache measured row heights to avoid estimate→measure correction jitter
   const measuredHeightsRef = useRef<Map<string, number>>(new Map());
 
@@ -294,6 +333,62 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     });
   }, [writeBottomPosition]);
 
+  const stopInitialBottomSettlement = useCallback(() => {
+    initialBottomSettlingRef.current = false;
+    initialBottomSettleDeadlineRef.current = 0;
+    initialBottomSettleStartedAtRef.current = 0;
+    initialBottomSettleLastHeightRef.current = null;
+    initialBottomSettleStableTicksRef.current = 0;
+    if (initialBottomSettleTimerRef.current !== null) {
+      window.clearTimeout(initialBottomSettleTimerRef.current);
+      initialBottomSettleTimerRef.current = null;
+    }
+  }, []);
+
+  // TanStack row estimates can be corrected in several batches without every
+  // correction resizing the observed outer node. During first-open only,
+  // converge against the real scrollHeight for a short bounded window.
+  const scheduleInitialBottomSettlement = useCallback(() => {
+    if (initialBottomSettleTimerRef.current !== null) {
+      window.clearTimeout(initialBottomSettleTimerRef.current);
+    }
+    const settle = () => {
+      initialBottomSettleTimerRef.current = null;
+      if (!initialBottomSettlingRef.current) return;
+      if (Date.now() >= initialBottomSettleDeadlineRef.current) {
+        stopInitialBottomSettlement();
+        return;
+      }
+      writeBottomPosition('auto');
+      const parent = parentRef.current;
+      const scrollHeight = parent?.scrollHeight ?? 0;
+      const previousHeight = initialBottomSettleLastHeightRef.current;
+      const distanceFromBottom = parent
+        ? scrollHeight - parent.clientHeight - parent.scrollTop
+        : Number.POSITIVE_INFINITY;
+      if (
+        previousHeight !== null &&
+        Math.abs(scrollHeight - previousHeight) <= 1 &&
+        Math.abs(distanceFromBottom) <= 2
+      ) {
+        initialBottomSettleStableTicksRef.current += 1;
+      } else {
+        initialBottomSettleStableTicksRef.current = 0;
+      }
+      initialBottomSettleLastHeightRef.current = scrollHeight;
+      if (
+        initialBottomSettleStableTicksRef.current >= 20 &&
+        Date.now() - initialBottomSettleStartedAtRef.current >= 10_000
+      ) {
+        // Keep the observer-owned flag active for genuinely late images, but
+        // stop polling after two stable seconds.
+        return;
+      }
+      initialBottomSettleTimerRef.current = window.setTimeout(settle, 100);
+    };
+    initialBottomSettleTimerRef.current = window.setTimeout(settle, 0);
+  }, [stopInitialBottomSettlement, writeBottomPosition]);
+
   const processScroll = useCallback(() => {
     const next = readScroll();
     if (next.nearTop) requestLoadBefore();
@@ -335,6 +430,46 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     });
   }, [processScroll]);
 
+  // A scroll event is not proof of user intent: assigning scrollTop and
+  // virtualizer measurement corrections both emit it. Only explicit input
+  // releases first-open bottom settlement, otherwise delayed Markdown/image
+  // measurement can strand the viewport several rows above the newest item.
+  React.useLayoutEffect(() => {
+    const parent = parentRef.current;
+    if (!parent) return;
+
+    const stopOnScrollKey = (event: KeyboardEvent) => {
+      if (
+        [
+          'ArrowUp',
+          'ArrowDown',
+          'PageUp',
+          'PageDown',
+          'Home',
+          'End',
+          ' ',
+        ].includes(event.key)
+      ) {
+        stopInitialBottomSettlement();
+      }
+    };
+
+    parent.addEventListener('wheel', stopInitialBottomSettlement, {
+      passive: true,
+    });
+    parent.addEventListener('touchstart', stopInitialBottomSettlement, {
+      passive: true,
+    });
+    parent.addEventListener('pointerdown', stopInitialBottomSettlement);
+    window.addEventListener('keydown', stopOnScrollKey);
+    return () => {
+      parent.removeEventListener('wheel', stopInitialBottomSettlement);
+      parent.removeEventListener('touchstart', stopInitialBottomSettlement);
+      parent.removeEventListener('pointerdown', stopInitialBottomSettlement);
+      window.removeEventListener('keydown', stopOnScrollKey);
+    };
+  }, [stopInitialBottomSettlement]);
+
   // Bottom following owns the real scroll container. The virtualizer only owns
   // item measurement and anchor restoration; it must not estimate the bottom.
   React.useLayoutEffect(() => {
@@ -361,7 +496,10 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     const content = contentRef.current;
     if (!parent || !content || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => {
-      if (followModeRef.current === 'pinned') {
+      if (
+        followModeRef.current === 'pinned' ||
+        initialBottomSettlingRef.current
+      ) {
         scheduleBottomSettlement();
       }
     });
@@ -494,13 +632,29 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       if (smoothScrollTimerRef.current !== null) {
         clearTimeout(smoothScrollTimerRef.current);
       }
+      stopInitialBottomSettlement();
     },
-    [],
+    [stopInitialBottomSettlement],
   );
 
   const scrollToBottom = useCallback(
-    ({ behavior }: { behavior: ScrollBehavior; reason: string }) => {
+    ({
+      behavior,
+      reason,
+    }: {
+      behavior: ScrollBehavior;
+      reason: string;
+    }) => {
       if (options.items.length === 0) return;
+      if (reason === 'initial-session-load') {
+        initialBottomSettlingRef.current = true;
+        initialBottomSettleStartedAtRef.current = Date.now();
+        initialBottomSettleDeadlineRef.current =
+          initialBottomSettleStartedAtRef.current + 30_000;
+        initialBottomSettleLastHeightRef.current = null;
+        initialBottomSettleStableTicksRef.current = 0;
+        scheduleInitialBottomSettlement();
+      }
       // C2: Suspend auto-follow during smooth scroll animation
       if (behavior === 'smooth') {
         smoothScrollActiveRef.current = true;
@@ -527,6 +681,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     [
       options.items.length,
       scheduleBottomSettlement,
+      scheduleInitialBottomSettlement,
       writeBottomPosition,
     ],
   );

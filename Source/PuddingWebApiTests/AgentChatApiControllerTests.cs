@@ -505,9 +505,7 @@ public sealed class AgentChatApiControllerTests
         Assert.IsNotNull(view);
         var message = view!.Messages.Single();
         Assert.AreEqual("final answer", message.Content);
-        Assert.HasCount(1, message.ProcessItems);
-        Assert.AreEqual("thinking", message.ProcessItems[0].Kind);
-        Assert.AreEqual("分析用户需求", message.ProcessItems[0].Text);
+        Assert.IsEmpty(message.ProcessItems);
     }
 
     [TestMethod]
@@ -583,15 +581,32 @@ public sealed class AgentChatApiControllerTests
         Assert.AreEqual(externalMessageId, message.MessageId);
         Assert.AreEqual("run-historical-tools", message.RunId);
         Assert.AreEqual("tool final answer", message.Content);
-        Assert.HasCount(3, message.ProcessItems);
-        Assert.AreEqual("thinking", message.ProcessItems[0].Kind);
-        Assert.AreEqual("准备查找文件", message.ProcessItems[0].Text);
-        Assert.AreEqual("tool_call", message.ProcessItems[1].Kind);
-        Assert.AreEqual("file_search", message.ProcessItems[1].Name);
-        Assert.AreEqual("{\"pattern\":\"*.md\"}", message.ProcessItems[1].Arguments);
-        Assert.AreEqual("tool_result", message.ProcessItems[2].Kind);
-        Assert.AreEqual("README.md", message.ProcessItems[2].Output);
-        Assert.AreEqual(0, message.ProcessItems[2].ExitCode);
+        Assert.IsEmpty(message.ProcessItems);
+        Assert.IsNotNull(message.ProcessSummary);
+        Assert.AreEqual(3, message.ProcessSummary.TotalItems);
+        Assert.AreEqual(1, message.ProcessSummary.ThinkingRounds);
+        Assert.AreEqual(1, message.ProcessSummary.ThinkingSteps);
+        Assert.AreEqual(1, message.ProcessSummary.ToolCalls);
+        Assert.AreEqual(1, message.ProcessSummary.ToolResults);
+        Assert.AreEqual(0, message.ProcessSummary.FailedTools);
+        Assert.IsTrue(message.ProcessSummary.HasDetails);
+
+        var detailResponse = await _client.GetAsync(
+            $"/api/workspaces/default/agents/agent-conversation-tools/conversation/messages/{externalMessageId}/process-items");
+        detailResponse.EnsureSuccessStatusCode();
+        var details = await detailResponse.Content.ReadFromJsonAsync<MessageProcessDetailsViewDto>(JsonOpts);
+        Assert.IsNotNull(details);
+        Assert.AreEqual(externalMessageId, details.MessageId);
+        Assert.AreEqual("run-historical-tools", details.RunId);
+        Assert.HasCount(3, details.ProcessItems);
+        Assert.AreEqual("thinking", details.ProcessItems[0].Kind);
+        Assert.AreEqual("准备查找文件", details.ProcessItems[0].Text);
+        Assert.AreEqual("tool_call", details.ProcessItems[1].Kind);
+        Assert.AreEqual("file_search", details.ProcessItems[1].Name);
+        Assert.AreEqual("{\"pattern\":\"*.md\"}", details.ProcessItems[1].Arguments);
+        Assert.AreEqual("tool_result", details.ProcessItems[2].Kind);
+        Assert.AreEqual("README.md", details.ProcessItems[2].Output);
+        Assert.AreEqual(0, details.ProcessItems[2].ExitCode);
     }
 
     [TestMethod]
@@ -689,11 +704,11 @@ public sealed class AgentChatApiControllerTests
         Assert.IsNotNull(view);
         Assert.HasCount(2, view!.Messages);
         Assert.AreEqual("run-a-completed", view.Messages[0].RunId);
-        Assert.HasCount(1, view.Messages[0].ProcessItems);
-        Assert.AreEqual("successful attempt", view.Messages[0].ProcessItems[0].Text);
+        Assert.IsEmpty(view.Messages[0].ProcessItems);
+        Assert.AreEqual(1, view.Messages[0].ProcessSummary?.TotalItems);
         Assert.AreEqual("run-b-completed", view.Messages[1].RunId);
-        Assert.HasCount(1, view.Messages[1].ProcessItems);
-        Assert.AreEqual("second message process", view.Messages[1].ProcessItems[0].Text);
+        Assert.IsEmpty(view.Messages[1].ProcessItems);
+        Assert.AreEqual(1, view.Messages[1].ProcessSummary?.TotalItems);
     }
 
     [TestMethod]
@@ -1014,6 +1029,21 @@ public sealed class AgentChatApiControllerTests
         int? ExitCode,
         string? Message);
 
+    private sealed record ConversationProcessSummaryDto(
+        int TotalItems,
+        int ThinkingRounds,
+        int ThinkingSteps,
+        int ToolCalls,
+        int ToolResults,
+        int FailedTools,
+        long DurationMs,
+        bool HasDetails);
+
+    private sealed record MessageProcessDetailsViewDto(
+        string MessageId,
+        string? RunId,
+        List<ProcessSummaryItemDto> ProcessItems);
+
     private sealed record ConversationMessageViewDto(
         string MessageId,
         string? TurnId,
@@ -1024,5 +1054,6 @@ public sealed class AgentChatApiControllerTests
         string CreatedAt,
         string Content,
         string Status,
-        List<ProcessSummaryItemDto> ProcessItems);
+        List<ProcessSummaryItemDto> ProcessItems,
+        ConversationProcessSummaryDto? ProcessSummary = null);
 }

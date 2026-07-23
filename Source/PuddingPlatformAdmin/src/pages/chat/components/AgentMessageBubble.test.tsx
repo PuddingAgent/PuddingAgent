@@ -84,6 +84,10 @@ jest.mock('../hooks/useTtsPlayer', () => ({
   }),
 }));
 
+jest.mock('../client/agentChatApi', () => ({
+  getAgentMessageProcessItems: jest.fn(),
+}));
+
 jest.mock('./AgentAvatar', () => () => <div data-testid="agent-avatar" />);
 jest.mock(
   './MessageActions',
@@ -100,7 +104,7 @@ jest.mock('./SessionBenchmarkDrawer', () => () => (
 const baseProps = {
   id: 'assistant-1',
   status: 'streaming',
-  createdAt: 1,
+  createdAt: Date.now(),
   agentName: 'Pudding',
   isStreaming: true,
   formatTime: () => '刚刚',
@@ -251,6 +255,28 @@ describe('AgentMessageBubble streaming presentation', () => {
       ),
     ).toBeTruthy();
     expect(container.querySelector('.reasoningContainer')).toBeNull();
+  });
+
+  it('keeps the server elapsed time after the bubble remounts', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-24T12:10:00.000Z'));
+    try {
+      render(
+        <AgentMessageBubble
+          {...baseProps}
+          createdAt={new Date('2026-07-24T12:00:00.000Z').getTime()}
+          status="thinking"
+          isStreaming={false}
+          content=""
+        />,
+      );
+
+      expect(
+        screen.getByText('模型正在进行复杂推理（600s），请稍候...'),
+      ).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('shows the current tool interaction as the default visible activity', () => {

@@ -48,6 +48,25 @@ public sealed record ProcessSummaryItem(
     int? ExitCode = null,
     string? Message = null);
 
+/// <summary>
+/// Payload-free statistics for a completed message process. Historical details are loaded on demand.
+/// </summary>
+public sealed record ConversationProcessSummary(
+    int TotalItems,
+    int ThinkingRounds,
+    int ThinkingSteps,
+    int ToolCalls,
+    int ToolResults,
+    int FailedTools,
+    long DurationMs,
+    bool HasDetails);
+
+/// <summary>Full process details for one persisted conversation message.</summary>
+public sealed record MessageProcessDetailsView(
+    string MessageId,
+    string? RunId,
+    IReadOnlyList<ProcessSummaryItem> ProcessItems);
+
 /// <summary>Renderable conversation projection for one Agent main session.</summary>
 public sealed record AgentConversationView(
     string WorkspaceId,
@@ -85,4 +104,10 @@ public sealed record ConversationMessageView(
 
     /// <summary>Optional message-level metadata (e.g. visionArtifactId, inputMode).</summary>
     public IReadOnlyDictionary<string, string>? Metadata { get; init; }
+
+    /// <summary>
+    /// Compact historical process statistics. Full event payloads are intentionally excluded from
+    /// the initial conversation projection and can be requested for this message on demand.
+    /// </summary>
+    public ConversationProcessSummary? ProcessSummary { get; init; }
 }

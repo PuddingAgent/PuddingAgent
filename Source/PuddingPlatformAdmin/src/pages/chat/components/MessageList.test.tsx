@@ -193,10 +193,13 @@ describe('MessageList scroll performance', () => {
       Object.defineProperty(node, 'scrollTop', {
         configurable: true,
         writable: true,
-        value: 900,
+        value: 0,
       });
-      rafCallbacks = [];
+      act(() => {
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+      });
 
+      node.scrollTop = 900;
       fireEvent.scroll(node);
       act(() => {
         while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
@@ -260,7 +263,15 @@ describe('MessageList scroll performance', () => {
       Object.defineProperty(node, 'scrollTop', {
         configurable: true,
         writable: true,
-        value: 100,
+        value: 0,
+      });
+      act(() => {
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+      });
+      node.scrollTop = 100;
+      fireEvent.scroll(node);
+      act(() => {
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
       });
       const scrollIntoView = jest.fn();
       if (props.listEndRef.current) {
@@ -302,7 +313,7 @@ describe('MessageList scroll performance', () => {
     }
   });
 
-  it('does not scroll to the latest message on first open', () => {
+  it('starts from the latest message on first open', () => {
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     const scrollIntoView = jest.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
@@ -315,6 +326,18 @@ describe('MessageList scroll performance', () => {
       get() {
         return this.getAttribute?.('data-testid') === 'chat-message-list'
           ? 1_800
+          : 0;
+      },
+    });
+    const originalClientHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'clientHeight',
+    );
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get() {
+        return this.getAttribute?.('data-testid') === 'chat-message-list'
+          ? 500
           : 0;
       },
     });
@@ -333,6 +356,7 @@ describe('MessageList scroll performance', () => {
         />,
       );
 
+      expect(ref.current?.scrollTop).toBe(1_300);
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
@@ -345,11 +369,20 @@ describe('MessageList scroll performance', () => {
       } else {
         delete (HTMLElement.prototype as any).scrollHeight;
       }
+      if (originalClientHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          'clientHeight',
+          originalClientHeight,
+        );
+      } else {
+        delete (HTMLElement.prototype as any).clientHeight;
+      }
     }
   });
 
-  it('does not move the viewport after first-open virtual content measurement expands', () => {
-    let scrollHeight = 300;
+  it('settles at the latest message after first-open content measurement expands', () => {
+    let scrollHeight = 1_000;
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     delete (HTMLElement.prototype as any).scrollIntoView;
     const originalScrollHeight = Object.getOwnPropertyDescriptor(
@@ -378,10 +411,11 @@ describe('MessageList scroll performance', () => {
     });
     const ref = React.createRef<HTMLDivElement>();
     try {
-      render(
+      const { rerender } = render(
         <MessageList
           {...baseProps}
           sessionId="session-first-open-expands-after-measure"
+          historyLoading
           messageListRef={ref}
           listEndRef={React.createRef<HTMLDivElement>()}
           turns={[
@@ -391,13 +425,57 @@ describe('MessageList scroll performance', () => {
         />,
       );
 
+      act(() => {
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+      });
       expect(ref.current?.scrollTop).toBe(0);
-      scrollHeight = 2_000;
+
+      rerender(
+        <MessageList
+          {...baseProps}
+          sessionId="session-first-open-expands-after-measure"
+          historyLoading={false}
+          messageListRef={ref}
+          listEndRef={React.createRef<HTMLDivElement>()}
+          turns={[
+            createTurn('older-turn', 1_000, 'older user', 'older answer'),
+            createTurn('latest-turn', 2_000, 'latest user', 'latest answer'),
+          ]}
+        />,
+      );
+      act(() => {
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+      });
+      expect(ref.current?.scrollTop).toBe(500);
+
+      // Programmatic scroll events from scrollTop/virtualizer corrections must
+      // not be mistaken for a user leaving the latest-message position.
+      fireEvent.scroll(ref.current!);
       act(() => {
         while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
       });
 
-      expect(ref.current?.scrollTop).toBe(0);
+      scrollHeight = 2_000;
+      act(() => {
+        for (const callback of resizeObserverCallbacks) {
+          callback([], {} as ResizeObserver);
+        }
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+      });
+
+      expect(ref.current?.scrollTop).toBe(1_500);
+
+      // Explicit user input releases initial settlement, so later layout
+      // changes no longer steal the reader's chosen position.
+      fireEvent.wheel(ref.current!);
+      scrollHeight = 2_500;
+      act(() => {
+        for (const callback of resizeObserverCallbacks) {
+          callback([], {} as ResizeObserver);
+        }
+        while (rafCallbacks.length) rafCallbacks.shift()?.(performance.now());
+      });
+      expect(ref.current?.scrollTop).toBe(1_500);
     } finally {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
       if (originalScrollHeight) {
@@ -1884,6 +1962,55 @@ describe('MessageList scroll performance', () => {
     ]);
     expect(rows[0].textContent).toContain('current question');
     expect(rows[1].textContent).toContain('current answer fragment');
+  });
+
+  it('rerenders a waiting bubble when only its live process timeline changes', () => {
+    const buildPendingTurn = (timelineText: string) => ({
+      turnId: 'live-process-turn',
+      userMessage: {
+        id: 'live-process-user',
+        text: 'use smart develop',
+        timestamp: 30_000,
+        status: 'success' as const,
+      },
+      assistant: {
+        id: 'live-process-agent',
+        status: 'executing' as const,
+        timelineItems: [
+          {
+            id: 'tool-smart-develop',
+            type: 'tool_call' as const,
+            name: 'smart_develop',
+            text: timelineText,
+            status: 'running',
+            timestamp: 31_000,
+            collapsed: false,
+          },
+        ],
+        answerMarkdown: '',
+        isStreaming: true,
+        renderMode: 'structured' as const,
+      },
+    });
+
+    const { rerender } = render(
+      <MessageList
+        {...baseProps}
+        turns={[buildPendingTurn('子代理正在启动')]}
+      />,
+    );
+
+    expect(screen.getByText('子代理正在启动')).toBeTruthy();
+
+    rerender(
+      <MessageList
+        {...baseProps}
+        turns={[buildPendingTurn('子代理正在执行第 2 轮')]}
+      />,
+    );
+
+    expect(screen.queryByText('子代理正在启动')).toBeNull();
+    expect(screen.getByText('子代理正在执行第 2 轮')).toBeTruthy();
   });
 
   it('keeps live SSE reasoning when the matching active run snapshot is still empty', () => {

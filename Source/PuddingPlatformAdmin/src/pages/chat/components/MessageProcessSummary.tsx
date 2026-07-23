@@ -1,6 +1,7 @@
 // ── MessageProcessSummary：过程摘要（默认折叠）─────────────
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import React, { useState } from 'react';
+import type { ConversationProcessSummary } from '../client/types';
 import { useChatStyles } from '../styles';
 import type { TimelineItem } from '../types';
 import {
@@ -15,7 +16,9 @@ import {
 
 interface MessageProcessSummaryProps {
   items: TimelineItem[];
+  summary?: ConversationProcessSummary;
   status: string;
+  onLoadDetails?: () => Promise<TimelineItem[]>;
   onRerun?: () => void;
   onOpenDiagnostics?: () => void;
 }
@@ -155,9 +158,28 @@ const getToolCompactDetail = (item: TimelineItem): string => {
   return sanitizeProcessText(output || message || args, { maxLength: 120 });
 };
 
+const getHistoricalSummaryText = (
+  summary?: ConversationProcessSummary,
+): string | null => {
+  if (!summary?.hasDetails) return null;
+  const parts: string[] = [];
+  if (summary.thinkingRounds > 0)
+    parts.push(`已思考 ${summary.thinkingRounds} 轮`);
+  else if (summary.thinkingSteps > 0)
+    parts.push(`已思考 ${summary.thinkingSteps} 步`);
+  if (summary.toolCalls > 0) parts.push(`调用 ${summary.toolCalls} 个工具`);
+  if (summary.failedTools > 0)
+    parts.push(`${summary.failedTools} 个失败`);
+  const duration = formatProcessDuration(summary.durationMs);
+  if (duration) parts.push(`用时 ${duration}`);
+  return parts.length > 0 ? parts.join(' · ') : '已完成';
+};
+
 const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   items,
+  summary: historicalSummary,
   status,
+  onLoadDetails,
   onRerun,
   onOpenDiagnostics,
 }) => {
@@ -165,8 +187,31 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   const styles = rawStyles as Record<string, string>;
   const [expanded, setExpanded] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [loadedItems, setLoadedItems] = useState<TimelineItem[] | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const effectiveItems = loadedItems ?? items;
+  const hasHistoricalDetails = Boolean(
+    historicalSummary?.hasDetails && onLoadDetails,
+  );
 
-  if (!items || items.length === 0) {
+  const expandWithDetails = async () => {
+    setExpanded(true);
+    if (!hasHistoricalDetails || loadedItems !== null || loadingDetails) return;
+    setLoadingDetails(true);
+    setLoadError(null);
+    try {
+      setLoadedItems(await onLoadDetails!());
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : '过程明细加载失败，请重试',
+      );
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  if ((!effectiveItems || effectiveItems.length === 0) && !hasHistoricalDetails) {
     if (status === 'streaming') {
       return (
         <div className={styles.processSummaryRow}>
@@ -193,10 +238,13 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
     return null;
   }
 
-  const summary = getProcessSummaryText(items);
-  const rounds = buildProcessRounds(items);
-  const displayItems = buildDisplayItems(items);
-  const traceChips = buildTraceChips(items);
+  const summary =
+    loadedItems !== null || !historicalSummary
+      ? getProcessSummaryText(effectiveItems)
+      : getHistoricalSummaryText(historicalSummary);
+  const rounds = buildProcessRounds(effectiveItems);
+  const displayItems = buildDisplayItems(effectiveItems);
+  const traceChips = buildTraceChips(effectiveItems);
   const roundByItemId = new Map<string, number>();
   rounds.forEach((round) => {
     round.items.forEach((item) => roundByItemId.set(item.id, round.index));
@@ -216,7 +264,7 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
       <div className={styles.processSummaryRow}>
         <button
           type="button"
-          onClick={() => setExpanded(true)}
+          onClick={() => void expandWithDetails()}
           style={{
             all: 'unset',
             display: 'inline-flex',
@@ -258,6 +306,27 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
         <UpOutlined /> 收起过程
       </button>
       <div className={styles.processExpandedArea}>
+        {loadingDetails && (
+          <div className={styles.processThinkingLabel}>正在加载过程明细...</div>
+        )}
+        {loadError && (
+          <div className={styles.processItemStatusError}>
+            {loadError}{' '}
+            <button
+              type="button"
+              className={styles.processSummaryLink}
+              onClick={() => void expandWithDetails()}
+            >
+              重试
+            </button>
+          </div>
+        )}
+        {!loadingDetails &&
+          !loadError &&
+          loadedItems !== null &&
+          loadedItems.length === 0 && (
+            <div className={styles.processThinkingLabel}>暂无过程明细</div>
+          )}
         <div className={styles.processTraceSummary}>
           {traceChips.map((chip) => (
             <span key={chip.label} className={styles.processTraceChip}>

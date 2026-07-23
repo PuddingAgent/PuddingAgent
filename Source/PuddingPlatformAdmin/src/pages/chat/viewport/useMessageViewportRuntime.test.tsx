@@ -51,6 +51,28 @@ describe('useMessageViewportRuntime', () => {
     expect(shouldVirtualizeMessageViewport(veryLongRichTimeline)).toBe(true);
   });
 
+  it('virtualizes a medium timeline when aggregate Markdown is expensive', () => {
+    const weightedTimeline = Array.from({ length: 40 }, (_, index) => ({
+      ...makeItem(`weighted-${index}`, index),
+      heightHint: 'rich' as const,
+      block: {
+        ...makeItem(`weighted-${index}`, index).block,
+        content: `| column | value |\n| --- | --- |\n${'rich markdown '.repeat(32)}`,
+      },
+    }));
+    const shortTallTimeline = Array.from({ length: 12 }, (_, index) => ({
+      ...makeItem(`short-tall-${index}`, index),
+      heightHint: 'rich' as const,
+      block: {
+        ...makeItem(`short-tall-${index}`, index).block,
+        content: 'large row '.repeat(250),
+      },
+    }));
+
+    expect(shouldVirtualizeMessageViewport(weightedTimeline)).toBe(true);
+    expect(shouldVirtualizeMessageViewport(shortTallTimeline)).toBe(false);
+  });
+
   it('tracks active process item growth for bottom-follow updates', () => {
     const baseItem = {
       ...makeItem('m1', 1),

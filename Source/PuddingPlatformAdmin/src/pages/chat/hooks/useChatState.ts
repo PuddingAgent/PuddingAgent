@@ -165,7 +165,12 @@ export {
   toChatInteractionRuntimeEvent,
   toSessionListItem,
 };
-export function useChatState(routeSearch?: string): UseChatStateReturn {
+export function useChatState(
+  routeSearch?: string,
+  options?: { agentProjectionOwnsMainSession?: boolean },
+): UseChatStateReturn {
+  const agentProjectionOwnsMainSession =
+    options?.agentProjectionOwnsMainSession ?? false;
   const { message: messageApi } = App.useApp();
   const [error, setError] = useState<string | null>(null);
   const {
@@ -1035,9 +1040,12 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       });
       return;
     }
-    void ensureAgentMainSession(workspaceId, agentId);
+    void ensureAgentMainSession(workspaceId, agentId, {
+      selectSession: !agentProjectionOwnsMainSession,
+    });
   }, [
     agentId,
+    agentProjectionOwnsMainSession,
     consumeMainSessionEnsureSuppression,
     ensureAgentMainSession,
     mainSessionId,
@@ -1059,6 +1067,12 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
       stopSessionEventStream();
       return;
     }
+    // History/bootstrap owns the initial cursor. Opening SSE before it finishes
+    // starts at sequence 0 and replays the entire event log on every refresh.
+    if (historyLoading) {
+      stopSessionEventStream();
+      return;
+    }
     if (projectionOwnedSessionIdsRef.current.has(selectedSessionId)) {
       stopSessionEventStream();
       recordPerfEvent(
@@ -1075,7 +1089,12 @@ export function useChatState(routeSearch?: string): UseChatStateReturn {
     return () => {
       stopSessionEventStream();
     };
-  }, [selectedSessionId, startSessionEventStream, stopSessionEventStream]);
+  }, [
+    historyLoading,
+    selectedSessionId,
+    startSessionEventStream,
+    stopSessionEventStream,
+  ]);
 
   // ── handleRenameStart ──────────────────────────────────────
   const handleRenameStart = openRenameModal;

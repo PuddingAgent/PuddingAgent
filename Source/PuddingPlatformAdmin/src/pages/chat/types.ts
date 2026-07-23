@@ -4,6 +4,7 @@ import type {
   WorkspaceAgentDto,
   WorkspaceWithPermDto,
 } from '@/services/platform/api';
+import type { ConversationProcessSummary } from './client/types';
 
 export type MessageStatus = 'sending' | 'success' | 'error';
 export type AssistantStatus =
@@ -61,6 +62,10 @@ export interface ChatTurn {
     status: AssistantStatus;
     /** 统一时间线：按 Agent 实际执行顺序排列 */
     timelineItems: TimelineItem[];
+    /** 历史过程的轻量统计；完整事件仅在用户展开时加载。 */
+    processSummary?: ConversationProcessSummary;
+    /** 用于按需加载历史过程事件的持久化消息 ID。 */
+    processMessageId?: string;
     answerMarkdown: string;
     isStreaming: boolean;
     usage?: TokenUsageDto;
@@ -115,6 +120,8 @@ export interface ChatMessageBlock {
 
   /** 执行过程（默认折叠） */
   processItems?: TimelineItem[];
+  processSummary?: ConversationProcessSummary;
+  processMessageId?: string;
   /** Token 用量 */
   usage?: TokenUsageDto;
   /** 是否与上一条消息同 Agent（视觉分组） */
@@ -234,6 +241,8 @@ export function buildMessageBlocks(
         processItems: mainAgentProcessItems.length
           ? mainAgentProcessItems
           : undefined,
+        processSummary: turn.assistant.processSummary,
+        processMessageId: turn.assistant.processMessageId,
         usage: turn.assistant.usage,
         isStreaming:
           turn.assistant.isStreaming || turn.assistant.status === 'streaming',

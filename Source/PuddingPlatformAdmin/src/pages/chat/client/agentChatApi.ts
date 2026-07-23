@@ -1,5 +1,9 @@
 import { request } from '@umijs/max';
-import type { AgentConversationView, AgentStatusProjection } from './types';
+import type {
+  AgentConversationView,
+  AgentStatusProjection,
+  MessageProcessDetailsView,
+} from './types';
 
 export async function listAgentStatuses(
   workspaceId: string,
@@ -31,4 +35,15 @@ export async function getAgentConversation(
     if (isNotModifiedResponse(error)) return null;
     throw error;
   }
+}
+
+export async function getAgentMessageProcessItems(
+  workspaceId: string,
+  agentId: string,
+  messageId: string,
+): Promise<MessageProcessDetailsView> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/conversation/messages/${encodeURIComponent(messageId)}/process-items`,
+    { method: 'GET' },
+  );
 }

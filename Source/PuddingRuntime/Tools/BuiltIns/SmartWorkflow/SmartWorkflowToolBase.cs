@@ -109,8 +109,6 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 agent_template = SubAgentTemplateId,
                 sync = true,
                 model,
-                pool_name = RoleName,
-                pool_role = RoleName,
                 role_in_plan = RoleName,
                 timeout_seconds = timeout,
                 max_rounds = DefaultMaxRounds,
@@ -119,7 +117,10 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 depth = context.DelegationDepth ?? 0,
                 max_depth = context.MaxDelegationDepth ?? MaxDelegationDepth,
                 tools = AllowedTools,
-                reuse_parent_context = true,
+                // Smart task prompts are self-contained. Reusing either the
+                // parent transcript or a pooled child session makes repeated
+                // atomic calls accumulate unrelated context.
+                reuse_parent_context = false,
                 origin_tool_id = Descriptor.ToolId,
                 output = CanonicalWorkReport.ExpectedOutputContract,
                 expected_output_contract = CanonicalWorkReport.ExpectedOutputContract,
@@ -132,13 +133,17 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             var toolExec = services.GetRequiredService<IPuddingToolExecutionService>();
             var result = await toolExec.ExecuteAsync("spawn_sub_agent", spawnArgs, context, null, ct);
 
-            // Fallback: if primary model failed with transient error, try fallback models
-            if (!result.Success && FallbackModelIds is { Count: > 0 } fallbacks 
+            // Model changes are externally visible execution decisions. Never
+            // retry a different model unless the caller explicitly opted in.
+            if (!result.Success && args is SmartWorkflowArgs { AllowFallback: true }
+                && FallbackModelIds is { Count: > 0 } fallbacks
                 && IsTransientSmartFailure(result.Error))
             {
                 foreach (var fallbackModel in fallbacks)
                 {
                     if (ct.IsCancellationRequested) break;
+                    if (string.Equals(fallbackModel, model, StringComparison.OrdinalIgnoreCase))
+                        continue;
                     
                     logger.LogWarning(
                         "[{Tool}] agent={Agent} role={Role} FALLBACK primary={Primary} -> fallback={Fallback}",
@@ -150,17 +155,15 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                         agent_template = SubAgentTemplateId,
                         sync = true,
                         model = fallbackModel,
-                        pool_name = RoleName,
-                        pool_role = RoleName,
                         role_in_plan = RoleName,
-                        timeout_seconds = timeout / 2, // shorter timeout for fallback
-                        max_rounds = DefaultMaxRounds / 2,
+                        timeout_seconds = Math.Max(1, timeout / 2),
+                        max_rounds = Math.Max(1, DefaultMaxRounds / 2),
                         working_directory = workingDirectory,
                         allow_sub_delegation = AllowNestedSmartDelegation,
                         depth = context.DelegationDepth ?? 0,
                         max_depth = context.MaxDelegationDepth ?? MaxDelegationDepth,
                         tools = AllowedTools,
-                        reuse_parent_context = true,
+                        reuse_parent_context = false,
                         origin_tool_id = Descriptor.ToolId,
                         output = CanonicalWorkReport.ExpectedOutputContract,
                         expected_output_contract = CanonicalWorkReport.ExpectedOutputContract,
@@ -481,6 +484,9 @@ public abstract class SmartWorkflowArgs
 
     [ToolParam("子代理超时秒数；留空时使用角色默认值")]
     public int? TimeoutSeconds { get; set; }
+
+    [ToolParam("主模型发生瞬态失败时是否允许显式切换到该 Smart 角色的备用模型；默认 false")]
+    public bool AllowFallback { get; set; }
 }
 
 /// <summary>需要文件、会话或研究边界的 Smart 工作流请求。</summary>

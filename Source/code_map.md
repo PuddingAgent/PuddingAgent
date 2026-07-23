@@ -94,7 +94,7 @@ Source/
 |------|------|------|
 | `Tools/BuiltIns/Files/` | `FileTools.cs` + `FileSearchTool.cs` | 文件读写、搜索、grep；`file_search` 在工具边界统一把任意 provider/fallback 结果规范化为绝对路径 |
 | `Tools/BuiltIns/Memory/` | `MemoryTools.cs` | 记忆读写（save/manage/search/grep） |
-| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并透传 `max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc` 执行快照；同步委派由 Manager 统一保留父级收尾时间 |
+| `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并完整保留 `origin_tool_id + reuse_parent_context + pool_* + max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc`；同步委派由 Manager 统一保留父级收尾时间 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
 | `Tools/BuiltIns/Search/` | `SmartSearchTool.cs` | 🔑 语义代码搜索 — 薄包装子代理，三层搜索协议，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | 通用搜索（Web/文档） |
@@ -102,7 +102,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索，二者均禁止嵌套委派且使用显式只读工具白名单；显式透传 canonical `expected_output_contract` 并与 Runtime 共享五段报告校验 |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；每次调用默认使用一次性子代理且 `reuse_parent_context=false`，角色工具集显式有界，跨模型 fallback 仅在 `allow_fallback=true` 时启用；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索；显式透传 canonical `expected_output_contract` 并与 Runtime 共享五段报告校验 |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
@@ -136,7 +136,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionSelection.ts` | Session 切换事务：取消旧请求、加载历史、恢复 replay、同步 route 与 unread；通过分组端口协调其他域 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionHistoryProjection.ts` | 持久消息到 `ChatTurn` 的投影与安全历史对账；完成后同步事件 cursor |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts` | delta/thinking 批处理缓冲与 timer 所有者 |
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期；首次连接保留历史/bootstrap 已同步的 cursor 并通过 `Last-Event-ID` 续读，禁止刷新时从 sequence 0 重放完整事件库 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；分页最大 sequence 必须以有限哨兵归并并单调推进，不能以 `NaN` 为 reduce 初值；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影；`subagent.*` 只进入独立 reducer/运行坞并提前返回，禁止缺失父 Turn 身份的历史事件回退污染最新主消息 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收 |
@@ -152,9 +152,9 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/utils/chatDiagnostics.ts` | ChatDiag 有界序列化、错误终态识别与可检索 Markdown 格式化、控制台记录和 sessionStorage 持久化边界；诊断失败不得影响聊天流程 |
 | `PuddingPlatformAdmin/src/pages/chat/utils/sessionEventReplay.ts` | 持久事件 wrapper 规范化与 replay page HTTP/404 边界 |
 | `PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts` | Agent conversation 查询缓存与轮询收敛；终态 cursor 暂时领先消息读模型、快照仍以 user 结尾时禁用条件 GET，避免相同 cursor 的 304 固化不完整投影 |
-| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，按 message id 缓存行高，80/200 阈值自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
-| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，同时保留 canonical 用户消息 metadata 以在刷新后恢复图片/语音模态；React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态与 reasoning，activeRun 采用非回退合并且不得以不完整 `localTurns` 过滤服务端事实；不直接拥有滚动策略 |
-| `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
+| `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，按 message id 缓存行高，并综合 row 数与 Markdown/process 内容重量选择正常流/virtualizer；历史前插恢复 DOM 锚点；首次打开在用户第一次真实滚动前以有界收敛窗口跟随虚拟行/Markdown 的分批测量，直到最新消息稳定可见 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，同时保留 canonical 用户消息 metadata 以在刷新后恢复图片/语音模态；React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态与 reasoning，activeRun 采用非回退合并且不得以不完整 `localTurns` 过滤服务端事实；会话首次装载等待 canonical 网络刷新完成后只向 viewport 发出一次定位最新消息意图，避免先对 IndexedDB 旧快照定位 |
+| `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` + `MessageStream.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline；memo 比较包含 timeline/process 摘要，确保正文未变化时工具进度仍实时重渲染；等待计时锚定 Turn 服务端 `createdAt`，刷新/虚拟行重挂载不归零 |
 | `PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx` | Chat 工作台布局壳层；`chatBody`/开发面板/历史搜索保持合法 JSX 嵌套，并展示 SSE 重连提示 |
 
 ---
@@ -214,7 +214,7 @@ Source/
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；附图不会改写主模型路由，文本模型收到受控本地路径与 `image_reader` 提示，视觉模型继续由 DirectLlm 直接消费；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
-| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；Agent 来源名取实例 manifest 显示名（禁止拿 Session title 冒充发送者），以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`，再以稳定 `messageId/runId` 关联过程事实 |
+| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；Agent 来源名取实例 manifest 显示名（禁止拿 Session title 冒充发送者），以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`；初始 conversation 只返回过程计数摘要且不读取事件 payload，完整过程按稳定 `messageId/runId` 经单消息详情端点延迟加载 |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |
 | `Services/Execution/SqliteExecutionLeaseStore.cs` | 原子 CAS 领取与恢复：BEGIN IMMEDIATE + fencing；释放/过期时事务恢复 Run、Command、Turn |
 | `Services/Execution/SqliteExecutionJournal.cs` | 统一 fenced 事件写入、原子终态和 Worker 基础设施失败兜底；终态从 Command 读取 assistant MessageId |
@@ -253,7 +253,7 @@ Source/
 ### 消息系统
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份；canonical/active-run `processItems` 防御过滤 legacy 子代理 kind，子代理状态不得进入主消息流 |
+| `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份；canonical/active-run `processItems` 防御过滤 legacy 子代理 kind，子代理状态不得进入主消息流；仅 timeline 内容变化也必须穿透 MessageStream memo |
 | `PuddingPlatformAdmin/src/pages/chat/reducer/subAgentReducer.ts` | 子代理 UI 唯一纯投影：按 eventId 幂等折叠 bootstrap/replay/live 的 created/round/LLM/tool/terminal，并允许 canonical session status 只把 active run 推进到终态；拒绝旧事件或快照把终态降级为 running |
 | `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；显示活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线；成功/异常终态分别停留 12/30 秒后自动隐藏，完整结果仍按 Run ID 从归档 `output.md` 懒加载 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts` | 纯消息虚拟项投影；只生成用户、主 Agent、系统消息和历史加载项，不投影子代理 run，避免多子代理调用污染文档流 |
@@ -694,10 +694,10 @@ Orchestrator:
 
 ## 🆕 新增模块 (2026-07-22)
 
-### 多模型协作与 Fallback
+### 多模型协作与显式 Fallback
 | 文件 | 用途 |
 |------|------|
-| `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 7 个 Smart 工具的 Fallback 链：Qwen → DeepSeek Pro → Flash；每个工具可覆写 `FallbackModelIds`；`IsTransientSmartFailure` 判定瞬态故障触发降级 |
+| `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 7 个 Smart 工具可声明备用模型链，但默认禁止跨模型重试；仅调用参数 `allow_fallback=true` 且 `IsTransientSmartFailure` 命中时才按 `FallbackModelIds` 显式降级 |
 | `PuddingCore/Abstractions/ILlmConfigService.cs` (`ProviderCompatConfig`) | 6 个 Provider 兼容性开关；K3 Gateway 适配：`maxTokensField→max_tokens`、`requiresStringContent`、`useReasoningEffort`、`supportsUsageInStreaming→false`、`requiresReasoningContentInToolMessages` |
 | `PuddingGateway/Services/OpenAiLlmGateway.cs` | `BuildRequestBody` 中消费 6 个 compat 字段 |
 
@@ -710,7 +710,7 @@ Orchestrator:
 | 文件 | 优化 | 说明 |
 |------|------|------|
 | `hooks/useSessionEventConnection.ts` | SSE 断流状态条 | `reconnectCountRef` → ChatMain Alert banner |
-| `components/AgentMessageBubble.tsx` | TTFB + 停滞检测 + 语音气泡 | 3s/10s 阈值；15s 琥珀脉冲；`modality='voice'` 波形 |
+| `components/AgentMessageBubble.tsx` | TTFB + 停滞检测 + 语音气泡 | 3s/10s 阈值；计时使用服务端 Turn 时间，重挂载不归零；15s 琥珀脉冲；`modality='voice'` 波形 |
 | `components/MessageItem.tsx` | 代码懒高亮 + Settle FLIP | 流式跳过 Prism；200ms transform 平滑切换 |
 | `hooks/useTypewriterStreaming.ts` | 增量扫描 + 自适应打字机 | O(n)→O(delta)；48-200 chars 动态缓冲 |
 | `viewport/useMessageViewportRuntime.ts` | 高度缓存 + 滚动锚定 | Map 缓存；500ms 挂起；rAF×2 重试 |

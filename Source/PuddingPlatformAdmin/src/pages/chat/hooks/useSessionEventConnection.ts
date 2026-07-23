@@ -109,19 +109,26 @@ export function useSessionEventConnection() {
       const ports = portsRef.current;
       const previousStreamSessionId = sseSessionIdRef.current;
       stopSessionEventStream();
-      ports.resetStreamCursorForSessionChange(
-        previousStreamSessionId,
-        sessionId,
-      );
+      // A first connection is opened only after history/bootstrap has advanced
+      // lastSequenceNumRef. Do not erase that authoritative cursor merely
+      // because there was no previous SSE instance. Explicit session switches
+      // already reset the cursor before loading the new session.
+      if (previousStreamSessionId) {
+        ports.resetStreamCursorForSessionChange(
+          previousStreamSessionId,
+          sessionId,
+        );
+      }
       sseSessionIdRef.current = sessionId;
       ports.syncSessionIdentity();
+      const afterSequence = Math.max(0, ports.lastSequenceNumRef.current);
       recordPerfEvent('chat.sse.start', { sessionId });
       logChatDiag('sse.start', {
         sessionId,
         previousStreamSessionId,
         selectedSessionId: ports.selectedSessionIdRef.current,
         sessionIdRef: ports.sessionIdRef.current,
-        lastSequenceNum: ports.lastSequenceNumRef.current,
+        lastSequenceNum: afterSequence,
         activeMessageCount: ports.activeMessageIdsRef.current.size,
         turnCount: ports.turnsRef.current.length,
       });
@@ -305,6 +312,7 @@ export function useSessionEventConnection() {
               logChatDiag('sse.error.reconnect', { sessionId, httpStatus });
               scheduleReconnect();
             },
+            afterSequence,
           },
         );
       } catch {

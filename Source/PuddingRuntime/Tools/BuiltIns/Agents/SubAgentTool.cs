@@ -1090,6 +1090,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["template"] = args.Template,
                 ["sync"] = args.Sync,
                 ["model"] = args.Model,
+                ["reuse_parent_context"] = args.ReuseParentContext,
                 ["tools"] = args.Tools,
                 ["permission_mode"] = args.PermissionMode,
                 ["timeout_seconds"] = args.TimeoutSeconds,
@@ -1107,6 +1108,12 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["allow_agent_creation"] = args.AllowAgentCreation,
                 ["assigned_objective"] = args.AssignedObjective,
                 ["expected_output_contract"] = args.ExpectedOutputContract,
+                ["origin_tool_id"] = args.OriginToolId,
+                ["pool_name"] = args.PoolName,
+                ["pool_action"] = args.PoolAction,
+                ["pool_role"] = args.PoolRole,
+                ["cleanup_status"] = args.CleanupStatus,
+                ["cleanup_older_than_days"] = args.CleanupOlderThanDays,
             };
 
             return JsonSerializer.Serialize(values, JsonOpts);
@@ -1347,8 +1354,11 @@ public sealed record SubAgentToolArgs
     [ToolParam("Assigned objective for task planning delegation.")]
     public string? AssignedObjective { get; init; }
 
-        [ToolParam("Expected output contract for task planning delegation.")]
+    [ToolParam("Expected output contract for task planning delegation.")]
     public string? ExpectedOutputContract { get; init; }
+
+    [ToolParam("Stable id of the parent tool that initiated this delegation.")]
+    public string? OriginToolId { get; init; }
 
     /// <summary>
     /// 池化子代理名称。指定后使用池化复用（保持会话连续以利用 KV-cache），

@@ -130,7 +130,7 @@ export const useAgentStyles = createStyles(({ token }) => ({
     opacity: 0.5,
     lineHeight: '20px',
   },
-  agentBubbleNew: {
+    agentBubbleNew: {
     background: 'var(--soft-white)',
     border: '1px solid',
     borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
@@ -143,10 +143,41 @@ export const useAgentStyles = createStyles(({ token }) => ({
     wordBreak: 'break-word' as const,
     width: '100%',
     contain: 'layout paint style',
-    transition: 'background 200ms ease, border-color 200ms ease',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+    transition: 'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
+    animation: 'messageGlowIn 0.6s ease-out, messageIn 0.3s ease-out',
     '&:hover': {
       background: 'color-mix(in srgb, var(--soft-white) 95%, transparent)',
       borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)',
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+    },
+  },
+    agentBubbleNewGlow: {
+    background: 'var(--soft-white)',
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    borderRadius: 8,
+    borderTopLeftRadius: 4,
+    padding: '12px 16px',
+    fontSize: 14,
+    lineHeight: 1.7,
+    color: 'var(--text-primary)',
+    wordBreak: 'break-word' as const,
+    width: '100%',
+    contain: 'layout paint style',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+    animation: 'messageGlow 800ms ease-out',
+    transition: 'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--soft-white) 95%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)',
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
     },
   },
   agentBubbleGrouped: {
@@ -154,8 +185,10 @@ export const useAgentStyles = createStyles(({ token }) => ({
     borderTop: '1px solid',
     borderTopColor: 'color-mix(in srgb, var(--earth-brown) 4%, transparent)',
   },
-  agentBubbleStreaming: {
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 20%, transparent)',
+        agentBubbleStreaming: {
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 14%, var(--earth-brown) 4%)',
+    boxShadow:
+      '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04), 0 0 18px 3px rgba(139, 63, 232, 0.08)',
   },
     agentWaitingBubble: {
     display: 'flex',
@@ -163,8 +196,7 @@ export const useAgentStyles = createStyles(({ token }) => ({
     gap: 12,
     width: 'fit-content',
     minHeight: 44,
-    background: 'color-mix(in srgb, var(--soft-white) 85%, transparent)',
-    backdropFilter: 'blur(6px)',
+    background: 'var(--soft-white)',
   },
   waitingDots: {
     display: 'flex',
@@ -177,11 +209,11 @@ export const useAgentStyles = createStyles(({ token }) => ({
     height: 7,
     borderRadius: '50%',
     background: 'var(--accent-purple)',
-    opacity: 0.4,
+    opacity: 0.5,
     animation: 'waitingBounce 1.4s ease-in-out infinite',
     '@media (prefers-reduced-motion: reduce)': {
       animation: 'none',
-      opacity: 0.55,
+      opacity: 0.6,
     },
   },
   waitingDotSlow: {
@@ -238,34 +270,56 @@ export const useAgentStyles = createStyles(({ token }) => ({
     fontSize: 13,
     lineHeight: 1.55,
   },
-  agentActiveOutputSurface: {
+    agentActiveOutputSurface: {
     borderColor:
-      'color-mix(in srgb, var(--accent-purple) 26%, var(--earth-brown) 10%)',
+      'color-mix(in srgb, var(--accent-purple) 16%, var(--earth-brown) 6%)',
     boxShadow:
-      '0 0 0 1px color-mix(in srgb, var(--accent-purple) 8%, transparent), 0 0 18px color-mix(in srgb, var(--accent-purple) 10%, transparent)',
+      '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
     animation: 'agentActiveOutputGlow 2.8s ease-in-out infinite',
     '@media (prefers-reduced-motion: reduce)': {
       animation: 'none',
       boxShadow:
-        '0 0 0 1px color-mix(in srgb, var(--accent-purple) 8%, transparent)',
+        '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
     },
   },
     '@keyframes waitingBounce': {
-    '0%, 100%': { transform: 'scale(0.6)', opacity: 0.35 },
-    '50%': { transform: 'scale(1)', opacity: 1 },
+    '0%, 80%, 100%': { transform: 'translateY(0) scale(0.6)', opacity: 0.35 },
+    '40%': { transform: 'translateY(-5px) scale(1)', opacity: 1 },
   },
   '@keyframes agentActiveOutputGlow': {
     '0%, 100%': {
       borderColor:
-        'color-mix(in srgb, var(--accent-purple) 20%, var(--earth-brown) 8%)',
+        'color-mix(in srgb, var(--accent-purple) 12%, var(--earth-brown) 5%)',
       boxShadow:
-        '0 0 0 1px color-mix(in srgb, var(--accent-purple) 5%, transparent), 0 0 10px color-mix(in srgb, var(--accent-purple) 7%, transparent)',
+        '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04), 0 0 18px 3px rgba(139, 63, 232, 0.08)',
     },
     '50%': {
       borderColor:
-        'color-mix(in srgb, var(--accent-purple) 34%, var(--earth-brown) 12%)',
+        'color-mix(in srgb, var(--accent-purple) 20%, var(--earth-brown) 7%)',
       boxShadow:
-        '0 0 0 1px color-mix(in srgb, var(--accent-purple) 11%, transparent), 0 0 22px color-mix(in srgb, var(--accent-purple) 14%, transparent)',
+        '0 1px 4px rgba(0,0,0,0.1), 0 2px 3px rgba(0,0,0,0.07), 0 0 18px 3px rgba(139, 63, 232, 0.12)',
+    },
+  },
+  '@keyframes messageGlow': {
+    '0%': {
+      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
+    },
+    '30%': {
+      boxShadow: '0 0 18px 6px rgba(139,63,232,0.18)',
+    },
+    '100%': {
+      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
+    },
+  },
+  '@keyframes messageGlowSubtle': {
+    '0%': {
+      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
+    },
+    '30%': {
+      boxShadow: '0 0 14px 4px rgba(139,63,232,0.1)',
+    },
+    '100%': {
+      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
     },
   },
 }));

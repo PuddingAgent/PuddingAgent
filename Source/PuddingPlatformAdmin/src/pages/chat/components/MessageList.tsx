@@ -6,6 +6,7 @@ import {
 import { Alert, Badge, Button, Skeleton, Spin, Tooltip } from 'antd';
 import React, {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -307,6 +308,14 @@ const createProjectedTurn = (
         isUser || isInboundAgentMessage || isHeartbeat
           ? []
           : toTimelineItems(message.processItems),
+      processSummary:
+        isUser || isInboundAgentMessage || isHeartbeat
+          ? undefined
+          : message.processSummary ?? undefined,
+      processMessageId:
+        isUser || isInboundAgentMessage || isHeartbeat
+          ? undefined
+          : message.messageId,
       answerMarkdown:
         (isUser || isInboundAgentMessage) && !isHeartbeat
           ? ''
@@ -758,6 +767,25 @@ const MessageList: React.FC<MessageListProps> = ({
     loadingBefore: loadingMore,
     onRequestLoadBefore: () => onLoadMore(),
   });
+  const initiallyPositionedSessionRef = useRef<string | null>(null);
+
+  // Opening or refreshing a conversation starts from its newest message.
+  // The guard is scoped to the session so history prepends and live projection
+  // refreshes do not repeatedly steal the reader's scroll position.
+  useLayoutEffect(() => {
+    if (historyLoading || !sessionId || projection.items.length === 0) return;
+    if (initiallyPositionedSessionRef.current === sessionId) return;
+    initiallyPositionedSessionRef.current = sessionId;
+    viewport.scrollToBottom({
+      behavior: 'auto',
+      reason: 'initial-session-load',
+    });
+  }, [
+    historyLoading,
+    projection.items.length,
+    sessionId,
+    viewport.scrollToBottom,
+  ]);
 
   useEffect(() => {
     if (viewportScrollIntent && viewportScrollIntent.type !== 'none') {
@@ -808,6 +836,8 @@ const MessageList: React.FC<MessageListProps> = ({
             id: item.block.id,
             status: item.block.status === 'streaming' ? 'streaming' : item.block.status === 'error' ? 'error' : item.block.status === 'cancelled' ? 'cancelled' : item.block.status === 'thinking' ? 'thinking' : 'success',
             timelineItems: item.block.processItems ?? [],
+            processSummary: item.block.processSummary,
+            processMessageId: item.block.processMessageId,
             answerMarkdown: item.block.content,
             isStreaming: item.block.isStreaming ?? false,
             renderMode: 'structured',

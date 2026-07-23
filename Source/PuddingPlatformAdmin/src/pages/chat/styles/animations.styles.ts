@@ -64,6 +64,24 @@ export const useAnimationStyles = createStyles(({ token }) => ({
     '0%': { opacity: 0, transform: 'translateY(8px)' },
     '100%': { opacity: 1, transform: 'translateY(0)' },
   },
+  // 消息入场光晕：紫色光圈从气泡边缘扩散并消散，与 messageIn 叠加使用（600ms ease-out）
+  '@keyframes messageGlowIn': {
+    '0%': {
+      opacity: 0,
+      boxShadow:
+        '0 0 0 0 rgba(139, 63, 232, 0.4), 0 0 20px 2px rgba(139, 63, 232, 0.15)',
+    },
+    '40%': {
+      opacity: 1,
+      boxShadow:
+        '0 0 0 12px rgba(139, 63, 232, 0), 0 0 48px 12px rgba(139, 63, 232, 0.06)',
+    },
+    '100%': {
+      opacity: 1,
+      boxShadow:
+        '0 0 0 0 rgba(139, 63, 232, 0), 0 0 0 0 rgba(139, 63, 232, 0)',
+    },
+  },
   '@keyframes stepIn': {
     '0%': { opacity: 0, transform: 'translateY(4px)' },
     '100%': { opacity: 1, transform: 'translateY(0)' },

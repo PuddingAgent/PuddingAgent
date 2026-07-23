@@ -91,6 +91,22 @@ ADR-057 Conversation Store 继续作为后续接入边界，但不得为了减�
 下一步进入 P2：先冻结并避开当前 `DevPanel.tsx` 的用户改动，再拆 Tab；随后完成
 residual styles 迁移并评估 Context 分层。
 
+### 4.1 2026-07-23 刷新性能与历史渐进披露
+
+主 Agent canonical projection 成为主会话消息加载权威后，页面组合层不得再同时启动
+legacy Session 历史加载和从 sequence 0 开始的 SSE。首次 legacy 连接只能在历史/bootstrap
+同步 cursor 后建立，并以 `Last-Event-ID` 从该 cursor 继续。
+
+历史消息的正文与过程详情采用渐进披露：
+
+- conversation 首屏投影不读取或序列化全部历史事件 payload，只返回每条助手消息的过程计数摘要；
+- 用户展开“查看过程”时，才按 workspace、agent、message 的稳定身份加载该条消息的完整过程；
+- 活动 Run 继续保留实时过程数据，不受历史延迟加载影响。
+
+Viewport 仍是唯一滚动权威。虚拟化决策同时考虑 row 数和累计富内容重量；首次打开或刷新
+从最新消息开始，在虚拟行测量与延迟图片布局稳定前短暂收敛到底部，用户第一次真实滚动后
+立即释放，历史前插继续使用 DOM 锚点恢复。
+
 ## 5. 后果
 
 正向后果：纯逻辑可以独立测试，主 hook 已成为组合入口，事件连接、回放、投影与发送

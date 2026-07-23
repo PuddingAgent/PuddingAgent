@@ -30,7 +30,7 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
     protected override int DefaultMaxRounds => 200;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
-    protected override string AllowedTools => "file_read,file_search,list_dir,search_grep,code_outline,code_symbol_search,code_explore,code_callers,code_callees,code_summary,project_map,file_patch,apply_patch,file_write,shell,terminal_start,terminal_wait,terminal_read,terminal_status,terminal_cancel,search_memory";
+    protected override string AllowedTools => "file_read,file_search,list_dir,search_grep,code_outline,code_symbol_search,code_callers,code_callees,project_map,file_patch,file_write,terminal_start,terminal_wait,terminal_read,terminal_status,terminal_cancel";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDevelopArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -56,7 +56,7 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
         sb.AppendLine("5. **Test**: `dotnet test` on affected projects. Report results.");
         sb.AppendLine();
         sb.AppendLine("### ⚠️ RULES");
-        sb.AppendLine("- Edit: file_patch, apply_patch, file_write. Verify: terminal_start + terminal_wait.");
+        sb.AppendLine("- Edit: file_patch, file_write. Verify: terminal_start + terminal_wait.");
         sb.AppendLine("- Read: file_read, code_outline, search_grep, list_dir.");
         sb.AppendLine("- NEVER: spawn_sub_agent. If stuck: report what you tried and why.");
         sb.AppendLine();

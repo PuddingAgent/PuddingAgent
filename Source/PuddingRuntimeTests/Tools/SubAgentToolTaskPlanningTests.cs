@@ -166,6 +166,57 @@ public sealed class SubAgentToolTaskPlanningTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_PreservesOriginAndContextIsolationArguments()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "completed",
+        };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest("""
+        {
+          "task": "Inspect the runtime",
+          "sync": true,
+          "origin_tool_id": "smart_develop",
+          "reuse_parent_context": false
+        }
+        """));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual("smart_develop", invocation.LastRequest!.OriginToolId);
+        Assert.IsNull(invocation.LastRequest.ParentContextSnapshot);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_PreservesExplicitPoolRoutingArgument()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest("""
+        {
+          "task": "Inspect the runtime",
+          "sync": true,
+          "pool_name": "developer"
+        }
+        """));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "SubAgentPool");
+        Assert.IsNull(invocation.LastRequest);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_NestedDelegationKeepsPersistentConfigurationOwner()
     {
         var invocation = new RecordingSubAgentInvocationService

@@ -3,6 +3,11 @@
 import { Tooltip } from 'antd';
 import React from 'react';
 import type { TokenUsageDto } from '@/services/platform/api';
+import { getAgentMessageProcessItems } from '../client/agentChatApi';
+import type {
+  ConversationProcessSummary,
+  ProcessSummaryItem,
+} from '../client/types';
 import { defaultBrowserVoiceOutputAdapter } from '../hooks/browserVoiceOutput';
 import { useTtsPlayer } from '../hooks/useTtsPlayer';
 import { useTypewriterStreaming } from '../hooks/useTypewriterStreaming';
@@ -31,6 +36,10 @@ interface AgentMessageBubbleProps {
   agentAvatarColor?: string;
   agentAvatarUrl?: string;
   processItems?: TimelineItem[];
+  processSummary?: ConversationProcessSummary;
+  processMessageId?: string;
+  workspaceId?: string;
+  agentId?: string;
   usage?: TokenUsageDto;
   quotedMessage?: ChatQuotedMessage;
   groupedWithPrevious?: boolean;
@@ -91,6 +100,32 @@ const agentAvatarColors = [
   '#a78bfa',
   '#c084fc',
 ];
+
+const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
+  items
+    .filter(
+      (item) =>
+        !item.kind.startsWith('subagent.') &&
+        !item.kind.startsWith('subagent_'),
+    )
+    .map((item) => ({
+      id: item.id,
+      type:
+        item.kind === 'thinking' ||
+        item.kind === 'tool_call' ||
+        item.kind === 'tool_result'
+          ? item.kind
+          : 'subconscious_step',
+      text: item.text,
+      status: item.status,
+      name: item.name ?? undefined,
+      arguments: item.arguments ?? undefined,
+      output: item.output ?? undefined,
+      exitCode: item.exitCode ?? undefined,
+      message: item.message ?? undefined,
+      timestamp: Date.parse(item.timestamp),
+      collapsed: true,
+    }));
 
 const formatElapsed = (startedAt?: number, now = Date.now()): string | null => {
   if (!Number.isFinite(startedAt)) return null;
@@ -283,6 +318,10 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   agentAvatarColor,
   agentAvatarUrl,
   processItems,
+  processSummary,
+  processMessageId,
+  workspaceId,
+  agentId,
   usage,
   quotedMessage,
   groupedWithPrevious,
@@ -301,6 +340,15 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   // 一旦过程摘要首次挂载，保持挂载避免 streaming 中 processItems 短暂清空导致 expanded 状态丢失
   const processSummaryEverMounted = React.useRef(false);
+  const loadHistoricalProcessItems = React.useCallback(async () => {
+    if (!workspaceId || !agentId || !processMessageId) return [];
+    const details = await getAgentMessageProcessItems(
+      workspaceId,
+      agentId,
+      processMessageId,
+    );
+    return toTimelineItems(details.processItems);
+  }, [workspaceId, agentId, processMessageId]);
 
   const tts = useTtsPlayer();
 
@@ -347,8 +395,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const shouldShowWaitingIndicator =
     shouldShowPreAnswerWaiting || showReasoningPreview;
   const [activityNow, setActivityNow] = React.useState(() => Date.now());
-  const waitStartRef = React.useRef(Date.now());
-  const [waitSeconds, setWaitSeconds] = React.useState(0);
+  const getCanonicalWaitSeconds = React.useCallback(
+    () =>
+      Number.isFinite(createdAt) && createdAt > 0
+        ? Math.max(0, Math.floor((Date.now() - createdAt) / 1000))
+        : 0,
+    [createdAt],
+  );
+  const [waitSeconds, setWaitSeconds] = React.useState(
+    getCanonicalWaitSeconds,
+  );
 
   React.useEffect(() => {
     if (!shouldShowCurrentActivity) return undefined;
@@ -356,19 +412,19 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     return () => window.clearInterval(timer);
   }, [shouldShowCurrentActivity]);
 
-  // B1: TTFB 计时 — 首 token 前等待超过阈值时改变视觉提示
+  // B1: TTFB 计时 — 使用 Turn 的服务端时间锚点，避免刷新或虚拟列表
+  // 重挂载时从 0 重新计时。
   React.useEffect(() => {
     if (shouldShowWaitingIndicator) {
-      waitStartRef.current = Date.now();
-      setWaitSeconds(0);
+      setWaitSeconds(getCanonicalWaitSeconds());
       const timer = window.setInterval(() => {
-        setWaitSeconds(Math.floor((Date.now() - waitStartRef.current) / 1000));
+        setWaitSeconds(getCanonicalWaitSeconds());
       }, 1000);
       return () => window.clearInterval(timer);
     }
     // not waiting: do nothing (keep stale value hidden)
     return undefined;
-  }, [shouldShowWaitingIndicator]);
+  }, [getCanonicalWaitSeconds, shouldShowWaitingIndicator]);
 
   // E2: 流式停滞检测 — 15s 无内容增量触发琥珀色警告
   const lastDeltaRef = React.useRef(Date.now());
@@ -486,15 +542,25 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             {/* 过程摘要：首 token 前显示预览气泡；正文输出后折叠为可展开时间线 */}
             {(() => {
               const hasItems = processItems && processItems.length > 0;
-              if (hasItems) processSummaryEverMounted.current = true;
+              const hasHistoricalSummary = Boolean(processSummary?.hasDetails);
+              if (hasItems || hasHistoricalSummary)
+                processSummaryEverMounted.current = true;
               const shouldRender =
                 !isBeforeFirstToken &&
-                (hasItems || processSummaryEverMounted.current);
+                (hasItems ||
+                  hasHistoricalSummary ||
+                  processSummaryEverMounted.current);
               if (!shouldRender) return null;
               return (
                 <MessageProcessSummary
                   items={processItems || []}
+                  summary={processSummary}
                   status={status}
+                  onLoadDetails={
+                    hasHistoricalSummary
+                      ? loadHistoricalProcessItems
+                      : undefined
+                  }
                   onRerun={onRerun}
                   onOpenDiagnostics={
                     sessionId ? () => setDiagnosticsOpen(true) : undefined

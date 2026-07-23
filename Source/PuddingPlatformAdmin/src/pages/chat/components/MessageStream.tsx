@@ -68,10 +68,48 @@ const MessageStream: React.FC<MessageStreamProps> = ({
   );
 };
 
+const timelineItemEquals = (
+  previous: ChatTurn['assistant']['timelineItems'][number],
+  next: ChatTurn['assistant']['timelineItems'][number],
+) =>
+  previous.id === next.id &&
+  previous.type === next.type &&
+  previous.status === next.status &&
+  previous.timestamp === next.timestamp &&
+  previous.text === next.text &&
+  previous.name === next.name &&
+  previous.arguments === next.arguments &&
+  previous.output === next.output &&
+  previous.exitCode === next.exitCode &&
+  previous.message === next.message;
+
+const timelineEquals = (
+  previous: ChatTurn['assistant']['timelineItems'],
+  next: ChatTurn['assistant']['timelineItems'],
+) =>
+  previous === next ||
+  (previous.length === next.length &&
+    previous.every((item, index) => timelineItemEquals(item, next[index])));
+
+const processSummaryEquals = (
+  previous: ChatTurn['assistant']['processSummary'],
+  next: ChatTurn['assistant']['processSummary'],
+) =>
+  previous === next ||
+  (previous?.totalItems === next?.totalItems &&
+    previous?.thinkingRounds === next?.thinkingRounds &&
+    previous?.thinkingSteps === next?.thinkingSteps &&
+    previous?.toolCalls === next?.toolCalls &&
+    previous?.toolResults === next?.toolResults &&
+    previous?.failedTools === next?.failedTools &&
+    previous?.durationMs === next?.durationMs &&
+    previous?.hasDetails === next?.hasDetails);
+
 export default React.memo(MessageStream, (prev, next) => {
   if (prev.sessionId !== next.sessionId) return false;
   if (prev.turns.length !== next.turns.length) return false;
-  // 比较最后一轮：turnId / answerMarkdown 值 / status 任一变化则重渲染
+  // 正文尚未产生时，thinking/tool 事件是唯一的实时可见进度。
+  // 这些字段不能被 memo 吞掉，否则 UI 会长期停留在首 Token 等待态。
   const prevLast = prev.turns[prev.turns.length - 1];
   const nextLast = next.turns[next.turns.length - 1];
   if (!prevLast || !nextLast) return prevLast === nextLast;
@@ -79,6 +117,17 @@ export default React.memo(MessageStream, (prev, next) => {
     prevLast.turnId === nextLast.turnId &&
     prevLast.assistant.answerMarkdown ===
       nextLast.assistant.answerMarkdown &&
-    prevLast.assistant.status === nextLast.assistant.status
+    prevLast.assistant.status === nextLast.assistant.status &&
+    prevLast.assistant.isStreaming === nextLast.assistant.isStreaming &&
+    prevLast.assistant.processMessageId ===
+      nextLast.assistant.processMessageId &&
+    timelineEquals(
+      prevLast.assistant.timelineItems,
+      nextLast.assistant.timelineItems,
+    ) &&
+    processSummaryEquals(
+      prevLast.assistant.processSummary,
+      nextLast.assistant.processSummary,
+    )
   );
 });

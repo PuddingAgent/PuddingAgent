@@ -82,12 +82,96 @@ public sealed class SmartWorkflowContractTests
         Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
         Assert.AreEqual(0, document.RootElement.GetProperty("depth").GetInt32());
         Assert.AreEqual(2, document.RootElement.GetProperty("max_depth").GetInt32());
+        Assert.IsFalse(document.RootElement.GetProperty("reuse_parent_context").GetBoolean());
+        Assert.IsFalse(document.RootElement.TryGetProperty("pool_name", out _));
         var planTools = document.RootElement.GetProperty("tools").GetString();
         StringAssert.Contains(planTools, "file_read");
         Assert.IsFalse(planTools!.Contains("file_write", StringComparison.Ordinal));
         Assert.IsFalse(planTools.Contains("shell", StringComparison.Ordinal));
         Assert.IsFalse(planTools.Contains("smart_explore", StringComparison.Ordinal));
         Assert.AreEqual(SubAgentExposure.MainAgentOnly, tool.Descriptor.SubAgentExposure);
+    }
+
+    [TestMethod]
+    public async Task SmartDevelopUsesFreshIsolatedChildWithBoundedToolSet()
+    {
+        var recorder = new RecordingToolExecutionService();
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartDevelopTool(
+            services,
+            NullLogger<SmartDevelopTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-develop-isolated",
+            ArgumentsJson = """{"task":"Implement one atomic change"}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
+        Assert.IsFalse(document.RootElement.GetProperty("reuse_parent_context").GetBoolean());
+        Assert.IsFalse(document.RootElement.TryGetProperty("pool_name", out _));
+        var tools = document.RootElement.GetProperty("tools").GetString()!
+            .Split(',', StringSplitOptions.RemoveEmptyEntries);
+        Assert.IsLessThanOrEqualTo(16, tools.Length);
+        CollectionAssert.Contains(tools, "file_read");
+        CollectionAssert.Contains(tools, "file_patch");
+        CollectionAssert.Contains(tools, "terminal_start");
+        CollectionAssert.DoesNotContain(tools, "shell");
+        CollectionAssert.DoesNotContain(tools, "search_memory");
+    }
+
+    [TestMethod]
+    public async Task SmartWorkflowDoesNotFallbackUnlessCallerOptsIn()
+    {
+        var recorder = new RecordingToolExecutionService();
+        recorder.Responses.Enqueue(ToolExecutionResult.Fail("HTTP 503"));
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartDevelopTool(
+            services,
+            NullLogger<SmartDevelopTool>.Instance);
+        var context = new ToolExecutionContext
+        {
+            WorkspaceId = "workspace",
+            SessionId = "session",
+            AgentInstanceId = "agent",
+        };
+
+        var primaryOnly = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-develop-no-fallback",
+            ArgumentsJson = """{"task":"Implement one atomic change"}""",
+            Context = context,
+        });
+
+        Assert.IsFalse(primaryOnly.Success);
+        Assert.AreEqual(1, recorder.CallCount);
+
+        recorder.Responses.Enqueue(ToolExecutionResult.Fail("HTTP 503"));
+        recorder.Responses.Enqueue(ToolExecutionResult.Ok(recorder.ResponseOutput));
+        var explicitFallback = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-develop-explicit-fallback",
+            ArgumentsJson = """{"task":"Implement one atomic change","allow_fallback":true}""",
+            Context = context,
+        });
+
+        Assert.IsTrue(explicitFallback.Success, explicitFallback.Error);
+        Assert.AreEqual(3, recorder.CallCount);
+        using var fallbackArguments = JsonDocument.Parse(recorder.ArgumentsJson!);
+        Assert.AreEqual(
+            "deepseek/deepseek-v4-pro",
+            fallbackArguments.RootElement.GetProperty("model").GetString());
     }
 
     [TestMethod]
@@ -341,6 +425,8 @@ public sealed class SmartWorkflowContractTests
     private sealed class RecordingToolExecutionService : IPuddingToolExecutionService
     {
         public string? ArgumentsJson { get; private set; }
+        public int CallCount { get; private set; }
+        public Queue<ToolExecutionResult> Responses { get; } = new();
         public string ResponseOutput { get; set; } = JsonSerializer.Serialize(new
         {
             schema = "pudding-subagent-result",
@@ -358,6 +444,9 @@ public sealed class SmartWorkflowContractTests
         {
             Assert.AreEqual("spawn_sub_agent", toolId);
             ArgumentsJson = argumentsJson;
+            CallCount++;
+            if (Responses.Count > 0)
+                return Task.FromResult(Responses.Dequeue());
             return Task.FromResult(ToolExecutionResult.Ok(ResponseOutput));
         }
     }

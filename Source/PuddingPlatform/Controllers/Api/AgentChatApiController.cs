@@ -44,6 +44,25 @@ public sealed class AgentChatApiController(IAgentRunProjectionService projection
         return Ok(view);
     }
 
+    /// <summary>Loads the persisted process trace for a single historical Agent message.</summary>
+    [HttpGet("{agentId}/conversation/messages/{messageId}/process-items")]
+    public async Task<ActionResult<MessageProcessDetailsView>> GetMessageProcessItems(
+        string workspaceId,
+        string agentId,
+        string messageId,
+        [FromServices] IAgentConversationProjectionService conversation,
+        CancellationToken ct)
+    {
+        var ownerUserId = ResolveOwnerUserId();
+        var view = await conversation.GetMessageProcessItemsAsync(
+            workspaceId,
+            ownerUserId,
+            agentId,
+            messageId,
+            ct);
+        return view is null ? NotFound() : Ok(view);
+    }
+
     private string ResolveOwnerUserId() =>
         User.Identity?.Name ?? "single-user";
 }
