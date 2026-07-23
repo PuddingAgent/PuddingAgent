@@ -120,25 +120,30 @@ const toActiveRunAssistantStatus = (
 const isActiveRunStreaming = (status: ActiveRunView['status']): boolean =>
   status === 'queued' || status === 'running' || status === 'waiting';
 
+const isSubAgentProcessItem = (kind: string): boolean =>
+  kind.startsWith('subagent.') || kind.startsWith('subagent_');
+
 const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
-  items.map((item) => ({
-    id: item.id,
-    type:
-      item.kind === 'tool_call' ||
-      item.kind === 'tool_result' ||
-      item.kind === 'thinking'
-        ? item.kind
-        : 'subconscious_step',
-    text: item.text,
-    status: item.status,
-    name: item.name ?? undefined,
-    arguments: item.arguments ?? undefined,
-    output: item.output ?? undefined,
-    exitCode: item.exitCode ?? undefined,
-    message: item.message ?? undefined,
-    timestamp: toTimestamp(item.timestamp),
-    collapsed: true,
-  }));
+  items
+    .filter((item) => !isSubAgentProcessItem(item.kind))
+    .map((item) => ({
+      id: item.id,
+      type:
+        item.kind === 'tool_call' ||
+        item.kind === 'tool_result' ||
+        item.kind === 'thinking'
+          ? item.kind
+          : 'subconscious_step',
+      text: item.text,
+      status: item.status,
+      name: item.name ?? undefined,
+      arguments: item.arguments ?? undefined,
+      output: item.output ?? undefined,
+      exitCode: item.exitCode ?? undefined,
+      message: item.message ?? undefined,
+      timestamp: toTimestamp(item.timestamp),
+      collapsed: true,
+    }));
 
 const readPuddingMessage = (
   source: string,
@@ -491,17 +496,6 @@ const mergeLocalTurnsAwaitingProjection = (
     );
   }
 
-  // Filter out projected-only turns from other sessions whose user
-  // message doesn't match any local turn (conversationView.messages
-  // includes all sessions, not just the current one).
-  merged = merged.filter(
-    (turn) =>
-      isPendingLocalTurn(turn) ||
-      localTurns.some((localTurn) =>
-        hasProjectedUserTurn([turn], localTurn),
-      ),
-  );
-
   return merged;
 };
 
@@ -553,6 +547,54 @@ const findActiveRunPendingTurnIndex = (
   );
 };
 
+const timelineInformationScore = (items: TimelineItem[]): number =>
+  items.reduce(
+    (score, item) =>
+      score +
+      16 +
+      (item.text?.length ?? 0) +
+      (item.name?.length ?? 0) +
+      (item.arguments?.length ?? 0) +
+      (item.output?.length ?? 0) +
+      (item.message?.length ?? 0),
+    0,
+  );
+
+const selectRicherTimelineItems = (
+  localItems: TimelineItem[],
+  activeItems: TimelineItem[],
+): TimelineItem[] => {
+  if (activeItems.length === 0) return localItems;
+  if (localItems.length === 0) return activeItems;
+  return timelineInformationScore(activeItems) >=
+    timelineInformationScore(localItems)
+    ? activeItems
+    : localItems;
+};
+
+const selectLongerMarkdown = (local: string, active: string): string =>
+  active.length >= local.length ? active : local;
+
+const mergeActiveRunAssistant = (
+  local: ChatTurn['assistant'],
+  active: ChatTurn['assistant'],
+): ChatTurn['assistant'] => ({
+  ...local,
+  ...active,
+  // Keep the local identity stable so a projection refresh cannot remount the
+  // visible bubble while the same Turn is still streaming.
+  id: local.id,
+  timelineItems: selectRicherTimelineItems(
+    local.timelineItems,
+    active.timelineItems,
+  ),
+  answerMarkdown: selectLongerMarkdown(
+    local.answerMarkdown,
+    active.answerMarkdown,
+  ),
+  isStreaming: local.isStreaming || active.isStreaming,
+});
+
 const mergeActiveRunIntoTurns = (
   turns: ChatTurn[],
   activeRun: AgentConversationView['activeRun'],
@@ -573,7 +615,10 @@ const mergeActiveRunIntoTurns = (
       index === existingIndex
         ? {
             ...turn,
-            assistant: activeTurn.assistant,
+            assistant: mergeActiveRunAssistant(
+              turn.assistant,
+              activeTurn.assistant,
+            ),
             source: activeTurn.source,
           }
         : turn,
@@ -586,7 +631,10 @@ const mergeActiveRunIntoTurns = (
       index === matchingPendingIndex
         ? {
             ...turn,
-            assistant: activeTurn.assistant,
+            assistant: mergeActiveRunAssistant(
+              turn.assistant,
+              activeTurn.assistant,
+            ),
             source: activeTurn.source,
           }
         : turn,
@@ -604,7 +652,10 @@ const mergeActiveRunIntoTurns = (
       ...turns.slice(0, -1),
       {
         ...lastTurn,
-        assistant: activeTurn.assistant,
+        assistant: mergeActiveRunAssistant(
+          lastTurn.assistant,
+          activeTurn.assistant,
+        ),
         source: activeTurn.source,
       },
     ];

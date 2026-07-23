@@ -4,6 +4,7 @@ using System.Text.Json;
 using PuddingCode.Agents;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
+using PuddingRuntime.Services.AgentLoop;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -21,10 +22,6 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected const string SubAgentTemplateId = "workspace-task-agent";
     protected const int SmartWorkflowTimeoutSeconds = 60 * 60;
     protected const int DefaultParentFinalizationReserveSeconds = 2 * 60;
-    private const int MinimumDetailedReportLength = 80;
-    private static readonly string[] RequiredReportSections =
-        ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
-
     protected abstract string RoleName { get; }
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
     protected virtual int DefaultTimeoutSeconds => SmartWorkflowTimeoutSeconds;
@@ -124,6 +121,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 tools = AllowedTools,
                 reuse_parent_context = true,
                 origin_tool_id = Descriptor.ToolId,
+                output = CanonicalWorkReport.ExpectedOutputContract,
+                expected_output_contract = CanonicalWorkReport.ExpectedOutputContract,
             });
 
             logger.LogInformation(
@@ -163,6 +162,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                         tools = AllowedTools,
                         reuse_parent_context = true,
                         origin_tool_id = Descriptor.ToolId,
+                        output = CanonicalWorkReport.ExpectedOutputContract,
+                        expected_output_contract = CanonicalWorkReport.ExpectedOutputContract,
                     });
 
                     result = await toolExec.ExecuteAsync("spawn_sub_agent", fallbackArgs, context, null, ct);
@@ -288,46 +289,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         out string? rawReport)
     {
         rawReport = ExtractRawReport(toolOutput);
-        if (string.IsNullOrWhiteSpace(rawReport))
-        {
-            error = "rawOutput is empty.";
-            return false;
-        }
-
-        if (rawReport.Trim().Length < MinimumDetailedReportLength)
-        {
-            error = $"report is too short ({rawReport.Trim().Length} chars; minimum {MinimumDetailedReportLength}).";
-            return false;
-        }
-
-        var sections = ParseCanonicalSections(rawReport);
-        var missing = RequiredReportSections
-            .Where(section => !sections.TryGetValue(section, out var content)
-                              || string.IsNullOrWhiteSpace(content))
-            .ToArray();
-        if (missing.Length > 0)
-        {
-            error = $"missing or empty canonical sections: {string.Join(", ", missing)}.";
-            return false;
-        }
-
-        
-                const int MinimumSummaryLength = 20;
-        if ((sections.TryGetValue("SUMMARY", out var summary) ? summary?.Length ?? 0 : 0) < MinimumSummaryLength)
-        {
-            error = $"SUMMARY is too short ({sections.GetValueOrDefault("SUMMARY", "")?.Length ?? 0} chars; minimum {MinimumSummaryLength}).";
-            return false;
-        }
-
-        const int MinimumEvidenceLength = 20;
-        if ((sections.TryGetValue("EVIDENCE", out var evidence) ? evidence?.Length ?? 0 : 0) < MinimumEvidenceLength)
-        {
-            error = $"EVIDENCE is too short ({sections.GetValueOrDefault("EVIDENCE", "")?.Length ?? 0} chars; minimum {MinimumEvidenceLength}).";
-            return false;
-        }
-
-        error = string.Empty;
-        return true;
+        return CanonicalWorkReport.TryValidate(rawReport, out error);
     }
 
     private static string? ExtractRawReport(string? toolOutput)
@@ -356,40 +318,6 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         }
 
         return toolOutput;
-    }
-
-    private static IReadOnlyDictionary<string, string> ParseCanonicalSections(string report)
-    {
-        var sections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        string? current = null;
-        var content = new StringBuilder();
-
-        foreach (var line in report.Replace("\r\n", "\n").Split('\n'))
-        {
-            var trimmed = line.Trim();
-            var matched = RequiredReportSections.FirstOrDefault(section =>
-                trimmed.StartsWith(section + ":", StringComparison.OrdinalIgnoreCase));
-            if (matched is not null)
-            {
-                if (current is not null)
-                    sections[current] = content.ToString().Trim();
-
-                current = matched;
-                content.Clear();
-                var inline = trimmed[(matched.Length + 1)..].Trim();
-                if (inline.Length > 0)
-                    content.AppendLine(inline);
-                continue;
-            }
-
-            if (current is not null)
-                content.AppendLine(line);
-        }
-
-        if (current is not null)
-            sections[current] = content.ToString().Trim();
-
-        return sections;
     }
 
     private static string? ResolveWorkingDirectory(TArgs args)

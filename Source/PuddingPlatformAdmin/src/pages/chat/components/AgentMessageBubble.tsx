@@ -15,8 +15,11 @@ import MessageProcessSummary from './MessageProcessSummary';
 import {
   type CurrentRunActivity,
   getCurrentRunActivity,
+  sanitizeProcessText,
 } from './processPreview';
+import { ReasoningPreview } from './ReasoningPreview';
 import SessionBenchmarkDrawer from './SessionBenchmarkDrawer';
+import { WaitingBubble } from './WaitingBubble';
 
 interface AgentMessageBubbleProps {
   id: string;
@@ -325,6 +328,24 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   );
   const shouldShowCurrentActivity = Boolean(isRunActive && currentActivity);
   const shouldShowPreAnswerWaiting = isBeforeFirstToken && !currentActivity;
+  // 思维链预览：从 timeline 提取已清洗的 thinking 文本；有内容时等待气泡升级为思维链预览
+  const reasoningLines = React.useMemo(() => {
+    if (!processItems || processItems.length === 0) return [];
+    return processItems
+      .filter((item) => item.type === 'thinking' && item.text)
+      .map((item) => ({ id: item.id, text: sanitizeProcessText(item.text) }))
+      .filter((line) => line.text.length > 0);
+  }, [processItems]);
+  const hasReasoningContent = reasoningLines.length > 0;
+  // 阶段2：思维链预览 — 最新运行事件为 thinking 且尚未输出正式回复时展示；
+  // 一旦出现工具/子代理活动，预览让位于 CurrentActivityPanel（实时活动优先）。
+  const showReasoningPreview =
+    hasReasoningContent &&
+    isBeforeFirstToken &&
+    (!currentActivity || currentActivity.kind === 'thinking');
+  // 等待计时器：两种“首 token 前等待态”（纯等待 / 思维链预览）任一存在时都应计时
+  const shouldShowWaitingIndicator =
+    shouldShowPreAnswerWaiting || showReasoningPreview;
   const [activityNow, setActivityNow] = React.useState(() => Date.now());
   const waitStartRef = React.useRef(Date.now());
   const [waitSeconds, setWaitSeconds] = React.useState(0);
@@ -337,7 +358,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
 
   // B1: TTFB 计时 — 首 token 前等待超过阈值时改变视觉提示
   React.useEffect(() => {
-    if (shouldShowPreAnswerWaiting) {
+    if (shouldShowWaitingIndicator) {
       waitStartRef.current = Date.now();
       setWaitSeconds(0);
       const timer = window.setInterval(() => {
@@ -346,12 +367,15 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       return () => window.clearInterval(timer);
     }
     // not waiting: do nothing (keep stale value hidden)
-  }, [shouldShowPreAnswerWaiting]);
+    return undefined;
+  }, [shouldShowWaitingIndicator]);
 
   // E2: 流式停滞检测 — 15s 无内容增量触发琥珀色警告
   const lastDeltaRef = React.useRef(Date.now());
   const [stallSeconds, setStallSeconds] = React.useState(0);
-  const stallCheckRef = React.useRef<ReturnType<typeof setInterval>>();
+  const stallCheckRef = React.useRef<
+    ReturnType<typeof setInterval> | undefined
+  >(undefined);
   React.useEffect(() => {
     lastDeltaRef.current = Date.now();
   }, [content]);
@@ -363,6 +387,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       return () => clearInterval(stallCheckRef.current);
     }
     setStallSeconds(0);
+    return undefined;
   }, [isStreaming]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -400,45 +425,28 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               </div>
             )}
 
-            {/* 当前活动区只展示真实运行事件；完整累计过程仍由下方“查看过程”入口承载。 */}
-            {shouldShowCurrentActivity && currentActivity && (
-              <CurrentActivityPanel
-                activity={currentActivity}
-                now={activityNow}
+                        {/* 当前活动区只展示真实运行事件；思维链预览激活时抑制同源的“模型过程”面板，避免思维内容重复展示。 */}
+            {shouldShowCurrentActivity &&
+              currentActivity &&
+              !showReasoningPreview && (
+                <CurrentActivityPanel
+                  activity={currentActivity}
+                  now={activityNow}
+                />
+              )}
+
+            {/* 阶段2: 思维链预览 — 有 reasoning 内容且最新活动为 thinking，尚未输出正式回复 */}
+            {showReasoningPreview && (
+              <ReasoningPreview
+                lines={reasoningLines}
+                waitSeconds={waitSeconds}
               />
             )}
 
-            {/* 首 token 前且暂无运行事件：轻量等待态，不编造具体思维阶段。 */}
-            {shouldShowPreAnswerWaiting && (() => {
-              const isSlow = waitSeconds >= 3;
-              const isVerySlow = waitSeconds >= 10;
-              const isExtreme = waitSeconds >= 30;
-              const msg = isExtreme
-                ? `模型正在进行复杂推理（${waitSeconds}s），请稍候...`
-                : isVerySlow
-                  ? `深入分析中（${waitSeconds}s），请耐心等待...`
-                  : isSlow
-                    ? `模型响应较慢（${waitSeconds}s）...`
-                    : '正在思考...';
-              return (
-                <div
-                  className={cx(
-                    styles.agentBubbleNew,
-                    styles.agentBubbleStreaming,
-                    styles.agentActiveOutputSurface,
-                    styles.agentWaitingBubble,
-                    isVerySlow && styles.agentBubbleWarning,
-                  )}
-                >
-                  <div className={styles.waitingDots}>
-                    <span className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)} style={{ animationDelay: '0s' }} />
-                    <span className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)} style={{ animationDelay: '0.2s' }} />
-                    <span className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)} style={{ animationDelay: '0.4s' }} />
-                  </div>
-                  <span className={cx(styles.waitingLabel, isVerySlow && styles.waitingLabelWarning)}>{msg}</span>
-                </div>
-              );
-            })()}
+            {/* 阶段1: 纯等待 — 无 reasoning 内容且暂无运行事件 */}
+            {!hasReasoningContent && shouldShowPreAnswerWaiting && (
+              <WaitingBubble waitSeconds={waitSeconds} />
+            )}
 
             {/* 消息气泡 */}
             {shouldRenderAnswerBubble &&

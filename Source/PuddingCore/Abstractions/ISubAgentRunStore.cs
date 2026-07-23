@@ -1,4 +1,4 @@
-using PuddingCode.SubAgents;
+﻿using PuddingCode.SubAgents;
 
 namespace PuddingCode.Abstractions;
 
@@ -24,4 +24,11 @@ public interface ISubAgentRunStore
         CancellationToken ct = default);
     /// <summary>重放尚未投影到 canonical Conversation Event Store 的持久运行事件。</summary>
     Task<int> ReplayPendingConversationEventsAsync(int maxRuns, CancellationToken ct = default);
+
+    /// <summary>
+    /// 删除子代理运行归档：移除数据库索引记录，并清理磁盘归档目录。
+    /// 不可逆操作，调用方应在确认子代理不再需要后调用。
+    /// </summary>
+    /// <returns>已删除 true，未找到 false。</returns>
+    Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default);
 }

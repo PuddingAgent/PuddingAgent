@@ -49,7 +49,8 @@ Source/
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计 |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计；对 canonical `ExpectedOutputContract` 保留最近一次合格报告，防止最终 DONE 状态摘要覆盖完整交付 |
+| `Services/AgentLoop/CanonicalWorkReport.cs` | Smart 子代理五段报告合同的共享解析/校验与执行期候选保留器；只在显式 canonical `ExpectedOutputContract` 下恢复完整报告 |
 | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs` | 主 Agent、工具调用和子代理共用的稳定执行身份；贯穿 Conversation/Turn/Command/Run/Tool/Invocation |
 | `PuddingCore/Runtime/ExecutionProgressRegistry.cs` | 主 Run 进程内进展注册表；按 Conversation 汇聚子执行信号，区分 liveness/meaningful，并拒绝相同 Run+阶段+指纹的重复续期 |
 | `Services/SessionExecutionGate.cs` + `PuddingCore/Runtime/ISessionExecutionGate.cs` | Runtime 会话进程内单写者；统一串行化 Conversation Worker、MessageDelivery、Heartbeat 与直接 Runtime 调度对同一 session 的状态修改 |
@@ -101,7 +102,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索，二者均禁止嵌套委派且使用显式只读工具白名单；共享五段顶层报告合同 |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索，二者均禁止嵌套委派且使用显式只读工具白名单；显式透传 canonical `expected_output_contract` 并与 Runtime 共享五段报告校验 |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |
@@ -137,7 +138,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts` | delta/thinking 批处理缓冲与 timer 所有者 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；分页最大 sequence 必须以有限哨兵归并并单调推进，不能以 `NaN` 为 reduce 初值；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影；`subagent.*` 只进入独立 reducer/运行坞并提前返回，禁止缺失父 Turn 身份的历史事件回退污染最新主消息 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收 |
 | `PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx` | Composer 图片暂存边界：多选、Ctrl+V/拖放、发送前预览与移除；提交时先上传全部图片，再用单次消息携带 `visionArtifactIds` |
 | `PuddingPlatformAdmin/src/pages/chat/components/UserMessageBubble.tsx` + `types.ts` + `viewport/messageProjection.ts` | 用户多图气泡与历史/实时元数据投影；按 artifact id 渲染图片画廊并保留单图兼容字段 |
@@ -152,7 +153,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/utils/sessionEventReplay.ts` | 持久事件 wrapper 规范化与 replay page HTTP/404 边界 |
 | `PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts` | Agent conversation 查询缓存与轮询收敛；终态 cursor 暂时领先消息读模型、快照仍以 user 结尾时禁用条件 GET，避免相同 cursor 的 304 固化不完整投影 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，按 message id 缓存行高，80/200 阈值自适应选择正常流/virtualizer，历史前插恢复 DOM 锚点，真实容器负责贴底 |
-| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，同时保留 canonical 用户消息 metadata 以在刷新后恢复图片/语音模态；React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态回复，并抑制同一命令的陈旧 activeRun 占位；不直接拥有滚动策略 |
+| `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，同时保留 canonical 用户消息 metadata 以在刷新后恢复图片/语音模态；React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态与 reasoning，activeRun 采用非回退合并且不得以不完整 `localTurns` 过滤服务端事实；不直接拥有滚动策略 |
 | `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline |
 | `PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx` | Chat 工作台布局壳层；`chatBody`/开发面板/历史搜索保持合法 JSX 嵌套，并展示 SSE 重连提示 |
 
@@ -199,7 +200,7 @@ Source/
 | `Services/VisionArtifactStorageService.cs` + `Services/VisualArtifactReference.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；同时提供 LLM 可消费引用与经过 workspace 根目录校验的受控本地路径，供文本主 Agent 调用 `image_reader` |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件再按持久游标投影 canonical Conversation Event |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件，再按持久游标投影到父执行身份对应的 canonical Conversation Event，供父 Chat 的 bootstrap/replay/live SSE 观察；有界后台补投使用跨轮次扫描游标，避免 run 数量超过单批上限后永久饥饿 |
 | `Services/SubAgentConversationProjectionWorker.cs` | 启动时将上一进程遗留的非终态 run 仲裁为 `interrupted`，随后扫描 run archive 投影积压 |
 | `Services/ConversationAcceptanceStore.cs` | 原子受理：Message + Batch + Turn + Command + Event 单事务 |
 | `Services/ExecutionCommandReader.cs` | Command 稳定执行引用的只读适配器；不拥有任何状态转换 |
@@ -252,7 +253,7 @@ Source/
 ### 消息系统
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份 |
+| `PuddingPlatformAdmin/src/pages/chat/types.ts` + `components/MessageList.tsx` | ChatTurn→虚拟消息→MessageStream 投影；必须保留 `sourceId/sourceType`，系统命令不得退化为 Agent 身份；canonical/active-run `processItems` 防御过滤 legacy 子代理 kind，子代理状态不得进入主消息流 |
 | `PuddingPlatformAdmin/src/pages/chat/reducer/subAgentReducer.ts` | 子代理 UI 唯一纯投影：按 eventId 幂等折叠 bootstrap/replay/live 的 created/round/LLM/tool/terminal，并允许 canonical session status 只把 active run 推进到终态；拒绝旧事件或快照把终态降级为 running |
 | `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；显示活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线；成功/异常终态分别停留 12/30 秒后自动隐藏，完整结果仍按 Run ID 从归档 `output.md` 懒加载 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts` | 纯消息虚拟项投影；只生成用户、主 Agent、系统消息和历史加载项，不投影子代理 run，避免多子代理调用污染文档流 |

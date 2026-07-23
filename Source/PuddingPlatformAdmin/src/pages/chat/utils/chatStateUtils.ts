@@ -655,6 +655,11 @@ export function shouldHydrateSessionEventReplay(
   );
 }
 
+/** 子代理运行事实只进入独立运行投影，不得回退绑定到主消息 Turn。 */
+export function isSubAgentConversationEvent(type: unknown): boolean {
+  return typeof type === 'string' && type.startsWith('subagent.');
+}
+
 export function resolveTerminalAssistantMarkdown(
   currentMarkdown: string,
   terminalReply?: string | null,

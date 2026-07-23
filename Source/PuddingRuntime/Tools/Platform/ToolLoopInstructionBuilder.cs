@@ -17,7 +17,7 @@ internal static class ToolLoopInstructionBuilder
         sb.AppendLine("```json");
         sb.AppendLine("{");
         sb.AppendLine("  \"status\": \"CONTINUE | DONE | WAIT | FAILED\",");
-        sb.AppendLine("  \"message\": \"your reasoning or final answer\",");
+        sb.AppendLine("  \"message\": \"the complete current reasoning or final deliverable\",");
         sb.AppendLine("  \"tool\": {");
         sb.AppendLine("    \"name\": \"tool_id or null\",");
         sb.AppendLine("    \"args\": {}");
@@ -27,12 +27,14 @@ internal static class ToolLoopInstructionBuilder
         sb.AppendLine("```");
         sb.AppendLine();
         sb.AppendLine("Rules:");
-        sb.AppendLine("1. Task not yet complete -> `status = \"CONTINUE\"`, optionally set `tool`.");
-        sb.AppendLine("2. Task is complete -> `status = \"DONE\"`, set `tool` to `null`.");
-        sb.AppendLine("3. Must wait for external event or approval -> `status = \"WAIT\"`, explain in `meta.reason`.");
-        sb.AppendLine("4. Cannot proceed (unrecoverable error) -> `status = \"FAILED\"`, explain in `meta.reason`.");
-        sb.AppendLine("5. Output `DONE` ONLY when you are certain everything is finished.");
-        sb.AppendLine("6. NEVER output anything outside the JSON object.");
+        sb.AppendLine("1. This JSON object is the Runtime control envelope. Any task-requested output format belongs verbatim inside `message`.");
+        sb.AppendLine("2. Task not yet complete -> `status = \"CONTINUE\"`, optionally set `tool`.");
+        sb.AppendLine("3. Task is complete -> `status = \"DONE\"`, set `tool` to `null`, and put the COMPLETE requested deliverable in `message`.");
+        sb.AppendLine("4. A DONE `message` must never be only a status sentence or a summary that points to content from an earlier round.");
+        sb.AppendLine("5. Must wait for external event or approval -> `status = \"WAIT\"`, explain in `meta.reason`.");
+        sb.AppendLine("6. Cannot proceed (unrecoverable error) -> `status = \"FAILED\"`, explain in `meta.reason`.");
+        sb.AppendLine("7. Output `DONE` ONLY when you are certain everything is finished.");
+        sb.AppendLine("8. NEVER output anything outside the JSON object.");
 
         if (available.Count > 0)
         {

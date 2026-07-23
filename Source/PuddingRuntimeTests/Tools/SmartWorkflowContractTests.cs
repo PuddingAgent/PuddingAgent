@@ -123,6 +123,12 @@ public sealed class SmartWorkflowContractTests
         Assert.IsFalse(exploreTools!.Contains("file_write", StringComparison.Ordinal));
         Assert.IsFalse(exploreTools.Contains("shell", StringComparison.Ordinal));
         Assert.IsFalse(exploreTools.Contains("spawn_sub_agent", StringComparison.Ordinal));
+        Assert.AreEqual(
+            "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS",
+            document.RootElement.GetProperty("output").GetString());
+        Assert.AreEqual(
+            "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS",
+            document.RootElement.GetProperty("expected_output_contract").GetString());
         Assert.AreEqual(SubAgentExposure.DelegatedSubAgent, tool.Descriptor.SubAgentExposure);
         var task = document.RootElement.GetProperty("task").GetString();
         Assert.IsNotNull(task);

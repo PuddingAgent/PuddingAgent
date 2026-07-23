@@ -1016,6 +1016,59 @@ describe('MessageList scroll performance', () => {
     expect(screen.queryByTestId('empty-state')).toBeNull();
   });
 
+  it('keeps legacy sub-agent process items out of the main message stream', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [],
+          activeRun: {
+            runId: 'run-a',
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-a',
+            status: 'running',
+            statusText: '正在输出',
+            summary: '',
+            eventCursor: 2,
+            outputSnapshot: {
+              markdown: 'active output',
+              processItems: [
+                {
+                  id: 'legacy-subagent',
+                  kind: 'subagent.spawned',
+                  status: 'running',
+                  text: 'stale sub-agent card',
+                  timestamp: '2026-06-07T00:00:00.000Z',
+                },
+                {
+                  id: 'thinking-1',
+                  kind: 'thinking',
+                  status: 'running',
+                  text: 'main agent thinking',
+                  timestamp: '2026-06-07T00:00:01.000Z',
+                },
+              ],
+            },
+            startedAt: '2026-06-07T00:00:00.000Z',
+            updatedAt: '2026-06-07T00:00:01.000Z',
+          },
+          eventCursor: 2,
+          updatedAt: '2026-06-07T00:00:01.000Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('active output')).toBeTruthy();
+    expect(screen.getByText('main agent thinking')).toBeTruthy();
+    expect(screen.queryByText('stale sub-agent card')).toBeNull();
+  });
+
   it('keeps active run markdown visible when an intermediate stream snapshot is shorter', () => {
     const activeRun = {
       runId: 'run-a',
@@ -1831,6 +1884,71 @@ describe('MessageList scroll performance', () => {
     ]);
     expect(rows[0].textContent).toContain('current question');
     expect(rows[1].textContent).toContain('current answer fragment');
+  });
+
+  it('keeps live SSE reasoning when the matching active run snapshot is still empty', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[
+          {
+            turnId: 'pending-current-question',
+            userMessage: {
+              id: 'message-current',
+              text: 'current question',
+              timestamp: 30_000,
+              status: 'success',
+            },
+            assistant: {
+              id: 'pending-current-agent',
+              status: 'thinking',
+              timelineItems: [
+                {
+                  id: 'live-thinking-1',
+                  type: 'thinking',
+                  text: 'LIVE_REASONING_FRAGMENT',
+                  status: 'streaming',
+                  timestamp: 30_100,
+                  collapsed: true,
+                },
+              ],
+              answerMarkdown: '',
+              isStreaming: true,
+              renderMode: 'structured',
+            },
+          },
+        ]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [],
+          activeRun: {
+            runId: 'run-current',
+            commandClientId: 'message-current',
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-a',
+            status: 'running',
+            statusText: '正在输出',
+            summary: '',
+            eventCursor: 1,
+            outputSnapshot: {
+              markdown: '',
+              processItems: [],
+            },
+            startedAt: '1970-01-01T00:00:30.000Z',
+            updatedAt: '1970-01-01T00:00:30.000Z',
+          },
+          eventCursor: 1,
+          updatedAt: '1970-01-01T00:00:30.000Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('LIVE_REASONING_FRAGMENT')).toBeTruthy();
   });
 
 });

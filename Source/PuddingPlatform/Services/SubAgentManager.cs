@@ -1163,10 +1163,77 @@ public sealed class SubAgentManager : ISubAgentManager
         {
             Trace = trace,
             Component = RuntimeActivityComponents.SubAgent,
-            Operation = operation,
+                        Operation = operation,
             Status = status,
             Summary = summary,
         }, ct);
+    }
+
+    public async Task<int> CleanupAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(parentSessionId))
+            throw new ArgumentException("parentSessionId cannot be null or empty.", nameof(parentSessionId));
+
+        var maxCount = filter.MaxCount > 0 ? filter.MaxCount : 100;
+
+        // 获取匹配的子代理列表
+        var subAgents = await GetSubAgentsAsync(parentSessionId, new SubAgentQueryFilter
+        {
+            Status = filter.Status,
+            MaxResults = maxCount,
+        }, ct);
+
+        // 如果有 OlderThanDays 限制，过滤
+        if (filter.OlderThanDays.HasValue && filter.OlderThanDays.Value > 0)
+        {
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-filter.OlderThanDays.Value);
+            subAgents = subAgents
+                .Where(s => s.SpawnedAt < cutoff)
+                .ToList();
+        }
+
+        var cleaned = 0;
+        foreach (var subAgent in subAgents)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // 跳过运行中的子代理
+            if (string.Equals(subAgent.Status, "running", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var deleted = false;
+            var runId = TryGetRunId(subAgent.SubSessionId);
+            if (!string.IsNullOrWhiteSpace(runId))
+            {
+                try
+                {
+                    deleted = await _runStore.DeleteRunAsync(runId, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "[SubAgentMgr] CleanupAsync: failed to delete runId={RunId} sub={Sub}",
+                        runId, subAgent.SubSessionId);
+                }
+            }
+
+            if (deleted)
+            {
+                cleaned++;
+                _logger.LogDebug(
+                    "[SubAgentMgr] CleanupAsync: deleted sub-agent sub={Sub} status={Status} runId={RunId}",
+                    subAgent.SubSessionId, subAgent.Status, runId);
+            }
+        }
+
+        _logger.LogInformation(
+            "[SubAgentMgr] CleanupAsync: cleaned {Cleaned}/{Total} sub-agents",
+            cleaned, subAgents.Count);
+
+        return cleaned;
     }
 }
 

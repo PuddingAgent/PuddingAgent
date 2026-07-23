@@ -25,6 +25,8 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
     private readonly IConversationEventStore _conversationEventStore;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _runGates = new(StringComparer.Ordinal);
+    private readonly object _projectionScanGate = new();
+    private int _projectionScanOffset;
 
     public FileSubAgentRunStore(
         PuddingDataPaths paths,
@@ -454,21 +456,35 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         if (maxRuns <= 0 || !Directory.Exists(_paths.WorkspacesRoot))
             return 0;
 
+        var runDirectories = Directory.EnumerateFiles(
+                _paths.WorkspacesRoot,
+                "events.jsonl",
+                SearchOption.AllDirectories)
+            .Select(Path.GetDirectoryName)
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Cast<string>()
+            .Where(static path =>
+                Path.GetFileName(path).StartsWith("run_", StringComparison.Ordinal))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (runDirectories.Length == 0)
+            return 0;
+
+        var scanCount = Math.Min(maxRuns, runDirectories.Length);
+        int scanStart;
+        lock (_projectionScanGate)
+        {
+            scanStart = _projectionScanOffset % runDirectories.Length;
+            _projectionScanOffset = (scanStart + scanCount) % runDirectories.Length;
+        }
+
         var projected = 0;
-        foreach (var eventsPath in Directory.EnumerateFiles(
-                     _paths.WorkspacesRoot,
-                     "events.jsonl",
-                     SearchOption.AllDirectories))
+        for (var scanIndex = 0; scanIndex < scanCount; scanIndex++)
         {
             ct.ThrowIfCancellationRequested();
-            var runDir = Path.GetDirectoryName(eventsPath);
-            if (string.IsNullOrWhiteSpace(runDir))
-                continue;
-
+            var runDir = runDirectories[(scanStart + scanIndex) % runDirectories.Length];
             var runId = Path.GetFileName(runDir);
-            if (!runId.StartsWith("run_", StringComparison.Ordinal))
-                continue;
-
             var gate = _runGates.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
             await gate.WaitAsync(ct);
             try
@@ -479,9 +495,6 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             {
                 gate.Release();
             }
-
-            if (--maxRuns == 0)
-                break;
         }
 
         return projected;
@@ -665,9 +678,13 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             }
 
             var parent = manifest.ParentExecutionIdentity;
-            // ADR-058 FIX: Use sub-agent's own SessionId so ConversationProjector
-            // can resolve the parent via SessionSubAgents → ParentSessionId correctly.
-            var conversationId = manifest.SubSessionId;
+            // ADR-060: Chat observes the parent Conversation. Projecting run
+            // facts into the child-only conversation makes the real run invisible
+            // to the parent SSE/bootstrap while stale historical parent events
+            // remain on screen.
+            var conversationId = parent?.ConversationId;
+            if (string.IsNullOrWhiteSpace(conversationId))
+                conversationId = manifest.ParentSessionId;
             var payload = archivedEvent.Payload.Clone();
             var draft = new NewConversationEvent(
                 EventId: archivedEvent.EventId,
@@ -920,9 +937,63 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                 await db.SaveChangesAsync(ct);
             }
         }
-        catch (Exception ex)
+                catch (Exception ex)
         {
             _logger.LogWarning(ex, "[FileSubAgentRunStore] DB index update failed for runId={RunId}", runId);
         }
+    }
+
+    /// <summary>
+    /// 删除子代理运行归档：移除数据库索引记录，并清理磁盘归档目录。
+    /// 不可逆操作。
+    /// </summary>
+    public async Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+            throw new ArgumentException("runId cannot be null or empty.", nameof(runId));
+
+        var deleted = false;
+
+        // 1. 删除数据库索引
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+            var entity = await db.SubAgentRuns.FirstOrDefaultAsync(e => e.RunId == runId, ct);
+            if (entity is not null)
+            {
+                db.SubAgentRuns.Remove(entity);
+                await db.SaveChangesAsync(ct);
+                deleted = true;
+                _logger.LogInformation(
+                    "[FileSubAgentRunStore] Deleted DB index for runId={RunId}", runId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[FileSubAgentRunStore] DB index delete failed for runId={RunId} (non-fatal)", runId);
+        }
+
+        // 2. 删除磁盘归档目录
+        var runDir = ResolveRunDir(runId);
+        if (runDir is not null && Directory.Exists(runDir))
+        {
+            try
+            {
+                Directory.Delete(runDir, recursive: true);
+                deleted = true;
+                _logger.LogInformation(
+                    "[FileSubAgentRunStore] Deleted archive directory for runId={RunId} path={Path}",
+                    runId, runDir);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[FileSubAgentRunStore] Archive directory delete failed for runId={RunId} path={Path} (non-fatal)",
+                    runId, runDir);
+            }
+        }
+
+        return deleted;
     }
 }

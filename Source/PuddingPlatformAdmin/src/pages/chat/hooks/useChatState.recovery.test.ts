@@ -17,6 +17,7 @@ import {
   getTrackedActiveMessageIds,
   hasBlockingActiveTurn,
   hasTrackedActiveSessionMessages,
+  isSubAgentConversationEvent,
   parseSessionEventTimestampMs,
   removeInjectedSteeringQueueItem,
   resolveActiveSessionReplayFromSequence,
@@ -594,6 +595,14 @@ describe('chat session recovery decisions', () => {
         'turn-latest',
       ),
     ).toBeNull();
+  });
+
+  it('classifies every sub-agent lifecycle event outside the main message turn', () => {
+    expect(isSubAgentConversationEvent('subagent.run.started')).toBe(true);
+    expect(isSubAgentConversationEvent('subagent.tool.completed')).toBe(true);
+    expect(isSubAgentConversationEvent('subagent.completed')).toBe(true);
+    expect(isSubAgentConversationEvent('turn.completed')).toBe(false);
+    expect(isSubAgentConversationEvent(undefined)).toBe(false);
   });
 
   it('only binds unknown metadata to the latest turn while that turn is still active', () => {

@@ -542,8 +542,6 @@ public sealed class AgentConversationProjectionService(
             ConversationEventTypes.MessageThinkingSummaryAppended => "thinking",
             ConversationEventTypes.ToolCallRequested => "tool_call",
             ConversationEventTypes.ToolCallCompleted or ConversationEventTypes.ToolCallFailed => "tool_result",
-            "subagent.spawned" or "subagent.delta" or "subagent.thinking" or
-            "subagent.tool_call" or "subagent.tool_result" or "subagent.completed" => eventType,
             _ => null,
         };
 

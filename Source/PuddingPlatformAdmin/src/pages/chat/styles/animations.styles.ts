@@ -76,6 +76,16 @@ export const useAnimationStyles = createStyles(({ token }) => ({
     '0%': { boxShadow: '0 0 12px 2px rgba(124,58,237,0.25)' },
     '100%': { boxShadow: '0 0 0 0 rgba(124,58,237,0)' },
   },
+  // 思维链预览：行级淡入上浮
+  '@keyframes reasoningLineFadeIn': {
+    '0%': { opacity: 0, transform: 'translateY(4px)' },
+    '100%': { opacity: 1, transform: 'translateY(0)' },
+  },
+  // 思维链预览：指示点紫色光晕呼吸
+  '@keyframes reasoningGlowPulse': {
+    '0%, 100%': { boxShadow: '0 0 4px rgba(139, 92, 246, 0.3)' },
+    '50%': { boxShadow: '0 0 12px rgba(139, 92, 246, 0.6)' },
+  },
   // E2: 流式停滞琥珀色慢脉冲
   '@keyframes stallPulse': {
     '0%, 100%': { borderColor: 'color-mix(in srgb, #d97706 15%, transparent)' },

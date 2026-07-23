@@ -83,10 +83,21 @@ data/workspaces/{workspaceId}/agents/{agentId}/runs/{runId}/
   conversation-projection.cursor
 ```
 
+`output.md` 必须保存最终返回父 Agent 的完整交付，而不是“已完成”等终态摘要。对于
+显式声明 canonical 五段 `ExpectedOutputContract` 的 delegated run，Runtime 在各轮
+保留最近一次通过共享合同校验的候选报告；若后续合法 `DONE` envelope 只包含状态摘要，
+完成 run 前恢复该候选。该恢复只作用于显式合同，不改变普通对话的最后回复语义。
+
 `FileSubAgentRunStore.AppendEventAsync` 先追加 `events.jsonl`，再将尚未投影的
 事件按顺序写入 canonical `IConversationEventStore`。游标只在 Conversation
 追加成功后推进。`SubAgentConversationProjectionWorker` 周期扫描积压，恢复
 “本地已提交、Conversation 尚未提交”的窗口。
+
+运行审计事件必须投影到 `ParentExecutionIdentity.ConversationId` 所指向的父
+Conversation；若该身份缺失，才回退到 manifest 的 `ParentSessionId`。禁止投影到
+`SubSessionId` 对应的子会话，否则父 Chat 的 bootstrap/replay/live SSE 无法观察当前
+run。Conversation 事件 envelope 的 `turnId` 必须来自父执行身份；缺少该身份的历史
+事件只能进入 run reducer，不能在前端回退绑定到最新主 Agent Turn。
 
 投影使用 run 事件原始 `eventId` 作为 Conversation `eventId` 和
 `producerEventId`；重复重放由 Event Store 幂等消除。

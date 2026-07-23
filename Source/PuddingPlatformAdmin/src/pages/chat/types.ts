@@ -132,6 +132,14 @@ function isAssistantInProgress(status: AssistantStatus): boolean {
   );
 }
 
+function isSubAgentTimelineItem(item: TimelineItem): boolean {
+  return (
+    item.type === 'subagent_spawned' ||
+    item.type === 'subagent_progress' ||
+    item.type === 'subagent_completed'
+  );
+}
+
 /**
  * 从 ChatTurn[] 转换为 IM-style ChatMessageBlock[]
  * 拆分规则：
@@ -207,6 +215,9 @@ export function buildMessageBlocks(
 
     if (hasContent) {
       const blockAgentName = turn.source?.displayName || agentName || 'Pudding';
+      const mainAgentProcessItems = turn.assistant.timelineItems.filter(
+        (item) => !isSubAgentTimelineItem(item),
+      );
       const block: ChatMessageBlock = {
         id: `${turn.assistant.id}:assistant:0`,
         turnId: turn.turnId,
@@ -220,8 +231,8 @@ export function buildMessageBlocks(
         agentAvatarUrl: turn.source?.avatarUrl,
         agentAvatarColor: turn.source?.avatarColor || '#7c3aed',
         agentAvatarEmoji: turn.source?.avatarEmoji || '🤖',
-        processItems: turn.assistant.timelineItems?.length
-          ? turn.assistant.timelineItems
+        processItems: mainAgentProcessItems.length
+          ? mainAgentProcessItems
           : undefined,
         usage: turn.assistant.usage,
         isStreaming:

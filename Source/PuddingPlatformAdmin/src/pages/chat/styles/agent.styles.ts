@@ -250,6 +250,10 @@ export const useAgentStyles = createStyles(({ token }) => ({
         '0 0 0 1px color-mix(in srgb, var(--accent-purple) 8%, transparent)',
     },
   },
+    '@keyframes waitingBounce': {
+    '0%, 100%': { transform: 'scale(0.6)', opacity: 0.35 },
+    '50%': { transform: 'scale(1)', opacity: 1 },
+  },
   '@keyframes agentActiveOutputGlow': {
     '0%, 100%': {
       borderColor:

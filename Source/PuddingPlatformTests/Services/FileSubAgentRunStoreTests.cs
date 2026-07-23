@@ -6,6 +6,7 @@ using PuddingCode.Configuration;
 using PuddingCode.Serialization;
 using PuddingCode.SubAgents;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 
@@ -110,6 +111,14 @@ public sealed class FileSubAgentRunStoreTests
             ExpectedOutputContract = "Return findings.",
             TimeoutSeconds = 1800,
             ExecutionDeadlineUtc = new DateTimeOffset(2026, 7, 19, 12, 34, 56, TimeSpan.Zero),
+            ParentExecutionIdentity = new RuntimeExecutionIdentity
+            {
+                Kind = RuntimeExecutionKind.ConversationTurn,
+                ConversationId = "parent-session",
+                TurnId = "parent-turn",
+                RunId = "parent-run",
+                ToolCallId = "parent-tool-call",
+            },
         });
 
         var runJsonPath = Path.Combine(handle.ArchivePath, "run.json");
@@ -174,7 +183,10 @@ public sealed class FileSubAgentRunStoreTests
             conversationEvents.Appended.Select(static item => item.Event.Type).ToArray());
         Assert.IsTrue(
             conversationEvents.Appended.All(
-                static item => item.ConversationId == "parent-session/sub/sub-agent"));
+                static item => item.ConversationId == "parent-session"));
+        Assert.IsTrue(
+            conversationEvents.Appended.All(
+                static item => item.Event.TurnId == "parent-turn"));
 
         await using var verifyDb = new PlatformDbContext(options);
         var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
@@ -329,6 +341,66 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual(1, payload.GetProperty("tool_output_truncated_count").GetInt32());
         Assert.AreEqual(49L, payload.GetProperty("tool_output_chars").GetInt64());
         Assert.AreEqual("build failed", payload.GetProperty("tool_failure_summary").GetString());
+    }
+
+    [TestMethod]
+    public async Task ReplayPendingConversationEvents_RotatesAcrossBoundedRunBatches()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var conversationEvents = new RecordingConversationEventStore();
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            conversationEvents);
+        var handles = new List<SubAgentRunHandle>();
+        for (var index = 0; index < 3; index++)
+        {
+            handles.Add(await store.CreateRunAsync(new SubAgentRunCreateRequest
+            {
+                ParentSessionId = "parent-session",
+                SubSessionId = $"sub-session-{index}",
+                WorkspaceId = "default",
+                AgentInstanceId = "agent-1",
+                TemplateId = "developer",
+                Task = $"Replay run {index}",
+            }));
+        }
+
+        conversationEvents.Appended.Clear();
+        foreach (var handle in handles)
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(handle.ArchivePath, "conversation-projection.cursor"),
+                "0");
+        }
+
+        for (var scan = 0; scan < handles.Count; scan++)
+            Assert.AreEqual(1, await store.ReplayPendingConversationEventsAsync(maxRuns: 1));
+
+        Assert.AreEqual(handles.Count, conversationEvents.Appended.Count);
+        Assert.AreEqual(
+            handles.Count,
+            conversationEvents.Appended
+                .Select(static item => item.Event.EventId)
+                .Distinct(StringComparer.Ordinal)
+                .Count());
+        foreach (var handle in handles)
+        {
+            Assert.AreEqual(
+                "1",
+                await File.ReadAllTextAsync(
+                    Path.Combine(handle.ArchivePath, "conversation-projection.cursor")));
+        }
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)

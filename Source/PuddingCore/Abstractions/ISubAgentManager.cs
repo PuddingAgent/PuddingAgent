@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
@@ -80,11 +80,24 @@ public interface ISubAgentManager
     // Run ID 映射（避免双创建）
     // ════════════════════════════════════════════════════════
 
-    /// <summary>
+        /// <summary>
     /// 查询 subSessionId 对应的 runId（如果已在 SpawnAsync 中创建）。
     /// 返回 null 表示尚未创建，调用方应自行创建。
     /// </summary>
     string? TryGetRunId(string subSessionId);
+
+    // ════════════════════════════════════════════════════════
+    // 清理
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 清理匹配过滤条件的子代理运行记录及归档文件。
+    /// 返回成功清理的数量。
+    /// </summary>
+    Task<int> CleanupAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct = default);
 }
 
 // ════════════════════════════════════════════════════════
@@ -173,4 +186,17 @@ public sealed record SubAgentStats
     public int Failed { get; init; }
     public string? LastCompletedId { get; init; }
     public string? LastFailedId { get; init; }
+}
+
+/// <summary>子代理清理过滤器。</summary>
+public sealed record SubAgentCleanupFilter
+{
+    /// <summary>按状态筛选：failed / completed / all（为 null 表示全部非运行中）。</summary>
+    public string? Status { get; init; }
+
+    /// <summary>仅清理早于指定天数的子代理记录。</summary>
+    public int? OlderThanDays { get; init; }
+
+    /// <summary>最大清理数量（防止误操作大规模删除）。默认 100。</summary>
+    public int MaxCount { get; init; } = 100;
 }

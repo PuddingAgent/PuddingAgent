@@ -603,10 +603,24 @@ BuiltIn provider 以及 fallback 不得分别暴露不同路径格式。
 3. 查看 Runtime 日志中的 `INVALID_REPORT`。日志包含工具、Agent、失败原因和输出长度；
    返回给主 Agent 的结构化错误包含 `subAgentId/runId/validationError`，工具
    `Output` 必须保留完整 `spawn_sub_agent` 结果信封和 `rawOutput`。
-4. 如果报告已有五段仍被拒绝，检查每段是否真的有内容；`SUMMARY` 少于 40 字符或
-   `EVIDENCE` 少于 60 字符也会失败。
+4. 如果报告已有五段仍被拒绝，检查每段是否真的有内容；当前共享校验要求报告总长至少
+   80 字符，`SUMMARY` 与 `EVIDENCE` 各至少 20 字符。
 5. 不要在主 Agent 侧把短结果补写成成功报告，也不要自动无限重试。修正对应角色的
    Prompt/模型后重新调用，避免悄悄重复消耗 Token。
+
+如果 `events.jsonl` 中曾出现完整五段报告，但 `output.md` 最终只剩
+“探索完成/已生成报告”等状态摘要，这是执行引擎覆盖，不是 UI 丢字段：
+
+1. 按顺序对比 `subagent.llm.completed`；完整报告可能先被无外层 JSON 的兼容解析标记为
+   `CONTINUE`，随后模型用合法 `DONE` envelope 返回短摘要。
+2. 检查 Smart 调用是否显式携带
+   `expected_output_contract=SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS`。
+3. 带该合同的执行应保留最近一次通过共享校验的候选报告；最终 DONE 内容不完整时，
+   Runtime 日志应出现
+   `[AgentExec] Restored prior contract-complete output session=... round=...`，
+   且 `output.md` 和返回主 Agent 的 `rawOutput` 都应是恢复后的完整报告。
+4. 如果没有恢复日志，先确认候选报告五个标题使用 `SECTION:` 格式且满足长度门槛，再查
+   `ExpectedOutputCandidateTracker` 是否在同一 delegated run 内创建和观察。
 
 ### 7.6 Smart 子代理在截止时间显示 cancelled，且轮次/工具统计归零
 
@@ -985,8 +999,24 @@ TypeScript 类型标注中的场景处理不稳定；这不是 Hook 运行时错
 - `MessageList` 在 canonical 投影落后期间保留并覆盖本地 SSE 已完成的助手 Turn，同时抑制同一
   `commandClientId` 的陈旧 `activeRun` 等待占位。
 
+若 `GET /api/workspaces/{workspaceId}/agents/{agentId}/conversation` 已返回
+`activeRun: null` 和对应助手终态，但页面仍停在“深入分析中/复杂推理中”，再检查两种投影回退：
+
+1. `mergeActiveRunIntoTurns` 不得用空或较短的 `outputSnapshot` 整体覆盖本地 SSE assistant；
+   `answerMarkdown`、`timelineItems` 与行 identity 都必须单调合并，避免 reasoning 预览被清空或
+   React remount 后退回等待态。
+2. canonical conversation 已经由 workspace/agent/main-session 查询限定，页面入口还会校验
+   workspace/agent。`MessageList` 不得再按 `localTurns` 是否能匹配来过滤 canonical turns；
+   本地历史在首次加载、分页或终态投影竞态中可以为空或不完整，这种过滤会同时删掉服务端已持久化
+   的助手终态、图片 metadata 和 Agent 入站消息。
+
+快速判别方法：记录刷新前等待占位与侧栏状态，然后请求上述 conversation endpoint；若服务端已终态，
+刷新后占位立即消失，就是前端投影/同步问题，不是 LLM 仍在推理。后端日志中的
+`[AgentExec:Stream:Round] thinkingFrames > 0` 还能进一步证明 reasoning 已从模型产生。
+
 回归测试至少覆盖“终态 cursor + user-only 快照强制全量追平”和“本地终态回复覆盖 user-only
-canonical 快照且不显示等待占位”两个场景。浏览器验收必须在不刷新页面的前提下观察运行气泡和
+canonical 快照且不显示等待占位”；还要覆盖“本地已有 reasoning、activeRun 快照为空”和
+“localTurns 为空但 canonical 历史完整”。浏览器验收必须在不刷新页面的前提下观察运行气泡和
 最终回复出现，再刷新确认持久化投影一致。
 
 ### 11.7 子代理早已结束，但运行坞仍显示 Running
@@ -1007,6 +1037,25 @@ canonical 快照且不显示等待占位”两个场景。浏览器验收必须�
 
 回归测试至少覆盖：事件快照只有 `run.started`、状态 API 已 `completed`；校正后卡片立即终态，
 且成功/异常均在各自停留窗口后从运行坞隐藏。
+
+如果历史子代理卡片出现在最新主 Agent 消息气泡中，或刷新/滚动后卡片换绑到另一轮，继续检查：
+
+1. 父 Conversation bootstrap 中该 `subagent.*` 事件的 envelope 是否缺少 `turnId`，payload 是否
+   缺少 `parent_turn_id`；这类旧事件不得调用通用 `resolveTurnIdForEvent` 并回退到最新 Turn。
+2. `useSessionEventProjection` 必须先将所有 `subagent.*` 交给 `subAgentReducer`，随后立即返回；
+   消息列表和主 Agent `timelineItems` 均不得消费子代理运行事实。
+   canonical Conversation View 也不得把 legacy `subagent.*` 转成 `processItems`；
+   `MessageList` 应防御过滤已有历史数据中的 `subagent.` / `subagent_` kind。
+3. 对当前 run，检查 `runs/{runId}/run.json` 的
+   `parent_execution_identity.conversation_id/turn_id`，再确认相同 `eventId` 已进入父
+   Conversation bootstrap。若事件只存在于 `SubSessionId` 的子会话，修复
+   `FileSubAgentRunStore` 的投影目标，并将精确 run 的 `conversation-projection.cursor`
+   回拨后重放；不得清空整个事件库。
+4. 若游标已回拨但长期不推进，统计 run 目录数量并检查补投扫描是否始终停在固定首批。
+   `maxRuns` 是单轮有界扫描量，扫描起点必须跨轮次轮转；不能每两秒永久重复前 N 个目录。
+
+正确结果是：主消息流中没有“子代理运行中/失败”气泡；活动和终态只显示在独立运行坞，并且
+bootstrap、gap replay 与 live SSE 都折叠到同一个 run。
 
 ### 11.8 新消息已受理但长期无回复，浏览器重复拉取同一事件页
 

@@ -39,4 +39,50 @@ describe('buildMessageBlocks', () => {
       isStreaming: false,
     });
   });
+
+  it('excludes sub-agent timeline items from main message blocks', () => {
+    const turns: ChatTurn[] = [
+      {
+        turnId: 'turn-sub-agent',
+        userMessage: {
+          id: 'user-1',
+          text: '检查状态',
+          timestamp: 1,
+          status: 'success',
+        },
+        assistant: {
+          id: 'assistant-1',
+          status: 'success',
+          timelineItems: [
+            {
+              id: 'sub-agent-1',
+              type: 'subagent_spawned',
+              status: 'running',
+              name: 'sub-agent',
+              message: 'stale sub-agent card',
+              timestamp: 2,
+              collapsed: false,
+            },
+            {
+              id: 'thinking-1',
+              type: 'thinking',
+              text: 'main agent thinking',
+              timestamp: 3,
+              collapsed: true,
+            },
+          ],
+          answerMarkdown: 'main answer',
+          isStreaming: false,
+          renderMode: 'structured',
+        },
+      },
+    ];
+
+    const blocks = buildMessageBlocks(turns, 'Pudding');
+    const agentBlock = blocks.find((block) => block.role === 'agent');
+
+    expect(agentBlock?.processItems).toEqual([
+      expect.objectContaining({ id: 'thinking-1', type: 'thinking' }),
+    ]);
+  });
 });

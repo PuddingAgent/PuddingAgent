@@ -499,6 +499,8 @@ public sealed class AgentExecutionService
         string?            resumeAnchorId = null;
         TokenUsageDto?     usage          = null;
         PromptPrefixSnapshot? lastPrefixSnapshot = null;
+        var expectedOutputTracker =
+            new ExpectedOutputCandidateTracker(request.ExpectedOutputContract);
 
         // 记录本次 dispatch 前已有的 journal 条数，用于在结束时截取本次新增的 turns
         var journalStartCount = _journal.GetTurns(request.SessionId).Count;
@@ -1178,6 +1180,7 @@ public sealed class AgentExecutionService
 
                 var loopResp = AgentLoopResponse.Parse(rawText);
                 finalMessage = loopResp.Message ?? rawText;
+                expectedOutputTracker.Observe(finalMessage);
 
                 await FireHooksAsync(h => h.OnRoundCompleteAsync(loopCtx, round, loopResp, ct));
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.completed", new
@@ -1196,6 +1199,14 @@ public sealed class AgentExecutionService
 
                 if (verdict == CompletionVerdict.Completed)
                 {
+                    if (expectedOutputTracker.RestoreIfFinalIsIncomplete(ref finalMessage))
+                    {
+                        _logger.LogWarning(
+                            "[AgentExec] Restored prior contract-complete output session={Session} round={Round}",
+                            request.SessionId,
+                            round + 1);
+                    }
+
                     _journal.Record(request.SessionId, new TurnRecord
                     {
                         Round = round, StartedAt = turnStart, CompletedAt = DateTimeOffset.UtcNow,

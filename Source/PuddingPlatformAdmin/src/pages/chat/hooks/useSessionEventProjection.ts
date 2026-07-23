@@ -28,13 +28,11 @@ import {
   getStepMessage,
   getStepTone,
   getTrackedActiveMessageIds,
+  isSubAgentConversationEvent,
   isActiveAssistantTurn,
   isReasoningStep,
   normalizeUsage,
-  parseSessionEventTimestampMs,
   removeTrackedActiveMessageIdsForTurn,
-  resolveSubAgentTaskSummary,
-  resolveSubAgentTerminalOutput,
   resolveTerminalAssistantMarkdown,
   resolveTurnIdForEvent,
   shouldAdvanceSequenceForSessionEvent,
@@ -44,7 +42,6 @@ import {
   tryExtractDelta,
 } from '../utils/chatStateUtils';
 import type { CompactionLifecycleOptions } from './useCompaction';
-import { useSubAgentActivity } from './useSubAgentActivity';
 
 interface ProjectionIdentityPort {
   agentId?: string;
@@ -156,7 +153,6 @@ export function useSessionEventProjection({
   const streamStartAtRef = useRef<Map<string, number>>(new Map());
   const messageIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
   const sessionIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
-  const { appendOrUpdateSubAgentActivity } = useSubAgentActivity();
 
   const setAgentIdsWorking = useCallback(
     (agentIds: Iterable<string | undefined>, isWorking: boolean) => {
@@ -609,165 +605,6 @@ export function useSessionEventProjection({
               },
             };
           }
-          // 子代理仍保留独立卡片承载完整输出；父 Agent timeline 只写入轻量活动预览，
-          // 让默认气泡能展示“当前正在和哪个子代理交互”，避免长耗时任务看起来像阻塞。
-          if (ev.type.startsWith('subagent.')) {
-            const mappedType = ev.type.substring('subagent.'.length);
-            const saData = ev as any;
-            const subAgentId = saData.sub_agent_id || saData.id || 'sub';
-            if (!subAgentId || subAgentId === 'sub') return turn;
-            const eventTimestamp = parseSessionEventTimestampMs(
-              saData.recordedAt ?? saData.timestamp,
-            );
-            const taskSummary = resolveSubAgentTaskSummary(saData);
-
-            if (mappedType === 'delta') {
-              const innerText = tryExtractDelta(saData);
-              if (!innerText) return turn;
-              return {
-                ...turn,
-                assistant: {
-                  ...turn.assistant,
-                  status: 'executing' as const,
-                  renderMode: 'structured' as const,
-                  timelineItems: appendOrUpdateSubAgentActivity(
-                    subAgentId,
-                    turn.assistant.timelineItems ?? [],
-                    {
-                      id: `subagent-progress-${subAgentId}`,
-                      type: 'subagent_progress' as const,
-                      status: 'running',
-                      name: subAgentId,
-                      arguments: taskSummary,
-                      output: innerText,
-                      timestamp: eventTimestamp,
-                      collapsed: false,
-                    },
-                    innerText,
-                  ),
-                },
-              };
-            }
-            // 子代理 spawned → 创建卡片
-            if (
-              mappedType === 'spawned' ||
-              mappedType === 'run.created' ||
-              mappedType === 'run.started'
-            ) {
-              return {
-                ...turn,
-                assistant: {
-                  ...turn.assistant,
-                  status: 'executing' as const,
-                  renderMode: 'structured' as const,
-                  timelineItems: appendOrUpdateSubAgentActivity(
-                    subAgentId,
-                    turn.assistant.timelineItems ?? [],
-                    {
-                      id: `subagent-spawned-${subAgentId}`,
-                      type: 'subagent_spawned' as const,
-                      status: 'running',
-                      name: subAgentId,
-                      arguments: taskSummary,
-                      message: taskSummary,
-                      timestamp: eventTimestamp,
-                      collapsed: false,
-                    },
-                  ),
-                },
-              };
-            }
-            // 子代理 completed → 更新卡片
-            if (
-              mappedType === 'completed' ||
-              mappedType === 'run.completed' ||
-              mappedType === 'run.failed' ||
-              mappedType === 'run.cancelled' ||
-              mappedType === 'run.timed_out' ||
-              mappedType === 'run.interrupted'
-            ) {
-              const terminalOutput = resolveSubAgentTerminalOutput(saData);
-              const terminalSuccess =
-                mappedType === 'run.completed' ||
-                (mappedType === 'completed' && saData.success === true);
-              return {
-                ...turn,
-                assistant: {
-                  ...turn.assistant,
-                  status: turn.assistant.status,
-                  renderMode: 'structured' as const,
-                  timelineItems: appendOrUpdateSubAgentActivity(
-                    subAgentId,
-                    turn.assistant.timelineItems ?? [],
-                    {
-                      id: `subagent-completed-${subAgentId}`,
-                      type: 'subagent_completed' as const,
-                      status: terminalSuccess ? 'success' : 'error',
-                      name: subAgentId,
-                      arguments: taskSummary,
-                      output: terminalOutput,
-                      message: terminalOutput || taskSummary,
-                      timestamp: eventTimestamp,
-                      collapsed: false,
-                    },
-                  ),
-                },
-              };
-            }
-            if (
-              mappedType === 'run.context_assembled' ||
-              mappedType === 'round.started' ||
-              mappedType === 'round.completed' ||
-              mappedType === 'llm.started' ||
-              mappedType === 'llm.completed' ||
-              mappedType === 'llm.failed' ||
-              mappedType === 'tool.started' ||
-              mappedType === 'tool.completed' ||
-              mappedType === 'tool.failed'
-            ) {
-              const round =
-                typeof saData.round === 'number' ? saData.round : undefined;
-              const toolName =
-                typeof saData.tool_name === 'string'
-                  ? saData.tool_name
-                  : undefined;
-              const phaseMessage = toolName
-                ? `工具 ${toolName}`
-                : mappedType.startsWith('llm.')
-                  ? '模型调用'
-                  : mappedType.startsWith('round.')
-                    ? `第 ${round ?? '?'} 轮`
-                    : '上下文已装配';
-              const phaseFailed = mappedType.endsWith('.failed');
-              return {
-                ...turn,
-                assistant: {
-                  ...turn.assistant,
-                  status: 'executing' as const,
-                  renderMode: 'structured' as const,
-                  timelineItems: appendOrUpdateSubAgentActivity(
-                    subAgentId,
-                    turn.assistant.timelineItems ?? [],
-                    {
-                      id: `subagent-progress-${subAgentId}`,
-                      type: 'subagent_progress' as const,
-                      status: phaseFailed ? 'error' : 'running',
-                      name: subAgentId,
-                      arguments: taskSummary,
-                      message: phaseMessage,
-                      output:
-                        typeof saData.error === 'string'
-                          ? saData.error
-                          : phaseMessage,
-                      timestamp: eventTimestamp,
-                      collapsed: false,
-                    },
-                  ),
-                },
-              };
-            }
-            return turn;
-          }
           if (ev.type === 'step') {
             const status = String(ev.status || 'executing');
             const message = getStepMessage(ev);
@@ -942,7 +779,8 @@ export function useSessionEventProjection({
       const applyStart = performance.now();
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
-      if (eventType.startsWith('subagent.')) {
+      const isSubAgentEvent = isSubAgentConversationEvent(eventType);
+      if (isSubAgentEvent) {
         setSubAgentRuns((current) =>
           reduceSubAgentRunEvent(current, {
             ...anyEv,
@@ -954,6 +792,29 @@ export function useSessionEventProjection({
         typeof anyEv.messageId === 'string' ? anyEv.messageId : null;
       const count = (eventCountsRef.current.get(eventType) ?? 0) + 1;
       eventCountsRef.current.set(eventType, count);
+
+      // ADR-060: 子代理事实只进入独立 reducer / 运行坞。它们不属于主 Agent
+      // 消息内容；缺少 parentTurnId 的历史事件尤其不能回退绑定到最新 Turn。
+      if (isSubAgentEvent) {
+        updateLastSequence(ev);
+        recordPerfEvent(
+          'chat.subagent.event.apply',
+          {
+            eventType,
+            count,
+            runId:
+              typeof anyEv.runId === 'string'
+                ? anyEv.runId
+                : typeof anyEv.run_id === 'string'
+                  ? anyEv.run_id
+                  : undefined,
+            sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
+            applyMs: Math.round(performance.now() - applyStart),
+          },
+          { throttleMs: 500 },
+        );
+        return;
+      }
 
       const runtimeEvent = toChatInteractionRuntimeEvent(ev, agentId);
       if (runtimeEvent) {

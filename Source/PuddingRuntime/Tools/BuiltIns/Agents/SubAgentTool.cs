@@ -265,6 +265,64 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         return Success(sb.ToString());
                     }
 
+                    case "cleanup":
+                    {
+                        // 清理单个池化子代理：从池中销毁 + 清理持久化记录
+                        var subAgentManager = _services.GetService<ISubAgentManager>();
+                        if (subAgentManager == null)
+                            return Fail("❌ ISubAgentManager 服务未注册。");
+
+                        // 先获取子代理信息用于清理持久化记录
+                        var poolAgent = await pool.GetAsync(args.PoolName, ct);
+
+                        // 从池中销毁
+                        var destroyed = await pool.DestroyAsync(args.PoolName, ct);
+
+                        // 清理持久化记录
+                        int dbCleaned = 0;
+                        if (poolAgent != null)
+                        {
+                            dbCleaned = await subAgentManager.CleanupAsync(
+                                request.SessionId,
+                                new SubAgentCleanupFilter
+                                {
+                                    Status = args.CleanupStatus ?? "all",
+                                    OlderThanDays = args.CleanupOlderThanDays,
+                                    MaxCount = 1,
+                                },
+                                ct);
+                        }
+
+                        return Success(
+                            $"✅ 子代理 '{args.PoolName}' 已清理。" +
+                            (destroyed ? " 池条目已销毁。" : " 池条目不存在或已销毁。") +
+                            $" 持久化记录已清理 {dbCleaned} 条。");
+                    }
+
+                    case "cleanup-bulk":
+                    {
+                        // 批量清理：不限于池化子代理，清理整个父会话下的子代理记录
+                        var subAgentManager = _services.GetService<ISubAgentManager>();
+                        if (subAgentManager == null)
+                            return Fail("❌ ISubAgentManager 服务未注册。");
+
+                        var cleaned = await subAgentManager.CleanupAsync(
+                            request.SessionId,
+                            new SubAgentCleanupFilter
+                            {
+                                Status = args.CleanupStatus ?? "all",
+                                OlderThanDays = args.CleanupOlderThanDays,
+                                MaxCount = 100,
+                            },
+                            ct);
+
+                        var filterDesc = args.CleanupStatus ?? "all";
+                        if (args.CleanupOlderThanDays.HasValue)
+                            filterDesc += $", older than {args.CleanupOlderThanDays} days";
+
+                        return Success($"✅ 批量清理完成: {cleaned} 个子代理已清理（筛选: {filterDesc}）。");
+                    }
+
                     case "execute":
                     default:
                     {
@@ -1302,7 +1360,7 @@ public sealed record SubAgentToolArgs
     /// <summary>
     /// 池操作: create(仅创建不执行), execute(执行任务,默认), destroy(销毁子代理), sleep(休眠), list(列出池状态)
     /// </summary>
-    [ToolParam("池操作: create, execute(默认), destroy, sleep, list")]
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk")]
     public string? PoolAction { get; init; }
 
     /// <summary>
@@ -1310,6 +1368,12 @@ public sealed record SubAgentToolArgs
     /// </summary>
     [ToolParam("池化子代理角色描述（可选，用于区分用途）")]
     public string? PoolRole { get; init; }
+
+    [ToolParam("清理筛选状态: failed, completed, all（仅用于 cleanup/cleanup-bulk）")]
+    public string? CleanupStatus { get; init; }
+
+    [ToolParam("仅清理早于 N 天的子代理（仅用于 cleanup-bulk）")]
+    public int? CleanupOlderThanDays { get; init; }
 }
 
 public sealed record SubAgentToolTaskArgs

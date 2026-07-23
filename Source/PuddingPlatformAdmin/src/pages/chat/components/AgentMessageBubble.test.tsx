@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+﻿import { render, screen } from '@testing-library/react';
 import * as React from 'react';
 import AgentMessageBubble from './AgentMessageBubble';
 
@@ -17,7 +17,6 @@ const mockMessageItem = jest.fn((props: Record<string, unknown>) => (
 ));
 
 jest.mock('antd', () => {
-  const React = require('react');
   return {
     unstableSetRender: jest.fn(),
     Tooltip: ({ children, title, ...props }: any) => (
@@ -45,6 +44,30 @@ jest.mock('../styles', () => {
       cx: (...values: Array<string | false | undefined>) =>
         values.filter(Boolean).join(' '),
     }),
+  };
+});
+
+jest.mock('../styles/reasoning.styles', () => {
+  const styles = new Proxy(
+    {},
+    {
+      get: (_target, prop) => String(prop),
+    },
+  );
+  return {
+    useReasoningStyles: () => ({ styles }),
+  };
+});
+
+jest.mock('../styles/agent.styles', () => {
+  const styles = new Proxy(
+    {},
+    {
+      get: (_target, prop) => String(prop),
+    },
+  );
+  return {
+    useAgentStyles: () => ({ styles }),
   };
 });
 
@@ -98,8 +121,8 @@ describe('AgentMessageBubble streaming presentation', () => {
     });
   });
 
-  it('shows a sanitized runtime activity before the first answer token without rendering an empty answer bubble', () => {
-    render(
+    it('shows a sanitized reasoning preview instead of the activity panel before the first answer token', () => {
+    const { container } = render(
       <AgentMessageBubble
         {...baseProps}
         content=""
@@ -116,9 +139,98 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    expect(screen.getByText('模型过程')).toBeTruthy();
+    // 思维链预览接管“模型过程”面板，内容经清洗后展示
+    expect(screen.getByText('思考中')).toBeTruthy();
     expect(screen.getByText('用户问的是商用密码应用安全性评估。')).toBeTruthy();
     expect(screen.queryByText(/undefined/)).toBeNull();
+    expect(screen.queryByText('模型过程')).toBeNull();
+    expect(container.querySelector('.reasoningContainer')).toBeTruthy();
+  });
+
+  it('shows only the last three reasoning lines in the preview', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        content=""
+        processItems={[
+          { id: 't1', type: 'thinking', text: '思维链第一行', timestamp: 1, collapsed: true },
+          { id: 't2', type: 'thinking', text: '思维链第二行', timestamp: 2, collapsed: true },
+          { id: 't3', type: 'thinking', text: '思维链第三行', timestamp: 3, collapsed: true },
+          { id: 't4', type: 'thinking', text: '思维链第四行', timestamp: 4, collapsed: true },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText('思维链第一行')).toBeNull();
+    expect(screen.getByText('思维链第二行')).toBeTruthy();
+    expect(screen.getByText('思维链第三行')).toBeTruthy();
+    expect(screen.getByText('思维链第四行')).toBeTruthy();
+    expect(screen.getByText('持续思考中...')).toBeTruthy();
+  });
+
+  it('yields the reasoning preview to the activity panel once a tool call starts', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="executing"
+        isStreaming={false}
+        content=""
+        processItems={[
+          {
+            id: 'thinking-1',
+            type: 'thinking',
+            text: '需要先查看项目结构。',
+            timestamp: 1,
+            collapsed: true,
+          },
+          {
+            id: 'tool-1',
+            type: 'tool_call',
+            name: 'list_dir',
+            status: 'tool_call',
+            arguments: '.',
+            timestamp: 2,
+            collapsed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText('思考中')).toBeNull();
+    expect(screen.getByText('正在调用工具：list_dir')).toBeTruthy();
+  });
+
+  it('keeps the reasoning preview when older tool activity predates the latest thinking', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="executing"
+        isStreaming={false}
+        content=""
+        processItems={[
+          {
+            id: 'tool-1',
+            type: 'tool_call',
+            name: 'list_dir',
+            status: 'tool_call',
+            arguments: '.',
+            timestamp: 1,
+            collapsed: false,
+          },
+          {
+            id: 'thinking-1',
+            type: 'thinking',
+            text: '目录结构已明确，开始分析。',
+            timestamp: 2,
+            collapsed: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('思考中')).toBeTruthy();
+    expect(screen.getByText('目录结构已明确，开始分析。')).toBeTruthy();
+    expect(screen.queryByText('正在调用工具：list_dir')).toBeNull();
   });
 
   it('shows the thinking placeholder before metadata marks the answer as streaming', () => {
@@ -132,13 +244,13 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    expect(screen.getByText('等待运行事件...')).toBeTruthy();
+    expect(screen.getByText('正在思考...')).toBeTruthy();
     expect(
       container.querySelector(
         '.agentBubbleNew.agentBubbleStreaming.agentWaitingBubble',
       ),
     ).toBeTruthy();
-    expect(container.querySelector('.preAnswerThinkingPanel')).toBeNull();
+    expect(container.querySelector('.reasoningContainer')).toBeNull();
   });
 
   it('shows the current tool interaction as the default visible activity', () => {
