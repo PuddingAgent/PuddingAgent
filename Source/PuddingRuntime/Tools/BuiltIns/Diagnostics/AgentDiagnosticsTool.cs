@@ -272,13 +272,20 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             var totalSucceeded = report.Overall.SuccessCount;
             double rate = totalRuns > 0 ? (double)totalSucceeded / totalRuns * 100 : 0;
 
+            var totalTimeout = report.ByRole.Sum(r => r.FailureTimeoutCount);
+            var totalToolError = report.ByRole.Sum(r => r.ToolErrorCount);
+            var totalLlmError = report.ByRole.Sum(r => r.LlmErrorCount);
+            var totalGuardrail = report.ByRole.Sum(r => r.GuardrailBlockedCount);
+            var totalUnknown = report.ByRole.Sum(r => r.UnknownErrorCount);
+
             var json = JsonSerializer.Serialize(report, new JsonSerializerOptions
             {
                 WriteIndented = false,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             });
 
-            return $"Success rate: {rate:F1}% ({totalSucceeded}/{totalRuns})\n\n" + json;
+            return $"Success rate: {rate:F1}% ({totalSucceeded}/{totalRuns})\n" +
+                   $"Failure breakdown: timeout={totalTimeout}, tool_error={totalToolError}, llm_error={totalLlmError}, guardrail_blocked={totalGuardrail}, unknown={totalUnknown}\n\n" + json;
         }
         catch (Exception ex)
         {
