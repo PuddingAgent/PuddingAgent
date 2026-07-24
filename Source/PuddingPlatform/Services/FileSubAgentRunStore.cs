@@ -259,6 +259,9 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         {
             Status = completion.Status,
             CompletedAt = completedAt,
+            TotalRounds = completion.TotalRounds,
+            TotalToolCalls = completion.TotalToolCalls,
+            ErrorMessage = completion.ErrorMessage,
         };
 
         var updatedJson = JsonSerializer.Serialize(updated, PuddingJsonContracts.PrettyJson);

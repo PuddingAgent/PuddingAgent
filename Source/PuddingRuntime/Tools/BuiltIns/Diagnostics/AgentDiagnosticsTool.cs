@@ -4,6 +4,7 @@ using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingCode.Abstractions;
+using PuddingCode.SubAgents;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -25,15 +26,18 @@ namespace PuddingRuntime.Services.Tools;
     safety: ToolSafetyFlags.None)]
 public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 {
-    private readonly IRuntimeActivitySink? _activitySink;
+        private readonly IRuntimeActivitySink? _activitySink;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISubAgentDiagnosticsService? _subAgentDiagnostics;
 
     public AgentDiagnosticsTool(
         IRuntimeActivitySink? activitySink,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        ISubAgentDiagnosticsService? subAgentDiagnostics = null)
     {
         _activitySink = activitySink;
         _scopeFactory = scopeFactory;
+        _subAgentDiagnostics = subAgentDiagnostics;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -44,12 +48,13 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         var limit = Math.Clamp(args.Limit ?? 20, 1, 200);
         var sessionId = args.SessionId ?? context.SessionId;
 
-        var result = action switch
+                var result = action switch
         {
             "tool_stats" => await GetToolStatsAsync(toolName ?? "", limit, ct),
             "slowest_tools" => await GetSlowestToolsAsync(limit, ct),
             "cache_health" => await GetCacheHealthAsync(sessionId, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health." })
+            "sub_agent_stats" => await GetSubAgentStatsAsync(args, context, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -231,6 +236,47 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         }
     }
 
+        private async Task<string> GetSubAgentStatsAsync(
+        AgentDiagnosticsArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        if (_subAgentDiagnostics is null)
+            return JsonSerializer.Serialize(new
+            {
+                error = "Sub-agent diagnostics service is not available in this environment."
+            });
+
+        var workspaceId = args.WorkspaceId ?? context.WorkspaceId;
+        var agentInstanceId = args.AgentInstanceId ?? context.AgentInstanceId;
+        var hoursBack = Math.Clamp(args.HoursBack ?? 24, 1, 720);
+        var maxRuns = Math.Clamp(args.MaxRuns ?? 50, 1, 1000);
+
+        try
+        {
+            var request = new SubAgentDiagnosticsRequest
+            {
+                WorkspaceId = workspaceId,
+                AgentInstanceId = agentInstanceId,
+                HoursBack = hoursBack,
+                MaxRuns = maxRuns,
+            };
+
+            var report = await _subAgentDiagnostics.GetDiagnosticsAsync(request, ct);
+            return JsonSerializer.Serialize(report, new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = "Failed to query sub-agent diagnostics.",
+                detail = ex.Message,
+            });
+        }
+    }
+
     private static string TruncateError(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return "(empty)";
@@ -240,7 +286,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
 public sealed record AgentDiagnosticsArgs
 {
-    [ToolParam("diagnostics mode: tool_stats, slowest_tools, or cache_health")]
+    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, or sub_agent_stats")]
     public string? Action { get; init; }
 
     [ToolParam("tool name to query (for tool_stats action)")]
@@ -251,4 +297,16 @@ public sealed record AgentDiagnosticsArgs
 
     [ToolParam("session id (for cache_health action; default: current session)")]
     public string? SessionId { get; init; }
+
+    [ToolParam("workspace id (for sub_agent_stats action; default: current workspace)")]
+    public string? WorkspaceId { get; init; }
+
+    [ToolParam("agent instance id (for sub_agent_stats action; default: current agent)")]
+    public string? AgentInstanceId { get; init; }
+
+    [ToolParam("hours to look back (for sub_agent_stats action; default: 24)")]
+    public int? HoursBack { get; init; }
+
+    [ToolParam("max runs to scan (for sub_agent_stats action; default: 50)")]
+    public int? MaxRuns { get; init; }
 }

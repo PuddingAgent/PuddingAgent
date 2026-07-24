@@ -1,4 +1,4 @@
-using PuddingCode.Runtime;
+﻿using PuddingCode.Runtime;
 
 namespace PuddingCode.SubAgents;
 
@@ -42,6 +42,9 @@ public sealed record SubAgentRunManifest
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? MaxRounds { get; init; }
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
+    public int? TotalRounds { get; init; }
+    public int? TotalToolCalls { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 // 创建请求
