@@ -175,6 +175,16 @@ public sealed class HeartbeatOrchestrator : IHostedService
             }
 
                         var agentConfig = scope.ServiceProvider.GetRequiredService<WorkspaceAgentFileService>();
+
+            // 跳过冻结的 Agent
+            var agent = await agentConfig.GetAgentAsync(workspaceId, request.AgentId, ct);
+            if (agent?.IsFrozen == true)
+            {
+                _logger.LogInformation("[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (frozen)", request.AgentId);
+                _idleDetector.ReArm();
+                return;
+            }
+
             var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
             var heartbeatPrompt = await agentConfig.GetAgentHeartbeatPromptAsync(workspaceId, request.AgentId, ct);
             var queuedSeconds = (int)(DateTime.UtcNow - request.EnqueuedAt).TotalSeconds;
