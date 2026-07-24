@@ -55,6 +55,25 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// Appends code navigation rules that instruct sub-agents to prefer
+    /// structured code-index tools over raw file reads.
+    /// </summary>
+    protected static void AppendCodeNavigationRules(StringBuilder sb)
+    {
+        sb.AppendLine();
+        sb.AppendLine("### Code Navigation Rules (Updated Jul 2026)");
+        sb.AppendLine("Prefer these structured tools over raw file reads:");
+        sb.AppendLine("1. Use `code_outline` instead of `file_read` to understand a file's structure (saves tokens)");
+        sb.AppendLine("2. Use `code_symbol_search` instead of `search_grep` to find symbols by name");
+        sb.AppendLine("3. Use `code_summary` to get a quick overview of a class/method (purpose, signature, call relationships)");
+        sb.AppendLine("4. Use `project_map` instead of `list_dir` to navigate directory structure");
+        sb.AppendLine("5. Use `code_explore` to see children of a namespace or class");
+        sb.AppendLine("6. Use `code_callers` / `code_callees` to understand call relationships");
+        sb.AppendLine();
+        sb.AppendLine("Only fall back to `file_read` + `search_grep` when the code index tools don't have what you need.");
+    }
+
     protected async Task<ToolExecutionResult> RunSubAgentAsync(
         TArgs args,
         ToolExecutionContext context,
@@ -64,6 +83,12 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         int? timeoutSeconds = null)
     {
         var task = BuildTaskPrompt(args, context);
+
+        // Append code navigation rules so all Smart sub-agents prefer structured
+        // code-index tools over raw file reads (saves ~80% tokens).
+        var taskWithNavRules = new StringBuilder(task);
+        AppendCodeNavigationRules(taskWithNavRules);
+        task = taskWithNavRules.ToString();
 
         // Validate task has location context before spawning expensive sub-agent
         if (args is ScopedSmartWorkflowArgs { Scope: null or "" }
