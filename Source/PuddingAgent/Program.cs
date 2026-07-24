@@ -696,12 +696,12 @@ builder.Services.TryAddSingleton<IMemoryWriteCoordinator, MemoryWriteCoordinator
 builder.Services.TryAddSingleton<SubconsciousPlanGenerationService>();
 builder.Services.AddSingleton<IdleDetector>();
 builder.Services.AddSingleton<IIdleDetector>(sp => sp.GetRequiredService<IdleDetector>());
-// HOSTED-DISABLED: builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleDetector>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleDetector>());
 
 // ── 主动心跳系统（空闲驱动 + 多 Agent 队列 + 尽力模式 + 哲学引导）────
 builder.Services.AddSingleton<AgentWakeQueue>();
 builder.Services.AddSingleton<HeartbeatOrchestrator>();
-// HOSTED-DISABLED: builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatOrchestrator>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatOrchestrator>());
 builder.Services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateRegistry>();
 builder.Services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
 builder.Services.AddSingleton<MessageDeliveryDispatcher>();
@@ -717,7 +717,7 @@ builder.Services.AddSingleton<IEventSubscriptionTool>(sp => sp.GetRequiredServic
 builder.Services.AddSingleton<IEventHandler, AgentEventHandler>();
 
 // 入站桥：IInternalEventBus → Preprocessor → PriorityQueue 管道入口
-// HOSTED-DISABLED: builder.Services.AddHostedService<EventIngressBridge>();
+builder.Services.AddHostedService<EventIngressBridge>();
 
 // 分发器：PriorityQueue 出队 → IEventHandler.HandleAsync()
 // HOSTED-DISABLED: builder.Services.AddHostedService<EventDispatcher>();
