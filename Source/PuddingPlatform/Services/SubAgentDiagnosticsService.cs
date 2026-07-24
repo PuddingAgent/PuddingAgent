@@ -154,11 +154,11 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
         if (totalClassified > 0)
         {
             report += $"\n--- Failure Classification ---\n";
-            report += $"  timeout: {o.FailureTimeoutCount}\n";
-            report += $"  tool_error: {o.ToolErrorCount}\n";
-            report += $"  llm_error: {o.LlmErrorCount}\n";
-            report += $"  guardrail_blocked: {o.GuardrailBlockedCount}\n";
-            report += $"  unknown: {o.UnknownErrorCount}\n";
+            report += $"  timeout: {o.FailureTimeoutCount} → {GetFailureSuggestion("timeout")}\n";
+            report += $"  tool_error: {o.ToolErrorCount} → {GetFailureSuggestion("tool_error")}\n";
+            report += $"  llm_error: {o.LlmErrorCount} → {GetFailureSuggestion("llm_error")}\n";
+            report += $"  guardrail_blocked: {o.GuardrailBlockedCount} → {GetFailureSuggestion("guardrail_blocked")}\n";
+            report += $"  unknown: {o.UnknownErrorCount} → {GetFailureSuggestion("unknown")}\n";
         }
 
         if (diagnostics.ByRole.Count > 0)
@@ -346,6 +346,18 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
             return null;
         }
     }
+
+    /// <summary>
+    /// 根据失败类别返回操作建议。
+    /// </summary>
+    private static string GetFailureSuggestion(string category) => category switch
+    {
+        "timeout" => "Consider increasing timeout_seconds or splitting into smaller atomic tasks",
+        "tool_error" => "Check tool permissions, parameter formats, and WHERE path accuracy",
+        "llm_error" => "Check API connectivity, rate limits, and model availability",
+        "guardrail_blocked" => "Review task content for safety policy violations",
+        _ => "Run latency_breakdown for detailed timing analysis",
+    };
 
     private string? FindRunDirectory(string runId)
     {
