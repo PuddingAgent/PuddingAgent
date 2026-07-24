@@ -12,6 +12,8 @@ namespace PuddingCodeIntelligence.TypeScript;
 /// TypeScript/JavaScript code indexer that extracts symbols by invoking a Node.js
 /// extraction script (Scripts/extract-ts-symbols.js) as a subprocess and persists
 /// the results through <see cref="ICodeIndexStore"/>.
+/// Supports two modes: project-level extraction (--project) for cross-file references,
+/// and per-file extraction as a fallback.
 /// </summary>
 public sealed class TypeScriptIndexer : ICodeIndexer
 {
@@ -97,41 +99,65 @@ public sealed class TypeScriptIndexer : ICodeIndexer
             var allFiles = new List<CodeFileRecord>();
             var now = DateTimeOffset.UtcNow;
             var errorCount = 0;
+            var usedProjectMode = false;
 
-            foreach (var filePath in files)
+            // Try project-level extraction first (single call, captures cross-file references)
+            var projectResult = await RunProjectExtractionAsync(scriptPath, descriptor.ProjectPath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (projectResult is not null && projectResult.Files is { Count: > 0 })
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                usedProjectMode = true;
+                _logger.LogInformation(
+                    "TypeScript project-mode extraction for {ProjectId}: {FileCount} files, {CrossRefCount} cross-references",
+                    descriptor.ProjectId, projectResult.Files.Count,
+                    projectResult.CrossReferences?.Count ?? 0);
 
-                var extractionResult = await RunExtractionScriptAsync(scriptPath, filePath, cancellationToken)
-                    .ConfigureAwait(false);
+                ProcessProjectExtraction(descriptor.WorkspaceId, descriptor.ProjectId,
+                    descriptor.ProjectPath, projectResult, allSymbols, allRelations, allFiles, now);
+            }
+            else
+            {
+                // Fallback: per-file extraction (existing behavior)
+                _logger.LogInformation(
+                    "TypeScript project-mode not available for {ProjectId}, falling back to per-file extraction",
+                    descriptor.ProjectId);
 
-                if (extractionResult is null)
+                foreach (var filePath in files)
                 {
-                    errorCount++;
-                    continue;
-                }
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                if (extractionResult.Symbols is not { Count: > 0 })
-                    continue;
+                    var extractionResult = await RunExtractionScriptAsync(scriptPath, filePath, cancellationToken)
+                        .ConfigureAwait(false);
 
-                // Clear stale symbols for this file before re-indexing
-                await _store.ClearSymbolsForFileAsync(
-                    descriptor.WorkspaceId, descriptor.ProjectId, filePath, cancellationToken)
-                    .ConfigureAwait(false);
+                    if (extractionResult is null)
+                    {
+                        errorCount++;
+                        continue;
+                    }
 
-                var symbols = new List<CodeSymbolRecord>();
-                var relations = new List<CodeRelationRecord>();
+                    if (extractionResult.Symbols is not { Count: > 0 })
+                        continue;
 
-                ConvertToRecords(descriptor.WorkspaceId, descriptor.ProjectId, filePath,
-                    extractionResult, symbols, relations);
+                    // Clear stale symbols for this file before re-indexing
+                    await _store.ClearSymbolsForFileAsync(
+                        descriptor.WorkspaceId, descriptor.ProjectId, filePath, cancellationToken)
+                        .ConfigureAwait(false);
 
-                if (symbols.Count > 0)
-                {
-                    allSymbols.AddRange(symbols);
-                    allRelations.AddRange(relations);
-                    allFiles.Add(new CodeFileRecord(
-                        descriptor.WorkspaceId, descriptor.ProjectId, filePath,
-                        GetLanguage(filePath), now));
+                    var symbols = new List<CodeSymbolRecord>();
+                    var relations = new List<CodeRelationRecord>();
+
+                    ConvertToRecords(descriptor.WorkspaceId, descriptor.ProjectId, filePath,
+                        extractionResult, symbols, relations);
+
+                    if (symbols.Count > 0)
+                    {
+                        allSymbols.AddRange(symbols);
+                        allRelations.AddRange(relations);
+                        allFiles.Add(new CodeFileRecord(
+                            descriptor.WorkspaceId, descriptor.ProjectId, filePath,
+                            GetLanguage(filePath), now));
+                    }
                 }
             }
 
@@ -145,12 +171,13 @@ public sealed class TypeScriptIndexer : ICodeIndexer
                     .ConfigureAwait(false);
             }
 
+            var modeLabel = usedProjectMode ? "project" : "per-file";
             _logger.LogInformation(
-                "TypeScript indexing for {ProjectId}: {SymbolCount} symbols, {RelationCount} relations in {FileCount} files ({ErrorCount} errors)",
-                descriptor.ProjectId, allSymbols.Count, allRelations.Count, allFiles.Count, errorCount);
+                "TypeScript indexing ({Mode}) for {ProjectId}: {SymbolCount} symbols, {RelationCount} relations in {FileCount} files ({ErrorCount} errors)",
+                modeLabel, descriptor.ProjectId, allSymbols.Count, allRelations.Count, allFiles.Count, errorCount);
 
             return new CodeIndexResult(true, CodeIndexStatus.Completed,
-                $"Indexing complete. {allSymbols.Count} symbols in {allFiles.Count} files.",
+                $"Indexing complete ({modeLabel} mode). {allSymbols.Count} symbols in {allFiles.Count} files.",
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
                 StartedAtUtc: startedAt, CompletedAtUtc: DateTimeOffset.UtcNow);
         }
@@ -229,6 +256,183 @@ public sealed class TypeScriptIndexer : ICodeIndexer
                 continue;
 
             CollectSourceFilesRecursive(subDir, result);
+        }
+    }
+
+    /// <summary>
+    /// Runs the extraction script in project mode: node extract-ts-symbols.js --project &lt;directory&gt;
+    /// Returns the parsed project output, or null if the script fails or is not supported.
+    /// </summary>
+    private async Task<TsProjectOutput?> RunProjectExtractionAsync(
+        string scriptPath,
+        string projectDirectory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = "node",
+                Arguments = $"\"{scriptPath}\" --project \"{projectDirectory}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            process.Start();
+
+            var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            if (process.ExitCode != 0)
+            {
+                _logger.LogWarning(
+                    "Project-mode extraction script failed for {Directory} with exit code {ExitCode}",
+                    projectDirectory, process.ExitCode);
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(stdout))
+                return null;
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            };
+
+            var result = JsonSerializer.Deserialize<TsProjectOutput>(stdout, options);
+
+            // Validate that the output has the expected project-mode shape
+            if (result?.Files is null)
+                return null;
+
+            return result;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "JSON parse failed for project-mode extraction output of {Directory}", projectDirectory);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to run project-mode extraction for {Directory}", projectDirectory);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Processes project-mode extraction output: converts file entries to symbol/file records
+    /// and cross-references to relation records.
+    /// </summary>
+    private void ProcessProjectExtraction(
+        string workspaceId,
+        string projectId,
+        string projectRoot,
+        TsProjectOutput projectOutput,
+        List<CodeSymbolRecord> allSymbols,
+        List<CodeRelationRecord> allRelations,
+        List<CodeFileRecord> allFiles,
+        DateTimeOffset now)
+    {
+        if (projectOutput.Files is null)
+            return;
+
+        // Build a lookup: "relativeFile|symbolName" -> symbolId for cross-reference resolution
+        var symbolIdLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var fileEntry in projectOutput.Files)
+        {
+            if (string.IsNullOrEmpty(fileEntry.File))
+                continue;
+
+            var absolutePath = Path.GetFullPath(Path.Combine(projectRoot, fileEntry.File));
+
+            // Clear stale symbols for this file
+            _store.ClearSymbolsForFileAsync(workspaceId, projectId, absolutePath, CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            if (fileEntry.Symbols is { Count: > 0 })
+            {
+                foreach (var tsSymbol in fileEntry.Symbols)
+                {
+                    var symbolId = $"TS:{absolutePath}:{tsSymbol.Name}:{tsSymbol.Kind}";
+                    var kind = MapSymbolKind(tsSymbol.Kind);
+
+                    allSymbols.Add(new CodeSymbolRecord(
+                        workspaceId,
+                        projectId,
+                        absolutePath,
+                        symbolId,
+                        tsSymbol.Name ?? "unknown",
+                        kind,
+                        tsSymbol.Line,
+                        tsSymbol.Line, // endLine = startLine for project mode (script provides single line)
+                        tsSymbol.Signature,
+                        tsSymbol.ContainerName));
+
+                    // Register in lookup for cross-reference resolution
+                    var lookupKey = fileEntry.File + "|" + (tsSymbol.Name ?? "");
+                    symbolIdLookup[lookupKey] = symbolId;
+
+                    // Contains relation for nested symbols
+                    if (!string.IsNullOrEmpty(tsSymbol.ContainerName))
+                    {
+                        var containerId = $"TS:{absolutePath}:{tsSymbol.ContainerName}";
+                        allRelations.Add(new CodeRelationRecord(
+                            workspaceId,
+                            projectId,
+                            containerId,
+                            symbolId,
+                            CodeRelationKind.Contains,
+                            tsSymbol.Line,
+                            absolutePath));
+                    }
+                }
+
+                allFiles.Add(new CodeFileRecord(
+                    workspaceId, projectId, absolutePath,
+                    GetLanguage(absolutePath), now));
+            }
+        }
+
+        // Process cross-file references
+        if (projectOutput.CrossReferences is { Count: > 0 })
+        {
+            foreach (var crossRef in projectOutput.CrossReferences)
+            {
+                if (string.IsNullOrEmpty(crossRef.SourceFile) || string.IsNullOrEmpty(crossRef.TargetFile))
+                    continue;
+
+                var sourceAbsolutePath = Path.GetFullPath(Path.Combine(projectRoot, crossRef.SourceFile));
+                var targetAbsolutePath = Path.GetFullPath(Path.Combine(projectRoot, crossRef.TargetFile));
+
+                // Resolve target symbol ID from lookup
+                var targetLookupKey = crossRef.TargetFile + "|" + (crossRef.TargetName ?? "");
+                var targetSymbolId = symbolIdLookup.TryGetValue(
+                    targetLookupKey, out var resolvedId)
+                    ? resolvedId
+                    : $"TS:{targetAbsolutePath}:{crossRef.TargetName}";
+
+                // Source symbol ID: use file-level reference since we don't know the exact containing symbol
+                var sourceSymbolId = $"TS:{sourceAbsolutePath}:{crossRef.SourceLine}";
+
+                var relationKind = MapCrossReferenceKind(crossRef.Kind);
+
+                allRelations.Add(new CodeRelationRecord(
+                    workspaceId,
+                    projectId,
+                    sourceSymbolId,
+                    targetSymbolId,
+                    relationKind,
+                    crossRef.SourceLine,
+                    sourceAbsolutePath));
+            }
         }
     }
 
@@ -380,6 +584,23 @@ public sealed class TypeScriptIndexer : ICodeIndexer
             _ => CodeRelationKind.Unknown,
         };
 
+    /// <summary>
+    /// Maps cross-reference kind strings from the JS project-mode output to CodeRelationKind.
+    /// The JS script emits kinds like: call, new, extends, implements, type_ref.
+    /// </summary>
+    private static CodeRelationKind MapCrossReferenceKind(string? kind) =>
+        kind?.ToLowerInvariant() switch
+        {
+            "call" => CodeRelationKind.Calls,
+            "new" => CodeRelationKind.Calls,
+            "extends" => CodeRelationKind.Inherits,
+            "implements" => CodeRelationKind.Implements,
+            "type_ref" => CodeRelationKind.References,
+            "references" => CodeRelationKind.References,
+            "uses" => CodeRelationKind.Uses,
+            _ => CodeRelationKind.Unknown,
+        };
+
     private static string GetLanguage(string filePath) =>
         Path.GetExtension(filePath).ToLowerInvariant() switch
         {
@@ -392,6 +613,7 @@ public sealed class TypeScriptIndexer : ICodeIndexer
 
     #region JSON Deserialization Models
 
+    /// <summary>Per-file extraction output (existing single-file mode).</summary>
     private sealed class TsExtractionOutput
     {
         [JsonPropertyName("symbols")]
@@ -438,6 +660,100 @@ public sealed class TypeScriptIndexer : ICodeIndexer
 
         [JsonPropertyName("line")]
         public int? Line { get; set; }
+    }
+
+    /// <summary>Project-mode extraction output (--project flag).</summary>
+    private sealed class TsProjectOutput
+    {
+        [JsonPropertyName("files")]
+        public List<TsProjectFileEntry>? Files { get; set; }
+
+        [JsonPropertyName("crossReferences")]
+        public List<TsCrossReferenceEntry>? CrossReferences { get; set; }
+    }
+
+    private sealed class TsProjectFileEntry
+    {
+        [JsonPropertyName("file")]
+        public string? File { get; set; }
+
+        [JsonPropertyName("symbols")]
+        public List<TsProjectSymbolEntry>? Symbols { get; set; }
+
+        [JsonPropertyName("references")]
+        public List<TsProjectReferenceEntry>? References { get; set; }
+
+        [JsonPropertyName("imports")]
+        public List<TsImportEntry>? Imports { get; set; }
+
+        [JsonPropertyName("exports")]
+        public List<string>? Exports { get; set; }
+    }
+
+    private sealed class TsProjectSymbolEntry
+    {
+        [JsonPropertyName("kind")]
+        public string? Kind { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("fullName")]
+        public string? FullName { get; set; }
+
+        [JsonPropertyName("line")]
+        public int Line { get; set; }
+
+        [JsonPropertyName("signature")]
+        public string? Signature { get; set; }
+
+        [JsonPropertyName("modifiers")]
+        public string? Modifiers { get; set; }
+
+        [JsonPropertyName("containerName")]
+        public string? ContainerName { get; set; }
+    }
+
+    private sealed class TsProjectReferenceEntry
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("line")]
+        public int Line { get; set; }
+
+        [JsonPropertyName("kind")]
+        public string? Kind { get; set; }
+    }
+
+    private sealed class TsImportEntry
+    {
+        [JsonPropertyName("from")]
+        public string? From { get; set; }
+
+        [JsonPropertyName("names")]
+        public List<string>? Names { get; set; }
+
+        [JsonPropertyName("resolvedFile")]
+        public string? ResolvedFile { get; set; }
+    }
+
+    private sealed class TsCrossReferenceEntry
+    {
+        [JsonPropertyName("sourceFile")]
+        public string? SourceFile { get; set; }
+
+        [JsonPropertyName("sourceLine")]
+        public int SourceLine { get; set; }
+
+        [JsonPropertyName("targetFile")]
+        public string? TargetFile { get; set; }
+
+        [JsonPropertyName("targetName")]
+        public string? TargetName { get; set; }
+
+        [JsonPropertyName("kind")]
+        public string? Kind { get; set; }
     }
 
     #endregion
