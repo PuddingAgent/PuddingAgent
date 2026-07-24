@@ -37,6 +37,8 @@ switch (command)
         return await RunSearchAsync(args);
     case "status":
         return await RunStatusAsync();
+    case "watch":
+        return await RunWatchAsync(args);
     default:
         Console.WriteLine($"Unknown command: {command}");
         PrintUsage();
@@ -287,6 +289,118 @@ async Task<int> RunIndexAsync(string[] args)
     return result.Success ? 0 : 1;
 }
 
+// ── watch <project-path> ───────────────────────────────────────────────────
+async Task<int> RunWatchAsync(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.WriteLine("Usage: PuddingCodeIndexer.Cli watch <project-path>");
+        return 1;
+    }
+
+    string projectPath = Path.GetFullPath(args[1]);
+    if (!Directory.Exists(projectPath))
+    {
+        Console.WriteLine($"Error: directory does not exist: {projectPath}");
+        return 1;
+    }
+
+    // Run initial full index
+    Console.WriteLine("=== Initial full index ===");
+    var indexArgs = new string[] { "index", args[1] };
+    await RunIndexAsync(indexArgs);
+
+    // Set up file watching
+    var watchExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { ".cs", ".ts", ".tsx", ".js", ".jsx", ".py" };
+    var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "bin", "obj", "node_modules", ".git", "__pycache__", ".pudding-code" };
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+        Console.WriteLine("\nStopping watcher...");
+    };
+
+    Console.WriteLine();
+    Console.WriteLine($"Watching for changes in: {projectPath}");
+    Console.WriteLine("Press Ctrl+C to stop.");
+    Console.WriteLine();
+
+    // Debounce state
+    CancellationTokenSource? pendingDebounce = null;
+    var debounceLock = new object();
+
+    using var watcher = new FileSystemWatcher(projectPath)
+    {
+        IncludeSubdirectories = true,
+        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
+    };
+
+    watcher.Filters.Add("*.*");
+
+    void OnChanged(object sender, FileSystemEventArgs e)
+    {
+        string ext = Path.GetExtension(e.FullPath);
+        if (!watchExtensions.Contains(ext))
+            return;
+
+        // Check excluded directories
+        string relativePath = Path.GetRelativePath(projectPath, e.FullPath);
+        var segments = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (segments.Any(seg => excludedDirs.Contains(seg)))
+            return;
+
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Changed: {e.FullPath}");
+
+        lock (debounceLock)
+        {
+            pendingDebounce?.Cancel();
+            pendingDebounce = new CancellationTokenSource();
+            var token = pendingDebounce.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), token);
+                    if (token.IsCancellationRequested) return;
+
+                    Console.WriteLine();
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Re-indexing...");
+                    await RunIndexAsync(indexArgs);
+                    Console.WriteLine();
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Watching for changes...");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Debounced — another change came in
+                }
+            });
+        }
+    }
+
+    watcher.Changed += OnChanged;
+    watcher.Created += OnChanged;
+    watcher.Renamed += (s, e) => OnChanged(s, e);
+    watcher.Deleted += OnChanged;
+
+    watcher.EnableRaisingEvents = true;
+
+    try
+    {
+        await Task.Delay(Timeout.Infinite, cts.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        // Ctrl+C pressed
+    }
+
+    return 0;
+}
+
 // ── search <query> ─────────────────────────────────────────────────────────
 async Task<int> RunSearchAsync(string[] args)
 {
@@ -372,4 +486,5 @@ void PrintUsage()
     Console.WriteLine("  index <project-path>   Index a project directory");
     Console.WriteLine("  search <query>         Search indexed symbols");
     Console.WriteLine("  status                 Show indexed project status");
+    Console.WriteLine("  watch <project-path>   Watch and re-index on file changes");
 }
