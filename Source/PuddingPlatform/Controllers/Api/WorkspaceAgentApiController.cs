@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
@@ -79,20 +79,20 @@ public class WorkspaceAgentApiController(
         }
     }
 
-    // POST /api/workspaces/{workspaceId}/agents/{agentId}/freeze
+        // POST /api/workspaces/{workspaceId}/agents/{agentId}/freeze
     [HttpPost("{agentId}/freeze")]
     public async Task<IActionResult> Freeze(string workspaceId, string agentId, CancellationToken ct)
     {
-        // Freeze/Unfreeze 暂不实现文件式管理，保留接口返回成功
-        // TODO: 在 agent state 中添加 frozen 状态
-        return Ok();
+        var agent = await fileService.SetFrozenAsync(workspaceId, agentId, frozen: true, ct);
+        return Ok(agent);
     }
 
     // POST /api/workspaces/{workspaceId}/agents/{agentId}/unfreeze
     [HttpPost("{agentId}/unfreeze")]
     public async Task<IActionResult> Unfreeze(string workspaceId, string agentId, CancellationToken ct)
     {
-        return Ok();
+        var agent = await fileService.SetFrozenAsync(workspaceId, agentId, frozen: false, ct);
+        return Ok(agent);
     }
 
     // DELETE /api/workspaces/{workspaceId}/agents/{agentId}

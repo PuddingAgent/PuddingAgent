@@ -863,6 +863,39 @@ public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSe
         }
     }
 
+    /// <summary>冻结/解冻 Agent 实例。冻结后心跳不再发送。</summary>
+    public async Task<WorkspaceAgentDto> SetFrozenAsync(
+        string workspaceId,
+        string agentId,
+        bool frozen,
+        CancellationToken ct = default)
+    {
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var refData = await LoadWorkspaceRefAsync(workspaceId, agentId, ct)
+                ?? throw new KeyNotFoundException($"Agent '{agentId}' in workspace '{workspaceId}' 不存在");
+
+            var manifest = await LoadInstanceManifestAsync(agentId, ct)
+                ?? throw new KeyNotFoundException($"Agent instance '{agentId}' 不存在");
+
+            if (manifest.IsFrozen == frozen)
+                return (await GetAgentAsync(workspaceId, agentId, ct))!;
+
+            var updated = manifest with { IsFrozen = frozen };
+            await AtomicFileWriter.WriteJsonAsync(
+                Path.Combine(_paths.AgentInstanceRoot(agentId), "manifest.json"),
+                updated, JsonOptions, ct);
+
+            _logger.LogInformation("Agent {AgentId} {Action}", agentId, frozen ? "frozen" : "unfrozen");
+            return (await GetAgentAsync(workspaceId, agentId, ct))!;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     /// <summary>删除工作区中的 Agent 引用（硬删除文件），Agent 实例数据仍保留在 data/agents/ 中以备数据恢复。</summary>
     public async Task DeleteAgentAsync(string workspaceId, string agentId, CancellationToken ct = default)
     {

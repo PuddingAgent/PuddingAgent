@@ -298,6 +298,7 @@ public sealed record AgentInstanceManifest
     public string? AvatarUrl { get; init; }
     public string? MainSessionId { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public bool IsFrozen { get; init; }
     public AgentInstancePaths Paths { get; init; } = new();
 
     // ── 模板配置（创建时嵌入，运行时不再查模板）──
