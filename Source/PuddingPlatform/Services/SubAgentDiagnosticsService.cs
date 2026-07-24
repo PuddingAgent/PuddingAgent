@@ -184,6 +184,15 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
         return report;
     }
 
+    /// <summary>
+    /// 获取最近 count 个 run 的 RunId 列表，方便调用方只获取 run ID 而不需要完整报告。
+    /// </summary>
+    public async Task<List<string>> GetRecentRunIds(SubAgentDiagnosticsRequest request, int count = 5, CancellationToken ct = default)
+    {
+        var report = await GetDiagnosticsAsync(request, ct);
+        return report.RecentRuns.Take(count).Select(r => r.RunId).ToList();
+    }
+
     private static SubAgentRoleStats ComputeRoleStats(string role, List<SubAgentRunSummary> runs)
     {
         if (runs.Count == 0)
