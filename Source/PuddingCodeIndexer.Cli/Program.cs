@@ -4,6 +4,7 @@ using PuddingCodeIntelligence.CSharp;
 using PuddingCodeIntelligence.Storage;
 using PuddingCodeIntelligence.Python;
 using PuddingCodeIntelligence.TypeScript;
+using PuddingCodeIntelligence.Services;
 
 // ── Logging setup ──────────────────────────────────────────────────────────
 using var loggerFactory = LoggerFactory.Create(builder =>
@@ -39,6 +40,12 @@ switch (command)
         return await RunStatusAsync();
     case "watch":
         return await RunWatchAsync(args);
+    case "definition":
+        return await RunDefinitionAsync(args);
+    case "references":
+        return await RunReferencesAsync(args);
+    case "hover":
+        return await RunHoverAsync(args);
     default:
         Console.WriteLine($"Unknown command: {command}");
         PrintUsage();
@@ -477,6 +484,154 @@ async Task<int> RunStatusAsync()
     return 0;
 }
 
+// ── definition <symbol-name> ─────────────────────────────────────────────
+async Task<int> RunDefinitionAsync(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.WriteLine("Usage: PuddingCodeIndexer.Cli definition <symbol-name>");
+        return 1;
+    }
+
+    string symbolName = string.Join(" ", args.Skip(1));
+
+    var store = new SqliteCodeIndexStore(dbPath);
+    await store.InitializeAsync();
+    var queryService = new CodeQueryService(store);
+
+    var request = new CodeSymbolSearchRequest(
+        WorkspaceId: WorkspaceId,
+        Query: symbolName,
+        Limit: 30);
+
+    IReadOnlyList<CodeSymbolDetail> symbols = await queryService.SearchSymbolsAsync(request);
+
+    if (symbols.Count == 0)
+    {
+        Console.WriteLine($"No definition found for: {symbolName}");
+        return 0;
+    }
+
+    Console.WriteLine($"Definition of '{symbolName}':");
+    foreach (var detail in symbols)
+    {
+        var sym = detail.Symbol;
+        Console.WriteLine($"  {sym.Kind} {sym.Name} :: {sym.FilePath}:{sym.StartLine}");
+    }
+
+    return 0;
+}
+
+// ── references <symbol-name> ─────────────────────────────────────────────
+async Task<int> RunReferencesAsync(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.WriteLine("Usage: PuddingCodeIndexer.Cli references <symbol-name>");
+        return 1;
+    }
+
+    string symbolName = string.Join(" ", args.Skip(1));
+
+    var store = new SqliteCodeIndexStore(dbPath);
+    await store.InitializeAsync();
+    var queryService = new CodeQueryService(store);
+
+    // Search for the symbol to get its ID
+    var request = new CodeSymbolSearchRequest(
+        WorkspaceId: WorkspaceId,
+        Query: symbolName,
+        Limit: 10);
+
+    IReadOnlyList<CodeSymbolDetail> symbols = await queryService.SearchSymbolsAsync(request);
+
+    if (symbols.Count == 0)
+    {
+        Console.WriteLine($"No symbol found for: {symbolName}");
+        return 0;
+    }
+
+    var targetSymbol = symbols[0].Symbol;
+
+    // Get callers via CodeQueryService
+    IReadOnlyList<CodeRelationRecord> callers = await queryService.GetCallersAsync(
+        targetSymbol.WorkspaceId,
+        targetSymbol.ProjectId,
+        targetSymbol.SymbolId);
+
+    // Build reference list: declaration + callers
+    var references = new List<(string FilePath, int? Line, string Kind)>();
+    references.Add((targetSymbol.FilePath, targetSymbol.StartLine, "declaration"));
+
+    foreach (var rel in callers)
+    {
+        string filePath = rel.SourceFilePath ?? "(unknown)";
+        int? line = rel.SourceLine;
+
+        // Resolve source symbol if file path is missing
+        if (rel.SourceFilePath is null)
+        {
+            var sourceSymbol = await store.GetSymbolAsync(
+                rel.WorkspaceId, rel.ProjectId, rel.SourceSymbolId);
+            if (sourceSymbol is not null)
+            {
+                filePath = sourceSymbol.FilePath;
+                line = sourceSymbol.StartLine;
+            }
+        }
+
+        references.Add((filePath, line, rel.Kind.ToString().ToLowerInvariant()));
+    }
+
+    Console.WriteLine($"References to '{symbolName}' ({references.Count} found):");
+    foreach (var (filePath, line, kind) in references)
+    {
+        string lineStr = line.HasValue ? $":{line.Value}" : "";
+        Console.WriteLine($"  {filePath}{lineStr}  {kind}");
+    }
+
+    return 0;
+}
+
+// ── hover <symbol-name> ──────────────────────────────────────────────────
+async Task<int> RunHoverAsync(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.WriteLine("Usage: PuddingCodeIndexer.Cli hover <symbol-name>");
+        return 1;
+    }
+
+    string symbolName = string.Join(" ", args.Skip(1));
+
+    var store = new SqliteCodeIndexStore(dbPath);
+    await store.InitializeAsync();
+    var queryService = new CodeQueryService(store);
+
+    var request = new CodeSymbolSearchRequest(
+        WorkspaceId: WorkspaceId,
+        Query: symbolName,
+        Limit: 10);
+
+    IReadOnlyList<CodeSymbolDetail> symbols = await queryService.SearchSymbolsAsync(request);
+
+    if (symbols.Count == 0)
+    {
+        Console.WriteLine($"No symbol found for: {symbolName}");
+        return 0;
+    }
+
+    var detail = symbols[0];
+    var sym = detail.Symbol;
+    string signature = sym.Signature ?? sym.Name;
+
+    Console.WriteLine($"Hover: {signature}");
+    Console.WriteLine($"File: {sym.FilePath}:{sym.StartLine}");
+    Console.WriteLine($"Kind: {sym.Kind}");
+
+    return 0;
+}
+
 // ── Usage ──────────────────────────────────────────────────────────────────
 void PrintUsage()
 {
@@ -487,4 +642,7 @@ void PrintUsage()
     Console.WriteLine("  search <query>         Search indexed symbols");
     Console.WriteLine("  status                 Show indexed project status");
     Console.WriteLine("  watch <project-path>   Watch and re-index on file changes");
+    Console.WriteLine("  definition <name>      Find symbol definition location");
+    Console.WriteLine("  references <name>      Find all references to a symbol");
+    Console.WriteLine("  hover <name>           Show symbol info and signature");
 }
