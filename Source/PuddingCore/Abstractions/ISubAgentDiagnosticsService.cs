@@ -13,4 +13,8 @@ public interface ISubAgentDiagnosticsService
     Task<SubAgentDiagnosticsReport> GetDiagnosticsAsync(
         SubAgentDiagnosticsRequest request,
         CancellationToken ct = default);
+
+    /// <summary>读取单个 run 的 events.jsonl，计算 LLM/Tool/Overhead 耗时分解。</summary>
+    Task<SubAgentLatencyBreakdown?> GetRunLatencyBreakdownAsync(
+        string runId, CancellationToken ct = default);
 }

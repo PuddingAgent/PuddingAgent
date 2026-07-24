@@ -59,7 +59,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "cache_health" => await GetCacheHealthAsync(sessionId, ct),
             "sub_agent_stats" => await GetSubAgentStatsAsync(args, context, ct),
             "compaction_stats" => await GetCompactionStatsAsync(args, limit, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats." })
+            "latency_breakdown" => await GetLatencyBreakdownAsync(args, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -361,6 +362,33 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         }
     }
 
+    private async Task<string> GetLatencyBreakdownAsync(AgentDiagnosticsArgs args, CancellationToken ct)
+    {
+        var runId = args.RunId;
+        if (string.IsNullOrWhiteSpace(runId))
+            return JsonSerializer.Serialize(new { error = "run_id is required for latency_breakdown action." });
+
+        if (_subAgentDiagnostics is null)
+            return JsonSerializer.Serialize(new { error = "Sub-agent diagnostics service is not available." });
+
+        try
+        {
+            var breakdown = await _subAgentDiagnostics.GetRunLatencyBreakdownAsync(runId, ct);
+            if (breakdown is null)
+                return JsonSerializer.Serialize(new { error = $"Run '{runId}' not found or has no events.", hint = "Check that the runId is correct and the run has completed." });
+
+            return JsonSerializer.Serialize(breakdown, new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = "Failed to compute latency breakdown.", detail = ex.Message });
+        }
+    }
+
     private static string TruncateError(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return "(empty)";
@@ -393,4 +421,7 @@ public sealed record AgentDiagnosticsArgs
 
     [ToolParam("max runs to scan (for sub_agent_stats action; default: 50)")]
     public int? MaxRuns { get; init; }
+
+    [ToolParam("run id (for latency_breakdown action; required)")]
+    public string? RunId { get; init; }
 }

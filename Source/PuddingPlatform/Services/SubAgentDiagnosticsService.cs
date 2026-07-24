@@ -171,4 +171,110 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
         var weight = index - lower;
         return sorted[lower] * (1 - weight) + sorted[upper] * weight;
     }
+
+    /// <inheritdoc />
+    public async Task<SubAgentLatencyBreakdown?> GetRunLatencyBreakdownAsync(
+        string runId, CancellationToken ct = default)
+    {
+        // 从 run.json 获取 workspace/agent
+        var runDir = FindRunDirectory(runId);
+        if (runDir is null) return null;
+
+        var eventsPath = Path.Combine(runDir, "events.jsonl");
+        if (!File.Exists(eventsPath)) return null;
+
+        try
+        {
+            var lines = await File.ReadAllLinesAsync(eventsPath, ct);
+            long llmMs = 0;
+            long toolMs = 0;
+            int rounds = 0;
+            int toolCalls = 0;
+            long? firstTs = null;
+            long? lastTs = null;
+
+            // 跟踪每轮的 LLM started 时间戳
+            long? currentLlmStart = null;
+
+            foreach (var line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                ct.ThrowIfCancellationRequested();
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+                    var tsStr = root.TryGetProperty("timestamp", out var ts) ? ts.GetString() : null;
+                    if (type is null || tsStr is null) continue;
+                    if (!DateTimeOffset.TryParse(tsStr, out var timestamp)) continue;
+                    var epoch = timestamp.ToUnixTimeMilliseconds();
+
+                    if (firstTs is null) firstTs = epoch;
+                    lastTs = epoch;
+
+                    switch (type)
+                    {
+                        case "subagent.llm.started":
+                            currentLlmStart = epoch;
+                            break;
+                        case "subagent.llm.completed":
+                            if (currentLlmStart.HasValue)
+                            {
+                                llmMs += Math.Max(0, epoch - currentLlmStart.Value);
+                                currentLlmStart = null;
+                                rounds++;
+                            }
+                            break;
+                        case "subagent.tool.completed":
+                        case "subagent.tool.failed":
+                            var dur = root.TryGetProperty("duration_ms", out var d) ? d.GetInt64() : 0;
+                            toolMs += Math.Max(0, dur);
+                            toolCalls++;
+                            break;
+                    }
+                }
+                catch { /* skip malformed */ }
+            }
+
+            var totalMs = firstTs.HasValue && lastTs.HasValue
+                ? Math.Max(0, lastTs.Value - firstTs.Value)
+                : 0L;
+            var overheadMs = Math.Max(0, totalMs - llmMs - toolMs);
+
+            return new SubAgentLatencyBreakdown
+            {
+                RunId = runId,
+                TotalDurationMs = totalMs,
+                LlmDurationMs = llmMs,
+                ToolDurationMs = toolMs,
+                OverheadMs = overheadMs,
+                RoundCount = rounds,
+                ToolCallCount = toolCalls,
+                LlmPct = totalMs > 0 ? Math.Round((double)llmMs / totalMs * 100, 1) : 0,
+                ToolPct = totalMs > 0 ? Math.Round((double)toolMs / totalMs * 100, 1) : 0,
+                OverheadPct = totalMs > 0 ? Math.Round((double)overheadMs / totalMs * 100, 1) : 0,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SubAgentDiagnostics] Failed to compute latency breakdown for runId={RunId}", runId);
+            return null;
+        }
+    }
+
+    private string? FindRunDirectory(string runId)
+    {
+        var workspacesRoot = _paths.WorkspacesRoot;
+        if (!Directory.Exists(workspacesRoot)) return null;
+
+        foreach (var eventsFile in Directory.EnumerateFiles(workspacesRoot, "events.jsonl", SearchOption.AllDirectories))
+        {
+            var dir = Path.GetDirectoryName(eventsFile);
+            if (dir is not null && Path.GetFileName(dir) == runId)
+                return dir;
+        }
+        return null;
+    }
 }

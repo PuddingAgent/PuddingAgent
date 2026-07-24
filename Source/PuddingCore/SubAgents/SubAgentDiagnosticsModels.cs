@@ -85,3 +85,20 @@ public sealed record SubAgentDiagnosticsReport
     /// <summary>最近的运行摘要列表。</summary>
     public IReadOnlyList<SubAgentRunSummary> RecentRuns { get; init; } = [];
 }
+
+/// <summary>
+/// 子代理单次运行的延迟分解（从 events.jsonl 计算）。
+/// </summary>
+public sealed record SubAgentLatencyBreakdown
+{
+    public required string RunId { get; init; }
+    public long TotalDurationMs { get; init; }
+    public long LlmDurationMs { get; init; }
+    public long ToolDurationMs { get; init; }
+    public long OverheadMs { get; init; }
+    public int RoundCount { get; init; }
+    public int ToolCallCount { get; init; }
+    public double LlmPct { get; init; }
+    public double ToolPct { get; init; }
+    public double OverheadPct { get; init; }
+}
