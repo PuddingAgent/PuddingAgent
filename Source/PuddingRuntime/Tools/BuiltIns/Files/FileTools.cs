@@ -119,37 +119,87 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 
         try
         {
-            var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
-            var totalChars = content.Length;
-            var totalLines = content.Count(c => c == '\n') + 1;
+            var fileInfo = new FileInfo(fullPath);
+            var isLargeFile = fileInfo.Length > FileChunkService.LargeFileByteThreshold;
 
-            var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
-
-            if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
+            if (!isLargeFile)
             {
-                content = content[..args.MaxChars.Value];
-                return ToolExecutionResult.Ok(
-                    $"{meta}\n{content}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)");
+                // Fast path: small file — full read then post-hoc pagination
+                var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
+                var totalChars = content.Length;
+                var totalLines = content.Count(c => c == '\n') + 1;
+
+                var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
+
+                if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
+                {
+                    content = content[..args.MaxChars.Value];
+                    return ToolExecutionResult.Ok(
+                        $"{meta}\n{content}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)");
+                }
+
+                if (args.HeadLines.HasValue)
+                {
+                    var lines = content.Split('\n');
+                    content = string.Join("\n", lines.Take(args.HeadLines.Value));
+                }
+                else if (args.TailLines.HasValue)
+                {
+                    var lines = content.Split('\n');
+                    content = string.Join("\n", lines.Skip(Math.Max(0, lines.Length - args.TailLines.Value)));
+                }
+                else if (args.OffsetLines.HasValue)
+                {
+                    var lines = content.Split('\n');
+                    var limit = args.LimitLines ?? (lines.Length - args.OffsetLines.Value);
+                    content = string.Join("\n", lines.Skip(args.OffsetLines.Value).Take(limit));
+                }
+
+                return ToolExecutionResult.Ok($"{meta}\n{content}");
             }
 
+            // Large file path: use FileChunkService for streaming reads
+            var totalLinesLarge = await _chunk.CountLinesAsync(fullPath, ct);
+            var totalCharsLarge = (int)Math.Min(fileInfo.Length, int.MaxValue);
+            var metaLarge = $"[META: size={totalCharsLarge} chars, lines={totalLinesLarge}, encoding=utf-8]";
+
+            // MaxChars requires full read for accurate char count — warn and truncate
+            if (args.MaxChars.HasValue)
+            {
+                _logger.LogWarning("[FileReadTool] large file {Path} ({Bytes} bytes) with MaxChars — full read required", args.Path, fileInfo.Length);
+                var fullContent = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
+                var fullChars = fullContent.Length;
+                if (fullChars > args.MaxChars.Value)
+                {
+                    fullContent = fullContent[..args.MaxChars.Value];
+                    return ToolExecutionResult.Ok(
+                        $"{metaLarge}\n{fullContent}\n... (truncated at {args.MaxChars.Value} chars, total {fullChars} chars, {totalLinesLarge} lines, encoding=utf-8)");
+                }
+                return ToolExecutionResult.Ok($"{metaLarge}\n{fullContent}");
+            }
+
+            string windowContent;
             if (args.HeadLines.HasValue)
             {
-                var lines = content.Split('\n');
-                content = string.Join("\n", lines.Take(args.HeadLines.Value));
+                windowContent = await _chunk.ReadChunkAsync(fullPath, 0, args.HeadLines.Value, ct);
             }
             else if (args.TailLines.HasValue)
             {
-                var lines = content.Split('\n');
-                content = string.Join("\n", lines.Skip(Math.Max(0, lines.Length - args.TailLines.Value)));
+                var offset = Math.Max(0, totalLinesLarge - args.TailLines.Value);
+                windowContent = await _chunk.ReadChunkAsync(fullPath, offset, args.TailLines.Value, ct);
             }
             else if (args.OffsetLines.HasValue)
             {
-                var lines = content.Split('\n');
-                var limit = args.LimitLines ?? (lines.Length - args.OffsetLines.Value);
-                content = string.Join("\n", lines.Skip(args.OffsetLines.Value).Take(limit));
+                var limit = args.LimitLines ?? (totalLinesLarge - args.OffsetLines.Value);
+                windowContent = await _chunk.ReadChunkAsync(fullPath, args.OffsetLines.Value, limit, ct);
+            }
+            else
+            {
+                // No pagination args on a large file — read all via chunk (full streaming)
+                windowContent = await _chunk.ReadChunkAsync(fullPath, 0, totalLinesLarge, ct);
             }
 
-            return ToolExecutionResult.Ok($"{meta}\n{content}");
+            return ToolExecutionResult.Ok($"{metaLarge}\n{windowContent}");
         }
         catch (Exception ex)
         {

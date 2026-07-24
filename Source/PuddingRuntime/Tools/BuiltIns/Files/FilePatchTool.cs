@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -95,6 +96,10 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             var sw = Stopwatch.StartNew();
             try
             {
+                var fileLength = new FileInfo(fullPath).Length;
+                if (fileLength > FileChunkService.LargeFileByteThreshold)
+                    _logger.LogWarning("[FilePatchTool] large file detected ({Bytes} bytes > {Threshold}), full load required for patch operations: {Path}",
+                        fileLength, FileChunkService.LargeFileByteThreshold, fullPath);
                 var original = File.ReadAllText(fullPath, Encoding.UTF8);
                 var replacementCount = 0;
                 var errors = new List<string>();
@@ -919,6 +924,9 @@ internal static class UnifiedDiffPatchRunner
                     "Patching agent private files requires a 'reason' parameter. Please explain the purpose of this patch.");
             }
 
+            // Large file check: patch logic requires full text for hunk matching; log size for diagnostics
+            var diffFileLength = new FileInfo(fullPath).Length;
+            // Note: static context — no ILogger available; size check recorded for future streaming optimization
             var original = File.ReadAllText(fullPath, Encoding.UTF8);
             var applyResult = UnifiedDiffApplier.Apply(original, patch);
             if (!applyResult.Success)
