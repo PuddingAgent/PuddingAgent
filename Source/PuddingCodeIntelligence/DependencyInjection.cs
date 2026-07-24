@@ -27,7 +27,7 @@ public static class DependencyInjection
         services.TryAddSingleton<ICodeIndexScopeResolver, CodeIndexScopeResolver>();
         services.TryAddSingleton<ICodeIndexScheduler, CodeIndexScheduler>();
         services.TryAddSingleton<ICodeQueryService, CodeQueryService>();
-        services.TryAddSingleton<ILanguageServerService, NoOpLanguageServerService>();
+        services.TryAddSingleton<ILanguageServerService, IndexBasedLanguageServerService>();
         services.TryAddSingleton<ICodeIndexer, RoslynCSharpIndexer>();
 
         // ── File outliners (multi-language) ─────────────────────────────
