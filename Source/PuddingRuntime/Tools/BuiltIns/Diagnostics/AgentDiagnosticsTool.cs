@@ -267,11 +267,18 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             };
 
             var report = await _subAgentDiagnostics.GetDiagnosticsAsync(request, ct);
-            return JsonSerializer.Serialize(report, new JsonSerializerOptions
+
+            var totalRuns = report.Overall.TotalRuns;
+            var totalSucceeded = report.Overall.SuccessCount;
+            double rate = totalRuns > 0 ? (double)totalSucceeded / totalRuns * 100 : 0;
+
+            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions
             {
                 WriteIndented = false,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             });
+
+            return $"Success rate: {rate:F1}% ({totalSucceeded}/{totalRuns})\n\n" + json;
         }
         catch (Exception ex)
         {

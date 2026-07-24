@@ -58,6 +58,18 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         int? timeoutSeconds = null)
     {
         var task = BuildTaskPrompt(args, context);
+
+        // Validate task has location context before spawning expensive sub-agent
+        if (args is ScopedSmartWorkflowArgs { Scope: null or "" }
+            && !TaskTextContainsLocation((args as SmartWorkflowArgs)?.Task ?? ""))
+        {
+            return ToolExecutionResult.Fail(
+                "Task is missing location information (WHERE). " +
+                "Please provide 'scope' (file path, directory, URL, or domain), " +
+                "or include explicit paths in the task description. " +
+                "Example: scope='Source/PuddingRuntime/Tools/' or task='In Source/Foo/Bar.cs, ...'");
+        }
+
         var toolName = GetType().Name;
         var workingDirectory = ResolveWorkingDirectory(args);
         var requestedTimeout = timeoutSeconds ?? DefaultTimeoutSeconds;
@@ -235,6 +247,31 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             || error.Contains("HTTP 429", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Heuristic: check if task text contains explicit path or URL references.
+    /// </summary>
+    private static bool TaskTextContainsLocation(string task)
+    {
+        if (string.IsNullOrWhiteSpace(task))
+            return false;
+        
+        // Check for filesystem paths
+        if (task.Contains('/') || task.Contains('\\'))
+            return true;
+        
+        // Check for URLs
+        if (task.Contains("://") || task.Contains("www."))
+            return true;
+        
+        // Common location indicators
+        var locationKeywords = new[] { "Source/", "src/", "file:", "path:", "directory:", "module:", "package:" };
+        foreach (var kw in locationKeywords)
+            if (task.Contains(kw, StringComparison.OrdinalIgnoreCase))
+                return true;
+        
+        return false;
+    }
+
     private ToolExecutionResult BuildInvalidReportFailure(
         string? toolOutput,
         string? rawReport,
@@ -345,6 +382,37 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Synthesize a WHERE (location) section from the scope parameter.
+    /// Called by each Smart tool's BuildTaskPrompt to inject spatial context.
+    /// </summary>
+    protected static string BuildWhereSection(TArgs args)
+    {
+        if (args is not ScopedSmartWorkflowArgs scoped)
+            return string.Empty;
+        
+        if (string.IsNullOrWhiteSpace(scoped.Scope))
+            return string.Empty;
+        
+        var sb = new StringBuilder();
+        sb.AppendLine("## 📍 LOCATION (WHERE)");
+        sb.AppendLine($"Scope: {scoped.Scope}");
+        
+        try
+        {
+            if (Directory.Exists(scoped.Scope))
+                sb.AppendLine($"Type: directory — {Path.GetFullPath(scoped.Scope)}");
+            else if (File.Exists(scoped.Scope))
+                sb.AppendLine($"Type: file — {Path.GetFullPath(scoped.Scope)}");
+        }
+        catch
+        {
+            // Scope may be a semantic boundary (URL, domain, concept), not a filesystem path
+        }
+        
+        return sb.ToString();
     }
 
     /// <summary>
