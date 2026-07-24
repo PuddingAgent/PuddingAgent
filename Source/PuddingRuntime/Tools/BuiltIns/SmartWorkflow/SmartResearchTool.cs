@@ -27,8 +27,9 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
         _logger = logger;
     }
 
-    protected override string RoleName => "researcher";
+        protected override string RoleName => "researcher";
     protected override int DefaultMaxRounds => 200;
+    protected override bool RequiresLocationContext => false; // research is domain-based
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
 

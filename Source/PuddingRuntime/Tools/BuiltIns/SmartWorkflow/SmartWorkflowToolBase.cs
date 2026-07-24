@@ -30,8 +30,11 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected virtual string? AllowedTools => null;
     /// <summary>主模型失败时的降级模型 ID 列表（按优先级）。null = 不启用 fallback。</summary>
     protected virtual IReadOnlyList<string>? FallbackModelIds => null;
-    /// <summary>仅由明确设计为 DAG 父节点的 Smart 工具覆盖为 true。</summary>
+        /// <summary>仅由明确设计为 DAG 父节点的 Smart 工具覆盖为 true。</summary>
     protected virtual bool AllowNestedSmartDelegation => false;
+    /// <summary>Whether this tool requires file/directory location context (WHERE).
+    /// Conceptual tools (planning, research) can set this to false.</summary>
+    protected virtual bool RequiresLocationContext => true;
     protected virtual int MaxDelegationDepth => 2;
 
     /// <summary>
@@ -90,8 +93,10 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         AppendCodeNavigationRules(taskWithNavRules);
         task = taskWithNavRules.ToString();
 
-        // Validate task has location context before spawning expensive sub-agent
-        if (args is ScopedSmartWorkflowArgs { Scope: null or "" }
+        // Validate task has location context before spawning expensive sub-agent.
+        // Skip for conceptual tools (planning, research) that don't need file paths.
+        if (RequiresLocationContext
+            && args is ScopedSmartWorkflowArgs { Scope: null or "" }
             && !TaskTextContainsLocation((args as SmartWorkflowArgs)?.Task ?? ""))
         {
             return ToolExecutionResult.Fail(

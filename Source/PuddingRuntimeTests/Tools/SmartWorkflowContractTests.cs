@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Platform;
@@ -106,7 +106,7 @@ public sealed class SmartWorkflowContractTests
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "smart-develop-isolated",
-            ArgumentsJson = """{"task":"Implement one atomic change"}""",
+            ArgumentsJson = """{"task":"In Source/Foo/Bar.cs, implement one atomic change"}""",
             Context = new ToolExecutionContext
             {
                 WorkspaceId = "workspace",
@@ -150,7 +150,7 @@ public sealed class SmartWorkflowContractTests
         var primaryOnly = await tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "smart-develop-no-fallback",
-            ArgumentsJson = """{"task":"Implement one atomic change"}""",
+            ArgumentsJson = """{"task":"In Source/Foo/Bar.cs, implement one atomic change"}""",
             Context = context,
         });
 
@@ -162,7 +162,7 @@ public sealed class SmartWorkflowContractTests
         var explicitFallback = await tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "smart-develop-explicit-fallback",
-            ArgumentsJson = """{"task":"Implement one atomic change","allow_fallback":true}""",
+            ArgumentsJson = """{"task":"In Source/Foo/Bar.cs, implement one atomic change","allow_fallback":true}""",
             Context = context,
         });
 
@@ -188,7 +188,7 @@ public sealed class SmartWorkflowContractTests
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "smart-explore",
-            ArgumentsJson = """{"task":"Locate and explain the heartbeat implementation","max_results":8}""",
+            ArgumentsJson = """{"task":"In Source/PuddingRuntime, locate and explain the heartbeat implementation","max_results":8}""",
             Context = new ToolExecutionContext
             {
                 WorkspaceId = "workspace",
@@ -245,13 +245,13 @@ public sealed class SmartWorkflowContractTests
             (new SmartPlanTool(services, NullLogger<SmartPlanTool>.Instance),
                 JsonSerializer.Serialize(new { task = longPlanTask }), "DETAILED_TASKS:"),
             (new SmartReviewTool(services, NullLogger<SmartReviewTool>.Instance),
-                """{"task":"Review the runtime execution contract"}""", "POSITIVE_OBSERVATIONS:"),
+                """{"task":"In Source/PuddingRuntime, review the runtime execution contract"}""", "POSITIVE_OBSERVATIONS:"),
             (new SmartDevelopTool(services, NullLogger<SmartDevelopTool>.Instance),
-                """{"task":"Implement the runtime execution contract"}""", "MANUAL_VERIFICATION:"),
+                """{"task":"In Source/PuddingRuntime, implement the runtime execution contract"}""", "MANUAL_VERIFICATION:"),
             (new SmartTestTool(services, NullLogger<SmartTestTool>.Instance),
-                """{"task":"Test the runtime execution contract"}""", "COVERAGE_GAPS:"),
+                """{"task":"In Source/PuddingRuntime, test the runtime execution contract"}""", "COVERAGE_GAPS:"),
             (new SmartDeployTool(services, NullLogger<SmartDeployTool>.Instance),
-                """{"task":"Deploy the runtime execution contract"}""", "HEALTH_CHECKS:"),
+                """{"task":"In Source/PuddingRuntime, deploy the runtime execution contract"}""", "HEALTH_CHECKS:"),
         ];
 
         foreach (var testCase in cases)

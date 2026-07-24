@@ -31,6 +31,7 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     protected override string RoleName => "planner";
     protected override int DefaultTimeoutSeconds => 60 * 60;
     protected override int DefaultMaxRounds => 48;
+    protected override bool RequiresLocationContext => false; // planning is conceptual
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
 

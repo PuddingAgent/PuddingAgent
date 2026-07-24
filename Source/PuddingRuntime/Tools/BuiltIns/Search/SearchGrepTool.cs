@@ -203,10 +203,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private static bool LooksLikeRegex(string q) =>
         q.Any(c => c is '\\' or '^' or '$' or '.' or '|' or '?' or '*' or '+' or '(' or ')' or '[' or '{');
 
-    private static HashSet<string> ParseExcludeDirs(string? excludeDirs)
+        private static HashSet<string> ParseExcludeDirs(string? excludeDirs)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var raw = !string.IsNullOrWhiteSpace(excludeDirs) ? excludeDirs : DefaultExcludeDirs;
+        // null → use default; empty string → no exclusion
+        var raw = excludeDirs ?? DefaultExcludeDirs;
         foreach (var d in raw.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var trimmed = d.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

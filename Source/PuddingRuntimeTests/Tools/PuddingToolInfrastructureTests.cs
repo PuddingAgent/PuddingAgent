@@ -206,7 +206,7 @@ public sealed partial class PuddingToolInfrastructureTests
         var expectations = new Dictionary<string, string[]>
         {
             ["http_fetch"] = ["url", "method", "headers", "body", "content_type", "timeout_seconds", "output_format", "max_response_chars", "include_headers", "cookie_scope"],
-                        ["search_memory"] = ["query", "book"],
+                        ["search_memory"] = ["query", "book", "workspaceId"],
             ["save_memory"] = ["action", "type", "book", "content", "key", "value", "title", "book_id", "chapter_id", "pointer_id", "source_ref", "source_label", "source_reference", "reference_type"],
             ["manage_memory"] = ["action", "book_id", "library_id", "title", "content", "summary", "chapter_id", "source_type", "source_id", "tags", "chapter_order", "source_reference", "reference_type"],
             ["grep_memory"] = ["action", "query", "mode", "book", "top_k"],
