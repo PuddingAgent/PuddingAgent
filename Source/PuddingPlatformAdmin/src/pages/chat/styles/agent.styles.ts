@@ -175,32 +175,6 @@ export const useAgentStyles = createStyles(({ token }) => ({
       animation: 'none',
     },
   },
-  agentBubbleNewGlow: {
-    background: 'var(--soft-white)',
-    border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
-    borderRadius: 8,
-    borderTopLeftRadius: 4,
-    padding: '12px 16px',
-    fontSize: 14,
-    lineHeight: 1.7,
-    color: 'var(--text-primary)',
-    wordBreak: 'break-word' as const,
-    width: '100%',
-    contain: 'layout paint style',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    animation: 'messageGlow 800ms ease-out',
-    transition:
-      'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
-    '&:hover': {
-      background: 'color-mix(in srgb, var(--soft-white) 95%, transparent)',
-      borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
-      boxShadow: '0 2px 6px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)',
-    },
-    '@media (prefers-reduced-motion: reduce)': {
-      animation: 'none',
-    },
-  },
   agentBubbleGrouped: {
     borderTopLeftRadius: 8,
     borderTop: '1px solid',
@@ -388,28 +362,6 @@ export const useAgentStyles = createStyles(({ token }) => ({
     '50%': {
       opacity: 0.42,
       backgroundPosition: '-15% 0',
-    },
-  },
-  '@keyframes messageGlow': {
-    '0%': {
-      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
-    },
-    '30%': {
-      boxShadow: '0 0 18px 6px rgba(139,63,232,0.18)',
-    },
-    '100%': {
-      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
-    },
-  },
-  '@keyframes messageGlowSubtle': {
-    '0%': {
-      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
-    },
-    '30%': {
-      boxShadow: '0 0 14px 4px rgba(139,63,232,0.1)',
-    },
-    '100%': {
-      boxShadow: '0 0 0 0 rgba(139,63,232,0)',
     },
   },
 }));

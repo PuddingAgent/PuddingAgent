@@ -99,33 +99,6 @@ export const useUserStyles = createStyles(() => ({
       animation: 'none',
     },
   },
-  userBubbleNewGlow: {
-    background:
-      'color-mix(in srgb, var(--accent-purple) 8%, var(--soft-white))',
-    border: '1.5px solid',
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 28%, transparent)',
-    borderRadius: 10,
-    borderBottomRightRadius: 4,
-    padding: '10px 16px',
-    fontSize: 14,
-    lineHeight: 1.6,
-    color: 'var(--text-primary)',
-    wordBreak: 'break-word' as const,
-    whiteSpace: 'pre-wrap' as const,
-    contain: 'layout paint style',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    transition:
-      'background 200ms ease, box-shadow 200ms ease, transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-    animation: 'messageGlow 800ms ease-out',
-    '&:hover': {
-      background:
-        'color-mix(in srgb, var(--accent-purple) 14%, var(--soft-white))',
-      boxShadow: '0 2px 6px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)',
-    },
-    '@media (prefers-reduced-motion: reduce)': {
-      animation: 'none',
-    },
-  },
   userBubbleSending: {
     opacity: 0.7,
   },
