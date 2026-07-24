@@ -1,5 +1,6 @@
 ﻿using HarnessAgent.Core.Provider;
 using HarnessAgent.Core.Memory;
+using HarnessAgent.Core.Compaction;
 
 // ═══════════════════════════════════════
 //  HarnessAgent CLI — Independent Tests
@@ -9,18 +10,25 @@ Console.WriteLine("╔═══════════════════�
 Console.WriteLine("║   HarnessAgent CLI Test Suite   ║");
 Console.WriteLine("╚══════════════════════════════════╝\n");
 
+var pass = 0;
+
 // ── L0: Provider ──
 Console.WriteLine("── L0: Provider Abstraction ──");
-TestProvider();
-Console.WriteLine("  ✅ L0 passed\n");
+TestProvider(); pass++;
+Console.WriteLine($"  ✅ L0 passed ({pass}/3)\n");
 
 // ── L1: Memory ──
 Console.WriteLine("── L1: Memory System ──");
-TestMemory();
-Console.WriteLine("  ✅ L1 passed\n");
+TestMemory(); pass++;
+Console.WriteLine($"  ✅ L1 passed ({pass}/3)\n");
+
+// ── L2: Compaction ──
+Console.WriteLine("── L2: Context Compaction ──");
+TestCompaction(); pass++;
+Console.WriteLine($"  ✅ L2 passed ({pass}/3)\n");
 
 Console.WriteLine("════════════════════════════════");
-Console.WriteLine("  All layers passed. 🎉");
+Console.WriteLine($"  All {pass} layers passed. 🎉");
 Console.WriteLine("════════════════════════════════");
 
 // ── Test Functions ──
@@ -85,6 +93,45 @@ static void TestMemory()
     // 6. Stats
     var stats = lib.GetStats();
     Console.WriteLine($"  - Stats: {stats.Books} books, {stats.Entries} entries, {stats.Relations} relations, ~{stats.EstimatedTokens} tokens");
+}
+
+static void TestCompaction()
+{
+    var engine = new CompactionEngine();
+    const int window = 128_000;
+
+    // 30% — none
+    var d = engine.Evaluate((int)(window * 0.30), window);
+    if (d.Tier != CompactionTier.None || d.ShouldCompact)
+        throw new Exception($"30% should be None, got {d.Tier}");
+    Console.WriteLine($"  - 30% → {d.Tier} ({d.Recommendation[..40]}...)");
+
+    // 55% — soft
+    d = engine.Evaluate((int)(window * 0.55), window);
+    if (d.Tier != CompactionTier.Soft || d.ShouldCompact)
+        throw new Exception($"55% should be Soft, got {d.Tier}");
+    Console.WriteLine($"  - 55% → {d.Tier} (tail budget: {d.TailTokenBudget})");
+
+    // 75% — aggressive
+    d = engine.Evaluate((int)(window * 0.75), window, recentTurnTokens: 3000);
+    if (d.Tier != CompactionTier.Aggressive || !d.ShouldCompact || d.TailTokenBudget == 0)
+        throw new Exception($"75% should be Aggressive, got {d.Tier}");
+    Console.WriteLine($"  - 75% → {d.Tier} (tail budget: {d.TailTokenBudget})");
+
+    // 90% — force
+    d = engine.Evaluate((int)(window * 0.90), window, recentTurnTokens: 2000);
+    if (d.Tier != CompactionTier.Force || !d.ShouldCompact)
+        throw new Exception($"90% should be Force, got {d.Tier}");
+    Console.WriteLine($"  - 90% → {d.Tier} (tail budget: {d.TailTokenBudget})");
+
+    // Tail budget sanity: aggressive = 10% of 128K = 12800, force = 5% = 6400
+    d = engine.Evaluate((int)(window * 0.75), window, recentTurnTokens: 0);
+    if (d.TailTokenBudget != 12800)
+        throw new Exception($"Aggressive tail should be 12800, got {d.TailTokenBudget}");
+
+    d = engine.Evaluate((int)(window * 0.90), window, recentTurnTokens: 0);
+    if (d.TailTokenBudget != 6400)
+        throw new Exception($"Force tail should be 6400, got {d.TailTokenBudget}");
 }
 
 // ── Mock Provider ──
