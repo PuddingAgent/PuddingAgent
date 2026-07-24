@@ -63,8 +63,9 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
         sb.AppendLine("### ⚠️ Read/search only. If http_fetch fails: note gap and continue.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
-        if (!string.IsNullOrWhiteSpace(args.Scope))
-            sb.AppendLine($"## 📁 Scope: {args.Scope}");
+        var whereSection = BuildWhereSection(args);
+        if (!string.IsNullOrWhiteSpace(whereSection))
+            sb.Append(whereSection);
         sb.AppendLine();
         AppendCanonicalReportRules(sb);
         sb.AppendLine("## OUTPUT CONTRACT:");

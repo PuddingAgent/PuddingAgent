@@ -63,8 +63,9 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
         sb.AppendLine("### ⚠️ Read-only only. Focus issues on: correctness → security → performance.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
-        if (!string.IsNullOrWhiteSpace(args.Scope))
-            sb.AppendLine($"## 📁 Scope: {args.Scope}");
+        var whereSection = BuildWhereSection(args);
+        if (!string.IsNullOrWhiteSpace(whereSection))
+            sb.Append(whereSection);
         if (!string.IsNullOrWhiteSpace(args.Aspects))
             sb.AppendLine($"## 🔬 Focus: {args.Aspects}");
         sb.AppendLine();

@@ -57,8 +57,9 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
         sb.AppendLine("### ⚠️ SAFETY — rollback plan BEFORE execution. Stop on error. Log everything.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
-        if (!string.IsNullOrWhiteSpace(args.Scope))
-            sb.AppendLine($"## 📁 CWD: {args.Scope}");
+        var whereSection = BuildWhereSection(args);
+        if (!string.IsNullOrWhiteSpace(whereSection))
+            sb.Append(whereSection);
         if (!string.IsNullOrWhiteSpace(args.Environment))
             sb.AppendLine($"## 🌐 Env: {args.Environment}");
         sb.AppendLine();

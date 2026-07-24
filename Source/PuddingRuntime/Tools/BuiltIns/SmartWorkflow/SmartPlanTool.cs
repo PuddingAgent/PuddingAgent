@@ -87,8 +87,9 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
         sb.AppendLine("- The task description above already contains background and constraints from the caller — trust it as a starting point, but verify critical claims.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
-        if (!string.IsNullOrWhiteSpace(args.Scope))
-            sb.AppendLine($"## 📁 Scope: {args.Scope}");
+        var whereSection = BuildWhereSection(args);
+        if (!string.IsNullOrWhiteSpace(whereSection))
+            sb.Append(whereSection);
         if (!string.IsNullOrWhiteSpace(args.Context))
             sb.AppendLine($"## 📋 Context: {args.Context}");
         sb.AppendLine();

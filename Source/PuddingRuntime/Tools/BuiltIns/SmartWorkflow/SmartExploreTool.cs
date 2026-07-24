@@ -82,8 +82,9 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
         sb.AppendLine("- Prefer a smaller set of verified, high-value findings over a long unverified file list.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
-        if (!string.IsNullOrWhiteSpace(args.Scope))
-            sb.AppendLine($"## 📁 Scope: {args.Scope}");
+        var whereSection = BuildWhereSection(args);
+        if (!string.IsNullOrWhiteSpace(whereSection))
+            sb.Append(whereSection);
         if (!string.IsNullOrWhiteSpace(args.SessionId))
             sb.AppendLine($"## 📋 Session: {args.SessionId}");
         if (!string.IsNullOrWhiteSpace(args.Focus))
