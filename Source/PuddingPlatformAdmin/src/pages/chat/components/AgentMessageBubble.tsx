@@ -58,6 +58,16 @@ interface AgentMessageBubbleProps {
   sessionId?: string | null;
 }
 
+const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
+const COMPLETION_PARTICLE_OFFSETS = [
+  { x: '15px', y: '-17px', delay: 0 },
+  { x: '-15px', y: '-12px', delay: 35 },
+  { x: '19px', y: '-4px', delay: 70 },
+  { x: '-9px', y: '-21px', delay: 105 },
+  { x: '6px', y: '-22px', delay: 140 },
+  { x: '-18px', y: '-3px', delay: 175 },
+] as const;
+
 const StreamingAnswer = React.memo(function StreamingAnswer({
   content,
   isStreaming,
@@ -199,6 +209,7 @@ const CurrentActivityPanel: React.FC<{
     <div
       className={cx(
         styles.currentActivityPanel,
+        styles.agentBubbleEntrance,
         isWorkingActivity && styles.agentActiveOutputSurface,
         toneClass,
       )}
@@ -351,10 +362,38 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   }, [workspaceId, agentId, processMessageId]);
 
   const tts = useTtsPlayer();
-
-  const isError = status === 'error' || status === 'cancelled';
-  const shouldUseTypewriter = Boolean(isStreaming);
   const hasAnswerContent = content.trim().length > 0;
+  const isError = status === 'error' || status === 'cancelled';
+
+  // P3: 完成粒子 — 回答落定时在气泡右下角播放一次粒子飞散动画
+  const [showCompletionParticles, setShowCompletionParticles] =
+    React.useState(false);
+  const hasShownParticles = React.useRef(false);
+  const previousIsStreaming = React.useRef(Boolean(isStreaming));
+  const previousHasAnswerContent = React.useRef(hasAnswerContent);
+  React.useEffect(() => {
+    const justFinishedStreaming =
+      previousIsStreaming.current && !isStreaming && hasAnswerContent;
+    const justReceivedCompletedAnswer =
+      !previousHasAnswerContent.current && hasAnswerContent && !isStreaming;
+
+    previousIsStreaming.current = Boolean(isStreaming);
+    previousHasAnswerContent.current = hasAnswerContent;
+
+    if (
+      isError ||
+      hasShownParticles.current ||
+      (!justFinishedStreaming && !justReceivedCompletedAnswer)
+    )
+      return undefined;
+
+    hasShownParticles.current = true;
+    setShowCompletionParticles(true);
+    const timer = setTimeout(() => setShowCompletionParticles(false), 820);
+    return () => clearTimeout(timer);
+  }, [isStreaming, hasAnswerContent, isError]);
+
+  const shouldUseTypewriter = Boolean(isStreaming);
   const hasQuotedOnly =
     Boolean(quotedMessage) &&
     !hasAnswerContent &&
@@ -368,6 +407,9 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       status === 'executing' ||
       status === 'streaming') &&
     status !== 'success';
+  const messageAgeMs = Math.max(0, Date.now() - createdAt);
+  const shouldAnimateEntrance =
+    isRunActive || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
   const isBeforeFirstToken = isRunActive && !hasAnswerContent;
   const shouldRenderAnswerBubble = hasAnswerContent || hasQuotedOnly;
   const currentActivity = React.useMemo(
@@ -402,9 +444,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
         : 0,
     [createdAt],
   );
-  const [waitSeconds, setWaitSeconds] = React.useState(
-    getCanonicalWaitSeconds,
-  );
+  const [waitSeconds, setWaitSeconds] = React.useState(getCanonicalWaitSeconds);
 
   React.useEffect(() => {
     if (!shouldShowCurrentActivity) return undefined;
@@ -459,8 +499,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       onMouseLeave={() => setShowActions(false)}
     >
       {/* 仅入站引用消息：直接渲染卡片，不套气泡外壳 */}
-      {hasQuotedOnly ? (
-        <QuotedMessageBlock quotedMessage={quotedMessage!} />
+      {hasQuotedOnly && quotedMessage ? (
+        <QuotedMessageBlock quotedMessage={quotedMessage} />
       ) : (
         <>
           <AgentAvatar
@@ -481,7 +521,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               </div>
             )}
 
-                        {/* 当前活动区只展示真实运行事件；思维链预览激活时抑制同源的“模型过程”面板，避免思维内容重复展示。 */}
+            {/* 当前活动区只展示真实运行事件；思维链预览激活时抑制同源的“模型过程”面板，避免思维内容重复展示。 */}
             {shouldShowCurrentActivity &&
               currentActivity &&
               !showReasoningPreview && (
@@ -510,6 +550,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 const isStalled = isStreaming && stallSeconds >= 15;
                 const bubbleClassName = cx(
                   styles.agentBubbleNew,
+                  shouldAnimateEntrance && styles.agentBubbleEntrance,
                   groupedWithPrevious && styles.agentBubbleGrouped,
                   isStreaming && styles.agentBubbleStreaming,
                   isStreaming && styles.agentActiveOutputSurface,
@@ -535,6 +576,31 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                       <QuotedMessageBlock quotedMessage={quotedMessage} />
                     )}
                     <MessageItem markdownText={content} isStreaming={false} />
+                    {showCompletionParticles && (
+                      <div
+                        className={styles.answerParticlesContainer}
+                        data-testid="answer-completion-particles"
+                        aria-hidden="true"
+                      >
+                        {COMPLETION_PARTICLE_OFFSETS.map(
+                          ({ x, y, delay }, index) => (
+                            <span
+                              key={`${x}:${y}`}
+                              className={styles.answerParticle}
+                              style={
+                                {
+                                  '--bx': x,
+                                  '--by': y,
+                                  animationDelay: `${delay}ms`,
+                                  width: index % 3 === 0 ? 4 : 3,
+                                  height: index % 3 === 0 ? 4 : 3,
+                                } as React.CSSProperties
+                              }
+                            />
+                          ),
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}

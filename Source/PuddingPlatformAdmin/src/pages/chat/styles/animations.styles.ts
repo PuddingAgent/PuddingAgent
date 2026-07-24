@@ -64,22 +64,40 @@ export const useAnimationStyles = createStyles(({ token }) => ({
     '0%': { opacity: 0, transform: 'translateY(8px)' },
     '100%': { opacity: 1, transform: 'translateY(0)' },
   },
+  // P1: 克制的 Q 弹入场 — 保留可感知的上浮与回弹，避免 0.8 倍缩放造成内容“炸入”
+  '@keyframes messageBounceIn': {
+    '0%': {
+      opacity: 0,
+      filter: 'blur(2px)',
+      transform: 'translateY(14px) scale(0.92)',
+    },
+    '55%': {
+      opacity: 1,
+      filter: 'blur(0)',
+      transform: 'translateY(-2px) scale(1.015)',
+    },
+    '78%': { opacity: 1, transform: 'translateY(1px) scale(0.996)' },
+    '100%': {
+      opacity: 1,
+      filter: 'blur(0)',
+      transform: 'translateY(0) scale(1)',
+    },
+  },
   // 消息入场光晕：紫色光圈从气泡边缘扩散并消散，与 messageIn 叠加使用（600ms ease-out）
   '@keyframes messageGlowIn': {
     '0%': {
       opacity: 0,
       boxShadow:
-        '0 0 0 0 rgba(139, 63, 232, 0.4), 0 0 20px 2px rgba(139, 63, 232, 0.15)',
+        '0 0 0 0 rgba(139, 63, 232, 0.28), 0 0 18px 2px rgba(139, 63, 232, 0.1)',
     },
     '40%': {
       opacity: 1,
       boxShadow:
-        '0 0 0 12px rgba(139, 63, 232, 0), 0 0 48px 12px rgba(139, 63, 232, 0.06)',
+        '0 0 0 4px rgba(139, 63, 232, 0), 0 0 26px 5px rgba(139, 63, 232, 0.065)',
     },
     '100%': {
       opacity: 1,
-      boxShadow:
-        '0 0 0 0 rgba(139, 63, 232, 0), 0 0 0 0 rgba(139, 63, 232, 0)',
+      boxShadow: '0 0 0 0 rgba(139, 63, 232, 0), 0 0 0 0 rgba(139, 63, 232, 0)',
     },
   },
   '@keyframes stepIn': {
@@ -106,8 +124,34 @@ export const useAnimationStyles = createStyles(({ token }) => ({
   },
   // E2: 流式停滞琥珀色慢脉冲
   '@keyframes stallPulse': {
-    '0%, 100%': { borderColor: 'color-mix(in srgb, #d97706 15%, transparent)' },
-    '50%': { borderColor: 'color-mix(in srgb, #d97706 45%, transparent)' },
+    '0%, 100%': { borderColor: 'color-mix(in srgb, #d97706 16%, transparent)' },
+    '50%': { borderColor: 'color-mix(in srgb, #d97706 30%, transparent)' },
+  },
+  // P2: 等待粒子 — 气泡周围的能量点错峰上升、轻微横向漂移并消散
+  '@keyframes particleFloatUp': {
+    '0%': { opacity: 0, transform: 'translate(0, 2px) scale(0.45)' },
+    '18%': { opacity: 0.72, transform: 'translate(0, -3px) scale(1)' },
+    '62%': {
+      opacity: 0.38,
+      transform: 'translate(var(--particle-drift), -18px) scale(0.82)',
+    },
+    '100%': {
+      opacity: 0,
+      transform: 'translate(var(--particle-drift), -34px) scale(0.35)',
+    },
+  },
+  // P3: 完成粒子 — 回答落定时从右下角闪现后向四周飞散
+  '@keyframes particleBurst': {
+    '0%': { opacity: 0, transform: 'translate(0, 0) scale(0.35)' },
+    '16%': { opacity: 0.78, transform: 'translate(0, -1px) scale(1.1)' },
+    '62%': {
+      opacity: 0.48,
+      transform: 'translate(var(--bx), var(--by)) scale(0.9)',
+    },
+    '100%': {
+      opacity: 0,
+      transform: 'translate(var(--bx), var(--by)) scale(0.2)',
+    },
   },
   streamingCursor: {
     display: 'inline-block',

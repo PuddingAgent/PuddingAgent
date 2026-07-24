@@ -22,6 +22,8 @@ interface UserMessageBubbleProps {
   onContextMenu?: (e: React.MouseEvent) => void;
 }
 
+const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
+
 const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   content,
   createdAt,
@@ -40,6 +42,9 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
     () => new Set(),
   );
   const isSending = status === 'sending';
+  const messageAgeMs = Math.max(0, Date.now() - createdAt);
+  const shouldAnimateEntrance =
+    isSending || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
   const displayName = userName || '我';
 
   const isVisionModality = modality === 'image' || modality === 'camera';
@@ -72,6 +77,7 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
           <div
             className={cx(
               styles.userBubbleNew,
+              shouldAnimateEntrance && styles.userBubbleEntrance,
               isSending && styles.userBubbleSending,
             )}
             onContextMenu={onContextMenu}

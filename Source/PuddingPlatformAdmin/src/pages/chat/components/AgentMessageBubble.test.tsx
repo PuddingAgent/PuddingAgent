@@ -125,7 +125,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     });
   });
 
-    it('shows a sanitized reasoning preview instead of the activity panel before the first answer token', () => {
+  it('shows a sanitized reasoning preview instead of the activity panel before the first answer token', () => {
     const { container } = render(
       <AgentMessageBubble
         {...baseProps}
@@ -157,10 +157,34 @@ describe('AgentMessageBubble streaming presentation', () => {
         {...baseProps}
         content=""
         processItems={[
-          { id: 't1', type: 'thinking', text: '思维链第一行', timestamp: 1, collapsed: true },
-          { id: 't2', type: 'thinking', text: '思维链第二行', timestamp: 2, collapsed: true },
-          { id: 't3', type: 'thinking', text: '思维链第三行', timestamp: 3, collapsed: true },
-          { id: 't4', type: 'thinking', text: '思维链第四行', timestamp: 4, collapsed: true },
+          {
+            id: 't1',
+            type: 'thinking',
+            text: '思维链第一行',
+            timestamp: 1,
+            collapsed: true,
+          },
+          {
+            id: 't2',
+            type: 'thinking',
+            text: '思维链第二行',
+            timestamp: 2,
+            collapsed: true,
+          },
+          {
+            id: 't3',
+            type: 'thinking',
+            text: '思维链第三行',
+            timestamp: 3,
+            collapsed: true,
+          },
+          {
+            id: 't4',
+            type: 'thinking',
+            text: '思维链第四行',
+            timestamp: 4,
+            collapsed: true,
+          },
         ]}
       />,
     );
@@ -531,8 +555,96 @@ describe('AgentMessageBubble streaming presentation', () => {
 
     expect(screen.getByTestId('message-item')).toBeTruthy();
     expect(
-      container.querySelector('.agentBubbleNew.agentActiveOutputSurface'),
+      container.querySelector(
+        '.agentBubbleNew.agentBubbleEntrance.agentActiveOutputSurface',
+      ),
     ).toBeTruthy();
+  });
+
+  it('does not replay the entrance animation for historical answers', () => {
+    const { container } = render(
+      <AgentMessageBubble
+        {...baseProps}
+        createdAt={Date.now() - 60_000}
+        status="success"
+        isStreaming={false}
+        content="已经稳定展示的历史回答"
+      />,
+    );
+
+    const bubble = container.querySelector('.agentBubbleNew');
+    expect(bubble).toBeTruthy();
+    expect(bubble?.classList.contains('agentBubbleEntrance')).toBe(false);
+  });
+
+  it('does not replay completion particles for historical answers on mount', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="success"
+        isStreaming={false}
+        content="已经完成的历史回答"
+      />,
+    );
+
+    expect(screen.queryByTestId('answer-completion-particles')).toBeNull();
+  });
+
+  it('shows completion particles when a streaming answer finishes', () => {
+    jest.useFakeTimers();
+    try {
+      const { rerender } = render(
+        <AgentMessageBubble
+          {...baseProps}
+          status="streaming"
+          isStreaming
+          content="正在输出"
+        />,
+      );
+
+      expect(screen.queryByTestId('answer-completion-particles')).toBeNull();
+
+      rerender(
+        <AgentMessageBubble
+          {...baseProps}
+          status="success"
+          isStreaming={false}
+          content="输出完成"
+        />,
+      );
+
+      expect(
+        screen.getByTestId('answer-completion-particles').children,
+      ).toHaveLength(6);
+      React.act(() => {
+        jest.advanceTimersByTime(1_000);
+      });
+      expect(screen.queryByTestId('answer-completion-particles')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not show completion particles when an answer enters an error state', () => {
+    const { rerender } = render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="success"
+        isStreaming={false}
+        content=""
+      />,
+    );
+
+    rerender(
+      <AgentMessageBubble
+        {...baseProps}
+        status="error"
+        isStreaming={false}
+        content="输出失败"
+      />,
+    );
+
+    expect(screen.queryByTestId('answer-completion-particles')).toBeNull();
   });
 
   it('passes browser voice output to assistant message actions after answer content is available', () => {

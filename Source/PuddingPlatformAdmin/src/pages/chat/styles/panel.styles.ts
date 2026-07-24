@@ -1,7 +1,7 @@
 // ── panel styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
-export const usePanelStyles = createStyles(({ token }) => ({
+export const usePanelStyles = createStyles(() => ({
   indicatorWrapper: { position: 'relative' as const },
   indicatorRing: {
     cursor: 'pointer',
@@ -79,18 +79,23 @@ export const usePanelStyles = createStyles(({ token }) => ({
     borderRadius: 6,
   },
   currentActivityPanel: {
+    position: 'relative' as const,
+    isolation: 'isolate' as const,
     width: '100%',
     minWidth: 'min(560px, calc(100vw - 128px))',
     maxWidth: 'min(720px, 100%)',
     boxSizing: 'border-box' as const,
     border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    borderColor:
+      'color-mix(in srgb, var(--accent-purple) 10%, var(--earth-brown) 5%)',
     borderLeft:
-      '2px solid color-mix(in srgb, var(--accent-purple) 24%, var(--earth-brown))',
-    borderRadius: 8,
-    borderTopLeftRadius: 4,
-    background: 'var(--soft-white)',
-    padding: '10px 14px',
+      '2px solid color-mix(in srgb, var(--accent-purple) 28%, var(--earth-brown) 8%)',
+    borderRadius: 10,
+    borderTopLeftRadius: 5,
+    background:
+      'linear-gradient(135deg, color-mix(in srgb, var(--accent-purple) 2%, var(--soft-white)), var(--soft-white) 54%)',
+    boxShadow: '0 3px 12px rgba(63, 38, 95, 0.04), 0 1px 3px rgba(0,0,0,0.035)',
+    padding: '11px 16px',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 7,
@@ -101,7 +106,7 @@ export const usePanelStyles = createStyles(({ token }) => ({
   },
   currentActivityToneRunning: {
     borderLeftColor:
-      'color-mix(in srgb, var(--accent-purple) 28%, var(--earth-brown))',
+      'color-mix(in srgb, var(--accent-purple) 38%, var(--earth-brown) 6%)',
   },
   currentActivityToneSuccess: {
     borderLeftColor: 'color-mix(in srgb, #6f8f72 58%, var(--earth-brown))',

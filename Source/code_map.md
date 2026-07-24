@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-23 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Subconscious 系统
+> 最后更新: 2026-07-24 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Subconscious 系统
 
 ---
 
@@ -154,7 +154,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts` | Agent conversation 查询缓存与轮询收敛；终态 cursor 暂时领先消息读模型、快照仍以 user 结尾时禁用条件 GET，避免相同 cursor 的 304 固化不完整投影 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/useMessageViewportRuntime.ts` | 消息视口唯一滚动权威；按帧合并 scroll，按 message id 缓存行高，并综合 row 数与 Markdown/process 内容重量选择正常流/virtualizer；历史前插恢复 DOM 锚点；首次打开在用户第一次真实滚动前以有界收敛窗口跟随虚拟行/Markdown 的分批测量，直到最新消息稳定可见 |
 | `PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx` | 消息列表渲染与 viewport overlay；优先按 canonical `turnId` 合并用户/助手投影并替换本地运行壳，同时保留 canonical 用户消息 metadata 以在刷新后恢复图片/语音模态；React/virtualizer row key 使用真实 message id，避免同一 Turn 多消息复用 key；canonical conversation 落后时保留本地 SSE 终态与 reasoning，activeRun 采用非回退合并且不得以不完整 `localTurns` 过滤服务端事实；会话首次装载等待 canonical 网络刷新完成后只向 viewport 发出一次定位最新消息意图，避免先对 IndexedDB 旧快照定位 |
-| `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` + `MessageStream.tsx` | 主 Agent 消息呈现边界；正文、流式输出与首 Token 等待态共享同一气泡壳层，运行过程仅消费投影后的 timeline；memo 比较包含 timeline/process 摘要，确保正文未变化时工具进度仍实时重渲染；等待计时锚定 Turn 服务端 `createdAt`，刷新/虚拟行重挂载不归零 |
+| `PuddingPlatformAdmin/src/pages/chat/components/AgentMessageBubble.tsx` + `WaitingBubble.tsx` + `ReasoningPreview.tsx` + `ParticleDots.tsx` + `MessageStream.tsx` | 主 Agent 消息呈现边界；等待、推理、工具活动与正文共享克制的活动面视觉语法，运行过程仅消费投影后的 timeline；memo 比较包含 timeline/process 摘要，确保正文未变化时工具进度仍实时重渲染；等待计时锚定 Turn 服务端 `createdAt`，刷新/虚拟行重挂载不归零；入场动画仅对活动或最近消息启用，等待粒子与答案完成粒子为纯呈现状态，完成粒子仅在活动答案落定时触发，历史消息挂载不得重放动效 |
 | `PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx` | Chat 工作台布局壳层；`chatBody`/开发面板/历史搜索保持合法 JSX 嵌套，并展示 SSE 重连提示 |
 
 ---

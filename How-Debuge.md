@@ -833,6 +833,21 @@ Turn 派生的 `dotnet test` / `testhost` 是否在父 Runtime 退出后仍存�
 
 不能只以“页面出现文字”作为通过条件。
 
+### 8.1 React 根节点空白
+
+页面标题和静态 HTML 已加载、但 Chat 工作台整体空白时，先检查浏览器控制台，不要先归因于
+代理、SSE 或历史接口。Mako 开发服务器出现
+`Runtime error found, and it will cause a full reload` 时，继续读取紧随其后的第一条
+`ReferenceError` 及组件栈；例如 Hook 在依赖数组中读取尚未初始化的 `const`，会在
+`AgentMessageBubble` 首次渲染时直接中断整个 React 根节点。
+
+修复后至少同时验证：
+
+1. 受影响组件的聚焦 Jest 测试从相同异常恢复为通过；
+2. `npm run build` 成功；
+3. 重新加载 `/admin/chat` 后工作台和 Composer 可见；
+4. 仅统计重新加载时间点之后的浏览器 Error，避免把修复前缓存的控制台记录误判为新错误。
+
 ## 9. 日志埋点约束
 
 新增命令链路日志时，至少包含：

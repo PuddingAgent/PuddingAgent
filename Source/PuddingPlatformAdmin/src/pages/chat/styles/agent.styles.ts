@@ -130,32 +130,52 @@ export const useAgentStyles = createStyles(({ token }) => ({
     opacity: 0.5,
     lineHeight: '20px',
   },
-    agentBubbleNew: {
+  agentBubbleNew: {
+    position: 'relative' as const,
+    isolation: 'isolate' as const,
     background: 'var(--soft-white)',
     border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
-    borderRadius: 8,
-    borderTopLeftRadius: 4,
+    borderColor:
+      'color-mix(in srgb, var(--accent-purple) 9%, var(--earth-brown) 5%)',
+    borderLeft:
+      '2px solid color-mix(in srgb, var(--accent-purple) 22%, var(--earth-brown) 8%)',
+    borderRadius: 10,
+    borderTopLeftRadius: 5,
     padding: '12px 16px',
     fontSize: 14,
     lineHeight: 1.7,
     color: 'var(--text-primary)',
     wordBreak: 'break-word' as const,
     width: '100%',
-    contain: 'layout paint style',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    transition: 'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
-    animation: 'messageGlowIn 0.6s ease-out, messageIn 0.3s ease-out',
-    '&:hover': {
-      background: 'color-mix(in srgb, var(--soft-white) 95%, transparent)',
-      borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
-      boxShadow: '0 2px 6px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)',
+    contain: 'layout style',
+    boxShadow: '0 3px 12px rgba(63, 38, 95, 0.04), 0 1px 3px rgba(0,0,0,0.035)',
+    transition:
+      'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease, transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+    '@media (hover: hover) and (pointer: fine)': {
+      '&:hover': {
+        background:
+          'color-mix(in srgb, var(--accent-purple) 2%, var(--soft-white))',
+        borderColor:
+          'color-mix(in srgb, var(--accent-purple) 22%, var(--earth-brown) 6%)',
+        boxShadow:
+          '0 6px 18px rgba(63, 38, 95, 0.065), 0 0 0 1px rgba(139, 63, 232, 0.025)',
+        transform: 'translateY(-1px) scale(1.006)',
+      },
     },
+    '@media (prefers-reduced-motion: reduce)': {
+      '&:hover': { transform: 'none' },
+    },
+  },
+  agentBubbleEntrance: {
+    transformOrigin: 'bottom left',
+    animation:
+      'messageGlowIn 680ms ease-out, messageBounceIn 460ms cubic-bezier(0.22, 1, 0.36, 1)',
+    animationFillMode: 'backwards',
     '@media (prefers-reduced-motion: reduce)': {
       animation: 'none',
     },
   },
-    agentBubbleNewGlow: {
+  agentBubbleNewGlow: {
     background: 'var(--soft-white)',
     border: '1px solid',
     borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
@@ -170,7 +190,8 @@ export const useAgentStyles = createStyles(({ token }) => ({
     contain: 'layout paint style',
     boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
     animation: 'messageGlow 800ms ease-out',
-    transition: 'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
+    transition:
+      'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
     '&:hover': {
       background: 'color-mix(in srgb, var(--soft-white) 95%, transparent)',
       borderColor: 'color-mix(in srgb, var(--earth-brown) 10%, transparent)',
@@ -185,24 +206,29 @@ export const useAgentStyles = createStyles(({ token }) => ({
     borderTop: '1px solid',
     borderTopColor: 'color-mix(in srgb, var(--earth-brown) 4%, transparent)',
   },
-        agentBubbleStreaming: {
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 14%, var(--earth-brown) 4%)',
+  agentBubbleStreaming: {
+    borderColor:
+      'color-mix(in srgb, var(--accent-purple) 22%, var(--earth-brown) 5%)',
     boxShadow:
-      '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04), 0 0 18px 3px rgba(139, 63, 232, 0.08)',
+      '0 5px 18px rgba(63, 38, 95, 0.055), 0 0 18px 2px rgba(139, 63, 232, 0.07)',
   },
-    agentWaitingBubble: {
+  agentWaitingBubble: {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
     width: 'fit-content',
     minHeight: 44,
-    background: 'var(--soft-white)',
+    minWidth: 176,
+    padding: '11px 16px',
+    contain: 'layout style',
   },
   waitingDots: {
     display: 'flex',
     alignItems: 'center',
     gap: 5,
     height: 20,
+    position: 'relative' as const,
+    zIndex: 2,
   },
   waitingDot: {
     width: 7,
@@ -222,12 +248,60 @@ export const useAgentStyles = createStyles(({ token }) => ({
   },
   waitingLabel: {
     fontSize: 13,
-    color: 'color-mix(in srgb, var(--accent-purple) 48%, var(--text-secondary))',
+    color:
+      'color-mix(in srgb, var(--accent-purple) 68%, var(--text-secondary))',
     fontStyle: 'italic',
     lineHeight: '20px',
+    position: 'relative' as const,
+    zIndex: 2,
   },
   waitingLabelWarning: {
     color: 'color-mix(in srgb, #d97706 65%, var(--text-secondary))',
+  },
+  /* ── P2: 等待粒子 (Waiting Particles) ── */
+  particleContainer: {
+    position: 'absolute' as const,
+    inset: '-18px -14px -4px',
+    pointerEvents: 'none' as const,
+    zIndex: 1,
+  },
+  particleDot: {
+    position: 'absolute' as const,
+    borderRadius: '50%',
+    background:
+      'radial-gradient(circle at 35% 30%, #ffffff 0 10%, #c4b5fd 34%, #9f67dd 74%)',
+    boxShadow:
+      '0 0 5px 1px rgba(139, 63, 232, 0.3), 0 0 9px rgba(167, 139, 250, 0.14)',
+    animationName: 'particleFloatUp',
+    animationDuration: '2.4s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    opacity: 0,
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+    },
+  },
+
+  /* ── P3: 完成粒子 (Completion Particles) ── */
+  answerParticlesContainer: {
+    position: 'absolute' as const,
+    bottom: 10,
+    right: 14,
+    pointerEvents: 'none' as const,
+    zIndex: 3,
+  },
+  answerParticle: {
+    position: 'absolute' as const,
+    borderRadius: '50%',
+    background:
+      'radial-gradient(circle at 35% 30%, #ffffff 0 10%, #c4b5fd 32%, #9f67dd 74%)',
+    boxShadow:
+      '0 0 4px 1px rgba(139, 63, 232, 0.32), 0 0 8px rgba(167, 139, 250, 0.16)',
+    animation: 'particleBurst 640ms cubic-bezier(0.16, 1, 0.3, 1) forwards',
+    opacity: 0,
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+    },
   },
 
   agentBubbleError: {
@@ -236,7 +310,7 @@ export const useAgentStyles = createStyles(({ token }) => ({
   },
   // E2: 流式停滞警告（琥珀色慢脉冲边框）
   agentBubbleWarning: {
-    borderColor: 'color-mix(in srgb, #d97706 35%, transparent)',
+    borderColor: 'color-mix(in srgb, #d97706 23%, transparent)',
     animation: 'stallPulse 2s ease-in-out infinite',
   },
   pulseDotWarning: {
@@ -270,34 +344,50 @@ export const useAgentStyles = createStyles(({ token }) => ({
     fontSize: 13,
     lineHeight: 1.55,
   },
-    agentActiveOutputSurface: {
+  agentActiveOutputSurface: {
+    position: 'relative' as const,
+    isolation: 'isolate' as const,
     borderColor:
-      'color-mix(in srgb, var(--accent-purple) 16%, var(--earth-brown) 6%)',
+      'color-mix(in srgb, var(--accent-purple) 24%, var(--earth-brown) 6%)',
     boxShadow:
-      '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
-    animation: 'agentActiveOutputGlow 2.8s ease-in-out infinite',
+      '0 5px 18px rgba(63, 38, 95, 0.055), 0 0 18px 2px rgba(139, 63, 232, 0.07)',
+    '&::after': {
+      content: '""',
+      position: 'absolute' as const,
+      inset: 0,
+      borderRadius: 'inherit',
+      background:
+        'linear-gradient(112deg, transparent 8%, rgba(167, 139, 250, 0.015) 35%, rgba(139, 63, 232, 0.055) 50%, rgba(167, 139, 250, 0.015) 64%, transparent 90%)',
+      backgroundSize: '220% 100%',
+      pointerEvents: 'none' as const,
+      zIndex: 0,
+      animation: 'agentActiveOutputGlow 2.8s ease-in-out infinite',
+    },
+    '& > *': {
+      position: 'relative' as const,
+      zIndex: 1,
+    },
     '@media (prefers-reduced-motion: reduce)': {
-      animation: 'none',
       boxShadow:
-        '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        '0 3px 12px rgba(63, 38, 95, 0.04), 0 1px 3px rgba(0,0,0,0.035)',
+      '&::after': {
+        animation: 'none',
+        opacity: 0.12,
+      },
     },
   },
-    '@keyframes waitingBounce': {
+  '@keyframes waitingBounce': {
     '0%, 80%, 100%': { transform: 'translateY(0) scale(0.6)', opacity: 0.35 },
     '40%': { transform: 'translateY(-5px) scale(1)', opacity: 1 },
   },
   '@keyframes agentActiveOutputGlow': {
     '0%, 100%': {
-      borderColor:
-        'color-mix(in srgb, var(--accent-purple) 12%, var(--earth-brown) 5%)',
-      boxShadow:
-        '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04), 0 0 18px 3px rgba(139, 63, 232, 0.08)',
+      opacity: 0.16,
+      backgroundPosition: '105% 0',
     },
     '50%': {
-      borderColor:
-        'color-mix(in srgb, var(--accent-purple) 20%, var(--earth-brown) 7%)',
-      boxShadow:
-        '0 1px 4px rgba(0,0,0,0.1), 0 2px 3px rgba(0,0,0,0.07), 0 0 18px 3px rgba(139, 63, 232, 0.12)',
+      opacity: 0.42,
+      backgroundPosition: '-15% 0',
     },
   },
   '@keyframes messageGlow': {

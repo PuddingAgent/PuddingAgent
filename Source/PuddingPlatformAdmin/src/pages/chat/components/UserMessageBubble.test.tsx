@@ -47,4 +47,38 @@ describe('UserMessageBubble voice metadata', () => {
     expect(screen.getByAltText('比较图片 1/2')).toBeTruthy();
     expect(screen.getByAltText('比较图片 2/2')).toBeTruthy();
   });
+
+  it('does not replay the entrance animation for historical messages', () => {
+    const { container } = render(
+      <UserMessageBubble
+        content="历史消息"
+        createdAt={Date.now() - 60_000}
+        status="success"
+        userName="我"
+        formatTime={() => '10:24'}
+      />,
+    );
+
+    const bubble = container.querySelector('.userBubbleNew');
+    expect(bubble).toBeTruthy();
+    expect(bubble?.classList.contains('userBubbleEntrance')).toBe(false);
+  });
+
+  it('animates a message while it is being sent', () => {
+    const { container } = render(
+      <UserMessageBubble
+        content="正在发送"
+        createdAt={Date.now() - 60_000}
+        status="sending"
+        userName="我"
+        formatTime={() => '10:24'}
+      />,
+    );
+
+    expect(
+      container.querySelector(
+        '.userBubbleNew.userBubbleEntrance.userBubbleSending',
+      ),
+    ).toBeTruthy();
+  });
 });

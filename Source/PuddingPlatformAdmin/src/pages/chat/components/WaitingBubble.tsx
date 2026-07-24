@@ -2,6 +2,7 @@
 import cx from 'classnames';
 import React from 'react';
 import { useAgentStyles } from '../styles/agent.styles';
+import { ParticleDots } from './ParticleDots';
 
 export interface WaitingBubbleProps {
   waitSeconds: number;
@@ -28,32 +29,25 @@ export const WaitingBubble: React.FC<WaitingBubbleProps> = ({
     <div
       className={cx(
         styles.agentBubbleNew,
+        styles.agentBubbleEntrance,
         styles.agentBubbleStreaming,
         styles.agentActiveOutputSurface,
         styles.agentWaitingBubble,
         isVerySlow && styles.agentBubbleWarning,
       )}
     >
+      {!isExtreme && <ParticleDots />}
       <div className={styles.waitingDots}>
         <span
-          className={cx(
-            styles.waitingDot,
-            isVerySlow && styles.waitingDotSlow,
-          )}
+          className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)}
           style={{ animationDelay: '0s' }}
         />
         <span
-          className={cx(
-            styles.waitingDot,
-            isVerySlow && styles.waitingDotSlow,
-          )}
+          className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)}
           style={{ animationDelay: '0.2s' }}
         />
         <span
-          className={cx(
-            styles.waitingDot,
-            isVerySlow && styles.waitingDotSlow,
-          )}
+          className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)}
           style={{ animationDelay: '0.4s' }}
         />
       </div>
