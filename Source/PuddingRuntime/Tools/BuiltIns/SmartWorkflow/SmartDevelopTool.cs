@@ -53,12 +53,13 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
         sb.AppendLine("2. **Understand**: file_read + code_outline on affected files (run in parallel).");
         sb.AppendLine("3. **Implement**: file_patch for existing files, file_write for new files. Minimal, focused edits.");
         sb.AppendLine("4. **Build**: `dotnet build`. If FAIL → fix (max 3 retries on same error).");
-        sb.AppendLine("5. **Test**: `dotnet test` on affected projects. Report results.");
+        sb.AppendLine("5. **Report**: Generate the five-section report with build evidence. Then STOP — no more tools.");
         sb.AppendLine();
         sb.AppendLine("### ⚠️ RULES");
         sb.AppendLine("- Edit: file_patch, file_write. Verify: terminal_start + terminal_wait.");
         sb.AppendLine("- Read: file_read, code_outline, search_grep, list_dir.");
         sb.AppendLine("- NEVER: spawn_sub_agent. If stuck: report what you tried and why.");
+        sb.AppendLine("- **A failed tool call does NOT mean the task failed.** If file_patch returns an error, read the error, fix the parameters, and retry ONCE. If still failing, report it in BLOCKERS and continue.");
         sb.AppendLine();
         sb.AppendLine($"## 🎯 Task: {args.Task}");
         var whereSection = BuildWhereSection(args);
@@ -93,7 +94,13 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
         sb.AppendLine("  DEVIATIONS: differences from the requested design and why");
         sb.AppendLine("BLOCKERS:");
         sb.AppendLine("  none, or unresolved error plus attempts made and exact next action");
-        sb.AppendLine("```");
+                sb.AppendLine("```");
+        sb.AppendLine();
+        sb.AppendLine("### ⚡ COMPLETION CHECKLIST");
+        sb.AppendLine("- [ ] Code changes made (file_patch or file_write executed)");
+        sb.AppendLine("- [ ] dotnet build completed (pass or fail with documented errors)");
+        sb.AppendLine("- [ ] Five-section report written with real build evidence");
+        sb.AppendLine("→ **When all three checked: OUTPUT THE REPORT AND STOP. Do NOT run more tools. The task is DONE.**");
         return sb.ToString();
     }
 }

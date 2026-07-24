@@ -38,8 +38,14 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     /// Appends the canonical report rules understood by <c>spawn_sub_agent</c>.
     /// Role prompts must add their role-specific fields under these five sections.
     /// </summary>
-    protected static void AppendCanonicalReportRules(StringBuilder sb)
+        protected static void AppendCanonicalReportRules(StringBuilder sb)
     {
+        sb.AppendLine("### 🛑 STOP RULES (READ FIRST)");
+        sb.AppendLine("- **After writing the report, STOP.** Do NOT run additional tools, verification, or edits.");
+        sb.AppendLine("- If you already completed the task AND generated the report → you are DONE. Output nothing else.");
+        sb.AppendLine("- **A single tool error (missing param, wrong flag, file-not-found) is NOT a task failure.** Fix and retry ONCE, then continue. Do not abort the entire task.");
+        sb.AppendLine("- If you genuinely cannot complete the task: still output the five-section report with `STATUS:blocked`.");
+        sb.AppendLine();
         sb.AppendLine("### REQUIRED WORK REPORT");
         sb.AppendLine("- Return a complete, self-contained work report. The parent Agent must not repeat your work to understand the result.");
         sb.AppendLine("- Never answer only \"done\", \"completed\", \"success\", or another progress/status sentence.");

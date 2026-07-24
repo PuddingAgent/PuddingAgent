@@ -49,6 +49,18 @@ public sealed record SubAgentRoleStats
     public int FailedCount { get; init; }
     public int CancelledCount { get; init; }
     public int TimeoutCount { get; init; }
+
+    /// <summary>失败原因分类：ErrorMessage 包含 timeout/canceled/cancelled。</summary>
+    public int FailureTimeoutCount { get; init; }
+    /// <summary>失败原因分类：ErrorMessage 包含 tool/Tool。</summary>
+    public int ToolErrorCount { get; init; }
+    /// <summary>失败原因分类：ErrorMessage 包含 llm/LLM/api/API。</summary>
+    public int LlmErrorCount { get; init; }
+    /// <summary>失败原因分类：ErrorMessage 包含 guard/block/safety。</summary>
+    public int GuardrailBlockedCount { get; init; }
+    /// <summary>失败原因分类：不匹配以上任何类别。</summary>
+    public int UnknownErrorCount { get; init; }
+
     public double AvgDurationMs { get; init; }
     public double P50DurationMs { get; init; }
     public double P95DurationMs { get; init; }

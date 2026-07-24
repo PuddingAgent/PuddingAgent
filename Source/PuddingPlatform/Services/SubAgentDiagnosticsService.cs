@@ -129,6 +129,61 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
         };
     }
 
+    /// <summary>
+    /// 生成诊断报告的文本摘要，末尾包含生成时间戳。
+    /// </summary>
+    public async Task<string> GetDiagnosticsReportAsync(
+        SubAgentDiagnosticsRequest request,
+        CancellationToken ct = default)
+    {
+        var diagnostics = await GetDiagnosticsAsync(request, ct);
+
+        var report = $"=== Sub-Agent Diagnostics Report ===\n";
+        report += $"Workspace: {request.WorkspaceId}\n";
+        report += $"Agent: {request.AgentInstanceId}\n";
+        report += $"Hours Back: {request.HoursBack}\n";
+        report += $"Total Runs: {diagnostics.Overall.TotalRuns}\n";
+        report += $"Success: {diagnostics.Overall.SuccessCount}, Failed: {diagnostics.Overall.FailedCount}\n";
+        report += $"Avg Duration: {diagnostics.Overall.AvgDurationMs}ms\n";
+        report += $"P50 Duration: {diagnostics.Overall.P50DurationMs}ms\n";
+        report += $"P95 Duration: {diagnostics.Overall.P95DurationMs}ms\n";
+
+        // 失败原因分类分布
+        var o = diagnostics.Overall;
+        var totalClassified = o.FailureTimeoutCount + o.ToolErrorCount + o.LlmErrorCount + o.GuardrailBlockedCount + o.UnknownErrorCount;
+        if (totalClassified > 0)
+        {
+            report += $"\n--- Failure Classification ---\n";
+            report += $"  timeout: {o.FailureTimeoutCount}\n";
+            report += $"  tool_error: {o.ToolErrorCount}\n";
+            report += $"  llm_error: {o.LlmErrorCount}\n";
+            report += $"  guardrail_blocked: {o.GuardrailBlockedCount}\n";
+            report += $"  unknown: {o.UnknownErrorCount}\n";
+        }
+
+        if (diagnostics.ByRole.Count > 0)
+        {
+            report += "\n--- By Role ---\n";
+            foreach (var role in diagnostics.ByRole)
+            {
+                report += $"  {role.Role}: {role.TotalRuns} runs, {role.SuccessCount} ok, {role.FailedCount} failed\n";
+            }
+        }
+
+        if (diagnostics.ByModel.Count > 0)
+        {
+            report += "\n--- By Model ---\n";
+            foreach (var model in diagnostics.ByModel)
+            {
+                report += $"  {model.ModelId}: {model.Stats.TotalRuns} runs\n";
+            }
+        }
+
+        report += $"\n--- Report generated at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC ---";
+
+        return report;
+    }
+
     private static SubAgentRoleStats ComputeRoleStats(string role, List<SubAgentRunSummary> runs)
     {
         if (runs.Count == 0)
@@ -142,6 +197,29 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
 
         var durations = runs.Select(r => (double)r.DurationMs).OrderBy(d => d).ToList();
 
+        // 失败原因分类（仅针对有 ErrorMessage 的失败/中断 run）
+        var failedRuns = runs.Where(r => r.Status is "failed" or "interrupted" && !string.IsNullOrEmpty(r.ErrorMessage)).ToList();
+        int failureTimeout = 0, toolError = 0, llmError = 0, guardrailBlocked = 0, unknownError = 0;
+        foreach (var run in failedRuns)
+        {
+            var msg = run.ErrorMessage!;
+            if (msg.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("canceled", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("cancelled", StringComparison.OrdinalIgnoreCase))
+                failureTimeout++;
+            else if (msg.Contains("tool", StringComparison.OrdinalIgnoreCase))
+                toolError++;
+            else if (msg.Contains("llm", StringComparison.OrdinalIgnoreCase) ||
+                     msg.Contains("api", StringComparison.OrdinalIgnoreCase))
+                llmError++;
+            else if (msg.Contains("guard", StringComparison.OrdinalIgnoreCase) ||
+                     msg.Contains("block", StringComparison.OrdinalIgnoreCase) ||
+                     msg.Contains("safety", StringComparison.OrdinalIgnoreCase))
+                guardrailBlocked++;
+            else
+                unknownError++;
+        }
+
         return new SubAgentRoleStats
         {
             Role = role,
@@ -150,6 +228,11 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
             FailedCount = runs.Count(r => r.Status is "failed" or "interrupted"),
             CancelledCount = runs.Count(r => r.Status == "cancelled"),
             TimeoutCount = runs.Count(r => r.Status == "timed_out"),
+            FailureTimeoutCount = failureTimeout,
+            ToolErrorCount = toolError,
+            LlmErrorCount = llmError,
+            GuardrailBlockedCount = guardrailBlocked,
+            UnknownErrorCount = unknownError,
             AvgDurationMs = Math.Round(durations.Average(), 1),
             P50DurationMs = Math.Round(Percentile(durations, 0.50), 1),
             P95DurationMs = Math.Round(Percentile(durations, 0.95), 1),
