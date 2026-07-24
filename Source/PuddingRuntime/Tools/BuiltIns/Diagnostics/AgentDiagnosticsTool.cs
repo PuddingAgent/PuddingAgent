@@ -4,6 +4,7 @@ using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.SubAgents;
 
 namespace PuddingRuntime.Services.Tools;
@@ -29,15 +30,18 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         private readonly IRuntimeActivitySink? _activitySink;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISubAgentDiagnosticsService? _subAgentDiagnostics;
+    private readonly PuddingDataPaths? _dataPaths;
 
     public AgentDiagnosticsTool(
         IRuntimeActivitySink? activitySink,
         IServiceScopeFactory scopeFactory,
-        ISubAgentDiagnosticsService? subAgentDiagnostics = null)
+        ISubAgentDiagnosticsService? subAgentDiagnostics = null,
+        PuddingDataPaths? dataPaths = null)
     {
         _activitySink = activitySink;
         _scopeFactory = scopeFactory;
         _subAgentDiagnostics = subAgentDiagnostics;
+        _dataPaths = dataPaths;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -54,7 +58,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "slowest_tools" => await GetSlowestToolsAsync(limit, ct),
             "cache_health" => await GetCacheHealthAsync(sessionId, ct),
             "sub_agent_stats" => await GetSubAgentStatsAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats." })
+            "compaction_stats" => await GetCompactionStatsAsync(args, limit, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -274,6 +279,85 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 error = "Failed to query sub-agent diagnostics.",
                 detail = ex.Message,
             });
+        }
+    }
+
+    private async Task<string> GetCompactionStatsAsync(AgentDiagnosticsArgs args, int limit, CancellationToken ct)
+    {
+        var logDir = _dataPaths is not null
+            ? _dataPaths.DiagnosticsLogsRoot
+            : Path.Combine(Directory.GetCurrentDirectory(), "data");
+        var logPath = Path.Combine(logDir, "compaction-log.jsonl");
+
+        if (!File.Exists(logPath))
+            return JsonSerializer.Serialize(new { compactions = Array.Empty<object>(), hint = "No compaction log found." });
+
+        try
+        {
+            var lines = await File.ReadAllLinesAsync(logPath, ct);
+            var entries = new List<JsonElement>();
+            foreach (var line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+
+                    if (!string.IsNullOrWhiteSpace(args.SessionId)
+                        && root.TryGetProperty("sessionId", out var sid)
+                        && sid.GetString() != args.SessionId)
+                        continue;
+                    if (!string.IsNullOrWhiteSpace(args.WorkspaceId)
+                        && root.TryGetProperty("workspaceId", out var wid)
+                        && wid.GetString() != args.WorkspaceId)
+                        continue;
+
+                    entries.Add(root.Clone());
+                }
+                catch { /* skip malformed lines */ }
+            }
+
+            var totalCompactions = entries.Count;
+            var recent = entries.TakeLast(limit).Reverse().ToList();
+
+            double avgRatio = 0;
+            double avgDuration = 0;
+            int totalMessagesCompacted = 0;
+            if (totalCompactions > 0)
+            {
+                avgRatio = Math.Round(entries.Average(e =>
+                    e.TryGetProperty("compactionRatio", out var r) ? r.GetDouble() : 0), 3);
+                avgDuration = Math.Round(entries.Average(e =>
+                    e.TryGetProperty("durationMs", out var d) ? d.GetDouble() : 0), 1);
+                totalMessagesCompacted = entries.Sum(e =>
+                    e.TryGetProperty("compactedMessageCount", out var c) ? c.GetInt32() : 0);
+            }
+
+            return JsonSerializer.Serialize(new
+            {
+                totalCompactions,
+                avgCompactionRatio = avgRatio,
+                avgDurationMs = avgDuration,
+                totalMessagesCompacted,
+                compactions = recent.Select(e => new
+                {
+                    timestamp = e.TryGetProperty("timestamp", out var ts) ? ts.GetString() : null,
+                    compactionId = e.TryGetProperty("compactionId", out var ci) ? ci.GetString() : null,
+                    sessionId = e.TryGetProperty("sessionId", out var s) ? s.GetString() : null,
+                    workspaceId = e.TryGetProperty("workspaceId", out var w) ? w.GetString() : null,
+                    agentId = e.TryGetProperty("agentId", out var a) ? a.GetString() : null,
+                    mode = e.TryGetProperty("mode", out var m) ? m.GetString() : null,
+                    beforeTokens = e.TryGetProperty("beforeTokens", out var bt) ? bt.GetInt32() : 0,
+                    afterTokens = e.TryGetProperty("afterTokens", out var at) ? at.GetInt32() : 0,
+                    compactionRatio = e.TryGetProperty("compactionRatio", out var cr) ? cr.GetDouble() : 0,
+                    durationMs = e.TryGetProperty("durationMs", out var dm) ? dm.GetInt64() : 0,
+                }).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = "Failed to read compaction log.", detail = ex.Message });
         }
     }
 

@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -28,6 +29,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly ContextCompactionOptions? _options;
     private readonly IHookPublisher? _hookPublisher;
+    private readonly PuddingDataPaths? _dataPaths;
 
     public ContextCompactionService(
         IDbContextFactory<MemoryDbContext> dbFactory,
@@ -39,7 +41,8 @@ public sealed class ContextCompactionService : IContextCompactionService
         SessionSummaryStore? sessionSummaryStore = null,
         ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         ContextCompactionOptions? options = null,
-        IHookPublisher? hookPublisher = null)
+        IHookPublisher? hookPublisher = null,
+        PuddingDataPaths? dataPaths = null)
     {
         _dbFactory = dbFactory;
         _summaryGenerator = summaryGenerator;
@@ -51,6 +54,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
         _options = options;
         _hookPublisher = hookPublisher;
+        _dataPaths = dataPaths;
     }
 
     public async Task<ContextHealthSnapshot> GetHealthAsync(
@@ -231,7 +235,7 @@ public sealed class ContextCompactionService : IContextCompactionService
             _logger.LogInformation(
                 "[ContextCompaction:Phase] skipNoOp compactionId={CompactionId} session={SessionId} elapsedMs={ElapsedMs}",
                 compactionId, request.SessionId, sw.ElapsedMilliseconds);
-            return new ContextCompactionResult(
+                        var noOpResult = new ContextCompactionResult(
                 request.SessionId,
                 SummaryMessageId: string.Empty,
                 request.Mode,
@@ -243,6 +247,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 SummaryMarkdown: string.Empty,
                 MemoryNotes: [],
                 Diagnostics: noOpDiagnostics);
+            await WriteCompactionLogAsync(request, noOpResult, ct);
+            return noOpResult;
         }
 
         var expandStart = sw.ElapsedMilliseconds;
@@ -410,7 +416,8 @@ public sealed class ContextCompactionService : IContextCompactionService
             memoryNotes,
             diagnostics);
 
-        await PublishSessionCompressedHookAsync(request, result, ct);
+                await PublishSessionCompressedHookAsync(request, result, ct);
+        await WriteCompactionLogAsync(request, result, ct);
         return result;
     }
 
@@ -461,6 +468,48 @@ public sealed class ContextCompactionService : IContextCompactionService
                 "[ContextCompaction] Failed to publish session.compressed hook compactionId={CompactionId} session={SessionId}",
                 diagnostics.CompactionId,
                 diagnostics.PreviousSessionId);
+        }
+    }
+
+    private async Task WriteCompactionLogAsync(
+        ContextCompactionRequest request,
+        ContextCompactionResult result,
+        CancellationToken ct)
+    {
+        try
+        {
+            var logDir = _dataPaths is not null
+                ? _dataPaths.DiagnosticsLogsRoot
+                : Path.Combine(Directory.GetCurrentDirectory(), "data");
+            Directory.CreateDirectory(logDir);
+            var logPath = Path.Combine(logDir, "compaction-log.jsonl");
+
+            var logLine = JsonSerializer.Serialize(new
+            {
+                timestamp = DateTimeOffset.UtcNow.ToString("O"),
+                compactionId = result.Diagnostics?.CompactionId ?? "",
+                sessionId = request.SessionId,
+                workspaceId = request.WorkspaceId,
+                agentId = request.AgentId,
+                mode = request.Mode.ToString(),
+                reason = request.Reason,
+                beforeTokens = result.BeforeTokens,
+                afterTokens = result.AfterTokens,
+                compactionRatio = result.BeforeTokens > 0
+                    ? Math.Round((double)result.AfterTokens / result.BeforeTokens, 3)
+                    : 0,
+                compactedMessageCount = result.CompactedMessageCount,
+                durationMs = result.Diagnostics?.DurationMs ?? 0,
+                summaryGenerator = result.Diagnostics?.SummaryGenerator ?? "",
+            }, JsonOptions);
+
+            await File.AppendAllTextAsync(logPath, logLine + Environment.NewLine, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[ContextCompaction] Failed to write compaction log session={SessionId}",
+                request.SessionId);
         }
     }
 
