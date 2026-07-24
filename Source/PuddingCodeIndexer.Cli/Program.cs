@@ -2,6 +2,7 @@
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.CSharp;
 using PuddingCodeIntelligence.Storage;
+using PuddingCodeIntelligence.TypeScript;
 
 // ── Logging setup ──────────────────────────────────────────────────────────
 using var loggerFactory = LoggerFactory.Create(builder =>
@@ -100,6 +101,103 @@ async Task<int> RunIndexAsync(string[] args)
     Console.WriteLine($"Status   : {result.Status}");
     if (!string.IsNullOrEmpty(result.Message))
         Console.WriteLine($"Message  : {result.Message}");
+
+    // ── TypeScript/JavaScript indexing ─────────────────────────────────────
+    var tsExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".ts", ".tsx", ".js", ".jsx" };
+    var tsFiles = Directory
+        .GetFiles(projectPath, "*.*", SearchOption.AllDirectories)
+        .Where(f => tsExtensions.Contains(Path.GetExtension(f))
+                 && !f.Contains(Path.DirectorySeparatorChar + "node_modules" + Path.DirectorySeparatorChar)
+                 && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                 && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+        .ToList();
+
+    if (tsFiles.Count > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"TypeScript/JavaScript files found: {tsFiles.Count}");
+        Console.WriteLine("Indexing TypeScript/JavaScript...");
+
+        // Locate the extraction script and node_modules.
+        // AppContext.BaseDirectory is bin/Debug/net10.0/ — walk up to find Scripts/ with node_modules.
+        string cliScriptsDir = Path.Combine(AppContext.BaseDirectory, "Scripts");
+        string extractScript = Path.Combine(cliScriptsDir, "extract-ts-symbols.js");
+        string cliNodeModules = Path.Combine(cliScriptsDir, "node_modules");
+
+        // If node_modules not in output dir, walk up to find source Scripts/ directory
+        if (!Directory.Exists(cliNodeModules))
+        {
+            string? walkDir = new DirectoryInfo(AppContext.BaseDirectory).Parent?.FullName;
+            for (int i = 0; i < 5 && walkDir is not null; i++)
+            {
+                string candidate = Path.Combine(walkDir, "Scripts", "node_modules");
+                if (Directory.Exists(candidate))
+                {
+                    cliScriptsDir = Path.Combine(walkDir, "Scripts");
+                    extractScript = Path.Combine(cliScriptsDir, "extract-ts-symbols.js");
+                    cliNodeModules = candidate;
+                    break;
+                }
+                walkDir = new DirectoryInfo(walkDir).Parent?.FullName;
+            }
+        }
+
+        // TypeScriptIndexer expects script at ProjectPath/Scripts/extract-ts-symbols.js
+        string targetScriptsDir = Path.Combine(projectPath, "Scripts");
+        string targetScriptPath = Path.Combine(targetScriptsDir, "extract-ts-symbols.js");
+
+        bool copiedScript = false;
+        if (!File.Exists(targetScriptPath) && File.Exists(extractScript))
+        {
+            Directory.CreateDirectory(targetScriptsDir);
+            File.Copy(extractScript, targetScriptPath, overwrite: true);
+            copiedScript = true;
+        }
+
+        // Set NODE_PATH so the extraction script can find the 'typescript' module
+        if (Directory.Exists(cliNodeModules))
+        {
+            string? existingNodePath = Environment.GetEnvironmentVariable("NODE_PATH");
+            string newNodePath = string.IsNullOrEmpty(existingNodePath)
+                ? cliNodeModules
+                : $"{existingNodePath}{Path.PathSeparator}{cliNodeModules}";
+            Environment.SetEnvironmentVariable("NODE_PATH", newNodePath);
+        }
+
+        string tsProjectId = projectId + "_ts";
+        var tsDescriptor = new CodeWorkspaceDescriptor(
+            WorkspaceId: WorkspaceId,
+            ProjectId: tsProjectId,
+            ProjectPath: projectPath,
+            IsLoaded: true,
+            SolutionPath: null,
+            ProjectFilePaths: new List<string>());
+
+        var tsLogger = loggerFactory.CreateLogger<TypeScriptIndexer>();
+        var tsIndexer = new TypeScriptIndexer(store, tsLogger);
+        CodeIndexResult tsResult = await tsIndexer.IndexWorkspaceAsync(tsDescriptor);
+
+        Console.WriteLine();
+        Console.WriteLine($"TS Success  : {tsResult.Success}");
+        Console.WriteLine($"TS Status   : {tsResult.Status}");
+        if (!string.IsNullOrEmpty(tsResult.Message))
+            Console.WriteLine($"TS Message  : {tsResult.Message}");
+
+        // Clean up copied script if we copied it
+        if (copiedScript)
+        {
+            try { File.Delete(targetScriptPath); } catch { /* best effort */ }
+            try { Directory.Delete(targetScriptsDir, recursive: false); } catch { /* dir may not be empty */ }
+        }
+
+        if (!tsResult.Success)
+            Console.WriteLine("Warning: TypeScript indexing failed. C# index is still valid.");
+    }
+    else
+    {
+        Console.WriteLine();
+        Console.WriteLine("No TypeScript/JavaScript files found — skipping TS indexing.");
+    }
 
     return result.Success ? 0 : 1;
 }
