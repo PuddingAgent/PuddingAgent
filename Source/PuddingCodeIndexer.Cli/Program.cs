@@ -2,6 +2,7 @@
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.CSharp;
 using PuddingCodeIntelligence.Storage;
+using PuddingCodeIntelligence.Python;
 using PuddingCodeIntelligence.TypeScript;
 
 // ── Logging setup ──────────────────────────────────────────────────────────
@@ -197,6 +198,90 @@ async Task<int> RunIndexAsync(string[] args)
     {
         Console.WriteLine();
         Console.WriteLine("No TypeScript/JavaScript files found — skipping TS indexing.");
+    }
+
+    // ── Python indexing ─────────────────────────────────────────────────────
+    var pyExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".py" };
+    var pyExcludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "__pycache__", ".git", "venv", ".venv" };
+    var pyFiles = Directory
+        .GetFiles(projectPath, "*.py", SearchOption.AllDirectories)
+        .Where(f => !f.Split(Path.DirectorySeparatorChar).Any(seg => pyExcludedDirs.Contains(seg))
+                 && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                 && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+        .ToList();
+
+    if (pyFiles.Count > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Python files found: {pyFiles.Count}");
+        Console.WriteLine("Indexing Python...");
+
+        // Locate the extraction script
+        string pyCliScriptsDir = Path.Combine(AppContext.BaseDirectory, "Scripts");
+        string pyExtractScript = Path.Combine(pyCliScriptsDir, "extract-py-symbols.py");
+
+        // If not in output dir, walk up to find source Scripts/ directory
+        if (!File.Exists(pyExtractScript))
+        {
+            string? walkDir = new DirectoryInfo(AppContext.BaseDirectory).Parent?.FullName;
+            for (int i = 0; i < 5 && walkDir is not null; i++)
+            {
+                string candidate = Path.Combine(walkDir, "Scripts", "extract-py-symbols.py");
+                if (File.Exists(candidate))
+                {
+                    pyCliScriptsDir = Path.Combine(walkDir, "Scripts");
+                    pyExtractScript = candidate;
+                    break;
+                }
+                walkDir = new DirectoryInfo(walkDir).Parent?.FullName;
+            }
+        }
+
+        // PythonIndexer expects script at ProjectPath/Scripts/extract-py-symbols.py
+        string pyTargetScriptsDir = Path.Combine(projectPath, "Scripts");
+        string pyTargetScriptPath = Path.Combine(pyTargetScriptsDir, "extract-py-symbols.py");
+
+        bool copiedPyScript = false;
+        if (!File.Exists(pyTargetScriptPath) && File.Exists(pyExtractScript))
+        {
+            Directory.CreateDirectory(pyTargetScriptsDir);
+            File.Copy(pyExtractScript, pyTargetScriptPath, overwrite: true);
+            copiedPyScript = true;
+        }
+
+        string pyProjectId = projectId + "_py";
+        var pyDescriptor = new CodeWorkspaceDescriptor(
+            WorkspaceId: WorkspaceId,
+            ProjectId: pyProjectId,
+            ProjectPath: projectPath,
+            IsLoaded: true,
+            SolutionPath: null,
+            ProjectFilePaths: new List<string>());
+
+        var pyLogger = loggerFactory.CreateLogger<PythonIndexer>();
+        var pyIndexer = new PythonIndexer(store, pyLogger);
+        CodeIndexResult pyResult = await pyIndexer.IndexWorkspaceAsync(pyDescriptor);
+
+        Console.WriteLine();
+        Console.WriteLine($"PY Success  : {pyResult.Success}");
+        Console.WriteLine($"PY Status   : {pyResult.Status}");
+        if (!string.IsNullOrEmpty(pyResult.Message))
+            Console.WriteLine($"PY Message  : {pyResult.Message}");
+
+        // Clean up copied script if we copied it
+        if (copiedPyScript)
+        {
+            try { File.Delete(pyTargetScriptPath); } catch { /* best effort */ }
+            try { Directory.Delete(pyTargetScriptsDir, recursive: false); } catch { /* dir may not be empty */ }
+        }
+
+        if (!pyResult.Success)
+            Console.WriteLine("Warning: Python indexing failed. C# index is still valid.");
+    }
+    else
+    {
+        Console.WriteLine();
+        Console.WriteLine("No Python files found — skipping Python indexing.");
     }
 
     return result.Success ? 0 : 1;
