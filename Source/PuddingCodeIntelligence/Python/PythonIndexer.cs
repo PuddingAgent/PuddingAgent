@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIntelligence.Services;
 
 namespace PuddingCodeIntelligence.Python;
 
@@ -17,16 +18,7 @@ namespace PuddingCodeIntelligence.Python;
 /// </summary>
 public sealed class PythonIndexer : ICodeIndexer
 {
-    private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "__pycache__",
-        ".git",
-        "venv",
-        ".venv",
-        "node_modules",
-        "bin",
-        "obj",
-    };
+    // Uses centralized IndexExcludePatterns.NoiseDirNames for directory exclusion.
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -251,14 +243,14 @@ public sealed class PythonIndexer : ICodeIndexer
         foreach (var file in Directory.EnumerateFiles(directory))
         {
             var ext = Path.GetExtension(file);
-            if (SupportedExtensions.Contains(ext))
+            if (SupportedExtensions.Contains(ext) && !IndexExcludePatterns.IsNoisePath(file))
                 result.Add(file);
         }
 
         foreach (var subDir in Directory.EnumerateDirectories(directory))
         {
             var dirName = Path.GetFileName(subDir);
-            if (ExcludedDirectories.Contains(dirName))
+            if (IndexExcludePatterns.NoiseDirNames.Contains(dirName))
                 continue;
 
             CollectSourceFilesRecursive(subDir, result);

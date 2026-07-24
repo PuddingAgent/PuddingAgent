@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIntelligence.Services;
 
 namespace PuddingCodeIntelligence.TypeScript;
 
@@ -17,13 +18,7 @@ namespace PuddingCodeIntelligence.TypeScript;
 /// </summary>
 public sealed class TypeScriptIndexer : ICodeIndexer
 {
-    private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "node_modules",
-        "bin",
-        "obj",
-        ".git",
-    };
+    // Uses centralized IndexExcludePatterns.NoiseDirNames for directory exclusion.
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -245,14 +240,14 @@ public sealed class TypeScriptIndexer : ICodeIndexer
         foreach (var file in Directory.EnumerateFiles(directory))
         {
             var ext = Path.GetExtension(file);
-            if (SupportedExtensions.Contains(ext))
+            if (SupportedExtensions.Contains(ext) && !IndexExcludePatterns.IsNoisePath(file))
                 result.Add(file);
         }
 
         foreach (var subDir in Directory.EnumerateDirectories(directory))
         {
             var dirName = Path.GetFileName(subDir);
-            if (ExcludedDirectories.Contains(dirName))
+            if (IndexExcludePatterns.NoiseDirNames.Contains(dirName))
                 continue;
 
             CollectSourceFilesRecursive(subDir, result);
