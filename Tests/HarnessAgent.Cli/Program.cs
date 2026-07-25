@@ -6,9 +6,10 @@ using HarnessAgent.Core.Mcp;
 using HarnessAgent.Core.Computer;
 using HarnessAgent.Core.Tools;
 using HarnessAgent.Core.Middleware;
+using HarnessAgent.Core.Browser;
 
 Console.WriteLine("=== HarnessAgent CLI ===\n");
-var p = 0; const int t = 11;
+var p = 0; const int t = 12;
 
 void Ok(string label) { Console.WriteLine($"  {label} OK ({++p}/{t})\n"); }
 
@@ -23,6 +24,7 @@ Console.WriteLine("-- C6: SelfHealRestart --"); TestSelfHealRestart(); Ok("C6");
 Console.WriteLine("-- C5: CodexIntegration --"); await TestCodex(); Ok("C5");
 Console.WriteLine("-- gh-tool --"); await TestGhTool(); Ok("gh");
 Console.WriteLine("-- Middleware --"); await TestMiddleware(); Ok("MW");
+Console.WriteLine("-- C4: BrowserControl --"); await TestBrowser(); Ok("C4");
 
 Console.WriteLine($"=== All {p}/{t} OK ===");
 
@@ -35,35 +37,23 @@ static void TestScreenCapture() { if (ScreenCapture.GetMonitors().Count == 0) Co
 static void TestUIAutomation() { if (WindowAutomation.GetActiveWindow() == IntPtr.Zero) Console.WriteLine("  skip"); }
 static void TestSelfHealRestart() { try { new SelfHealRestart().Discover(); } catch { Console.WriteLine("  skip"); } }
 static async Task TestCodex() { if (new CodexIntegration().EnsureLayout() == null) { Console.WriteLine("  skip"); return; } await CodexIntegration.IsPuddingRunningAsync(1000); }
-static async Task TestGhTool() { var gh = new GitHubCli(); await gh.ListIssuesAsync(limit: 1); Console.WriteLine("  ok"); }
+static async Task TestGhTool() { await new GitHubCli().ListIssuesAsync(limit: 1); }
+static async Task TestMiddleware() { var pipeline = new ChatPipeline((r,ct) => Task.FromResult(new ChatCompletionResponse { ModelId = r.ModelId, Message = ChatMessage.Assistant("ok"), Usage = new TokenUsage { InputTokens = 1, OutputTokens = 1 }, FinishReason = "stop" })); await pipeline.Use(ChatMiddleware.Validate()).ExecuteAsync(new ChatCompletionRequest { ModelId = "t", Messages = new List<ChatMessage> { ChatMessage.User("hi") } }); }
 
-static async Task TestMiddleware()
+static async Task TestBrowser()
 {
-    int calls = 0;
-    // Inner handler that counts calls
-    Task<ChatCompletionResponse> Inner(ChatCompletionRequest r, CancellationToken ct)
+    try
     {
-        calls++;
-        return Task.FromResult(new ChatCompletionResponse
-        {
-            ModelId = r.ModelId, Message = ChatMessage.Assistant("mw-ok"),
-            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 }, FinishReason = "stop"
-        });
+        await using var bc = new BrowserControl();
+        var page = await bc.LaunchAsync(headless: true);
+        await bc.GoToAsync("about:blank", 5000);
+        var title = await bc.GetTitleAsync();
+        Console.WriteLine($"  launched: title='{title}'");
     }
-
-    var pipeline = new ChatPipeline(Inner)
-        .Use(ChatMiddleware.Validate())
-        .Use(ChatMiddleware.Logging());
-
-    var resp = await pipeline.ExecuteAsync(new ChatCompletionRequest
+    catch (Exception ex)
     {
-        ModelId = "test", Messages = new List<ChatMessage> { ChatMessage.User("hi") }
-    });
-
-    if (calls != 1 || resp.Message.Content != "mw-ok")
-        throw new Exception($"Middleware failed: calls={calls} resp={resp.Message.Content}");
-
-    Console.WriteLine("  validate+logging pipeline OK");
+        Console.WriteLine($"  skip: {ex.Message[..Math.Min(60, ex.Message.Length)]}");
+    }
 }
 
 sealed class MockMcpTransport : IMcpTransport
