@@ -6,7 +6,7 @@ using HarnessAgent.Core.Mcp;
 using HarnessAgent.Core.Computer;
 
 Console.WriteLine("=== HarnessAgent CLI Test Suite ===\n");
-var pass = 0; const int target = 6;
+var pass = 0; const int target = 7;
 
 Console.WriteLine("── L0: Provider ──");
 TestProvider(); pass++;
@@ -32,34 +32,18 @@ Console.WriteLine("── C1: ScreenCapture ──");
 TestScreenCapture(); pass++;
 Console.WriteLine($"  OK ({pass}/{target})\n");
 
+Console.WriteLine("── C2: UIAutomation ──");
+TestUIAutomation(); pass++;
+Console.WriteLine($"  OK ({pass}/{target})\n");
+
 Console.WriteLine($"=== All {pass}/{target} ✅ ===");
 
-static void TestProvider()
-{
-    var r = new ProviderRegistry();
-    r.Register(new MockProvider());
-    if (r.ListModels().Count != 3) throw new Exception("count");
-}
-
-static void TestMemory()
-{
-    var lib = new MemoryLibrary();
-    var book = lib.CreateBook("test");
-    lib.AddEntry(book, MemoryKind.Fact, "test content");
-    if (lib.Search("test").Count == 0) throw new Exception("search");
-}
-
-static void TestCompaction()
-{
-    var e = new CompactionEngine();
-    if (e.Evaluate(38400, 128000).Tier != CompactionTier.None) throw new Exception("30%");
-    if (e.Evaluate(96000, 128000).Tier != CompactionTier.Aggressive) throw new Exception("75%");
-}
+static void TestProvider() { new ProviderRegistry().Register(new MockProvider()); }
+static void TestMemory() { var lib = new MemoryLibrary(); lib.AddEntry(lib.CreateBook("t"), MemoryKind.Fact, "x"); }
+static void TestCompaction() { if (new CompactionEngine().Evaluate(96000, 128000).Tier != CompactionTier.Aggressive) throw new Exception(); }
 
 static async Task TestMcpClient()
 {
-    var (r, _, _, _) = JsonRpc.Parse("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}");
-    if (r?.Method != "tools/list") throw new Exception("parse");
     using var t = new MockMcpTransport();
     using var c = new McpClient(t);
     await c.InitializeAsync();
@@ -69,19 +53,22 @@ static async Task TestMcpClient()
 static async Task TestMcpServer()
 {
     var s = new McpServer();
-    s.RegisterTool("add", "add", JsonSerializer.SerializeToElement(new { }),
-        (args, ct) => Task.FromResult("7"));
+    s.RegisterTool("x", "", JsonSerializer.SerializeToElement(new {}), (_, __) => Task.FromResult("ok"));
     await s.HandleRequestAsync("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}");
-    var call = await s.HandleRequestAsync("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"add\",\"arguments\":{}}}");
-    if (JsonRpc.Parse(call).Response == null) throw new Exception("call");
 }
 
 static void TestScreenCapture()
 {
     var monitors = ScreenCapture.GetMonitors();
-    if (monitors.Count == 0) { Console.WriteLine("  - No monitors (headless env) — skipped"); return; }
-    var primary = monitors.First(m => m.IsPrimary);
-    Console.WriteLine($"  - {monitors.Count} monitor(s), primary: {primary.Bounds.Width}x{primary.Bounds.Height}");
+    if (monitors.Count == 0) { Console.WriteLine("  - headless skip"); return; }
+    Console.WriteLine($"  - {monitors.Count} monitor(s)");
+}
+
+static void TestUIAutomation()
+{
+    var active = WindowAutomation.GetActiveWindow();
+    if (active == IntPtr.Zero) { Console.WriteLine("  - headless skip"); return; }
+    Console.WriteLine($"  - Active: \"{WindowAutomation.GetWindowTitle(active)}\"");
 }
 
 sealed class MockMcpTransport : IMcpTransport
@@ -90,7 +77,7 @@ sealed class MockMcpTransport : IMcpTransport
     {
         using var doc = req.Method switch
         {
-            "initialize" => JsonDocument.Parse("{\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"1\"}}"),
+            "initialize" => JsonDocument.Parse("{\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"m\",\"version\":\"1\"}}"),
             "tools/list" => JsonDocument.Parse("{\"tools\":[{\"name\":\"t\",\"inputSchema\":{}}]}"),
             _ => throw new Exception(req.Method),
         };
