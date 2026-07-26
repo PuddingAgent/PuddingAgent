@@ -37,6 +37,21 @@ public sealed class RoomMessageEntity
     [Required, Column("content")]
     public string Content { get; set; } = string.Empty;
 
+    [MaxLength(64), Column("conversation_id")]
+    public string? ConversationId { get; set; }
+
+    [MaxLength(128), Column("reply_to_message_id")]
+    public string? ReplyToMessageId { get; set; }
+
+    [MaxLength(128), Column("correlation_id")]
+    public string? CorrelationId { get; set; }
+
+    [MaxLength(128), Column("causation_id")]
+    public string? CausationId { get; set; }
+
+    [Column("metadata_json")]
+    public string? MetadataJson { get; set; }
+
     [Column("created_at")]
     public long CreatedAt { get; set; }
 }

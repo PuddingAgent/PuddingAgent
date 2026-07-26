@@ -13,6 +13,7 @@ public static class ConversationCommandSchemaBootstrapper
 {
     private const string TableName = "chat_execution_commands";
     private const string MetadataJsonColumn = "metadata_json";
+    private const string ReplyProjectedAtColumn = "reply_projected_at";
 
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
@@ -22,20 +23,35 @@ public static class ConversationCommandSchemaBootstrapper
         if (!db.Database.IsSqlite())
             return;
 
-        if (await ColumnExistsAsync(db, TableName, MetadataJsonColumn, ct))
-            return;
+        if (!await ColumnExistsAsync(db, TableName, MetadataJsonColumn, ct))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                ALTER TABLE "chat_execution_commands"
+                ADD COLUMN "metadata_json" TEXT NULL;
+                """,
+                ct);
 
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            ALTER TABLE "chat_execution_commands"
-            ADD COLUMN "metadata_json" TEXT NULL;
-            """,
-            ct);
+            logger?.LogInformation(
+                "[ConversationCommandSchema] Added {Table}.{Column}",
+                TableName,
+                MetadataJsonColumn);
+        }
 
-        logger?.LogInformation(
-            "[ConversationCommandSchema] Added {Table}.{Column}",
-            TableName,
-            MetadataJsonColumn);
+        if (!await ColumnExistsAsync(db, TableName, ReplyProjectedAtColumn, ct))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                ALTER TABLE "chat_execution_commands"
+                ADD COLUMN "reply_projected_at" INTEGER NULL;
+                """,
+                ct);
+
+            logger?.LogInformation(
+                "[ConversationCommandSchema] Added {Table}.{Column}",
+                TableName,
+                ReplyProjectedAtColumn);
+        }
     }
 
     private static async Task<bool> ColumnExistsAsync(

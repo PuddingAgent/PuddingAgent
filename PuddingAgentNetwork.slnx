@@ -13,6 +13,8 @@
     <Project Path="external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj" Id="2b2be7d9-5aae-437b-89f0-67b77d7f8e80" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj" />
+    <Project Path="Tests/PuddingAgent.IntegrationTests/PuddingAgent.IntegrationTests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />

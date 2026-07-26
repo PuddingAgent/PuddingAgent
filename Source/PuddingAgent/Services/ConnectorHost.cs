@@ -31,7 +31,9 @@ public sealed class ConnectorHost
     public void Register(IPuddingConnector connector)
     {
         var entry = new ConnectorEntry(connector, ConnectorStatus.Registered);
-        _connectors[connector.Descriptor.ConnectorId] = entry;
+        if (!_connectors.TryAdd(connector.Descriptor.ConnectorId, entry))
+            throw new InvalidOperationException(
+                $"Connector already registered: {connector.Descriptor.ConnectorId}");
         _logger.LogInformation("[ConnectorHost] Registered: {Id} ({Type}) proto={Proto}",
             connector.Descriptor.ConnectorId, connector.Descriptor.ConnectorType, connector.Descriptor.Protocol);
     }
@@ -48,7 +50,7 @@ public sealed class ConnectorHost
             OnEventReceived = async (envelope, c) =>
             {
                 _logger.LogDebug("[ConnectorHost] Event from {ConnectorId} channel={Channel}", connectorId, envelope.ChannelType);
-                await _onEventReceived(envelope, c);
+                await _onEventReceived(envelope with { ConnectorId = connectorId }, c);
             },
             Log = msg => _logger.LogInformation("[Connector:{Id}] {Msg}", connectorId, msg),
             CancellationToken = ct,
@@ -95,7 +97,25 @@ public sealed class ConnectorHost
     public async Task StartAllAsync(CancellationToken ct = default)
     {
         foreach (var id in _connectors.Keys)
-            await StartAsync(id, ct);
+        {
+            try
+            {
+                await StartAsync(id, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Connector faults are isolated. Diagnostics retain the faulted
+                // entry, while unrelated channels remain available.
+                _logger.LogError(
+                    ex,
+                    "[ConnectorHost] Connector start isolated failure: {Id}",
+                    id);
+            }
+        }
     }
 
     /// <summary>停止所有连接器。</summary>
@@ -103,6 +123,21 @@ public sealed class ConnectorHost
     {
         foreach (var id in _connectors.Keys)
             await StopAsync(id, ct);
+    }
+
+    /// <summary>向已启动的指定连接器投递一条出站消息。</summary>
+    public async Task SendAsync(
+        string connectorId,
+        ConnectorMessage message,
+        CancellationToken ct = default)
+    {
+        if (!_connectors.TryGetValue(connectorId, out var entry))
+            throw new InvalidOperationException($"Connector not found: {connectorId}");
+        if (entry.Status != ConnectorStatus.Running)
+            throw new InvalidOperationException(
+                $"Connector '{connectorId}' is not running (status={entry.Status}).");
+
+        await entry.Connector.SendAsync(message, ct);
     }
 
     /// <summary>获取所有连接器诊断信息。</summary>

@@ -19,6 +19,10 @@ public sealed class ConversationCommandSchemaBootstrapperTests
             scope.Db,
             "chat_execution_commands",
             "metadata_json"));
+        Assert.IsTrue(await ColumnExistsAsync(
+            scope.Db,
+            "chat_execution_commands",
+            "reply_projected_at"));
     }
 
     [TestMethod]
@@ -53,6 +57,10 @@ public sealed class ConversationCommandSchemaBootstrapperTests
             db,
             "chat_execution_commands",
             "metadata_json"));
+        Assert.IsTrue(await ColumnExistsAsync(
+            db,
+            "chat_execution_commands",
+            "reply_projected_at"));
     }
 
     private static async Task<TestDatabaseScope> CreateLegacyDatabaseAsync()

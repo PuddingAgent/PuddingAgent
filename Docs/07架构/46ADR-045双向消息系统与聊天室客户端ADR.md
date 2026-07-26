@@ -7,6 +7,25 @@
 
 ---
 
+## 2026-07-25 飞书 V1 默认回复修订
+
+[ADR-063](63ADR-063飞书Agent绑定与可靠消息网关ADR.md) 已落地飞书 V1。对“回复原入站消息”的普通终态答复，早期本文中的
+`Agent Runtime -> send_message` 不是执行要求：终态答复由系统从 committed Conversation terminal event
+投影为 connector delivery，再由 Connector egress 独立重试。LLM `send_message` 仅保留给主动消息、跨 Agent
+消息或显式不同目标。
+
+因此，默认回复的权威链是：
+
+```text
+Conversation terminal event
+  -> ConversationReplyProjectionWorker
+  -> Message Fabric connector delivery
+  -> ConnectorDeliveryDispatcher
+  -> Connector.SendAsync
+```
+
+该修订保留本文 Message Fabric / Gateway / Connector 分层，但消除“LLM 必须记得调用工具才能回复原渠道”的可靠性缺口。
+
 ## 2026-07-18 实现边界修订
 
 `message.deliver` 的唯一自动消费方确定为 Runtime 内的 `MessageDeliveryDispatcher`，不再由通用 `AgentEventHandler` 执行。`MessageDelivery` 持久化状态是可靠性权威，内部事件只是低延迟唤醒信号。

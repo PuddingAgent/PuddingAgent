@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 
@@ -20,7 +22,9 @@ public sealed class MessageRouter : IMessageRouter
         var targets = ResolveTargets(envelope, participants);
         var deliveries = targets.Select(target => new MessageDeliveryDraft
         {
-            DeliveryId = Guid.NewGuid().ToString("N"),
+            // Stable per (message,target) so a reply projector may safely retry
+            // after a process crash without creating duplicate connector work.
+            DeliveryId = CreateDeliveryId(envelope.MessageId, target),
             MessageId = envelope.MessageId,
             Target = target,
             Priority = envelope.Priority,
@@ -38,9 +42,21 @@ public sealed class MessageRouter : IMessageRouter
                 Visibility = envelope.Visibility,
                 Content = envelope.Content,
                 CreatedAt = envelope.CreatedAt,
+                ConversationId = envelope.ConversationId,
+                ReplyToMessageId = envelope.ReplyToMessageId,
+                CorrelationId = envelope.CorrelationId,
+                CausationId = envelope.CausationId,
+                Metadata = envelope.Metadata,
             },
             Deliveries = deliveries,
         });
+    }
+
+    private static string CreateDeliveryId(string messageId, MessageAddress target)
+    {
+        var value = $"{messageId}\n{target.Kind.ToLowerInvariant()}\n{target.Id}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))
+            .ToLowerInvariant()[..32];
     }
 
     private static IReadOnlyList<MessageAddress> ResolveTargets(

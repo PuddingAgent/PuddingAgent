@@ -112,6 +112,16 @@ public sealed record MessageOrigin
     public string? CausationId { get; init; }
     /// <summary>消息类型（如 agent_message / agent_reply / subagent_result）。</summary>
     public required string MessageType { get; init; }
+    /// <summary>Pudding 渠道标识，例如 feishu 或 web。</summary>
+    public string? ChannelId { get; init; }
+    /// <summary>渠道类型，例如 feishu。</summary>
+    public string? ChannelType { get; init; }
+    /// <summary>连接器实例标识，例如 feishu:{agentId}。</summary>
+    public string? ConnectorId { get; init; }
+    /// <summary>第三方会话标识，例如飞书 chat_id。</summary>
+    public string? ExternalConversationId { get; init; }
+    /// <summary>第三方消息标识。</summary>
+    public string? ExternalMessageId { get; init; }
 }
 
 /// <summary>Runtime 执行请求——Controller 投递到 Runtime。</summary>

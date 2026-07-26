@@ -40,6 +40,7 @@
 34. [60ADR-059Conversation执行内核与可靠命令链路ADR](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 35. [61ADR-060子代理运行可观测性与会话事件投影ADR](61ADR-060子代理运行可观测性与会话事件投影ADR.md)
 36. [62ADR-062前端ChatUI模块化审计与渐进拆分ADR](62ADR-062前端ChatUI模块化审计与渐进拆分ADR.md)
+37. [63ADR-063飞书Agent绑定与可靠消息网关ADR](63ADR-063飞书Agent绑定与可靠消息网关ADR.md)
 
 文档分工：
 

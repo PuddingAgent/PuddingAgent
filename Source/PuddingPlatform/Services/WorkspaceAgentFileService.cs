@@ -16,6 +16,19 @@ public interface IWorkspaceAgentCatalog
     Task<IReadOnlyList<WorkspaceAgentDto>> ListAgentsAsync(string workspaceId, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Narrow write boundary used by message ingress when it creates or recovers an
+/// Agent main Conversation. The file service remains the only manifest writer.
+/// </summary>
+public interface IAgentMainSessionBinder
+{
+    Task<WorkspaceAgentDto> SetAgentMainSessionAsync(
+        string workspaceId,
+        string agentId,
+        string mainSessionId,
+        CancellationToken ct = default);
+}
+
 /// <summary>Workspace-scoped Audit agent candidate used by automatic approval routing.</summary>
 public sealed record WorkspaceAgentAuditProfile
 {
@@ -53,7 +66,10 @@ public sealed class WorkspaceAuditAgentConflictException : Exception
 /// 是避免列表/详情 DTO 变成第二个模型配置来源，进而让 Controller 或消息队列
 /// 消费者误以为可以绕过模板服务直接构造 LLM 配置。
 /// </remarks>
-public sealed class WorkspaceAgentFileService : IWorkspaceAgentCatalog, IAgentSelfMaintenanceService
+public sealed class WorkspaceAgentFileService :
+    IWorkspaceAgentCatalog,
+    IAgentMainSessionBinder,
+    IAgentSelfMaintenanceService
 {
     private const int MaxSelfMaintainedDocumentChars = 200_000;
 

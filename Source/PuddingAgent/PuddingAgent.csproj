@@ -38,6 +38,7 @@
     <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <ProjectReference Include="..\..\external\github.hyfree.GM\github.hyfree.GM\github.hyfree.GM.csproj" />
+    <ProjectReference Include="..\..\src\HarnessAgent\Core\HarnessAgent.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

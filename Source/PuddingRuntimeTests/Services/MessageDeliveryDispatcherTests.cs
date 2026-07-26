@@ -223,6 +223,56 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
+    public async Task HandleAsync_GatewayIngress_UsesCanonicalSubmitAndAcksWithoutDirectRuntime()
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            [MessageGatewayMetadata.IsGatewayIngress] = "true",
+            [MessageGatewayMetadata.ChannelId] = "feishu",
+            [MessageGatewayMetadata.ChannelType] = "feishu",
+            [MessageGatewayMetadata.ConnectorId] = "feishu:agent-b",
+            [MessageGatewayMetadata.ExternalConversationId] = "oc_chat",
+            [MessageGatewayMetadata.ExternalMessageId] = "om_message",
+            [MessageGatewayMetadata.ClientRequestId] = "gateway-request-1",
+        };
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimConversationId = "conversation-1",
+            ClaimMetadata = metadata,
+            ClaimContent = "hello",
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit);
+
+        await dispatcher.HandleAsync(
+            CreateEvent(
+                MessageEndpointKinds.Agent,
+                "agent-b",
+                metadata),
+            CancellationToken.None);
+
+        Assert.HasCount(1, submit.Commands);
+        var command = submit.Commands.Single();
+        Assert.IsTrue(command.IsTrustedGatewayIngress);
+        Assert.AreEqual("conversation-1", command.ConversationId);
+        Assert.AreEqual("gateway-request-1", command.ClientRequestId);
+        Assert.AreEqual("m1", command.ClientMessageId);
+        CollectionAssert.AreEqual(
+            new[] { "agent-b" },
+            command.Recipients.AgentIds!.ToArray());
+        Assert.AreEqual("hello", command.Content.Single().Text);
+        Assert.AreEqual("feishu", command.Metadata![MessageGatewayMetadata.ChannelType]);
+        Assert.IsEmpty(runtime.Requests);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.HasCount(1, inbox.Acked);
+        Assert.IsEmpty(inbox.Retried);
+    }
+
+    [TestMethod]
     public async Task HandleAsync_MessageDeliver_ClaimsWithoutPrecheckingAvailability()
     {
         var inbox = new RecordingMessageInbox();
@@ -643,7 +693,8 @@ public sealed class MessageDeliveryDispatcherTests
         RecordingAgentExecutionAvailabilityProvider? availability = null,
         RecordingInternalEventBus? eventBus = null,
         RecordingWorkspaceAgentCatalog? catalog = null,
-        RecordingMessageSystem? messageSystem = null)
+        RecordingMessageSystem? messageSystem = null,
+        RecordingSubmitTurnHandler? submitTurnHandler = null)
     {
         var services = new ServiceCollection();
         var effectiveCatalog = catalog ?? new RecordingWorkspaceAgentCatalog(
@@ -658,6 +709,8 @@ public sealed class MessageDeliveryDispatcherTests
         services.AddLogging();
         if (messageSystem is not null)
             services.AddScoped<IMessageSystem>(_ => messageSystem);
+        if (submitTurnHandler is not null)
+            services.AddScoped<ISubmitTurnHandler>(_ => submitTurnHandler);
 
         var provider = services.BuildServiceProvider();
         return new MessageDeliveryDispatcher(
@@ -755,6 +808,7 @@ public sealed class MessageDeliveryDispatcherTests
         public MessageClaimRequest? LastClaim { get; private set; }
         public int ClaimAttemptCount { get; init; } = 1;
         public IReadOnlyDictionary<string, string>? ClaimMetadata { get; init; }
+        public string? ClaimConversationId { get; init; }
         public string? ClaimContent { get; init; }
         public MessageAddress? ClaimFrom { get; init; }
         public IReadOnlyList<MessageInboxItem> BatchClaims { get; init; } = [];
@@ -784,6 +838,7 @@ public sealed class MessageDeliveryDispatcherTests
                 MessageId = "m1",
                 WorkspaceId = "default",
                 RoomId = "room-default",
+                ConversationId = ClaimConversationId,
                 From = ClaimFrom ?? new MessageAddress { Kind = MessageEndpointKinds.User, Id = "owner" },
                 Target = request.Endpoint,
                 Content = ClaimContent ?? (ClaimMetadata is null ? "hello" : "subagent result"),
@@ -792,6 +847,7 @@ public sealed class MessageDeliveryDispatcherTests
                 AttemptCount = ClaimAttemptCount,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 ClaimedByExecutionId = request.ExecutionId,
+                Metadata = ClaimMetadata ?? new Dictionary<string, string>(),
             });
         }
 
@@ -823,6 +879,26 @@ public sealed class MessageDeliveryDispatcherTests
         {
             DeadLettered.Add((deliveryId, executionId, error));
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingSubmitTurnHandler : ISubmitTurnHandler
+    {
+        public List<SubmitTurnCommand> Commands { get; } = [];
+
+        public Task<AcceptanceResult> HandleAsync(
+            SubmitTurnCommand command,
+            CancellationToken ct)
+        {
+            Commands.Add(command);
+            return Task.FromResult(new AcceptanceResult
+            {
+                ConversationId = command.ConversationId,
+                MessageId = command.ClientMessageId,
+                TurnIds = ["turn-1"],
+                CommandIds = ["command-1"],
+                AcceptedSequence = 1,
+            });
         }
     }
 

@@ -1202,6 +1202,94 @@ $sessions | Where-Object { $_.title -match '^(压缩\s*-\s*){2,}' } |
 推荐记录修复前后四个量：conversation 响应字节、API duration、SSE replay event 数、
 首屏挂载 row 数。只减少接口耗时而仍同步渲染全部历史，不能视为完成修复。
 
+### 11.12 飞书消息已发出但 Agent 或飞书没有回复
+
+先按同一个 `connectorId/messageId/commandId` 区分五段，不要把“飞书没回复”直接归因到 LLM：
+
+```text
+Feishu WS -> Gateway ingress -> Message Fabric/ADR-059
+          -> Conversation terminal -> Reply projection
+          -> Connector delivery -> Feishu OpenAPI
+```
+
+当前 V1 只从 Agent manifest 加载运行时绑定。以下命令只输出布尔状态，不打印凭据：
+
+```powershell
+$agentId = "<agentInstanceId>"
+$manifestPath = Join-Path "D:\data\agents\$agentId" "manifest.json"
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+[pscustomobject]@{
+    AgentId = $manifest.agentInstanceId
+    FeishuConfigured = $null -ne $manifest.feishu
+    FeishuEnabled = $manifest.feishu.enabled -eq $true
+    HasAppId = -not [string]::IsNullOrWhiteSpace([string]$manifest.feishu.appId)
+    HasAppSecret = -not [string]::IsNullOrWhiteSpace([string]$manifest.feishu.appSecret)
+}
+```
+
+旧 `D:\data\config\feishu.json` 只供 Harness 手工测试，Pudding Runtime 不会自动选一个
+Agent 继承它。配置或修改 Agent manifest 后需要重启。
+
+可以先执行不会发送消息的真实连通性冒烟。它只获取 tenant token、建立并关闭
+WebSocket；默认测试套件会跳过该 Live 测试：
+
+```powershell
+$env:PUDDING_RUN_FEISHU_LIVE_TESTS = "1"
+dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
+  --filter "TestCategory=Live"
+Remove-Item Env:PUDDING_RUN_FEISHU_LIVE_TESTS
+```
+
+按日志阶段检索：
+
+```powershell
+rg -n "\[Feishu\]|\[MessageGateway\]|\[ConnectorDelivery\]|Gateway ingress accepted" `
+  .\tmp\dev\backend.out.log
+```
+
+| 最后证据 | 结论 |
+|---|---|
+| `[Feishu] Loaded 0 Agent-owned connector binding(s)` | 没有 Agent manifest 启用飞书 |
+| `binding is enabled but incomplete` | AppId/AppSecret 缺失 |
+| `WebSocket connection failed` | endpoint、网络、凭据或飞书应用配置错误 |
+| Echo 没有 `initial ping sent` 或 ping 后没有 `type=pong` | 长连握手/心跳层故障；官方 SDK 要求 WebSocket open 后立即发送首个 ping |
+| Echo 有 `initial ping sent` 和 `type=pong`，确认发送新消息后却没有 `method=1 ... type=event` | 协议连接已活跃，但飞书未向本客户端投递事件；查事件订阅/版本发布，并排除同 AppId 的其他长连客户端正在分流事件 |
+| 有 `event_type=im.message.receive_v1`，但 `message_type=-` 且没有 `received message` | 入站模型字段映射错误；真实事件是 `message_type`，不是出站 OpenAPI 请求的 `msg_type` |
+| 有 WS event、没有 `Inbound accepted` | 事件字段/类型映射或 Gateway durable acceptance 失败；飞书应收到非 200 ACK |
+| 有 `Ingress accepted`、没有 `Gateway ingress accepted` | Agent MessageDelivery 未被 canonical ADR-059 受理，查 delivery retry/dead-letter |
+| Command succeeded、没有 `Reply projected` | terminal event/metadata/reply projection Schema 或 Worker 异常 |
+| 有 `Reply projected`、没有 `ConnectorDelivery Delivered` | 只查 Connector delivery 重试和飞书 OpenAPI 错误；不要重跑 Agent |
+
+如果 endpoint 返回 HTTP 400 且 `code=9499`，先逐项对照官方 SDK 的 discovery
+请求：JSON 字段必须精确为 `AppID`/`AppSecret`（不能让 `JsonContent` 的 Web 默认策略改成
+`appID`/`appSecret`），并携带 `locale: zh` 与非空 `User-Agent`。同一凭据能换取 tenant
+token，不代表这个 endpoint 请求格式正确。
+
+需要把飞书协议与 Pudding Agent 执行拆开时，运行独立 Echo：
+
+```powershell
+# 收到一条文本、原样回复一次，然后退出
+dotnet run --project .\Tests\HarnessAgent.Cli -- feishu-echo --once
+
+# 无人操作的连接冒烟；10 秒没有消息时退出码为 2
+dotnet run --project .\Tests\HarnessAgent.Cli -- feishu-echo --timeout-seconds 10
+```
+
+日志出现 `WebSocket connected` 只证明 endpoint discovery 和 WSS 建连成功。修正的协议序列应先出现
+`initial ping sent`，随后收到 `method=0 ... type=pong`。若确认在当前 Echo 运行窗口内发送了一条新消息，
+但始终没有 `method=1 ... type=event` 或 `received message=...`，不要将历史旧消息当成新投递；用同一凭证
+单独运行官方 SDK 对照（不与 Pudding/Echo 并发建连），并检查飞书开发者后台：应用必须是
+企业自建应用、事件订阅方式必须选择“使用长连接接收事件/回调”、必须订阅
+`im.message.receive_v1`，相关权限和应用版本必须已经发布到当前租户。官方 SDK 同样收不到时，
+不要继续修改 pbbp2 parser；先修复飞书后台配置或确认消息发给了当前 AppId 对应机器人。
+
+数据库诊断时牢记：`chat_execution_commands.reply_projected_at` 只表示 durable connector
+delivery 已创建；真正的发送状态在 `message_deliveries.status`。同一飞书 `message_id` 重投时，
+Message/Delivery/Conversation acceptance 都应命中稳定幂等身份，不能出现第二个 Agent Turn。
+
+飞书长连接要求事件处理尽快完成。Gateway 只等待 durable acceptance，不等待 Agent 完成；
+如果 ACK 仍超时，查 SQLite 锁、事件发布订阅阻塞和 schema 初始化，而不是缩短 Agent 执行时间。
+
 ## 12. 修改后的最低验收
 
 ```powershell

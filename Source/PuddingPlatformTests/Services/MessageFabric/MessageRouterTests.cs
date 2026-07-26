@@ -172,6 +172,58 @@ public sealed class MessageRouterTests
         Assert.AreEqual(1, plan.Deliveries.Count);
     }
 
+    [TestMethod]
+    public async Task RouteAsync_GatewayFacts_ArePreserved_AndDeliveryIdIsStable()
+    {
+        var router = new MessageRouter();
+        var envelope = new MessageEnvelope
+        {
+            MessageId = "gateway-message-1",
+            RoomId = "conversation-1",
+            ConversationId = "conversation-1",
+            ReplyToMessageId = "om_external",
+            CorrelationId = "oc_chat",
+            CausationId = "om_external",
+            From = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.User,
+                Id = "ou_sender",
+                WorkspaceId = "default",
+            },
+            To =
+            [
+                new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = "assistant",
+                    WorkspaceId = "default",
+                },
+            ],
+            Audience = MessageAudiences.Direct,
+            Visibility = MessageVisibilities.Private,
+            Content = "from feishu",
+            Metadata = new Dictionary<string, string>
+            {
+                ["gateway_channel_type"] = "feishu",
+                ["gateway_connector_id"] = "feishu:assistant",
+            },
+        };
+
+        var first = await router.RouteAsync(envelope, Participants());
+        var replay = await router.RouteAsync(envelope, Participants());
+
+        Assert.AreEqual(
+            first.Deliveries.Single().DeliveryId,
+            replay.Deliveries.Single().DeliveryId);
+        Assert.AreEqual("conversation-1", first.RoomMessage.ConversationId);
+        Assert.AreEqual("om_external", first.RoomMessage.ReplyToMessageId);
+        Assert.AreEqual("oc_chat", first.RoomMessage.CorrelationId);
+        Assert.AreEqual("om_external", first.RoomMessage.CausationId);
+        Assert.AreEqual(
+            "feishu",
+            first.RoomMessage.Metadata["gateway_channel_type"]);
+    }
+
     private static IReadOnlyList<RoomParticipant> Participants() =>
     [
         new()

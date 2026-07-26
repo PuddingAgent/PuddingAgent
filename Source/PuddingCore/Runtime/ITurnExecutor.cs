@@ -49,6 +49,12 @@ public sealed record TurnExecutionContext(
     /// <summary>由 Execution Kernel 创建的稳定身份。</summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
 
+    /// <summary>触发本 Turn 的稳定用户消息 ID。</summary>
+    public string? InboundMessageId { get; init; }
+
+    /// <summary>外部渠道来源；Runtime 将其渲染到 pudding-message metadata。</summary>
+    public MessageOrigin? Origin { get; init; }
+
     /// <summary>
     /// Execution Kernel 在 Run 启动时冻结的绝对截止时间。
     /// Runtime、工具与子代理只能缩短该预算，禁止重新从当前时间放宽。

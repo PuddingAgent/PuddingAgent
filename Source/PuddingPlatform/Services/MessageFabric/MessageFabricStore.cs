@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +18,7 @@ namespace PuddingPlatform.Services.MessageFabric;
 /// </summary>
 public sealed class MessageFabricStore : IMessageInbox
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly PlatformDbContext _db;
     private readonly ILogger<MessageFabricStore> _logger;
 
@@ -48,6 +50,11 @@ public sealed class MessageFabricStore : IMessageInbox
             Audience = plan.RoomMessage.Audience,
             Visibility = plan.RoomMessage.Visibility,
             Content = plan.RoomMessage.Content,
+            ConversationId = plan.RoomMessage.ConversationId,
+            ReplyToMessageId = plan.RoomMessage.ReplyToMessageId,
+            CorrelationId = plan.RoomMessage.CorrelationId,
+            CausationId = plan.RoomMessage.CausationId,
+            MetadataJson = SerializeMetadata(plan.RoomMessage.Metadata),
             CreatedAt = plan.RoomMessage.CreatedAt,
         });
 
@@ -363,6 +370,10 @@ public sealed class MessageFabricStore : IMessageInbox
                 MessageId = delivery.MessageId,
                 WorkspaceId = delivery.WorkspaceId,
                 RoomId = delivery.RoomId,
+                ConversationId = message?.ConversationId,
+                ReplyToMessageId = message?.ReplyToMessageId,
+                CorrelationId = message?.CorrelationId,
+                CausationId = message?.CausationId,
                 From = new MessageAddress
                 {
                     Kind = message?.FromKind ?? MessageEndpointKinds.System,
@@ -388,8 +399,30 @@ public sealed class MessageFabricStore : IMessageInbox
                 AckAt = delivery.AckAt,
                 ClaimedByExecutionId = delivery.ClaimedByExecutionId,
                 LastError = delivery.LastError,
+                Metadata = DeserializeMetadata(message?.MetadataJson),
             };
         }).ToList();
+    }
+
+    private static string? SerializeMetadata(IReadOnlyDictionary<string, string>? metadata)
+        => metadata is { Count: > 0 }
+            ? JsonSerializer.Serialize(metadata, JsonOptions)
+            : null;
+
+    private static IReadOnlyDictionary<string, string> DeserializeMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, string>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions)
+                ?? new Dictionary<string, string>();
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, string>();
+        }
     }
 
     private static bool MatchesExecution(MessageDeliveryEntity delivery, string executionId)

@@ -1,4 +1,6 @@
-using System.Text.Json;
+﻿using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using HarnessAgent.Core.Provider;
 using HarnessAgent.Core.Memory;
 using HarnessAgent.Core.Compaction;
@@ -7,9 +9,17 @@ using HarnessAgent.Core.Computer;
 using HarnessAgent.Core.Tools;
 using HarnessAgent.Core.Middleware;
 using HarnessAgent.Core.Browser;
+using HarnessAgent.Core.Connectors.Feishu;
+
+if (args.Length > 0
+    && string.Equals(args[0], "feishu-echo", StringComparison.OrdinalIgnoreCase))
+{
+    Environment.ExitCode = await RunFeishuEchoAsync(args[1..]);
+    return;
+}
 
 Console.WriteLine("=== HarnessAgent CLI ===\n");
-var p = 0; const int t = 12;
+var p = 0; const int t = 15;
 
 void Ok(string label) { Console.WriteLine($"  {label} OK ({++p}/{t})\n"); }
 
@@ -23,8 +33,11 @@ Console.WriteLine("-- C2: UIAutomation --"); TestUIAutomation(); Ok("C2");
 Console.WriteLine("-- C6: SelfHealRestart --"); TestSelfHealRestart(); Ok("C6");
 Console.WriteLine("-- C5: CodexIntegration --"); await TestCodex(); Ok("C5");
 Console.WriteLine("-- gh-tool --"); await TestGhTool(); Ok("gh");
-Console.WriteLine("-- Middleware --"); await TestMiddleware(); Ok("MW");
 Console.WriteLine("-- C4: BrowserControl --"); await TestBrowser(); Ok("C4");
+Console.WriteLine("-- Middleware --"); await TestMiddleware(); Ok("MW");
+Console.WriteLine("-- F1: Feishu Client --"); await TestFeishu(); Ok("F1");
+Console.WriteLine("-- F2: Feishu Mapper --"); TestFeishuMapper(); Ok("F2");
+Console.WriteLine("-- F3: Feishu WebSocket --"); await TestFeishuWebSocket(); Ok("F3");
 
 Console.WriteLine($"=== All {p}/{t} OK ===");
 
@@ -54,6 +67,261 @@ static async Task TestBrowser()
     {
         Console.WriteLine($"  skip: {ex.Message[..Math.Min(60, ex.Message.Length)]}");
     }
+}
+
+static async Task TestFeishu()
+{
+    var configPath = @"D:\data\config\feishu.json";
+    if (!File.Exists(configPath))
+    {
+        Console.WriteLine($"  skip: config not found");
+        return;
+    }
+    var config = JsonSerializer.Deserialize<FeishuConfig>(File.ReadAllText(configPath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (config == null || string.IsNullOrWhiteSpace(config.AppId))
+    {
+        Console.WriteLine("  skip: invalid config");
+        return;
+    }
+    using var client = new FeishuClient(config);
+    try
+    {
+        var token = await client.GetAccessTokenAsync();
+        Console.WriteLine(string.IsNullOrWhiteSpace(token)
+            ? "  skip: empty token"
+            : "  tenant token acquired");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  skip: {ex.Message[..Math.Min(80, ex.Message.Length)]}");
+    }
+}
+
+static void TestFeishuMapper()
+{
+    var evt = new FeishuEvent
+    {
+        Event = new FeishuEventV2
+        {
+            Message = new FeishuMessageEvent
+            {
+                MessageType = "text",
+                TextWithoutAtBot = "你好 Pudding"
+            }
+        }
+    };
+    var text = evt.ExtractText();
+    Console.WriteLine($"  mapper: text='{text}'");
+}
+
+static async Task TestFeishuWebSocket()
+{
+    var configPath = @"D:\data\config\feishu.json";
+    if (!File.Exists(configPath))
+    {
+        Console.WriteLine("  skip: config not found");
+        return;
+    }
+    var config = JsonSerializer.Deserialize<FeishuConfig>(File.ReadAllText(configPath),
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (config == null || string.IsNullOrWhiteSpace(config.AppId))
+    {
+        Console.WriteLine("  skip: invalid config");
+        return;
+    }
+
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+    using var ws = new FeishuWebSocket(config);
+
+    ws.OnConnectionChanged += connected =>
+        Console.WriteLine(connected ? "  [WS] 已连接" : "  [WS] 已断开");
+
+    try
+    {
+        Console.WriteLine("  正在注册 WebSocket...");
+        await ws.ConnectAsync(cts.Token);
+        Console.WriteLine("  WebSocket 建连成功（默认 Harness 不发送回复）");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  skip: {ex.Message[..Math.Min(120, ex.Message.Length)]}");
+    }
+
+    await ws.DisconnectAsync();
+}
+
+static async Task<int> RunFeishuEchoAsync(string[] commandArgs)
+{
+    var configPath = @"D:\data\config\feishu.json";
+    var once = false;
+    var timeoutSeconds = 0;
+
+    for (var i = 0; i < commandArgs.Length; i++)
+    {
+        switch (commandArgs[i])
+        {
+            case "--config" when i + 1 < commandArgs.Length:
+                configPath = commandArgs[++i];
+                break;
+            case "--once":
+                once = true;
+                break;
+            case "--timeout-seconds" when i + 1 < commandArgs.Length
+                && int.TryParse(commandArgs[++i], out var parsedTimeout)
+                && parsedTimeout > 0:
+                timeoutSeconds = parsedTimeout;
+                break;
+            case "--help":
+            case "-h":
+                PrintFeishuEchoHelp();
+                return 0;
+            default:
+                Console.Error.WriteLine(
+                    $"Unknown feishu-echo option: {commandArgs[i]}");
+                PrintFeishuEchoHelp();
+                return 64;
+        }
+    }
+
+    if (!File.Exists(configPath))
+    {
+        Console.Error.WriteLine($"Feishu config not found: {configPath}");
+        return 2;
+    }
+
+    var config = JsonSerializer.Deserialize<FeishuConfig>(
+        await File.ReadAllTextAsync(configPath),
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (config is null
+        || string.IsNullOrWhiteSpace(config.AppId)
+        || string.IsNullOrWhiteSpace(config.AppSecret))
+    {
+        Console.Error.WriteLine(
+            "Feishu config must contain AppId and AppSecret.");
+        return 2;
+    }
+
+    using var runCts = new CancellationTokenSource();
+    if (timeoutSeconds > 0)
+        runCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+    ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+    {
+        eventArgs.Cancel = true;
+        runCts.Cancel();
+    };
+    Console.CancelKeyPress += cancelHandler;
+
+    var receivedCount = 0;
+    var onceCompleted = new TaskCompletionSource(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    using var client = new FeishuClient(config);
+    using var webSocket = new FeishuWebSocket(config);
+
+    webSocket.OnDiagnostic += message =>
+        Console.WriteLine($"[Feishu Echo] protocol: {message}");
+    webSocket.OnConnectionChanged += connected =>
+        Console.WriteLine(connected
+            ? "[Feishu Echo] WebSocket connected."
+            : "[Feishu Echo] WebSocket disconnected.");
+    webSocket.OnTextMessage += async (
+        messageId,
+        chatId,
+        senderOpenId,
+        text) =>
+    {
+        var number = Interlocked.Increment(ref receivedCount);
+        Console.WriteLine(
+            $"[Feishu Echo] #{number} received message={messageId} chat={chatId} sender={senderOpenId} text={JsonSerializer.Serialize(text)}");
+        try
+        {
+            var result = await client.ReplyTextAsync(
+                messageId,
+                text,
+                CreateEchoUuid(messageId),
+                runCts.Token);
+            if (result.Code != 0)
+            {
+                throw new InvalidOperationException(
+                    $"Feishu reply failed: code={result.Code}, msg={result.Msg}");
+            }
+
+            Console.WriteLine(
+                $"[Feishu Echo] #{number} replied with the same text.");
+            if (once)
+                onceCompleted.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[Feishu Echo] #{number} reply failed: {ex.Message}");
+            if (once)
+                onceCompleted.TrySetException(ex);
+            throw;
+        }
+    };
+
+    try
+    {
+        var token = await client.GetAccessTokenAsync(runCts.Token);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new InvalidOperationException(
+                "Feishu returned an empty tenant token.");
+        }
+
+        await webSocket.ConnectAsync(runCts.Token);
+        Console.WriteLine(once
+            ? "[Feishu Echo] Ready. Send one text message from Feishu."
+            : "[Feishu Echo] Ready. Every text message will be copied back. Press Ctrl+C to stop.");
+
+        try
+        {
+            if (once)
+                await onceCompleted.Task.WaitAsync(runCts.Token);
+            else
+                await Task.Delay(Timeout.InfiniteTimeSpan, runCts.Token);
+        }
+        catch (OperationCanceledException) when (runCts.IsCancellationRequested)
+        {
+            // Ctrl+C or the explicit test timeout is a normal shutdown.
+        }
+
+        return timeoutSeconds > 0 && receivedCount == 0 ? 2 : 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"[Feishu Echo] Fatal: {ex.Message}");
+        return 1;
+    }
+    finally
+    {
+        await webSocket.DisconnectAsync();
+        Console.CancelKeyPress -= cancelHandler;
+        Console.WriteLine(
+            $"[Feishu Echo] Stopped. Echoed {receivedCount} message(s).");
+    }
+}
+
+static string CreateEchoUuid(string messageId)
+{
+    var hash = SHA256.HashData(Encoding.UTF8.GetBytes(messageId));
+    return $"echo-{Convert.ToHexString(hash).ToLowerInvariant()[..32]}";
+}
+
+static void PrintFeishuEchoHelp()
+{
+    Console.WriteLine(
+        """
+        Usage:
+          dotnet run --project Tests/HarnessAgent.Cli -- feishu-echo [options]
+
+        Options:
+          --config <path>          Feishu JSON config (default D:\data\config\feishu.json)
+          --once                   Exit after one successful copied reply
+          --timeout-seconds <n>    Stop after n seconds; returns 2 if no message arrived
+          --help                   Show this help
+        """);
 }
 
 sealed class MockMcpTransport : IMcpTransport

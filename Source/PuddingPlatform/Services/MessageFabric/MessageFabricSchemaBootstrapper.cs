@@ -28,9 +28,19 @@ public static class MessageFabricSchemaBootstrapper
             audience            TEXT    NOT NULL,
             visibility          TEXT    NOT NULL,
             content             TEXT    NOT NULL,
+            conversation_id     TEXT,
+            reply_to_message_id TEXT,
+            correlation_id      TEXT,
+            causation_id        TEXT,
+            metadata_json       TEXT,
             created_at          INTEGER NOT NULL
         );
         """,
+        "ALTER TABLE room_messages ADD COLUMN conversation_id TEXT;",
+        "ALTER TABLE room_messages ADD COLUMN reply_to_message_id TEXT;",
+        "ALTER TABLE room_messages ADD COLUMN correlation_id TEXT;",
+        "ALTER TABLE room_messages ADD COLUMN causation_id TEXT;",
+        "ALTER TABLE room_messages ADD COLUMN metadata_json TEXT;",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_message_id ON room_messages(message_id);",
         "CREATE INDEX IF NOT EXISTS idx_room_messages_workspace_room_time ON room_messages(workspace_id, room_id, created_at);",
 
@@ -57,6 +67,11 @@ public static class MessageFabricSchemaBootstrapper
             ack_at                INTEGER
         );
         """,
+        "ALTER TABLE message_deliveries ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE message_deliveries ADD COLUMN available_at INTEGER;",
+        "ALTER TABLE message_deliveries ADD COLUMN lease_until INTEGER;",
+        "ALTER TABLE message_deliveries ADD COLUMN claimed_by_execution_id TEXT;",
+        "ALTER TABLE message_deliveries ADD COLUMN last_error TEXT;",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_message_deliveries_delivery_id ON message_deliveries(delivery_id);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_message_id ON message_deliveries(message_id);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_endpoint_status ON message_deliveries(workspace_id, target_kind, target_id, status);",

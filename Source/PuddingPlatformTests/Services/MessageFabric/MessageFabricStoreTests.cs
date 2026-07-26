@@ -77,6 +77,56 @@ public sealed class MessageFabricStoreTests
     }
 
     [TestMethod]
+    public async Task ClaimNextAsync_RestoresGatewayConversationFactsAndMetadata()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        var route = RoutePlan();
+        route = route with
+        {
+            RoomMessage = route.RoomMessage with
+            {
+                ConversationId = "conversation-1",
+                ReplyToMessageId = "om_external",
+                CorrelationId = "oc_chat",
+                CausationId = "om_external",
+                Metadata = new Dictionary<string, string>
+                {
+                    ["gateway_ingress"] = "true",
+                    ["gateway_channel_type"] = "feishu",
+                    ["gateway_connector_id"] = "feishu:assistant",
+                },
+            },
+        };
+        await store.PersistRouteAsync("default", route, CancellationToken.None);
+
+        var claimed = await store.ClaimNextAsync(
+            new MessageClaimRequest
+            {
+                Endpoint = new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = "assistant",
+                },
+                WorkspaceId = "default",
+                ExecutionId = "gateway-execution",
+            },
+            CancellationToken.None);
+
+        Assert.IsNotNull(claimed);
+        Assert.AreEqual("conversation-1", claimed!.ConversationId);
+        Assert.AreEqual("om_external", claimed.ReplyToMessageId);
+        Assert.AreEqual("oc_chat", claimed.CorrelationId);
+        Assert.AreEqual("om_external", claimed.CausationId);
+        Assert.AreEqual("true", claimed.Metadata["gateway_ingress"]);
+        Assert.AreEqual("feishu", claimed.Metadata["gateway_channel_type"]);
+    }
+
+    [TestMethod]
     public async Task ClaimNextAsync_MarksDeliveryDelivering_WithLeaseAndExecutionId()
     {
         using var temp = TemporaryDirectory.Create();

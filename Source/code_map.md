@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-24 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Subconscious 系统
+> 最后更新: 2026-07-26 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Fake 飞书往返测试、Echo CLI 与首帧 ping 回归
 
 ---
 
@@ -209,10 +209,10 @@ Source/
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
 | `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync` |
 | `Services/TokenUsageSchemaBootstrapper.cs` | Platform SQLite 的 Token 用量 Schema 升级边界；启动时幂等补齐 `TokenUsageEvents.ParentSessionId` 与索引，DDL 失败直接阻止启动，避免 EF 模型与旧数据库静默失配 |
-| `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json`，避免已有数据库在 Turn 受理事务中因 EF 模型漂移返回 500 |
+| `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json/reply_projected_at`，避免已有数据库在 Turn 受理或渠道回复投影时因 EF 模型漂移失败 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；附图不会改写主模型路由，文本模型收到受控本地路径与 `image_reader` 提示，视觉模型继续由 DirectLlm 直接消费；终态写入失败时执行 fenced 基础设施兜底 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；从 gateway metadata 构造 typed `MessageOrigin`，让 Runtime 明确识别飞书来源；附图不会改写主模型路由；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；Agent 来源名取实例 manifest 显示名（禁止拿 Session title 冒充发送者），以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`；初始 conversation 只返回过程计数摘要且不读取事件 payload，完整过程按稳定 `messageId/runId` 经单消息详情端点延迟加载 |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |
@@ -222,7 +222,7 @@ Source/
 | `Services/Execution/ExecutionControlService.cs` | Cancel/Control 的唯一事务写入权威 |
 | `Services/PlatformReadinessProbe.cs` | Conversation 执行链 readiness：DB + Submit Handler + Coordinator |
 | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 只消费 AgentRuntimeProfile 的无密钥快照工厂；冻结 Provider/Profile/Model 与能力引用 |
-| `Services/Conversation/SubmitTurnHandler.cs` | Submit Turn 应用处理器 |
+| `Services/Conversation/SubmitTurnHandler.cs` | Submit Turn 应用处理器；公开请求的 `gateway_*` 保留 metadata 会被过滤，只有进程内可信 Gateway 命令可保留渠道回复路由事实 |
 | `Services/Conversation/SystemCommandHandler.cs` | 系统命令执行边界；`/yolo` 仅修改 RuntimeControl 并持久化 system transcript，禁止创建 Agent Turn/Command |
 | `Services/Conversation/RequestTurnCancellationHandler.cs` | Cancel 处理器 — 写 turn.cancel.requested |
 | `Services/Conversation/CreateSteeringHandler.cs` | Steering 应用 Handler；端点在 Runtime 消费器落地前保持关闭 |
@@ -258,10 +258,18 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理右上角悬浮运行坞与详情检查器；显示活动阶段、模型消息、脱敏工具输入输出、轮次、预算和有界事件时间线；成功/异常终态分别停留 12/30 秒后自动隐藏，完整结果仍按 Run ID 从归档 `output.md` 懒加载 |
 | `PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts` | 纯消息虚拟项投影；只生成用户、主 Agent、系统消息和历史加载项，不投影子代理 run，避免多子代理调用污染文档流 |
 | `Services/MessageFabric/MessageSystem.cs` | 消息系统核心 |
-| `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room） |
-| `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；从 `queued/retrying` 投递发现待处理 Agent 目标 |
+| `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room）；为 `(message,target)` 生成稳定 DeliveryId，并保留 Conversation/reply/correlation/causation/metadata |
+| `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；持久化渠道路由事实，并从 `queued/retrying` 投递发现待处理 Agent/Connector 目标 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
-| `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；Hosted Service 订阅唤醒事件，并周期从持久化 Inbox 发现目标、恢复 lease、原子领取；执行进入共享 session 单写者后再 ack/retry/dead-letter |
+| `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
+| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 succeeded Command 的 committed terminal event 幂等创建 Connector delivery；`reply_projected_at` 与实际 Connector delivered 状态分离 |
+| `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 Agent-owned binding，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份并写 Message Fabric |
+| `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从私有 Agent manifest 动态装配一 Agent 一机器人；拒绝重复 AppId，凭据不进入公共 DTO |
+| `PuddingAgent/Connectors/FeishuConnector.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 frame、open 后首帧 ping、事件 ACK、分片、ping/reconnect 与 message/chat/sender 字段映射；入站使用 `message_type`，出站 OpenAPI 使用 `msg_type`；可选协议诊断只输出非敏感帧元数据 |
+| `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter，出站故障不重跑 Agent |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` | 无外网 Fake 飞书往返验收；使用真实 SQLite Message Fabric、canonical Turn 受理、terminal reply projection 和 Connector dispatcher，只替换外部飞书与 Agent 执行结果 |
+| `Tests/HarnessAgent.Cli/Program.cs` (`feishu-echo`) | 独立飞书 SDK Echo 程序；真实长连接收到文本后以稳定 uuid 调 reply API 原样回复，支持 `--once/--timeout-seconds/--config` |
+| `Tests/HarnessAgent.Core.Tests/Feishu/FeishuWebSocketInitialPingTests.cs` | 本地真 WebSocket 协议回归；锁定建连后立即 CONTROL/ping，以及 pbbp2 DATA/event 解码、文本投递和成功 ACK |
 | `Controllers/Api/MessageQueueController.cs` | Agent 交互队列 API；`includeSystem=false` 为默认用户界面边界 |
 
 ### API Controllers（核心）

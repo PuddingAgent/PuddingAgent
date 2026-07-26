@@ -3446,6 +3446,7 @@ public sealed class AgentExecutionService
             CausationId = request.Origin.CausationId,
             From = new AgentContextEndpoint(request.Origin.FromKind, request.Origin.FromId, request.Origin.FromDisplayName),
             To = [new AgentContextEndpoint("agent", request.AgentTemplateId, null)],
+            Metadata = BuildOriginMetadata(request.Origin),
             Constraints =
             [
                 "This message was delivered by Pudding Message Fabric.",
@@ -3457,6 +3458,23 @@ public sealed class AgentExecutionService
         };
 
         return AgentContextEnvelopeRenderer.RenderForAgent(envelope);
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildOriginMetadata(MessageOrigin origin)
+    {
+        var metadata = new Dictionary<string, string>();
+        Add("channel_id", origin.ChannelId);
+        Add("channel_type", origin.ChannelType);
+        Add("connector_id", origin.ConnectorId);
+        Add("external_conversation_id", origin.ExternalConversationId);
+        Add("external_message_id", origin.ExternalMessageId);
+        return metadata;
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                metadata[key] = value;
+        }
     }
 
     private async Task RecordSteeringTelemetryAsync(

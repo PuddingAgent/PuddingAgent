@@ -300,6 +300,11 @@ public sealed record AgentInstanceManifest
     public bool IsEnabled { get; init; } = true;
     public bool IsFrozen { get; init; }
     public AgentInstancePaths Paths { get; init; } = new();
+    /// <summary>
+    /// V1 第三方聊天渠道绑定。一个 Agent manifest 最多配置一个飞书机器人，
+    /// 配置只在服务端加载，不投影到通用 Agent DTO。
+    /// </summary>
+    public AgentFeishuBotConfig? Feishu { get; init; }
 
     // ── 模板配置（创建时嵌入，运行时不再查模板）──
     public string? Role { get; init; }
@@ -338,6 +343,18 @@ public sealed record AgentInstanceManifest
     public string? BootstrapMdFile { get; init; }
     public string? MemoryMdFile { get; init; }
     public string? HeartbeatMdFile { get; init; }
+}
+
+/// <summary>
+/// Agent 级飞书机器人配置。V1 中飞书是唯一的第三方聊天渠道；
+/// 后续渠道扩展不得改变本配置作为 Agent 私有配置的事实。
+/// </summary>
+public sealed record AgentFeishuBotConfig
+{
+    public bool Enabled { get; init; }
+    public string AppId { get; init; } = "";
+    public string AppSecret { get; init; } = "";
+    public string? Description { get; init; }
 }
 
 public sealed record AgentInstancePaths

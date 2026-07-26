@@ -43,7 +43,14 @@ public sealed record SubmitTurnCommand(
     string ClientMessageId,
     RecipientRequest Recipients,
     IReadOnlyList<ContentPart> Content,
-    IReadOnlyDictionary<string, string>? Metadata);
+    IReadOnlyDictionary<string, string>? Metadata)
+{
+    /// <summary>
+    /// 仅允许进程内 Message Gateway 设置。HTTP Controller 不从请求 DTO 映射此值，
+    /// 因而普通客户端不能伪造 gateway_* 回复路由事实。
+    /// </summary>
+    public bool IsTrustedGatewayIngress { get; init; }
+}
 
 public sealed record RequestTurnCancellationCommand(
     string ConversationId,

@@ -46,11 +46,32 @@ public sealed class SubmitTurnHandler(
                 ClientMessageId = command.ClientMessageId,
                 Recipients = command.Recipients,
                 Content = command.Content,
-                Metadata = command.Metadata,
+                Metadata = NormalizeMetadata(
+                    command.Metadata,
+                    command.IsTrustedGatewayIngress),
             },
             command.WorkspaceId,
             command.ConversationId,
             command.UserId,
             ct);
+    }
+
+    private static IReadOnlyDictionary<string, string>? NormalizeMetadata(
+        IReadOnlyDictionary<string, string>? metadata,
+        bool isTrustedGatewayIngress)
+    {
+        if (metadata is null || isTrustedGatewayIngress)
+            return metadata;
+
+        var filtered = metadata
+            .Where(pair =>
+                !pair.Key.StartsWith(
+                    "gateway_",
+                    StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal);
+        return filtered.Count > 0 ? filtered : null;
     }
 }

@@ -67,6 +67,7 @@ public sealed class ExecutionRunCoordinator(
             var userMessage = await messageRepository.GetByMessageIdAsync(
                 command.UserMessageId, ctsRun.Token);
             var visualArtifactIds = ExtractVisualArtifactIds(userMessage?.MetadataJson);
+            var messageOrigin = BuildMessageOrigin(userMessage?.MetadataJson);
             var messageText = await BuildMessageTextAsync(
                 lease.WorkspaceId,
                 userMessage?.Content ?? "",
@@ -148,6 +149,8 @@ public sealed class ExecutionRunCoordinator(
                 VisualArtifactIds: visualArtifactIds)
             {
                 ExecutionDeadlineUtc = executionDeadlineUtc,
+                InboundMessageId = command.UserMessageId,
+                Origin = messageOrigin,
                 ExecutionIdentity = new RuntimeExecutionIdentity
                 {
                     Kind = RuntimeExecutionKind.ConversationTurn,
@@ -588,6 +591,72 @@ public sealed class ExecutionRunCoordinator(
             return null;
         }
     }
+
+    private static MessageOrigin? BuildMessageOrigin(string? metadataJson)
+    {
+        var metadata = DeserializeMetadata(metadataJson);
+        if (metadata is null
+            || !IsTrue(GetMetadataValue(metadata, MessageGatewayMetadata.IsGatewayIngress)))
+        {
+            return null;
+        }
+
+        var externalUserId = GetMetadataValue(
+            metadata,
+            MessageGatewayMetadata.ExternalUserId) ?? "external-user";
+        var channelType = GetMetadataValue(
+            metadata,
+            MessageGatewayMetadata.ChannelType) ?? "connector";
+
+        return new MessageOrigin
+        {
+            FromKind = "user",
+            FromId = externalUserId,
+            FromDisplayName = null,
+            CorrelationId = GetMetadataValue(
+                metadata,
+                MessageGatewayMetadata.ExternalConversationId),
+            CausationId = GetMetadataValue(
+                metadata,
+                MessageGatewayMetadata.ExternalMessageId),
+            MessageType = $"{channelType}.chat",
+            ChannelId = GetMetadataValue(metadata, MessageGatewayMetadata.ChannelId),
+            ChannelType = channelType,
+            ConnectorId = GetMetadataValue(metadata, MessageGatewayMetadata.ConnectorId),
+            ExternalConversationId = GetMetadataValue(
+                metadata,
+                MessageGatewayMetadata.ExternalConversationId),
+            ExternalMessageId = GetMetadataValue(
+                metadata,
+                MessageGatewayMetadata.ExternalMessageId),
+        };
+    }
+
+    private static IReadOnlyDictionary<string, string>? DeserializeMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? GetMetadataValue(
+        IReadOnlyDictionary<string, string> metadata,
+        string key)
+        => metadata.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+
+    private static bool IsTrue(string? value)
+        => string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(value, "1", StringComparison.Ordinal);
 
     private static async Task<string> BuildMessageTextAsync(
         string workspaceId,

@@ -25,6 +25,7 @@ public sealed class TurnExecutorAdapter(
             AgentTemplateId = context.AgentTemplateId ?? "global:general-assistant",
             MessageText = context.MessageText,
             WorkspaceId = context.WorkspaceId,
+            MessageId = context.InboundMessageId,
             UserId = context.UserId,
             AgentInstanceId = context.AgentInstanceId,
             LlmProfile = context.LlmProfile,
@@ -38,6 +39,7 @@ public sealed class TurnExecutorAdapter(
             MaxToolCallsTotal = context.MaxToolCallsTotal ?? 0,
             ExecutionIdentity = context.ExecutionIdentity,
             VisualArtifactIds = context.VisualArtifactIds,
+            Origin = context.Origin,
         };
 
         var sawTerminal = false;

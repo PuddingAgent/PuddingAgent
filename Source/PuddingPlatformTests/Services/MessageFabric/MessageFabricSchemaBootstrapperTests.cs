@@ -32,6 +32,11 @@ public sealed class MessageFabricSchemaBootstrapperTests
             Assert.IsTrue(await TableExistsAsync(db, "room_messages"));
             Assert.IsTrue(await TableExistsAsync(db, "message_deliveries"));
             Assert.IsTrue(await TableExistsAsync(db, "room_participants"));
+            Assert.IsTrue(await ColumnExistsAsync(db, "room_messages", "conversation_id"));
+            Assert.IsTrue(await ColumnExistsAsync(db, "room_messages", "reply_to_message_id"));
+            Assert.IsTrue(await ColumnExistsAsync(db, "room_messages", "correlation_id"));
+            Assert.IsTrue(await ColumnExistsAsync(db, "room_messages", "causation_id"));
+            Assert.IsTrue(await ColumnExistsAsync(db, "room_messages", "metadata_json"));
 
             var store = new MessageFabricStore(db);
             await store.PersistRouteAsync("default", new MessageRoutePlan

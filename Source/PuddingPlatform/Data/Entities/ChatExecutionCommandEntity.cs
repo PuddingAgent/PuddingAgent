@@ -89,4 +89,11 @@ public class ChatExecutionCommandEntity
     /// <summary>JSON 格式的附加元数据（如 vision_artifact_id）。</summary>
     [MaxLength(4096), Column("metadata_json")]
     public string? MetadataJson { get; set; }
+
+    /// <summary>
+    /// Gateway terminal reply 已可靠投影到 Message Fabric 的时间。
+    /// null 表示 ReplyProjectionWorker 仍需投影；连接器发送状态由 MessageDelivery 独立负责。
+    /// </summary>
+    [Column("reply_projected_at")]
+    public long? ReplyProjectedAt { get; set; }
 }

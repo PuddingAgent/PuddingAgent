@@ -113,6 +113,7 @@ public sealed class ConversationAcceptanceStore(
                     TurnId = turnId,
                     AgentInstanceId = agentId,
                     UserId = userId,
+                    ChannelId = GetMetadataValue(request.Metadata, MessageGatewayMetadata.ChannelId),
                     Status = "pending",
                     CreatedAt = now,
                     MetadataJson = SerializeMetadata(request.Metadata),
@@ -264,4 +265,13 @@ public sealed class ConversationAcceptanceStore(
             return null;
         }
     }
+
+    private static string? GetMetadataValue(
+        IReadOnlyDictionary<string, string>? metadata,
+        string key)
+        => metadata is not null
+           && metadata.TryGetValue(key, out var value)
+           && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
 }

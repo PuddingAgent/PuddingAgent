@@ -100,6 +100,12 @@ public sealed record RoomMessageDraft
     public required string Visibility { get; init; }
     public required string Content { get; init; }
     public required long CreatedAt { get; init; }
+    public string? ConversationId { get; init; }
+    public string? ReplyToMessageId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? CausationId { get; init; }
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } =
+        new Dictionary<string, string>();
 }
 
 /// <summary>Per-target delivery draft produced by routing a message.</summary>
@@ -165,6 +171,10 @@ public sealed record MessageInboxItem
     public required string MessageId { get; init; }
     public required string WorkspaceId { get; init; }
     public string? RoomId { get; init; }
+    public string? ConversationId { get; init; }
+    public string? ReplyToMessageId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? CausationId { get; init; }
     public required MessageAddress From { get; init; }
     public required MessageAddress Target { get; init; }
     public required string Content { get; init; }
@@ -178,6 +188,8 @@ public sealed record MessageInboxItem
     public long? AckAt { get; init; }
     public string? ClaimedByExecutionId { get; init; }
     public string? LastError { get; init; }
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } =
+        new Dictionary<string, string>();
 }
 
 /// <summary>Payload carried by message.deliver events in the internal event pipeline.</summary>

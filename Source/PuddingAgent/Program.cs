@@ -27,6 +27,7 @@ using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Storage;
 using PuddingPlatform.Services.MessageFabric;
+using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingController;
 using PuddingController.Data;
@@ -412,6 +413,12 @@ builder.Services.AddSingleton<BenchmarkRunService>();
 // ── Workspace Agent 实例配置与运行目录写入权威 ──
 builder.Services.AddSingleton<WorkspaceAgentFileService>();
 builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
+builder.Services.AddSingleton<IAgentMainSessionBinder>(sp =>
+    sp.GetRequiredService<WorkspaceAgentFileService>());
+builder.Services.AddSingleton<AgentManifestCatalog>();
+builder.Services.AddSingleton<MessageGatewayIngress>();
+builder.Services.AddSingleton<IMessageGatewayIngress>(
+    sp => sp.GetRequiredService<MessageGatewayIngress>());
 builder.Services.AddSingleton<IAgentSelfMaintenanceService>(
     sp => sp.GetRequiredService<WorkspaceAgentFileService>());
 builder.Services.AddSingleton<IWorkspaceAgentQueryService, WorkspaceAgentQueryServiceAdapter>();
@@ -706,6 +713,7 @@ builder.Services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateR
 builder.Services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
 builder.Services.AddSingleton<MessageDeliveryDispatcher>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
+builder.Services.AddHostedService<ConversationReplyProjectionWorker>();
 
 // 检查点与订阅管理
 builder.Services.AddSingleton<AgentCheckpointService>();
@@ -809,6 +817,9 @@ builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<Web
 builder.Services.AddSingleton<MqttConnector>();
 builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<MqttConnector>());
 
+// ── 飞书连接器（从 Agent manifest 动态创建；一个 Agent 一个机器人）──────
+builder.Services.AddSingleton<FeishuConnectorFactory>();
+
 // ── 网关鉴权（SM2 + 白名单）────────────────────────
 builder.Services.AddSingleton<GatewayAuthService>();
 
@@ -818,6 +829,16 @@ builder.Services.AddSingleton<ConnectorHost>(sp =>
     var host = new ConnectorHost(
         onEventReceived: async (envelope, ct) =>
         {
+            if (string.Equals(
+                    envelope.ChannelType,
+                    "feishu",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var gateway = sp.GetRequiredService<IMessageGatewayIngress>();
+                await gateway.AcceptAsync(envelope, ct);
+                return;
+            }
+
             // 将连接器事件推入 IInternalEventBus → EventIngressBridge → AgentEventHandler
             var bus = sp.GetRequiredService<PuddingCode.Abstractions.IInternalEventBus>();
             var sessionId = envelope.CorrelationId ?? $"connector-session-{Guid.NewGuid():N}"[..26];
@@ -844,13 +865,13 @@ builder.Services.AddSingleton<ConnectorHost>(sp =>
                 Type = eventType,
                 Source = new PuddingCode.Models.EventSource { SourceType = envelope.ChannelType, SourceId = envelope.ChannelId },
                 SessionId = sessionId,
-                WorkspaceId = "default",
+                WorkspaceId = envelope.WorkspaceId ?? "default",
                 Payload = System.Text.Json.JsonSerializer.SerializeToElement(payload),
                 TimestampUtc = DateTime.UtcNow,
                 Priority = PuddingCode.Models.EventPriorityLevel.Normal,
                 TraceId = traceId,
                 CorrelationId = sessionId,
-                CausationId = null, // PuddingIngressEnvelope 尚未标准化，暂无 CausationId
+                CausationId = envelope.ExternalMessageId,
             };
 
             var spLogger = sp.GetRequiredService<ILogger<Program>>();
@@ -911,6 +932,9 @@ builder.Services.AddSingleton<ConnectorHost>(sp =>
         sp.GetRequiredService<ILogger<ConnectorHost>>());
     return host;
 });
+builder.Services.AddSingleton<ConnectorDeliveryDispatcher>();
+builder.Services.AddHostedService(
+    sp => sp.GetRequiredService<ConnectorDeliveryDispatcher>());
 
 // ── Cron 定时任务调度 ──────────────────────────────
 // HOSTED-DISABLED: builder.Services.AddHostedService<CronSchedulerService>();
@@ -1003,6 +1027,10 @@ app.Lifetime.ApplicationStarted.Register(() =>
             var connectorHost = app.Services.GetRequiredService<ConnectorHost>();
             progLogger.LogWarning("[Program] ConnectorHost resolved, getting connectors...");
             var connectors = app.Services.GetServices<IPuddingConnector>().ToList();
+            var feishuConnectors = await app.Services
+                .GetRequiredService<FeishuConnectorFactory>()
+                .CreateAsync(CancellationToken.None);
+            connectors.AddRange(feishuConnectors);
             progLogger.LogWarning("[Program] Got {Count} connectors, registering...", connectors.Count);
             foreach (var c in connectors)
                 connectorHost.Register(c);
@@ -1018,6 +1046,19 @@ app.Lifetime.ApplicationStarted.Register(() =>
 
 app.Lifetime.ApplicationStopping.Register(() =>
 {
+    try
+    {
+        app.Services
+            .GetRequiredService<ConnectorHost>()
+            .StopAllAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "[ConnectorHost] Graceful stop failed.");
+    }
+
     try
     {
         jsonlSessionWriter.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -1282,6 +1323,10 @@ try
             schemaLogger,
             CancellationToken.None);
         await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(
+            platformDb,
+            schemaLogger,
+            CancellationToken.None);
+        await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(
             platformDb,
             schemaLogger,
             CancellationToken.None);

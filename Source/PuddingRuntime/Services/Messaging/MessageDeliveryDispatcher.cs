@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -289,6 +290,24 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         }
 
         var claimedIsHeartbeat = IsHeartbeat(claimed);
+        var effectiveMetadata = claimed.Metadata.Count > 0
+            ? claimed.Metadata
+            : metadata ?? new Dictionary<string, string>();
+
+        // Connector chat ingress must enter the canonical ADR-059 command/event
+        // path. It is intentionally one delivery = one Turn and never participates
+        // in the legacy message batching/direct Runtime path.
+        if (IsGatewayConversationIngress(effectiveMetadata))
+        {
+            await AcceptGatewayConversationTurnAsync(
+                scope.ServiceProvider,
+                inbox,
+                claimed,
+                executionId,
+                effectiveMetadata,
+                ct);
+            return;
+        }
 
         // 批量声明：同一目标的其他排队消息一并取出合并。
         // 心跳是低优先级探活，不参与批处理，避免插入或打断真实用户/Agent 消息。
@@ -370,7 +389,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     From = claimed.From,
                     CorrelationId = correlationId,
                     CausationId = causationId,
-                    Metadata = metadata,
+                    Metadata = effectiveMetadata,
                 },
                 ct);
 
@@ -413,7 +432,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                         scope.ServiceProvider,
                         claimed,
                         result,
-                        metadata,
+                        effectiveMetadata,
                         ct);
                 }
                 catch (Exception ex)
@@ -808,6 +827,112 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             DateTimeOffset.UtcNow.AddSeconds(30),
             ct);
         return false;
+    }
+
+    private async Task AcceptGatewayConversationTurnAsync(
+        IServiceProvider serviceProvider,
+        IMessageInbox inbox,
+        MessageInboxItem claimed,
+        string executionId,
+        IReadOnlyDictionary<string, string> metadata,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(claimed.ConversationId))
+                throw new InvalidOperationException(
+                    "Gateway message delivery is missing the canonical ConversationId.");
+
+            var handler = serviceProvider.GetRequiredService<ISubmitTurnHandler>();
+            var clientRequestId = GetMetadataValue(
+                    metadata,
+                    MessageGatewayMetadata.ClientRequestId)
+                ?? claimed.MessageId;
+
+            await handler.HandleAsync(
+                new SubmitTurnCommand(
+                    ConversationId: claimed.ConversationId,
+                    WorkspaceId: claimed.WorkspaceId,
+                    UserId: StableGatewayUserId(claimed.From.Id),
+                    ClientRequestId: clientRequestId,
+                    ClientMessageId: claimed.MessageId,
+                    Recipients: new RecipientRequest
+                    {
+                        Type = "agent",
+                        AgentIds = [claimed.Target.Id],
+                    },
+                    Content:
+                    [
+                        new ContentPart
+                        {
+                            Type = "text",
+                            Text = claimed.Content,
+                        },
+                    ],
+                    Metadata: metadata)
+                {
+                    IsTrustedGatewayIngress = true,
+                },
+                ct);
+
+            await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+            LogExecutionResult(
+                claimed,
+                MessageDeliveryStatuses.Delivered,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+            _logger.LogInformation(
+                "[MessageDeliveryDispatcher] Gateway ingress accepted delivery={DeliveryId} agent={AgentId} conversation={ConversationId}",
+                claimed.DeliveryId,
+                claimed.Target.Id,
+                claimed.ConversationId);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var deadLettered = await RetryOrDeadLetterAsync(
+                inbox,
+                claimed,
+                executionId,
+                ex.Message,
+                CancellationToken.None);
+            LogExecutionResult(
+                claimed,
+                deadLettered
+                    ? MessageDeliveryStatuses.DeadLetter
+                    : MessageDeliveryStatuses.Retrying,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+            _logger.LogError(
+                ex,
+                "[MessageDeliveryDispatcher] Gateway ingress acceptance failed delivery={DeliveryId} agent={AgentId} deadLettered={DeadLettered}",
+                claimed.DeliveryId,
+                claimed.Target.Id,
+                deadLettered);
+        }
+    }
+
+    private static bool IsGatewayConversationIngress(
+        IReadOnlyDictionary<string, string> metadata)
+    {
+        var value = GetMetadataValue(
+            metadata,
+            MessageGatewayMetadata.IsGatewayIngress);
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(value, "1", StringComparison.Ordinal);
+    }
+
+    private static string StableGatewayUserId(string externalUserId)
+    {
+        var hash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(externalUserId)))
+            .ToLowerInvariant();
+        return $"gateway:{hash[..32]}";
     }
 
     private Task OnMessageDeliverAsync(InternalEvent evt) =>
