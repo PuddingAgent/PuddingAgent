@@ -71,13 +71,20 @@ Workspace Agent 实例负责场景化与个性化字段：
 Agent 实例目录保存：
 
 - `manifest.json`：身份、角色、权限、Skill、执行护栏、主模型显式引用和 Smart 角色模型；
-  其中 `preferredProviderId + preferredModelId` 是主 Agent 执行模型的唯一真相源
+  其中 `preferredProviderId + preferredModelId` 是主 Agent 执行模型的唯一真相源；第三方渠道只记录
+  `channelIds` 引用，不保存渠道账号或密钥
+- `data/channels/{channelId}/manifest.json`：独立于 Agent 的渠道实例配置、飞书凭据、渠道级权限与回复策略
+- `data/config/channel.providers.json`：已安装渠道服务商及 Connector 能力目录
 - `config/llm.json`：潜意识/管理兼容配置；不得覆盖主 Agent 的 manifest 模型引用
 - `SOUL.md`、`AGENTS.md`、`TOOLS.md`、`BOOTSTRAP.md`、`MEMORY.md`
 - `heartbeatPrompt.md`
 
-Workspace Agent 编辑器应覆盖上述可编辑字段，并按“基础信息、能力与 Skill、
-角色定义、默认模型策略、执行护栏”分组。来源模板在编辑模式只读。
+Workspace Agent 编辑器应覆盖上述 Agent 可编辑字段，并按“基础信息、能力与 Skill、
+角色与 Prompt、模型与记忆、Smart 子代理、执行护栏”切换显示；Markdown 角色文件和高级运行环境
+默认折叠，校验失败跳到对应分组，关闭脏表单前要求确认。来源模板在编辑模式只读。
+
+渠道配置不进入 Agent 编辑器。Workspace 的“渠道服务商”管理已安装 Connector，“渠道管理”维护
+机器人账号、Secret、特权用户、回复策略并选择绑定 Agent；绑定操作只回写 Agent `channelIds`。
 
 实例的最大轮次、最大耗时和最大工具调用数必须进入 `AgentExecutionSnapshot`，
 再由 `TurnExecutionContext` 传给 Runtime。平台 `AgentExecutionGuardrails` 是硬上限，

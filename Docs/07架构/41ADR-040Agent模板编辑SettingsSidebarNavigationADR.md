@@ -1,7 +1,7 @@
 # 41 ADR-040 Agent 模板编辑 Settings Sidebar Navigation
 
-> 状态：proposed
-> 日期：2026-05-23
+> 状态：accepted（Workspace Agent 分组切换与配置密度优化已实现）
+> 日期：2026-05-23；Workspace Agent 实现修订：2026-07-26
 > 范围：`/admin/global-agent-template`、`/admin/workspace-agent-template`、Workspace 详情页内 Agent 模板编辑抽屉
 > 关联：ADR-034 Agent 头像服务端管理、ADR-036 Admin Console 去 Ant Design Pro 化与 Pudding 设计语言统一
 
@@ -20,7 +20,7 @@ Agent 模板编辑表单已经从简单 CRUD 演进为运行画像配置页。�
 
 采用 Settings Sidebar Navigation：把 Agent 模板编辑抽屉升级为宽抽屉内的双栏设置页。
 
-左侧为固定分组导航，右侧为当前表单内容。仍然使用单个 `ProForm`、单次保存、现有 API DTO，不引入局部保存。
+左侧为固定分组导航，右侧只显示当前分组。仍然使用单个 `ProForm`、单次保存、现有 API DTO，不引入局部保存；未显示分组的字段仍保留在同一 Form store 中。
 
 分组如下：
 
@@ -28,9 +28,10 @@ Agent 模板编辑表单已经从简单 CRUD 演进为运行画像配置页。�
 |------|------|
 | 基础信息 | 模板 ID、Workspace、继承自全局模板、名称、角色类型、描述、头像、启用、排序 |
 | 能力与 Skill | 默认能力、高权限能力、Skill 包 |
-| Prompt 与个性 | 系统 Prompt、人设、工具使用约定、首次引导模板、用户 Prompt 模板 |
+| 角色与 Prompt | 系统 Prompt、用户 Prompt、心跳提示和 Markdown 角色文件；低频长文本默认折叠 |
 | 模型与记忆 | 主模型服务商、主模型、潜意识模型服务商、潜意识模型、记忆搜索模式、推理深度 |
-| 执行护栏 | 最大轮次、最大耗时、最大工具调用、容器镜像、上下文 tokens、最大回复 tokens |
+| Smart 子代理 | Explorer、Researcher、Planner、Reviewer、Developer、Deployer、Tester 模型；支持批量填充 |
+| 执行护栏 | 最大轮次、最大耗时、最大工具调用、最大回复 tokens；容器镜像默认折叠 |
 
 ## 3. 取舍
 
@@ -38,7 +39,8 @@ Agent 模板编辑表单已经从简单 CRUD 演进为运行画像配置页。�
 
 - 抽屉宽度从 600/620px 提升到 960px，换取可扫描性。
 - 首版只做前端结构重组，不改变保存 API。
-- 首版只支持分组锚点和错误定位，不做局部保存。
+- 首版支持分组切换和错误定位，不做局部保存。
+- 关闭脏表单前确认；保存按钮展示未保存状态。
 
 拒绝：
 
@@ -64,8 +66,9 @@ Agent 模板编辑表单已经从简单 CRUD 演进为运行画像配置页。�
 ## 5. 验收标准
 
 1. 1251x1270 视口下，编辑 Agent 模板时左侧显示设置分组导航。
-2. 点击任一分组能滚动到对应 section。
+2. 点击任一分组只显示对应 section，避免长表单滚动穿透。
 3. 表单校验失败后自动跳转到第一个错误字段所在分组。
 4. 分组导航项能标记错误状态。
 5. 不再同时出现 Transfer 版和 Checkbox 版 Skill 包选择。
 6. 现有创建、编辑、保存、删除 API 行为不变。
+7. `maxReplyTokens` 在 Workspace Agent 编辑器可见并完整回写。

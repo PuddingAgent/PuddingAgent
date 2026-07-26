@@ -15,19 +15,27 @@ public sealed class ToolCatalogApiController(
     IToolPermissionPolicyService toolPermissionPolicy) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<List<ToolCatalogItemDto>> List([FromQuery] bool? enabledByDefaultOnly = null)
+    public ActionResult<List<ToolCatalogItemDto>> List(
+        [FromQuery] bool? enabledByDefaultOnly = null,
+        [FromQuery] string? workspaceId = null)
     {
-        var tools = catalog.ListTools(enabledByDefaultOnly == true)
+        var tools = string.IsNullOrWhiteSpace(workspaceId)
+            ? catalog.ListTools(enabledByDefaultOnly == true)
+            : catalog.ListTools(workspaceId, enabledByDefaultOnly == true);
+        var result = tools
             .Select(Map)
             .ToList();
 
-        return Ok(tools);
+        return Ok(result);
     }
 
     [HttpGet("{toolId}")]
-    public ActionResult<ToolCatalogItemDto> Get(string toolId)
+    public ActionResult<ToolCatalogItemDto> Get(string toolId, [FromQuery] string? workspaceId = null)
     {
-        var descriptor = catalog.ListTools()
+        var tools = string.IsNullOrWhiteSpace(workspaceId)
+            ? catalog.ListTools()
+            : catalog.ListTools(workspaceId);
+        var descriptor = tools
             .FirstOrDefault(t => t.ToolId.Equals(toolId, StringComparison.OrdinalIgnoreCase));
 
         return descriptor is null

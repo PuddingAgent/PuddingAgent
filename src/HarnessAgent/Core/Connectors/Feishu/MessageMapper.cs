@@ -45,6 +45,29 @@ public static class MessageMapper
         return "[empty]";
     }
 
+    /// <summary>Extracts image_key from an image message.</summary>
+    public static string? ExtractImageKey(this FeishuEvent evt)
+    {
+        var message = evt.Event?.Message;
+        if (message is null
+            || !string.Equals(message.MessageType, "image", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(message.Content))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<FeishuImageContent>(
+                message.Content,
+                JsonOptions)?.ImageKey;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// 提取发送者 ID。
     /// </summary>

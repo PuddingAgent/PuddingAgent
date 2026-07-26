@@ -17,6 +17,7 @@ public sealed class FeishuCommandInterceptionTests
 {
     private const string WorkspaceId = "default";
     private const string AgentId = "fake-command-agent";
+    private const string ChannelId = AgentId;
     private const string ConversationId = "fake-command-main";
     private const string ConnectorId = "feishu:fake-command-agent";
     private const string SenderOpenId = "ou_command_sender";
@@ -173,6 +174,11 @@ public sealed class FeishuCommandInterceptionTests
         var provider = services.BuildServiceProvider();
         var gateway = new MessageGatewayIngress(
             new AgentManifestCatalog(paths),
+            new ChannelConfigurationFileService(
+                paths,
+                new FakeWorkspaceAgentCatalog(),
+                new UnexpectedAgentChannelBinder(),
+                NullLogger<ChannelConfigurationFileService>.Instance),
             sessions,
             new UnexpectedMainSessionBinder(),
             provider.GetRequiredService<IServiceScopeFactory>(),
@@ -188,7 +194,7 @@ public sealed class FeishuCommandInterceptionTests
             ConnectorId = ConnectorId,
             WorkspaceId = WorkspaceId,
             AgentId = AgentId,
-            ChannelId = "feishu",
+            ChannelId = ChannelId,
             ChannelType = "feishu",
             UserExternalId = SenderOpenId,
             MessageText = text,
@@ -212,9 +218,19 @@ public sealed class FeishuCommandInterceptionTests
             DisplayName = "Fake Command Agent",
             MainSessionId = ConversationId,
             IsEnabled = true,
-            Feishu = new AgentFeishuBotConfig
+            ChannelIds = [ChannelId],
+        };
+        var channel = new ChannelInstanceManifest
+        {
+            ChannelId = ChannelId,
+            WorkspaceId = WorkspaceId,
+            ProviderId = ChannelProviderKinds.Feishu,
+            Name = "Fake Command Channel",
+            IsEnabled = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Feishu = new FeishuChannelSettings
             {
-                Enabled = true,
                 AppId = "cli_fake_command",
                 AppSecret = "fake-command-secret",
                 PrivilegedUserOpenIds = whitelisted ? [SenderOpenId] : [],
@@ -224,6 +240,12 @@ public sealed class FeishuCommandInterceptionTests
             Path.Combine(root, "manifest.json"),
             JsonSerializer.Serialize(
                 manifest,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Directory.CreateDirectory(paths.ChannelRoot(ChannelId));
+        await File.WriteAllTextAsync(
+            paths.ChannelManifestFile(ChannelId),
+            JsonSerializer.Serialize(
+                channel,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
 
@@ -269,6 +291,44 @@ public sealed class FeishuCommandInterceptionTests
             CancellationToken ct = default)
             => throw new AssertFailedException(
                 "The configured fake main session should be reused.");
+    }
+
+    private sealed class UnexpectedAgentChannelBinder : IAgentChannelBinder
+    {
+        public Task SetChannelBindingAsync(
+            string workspaceId,
+            string channelId,
+            string? agentId,
+            CancellationToken ct = default)
+            => throw new AssertFailedException(
+                "Runtime channel reads must not mutate Agent bindings.");
+    }
+
+    private sealed class FakeWorkspaceAgentCatalog : IWorkspaceAgentCatalog
+    {
+        public Task<IReadOnlyList<WorkspaceAgentDto>> ListAgentsAsync(
+            string workspaceId,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<WorkspaceAgentDto>>(
+            [
+                new WorkspaceAgentDto(
+                    AgentId,
+                    AgentId,
+                    null,
+                    "Fake Command Agent",
+                    null,
+                    null,
+                    "general-assistant",
+                    ConversationId,
+                    null,
+                    null,
+                    null,
+                    true,
+                    false,
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow,
+                    ChannelIds: [ChannelId]),
+            ]);
     }
 
     private sealed record TestContext(

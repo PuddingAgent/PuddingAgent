@@ -314,6 +314,8 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
   );
 
   const previewDefaults = defaultCapabilities.slice(0, 6);
+  const previewGrants = selectedGrantCapabilities.slice(0, 6);
+  const previewSkills = selectedSkills.slice(0, 6);
 
   return (
     <section id={id} data-section-id={id} className={styles.section}>
@@ -370,7 +372,7 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
           </div>
           {selectedGrantCapabilities.length > 0 ? (
             <Space size={[4, 6]} wrap>
-              {selectedGrantCapabilities.map((item) => (
+              {previewGrants.map((item) => (
                 <GrantChip
                   key={item.capabilityId}
                   label={item.name}
@@ -380,6 +382,11 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
                   onClose={() => onGrantChange(grantTargetKeys.filter((key) => key !== item.capabilityId))}
                 />
               ))}
+              {selectedGrantCapabilities.length > previewGrants.length && (
+                <Button size="small" type="link" onClick={() => setActivePicker('capability')}>
+                  另 {selectedGrantCapabilities.length - previewGrants.length} 项
+                </Button>
+              )}
             </Space>
           ) : (
             <Text type="secondary">未授予高权限工具</Text>
@@ -405,7 +412,7 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
           </div>
           {selectedSkills.length > 0 ? (
             <Space size={[4, 6]} wrap>
-              {selectedSkills.map((item) => (
+              {previewSkills.map((item) => (
                 <GrantChip
                   key={item.skillPackageId}
                   label={item.name}
@@ -415,6 +422,11 @@ const CapabilitySkillSection: React.FC<CapabilitySkillSectionProps> = ({
                   onClose={() => onSkillChange(skillTargetKeys.filter((key) => key !== item.skillPackageId))}
                 />
               ))}
+              {selectedSkills.length > previewSkills.length && (
+                <Button size="small" type="link" onClick={() => setActivePicker('skill')}>
+                  另 {selectedSkills.length - previewSkills.length} 项
+                </Button>
+              )}
             </Space>
           ) : (
             <Text type="secondary">未选择 Skill 包</Text>

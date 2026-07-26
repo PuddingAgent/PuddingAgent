@@ -93,4 +93,39 @@ public sealed class ProtobufFrameTests
         Assert.AreEqual("ou_sender", evt.ExtractSenderId());
         Assert.AreEqual("hello pudding", evt.ExtractText());
     }
+
+    [TestMethod]
+    public void FeishuImageEvent_SnakeCasePayload_ExtractsImageKey()
+    {
+        const string json =
+            """
+            {
+              "schema": "2.0",
+              "header": {
+                "event_id": "evt_image",
+                "event_type": "im.message.receive_v1"
+              },
+              "event": {
+                "sender": { "sender_id": { "open_id": "ou_sender" } },
+                "message": {
+                  "message_id": "om_image",
+                  "chat_id": "oc_chat",
+                  "message_type": "image",
+                  "content": "{\"image_key\":\"img_v3_test\"}"
+                }
+              }
+            }
+            """;
+        var options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            PropertyNameCaseInsensitive = true,
+        };
+
+        var evt = JsonSerializer.Deserialize<FeishuEvent>(json, options);
+
+        Assert.IsNotNull(evt);
+        Assert.AreEqual("img_v3_test", evt!.ExtractImageKey());
+        Assert.AreEqual("[image]", evt.ExtractText());
+    }
 }

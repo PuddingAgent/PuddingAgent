@@ -12,12 +12,13 @@ using PuddingPlatform.Services;
 namespace PuddingAgent.Services;
 
 /// <summary>
-/// V1 Connector ingress: validates the Agent-owned Feishu binding, resolves the
-/// Agent main Conversation and durably submits one Message Fabric delivery.
+/// V1 Connector ingress: validates the channel-owned Feishu binding and the
+/// Agent channel reference, then durably submits one Message Fabric delivery.
 /// The Agent dispatcher then accepts that delivery through ADR-059.
 /// </summary>
 public sealed class MessageGatewayIngress(
     AgentManifestCatalog manifests,
+    ChannelConfigurationFileService channels,
     InMemorySessionRepository sessions,
     IAgentMainSessionBinder workspaceAgents,
     IServiceScopeFactory scopeFactory,
@@ -34,7 +35,10 @@ public sealed class MessageGatewayIngress(
         var manifest = await manifests.GetAsync(envelope.AgentId!, ct)
             ?? throw new InvalidOperationException(
                 $"Bound Agent '{envelope.AgentId}' does not exist.");
-        ValidateBinding(envelope, manifest);
+        var channel = await channels.GetChannelAsync(envelope.ChannelId, ct)
+            ?? throw new InvalidOperationException(
+                $"Bound channel '{envelope.ChannelId}' does not exist.");
+        ValidateBinding(envelope, manifest, channel);
 
         var conversationId = await EnsureMainConversationAsync(manifest, ct);
         var externalMessageId = envelope.ExternalMessageId ?? envelope.EnvelopeId;
@@ -59,6 +63,7 @@ public sealed class MessageGatewayIngress(
                 envelope.ExternalConversationId!,
             [MessageGatewayMetadata.ExternalMessageId] = externalMessageId,
             [MessageGatewayMetadata.ExternalUserId] = envelope.UserExternalId,
+            [MessageGatewayMetadata.MessageType] = envelope.MessageType ?? "chat",
             [MessageGatewayMetadata.ClientRequestId] = clientRequestId,
         };
 
@@ -67,6 +72,7 @@ public sealed class MessageGatewayIngress(
             scope.ServiceProvider,
             envelope,
             manifest,
+            channel,
             conversationId,
             externalMessageId,
             messageId,
@@ -136,6 +142,7 @@ public sealed class MessageGatewayIngress(
         IServiceProvider serviceProvider,
         PuddingIngressEnvelope envelope,
         AgentInstanceManifest manifest,
+        ChannelInstanceManifest channel,
         string conversationId,
         string externalMessageId,
         string ingressMessageId,
@@ -151,7 +158,7 @@ public sealed class MessageGatewayIngress(
         var requiresPrivilege = parsed
                                 && SystemCommandParser.RequiresPrivilege(command);
         var isPrivilegedUser = IsPrivilegedFeishuUser(
-            manifest.Feishu,
+            channel.Feishu,
             envelope.UserExternalId);
         var responseMessageId = StableId(
             "gateway-command-response",
@@ -380,7 +387,7 @@ public sealed class MessageGatewayIngress(
     }
 
     private static bool IsPrivilegedFeishuUser(
-        AgentFeishuBotConfig? binding,
+        FeishuChannelSettings? binding,
         string externalUserId)
         => binding?.PrivilegedUserOpenIds.Any(
                allowed => string.Equals(
@@ -408,40 +415,53 @@ public sealed class MessageGatewayIngress(
 
     private static void ValidateBinding(
         PuddingIngressEnvelope envelope,
-        AgentInstanceManifest manifest)
+        AgentInstanceManifest manifest,
+        ChannelInstanceManifest channel)
     {
         if (!manifest.IsEnabled || manifest.IsFrozen)
             throw new InvalidOperationException(
                 $"Bound Agent '{manifest.AgentInstanceId}' is disabled or frozen.");
-        if (manifest.Feishu is not { Enabled: true }
-            || string.IsNullOrWhiteSpace(manifest.Feishu.AppId)
-            || string.IsNullOrWhiteSpace(manifest.Feishu.AppSecret))
+        if (!channel.IsEnabled
+            || channel.Feishu is not { } settings
+            || string.IsNullOrWhiteSpace(settings.AppId)
+            || string.IsNullOrWhiteSpace(settings.AppSecret))
         {
             throw new InvalidOperationException(
-                $"Agent '{manifest.AgentInstanceId}' has no enabled Feishu binding.");
+                $"Channel '{channel.ChannelId}' has no enabled Feishu configuration.");
         }
         if (!string.Equals(
                 manifest.WorkspaceId,
                 envelope.WorkspaceId,
                 StringComparison.Ordinal)
             || !string.Equals(
+                channel.WorkspaceId,
+                envelope.WorkspaceId,
+                StringComparison.Ordinal)
+            || !string.Equals(
                 manifest.AgentInstanceId,
                 envelope.AgentId,
-                StringComparison.Ordinal))
+                StringComparison.Ordinal)
+            || !string.Equals(
+                channel.ChannelId,
+                envelope.ChannelId,
+                StringComparison.Ordinal)
+            || !manifest.ChannelIds.Contains(
+                channel.ChannelId,
+                StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
-                "Connector binding does not match the Agent manifest.");
+                "Connector channel does not match the Agent channel reference.");
         }
 
-        var expectedConnectorId = FeishuConnectorIdentity.ForAgent(
-            manifest.AgentInstanceId);
+        var expectedConnectorId = FeishuConnectorIdentity.ForChannel(
+            channel.ChannelId);
         if (!string.Equals(
                 expectedConnectorId,
                 envelope.ConnectorId,
                 StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Connector identity does not match the Agent-owned Feishu binding.");
+                "Connector identity does not match the channel-owned Feishu binding.");
         }
     }
 

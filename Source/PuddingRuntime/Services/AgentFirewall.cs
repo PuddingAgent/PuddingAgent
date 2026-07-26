@@ -153,7 +153,7 @@ public sealed class AgentFirewall : IAgentFirewall
             return FirewallDecision.Allow();
 
         if (_toolRegistry is null || _policySvc is null) return FirewallDecision.Allow();
-        var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId);
+        var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId, ctx.WorkspaceId);
         if (descriptor is not null && !_policySvc.CanExposeToAgent(descriptor, ctx.Policy))
             return FirewallDecision.Deny(
                 $"Tool '{ctx.ToolId}' is not allowed by the agent's capability policy. " +
@@ -176,7 +176,7 @@ public sealed class AgentFirewall : IAgentFirewall
 
         if (_authzSvc is null || _toolRegistry is null) return FirewallDecision.Allow();
 
-        var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId);
+        var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId, ctx.WorkspaceId);
         if (descriptor is null) return FirewallDecision.Allow();
 
         if (_policySvc is null || !_policySvc.RequiresRuntimeAuthorization(descriptor))

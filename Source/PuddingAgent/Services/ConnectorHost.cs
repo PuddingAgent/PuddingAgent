@@ -140,6 +140,24 @@ public sealed class ConnectorHost
         await entry.Connector.SendAsync(message, ct);
     }
 
+    /// <summary>Execute a connector-specific operation on a running connector.</summary>
+    public async Task<ConnectorOperationResult> OperateAsync(
+        string connectorId,
+        string operation,
+        Dictionary<string, string>? parameters = null,
+        CancellationToken ct = default)
+    {
+        if (!_connectors.TryGetValue(connectorId, out var entry))
+            throw new InvalidOperationException($"Connector not found: {connectorId}");
+        if (entry.Status != ConnectorStatus.Running)
+        {
+            throw new InvalidOperationException(
+                $"Connector '{connectorId}' is not running (status={entry.Status}).");
+        }
+
+        return await entry.Connector.OperateAsync(operation, parameters, ct);
+    }
+
     /// <summary>获取所有连接器诊断信息。</summary>
     public async Task<IReadOnlyList<ConnectorDiagnostics>> GetDiagnosticsAsync(CancellationToken ct = default)
     {

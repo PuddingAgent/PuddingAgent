@@ -16,6 +16,7 @@
     <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
+    <ProjectReference Include="..\..\Tests\Mcp.Cli\Mcp.Cli.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

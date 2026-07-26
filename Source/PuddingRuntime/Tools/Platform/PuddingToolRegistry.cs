@@ -21,6 +21,7 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
 {
     private readonly IReadOnlyList<IPuddingTool> _nativeTools;
     private readonly IReadOnlyList<IPuddingToolSource> _toolSources;
+    private readonly IReadOnlyList<IWorkspacePuddingToolSource> _workspaceToolSources;
     private readonly IToolPermissionPolicyService _permissionPolicy;
     private readonly IAgentFirewall? _firewall;
 
@@ -28,20 +29,26 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
         IEnumerable<IPuddingTool> tools,
         IToolPermissionPolicyService? permissionPolicy = null,
         IAgentFirewall? firewall = null,
-        IEnumerable<IPuddingToolSource>? toolSources = null)
+        IEnumerable<IPuddingToolSource>? toolSources = null,
+        IEnumerable<IWorkspacePuddingToolSource>? workspaceToolSources = null)
     {
         _permissionPolicy = permissionPolicy ?? new ToolPermissionPolicyService();
         _firewall = firewall;
         _nativeTools = tools.ToList();
         _toolSources = (toolSources ?? []).ToList();
+        _workspaceToolSources = (workspaceToolSources ?? []).ToList();
 
         _ = BuildToolSnapshot();
     }
 
-    private Dictionary<string, IPuddingTool> BuildToolSnapshot()
+    private Dictionary<string, IPuddingTool> BuildToolSnapshot(string? workspaceId = null)
     {
         var snapshot = new Dictionary<string, IPuddingTool>(StringComparer.OrdinalIgnoreCase);
-        foreach (var tool in _nativeTools.Concat(_toolSources.SelectMany(s => s.ListTools())))
+        var tools = _nativeTools.Concat(_toolSources.SelectMany(s => s.ListTools()));
+        if (!string.IsNullOrWhiteSpace(workspaceId))
+            tools = tools.Concat(_workspaceToolSources.SelectMany(s => s.ListTools(workspaceId)));
+
+        foreach (var tool in tools)
         {
             var id = tool.Descriptor.ToolId;
             if (string.IsNullOrWhiteSpace(id))
@@ -64,11 +71,24 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
     public IPuddingTool? GetTool(string toolId) =>
         BuildToolSnapshot().GetValueOrDefault(toolId);
 
+    public IPuddingTool? GetTool(string toolId, string workspaceId) =>
+        BuildToolSnapshot(workspaceId).GetValueOrDefault(toolId);
+
     public ToolDescriptor? GetDescriptor(string toolId) =>
         BuildToolSnapshot().GetValueOrDefault(toolId)?.Descriptor;
 
+    public ToolDescriptor? GetDescriptor(string toolId, string workspaceId) =>
+        BuildToolSnapshot(workspaceId).GetValueOrDefault(toolId)?.Descriptor;
+
     public IReadOnlyList<ToolDescriptor> ListDescriptors() =>
         BuildToolSnapshot().Values
+            .Select(t => t.Descriptor)
+            .OrderBy(d => d.SortOrder)
+            .ThenBy(d => d.ToolId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    public IReadOnlyList<ToolDescriptor> ListDescriptors(string workspaceId) =>
+        BuildToolSnapshot(workspaceId).Values
             .Select(t => t.Descriptor)
             .OrderBy(d => d.SortOrder)
             .ThenBy(d => d.ToolId, StringComparer.OrdinalIgnoreCase)
@@ -79,6 +99,13 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
         var descriptors = ListDescriptors();
 
         return descriptors
+            .Where(d => _permissionPolicy.CanExposeToAgent(d, policy))
+            .ToList();
+    }
+
+    public IReadOnlyList<ToolDescriptor> ListAvailable(CapabilityPolicy? policy, string workspaceId)
+    {
+        return ListDescriptors(workspaceId)
             .Where(d => _permissionPolicy.CanExposeToAgent(d, policy))
             .ToList();
     }
@@ -502,6 +529,14 @@ public sealed class PuddingToolCatalogService : IPuddingToolCatalogService
             ? tools.Where(t => t.IsEnabledByDefault).ToList()
             : tools;
     }
+
+    public IReadOnlyList<ToolDescriptor> ListTools(string workspaceId, bool enabledByDefaultOnly = false)
+    {
+        var tools = _registry.ListDescriptors(workspaceId);
+        return enabledByDefaultOnly
+            ? tools.Where(t => t.IsEnabledByDefault).ToList()
+            : tools;
+    }
 }
 
 /// <summary>从 Tool 注册表生成 LLM function-call schema。</summary>
@@ -514,9 +549,13 @@ public sealed class PuddingToolSchemaService
         _registry = registry;
     }
 
-    public IReadOnlyList<LlmToolDefinition> BuildLlmTools(CapabilityPolicy? policy)
+    public IReadOnlyList<LlmToolDefinition> BuildLlmTools(CapabilityPolicy? policy, string? workspaceId = null)
     {
-        return _registry.ListAvailable(policy)
+        var descriptors = string.IsNullOrWhiteSpace(workspaceId)
+            ? _registry.ListAvailable(policy)
+            : _registry.ListAvailable(policy, workspaceId);
+
+        return descriptors
             .Select(d => new LlmToolDefinition
             {
                 Name = d.ToolId,
@@ -577,7 +616,7 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         CancellationToken ct = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
-        var tool = _registry.GetTool(toolId);
+        var tool = _registry.GetTool(toolId, context.WorkspaceId);
         if (tool is null)
         {
             var result = ToolExecutionResult.Fail($"Tool '{toolId}' not found.");

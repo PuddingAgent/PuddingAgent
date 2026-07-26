@@ -1,6 +1,6 @@
 ﻿import {
   ArrowLeftOutlined,
-  CodeOutlined,
+  ApiOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
@@ -13,7 +13,7 @@
 } from '@ant-design/icons';
 import {
   PageContainer,
-  ProColumns,
+  type ProColumns,
   ProForm,
   ProFormSelect,
   ProFormSwitch,
@@ -52,7 +52,7 @@ import {
   createWorkspaceSkill,
   createKnowledgeBase,
   createWorkflow,
-    deleteWorkspaceAgent,
+  deleteWorkspaceAgent,
   getWorkspaceAgent,
   deleteWorkspaceChannel,
   deleteWorkspaceSkill,
@@ -71,12 +71,13 @@ import {
   listWorkspaceChannels,
   listWorkspaceMembers,
   listWorkspaceSkills,
-  listP2pPeers,
+  listChannelProviders,
   listWorkflows,
   removeWorkspaceMember,
   updateWorkspace,
   updateWorkspaceAgent,
   updateWorkspaceChannel,
+  updateChannelProvider,
   updateWorkspaceSkill,
   updateKnowledgeBase,
   updateWorkflow,
@@ -84,18 +85,19 @@ import {
   type AgentAvatarDto,
   type AppUserDto,
   type CapabilityDto,
+  type ChannelProviderDto,
   type CreateWorkspaceAgentRequest,
   type GlobalAgentTemplateDto,
   type KnowledgeBaseDto,
   type LlmModelDto,
   type LlmProviderDto,
-  type PeerNodeDto,
   type SkillPackageDto,
   type UpsertKnowledgeBaseRequest,
   type UpsertWorkflowRequest,
   type UpsertWorkspaceChannelRequest,
   type UpsertWorkspaceSkillRequest,
   type UpdateWorkspaceAgentRequest,
+  type UpdateChannelProviderRequest,
   type UpdateWorkspaceRequest,
   type WorkspaceAccessPolicy,
   type WorkspaceAgentDto,
@@ -414,6 +416,7 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
         isEnabled: true,
         role: 'Service',
         memorySearchMode: 'deep',
+        maxReplyTokens: 4096,
         maxRounds: 200,
         maxElapsedSeconds: 2400,
         maxToolCallsTotal: 100,
@@ -462,9 +465,9 @@ const WorkspaceAgentsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) 
     await loadModels(providerId, setEmbeddingModels, setLoadingEmbeddingModels, true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (validatedValues?: WorkspaceAgentFormValues) => {
     try {
-      const values = await form.validateFields();
+      const values = validatedValues ?? await form.validateFields();
       const request = {
         ...values,
         selectedCapabilityIds: Array.from(new Set([...defaultCapIds, ...grantTargetKeys])),
@@ -878,7 +881,7 @@ const SkillsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             rows={5}
             placeholder={
               skillType === 'MCP'
-                ? '{"serverUrl": "http://localhost:3100/sse", "transport": "sse"}'
+                ? '{"endpoint":"http://localhost:3100/mcp","transport":"streamable_http","allowPrivateNetwork":true}'
                 : skillType === 'HttpTool'
                   ? '{"endpoint": "https://api.example.com/tool", "method": "POST"}'
                   : '可选的配置参数 JSON'
@@ -891,110 +894,125 @@ const SkillsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   );
 };
 
-// ─── 对等节点 Tab ────────────────────────────────────────────────────────────
+// ─── 渠道服务商 Tab ──────────────────────────────────────────────────────────
 
-const PeersTab: React.FC = () => {
+const CHANNEL_CAPABILITY_LABELS: Record<string, string> = {
+  text: '文本',
+  image: '图片',
+  streaming: '流式回复',
+  slash_commands: '系统指令',
+};
+
+const ChannelProvidersTab: React.FC = () => {
   const { message } = App.useApp();
-  const [loading, setLoading] = useState(false);
-  const [peers, setPeers] = useState<PeerNodeDto[]>([]);
+  const tableRef = useRef<ActionType>(undefined);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editItem, setEditItem] = useState<ChannelProviderDto | null>(null);
+  const [form] = Form.useForm<UpdateChannelProviderRequest>();
 
-  const loadPeers = async (showError = false) => {
-    setLoading(true);
+  const openEdit = (item: ChannelProviderDto) => {
+    setEditItem(item);
+    form.setFieldsValue({
+      name: item.name,
+      description: item.description,
+      isEnabled: item.isEnabled,
+    });
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!editItem) return;
     try {
-      const data = await listP2pPeers();
-      const sorted = [...data].sort(
-        (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
-      );
-      setPeers(sorted);
-    } catch {
-      if (showError) {
-        message.error('加载对等节点失败，请检查 P2P 服务状态');
-      }
-    } finally {
-      setLoading(false);
+      const values = await form.validateFields();
+      await updateChannelProvider(editItem.providerId, values);
+      message.success('渠道服务商已更新');
+      setDrawerOpen(false);
+      tableRef.current?.reload();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('保存失败');
     }
   };
 
-  useEffect(() => {
-    void loadPeers(false);
-    const timer = window.setInterval(() => {
-      void loadPeers(false);
-    }, 5000);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const columns: ProColumns<ChannelProviderDto>[] = [
+    {
+      title: '服务商',
+      render: (_, item) => (
+        <Space direction="vertical" size={0}>
+          <Text strong>{item.name}</Text>
+          <Text code style={{ fontSize: 11 }}>{item.providerId}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '渠道类型',
+      dataIndex: 'channelType',
+      width: 120,
+      render: (_, item) => <Tag color="blue">{item.channelType}</Tag>,
+    },
+    {
+      title: '接入能力',
+      render: (_, item) => (
+        <Space size={[4, 6]} wrap>
+          {item.capabilities.map((capability) => (
+            <Tag key={capability}>{CHANNEL_CAPABILITY_LABELS[capability] ?? capability}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    { title: '说明', dataIndex: 'description', ellipsis: true },
+    {
+      title: '状态',
+      width: 90,
+      render: (_, item) => item.isEnabled
+        ? <Badge status="success" text="可用" />
+        : <Badge status="default" text="停用" />,
+    },
+    {
+      title: '操作',
+      width: 80,
+      render: (_, item) => (
+        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(item)} />
+      ),
+    },
+  ];
 
   return (
     <>
-      <div style={{ marginBottom: 12, textAlign: 'right' }}>
-        <Button onClick={() => loadPeers(true)} loading={loading}>刷新节点</Button>
-      </div>
-      <Table<PeerNodeDto>
-        rowKey="nodeId"
-        loading={loading}
-        dataSource={peers}
-        pagination={false}
-        size="small"
-        bordered
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="暂无已发现对等节点"
-            />
-          ),
-        }}
-        columns={[
-          {
-            title: '节点名',
-            dataIndex: 'displayName',
-            render: (value: string, record: PeerNodeDto) => (
-              <Space direction="vertical" size={0}>
-                <Text>{value || record.nodeId}</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {record.nodeId}
-                </Text>
-              </Space>
-            ),
-          },
-          {
-            title: '主机',
-            dataIndex: 'host',
-          },
-          {
-            title: '端口',
-            dataIndex: 'port',
-            width: 100,
-          },
-          {
-            title: '最后心跳',
-            dataIndex: 'lastSeen',
-            render: (value: string) => new Date(value).toLocaleString('zh-CN'),
-            width: 200,
-          },
-        ]}
+      <Alert
+        showIcon
+        type="info"
+        message="渠道服务商定义 Pudding 已安装的接入实现"
+        description="机器人账号、凭据和 Agent 绑定请在“渠道管理”中维护。新增服务商需要先安装对应 Connector 实现。"
+        style={{ marginBottom: 16 }}
       />
+      <ProTable<ChannelProviderDto>
+        actionRef={tableRef}
+        rowKey="providerId"
+        columns={columns}
+        request={async () => ({ data: await listChannelProviders(), success: true })}
+        search={false}
+        pagination={false}
+        options={{ density: false, setting: false }}
+      />
+      <Drawer
+        title="编辑渠道服务商"
+        open={drawerOpen}
+        width={480}
+        onClose={() => setDrawerOpen(false)}
+        extra={<Button type="primary" onClick={handleSave}>保存</Button>}
+      >
+        <ProForm form={form} submitter={false} layout="vertical">
+          <ProFormText name="name" label="显示名称" rules={[{ required: true }]} />
+          <ProFormTextArea name="description" label="说明" rows={3} />
+          <ProFormSwitch name="isEnabled" label="启用服务商" />
+        </ProForm>
+      </Drawer>
     </>
   );
 };
 
-// ─── 渠道管道 Tab ─────────────────────────────────────────────────────────────
-
-const CHANNEL_TYPES = [
-  { label: 'HTTP (Webhook)', value: 'HTTP' },
-  { label: 'RabbitMQ', value: 'RabbitMQ' },
-  { label: 'WebSocket', value: 'WebSocket' },
-  { label: 'CLI', value: 'CLI' },
-  { label: 'Telegram', value: 'Telegram' },
-  { label: 'Email', value: 'Email' },
-];
-
-const CHANNEL_COLORS: Record<string, string> = {
-  HTTP: 'blue', RabbitMQ: 'orange', WebSocket: 'purple', CLI: 'default', Telegram: 'geekblue', Email: 'cyan',
-};
+// ─── 渠道管理 Tab ────────────────────────────────────────────────────────────
 
 const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   const { message } = App.useApp();
@@ -1002,22 +1020,42 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editItem, setEditItem] = useState<WorkspaceChannelDto | null>(null);
   const [workspaceAgents, setWorkspaceAgents] = useState<WorkspaceAgentDto[]>([]);
+  const [providers, setProviders] = useState<ChannelProviderDto[]>([]);
   const [form] = Form.useForm<UpsertWorkspaceChannelRequest>();
 
   useEffect(() => {
     listWorkspaceAgents(workspaceId).then(setWorkspaceAgents).catch(() => {});
+    listChannelProviders()
+      .then((items) => setProviders(items.filter((item) => item.isEnabled)))
+      .catch(() => setProviders([]));
   }, [workspaceId]);
 
   const openCreate = () => {
     setEditItem(null);
     form.resetFields();
-    form.setFieldsValue({ channelType: 'HTTP', isEnabled: true });
+    form.setFieldsValue({
+      providerId: providers[0]?.providerId ?? 'feishu',
+      streamingRepliesEnabled: true,
+      privilegedUserOpenIds: [],
+      isEnabled: true,
+    });
     setDrawerOpen(true);
   };
 
   const openEdit = (item: WorkspaceChannelDto) => {
     setEditItem(item);
-    form.setFieldsValue(item);
+    form.resetFields();
+    form.setFieldsValue({
+      name: item.name,
+      description: item.description,
+      providerId: item.providerId,
+      boundAgentId: item.boundAgentId,
+      appId: item.appId,
+      appSecret: undefined,
+      streamingRepliesEnabled: item.streamingRepliesEnabled,
+      privilegedUserOpenIds: item.privilegedUserOpenIds,
+      isEnabled: item.isEnabled,
+    });
     setDrawerOpen(true);
   };
 
@@ -1033,6 +1071,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       }
       setDrawerOpen(false);
       tableRef.current?.reload();
+      message.info('渠道连接器会在下次重启 Pudding 时按新配置重新装配');
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'errorFields' in err) return;
       message.error('保存失败');
@@ -1048,20 +1087,33 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   const columns: ProColumns<WorkspaceChannelDto>[] = [
     { title: '名称', dataIndex: 'name', width: 140 },
     {
-      title: '类型',
-      dataIndex: 'channelType',
-      width: 110,
-      render: (_, r) => <Tag color={CHANNEL_COLORS[r.channelType] ?? 'default'}>{r.channelType}</Tag>,
+      title: '服务商',
+      width: 130,
+      render: (_, r) => <Tag color="blue">{r.providerName}</Tag>,
     },
     {
-      title: '默认 Agent',
+      title: '绑定 Agent',
       width: 160,
       ellipsis: true,
-      render: (_, r) => r.defaultAgentId
-        ? <Text code style={{ fontSize: 12 }}>{r.defaultAgentId}</Text>
-        : <Text type="secondary">场景默认</Text>,
+      render: (_, r) => {
+        const agent = workspaceAgents.find((item) => item.agentId === r.boundAgentId);
+        return r.boundAgentId
+          ? <Text>{agent?.name ?? r.boundAgentId}</Text>
+          : <Text type="secondary">未绑定</Text>;
+      },
     },
-    { title: '描述', dataIndex: 'description', ellipsis: true },
+    {
+      title: '连接配置',
+      render: (_, r) => (
+        <Space direction="vertical" size={0}>
+          <Text>{r.appId || '未配置 App ID'}</Text>
+          <Text type={r.hasAppSecret ? 'success' : 'danger'} style={{ fontSize: 12 }}>
+            {r.hasAppSecret ? 'Secret 已配置' : 'Secret 未配置'}
+            {r.streamingRepliesEnabled ? ' · 流式回复' : ' · 普通回复'}
+          </Text>
+        </Space>
+      ),
+    },
     {
       title: '启用',
       width: 80,
@@ -1103,11 +1155,11 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           ),
         }}
         toolBarRender={() => [
-          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>添加渠道</Button>,
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增渠道</Button>,
         ]}
       />
       <Drawer
-        title={editItem ? '编辑渠道' : '添加渠道'}
+        title={editItem ? '编辑渠道' : '新增渠道'}
         open={drawerOpen}
         width={500}
         onClose={() => setDrawerOpen(false)}
@@ -1115,18 +1167,58 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       >
         <ProForm form={form} submitter={false} layout="vertical">
           <ProFormText name="name" label="渠道名称" rules={[{ required: true }]} />
-          <ProFormSelect name="channelType" label="渠道类型" options={CHANNEL_TYPES} rules={[{ required: true }]} />
+          <ProFormSelect
+            name="providerId"
+            label="渠道服务商"
+            options={providers.map((provider) => ({
+              label: provider.name,
+              value: provider.providerId,
+            }))}
+            rules={[{ required: true }]}
+            disabled={Boolean(editItem)}
+          />
           <ProFormTextArea name="description" label="描述" rows={2} />
           <ProFormSelect
-            name="defaultAgentId"
-            label="默认路由 Agent"
+            name="boundAgentId"
+            label="绑定 Agent"
             options={workspaceAgents.filter((a) => !a.isFrozen && a.isEnabled).map((a) => ({
               label: a.name, value: a.agentId,
             }))}
-            placeholder="不选则使用场景默认路由策略"
+            placeholder="选择这个渠道接收消息时运行的 Agent"
             fieldProps={{ allowClear: true }}
           />
-          <ProFormTextArea name="configJson" label="连接配置 JSON" rows={4} placeholder='{"endpoint": "...", "authRef": "secret-name"}' />
+          <Alert
+            showIcon
+            type="info"
+            message="飞书企业自建应用"
+            description="使用 WebSocket 长连接，不需要公网回调地址。App Secret 只写入服务端渠道配置文件，不会通过 API 回显。"
+            style={{ marginBottom: 16 }}
+          />
+          <ProFormText
+            name="appId"
+            label="App ID"
+            placeholder="cli_xxx"
+            rules={[{ required: true, message: '请输入飞书 App ID' }]}
+          />
+          <ProFormText.Password
+            name="appSecret"
+            label="App Secret"
+            placeholder={editItem ? '留空则保留当前 Secret' : '请输入飞书 App Secret'}
+            rules={editItem ? [] : [{ required: true, message: '请输入飞书 App Secret' }]}
+            fieldProps={{ autoComplete: 'new-password' }}
+          />
+          <ProFormSelect
+            name="privilegedUserOpenIds"
+            label="特权用户 Open ID"
+            placeholder="输入 open_id 后回车，可添加多个"
+            fieldProps={{
+              mode: 'tags',
+              tokenSeparators: [',', ' ', '\n'],
+              options: [],
+            }}
+            extra="只控制 /yolo 等高权限系统指令，不限制普通聊天。"
+          />
+          <ProFormSwitch name="streamingRepliesEnabled" label="CardKit 流式回复" />
           <ProFormSwitch name="isEnabled" label="启用" />
         </ProForm>
       </Drawer>
@@ -1168,7 +1260,7 @@ const WorkspaceDetailPage: React.FC = () => {
     'workflows',
     'knowledge-bases',
     'skills',
-    'peers',
+    'channel-providers',
     'channels',
     'members',
   ].includes(tabFromQuery ?? '')
@@ -1427,18 +1519,18 @@ const WorkspaceDetailPage: React.FC = () => {
             children: <SkillsTab workspaceId={workspace.workspaceId} />,
           },
           {
-            key: 'peers',
+            key: 'channel-providers',
             label: (
               <Space>
-                <CodeOutlined />
-                对等节点
+                <ApiOutlined />
+                渠道服务商
               </Space>
             ),
-            children: <PeersTab />,
+            children: <ChannelProvidersTab />,
           },
           {
             key: 'channels',
-            label: '渠道管道',
+            label: '渠道管理',
             children: <ChannelsTab workspaceId={workspace.workspaceId} />,
           },
           {

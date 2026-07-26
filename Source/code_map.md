@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-26 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Fake 飞书往返测试、Echo CLI 与首帧 ping 回归
+> 最后更新: 2026-07-26 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +飞书 CardKit 流式回复投影；MCP stdio/Codex 子进程接入与 fake 往返
 
 ---
 
@@ -84,7 +84,7 @@ Source/
 ### 工具系统
 | 文件 | 用途 |
 |------|------|
-| `Tools/Platform/PuddingToolRegistry.cs` | 🔑 工具注册表与执行硬边界；强制 MainAgentOnly/DelegatedSubAgent、AllowSubDelegation 和 DelegationDepth，模型无法用伪造工具名绕过 |
+| `Tools/Platform/PuddingToolRegistry.cs` | 🔑 工具注册表与执行硬边界；支持 `IWorkspacePuddingToolSource` 的 Workspace 动态工具快照，强制 MainAgentOnly/DelegatedSubAgent、AllowSubDelegation 和 DelegationDepth，模型无法用伪造工具名或跨 Workspace 绕过 |
 | `Tools/Platform/ToolInvocationService.cs` | 工具调用分发（解析工具名 → 透传配置所有者/委派深度 → 执行） |
 | `Tools/Platform/ToolPermissionPolicyService.cs` | 工具权限策略（安全区检查） |
 | `Tools/Approval/InMemoryToolApprovalService.cs` | 高危工具审批服务 |
@@ -196,7 +196,10 @@ Source/
 | `Services/ChatHistoryService.cs` | 聊天历史查询 |
 | `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；只以实例 manifest 的 `preferredProviderId + preferredModelId` 作为主 Agent 模型身份，再由 `llm.providers.json` 精确补齐连接配置；缺失或无效时返回 `agent_configuration_invalid`，不回退 |
-| `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，并实现 `IAgentSelfMaintenanceService` 的受控自维护写入 |
+| `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，实现 `IAgentSelfMaintenanceService` 的受控自维护写入，并以 `IAgentChannelBinder` 单写者维护 Agent `channelIds` 引用 |
+| `Services/ChannelConfigurationFileService.cs` | 文件化渠道配置唯一写入边界；维护 `config/channel.providers.json` 与 `channels/{channelId}/manifest.json`，Secret 只返回是否已配置，校验唯一 Feishu App ID 和 Agent 绑定，并在启动时把旧 Agent `feishu` 对象原地迁移为渠道实例 |
+| `Services/Mcp/McpServerConfig.cs` + `McpConnectionManager.cs` | Workspace MCP Client 生命周期；官方 SDK Streamable HTTP/SSE 与本地 stdio 子进程、严格配置、KeyVault Bearer 引用、受限子进程环境、DNS/SSRF 防线、工具热发现和 fail-closed 状态；可直接托管 `codex mcp-server` |
+| `Services/Mcp/McpPuddingTool.cs` | MCP Tool → `IPuddingTool` 适配；稳定命名空间、原始 JSON Schema、高风险审批、Workspace 二次隔离、超时与结果上限 |
 | `Services/VisionArtifactStorageService.cs` + `Controllers/Api/VisionArtifactApiController.cs` + `Services/VisualArtifactReference.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；只持久化 provider-safe JPEG/PNG/WebP，同时提供 LLM 可消费引用与经过 workspace 根目录校验的受控本地路径；不支持的 MIME 返回 HTTP 415，不得成为 500 |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
@@ -212,7 +215,8 @@ Source/
 | `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json/reply_projected_at`，避免已有数据库在 Turn 受理或渠道回复投影时因 EF 模型漂移失败 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；从 gateway metadata 构造 typed `MessageOrigin`，让 Runtime 明确识别飞书来源；附图不会改写主模型路由；终态写入失败时执行 fenced 基础设施兜底 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；从 gateway metadata 构造 typed `MessageOrigin`，让 Runtime 明确识别飞书来源；附图不改写主模型路由，文本主模型先获得平台视觉观察；终态写入失败时执行 fenced 基础设施兜底 |
+| `Services/VisualArtifactObservationService.cs` | 文本主模型的强制视觉预处理边界；按 `vision` capability 选择视觉模型，把多图事实/OCR 与不确定性作为不可信媒体观察注入本轮，失败即阻断主 Agent；原生视觉主模型跳过二次调用 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；Agent 来源名取实例 manifest 显示名（禁止拿 Session title 冒充发送者），以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`；初始 conversation 只返回过程计数摘要且不读取事件 payload，完整过程按稳定 `messageId/runId` 经单消息详情端点延迟加载 |
 | `Services/AgentChat/AgentRunProjectionService.cs` | Agent 联系人当前状态投影；状态与 cursor 均来自 canonical Conversation Event sequence，失败/取消/LeaseLost 终态结束后回到 idle，失败详情留在 Turn 事件 |
@@ -232,8 +236,9 @@ Source/
 ### 工作空间 Agent 管理前端
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/workspace/[id]/index.tsx` | 工作空间 Agent 列表与实例编辑抽屉；Drawer body 是表单唯一滚动容器，避免嵌套滚动和底部留白 |
-| `PuddingPlatformAdmin/src/pages/workspace/[id]/SmartRoleModelFields.tsx` | 7 个 Smart 子代理角色模型下拉；读取服务商模型目录并写入 Agent manifest 字段 |
+| `PuddingPlatformAdmin/src/pages/workspace/[id]/index.tsx` | 工作空间 Agent 列表、渠道服务商、渠道管理及其它 Workspace 配置入口；渠道 Secret 只允许写入、不回显 |
+| `PuddingPlatformAdmin/src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx` | Agent 自包含设置抽屉；单 Form 的六个互斥面板、错误分组跳转、脏表单关闭确认、Markdown/高级环境折叠与 `maxReplyTokens` 编辑 |
+| `PuddingPlatformAdmin/src/pages/workspace/[id]/SmartRoleModelFields.tsx` | 7 个 Smart 子代理角色模型下拉；读取服务商模型目录并写入 Agent manifest 字段，支持批量填充未配置项或全部角色 |
 
 ### 记忆图书馆管理前端
 | 文件 | 用途 |
@@ -262,13 +267,17 @@ Source/
 | `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；持久化渠道路由事实，并从 `queued/retrying` 投递发现待处理 Agent/Connector 目标 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
 | `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
-| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 succeeded Command 的 committed terminal event 幂等创建 Connector delivery；`reply_projected_at` 与实际 Connector delivered 状态分离 |
-| `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 Agent-owned binding，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按 manifest `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
-| `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从私有 Agent manifest 动态装配一 Agent 一机器人；拒绝重复 AppId，凭据不进入公共 DTO |
-| `PuddingAgent/Connectors/FeishuConnector.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 frame、open 后首帧 ping、事件 ACK、分片、ping/reconnect 与 message/chat/sender 字段映射；入站使用 `message_type`，出站 OpenAPI 使用 `msg_type`；可选协议诊断只输出非敏感帧元数据 |
-| `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter，出站故障不重跑 Agent |
-| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` | 无外网 Fake 飞书往返验收；使用真实 SQLite Message Fabric、canonical Turn 受理、terminal reply projection 和 Connector dispatcher，只替换外部飞书与 Agent 执行结果 |
-| `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 Agent-owned open_id 白名单、`/whoami` 身份透传、默认只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
+| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 succeeded Command 的 committed terminal event 幂等创建 Connector delivery；活跃 CardKit stream 拥有终态投影，只有 stream `failed` 才走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
+| `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 channel-owned Connector、渠道实例与 Agent `channelIds` 引用，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按渠道 `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
+| `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从启用的渠道服务商/渠道实例和 Agent 引用动态装配一 Agent 一机器人；Connector 身份为 `feishu:{channelId}`，拒绝重复 AppId，凭据不进入公共 DTO |
+| `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1 实体创建、引用回复、累计元素更新与关闭 streaming；图片 `image_key` 在 ACK 前经消息资源 API 下载、签名校验并以稳定 ID 落入 Web 共用 Vision Artifact，再用 `visionArtifactIds` 进入 canonical Conversation；入站使用 `message_type`，出站 OpenAPI 使用 `msg_type` |
+| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 投影到同一飞书流式卡片；sequence/uuid 稳定重试，终态通过 Message Fabric delivery 收口，失败回退普通文本而不重跑 Agent |
+| `Data/Entities/ConnectorStreamProjectionEntity.cs` + `Services/ConnectorStreamProjectionSchemaBootstrapper.cs` | `connector_stream_projections` 的 CardKit resource、累计正文、Conversation cursor、操作 sequence、重试与生命周期状态；SQLite 幂等建表升级 |
+| `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter；CardKit 终态 ACK 后同步完成 stream projection，出站故障不重跑 Agent |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片 metadata 进入真实 SQLite Message Fabric/canonical SubmitTurn、图片资源稳定落盘与重投复用，以及 CardKit create/publish/delta/final durable delivery，只替换外部飞书与 Agent 执行结果 |
+| `PuddingPlatformTests/Services/VisualArtifactObservationServiceTests.cs` | 视觉预处理回归；覆盖文本主模型强制观察、原生视觉直通、视觉失败阻断，以及观察上下文的媒体 prompt-injection 安全边界 |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 channel-owned open_id 白名单、`/whoami` 身份透传、默认只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
+| `PuddingPlatformTests/Services/ChannelConfigurationFileServiceTests.cs` | 渠道文件配置回归；覆盖 Secret 不回显、空 Secret 更新保留、旧 Agent 飞书配置迁移和重复 App ID 拒绝 |
 | `Tests/HarnessAgent.Cli/Program.cs` (`feishu-echo`) | 独立飞书 SDK Echo 程序；真实长连接收到文本后以稳定 uuid 调 reply API 原样回复，支持 `--once/--timeout-seconds/--config` |
 | `Tests/HarnessAgent.Core.Tests/Feishu/FeishuWebSocketInitialPingTests.cs` | 本地真 WebSocket 协议回归；锁定建连后立即 CONTROL/ping，以及 pbbp2 DATA/event 解码、文本投递和成功 ACK |
 | `Controllers/Api/MessageQueueController.cs` | Agent 交互队列 API；`includeSystem=false` 为默认用户界面边界 |
@@ -285,6 +294,8 @@ Source/
 | `Api/AuthApiController.cs` | 认证（JWT） |
 | `Api/WorkspaceApiController.cs` | 工作区管理 |
 | `Api/ToolCatalogApiController.cs` | 工具目录 |
+| `Api/WorkspaceSkillApiController.cs` | Workspace Skill CRUD；MCP 配置校验/规范化、热重载与 runtime-status 查询 |
+| `Api/ChannelProviderApiController.cs` / `Api/WorkspaceChannelApiController.cs` | 渠道服务商目录与 Workspace 渠道实例 API；后者同步维护 Agent channel 引用且不返回 Secret |
 | `Api/MemoryLibraryAdminController.cs` | 记忆图书馆管理 |
 
 ---
@@ -532,6 +543,7 @@ Agent 调用 search_memory / grep_memory
 | `developerModel` | Developer 子代理模型（smart_develop） |
 | `deployerModel` | Deployer 子代理模型（smart_deploy） |
 | `testerModel` | Tester 子代理模型（smart_test） |
+| `channelIds` | 绑定的渠道实例 ID；账号、Secret 与渠道策略保存在 `data/channels`，不得嵌入 Agent manifest |
 
 值格式: `"{providerId}/{modelId}"`，如 `"deepseek/deepseek-v4-pro"`。
 不配置时 Smart 工具不传 `model`，由 `spawn_sub_agent` 的默认模型策略解析。
@@ -556,9 +568,10 @@ Agent 调用 search_memory / grep_memory
   一轮耗尽时统一返回 `Failed + MaxRoundsReached`
 
 ### 前端 UI
-- `workspace/[id]/SmartRoleModelFields.tsx`：加载启用的 LLM 服务商/模型并生成 7 个角色模型下拉
+- `workspace/[id]/SmartRoleModelFields.tsx`：加载启用的 LLM 服务商/模型并生成 7 个角色模型下拉，支持批量填充
 - `workspace/[id]/WorkspaceAgentSettingsDrawer.tsx`：Workspace Agent 自包含配置编辑器；
-  复用全局模板的分组组件，但字段绑定到 Agent DTO，不回查模板
+  复用全局模板的分组组件，但字段绑定到 Agent DTO，不回查模板；六个互斥分组共用一个 Form store，
+  Markdown 和高级运行环境默认折叠
 - `workspace/[id]/index.tsx`：加载 Agent 详情、模板创建快照、Provider/Model、Capability
   和 Skill 选项，并负责完整创建/更新请求
 - 下拉选项格式：`{服务商名} / {模型名} (上下文大小)`
@@ -577,7 +590,7 @@ WorkspaceAgentSettingsDrawer
 ```
 
 - Agent 编辑器覆盖角色、Prompt/Markdown、能力、Skill、主模型、潜意识模型、
-  Embedding、Smart 子代理模型和执行护栏
+  Embedding、Smart 子代理模型和执行护栏（含 `maxReplyTokens`）；渠道账号与密钥在渠道管理维护
 - `sourceTemplateId` 创建后只作为来源审计信息，运行时不得据此读取模板
 - `maxContextTokens` 不进入 Agent 表单或 Agent 配置，容量只由 Provider Model 解析
 - 最大轮次、最大耗时、最大工具调用进入不可变执行快照；默认父 Turn 最大耗时为
@@ -698,6 +711,7 @@ Orchestrator:
 17. **Agent 不复制模型容量**: `maxContextTokens` 只从 `llm.providers.json` 的 Provider Model 解析；Agent manifest、Agent DTO 和 `config/llm.json` binding 不保存该字段
 18. **前端终态游标**: `turn.accepted` 负责尽早迁移 optimistic Turn 身份；终态按 Turn 清除全部关联 messageId，事件只有成功归并后才能推进 cursor
 19. **Agent 执行护栏生效链**: Agent manifest → RuntimeProfile → ExecutionSnapshot → TurnExecutionContext → RuntimeDispatchRequest；实例上限不得超过平台 Guardrails
+20. **渠道配置独立化**: `data/config/channel.providers.json` 声明已安装 Connector，`data/channels/{channelId}/manifest.json` 保存渠道实例和密钥，Agent manifest 只保存 `channelIds`；管理 API 不回显 Secret，运行时按 channel-owned identity 装配 Connector
 
 ---
 

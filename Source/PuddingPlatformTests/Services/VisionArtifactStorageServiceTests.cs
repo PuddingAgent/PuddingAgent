@@ -76,6 +76,38 @@ public sealed class VisionArtifactStorageServiceTests
         Assert.AreEqual("text/plain", ex.MimeType);
     }
 
+    [TestMethod]
+    public async Task SaveIdempotentAsync_ReusesStableArtifactAcrossConnectorRetry()
+    {
+        var root = CreateTempRoot();
+        var service = new VisionArtifactStorageService(
+            PuddingDataPaths.FromRoot(root),
+            NullLogger<VisionArtifactStorageService>.Instance);
+        const string artifactId = "vision-0123456789abcdef0123456789abcdef";
+        await using var first = new MemoryStream([1, 2, 3]);
+        await using var retry = new MemoryStream([9, 9, 9]);
+
+        var saved = await service.SaveIdempotentAsync(
+            "default",
+            artifactId,
+            first,
+            "image/png",
+            capturedAt: 1234);
+        var reused = await service.SaveIdempotentAsync(
+            "default",
+            artifactId,
+            retry,
+            "image/png",
+            capturedAt: 9999);
+
+        Assert.AreEqual(artifactId, saved.ArtifactId);
+        Assert.AreEqual(artifactId, reused.ArtifactId);
+        Assert.AreEqual(1234, reused.CapturedAt);
+        var resolved = await service.ResolveAsync("default", artifactId);
+        Assert.IsNotNull(resolved);
+        Assert.AreEqual("data:image/png;base64,AQID", resolved.Uri);
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), $"pudding-vision-artifacts-{Guid.NewGuid():N}");

@@ -4014,7 +4014,7 @@ public sealed class AgentExecutionService
         RuntimeDispatchRequest request)
     {
         var source = _toolSchemaService is not null ? "tool-schema-service" : "legacy-skill-runtime";
-        var tools = (_toolSchemaService?.BuildLlmTools(capability)
+        var tools = (_toolSchemaService?.BuildLlmTools(capability, request.WorkspaceId)
                     ?? _skillRuntime.BuildLlmTools(capability))
             .ToList();
         var registryToolCount = tools.Count;

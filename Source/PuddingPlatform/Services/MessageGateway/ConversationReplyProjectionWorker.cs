@@ -57,7 +57,6 @@ public sealed class ConversationReplyProjectionWorker(
                 command.Status == "succeeded"
                 && command.TerminalSequence != null
                 && command.ReplyProjectedAt == null
-                && command.ChannelId == "feishu"
                 && command.MetadataJson != null
                 && command.MetadataJson.Contains(MessageGatewayMetadata.IsGatewayIngress))
             .OrderBy(command => command.CompletedAt)
@@ -77,6 +76,13 @@ public sealed class ConversationReplyProjectionWorker(
                 projected++;
                 continue;
             }
+            if (!string.Equals(
+                    Get(metadata, MessageGatewayMetadata.ChannelType),
+                    "feishu",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
             var connectorId = Get(metadata, MessageGatewayMetadata.ConnectorId);
             var externalConversationId = Get(
@@ -88,6 +94,21 @@ public sealed class ConversationReplyProjectionWorker(
                 command.ReplyProjectedAt =
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 projected++;
+                continue;
+            }
+
+            // A running connector stream owns this reply until it either creates
+            // the durable final-card delivery or explicitly fails. Only a failed
+            // stream falls back to the ordinary terminal text reply below.
+            var streamProjection = await db.ConnectorStreamProjections
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    projection => projection.CommandId == command.CommandId
+                                  && projection.ConnectorId == connectorId,
+                    ct);
+            if (streamProjection is not null
+                && streamProjection.Status != ConnectorStreamProjectionStatuses.Failed)
+            {
                 continue;
             }
 

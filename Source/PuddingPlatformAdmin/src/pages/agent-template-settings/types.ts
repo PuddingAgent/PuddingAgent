@@ -5,6 +5,7 @@ export type AgentTemplateSectionKey =
   | 'capabilities'
   | 'prompts'
   | 'models'
+  | 'smartModels'
   | 'guardrails';
 
 export interface SettingsSectionMeta {

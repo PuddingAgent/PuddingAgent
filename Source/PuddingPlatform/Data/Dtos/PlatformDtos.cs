@@ -119,15 +119,36 @@ public record UpsertWorkspaceSkillRequest(
     bool IsEnabled
 );
 
-// ── WorkspaceChannel 工作区渠道 ────────────────────────────────
+// ── Channel Provider / Workspace Channel 文件配置 ─────────────
+
+public record ChannelProviderDto(
+    string ProviderId,
+    string Name,
+    string ChannelType,
+    string? Description,
+    bool IsBuiltIn,
+    bool IsEnabled,
+    List<string> Capabilities
+);
+
+public record UpdateChannelProviderRequest(
+    string Name,
+    string? Description,
+    bool IsEnabled
+);
 
 public record WorkspaceChannelDto(
     string ChannelId,
     string Name,
     string? Description,
+    string ProviderId,
+    string ProviderName,
     string ChannelType,
-    string? DefaultAgentId,
-    string? ConfigJson,
+    string? BoundAgentId,
+    string? AppId,
+    bool HasAppSecret,
+    bool StreamingRepliesEnabled,
+    List<string> PrivilegedUserOpenIds,
     bool IsEnabled,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
@@ -136,8 +157,11 @@ public record WorkspaceChannelDto(
 public record UpsertWorkspaceChannelRequest(
     string Name,
     string? Description,
-    string ChannelType,
-    string? DefaultAgentId,
-    string? ConfigJson,
+    string ProviderId,
+    string? BoundAgentId,
+    string? AppId,
+    string? AppSecret,
+    bool StreamingRepliesEnabled,
+    List<string>? PrivilegedUserOpenIds,
     bool IsEnabled
 );

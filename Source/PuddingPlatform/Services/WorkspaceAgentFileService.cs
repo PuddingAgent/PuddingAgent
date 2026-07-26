@@ -29,6 +29,19 @@ public interface IAgentMainSessionBinder
         CancellationToken ct = default);
 }
 
+/// <summary>
+/// Single writer for Agent to channel references. Channel credentials remain
+/// outside the Agent manifest; only stable channel IDs are persisted here.
+/// </summary>
+public interface IAgentChannelBinder
+{
+    Task SetChannelBindingAsync(
+        string workspaceId,
+        string channelId,
+        string? agentId,
+        CancellationToken ct = default);
+}
+
 /// <summary>Workspace-scoped Audit agent candidate used by automatic approval routing.</summary>
 public sealed record WorkspaceAgentAuditProfile
 {
@@ -69,6 +82,7 @@ public sealed class WorkspaceAuditAgentConflictException : Exception
 public sealed class WorkspaceAgentFileService :
     IWorkspaceAgentCatalog,
     IAgentMainSessionBinder,
+    IAgentChannelBinder,
     IAgentSelfMaintenanceService
 {
     private const int MaxSelfMaintainedDocumentChars = 200_000;
@@ -427,7 +441,8 @@ public sealed class WorkspaceAgentFileService :
                     ReviewerModel: instanceManifest.ReviewerModel,
                     DeveloperModel: instanceManifest.DeveloperModel,
                     DeployerModel: instanceManifest.DeployerModel,
-                    TesterModel: instanceManifest.TesterModel
+                    TesterModel: instanceManifest.TesterModel,
+                    ChannelIds: instanceManifest.ChannelIds
                 ));
             }
             catch (Exception ex)
@@ -504,7 +519,8 @@ public sealed class WorkspaceAgentFileService :
                     AgentsMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.AgentsMdFile, ct),
                     ToolsMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.ToolsMdFile, ct),
                     BootstrapMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.BootstrapMdFile, ct),
-                    MemoryMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.MemoryMdFile, ct)
+                    MemoryMdContent: await ReadAgentMdContentAsync(_paths.AgentInstanceRoot(agentId), instanceManifest.MemoryMdFile, ct),
+                    ChannelIds: instanceManifest.ChannelIds
                 );
         }
 
@@ -695,7 +711,8 @@ public sealed class WorkspaceAgentFileService :
                 ReviewerModel: instanceManifest.ReviewerModel,
                 DeveloperModel: instanceManifest.DeveloperModel,
                 DeployerModel: instanceManifest.DeployerModel,
-                TesterModel: instanceManifest.TesterModel
+                TesterModel: instanceManifest.TesterModel,
+                ChannelIds: instanceManifest.ChannelIds
             );
         }
         finally
@@ -870,7 +887,8 @@ public sealed class WorkspaceAgentFileService :
                 ReviewerModel: updated.ReviewerModel,
                 DeveloperModel: updated.DeveloperModel,
                 DeployerModel: updated.DeployerModel,
-                TesterModel: updated.TesterModel
+                TesterModel: updated.TesterModel,
+                ChannelIds: updated.ChannelIds
             );
         }
         finally
@@ -977,6 +995,72 @@ public sealed class WorkspaceAgentFileService :
         {
             _writeLock.Release();
         }
+    }
+
+    public async Task SetChannelBindingAsync(
+        string workspaceId,
+        string channelId,
+        string? agentId,
+        CancellationToken ct = default)
+    {
+#pragma warning disable CS0618 // One-time removal of legacy manifest.feishu during binding migration.
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(channelId);
+
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var agents = await ListAgentsAsync(workspaceId, ct);
+            if (!string.IsNullOrWhiteSpace(agentId)
+                && agents.All(agent => !string.Equals(
+                    agent.AgentId,
+                    agentId,
+                    StringComparison.Ordinal)))
+            {
+                throw new KeyNotFoundException(
+                    $"Agent '{agentId}' in workspace '{workspaceId}' 不存在");
+            }
+
+            foreach (var agent in agents)
+            {
+                var manifest = await LoadInstanceManifestAsync(agent.AgentId, ct)
+                    ?? throw new KeyNotFoundException(
+                        $"Agent instance '{agent.AgentId}' 不存在");
+                var channelIds = manifest.ChannelIds
+                    .Where(id => !string.Equals(id, channelId, StringComparison.Ordinal))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                if (string.Equals(agent.AgentId, agentId, StringComparison.Ordinal))
+                    channelIds.Add(channelId);
+
+                var clearLegacyFeishu = string.Equals(
+                    agent.AgentId,
+                    agentId,
+                    StringComparison.Ordinal);
+                if (manifest.ChannelIds.SequenceEqual(channelIds, StringComparer.Ordinal)
+                    && (!clearLegacyFeishu || manifest.Feishu is null))
+                    continue;
+
+                await AtomicFileWriter.WriteJsonAsync(
+                    Path.Combine(_paths.AgentInstanceRoot(agent.AgentId), "manifest.json"),
+                    clearLegacyFeishu
+                        ? manifest with { ChannelIds = channelIds, Feishu = null }
+                        : manifest with { ChannelIds = channelIds },
+                    JsonOptions,
+                    ct);
+            }
+
+            _logger.LogInformation(
+                "Workspace channel binding updated: workspace={WorkspaceId} channel={ChannelId} agent={AgentId}",
+                workspaceId,
+                channelId,
+                agentId ?? "<unbound>");
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+#pragma warning restore CS0618
     }
 
     // ─── 内部方法 ─────────────────────────────────────────

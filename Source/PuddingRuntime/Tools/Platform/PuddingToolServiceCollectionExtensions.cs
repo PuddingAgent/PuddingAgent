@@ -61,11 +61,13 @@ public static class PuddingToolServiceCollectionExtensions
 
             var nativeTools = sp.GetServices<IPuddingTool>().ToList();
             var toolSources = sp.GetServices<IPuddingToolSource>().ToList();
+            var workspaceToolSources = sp.GetServices<IWorkspacePuddingToolSource>().ToList();
 
             return new PuddingToolRegistry(
                 nativeTools,
                 sp.GetRequiredService<IToolPermissionPolicyService>(),
-                toolSources: toolSources);
+                toolSources: toolSources,
+                workspaceToolSources: workspaceToolSources);
         });
 
         services.TryAddSingleton<IToolPermissionPolicyService, ToolPermissionPolicyService>();

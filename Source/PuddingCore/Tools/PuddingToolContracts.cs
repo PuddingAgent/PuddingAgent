@@ -224,6 +224,13 @@ public interface IPuddingToolRegistry
     ToolDescriptor? GetDescriptor(string toolId);
     IReadOnlyList<ToolDescriptor> ListDescriptors();
     IReadOnlyList<ToolDescriptor> ListAvailable(PuddingCode.Platform.CapabilityPolicy? policy);
+
+    IPuddingTool? GetTool(string toolId, string workspaceId) => GetTool(toolId);
+    ToolDescriptor? GetDescriptor(string toolId, string workspaceId) => GetDescriptor(toolId);
+    IReadOnlyList<ToolDescriptor> ListDescriptors(string workspaceId) => ListDescriptors();
+    IReadOnlyList<ToolDescriptor> ListAvailable(
+        PuddingCode.Platform.CapabilityPolicy? policy,
+        string workspaceId) => ListAvailable(policy);
 }
 
 /// <summary>
@@ -237,10 +244,22 @@ public interface IPuddingToolSource
     IReadOnlyList<IPuddingTool> ListTools();
 }
 
+/// <summary>
+/// Supplies tools whose visibility is scoped to a workspace. Dynamic remote sources such as MCP
+/// must use this boundary so one workspace can never observe or invoke another workspace's tools.
+/// </summary>
+public interface IWorkspacePuddingToolSource
+{
+    string SourceId { get; }
+    IReadOnlyList<IPuddingTool> ListTools(string workspaceId);
+}
+
 /// <summary>Tool Catalog 服务。后台 UI 应读取它，而不是维护独立的硬编码能力清单。</summary>
 public interface IPuddingToolCatalogService
 {
     IReadOnlyList<ToolDescriptor> ListTools(bool enabledByDefaultOnly = false);
+    IReadOnlyList<ToolDescriptor> ListTools(string workspaceId, bool enabledByDefaultOnly = false)
+        => ListTools(enabledByDefaultOnly);
 }
 
 /// <summary>统一 Tool 执行入口。调用方只传入 ToolId、参数和能力策略。</summary>

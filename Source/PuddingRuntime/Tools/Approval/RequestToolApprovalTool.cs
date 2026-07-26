@@ -47,7 +47,7 @@ public sealed class RequestToolApprovalTool : PuddingToolBase<RequestToolApprova
             return ToolExecutionResult.Fail("tool_id is required.");
 
         var catalog = _serviceProvider.GetService<IPuddingToolCatalogService>();
-        var descriptor = catalog?.ListTools()
+        var descriptor = catalog?.ListTools(context.WorkspaceId)
             .FirstOrDefault(t => t.ToolId.Equals(args.ToolId.Trim(), StringComparison.OrdinalIgnoreCase));
         if (descriptor is null)
             return ToolExecutionResult.Fail($"Unknown tool '{args.ToolId}'.");

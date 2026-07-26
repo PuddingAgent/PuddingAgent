@@ -97,6 +97,7 @@ public sealed class FakeFeishuRoundTripTests
 
             var gateway = new MessageGatewayIngress(
                 new AgentManifestCatalog(paths),
+                CreateChannelService(paths, agentId, conversationId),
                 sessions,
                 new UnexpectedMainSessionBinder(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
@@ -136,9 +137,14 @@ public sealed class FakeFeishuRoundTripTests
                 externalChatId,
                 "ou_fake_sender",
                 inboundText);
+            await fakeFeishu.EmitImageAsync(
+                "om_fake_image",
+                externalChatId,
+                "ou_fake_sender",
+                "vision-0123456789abcdef0123456789abcdef");
 
-            Assert.HasCount(1, submitHandler.Commands);
-            var accepted = submitHandler.Commands.Single();
+            Assert.HasCount(2, submitHandler.Commands);
+            var accepted = submitHandler.Commands[0];
             Assert.IsTrue(accepted.IsTrustedGatewayIngress);
             Assert.AreEqual(conversationId, accepted.ConversationId);
             Assert.AreEqual(inboundText, accepted.Content.Single().Text);
@@ -148,6 +154,16 @@ public sealed class FakeFeishuRoundTripTests
             Assert.AreEqual(
                 externalMessageId,
                 accepted.Metadata[MessageGatewayMetadata.ExternalMessageId]);
+            var acceptedImage = submitHandler.Commands[1];
+            Assert.AreEqual(
+                "用户从飞书发送了一张图片。",
+                acceptedImage.Content.Single().Text);
+            Assert.AreEqual(
+                "image",
+                acceptedImage.Metadata![MessageGatewayMetadata.MessageType]);
+            Assert.AreEqual(
+                "vision-0123456789abcdef0123456789abcdef",
+                acceptedImage.Metadata["visionArtifactId"]);
 
             await CommitFakeAgentReplyAsync(
                 provider,
@@ -176,7 +192,7 @@ public sealed class FakeFeishuRoundTripTests
                 .AsNoTracking()
                 .OrderBy(delivery => delivery.Id)
                 .ToListAsync();
-            Assert.HasCount(2, deliveries);
+            Assert.HasCount(3, deliveries);
             Assert.IsTrue(deliveries.All(delivery =>
                 delivery.Status == MessageDeliveryStatuses.Delivered));
             Assert.IsTrue(deliveries.Any(delivery =>
@@ -190,8 +206,172 @@ public sealed class FakeFeishuRoundTripTests
                 .Select(message => message.Content)
                 .ToListAsync();
             CollectionAssert.AreEqual(
-                new[] { inboundText, replyText },
+                new[] { inboundText, "用户从飞书发送了一张图片。", replyText },
                 transcript.ToArray());
+            var imageMetadataJson = await verifyDb.RoomMessages
+                .AsNoTracking()
+                .Where(message => message.Content == "用户从飞书发送了一张图片。")
+                .Select(message => message.MetadataJson)
+                .SingleAsync();
+            Assert.IsNotNull(imageMetadataJson);
+            using var imageMetadata = JsonDocument.Parse(imageMetadataJson!);
+            Assert.AreEqual(
+                "vision-0123456789abcdef0123456789abcdef",
+                imageMetadata.RootElement
+                    .GetProperty("visionArtifactIds")
+                    .GetString());
+
+            await connectorHost.StopAllAsync();
+        }
+        finally
+        {
+            if (Directory.Exists(dataRoot))
+                Directory.Delete(dataRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task FakeFeishuStreamingCard_ProjectsDeltasAndFinalizesThroughDurableDelivery()
+    {
+        const string workspaceId = "default";
+        const string agentId = "fake-stream-agent";
+        const string conversationId = "fake-stream-main";
+        const string connectorId = "feishu:fake-stream-agent";
+        const string externalMessageId = "om_fake_stream_source";
+        const string externalChatId = "oc_fake_stream_chat";
+        const string replyText = "第一段，第二段，完成。";
+
+        var dataRoot = Path.Combine(
+            Path.GetTempPath(),
+            "pudding-fake-feishu-stream-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dataRoot);
+
+        try
+        {
+            var paths = PuddingDataPaths.FromRoot(dataRoot);
+            await WriteManifestAsync(
+                paths,
+                workspaceId,
+                agentId,
+                conversationId);
+
+            await using var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync();
+            var eventBus = new SynchronousInternalEventBus();
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<PlatformDbContext>(
+                options => options.UseSqlite(connection));
+            services.AddSingleton<IInternalEventBus>(eventBus);
+            services.AddSingleton<IWorkspaceAgentCatalog>(
+                new FakeWorkspaceAgentCatalog(agentId, conversationId));
+            services.AddScoped<IMessageRouter, MessageRouter>();
+            services.AddScoped<MessageFabricStore>();
+            services.AddScoped<IMessageInbox>(
+                provider => provider.GetRequiredService<MessageFabricStore>());
+            services.AddScoped<WorkspaceRoomParticipantProvider>();
+            services.AddScoped<IMessageSystem, MessageSystem>();
+            await using var provider = services.BuildServiceProvider();
+
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                await db.Database.EnsureCreatedAsync();
+                await SeedStreamingCommandAsync(
+                    db,
+                    workspaceId,
+                    agentId,
+                    conversationId,
+                    connectorId,
+                    externalMessageId,
+                    externalChatId);
+            }
+
+            var connectorHost = new ConnectorHost(
+                (_, _) => Task.CompletedTask,
+                NullLogger<ConnectorHost>.Instance);
+            var fakeFeishu = new FakeFeishuConnector(
+                connectorId,
+                workspaceId,
+                agentId);
+            connectorHost.Register(fakeFeishu);
+            await connectorHost.StartAsync(connectorId);
+
+            var connectorDispatcher = new ConnectorDeliveryDispatcher(
+                eventBus,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                connectorHost,
+                NullLogger<ConnectorDeliveryDispatcher>.Instance);
+            using var connectorSubscription = await eventBus.SubscribeAsync(
+                "message.deliver",
+                evt => connectorDispatcher.HandleAsync(evt));
+            var streamWorker = new FeishuStreamingProjectionWorker(
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                connectorHost,
+                CreateChannelService(paths, agentId, conversationId),
+                NullLogger<FeishuStreamingProjectionWorker>.Instance);
+
+            Assert.AreEqual(1, await streamWorker.ProjectBatchAsync());
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    ConnectorStreamOperations.Create,
+                    ConnectorStreamOperations.Publish,
+                    ConnectorStreamOperations.Update,
+                },
+                fakeFeishu.Operations.Select(item => item.Operation).ToArray());
+            var update = fakeFeishu.Operations.Single(item =>
+                item.Operation == ConnectorStreamOperations.Update);
+            Assert.AreEqual(
+                "第一段，第二段，",
+                update.Parameters[ConnectorStreamParameters.Content]);
+            Assert.AreEqual(
+                "1",
+                update.Parameters[ConnectorStreamParameters.Sequence]);
+
+            await CompleteStreamingCommandAsync(
+                provider,
+                conversationId,
+                replyText);
+            var ordinaryProjector = new ConversationReplyProjectionWorker(
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<ConversationReplyProjectionWorker>.Instance);
+            Assert.AreEqual(
+                0,
+                await ordinaryProjector.ProjectBatchAsync(),
+                "An active card stream must suppress the duplicate terminal text reply.");
+
+            Assert.AreEqual(1, await streamWorker.ProjectBatchAsync());
+            Assert.HasCount(1, fakeFeishu.SentMessages);
+            var final = fakeFeishu.SentMessages.Single();
+            Assert.AreEqual(replyText, final.Content);
+            Assert.AreEqual(
+                ConnectorStreamMetadata.FinalizeReplyMode,
+                final.Metadata[ConnectorStreamMetadata.ReplyMode]);
+            Assert.AreEqual(
+                "2",
+                final.Metadata[ConnectorStreamMetadata.ContentSequence]);
+            Assert.AreEqual(
+                "3",
+                final.Metadata[ConnectorStreamMetadata.FinishSequence]);
+            Assert.AreEqual(externalMessageId, final.Metadata["message_id"]);
+            Assert.AreEqual(0, await ordinaryProjector.ProjectBatchAsync());
+
+            await using var verifyScope = provider.CreateAsyncScope();
+            var verifyDb =
+                verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var projection = await verifyDb.ConnectorStreamProjections
+                .AsNoTracking()
+                .SingleAsync();
+            Assert.AreEqual(
+                ConnectorStreamProjectionStatuses.Completed,
+                projection.Status);
+            Assert.AreEqual(replyText, projection.Content);
+            Assert.IsNull(projection.PendingEventSequence);
+            Assert.IsTrue(await verifyDb.MessageDeliveries.AnyAsync(delivery =>
+                delivery.TargetKind == MessageEndpointKinds.Connector
+                && delivery.Status == MessageDeliveryStatuses.Delivered));
 
             await connectorHost.StopAllAsync();
         }
@@ -218,9 +398,19 @@ public sealed class FakeFeishuRoundTripTests
             DisplayName = "Fake Feishu Agent",
             MainSessionId = conversationId,
             IsEnabled = true,
-            Feishu = new AgentFeishuBotConfig
+            ChannelIds = [agentId],
+        };
+        var channel = new ChannelInstanceManifest
+        {
+            ChannelId = agentId,
+            WorkspaceId = workspaceId,
+            ProviderId = ChannelProviderKinds.Feishu,
+            Name = "Fake Feishu Channel",
+            IsEnabled = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Feishu = new FeishuChannelSettings
             {
-                Enabled = true,
                 AppId = "cli_fake",
                 AppSecret = "fake-secret",
             },
@@ -230,7 +420,22 @@ public sealed class FakeFeishuRoundTripTests
             JsonSerializer.Serialize(
                 manifest,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Directory.CreateDirectory(paths.ChannelRoot(agentId));
+        await File.WriteAllTextAsync(
+            paths.ChannelManifestFile(agentId),
+            JsonSerializer.Serialize(
+                channel,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
+
+    private static ChannelConfigurationFileService CreateChannelService(
+        PuddingDataPaths paths,
+        string agentId,
+        string conversationId) => new(
+        paths,
+        new FakeWorkspaceAgentCatalog(agentId, conversationId),
+        new UnexpectedAgentChannelBinder(),
+        NullLogger<ChannelConfigurationFileService>.Instance);
 
     private static async Task CommitFakeAgentReplyAsync(
         IServiceProvider provider,
@@ -254,7 +459,7 @@ public sealed class FakeFeishuRoundTripTests
             TurnId = "fake-turn",
             AgentInstanceId = agentId,
             UserId = accepted.UserId,
-            ChannelId = "feishu",
+            ChannelId = agentId,
             RunId = "fake-run",
             TerminalSequence = 2,
             Status = "succeeded",
@@ -284,6 +489,99 @@ public sealed class FakeFeishuRoundTripTests
         await db.SaveChangesAsync();
     }
 
+    private static async Task SeedStreamingCommandAsync(
+        PlatformDbContext db,
+        string workspaceId,
+        string agentId,
+        string conversationId,
+        string connectorId,
+        string externalMessageId,
+        string externalChatId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+        {
+            CommandId = "fake-stream-command",
+            BatchId = "fake-stream-batch",
+            WorkspaceId = workspaceId,
+            SessionId = conversationId,
+            MessageId = "fake-stream-assistant-message",
+            UserMessageId = "fake-stream-user-message",
+            TurnId = "fake-stream-turn",
+            AgentInstanceId = agentId,
+            UserId = "ou_fake_sender",
+            ChannelId = "feishu",
+            RunId = "fake-stream-run",
+            Status = "running",
+            CreatedAt = now.ToUnixTimeMilliseconds(),
+            StartedAt = now.ToUnixTimeMilliseconds(),
+            MetadataJson = JsonSerializer.Serialize(
+                new Dictionary<string, string>
+                {
+                    [MessageGatewayMetadata.IsGatewayIngress] = "true",
+                    [MessageGatewayMetadata.ChannelId] = agentId,
+                    [MessageGatewayMetadata.ChannelType] = "feishu",
+                    [MessageGatewayMetadata.ConnectorId] = connectorId,
+                    [MessageGatewayMetadata.ExternalConversationId] = externalChatId,
+                    [MessageGatewayMetadata.ExternalMessageId] = externalMessageId,
+                    [MessageGatewayMetadata.ExternalUserId] = "ou_fake_sender",
+                }),
+        });
+        db.ConversationEvents.Add(new ConversationEventEntity
+        {
+            ConversationId = conversationId,
+            Sequence = 1,
+            EventId = "fake-stream-delta",
+            WorkspaceId = workspaceId,
+            TurnId = "fake-stream-turn",
+            CommandId = "fake-stream-command",
+            RunId = "fake-stream-run",
+            MessageId = "fake-stream-assistant-message",
+            Type = ConversationEventTypes.MessageContentAppended,
+            Payload = JsonSerializer.Serialize(new
+            {
+                delta = "第一段，第二段，",
+            }),
+            OccurredAt = now.ToString("O"),
+            CommittedAt = now.ToString("O"),
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task CompleteStreamingCommandAsync(
+        IServiceProvider provider,
+        string conversationId,
+        string reply)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var command = await db.ChatExecutionCommands.SingleAsync();
+        var now = DateTimeOffset.UtcNow;
+        command.Status = "succeeded";
+        command.TerminalSequence = 2;
+        command.CompletedAt = now.ToUnixTimeMilliseconds();
+        db.ConversationEvents.Add(new ConversationEventEntity
+        {
+            ConversationId = conversationId,
+            Sequence = 2,
+            EventId = "fake-stream-terminal",
+            WorkspaceId = command.WorkspaceId,
+            TurnId = command.TurnId,
+            CommandId = command.CommandId,
+            RunId = command.RunId,
+            MessageId = command.MessageId,
+            Type = ConversationEventTypes.TurnCompleted,
+            Payload = JsonSerializer.Serialize(new
+            {
+                kind = "Completed",
+                reply,
+            }),
+            OccurredAt = now.ToString("O"),
+            CommittedAt = now.ToString("O"),
+        });
+        await db.SaveChangesAsync();
+    }
+
     private sealed class FakeFeishuConnector(
         string connectorId,
         string workspaceId,
@@ -296,10 +594,11 @@ public sealed class FakeFeishuRoundTripTests
             ConnectorId = connectorId,
             ConnectorType = "feishu",
             Protocol = "fake-feishu",
-            Capabilities = ["receive", "send"],
+            Capabilities = ["receive", "send", "stream"],
         };
 
         public List<ConnectorMessage> SentMessages { get; } = [];
+        public List<ConnectorOperationCall> Operations { get; } = [];
 
         public Task StartAsync(
             ConnectorContext context,
@@ -338,7 +637,7 @@ public sealed class FakeFeishuRoundTripTests
                     ConnectorId = connectorId,
                     WorkspaceId = workspaceId,
                     AgentId = agentId,
-                    ChannelId = "feishu",
+                    ChannelId = agentId,
                     ChannelType = "feishu",
                     UserExternalId = senderId,
                     MessageText = text,
@@ -354,15 +653,73 @@ public sealed class FakeFeishuRoundTripTests
                 ct);
         }
 
+        public Task EmitImageAsync(
+            string messageId,
+            string chatId,
+            string senderId,
+            string artifactId,
+            CancellationToken ct = default)
+        {
+            var context = _context
+                ?? throw new InvalidOperationException("Fake Feishu is not started.");
+            return context.OnEventReceived(
+                new PuddingIngressEnvelope
+                {
+                    ConnectorId = connectorId,
+                    WorkspaceId = workspaceId,
+                    AgentId = agentId,
+                    ChannelId = agentId,
+                    ChannelType = "feishu",
+                    UserExternalId = senderId,
+                    MessageText = "用户从飞书发送了一张图片。",
+                    MessageType = "image",
+                    ExternalConversationId = chatId,
+                    ExternalMessageId = messageId,
+                    CorrelationId = chatId,
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["source"] = "fake-feishu",
+                        ["inputMode"] = "image",
+                        ["visionArtifactId"] = artifactId,
+                        ["visionArtifactIds"] = artifactId,
+                    },
+                },
+                ct);
+        }
+
         public Task<ConnectorOperationResult> OperateAsync(
             string operation,
             Dictionary<string, string>? parameters = null,
             CancellationToken ct = default)
-            => Task.FromResult(new ConnectorOperationResult
+        {
+            var copied = new Dictionary<string, string>(
+                parameters ?? [],
+                StringComparer.Ordinal);
+            Operations.Add(new ConnectorOperationCall(operation, copied));
+            return Task.FromResult(operation switch
             {
-                Success = false,
-                Error = "Not supported by fake Feishu.",
+                ConnectorStreamOperations.Create => new ConnectorOperationResult
+                {
+                    Success = true,
+                    Data = "card_fake_stream",
+                },
+                ConnectorStreamOperations.Publish => new ConnectorOperationResult
+                {
+                    Success = true,
+                    Data = "om_fake_stream_reply",
+                },
+                ConnectorStreamOperations.Update
+                    or ConnectorStreamOperations.Finish => new ConnectorOperationResult
+                    {
+                        Success = true,
+                    },
+                _ => new ConnectorOperationResult
+                {
+                    Success = false,
+                    Error = "Not supported by fake Feishu.",
+                },
             });
+        }
 
         public Task<ConnectorDiagnostics> GetDiagnosticsAsync(
             CancellationToken ct = default)
@@ -372,6 +729,10 @@ public sealed class FakeFeishuRoundTripTests
                 MessagesSent = SentMessages.Count,
             });
     }
+
+    private sealed record ConnectorOperationCall(
+        string Operation,
+        Dictionary<string, string> Parameters);
 
     private sealed class RecordingSubmitTurnHandler : ISubmitTurnHandler
     {
@@ -417,8 +778,20 @@ public sealed class FakeFeishuRoundTripTests
                     IsEnabled: true,
                     IsFrozen: false,
                     CreatedAt: DateTimeOffset.UtcNow,
-                    UpdatedAt: DateTimeOffset.UtcNow),
+                    UpdatedAt: DateTimeOffset.UtcNow,
+                    ChannelIds: [agentId]),
             ]);
+    }
+
+    private sealed class UnexpectedAgentChannelBinder : IAgentChannelBinder
+    {
+        public Task SetChannelBindingAsync(
+            string workspaceId,
+            string channelId,
+            string? agentId,
+            CancellationToken ct = default)
+            => throw new AssertFailedException(
+                "Runtime channel reads must not mutate Agent bindings.");
     }
 
     private sealed class UnexpectedMainSessionBinder : IAgentMainSessionBinder

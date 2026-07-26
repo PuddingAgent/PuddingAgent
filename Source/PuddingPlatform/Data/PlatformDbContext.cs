@@ -85,6 +85,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<ConversationEventEntity> ConversationEvents => Set<ConversationEventEntity>();
     public DbSet<ConversationProjectionCheckpointEntity> ConversationProjectionCheckpoints => Set<ConversationProjectionCheckpointEntity>();
 
+    // Connector streaming reply projection cursors (Feishu V1; generic storage contract)
+    public DbSet<ConnectorStreamProjectionEntity> ConnectorStreamProjections => Set<ConnectorStreamProjectionEntity>();
+
     // Acceptance Batch（ADR-059）
     public DbSet<AcceptanceBatchEntity> AcceptanceBatches => Set<AcceptanceBatchEntity>();
 
@@ -483,6 +486,15 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         modelBuilder.Entity<ConversationProjectionCheckpointEntity>(e =>
         {
             e.ToTable("conversation_projection_checkpoints");
+        });
+
+        modelBuilder.Entity<ConnectorStreamProjectionEntity>(e =>
+        {
+            e.ToTable("connector_stream_projections");
+            e.HasIndex(x => x.ProjectionId).IsUnique();
+            e.HasIndex(x => new { x.CommandId, x.ConnectorId }).IsUnique();
+            e.HasIndex(x => new { x.Status, x.AvailableAt, x.UpdatedAt });
+            e.Property(x => x.Content).HasColumnType("TEXT");
         });
 
         // ── 注意：配置类 seed 数据已废弃（ADR-036）────────────────────

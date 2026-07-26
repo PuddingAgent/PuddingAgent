@@ -281,7 +281,8 @@ public record WorkspaceAgentDto(
     string? AgentsMdContent = null,
     string? ToolsMdContent = null,
     string? BootstrapMdContent = null,
-    string? MemoryMdContent = null
+    string? MemoryMdContent = null,
+    List<string>? ChannelIds = null
 );
 
 public record CreateWorkspaceAgentRequest(

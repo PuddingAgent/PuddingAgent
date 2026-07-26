@@ -1139,19 +1139,22 @@ bootstrap、gap replay 与 live SSE 都折叠到同一个 run。
 2. 日志中的主调用必须仍是实例快照的 Provider/Model，例如
    `[LlmInvocation] ... provider=deepseek ... model=deepseek-v4-pro`。上传图片不能把主 Agent 强制路由到
    某个固定视觉模型。
-3. `DirectLlm` 只有在当前模型配置包含 `vision` 标签时才能序列化图片内容；否则应只发送文本，并由
-   `ExecutionRunCoordinator` 在当前请求中附加受控本地路径和 `image_reader` 使用提示。
-4. 文本主 Agent 选择工具后，日志顺序应包含 `tool=image_reader`、`[ImageReader] Analyze ...`，随后才出现
-   工具内部的视觉 Provider/Model。主调用和工具内部调用的模型身份必须不同且可解释。
+3. `DirectLlm` 只有在当前模型配置包含 `vision` 标签时才能序列化图片内容。文本主模型不会接收
+   `image_url`；`ExecutionRunCoordinator` 必须先调用 `VisualArtifactObservationService`，日志顺序是
+   `[VisualObservation] Analyze` → 视觉 `[LlmInvocation]` → `[VisualObservation] Completed` → 主模型
+   `[LlmInvocation]`。不能再以“主模型可能自行调用 `image_reader`”作为正确性条件。
+4. 原生视觉主模型应记录 `[VisualObservation] Native vision route` 并跳过第二次视觉调用。
+   `image_reader` 仍用于 Agent 对某张图做定向二次检查，调用时才应出现 `tool=image_reader` 与
+   `[ImageReader] Analyze ...`。
 
 `unknown variant image_url, expected text` 表示文本模型收到了多模态 payload；检查该模型是否被错误标记为
 `vision`。`model_not_found` 则先查询 Provider 的 `/models`，不要把不存在的视觉模型 ID 写进
-`llm.providers.json`。当前 Agent 的 manifest 还必须包含 `cap-image-reader`，否则工具已注册但不会进入该
-Agent 的工具定义。可用以下命令快速确认：
+`llm.providers.json`。强制预识别不依赖 Agent manifest 的 `cap-image-reader`；只有需要 Agent 主动二次
+复查时才要求该 capability。可用以下命令快速确认：
 
 ```powershell
 Invoke-WebRequest http://localhost:5000/api/tools/image_reader -UseBasicParsing
-rg -n "LlmInvocation|DirectLlm:Tools|tool=image_reader|ImageReader" .\tmp\dev\backend.out.log
+rg -n "VisualObservation|LlmInvocation|DirectLlm:Tools|tool=image_reader|ImageReader" .\tmp\dev\backend.out.log
 ```
 
 ### 11.10 连续压缩后会话标题重复出现“压缩 - ”
@@ -1212,24 +1215,30 @@ Feishu WS -> Gateway ingress -> Message Fabric/ADR-059
           -> Connector delivery -> Feishu OpenAPI
 ```
 
-当前 V1 只从 Agent manifest 加载运行时绑定。以下命令只输出布尔状态，不打印凭据：
+当前运行时从渠道服务商、渠道实例和 Agent `channelIds` 三个文件事实装配绑定。以下命令只输出
+布尔状态，不打印凭据：
 
 ```powershell
 $agentId = "<agentInstanceId>"
 $manifestPath = Join-Path "D:\data\agents\$agentId" "manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$channelId = @($manifest.channelIds)[0]
+$channelPath = Join-Path (Join-Path "D:\data\channels" $channelId) "manifest.json"
+$channel = Get-Content -LiteralPath $channelPath -Raw | ConvertFrom-Json
 [pscustomobject]@{
     AgentId = $manifest.agentInstanceId
-    FeishuConfigured = $null -ne $manifest.feishu
-    FeishuEnabled = $manifest.feishu.enabled -eq $true
-    HasAppId = -not [string]::IsNullOrWhiteSpace([string]$manifest.feishu.appId)
-    HasAppSecret = -not [string]::IsNullOrWhiteSpace([string]$manifest.feishu.appSecret)
-    PrivilegedUserCount = @($manifest.feishu.privilegedUserOpenIds).Count
+    ChannelId = $channel.channelId
+    BoundInAgent = @($manifest.channelIds) -contains $channel.channelId
+    FeishuEnabled = $channel.isEnabled -eq $true
+    HasAppId = -not [string]::IsNullOrWhiteSpace([string]$channel.feishu.appId)
+    HasAppSecret = -not [string]::IsNullOrWhiteSpace([string]$channel.feishu.appSecret)
+    PrivilegedUserCount = @($channel.feishu.privilegedUserOpenIds).Count
 }
 ```
 
 旧 `D:\data\config\feishu.json` 只供 Harness 手工测试，Pudding Runtime 不会自动选一个
-Agent 继承它。配置或修改 Agent manifest 后需要重启。
+Agent 继承它。旧 Agent manifest 的 `feishu` 对象会在启动时迁移到 `data/channels` 并删除；
+渠道或绑定修改后需要重启。
 
 可以先执行不会发送消息的真实连通性冒烟。它只获取 tenant token、建立并关闭
 WebSocket；默认测试套件会跳过该 Live 测试：
@@ -1250,8 +1259,8 @@ rg -n "\[Feishu\]|\[MessageGateway\]|\[ConnectorDelivery\]|Gateway ingress accep
 
 | 最后证据 | 结论 |
 |---|---|
-| `[Feishu] Loaded 0 Agent-owned connector binding(s)` | 没有 Agent manifest 启用飞书 |
-| `binding is enabled but incomplete` | AppId/AppSecret 缺失 |
+| `[Feishu] Loaded 0 channel-owned connector binding(s)` | 渠道服务商/渠道未启用、渠道未绑定唯一启用 Agent，或 Agent 缺少对应 `channelIds` 引用 |
+| `Channel credentials are incomplete` | 渠道 manifest 的 AppId/AppSecret 缺失 |
 | `WebSocket connection failed` | endpoint、网络、凭据或飞书应用配置错误 |
 | Echo 没有 `initial ping sent` 或 ping 后没有 `type=pong` | 长连握手/心跳层故障；官方 SDK 要求 WebSocket open 后立即发送首个 ping |
 | Echo 有 `initial ping sent` 和 `type=pong`，确认发送新消息后却没有 `method=1 ... type=event` | 协议连接已活跃，但飞书未向本客户端投递事件；查事件订阅/版本发布，并排除同 AppId 的其他长连客户端正在分流事件 |
@@ -1262,7 +1271,7 @@ rg -n "\[Feishu\]|\[MessageGateway\]|\[ConnectorDelivery\]|Gateway ingress accep
 | 有 `Reply projected`、没有 `ConnectorDelivery Delivered` | 只查 Connector delivery 重试和飞书 OpenAPI 错误；不要重跑 Agent |
 
 飞书斜杠指令是另一条受控分支。`/help`、`/status`、`/whoami` 可由任意飞书用户调用；`/yolo`
-等特权指令要求事件 sender `open_id` 位于当前 Agent manifest 的
+等特权指令要求事件 sender `open_id` 位于当前渠道 manifest 的
 `feishu.privilegedUserOpenIds`。不要把 open_id 打到诊断输出，只检查数量和布尔命中结果。
 
 正常拦截日志为 `[MessageGateway] Command intercepted ... privileged=... whitelisted=...`。
@@ -1306,6 +1315,107 @@ Message/Delivery/Conversation acceptance 都应命中稳定幂等身份，不能
 
 飞书长连接要求事件处理尽快完成。Gateway 只等待 durable acceptance，不等待 Agent 完成；
 如果 ACK 仍超时，查 SQLite 锁、事件发布订阅阻塞和 schema 初始化，而不是缩短 Agent 执行时间。
+
+### 11.13 飞书流式卡片未出现、停止更新或重复回复
+
+先确认渠道 manifest 的 `feishu.streamingRepliesEnabled` 没有显式关闭，并确认飞书应用已开通
+CardKit 卡片创建、更新以及机器人消息回复权限。流式投影只消费已经提交的
+`message.content.appended`；浏览器 SSE 有 delta 但飞书没有卡片时，按以下日志顺序定位：
+
+```powershell
+rg -n "\[FeishuStream\]|\[ConnectorDelivery\]" .\tmp\dev\backend.out.log
+```
+
+| 最后证据 | 结论 |
+|---|---|
+| 没有 `Projection created`，但 Command 已很快 succeeded | 短回复可能在 stream worker 建立资源前完成；普通文本终态是允许的竞争结果 |
+| `Projection created` 后反复 operation failed | 查 CardKit 权限、tenant token、connector running 状态和飞书返回码；5 次失败后应转普通文本兜底 |
+| 有 `Card published`、没有 `Content projected` | 查该 Command 的 committed `message.content.appended` 事件，不要从尚未提交的 Runtime token 排查 |
+| `Content projected` 后卡片停止 | 查 `pending_event_sequence`、`operation_sequence` 与 `last_error`；重试必须复用 sequence/uuid |
+| 有 `Final delivery projected`、没有 `ConnectorDelivery Delivered` | 终态已进入 durable egress；只查 `message_deliveries` 的 retry/dead-letter 和 CardKit final API，不重跑 Agent |
+| 同时出现卡片和第二条终态文本 | 查 projection 是否在 terminal 前错误进入 `failed`，以及普通 projector 是否看到了同一 `command_id + connector_id` |
+
+数据库只查看状态与游标，不输出消息正文或飞书身份：
+
+```powershell
+sqlite3 D:\data\databases\pudding_platform.db "SELECT command_id,status,operation_sequence,last_event_sequence,pending_event_sequence,attempt_count,last_error FROM connector_stream_projections ORDER BY updated_at DESC LIMIT 20;"
+```
+
+正常生命周期是 `starting → resource_created → active → finalizing → completed`。`active` 阶段的
+增量更新是可恢复展示投影；最终正文仍来自 terminal event，并通过稳定的 Connector delivery 更新
+同一张卡、关闭 `streaming_mode`。因此 `reply_projected_at` 已设置不代表卡片已完成，最终仍以
+`message_deliveries.status=delivered` 和 projection `completed` 为准。
+
+### 11.14 飞书图片在 Agent 中仍显示 `[image]`
+
+正确链路是：
+
+```text
+Feishu image event -> image_key -> authenticated message resource download
+                   -> workspace vision-artifacts -> visionArtifactIds metadata
+                   -> canonical Web bubble + native vision or forced visual observation
+                   -> grounded Agent answer + Feishu/Web projection
+```
+
+先确认当前启动周期出现以下顺序：
+
+```powershell
+rg -n "Image materialized|Inbound accepted|Gateway ingress accepted|VisionArtifact|VisualObservation" `
+  .\tmp\dev\backend.out.log
+Get-ChildItem D:\data\workspaces\default\vision-artifacts `
+  -Filter "vision-*" | Sort-Object LastWriteTime -Descending | Select-Object -First 6
+```
+
+| 最后证据 | 结论 |
+|---|---|
+| WS 有 `message_type=image`，没有 `Image materialized` | 查 `content.image_key`、消息资源读取权限和 OpenAPI HTTP 状态 |
+| 下载报资源超过 10 MiB | 当前安全上限拒绝该资源；不要改成无界 `ReadAsByteArrayAsync` |
+| 报 unsupported MIME/signature | 当前只接收 JPEG/PNG/WebP；响应 MIME 不能代替文件签名校验 |
+| 有 `Image materialized`，没有 `Inbound accepted` | artifact 已落盘，但 Gateway durable acceptance 失败；飞书应收到非 200 并重投 |
+| Web 正文是图片提示但无图片 | 查 RoomMessage metadata 是否仍含 `visionArtifactId(s)`，再查 artifact GET；不要把二进制/base64 写进 SQLite |
+| 有 `Image materialized`，没有 `VisualObservation` | 先确认该消息已创建 Agent Turn；若主模型是原生视觉，应有 `Native vision route`，否则检查 Coordinator DI/旧 DLL |
+| 有 `Analyze`，没有 `Completed` | 查视觉 capability 路由和该 Provider 调用错误；系统应阻断主 Agent，不能继续猜图 |
+| 有 `Completed`，主 Agent 仍识别错误 | 核对视觉观察本身；观察正确则查本轮组装上下文，观察错误则用同一 artifact 调 `image_reader` 定向复查并检查视觉模型质量 |
+| Agent 仍声称只看到 `[image]` | 通常是后端仍加载旧 DLL，或消息发生在重启前；确认 PID/启动时间后发送一张全新的图片 |
+
+同一 `connectorId + message_id + image_key` 会生成相同 artifact ID。飞书重投后文件数量不应增加；
+如果已有 `Image materialized` 日志但同一消息不断下载，检查 `D:\data\workspaces\<workspace>\vision-artifacts`
+下对应 `.json` 与图片文件是否成对存在。日志只记录 message/artifact 身份，不记录图片正文、`image_key`
+或飞书用户 ID。
+
+### 11.15 MCP Server 连接成功但 Agent 看不到或无法调用工具
+
+先把 MCP 协议、Workspace 注册和 Agent 权限三层拆开：
+
+```powershell
+# 不依赖 Pudding 数据库，验证官方 SDK 的严格 Streamable HTTP 生命周期
+dotnet run --project .\Tests\Mcp.Cli\Mcp.Cli.csproj
+
+# 真实启动 codex mcp-server，验证 tools/list + 只读 tools/call（会调用 Codex）
+dotnet run --project .\Tests\Mcp.Cli\Mcp.Cli.csproj -- --codex-smoke
+
+# 查询指定 Workspace Skill 的内存运行状态
+# GET /api/workspaces/<workspaceId>/skills/<skillId>/runtime-status
+
+rg -n "\[MCP\]|tool.execution" .\tmp\dev\backend.out.log
+```
+
+| 最后证据 | 结论 |
+|---|---|
+| CLI 不是 5/5 | 先查 `initialize` 字段、Accept Header、Session/Protocol Header、分页或 DELETE；不要从 Agent Prompt 排查 |
+| 状态为 `Unavailable` 且配置错误 | `configJson` 是严格 JSON；本地地址需显式 `allowPrivateNetwork=true`，公网必须 HTTPS |
+| 日志有 `Connection failed` | 查 Endpoint、DNS/SSRF 策略、TLS、KeyVault `bearerTokenSecretId` 和远端 Server 日志；禁止把 Token 写入 Skill 配置或日志 |
+| stdio 状态为 `Unavailable` | 查 `command` 是否为直接可执行文件/裸命令、`arguments` 是否逐项配置、绝对 `workingDirectory` 是否存在；不要把整条 shell 命令塞进 `command` |
+| WindowsApps 下的 Codex 报 Access denied | Codex Desktop 包内二进制不保证后台进程可执行；安装官方 npm CLI，并在 Skill 中指向用户 npm 目录下的绝对 `codex.cmd` |
+| `--codex-smoke` 能发现工具但调用失败 | 先用同一服务账户执行 `codex --version`，再查用户目录下 Codex 登录状态；stdio 只继承 SDK OS/runtime 环境白名单，不会继承任意 Token、代理变量或自定义 `CODEX_HOME` |
+| stdio JSON 解析失败 | Server stdout 必须只有逐行 JSON-RPC；诊断输出写 stderr。Pudding 只在 Debug 日志记录有界 stderr 行 |
+| 有 `Tools refreshed`，目录没有工具 | 工具目录查询必须携带正确 `workspaceId`；无 Workspace 的全局目录故意不暴露动态 MCP 工具 |
+| 目录有工具，Agent Prompt 没有 | 查 `AgentRuntimeProfileResolver` 的 Workspace ID、Capability Policy 和 LLM schema；MCP schema 应来自 `RawJsonSchema` |
+| Agent 调用返回 authorization denied | MCP 工具固定为 High 风险并要求运行时审批，这是预期安全边界；不要依据远端 `readOnlyHint` 降级 |
+| 返回 403 workspace mismatch | Tool 快照或执行上下文跨 Workspace；禁止移除二次 Workspace 校验 |
+| `tools/list_changed` 后仍是旧清单 | 查通知名称、Session 是否仍存活和 `Tools refreshed`；失败应 fail-closed，不继续使用陈旧定义 |
+
+HTTP 日志中的 Endpoint 只保留 scheme/host/path；stdio 日志只记录可执行文件名。两者都不应包含 query、userinfo、Bearer Token、工具参数或结果正文。Codex MCP 正常时应发现 `Codex` 和 `Codex Reply`；首次调用结果的 `structuredContent.threadId` 必须保留到后续 `codex-reply`。
 
 ## 12. 修改后的最低验收
 

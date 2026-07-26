@@ -28,6 +28,7 @@ using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Storage;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.MessageGateway;
+using PuddingPlatform.Services.Mcp;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingController;
 using PuddingController.Data;
@@ -331,6 +332,7 @@ builder.Services.AddScoped<IAgentConversationProjectionService, AgentConversatio
 builder.Services.AddSingleton<VisionArtifactStorageService>();
 builder.Services.AddSingleton<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
 builder.Services.AddSingleton<IVisualArtifactLocalFileResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
+builder.Services.AddSingleton<FeishuInboundMessageMapper>();
 builder.Services.AddSingleton<IVisualArtifactResolver, VisualArtifactResolverBridge>();
 builder.Services.AddScoped<SessionTitleService>();
 builder.Services.AddScoped<TokenCostService>();
@@ -415,6 +417,9 @@ builder.Services.AddSingleton<WorkspaceAgentFileService>();
 builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
 builder.Services.AddSingleton<IAgentMainSessionBinder>(sp =>
     sp.GetRequiredService<WorkspaceAgentFileService>());
+builder.Services.AddSingleton<IAgentChannelBinder>(sp =>
+    sp.GetRequiredService<WorkspaceAgentFileService>());
+builder.Services.AddSingleton<ChannelConfigurationFileService>();
 builder.Services.AddSingleton<AgentManifestCatalog>();
 builder.Services.AddSingleton<MessageGatewayIngress>();
 builder.Services.AddSingleton<IMessageGatewayIngress>(
@@ -636,6 +641,10 @@ builder.Services.AddPuddingTool<SubconsciousTriggerTool>();
 // ── 统一 Tool 注册表：Agent 工具统一通过 IPuddingTool/native registry 暴露 ──────────
 builder.Services.AddPuddingToolsFromAssembly(typeof(Program).Assembly);
 builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingRuntime.RuntimeServiceExtensions).Assembly);
+builder.Services.AddSingleton<McpConnectionManager>();
+builder.Services.AddSingleton<IMcpConnectionManager>(sp => sp.GetRequiredService<McpConnectionManager>());
+builder.Services.AddSingleton<IWorkspacePuddingToolSource>(sp => sp.GetRequiredService<McpConnectionManager>());
+builder.Services.AddHostedService<McpWorkspaceSkillHostedService>();
 builder.Services.AddPuddingToolRegistry(builder.Configuration);
 builder.Services.AddSingleton<IToolInvocationService, ToolInvocationService>();
 builder.Services.AddSingleton<FileMutationQueue>();
@@ -935,6 +944,9 @@ builder.Services.AddSingleton<ConnectorHost>(sp =>
 builder.Services.AddSingleton<ConnectorDeliveryDispatcher>();
 builder.Services.AddHostedService(
     sp => sp.GetRequiredService<ConnectorDeliveryDispatcher>());
+builder.Services.AddSingleton<FeishuStreamingProjectionWorker>();
+builder.Services.AddHostedService(
+    sp => sp.GetRequiredService<FeishuStreamingProjectionWorker>());
 
 // ── Cron 定时任务调度 ──────────────────────────────
 // HOSTED-DISABLED: builder.Services.AddHostedService<CronSchedulerService>();
@@ -949,6 +961,7 @@ builder.Services.AddSingleton<ILlmResolver>(sp =>
         sp.GetRequiredService<ILlmConfigService>(),
         sp.GetRequiredService<ILogger<FileLlmResolver>>());
 });
+builder.Services.AddSingleton<IVisualArtifactObservationService, VisualArtifactObservationService>();
 
 builder.Services.AddHttpClient("DirectLlm", client =>
 {
@@ -1024,6 +1037,10 @@ app.Lifetime.ApplicationStarted.Register(() =>
             // 启动 ConnectorHost：注册所有 IPuddingConnector
             var progLogger = app.Services.GetRequiredService<ILogger<Program>>();
             progLogger.LogWarning("[Program] Starting ConnectorHost via DI logger...");
+            var channelConfiguration = app.Services
+                .GetRequiredService<ChannelConfigurationFileService>();
+            await channelConfiguration.MigrateLegacyAgentFeishuBindingsAsync(
+                CancellationToken.None);
             var connectorHost = app.Services.GetRequiredService<ConnectorHost>();
             progLogger.LogWarning("[Program] ConnectorHost resolved, getting connectors...");
             var connectors = app.Services.GetServices<IPuddingConnector>().ToList();
@@ -1327,6 +1344,10 @@ try
             schemaLogger,
             CancellationToken.None);
         await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(
+            platformDb,
+            schemaLogger,
+            CancellationToken.None);
+        await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(
             platformDb,
             schemaLogger,
             CancellationToken.None);

@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -343,19 +344,35 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             var toolsArray = new JsonArray();
             foreach (var tool in tools)
             {
-                var propsObj = new JsonObject();
-                foreach (var p in tool.Parameters.Properties)
+                JsonNode parametersNode;
+                if (tool.Parameters.RawJsonSchema is { ValueKind: JsonValueKind.Object } rawSchema)
                 {
-                    propsObj[p.Name] = new JsonObject
+                    parametersNode = JsonNode.Parse(rawSchema.GetRawText())
+                        ?? throw new InvalidOperationException($"Tool '{tool.Name}' has an invalid raw JSON schema.");
+                }
+                else
+                {
+                    var propsObj = new JsonObject();
+                    foreach (var p in tool.Parameters.Properties)
                     {
-                        ["type"] = p.Type,
-                        ["description"] = p.Description
+                        propsObj[p.Name] = new JsonObject
+                        {
+                            ["type"] = p.Type,
+                            ["description"] = p.Description
+                        };
+                    }
+
+                    var requiredArray = new JsonArray();
+                    foreach (var r in tool.Parameters.Required)
+                        requiredArray.Add(JsonValue.Create(r));
+
+                    parametersNode = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = propsObj,
+                        ["required"] = requiredArray
                     };
                 }
-
-                var requiredArray = new JsonArray();
-                foreach (var r in tool.Parameters.Required)
-                    requiredArray.Add(JsonValue.Create(r));
 
                 toolsArray.Add(new JsonObject
                 {
@@ -364,12 +381,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
                     {
                         ["name"] = tool.Name,
                         ["description"] = tool.Description,
-                        ["parameters"] = new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = propsObj,
-                            ["required"] = requiredArray
-                        }
+                        ["parameters"] = parametersNode
                     }
                 });
             }

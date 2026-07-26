@@ -3,6 +3,7 @@ import { useStyles } from './styles';
 import {
   AGENT_TEMPLATE_SECTIONS,
   type AgentTemplateSectionKey,
+  type SettingsSectionMeta,
   type SectionStatus,
 } from './types';
 
@@ -10,12 +11,14 @@ export interface AgentTemplateSettingsNavProps {
   activeSection: AgentTemplateSectionKey;
   errorSections: Set<AgentTemplateSectionKey>;
   onNavigate: (key: AgentTemplateSectionKey) => void;
+  sections?: SettingsSectionMeta[];
 }
 
 const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
   activeSection,
   errorSections,
   onNavigate,
+  sections = AGENT_TEMPLATE_SECTIONS,
 }) => {
   const { styles, cx } = useStyles();
 
@@ -27,7 +30,7 @@ const AgentTemplateSettingsNav: React.FC<AgentTemplateSettingsNavProps> = ({
 
   return (
     <nav className={styles.settingsNav} aria-label="设置分组导航">
-      {AGENT_TEMPLATE_SECTIONS.map((section) => {
+      {sections.map((section) => {
         const status = getStatus(section.key);
         return (
           <button

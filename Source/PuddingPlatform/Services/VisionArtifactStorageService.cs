@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Configuration;
@@ -29,6 +30,9 @@ public sealed partial class VisionArtifactStorageService(
     IVisualArtifactReferenceResolver,
     IVisualArtifactLocalFileResolver
 {
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _workspaceSaveLocks =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -48,8 +52,85 @@ public sealed partial class VisionArtifactStorageService(
         if (content is null || !content.CanRead)
             throw new InvalidOperationException("Vision artifact upload requires readable content.");
 
-        var normalizedMime = NormalizeMimeType(mimeType);
         var artifactId = $"vision-{Guid.NewGuid():N}";
+        return await SaveIdempotentAsync(
+            workspaceId,
+            artifactId,
+            content,
+            mimeType,
+            width,
+            height,
+            capturedAt,
+            ct);
+    }
+
+    /// <summary>
+    /// Stores an artifact using a caller-provided stable id. Repeated connector
+    /// delivery of the same external resource resolves the first durable copy
+    /// instead of creating duplicate browser/Agent attachments.
+    /// </summary>
+    public async Task<VisionArtifactUploadResult> SaveIdempotentAsync(
+        string workspaceId,
+        string artifactId,
+        Stream content,
+        string mimeType,
+        int? width = null,
+        int? height = null,
+        long? capturedAt = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId))
+            throw new InvalidOperationException("Vision artifact upload requires a workspace id.");
+        if (content is null || !content.CanRead)
+            throw new InvalidOperationException("Vision artifact upload requires readable content.");
+        if (string.IsNullOrWhiteSpace(artifactId) || !ArtifactIdRegex().IsMatch(artifactId))
+            throw new InvalidOperationException("Vision artifact id is invalid.");
+
+        var normalizedMime = NormalizeMimeType(mimeType);
+        var workspaceKey = SanitizePathSegment(workspaceId);
+        var saveLock = _workspaceSaveLocks.GetOrAdd(
+            workspaceKey,
+            static _ => new SemaphoreSlim(1, 1));
+        await saveLock.WaitAsync(ct);
+        try
+        {
+            var existing = await ResolveLocalFileAsync(workspaceId, artifactId, ct);
+            if (existing is not null)
+            {
+                return new VisionArtifactUploadResult(
+                    existing.ArtifactId,
+                    existing.MimeType,
+                    existing.Width,
+                    existing.Height,
+                    existing.CapturedAt ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            }
+
+            return await SaveCoreAsync(
+                workspaceId,
+                artifactId,
+                content,
+                normalizedMime,
+                width,
+                height,
+                capturedAt,
+                ct);
+        }
+        finally
+        {
+            saveLock.Release();
+        }
+    }
+
+    private async Task<VisionArtifactUploadResult> SaveCoreAsync(
+        string workspaceId,
+        string artifactId,
+        Stream content,
+        string normalizedMime,
+        int? width,
+        int? height,
+        long? capturedAt,
+        CancellationToken ct)
+    {
         var storedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var effectiveCapturedAt = capturedAt ?? storedAt;
         var ext = ExtensionForMime(normalizedMime);
@@ -58,21 +139,47 @@ public sealed partial class VisionArtifactStorageService(
 
         var bytesPath = Path.Combine(root, $"{artifactId}{ext}");
         var metadataPath = Path.Combine(root, $"{artifactId}.json");
+        var tempSuffix = $".tmp-{Guid.NewGuid():N}";
+        var tempBytesPath = bytesPath + tempSuffix;
+        var tempMetadataPath = metadataPath + tempSuffix;
 
-        await using (var file = File.Create(bytesPath))
+        try
         {
-            await content.CopyToAsync(file, ct);
-        }
+            await using (var file = new FileStream(
+                tempBytesPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81_920,
+                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await content.CopyToAsync(file, ct);
+                await file.FlushAsync(ct);
+            }
 
-        var metadata = new VisionArtifactMetadata(
-            artifactId,
-            normalizedMime,
-            Path.GetFileName(bytesPath),
-            width,
-            height,
-            effectiveCapturedAt,
-            storedAt);
-        await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(metadata, JsonOptions), ct);
+            var metadata = new VisionArtifactMetadata(
+                artifactId,
+                normalizedMime,
+                Path.GetFileName(bytesPath),
+                width,
+                height,
+                effectiveCapturedAt,
+                storedAt);
+            await File.WriteAllTextAsync(
+                tempMetadataPath,
+                JsonSerializer.Serialize(metadata, JsonOptions),
+                ct);
+
+            File.Move(tempBytesPath, bytesPath, overwrite: true);
+            File.Move(tempMetadataPath, metadataPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempBytesPath))
+                File.Delete(tempBytesPath);
+            if (File.Exists(tempMetadataPath))
+                File.Delete(tempMetadataPath);
+        }
 
         logger.LogInformation(
             "[VisionArtifact] Stored workspace={WorkspaceId} artifact={ArtifactId} mime={MimeType}",

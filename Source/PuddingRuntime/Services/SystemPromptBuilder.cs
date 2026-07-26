@@ -318,7 +318,7 @@ public sealed class SystemPromptBuilder
         }
         else
         {
-            sb.Append(BuildLoopInstructions(capability));
+            sb.Append(BuildLoopInstructions(capability, workspaceId));
         }
 
         return sb.ToString();
@@ -393,11 +393,14 @@ public sealed class SystemPromptBuilder
         }
     }
 
-    private string BuildLoopInstructions(CapabilityPolicy? capability)
+    private string BuildLoopInstructions(CapabilityPolicy? capability, string? workspaceId)
     {
         if (_toolRegistry is null)
             return _skillRuntime.BuildLoopInstructions(capability);
 
-        return ToolLoopInstructionBuilder.BuildFromDescriptors(_toolRegistry.ListAvailable(capability));
+        var descriptors = string.IsNullOrWhiteSpace(workspaceId)
+            ? _toolRegistry.ListAvailable(capability)
+            : _toolRegistry.ListAvailable(capability, workspaceId);
+        return ToolLoopInstructionBuilder.BuildFromDescriptors(descriptors);
     }
 }

@@ -1,73 +1,104 @@
 using PuddingAgent.Connectors;
+using PuddingCode.Configuration;
 using PuddingCode.Platform;
+using PuddingPlatform.Services;
 
 namespace PuddingAgent.Services;
 
 /// <summary>
-/// Creates one Feishu connector for every enabled Agent-owned Feishu binding.
-/// AppId uniqueness enforces that one robot is not consumed by multiple Agents.
+/// Creates one Feishu connector for every enabled channel instance referenced
+/// by exactly one enabled Agent. Credentials come only from data/channels.
 /// </summary>
 public sealed class FeishuConnectorFactory(
     AgentManifestCatalog manifests,
+    ChannelConfigurationFileService channels,
+    FeishuInboundMessageMapper inboundMessageMapper,
     ILoggerFactory loggerFactory,
     ILogger<FeishuConnectorFactory> logger)
 {
     public async Task<IReadOnlyList<IPuddingConnector>> CreateAsync(
         CancellationToken ct = default)
     {
-        var configured = (await manifests.ListAsync(ct))
-            .Where(manifest =>
-                manifest.IsEnabled
-                && !manifest.IsFrozen
-                && manifest.Feishu is { Enabled: true })
+        var enabledProviderIds = (await channels.ListProvidersAsync(ct))
+            .Where(provider =>
+                provider.IsEnabled
+                && string.Equals(
+                    provider.ChannelType,
+                    ChannelProviderKinds.Feishu,
+                    StringComparison.OrdinalIgnoreCase))
+            .Select(provider => provider.ProviderId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var agents = (await manifests.ListAsync(ct))
+            .Where(agent => agent.IsEnabled && !agent.IsFrozen)
+            .ToList();
+        var configuredChannels = (await channels.ListAllChannelsAsync(ct))
+            .Where(channel =>
+                channel.IsEnabled
+                && enabledProviderIds.Contains(channel.ProviderId))
             .ToList();
 
-        var invalid = configured
-            .Where(manifest =>
-                string.IsNullOrWhiteSpace(manifest.Feishu!.AppId)
-                || string.IsNullOrWhiteSpace(manifest.Feishu.AppSecret))
-            .ToList();
-        foreach (var manifest in invalid)
+        var bindings = new List<(AgentInstanceManifest Agent, ChannelInstanceManifest Channel)>();
+        foreach (var channel in configuredChannels)
         {
-            logger.LogError(
-                "[Feishu] Agent binding is enabled but incomplete agent={AgentId}",
-                manifest.AgentInstanceId);
+            var boundAgents = agents.Where(agent =>
+                    string.Equals(agent.WorkspaceId, channel.WorkspaceId, StringComparison.Ordinal)
+                    && agent.ChannelIds.Contains(channel.ChannelId, StringComparer.Ordinal))
+                .ToList();
+            if (boundAgents.Count != 1)
+            {
+                logger.LogError(
+                    "[Feishu] Channel must be referenced by exactly one enabled Agent channel={ChannelId} agentCount={AgentCount}",
+                    channel.ChannelId,
+                    boundAgents.Count);
+                continue;
+            }
+            if (channel.Feishu is not { } settings
+                || string.IsNullOrWhiteSpace(settings.AppId)
+                || string.IsNullOrWhiteSpace(settings.AppSecret))
+            {
+                logger.LogError(
+                    "[Feishu] Channel credentials are incomplete channel={ChannelId}",
+                    channel.ChannelId);
+                continue;
+            }
+            bindings.Add((boundAgents[0], channel));
         }
 
-        var valid = configured.Except(invalid).ToList();
-        var duplicates = valid
-            .GroupBy(
-                manifest => manifest.Feishu!.AppId,
-                StringComparer.Ordinal)
+        var duplicatedAppIds = bindings
+            .GroupBy(binding => binding.Channel.Feishu!.AppId, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
-            .ToList();
-        var duplicatedAppIds = duplicates
             .Select(group => group.Key)
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var duplicate in duplicates)
+        foreach (var appId in duplicatedAppIds)
         {
             logger.LogError(
-                "[Feishu] One robot AppId may only bind to one Agent; all conflicting bindings were skipped agents={AgentIds}",
+                "[Feishu] One AppId may only belong to one channel; conflicting channels were skipped channels={ChannelIds}",
                 string.Join(
                     ", ",
-                    duplicate.Select(manifest => manifest.AgentInstanceId)));
+                    bindings
+                        .Where(binding => string.Equals(
+                            binding.Channel.Feishu!.AppId,
+                            appId,
+                            StringComparison.Ordinal))
+                        .Select(binding => binding.Channel.ChannelId)));
         }
 
-        var connectors = valid
-            .Where(manifest =>
-                !duplicatedAppIds.Contains(manifest.Feishu!.AppId))
-            .Select(manifest => (IPuddingConnector)new FeishuConnector(
+        var connectors = bindings
+            .Where(binding => !duplicatedAppIds.Contains(binding.Channel.Feishu!.AppId))
+            .Select(binding => (IPuddingConnector)new FeishuConnector(
                 new FeishuConnectorBinding(
-                    manifest.AgentInstanceId,
-                    manifest.WorkspaceId,
-                    manifest.Feishu!.AppId,
-                    manifest.Feishu.AppSecret,
-                    manifest.Feishu.Description),
-                loggerFactory.CreateLogger<FeishuConnector>()))
+                    binding.Agent.AgentInstanceId,
+                    binding.Agent.WorkspaceId,
+                    binding.Channel.Feishu!.AppId,
+                    binding.Channel.Feishu.AppSecret,
+                    binding.Channel.Description,
+                    binding.Channel.ChannelId),
+                loggerFactory.CreateLogger<FeishuConnector>(),
+                inboundMessageMapper))
             .ToList();
 
         logger.LogInformation(
-            "[Feishu] Loaded {Count} Agent-owned connector binding(s)",
+            "[Feishu] Loaded {Count} channel-owned connector binding(s)",
             connectors.Count);
         return connectors;
     }

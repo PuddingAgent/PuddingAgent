@@ -76,6 +76,7 @@ public static class PrefixCacheSnapshotBuilder
                     p.Description,
                 }).ToArray(),
                 Required = t.Parameters.Required.ToArray(),
+                RawJsonSchema = t.Parameters.RawJsonSchema?.GetRawText(),
             },
         }).ToArray();
 

@@ -301,9 +301,16 @@ public sealed record AgentInstanceManifest
     public bool IsFrozen { get; init; }
     public AgentInstancePaths Paths { get; init; } = new();
     /// <summary>
-    /// V1 第三方聊天渠道绑定。一个 Agent manifest 最多配置一个飞书机器人，
-    /// 配置只在服务端加载，不投影到通用 Agent DTO。
+    /// Workspace channel instance references. Channel credentials and provider
+    /// settings live under data/channels and never belong to the Agent manifest.
     /// </summary>
+    public List<string> ChannelIds { get; init; } = [];
+    /// <summary>
+    /// One-time migration source for pre channel-catalog development data.
+    /// New writes clear this value after moving the binding to data/channels.
+    /// </summary>
+    [Obsolete("Use ChannelIds and ChannelInstanceManifest instead.")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AgentFeishuBotConfig? Feishu { get; init; }
 
     // ── 模板配置（创建时嵌入，运行时不再查模板）──
@@ -355,6 +362,11 @@ public sealed record AgentFeishuBotConfig
     public string AppId { get; init; } = "";
     public string AppSecret { get; init; } = "";
     public string? Description { get; init; }
+    /// <summary>
+    /// Project committed Agent deltas to a CardKit streaming reply. When CardKit
+    /// is unavailable, the terminal reply falls back to the normal text delivery.
+    /// </summary>
+    public bool StreamingRepliesEnabled { get; init; } = true;
     /// <summary>
     /// Feishu sender open_ids allowed to execute privileged Pudding commands
     /// through this Agent-owned bot. Regular chat is not restricted by this list.

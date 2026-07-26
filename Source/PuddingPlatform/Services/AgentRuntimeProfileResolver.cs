@@ -51,7 +51,7 @@ public sealed class AgentRuntimeProfileResolver(
             agent.AgentId,
             manifestPath,
             llmConfigService);
-        var capabilities = BuildCapabilitiesFromInstance(definition.Instance);
+        var capabilities = BuildCapabilitiesFromInstance(definition.Instance, workspaceId);
         var skillPackages = await ResolveSkillPackagesFromInstanceAsync(
             definition.Instance,
             ct);
@@ -185,14 +185,28 @@ public sealed class AgentRuntimeProfileResolver(
     /// Build capability policy and tool definitions from agent's embedded config.
     /// No longer reads template files at runtime.
     /// </summary>
-    private ResolvedCapabilities BuildCapabilitiesFromInstance(AgentInstanceManifest instance)
+    private ResolvedCapabilities BuildCapabilitiesFromInstance(
+        AgentInstanceManifest instance,
+        string workspaceId)
     {
         var capIds = instance.Capabilities.AllowedToolIds;
-        if (capIds.Count == 0)
+        var selectedToolDescriptors = ResolveSelectedToolDescriptors(capIds, workspaceId)
+            .ToDictionary(d => d.ToolId, StringComparer.OrdinalIgnoreCase);
+
+        // An enabled Workspace MCP server is an explicit workspace-level capability grant. Its
+        // individual tools are exposed to agents in that workspace, but remain high-risk and pass
+        // through the normal runtime approval gate before invocation.
+        foreach (var descriptor in toolCatalog.ListTools(workspaceId)
+                     .Where(d => d.SourceKind.Equals("MCP", StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedToolDescriptors.TryAdd(descriptor.ToolId, descriptor);
+        }
+
+        if (selectedToolDescriptors.Count == 0)
             return new ResolvedCapabilities(null, null, "none", 0);
 
-        var selectedToolDescriptors = ResolveSelectedToolDescriptors(capIds);
-        var selectedToolNames = selectedToolDescriptors.Select(d => d.ToolId).ToList();
+        var selectedDescriptors = selectedToolDescriptors.Values.ToList();
+        var selectedToolNames = selectedDescriptors.Select(d => d.ToolId).ToList();
         var allowedToolNamesJson = instance.Capabilities.AllowedToolNames is { Count: > 0 } names
             ? JsonSerializer.Serialize(names)
             : "[]";
@@ -204,8 +218,9 @@ public sealed class AgentRuntimeProfileResolver(
                 instance.Capabilities.AllowNetworkAccess,
                 allowedToolNamesJson,
                 instance.Role ?? "Service",
-                selectedToolNames),
-            BuildToolDefinitions(selectedToolDescriptors),
+                selectedToolNames,
+                workspaceId),
+            BuildToolDefinitions(selectedDescriptors),
             "agent-instance-embedded",
             selectedToolNames.Count);
     }
@@ -248,9 +263,10 @@ public sealed class AgentRuntimeProfileResolver(
     // ── 以下方法保持不变 ──
 
     private IReadOnlyList<ToolDescriptor> ResolveSelectedToolDescriptors(
-        IEnumerable<string> selectedCapabilityOrToolIds)
+        IEnumerable<string> selectedCapabilityOrToolIds,
+        string workspaceId)
     {
-        var descriptors = toolCatalog.ListTools();
+        var descriptors = toolCatalog.ListTools(workspaceId);
         var byToolId = descriptors.ToDictionary(d => d.ToolId, StringComparer.OrdinalIgnoreCase);
         var byCapabilityId = descriptors.ToDictionary(d => ToolIdToCapabilityId(d.ToolId), StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, ToolDescriptor>(StringComparer.OrdinalIgnoreCase);
@@ -304,10 +320,11 @@ public sealed class AgentRuntimeProfileResolver(
         bool allowNetworkAccess,
         string allowedToolNamesJson,
         string role,
-        IReadOnlyList<string> selectedToolNames)
+        IReadOnlyList<string> selectedToolNames,
+        string workspaceId)
     {
         var tools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var descriptors = toolCatalog.ListTools();
+        var descriptors = toolCatalog.ListTools(workspaceId);
         var descriptorByTool = descriptors.ToDictionary(d => d.ToolId, StringComparer.OrdinalIgnoreCase);
 
         try

@@ -48,6 +48,19 @@ public class MessageData
     public string? MessageId { get; set; }
 }
 
+/// <summary>CardKit create/update response.</summary>
+public class CardKitResponse
+{
+    public int Code { get; set; }
+    public string? Msg { get; set; }
+    public CardKitData? Data { get; set; }
+}
+
+public class CardKitData
+{
+    public string? CardId { get; set; }
+}
+
 /// <summary>
 /// 飞书事件基类（WebSocket 推送）。
 /// </summary>
@@ -114,6 +127,20 @@ public class FeishuTextContent
 {
     public string? Text { get; set; }
 }
+
+/// <summary>
+/// 图片消息内容（Content 字段 JSON 解析后的结构）。
+/// </summary>
+public class FeishuImageContent
+{
+    public string? ImageKey { get; set; }
+}
+
+/// <summary>Downloaded message resource returned by Feishu OpenAPI.</summary>
+public sealed record FeishuMessageResource(
+    byte[] Content,
+    string? ContentType,
+    string? FileName);
 
 /// <summary>
 /// URL 验证事件（首次配置时）。

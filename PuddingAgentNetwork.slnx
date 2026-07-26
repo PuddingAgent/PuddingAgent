@@ -3,6 +3,7 @@
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj" />
     <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
+    <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
@@ -16,6 +17,7 @@
     <Project Path="Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj" />
     <Project Path="Tests/PuddingAgent.IntegrationTests/PuddingAgent.IntegrationTests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
+    <Project Path="Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />
     <Project Path="Source/PuddingPlatformTests/PuddingPlatformTests.csproj" />

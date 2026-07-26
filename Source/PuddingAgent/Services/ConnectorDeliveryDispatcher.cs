@@ -1,7 +1,9 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingPlatform.Data;
 
 namespace PuddingAgent.Services;
 
@@ -154,6 +156,26 @@ public sealed class ConnectorDeliveryDispatcher(
                     Metadata = connectorMetadata,
                 },
                 ct);
+
+            if (Get(
+                    connectorMetadata,
+                    ConnectorStreamMetadata.ProjectionId) is { } projectionId)
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                var projection = await db.ConnectorStreamProjections
+                    .SingleOrDefaultAsync(
+                        item => item.ProjectionId == projectionId,
+                        ct);
+                if (projection is not null)
+                {
+                    projection.Status = ConnectorStreamProjectionStatuses.Completed;
+                    projection.AttemptCount = 0;
+                    projection.AvailableAt = null;
+                    projection.LastError = null;
+                    projection.UpdatedAt =
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                }
+            }
             await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
             logger.LogInformation(
                 "[ConnectorDelivery] Delivered connector={ConnectorId} delivery={DeliveryId} attempt={Attempt}",

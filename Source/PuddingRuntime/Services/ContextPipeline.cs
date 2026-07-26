@@ -790,7 +790,7 @@ public sealed class ContextPipeline
 
         if (_toolRegistry is not null)
         {
-            var descriptors = _toolRegistry.ListAvailable(request.Capability);
+            var descriptors = _toolRegistry.ListAvailable(request.Capability, request.WorkspaceId);
             AppendToolDescriptorList(sb, descriptors, request);
             return Task.FromResult(sb.ToString());
         }
@@ -1383,16 +1383,16 @@ public sealed class ContextPipeline
         else
         {
             sb.AppendLine("你有访问用户记忆图书馆和会话证据的能力。可用工具：search_memory（检索记忆）、save_memory（写入/更新记忆）、grep_memory（全文检索/列出Books/目录）、manage_memory（管理Books/章节/指针）、query_session_logs（默认查询分页消息转录；raw event 动作仅用于诊断）。");
-            sb.Append(BuildLoopInstructions(request.Capability));
+            sb.Append(BuildLoopInstructions(request.Capability, request.WorkspaceId));
         }
     }
 
-    private string BuildLoopInstructions(CapabilityPolicy? capability)
+    private string BuildLoopInstructions(CapabilityPolicy? capability, string workspaceId)
     {
         if (_toolRegistry is null)
             return _skillRuntime.BuildLoopInstructions(capability);
 
-        return ToolLoopInstructionBuilder.BuildFromDescriptors(_toolRegistry.ListAvailable(capability));
+        return ToolLoopInstructionBuilder.BuildFromDescriptors(_toolRegistry.ListAvailable(capability, workspaceId));
     }
 
     // ═══════════════════════════════════════════════════════════════

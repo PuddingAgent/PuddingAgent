@@ -1581,6 +1581,7 @@ export interface WorkspaceAgentDto {
   toolsMdContent?: string;
   bootstrapMdContent?: string;
   memoryMdContent?: string;
+  channelIds?: string[];
 }
 
 export interface CreateWorkspaceAgentRequest {
@@ -1838,9 +1839,14 @@ export interface WorkspaceChannelDto {
   channelId: string;
   name: string;
   description?: string;
+  providerId: string;
+  providerName: string;
   channelType: string;
-  defaultAgentId?: string;
-  configJson?: string;
+  boundAgentId?: string;
+  appId?: string;
+  hasAppSecret: boolean;
+  streamingRepliesEnabled: boolean;
+  privilegedUserOpenIds: string[];
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -1849,9 +1855,28 @@ export interface WorkspaceChannelDto {
 export interface UpsertWorkspaceChannelRequest {
   name: string;
   description?: string;
+  providerId: string;
+  boundAgentId?: string;
+  appId?: string;
+  appSecret?: string;
+  streamingRepliesEnabled: boolean;
+  privilegedUserOpenIds?: string[];
+  isEnabled: boolean;
+}
+
+export interface ChannelProviderDto {
+  providerId: string;
+  name: string;
   channelType: string;
-  defaultAgentId?: string;
-  configJson?: string;
+  description?: string;
+  isBuiltIn: boolean;
+  isEnabled: boolean;
+  capabilities: string[];
+}
+
+export interface UpdateChannelProviderRequest {
+  name: string;
+  description?: string;
   isEnabled: boolean;
 }
 
@@ -1873,6 +1898,20 @@ export async function updateWorkspaceChannel(workspaceId: string, channelId: str
 
 export async function deleteWorkspaceChannel(workspaceId: string, channelId: string): Promise<void> {
   return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/channels/${encodeURIComponent(channelId)}`, { method: 'DELETE' });
+}
+
+export async function listChannelProviders(): Promise<ChannelProviderDto[]> {
+  return request('/api/channel-providers', { method: 'GET' });
+}
+
+export async function updateChannelProvider(
+  providerId: string,
+  req: UpdateChannelProviderRequest,
+): Promise<ChannelProviderDto> {
+  return request(`/api/channel-providers/${encodeURIComponent(providerId)}`, {
+    method: 'PUT',
+    data: req,
+  });
 }
 
 // ─── Sub-Agent API (ADR-016) ──────────────────────────────────────

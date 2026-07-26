@@ -7,6 +7,7 @@ public sealed record PuddingDataPaths
     public string ConfigRoot => Path.Combine(DataRoot, "config");
     public string AgentTemplatesRoot => Path.Combine(DataRoot, "agent-templates");
     public string AgentInstancesRoot => Path.Combine(DataRoot, "agents");
+    public string ChannelsRoot => Path.Combine(DataRoot, "channels");
     public string WorkspacesRoot => Path.Combine(DataRoot, "workspaces");
     public string LogsRoot => Path.Combine(DataRoot, "logs");
     public string SystemLogsRoot => Path.Combine(LogsRoot, "system");
@@ -44,6 +45,12 @@ public sealed record PuddingDataPaths
 
     public string AgentInstanceRoot(string agentInstanceId) =>
         Path.Combine(AgentInstancesRoot, agentInstanceId);
+
+    public string ChannelRoot(string channelId) =>
+        Path.Combine(ChannelsRoot, channelId);
+
+    public string ChannelManifestFile(string channelId) =>
+        Path.Combine(ChannelRoot(channelId), "manifest.json");
 
     public string AgentInstanceConfigRoot(string agentInstanceId) =>
         Path.Combine(AgentInstanceRoot(agentInstanceId), "config");

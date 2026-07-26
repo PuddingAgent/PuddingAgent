@@ -71,8 +71,8 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         var toolRegistry = _serviceProvider.GetRequiredService<IPuddingToolRegistry>();
 
         // 1. 检查工具是否注册
-        var tool = toolRegistry.GetTool(toolId);
-        var descriptor = toolRegistry.GetDescriptor(toolId);
+        var tool = toolRegistry.GetTool(toolId, context.WorkspaceId);
+        var descriptor = toolRegistry.GetDescriptor(toolId, context.WorkspaceId);
 
         var registered = tool is not null;
         var isAvailable = registered; // 基础可用性
@@ -112,13 +112,21 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         {
             try
             {
-                var testRequest = new ToolExecutionRequest
+                if (toolId.Equals(Descriptor.ToolId, StringComparison.OrdinalIgnoreCase))
                 {
-                    ToolCallId = $"test_{toolId}_{Guid.NewGuid():N}",
-                    ArgumentsJson = args.TestArgs,
-                    Context = context,
-                };
-                var result = await tool.ExecuteAsync(testRequest, ct);
+                    return ToolExecutionResult.Fail("test_tool cannot recursively invoke itself.");
+                }
+
+                // Actual probes must traverse the same firewall, authorization, approval,
+                // telemetry and workspace boundaries as normal Agent calls. Directly invoking
+                // IPuddingTool here would let this low-risk diagnostic wrapper bypass them.
+                var executionService = _serviceProvider.GetRequiredService<IPuddingToolExecutionService>();
+                var result = await executionService.ExecuteAsync(
+                    toolId,
+                    args.TestArgs,
+                    context,
+                    policy: null,
+                    ct);
                 testResult = result.Success
                     ? $"OK: {Truncate(result.Output, 200)}"
                     : $"FAIL: {Truncate(result.Error ?? "unknown error", 200)}";

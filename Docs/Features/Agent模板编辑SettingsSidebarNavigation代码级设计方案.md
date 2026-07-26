@@ -4,6 +4,11 @@
 > 范围：`Source/PuddingPlatformAdmin`
 > ADR：`Docs/07架构/41ADR-040Agent模板编辑SettingsSidebarNavigationADR.md`
 
+> **2026-07-26 实现修订**：Workspace Agent 编辑器采用同一 `ProForm` 内的互斥分组面板，
+> 不再使用滚动锚点；新增 `smartModels` 分组、批量角色模型填充、`maxReplyTokens`、脏表单关闭确认，
+> Markdown 角色文件与高级运行环境使用 Collapse 降低首屏高度。Global 模板编辑仍沿用共享组件的既有
+> 分组实现，本文后续锚点伪代码仅保留为最初设计记录。
+
 ## 1. 当前代码事实
 
 主要入口：

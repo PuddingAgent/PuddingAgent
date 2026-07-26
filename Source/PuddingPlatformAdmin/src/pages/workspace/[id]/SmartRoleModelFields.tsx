@@ -1,5 +1,5 @@
 import { ProFormSelect } from '@ant-design/pro-components';
-import { Alert, Typography } from 'antd';
+import { Alert, Button, Form, Select, Space, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 import {
   listLlmModels,
@@ -66,10 +66,12 @@ function toModelOptions(
     }));
 }
 
-const SmartRoleModelFields: React.FC = () => {
+const SmartRoleModelFields: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
+  const form = Form.useFormInstance();
   const [options, setOptions] = useState<ModelOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadWarning, setLoadWarning] = useState<string>();
+  const [batchModel, setBatchModel] = useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -117,11 +119,19 @@ const SmartRoleModelFields: React.FC = () => {
     };
   }, []);
 
+  const applyBatchModel = (onlyEmpty: boolean) => {
+    if (!batchModel) return;
+    const nextValues = Object.fromEntries(
+      SMART_ROLE_FIELDS
+        .filter((role) => !onlyEmpty || !form.getFieldValue(role.name))
+        .map((role) => [role.name, batchModel]),
+    );
+    form.setFieldsValue(nextValues);
+    onChanged?.();
+  };
+
   return (
     <>
-      <Text strong style={{ display: 'block', marginTop: 12, marginBottom: 8 }}>
-        Smart 子代理模型
-      </Text>
       <Alert
         showIcon
         type="info"
@@ -129,6 +139,42 @@ const SmartRoleModelFields: React.FC = () => {
         description="Smart 工具调用子代理时，从 Agent manifest 读取对应角色的 providerId/modelId；留空时由子代理默认模型策略处理。"
         style={{ marginBottom: 12 }}
       />
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 8,
+          padding: 12,
+          marginBottom: 16,
+          borderRadius: 8,
+          background: 'rgba(124, 58, 237, 0.05)',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
+            批量设置角色模型
+          </Text>
+          <Select
+            value={batchModel}
+            onChange={setBatchModel}
+            options={options}
+            loading={loading}
+            showSearch
+            allowClear
+            optionFilterProp="label"
+            placeholder="选择服务商 / 模型"
+            style={{ width: '100%' }}
+          />
+        </div>
+        <Space>
+          <Button disabled={!batchModel} onClick={() => applyBatchModel(true)}>
+            应用到未配置
+          </Button>
+          <Button disabled={!batchModel} onClick={() => applyBatchModel(false)}>
+            全部应用
+          </Button>
+        </Space>
+      </div>
       {loadWarning && (
         <Alert
           showIcon
