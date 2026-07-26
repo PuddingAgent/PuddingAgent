@@ -85,4 +85,128 @@ public sealed class SystemCommandHandlerTests
         Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
         Assert.AreEqual(RuntimeExecutionMode.Yolo, runtime.Mode);
     }
+
+    [TestMethod]
+    public async Task Yolo_FromNonWhitelistedFeishuUser_IsRecordedButDoesNotChangeMode()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var handler = new SystemCommandHandler(
+            db,
+            runtime,
+            NullLogger<SystemCommandHandler>.Instance);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-feishu",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "gateway:user-hash",
+                ClientRequestId: "request-denied",
+                ClientMessageId: "user-message-denied",
+                ResponseMessageId: "system-message-denied",
+                CommandText: "/yolo",
+                IsPrivilegedUser: false,
+                SourceChannel: "feishu",
+                ExternalUserId: "ou_not_allowed"));
+
+        Assert.AreEqual(RuntimeExecutionMode.Normal, runtime.Mode);
+        Assert.AreEqual("Normal", result.RuntimeMode);
+        Assert.IsFalse(result.ForwardToAgent);
+        StringAssert.Contains(result.Message, "Permission denied");
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+
+        var response = await db.ChatMessages.SingleAsync(message =>
+            message.MessageId == "system-message-denied");
+        StringAssert.Contains(response.MetadataJson, "\"sourceChannel\":\"feishu\"");
+        StringAssert.Contains(response.MetadataJson, "\"privilegedUser\":false");
+    }
+
+    [TestMethod]
+    public async Task Help_FromNonWhitelistedFeishuUser_RemainsReadOnlyAndAvailable()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var handler = new SystemCommandHandler(
+            db,
+            runtime,
+            NullLogger<SystemCommandHandler>.Instance);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-feishu-help",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "gateway:user-hash",
+                ClientRequestId: "request-help",
+                ClientMessageId: "user-message-help",
+                ResponseMessageId: "system-message-help",
+                CommandText: "/help",
+                IsPrivilegedUser: false,
+                SourceChannel: "feishu",
+                ExternalUserId: "ou_not_allowed"));
+
+        Assert.AreEqual(RuntimeExecutionMode.Normal, runtime.Mode);
+        Assert.IsFalse(result.ForwardToAgent);
+        StringAssert.Contains(result.Message, "System commands:");
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task WhoAmI_FromFeishu_EchoesExternalUserIdWithoutAgentExecution()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var handler = new SystemCommandHandler(
+            db,
+            runtime,
+            NullLogger<SystemCommandHandler>.Instance);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-feishu-whoami",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "gateway:user-hash",
+                ClientRequestId: "request-whoami",
+                ClientMessageId: "user-message-whoami",
+                ResponseMessageId: "system-message-whoami",
+                CommandText: "/whoami",
+                IsPrivilegedUser: false,
+                SourceChannel: "feishu",
+                ExternalUserId: "ou_current_sender"));
+
+        Assert.AreEqual(RuntimeExecutionMode.Normal, runtime.Mode);
+        Assert.IsFalse(result.ForwardToAgent);
+        StringAssert.Contains(result.Message, "open_id");
+        StringAssert.Contains(result.Message, "ou_current_sender");
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
 }

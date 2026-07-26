@@ -27,6 +27,7 @@ public enum SystemCommandKind
     EmergencyStop,
     Resume,
     Yolo,
+    WhoAmI,
 }
 
 /// <summary>Action parsed from a user-authored slash command before routing.</summary>
@@ -156,6 +157,7 @@ public static class ToolAuthorizationDefaults
         {
             return "System commands:" + Environment.NewLine + Environment.NewLine +
                    "- `/help` - Show system command help." + Environment.NewLine +
+                   "- `/whoami` - Show the current Feishu sender open_id." + Environment.NewLine +
                    "- `/authorize <tool> [10m|1h|once|session|permanent]` - Manually grant runtime authorization for a high-risk tool when automatic approval cannot be used." + Environment.NewLine +
                    "- `/deny <tool>` - Deny authorization and clear active grants for that tool." + Environment.NewLine +
                    "- `/revoke <tool>` - Revoke active grants for that tool." + Environment.NewLine +
@@ -191,6 +193,8 @@ public static class ToolAuthorizationDefaults
                         "- `/memory` - Manage or write memories. Current feature is not implemented.",
             "status" => "Help for `/status`:" + Environment.NewLine + Environment.NewLine +
                         "- `/status` - Show the current Runtime, Session, Agent, Model, Skill, Tool, Safety, Resource, and Recovery snapshot.",
+            "whoami" => "Help for `/whoami`:" + Environment.NewLine + Environment.NewLine +
+                         "- `/whoami` - Show the current Feishu sender open_id. This command is read-only and does not require privileged-user access.",
             "stop" => "Help for `/stop`:" + Environment.NewLine + Environment.NewLine +
                       "- `/stop` - Stop the current session." + Environment.NewLine +
                       "- `/stop all` - Stop all active sessions.",
@@ -273,6 +277,16 @@ public static class ToolAuthorizationDefaults
 /// </summary>
 public static partial class SystemCommandParser
 {
+    /// <summary>
+    /// Privileged commands may change runtime state, authorization, durable memory,
+    /// or active execution. External channels must authorize their user before
+    /// dispatching them. Help and status remain read-only.
+    /// </summary>
+    public static bool RequiresPrivilege(SystemCommand command)
+        => command.CommandKind is not SystemCommandKind.Help
+            and not SystemCommandKind.Status
+            and not SystemCommandKind.WhoAmI;
+
     public static bool TryParse(string? rawText, out SystemCommand command)
     {
         command = default!;
@@ -335,6 +349,7 @@ public static partial class SystemCommandParser
                     "estop" => SystemCommandKind.EmergencyStop,
                     "resume" => SystemCommandKind.Resume,
                     "yolo" => SystemCommandKind.Yolo,
+                    "whoami" => SystemCommandKind.WhoAmI,
                     _ => throw new InvalidOperationException($"Unsupported system command '{commandName}'."),
                 },
             };
@@ -433,14 +448,14 @@ public static partial class SystemCommandParser
     private static bool IsValidSystemCommandArgument(string commandName, string argument)
         => commandName switch
         {
-            "compact" or "memory" or "status" or "estop" or "resume" or "yolo" => string.IsNullOrWhiteSpace(argument),
+            "compact" or "memory" or "status" or "estop" or "resume" or "yolo" or "whoami" => string.IsNullOrWhiteSpace(argument),
             "stop" => string.IsNullOrWhiteSpace(argument) || string.Equals(argument, "all", StringComparison.Ordinal),
             "mode" => string.IsNullOrWhiteSpace(argument)
                       || argument is "safe" or "normal" or "list",
             _ => false,
         };
 
-    [GeneratedRegex(@"^/(?<command>compact|memory|status|stop|mode|estop|resume|yolo)(?:\s+(?<argument>[a-zA-Z0-9_]+))?$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^/(?<command>compact|memory|status|stop|mode|estop|resume|yolo|whoami)(?:\s+(?<argument>[a-zA-Z0-9_]+))?$", RegexOptions.IgnoreCase)]
     private static partial Regex SystemCommandRegex();
 
     [GeneratedRegex(@"^/(?<command>[a-zA-Z0-9_-]+)\s+-help$", RegexOptions.IgnoreCase)]

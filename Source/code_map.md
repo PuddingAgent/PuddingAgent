@@ -223,7 +223,7 @@ Source/
 | `Services/PlatformReadinessProbe.cs` | Conversation 执行链 readiness：DB + Submit Handler + Coordinator |
 | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 只消费 AgentRuntimeProfile 的无密钥快照工厂；冻结 Provider/Profile/Model 与能力引用 |
 | `Services/Conversation/SubmitTurnHandler.cs` | Submit Turn 应用处理器；公开请求的 `gateway_*` 保留 metadata 会被过滤，只有进程内可信 Gateway 命令可保留渠道回复路由事实 |
-| `Services/Conversation/SystemCommandHandler.cs` | 系统命令执行边界；`/yolo` 仅修改 RuntimeControl 并持久化 system transcript，禁止创建 Agent Turn/Command |
+| `Services/Conversation/SystemCommandHandler.cs` | Web/飞书共享的系统命令执行边界；只读命令直接处理，`/whoami` 只回显已验证 Feishu `externalUserId`，特权命令要求渠道已验证用户；持久化 system transcript，默认禁止创建 Agent Turn/Command，只有显式 `ForwardToAgent` 才允许投递处理结果 |
 | `Services/Conversation/RequestTurnCancellationHandler.cs` | Cancel 处理器 — 写 turn.cancel.requested |
 | `Services/Conversation/CreateSteeringHandler.cs` | Steering 应用 Handler；端点在 Runtime 消费器落地前保持关闭 |
 | `Services/Conversation/RequestCompactionHandler.cs` | 手动压缩唯一应用入口；解析 Agent Profile、执行压缩、写生命周期事件并创建后继 Conversation |
@@ -263,11 +263,12 @@ Source/
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
 | `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
 | `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 succeeded Command 的 committed terminal event 幂等创建 Connector delivery；`reply_projected_at` 与实际 Connector delivered 状态分离 |
-| `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 Agent-owned binding，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份并写 Message Fabric |
+| `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 Agent-owned binding，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按 manifest `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
 | `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从私有 Agent manifest 动态装配一 Agent 一机器人；拒绝重复 AppId，凭据不进入公共 DTO |
 | `PuddingAgent/Connectors/FeishuConnector.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 frame、open 后首帧 ping、事件 ACK、分片、ping/reconnect 与 message/chat/sender 字段映射；入站使用 `message_type`，出站 OpenAPI 使用 `msg_type`；可选协议诊断只输出非敏感帧元数据 |
 | `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter，出站故障不重跑 Agent |
 | `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` | 无外网 Fake 飞书往返验收；使用真实 SQLite Message Fabric、canonical Turn 受理、terminal reply projection 和 Connector dispatcher，只替换外部飞书与 Agent 执行结果 |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 Agent-owned open_id 白名单、`/whoami` 身份透传、默认只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
 | `Tests/HarnessAgent.Cli/Program.cs` (`feishu-echo`) | 独立飞书 SDK Echo 程序；真实长连接收到文本后以稳定 uuid 调 reply API 原样回复，支持 `--once/--timeout-seconds/--config` |
 | `Tests/HarnessAgent.Core.Tests/Feishu/FeishuWebSocketInitialPingTests.cs` | 本地真 WebSocket 协议回归；锁定建连后立即 CONTROL/ping，以及 pbbp2 DATA/event 解码、文本投递和成功 ACK |
 | `Controllers/Api/MessageQueueController.cs` | Agent 交互队列 API；`includeSystem=false` 为默认用户界面边界 |

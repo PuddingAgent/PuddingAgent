@@ -34,7 +34,8 @@ V2 才引入通用第三方聊天 App binding。V1 不提前建设多渠道配�
     "enabled": true,
     "appId": "cli_xxx",
     "appSecret": "<secret>",
-    "description": "默认助手的飞书机器人"
+    "description": "默认助手的飞书机器人",
+    "privilegedUserOpenIds": ["ou_xxx"]
   }
 }
 ```
@@ -52,6 +53,7 @@ V2 才引入通用第三方聊天 App binding。V1 不提前建设多渠道配�
 3. 重复 AppId 的全部冲突绑定会被拒绝并记录 Error；其它连接器继续启动，不能让两个 Agent 竞争同一个机器人事件流。
 4. 凭据只在服务端 manifest reader、connector factory 和 connector 内流动，不投影到通用 Agent DTO、日志或 Conversation metadata。
 5. V1 修改 manifest 后需要重启 Pudding 重新装配连接器。
+6. `privilegedUserOpenIds` 是该机器人自己的特权指令白名单，只存飞书 sender `open_id`；它不限制普通聊天消息。
 
 `Tests/HarnessAgent.Cli` 可继续读取全局 `config/feishu.json` 做独立协议测试；它不是 Pudding 运行时配置来源。
 
@@ -78,7 +80,32 @@ Agent Runtime 收到的 `pudding-message` metadata 包含
 `SubmitTurnCommand.IsTrustedGatewayIngress=true` 可以保留这些字段；公开 Turn API 提交的同名前缀
 会在 `SubmitTurnHandler` 被过滤，防止 Web 客户端伪造 Connector reply route。
 
-### 2.3 权威消息链
+### 2.3 飞书系统指令与特权用户
+
+以 `/` 开头的飞书文本先由 `MessageGatewayIngress` 识别为 Pudding 系统指令，禁止先写入
+Agent delivery 再由 LLM 猜测是否应执行。处理规则是：
+
+1. `/help`、`/status`、`/whoami` 是只读指令，不要求用户进入特权白名单。
+2. `/yolo`、授权、执行控制、记忆写入等可能改变状态的指令属于特权指令。
+3. 特权校验必须使用当前 Agent manifest 的 `feishu.privilegedUserOpenIds`，并与事件 sender
+   `open_id` 精确比较；不得使用全局飞书白名单把一个机器人的权限扩散到其它 Agent。
+4. 未授权、未知、尚未实现和已处理的指令都由 Pudding 生成系统 transcript，并通过 durable
+   Connector delivery 回复原飞书消息；默认不创建 `ConversationTurn`、
+   `ChatExecutionCommand` 或 Agent delivery。
+5. 只有系统指令处理器显式返回 `ForwardToAgent=true` 时，Gateway 才把处理后的
+   `AgentMessage` 作为新消息投递给 Agent。原始斜杠指令仍不得直接成为 Agent prompt。
+6. Web 与飞书复用同一个 `ISystemCommandHandler`。Web 身份由 Web 鉴权边界保证；飞书身份由
+   Agent-owned whitelist 保证。
+
+`/whoami` 只读取 Gateway 从已验证飞书事件传入的 `externalUserId`，并将 sender `open_id`
+回复到原飞书消息，同时写入 Web canonical transcript。它不调用 Agent、不查询飞书通讯录，也不
+将 ID 写入运行日志。若请求不是来自已验证的飞书消息，处理器返回 ID unavailable，禁止回退到
+客户端自报身份。
+
+Gateway 指令回复使用稳定的 message/request/reply 身份；同一飞书 `message_id` 重投不会执行
+第二次状态变更，也不会形成第二个 Agent Turn。
+
+### 2.4 权威消息链
 
 ```mermaid
 flowchart LR
@@ -110,7 +137,7 @@ V1 将绑定机器人的消息投递到 Agent main Conversation，使 Web 观察
 
 该选择适用于 V1 的单信任域机器人。若机器人面向互不可信的多个群或用户，必须在开放前进入 V2：按 `(connectorId, externalConversationId)` 建立独立 Conversation 映射与访问控制，禁止把不同信任域的上下文混入同一 main Conversation。
 
-### 2.4 默认回复由系统代投
+### 2.5 默认回复由系统代投
 
 普通 Agent 终态答复不要求 LLM 调用 `send_message`。
 
@@ -126,7 +153,7 @@ V1 将绑定机器人的消息投递到 Agent main Conversation，使 Web 观察
 
 `send_message` 仍用于 Agent 主动消息、跨 Agent 消息或显式发送到不同目标；它不是默认答复协议。
 
-### 2.5 可靠性与幂等
+### 2.6 可靠性与幂等
 
 | 边界 | 稳定事实/幂等键 | 失败处理 |
 |---|---|---|
@@ -176,7 +203,11 @@ Connector 只把支持的消息事件送进 Gateway。未知事件应确认后�
 
 ```powershell
 dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj `
-  --filter "FullyQualifiedName~FakeFeishuRoundTripTests"
+  --filter "FullyQualifiedName~FakeFeishuRoundTripTests|FullyQualifiedName~FeishuCommandInterceptionTests"
+dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SystemCommandParserTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SystemCommandHandlerTests"
 dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore
 $env:PUDDING_RUN_FEISHU_LIVE_TESTS = "1"
 dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
@@ -215,3 +246,7 @@ CONTROL/ping；收到真实格式的 pbbp2 DATA/event 后可解析文本并回�
    `Gateway ingress accepted`、terminal、`Reply projected`、`[ConnectorDelivery] Delivered`。
 5. 飞书收到一次最终答复；Web Conversation 同时包含用户消息、执行过程和最终答复。
 6. 临时阻断飞书出站后，Agent Command 仍保持 succeeded，只有 connector delivery 重试。
+7. 未在 `privilegedUserOpenIds` 的用户发送 `/yolo` 时收到 Permission denied，Runtime mode
+   不变且日志中没有该消息对应的 Agent Turn；加入白名单后同一用户可由 Pudding 执行该指令。
+8. 任意飞书用户发送 `/whoami` 时收到当前事件 sender `open_id`；Web transcript 同时可见，且
+   `chat_execution_commands`、`conversation_turns` 均不新增记录。

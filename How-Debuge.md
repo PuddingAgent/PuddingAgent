@@ -1224,6 +1224,7 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     FeishuEnabled = $manifest.feishu.enabled -eq $true
     HasAppId = -not [string]::IsNullOrWhiteSpace([string]$manifest.feishu.appId)
     HasAppSecret = -not [string]::IsNullOrWhiteSpace([string]$manifest.feishu.appSecret)
+    PrivilegedUserCount = @($manifest.feishu.privilegedUserOpenIds).Count
 }
 ```
 
@@ -1259,6 +1260,22 @@ rg -n "\[Feishu\]|\[MessageGateway\]|\[ConnectorDelivery\]|Gateway ingress accep
 | 有 `Ingress accepted`、没有 `Gateway ingress accepted` | Agent MessageDelivery 未被 canonical ADR-059 受理，查 delivery retry/dead-letter |
 | Command succeeded、没有 `Reply projected` | terminal event/metadata/reply projection Schema 或 Worker 异常 |
 | 有 `Reply projected`、没有 `ConnectorDelivery Delivered` | 只查 Connector delivery 重试和飞书 OpenAPI 错误；不要重跑 Agent |
+
+飞书斜杠指令是另一条受控分支。`/help`、`/status`、`/whoami` 可由任意飞书用户调用；`/yolo`
+等特权指令要求事件 sender `open_id` 位于当前 Agent manifest 的
+`feishu.privilegedUserOpenIds`。不要把 open_id 打到诊断输出，只检查数量和布尔命中结果。
+
+正常拦截日志为 `[MessageGateway] Command intercepted ... privileged=... whitelisted=...`。
+该消息没有后续 `Gateway ingress accepted` 或 Agent Turn 是正确行为，因为 Pudding 会直接创建
+durable Connector reply。未命中白名单应收到 `Permission denied` 且 Runtime mode 不变；命中后
+`/yolo` 才能切换模式。若日志显示 `ForwardToAgent` 分支，则只允许投递处理器生成的
+`AgentMessage`，原始斜杠文本不得成为 Agent prompt。
+
+`/whoami` 应回复当前入站事件的 sender `open_id`，用于配置
+`privilegedUserOpenIds`。它不需要白名单，也不应出现 Agent Turn。系统日志只记录命令种类和
+授权布尔值，不应打印回复中的 open_id；需要核对 ID 时以飞书回复和 Web canonical transcript
+为准。若回复 `Feishu user ID is unavailable`，检查 Gateway 是否传入 `SourceChannel=feishu`
+和非空 `ExternalUserId`，禁止从用户正文或客户端参数补造身份。
 
 如果 endpoint 返回 HTTP 400 且 `code=9499`，先逐项对照官方 SDK 的 discovery
 请求：JSON 字段必须精确为 `AppID`/`AppSecret`（不能让 `JsonContent` 的 Web 默认策略改成

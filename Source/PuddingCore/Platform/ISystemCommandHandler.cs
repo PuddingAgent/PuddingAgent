@@ -18,7 +18,10 @@ public sealed record SystemCommandRequest(
     string ClientRequestId,
     string ClientMessageId,
     string ResponseMessageId,
-    string CommandText);
+    string CommandText,
+    bool IsPrivilegedUser = true,
+    string? SourceChannel = null,
+    string? ExternalUserId = null);
 
 public sealed record SystemCommandResult(
     string ConversationId,
@@ -26,4 +29,6 @@ public sealed record SystemCommandResult(
     string ResponseMessageId,
     string Command,
     string Message,
-    string RuntimeMode);
+    string RuntimeMode,
+    bool ForwardToAgent = false,
+    string? AgentMessage = null);

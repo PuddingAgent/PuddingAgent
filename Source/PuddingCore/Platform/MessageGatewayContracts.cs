@@ -32,6 +32,8 @@ public static class MessageGatewayMetadata
     public const string ExternalMessageId = "gateway_external_message_id";
     public const string ExternalUserId = "gateway_external_user_id";
     public const string ClientRequestId = "gateway_client_request_id";
+    public const string IsGatewayCommand = "gateway_command";
+    public const string GatewayCommand = "gateway_command_text";
     public const string ReplyProjectedMessageId = "gateway_reply_message_id";
     public const string IdempotencyKey = "gateway_idempotency_key";
 }

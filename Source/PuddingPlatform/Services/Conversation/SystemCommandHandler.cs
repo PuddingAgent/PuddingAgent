@@ -27,13 +27,8 @@ public sealed class SystemCommandHandler(
     {
         Validate(request);
 
-        if (!SystemCommandParser.TryParse(request.CommandText, out var command) ||
-            command.CommandKind != SystemCommandKind.Yolo ||
-            command.Action != SystemCommandAction.Run)
-        {
-            throw new NotSupportedException(
-                "This endpoint currently accepts only the exact /yolo system command.");
-        }
+        var commandText = request.CommandText.Trim();
+        var isParsed = SystemCommandParser.TryParse(commandText, out var command);
 
         var existing = await db.ChatMessages
             .AsNoTracking()
@@ -45,15 +40,58 @@ public sealed class SystemCommandHandler(
                 ct);
         if (existing is not null)
         {
-            runtimeControl.SetMode(
-                RuntimeExecutionMode.Yolo,
-                $"idempotent replay of /yolo; user={request.UserId}; conversation={request.ConversationId}");
+            // The authenticated Web endpoint historically reapplies process-local
+            // YOLO state after a reset. External gateway replays must preserve the
+            // originally recorded authorization result instead of gaining a new
+            // privilege after whitelist changes.
+            if (request.SourceChannel is null
+                && request.IsPrivilegedUser
+                && isParsed
+                && IsYolo(command))
+            {
+                runtimeControl.SetMode(
+                    RuntimeExecutionMode.Yolo,
+                    $"idempotent replay of /yolo; user={request.UserId}; conversation={request.ConversationId}");
+            }
             return BuildResult(request, existing.Content, runtimeControl.Mode);
         }
 
-        var action = runtimeControl.SetMode(
-            RuntimeExecutionMode.Yolo,
-            $"user command /yolo; user={request.UserId}; conversation={request.ConversationId}");
+        string responseMessage;
+        if (!isParsed)
+        {
+            responseMessage =
+                $"Unknown Pudding command '{commandText}'. Send /help for available commands.";
+        }
+        else if (SystemCommandParser.RequiresPrivilege(command)
+                 && !request.IsPrivilegedUser)
+        {
+            var channel = string.IsNullOrWhiteSpace(request.SourceChannel)
+                ? "external"
+                : request.SourceChannel;
+            responseMessage =
+                $"Permission denied: the current {channel} user is not in the configured whitelist for privileged command '{command.RawText}'.";
+        }
+        else if (command.Action == SystemCommandAction.Help)
+        {
+            responseMessage = ToolAuthorizationDefaults.BuildHelpMessage(
+                command.TargetId);
+        }
+        else if (command.CommandKind == SystemCommandKind.WhoAmI)
+        {
+            responseMessage = BuildWhoAmIMessage(request);
+        }
+        else if (IsYolo(command))
+        {
+            var action = runtimeControl.SetMode(
+                RuntimeExecutionMode.Yolo,
+                $"user command /yolo; user={request.UserId}; conversation={request.ConversationId}");
+            responseMessage = action.Message;
+        }
+        else
+        {
+            responseMessage =
+                $"Pudding intercepted '{command.RawText}', but this system command is not implemented yet.";
+        }
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var sourceMetadata = JsonSerializer.Serialize(
@@ -62,6 +100,9 @@ public sealed class SystemCommandHandler(
                 sourceType = "system_command",
                 sourceId = "system",
                 sourceName = "System",
+                sourceChannel = request.SourceChannel,
+                externalUserId = request.ExternalUserId,
+                privilegedUser = request.IsPrivilegedUser,
             },
             JsonOptions);
 
@@ -79,7 +120,7 @@ public sealed class SystemCommandHandler(
                     WorkspaceId = request.WorkspaceId,
                     AgentInstanceId = request.AgentId,
                     Role = "user",
-                    Content = command.RawText,
+                    Content = commandText,
                     TurnId = request.ClientRequestId,
                     CommandId = request.ClientRequestId,
                     UserId = request.UserId,
@@ -98,7 +139,7 @@ public sealed class SystemCommandHandler(
                     WorkspaceId = request.WorkspaceId,
                     AgentInstanceId = request.AgentId,
                     Role = "agent",
-                    Content = action.Message,
+                    Content = responseMessage,
                     TurnId = request.ClientRequestId,
                     CommandId = request.ClientRequestId,
                     MetadataJson = sourceMetadata,
@@ -115,15 +156,17 @@ public sealed class SystemCommandHandler(
             throw;
         }
 
-        logger.LogWarning(
-            "[SystemCommand] handled command={Command} workspace={WorkspaceId} conversation={ConversationId} user={UserId} mode={Mode}",
-            command.RawText,
+        logger.LogInformation(
+            "[SystemCommand] handled command={Command} parsed={Parsed} privileged={Privileged} workspace={WorkspaceId} conversation={ConversationId} user={UserId} mode={Mode}",
+            commandText,
+            isParsed,
+            isParsed && SystemCommandParser.RequiresPrivilege(command),
             request.WorkspaceId,
             request.ConversationId,
             request.UserId,
             runtimeControl.Mode);
 
-        return BuildResult(request, action.Message, runtimeControl.Mode);
+        return BuildResult(request, responseMessage, runtimeControl.Mode);
     }
 
     private static SystemCommandResult BuildResult(
@@ -137,6 +180,24 @@ public sealed class SystemCommandHandler(
             request.CommandText.Trim(),
             message,
             mode.ToString());
+
+    private static bool IsYolo(SystemCommand command)
+        => command.CommandKind == SystemCommandKind.Yolo
+           && command.Action == SystemCommandAction.Run;
+
+    private static string BuildWhoAmIMessage(SystemCommandRequest request)
+    {
+        if (!string.Equals(
+                request.SourceChannel,
+                "feishu",
+                StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(request.ExternalUserId))
+        {
+            return "Feishu user ID is unavailable because this command did not originate from a verified Feishu message.";
+        }
+
+        return $"Your Feishu user ID (open_id) is `{request.ExternalUserId}`.";
+    }
 
     private static void Validate(SystemCommandRequest request)
     {

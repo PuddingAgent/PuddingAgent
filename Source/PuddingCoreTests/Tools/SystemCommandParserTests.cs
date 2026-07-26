@@ -61,6 +61,10 @@ public sealed class SystemCommandParserTests
         Assert.IsTrue(SystemCommandParser.TryParse("/status", out var status));
         Assert.AreEqual(SystemCommandKind.Status, status.CommandKind);
 
+        Assert.IsTrue(SystemCommandParser.TryParse("/whoami", out var whoAmI));
+        Assert.AreEqual(SystemCommandKind.WhoAmI, whoAmI.CommandKind);
+        Assert.AreEqual("whoami", whoAmI.TargetId);
+
         Assert.IsTrue(SystemCommandParser.TryParse("/stop all", out var stopAll));
         Assert.AreEqual(SystemCommandKind.Stop, stopAll.CommandKind);
         Assert.AreEqual("all", stopAll.TargetId);
@@ -80,6 +84,7 @@ public sealed class SystemCommandParserTests
         Assert.IsFalse(SystemCommandParser.TryParse("/stop session", out _));
         Assert.IsFalse(SystemCommandParser.TryParse("/mode turbo", out _));
         Assert.IsFalse(SystemCommandParser.TryParse("/estop now", out _));
+        Assert.IsFalse(SystemCommandParser.TryParse("/whoami all", out _));
     }
 
     [TestMethod]
@@ -120,5 +125,24 @@ public sealed class SystemCommandParserTests
     {
         Assert.IsFalse(SystemCommandParser.TryParse("authorize shell", out _));
         Assert.IsFalse(SystemCommandParser.TryParse("/unknown shell", out _));
+    }
+
+    [TestMethod]
+    public void RequiresPrivilege_LeavesOnlyHelpAndStatusReadOnly()
+    {
+        Assert.IsTrue(SystemCommandParser.TryParse("/help", out var help));
+        Assert.IsFalse(SystemCommandParser.RequiresPrivilege(help));
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/status", out var status));
+        Assert.IsFalse(SystemCommandParser.RequiresPrivilege(status));
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/whoami", out var whoAmI));
+        Assert.IsFalse(SystemCommandParser.RequiresPrivilege(whoAmI));
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/yolo", out var yolo));
+        Assert.IsTrue(SystemCommandParser.RequiresPrivilege(yolo));
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/authorize shell", out var authorize));
+        Assert.IsTrue(SystemCommandParser.RequiresPrivilege(authorize));
     }
 }

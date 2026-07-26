@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Tools;
 using PuddingController.Services;
 using PuddingPlatform.Services;
 
@@ -62,6 +63,19 @@ public sealed class MessageGatewayIngress(
         };
 
         using var scope = scopeFactory.CreateScope();
+        var commandResult = await TryHandleCommandAsync(
+            scope.ServiceProvider,
+            envelope,
+            manifest,
+            conversationId,
+            externalMessageId,
+            messageId,
+            clientRequestId,
+            metadata,
+            ct);
+        if (commandResult is not null)
+            return commandResult;
+
         var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
         var result = await messageSystem.SendAsync(
             new MessageEnvelope
@@ -110,6 +124,184 @@ public sealed class MessageGatewayIngress(
             MessageId = result.MessageId,
             ConversationId = conversationId,
             DeliveryIds = result.DeliveryIds,
+        };
+    }
+
+    /// <summary>
+    /// Slash commands are Pudding control messages, not Agent prompts. The
+    /// gateway records and replies to every command itself. A command reaches an
+    /// Agent only when its system handler explicitly returns ForwardToAgent.
+    /// </summary>
+    private async Task<MessageGatewayIngressResult?> TryHandleCommandAsync(
+        IServiceProvider serviceProvider,
+        PuddingIngressEnvelope envelope,
+        AgentInstanceManifest manifest,
+        string conversationId,
+        string externalMessageId,
+        string ingressMessageId,
+        string clientRequestId,
+        Dictionary<string, string> metadata,
+        CancellationToken ct)
+    {
+        var commandText = envelope.MessageText.Trim();
+        if (!commandText.StartsWith("/", StringComparison.Ordinal))
+            return null;
+
+        var parsed = SystemCommandParser.TryParse(commandText, out var command);
+        var requiresPrivilege = parsed
+                                && SystemCommandParser.RequiresPrivilege(command);
+        var isPrivilegedUser = IsPrivilegedFeishuUser(
+            manifest.Feishu,
+            envelope.UserExternalId);
+        var responseMessageId = StableId(
+            "gateway-command-response",
+            envelope.ConnectorId!,
+            externalMessageId);
+        var handler = serviceProvider.GetRequiredService<ISystemCommandHandler>();
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: conversationId,
+                WorkspaceId: manifest.WorkspaceId,
+                AgentId: manifest.AgentInstanceId,
+                UserId: $"gateway:{StableId("gateway-user", envelope.ChannelType, envelope.UserExternalId)}",
+                ClientRequestId: clientRequestId,
+                ClientMessageId: ingressMessageId,
+                ResponseMessageId: responseMessageId,
+                CommandText: commandText,
+                IsPrivilegedUser: isPrivilegedUser,
+                SourceChannel: envelope.ChannelType,
+                ExternalUserId: envelope.UserExternalId),
+            ct);
+
+        var commandMetadata = new Dictionary<string, string>(
+            metadata,
+            StringComparer.Ordinal)
+        {
+            [MessageGatewayMetadata.IsGatewayCommand] = "true",
+            [MessageGatewayMetadata.GatewayCommand] = commandText,
+        };
+        var messageSystem = serviceProvider.GetRequiredService<IMessageSystem>();
+
+        if (result.ForwardToAgent)
+        {
+            var forwardedMessageId = StableId(
+                "gateway-command-agent-message",
+                envelope.ConnectorId!,
+                externalMessageId);
+            var forwardedRequestId = StableId(
+                "gateway-command-agent-request",
+                envelope.ConnectorId!,
+                externalMessageId);
+            commandMetadata[MessageGatewayMetadata.ClientRequestId] =
+                forwardedRequestId;
+
+            var forwarded = await messageSystem.SendAsync(
+                new MessageEnvelope
+                {
+                    MessageId = forwardedMessageId,
+                    From = new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.System,
+                        Id = "pudding",
+                        WorkspaceId = manifest.WorkspaceId,
+                        DisplayName = "Pudding",
+                    },
+                    To =
+                    [
+                        new MessageAddress
+                        {
+                            Kind = MessageEndpointKinds.Agent,
+                            Id = manifest.AgentInstanceId,
+                            WorkspaceId = manifest.WorkspaceId,
+                            DisplayName = manifest.DisplayName,
+                        },
+                    ],
+                    RoomId = conversationId,
+                    ConversationId = conversationId,
+                    CorrelationId = envelope.CorrelationId
+                        ?? envelope.ExternalConversationId,
+                    CausationId = externalMessageId,
+                    Audience = MessageAudiences.Direct,
+                    Visibility = MessageVisibilities.Private,
+                    ContentType = MessageContentTypes.Text,
+                    Content = string.IsNullOrWhiteSpace(result.AgentMessage)
+                        ? result.Message
+                        : result.AgentMessage,
+                    CreatedAt = envelope.Timestamp.ToUnixTimeMilliseconds(),
+                    Metadata = commandMetadata,
+                },
+                ct);
+
+            logger.LogInformation(
+                "[MessageGateway] Command forwarded after Pudding handling command={Command} connector={ConnectorId} agent={AgentId} message={MessageId}",
+                result.Command,
+                envelope.ConnectorId,
+                manifest.AgentInstanceId,
+                forwarded.MessageId);
+            return new MessageGatewayIngressResult
+            {
+                MessageId = ingressMessageId,
+                ConversationId = conversationId,
+                DeliveryIds = forwarded.DeliveryIds,
+            };
+        }
+
+        var replyMessageId = StableId(
+            "gateway-command-reply",
+            envelope.ConnectorId!,
+            externalMessageId);
+        commandMetadata[MessageGatewayMetadata.ReplyProjectedMessageId] =
+            replyMessageId;
+        commandMetadata[MessageGatewayMetadata.IdempotencyKey] =
+            replyMessageId;
+        var reply = await messageSystem.SendAsync(
+            new MessageEnvelope
+            {
+                MessageId = replyMessageId,
+                From = new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.System,
+                    Id = "pudding",
+                    WorkspaceId = manifest.WorkspaceId,
+                    DisplayName = "Pudding",
+                },
+                To =
+                [
+                    new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.Connector,
+                        Id = envelope.ConnectorId!,
+                        WorkspaceId = manifest.WorkspaceId,
+                    },
+                ],
+                RoomId = conversationId,
+                ConversationId = conversationId,
+                ReplyToMessageId = externalMessageId,
+                CorrelationId = envelope.CorrelationId
+                    ?? envelope.ExternalConversationId,
+                CausationId = externalMessageId,
+                Audience = MessageAudiences.Direct,
+                Visibility = MessageVisibilities.Private,
+                ContentType = MessageContentTypes.Text,
+                Content = result.Message,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Metadata = commandMetadata,
+            },
+            ct);
+
+        logger.LogInformation(
+            "[MessageGateway] Command intercepted command={Command} parsed={Parsed} privileged={Privileged} whitelisted={Whitelisted} connector={ConnectorId} message={MessageId}",
+            result.Command,
+            parsed,
+            requiresPrivilege,
+            isPrivilegedUser,
+            envelope.ConnectorId,
+            reply.MessageId);
+        return new MessageGatewayIngressResult
+        {
+            MessageId = ingressMessageId,
+            ConversationId = conversationId,
+            DeliveryIds = reply.DeliveryIds,
         };
     }
 
@@ -186,6 +378,16 @@ public sealed class MessageGatewayIngress(
             gate.Release();
         }
     }
+
+    private static bool IsPrivilegedFeishuUser(
+        AgentFeishuBotConfig? binding,
+        string externalUserId)
+        => binding?.PrivilegedUserOpenIds.Any(
+               allowed => string.Equals(
+                   allowed,
+                   externalUserId,
+                   StringComparison.OrdinalIgnoreCase))
+           == true;
 
     private static void ValidateEnvelope(PuddingIngressEnvelope envelope)
     {

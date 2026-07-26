@@ -355,6 +355,11 @@ public sealed record AgentFeishuBotConfig
     public string AppId { get; init; } = "";
     public string AppSecret { get; init; } = "";
     public string? Description { get; init; }
+    /// <summary>
+    /// Feishu sender open_ids allowed to execute privileged Pudding commands
+    /// through this Agent-owned bot. Regular chat is not restricted by this list.
+    /// </summary>
+    public IReadOnlyList<string> PrivilegedUserOpenIds { get; init; } = [];
 }
 
 public sealed record AgentInstancePaths
