@@ -407,3 +407,27 @@ ADR-030 V1 完成后必须满足：
 - 管理员能创建/编辑/归档 TreeNode、Book、Chapter。
 - 所有 API 均 workspace + agent scoped，并有跨 agent 隔离测试覆盖。
 - 前端在 1440px、1024px、768px、375px 宽度下无主要布局遮挡。
+
+---
+
+## 8. 2026-07-27 实施演进：同一事实源的双入口 Notion 体验
+
+记忆图书馆不是仅供管理员查看的 CRUD 页面，也不是 Agent 私有的不可见存储。它采用同一套结构化事实源，向两类使用者提供不同入口：
+
+- **Agent 入口**：通过 Memory Tools 查询、阅读和 `edit_page`；框架注入 workspace、agent、library 等 scope，Agent 不绕过写入层操作数据库。
+- **人类入口**：通过类 Notion 的页面工作区浏览、查询和编辑；同一棵多节点导航树定位 Page、Book 与 Chapter，中间文档画布阅读或内联编辑当前 Chapter，详情抽屉查看来源和链接。
+- **共享写入层**：Agent Tools 与 Admin UI 最终都调用 MemoryLibrary 的结构化写入语义，不能形成相互独立的“Agent 记忆”和“人类笔记”。
+
+Book 页面在桌面端采用以下阅读结构：
+
+```text
+Page / Book / Chapter Tree | Current Page or Chapter Document
+```
+
+交互约束：
+
+- Book 节点按需展开为 Chapter 子节点；一次只在正文画布中打开一个 Chapter，避免独立章节栏造成重复导航，也避免把所有章节退化为日志卡片流。
+- Chapter 的标题、Markdown 内容和重要性在正文画布中直接进入编辑态，并显式保存或取消。
+- 新建 Chapter 位于章节目录上下文；编辑和归档位于当前 Chapter 上下文；Book 元信息和归档位于 Book 上下文。
+- Markdown 是 Chapter 的一种可编辑内容格式，但 Book、Chapter、SourceReference、Pointer 仍是可查询的结构化实体；不把整座图书馆压成单一 Markdown blob。
+- Source、Link 与底层 ID 使用按需详情抽屉，不作为常驻第三栏；工作台始终优先保证导航树和文档画布的阅读宽度。

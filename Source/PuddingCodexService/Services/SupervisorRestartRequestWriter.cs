@@ -4,14 +4,14 @@ using PuddingCodexService.Models;
 namespace PuddingCodexService.Services;
 
 public sealed class SupervisorRestartRequestWriter(
-    CodexServiceOptions options,
-    CodexTaskCoordinator coordinator)
+    CodexServiceOptions options)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public async Task<PuddingRestartAccepted> RequestAsync(string taskId, CancellationToken ct = default)
+    public async Task<PuddingRestartAccepted> RequestAsync(
+        CodexTaskRecord task,
+        CancellationToken ct = default)
     {
-        var task = await coordinator.GetRequiredAsync(taskId, ct);
         if (task.Status != CodexTaskStatus.Completed)
             throw new InvalidOperationException("Pudding restart requires a completed Codex task.");
 
@@ -20,7 +20,19 @@ public sealed class SupervisorRestartRequestWriter(
         {
             var requestPath = Path.Combine(options.SupervisorRunDirectory, "backend.restart.request.json");
             if (File.Exists(requestPath))
+            {
+                var pending = JsonSerializer.Deserialize<SupervisorRestartRequest>(
+                    await File.ReadAllTextAsync(requestPath, ct),
+                    JsonOptions)
+                    ?? throw new InvalidOperationException("The pending Pudding restart request is invalid.");
+                if (string.Equals(pending.TaskId, task.TaskId, StringComparison.Ordinal))
+                    return new PuddingRestartAccepted(pending.RequestId, pending.TaskId, pending.NotBeforeUtc);
                 throw new InvalidOperationException("A Pudding backend restart request is already pending.");
+            }
+
+            var completed = await FindCompletedRequestAsync(task.TaskId, ct);
+            if (completed is not null)
+                return completed;
 
             var now = DateTimeOffset.UtcNow;
             var request = new SupervisorRestartRequest(
@@ -49,6 +61,34 @@ public sealed class SupervisorRestartRequestWriter(
         {
             _gate.Release();
         }
+    }
+
+    private async Task<PuddingRestartAccepted?> FindCompletedRequestAsync(
+        string taskId,
+        CancellationToken ct)
+    {
+        foreach (var path in Directory.EnumerateFiles(
+                     options.SupervisorRunDirectory,
+                     "backend.restart.result.*.json")
+                 .OrderByDescending(File.GetLastWriteTimeUtc))
+        {
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(path, ct));
+            var root = document.RootElement;
+            if (!root.TryGetProperty("taskId", out var storedTaskId)
+                || !string.Equals(storedTaskId.GetString(), taskId, StringComparison.Ordinal)
+                || !root.TryGetProperty("requestId", out var requestId))
+            {
+                continue;
+            }
+
+            var completedAt = root.TryGetProperty("completedAtUtc", out var completedAtUtc)
+                              && completedAtUtc.TryGetDateTimeOffset(out var parsed)
+                ? parsed
+                : new DateTimeOffset(File.GetLastWriteTimeUtc(path));
+            return new PuddingRestartAccepted(requestId.GetString()!, taskId, completedAt);
+        }
+
+        return null;
     }
 
     public async Task<string> GetResultAsync(string requestId, CancellationToken ct = default)

@@ -1394,6 +1394,20 @@ dotnet run --project .\Tests\Mcp.Cli\Mcp.Cli.csproj
 # 真实启动 codex mcp-server，验证 tools/list + 只读 tools/call（会调用 Codex）
 dotnet run --project .\Tests\Mcp.Cli\Mcp.Cli.csproj -- --codex-smoke
 
+# 独立 Service + fake Codex：第一个 MCP Client 断开后由第二个 Client 按 taskId 取结果
+python .\TestScripts\codex_service_smoke.py
+
+# 通过当前常驻 Service 调用真实 Codex，并验证 Client 断线恢复
+dotnet run --project .\Tests\Mcp.Cli\Mcp.Cli.csproj -- `
+  --codex-service-real-smoke http://127.0.0.1:5100/mcp
+
+# 验证 Service 中的真实 Codex 能在 Yolo 权限下启动 PowerShell 命令
+dotnet run --project .\Tests\Mcp.Cli\Mcp.Cli.csproj -- `
+  --codex-service-yolo-smoke http://127.0.0.1:5100/mcp
+
+python .\dev-up.py --status
+Invoke-WebRequest http://127.0.0.1:5100/health
+
 # 查询指定 Workspace Skill 的内存运行状态
 # GET /api/workspaces/<workspaceId>/skills/<skillId>/runtime-status
 
@@ -1408,6 +1422,16 @@ rg -n "\[MCP\]|tool.execution" .\tmp\dev\backend.out.log
 | stdio 状态为 `Unavailable` | 查 `command` 是否为直接可执行文件/裸命令、`arguments` 是否逐项配置、绝对 `workingDirectory` 是否存在；不要把整条 shell 命令塞进 `command` |
 | WindowsApps 下的 Codex 报 Access denied | Codex Desktop 包内二进制不保证后台进程可执行；安装官方 npm CLI，并在 Skill 中指向用户 npm 目录下的绝对 `codex.cmd` |
 | `--codex-smoke` 能发现工具但调用失败 | 先用同一服务账户执行 `codex --version`，再查用户目录下 Codex 登录状态；stdio 只继承 SDK OS/runtime 环境白名单，不会继承任意 Token、代理变量或自定义 `CODEX_HOME` |
+| Backend 重启时 Codex 任务中断 | Codex Skill 不应再是 stdio；确认 Endpoint 为 `http://127.0.0.1:5100/mcp`，并确认进程树是 `dev-up → Codex Service → codex`，不是 `Pudding → codex` |
+| `Codex MCP : stopped` | 查 `tmp/dev/codex-service.err.log`、5100 端口和 `Source/PuddingCodexService` 构建；不要回退为 Pudding 子进程掩盖故障 |
+| `codex_task_start` 返回后一直 Queued | 查 Service BackgroundService 是否启动、`D:\data\codex-service\tasks` 文件状态和 Service 日志 |
+| Codex 仍报告 Windows sandbox/helper 错误 | 查新 Task JSON 必须为 `sandbox: danger-full-access`、`approvalPolicy: never`；`codex_task_start` schema 不应再暴露这两个调用参数。旧 Task 不会原地升级 |
+| Task 为 Running，Pudding 重启后查不到 | 必须复用 Pudding 级 `taskId` 调 `codex_task_get`；不要用 Codex `threadId` 代替 |
+| Agent 卡片长期显示 Running，但 Task JSON 已 Completed | 这是会话中的一次性文本快照，不是任务事实源；检查是否误用了 `codex_task_start`。Pudding 自修复必须调用 `pudding_self_heal_start`，并以 Task 中的 `restartRequestId` 查询监督器结果 |
+| Codex 直接杀死 Backend，随后出现较长 502 | 下发链路错误；Task Prompt 不得包含 `taskkill`、`dotnet run PuddingRuntime`、`dev-up --restart` 或 `/yolo`。检查 Task 是否 `restartPuddingOnCompletion=true`，并确认 `tmp/dev/backend.restart.request.json` 由 Service 生成 |
+| `pudding_build_restart` 拒绝 | 只有 Completed Task 可触发；同时只允许一个 `backend.restart.request.json` 待处理 |
+| restart 结果为 `build_failed` | staging build 失败，旧 Backend 应仍在线；查 `tmp/dev/backend.err.log`，不要先杀 Backend 再排查编译 |
+| restart 为 `restarted` 但页面 502 | 对比 `backend.restart.result.<requestId>.json` 的 PID，并查 staging DLL 启动日志与 `/health`；Codex Service PID 应保持不变 |
 | stdio JSON 解析失败 | Server stdout 必须只有逐行 JSON-RPC；诊断输出写 stderr。Pudding 只在 Debug 日志记录有界 stderr 行 |
 | 有 `Tools refreshed`，目录没有工具 | 工具目录查询必须携带正确 `workspaceId`；无 Workspace 的全局目录故意不暴露动态 MCP 工具 |
 | 目录有工具，Agent Prompt 没有 | 查 `AgentRuntimeProfileResolver` 的 Workspace ID、Capability Policy 和 LLM schema；MCP schema 应来自 `RawJsonSchema` |
@@ -1415,7 +1439,7 @@ rg -n "\[MCP\]|tool.execution" .\tmp\dev\backend.out.log
 | 返回 403 workspace mismatch | Tool 快照或执行上下文跨 Workspace；禁止移除二次 Workspace 校验 |
 | `tools/list_changed` 后仍是旧清单 | 查通知名称、Session 是否仍存活和 `Tools refreshed`；失败应 fail-closed，不继续使用陈旧定义 |
 
-HTTP 日志中的 Endpoint 只保留 scheme/host/path；stdio 日志只记录可执行文件名。两者都不应包含 query、userinfo、Bearer Token、工具参数或结果正文。Codex MCP 正常时应发现 `Codex` 和 `Codex Reply`；首次调用结果的 `structuredContent.threadId` 必须保留到后续 `codex-reply`。
+HTTP 日志中的 Endpoint 只保留 scheme/host/path；stdio 日志只记录可执行文件名。两者都不应包含 query、userinfo、Bearer Token、工具参数或结果正文。独立 Codex Service 正常时应发现 `codex_task_start/get/reply/cancel`、`pudding_self_heal_start` 与 `pudding_build_restart/restart_get` 七个工具。Pudding 与 Service 之间使用 `taskId`；内部 `structuredContent.threadId` 只由 Service 保存并用于后续 Codex reply。
 
 ## 12. 修改后的最低验收
 

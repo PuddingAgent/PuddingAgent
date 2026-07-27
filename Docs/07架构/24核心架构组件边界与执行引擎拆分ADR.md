@@ -13,7 +13,7 @@ Pudding 当前架构方向是合理的：单进程、`data` 目录透明配置�
 
 主要问题不在方向，而在核心职责边界正在变重：
 
-- `AgentExecutionService` 约 2391 行，承担执行编排、上下文合成调用、LLM 调用、工具循环、SSE 写入、RuntimeActivity、子代理 run archive、错误终态处理等多种职责。
+- `AgentExecutionService` 在 2026-07-27 清理批次前已增长至 4811 行，承担执行编排、上下文合成调用、LLM 调用、工具循环、SSE 写入、RuntimeActivity、子代理 run archive、错误终态处理等多种职责。
 - `ContextPipeline` 约 1044 行，已经具备上下文分层能力，但缺少清晰的输入输出契约用于执行引擎审计和 timeline 聚合。
 - `RuntimeActivity`、`InternalEvent`、`SessionEvent`、`SubAgentRun` 已经存在，但诊断语义尚未统一到一个执行生命周期。
 - 子代理、记忆、连接器将继续扩展，如果执行引擎边界不拆，后续会形成“所有东西都塞进 AgentExecutionService”的结构性风险。
@@ -456,6 +456,15 @@ public interface ISubAgentInvocationService
 - 关键行为由 facade tests 覆盖。
 - E2E smoke 通过。
 
+#### 2026-07-27 渐进清理批次
+
+- 将工具调用 JSON 到 legacy skill 参数的纯转换提取为 `AgentToolArguments`；执行器保留薄委托方法，以维持既有反射测试契约。
+- 将 `NoOpKeyVaultService` 和 `StreamPipelineDiagnosticsAccumulator` 从执行器内嵌类型提取为独立文件。
+- `AgentExecutionService.cs` 从 4811 行降至 1550 行；非流式与流式循环分别迁入 `AgentExecutionService.Buffered.cs`（1686 行）和 `AgentExecutionService.Streaming.cs`（1375 行）的 partial 实现，降低导航和并行修改冲突。
+- partial 拆分不等于完成职责拆分：两个长方法的复杂度仍在，后续继续沿既有 facade 边界把循环阶段迁入可独立测试的专职服务。
+- 同步清理 Host 组合根：`Program.cs` 从 1608 行降至 499 行；服务注册按 Platform、Runtime、Connector、Bootstrap 分为 78-375 行的 partial 组合根文件，HTTP 管道和数据库/目录初始化由专职扩展承载，注册与中间件顺序保持不变。
+- 定向契约测试覆盖工具参数与终端后台任务 payload；Web API 组合根测试验证 `AgentExecutionService` 仍接收统一工具调用 facade。
+
 ---
 
 ## 5. 架构边界规则
@@ -543,4 +552,3 @@ ADR-024 完成后必须满足：
 - 子代理调用通过 `ISubAgentInvocationService` 进入执行引擎。
 - 会话层只接收用户可见 frame，不处理 provider/tool/sub-agent 细节。
 - 现有核心测试和 E2E smoke 通过。
-

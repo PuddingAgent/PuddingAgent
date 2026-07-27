@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-26 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +飞书 CardKit 流式回复投影；MCP stdio/Codex 子进程接入与 fake 往返
+> 最后更新: 2026-07-27 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +飞书 CardKit 流式回复投影；独立 Codex MCP Service、固定 Yolo 任务与 Backend-only 自修复重启
 
 ---
 
@@ -14,7 +14,7 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 
 | 文件 | 用途 |
 |------|------|
-| `../dev-up.py` | 本地 Backend/Frontend/Proxy 启动器；前端短时间连续退出时熔断并指向 `tmp/dev/frontend.err.log`，避免编译错误触发无限重启；`--auto-yolo` 以后台健康等待执行，不受前台监督循环阻塞 |
+| `../dev-up.py` | 本地 Backend/Codex MCP Service/Frontend/Proxy 监督器；Codex 与 Backend 为同级进程；消费延迟重启请求，先 staging build 再只切换 Backend；各受管角色有快速失败熔断 |
 | `../How-Debuge.md` | 可重复使用的启动、会话、SSE、子代理与工具诊断路径 |
 
 ---
@@ -24,6 +24,7 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 ```
 Source/
 ├── PuddingAgent/              # 入口项目 (Program.cs, 启动配置)
+├── PuddingCodexService/       # 🔑 宿主外 Codex MCP Sidecar（持久任务/自修复重启握手）
 ├── PuddingRuntime/            # 🔑 运行时核心 (Agent Loop, LLM 调用, 工具系统)
 ├── PuddingPlatform/           # 🔑 平台层 (Session 管理, API, 数据持久化)
 ├── PuddingMemoryEngine/       # 🔑 记忆引擎 (Library/Book/Chapter, FTS5)
@@ -49,7 +50,10 @@ Source/
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计；对 canonical `ExpectedOutputContract` 保留最近一次合格报告，防止最终 DONE 状态摘要覆盖完整交付 |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行编排入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计；对 canonical `ExpectedOutputContract` 保留最近一次合格报告，防止最终 DONE 状态摘要覆盖完整交付；纯工具参数转换、KeyVault 空实现与流式诊断聚合已移入 `Services/AgentExecution/` |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` + `AgentExecutionService.Streaming.cs` | 同一执行器的过渡期 partial 主循环边界；分别承载结构化非流式循环和面向 UI 的 SSE 流式循环，先降低单文件导航/冲突成本，后续仍须沿 facade 继续拆解长方法 |
+| `Services/AgentExecution/AgentToolArguments.cs` | LLM tool-call JSON 到 legacy skill 参数与 terminal payload 的纯转换边界；执行器保留薄委托以兼容既有反射测试 |
+| `Services/AgentExecution/NoOpKeyVaultService.cs` + `StreamPipelineDiagnosticsAccumulator.cs` | 可选 KeyVault 的无副作用 fallback，以及流式 KeyVault/SSM 热路径指标的线程安全聚合；均不再作为执行器内嵌类型 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | Smart 子代理五段报告合同的共享解析/校验与执行期候选保留器；只在显式 canonical `ExpectedOutputContract` 下恢复完整报告 |
 | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs` | 主 Agent、工具调用和子代理共用的稳定执行身份；贯穿 Conversation/Turn/Command/Run/Tool/Invocation |
 | `PuddingCore/Runtime/ExecutionProgressRegistry.cs` | 主 Run 进程内进展注册表；按 Conversation 汇聚子执行信号，区分 liveness/meaningful，并拒绝相同 Run+阶段+指纹的重复续期 |
@@ -159,6 +163,16 @@ Source/
 
 ---
 
+## 🔑 PuddingCodexService — 宿主外 Codex 执行边界
+
+| 文件 | 用途 |
+|------|------|
+| `PuddingCodexService/Program.cs` + `CodexServiceOptions.cs` | loopback Streamable HTTP MCP Host；开发机固定 `danger-full-access/never`，同时保留严格仓库 cwd 边界与 Service/数据/监督器路径配置 |
+| `Services/CodexTaskCoordinator.cs` + `FileCodexTaskStore.cs` | `taskId` 持久异步队列；HTTP Client 断开后继续执行，Service 重启恢复 Queued/Running；自修复任务固定禁止 Codex 控制 Pudding 进程，并在完成后自动、幂等地安排 staging Backend restart |
+| `Services/CodexMcpExecutor.cs` | Service 独占的 `codex mcp-server` stdio Client；固定 Yolo 权限、顺序执行、超时、断线重连与结构化结果保留 |
+| `Tools/CodexTaskTools.cs` | 普通 `codex_task_start/get/reply/cancel`、专用 `pudding_self_heal_start` 与特权 `pudding_build_restart/restart_get`；调用方不能覆盖 Codex sandbox/approval |
+| `Services/SupervisorRestartRequestWriter.cs` | 只接受 Completed Codex Task；原子写入延迟 Backend restart request，并按 taskId 复用 pending/result 身份，避免崩溃窗口重复重启 |
+
 ## 🔑 PuddingPlatform — 平台层
 
 ### 数据层
@@ -198,7 +212,7 @@ Source/
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；只以实例 manifest 的 `preferredProviderId + preferredModelId` 作为主 Agent 模型身份，再由 `llm.providers.json` 精确补齐连接配置；缺失或无效时返回 `agent_configuration_invalid`，不回退 |
 | `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，实现 `IAgentSelfMaintenanceService` 的受控自维护写入，并以 `IAgentChannelBinder` 单写者维护 Agent `channelIds` 引用 |
 | `Services/ChannelConfigurationFileService.cs` | 文件化渠道配置唯一写入边界；维护 `config/channel.providers.json` 与 `channels/{channelId}/manifest.json`，Secret 只返回是否已配置，校验唯一 Feishu App ID 和 Agent 绑定，并在启动时把旧 Agent `feishu` 对象原地迁移为渠道实例 |
-| `Services/Mcp/McpServerConfig.cs` + `McpConnectionManager.cs` | Workspace MCP Client 生命周期；官方 SDK Streamable HTTP/SSE 与本地 stdio 子进程、严格配置、KeyVault Bearer 引用、受限子进程环境、DNS/SSRF 防线、工具热发现和 fail-closed 状态；可直接托管 `codex mcp-server` |
+| `Services/Mcp/McpServerConfig.cs` + `McpConnectionManager.cs` | Workspace MCP Client 生命周期；官方 SDK Streamable HTTP/SSE 与本地 stdio 子进程、严格配置、KeyVault Bearer 引用、受限子进程环境、DNS/SSRF 防线、工具热发现和 fail-closed 状态；Codex 自修复场景连接独立 HTTP Service，不由 Backend 托管进程 |
 | `Services/Mcp/McpPuddingTool.cs` | MCP Tool → `IPuddingTool` 适配；稳定命名空间、原始 JSON Schema、高风险审批、Workspace 二次隔离、超时与结果上限 |
 | `Services/VisionArtifactStorageService.cs` + `Controllers/Api/VisionArtifactApiController.cs` + `Services/VisualArtifactReference.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；只持久化 provider-safe JPEG/PNG/WebP，同时提供 LLM 可消费引用与经过 workspace 根目录校验的受控本地路径；不支持的 MIME 返回 HTTP 415，不得成为 500 |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
@@ -243,17 +257,25 @@ Source/
 ### 记忆图书馆管理前端
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/memory-library/index.tsx` | 记忆图书馆工作台入口；组织 Workspace/Agent/Library 作用域、搜索与 Page/Book 操作 |
-| `PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageTree.tsx` | Notebook/Page 树；长标题单行省略并保留原文提示 |
-| `PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageEditor.tsx` | Page/Book 主内容区与未选择节点空状态 |
-| `PuddingPlatformAdmin/src/pages/memory-library/components/MemoryInspector.tsx` | 节点信息、来源引用与链接检查器 |
-| `PuddingPlatformAdmin/src/pages/memory-library/styles.less` | 三栏工作台响应式布局、面板滚动边界和工具栏收缩规则 |
+| `PuddingPlatformAdmin/src/pages/memory-library/index.tsx` | 记忆图书馆工作台入口；组织 Workspace/Agent/Library 作用域、搜索、Page/Book/Chapter 操作、内联更新与详情 Drawer |
+| `PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageTree.tsx` | Page/Book/Chapter 多节点树；当前 Book 的 Chapter 按需挂为子节点，支持长标题省略与完整行选择 |
+| `PuddingPlatformAdmin/src/pages/memory-library/components/MemoryPageEditor.tsx` | 类 Notion 文档画布；当前 Page/Chapter 的 Markdown 阅读、内联编辑及新建/归档入口 |
+| `PuddingPlatformAdmin/src/pages/memory-library/components/MemoryInspector.tsx` | 节点信息、来源引用与链接检查器；ID 可复制且展示层去重 |
+| `PuddingPlatformAdmin/src/pages/memory-library/styles.less` | 阅读优先的双栏工作台、详情 Drawer、Chapter 文档画布及 900/600px 响应式规则 |
 
 ### LLM 资源池前端
 | 文件 | 用途 |
 |------|------|
 | `PuddingPlatformAdmin/src/pages/llm-resource-pool/providerTemplates.ts` | 服务商预设目录；包含 DeepSeek、Moonshot Kimi K3、小米 MiMo、DashScope、OpenAI、BigModel 等 Provider/Model 初始配置 |
 | `PuddingPlatformAdmin/src/pages/llm-resource-pool/index.tsx` | LLM 服务商与模型管理；服务商配置支持并发数、TPM、RPM 并写入 `llm.providers.json` |
+
+### PuddingAgent Host 组合根
+| 文件 | 用途 |
+|------|------|
+| `PuddingAgent/Program.cs` | Host 顶层生命周期入口；只保留数据根准备、基础 Web/JWT 配置、组合根调用、进程生命周期和 `Run` |
+| `PuddingAgent/Services/PuddingServiceCollectionExtensions*.cs` | 服务注册组合根；入口文件只表达调用顺序，Platform、Runtime、Connector、Bootstrap 四个 partial 文件分别拥有各自注册边界，并保持原始注册顺序 |
+| `PuddingAgent/Services/PuddingWebApplicationExtensions.cs` | HTTP middleware、健康检查、Legacy API 诊断与 SPA fallback；路由顺序是运行时契约 |
+| `PuddingAgent/Services/PuddingApplicationInitializationExtensions.cs` | Platform/Memory schema 幂等初始化、Conversation Event Store 建表、Workspace Catalog 加载与 jieba 回填 |
 
 ### 消息系统
 | 文件 | 用途 |

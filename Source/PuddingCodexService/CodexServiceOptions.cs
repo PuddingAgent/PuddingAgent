@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace PuddingCodexService;
 
 public sealed class CodexServiceOptions
@@ -7,6 +9,8 @@ public sealed class CodexServiceOptions
     public string SupervisorRunDirectory { get; set; } = string.Empty;
     public string CodexCommand { get; set; } = OperatingSystem.IsWindows() ? "codex.cmd" : "codex";
     public string[] CodexArguments { get; set; } = ["mcp-server"];
+    public string TaskSandbox { get; set; } = "danger-full-access";
+    public string TaskApprovalPolicy { get; set; } = "never";
     public int ConnectionTimeoutSeconds { get; set; } = 30;
     public int CallTimeoutSeconds { get; set; } = 3_600;
     public int ShutdownTimeoutSeconds { get; set; } = 5;
@@ -35,6 +39,12 @@ public sealed class CodexServiceOptions
             configuration["CodexService:CodexCommand"],
             Environment.GetEnvironmentVariable("PUDDING_CODEX_COMMAND"),
             result.CodexCommand);
+        if (Environment.GetEnvironmentVariable("PUDDING_CODEX_ARGUMENTS_JSON") is { Length: > 0 } argumentsJson)
+        {
+            result.CodexArguments = JsonSerializer.Deserialize<string[]>(argumentsJson)
+                                    ?? throw new InvalidOperationException(
+                                        "PUDDING_CODEX_ARGUMENTS_JSON must be a JSON string array.");
+        }
         return result;
     }
 
@@ -50,6 +60,13 @@ public sealed class CodexServiceOptions
             throw new InvalidOperationException("CodexService:CodexCommand is required.");
         if (CodexArguments.Length == 0)
             throw new InvalidOperationException("CodexService:CodexArguments must not be empty.");
+        if (!string.Equals(TaskSandbox, "danger-full-access", StringComparison.Ordinal)
+            || !string.Equals(TaskApprovalPolicy, "never", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "PuddingCodexService currently requires Yolo execution: " +
+                "TaskSandbox=danger-full-access and TaskApprovalPolicy=never.");
+        }
         if (ConnectionTimeoutSeconds is < 1 or > 300)
             throw new InvalidOperationException("CodexService:ConnectionTimeoutSeconds must be between 1 and 300.");
         if (CallTimeoutSeconds is < 1 or > 86_400)

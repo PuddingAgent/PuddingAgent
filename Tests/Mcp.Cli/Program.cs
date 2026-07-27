@@ -19,6 +19,66 @@ if (args.Contains("--codex-smoke", StringComparer.Ordinal))
     return;
 }
 
+var serviceSmokeIndex = Array.IndexOf(args, "--codex-service-smoke");
+if (serviceSmokeIndex >= 0)
+{
+    var endpoint = serviceSmokeIndex + 1 < args.Length
+        ? new Uri(args[serviceSmokeIndex + 1], UriKind.Absolute)
+        : new Uri("http://127.0.0.1:5100/mcp");
+    await RunCodexServiceSmokeAsync(
+        endpoint,
+        "delay:1500 verify task survives Pudding MCP client disconnect",
+        "FAKE CODEX START");
+    return;
+}
+
+var realServiceSmokeIndex = Array.IndexOf(args, "--codex-service-real-smoke");
+if (realServiceSmokeIndex >= 0)
+{
+    var endpoint = realServiceSmokeIndex + 1 < args.Length
+        ? new Uri(args[realServiceSmokeIndex + 1], UriKind.Absolute)
+        : new Uri("http://127.0.0.1:5100/mcp");
+    await RunCodexServiceSmokeAsync(
+        endpoint,
+        "Reply with exactly PUDDING_CODEX_SERVICE_OK. Do not inspect or modify files.",
+        "PUDDING_CODEX_SERVICE_OK");
+    return;
+}
+
+var selfHealServiceSmokeIndex = Array.IndexOf(args, "--codex-service-self-heal-smoke");
+if (selfHealServiceSmokeIndex >= 0)
+{
+    var endpoint = selfHealServiceSmokeIndex + 1 < args.Length
+        ? new Uri(args[selfHealServiceSmokeIndex + 1], UriKind.Absolute)
+        : new Uri("http://127.0.0.1:5100/mcp");
+    await RunCodexServiceSelfHealSmokeAsync(endpoint);
+    return;
+}
+
+var yoloServiceSmokeIndex = Array.IndexOf(args, "--codex-service-yolo-smoke");
+if (yoloServiceSmokeIndex >= 0)
+{
+    var endpoint = yoloServiceSmokeIndex + 1 < args.Length
+        ? new Uri(args[yoloServiceSmokeIndex + 1], UriKind.Absolute)
+        : new Uri("http://127.0.0.1:5100/mcp");
+    await RunCodexServiceSmokeAsync(
+        endpoint,
+        "Use the shell to run `powershell -NoProfile -Command \"Write-Output PUDDING_CODEX_YOLO_SHELL_OK\"`. Only after the command succeeds, reply with exactly PUDDING_CODEX_YOLO_SHELL_OK. Do not modify files.",
+        "PUDDING_CODEX_YOLO_SHELL_OK");
+    return;
+}
+
+var restartSmokeIndex = Array.IndexOf(args, "--codex-service-request-restart");
+if (restartSmokeIndex >= 0)
+{
+    if (restartSmokeIndex + 2 >= args.Length)
+        throw new ArgumentException("--codex-service-request-restart requires ENDPOINT and TASK_ID.");
+    await RequestPuddingRestartAsync(
+        new Uri(args[restartSmokeIndex + 1], UriKind.Absolute),
+        args[restartSmokeIndex + 2]);
+    return;
+}
+
 Console.WriteLine("=== MCP strict protocol CLI ===");
 
 await using var server = await StrictMcpServer.StartAsync();
@@ -137,6 +197,139 @@ static async Task RunCodexSmokeAsync()
         throw new InvalidOperationException("Codex MCP smoke response did not contain the expected marker.");
 
     Console.WriteLine("PASS real codex mcp-server tools/list + tools/call");
+}
+
+static async Task RunCodexServiceSmokeAsync(Uri endpoint, string prompt, string expectedMarker)
+{
+    using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+    string taskId;
+    await using (var firstClient = await CreateHttpMcpClientAsync(endpoint, timeout.Token))
+    {
+        var tools = await firstClient.ListToolsAsync(cancellationToken: timeout.Token);
+        var start = tools.Single(tool => tool.Name == "codex_task_start");
+        var started = await start.CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["prompt"] = prompt,
+            },
+            cancellationToken: timeout.Token);
+        taskId = started.StructuredContent?.GetProperty("taskId").GetString()
+                 ?? throw new InvalidOperationException("Codex Service did not return taskId.");
+        Console.WriteLine($"Started durable Codex task {taskId}; disposing first MCP client.");
+    }
+
+    await Task.Delay(250, timeout.Token);
+
+    await using var secondClient = await CreateHttpMcpClientAsync(endpoint, timeout.Token);
+    var secondTools = await secondClient.ListToolsAsync(cancellationToken: timeout.Token);
+    var get = secondTools.Single(tool => tool.Name == "codex_task_get");
+    while (true)
+    {
+        var result = await get.CallAsync(
+            new Dictionary<string, object?> { ["taskId"] = taskId },
+            cancellationToken: timeout.Token);
+        var structured = result.StructuredContent
+                         ?? throw new InvalidOperationException("codex_task_get returned no structuredContent.");
+        var status = structured.GetProperty("status").GetString();
+        Console.WriteLine($"Task {taskId}: {status}");
+        if (status == "Completed")
+        {
+            var resultJson = structured.GetProperty("resultJson").GetString() ?? string.Empty;
+            if (!resultJson.Contains(expectedMarker, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"Codex Service result did not contain expected marker '{expectedMarker}'.");
+            break;
+        }
+        if (status is "Failed" or "Cancelled")
+            throw new InvalidOperationException($"Codex Service task ended as {status}: {structured}");
+        await Task.Delay(500, timeout.Token);
+    }
+
+    Console.WriteLine("PASS Codex Service task survived MCP client disconnect and was recovered by taskId");
+}
+
+static async Task RunCodexServiceSelfHealSmokeAsync(Uri endpoint)
+{
+    using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+    await using var client = await CreateHttpMcpClientAsync(endpoint, timeout.Token);
+    var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
+    var start = tools.Single(tool => tool.Name == "pudding_self_heal_start");
+    var started = await start.CallAsync(
+        new Dictionary<string, object?>
+        {
+            ["prompt"] = "Validate the fake self-heal workflow without changing files.",
+        },
+        cancellationToken: timeout.Token);
+    var taskId = started.StructuredContent?.GetProperty("taskId").GetString()
+                 ?? throw new InvalidOperationException("Self-heal workflow did not return taskId.");
+    if (started.StructuredContent?.GetProperty("restartPuddingOnCompletion").GetBoolean() != true)
+        throw new InvalidOperationException("Self-heal workflow did not declare automatic restart scheduling.");
+
+    var get = tools.Single(tool => tool.Name == "codex_task_get");
+    while (true)
+    {
+        var result = await get.CallAsync(
+            new Dictionary<string, object?> { ["taskId"] = taskId },
+            cancellationToken: timeout.Token);
+        var structured = result.StructuredContent
+                         ?? throw new InvalidOperationException("codex_task_get returned no structuredContent.");
+        var status = structured.GetProperty("status").GetString();
+        Console.WriteLine($"Self-heal task {taskId}: {status}");
+        if (status == "Completed"
+            && structured.TryGetProperty("restartRequestId", out var restartRequestId)
+            && restartRequestId.ValueKind == JsonValueKind.String)
+        {
+            Console.WriteLine($"RestartRequestId={restartRequestId.GetString()}");
+            break;
+        }
+        if (status is "Failed" or "Cancelled")
+            throw new InvalidOperationException($"Self-heal workflow ended as {status}: {structured}");
+        await Task.Delay(500, timeout.Token);
+    }
+
+    Console.WriteLine("PASS safe Codex self-heal task automatically scheduled staged Pudding restart");
+}
+
+static async Task<McpClient> CreateHttpMcpClientAsync(Uri endpoint, CancellationToken ct)
+{
+    var transport = new HttpClientTransport(
+        new HttpClientTransportOptions
+        {
+            Endpoint = endpoint,
+            Name = "PuddingCodexServiceSmoke",
+            TransportMode = HttpTransportMode.StreamableHttp,
+            ConnectionTimeout = TimeSpan.FromSeconds(10),
+            OwnsSession = true,
+        },
+        NullLoggerFactory.Instance);
+    return await McpClient.CreateAsync(
+        transport,
+        new McpClientOptions
+        {
+            ClientInfo = new Implementation
+            {
+                Name = "PuddingCodexServiceSmoke",
+                Version = "1.0.0",
+            },
+            InitializationTimeout = TimeSpan.FromSeconds(10),
+        },
+        NullLoggerFactory.Instance,
+        ct);
+}
+
+static async Task RequestPuddingRestartAsync(Uri endpoint, string taskId)
+{
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    await using var client = await CreateHttpMcpClientAsync(endpoint, timeout.Token);
+    var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
+    var restart = tools.Single(tool => tool.Name == "pudding_build_restart");
+    var result = await restart.CallAsync(
+        new Dictionary<string, object?> { ["taskId"] = taskId },
+        cancellationToken: timeout.Token);
+    var structured = result.StructuredContent
+                     ?? throw new InvalidOperationException("pudding_build_restart returned no structuredContent.");
+    Console.WriteLine($"RestartRequestId={structured.GetProperty("requestId").GetString()}");
+    Console.WriteLine($"NotBeforeUtc={structured.GetProperty("notBeforeUtc").GetDateTimeOffset():O}");
 }
 
 static void Check(string name, bool condition, ref int passed)
@@ -466,7 +659,7 @@ internal static class FakeCodexStdioServer
                 {
                     "initialize" => Initialize(id, root),
                     "tools/list" => ToolList(id),
-                    "tools/call" => ToolCall(id, root),
+                    "tools/call" => await ToolCallAsync(id, root),
                     "ping" => new { jsonrpc = "2.0", id = id.Clone(), result = new { } },
                     _ => new
                     {
@@ -546,12 +739,18 @@ internal static class FakeCodexStdioServer
         },
     };
 
-    private static object ToolCall(JsonElement id, JsonElement root)
+    private static async Task<object> ToolCallAsync(JsonElement id, JsonElement root)
     {
         var parameters = root.GetProperty("params");
         var toolName = parameters.GetProperty("name").GetString();
         var arguments = parameters.GetProperty("arguments");
         var prompt = arguments.GetProperty("prompt").GetString();
+        if (prompt is not null && prompt.StartsWith("delay:", StringComparison.Ordinal))
+        {
+            var value = prompt["delay:".Length..].Split(' ', 2)[0];
+            if (int.TryParse(value, out var delayMilliseconds) && delayMilliseconds is > 0 and <= 10_000)
+                await Task.Delay(delayMilliseconds);
+        }
         var content = toolName switch
         {
             "codex" => $"FAKE CODEX START: {prompt}",

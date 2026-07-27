@@ -46,7 +46,16 @@ public sealed class CodexMcpExecutor(
             task.TaskId,
             toolName,
             task.WorkingDirectory);
-        var result = await tool.CallAsync(arguments, cancellationToken: timeout.Token);
+        CallToolResult result;
+        try
+        {
+            result = await tool.CallAsync(arguments, cancellationToken: timeout.Token);
+        }
+        catch
+        {
+            await ResetClientAsync();
+            throw;
+        }
         var threadId = ExtractThreadId(result.StructuredContent) ?? task.ThreadId;
         var resultJson = JsonSerializer.Serialize(new
         {
@@ -131,9 +140,25 @@ public sealed class CodexMcpExecutor(
 
     public async ValueTask DisposeAsync()
     {
-        if (_client is not null)
-            await _client.DisposeAsync();
+        await ResetClientAsync();
         _connectGate.Dispose();
+    }
+
+    private async Task ResetClientAsync()
+    {
+        var client = Interlocked.Exchange(ref _client, null);
+        _tools = new Dictionary<string, McpClientTool>();
+        if (client is not null)
+        {
+            try
+            {
+                await client.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[CodexService] Failed to dispose a broken Codex MCP session.");
+            }
+        }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

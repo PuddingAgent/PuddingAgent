@@ -21,27 +21,36 @@ const MemorySearchResults: React.FC<MemorySearchResultsProps> = ({
 
   return (
     <List
+      className="memory-search-results"
       size="small"
       dataSource={results}
       renderItem={(item) => (
         <List.Item
-          style={{ cursor: 'pointer' }}
+          className="memory-search-result"
+          role="button"
+          tabIndex={0}
           onClick={() => onSelect(item.bookId, item.chapterId)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onSelect(item.bookId, item.chapterId);
+            }
+          }}
         >
           <List.Item.Meta
             avatar={<SearchOutlined style={{ color: '#1890ff' }} />}
             title={
-              <Text strong>{item.bookTitle}</Text>
+              <Text strong className="memory-search-result-title">{item.bookTitle}</Text>
             }
             description={
               <div>
                 <Paragraph
                   ellipsis={{ rows: 2 }}
-                  style={{ marginBottom: 4, fontSize: 13 }}
+                  className="memory-search-result-snippet"
                 >
                   {item.snippet}
                 </Paragraph>
-                <Tag style={{ fontSize: 11 }}>
+                <Tag bordered={false} className="memory-search-result-score">
                   相关度: {item.score.toFixed(2)}
                 </Tag>
               </div>

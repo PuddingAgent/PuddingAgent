@@ -1,9 +1,29 @@
-import { Typography, Tag, Spin, Empty, Divider, Space, Popconfirm, Button } from 'antd';
-import { BookOutlined, FileTextOutlined, DeleteOutlined } from '@ant-design/icons';
-import React from 'react';
-import type { MemoryBookPageDto } from '../types';
+import {
+  Typography,
+  Tag,
+  Spin,
+  Empty,
+  Space,
+  Popconfirm,
+  Button,
+  Input,
+  InputNumber,
+} from 'antd';
+import {
+  BookOutlined,
+  FileTextOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+  SaveOutlined,
+  CloseOutlined,
+} from '@ant-design/icons';
+import React, { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { MemoryBookPageDto, MemoryChapterSectionDto } from '../types';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 interface MemoryPageEditorProps {
   loading: boolean;
@@ -12,8 +32,14 @@ interface MemoryPageEditorProps {
   nodeTitle?: string;
   nodeSummary?: string;
   nodeType?: string;
-  /** 归档章节回调。 */
+  selectedChapterId?: string;
+  onCreateChapter?: () => void;
+  onUpdateChapter?: (
+    chapterId: string,
+    values: { title: string; content: string; importance: number },
+  ) => Promise<boolean>;
   onArchiveChapter?: (chapterId: string) => void;
+  saving?: boolean;
 }
 
 const MemoryPageEditor: React.FC<MemoryPageEditorProps> = ({
@@ -22,85 +48,205 @@ const MemoryPageEditor: React.FC<MemoryPageEditorProps> = ({
   nodeTitle,
   nodeSummary,
   nodeType,
+  selectedChapterId,
+  onCreateChapter,
+  onUpdateChapter,
   onArchiveChapter,
+  saving,
 }) => {
+  const [editingChapterId, setEditingChapterId] = useState<string>();
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftContent, setDraftContent] = useState('');
+  const [draftImportance, setDraftImportance] = useState(0.5);
+
+  useEffect(() => {
+    if (editingChapterId && editingChapterId !== selectedChapterId) {
+      setEditingChapterId(undefined);
+    }
+  }, [editingChapterId, selectedChapterId]);
+
+  const beginEditing = (chapter: MemoryChapterSectionDto) => {
+    setDraftTitle(chapter.title);
+    setDraftContent(chapter.content);
+    setDraftImportance(chapter.importance);
+    setEditingChapterId(chapter.chapterId);
+  };
+
+  const saveEditing = async () => {
+    if (!editingChapterId || !onUpdateChapter || !draftTitle.trim() || !draftContent.trim()) return;
+    const saved = await onUpdateChapter(editingChapterId, {
+      title: draftTitle.trim(),
+      content: draftContent,
+      importance: draftImportance,
+    });
+    if (saved) setEditingChapterId(undefined);
+  };
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+      <div className="memory-editor-loading">
         <Spin />
       </div>
     );
   }
 
-  // Book page view
   if (book) {
+    const selectedChapter = book.chapters.find((chapter) => chapter.chapterId === selectedChapterId)
+      ?? book.chapters[0];
+    const selectedChapterIndex = selectedChapter
+      ? book.chapters.findIndex((chapter) => chapter.chapterId === selectedChapter.chapterId)
+      : -1;
+    const isEditing = selectedChapter?.chapterId === editingChapterId;
+
     return (
-      <div>
-        <Title level={3} style={{ marginBottom: 4 }}>{book.title}</Title>
-        <div style={{ marginBottom: 16 }}>
-          <Tag color="blue">{book.status}</Tag>
-          <Text type="secondary" style={{ marginLeft: 8 }}>
-            {book.chapters.length} 个章节
-          </Text>
-        </div>
-        {book.summary && (
-          <Paragraph type="secondary" style={{ marginBottom: 24 }}>
-            {book.summary}
-          </Paragraph>
-        )}
-        <Divider />
-        {book.chapters.length === 0 ? (
-          <Empty description="暂无章节" />
-        ) : (
-          book.chapters.map((ch) => (
-            <div key={ch.chapterId} style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <FileTextOutlined />
-                <Title level={5} style={{ margin: 0 }}>{ch.title}</Title>
-              </div>
-              <Paragraph
-                ellipsis={{ rows: 4, expandable: true, symbol: '展开' }}
-                style={{ whiteSpace: 'pre-wrap', color: '#555' }}
-              >
-                {ch.content}
-              </Paragraph>
-              <Space size="small" style={{ fontSize: 12, color: '#999' }}>
-                <Tag>{ch.contentType}</Tag>
-                <span>重要性: {ch.importance.toFixed(2)}</span>
-              </Space>
-              {onArchiveChapter && (
-                <div style={{ marginTop: 4 }}>
-                  <Popconfirm title="归档此章节？" onConfirm={() => onArchiveChapter(ch.chapterId)}>
-                    <Button size="small" type="text" danger icon={<DeleteOutlined />}>
-                      归档
-                    </Button>
-                  </Popconfirm>
-                </div>
-              )}
+      <article className="memory-book-page">
+        <header className="memory-book-header">
+          <div className="memory-book-eyebrow">
+            <BookOutlined />
+            <span>记忆 Book</span>
+          </div>
+          <Title level={2}>{book.title}</Title>
+          <Space size={8} wrap className="memory-book-meta">
+            <Tag color={book.status === 'active' ? 'green' : 'default'}>{book.status}</Tag>
+            <Text type="secondary">{book.chapters.length} 个章节</Text>
+          </Space>
+          {book.summary && (
+            <div className="memory-book-summary memory-book-summary-markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{book.summary}</ReactMarkdown>
             </div>
-          ))
-        )}
-      </div>
+          )}
+        </header>
+
+        <main className="memory-chapter-reader memory-chapter-reader--standalone">
+            {selectedChapter ? (
+              <>
+                <header className="memory-current-chapter-header">
+                  <div className="memory-current-chapter-copy">
+                    <div className="memory-book-eyebrow">
+                      <FileTextOutlined />
+                      <span>章节 {String(selectedChapterIndex + 1).padStart(2, '0')}</span>
+                    </div>
+                    <Title level={2}>{selectedChapter.title}</Title>
+                    <Space size={6} wrap className="memory-current-chapter-meta">
+                      <Tag bordered={false}>{selectedChapter.contentType}</Tag>
+                      <Text type="secondary">重要性 {selectedChapter.importance.toFixed(2)}</Text>
+                    </Space>
+                  </div>
+                  <div className="memory-current-chapter-actions">
+                    {onUpdateChapter && !isEditing && (
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => beginEditing(selectedChapter)}
+                      >
+                        编辑
+                      </Button>
+                    )}
+                    {onArchiveChapter && (
+                      <Popconfirm
+                        title="归档此章节？"
+                        onConfirm={() => onArchiveChapter(selectedChapter.chapterId)}
+                      >
+                        <Button
+                          aria-label={`归档章节 ${selectedChapter.title}`}
+                          title="归档章节"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                        />
+                      </Popconfirm>
+                    )}
+                  </div>
+                </header>
+                {isEditing ? (
+                  <div className="memory-chapter-inline-editor">
+                    <Input
+                      className="memory-chapter-title-input"
+                      value={draftTitle}
+                      onChange={(event) => setDraftTitle(event.target.value)}
+                      placeholder="章节标题"
+                    />
+                    <Input.TextArea
+                      className="memory-chapter-content-input"
+                      value={draftContent}
+                      onChange={(event) => setDraftContent(event.target.value)}
+                      autoSize={{ minRows: 14, maxRows: 32 }}
+                      placeholder="使用 Markdown 编写章节内容"
+                    />
+                    <div className="memory-chapter-inline-editor-footer">
+                      <label htmlFor="memory-chapter-importance">
+                        <Text type="secondary">重要性</Text>
+                        <InputNumber
+                          id="memory-chapter-importance"
+                          min={0}
+                          max={1}
+                          step={0.1}
+                          value={draftImportance}
+                          onChange={(value) => setDraftImportance(value ?? 0.5)}
+                        />
+                      </label>
+                      <Space size={8}>
+                        <Button
+                          icon={<CloseOutlined />}
+                          onClick={() => setEditingChapterId(undefined)}
+                          disabled={saving}
+                        >
+                          取消
+                        </Button>
+                        <Button
+                          type="primary"
+                          icon={<SaveOutlined />}
+                          onClick={saveEditing}
+                          loading={saving}
+                          disabled={!draftTitle.trim() || !draftContent.trim()}
+                        >
+                          保存
+                        </Button>
+                      </Space>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="memory-chapter-markdown memory-chapter-document">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedChapter.content}</ReactMarkdown>
+                  </div>
+                )}
+              </>
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="此 Book 暂无章节"
+              >
+                {onCreateChapter && (
+                  <Button type="primary" icon={<PlusOutlined />} onClick={onCreateChapter}>
+                    新建第一章
+                  </Button>
+                )}
+              </Empty>
+            )}
+        </main>
+      </article>
     );
   }
 
-  // TreeNode info view (non-Book)
   if (nodeTitle) {
     return (
-      <div>
-        <Title level={3} style={{ marginBottom: 4 }}>
-          <BookOutlined style={{ marginRight: 8 }} />
-          {nodeTitle}
-        </Title>
+      <article className="memory-node-page">
+        <div className="memory-book-eyebrow">
+          <BookOutlined />
+          <span>目录页面</span>
+        </div>
+        <Title level={2}>{nodeTitle}</Title>
         {nodeType && (
-          <Tag style={{ marginBottom: 16 }}>{nodeType}</Tag>
+          <Tag className="memory-node-type">{nodeType}</Tag>
         )}
         {nodeSummary ? (
-          <Paragraph type="secondary">{nodeSummary}</Paragraph>
+          <div className="memory-book-summary memory-book-summary-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{nodeSummary}</ReactMarkdown>
+          </div>
         ) : (
           <Empty description="此节点为目录页，请选择子节点或挂载的 Book。" />
         )}
-      </div>
+      </article>
     );
   }
 

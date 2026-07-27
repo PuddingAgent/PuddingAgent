@@ -4,6 +4,7 @@ Pudding Agent local development launcher.
 
 Starts:
   - backend app on 0.0.0.0:5000
+  - Codex MCP service on 127.0.0.1:5100
   - frontend dev server on 0.0.0.0:8000
   - reverse proxy on 0.0.0.0:80
 """
@@ -25,7 +26,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -36,6 +38,7 @@ DATA_LOG_DIR = ROOT / "data" / "logs"
 DEV_UP_LOG_PREFIX = "dev-up"
 
 BACKEND_PORT = 5000
+CODEX_SERVICE_PORT = 5100
 FRONTEND_PORT = 8000
 LOOPBACK_HOST = "0.0.0.0"
 LOCAL_CONNECT_HOST = "127.0.0.1"  # 代理连接后端/前端时使用，0.0.0.0 不可作为连接目标
@@ -46,18 +49,25 @@ HEALTH_PATH = "/health"
 PROCESS_STOP_TIMEOUT_SECONDS = 10.0
 FRONTEND_RESTART_LIMIT = int(os.environ.get("PUDDING_FRONTEND_RESTART_LIMIT", "3"))
 FRONTEND_RESTART_WINDOW_SECONDS = float(os.environ.get("PUDDING_FRONTEND_RESTART_WINDOW_SECONDS", "30"))
+BACKEND_RESTART_LIMIT = int(os.environ.get("PUDDING_BACKEND_RESTART_LIMIT", "3"))
+BACKEND_RESTART_WINDOW_SECONDS = float(os.environ.get("PUDDING_BACKEND_RESTART_WINDOW_SECONDS", "60"))
 
 BACKEND_PID_FILE = RUN_DIR / "backend.pid"
+CODEX_SERVICE_PID_FILE = RUN_DIR / "codex-service.pid"
 FRONTEND_PID_FILE = RUN_DIR / "frontend.pid"
 PROXY_PID_FILE = RUN_DIR / "proxy.pid"
 PROXY_PORT_FILE = RUN_DIR / "proxy.port"
 
 BACKEND_OUT_LOG = RUN_DIR / "backend.out.log"
 BACKEND_ERR_LOG = RUN_DIR / "backend.err.log"
+CODEX_SERVICE_OUT_LOG = RUN_DIR / "codex-service.out.log"
+CODEX_SERVICE_ERR_LOG = RUN_DIR / "codex-service.err.log"
 FRONTEND_OUT_LOG = RUN_DIR / "frontend.out.log"
 FRONTEND_ERR_LOG = RUN_DIR / "frontend.err.log"
 PROXY_OUT_LOG = RUN_DIR / "proxy.out.log"
 PROXY_ERR_LOG = RUN_DIR / "proxy.err.log"
+BACKEND_RESTART_REQUEST_FILE = RUN_DIR / "backend.restart.request.json"
+BACKEND_STAGING_DIR = RUN_DIR / "backend-staging"
 DEV_LOG_ROTATE_MAX_BYTES = int(os.environ.get("PUDDING_DEV_LOG_ROTATE_MAX_BYTES", str(20 * 1024 * 1024)))
 DEV_LOG_ROTATE_BACKUPS = int(os.environ.get("PUDDING_DEV_LOG_ROTATE_BACKUPS", "3"))
 DEFAULT_LOG_TAIL_LINES = int(os.environ.get("PUDDING_DEV_LOG_TAIL_LINES", "80"))
@@ -575,6 +585,94 @@ def probe_health(url: str, timeout_seconds: int = 3) -> dict[str, object]:
         }
 
 
+def read_due_backend_restart_request(now: datetime | None = None) -> dict[str, object] | None:
+    if not BACKEND_RESTART_REQUEST_FILE.exists():
+        return None
+    try:
+        request = json.loads(BACKEND_RESTART_REQUEST_FILE.read_text(encoding="utf-8"))
+        request_id = str(request["requestId"])
+        task_id = str(request["taskId"])
+        uuid.UUID(hex=request_id)
+        uuid.UUID(hex=task_id)
+        not_before = datetime.fromisoformat(str(request["notBeforeUtc"]).replace("Z", "+00:00"))
+        if not_before.tzinfo is None:
+            not_before = not_before.replace(tzinfo=timezone.utc)
+        effective_now = now or datetime.now(timezone.utc)
+        if effective_now < not_before:
+            return None
+        return request
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        info(f"! Invalid backend restart request: {exc}")
+        BACKEND_RESTART_REQUEST_FILE.unlink(missing_ok=True)
+        return None
+
+
+def write_backend_restart_result(request_id: str, payload: dict[str, object]) -> Path:
+    uuid.UUID(hex=request_id)
+    result_path = RUN_DIR / f"backend.restart.result.{request_id}.json"
+    temp_path = result_path.with_name(f"{result_path.name}.{uuid.uuid4().hex}.tmp")
+    result = {
+        "requestId": request_id,
+        "completedAtUtc": datetime.now(timezone.utc).isoformat(),
+        **payload,
+    }
+    temp_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(result_path)
+    return result_path
+
+
+def perform_backend_restart(processes: dict[str, subprocess.Popen], request: dict[str, object]) -> None:
+    request_id = str(request["requestId"])
+    task_id = str(request["taskId"])
+    staging_dir = BACKEND_STAGING_DIR / request_id
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    info(f"==> Staging Pudding backend build for Codex task {task_id} ...")
+    build_code = run_backend_build(output_dir=staging_dir)
+    assembly_path = staging_dir / "PuddingAgent.dll"
+    if build_code != 0 or not assembly_path.exists():
+        write_backend_restart_result(request_id, {
+            "taskId": task_id,
+            "status": "build_failed",
+            "buildExitCode": build_code,
+        })
+        info(f"! Staged backend build failed for restart request {request_id}; current backend remains running")
+        return
+
+    current = processes.get("backend")
+    if current is not None and current.poll() is None and not stop_process_tree(current.pid):
+        write_backend_restart_result(request_id, {
+            "taskId": task_id,
+            "status": "stop_failed",
+            "backendPid": current.pid,
+        })
+        info(f"! Could not stop backend PID {current.pid} for restart request {request_id}")
+        return
+
+    wait_until_port_free(BACKEND_PORT)
+    process = start_backend(assembly_path=assembly_path)
+    processes["backend"] = process
+    health_url = build_health_url(LOCAL_CONNECT_HOST, BACKEND_PORT, HEALTH_PATH)
+    deadline = time.monotonic() + 45
+    healthy = False
+    while time.monotonic() < deadline and process.poll() is None:
+        if probe_health(health_url, timeout_seconds=2)["ok"]:
+            healthy = True
+            break
+        time.sleep(1)
+
+    status = "restarted" if healthy else "start_failed"
+    write_backend_restart_result(request_id, {
+        "taskId": task_id,
+        "status": status,
+        "backendPid": process.pid,
+        "assemblyPath": str(assembly_path),
+    })
+    if healthy:
+        info(f"V Backend-only restart completed (PID {process.pid}, request {request_id})")
+    else:
+        info(f"! Backend did not become healthy after restart request {request_id}")
+
+
 def rotate_log_if_needed(path: Path) -> None:
     if DEV_LOG_ROTATE_MAX_BYTES <= 0 or DEV_LOG_ROTATE_BACKUPS <= 0:
         return
@@ -602,7 +700,7 @@ def popen_kwargs():
     return {"start_new_session": True}
 
 
-def backend_build_command(full_rebuild: bool = False) -> list[str]:
+def backend_build_command(full_rebuild: bool = False, output_dir: Path | None = None) -> list[str]:
     cmd = [
         resolve_command("dotnet") or "dotnet",
         "build",
@@ -611,13 +709,32 @@ def backend_build_command(full_rebuild: bool = False) -> list[str]:
     ]
     if full_rebuild:
         cmd.append("--no-incremental")
+    if output_dir is not None:
+        cmd.extend(["--no-restore", f"-p:OutDir={output_dir}{os.sep}"])
     return cmd
 
 
-def backend_command() -> list[str]:
+def backend_command(assembly_path: Path | None = None) -> list[str]:
+    assembly = assembly_path or ROOT / "Source" / "PuddingAgent" / "bin" / "Debug" / "net10.0" / "PuddingAgent.dll"
     return [
         resolve_command("dotnet") or "dotnet",
-        str(ROOT / "Source" / "PuddingAgent" / "bin" / "Debug" / "net10.0" / "PuddingAgent.dll"),
+        str(assembly),
+    ]
+
+
+def codex_service_build_command() -> list[str]:
+    return [
+        resolve_command("dotnet") or "dotnet",
+        "build",
+        "Source/PuddingCodexService/PuddingCodexService.csproj",
+        "--nologo",
+    ]
+
+
+def codex_service_command() -> list[str]:
+    return [
+        resolve_command("dotnet") or "dotnet",
+        str(ROOT / "Source" / "PuddingCodexService" / "bin" / "Debug" / "net10.0" / "PuddingCodexService.dll"),
     ]
 
 
@@ -650,12 +767,12 @@ def backend_environment() -> dict[str, str]:
     return env
 
 
-def run_backend_build(full_rebuild: bool = False) -> int:
+def run_backend_build(full_rebuild: bool = False, output_dir: Path | None = None) -> int:
     env = backend_environment()
     build_log = open_log(BACKEND_OUT_LOG)
     build_err = open_log(BACKEND_ERR_LOG)
     build = subprocess.run(
-        backend_build_command(full_rebuild=full_rebuild),
+        backend_build_command(full_rebuild=full_rebuild, output_dir=output_dir),
         cwd=ROOT,
         env=env,
         stdout=build_log,
@@ -667,17 +784,34 @@ def run_backend_build(full_rebuild: bool = False) -> int:
     return build.returncode
 
 
-def start_backend(full_rebuild: bool = False) -> subprocess.Popen:
+def run_codex_service_build() -> int:
+    build_log = open_log(CODEX_SERVICE_OUT_LOG)
+    build_err = open_log(CODEX_SERVICE_ERR_LOG)
+    build = subprocess.run(
+        codex_service_build_command(),
+        cwd=ROOT,
+        env=os.environ.copy(),
+        stdout=build_log,
+        stderr=build_err,
+        check=False,
+    )
+    build_log.close()
+    build_err.close()
+    return build.returncode
+
+
+def start_backend(full_rebuild: bool = False, assembly_path: Path | None = None) -> subprocess.Popen:
     env = backend_environment()
-    returncode = run_backend_build(full_rebuild=full_rebuild)
-    if returncode != 0:
-        info(f"! Backend build failed with exit code {returncode}")
-        proc = failed_backend_process()
-        write_pid(BACKEND_PID_FILE, proc.pid)
-        return proc
+    if assembly_path is None:
+        returncode = run_backend_build(full_rebuild=full_rebuild)
+        if returncode != 0:
+            info(f"! Backend build failed with exit code {returncode}")
+            proc = failed_backend_process()
+            write_pid(BACKEND_PID_FILE, proc.pid)
+            return proc
 
     proc = subprocess.Popen(
-        backend_command(),
+        backend_command(assembly_path),
         cwd=ROOT,
         env=env,
         stdout=open_log(BACKEND_OUT_LOG),
@@ -686,6 +820,40 @@ def start_backend(full_rebuild: bool = False) -> subprocess.Popen:
     )
     write_pid(BACKEND_PID_FILE, proc.pid)
     info(f"V Backend started (PID {proc.pid})")
+    return proc
+
+
+def codex_service_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "ASPNETCORE_ENVIRONMENT": "Development",
+            "ASPNETCORE_URLS": f"http://{LOCAL_CONNECT_HOST}:{CODEX_SERVICE_PORT}",
+            "PUDDING_DATA_ROOT": r"D:\data",
+            "PUDDING_REPOSITORY_ROOT": str(ROOT),
+            "PUDDING_SUPERVISOR_RUN_DIR": str(RUN_DIR),
+            "PUDDING_CODEX_COMMAND": resolve_command("codex") or "codex",
+            "CodexService__TaskSandbox": "danger-full-access",
+            "CodexService__TaskApprovalPolicy": "never",
+        }
+    )
+    return env
+
+
+def start_codex_service() -> subprocess.Popen:
+    returncode = run_codex_service_build()
+    if returncode != 0:
+        fail(f"Codex Service build failed with exit code {returncode}. See {CODEX_SERVICE_ERR_LOG}")
+    proc = subprocess.Popen(
+        codex_service_command(),
+        cwd=ROOT,
+        env=codex_service_environment(),
+        stdout=open_log(CODEX_SERVICE_OUT_LOG),
+        stderr=open_log(CODEX_SERVICE_ERR_LOG),
+        **popen_kwargs(),
+    )
+    write_pid(CODEX_SERVICE_PID_FILE, proc.pid)
+    info(f"V Codex Service started (PID {proc.pid})")
     return proc
 
 
@@ -740,11 +908,12 @@ def start_proxy(port: int) -> subprocess.Popen:
 def format_status_lines(snapshot: dict[str, dict[str, object]]) -> list[str]:
     labels = {
         "backend": "Backend   ",
+        "codex": "Codex MCP ",
         "frontend": "Frontend  ",
         "proxy": "Proxy     ",
     }
     lines: list[str] = []
-    for role in ("backend", "frontend", "proxy"):
+    for role in ("backend", "codex", "frontend", "proxy"):
         state = snapshot.get(role, {})
         pid = state.get("pid")
         alive = bool(state.get("alive"))
@@ -762,10 +931,12 @@ def status_snapshot() -> dict[str, dict[str, object]]:
     except FileNotFoundError:
         proxy_port = ""
     backend_pid = read_pid(BACKEND_PID_FILE)
+    codex_pid = read_pid(CODEX_SERVICE_PID_FILE)
     frontend_pid = read_pid(FRONTEND_PID_FILE)
     proxy_pid = read_pid(PROXY_PID_FILE)
     proxy_port_value = int(proxy_port) if proxy_port.isdigit() else None
     backend_owner = port_owner_pid(BACKEND_PORT)
+    codex_owner = port_owner_pid(CODEX_SERVICE_PORT)
     frontend_owner = port_owner_pid(FRONTEND_PORT)
     proxy_owner = port_owner_pid(proxy_port_value) if proxy_port_value else None
     return {
@@ -774,6 +945,12 @@ def status_snapshot() -> dict[str, dict[str, object]]:
             "alive": is_process_alive(backend_pid) or backend_owner is not None,
             "tracked_pid": backend_pid,
             "port_owner_pid": backend_owner,
+        },
+        "codex": {
+            "pid": codex_pid if is_process_alive(codex_pid) else codex_owner,
+            "alive": is_process_alive(codex_pid) or codex_owner is not None,
+            "tracked_pid": codex_pid,
+            "port_owner_pid": codex_owner,
         },
         "frontend": {
             "pid": frontend_pid if is_process_alive(frontend_pid) else frontend_owner,
@@ -840,6 +1017,8 @@ def follow_logs(tail_lines: int = 0) -> None:
         launcher_log_path(),
         BACKEND_OUT_LOG,
         BACKEND_ERR_LOG,
+        CODEX_SERVICE_OUT_LOG,
+        CODEX_SERVICE_ERR_LOG,
         FRONTEND_OUT_LOG,
         FRONTEND_ERR_LOG,
         PROXY_OUT_LOG,
@@ -884,10 +1063,12 @@ def stop_all() -> None:
         proxy_port = int(PROXY_PORT_FILE.read_text(encoding="ascii").strip())
     except (FileNotFoundError, ValueError):
         proxy_port = PREFERRED_PROXY_PORT
-    stop_tracked_process("Proxy", PROXY_PID_FILE, proxy_port)
-    stop_tracked_process("Frontend", FRONTEND_PID_FILE, FRONTEND_PORT)
     stop_tracked_process("Backend", BACKEND_PID_FILE, BACKEND_PORT)
+    stop_tracked_process("Codex Service", CODEX_SERVICE_PID_FILE, CODEX_SERVICE_PORT)
+    stop_tracked_process("Frontend", FRONTEND_PID_FILE, FRONTEND_PORT)
+    stop_tracked_process("Proxy", PROXY_PID_FILE, proxy_port)
     PROXY_PORT_FILE.unlink(missing_ok=True)
+    BACKEND_RESTART_REQUEST_FILE.unlink(missing_ok=True)
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -1213,6 +1394,8 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
 
     if not frontend_only and not is_port_free(LOOPBACK_HOST, BACKEND_PORT):
         fail(f"Backend port {BACKEND_PORT} is already in use.")
+    if not frontend_only and not is_port_free(LOCAL_CONNECT_HOST, CODEX_SERVICE_PORT):
+        fail(f"Codex Service port {CODEX_SERVICE_PORT} is already in use.")
     if not is_port_free(LOOPBACK_HOST, FRONTEND_PORT):
         fail(f"Frontend port {FRONTEND_PORT} is already in use.")
 
@@ -1226,12 +1409,14 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
     if frontend_only:
         info("Frontend-only mode (skip backend)")
     else:
+        processes["codex"] = start_codex_service()
         processes["backend"] = start_backend()
 
     proxy_url = proxy_display_url(proxy_port)
     info(
         "\nDevelopment environment started:\n"
         f"  Backend API  -> http://localhost:{BACKEND_PORT}\n"
+        f"  Codex MCP    -> http://{LOCAL_CONNECT_HOST}:{CODEX_SERVICE_PORT}/mcp\n"
         f"  Frontend Dev -> http://localhost:{FRONTEND_PORT}\n"
         f"  Proxy entry  -> {proxy_url}/admin/user/login\n"
         f"  LAN entry    -> {proxy_lan_url_hint(proxy_port)}/admin/user/login\n\n"
@@ -1248,6 +1433,10 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
         max_restarts=FRONTEND_RESTART_LIMIT,
         window_seconds=FRONTEND_RESTART_WINDOW_SECONDS,
     )
+    backend_restart_limiter = RapidRestartLimiter(
+        max_restarts=BACKEND_RESTART_LIMIT,
+        window_seconds=BACKEND_RESTART_WINDOW_SECONDS,
+    )
 
     def request_stop(signum, frame) -> None:
         nonlocal stopping
@@ -1259,13 +1448,39 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
 
     try:
         while not stopping:
+            restart_request = read_due_backend_restart_request()
+            if restart_request is not None and "backend" in processes:
+                try:
+                    perform_backend_restart(processes, restart_request)
+                finally:
+                    BACKEND_RESTART_REQUEST_FILE.unlink(missing_ok=True)
+
             for role, process in list(processes.items()):
                 exit_code = process.poll()
                 if exit_code is None:
                     continue
                 if role == "backend":
-                    info(f"! {role} exited with code {exit_code}, stopping all")
-                    stopping = True
+                    info(f"! {role} exited with code {exit_code}, restarting")
+                    if not backend_restart_limiter.allow(role, time.monotonic()):
+                        info(
+                            f"! backend exited more than {BACKEND_RESTART_LIMIT} times in "
+                            f"{BACKEND_RESTART_WINDOW_SECONDS:g}s; stopping all. See {BACKEND_ERR_LOG.relative_to(ROOT)}"
+                        )
+                        stopping = True
+                        break
+                    force_release_port(BACKEND_PORT)
+                    processes[role] = start_backend()
+                elif role == "codex":
+                    info(f"! Codex Service exited with code {exit_code}, restarting")
+                    if not backend_restart_limiter.allow(role, time.monotonic()):
+                        info(
+                            f"! Codex Service exited more than {BACKEND_RESTART_LIMIT} times in "
+                            f"{BACKEND_RESTART_WINDOW_SECONDS:g}s; stopping all. See {CODEX_SERVICE_ERR_LOG.relative_to(ROOT)}"
+                        )
+                        stopping = True
+                        break
+                    force_release_port(CODEX_SERVICE_PORT)
+                    processes[role] = start_codex_service()
                 elif role == "proxy":
                     info(f"! {role} exited with code {exit_code}, restarting")
                     force_release_port(proxy_port)
@@ -1289,9 +1504,10 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
         for role, process in list(processes.items()):
             if process.poll() is None:
                 stop_process_tree(process.pid)
-        for pid_file in (BACKEND_PID_FILE, FRONTEND_PID_FILE, PROXY_PID_FILE):
+        for pid_file in (BACKEND_PID_FILE, CODEX_SERVICE_PID_FILE, FRONTEND_PID_FILE, PROXY_PID_FILE):
             pid_file.unlink(missing_ok=True)
         PROXY_PORT_FILE.unlink(missing_ok=True)
+        BACKEND_RESTART_REQUEST_FILE.unlink(missing_ok=True)
 
 
 # ── Bootstrap / Init ──────────────────────────────────────────

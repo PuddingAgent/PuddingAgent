@@ -5,7 +5,7 @@ import json
 import socket
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -155,6 +155,33 @@ class DevUpProxyTests(unittest.TestCase):
             command,
         )
 
+    def test_backend_build_command_can_target_staging_output(self):
+        dev_up = load_dev_up_module()
+
+        with patch.object(dev_up, "resolve_command", return_value="dotnet"):
+            command = dev_up.backend_build_command(output_dir=Path(r"C:\staging\task"))
+
+        self.assertIn("--no-restore", command)
+        self.assertIn("-p:OutDir=C:\\staging\\task\\", command)
+
+    def test_codex_service_command_runs_compiled_service_directly(self):
+        dev_up = load_dev_up_module()
+
+        with patch.object(dev_up, "resolve_command", return_value="dotnet"):
+            command = dev_up.codex_service_command()
+
+        self.assertEqual("dotnet", command[0])
+        self.assertTrue(command[1].endswith("PuddingCodexService.dll"))
+
+    def test_codex_service_environment_enforces_yolo_mode(self):
+        dev_up = load_dev_up_module()
+
+        with patch.object(dev_up, "resolve_command", return_value="codex"):
+            environment = dev_up.codex_service_environment()
+
+        self.assertEqual("danger-full-access", environment["CodexService__TaskSandbox"])
+        self.assertEqual("never", environment["CodexService__TaskApprovalPolicy"])
+
     def test_start_proxy_binds_publicly_while_upstreams_stay_loopback(self):
         dev_up = load_dev_up_module()
 
@@ -188,6 +215,70 @@ class DevUpProxyTests(unittest.TestCase):
 
 
 class DevUpSupervisorTests(unittest.TestCase):
+    def test_status_includes_independent_codex_service(self):
+        dev_up = load_dev_up_module()
+
+        lines = dev_up.format_status_lines({
+            "backend": {"alive": True, "pid": 10},
+            "codex": {"alive": True, "pid": 20},
+            "frontend": {"alive": True, "pid": 30},
+            "proxy": {"alive": True, "pid": 40, "port": 80},
+        })
+
+        self.assertEqual(4, len(lines))
+        self.assertIn("Codex MCP", lines[1])
+        self.assertIn("20", lines[1])
+
+    def test_backend_restart_request_waits_until_not_before(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            request_path = Path(temp_dir) / "backend.restart.request.json"
+            request_path.write_text(json.dumps({
+                "requestId": "11111111111111111111111111111111",
+                "taskId": "22222222222222222222222222222222",
+                "requestedAtUtc": "2026-07-26T10:00:00+00:00",
+                "notBeforeUtc": "2026-07-26T10:00:10+00:00",
+            }), encoding="utf-8")
+            with patch.object(dev_up, "BACKEND_RESTART_REQUEST_FILE", request_path):
+                self.assertIsNone(dev_up.read_due_backend_restart_request(
+                    datetime(2026, 7, 26, 10, 0, 9, tzinfo=timezone.utc)))
+                due = dev_up.read_due_backend_restart_request(
+                    datetime(2026, 7, 26, 10, 0, 10, tzinfo=timezone.utc))
+
+        self.assertEqual("11111111111111111111111111111111", due["requestId"])
+
+    def test_failed_staged_build_does_not_stop_current_backend(self):
+        dev_up = load_dev_up_module()
+
+        class FakeProcess:
+            pid = 1234
+
+            @staticmethod
+            def poll():
+                return None
+
+        request = {
+            "requestId": "11111111111111111111111111111111",
+            "taskId": "22222222222222222222222222222222",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            with (
+                patch.object(dev_up, "RUN_DIR", run_dir),
+                patch.object(dev_up, "BACKEND_STAGING_DIR", run_dir / "staging"),
+                patch.object(dev_up, "run_backend_build", return_value=1),
+                patch.object(dev_up, "stop_process_tree") as stop_process,
+                patch.object(dev_up, "info"),
+            ):
+                dev_up.perform_backend_restart({"backend": FakeProcess()}, request)
+
+            result = json.loads((run_dir / "backend.restart.result.11111111111111111111111111111111.json")
+                                .read_text(encoding="utf-8"))
+
+        stop_process.assert_not_called()
+        self.assertEqual("build_failed", result["status"])
+
     def test_info_writes_launcher_log_under_data_logs(self):
         dev_up = load_dev_up_module()
 

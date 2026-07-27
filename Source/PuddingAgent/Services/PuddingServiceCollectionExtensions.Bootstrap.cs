@@ -56,23 +56,36 @@ using System.Threading.Channels;
 
 namespace PuddingAgent.Services;
 
-/// <summary>
-/// Owns the host composition root registrations that previously lived in Program.cs.
-/// Registration order is preserved while the groups expose their architectural boundary.
-/// </summary>
 public static partial class PuddingServiceCollectionExtensions
 {
-    public static WebApplicationBuilder AddPuddingApplicationServices(
-        this WebApplicationBuilder builder,
-        PuddingDataPaths dataPaths,
-        IConfiguration bootstrapConfiguration,
-        string aspnetcoreEnvironment)
+    private static void AddBootstrapServices(
+        WebApplicationBuilder builder,
+        PuddingDataPaths dataPaths)
     {
-        AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
-        AddRuntimeServices(builder, dataPaths, bootstrapConfiguration);
-        AddConnectorServices(builder);
-        AddBootstrapServices(builder, dataPaths);
-        return builder;
+        // ── Bootstrap 初始化 ─────────────────────────────────
+        var stateFilePath = Path.Combine(dataPaths.RuntimeRoot, "bootstrap-state.json");
+
+        if (!File.Exists(stateFilePath))
+        {
+            var secretBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+            var secret = Convert.ToBase64String(secretBytes);
+            var initialState = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Bootstrap = new { Secret = secret, Initialized = false }
+            });
+            File.WriteAllText(stateFilePath, initialState);
+        }
+
+        builder.Configuration.AddJsonFile(stateFilePath, optional: true, reloadOnChange: true);
+        builder.Services.AddSingleton<BootstrapStateService>(sp =>
+            new BootstrapStateService(stateFilePath, sp.GetRequiredService<IConfiguration>()));
+
+        // ── JSON 配置种子服务 ─────────────────────────────
+        builder.Services.AddScoped<JsonConfigSeedService>();
+
+        // ── Agent 头像服务（ADR-034 revised ─ JSON 内存目录）────
+        builder.Services.AddSingleton<AgentAvatarCatalog>();
+        builder.Services.AddSingleton<IAgentAvatarCatalog>(sp => sp.GetRequiredService<AgentAvatarCatalog>());
     }
 
 }

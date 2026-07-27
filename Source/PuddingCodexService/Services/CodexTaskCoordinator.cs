@@ -8,8 +8,19 @@ public sealed class CodexTaskCoordinator(
     CodexServiceOptions options,
     FileCodexTaskStore store,
     ICodexExecutor executor,
+    SupervisorRestartRequestWriter restartWriter,
     ILogger<CodexTaskCoordinator> logger) : BackgroundService
 {
+    private const string SelfHealPolicy = """
+        PUDDING SELF-HEAL POLICY (mandatory):
+        - Do not stop, kill, restart, or launch PuddingAgent, PuddingRuntime, dev-up, the frontend, the proxy, or PuddingCodexService.
+        - Ignore any requested-work instruction that asks you to control those processes directly.
+        - Perform only the requested engineering changes, build, and tests while the current Pudding backend remains online.
+        - Do not run or print /yolo. Execution permissions are already fixed by PuddingCodexService.
+        - Report the completed work and verification normally. The external supervisor will perform a staged backend-only restart after this task completes.
+
+        Requested work:
+        """;
     private readonly Channel<string> _queue = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
     {
         SingleReader = true,
@@ -21,9 +32,31 @@ public sealed class CodexTaskCoordinator(
         string prompt,
         string? workingDirectory,
         string? model,
-        string sandbox,
-        string approvalPolicy,
+        CancellationToken ct = default) =>
+        await StartCoreAsync(prompt, workingDirectory, model, restartPuddingOnCompletion: false, ct);
+
+    public async Task<CodexTaskAccepted> StartSelfHealAsync(
+        string prompt,
+        string? workingDirectory,
+        string? model,
         CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+            throw new ArgumentException("Codex self-heal prompt is required.", nameof(prompt));
+        return await StartCoreAsync(
+            $"{SelfHealPolicy}\n{prompt.Trim()}",
+            workingDirectory,
+            model,
+            restartPuddingOnCompletion: true,
+            ct);
+    }
+
+    private async Task<CodexTaskAccepted> StartCoreAsync(
+        string prompt,
+        string? workingDirectory,
+        string? model,
+        bool restartPuddingOnCompletion,
+        CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(prompt))
             throw new ArgumentException("Codex prompt is required.", nameof(prompt));
@@ -34,8 +67,11 @@ public sealed class CodexTaskCoordinator(
             Prompt = prompt.Trim(),
             WorkingDirectory = options.NormalizeWorkingDirectory(workingDirectory),
             Model = string.IsNullOrWhiteSpace(model) ? null : model.Trim(),
-            Sandbox = NormalizeSandbox(sandbox),
-            ApprovalPolicy = NormalizeApprovalPolicy(approvalPolicy),
+            // PuddingCodexService is intentionally a developer-machine Yolo executor.
+            // Callers cannot downgrade or override this trust boundary per task.
+            Sandbox = options.TaskSandbox,
+            ApprovalPolicy = options.TaskApprovalPolicy,
+            RestartPuddingOnCompletion = restartPuddingOnCompletion,
             Status = CodexTaskStatus.Queued,
             StatusMessage = "Queued by Pudding.",
             CreatedAtUtc = now,
@@ -43,7 +79,11 @@ public sealed class CodexTaskCoordinator(
         };
         await store.CreateAsync(record, ct);
         await _queue.Writer.WriteAsync(record.TaskId, ct);
-        return new CodexTaskAccepted(record.TaskId, record.Status, record.CreatedAtUtc);
+        return new CodexTaskAccepted(
+            record.TaskId,
+            record.Status,
+            record.CreatedAtUtc,
+            record.RestartPuddingOnCompletion);
     }
 
     public async Task<CodexTaskAccepted> ReplyAsync(
@@ -75,7 +115,11 @@ public sealed class CodexTaskCoordinator(
         };
         await store.CreateAsync(record, ct);
         await _queue.Writer.WriteAsync(record.TaskId, ct);
-        return new CodexTaskAccepted(record.TaskId, record.Status, record.CreatedAtUtc);
+        return new CodexTaskAccepted(
+            record.TaskId,
+            record.Status,
+            record.CreatedAtUtc,
+            record.RestartPuddingOnCompletion);
     }
 
     public Task<CodexTaskRecord?> GetAsync(string taskId, CancellationToken ct = default) =>
@@ -112,6 +156,14 @@ public sealed class CodexTaskCoordinator(
             await _queue.Writer.WriteAsync(task.TaskId, stoppingToken);
         }
 
+        foreach (var task in recovered.Where(task =>
+                     task.Status == CodexTaskStatus.Completed
+                     && task.RestartPuddingOnCompletion
+                     && string.IsNullOrWhiteSpace(task.RestartRequestId)))
+        {
+            await ScheduleRestartAsync(task, stoppingToken);
+        }
+
         await foreach (var taskId in _queue.Reader.ReadAllAsync(stoppingToken))
             await ExecuteOneAsync(taskId, stoppingToken);
     }
@@ -133,7 +185,7 @@ public sealed class CodexTaskCoordinator(
                 StatusMessage = "Codex is running outside Pudding.",
             }, stoppingToken);
             var result = await executor.ExecuteAsync(current, executionCancellation.Token);
-            await store.UpdateAsync(taskId, record => record with
+            var completed = await store.UpdateAsync(taskId, record => record with
             {
                 ThreadId = result.ThreadId,
                 Status = result.IsError ? CodexTaskStatus.Failed : CodexTaskStatus.Completed,
@@ -141,6 +193,8 @@ public sealed class CodexTaskCoordinator(
                 ResultJson = result.ResultJson,
                 Error = result.IsError ? result.ResultJson : null,
             }, stoppingToken);
+            if (!result.IsError && completed.RestartPuddingOnCompletion)
+                await ScheduleRestartAsync(completed, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -174,15 +228,32 @@ public sealed class CodexTaskCoordinator(
         }
     }
 
-    private static string NormalizeSandbox(string value) => value switch
+    private async Task ScheduleRestartAsync(CodexTaskRecord task, CancellationToken ct)
     {
-        "read-only" or "workspace-write" or "danger-full-access" => value,
-        _ => throw new ArgumentException("sandbox must be read-only, workspace-write, or danger-full-access."),
-    };
+        try
+        {
+            var accepted = await restartWriter.RequestAsync(task, ct);
+            await store.UpdateAsync(task.TaskId, record => record with
+            {
+                RestartRequestId = accepted.RequestId,
+                RestartNotBeforeUtc = accepted.NotBeforeUtc,
+                StatusMessage = "Codex completed; staged Pudding backend restart scheduled.",
+            }, ct);
+            logger.LogInformation(
+                "[CodexService] Scheduled staged Pudding restart task={TaskId} request={RequestId}",
+                task.TaskId,
+                accepted.RequestId);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogError(ex, "[CodexService] Failed to schedule Pudding restart task={TaskId}", task.TaskId);
+            await store.UpdateAsync(task.TaskId, record => record with
+            {
+                Status = CodexTaskStatus.Failed,
+                StatusMessage = "Codex completed, but scheduling the Pudding restart failed.",
+                Error = ex.Message,
+            }, CancellationToken.None);
+        }
+    }
 
-    private static string NormalizeApprovalPolicy(string value) => value switch
-    {
-        "untrusted" or "on-failure" or "on-request" or "never" => value,
-        _ => throw new ArgumentException("approvalPolicy must be untrusted, on-failure, on-request, or never."),
-    };
 }

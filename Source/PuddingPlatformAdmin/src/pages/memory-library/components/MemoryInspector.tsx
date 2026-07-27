@@ -4,7 +4,7 @@ import {
   LinkOutlined,
   FileSearchOutlined,
 } from '@ant-design/icons';
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { MemoryBookPageDto } from '../types';
 
 const { Text } = Typography;
@@ -30,9 +30,28 @@ const MemoryInspector: React.FC<MemoryInspectorProps> = ({
   sources,
   pointers,
 }) => {
+  const uniqueSources = useMemo(
+    () => Array.from(new Map(
+      (sources ?? []).map((source) => [
+        `${source.sourceReferenceId ?? ''}:${source.targetType}:${source.targetId}`,
+        source,
+      ]),
+    ).values()),
+    [sources],
+  );
+  const uniquePointers = useMemo(
+    () => Array.from(new Map(
+      (pointers ?? []).map((pointer) => [
+        `${pointer.targetType}:${pointer.targetId}:${pointer.label ?? ''}`,
+        pointer,
+      ]),
+    ).values()),
+    [pointers],
+  );
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+      <div className="memory-inspector-loading">
         <Spin />
       </div>
     );
@@ -42,6 +61,7 @@ const MemoryInspector: React.FC<MemoryInspectorProps> = ({
 
   return (
     <Tabs
+      className="memory-inspector-tabs"
       size="small"
       items={[
         {
@@ -54,13 +74,13 @@ const MemoryInspector: React.FC<MemoryInspectorProps> = ({
               {book && (
                 <>
                   <Descriptions.Item label="Book ID">
-                    <Text code style={{ fontSize: 11 }}>{book.bookId}</Text>
+                    <Text code copyable={{ text: book.bookId }}>{book.bookId}</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="Library ID">
-                    <Text code style={{ fontSize: 11 }}>{book.libraryId}</Text>
+                    <Text code copyable={{ text: book.libraryId }}>{book.libraryId}</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="Workspace">
-                    <Text code style={{ fontSize: 11 }}>{book.workspaceId}</Text>
+                    <Text code copyable={{ text: book.workspaceId }}>{book.workspaceId}</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="Status">
                     <Tag color={book.status === 'active' ? 'green' : 'default'}>{book.status}</Tag>
@@ -71,7 +91,7 @@ const MemoryInspector: React.FC<MemoryInspectorProps> = ({
               {nodeId && !book && (
                 <>
                   <Descriptions.Item label="Node ID">
-                    <Text code style={{ fontSize: 11 }}>{nodeId}</Text>
+                    <Text code copyable={{ text: nodeId }}>{nodeId}</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="Node Type">
                     <Tag>{nodeType}</Tag>
@@ -84,14 +104,16 @@ const MemoryInspector: React.FC<MemoryInspectorProps> = ({
         },
         {
           key: 'sources',
-          label: <span><FileSearchOutlined /> 来源</span>,
-          children: sources?.length ? (
-            <div>
-              {sources.map((s) => (
-                <div key={s.sourceReferenceId ?? `${s.targetType}:${s.targetId}`} style={{ marginBottom: 8 }}>
+          label: <span><FileSearchOutlined /> 来源 {uniqueSources.length || ''}</span>,
+          children: uniqueSources.length ? (
+            <div className="memory-inspector-list">
+              {uniqueSources.map((s) => (
+                <div className="memory-inspector-card" key={s.sourceReferenceId ?? `${s.targetType}:${s.targetId}`}>
+                  <div className="memory-inspector-card-topline">
                   <Tag>{s.targetType}</Tag>
-                  <Text code style={{ fontSize: 11 }}>{s.targetId}</Text>
-                  {s.label && <div><Text type="secondary">{s.label}</Text></div>}
+                    <Text code copyable={{ text: s.targetId }}>{s.targetId}</Text>
+                  </div>
+                  {s.label && <Text type="secondary" className="memory-inspector-card-label">{s.label}</Text>}
                 </div>
               ))}
             </div>
@@ -101,14 +123,16 @@ const MemoryInspector: React.FC<MemoryInspectorProps> = ({
         },
         {
           key: 'links',
-          label: <span><LinkOutlined /> 链接</span>,
-          children: pointers?.length ? (
-            <div>
-              {pointers.map((p) => (
-                <div key={p.pointerId} style={{ marginBottom: 8 }}>
+          label: <span><LinkOutlined /> 链接 {uniquePointers.length || ''}</span>,
+          children: uniquePointers.length ? (
+            <div className="memory-inspector-list">
+              {uniquePointers.map((p) => (
+                <div className="memory-inspector-card" key={p.pointerId}>
+                  <div className="memory-inspector-card-topline">
                   <Tag color="purple">{p.targetType}</Tag>
-                  <Text code style={{ fontSize: 11 }}>{p.targetId}</Text>
-                  {p.label && <div><Text type="secondary">{p.label}</Text></div>}
+                    <Text code copyable={{ text: p.targetId }}>{p.targetId}</Text>
+                  </div>
+                  {p.label && <Text type="secondary" className="memory-inspector-card-label">{p.label}</Text>}
                 </div>
               ))}
             </div>

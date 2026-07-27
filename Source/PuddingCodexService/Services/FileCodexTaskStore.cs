@@ -4,7 +4,7 @@ using PuddingCodexService.Models;
 
 namespace PuddingCodexService.Services;
 
-public sealed class FileCodexTaskStore(CodexServiceOptions options)
+public sealed partial class FileCodexTaskStore(CodexServiceOptions options)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _root = options.TaskStoreDirectory;

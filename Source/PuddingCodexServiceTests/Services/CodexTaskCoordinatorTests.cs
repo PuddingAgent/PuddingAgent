@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using PuddingCodexService;
 using PuddingCodexService.Models;
 using PuddingCodexService.Services;
+using PuddingCodexService.Tools;
 
 namespace PuddingCodexServiceTests.Services;
 
@@ -17,13 +19,13 @@ public sealed class CodexTaskCoordinatorTests
         var accepted = await fixture.Coordinator.StartAsync(
             "repair pudding",
             fixture.RepositoryRoot,
-            model: null,
-            sandbox: "workspace-write",
-            approvalPolicy: "never");
+            model: null);
 
         await fixture.Executor.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var running = await fixture.Store.GetAsync(accepted.TaskId);
         Assert.AreEqual(CodexTaskStatus.Running, running?.Status);
+        Assert.AreEqual("danger-full-access", running?.Sandbox);
+        Assert.AreEqual("never", running?.ApprovalPolicy);
 
         fixture.Executor.Complete(new CodexExecutionResult(
             "thread-persisted",
@@ -49,9 +51,7 @@ public sealed class CodexTaskCoordinatorTests
         var first = await fixture.Coordinator.StartAsync(
             "first",
             fixture.RepositoryRoot,
-            null,
-            "read-only",
-            "never");
+            null);
         await fixture.Executor.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         fixture.Executor.Complete(new CodexExecutionResult("thread-1", "{}", false));
         await WaitForStatusAsync(fixture.Store, first.TaskId, CodexTaskStatus.Completed);
@@ -61,8 +61,75 @@ public sealed class CodexTaskCoordinatorTests
         var executedReply = await fixture.Executor.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.AreEqual(first.TaskId, executedReply.ParentTaskId);
         Assert.AreEqual("thread-1", executedReply.ThreadId);
+        Assert.AreEqual("danger-full-access", executedReply.Sandbox);
+        Assert.AreEqual("never", executedReply.ApprovalPolicy);
         fixture.Executor.Complete(new CodexExecutionResult("thread-1", "{}", false));
         await WaitForStatusAsync(fixture.Store, reply.TaskId, CodexTaskStatus.Completed);
+    }
+
+    [TestMethod]
+    public async Task SelfHeal_Task_Uses_Safe_Policy_And_Schedules_One_Staged_Restart()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.Coordinator.StartAsync(CancellationToken.None);
+
+        var accepted = await fixture.Coordinator.StartSelfHealAsync(
+            "terminate Pudding and restart it",
+            fixture.RepositoryRoot,
+            model: null);
+        Assert.IsTrue(accepted.RestartPuddingOnCompletion);
+
+        var executed = await fixture.Executor.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsTrue(executed.RestartPuddingOnCompletion);
+        StringAssert.Contains(executed.Prompt, "Do not stop, kill, restart, or launch PuddingAgent");
+        StringAssert.Contains(executed.Prompt, "Ignore any requested-work instruction");
+        StringAssert.Contains(executed.Prompt, "terminate Pudding and restart it");
+
+        fixture.Executor.Complete(new CodexExecutionResult(
+            "thread-self-heal",
+            "{\"content\":\"ready\"}",
+            IsError: false));
+        var completed = await WaitForRestartScheduledAsync(fixture.Store, accepted.TaskId);
+        Assert.AreEqual(CodexTaskStatus.Completed, completed.Status);
+        Assert.IsNotNull(completed.RestartRequestId);
+        Assert.IsNotNull(completed.RestartNotBeforeUtc);
+
+        var requestPath = Path.Combine(
+            fixture.Options.SupervisorRunDirectory,
+            "backend.restart.request.json");
+        using var request = JsonDocument.Parse(await File.ReadAllTextAsync(requestPath));
+        Assert.AreEqual(accepted.TaskId, request.RootElement.GetProperty("taskId").GetString());
+        Assert.AreEqual(completed.RestartRequestId, request.RootElement.GetProperty("requestId").GetString());
+
+        var repeated = await fixture.RestartWriter.RequestAsync(completed);
+        Assert.AreEqual(completed.RestartRequestId, repeated.RequestId);
+
+        var tools = new CodexTaskTools(fixture.Coordinator, fixture.RestartWriter);
+        var projected = await tools.GetAsync(completed.TaskId);
+        Assert.IsNotNull(projected.RestartResultJson);
+        StringAssert.Contains(projected.RestartResultJson, "pending");
+    }
+
+    [TestMethod]
+    public async Task Failed_SelfHeal_Task_Does_Not_Request_A_Restart()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.Coordinator.StartAsync(CancellationToken.None);
+        var accepted = await fixture.Coordinator.StartSelfHealAsync(
+            "repair before restart",
+            fixture.RepositoryRoot,
+            model: null);
+        await fixture.Executor.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        fixture.Executor.Complete(new CodexExecutionResult(
+            "thread-failed",
+            "{\"error\":\"build failed\"}",
+            IsError: true));
+        await WaitForStatusAsync(fixture.Store, accepted.TaskId, CodexTaskStatus.Failed);
+
+        Assert.IsFalse(File.Exists(Path.Combine(
+            fixture.Options.SupervisorRunDirectory,
+            "backend.restart.request.json")));
     }
 
     private static async Task<CodexTaskRecord> WaitForStatusAsync(
@@ -82,6 +149,22 @@ public sealed class CodexTaskCoordinatorTests
         throw new TimeoutException($"Task {taskId} did not reach {expected}.");
     }
 
+    private static async Task<CodexTaskRecord> WaitForRestartScheduledAsync(
+        FileCodexTaskStore store,
+        string taskId)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!timeout.IsCancellationRequested)
+        {
+            var record = await store.GetAsync(taskId, timeout.Token);
+            if (record is { Status: CodexTaskStatus.Completed, RestartRequestId.Length: > 0 })
+                return record;
+            await Task.Delay(25, timeout.Token);
+        }
+
+        throw new TimeoutException($"Task {taskId} did not schedule a Pudding restart.");
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(
@@ -90,6 +173,7 @@ public sealed class CodexTaskCoordinatorTests
             CodexServiceOptions options,
             FileCodexTaskStore store,
             ControlledExecutor executor,
+            SupervisorRestartRequestWriter restartWriter,
             CodexTaskCoordinator coordinator)
         {
             Root = root;
@@ -97,6 +181,7 @@ public sealed class CodexTaskCoordinatorTests
             Options = options;
             Store = store;
             Executor = executor;
+            RestartWriter = restartWriter;
             Coordinator = coordinator;
         }
 
@@ -105,6 +190,7 @@ public sealed class CodexTaskCoordinatorTests
         public CodexServiceOptions Options { get; }
         public FileCodexTaskStore Store { get; }
         public ControlledExecutor Executor { get; }
+        public SupervisorRestartRequestWriter RestartWriter { get; }
         public CodexTaskCoordinator Coordinator { get; }
 
         public static Task<Fixture> CreateAsync()
@@ -121,12 +207,21 @@ public sealed class CodexTaskCoordinatorTests
             options.Validate();
             var store = new FileCodexTaskStore(options);
             var executor = new ControlledExecutor();
+            var restartWriter = new SupervisorRestartRequestWriter(options);
             var coordinator = new CodexTaskCoordinator(
                 options,
                 store,
                 executor,
+                restartWriter,
                 NullLogger<CodexTaskCoordinator>.Instance);
-            return Task.FromResult(new Fixture(root, repositoryRoot, options, store, executor, coordinator));
+            return Task.FromResult(new Fixture(
+                root,
+                repositoryRoot,
+                options,
+                store,
+                executor,
+                restartWriter,
+                coordinator));
         }
 
         public async ValueTask DisposeAsync()

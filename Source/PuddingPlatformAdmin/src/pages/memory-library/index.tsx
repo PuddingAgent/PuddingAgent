@@ -1,11 +1,24 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { Select, Input, Button, Alert, Modal, Form, Popconfirm, message } from 'antd';
+import {
+  Select,
+  Input,
+  Button,
+  Alert,
+  Modal,
+  Form,
+  Popconfirm,
+  Tooltip,
+  Drawer,
+  message,
+} from 'antd';
 import {
   ReloadOutlined,
   SearchOutlined,
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
+  BookOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -20,6 +33,7 @@ import {
   createAgentMemoryBook,
   updateAgentMemoryBook,
   createAgentMemoryChapter,
+  updateAgentMemoryChapter,
   archiveAgentMemoryBook,
   archiveAgentMemoryChapter,
   listAgentMemorySources,
@@ -39,6 +53,9 @@ import MemoryInspector from './components/MemoryInspector';
 import MemorySearchResults from './components/MemorySearchResults';
 import './styles.less';
 
+const countTreeNodes = (nodes: MemoryLibraryTreeNodeDto[]): number =>
+  nodes.reduce((total, node) => total + 1 + countTreeNodes(node.children ?? []), 0);
+
 const MemoryLibraryPage: React.FC = () => {
   // ── State ──────────────────────────────────────────────────────
   const [workspaces, setWorkspaces] = useState<WorkspaceWithPermDto[]>([]);
@@ -53,6 +70,8 @@ const MemoryLibraryPage: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<MemoryLibraryTreeNodeDto | null>(null);
   const [bookPage, setBookPage] = useState<MemoryBookPageDto | null>(null);
   const [bookLoading, setBookLoading] = useState(false);
+  const [selectedChapterId, setSelectedChapterId] = useState<string>();
+  const [inspectorOpen, setInspectorOpen] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,6 +92,16 @@ const MemoryLibraryPage: React.FC = () => {
   // Sources & pointers for Inspector
   const [sources, setSources] = useState<any[]>([]);
   const [pointers, setPointers] = useState<{ outgoing: any[]; backlinks: any[] }>({ outgoing: [], backlinks: [] });
+
+  useEffect(() => {
+    if (!bookPage?.chapters.length) {
+      setSelectedChapterId(undefined);
+      return;
+    }
+    if (!selectedChapterId || !bookPage.chapters.some((chapter) => chapter.chapterId === selectedChapterId)) {
+      setSelectedChapterId(bookPage.chapters[0].chapterId);
+    }
+  }, [bookPage, selectedChapterId]);
 
   // ── Load workspaces on mount ───────────────────────────────────
   useEffect(() => {
@@ -147,6 +176,7 @@ const MemoryLibraryPage: React.FC = () => {
     setSelectedLibraryId(undefined);
     setSelectedNode(null);
     setBookPage(null);
+    setSelectedChapterId(undefined);
     setTreeData([]);
     setSearchVisible(false);
     setSearchResults([]);
@@ -159,6 +189,7 @@ const MemoryLibraryPage: React.FC = () => {
     setSelectedLibraryId(undefined);
     setSelectedNode(null);
     setBookPage(null);
+    setSelectedChapterId(undefined);
     setTreeData([]);
     setSources([]);
     setPointers({ outgoing: [], backlinks: [] });
@@ -171,6 +202,7 @@ const MemoryLibraryPage: React.FC = () => {
     setSelectedLibraryId(value);
     setSelectedNode(null);
     setBookPage(null);
+    setSelectedChapterId(undefined);
     setTreeData([]);
   }, []);
 
@@ -182,6 +214,7 @@ const MemoryLibraryPage: React.FC = () => {
           setTreeData(nodes);
           setSelectedNode(null);
           setBookPage(null);
+          setSelectedChapterId(undefined);
         })
         .catch(() => setError('刷新失败'))
         .finally(() => setLoading(false));
@@ -227,6 +260,7 @@ const MemoryLibraryPage: React.FC = () => {
         .catch(() => {});
     } else {
       setBookPage(null);
+      setSelectedChapterId(undefined);
       setBookLoading(false);
       if (selectedWorkspaceId && selectedAgentId) {
         // 加载 TreeNode 的来源和指针
@@ -254,13 +288,14 @@ const MemoryLibraryPage: React.FC = () => {
       .catch(() => setError('搜索失败'));
   }, [selectedWorkspaceId, selectedAgentId]);
 
-  const handleSearchResultSelect = useCallback((bookId: string, _chapterId: string) => {
+  const handleSearchResultSelect = useCallback((bookId: string, chapterId: string) => {
     if (!selectedWorkspaceId || !selectedAgentId) return;
     setSearchVisible(false);
     setBookLoading(true);
     getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookId)
       .then((page) => {
         setBookPage(page);
+        setSelectedChapterId(chapterId);
         setSelectedNode(null); // clear tree selection when viewing search result
       })
       .catch(() => setError('无法加载搜索结果'))
@@ -339,7 +374,7 @@ const MemoryLibraryPage: React.FC = () => {
     if (!bookPage || !selectedWorkspaceId || !selectedAgentId) return;
     setEditLoading(true);
     try {
-      await createAgentMemoryChapter(selectedWorkspaceId, selectedAgentId, {
+      const created = await createAgentMemoryChapter(selectedWorkspaceId, selectedAgentId, {
         bookId: bookPage.bookId,
         title: values.title,
         content: values.content,
@@ -348,15 +383,39 @@ const MemoryLibraryPage: React.FC = () => {
       message.success('章节已添加');
       setNewChapterModalOpen(false);
       newChapterForm.resetFields();
-      if (selectedWorkspaceId) {
-        getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId).then(setBookPage).catch(() => {});
-      }
+      const refreshed = await getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId);
+      setBookPage(refreshed);
+      if (created?.chapterId) setSelectedChapterId(created.chapterId);
     } catch {
       message.error('添加失败');
     } finally {
       setEditLoading(false);
     }
   }, [bookPage, selectedWorkspaceId, selectedAgentId, newChapterForm]);
+
+  const handleUpdateChapter = useCallback(async (
+    chapterId: string,
+    values: { title: string; content: string; importance: number },
+  ): Promise<boolean> => {
+    if (!bookPage || !selectedWorkspaceId || !selectedAgentId) return false;
+    setEditLoading(true);
+    try {
+      await updateAgentMemoryChapter(selectedWorkspaceId, selectedAgentId, chapterId, {
+        title: values.title,
+        content: values.content,
+        importance: values.importance ?? 0.5,
+      });
+      const refreshed = await getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId);
+      setBookPage(refreshed);
+      message.success('章节已更新');
+      return true;
+    } catch {
+      message.error('章节更新失败');
+      return false;
+    } finally {
+      setEditLoading(false);
+    }
+  }, [bookPage, selectedWorkspaceId, selectedAgentId]);
 
   const handleArchiveBook = useCallback(async () => {
     if (!bookPage || !selectedWorkspaceId || !selectedAgentId) return;
@@ -376,7 +435,8 @@ const MemoryLibraryPage: React.FC = () => {
       await archiveAgentMemoryChapter(selectedWorkspaceId, selectedAgentId, chapterId);
       message.success('章节已归档');
       if (bookPage) {
-        getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId).then(setBookPage).catch(() => {});
+        const refreshed = await getAgentMemoryBookPage(selectedWorkspaceId, selectedAgentId, bookPage.bookId);
+        setBookPage(refreshed);
       }
     } catch {
       message.error('归档失败');
@@ -397,6 +457,8 @@ const MemoryLibraryPage: React.FC = () => {
   const treeEmptyDescription = selectedLibraryId
     ? '当前图书馆为空，可新建 Page 或 Book。'
     : '请选择或创建图书馆。';
+  const treeNodeCount = countTreeNodes(treeData);
+  const selectionLabel = selectedNode?.title ?? bookPage?.title;
 
   return (
     <PageContainer>
@@ -404,30 +466,35 @@ const MemoryLibraryPage: React.FC = () => {
         {/* ── Toolbar ──────────────────────────────────────── */}
         <div className="memory-library-toolbar">
           <div className="memory-library-scope">
-            <Select
-              className="workspace-select"
-              placeholder="选择工作区"
-              options={workspaceOptions}
-              value={selectedWorkspaceId}
-              onChange={handleWorkspaceChange}
-            />
-            <Select
-              className="workspace-select"
-              placeholder="选择 Agent"
-              options={agentOptions}
-              value={selectedAgentId}
-              onChange={handleAgentChange}
-              disabled={!selectedWorkspaceId || agents.length === 0}
-            />
-            {libraries.length > 1 && (
+            <div className="memory-library-scope-selects">
               <Select
                 className="workspace-select"
-                placeholder="选择图书馆"
-                value={selectedLibraryId}
-                onChange={handleLibraryChange}
-                options={libraries.map((l) => ({ label: l.name, value: l.libraryId }))}
+                aria-label="选择工作区"
+                placeholder="选择工作区"
+                options={workspaceOptions}
+                value={selectedWorkspaceId}
+                onChange={handleWorkspaceChange}
               />
-            )}
+              <Select
+                className="workspace-select"
+                aria-label="选择 Agent"
+                placeholder="选择 Agent"
+                options={agentOptions}
+                value={selectedAgentId}
+                onChange={handleAgentChange}
+                disabled={!selectedWorkspaceId || agents.length === 0}
+              />
+              {libraries.length > 1 && (
+                <Select
+                  className="workspace-select"
+                  aria-label="选择图书馆"
+                  placeholder="选择图书馆"
+                  value={selectedLibraryId}
+                  onChange={handleLibraryChange}
+                  options={libraries.map((l) => ({ label: l.name, value: l.libraryId }))}
+                />
+              )}
+            </div>
             <Input.Search
               className="search-input"
               placeholder="搜索当前 Agent 的记忆..."
@@ -440,91 +507,140 @@ const MemoryLibraryPage: React.FC = () => {
             />
           </div>
           <div className="memory-library-actions">
-            <Button icon={<ReloadOutlined />} onClick={handleRefresh} disabled={!selectedLibraryId}>
-              刷新
-            </Button>
+            <Tooltip title="刷新记忆树">
+              <Button
+                aria-label="刷新记忆树"
+                icon={<ReloadOutlined />}
+                onClick={handleRefresh}
+                disabled={!selectedLibraryId}
+              />
+            </Tooltip>
             {selectedWorkspaceId && selectedAgentId && libraries.length === 0 && (
               <Button onClick={handleEnsureDefaultLibrary} loading={editLoading}>
                 创建默认图书馆
               </Button>
             )}
             <Button icon={<PlusOutlined />} onClick={() => setNewPageModalOpen(true)} disabled={!selectedLibraryId}>
-              新建 Page
+              新建页面
             </Button>
-            <Button icon={<PlusOutlined />} onClick={() => setNewBookModalOpen(true)} disabled={!selectedLibraryId}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setNewBookModalOpen(true)} disabled={!selectedLibraryId}>
               新建 Book
             </Button>
+            <Tooltip title={inspectorOpen ? '关闭页面详情' : '打开页面详情'}>
+              <Button
+                aria-label={inspectorOpen ? '关闭页面详情' : '打开页面详情'}
+                icon={<InfoCircleOutlined />}
+                onClick={() => setInspectorOpen((open) => !open)}
+              />
+            </Tooltip>
           </div>
+        </div>
+        <div className="memory-library-contextbar">
           <div
             className="memory-library-selection"
-            title={selectedNode?.title ?? bookPage?.title ?? '未选中节点'}
+            title={selectionLabel ?? '未选中节点'}
           >
-            {selectedNode ? `已选中: ${selectedNode.title}` : bookPage ? `浏览: ${bookPage.title}` : '未选中节点'}
+            <span className="memory-library-selection-label">当前位置</span>
+            <span>{selectionLabel ?? '尚未选择记忆页'}</span>
           </div>
+          <span className="memory-library-count">{treeNodeCount} 个页面节点</span>
         </div>
 
         {/* ── Content: Tree | Editor | Inspector ────────────── */}
         <div className="memory-library-content">
           {/* Left: Page Tree */}
           <div className="memory-page-tree-panel">
-            {error ? (
-              <Alert message={error} type="error" showIcon closable onClose={() => setError(null)} style={{ marginBottom: 12 }} />
-            ) : null}
-            {searchVisible ? (
-              <MemorySearchResults results={searchResults} onSelect={handleSearchResultSelect} />
-            ) : (
-              <MemoryPageTree
-                loading={loading}
-                data={treeData}
-                selectedKey={selectedNode?.id}
-                onSelect={handleTreeSelect}
-                emptyDescription={treeEmptyDescription}
-              />
-            )}
+            <div className="memory-panel-heading">
+              <div className="memory-panel-title">
+                <BookOutlined />
+                <span>{searchVisible ? '搜索结果' : '记忆页面'}</span>
+              </div>
+              <span className="memory-panel-count">
+                {searchVisible ? searchResults.length : treeNodeCount}
+              </span>
+            </div>
+            <div className="memory-page-tree-scroll">
+              {error ? (
+                <Alert message={error} type="error" showIcon closable onClose={() => setError(null)} style={{ marginBottom: 12 }} />
+              ) : null}
+              {searchVisible ? (
+                <MemorySearchResults results={searchResults} onSelect={handleSearchResultSelect} />
+              ) : (
+                <MemoryPageTree
+                  loading={loading}
+                  data={treeData}
+                  selectedKey={selectedNode?.id}
+                  book={bookPage ?? undefined}
+                  selectedChapterId={selectedChapterId}
+                  onSelect={handleTreeSelect}
+                  onSelectChapter={setSelectedChapterId}
+                  emptyDescription={treeEmptyDescription}
+                />
+              )}
+            </div>
           </div>
 
           {/* Center: Page Editor */}
           <div className="memory-page-editor-panel">
             {bookPage && (
-              <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+              <div className="memory-page-editor-toolbar">
                 <Button size="small" icon={<EditOutlined />} onClick={() => {
                   editBookForm.setFieldsValue({ title: bookPage.title, summary: bookPage.summary });
                   setEditBookModalOpen(true);
-                }}>编辑信息</Button>
-                <Button size="small" icon={<PlusOutlined />} onClick={() => setNewChapterModalOpen(true)}>添加章节</Button>
+                }}>编辑 Book</Button>
+                <Button size="small" icon={<PlusOutlined />} onClick={() => setNewChapterModalOpen(true)}>
+                  新建章节
+                </Button>
                 <Popconfirm title="归档后将不可见，确认归档？" onConfirm={handleArchiveBook}>
                   <Button size="small" danger icon={<DeleteOutlined />}>归档 Book</Button>
                 </Popconfirm>
               </div>
             )}
-            <MemoryPageEditor
-              loading={bookLoading}
-              book={bookPage ?? undefined}
-              nodeTitle={selectedNode?.title}
-              nodeSummary={selectedNode?.summary}
-              nodeType={selectedNode?.type}
-              onArchiveChapter={handleArchiveChapter}
-            />
+            <div className="memory-page-editor-scroll">
+              <div className="memory-page-editor-content">
+                <MemoryPageEditor
+                  loading={bookLoading}
+                  book={bookPage ?? undefined}
+                  nodeTitle={selectedNode?.title}
+                  nodeSummary={selectedNode?.summary}
+                  nodeType={selectedNode?.type}
+                  selectedChapterId={selectedChapterId}
+                  onCreateChapter={() => setNewChapterModalOpen(true)}
+                  onUpdateChapter={handleUpdateChapter}
+                  onArchiveChapter={handleArchiveChapter}
+                  saving={editLoading}
+                />
+              </div>
+            </div>
           </div>
 
-          {/* Right: Inspector */}
-          <div className="memory-inspector-panel">
-            <MemoryInspector
-              loading={bookLoading}
-              book={bookPage ?? undefined}
-              nodeTitle={selectedNode?.title}
-              nodeType={selectedNode?.type}
-              nodeId={selectedNode?.id ?? bookPage?.bookId}
-              sources={sources}
-              pointers={pointers.outgoing.concat(pointers.backlinks).map((p: any) => ({
-                pointerId: p.pointerId,
-                targetType: p.targetType,
-                targetId: p.targetId,
-                label: p.targetLabel,
-              }))}
-            />
-          </div>
         </div>
+
+        <Drawer
+          className="memory-inspector-drawer"
+          title="页面详情"
+          placement="right"
+          width={380}
+          open={inspectorOpen}
+          onClose={() => setInspectorOpen(false)}
+          getContainer={false}
+          rootStyle={{ position: 'absolute' }}
+        >
+          <MemoryInspector
+            loading={bookLoading}
+            book={bookPage ?? undefined}
+            nodeTitle={selectedNode?.title}
+            nodeType={selectedNode?.type}
+            nodeId={selectedNode?.id ?? bookPage?.bookId}
+            sources={sources}
+            pointers={pointers.outgoing.concat(pointers.backlinks).map((p: any) => ({
+              pointerId: p.pointerId,
+              targetType: p.targetType,
+              targetId: p.targetId,
+              label: p.targetLabel,
+            }))}
+          />
+        </Drawer>
       </div>
 
       {/* ── Modals ──────────────────────────────────────────── */}
@@ -606,6 +722,7 @@ const MemoryLibraryPage: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
     </PageContainer>
   );
 };

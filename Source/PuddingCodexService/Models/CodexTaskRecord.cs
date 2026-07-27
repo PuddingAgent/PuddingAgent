@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace PuddingCodexService.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter<CodexTaskStatus>))]
 public enum CodexTaskStatus
 {
     Queued,
@@ -23,6 +26,10 @@ public sealed record CodexTaskRecord
     public string? StatusMessage { get; init; }
     public string? ResultJson { get; init; }
     public string? Error { get; init; }
+    public bool RestartPuddingOnCompletion { get; init; }
+    public string? RestartRequestId { get; init; }
+    public DateTimeOffset? RestartNotBeforeUtc { get; init; }
+    public string? RestartResultJson { get; init; }
     public required DateTimeOffset CreatedAtUtc { get; init; }
     public required DateTimeOffset UpdatedAtUtc { get; init; }
     public long Revision { get; init; }
@@ -36,7 +43,8 @@ public sealed record CodexExecutionResult(
 public sealed record CodexTaskAccepted(
     string TaskId,
     CodexTaskStatus Status,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool RestartPuddingOnCompletion);
 
 public sealed record PuddingRestartAccepted(
     string RequestId,
