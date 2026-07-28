@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,8 @@ namespace PuddingPlatform.Services.Conversation;
 public sealed class SystemCommandHandler(
     PlatformDbContext db,
     IRuntimeControlService runtimeControl,
+    IRequestCompactionHandler requestCompactionHandler,
+    ISystemStatusSnapshotProvider statusSnapshotProvider,
     ILogger<SystemCommandHandler> logger) : ISystemCommandHandler
 {
     private static readonly JsonSerializerOptions JsonOptions =
@@ -34,7 +37,6 @@ public sealed class SystemCommandHandler(
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 message =>
-                    message.SessionId == request.ConversationId &&
                     message.CommandId == request.ClientRequestId &&
                     message.MessageId == request.ResponseMessageId,
                 ct);
@@ -53,7 +55,13 @@ public sealed class SystemCommandHandler(
                     RuntimeExecutionMode.Yolo,
                     $"idempotent replay of /yolo; user={request.UserId}; conversation={request.ConversationId}");
             }
-            return BuildResult(request, existing.Content, runtimeControl.Mode);
+            // A state-changing command such as /compact can move the Agent's
+            // main conversation before Feishu retries the same message. Stable
+            // gateway IDs remain authoritative across that conversation switch.
+            return BuildResult(
+                request with { ConversationId = existing.SessionId },
+                existing.Content,
+                runtimeControl.Mode);
         }
 
         string responseMessage;
@@ -79,6 +87,15 @@ public sealed class SystemCommandHandler(
         else if (command.CommandKind == SystemCommandKind.WhoAmI)
         {
             responseMessage = BuildWhoAmIMessage(request);
+        }
+        else if (command.CommandKind == SystemCommandKind.Status)
+        {
+            responseMessage = await HandleStatusAsync(request, ct);
+        }
+        else if (command.CommandKind == SystemCommandKind.Compact
+                 && command.Action == SystemCommandAction.Run)
+        {
+            responseMessage = await HandleCompactAsync(request, ct);
         }
         else if (IsYolo(command))
         {
@@ -184,6 +201,128 @@ public sealed class SystemCommandHandler(
     private static bool IsYolo(SystemCommand command)
         => command.CommandKind == SystemCommandKind.Yolo
            && command.Action == SystemCommandAction.Run;
+
+    private async Task<string> HandleStatusAsync(
+        SystemCommandRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var snapshot = await statusSnapshotProvider.GetAsync(
+                new SystemStatusSnapshotRequest(
+                    request.WorkspaceId,
+                    request.ConversationId,
+                    request.AgentId),
+                ct);
+            return BuildStatusMessage(snapshot);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "[SystemCommand] status failed workspace={WorkspaceId} conversation={ConversationId} agent={AgentId} user={UserId}",
+                request.WorkspaceId,
+                request.ConversationId,
+                request.AgentId,
+                request.UserId);
+            return "Pudding status is temporarily unavailable. Check the backend diagnostics for details.";
+        }
+    }
+
+    private static string BuildStatusMessage(SystemStatusSnapshot snapshot)
+    {
+        var model = string.IsNullOrWhiteSpace(snapshot.ModelId)
+            ? "unavailable"
+            : string.IsNullOrWhiteSpace(snapshot.ProviderId)
+                ? InlineCode(snapshot.ModelId)
+                : InlineCode($"{snapshot.ProviderId}/{snapshot.ModelId}");
+        var template = string.IsNullOrWhiteSpace(snapshot.SourceTemplateId)
+            ? string.Empty
+            : $" · template {InlineCode(snapshot.SourceTemplateId)}";
+        var context = snapshot.ContextHealth is not { } health
+            ? "unavailable"
+            : $"{FormatTokens(health.RemainingTokens)} remaining / " +
+              $"{FormatTokens(health.EffectiveWindowTokens)} effective " +
+              $"({FormatTokens(health.UsedTokens)} used, " +
+              $"{health.UsageRatio.ToString("P1", CultureInfo.InvariantCulture)}, " +
+              $"{health.State}; source={health.UsageSource}, confidence={health.UsageConfidence})";
+        var runtime =
+            $"{InlineCode(snapshot.RuntimeMode.ToString())} · " +
+            $"{snapshot.ActiveRuntimeSessions} active session(s) · " +
+            $"{snapshot.SessionWindowErrorCount} error(s) in the runtime window";
+
+        var lines = new List<string>
+        {
+            "**Pudding status**",
+            $"- Agent: {snapshot.AgentDisplayName} ({InlineCode(snapshot.AgentId)}){template}",
+            $"- Session: {InlineCode(snapshot.SessionState.ToString())} ({InlineCode(snapshot.ConversationId)}) · {snapshot.RunningSubAgents} running sub-agent(s)",
+            $"- Context: {context}",
+            $"- Model: {model}",
+            $"- Runtime: {runtime}",
+            $"- Capabilities: {snapshot.CapabilityCount}",
+        };
+
+        if (!string.IsNullOrWhiteSpace(snapshot.SessionFaultSummary))
+            lines.Add("- Fault: present; inspect authenticated backend diagnostics for details");
+        if (snapshot.Warnings.Count > 0)
+            lines.Add($"- Warnings: {string.Join("; ", snapshot.Warnings)}");
+
+        return string.Join('\n', lines);
+    }
+
+    private static string FormatTokens(int tokens)
+        => tokens >= 1_000
+            ? $"{tokens / 1_000d:0.0}k"
+            : tokens.ToString(CultureInfo.InvariantCulture);
+
+    private static string InlineCode(string value)
+        => $"`{value.Replace("`", "ˋ", StringComparison.Ordinal)}`";
+
+    private async Task<string> HandleCompactAsync(
+        SystemCommandRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await requestCompactionHandler.HandleAsync(
+                new RequestCompactionCommand(
+                    request.ConversationId,
+                    request.WorkspaceId,
+                    request.AgentId,
+                    ContextCompactionLevel.Full,
+                    $"system command /compact from {request.SourceChannel ?? "web"}",
+                    request.ClientRequestId,
+                    request.UserId),
+                ct);
+            var title = string.IsNullOrWhiteSpace(result.NewConversationTitle)
+                ? result.NewConversationId
+                : result.NewConversationTitle;
+
+            return
+                $"Context compaction completed. Compacted {result.Compaction.CompactedMessageCount} messages; " +
+                $"context tokens {result.Compaction.BeforeTokens} -> {result.Compaction.AfterTokens}. " +
+                $"Future messages will continue in `{title}` (`{result.NewConversationId}`).";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "[SystemCommand] compact failed workspace={WorkspaceId} conversation={ConversationId} agent={AgentId} user={UserId}",
+                request.WorkspaceId,
+                request.ConversationId,
+                request.AgentId,
+                request.UserId);
+            return $"Context compaction failed: {ex.Message}";
+        }
+    }
 
     private static string BuildWhoAmIMessage(SystemCommandRequest request)
     {

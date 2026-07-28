@@ -199,7 +199,7 @@ public sealed class ContextCompactionContentSummaryTests
             new FixedSummaryGenerator("## 用户目标\n只压缩当前 session 窗口。"),
             NullLogger<ContextCompactionService>.Instance,
             contentSummary,
-            null, null);
+            messageStore: new ChatMessageRepository(new TestPlatformDbContextFactory(platformOptions)));
 
         var result = await service.CompactAsync(new ContextCompactionRequest(
             WorkspaceId: "workspace-1",
@@ -221,6 +221,44 @@ public sealed class ContextCompactionContentSummaryTests
             m.SessionId == "session-from-chat" && m.ContentType == "compact_summary"));
         Assert.AreEqual(4, await verifyDb.Messages.CountAsync(m =>
             m.SessionId == "session-from-chat" && m.CompactedBy != null));
+    }
+
+    [TestMethod]
+    public async Task GetHealthAsync_UsesCanonicalTranscript_WhenRuntimeUsageIsUnavailable()
+    {
+        await using var memoryConnection = new SqliteConnection("Data Source=:memory:");
+        await memoryConnection.OpenAsync();
+        var memoryOptions = CreateOptions(memoryConnection);
+        await using (var memoryDb = new MemoryDbContext(memoryOptions))
+        {
+            await memoryDb.Database.EnsureCreatedAsync();
+        }
+
+        await using var platformConnection = new SqliteConnection("Data Source=:memory:");
+        await platformConnection.OpenAsync();
+        var platformOptions = CreatePlatformOptions(platformConnection);
+        await using (var platformDb = new PlatformDbContext(platformOptions))
+        {
+            await platformDb.Database.EnsureCreatedAsync();
+            SeedTranscript(platformDb, "session-health", "agent-1", messageCount: 8);
+            await platformDb.SaveChangesAsync();
+        }
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(memoryOptions),
+            new FixedSummaryGenerator("unused"),
+            NullLogger<ContextCompactionService>.Instance,
+            messageStore: new ChatMessageRepository(new TestPlatformDbContextFactory(platformOptions)));
+
+        var health = await service.GetHealthAsync(
+            "session-health",
+            contextWindowTokens: 100_000,
+            maxOutputTokens: 4_096);
+
+        Assert.IsTrue(health.UsedTokens > 0);
+        Assert.AreEqual(8, health.MessageCount);
+        Assert.AreEqual("canonical_chat_transcript", health.UsageSource);
+        Assert.AreEqual("estimated", health.UsageConfidence);
     }
 
     [TestMethod]
@@ -345,6 +383,7 @@ public sealed class ContextCompactionContentSummaryTests
         {
             db.ChatMessages.Add(new ChatMessageEntity
             {
+                MessageId = $"{sessionId}-message-{i}",
                 SessionId = sessionId,
                 WorkspaceId = "workspace-1",
                 AgentInstanceId = agentId,

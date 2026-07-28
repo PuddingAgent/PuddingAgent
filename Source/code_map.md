@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-27 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +飞书 CardKit 流式回复投影；独立 Codex MCP Service、固定 Yolo 任务与 Backend-only 自修复重启
+> 最后更新: 2026-07-28 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Web/飞书共享 `/status` 状态快照与斜杠指令入口
 
 ---
 
@@ -14,7 +14,7 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 
 | 文件 | 用途 |
 |------|------|
-| `../dev-up.py` | 本地 Backend/Codex MCP Service/Frontend/Proxy 监督器；Codex 与 Backend 为同级进程；消费延迟重启请求，先 staging build 再只切换 Backend；各受管角色有快速失败熔断 |
+| `../dev-up.py` | 本地 Backend/Codex MCP Service/Frontend/Proxy 监督器；以 `tmp/dev/supervisor.pid` 保证重启时先终止旧监督器，避免旧实例抢占重建；`--rebuild` 复用预构建产物且 `--auto-yolo` 通过仓库根 `yolo.signal` 激活 Runtime；各受管角色有快速失败熔断 |
 | `../How-Debuge.md` | 可重复使用的启动、会话、SSE、子代理与工具诊断路径 |
 
 ---
@@ -50,11 +50,12 @@ Source/
 ### Agent Loop (核心执行循环)
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 Agent 执行编排入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、从 journal 提交真实终态统计；对 canonical `ExpectedOutputContract` 保留最近一次合格报告，防止最终 DONE 状态摘要覆盖完整交付；纯工具参数转换、KeyVault 空实现与流式诊断聚合已移入 `Services/AgentExecution/` |
+| `Services/AgentExecutionService.cs` | 🔑 Agent 执行编排入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、以实际 round-start 计数提交终态统计；对 canonical `ExpectedOutputContract` 保留最近一次合格报告，防止最终 DONE 状态摘要覆盖完整交付；纯工具参数转换、KeyVault 空实现与流式诊断聚合已移入 `Services/AgentExecution/` |
 | `Services/AgentExecution/AgentExecutionService.Buffered.cs` + `AgentExecutionService.Streaming.cs` | 同一执行器的过渡期 partial 主循环边界；分别承载结构化非流式循环和面向 UI 的 SSE 流式循环，先降低单文件导航/冲突成本，后续仍须沿 facade 继续拆解长方法 |
 | `Services/AgentExecution/AgentToolArguments.cs` | LLM tool-call JSON 到 legacy skill 参数与 terminal payload 的纯转换边界；执行器保留薄委托以兼容既有反射测试 |
 | `Services/AgentExecution/NoOpKeyVaultService.cs` + `StreamPipelineDiagnosticsAccumulator.cs` | 可选 KeyVault 的无副作用 fallback，以及流式 KeyVault/SSM 热路径指标的线程安全聚合；均不再作为执行器内嵌类型 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | Smart 子代理五段报告合同的共享解析/校验与执行期候选保留器；只在显式 canonical `ExpectedOutputContract` 下恢复完整报告 |
+| `Services/AgentLoop/AgentExecutionOutcomePolicy.cs` | 运行终态兼容判定；历史工具失败仍保留审计，但完整 canonical `DONE` 报告优先，报告正文中的 `Failed/timed out` 术语不得反向污染终态 |
 | `Services/AgentLoop/AgentLoopResponse.cs` | 结构化 Agent Loop 响应解析；支持纯 JSON、起始代码围栏，以及模型先输出说明文字再返回 fenced JSON 的格式，确保 `DONE.message` 而非整段 provider 原文进入最终结果 |
 | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs` | 主 Agent、工具调用和子代理共用的稳定执行身份；贯穿 Conversation/Turn/Command/Run/Tool/Invocation |
 | `PuddingCore/Runtime/ExecutionProgressRegistry.cs` | 主 Run 进程内进展注册表；按 Conversation 汇聚子执行信号，区分 liveness/meaningful，并拒绝相同 Run+阶段+指纹的重复续期 |
@@ -63,12 +64,14 @@ Source/
 | `Services/AgentLoop/ExecutionJournal.cs` | 执行日志记录 |
 | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 执行护栏（最大轮次等） |
 | `Services/AgentLoop/ExecutionControlRegistry.cs` | 注册执行控制策略 |
+| `Services/YoloSignalService.cs` | 开发机 `--auto-yolo` 文件信号消费者；从显式 `PUDDING_REPOSITORY_ROOT` 定位仓库根，消费后切换共享 Runtime mode 并删除信号文件 |
 | `Services/StreamWatchdog.cs` + `DirectLlmClient.cs` | LLM 流操作级滑动看门狗；首块默认 300 秒，首块后相邻流块默认 120 秒，Provider 配置只能收紧空闲窗口，不再施加固定流总时长；使用 Stopwatch 单调时钟 |
 
 ### LLM 调用
 | 文件 | 用途 |
 |------|------|
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
+| `PuddingCore/Core/OpenAiLlmGateway.cs` + `PuddingCore/Models/StreamDelta.cs` | OpenAI-compatible Chat Completions 适配；流式解析保留同一 chunk 的全部 `tool_calls`，按 index 维持延迟 ID，并为缺失/重复 ID 生成单轮稳定协议 ID，避免工具结果在下一轮被判 orphan |
 | `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；仅当当前模型带 `vision` 能力标签时才把 workspace 授权视觉制品序列化为多模态内容，文本模型不再接收 `image_url` |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
@@ -81,7 +84,7 @@ Source/
 |------|------|
 | `Services/ContextWindowManager.cs` | 🔑 上下文窗口管理（token 驱动裁剪 + 自动压缩触发）；比较持久化快照前先修复内存中的不完整工具轮次 |
 | `PuddingCore/Models/LlmMessageSequenceNormalizer.cs` | OpenAI-compatible 消息协议守卫；保留完整工具轮次、移除 orphan Tool、降级或丢弃不完整 Assistant tool-call |
-| `Services/ContextCompactionService.cs` | 上下文压缩执行（消息合并） |
+| `Services/ContextCompactionService.cs` | 上下文压缩执行与 ContextHealth 用量解析；provider/snapshot/Memory 均无数据时，以最近 500 条 canonical ChatMessages 估算并标记 `canonical_chat_transcript`，避免重启后错误显示 0 used |
 | `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估 + 容量预测（PredictCapacity） |
 | `Services/ContextAssemblyService.cs` | 上下文组装（System Prompt + 历史 + 记忆） |
 | `Services/ContextPipeline.cs` | 上下文管线编排 |
@@ -144,7 +147,7 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期；首次连接保留历史/bootstrap 已同步的 cursor 并通过 `Last-Event-ID` 续读，禁止刷新时从 sequence 0 重放完整事件库 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；分页最大 sequence 必须以有限哨兵归并并单调推进，不能以 `NaN` 为 reduce 初值；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts` | 持久/实时事件到 Turn、SubAgent、usage、cache 与 working-agent 状态的统一投影；`subagent.*` 只进入独立 reducer/运行坞并提前返回，禁止缺失父 Turn 身份的历史事件回退污染最新主消息 |
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts` | 发送事务：乐观 Turn、Outbox、202 acceptance 身份收敛、SSE/replay 衔接与失败回收；除专用 `/compact` 生命周期外，所有斜杠输入统一调用 Web system-command endpoint，不进入 Agent Turn |
 | `PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx` + `visionArtifactImage.ts` | Composer 图片暂存边界：多选、Ctrl+V/拖放、发送前预览与移除；BMP/GIF/AVIF 等浏览器可解码格式先转为 provider-safe PNG，再上传全部图片并用单次消息携带 `visionArtifactIds` |
 | `PuddingPlatformAdmin/src/pages/chat/components/UserMessageBubble.tsx` + `types.ts` + `viewport/messageProjection.ts` | 用户多图气泡与历史/实时元数据投影；按 artifact id 渲染图片画廊并保留单图兼容字段 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 输入、服务端命令队列、steering 队列、快捷键与定时刷新 |
@@ -242,7 +245,8 @@ Source/
 | `Services/PlatformReadinessProbe.cs` | Conversation 执行链 readiness：DB + Submit Handler + Coordinator |
 | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 只消费 AgentRuntimeProfile 的无密钥快照工厂；冻结 Provider/Profile/Model 与能力引用 |
 | `Services/Conversation/SubmitTurnHandler.cs` | Submit Turn 应用处理器；公开请求的 `gateway_*` 保留 metadata 会被过滤，只有进程内可信 Gateway 命令可保留渠道回复路由事实 |
-| `Services/Conversation/SystemCommandHandler.cs` | Web/飞书共享的系统命令执行边界；只读命令直接处理，`/whoami` 只回显已验证 Feishu `externalUserId`，特权命令要求渠道已验证用户；持久化 system transcript，默认禁止创建 Agent Turn/Command，只有显式 `ForwardToAgent` 才允许投递处理结果 |
+| `PuddingCore/Platform/ISystemStatusSnapshotProvider.cs` + `Services/Conversation/SystemStatusSnapshotProvider.cs` | `/status` 的渠道无关状态快照边界；统一读取 Agent Profile、Provider/Model、模型容量、ContextHealth、canonical Session/子代理状态和 Runtime mode/error window，数据源降级时返回 warning 而不调用 Agent 补猜 |
+| `Services/Conversation/SystemCommandHandler.cs` | Web/飞书共享的系统命令执行边界；`/status` 格式化共享快照并显示 remaining/effective context、模型和 Agent/Session 基础状态；`/compact` 复用 `IRequestCompactionHandler` 并回复压缩统计/后继会话，跨会话使用稳定 request/response ID 防止飞书重投二次压缩；`/whoami` 只回显已验证 Feishu `externalUserId`；特权命令要求渠道已验证用户，默认禁止创建 Agent Turn/Command |
 | `Services/Conversation/RequestTurnCancellationHandler.cs` | Cancel 处理器 — 写 turn.cancel.requested |
 | `Services/Conversation/CreateSteeringHandler.cs` | Steering 应用 Handler；端点在 Runtime 消费器落地前保持关闭 |
 | `Services/Conversation/RequestCompactionHandler.cs` | 手动压缩唯一应用入口；解析 Agent Profile、执行压缩、写生命周期事件并创建后继 Conversation |
@@ -299,7 +303,7 @@ Source/
 | `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter；CardKit 终态 ACK 后同步完成 stream projection，出站故障不重跑 Agent |
 | `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片 metadata 进入真实 SQLite Message Fabric/canonical SubmitTurn、图片资源稳定落盘与重投复用，以及 CardKit create/publish/delta/final durable delivery，只替换外部飞书与 Agent 执行结果 |
 | `PuddingPlatformTests/Services/VisualArtifactObservationServiceTests.cs` | 视觉预处理回归；覆盖文本主模型强制观察、原生视觉直通、视觉失败阻断，以及观察上下文的媒体 prompt-injection 安全边界 |
-| `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 channel-owned open_id 白名单、`/whoami` 身份透传、默认只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 channel-owned open_id 白名单、`/whoami` 身份透传、`/status` 非特权共享处理、`/compact` 只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
 | `PuddingPlatformTests/Services/ChannelConfigurationFileServiceTests.cs` | 渠道文件配置回归；覆盖 Secret 不回显、空 Secret 更新保留、旧 Agent 飞书配置迁移和重复 App ID 拒绝 |
 | `Tests/HarnessAgent.Cli/Program.cs` (`feishu-echo`) | 独立飞书 SDK Echo 程序；真实长连接收到文本后以稳定 uuid 调 reply API 原样回复，支持 `--once/--timeout-seconds/--config` |
 | `Tests/HarnessAgent.Core.Tests/Feishu/FeishuWebSocketInitialPingTests.cs` | 本地真 WebSocket 协议回归；锁定建连后立即 CONTROL/ping，以及 pbbp2 DATA/event 解码、文本投递和成功 ACK |
@@ -458,9 +462,13 @@ ContextWindowManager.EnsureCapacity()
 ### 3. 手动 `/compact` 与新会话切换
 
 ```text
-Frontend /compact
-  → POST /api/sessions/{conversationId}/compact
-  → IRequestCompactionHandler
+Web /compact
+  → POST /api/sessions/{conversationId}/compact ───────────────┐
+Feishu /compact                                                │
+  → MessageGatewayIngress（稳定 ID + channel-owned 白名单）    │
+  → ISystemCommandHandler（拦截，不创建 Agent Turn）───────────┤
+                                                               ▼
+  IRequestCompactionHandler
       → IAgentRuntimeProfileResolver
       → context.compaction.started
       → IContextCompactionService
@@ -471,11 +479,30 @@ Frontend /compact
           → register old → new redirect
       → source context.compaction.completed
       → successor context.compaction.completed
+  → Feishu durable Connector reply（统计 + 后继 Conversation）
   → 前端按 compactionId 更新独立状态 Turn
   → 清零新 Conversation 的 SSE cursor 并切换
   → Bootstrap.lifecycleEvents 恢复持久压缩状态
   → 前端维护独立 lifecycle Turn 索引
   → Hook 输出边界统一合并 ChatMessages 与 lifecycle Turn
+```
+
+### 4. Web/飞书共享 `/status`
+
+```text
+Web /status ──→ system-command endpoint ───────────────────────┐
+Feishu /status → MessageGatewayIngress（只读，无需白名单）────┤
+                                                               ▼
+                   ISystemCommandHandler
+                         → ISystemStatusSnapshotProvider
+                             → IAgentRuntimeProfileResolver
+                             → ILlmConfigService
+                             → IContextCompactionService.GetHealthAsync
+                             → ISessionStateManager
+                             → IRuntimeControlService
+                         → canonical system transcript
+                         → Web system Turn / Feishu Connector reply
+                         ╳ no ConversationTurn / ChatExecutionCommand / Agent delivery
 ```
 
 Compact HTTP 命令只携带 Conversation/Workspace/Agent 身份、压缩级别、原因和
@@ -484,8 +511,11 @@ Compact HTTP 命令只携带 Conversation/Workspace/Agent 身份、压缩级别�
 返回对应 `lifecycleEvents`，前端应用这些事件后才允许推进 SSE cursor。
 Controller SessionRepository 是 Main Session 归属的事实源；Agent manifest 只是
 运行时镜像，内存 redirect 只负责进程内低延迟跳转，二者都不能替代持久 rebind。
+飞书使用稳定 `clientRequestId` 作为 `compactionId`；压缩已把主会话切到后继会话后，
+同一飞书消息重投仍按 `clientRequestId + responseMessageId` 跨 Conversation 命中旧结果，
+不得执行第二次压缩。
 
-### 4. Smart* 工具 — 子代理薄包装与有界委派模式
+### 5. Smart* 工具 — 子代理薄包装与有界委派模式
 ```
 ExecutionRunCoordinator（Turn 启动时冻结 24h parent hard deadline，并注册 1h meaningful-progress 窗口）
   → Turn / Runtime / Tool contract 逐层透传（只能收紧）
@@ -524,7 +554,7 @@ ExecutionRunCoordinator（Turn 启动时冻结 24h parent hard deadline，并注
     → 子代理执行角色协议并返回 canonical 详细报告
 ```
 
-### 4. 记忆写入
+### 6. 记忆写入
 ```
 Agent 调用 save_memory / manage_memory
   → MemoryTools.ExecuteAsync()
@@ -533,7 +563,7 @@ Agent 调用 save_memory / manage_memory
     → BookRegistry.GetBookIdByAlias()       // 标准名 → BookId 路由
 ```
 
-### 5. 记忆召回
+### 7. 记忆召回
 ```
 Agent 调用 search_memory / grep_memory
   → MemoryTools / MemoryLibraryTool
@@ -541,7 +571,7 @@ Agent 调用 search_memory / grep_memory
     → MemoryLibrary.SearchBooksFtsAsync()     // Book 级检索
 ```
 
-### 6. 会话状态持久化恢复
+### 8. 会话状态持久化恢复
 ```
 重启
   → SessionStateStore.LoadFromDisk()           // 扫描 data/sessions/*.json
@@ -723,7 +753,7 @@ Orchestrator:
 6. **会话持久化**: `SessionStateStore` 在状态变更时异步写入 `data/sessions/{id}.json`，重启后恢复
 7. **EF Core Migration**: Platform 用 Code-First Migration，MemoryEngine 用 DbInitializer 手动建表
 8. **SSE 双轨迁移**: 新聊天链路以 `ConversationEventStore` 为事实源并按 sequence 重放；`SessionStateManager` 仅保留遗留 Session 流
-9. **工具权限**: `ToolPermissionPolicyService` 检查安全区，高危工具需 `InMemoryToolApprovalService` 审批
+9. **工具权限**: `ToolPermissionPolicyService` 先执行显式 `AllowedToolNames` 暴露边界，再处理安全区与 Yolo 审批旁路；高危工具需 `InMemoryToolApprovalService` 审批
 10. **执行配置边界**: Command 只保存稳定引用；LLM/Tool/Skill 配置由 Worker 执行时通过 SnapshotFactory 快照化
 11. **ADR-059 Execution Kernel 已建成**: Worker 原子 CAS 领取；Journal 负责 fenced 输出、原子终态与基础设施失败兜底；SnapshotFactory 负责执行配置；ControlService 负责 Cancel/Control 写入
 12. **唯一命令入口**: 前端只调用 `POST /api/v1/conversations/{id}/turns`；旧 ChatApiController 与旧前端发送函数已删除

@@ -1,7 +1,7 @@
 # ADR-063：飞书 Agent 绑定与可靠消息网关
 
-> 状态：**Accepted（V1.2 渠道配置独立化已实现）**
-> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26
+> 状态：**Accepted（V1.3 共享系统指令与 `/status` 已实现）**
+> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28
 > 范围：渠道服务商、渠道实例、Agent channel 引用、飞书 Connector、Message Gateway、Message Fabric、Conversation、Vision Artifact、CardKit 流式投影、回复投递
 > 关联：[ADR-045 双向消息系统](46ADR-045双向消息系统与聊天室客户端ADR.md)、[ADR-057 可靠 Conversation 事件流](58ADR-057前后端可靠SSE与Conversation事件流架构ADR.md)、[ADR-059 Conversation 执行内核](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 
@@ -116,13 +116,37 @@ Agent delivery 再由 LLM 猜测是否应执行。处理规则是：
 6. Web 与飞书复用同一个 `ISystemCommandHandler`。Web 身份由 Web 鉴权边界保证；飞书身份由
    channel-owned whitelist 保证。
 
+Web Composer 与飞书 Gateway 只负责识别斜杠前缀和构造经过各自身份边界验证的
+`SystemCommandRequest`；命令解析、授权、执行、幂等与 transcript 持久化都属于
+`ISystemCommandHandler`。Web 不得再为 `/status`、`/help`、`/whoami` 等只读指令分别实现
+本地处理器；除承担后继会话 UI 切换的 `/compact` 外，所有 `/` 开头的 Web 输入都进入共享端点。
+
 `/whoami` 只读取 Gateway 从已验证飞书事件传入的 `externalUserId`，并将 sender `open_id`
 回复到原飞书消息，同时写入 Web canonical transcript。它不调用 Agent、不查询飞书通讯录，也不
 将 ID 写入运行日志。若请求不是来自已验证的飞书消息，处理器返回 ID unavailable，禁止回退到
 客户端自报身份。
 
+`/status` 是只读、非特权指令。`ISystemStatusSnapshotProvider` 从执行期的权威边界读取当前
+Agent Profile、Provider/Model、模型上下文容量、`ContextHealthSnapshot`、canonical Session
+状态、运行中子代理数和 Runtime mode/error window，再由共享 Handler 格式化为 Web/飞书均可
+展示的 Markdown。上下文必须显示 `remaining / effective`、used、usage ratio、health state、
+usage source/confidence；某个只读数据源不可用时返回部分状态与 warning，不得调用 Agent 补猜。
+Context usage 的优先级是 provider usage → 当前进程 snapshot → Memory active messages；服务重启后
+这些来源均为空但 canonical `ChatMessages` 仍有历史时，只读取最近 500 条做 tokenizer 估算，并将
+source 标记为 `canonical_chat_transcript`、confidence 标记为 `estimated`。禁止因运行时缓存丢失而
+把有历史的会话显示为 0 used，也禁止为状态查询全量加载无界 transcript。
+`/status` 的用户消息和系统回复写入 canonical transcript，但不会创建 `ConversationTurn`、
+`ChatExecutionCommand` 或 Agent delivery。
+
+`/compact` 是会改变会话状态的特权指令。白名单校验通过后，`ISystemCommandHandler` 必须调用
+与 Web 相同的 `IRequestCompactionHandler`，使用稳定 `clientRequestId` 作为 `compactionId`；
+不得直接调用压缩服务或把原始指令投递给 Agent。成功回复包含压缩消息数、压缩前后 token 数与
+后继 Conversation，`ICompactionSessionSuccessor` 同时持久化 Agent 的新主会话，因此下一条飞书
+消息进入后继 Conversation。压缩失败也要形成系统 transcript 并可靠回复飞书。
+
 Gateway 指令回复使用稳定的 message/request/reply 身份；同一飞书 `message_id` 重投不会执行
-第二次状态变更，也不会形成第二个 Agent Turn。
+第二次状态变更，也不会形成第二个 Agent Turn。幂等查询不能限定当前 Conversation：`/compact`
+成功后主会话已经切换，重投仍须通过稳定 `clientRequestId + responseMessageId` 命中旧会话结果。
 
 ### 2.4 权威消息链
 

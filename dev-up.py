@@ -56,6 +56,7 @@ BACKEND_PID_FILE = RUN_DIR / "backend.pid"
 CODEX_SERVICE_PID_FILE = RUN_DIR / "codex-service.pid"
 FRONTEND_PID_FILE = RUN_DIR / "frontend.pid"
 PROXY_PID_FILE = RUN_DIR / "proxy.pid"
+SUPERVISOR_PID_FILE = RUN_DIR / "supervisor.pid"
 PROXY_PORT_FILE = RUN_DIR / "proxy.port"
 
 BACKEND_OUT_LOG = RUN_DIR / "backend.out.log"
@@ -68,6 +69,7 @@ PROXY_OUT_LOG = RUN_DIR / "proxy.out.log"
 PROXY_ERR_LOG = RUN_DIR / "proxy.err.log"
 BACKEND_RESTART_REQUEST_FILE = RUN_DIR / "backend.restart.request.json"
 BACKEND_STAGING_DIR = RUN_DIR / "backend-staging"
+YOLO_SIGNAL_FILE = ROOT / "yolo.signal"
 DEV_LOG_ROTATE_MAX_BYTES = int(os.environ.get("PUDDING_DEV_LOG_ROTATE_MAX_BYTES", str(20 * 1024 * 1024)))
 DEV_LOG_ROTATE_BACKUPS = int(os.environ.get("PUDDING_DEV_LOG_ROTATE_BACKUPS", "3"))
 DEFAULT_LOG_TAIL_LINES = int(os.environ.get("PUDDING_DEV_LOG_TAIL_LINES", "80"))
@@ -158,6 +160,12 @@ def write_pid(path: Path, pid: int) -> None:
     path.write_text(str(pid), encoding="ascii")
 
 
+def unlink_pid_if_owned(path: Path, pid: int) -> None:
+    """Remove a PID file only when it still names the caller-owned process."""
+    if read_pid(path) == pid:
+        path.unlink(missing_ok=True)
+
+
 def is_process_alive(pid: int | None) -> bool:
     if not pid:
         return False
@@ -235,6 +243,67 @@ def port_owner_pid(port: int) -> int | None:
             return int(line.strip())
         except ValueError:
             continue
+    return None
+
+
+def process_parent_and_command(pid: int) -> tuple[int | None, str]:
+    """Read a Windows process parent and command line without broad process mutation."""
+    if os.name != "nt" or pid <= 0:
+        return None, ""
+
+    shell = resolve_command("pwsh") or resolve_command("powershell")
+    if not shell:
+        return None, ""
+    script = (
+        f'$p = Get-CimInstance Win32_Process -Filter "ProcessId = {pid}"; '
+        'if ($null -ne $p) { '
+        'Write-Output ($p.ParentProcessId.ToString() + "`t" + $p.CommandLine) }'
+    )
+    try:
+        result = subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-Command", script],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None, ""
+
+    raw = result.stdout.strip()
+    if not raw or "\t" not in raw:
+        return None, ""
+    parent_raw, command_line = raw.split("\t", 1)
+    try:
+        return int(parent_raw), command_line.strip()
+    except ValueError:
+        return None, ""
+
+
+def find_legacy_supervisor_pid() -> int | None:
+    """Find an old supervisor through its tracked child before PID tracking existed."""
+    current_pid = os.getpid()
+    for pid_file in (
+        BACKEND_PID_FILE,
+        CODEX_SERVICE_PID_FILE,
+        FRONTEND_PID_FILE,
+        PROXY_PID_FILE,
+    ):
+        child_pid = read_pid(pid_file)
+        if not child_pid or not is_process_alive(child_pid):
+            continue
+        parent_pid, parent_command = process_parent_and_command(child_pid)
+        if (
+            parent_pid
+            and parent_pid != current_pid
+            and is_process_alive(parent_pid)
+            and "dev-up.py" in parent_command.lower()
+        ):
+            return parent_pid
     return None
 
 
@@ -714,8 +783,12 @@ def backend_build_command(full_rebuild: bool = False, output_dir: Path | None = 
     return cmd
 
 
+def default_backend_assembly_path() -> Path:
+    return ROOT / "Source" / "PuddingAgent" / "bin" / "Debug" / "net10.0" / "PuddingAgent.dll"
+
+
 def backend_command(assembly_path: Path | None = None) -> list[str]:
-    assembly = assembly_path or ROOT / "Source" / "PuddingAgent" / "bin" / "Debug" / "net10.0" / "PuddingAgent.dll"
+    assembly = assembly_path or default_backend_assembly_path()
     return [
         resolve_command("dotnet") or "dotnet",
         str(assembly),
@@ -752,6 +825,7 @@ def backend_environment() -> dict[str, str]:
             "ASPNETCORE_URLS": f"http://{LOOPBACK_HOST}:{BACKEND_PORT}",
             "DOTNET_USE_POLLING_FILE_WATCHER": "1",
             "PUDDING_DATA_ROOT": r"D:\data",
+            "PUDDING_REPOSITORY_ROOT": str(ROOT),
             "Jwt__Key": "Pudding-Platform-JWT-DevKey-MUST-CHANGE-IN-PRODUCTION-32PLUS!",
             "Jwt__Issuer": "pudding-platform",
             "Jwt__Audience": "pudding-admin",
@@ -821,6 +895,12 @@ def start_backend(full_rebuild: bool = False, assembly_path: Path | None = None)
     write_pid(BACKEND_PID_FILE, proc.pid)
     info(f"V Backend started (PID {proc.pid})")
     return proc
+
+
+def start_supervised_backend(backend_prebuilt: bool) -> subprocess.Popen:
+    return start_backend(
+        assembly_path=default_backend_assembly_path() if backend_prebuilt else None
+    )
 
 
 def codex_service_environment() -> dict[str, str]:
@@ -907,13 +987,14 @@ def start_proxy(port: int) -> subprocess.Popen:
 
 def format_status_lines(snapshot: dict[str, dict[str, object]]) -> list[str]:
     labels = {
+        "supervisor": "Supervisor",
         "backend": "Backend   ",
         "codex": "Codex MCP ",
         "frontend": "Frontend  ",
         "proxy": "Proxy     ",
     }
     lines: list[str] = []
-    for role in ("backend", "codex", "frontend", "proxy"):
+    for role in ("supervisor", "backend", "codex", "frontend", "proxy"):
         state = snapshot.get(role, {})
         pid = state.get("pid")
         alive = bool(state.get("alive"))
@@ -934,12 +1015,17 @@ def status_snapshot() -> dict[str, dict[str, object]]:
     codex_pid = read_pid(CODEX_SERVICE_PID_FILE)
     frontend_pid = read_pid(FRONTEND_PID_FILE)
     proxy_pid = read_pid(PROXY_PID_FILE)
+    supervisor_pid = read_pid(SUPERVISOR_PID_FILE)
     proxy_port_value = int(proxy_port) if proxy_port.isdigit() else None
     backend_owner = port_owner_pid(BACKEND_PORT)
     codex_owner = port_owner_pid(CODEX_SERVICE_PORT)
     frontend_owner = port_owner_pid(FRONTEND_PORT)
     proxy_owner = port_owner_pid(proxy_port_value) if proxy_port_value else None
     return {
+        "supervisor": {
+            "pid": supervisor_pid,
+            "alive": is_process_alive(supervisor_pid),
+        },
         "backend": {
             "pid": backend_pid if is_process_alive(backend_pid) else backend_owner,
             "alive": is_process_alive(backend_pid) or backend_owner is not None,
@@ -1063,6 +1149,17 @@ def stop_all() -> None:
         proxy_port = int(PROXY_PORT_FILE.read_text(encoding="ascii").strip())
     except (FileNotFoundError, ValueError):
         proxy_port = PREFERRED_PROXY_PORT
+    legacy_supervisor_pid = None
+    tracked_supervisor_pid = read_pid(SUPERVISOR_PID_FILE)
+    if not tracked_supervisor_pid or not is_process_alive(tracked_supervisor_pid):
+        legacy_supervisor_pid = find_legacy_supervisor_pid()
+
+    # Stop the supervisor first. Otherwise it observes each deliberately
+    # stopped child as a crash and races the new rebuild by starting it again.
+    stop_tracked_process("Supervisor", SUPERVISOR_PID_FILE)
+    if legacy_supervisor_pid and is_process_alive(legacy_supervisor_pid):
+        stop_process_tree(legacy_supervisor_pid)
+        info(f"V Stopped legacy Supervisor (PID {legacy_supervisor_pid})")
     stop_tracked_process("Backend", BACKEND_PID_FILE, BACKEND_PORT)
     stop_tracked_process("Codex Service", CODEX_SERVICE_PID_FILE, CODEX_SERVICE_PORT)
     stop_tracked_process("Frontend", FRONTEND_PID_FILE, FRONTEND_PORT)
@@ -1386,7 +1483,11 @@ def run_proxy(host: str, port: int, backend_url: str, frontend_url: str) -> None
         server.server_close()
 
 
-def start_all(no_install: bool, frontend_only: bool = False) -> None:
+def _run_supervisor_loop(
+    no_install: bool,
+    frontend_only: bool = False,
+    backend_prebuilt: bool = False,
+) -> None:
     ensure_run_dir()
     if not frontend_only:
         require_command("dotnet")
@@ -1410,7 +1511,7 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
         info("Frontend-only mode (skip backend)")
     else:
         processes["codex"] = start_codex_service()
-        processes["backend"] = start_backend()
+        processes["backend"] = start_supervised_backend(backend_prebuilt)
 
     proxy_url = proxy_display_url(proxy_port)
     info(
@@ -1459,6 +1560,19 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
                 exit_code = process.poll()
                 if exit_code is None:
                     continue
+                pid_file = {
+                    "backend": BACKEND_PID_FILE,
+                    "codex": CODEX_SERVICE_PID_FILE,
+                    "frontend": FRONTEND_PID_FILE,
+                    "proxy": PROXY_PID_FILE,
+                }[role]
+                if read_pid(pid_file) != process.pid:
+                    info(
+                        f"! {role} ownership changed after PID {process.pid} exited; "
+                        "stopping this supervisor instead of restarting it"
+                    )
+                    stopping = True
+                    break
                 if role == "backend":
                     info(f"! {role} exited with code {exit_code}, restarting")
                     if not backend_restart_limiter.allow(role, time.monotonic()):
@@ -1504,10 +1618,39 @@ def start_all(no_install: bool, frontend_only: bool = False) -> None:
         for role, process in list(processes.items()):
             if process.poll() is None:
                 stop_process_tree(process.pid)
-        for pid_file in (BACKEND_PID_FILE, CODEX_SERVICE_PID_FILE, FRONTEND_PID_FILE, PROXY_PID_FILE):
-            pid_file.unlink(missing_ok=True)
+            pid_file = {
+                "backend": BACKEND_PID_FILE,
+                "codex": CODEX_SERVICE_PID_FILE,
+                "frontend": FRONTEND_PID_FILE,
+                "proxy": PROXY_PID_FILE,
+            }[role]
+            unlink_pid_if_owned(pid_file, process.pid)
         PROXY_PORT_FILE.unlink(missing_ok=True)
         BACKEND_RESTART_REQUEST_FILE.unlink(missing_ok=True)
+
+
+def start_all(
+    no_install: bool,
+    frontend_only: bool = False,
+    backend_prebuilt: bool = False,
+) -> None:
+    """Run the foreground supervisor and publish its PID for atomic restarts."""
+    existing = read_pid(SUPERVISOR_PID_FILE)
+    if existing and existing != os.getpid() and is_process_alive(existing):
+        fail(
+            f"Development supervisor is already running (PID {existing}). "
+            "Use --status, --restart, or --down."
+        )
+
+    write_pid(SUPERVISOR_PID_FILE, os.getpid())
+    try:
+        _run_supervisor_loop(
+            no_install=no_install,
+            frontend_only=frontend_only,
+            backend_prebuilt=backend_prebuilt,
+        )
+    finally:
+        unlink_pid_if_owned(SUPERVISOR_PID_FILE, os.getpid())
 
 
 # ── Bootstrap / Init ──────────────────────────────────────────
@@ -1599,7 +1742,7 @@ def run_init() -> None:
 
 
 def do_auto_yolo(args: argparse.Namespace) -> None:
-    """Wait for services to be healthy, then send /yolo and notification."""
+    """Wait for services to be healthy, then activate YOLO without creating a turn."""
     proxy_port = PREFERRED_PROXY_PORT
     try:
         port_text = PROXY_PORT_FILE.read_text(encoding="ascii").strip()
@@ -1621,44 +1764,26 @@ def do_auto_yolo(args: argparse.Namespace) -> None:
         info("! Health check did not pass within 60s, skipping auto-yolo")
         return
 
-    conversation_id = args.yolo_conversation_id
-    if not conversation_id:
-        try:
-            cp = json.loads(Path("checkpoint.json").read_text(encoding="utf-8"))
-            conversation_id = cp.get("conversation_id", "")
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-    if not conversation_id:
-        info("! No conversation_id available, skipping auto-yolo")
+    try:
+        signal_payload = {
+            "requestedAtUtc": utc_timestamp(),
+            "source": "dev-up.py --auto-yolo",
+            "userId": args.yolo_user_id or "admin",
+        }
+        temp_path = YOLO_SIGNAL_FILE.with_name(f"{YOLO_SIGNAL_FILE.name}.{uuid.uuid4().hex}.tmp")
+        temp_path.write_text(json.dumps(signal_payload, ensure_ascii=False), encoding="utf-8")
+        temp_path.replace(YOLO_SIGNAL_FILE)
+        info(f"V YOLO activation signal written: {YOLO_SIGNAL_FILE}")
+    except Exception as exc:
+        info(f"! YOLO activation signal failed: {exc}")
         return
 
-    base_url = f"http://127.0.0.1:{proxy_port}"
-    user_id = args.yolo_user_id or "admin"
-    agent_id = args.yolo_agent_id or "default.global_general-assistant.6a8"
-
-    yolo_url = f"{base_url}/api/sessions/{conversation_id}/commands"
-    yolo_payload = json.dumps({"command": "/yolo", "userId": user_id}).encode("utf-8")
     try:
-        req = urllib.request.Request(yolo_url, data=yolo_payload, headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            info(f"V /yolo sent: HTTP {resp.status}")
-    except Exception as exc:
-        info(f"! /yolo failed: {exc}")
-
-    msg_url = f"{base_url}/api/messages"
-    msg_payload = json.dumps({"to": f"agent:{agent_id}", "content": "\u2705 \u91cd\u542f\u5b8c\u6210\uff0cYOLO \u5df2\u6388\u6743\u3002\u7ee7\u7eed\u63a8\u8fdb\u3002", "roomId": "default", "priority": 5}).encode("utf-8")
-    try:
-        req = urllib.request.Request(msg_url, data=msg_payload, headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            info(f"V Notification sent: HTTP {resp.status}")
-    except Exception as exc:
-        info(f"! Notification failed: {exc}")
-
-    try:
-        cp_path = Path("checkpoint.json")
-        cp = json.loads(cp_path.read_text(encoding="utf-8"))
+        cp_path = ROOT / "checkpoint.json"
+        cp = json.loads(cp_path.read_text(encoding="utf-8-sig")) if cp_path.exists() else {"version": 1}
         cp["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         cp["status"] = "restarted"
+        cp["auto_yolo"] = True
         cp["proxy_port"] = proxy_port
         cp_path.write_text(json.dumps(cp, ensure_ascii=False, indent=2), encoding="utf-8")
         info("V checkpoint.json updated")
@@ -1688,10 +1813,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--proxy-port", type=int, default=PREFERRED_PROXY_PORT, help=argparse.SUPPRESS)
     parser.add_argument("--backend-url", default=f"http://{LOCAL_CONNECT_HOST}:{BACKEND_PORT}", help=argparse.SUPPRESS)
     parser.add_argument("--frontend-url", default=f"http://{LOCAL_CONNECT_HOST}:{FRONTEND_PORT}", help=argparse.SUPPRESS)
-    parser.add_argument("--auto-yolo", action="store_true", help="After restart, auto-send /yolo command and notify agent.")
-    parser.add_argument("--yolo-conversation-id", default=None, help="Conversation ID for auto-yolo")
-    parser.add_argument("--yolo-agent-id", default="default.global_general-assistant.6a8", help="Agent ID for notification")
-    parser.add_argument("--yolo-user-id", default="admin", help="User ID for /yolo command")
+    parser.add_argument("--auto-yolo", action="store_true", help="After restart, activate YOLO without creating an Agent turn.")
+    parser.add_argument("--yolo-user-id", default="admin", help="Audit user ID recorded in the YOLO signal")
     return parser.parse_args(argv)
 
 
@@ -1707,6 +1830,7 @@ def main(argv: list[str] | None = None) -> int:
         run_init()
         return 0
 
+    backend_prebuilt = False
     if args.down or args.restart or args.rebuild:
         stop_all()
         if args.down and not args.restart and not args.rebuild:
@@ -1716,6 +1840,7 @@ def main(argv: list[str] | None = None) -> int:
             rc = run_backend_build(full_rebuild=True)
             if rc != 0:
                 fail(f"Full rebuild failed with exit code {rc}")
+            backend_prebuilt = True
 
     # --status / --logs are read-only: only handle when not doing a start cycle
     if not args.restart and not args.rebuild and not args.down:
@@ -1735,7 +1860,11 @@ def main(argv: list[str] | None = None) -> int:
             daemon=True,
         ).start()
 
-    start_all(no_install=args.no_install, frontend_only=args.frontend_only)
+    start_all(
+        no_install=args.no_install,
+        frontend_only=args.frontend_only,
+        backend_prebuilt=backend_prebuilt,
+    )
 
     return 0
 

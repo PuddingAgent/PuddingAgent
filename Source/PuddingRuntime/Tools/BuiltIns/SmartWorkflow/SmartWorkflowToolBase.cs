@@ -247,7 +247,16 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 
             var failMsg = $"❌ {toolName} sub-agent FAILED.\n   Error: {result.Error}\n   Role: {RoleName}\n   Duration: {sw.ElapsedMilliseconds}ms";
             logger.LogError("[{Tool}] agent={Agent} FAILED error={Error}", toolName, context.AgentInstanceId, result.Error);
-            return ToolExecutionResult.Fail(failMsg);
+            return new ToolExecutionResult
+            {
+                Success = false,
+                // A terminal-classification failure can coexist with a complete delegated
+                // report. Preserve the spawn_sub_agent envelope so the parent and diagnostics
+                // can inspect stable IDs and rawOutput instead of repeating the work.
+                Output = result.Output ?? string.Empty,
+                Error = failMsg,
+                ExitCode = 1,
+            };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

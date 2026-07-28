@@ -92,6 +92,10 @@ export const createId = () =>
 export const COMPACT_COMMAND = '/compact';
 export const COMPACTION_TURN_PREFIX = 'compaction:';
 
+/** Mirrors the connector ingress rule: slash-prefixed user text is a Pudding command. */
+export const isSystemCommandText = (text: string): boolean =>
+  text.trimStart().startsWith('/');
+
 export function compactionTurnId(compactionId: string): string {
   return `${COMPACTION_TURN_PREFIX}${compactionId}`;
 }

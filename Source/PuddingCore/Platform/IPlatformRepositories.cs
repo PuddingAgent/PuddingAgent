@@ -142,6 +142,10 @@ public sealed class SessionTokenStats
 public interface ICompactionChatMessageStore
 {
     Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default);
+    Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
+        string sessionId,
+        int limit,
+        CancellationToken ct = default);
     Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default);
 }
 

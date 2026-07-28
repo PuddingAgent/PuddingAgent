@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingPlatform.Data;
@@ -23,10 +24,7 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = new SystemCommandHandler(
-            db,
-            runtime,
-            NullLogger<SystemCommandHandler>.Instance);
+        var handler = CreateHandler(db, runtime);
 
         var result = await handler.HandleAsync(
             new SystemCommandRequest(
@@ -63,10 +61,7 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = new SystemCommandHandler(
-            db,
-            runtime,
-            NullLogger<SystemCommandHandler>.Instance);
+        var handler = CreateHandler(db, runtime);
         var request = new SystemCommandRequest(
             "conversation-1",
             "default",
@@ -98,10 +93,7 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = new SystemCommandHandler(
-            db,
-            runtime,
-            NullLogger<SystemCommandHandler>.Instance);
+        var handler = CreateHandler(db, runtime);
 
         var result = await handler.HandleAsync(
             new SystemCommandRequest(
@@ -143,10 +135,7 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = new SystemCommandHandler(
-            db,
-            runtime,
-            NullLogger<SystemCommandHandler>.Instance);
+        var handler = CreateHandler(db, runtime);
 
         var result = await handler.HandleAsync(
             new SystemCommandRequest(
@@ -182,10 +171,7 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = new SystemCommandHandler(
-            db,
-            runtime,
-            NullLogger<SystemCommandHandler>.Instance);
+        var handler = CreateHandler(db, runtime);
 
         var result = await handler.HandleAsync(
             new SystemCommandRequest(
@@ -208,5 +194,196 @@ public sealed class SystemCommandHandlerTests
         Assert.AreEqual(2, await db.ChatMessages.CountAsync());
         Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
         Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task Status_FromNonWhitelistedFeishuUser_ReturnsSharedSnapshotWithoutAgentExecution()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var status = new RecordingSystemStatusSnapshotProvider(
+            new SystemStatusSnapshot(
+                "default",
+                "conversation-feishu-status",
+                "agent-1",
+                "Default Assistant",
+                "global:general-assistant",
+                SessionState.WaitingForUser,
+                RunningSubAgents: 2,
+                RuntimeExecutionMode.Normal,
+                ActiveRuntimeSessions: 1,
+                SessionWindowErrorCount: 0,
+                SessionFaultSummary: null,
+                ProviderId: "openai",
+                ModelId: "gpt-test",
+                CapabilityCount: 12,
+                ContextHealth: new ContextHealthSnapshot(
+                    "conversation-feishu-status",
+                    UsedTokens: 31_400,
+                    ContextWindowTokens: 1_048_576,
+                    EffectiveWindowTokens: 1_000_000,
+                    RemainingTokens: 968_600,
+                    UsageRatio: 0.0314,
+                    ContextHealthState.Healthy,
+                    ShouldSuggestCompact: false,
+                    ShouldAutoCompact: false,
+                    ShouldBlockSend: false)
+                {
+                    UsageSource = "provider_usage",
+                    UsageConfidence = "exact",
+                },
+                Warnings: []));
+        var handler = CreateHandler(db, runtime, statusSnapshotProvider: status);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-feishu-status",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "gateway:user-hash",
+                ClientRequestId: "request-status",
+                ClientMessageId: "user-message-status",
+                ResponseMessageId: "system-message-status",
+                CommandText: "/status",
+                IsPrivilegedUser: false,
+                SourceChannel: "feishu",
+                ExternalUserId: "ou_not_allowed"));
+
+        Assert.HasCount(1, status.Requests);
+        Assert.AreEqual("conversation-feishu-status", status.Requests.Single().ConversationId);
+        Assert.IsFalse(result.ForwardToAgent);
+        StringAssert.Contains(result.Message, "Pudding status");
+        StringAssert.Contains(result.Message, "Default Assistant");
+        StringAssert.Contains(result.Message, "WaitingForUser");
+        StringAssert.Contains(result.Message, "968.6k remaining / 1000.0k effective");
+        StringAssert.Contains(result.Message, "openai/gpt-test");
+        StringAssert.Contains(result.Message, "2 running sub-agent(s)");
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task Compact_FromWhitelistedFeishuUser_UsesManualCompactionBoundaryAndPersistsReply()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var compaction = new RecordingRequestCompactionHandler();
+        var handler = CreateHandler(db, runtime, compaction);
+
+        var request = new SystemCommandRequest(
+            ConversationId: "conversation-feishu-compact",
+            WorkspaceId: "default",
+            AgentId: "agent-1",
+            UserId: "gateway:user-hash",
+            ClientRequestId: "request-compact",
+            ClientMessageId: "user-message-compact",
+            ResponseMessageId: "system-message-compact",
+            CommandText: "/compact",
+            IsPrivilegedUser: true,
+            SourceChannel: "feishu",
+            ExternalUserId: "ou_allowed");
+        var result = await handler.HandleAsync(request);
+        var replay = await handler.HandleAsync(
+            request with { ConversationId = "conversation-feishu-compact-next" });
+
+        Assert.HasCount(1, compaction.Requests);
+        var command = compaction.Requests.Single();
+        Assert.AreEqual("conversation-feishu-compact", command.ConversationId);
+        Assert.AreEqual("agent-1", command.AgentId);
+        Assert.AreEqual(ContextCompactionLevel.Full, command.Level);
+        Assert.AreEqual("request-compact", command.CompactionId);
+        StringAssert.Contains(command.Reason, "feishu");
+        StringAssert.Contains(result.Message, "Compacted 8 messages");
+        StringAssert.Contains(result.Message, "1200 -> 240");
+        StringAssert.Contains(result.Message, "conversation-feishu-compact-next");
+        Assert.AreEqual("conversation-feishu-compact", replay.ConversationId);
+        Assert.AreEqual(result.Message, replay.Message);
+        Assert.IsFalse(result.ForwardToAgent);
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
+
+    private static SystemCommandHandler CreateHandler(
+        PlatformDbContext db,
+        IRuntimeControlService runtime,
+        IRequestCompactionHandler? compaction = null,
+        ISystemStatusSnapshotProvider? statusSnapshotProvider = null) =>
+        new(
+            db,
+            runtime,
+            compaction ?? new UnexpectedRequestCompactionHandler(),
+            statusSnapshotProvider ?? new UnexpectedSystemStatusSnapshotProvider(),
+            NullLogger<SystemCommandHandler>.Instance);
+
+    private sealed class UnexpectedSystemStatusSnapshotProvider : ISystemStatusSnapshotProvider
+    {
+        public Task<SystemStatusSnapshot> GetAsync(
+            SystemStatusSnapshotRequest request,
+            CancellationToken ct = default) =>
+            throw new AssertFailedException("This test must not request a status snapshot.");
+    }
+
+    private sealed class RecordingSystemStatusSnapshotProvider(
+        SystemStatusSnapshot snapshot) : ISystemStatusSnapshotProvider
+    {
+        public List<SystemStatusSnapshotRequest> Requests { get; } = [];
+
+        public Task<SystemStatusSnapshot> GetAsync(
+            SystemStatusSnapshotRequest request,
+            CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(snapshot);
+        }
+    }
+
+    private sealed class UnexpectedRequestCompactionHandler : IRequestCompactionHandler
+    {
+        public Task<CompactionResult> HandleAsync(
+            RequestCompactionCommand command,
+            CancellationToken ct) =>
+            throw new AssertFailedException("This test must not request compaction.");
+    }
+
+    private sealed class RecordingRequestCompactionHandler : IRequestCompactionHandler
+    {
+        public List<RequestCompactionCommand> Requests { get; } = [];
+
+        public Task<CompactionResult> HandleAsync(
+            RequestCompactionCommand command,
+            CancellationToken ct)
+        {
+            Requests.Add(command);
+            return Task.FromResult(new CompactionResult(
+                command.CompactionId,
+                new ContextCompactionResult(
+                    command.ConversationId,
+                    "summary-message",
+                    ContextCompactionMode.Manual,
+                    ContextCompactionLevel.Full,
+                    BeforeTokens: 1200,
+                    AfterTokens: 240,
+                    CompactedMessageCount: 8,
+                    SummaryPreview: "summary preview",
+                    SummaryMarkdown: "summary markdown"),
+                "conversation-feishu-compact-next",
+                "压缩 - Fake Command Conversation"));
+        }
     }
 }

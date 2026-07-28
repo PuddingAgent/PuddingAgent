@@ -760,6 +760,45 @@ describe('useChatState session selection races', () => {
     );
   });
 
+  it('routes /status through the shared system command endpoint without creating an Agent turn', async () => {
+    (listSessionMessages as jest.Mock).mockResolvedValue(messagePage('A'));
+    (executeConversationSystemCommand as jest.Mock).mockResolvedValueOnce({
+      conversationId: 'session-a',
+      clientMessageId: 'client-status-message',
+      responseMessageId: 'system-status-response',
+      command: '/status',
+      message:
+        '**Pudding status**\n- Context: 968.6k remaining / 1000.0k effective',
+      runtimeMode: 'Normal',
+    });
+
+    const { result } = renderHook(() => useChatState('?workspaceId=default'), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(result.current.selectedSessionId).toBe('session-a'),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage('/status');
+    });
+
+    expect(executeConversationSystemCommand).toHaveBeenCalledWith(
+      'default',
+      'session-a',
+      expect.objectContaining({
+        agentId: 'agent-a',
+        commandText: '/status',
+      }),
+    );
+    expect(submitConversationTurn).not.toHaveBeenCalled();
+
+    const commandTurn = result.current.turns.at(-1);
+    expect(commandTurn?.source?.sourceType).toBe('system_command');
+    expect(commandTurn?.assistant.status).toBe('success');
+    expect(commandTurn?.assistant.answerMarkdown).toContain('968.6k remaining');
+  });
+
   it('does not abort current SSE when deleting a non-current session', async () => {
     const deleteSession = require('@/services/platform/api')
       .deleteSession as jest.Mock;

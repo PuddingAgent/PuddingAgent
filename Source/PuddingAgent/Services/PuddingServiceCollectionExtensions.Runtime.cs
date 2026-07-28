@@ -122,6 +122,7 @@ public static partial class PuddingServiceCollectionExtensions
                 warningThreshold: fuseConfig?.WarningThreshold,
                 windowSeconds: fuseConfig?.WindowSeconds);
         });
+        builder.Services.AddHostedService<YoloSignalService>();
         builder.Services.AddSingleton<ExecutionJournal>();
         builder.Services.AddSingleton<CompletionPolicy>();
         builder.Services.AddSingleton<SandboxExecutor>();

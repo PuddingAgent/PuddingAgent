@@ -831,6 +831,35 @@ Turn 派生的 `dotnet test` / `testhost` 是否在父 Runtime 退出后仍存�
 验证日志应出现首块前的 `[DirectLlm] STREAM RETRY before first delta`，最终成功时不应
 写入 `turn.failed`；若首块后断流，则应直接失败且只能看到一次 Provider 请求。
 
+### 7.10 Smart 显示失败，但子代理已经产出完整报告
+
+不要只看父 Turn 的“1 个失败”标签。先在对应 run archive 对照 round 终态、完整输出和
+terminal 事件：
+
+```powershell
+$runDir = 'D:\data\workspaces\default\agents\<agentId>\runs\<runId>'
+rg -n 'subagent.tool.failed|"status":"DONE"|subagent.run.failed|subagent.run.completed' `
+  (Join-Path $runDir 'events.jsonl')
+Get-Content (Join-Path $runDir 'output.md')
+Get-Content (Join-Path $runDir 'errors.jsonl')
+Get-Content (Join-Path $runDir 'run.json')
+```
+
+若先出现一次 `subagent.tool.failed`，之后出现 canonical 五段报告和
+`subagent.round.completed status=DONE`，但下一条仍是 `subagent.run.failed`，重点检查：
+
+1. `AgentExecutionOutcomePolicy` 是否把完整 canonical 报告置于文本失败启发式之前；报告
+   在 EVIDENCE 中提到 `Completed→Failed` 或 `timed out` 不代表本次运行失败。
+2. Smart 失败结果的 `Output` 是否仍保留 `spawn_sub_agent` 信封及 `rawOutput`；若为空，
+   父 Agent 会重复已经完成的探索。
+3. `total_rounds` 应等于 `subagent.round.started` 的最大 round，而不是 journal 条目数量；
+   工具调用和状态记录不能被重复计作 round。
+4. Yolo 模式下仍须执行角色 `AllowedToolNames` 暴露边界。若 Explorer 调用了 `goal_read`
+   等白名单外工具，同时核对 Tool schema 和 AgentFirewall CapabilityGate。
+
+单次错误后继续完成是正常自愈；只有没有合格最终交付、显式 `FAILED`、超时或取消时才应
+提交失败终态。
+
 ## 8. 浏览器验收
 
 每次修改聊天链路后至少完成：
@@ -1453,6 +1482,159 @@ rg -n "\[MCP\]|tool.execution" .\tmp\dev\backend.out.log
 | `tools/list_changed` 后仍是旧清单 | 查通知名称、Session 是否仍存活和 `Tools refreshed`；失败应 fail-closed，不继续使用陈旧定义 |
 
 HTTP 日志中的 Endpoint 只保留 scheme/host/path；stdio 日志只记录可执行文件名。两者都不应包含 query、userinfo、Bearer Token、工具参数或结果正文。独立 Codex Service 正常时应发现 `codex_task_start/get/reply/cancel`、`pudding_self_heal_start` 与 `pudding_build_restart/restart_get` 七个工具。Pudding 与 Service 之间使用 `taskId`；内部 `structuredContent.threadId` 只由 Service 保存并用于后续 Codex reply。
+
+### 11.16 飞书 `/compact` 被拦截但未执行，或重复压缩
+
+正确链路是：
+
+```text
+Feishu /compact -> MessageGatewayIngress whitelist + stable IDs
+                -> ISystemCommandHandler
+                -> IRequestCompactionHandler
+                -> context.compaction.started/completed
+                -> ICompactionSessionSuccessor rebind main session
+                -> durable Connector reply + Web lifecycle event
+```
+
+先看当前启动周期的边界日志：
+
+```powershell
+rg -n "\[MessageGateway\] Command intercepted|\[SystemCommand\]|\[Compact\]|\[CompactSuccessor\]" `
+  .\tmp\dev\backend.out.log .\tmp\dev\backend.err.log
+```
+
+| 最后证据 | 结论 |
+|---|---|
+| 回复 `not implemented yet` | 后端仍加载旧 `SystemCommandHandler`；重新构建并重启后发送一条全新的飞书消息 |
+| 回复 `Permission denied` | `/compact` 是特权指令；检查当前 channel manifest 的 `feishu.privilegedUserOpenIds` 是否精确包含 sender `open_id` |
+| 有 `Command intercepted`，没有 `[Compact]` | 查系统命令 DI 和解析；不得把 `/compact` 改成 Agent prompt 绕过 |
+| 有 `[Compact] failed` | 按同一 `compactionId` 查 Agent Profile、摘要模型、事件存储与后继 Session 创建错误 |
+| 有 `[Compact] completed`，没有 `[CompactSuccessor] rebound` | 后继会话事务未完整收敛；检查 Controller SessionRepository、Agent manifest 写入与 redirect |
+| 成功后下一条飞书消息仍进旧会话 | 对比 Agent manifest `mainSessionId` 与 Controller canonical Main；不能只依赖内存 redirect |
+| 同一飞书 `message_id` 触发第二次压缩 | 幂等查询被错误限定到当前 Conversation；必须用稳定 `clientRequestId + responseMessageId` 跨后继会话命中旧结果 |
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SystemCommandHandlerTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  --filter "FullyQualifiedName~FeishuCommandInterceptionTests"
+```
+
+### 11.17 Web/飞书 `/status` 被送给 Agent、显示不完整或仍回复未实现
+
+`/status` 的正确链路只有一套：
+
+```text
+Web slash classifier ─→ system-command endpoint ───────────────┐
+Feishu Gateway slash classifier ─→ ISystemCommandHandler ─────┤
+                                                               ▼
+                         ISystemStatusSnapshotProvider
+                           → Agent Profile + Provider/Model
+                           → ContextHealth remaining/effective
+                           → Session/sub-agent + Runtime state
+                         → canonical transcript
+                         → Web system Turn / Feishu Connector reply
+                         ╳ Agent Turn / ChatExecutionCommand
+```
+
+正常回复至少包含 Agent、Session、剩余/有效上下文、已用比例、模型、Runtime mode、运行中子代理数
+和 capability 数；部分数据源失败时应出现 `Warnings`，而不是让 Agent 根据聊天内容猜状态。
+
+先查当前启动周期：
+
+```powershell
+rg -n "\[MessageGateway\] Command intercepted|\[SystemCommand\]|\[SystemStatus\]" `
+  .\tmp\dev\backend.out.log .\tmp\dev\backend.err.log
+```
+
+| 现象 | 结论 |
+|---|---|
+| Web 创建了普通 Agent Turn | 前端仍只识别 `/yolo` 或未加载新 bundle；检查 `isSystemCommandText` 与浏览器资源版本 |
+| 飞书出现 Agent 回复而非系统回复 | Gateway 没有在 Agent delivery 前拦截斜杠文本；检查 `IsGatewayCommand` metadata 和 `ForwardToAgent` |
+| 回复 `not implemented yet` | 后端仍加载旧 `SystemCommandHandler`；重新构建/重启后发送新消息 |
+| Context 显示 unavailable | 查 Agent provider/model 绑定与模型 `maxContextTokens`，再查 `[SystemStatus] context health unavailable` |
+| 重启后 Context 显示 `0 used`，但会话有历史 | provider/snapshot/Memory active messages 均缺失时应回退到最近 500 条 canonical `ChatMessages`，回复中的 source 应为 `canonical_chat_transcript`；否则检查 `ICompactionChatMessageStore.GetRecentForSessionAsync` 和 Conversation ID |
+| Session/子代理显示 warning | 查 `ISessionStateManager` 读取异常；Runtime fallback 只用于部分展示，不能代替 canonical 状态 |
+| Web/飞书数值不同 | 两端不应自行计算；确认都命中同一 conversation、agent 和 `ISystemStatusSnapshotProvider` |
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SystemCommandHandlerTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  -p:OutDir="$env:TEMP\pudding-status-feishu-tests\" `
+  --filter "FullyQualifiedName~FeishuCommandInterceptionTests"
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  -p:OutDir="$env:TEMP\pudding-status-runtime-tests\" `
+  --filter "FullyQualifiedName~ContextCompactionContentSummaryTests.GetHealthAsync_UsesCanonicalTranscript"
+npm --prefix .\Source\PuddingPlatformAdmin run jest -- --runInBand `
+  src/pages/chat/hooks/useChatState.selection.test.tsx
+```
+
+### 11.18 `dev-up.py --rebuild --restart --auto-yolo` 只剩 Backend 或启动失败
+
+先确认监督器和四个子进程是否属于同一个启动周期：
+
+```powershell
+python .\dev-up.py --status
+Get-Content .\data\logs\dev-up-$(Get-Date -Format yyyy-MM-dd).log -Tail 200
+rg -n "Full rebuild|exited with code|restarting|YoloSignal|Notification|checkpoint" `
+  .\tmp\dev\backend.out.log .\tmp\dev\backend.err.log
+```
+
+`--restart` 必须先停止 `tmp/dev/supervisor.pid` 指向的旧监督器，再停止 Backend、Codex MCP、Frontend
+和 Proxy。若升级前的监督器还没有 PID 文件，启动器只沿已跟踪子进程反查父命令行，并仅终止明确运行
+`dev-up.py` 的父进程。若只停止子进程，旧监督器会把计划内退出误判为崩溃，在新实例执行 full rebuild 时
+抢先普通构建并重启 Backend，最终表现为新构建失败或只剩孤立 Backend。
+
+`--rebuild` 成功后，监督器应直接启动 `Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.dll`，不能再次
+触发普通 build。`--auto-yolo` 的成功证据是：
+
+```text
+[YoloSignal] Watching <repo>\yolo.signal
+[YoloSignal] Activated YOLO mode via file signal
+```
+
+消费后仓库根的 `yolo.signal` 应被删除；`checkpoint.json` 即使带 UTF-8 BOM 也应被更新。
+`--auto-yolo` 不得调用 Workspace Message API，也不得创建 Agent Turn/Message Fabric delivery；否则聊天页会出现
+“重启完成，YOLO 已授权”的交互队列，并无意义地唤醒 Agent。启动确认只看监督器日志、Runtime mode 和 checkpoint。
+
+### 11.19 OpenAI-compatible 模型重复调用工具，最终触发 MaxToolCalls
+
+若页面长时间显示“复杂推理”，先确认是单次 Provider 卡顿，还是模型因为看不到上一轮工具结果而循环。
+以下组合能够直接识别工具调用 ID 兼容故障：
+
+```powershell
+rg -n "\[ToolInvocation\].*callId= |\[LlmInvocation\] Repaired invalid tool-call history|msgCount=" `
+  .\tmp\dev\backend.out.log
+```
+
+典型故障证据：
+
+- 同一主 Session 的 `[ToolInvocation]` 持续显示空 `callId=`；
+- `incompleteToolRounds` 和 `orphanToolMessages` 每轮增长；
+- 后续 `[LlmInvocation]` 的 `msgCount` 保持不变，说明工具轮次在调用前被协议守卫删除；
+- Provider TTFT/单次请求耗时正常，但最终命中 `MaxToolCallsTotal`。
+
+修复版本会在 Provider 省略或重复 `tool_call.id` 时记录：
+
+```text
+[LlmProtocolCompat] Synthesized tool call IDs session=... round=... count=... model=... endpointHost=...
+```
+
+该日志表示协议入口已经生成单轮稳定 ID；随后 `msgCount` 应随 Assistant tool-call 和 Tool results 增长，
+且不应再出现针对该轮的 incomplete/orphan 修复。不要通过关闭 `LlmMessageSequenceNormalizer` 掩盖问题，
+也不要先归因上下文长度或 Provider 延迟。
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
+  --filter "FullyQualifiedName~OpenAiLlmGatewayCompatibilityTests|FullyQualifiedName~LlmMessageSequenceNormalizerTests"
+```
 
 ## 12. 修改后的最低验收
 

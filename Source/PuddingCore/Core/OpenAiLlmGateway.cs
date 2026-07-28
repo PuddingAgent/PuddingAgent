@@ -104,6 +104,9 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         using var reader = new StreamReader(stream, Encoding.UTF8);
         long chunkIndex = 0;
         long? lastProviderChunkAt = null;
+        var toolCallIdsByIndex = new Dictionary<int, string>();
+        var toolCallIdOwners = new Dictionary<string, int>(StringComparer.Ordinal);
+        var synthesizedToolCallIndexes = new HashSet<int>();
 
         while (true)
         {
@@ -128,17 +131,23 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             chunkIndex++;
 
             var parseStartedAt = Stopwatch.GetTimestamp();
-            var delta = ParseStreamChunk(data);
+            var deltas = ParseStreamChunk(data);
             var parseMs = ElapsedMilliseconds(parseStartedAt);
-            if (delta is not null)
+            for (var deltaIndex = 0; deltaIndex < deltas.Count; deltaIndex++)
             {
+                var delta = ResolveStreamingToolCallId(
+                    deltas[deltaIndex],
+                    toolCallIdsByIndex,
+                    toolCallIdOwners,
+                    synthesizedToolCallIndexes);
+                var isFirstDeltaForChunk = deltaIndex == 0;
                 yield return delta with
                 {
                     ProviderChunkIndex = chunkIndex,
-                    ProviderReadMs = readMs,
-                    ProviderChunkGapMs = providerGapMs,
-                    ProviderPayloadChars = data.Length,
-                    GatewayParseMs = parseMs,
+                    ProviderReadMs = isFirstDeltaForChunk ? readMs : null,
+                    ProviderChunkGapMs = isFirstDeltaForChunk ? providerGapMs : null,
+                    ProviderPayloadChars = isFirstDeltaForChunk ? data.Length : null,
+                    GatewayParseMs = isFirstDeltaForChunk ? parseMs : null,
                 };
             }
         }
@@ -150,18 +159,18 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     private static long ElapsedMilliseconds(long startedAt, long endedAt)
         => (long)((endedAt - startedAt) * 1000.0 / Stopwatch.Frequency);
 
-    private static StreamDelta? ParseStreamChunk(string json)
+    private static IReadOnlyList<StreamDelta> ParseStreamChunk(string json)
     {
         var root = JsonNode.Parse(json);
         var usage = ParseUsage(root?["usage"]);
         var choices = root?["choices"]?.AsArray();
         if (choices is null || choices.Count == 0)
-            return usage is not null ? new StreamDelta { Usage = usage } : null;
+            return usage is not null ? [new StreamDelta { Usage = usage }] : [];
 
         var choice = choices[0];
         var delta = choice?["delta"];
         if (delta is null)
-            return usage is not null ? new StreamDelta { Usage = usage } : null;
+            return usage is not null ? [new StreamDelta { Usage = usage }] : [];
 
         var finishReason = choice?["finish_reason"]?.GetValue<string>();
 
@@ -171,37 +180,95 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         // Reasoning delta (DeepSeek Reasoner)
         var reasoningDelta = delta["reasoning_content"]?.GetValue<string>();
 
-        // Tool call deltas
-        string? tcId = null, tcNameDelta = null, tcArgsDelta = null;
-        int? tcIndex = null;
-
-        if (delta["tool_calls"] is JsonArray tcArray && tcArray.Count > 0)
+        if (delta["tool_calls"] is not JsonArray tcArray || tcArray.Count == 0)
         {
-            var tc = tcArray[0];
-            tcIndex = tc?["index"]?.GetValue<int>();
-            tcId = tc?["id"]?.GetValue<string>();
-            var func = tc?["function"];
-            tcNameDelta = func?["name"]?.GetValue<string>();
-            tcArgsDelta = func?["arguments"]?.GetValue<string>();
+            if (contentDelta is null && reasoningDelta is null
+                && finishReason is null && usage is null)
+                return [];
+
+            return
+            [
+                new StreamDelta
+                {
+                    ContentDelta = contentDelta,
+                    ReasoningDelta = reasoningDelta,
+                    FinishReason = finishReason,
+                    Usage = usage,
+                },
+            ];
         }
 
-        // Skip empty deltas (only happens on very first chunk sometimes)
-        if (contentDelta is null && reasoningDelta is null
-            && tcIndex is null && finishReason is null && usage is null)
-            return null;
-
-        return new StreamDelta
+        // OpenAI-compatible providers may emit several tool calls in one SSE
+        // chunk. Preserve every entry and attach the shared content/usage fields
+        // only to the first emitted delta so downstream metrics are not doubled.
+        var result = new List<StreamDelta>(tcArray.Count);
+        for (var i = 0; i < tcArray.Count; i++)
         {
-            ContentDelta = contentDelta,
-            ReasoningDelta = reasoningDelta,
-            ToolCallIndex = tcIndex,
-            ToolCallId = tcId,
-            ToolCallNameDelta = tcNameDelta,
-            ToolCallArgsDelta = tcArgsDelta,
-            FinishReason = finishReason,
-            Usage = usage,
+            var tc = tcArray[i];
+            var func = tc?["function"];
+            result.Add(new StreamDelta
+            {
+                ContentDelta = i == 0 ? contentDelta : null,
+                ReasoningDelta = i == 0 ? reasoningDelta : null,
+                ToolCallIndex = tc?["index"]?.GetValue<int>(),
+                ToolCallId = tc?["id"]?.GetValue<string>(),
+                ToolCallNameDelta = func?["name"]?.GetValue<string>(),
+                ToolCallArgsDelta = func?["arguments"]?.GetValue<string>(),
+                FinishReason = i == 0 ? finishReason : null,
+                Usage = i == 0 ? usage : null,
+            });
+        }
+
+        return result;
+    }
+
+    private static StreamDelta ResolveStreamingToolCallId(
+        StreamDelta delta,
+        Dictionary<int, string> idsByIndex,
+        Dictionary<string, int> idOwners,
+        HashSet<int> synthesizedIndexes)
+    {
+        if (delta.ToolCallIndex is not int callIndex)
+            return delta;
+
+        var providerId = string.IsNullOrWhiteSpace(delta.ToolCallId)
+            ? null
+            : delta.ToolCallId;
+        if (providerId is not null
+            && (!idOwners.TryGetValue(providerId, out var ownerIndex) || ownerIndex == callIndex))
+        {
+            idsByIndex[callIndex] = providerId;
+            idOwners[providerId] = callIndex;
+            synthesizedIndexes.Remove(callIndex);
+            return delta with
+            {
+                ToolCallId = providerId,
+                ToolCallIdWasSynthesized = false,
+            };
+        }
+
+        if (!idsByIndex.TryGetValue(callIndex, out var resolvedId))
+        {
+            do
+            {
+                resolvedId = CreateSyntheticToolCallId();
+            }
+            while (idOwners.ContainsKey(resolvedId));
+
+            idsByIndex[callIndex] = resolvedId;
+            idOwners[resolvedId] = callIndex;
+            synthesizedIndexes.Add(callIndex);
+        }
+
+        return delta with
+        {
+            ToolCallId = resolvedId,
+            ToolCallIdWasSynthesized = synthesizedIndexes.Contains(callIndex),
         };
     }
+
+    private static string CreateSyntheticToolCallId()
+        => $"call_pudding_{Guid.NewGuid():N}"[..40];
 
     // ──────── Helpers ────────
 
@@ -466,10 +533,19 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         if (message["tool_calls"] is JsonArray tcArray && tcArray.Count > 0)
         {
             toolCalls = [];
+            var seenIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var tc in tcArray)
             {
-                var id = tc!["id"]!.GetValue<string>();
-                var func = tc["function"]!;
+                var id = tc?["id"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(id) || !seenIds.Add(id))
+                {
+                    do
+                    {
+                        id = CreateSyntheticToolCallId();
+                    }
+                    while (!seenIds.Add(id));
+                }
+                var func = tc!["function"]!;
                 var name = func["name"]!.GetValue<string>();
                 var arguments = func["arguments"]!.GetValue<string>();
                 toolCalls.Add(new ToolCall(id, name, arguments));

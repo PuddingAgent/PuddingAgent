@@ -1,6 +1,6 @@
 # ADR-060：子代理运行可观测性与会话事件投影
 
-状态：已实施第一纵向切片（2026-07-19）
+状态：已实施第一纵向切片（2026-07-19）；终态与角色工具边界加固（2026-07-28）
 
 关联：ADR-016、ADR-021、ADR-057、ADR-059
 
@@ -372,6 +372,12 @@ LLM 单次流另有更短的操作级看门狗：默认首块等待 300 秒，�
     `allow_fallback=true` 时才允许产生备用模型 run，并在日志中记录模型切换。
 29. 主 Agent 正文和状态不变、只有 `timelineItems` 新增或更新时，消息气泡必须实时重渲染
     当前工具活动；刷新或虚拟列表重挂载后等待秒数继续以 Turn 服务端时间计算，不得归零。
+30. 子代理执行期间的单次可恢复工具失败只作为审计事实；当最终 `DONE.message` 满足 canonical
+    报告合同时，终态必须保持 `completed`，不得因为报告正文提及 `Failed` 状态而翻转为失败。
+31. Smart 包装收到失败的 `spawn_sub_agent` 信封时仍须保留其完整 `Output`，包括稳定
+    `subAgentId/runId/rawOutput`；Yolo 只绕过运行时审批，不得突破角色 `AllowedToolNames` 暴露边界。
+32. terminal 的 `total_rounds` 等于实际发出的 `subagent.round.started` 最大轮次；journal 中的
+    工具步骤和状态记录不得被计作 LLM round。
 
 ## 6. 后续清理
 

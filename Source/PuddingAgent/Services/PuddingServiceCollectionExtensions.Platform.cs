@@ -100,6 +100,7 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddScoped<IRequestCompactionHandler, RequestCompactionHandler>();
             builder.Services.AddScoped<ICompactionSessionSuccessor, CompactionSessionSuccessor>();
             builder.Services.AddScoped<IConversationAcceptanceStore, ConversationAcceptanceStore>();
+            builder.Services.AddScoped<ISystemStatusSnapshotProvider, SystemStatusSnapshotProvider>();
             builder.Services.AddScoped<ISystemCommandHandler, SystemCommandHandler>();
 
             // ── Conversation Event Store（ADR-057 Phase 2）────

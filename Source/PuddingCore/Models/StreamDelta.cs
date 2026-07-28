@@ -15,6 +15,12 @@ public sealed record StreamDelta
     /// <summary>Tool call id (first chunk only).</summary>
     public string? ToolCallId { get; init; }
 
+    /// <summary>
+    /// True when the OpenAI-compatible gateway supplied a local protocol ID because
+    /// the provider omitted the ID or reused another call's ID.
+    /// </summary>
+    public bool ToolCallIdWasSynthesized { get; init; }
+
     /// <summary>Tool call function name delta.</summary>
     public string? ToolCallNameDelta { get; init; }
 

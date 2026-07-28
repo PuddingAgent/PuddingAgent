@@ -16,7 +16,7 @@ public enum RuntimeExecutionMode
     Safe,
     /// <summary>Emergency stopping — backend is shutting down.</summary>
     EmergencyStopping,
-    /// <summary>YOLO mode — all tool permission checks bypassed. Memory-only, lost on restart.</summary>
+    /// <summary>YOLO mode — runtime approvals are bypassed inside the configured tool exposure boundary. Memory-only, lost on restart.</summary>
     Yolo,
 }
 

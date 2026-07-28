@@ -30,6 +30,7 @@ import {
   createId,
   getAgentName,
   hasBlockingActiveTurn,
+  isSystemCommandText,
   stringToColor,
 } from '../utils/chatStateUtils';
 import type { ScrollIntent } from '../viewport/types';
@@ -202,7 +203,7 @@ export function useMessageSend({
       const route = resolveChatRoute(text, agents, agentId);
       const routedText = route.messageText.trim();
       if (!routedText || route.targetAgentIds.length === 0) return;
-      const isDirectSystemCommand = /^\/yolo$/i.test(routedText);
+      const isSystemCommand = isSystemCommandText(routedText);
       resetMainSessionEnsureSuppression('send-message');
       setError(null);
       const perfStart = performance.now();
@@ -210,7 +211,7 @@ export function useMessageSend({
       const routeLabel = getChatRouteLabel(route, agents);
       const targetAgentId = route.primaryAgentId ?? agentId;
       const targetAgent = agents.find((item) => item.agentId === targetAgentId);
-      const workingTargetAgentIds = isDirectSystemCommand
+      const workingTargetAgentIds = isSystemCommand
         ? []
         : Array.from(
             new Set(
@@ -224,7 +225,7 @@ export function useMessageSend({
         sessionIdRef.current ??
         selectedSessionIdRef.current ??
         mainSessionIdRef.current;
-      if (forceNewSessionRef.current && !isDirectSystemCommand) {
+      if (forceNewSessionRef.current && !isSystemCommand) {
         const created = await createSession(
           workspaceId,
           targetAgent?.sourceTemplateId || `global:${targetAgentId}`,
@@ -248,7 +249,7 @@ export function useMessageSend({
       startSessionEventStream(sendConversationId);
 
       const turnId = createId();
-      if (isDirectSystemCommand) {
+      if (isSystemCommand) {
         const clientRequestId = createId();
         const clientMessageId = createId();
         const responseMessageId = createId();

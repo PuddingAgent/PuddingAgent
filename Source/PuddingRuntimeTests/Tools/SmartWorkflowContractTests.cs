@@ -175,6 +175,49 @@ public sealed class SmartWorkflowContractTests
     }
 
     [TestMethod]
+    public async Task SmartWorkflowPreservesSpawnEnvelopeWhenSubAgentIsClassifiedAsFailed()
+    {
+        var spawnEnvelope = JsonSerializer.Serialize(new
+        {
+            schema = "pudding-subagent-result",
+            version = 1,
+            subAgentId = "sub-session-failed",
+            runId = "run-failed",
+            status = "failed",
+            rawOutput = ValidDetailedReport,
+            error = "recoverable tool error was retained by terminal classification",
+        });
+        var recorder = new RecordingToolExecutionService();
+        recorder.Responses.Enqueue(new ToolExecutionResult
+        {
+            Success = false,
+            Output = spawnEnvelope,
+            Error = "recoverable tool error was retained by terminal classification",
+            ExitCode = 1,
+        });
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartExploreTool(services, NullLogger<SmartExploreTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-preserve-failed-envelope",
+            ArgumentsJson = """{"task":"In Source/PuddingRuntime, inspect the terminal classification"}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+            },
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(spawnEnvelope, result.Output);
+        StringAssert.Contains(result.Error, "sub-agent FAILED");
+    }
+
+    [TestMethod]
     public async Task SmartExploreRequiresSelfContainedVerifiedEvidencePackage()
     {
         var recorder = new RecordingToolExecutionService();

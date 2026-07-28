@@ -620,6 +620,7 @@ public sealed partial class AgentExecutionService
 
                 var hasToolCalls = false;
                 var accumulatedToolCalls = new List<AccumulatedToolCall>();
+                var synthesizedToolCallIndexes = new HashSet<int>();
                 var replyBuf = new StringBuilder();
                 var reasoningBuf = new StringBuilder();
 
@@ -797,6 +798,8 @@ public sealed partial class AgentExecutionService
                         if (delta.ToolCallIndex != null)
                         {
                             AccumulateToolCall(accumulatedToolCalls, delta);
+                            if (delta.ToolCallIdWasSynthesized)
+                                synthesizedToolCallIndexes.Add(delta.ToolCallIndex.Value);
                             hasToolCalls = true;
                             ReportMeaningfulProgress(
                                 request,
@@ -986,6 +989,16 @@ public sealed partial class AgentExecutionService
                 _logger.LogDebug("[Diag] Tool calls found session={Session} round={Round} count={Count} names={Names}",
                     request.SessionId, round, accumulatedToolCalls.Count,
                     string.Join(",", accumulatedToolCalls.Select(t => t.Name)));
+                if (synthesizedToolCallIndexes.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "[LlmProtocolCompat] Synthesized tool call IDs session={Session} round={Round} count={Count} model={Model} endpointHost={EndpointHost}",
+                        request.SessionId,
+                        round,
+                        synthesizedToolCallIndexes.Count,
+                        effectiveLlmConfig?.ModelId ?? "",
+                        SafeHost(effectiveLlmConfig?.Endpoint));
+                }
                 var assistantToolCalls = accumulatedToolCalls
                     .Select(tc => new ToolCall(tc.Id, tc.Name, tc.Arguments))
                     .ToList();

@@ -115,16 +115,79 @@ public sealed class ContextCompactionService : IContextCompactionService
             return snapshot;
 
         var activeTokens = await EstimateActiveTokensAsync(db, sessionId, ct);
+        if (activeTokens > 0)
+        {
+            return new ContextUsageSnapshot
+            {
+                SessionId = sessionId,
+                RecordedAt = DateTimeOffset.UtcNow,
+                UsedTokens = activeTokens,
+                MessageTokens = activeTokens,
+                HistoryMessageTokens = activeTokens,
+                Source = "active_session_messages",
+                Confidence = "estimated",
+            };
+        }
+
+        var transcriptEstimate = await TryEstimateCanonicalTranscriptAsync(sessionId, ct);
+        if (transcriptEstimate is not null)
+            return transcriptEstimate;
+
         return new ContextUsageSnapshot
         {
             SessionId = sessionId,
             RecordedAt = DateTimeOffset.UtcNow,
-            UsedTokens = activeTokens,
-            MessageTokens = activeTokens,
-            HistoryMessageTokens = activeTokens,
+            UsedTokens = 0,
+            MessageTokens = 0,
+            HistoryMessageTokens = 0,
             Source = "active_session_messages",
             Confidence = "estimated",
         };
+    }
+
+    private async Task<ContextUsageSnapshot?> TryEstimateCanonicalTranscriptAsync(
+        string sessionId,
+        CancellationToken ct)
+    {
+        if (_messageStore is null)
+            return null;
+
+        try
+        {
+            var messages = await _messageStore.GetRecentForSessionAsync(
+                sessionId,
+                MaxActiveMessagesToLoad,
+                ct);
+            if (messages.Count == 0)
+                return null;
+
+            var estimatedTokens = Math.Max(
+                1,
+                messages.Sum(message => ContextUsageSnapshotStore.CountTokens(message.Content)));
+            return new ContextUsageSnapshot
+            {
+                SessionId = sessionId,
+                RecordedAt = DateTimeOffset.UtcNow,
+                UsedTokens = estimatedTokens,
+                MessageTokens = estimatedTokens,
+                HistoryMessageTokens = estimatedTokens,
+                MessageCount = messages.Count,
+                Source = "canonical_chat_transcript",
+                Confidence = "estimated",
+            };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "[ContextCompaction] Failed to estimate canonical transcript session={SessionId}",
+                sessionId);
+            return null;
+        }
     }
 
     private async Task<ContextUsageSnapshot?> TryGetLatestProviderUsageAsync(string sessionId, CancellationToken ct)

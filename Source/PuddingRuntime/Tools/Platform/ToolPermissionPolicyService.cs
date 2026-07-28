@@ -128,7 +128,16 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
 
     public bool CanExposeToAgent(ToolDescriptor descriptor, CapabilityPolicy? policy)
     {
-        // YOLO 模式：绕过所有工具权限检查
+        // An explicit role/tool allowlist is an exposure boundary, not an approval rule.
+        // It remains authoritative in YOLO mode so delegated Smart roles cannot acquire
+        // unrelated read-only or control-plane tools.
+        if (policy?.AllowedToolNames.Count > 0
+            && !policy.AllowedToolNames.Contains(descriptor.ToolId, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // YOLO bypasses runtime approval after the exposure boundary has been enforced.
         if (_runtimeControl?.Mode == RuntimeExecutionMode.Yolo)
             return true;
 
@@ -141,9 +150,7 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
             return decision.Tier != ToolPermissionTier.Blocked;
 
         if (policy.AllowedToolNames.Count > 0)
-        {
-            return policy.AllowedToolNames.Contains(descriptor.ToolId, StringComparer.OrdinalIgnoreCase);
-        }
+            return true;
 
         return decision.Tier == ToolPermissionTier.RuntimeGranted
             ? policy.RequiresGrantToolNames.Contains(descriptor.ToolId, StringComparer.OrdinalIgnoreCase)

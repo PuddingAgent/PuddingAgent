@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-07-28 OpenAI-compatible 流式工具调用兼容修订
+
+部分标记为 OpenAI-compatible 的 Provider 会在流式 `tool_calls` 中省略 `id`、重复使用 `id`，或在同一
+SSE chunk 中返回多个工具调用。协议适配器不能把这些差异泄漏给 Agent Loop，也不能在工具已执行后让
+`LlmMessageSequenceNormalizer` 丢弃整个轮次。
+
+- `OpenAiLlmGateway` 必须遍历一个 chunk 中的全部 `tool_calls`，按 `index` 聚合增量，并允许 Provider ID
+  在后续 chunk 才出现。
+- Provider ID 缺失或与其他 index 重复时，Gateway 生成不超过 OpenAI 长度约束的唯一 ID；该 ID 在同一
+  流式调用和 index 内保持稳定，并同时用于 Assistant `tool_calls`、工具执行身份和 Tool result。
+- 后续 chunk 若补发合法 Provider ID，应切回该真实 ID；重复 ID 仅修复冲突的调用。
+- Runtime 对发生过 ID 合成的工具轮次记录 `[LlmProtocolCompat]`，包含 session、round、数量、model 和
+  endpoint host，但不记录参数、结果、Prompt 或密钥。
+- 此行为属于 OpenAI-compatible 协议入口的防御性归一化，不绑定 Qwen 等具体 Provider 配置。
+
+针对性回归必须覆盖：同 chunk 多调用、始终缺失 ID、延迟补发 ID、重复 ID，以及修复后完整工具轮次能被
+`LlmMessageSequenceNormalizer` 原样保留。
+
 ## 2026-07-25 飞书 V1 默认回复修订
 
 [ADR-063](63ADR-063飞书Agent绑定与可靠消息网关ADR.md) 已落地飞书 V1。对“回复原入站消息”的普通终态答复，早期本文中的

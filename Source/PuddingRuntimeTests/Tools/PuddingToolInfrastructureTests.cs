@@ -478,6 +478,48 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task ToolPermissionPolicy_EnforcesExplicitAllowlist_InYoloMode()
+    {
+        var runtime = new RuntimeControlService();
+        var modeResult = runtime.SetMode(RuntimeExecutionMode.Yolo, "test");
+        Assert.IsTrue(modeResult.Success);
+        var policy = new ToolPermissionPolicyService(runtime);
+        var capability = new CapabilityPolicy
+        {
+            AllowedToolNames = ["file_read"],
+        };
+        var allowedTool = new FileReadTool(NullLogger<FileReadTool>.Instance);
+        var unrelatedReadOnlyTool = new AgentSkillToolAdapter(new LegacyRuntimeSkill(
+            "goal_read",
+            "goal_read",
+            requiresShellExecution: false,
+            permissionLevel: ToolPermissionLevel.Low));
+
+        Assert.IsTrue(policy.CanExposeToAgent(allowedTool.Descriptor, capability));
+        Assert.IsFalse(policy.CanExposeToAgent(unrelatedReadOnlyTool.Descriptor, capability));
+
+        var registry = new PuddingToolRegistry(
+            [allowedTool, unrelatedReadOnlyTool],
+            permissionPolicy: policy);
+        var firewall = new AgentFirewall(
+            runtime: runtime,
+            policySvc: policy,
+            toolRegistry: registry);
+        var decision = await firewall.EvaluateAsync(new FirewallContext
+        {
+            WorkspaceId = "workspace",
+            SessionId = "session",
+            AgentInstanceId = "agent",
+            ToolId = "goal_read",
+            Policy = capability,
+            RuntimeMode = RuntimeExecutionMode.Yolo,
+        }, CancellationToken.None);
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.AreEqual(FirewallGate.Capability, decision.DeniedAtGate);
+    }
+
+    [TestMethod]
     public async Task FileSearchTool_Normalizes_Provider_Results_To_Absolute_Paths()
     {
         var directory = Path.Combine(

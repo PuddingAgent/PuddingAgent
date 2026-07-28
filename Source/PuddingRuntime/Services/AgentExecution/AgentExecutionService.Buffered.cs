@@ -345,6 +345,7 @@ public sealed partial class AgentExecutionService
         // 护栏状态
         var  totalSw          = System.Diagnostics.Stopwatch.StartNew();
         int  totalToolCalls   = 0;
+        int  roundsStarted    = 0;
         int  noProgressCount  = 0;   // 连续无工具调用进展的轮次计数
         var  toolRepeatMap    = new Dictionary<string, int>(StringComparer.Ordinal);
         int  toolFailureCount = 0;
@@ -397,6 +398,7 @@ public sealed partial class AgentExecutionService
                     break;
                 }
 
+                roundsStarted = round + 1;
                 await FireHooksAsync(h => h.OnRoundStartAsync(loopCtx, round, ct));
                 var turnStart = DateTimeOffset.UtcNow;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.started", new
@@ -1481,11 +1483,9 @@ public sealed partial class AgentExecutionService
             await FireHooksAsync(h => h.OnFailedAsync(loopCtx, ex.Message, ex, default));
 
             // 完成子代理运行归档（ADR-021）
-            var failedTurnCount =
-                _journal.GetTurns(request.SessionId).Count - journalStartCount;
             await TryCompleteSubAgentRunAsync(
                 subAgentRunId, request.SessionId, false,
-                finalMessage, ex.Message, failedTurnCount, totalToolCalls, totalSw.ElapsedMilliseconds,
+                finalMessage, ex.Message, roundsStarted, totalToolCalls, totalSw.ElapsedMilliseconds,
                 toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
                 "failed",
                 request.ExecutionIdentity,
@@ -1564,12 +1564,15 @@ public sealed partial class AgentExecutionService
             await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
         }
 
-        var finalMessageIsFailure = LooksLikeFailureReply(finalMessage);
         var executeIsSuccess = execState is AgentExecutionState.Completed or AgentExecutionState.WaitingEvent;
-        if (executeIsSuccess && toolFailureCount > 0 && finalMessageIsFailure)
+        if (AgentExecutionOutcomePolicy.ShouldDowngradeSuccessfulExecution(
+                executeIsSuccess,
+                toolFailureCount,
+                finalMessage,
+                request.ExpectedOutputContract))
         {
-            // 工具执行失败是运行时事实，必须先落到终态，再通知 hook / Activity / 子代理归档。
-            // 否则上游会看到“Completed + 一段解释失败的回复”，继续把失败结果当成功消费。
+            // Without a contract-complete delegated report, a failure-only final reply must
+            // not be exposed as Completed merely because the loop emitted a nominal DONE.
             executeIsSuccess = false;
             execState = AgentExecutionState.Failed;
             stopReason = AgentLoopStopReason.Failed;
@@ -1653,11 +1656,10 @@ public sealed partial class AgentExecutionService
         }
 
         // 完成子代理运行归档（ADR-021）
-        var newTurnCount = _journal.GetTurns(request.SessionId).Count - journalStartCount;
         await TryCompleteSubAgentRunAsync(
             subAgentRunId, request.SessionId, executeIsSuccess,
             finalMessage, executeIsSuccess ? null : finalErrorMessage,
-            newTurnCount, totalToolCalls, totalSw.ElapsedMilliseconds,
+            roundsStarted, totalToolCalls, totalSw.ElapsedMilliseconds,
             toolFailureCount, toolOutputTruncatedCount, toolOutputChars, firstToolFailureSummary,
             subAgentTerminalStatus,
             request.ExecutionIdentity,

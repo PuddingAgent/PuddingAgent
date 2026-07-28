@@ -75,6 +75,25 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
         return messages.Select(Map).ToList();
     }
 
+    public async Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
+        string sessionId,
+        int limit,
+        CancellationToken ct = default)
+    {
+        if (limit <= 0)
+            return [];
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var messages = await db.ChatMessages.AsNoTracking()
+            .Where(m => m.SessionId == sessionId && !string.IsNullOrWhiteSpace(m.Content))
+            .OrderByDescending(m => m.CreatedAt)
+            .ThenByDescending(m => m.Id)
+            .Take(limit)
+            .ToListAsync(ct);
+        messages.Reverse();
+        return messages.Select(Map).ToList();
+    }
+
     public async Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

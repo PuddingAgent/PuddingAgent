@@ -188,6 +188,11 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 - `IRequestCompactionHandler` 是手动压缩唯一应用入口。Controller 只做认证、
   参数映射和 HTTP 错误映射，不得直接解析 Agent Profile、调用压缩服务、创建
   Session 或写生命周期事件。
+- 非 HTTP 渠道的系统指令适配器也必须调用同一个 `IRequestCompactionHandler`。
+  飞书 `/compact` 在 `MessageGatewayIngress` 完成 channel-owned 白名单校验后，由
+  `ISystemCommandHandler` 映射为 `RequestCompactionCommand`；原始斜杠文本不得进入
+  Agent Turn。Gateway 的稳定 `clientRequestId` 同时作为 `compactionId`，重投幂等查询
+  必须跨压缩前后的 Conversation 识别相同 `responseMessageId`。
 - Handler 通过 `IAgentRuntimeProfileResolver` 获得完整不可变 Profile，并把
   LLM/Tool/Skill 参数传给 `IContextCompactionService`。配置缺失产生
   `agent_configuration_invalid`，不得回退默认 LLM。

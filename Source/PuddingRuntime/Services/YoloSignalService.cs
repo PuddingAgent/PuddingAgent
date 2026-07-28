@@ -21,28 +21,29 @@ public sealed class YoloSignalService : BackgroundService
     {
         _runtimeControl = runtimeControl;
         _logger = logger;
-
-        var workspaceRoot = AppDomain.CurrentDomain.BaseDirectory;
-        // Walk up from bin/Debug/net10.0 to the repo root (where checkpoint.json lives).
-        for (int i = 0; i < 5; i++)
-        {
-            var candidate = Path.Combine(workspaceRoot, "yolo.signal");
-            if (File.Exists(candidate) || Directory.Exists(Path.GetDirectoryName(candidate)!))
-            {
-                _signalPath = candidate;
-                break;
-            }
-            workspaceRoot = Path.GetFullPath(Path.Combine(workspaceRoot, ".."));
-        }
-
-        // Fallback: put it next to checkpoint.json
-        if (string.IsNullOrEmpty(_signalPath))
-        {
-            _signalPath = Path.GetFullPath(Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "yolo.signal"));
-        }
+        _signalPath = ResolveSignalPath(
+            Environment.GetEnvironmentVariable("PUDDING_REPOSITORY_ROOT"),
+            AppDomain.CurrentDomain.BaseDirectory);
 
         _logger.LogInformation("[YoloSignal] Watching {Path}", _signalPath);
+    }
+
+    internal static string ResolveSignalPath(string? repositoryRoot, string baseDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(repositoryRoot))
+            return Path.Combine(Path.GetFullPath(repositoryRoot), "yolo.signal");
+
+        var current = new DirectoryInfo(Path.GetFullPath(baseDirectory));
+        for (var depth = 0; depth < 8 && current is not null; depth++, current = current.Parent)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "dev-up.py"))
+                || File.Exists(Path.Combine(current.FullName, "checkpoint.json")))
+            {
+                return Path.Combine(current.FullName, "yolo.signal");
+            }
+        }
+
+        return Path.Combine(Path.GetFullPath(baseDirectory), "yolo.signal");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

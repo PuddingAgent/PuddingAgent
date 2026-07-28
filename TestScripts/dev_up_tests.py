@@ -225,9 +225,108 @@ class DevUpSupervisorTests(unittest.TestCase):
             "proxy": {"alive": True, "pid": 40, "port": 80},
         })
 
-        self.assertEqual(4, len(lines))
-        self.assertIn("Codex MCP", lines[1])
-        self.assertIn("20", lines[1])
+        self.assertEqual(5, len(lines))
+        self.assertEqual("Supervisor: stopped", lines[0])
+        self.assertIn("Codex MCP", lines[2])
+        self.assertIn("20", lines[2])
+
+    def test_stop_all_stops_supervisor_before_tracked_children(self):
+        dev_up = load_dev_up_module()
+        calls = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            with (
+                patch.object(dev_up, "SUPERVISOR_PID_FILE", run_dir / "supervisor.pid"),
+                patch.object(dev_up, "BACKEND_PID_FILE", run_dir / "backend.pid"),
+                patch.object(dev_up, "CODEX_SERVICE_PID_FILE", run_dir / "codex.pid"),
+                patch.object(dev_up, "FRONTEND_PID_FILE", run_dir / "frontend.pid"),
+                patch.object(dev_up, "PROXY_PID_FILE", run_dir / "proxy.pid"),
+                patch.object(dev_up, "PROXY_PORT_FILE", run_dir / "proxy.port"),
+                patch.object(dev_up, "BACKEND_RESTART_REQUEST_FILE", run_dir / "restart.json"),
+                patch.object(
+                    dev_up,
+                    "stop_tracked_process",
+                    side_effect=lambda name, *_args, **_kwargs: calls.append(name),
+                ),
+                patch.object(dev_up, "find_legacy_supervisor_pid", return_value=None),
+            ):
+                dev_up.stop_all()
+
+        self.assertEqual(
+            ["Supervisor", "Backend", "Codex Service", "Frontend", "Proxy"],
+            calls,
+        )
+
+    def test_stop_all_stops_legacy_supervisor_discovered_from_child(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            with (
+                patch.object(dev_up, "SUPERVISOR_PID_FILE", run_dir / "supervisor.pid"),
+                patch.object(dev_up, "BACKEND_PID_FILE", run_dir / "backend.pid"),
+                patch.object(dev_up, "CODEX_SERVICE_PID_FILE", run_dir / "codex.pid"),
+                patch.object(dev_up, "FRONTEND_PID_FILE", run_dir / "frontend.pid"),
+                patch.object(dev_up, "PROXY_PID_FILE", run_dir / "proxy.pid"),
+                patch.object(dev_up, "PROXY_PORT_FILE", run_dir / "proxy.port"),
+                patch.object(dev_up, "BACKEND_RESTART_REQUEST_FILE", run_dir / "restart.json"),
+                patch.object(dev_up, "find_legacy_supervisor_pid", return_value=777),
+                patch.object(dev_up, "is_process_alive", return_value=True),
+                patch.object(dev_up, "stop_process_tree", return_value=True) as stop_tree,
+                patch.object(dev_up, "stop_tracked_process"),
+                patch.object(dev_up, "info"),
+            ):
+                dev_up.stop_all()
+
+        stop_tree.assert_called_once_with(777)
+
+    def test_legacy_supervisor_requires_dev_up_parent_command(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backend_pid_file = Path(temp_dir) / "backend.pid"
+            backend_pid_file.write_text("123", encoding="ascii")
+            with (
+                patch.object(dev_up, "BACKEND_PID_FILE", backend_pid_file),
+                patch.object(dev_up, "CODEX_SERVICE_PID_FILE", Path(temp_dir) / "codex.pid"),
+                patch.object(dev_up, "FRONTEND_PID_FILE", Path(temp_dir) / "frontend.pid"),
+                patch.object(dev_up, "PROXY_PID_FILE", Path(temp_dir) / "proxy.pid"),
+                patch.object(dev_up, "is_process_alive", return_value=True),
+                patch.object(
+                    dev_up,
+                    "process_parent_and_command",
+                    return_value=(456, "python other-worker.py"),
+                ) as parent_lookup,
+            ):
+                self.assertIsNone(dev_up.find_legacy_supervisor_pid())
+
+                parent_lookup.return_value = (
+                    456,
+                    r"python E:\github\AgentNetworkPlan\PuddingAgent\dev-up.py",
+                )
+                self.assertEqual(456, dev_up.find_legacy_supervisor_pid())
+
+    def test_supervised_backend_skips_second_build_after_rebuild(self):
+        dev_up = load_dev_up_module()
+
+        with patch.object(dev_up, "start_backend") as start_backend:
+            dev_up.start_supervised_backend(backend_prebuilt=True)
+
+        start_backend.assert_called_once_with(
+            assembly_path=dev_up.default_backend_assembly_path()
+        )
+
+    def test_pid_cleanup_does_not_remove_new_owner(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pid_file = Path(temp_dir) / "supervisor.pid"
+            pid_file.write_text("222", encoding="ascii")
+            dev_up.unlink_pid_if_owned(pid_file, 111)
+            self.assertTrue(pid_file.exists())
+            dev_up.unlink_pid_if_owned(pid_file, 222)
+            self.assertFalse(pid_file.exists())
 
     def test_backend_restart_request_waits_until_not_before(self):
         dev_up = load_dev_up_module()
@@ -396,11 +495,10 @@ class DevUpSupervisorTests(unittest.TestCase):
         self.assertEqual(
             [
                 "Supervisor: stopped",
-                "Guard     : enabled",
                 "Backend   : running (PID 101)",
+                "Codex MCP : stopped",
                 "Frontend  : stopped",
                 "Proxy     : running (PID 303) on http://localhost:8088",
-                "Health    : pending",
             ],
             dev_up.format_status_lines(snapshot),
         )
@@ -485,7 +583,59 @@ class DevUpSupervisorTests(unittest.TestCase):
             self.assertEqual(0, dev_up.main(["--restart", "--auto-yolo"]))
 
         worker.start.assert_called_once_with()
-        start_all.assert_called_once_with(no_install=False, frontend_only=False)
+        start_all.assert_called_once_with(
+            no_install=False,
+            frontend_only=False,
+            backend_prebuilt=False,
+        )
+
+    def test_rebuild_marks_backend_prebuilt_for_supervisor(self):
+        dev_up = load_dev_up_module()
+
+        with (
+            patch.object(dev_up, "stop_all"),
+            patch.object(dev_up, "run_backend_build", return_value=0) as build,
+            patch.object(dev_up, "start_all") as start_all,
+        ):
+            self.assertEqual(0, dev_up.main(["--rebuild", "--restart"]))
+
+        build.assert_called_once_with(full_rebuild=True)
+        start_all.assert_called_once_with(
+            no_install=False,
+            frontend_only=False,
+            backend_prebuilt=True,
+        )
+
+    def test_auto_yolo_uses_repository_signal_without_enqueuing_agent_message(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            checkpoint = root / "checkpoint.json"
+            checkpoint.write_text('{"version":1}', encoding="utf-8-sig")
+            signal = root / "yolo.signal"
+            with (
+                patch.object(dev_up, "ROOT", root),
+                patch.object(dev_up, "YOLO_SIGNAL_FILE", signal),
+                patch.object(dev_up, "PROXY_PORT_FILE", root / "missing-proxy.port"),
+                patch.object(
+                    dev_up,
+                    "probe_health",
+                    return_value={"ok": True, "status_code": 200},
+                ),
+                patch.object(dev_up.urllib.request, "urlopen") as urlopen,
+                patch.object(dev_up, "info"),
+            ):
+                dev_up.do_auto_yolo(dev_up.parse_args(["--auto-yolo"]))
+
+            signal_payload = json.loads(signal.read_text(encoding="utf-8"))
+            updated_checkpoint = json.loads(checkpoint.read_text(encoding="utf-8"))
+
+        self.assertEqual("dev-up.py --auto-yolo", signal_payload["source"])
+        self.assertEqual("admin", signal_payload["userId"])
+        self.assertTrue(updated_checkpoint["auto_yolo"])
+        self.assertEqual("restarted", updated_checkpoint["status"])
+        urlopen.assert_not_called()
 
     def test_watch_snapshot_ignores_frontend_generated_umi_files(self):
         dev_up = load_dev_up_module()

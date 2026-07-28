@@ -100,7 +100,8 @@ public sealed class AgentFirewall : IAgentFirewall
         return mode switch
         {
             RuntimeExecutionMode.Yolo =>
-                // YOLO: one-click pass through all gates
+                // YOLO bypasses approval/resource restrictions in their own gates, but the
+                // capability gate still enforces an explicit role tool allowlist.
                 FirewallDecision.Allow(),
 
             RuntimeExecutionMode.EmergencyStopping =>
@@ -148,10 +149,6 @@ public sealed class AgentFirewall : IAgentFirewall
     // ────────────────────────────────────────────
     private FirewallDecision EvaluateCapabilityGate(FirewallContext ctx)
     {
-        // YOLO already returned in ModeGate; but double-check
-        if (ctx.RuntimeMode == RuntimeExecutionMode.Yolo)
-            return FirewallDecision.Allow();
-
         if (_toolRegistry is null || _policySvc is null) return FirewallDecision.Allow();
         var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId, ctx.WorkspaceId);
         if (descriptor is not null && !_policySvc.CanExposeToAgent(descriptor, ctx.Policy))

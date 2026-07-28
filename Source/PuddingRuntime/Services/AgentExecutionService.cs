@@ -1100,16 +1100,7 @@ public sealed partial class AgentExecutionService
     }
 
     private static bool LooksLikeFailureReply(string? reply)
-    {
-        if (string.IsNullOrWhiteSpace(reply))
-            return false;
-
-        return reply.Contains("执行失败", StringComparison.OrdinalIgnoreCase)
-            || reply.Contains("FAILED", StringComparison.OrdinalIgnoreCase)
-            || reply.Contains("failed", StringComparison.OrdinalIgnoreCase)
-            || reply.Contains("Command timed out", StringComparison.OrdinalIgnoreCase)
-            || reply.Contains("timed out", StringComparison.OrdinalIgnoreCase);
-    }
+        => AgentExecutionOutcomePolicy.LooksLikeFailureReply(reply);
 
     private sealed record StreamErrorDiagnostic
     {

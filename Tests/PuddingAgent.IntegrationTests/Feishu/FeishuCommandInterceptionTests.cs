@@ -103,6 +103,45 @@ public sealed class FeishuCommandInterceptionTests
     }
 
     [TestMethod]
+    public async Task Compact_IsInterceptedAndRepliesToFeishuWithoutAgentDelivery()
+    {
+        var context = await CreateContextAsync(
+            whitelisted: true,
+            request => new SystemCommandResult(
+                request.ConversationId,
+                request.ClientMessageId,
+                request.ResponseMessageId,
+                request.CommandText,
+                "Context compaction completed. Future messages will continue in the successor conversation.",
+                "Normal"));
+        try
+        {
+            await context.Gateway.AcceptAsync(
+                CreateEnvelope("om_compact", "/compact"));
+
+            Assert.HasCount(1, context.Handler.Requests);
+            var request = context.Handler.Requests.Single();
+            Assert.AreEqual("/compact", request.CommandText);
+            Assert.IsTrue(request.IsPrivilegedUser);
+            Assert.AreEqual("feishu", request.SourceChannel);
+            Assert.AreEqual(SenderOpenId, request.ExternalUserId);
+
+            Assert.HasCount(1, context.Messages.Envelopes);
+            var reply = context.Messages.Envelopes.Single();
+            Assert.AreEqual(MessageEndpointKinds.Connector, reply.To.Single().Kind);
+            Assert.AreEqual(ConnectorId, reply.To.Single().Id);
+            Assert.AreEqual("om_compact", reply.ReplyToMessageId);
+            StringAssert.Contains(reply.Content, "compaction completed");
+            Assert.IsFalse(context.Messages.Envelopes.Any(message =>
+                message.To.Any(target => target.Kind == MessageEndpointKinds.Agent)));
+        }
+        finally
+        {
+            context.Dispose();
+        }
+    }
+
+    [TestMethod]
     public async Task WhoAmI_PassesSenderOpenIdAndRepliesWithoutPrivilegeOrAgentDelivery()
     {
         var context = await CreateContextAsync(
@@ -129,6 +168,43 @@ public sealed class FeishuCommandInterceptionTests
             var reply = context.Messages.Envelopes.Single();
             Assert.AreEqual(MessageEndpointKinds.Connector, reply.To.Single().Kind);
             StringAssert.Contains(reply.Content, SenderOpenId);
+            Assert.IsFalse(context.Messages.Envelopes.Any(message =>
+                message.To.Any(target => target.Kind == MessageEndpointKinds.Agent)));
+        }
+        finally
+        {
+            context.Dispose();
+        }
+    }
+
+    [TestMethod]
+    public async Task Status_IsInterceptedForNonWhitelistedUser_AndRepliesWithoutAgentDelivery()
+    {
+        var context = await CreateContextAsync(
+            whitelisted: false,
+            request => new SystemCommandResult(
+                request.ConversationId,
+                request.ClientMessageId,
+                request.ResponseMessageId,
+                request.CommandText,
+                "**Pudding status**\n- Context: 968.6k remaining / 1000.0k effective",
+                "Normal"));
+        try
+        {
+            await context.Gateway.AcceptAsync(
+                CreateEnvelope("om_status", "/status"));
+
+            Assert.HasCount(1, context.Handler.Requests);
+            var request = context.Handler.Requests.Single();
+            Assert.AreEqual("/status", request.CommandText);
+            Assert.IsFalse(request.IsPrivilegedUser);
+            Assert.AreEqual("feishu", request.SourceChannel);
+
+            Assert.HasCount(1, context.Messages.Envelopes);
+            var reply = context.Messages.Envelopes.Single();
+            Assert.AreEqual(MessageEndpointKinds.Connector, reply.To.Single().Kind);
+            Assert.AreEqual("om_status", reply.ReplyToMessageId);
+            StringAssert.Contains(reply.Content, "Pudding status");
             Assert.IsFalse(context.Messages.Envelopes.Any(message =>
                 message.To.Any(target => target.Kind == MessageEndpointKinds.Agent)));
         }
