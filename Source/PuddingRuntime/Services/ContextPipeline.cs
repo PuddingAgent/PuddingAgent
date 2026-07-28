@@ -68,6 +68,9 @@ public sealed class ContextPipeline
     // RECENT 层滑动窗口常量
     private const int DefaultRecentMessageCount = 35;
 
+    // L6-CONTEXT-AUGMENT 硬上限：防止日志召回层无限膨胀（历史最大 55,905 tokens）
+    private const int MaxContextAugmentTokens = 5000;
+
     // 内存缓存过期
     private static readonly TimeSpan MemCacheExpiration = TimeSpan.FromSeconds(30);
 
@@ -357,6 +360,9 @@ public sealed class ContextPipeline
         // ── L6-CONTEXT-AUGMENT 注入：潜意识召回管道输出（替代原 RECALLED + AGENT-LOG-RECALL）──
         if (!string.IsNullOrWhiteSpace(contextAugmentStr))
         {
+            // P0 硬上限：防止日志召回层膨胀（历史最大 55,905 tokens →  cap 5,000）
+            contextAugmentStr = TrimToTokenBudget(contextAugmentStr, MaxContextAugmentTokens);
+            contextAugmentTokens = EstimateTokens(contextAugmentStr);
             AppendLayer(sb, contextAugmentStr);
             layers.Add(new ContextLayerSnapshot("上下文增强", contextAugmentTokens, (double)contextAugmentTokens / totalBudget * 100));
             layerInfos.Add(new ContextLayerInfo
