@@ -362,6 +362,54 @@ public sealed class SmartWorkflowContractTests
     }
 
     [TestMethod]
+    public async Task SmartPlanValidatesCanonicalRawOutputInsteadOfTerseStructuredSummary()
+    {
+        var doneEnvelope = JsonSerializer.Serialize(new
+        {
+            status = "DONE",
+            message = ValidDetailedReport,
+            tool = (object?)null,
+        });
+        var recorder = new RecordingToolExecutionService
+        {
+            ResponseOutput = JsonSerializer.Serialize(new
+            {
+                schema = "pudding-subagent-result",
+                version = 1,
+                subAgentId = "sub-session-plan",
+                runId = "run-plan",
+                status = "completed",
+                summary = "Now I have sufficient evidence to produce the comprehensive engineering plan. Let me compile the final report.",
+                rawOutput = $"Planner finished its investigation.\n```json\n{doneEnvelope}\n```",
+            }),
+        };
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartPlanTool(
+            services,
+            NullLogger<SmartPlanTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "smart-plan-fenced-report",
+            ArgumentsJson = JsonSerializer.Serialize(new
+            {
+                task = "Produce an implementation-ready architecture plan. " + new string('p', 520),
+            }),
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(recorder.ResponseOutput, result.Output);
+    }
+
+    [TestMethod]
     public async Task SmartWorkflowClampsChildBudgetToParentDeadlineAndReservesFinalizationTime()
     {
         var recorder = new RecordingToolExecutionService();

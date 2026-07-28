@@ -378,14 +378,28 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             using var document = JsonDocument.Parse(toolOutput);
             if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                // 优先读取 summary（BuildStructuredResult 产出的结构化字段）
+                // rawOutput is the authoritative delegated result. The structured
+                // summary contains only the SUMMARY section (or even the first prose
+                // line when an LLM wraps DONE JSON in a fenced block), so validating
+                // summary as the whole five-section report produces false failures.
+                if (document.RootElement.TryGetProperty("rawOutput", out var rawOutput)
+                    && rawOutput.ValueKind == JsonValueKind.String)
+                {
+                    var raw = rawOutput.GetString();
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        var loopResponse = AgentLoopResponse.Parse(raw);
+                        return string.IsNullOrWhiteSpace(loopResponse.Message)
+                            ? raw
+                            : loopResponse.Message;
+                    }
+                }
+
+                // Alternative tool implementations may expose the complete report
+                // directly in summary and omit rawOutput.
                 if (document.RootElement.TryGetProperty("summary", out var summary)
                     && summary.ValueKind == JsonValueKind.String)
                     return summary.GetString();
-                // 向后兼容：rawOutput（一次性子代理的 BuildSingleToolOutput 仍产它）
-                if (document.RootElement.TryGetProperty("rawOutput", out var rawOutput)
-                    && rawOutput.ValueKind == JsonValueKind.String)
-                    return rawOutput.GetString();
             }
         }
         catch (JsonException)

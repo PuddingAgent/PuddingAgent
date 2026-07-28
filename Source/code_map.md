@@ -55,6 +55,7 @@ Source/
 | `Services/AgentExecution/AgentToolArguments.cs` | LLM tool-call JSON 到 legacy skill 参数与 terminal payload 的纯转换边界；执行器保留薄委托以兼容既有反射测试 |
 | `Services/AgentExecution/NoOpKeyVaultService.cs` + `StreamPipelineDiagnosticsAccumulator.cs` | 可选 KeyVault 的无副作用 fallback，以及流式 KeyVault/SSM 热路径指标的线程安全聚合；均不再作为执行器内嵌类型 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | Smart 子代理五段报告合同的共享解析/校验与执行期候选保留器；只在显式 canonical `ExpectedOutputContract` 下恢复完整报告 |
+| `Services/AgentLoop/AgentLoopResponse.cs` | 结构化 Agent Loop 响应解析；支持纯 JSON、起始代码围栏，以及模型先输出说明文字再返回 fenced JSON 的格式，确保 `DONE.message` 而非整段 provider 原文进入最终结果 |
 | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs` | 主 Agent、工具调用和子代理共用的稳定执行身份；贯穿 Conversation/Turn/Command/Run/Tool/Invocation |
 | `PuddingCore/Runtime/ExecutionProgressRegistry.cs` | 主 Run 进程内进展注册表；按 Conversation 汇聚子执行信号，区分 liveness/meaningful，并拒绝相同 Run+阶段+指纹的重复续期 |
 | `Services/SessionExecutionGate.cs` + `PuddingCore/Runtime/ISessionExecutionGate.cs` | Runtime 会话进程内单写者；统一串行化 Conversation Worker、MessageDelivery、Heartbeat 与直接 Runtime 调度对同一 session 的状态修改 |
@@ -106,7 +107,7 @@ Source/
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionsTool.cs` | 会话列表查询 |
-| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；每次调用默认使用一次性子代理且 `reuse_parent_context=false`，角色工具集显式有界，跨模型 fallback 仅在 `allow_fallback=true` 时启用；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索；显式透传 canonical `expected_output_contract` 并与 Runtime 共享五段报告校验 |
+| `Tools/BuiltIns/SmartWorkflow/` | `SmartWorkflowToolBase.cs` + `Smart*Tool.cs` | 🔑 7 个角色化 Smart 工作流工具；统一 `task`、角色模型和父 deadline/120 秒收尾预留；每次调用默认使用一次性子代理且 `reuse_parent_context=false`，角色工具集显式有界，跨模型 fallback 仅在 `allow_fallback=true` 时启用；单次调用默认上限 3600 秒，`smart_plan` 为 3600 秒/48 轮只读规划，`smart_explore` 为 1800 秒/32 轮只读探索；显式透传 canonical `expected_output_contract` 并与 Runtime 共享五段报告校验；验证结构化结果时以完整 `rawOutput` 为权威并解包嵌套 `DONE.message`，不把短 `summary` 误当完整报告 |
 | `Tools/BuiltIns/Management/` | `LlmResourcePoolTool.cs` | LLM 资源池查询（Provider + Model + 能力标签），MainAgentOnly |
 | `Tools/BuiltIns/Management/` | `AgentStateTool.cs` | Agent 私有状态自维护：检查、诊断、读取、原子更新白名单 Markdown；Low 风险且只使用当前 `AgentInstanceId` |
 | `Tools/BuiltIns/Http/` | `HttpFetchSkill.cs` | HTTP 请求 |

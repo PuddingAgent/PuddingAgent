@@ -42,7 +42,8 @@ public sealed class AgentLoopResponse
 
     /// <summary>
     /// 从 LLM 原始输出文本解析 AgentLoopResponse。
-    /// 自动剥离 Markdown 代码围栏；解析失败时安全降级。
+    /// 自动提取 Markdown JSON 代码围栏，即使模型在围栏前添加了说明文字；
+    /// 解析失败时安全降级。
     /// </summary>
     public static AgentLoopResponse Parse(string text)
     {
@@ -64,12 +65,34 @@ public sealed class AgentLoopResponse
 
     private static string StripCodeFence(string s)
     {
-        if (!s.StartsWith("```")) return s;
-        var nl = s.IndexOf('\n');
-        if (nl < 0) return s;
-        s = s[(nl + 1)..];
-        if (s.EndsWith("```")) s = s[..^3].TrimEnd();
-        return s.Trim();
+        var searchFrom = 0;
+        while (searchFrom < s.Length)
+        {
+            var fenceStart = s.IndexOf("```", searchFrom, StringComparison.Ordinal);
+            if (fenceStart < 0)
+                return s;
+
+            var headerEnd = s.IndexOf('\n', fenceStart + 3);
+            if (headerEnd < 0)
+                return s;
+
+            var fenceEnd = s.IndexOf("```", headerEnd + 1, StringComparison.Ordinal);
+            if (fenceEnd < 0)
+                return s;
+
+            var language = s[(fenceStart + 3)..headerEnd].Trim();
+            var candidate = s[(headerEnd + 1)..fenceEnd].Trim();
+            if (language.Equals("json", StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith('{')
+                || candidate.StartsWith('['))
+            {
+                return candidate;
+            }
+
+            searchFrom = fenceEnd + 3;
+        }
+
+        return s;
     }
 }
 

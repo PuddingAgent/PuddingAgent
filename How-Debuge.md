@@ -634,6 +634,19 @@ BuiltIn provider 以及 fallback 不得分别暴露不同路径格式。
 4. 如果没有恢复日志，先确认候选报告五个标题使用 `SECTION:` 格式且满足长度门槛，再查
    `ExpectedOutputCandidateTracker` 是否在同一 delegated run 内创建和观察。
 
+如果 `output.md` 很长且包含完整五段，但 `INVALID_REPORT` 却记录约 100 字符，检查
+`spawn_sub_agent` 的结构化结果信封：
+
+1. `rawOutput` 是子代理完整输出的权威字段；`summary` 只表示 `SUMMARY` 段，或者在解析
+   失败时只是模型输出的第一行，不能拿它代替完整五段报告做校验。
+2. Qwen 等模型可能先输出一句说明，再用 JSON 代码围栏包住 `status=DONE` 信封；
+   `AgentLoopResponse.Parse` 必须从前导说明后提取 JSON fence，并把其中的 `message`
+   作为最终正文。
+3. Smart Workflow 解包应先读取 `rawOutput`，再通过 `AgentLoopResponse.Parse` 解出嵌套
+   `message`；只有不提供 `rawOutput` 的替代实现才回退到 `summary`。
+4. 同期出现的 Embedding 401 属于回合后记忆嵌入故障，不会导致已完成的 Smart 报告
+   缺段；不要把它误判为 `INVALID_REPORT` 的根因。
+
 ### 7.6 Smart 子代理在截止时间显示 cancelled，且轮次/工具统计归零
 
 已复现样本：
