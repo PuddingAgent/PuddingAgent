@@ -925,8 +925,8 @@ public sealed partial class AgentExecutionService
                 tools.Count,
                 removedSubAgentTool,
                 0,
-                SummarizeToolDefinitions(tools));
-            return tools;
+                                SummarizeToolDefinitions(tools));
+            return ApplyToolProfile(tools, request);
         }
 
         var allowed = new HashSet<string>(template.AllowedSkillIds, StringComparer.OrdinalIgnoreCase);
@@ -943,8 +943,59 @@ public sealed partial class AgentExecutionService
             filtered.Count,
             removedSubAgentTool,
             template.AllowedSkillIds.Count,
-            SummarizeToolDefinitions(filtered));
+                        SummarizeToolDefinitions(filtered));
+        return ApplyToolProfile(filtered, request);
+    }
+
+    /// <summary>
+    /// 根据执行场景（心跳 / 子代理）过滤工具定义，减少发送给 LLM 的 tool schema token 占用。
+    /// 默认 profile 包含所有工具，保持向后兼容。
+    /// </summary>
+    private IReadOnlyList<LlmToolDefinition> ApplyToolProfile(
+        IReadOnlyList<LlmToolDefinition> tools,
+        RuntimeDispatchRequest request)
+    {
+        var profileName = ResolveToolProfile(request);
+        if (profileName is null)
+            return tools;
+
+        var filtered = tools
+            .Where(t => ToolProfileConfig.ShouldInclude(profileName, t.Name))
+            .ToList();
+
+        if (filtered.Count < tools.Count)
+        {
+            _logger.LogInformation(
+                "[AgentExec:ToolProfile] Applied profile={Profile} session={Session} before={Before} after={After} removed={Removed}",
+                profileName,
+                request.SessionId,
+                tools.Count,
+                filtered.Count,
+                tools.Count - filtered.Count);
+        }
+
         return filtered;
+    }
+
+    /// <summary>
+    /// 根据请求上下文决定工具 profile 名称。返回 null 表示使用完整工具集。
+    /// </summary>
+    private static string? ResolveToolProfile(RuntimeDispatchRequest request)
+    {
+        // 心跳场景：消息内容包含系统心跳标记
+        if (request.MessageText is not null
+            && request.MessageText.Contains("── 系统心跳 ──", StringComparison.Ordinal))
+        {
+            return "heartbeat";
+        }
+
+        // 子代理场景
+        if (request.ExecutionIdentity?.Kind == RuntimeExecutionKind.SubAgent)
+        {
+            return "sub_agent";
+        }
+
+        return null; // 默认：完整工具集
     }
 
     private static string SummarizeToolDefinitions(IReadOnlyList<LlmToolDefinition>? tools)

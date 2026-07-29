@@ -25,7 +25,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
     private readonly TokenUsageNormalizer _normalizer;
     private readonly ILogger<TokenUsageRecorder> _logger;
     private readonly ITelemetryMetricSink? _telemetrySink;
-    private readonly ContextAssemblyStore? _contextAssemblyStore;
+        private readonly ContextAssemblyStore? _contextAssemblyStore;
+    private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly ILlmConfigService? _llmConfigService;
     private readonly ISessionTimelineRecorder? _timelineRecorder;
 
@@ -34,7 +35,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         TokenUsageNormalizer normalizer,
         ILogger<TokenUsageRecorder> logger,
         ITelemetryMetricSink? telemetrySink = null,
-        ContextAssemblyStore? contextAssemblyStore = null,
+                ContextAssemblyStore? contextAssemblyStore = null,
+        ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         ILlmConfigService? llmConfigService = null,
         ISessionTimelineRecorder? timelineRecorder = null)
     {
@@ -42,7 +44,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         _normalizer = normalizer;
         _logger = logger;
         _telemetrySink = telemetrySink;
-        _contextAssemblyStore = contextAssemblyStore;
+                _contextAssemblyStore = contextAssemblyStore;
+        _contextUsageSnapshotStore = contextUsageSnapshotStore;
         _llmConfigService = llmConfigService;
         _timelineRecorder = timelineRecorder;
     }
@@ -477,7 +480,56 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 CreatedAtUtc = DateTimeOffset.UtcNow,
             });
 
-            tokenOffset += tokens;
+                        tokenOffset += tokens;
+        }
+
+        // ── 合成 L1-TOOL-DEFINITIONS 层：追踪工具定义的 token 占用 ──
+        if (_contextUsageSnapshotStore is not null
+            && _contextUsageSnapshotStore.TryGet(sessionId!, out var usageSnapshot)
+            && usageSnapshot is not null
+            && usageSnapshot.ToolDefinitionTokens > 0)
+        {
+            var toolDefTokens = usageSnapshot.ToolDefinitionTokens;
+            var toolDefHit = Math.Min(toolDefTokens, hitRemaining);
+            hitRemaining -= toolDefHit;
+            var toolDefRemaining = toolDefTokens - toolDefHit;
+            var toolDefMiss = Math.Min(toolDefRemaining, missRemaining);
+            missRemaining -= toolDefMiss;
+
+            db.ContextLayerMetricEvents.Add(new ContextLayerMetricEventEntity
+            {
+                SourceType = sourceType,
+                SourceId = sourceId,
+                WorkspaceId = workspaceId,
+                SessionId = sessionId,
+                ProviderId = providerId,
+                ModelId = modelId,
+                OccurredAtUtc = occurredAtUtc,
+                AssemblerVersion = "context-v1",
+                LayoutVersion = "layer-v1",
+                LayerName = "L1-TOOL-DEFINITIONS",
+                LayerOrder = 1,
+                LayerRole = "stable_prefix",
+                TokenCount = toolDefTokens,
+                CharCount = 0,
+                ContentHash = ComputeLayerHash(new ContextLayerInfo
+                {
+                    LayerName = "L1-TOOL-DEFINITIONS",
+                    TokenCount = toolDefTokens,
+                    ContentPreview = $"tool_count={usageSnapshot.ToolCount}",
+                }),
+                PreviousHash = null,
+                IsChanged = false,
+                ChangeReason = null,
+                StartsAtToken = tokenOffset,
+                EndsAtToken = tokenOffset + toolDefTokens,
+                IsCacheEligible = true,
+                EstimatedCacheHitTokens = toolDefHit,
+                EstimatedCacheMissTokens = toolDefMiss,
+                EstimatedCacheHitRate = (toolDefHit + toolDefMiss) > 0 ? (double)toolDefHit / (toolDefHit + toolDefMiss) : null,
+                Confidence = "estimated",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            });
         }
     }
 
