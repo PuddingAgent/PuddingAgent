@@ -300,6 +300,10 @@ public abstract class PuddingToolBase<TArgs> : IPuddingTool
         {
             return ToolExecutionResult.Fail(BuildInvalidArgumentsJsonError(ex, request.ArgumentsJson));
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return ToolExecutionResult.Fail(ex.Message);

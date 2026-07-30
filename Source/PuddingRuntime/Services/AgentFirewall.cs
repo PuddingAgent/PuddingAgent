@@ -345,7 +345,8 @@ public sealed class AgentFirewall : IAgentFirewall
 
     private static bool IsNetworkTool(string toolId) =>
         toolId.Equals("http_fetch", StringComparison.OrdinalIgnoreCase)
-        || toolId.Equals("anysearch_search", StringComparison.OrdinalIgnoreCase);
+        || toolId.Equals("anysearch_search", StringComparison.OrdinalIgnoreCase)
+        || toolId.Equals("doubao_search", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Extracts the primary file path from tool arguments JSON.

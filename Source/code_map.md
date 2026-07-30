@@ -92,6 +92,7 @@ Source/
 ### 工具系统
 | 文件 | 用途 |
 |------|------|
+| `PuddingCore/Tools/PuddingToolContracts.cs` | 原生 Tool 契约、描述符与强类型参数基类；调用方取消必须透传，Provider 超时和普通异常仍映射为工具失败 |
 | `Tools/Platform/PuddingToolRegistry.cs` | 🔑 工具注册表与执行硬边界；支持 `IWorkspacePuddingToolSource` 的 Workspace 动态工具快照，强制 MainAgentOnly/DelegatedSubAgent、AllowSubDelegation 和 DelegationDepth，模型无法用伪造工具名或跨 Workspace 绕过 |
 | `Tools/Platform/ToolInvocationService.cs` | 工具调用分发（解析工具名 → 透传配置所有者/委派深度 → 执行） |
 | `Tools/Platform/ToolPermissionPolicyService.cs` | 工具权限策略（安全区检查） |
@@ -105,7 +106,8 @@ Source/
 | `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并完整保留 `origin_tool_id + reuse_parent_context + pool_* + max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc`；同步委派由 Manager 统一保留父级收尾时间 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
 | `Tools/BuiltIns/Search/` | `SmartSearchTool.cs` | 🔑 语义代码搜索 — 薄包装子代理，三层搜索协议，MainAgentOnly，Explorer 模型 |
-| `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | 通用搜索（Web/文档） |
+| `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | AnySearch 通用搜索（Web/文档） |
+| `Tools/BuiltIns/Search/` | `DoubaoSearchTool.cs` | 豆包搜索 Global 版；从 `search.providers.json` 的 `doubao_search` 节读取凭据，映射文本/图片摘要并保留双层业务错误与 RequestId |
 | `Tools/BuiltIns/Search/` | `GitHubSearchTool.cs` | GitHub REST API 搜索 |
 | `Tools/BuiltIns/Sessions/` | `SmartQuerySessionLogsTool.cs` | 🔑 语义会话日志查询 — 薄包装子代理，MainAgentOnly，Explorer 模型 |
 | `Tools/BuiltIns/Sessions/` | `QuerySessionLogsTool.cs` | 会话日志查询（支持 exclude_heartbeat） |
