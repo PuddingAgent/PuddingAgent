@@ -67,6 +67,7 @@ public interface ISubconsciousOrchestrator
     /// </summary>
     Task<PatternExtractionReport> ExtractPatternsAsync(
         string workspaceId,
+        string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
         CancellationToken ct = default);
 
@@ -76,6 +77,7 @@ public interface ISubconsciousOrchestrator
     /// </summary>
     Task<SkillImprovementReport> ImproveSkillsAsync(
         string workspaceId,
+        string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
         CancellationToken ct = default);
 }

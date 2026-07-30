@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
   type AdminChatStreamEvent,
+  type ConversationBootstrapResponse,
   getConversationBootstrap,
   getSessionSubAgents,
 } from '@/services/platform/api';
@@ -136,13 +137,16 @@ export function useSessionEventReplay({
   }, [hasActiveSubAgentRuns, selectedSessionId, setSubAgentRuns]);
 
   const syncCompletedHistoryEventCursor = useCallback(
-    async (sessionId: string, signal?: AbortSignal) => {
+    async (
+      sessionId: string,
+      signal?: AbortSignal,
+    ): Promise<ConversationBootstrapResponse['turns']> => {
       try {
         const [bootstrap, statuses] = await Promise.all([
           getConversationBootstrap(sessionId, 1),
           getSessionSubAgents(sessionId).catch(() => []),
         ]);
-        if (signal?.aborted) return;
+        if (signal?.aborted) return [];
         for (const rawEvent of bootstrap.lifecycleEvents ?? []) {
           const event = normalizeSessionEvent(rawEvent);
           if (!event) continue;
@@ -172,7 +176,8 @@ export function useSessionEventReplay({
           return reconcileSubAgentRunStatuses(merged, statuses);
         });
         const cursor = Number(bootstrap.snapshotCursor);
-        if (!Number.isFinite(cursor) || cursor < 0) return;
+        if (!Number.isFinite(cursor) || cursor < 0)
+          return bootstrap.turns ?? [];
         lastSequenceNumRef.current = Math.max(
           lastSequenceNumRef.current,
           cursor,
@@ -181,6 +186,7 @@ export function useSessionEventReplay({
           sessionId,
           lastSequenceNum: lastSequenceNumRef.current,
         });
+        return bootstrap.turns ?? [];
       } catch (error) {
         recordPerfEvent(
           'chat.replay.cursorSyncFailed',
@@ -191,6 +197,7 @@ export function useSessionEventReplay({
           },
           { throttleMs: 1_000 },
         );
+        return [];
       }
     },
     [handleCompactionLifecycleEvent, lastSequenceNumRef, setSubAgentRuns],

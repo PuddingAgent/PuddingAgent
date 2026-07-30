@@ -227,6 +227,14 @@ public class TokenUsageRecorder(
 非 Conversation LLM 调用的 `sourceId` 使用 `llm:{InvocationId}`。`InvocationId` 在
 `LlmInvocationRequest` 创建时生成，在调用服务内部重试期间保持不变。
 
+#### 4.2.1 上下文层投影修订（layer-v2）
+
+`ContextUsageSnapshotStore` 必须保存最终 LLM 请求中的工具定义 token 数和规范化 schema 哈希。
+`TokenUsageRecorder` 将合成的 `L1-TOOL-DEFINITIONS` 插在所有 `L0-*` 层之后、首个动态层之前，
+再统一计算 `LayerOrder`、token offset 和缓存命中分配。工具名称、描述或参数 schema 变化时，
+该层写入 `PreviousHash`、`IsChanged=true` 和 `ChangeReason=tool_spec_changed`。不得把工具层追加到
+记录末尾后伪造较小的 `LayerOrder`，也不得仅用 token 数或工具数量判断 schema 是否变化。
+
 ### 4.3 TokenUsageRebuildService（新服务）
 
 ```csharp

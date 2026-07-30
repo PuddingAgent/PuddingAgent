@@ -8,6 +8,7 @@ using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.MessageGateway;
 
 namespace PuddingAgent.Services;
 
@@ -223,7 +224,11 @@ public sealed class FeishuStreamingProjectionWorker(
 
             if (command.TerminalSequence is not null)
             {
-                changed |= await CloseInterruptedAsync(db, projection, ct);
+                changed |= await CloseInterruptedAsync(
+                    db,
+                    command,
+                    projection,
+                    ct);
             }
 
             return changed;
@@ -478,6 +483,7 @@ public sealed class FeishuStreamingProjectionWorker(
 
     private async Task<bool> CloseInterruptedAsync(
         PlatformDbContext db,
+        ChatExecutionCommandEntity command,
         ConnectorStreamProjectionEntity projection,
         CancellationToken ct)
     {
@@ -486,16 +492,31 @@ public sealed class FeishuStreamingProjectionWorker(
                 or ConnectorStreamProjectionStatuses.Finalizing))
             return false;
 
+        var terminalEvent = command.TerminalSequence is null
+            ? null
+            : await db.ConversationEvents
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    evt => evt.ConversationId == command.SessionId
+                           && evt.Sequence == command.TerminalSequence,
+                    ct);
+        var presentation = terminalEvent is null
+            ? null
+            : ConversationTerminalMessageFormatter.Parse(terminalEvent.Payload);
+        var content = presentation?.Content
+                      ?? (string.IsNullOrWhiteSpace(projection.Content)
+                          ? "生成中断。"
+                          : $"{projection.Content}\n\n— 生成中断");
+        var summary = presentation?.Summary ?? "生成中断";
+
         if (projection.Status == ConnectorStreamProjectionStatuses.Active)
         {
-            projection.Content = string.IsNullOrWhiteSpace(projection.Content)
-                ? "生成中断。"
-                : $"{projection.Content}\n\n— 生成中断";
             projection.OperationSequence += 2;
             projection.Status = ConnectorStreamProjectionStatuses.Finalizing;
-            projection.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            await db.SaveChangesAsync(ct);
         }
+        projection.Content = content;
+        projection.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        await db.SaveChangesAsync(ct);
 
         await RequireSuccessAsync(
             projection.ConnectorId,
@@ -519,7 +540,7 @@ public sealed class FeishuStreamingProjectionWorker(
             {
                 [ConnectorStreamParameters.ResourceId] = RequireResourceId(projection),
                 [ConnectorStreamParameters.Content] = projection.Content,
-                [ConnectorStreamParameters.Summary] = "生成中断",
+                [ConnectorStreamParameters.Summary] = summary,
                 [ConnectorStreamParameters.Sequence] =
                     projection.OperationSequence.ToString(),
                 [ConnectorStreamParameters.Uuid] = StableId(
@@ -529,6 +550,7 @@ public sealed class FeishuStreamingProjectionWorker(
             ct);
 
         projection.Status = ConnectorStreamProjectionStatuses.Completed;
+        command.ReplyProjectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         ResetFailure(projection);
         projection.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await db.SaveChangesAsync(ct);
@@ -569,8 +591,7 @@ public sealed class FeishuStreamingProjectionWorker(
             .AddSeconds(Math.Min(10, 1 << Math.Min(4, projection.AttemptCount - 1)))
             .ToUnixTimeMilliseconds();
         projection.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (projection.AttemptCount >= MaxOperationAttempts
-            && projection.Status != ConnectorStreamProjectionStatuses.Finalizing)
+        if (projection.AttemptCount >= MaxOperationAttempts)
         {
             projection.Status = ConnectorStreamProjectionStatuses.Failed;
             projection.AvailableAt = null;

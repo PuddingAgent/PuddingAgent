@@ -8,12 +8,25 @@ using PuddingRuntime;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Services;
 
 [TestClass]
 public sealed class RuntimeServiceExtensionsTests
 {
+    [TestMethod]
+    public void AddPuddingRuntime_RegistersProviderIndependentToolDiscovery()
+    {
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddPuddingRuntime();
+
+        Assert.IsTrue(services.Any(descriptor =>
+            descriptor.ServiceType == typeof(PuddingCode.Tools.IPuddingTool)
+            && descriptor.ImplementationType == typeof(SearchToolsTool)));
+    }
+
     [TestMethod]
     public void AddPuddingRuntime_DoesNotRegisterLegacySubconsciousHookByDefault()
     {

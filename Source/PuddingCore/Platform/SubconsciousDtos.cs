@@ -32,6 +32,9 @@ public sealed record SubconsciousMemoryScope
 public static class SubconsciousJobTypes
 {
     public const string MemoryConsolidateSession = "memory.consolidate_session";
+    public const string AutoDream = "memory.auto_dream";
+    public const string ExtractPatterns = "skill.extract_patterns";
+    public const string ImproveSkills = "skill.improve";
 }
 
 public sealed record SubconsciousJobEnqueueRequest
@@ -63,6 +66,9 @@ public static class SubconsciousJobResultKinds
 {
     public const string MemoryMaintenancePlanDryRun = "memory_maintenance_plan.dry_run";
     public const string MemoryWikiPageUpdate = "memory_wiki_page_update.v1";
+    public const string MemoryAutoDream = "memory.auto_dream.v1";
+    public const string SkillPatternExtraction = "skill.pattern_extraction.v1";
+    public const string SkillImprovement = "skill.improvement.v1";
 }
 
 public static class SubconsciousJobResultStatuses
@@ -70,6 +76,7 @@ public static class SubconsciousJobResultStatuses
     public const string Accepted = "accepted";
     public const string Rejected = "rejected";
     public const string Quarantined = "quarantined";
+    public const string Completed = "completed";
 }
 
 public static class SubconsciousJobResultDecisions
@@ -78,6 +85,7 @@ public static class SubconsciousJobResultDecisions
     public const string RejectComplete = "reject_complete";
     public const string RetryLater = "retry_later";
     public const string DeferForRecheck = "defer_for_recheck";
+    public const string ExecutionCompleted = "execution_completed";
 }
 
 public static class SubconsciousJobResultNextActions
@@ -86,6 +94,7 @@ public static class SubconsciousJobResultNextActions
     public const string CompleteRejected = "complete_rejected";
     public const string RetryJob = "retry_job";
     public const string CompleteQuarantined = "complete_quarantined";
+    public const string CompleteJob = "complete_job";
 }
 
 public sealed record SubconsciousJobResultEnvelope
@@ -339,6 +348,8 @@ public sealed record MemorySnapshotBook
 public sealed record PatternCandidate
 {
     public string SessionId { get; init; } = "";
+    public string TurnId { get; init; } = "";
+    public string AgentInstanceId { get; init; } = "";
     /// <summary>简短描述（≤30字）</summary>
     public string Title { get; init; } = "";
     /// <summary>这个模式解决什么问题</summary>
@@ -354,6 +365,47 @@ public sealed record PatternCandidate
     public double Confidence { get; init; }
     /// <summary>提取时的证据摘要</summary>
     public string? Evidence { get; init; }
+}
+
+/// <summary>Canonical successful tool trajectory used by the experience-to-Skill pipeline.</summary>
+public sealed record SkillEvolutionTrajectory
+{
+    public required string WorkspaceId { get; init; }
+    public required string AgentInstanceId { get; init; }
+    public required string SessionId { get; init; }
+    public required string TurnId { get; init; }
+    public required string Goal { get; init; }
+    public IReadOnlyList<SkillEvolutionToolStep> Steps { get; init; } = [];
+}
+
+public sealed record SkillEvolutionToolStep
+{
+    public required string ToolName { get; init; }
+    public string Arguments { get; init; } = "{}";
+    public string? Output { get; init; }
+}
+
+/// <summary>Runtime Agent Skill document used across the MemoryEngine/Runtime boundary.</summary>
+public sealed record AgentSkillEvolutionDocument
+{
+    public required string SkillId { get; init; }
+    public required string Name { get; init; }
+    public required string Version { get; init; }
+    public string? Description { get; init; }
+    public IReadOnlyList<string> Tags { get; init; } = [];
+    public IReadOnlyList<string> Keywords { get; init; } = [];
+    public required string Markdown { get; init; }
+}
+
+public sealed record AgentSkillEvolutionWriteRequest
+{
+    public required string SkillId { get; init; }
+    public required string Name { get; init; }
+    public required string Version { get; init; }
+    public string? Description { get; init; }
+    public IReadOnlyList<string> Tags { get; init; } = [];
+    public IReadOnlyList<string> Keywords { get; init; } = [];
+    public required string Markdown { get; init; }
 }
 
 /// <summary>3条件过滤的单一条件评估结果</summary>

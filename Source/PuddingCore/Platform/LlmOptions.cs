@@ -96,6 +96,8 @@ namespace PuddingCode.Platform
         public int HistoryMessageTokens { get; set; }
         public int MessageCount { get; set; }
         public int ToolCount { get; set; }
+        /// <summary>规范化工具名称、描述和参数 schema 的稳定哈希。</summary>
+        public string? ToolDefinitionHash { get; set; }
         public string Source { get; set; } = "unknown";
         public string Confidence { get; set; } = "estimated";
         public int? ProviderPromptTokens { get; set; }
@@ -148,6 +150,9 @@ namespace PuddingCode.Platform
             }
 
             var toolTokens = CountToolDefinitionTokens(tools, modelId);
+            var toolDefinitionHash = tools is { Count: > 0 }
+                ? PrefixCacheSnapshotBuilder.Build(messages, tools).ToolSpecHash
+                : null;
             var snapshot = new ContextUsageSnapshot
             {
                 SessionId = sessionId,
@@ -159,6 +164,7 @@ namespace PuddingCode.Platform
                 HistoryMessageTokens = historyTokens,
                 MessageCount = messages.Count,
                 ToolCount = tools?.Count ?? 0,
+                ToolDefinitionHash = toolDefinitionHash,
                 Source = "llm_request",
                 Confidence = "estimated",
             };
@@ -202,6 +208,7 @@ namespace PuddingCode.Platform
                 HistoryMessageTokens = existing?.HistoryMessageTokens ?? 0,
                 MessageCount = existing?.MessageCount ?? 0,
                 ToolCount = existing?.ToolCount ?? 0,
+                ToolDefinitionHash = existing?.ToolDefinitionHash,
                 Source = "provider_usage",
                 Confidence = "provider_reported",
                 ProviderPromptTokens = usage.PromptTokens,

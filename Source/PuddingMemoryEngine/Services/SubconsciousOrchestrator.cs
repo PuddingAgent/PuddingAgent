@@ -5,6 +5,7 @@ using PuddingCode.Platform;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -28,6 +29,8 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
     private readonly IDbContextFactory<MemoryDbContext> _memoryDbContextFactory;
     private readonly IMemoryLibrarian _memoryLibrarian;
     private readonly IStreamingEventBus? _eventBus;
+    private readonly ISkillEvolutionTrajectorySource _skillTrajectorySource;
+    private readonly IAgentSkillEvolutionStore _skillStore;
 
     public SubconsciousOrchestrator(
         IMemoryLibrary memoryLibrary,
@@ -36,6 +39,8 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         IMemoryLibrarian memoryLibrarian,
         ILogger<SubconsciousOrchestrator> logger,
         IDbContextFactory<MemoryDbContext> memoryDbContextFactory,
+        ISkillEvolutionTrajectorySource skillTrajectorySource,
+        IAgentSkillEvolutionStore skillStore,
         IEmbeddingService? embeddingService = null,
         IStreamingEventBus? eventBus = null)
     {
@@ -47,6 +52,8 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         _logger = logger;
         _memoryDbContextFactory = memoryDbContextFactory;
         _eventBus = eventBus;
+        _skillTrajectorySource = skillTrajectorySource;
+        _skillStore = skillStore;
     }
 
     /// <summary>
@@ -1165,6 +1172,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
 
     public async Task<PatternExtractionReport> ExtractPatternsAsync(
         string workspaceId,
+        string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
         CancellationToken ct = default)
     {
@@ -1172,8 +1180,11 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         int candidatesFound = 0, promoted = 0, demotedToMemory = 0, skipped = 0;
         var createdSkillIds = new List<string>();
 
-        _logger.LogInformation("[PatternExtraction] Phase1-Scan: scanning recent sessions workspace={Workspace}", workspaceId);
-        var candidates = await DetectPatternCandidatesAsync(workspaceId, memoryLlmConfig, ct);
+        _logger.LogInformation(
+            "[PatternExtraction] Phase1-Scan: scanning canonical trajectories workspace={Workspace} agent={AgentInstanceId}",
+            workspaceId,
+            agentInstanceId);
+        var candidates = await DetectPatternCandidatesAsync(workspaceId, agentInstanceId, memoryLlmConfig, ct);
         candidatesFound = candidates.Count;
         _logger.LogInformation("[PatternExtraction] Phase1-Scan: found {Count} candidates", candidatesFound);
 
@@ -1188,9 +1199,9 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             switch (evaluation.Decision)
             {
                 case "promote":
-                    var skillId = await MaterializeSkillAsync(candidate, evaluation, workspaceId, ct);
+                    var skillId = await MaterializeSkillAsync(candidate, evaluation, ct);
                     if (skillId is not null) { createdSkillIds.Add(skillId); promoted++; }
-                    else demotedToMemory++;
+                    else skipped++;
                     break;
                 case "demote":
                     await SaveAsMemoryNoteAsync(candidate, evaluation, workspaceId, ct);
@@ -1214,31 +1225,29 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         return report;
     }
 
-    private async Task<List<PatternCandidate>> DetectPatternCandidatesAsync(string workspaceId, MemoryLlmConfig? memoryLlmConfig, CancellationToken ct)
+    private async Task<List<PatternCandidate>> DetectPatternCandidatesAsync(
+        string workspaceId,
+        string agentInstanceId,
+        MemoryLlmConfig? memoryLlmConfig,
+        CancellationToken ct)
     {
         var candidates = new List<PatternCandidate>();
         try
         {
-            await using var db = await _memoryDbContextFactory.CreateDbContextAsync(ct);
-            var recentSessionIds = await db.SubconsciousJobLogs
-                .Where(l => l.Status == "completed" && l.FactsExtracted > 0)
-                .OrderByDescending(l => l.CompletedAt).Take(5)
-                .Select(l => l.SessionId).Distinct().ToListAsync(ct);
-            if (recentSessionIds.Count == 0)
+            var trajectories = await _skillTrajectorySource.GetRecentSuccessfulAsync(
+                workspaceId,
+                agentInstanceId,
+                limit: 5,
+                ct);
+            if (trajectories.Count == 0)
             {
-                _logger.LogInformation("[PatternExtraction] No recent completed sessions to scan");
+                _logger.LogInformation("[PatternExtraction] No verified tool trajectories to scan");
                 return candidates;
             }
-            foreach (var sid in recentSessionIds)
+            foreach (var trajectory in trajectories)
             {
                 if (ct.IsCancellationRequested) break;
-                var messages = await db.Messages.AsNoTracking()
-                    .Where(m => m.SessionId == sid).OrderBy(m => m.CreatedAt).Take(300)
-                    .Select(m => new MessageSlice(m.MessageId, m.Role, m.Content, m.CreatedAt)).ToListAsync(ct);
-                if (messages.Count < 5) continue;
-                var conversationText = BuildConversation(messages);
-                if (conversationText.Length < 100) continue;
-                var detected = await DetectGoldenPathsInSessionAsync(sid, conversationText, memoryLlmConfig, ct);
+                var detected = await DetectGoldenPathsInSessionAsync(trajectory, memoryLlmConfig, ct);
                 if (detected.Count > 0) candidates.AddRange(detected);
             }
         }
@@ -1246,10 +1255,13 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         return candidates;
     }
 
-    private async Task<List<PatternCandidate>> DetectGoldenPathsInSessionAsync(string sessionId, string conversationText, MemoryLlmConfig? memoryLlmConfig, CancellationToken ct)
+    private async Task<List<PatternCandidate>> DetectGoldenPathsInSessionAsync(
+        SkillEvolutionTrajectory trajectory,
+        MemoryLlmConfig? memoryLlmConfig,
+        CancellationToken ct)
     {
-        const string systemPrompt = "You are a pattern detection engine. Analyze the agent conversation and identify \"golden path\" moments — multi-step tool sequences that:\n1. Involved 3+ tool calls in sequence to achieve a goal\n2. Required at least one retry or correction before succeeding\n3. Or the user explicitly corrected the agent and it then succeeded\n\nOutput JSON array of candidates, max 3 per session:\n{ \"candidates\": [{\"title\":\"≤30 chars\",\"goal\":\"what problem this solves\",\"stepsCount\":N,\"allSucceeded\":bool,\"retryCount\":N,\"toolSequence\":[\"tool1\"],\"userCorrection\":\"...or null\",\"confidence\":0.0-1.0,\"evidence\":\"brief quote\"}] }\nIf no golden paths, return {\"candidates\":[]}. Be strict.";
-        var userPrompt = $"Session {sessionId}:\n{conversationText}";
+        const string systemPrompt = "You are a pattern detection engine. The input is a verified successful tool trajectory from the canonical conversation event store. Identify a reusable golden path only when the tool chain solves a generalizable task. Two or more successful tool calls are sufficient. Output JSON: {\"candidates\":[{\"title\":\"short English skill name\",\"goal\":\"what problem this solves\",\"confidence\":0.0-1.0,\"evidence\":\"brief evidence\"}]}. Return {\"candidates\":[]} for one-off or unsafe tasks.";
+        var userPrompt = JsonSerializer.Serialize(trajectory);
         var raw = await ChatMemoryLlmWithTimeoutAsync(systemPrompt, userPrompt, memoryLlmConfig ?? new MemoryLlmConfig(null, null, null), "pattern-detect", null, ct);
         if (string.IsNullOrWhiteSpace(raw)) return [];
         var json = ExtractJson(raw);
@@ -1262,14 +1274,15 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             foreach (var el in arr.EnumerateArray())
                 list.Add(new PatternCandidate
                 {
-                    SessionId = sessionId,
+                    SessionId = trajectory.SessionId,
+                    TurnId = trajectory.TurnId,
+                    AgentInstanceId = trajectory.AgentInstanceId,
                     Title = el.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "",
-                    Goal = el.TryGetProperty("goal", out var g) ? g.GetString() ?? "" : "",
-                    StepsCount = el.TryGetProperty("stepsCount", out var sc) ? sc.GetInt32() : 0,
-                    AllSucceeded = el.TryGetProperty("allSucceeded", out var a) && a.GetBoolean(),
-                    RetryCount = el.TryGetProperty("retryCount", out var rc) ? rc.GetInt32() : 0,
-                    ToolSequence = el.TryGetProperty("toolSequence", out var ts) ? ts.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : [],
-                    UserCorrection = el.TryGetProperty("userCorrection", out var uc) ? uc.GetString() : null,
+                    Goal = el.TryGetProperty("goal", out var g) ? g.GetString() ?? trajectory.Goal : trajectory.Goal,
+                    StepsCount = trajectory.Steps.Count,
+                    AllSucceeded = true,
+                    RetryCount = 0,
+                    ToolSequence = trajectory.Steps.Select(step => step.ToolName).ToArray(),
                     Confidence = el.TryGetProperty("confidence", out var cf) ? cf.GetDouble() : 0.5,
                     Evidence = el.TryGetProperty("evidence", out var ev) ? ev.GetString() : null,
                 });
@@ -1280,11 +1293,11 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
 
     private async Task<CandidateEvaluation> EvaluateCandidateAsync(PatternCandidate candidate, MemoryLlmConfig? memoryLlmConfig, CancellationToken ct)
     {
-        if (candidate.RetryCount == 0 && string.IsNullOrWhiteSpace(candidate.UserCorrection))
-        { _logger.LogDebug("[PatternExtraction] Quick-skip {Title}: no retries, no corrections", candidate.Title); return new CandidateEvaluation { Decision = "skip", Reason = "No evidence of learning" }; }
-        if (candidate.StepsCount < 3)
+        if (!candidate.AllSucceeded)
+        { _logger.LogDebug("[PatternExtraction] Quick-skip {Title}: trajectory is not fully successful", candidate.Title); return new CandidateEvaluation { Decision = "skip", Reason = "Trajectory is not fully successful" }; }
+        if (candidate.StepsCount < 2 || candidate.Confidence < 0.65)
         { _logger.LogDebug("[PatternExtraction] Quick-skip {Title}: too few steps ({Steps})", candidate.Title, candidate.StepsCount); return new CandidateEvaluation { Decision = "skip", Reason = $"Too simple ({candidate.StepsCount} steps)" }; }
-        const string systemPrompt = "You are a skill quality evaluator. Evaluate against 3 conditions:\n1. PASSING CHECK: Was the path verified? (build passed, test passed, clean exit)\n2. NAMED FAILURE: Can you name the failure this pattern avoids?\n3. RULED-OUT DEAD-END: Was a concrete approach tried and eliminated?\nOutput JSON: {\"promoted\":bool,\"decision\":\"promote|demote|skip\",\"reason\":\"...\",\"checks\":[{\"conditionName\":\"passing_check\",\"passed\":bool,\"reason\":\"...\"},...]}\nPromote only if ALL 3 pass. Demote if 1-2 pass. Skip if 0 pass.";
+        const string systemPrompt = "You are a skill quality evaluator. Check: (1) the supplied trajectory is verified successful, (2) the goal and steps are reusable, (3) the generated skill would not encode secrets or destructive one-off state. Output JSON: {\"promoted\":bool,\"decision\":\"promote|demote|skip\",\"reason\":\"...\",\"checks\":[{\"conditionName\":\"passing_check\",\"passed\":bool,\"reason\":\"...\"},{\"conditionName\":\"reusable\",\"passed\":bool,\"reason\":\"...\"},{\"conditionName\":\"safe\",\"passed\":bool,\"reason\":\"...\"}]}. Promote only when all three pass.";
         var raw = await ChatMemoryLlmWithTimeoutAsync(systemPrompt, JsonSerializer.Serialize(candidate), memoryLlmConfig ?? new MemoryLlmConfig(null, null, null), "candidate-eval", null, ct);
         if (string.IsNullOrWhiteSpace(raw)) return new CandidateEvaluation { Decision = "skip", Reason = "LLM timeout" };
         var json = ExtractJson(raw);
@@ -1297,37 +1310,73 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             if (root.TryGetProperty("checks", out var arr))
                 foreach (var chk in arr.EnumerateArray())
                     checks.Add(new ConditionCheckResult { ConditionName = chk.TryGetProperty("conditionName", out var cn) ? cn.GetString() ?? "" : "", Passed = chk.TryGetProperty("passed", out var p) && p.GetBoolean(), Reason = chk.TryGetProperty("reason", out var r) ? r.GetString() : null });
-            return new CandidateEvaluation { Promoted = root.TryGetProperty("promoted", out var pr) && pr.GetBoolean(), Decision = root.TryGetProperty("decision", out var d) ? d.GetString() ?? "skip" : "skip", Reason = root.TryGetProperty("reason", out var re) ? re.GetString() : null, Checks = checks.ToArray() };
+            var requiredChecks = new[] { "passing_check", "reusable", "safe" };
+            var allRequiredChecksPassed = requiredChecks.All(required => checks.Any(check =>
+                string.Equals(check.ConditionName, required, StringComparison.OrdinalIgnoreCase)
+                && check.Passed));
+            var promoted = root.TryGetProperty("promoted", out var pr) && pr.GetBoolean()
+                           && allRequiredChecksPassed;
+            var requestedDecision = root.TryGetProperty("decision", out var d)
+                ? d.GetString()
+                : null;
+            return new CandidateEvaluation
+            {
+                Promoted = promoted,
+                Decision = promoted
+                    ? "promote"
+                    : string.Equals(requestedDecision, "demote", StringComparison.OrdinalIgnoreCase)
+                        ? "demote"
+                        : "skip",
+                Reason = root.TryGetProperty("reason", out var re) ? re.GetString() : null,
+                Checks = checks.ToArray()
+            };
         }
         catch { return new CandidateEvaluation { Decision = "skip", Reason = "Parse error" }; }
     }
 
-    private async Task<string?> MaterializeSkillAsync(PatternCandidate candidate, CandidateEvaluation evaluation, string workspaceId, CancellationToken ct)
+    private async Task<string?> MaterializeSkillAsync(
+        PatternCandidate candidate,
+        CandidateEvaluation evaluation,
+        CancellationToken ct)
     {
         try
         {
-            var skillMd = GenerateSkillMarkdown(candidate, evaluation);
-            var bookTitle = $"SKILL: {candidate.Title}";
-            var existingBooks = await _memoryLibrary.ListBooksScopedAsync(workspaceId, limit: 200, ct);
-            var existing = existingBooks.FirstOrDefault(b => b.Title.Equals(bookTitle, StringComparison.OrdinalIgnoreCase));
-            if (existing is not null)
+            var skillId = ToSkillId(candidate.Title, candidate.Goal);
+            if (await _skillStore.GetAsync(candidate.AgentInstanceId, skillId, ct) is not null)
             {
-                await _memoryLibrary.AddChapterAsync(existing.BookId, $"v{DateTime.UtcNow:yyyyMMdd-HHmmss}", skillMd, sourceSessionId: candidate.SessionId, ct: ct);
-                _logger.LogInformation("[PatternExtraction] Updated existing skill {Title}", candidate.Title);
-                return existing.BookId;
+                _logger.LogInformation(
+                    "[PatternExtraction] Skip existing skill {SkillId} agent={AgentInstanceId}",
+                    skillId,
+                    candidate.AgentInstanceId);
+                return null;
             }
-            var ingestion = new MemoryIngestionRequest(workspaceId, "", new ExperiencePackage { Title = candidate.Title, Content = skillMd, SuggestedTags = ["auto-generated", "skill-candidate", $"session:{candidate.SessionId}"], Importance = 0.7, SourceSessionId = candidate.SessionId }, TargetBookTitle: bookTitle);
-            var result = await _memoryLibrarian.IngestExperienceAsync(ingestion, ct);
-            _logger.LogInformation("[PatternExtraction] Created skill {Title} bookId={BookId}", candidate.Title, result.Book.BookId);
-            return result.Book.BookId;
+
+            var skillMd = GenerateSkillMarkdown(candidate, evaluation);
+            await _skillStore.CreateAsync(candidate.AgentInstanceId, new AgentSkillEvolutionWriteRequest
+            {
+                SkillId = skillId,
+                Name = candidate.Title,
+                Version = "1.0.0",
+                Description = candidate.Goal,
+                Tags = ["auto-generated", "self-evolution"],
+                Keywords = candidate.ToolSequence
+                    .Append(candidate.Title)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                Markdown = skillMd,
+            }, ct);
+            _logger.LogInformation(
+                "[PatternExtraction] Created runtime skill {SkillId} agent={AgentInstanceId}",
+                skillId,
+                candidate.AgentInstanceId);
+            return skillId;
         }
         catch (Exception ex) { _logger.LogWarning(ex, "[PatternExtraction] Materialize skill failed {Title}", candidate.Title); return null; }
     }
 
     private static string GenerateSkillMarkdown(PatternCandidate candidate, CandidateEvaluation evaluation)
     {
-        var failureCheck = evaluation.Checks.FirstOrDefault(c => c.ConditionName == "named_failure");
-        var deadEndCheck = evaluation.Checks.FirstOrDefault(c => c.ConditionName == "ruled_out_deadend");
         var sb = new StringBuilder();
         sb.AppendLine("---");
         sb.AppendLine($"name: {ToKebabCase(candidate.Title)}");
@@ -1341,7 +1390,8 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         sb.AppendLine("## 来源");
         sb.AppendLine($"- 会话: {candidate.SessionId}");
         sb.AppendLine($"- 置信度: {candidate.Confidence:P0}");
-        sb.AppendLine("- 验证状态: ✅ 3条件全部通过");
+        sb.AppendLine("- 验证状态: canonical conversation events verified all tool calls succeeded");
+        sb.AppendLine($"- Turn: {candidate.TurnId}");
         sb.AppendLine();
         sb.AppendLine("## 目标");
         sb.AppendLine(candidate.Goal);
@@ -1350,11 +1400,9 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         for (int i = 0; i < candidate.ToolSequence.Length; i++)
             sb.AppendLine($"{i + 1}. `{candidate.ToolSequence[i]}`");
         sb.AppendLine();
-        sb.AppendLine("## 失败模式");
-        sb.AppendLine(failureCheck?.Reason ?? "（待补充）");
-        sb.AppendLine();
-        sb.AppendLine("## 已排除的错误路径");
-        sb.AppendLine(deadEndCheck?.Reason ?? "（待补充）");
+        sb.AppendLine("## 质量门禁");
+        foreach (var check in evaluation.Checks)
+            sb.AppendLine($"- {check.ConditionName}: {(check.Passed ? "passed" : "failed")} — {check.Reason}");
         if (!string.IsNullOrWhiteSpace(candidate.UserCorrection))
         { sb.AppendLine(); sb.AppendLine("## 用户纠正"); sb.AppendLine(candidate.UserCorrection); }
         sb.AppendLine();
@@ -1399,10 +1447,25 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         return s.Length > 0 ? s : "unnamed";
     }
 
+    private static string ToSkillId(string title, string goal)
+    {
+        var kebab = ToKebabCase(title);
+        var ascii = new string(kebab
+            .Where(ch => ch is >= 'a' and <= 'z' or >= '0' and <= '9' or '-')
+            .ToArray())
+            .Trim('-');
+        if (!string.IsNullOrWhiteSpace(ascii))
+            return ascii;
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{title}\n{goal}"));
+        return $"skill-{Convert.ToHexStringLower(hash)[..12]}";
+    }
+
     // ── Skill Self-Improvement ──
 
     public async Task<SkillImprovementReport> ImproveSkillsAsync(
         string workspaceId,
+        string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
         CancellationToken ct = default)
     {
@@ -1412,11 +1475,13 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
 
         try
         {
-            _logger.LogInformation("[SkillImprovement] Phase1-Scan: listing skills");
+            _logger.LogInformation(
+                "[SkillImprovement] Phase1-Scan: listing runtime skills workspace={WorkspaceId} agent={AgentInstanceId}",
+                workspaceId,
+                agentInstanceId);
 
-            var allSkills = await ListSkillsFromMemoryAsync(workspaceId, ct);
+            var allSkills = await _skillStore.ListAutoGeneratedAsync(agentInstanceId, ct);
             var candidates = allSkills
-                .Where(s => s.Tags.Contains("auto-generated", StringComparer.OrdinalIgnoreCase))
                 .Take(5)
                 .ToList();
 
@@ -1450,7 +1515,16 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 }
 
                 var newVersion = BumpVersion(skill.Version);
-                await SaveImprovedSkillAsync(skill.SkillId, skill.Name, newVersion, improved, workspaceId, ct);
+                await _skillStore.UpdateAsync(agentInstanceId, skill.SkillId, new AgentSkillEvolutionWriteRequest
+                {
+                    SkillId = skill.SkillId,
+                    Name = skill.Name,
+                    Version = newVersion,
+                    Description = skill.Description,
+                    Tags = skill.Tags,
+                    Keywords = skill.Keywords,
+                    Markdown = improved,
+                }, ct);
                 patched++;
                 improvedIds.Add(skill.SkillId);
                 _logger.LogInformation("[SkillImprovement] Patched {SkillId} {Old}→{New}", skill.SkillId, skill.Version, newVersion);
@@ -1474,66 +1548,21 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         };
     }
 
-    private async Task<IReadOnlyList<SkillInfo>> ListSkillsFromMemoryAsync(string workspaceId, CancellationToken ct)
-    {
-        var results = new List<SkillInfo>();
-        try
-        {
-            var books = await _memoryLibrary.ListBooksScopedAsync(workspaceId, limit: 100, ct);
-            foreach (var book in books)
-            {
-                if (!"技能".Equals(book.Title, StringComparison.OrdinalIgnoreCase)
-                    && !"Skills".Equals(book.Title, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var chapters = await _memoryLibrary.ListChaptersAsync(book.BookId, ct);
-                foreach (var ch in chapters)
-                {
-                    if (string.IsNullOrWhiteSpace(ch.Title)) continue;
-                    var meta = ParseSkillMetaFromTitle(ch.Title);
-                    if (meta == null) continue;
-                    results.Add(new SkillInfo
-                    {
-                        SkillId = meta.Value.id,
-                        Name = meta.Value.name,
-                        Version = meta.Value.version,
-                        Tags = ["auto-generated"]
-                    });
-                }
-            }
-        }
-        catch (Exception ex) { _logger.LogWarning(ex, "[SkillImprovement] ListSkills failed"); }
-        return results;
-    }
-
-    private static (string id, string name, string version)? ParseSkillMetaFromTitle(string title)
-    {
-        // Titles look like: "SKILL: competitive-analysis v1.0.0" or similar
-        var cleaned = title.Replace("SKILL:", "").Replace("SKILL：", "").Trim();
-        var lastSpace = cleaned.LastIndexOf(' ');
-        if (lastSpace > 0 && cleaned.Length > lastSpace + 1)
-        {            var maybeVersion = cleaned[(lastSpace + 1)..];
-            if (maybeVersion.StartsWith('v') && maybeVersion.Count(c => c == '.') >= 1)
-            {
-                var name = cleaned[..lastSpace].Trim();
-                return (ToKebabCase(name), name, maybeVersion);
-            }
-        }
-        var kebab = ToKebabCase(cleaned);
-        return null;
-    }
-
     private async Task<SkillEvaluation> EvaluateOneSkillAsync(
-        SkillInfo skill, MemoryLlmConfig config, CancellationToken ct)
+        AgentSkillEvolutionDocument skill,
+        MemoryLlmConfig? config,
+        CancellationToken ct)
     {
-        // Use the skill metadata for evaluation — full content requires separate read
-        var prompt = $@"Evaluate if this Pudding SKILL needs self-improvement based on its metadata.
+        var prompt = $@"Evaluate whether this complete Pudding SKILL needs a focused self-improvement.
 
 SKILL ID: {skill.SkillId}
 SKILL NAME: {skill.Name}
 VERSION: {skill.Version}
 
-Check: 1) Is this skill likely outdated? 2) Any obvious gaps?
+CURRENT SKILL.md:
+{skill.Markdown}
+
+Check for internally inconsistent steps, missing verification, or clearly obsolete instructions. Do not change a valid skill merely to rephrase it.
 Output JSON only: {{""needs_update"":true/false,""reason"":""...""}}";
 
         var raw = await _memoryLlmClient.ChatWithConfigAsync(
@@ -1553,7 +1582,10 @@ Output JSON only: {{""needs_update"":true/false,""reason"":""...""}}";
     }
 
     private async Task<string?> GenerateImprovedSkillContentAsync(
-        SkillInfo skill, SkillEvaluation eval, MemoryLlmConfig config, CancellationToken ct)
+        AgentSkillEvolutionDocument skill,
+        SkillEvaluation eval,
+        MemoryLlmConfig? config,
+        CancellationToken ct)
     {
         var prompt = $@"Improve this Pudding SKILL.
 
@@ -1561,25 +1593,13 @@ SKILL: {skill.SkillId} v{skill.Version}
 NEW VERSION: {BumpVersion(skill.Version)}
 REASON FOR UPDATE: {eval.Reason}
 
+CURRENT SKILL.md:
+{skill.Markdown}
+
 Output the COMPLETE improved SKILL.md. Preserve original structure. Only fix outdated parts.";
 
         var raw = await _memoryLlmClient.ChatWithConfigAsync("You improve Pudding SKILL files. Output complete SKILL.md.", prompt, config, tools: null, ct: ct);
         return string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
-    }
-
-    private async Task SaveImprovedSkillAsync(string skillId, string name, string newVersion,
-        string content, string workspaceId, CancellationToken ct)
-    {
-        var package = new ExperiencePackage
-        {
-            Title = $"SKILL: {name} v{newVersion}",
-            Content = content,
-            SuggestedTags = ["auto-generated", "技能", $"skill:{skillId}"],
-            Importance = 0.7,
-            SourceSessionId = null
-        };
-        var ingestion = new MemoryIngestionRequest(workspaceId, "", package, TargetBookTitle: "技能");
-        await _memoryLibrarian.IngestExperienceAsync(ingestion, ct);
     }
 
     private static string BumpVersion(string currentVersion)
@@ -1597,13 +1617,6 @@ Output the COMPLETE improved SKILL.md. Preserve original structure. Only fix out
     private static string Truncate(string text, int maxChars)
         => string.IsNullOrEmpty(text) || text.Length <= maxChars ? text : text[..maxChars] + "...";
 
-    private sealed record SkillInfo
-    {
-        public string SkillId { get; init; } = "";
-        public string Name { get; init; } = "";
-        public string Version { get; init; } = "";
-        public string[] Tags { get; init; } = [];
-    }
 }
 
 

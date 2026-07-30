@@ -1388,6 +1388,25 @@ sqlite3 D:\data\databases\pudding_platform.db "SELECT command_id,status,operatio
 同一张卡、关闭 `streaming_mode`。因此 `reply_projected_at` 已设置不代表卡片已完成，最终仍以
 `message_deliveries.status=delivered` 和 projection `completed` 为准。
 
+若 `status=finalizing` 且 `attempt_count` 持续增长，尤其 `last_error` 是 CardKit
+`300309 streaming mode is closed`，说明终态卡片已经不可继续更新。任一阶段累计 5 次失败后都应
+进入 projection `failed`，由 `ConversationReplyProjectionWorker` 根据同一 committed terminal
+event 投递普通文本兜底；不能让 `finalizing` 绕过重试上限形成无限循环。
+
+网页只显示用户气泡、刷新后仍像“卡住”时，先检查 Turn 是否其实已经失败：
+
+```powershell
+sqlite3 D:\data\databases\pudding_platform.db "SELECT command_id,turn_id,status,terminal_sequence,last_error FROM chat_execution_commands ORDER BY id DESC LIMIT 10;"
+sqlite3 D:\data\databases\pudding_platform.db "SELECT conversation_id,turn_id,sequence,type,payload FROM conversation_events ORDER BY sequence DESC LIMIT 10;"
+```
+
+- 若已有 `turn.failed`，前端 bootstrap 的 `turns` 必须把该 Turn 恢复成持久错误卡片，并显示
+  `errorCode + errorMessage`；只推进事件 cursor、忽略 Turn 快照会制造假性“卡住”。
+- 若失败 Command 来自飞书，CardKit 终态或普通文本兜底也必须使用同一 terminal event；不得
+  重新调用 Agent 或临时改用其他模型。
+- 若没有 terminal event，再按 Worker lease、Provider 请求和 watchdog 链路继续排查；此时才是
+  真正的执行未收口。
+
 ### 11.14 飞书图片在 Agent 中仍显示 `[image]`
 
 正确链路是：
@@ -1634,6 +1653,62 @@ rg -n "\[ToolInvocation\].*callId= |\[LlmInvocation\] Repaired invalid tool-call
 ```powershell
 dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
   --filter "FullyQualifiedName~OpenAiLlmGatewayCompatibilityTests|FullyQualifiedName~LlmMessageSequenceNormalizerTests"
+```
+
+### 11.20 工具定义层或 L6 预算统计异常
+
+若简单请求仍显示工具 schema 占用异常，先确认工具配置是否由可信运行时元数据触发：
+
+```powershell
+rg -n "\[AgentExec:ToolProfile\]|\[AgentExec:Tools\]|Trimmed L6-" `
+  .\tmp\dev\backend.out.log .\tmp\dev\backend.err.log
+```
+
+- 心跳最小工具集只允许 `MessageOrigin.FromKind=system` 且 `FromId=heartbeat` 的消息触发；不要根据消息正文中的心跳标记判断。
+- 子代理若有 capability 或 template 显式工具列表，日志中不应再出现静态 `sub_agent` 配置删除这些工具。
+- L6 被裁剪时会记录 `rawTokens`、`retainedTokens` 和 `limit=5000`；`retainedTokens` 必须不大于 5000，且预算只计 retained 值。
+- `context_layer_metric_events` 的 `LayoutVersion` 应为 `layer-v2`；同一 source 的层顺序应是全部 `L0-*`、`L1-TOOL-DEFINITIONS`、后续动态层，token offset 必须连续。
+- 工具名称、描述或参数 schema 改变后，工具层应出现 `PreviousHash`、`IsChanged=1`、`ChangeReason=tool_spec_changed`。
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ToolProfileConfigTests"
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ContextPipelineAgentLogRecallLayerTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~TokenUsageRecorderPrefixDiagnosticsTests"
+```
+
+### 11.21 自进化 Job 已完成但结果接口返回 404
+
+主动触发后先查询 Job 状态，再查询结果：
+
+```text
+GET /api/debug/subconscious/jobs/lookup?jobId={jobId}
+GET /api/debug/subconscious/jobs/{jobId}/result
+```
+
+如果第一个接口显示 `completed`，第二个接口却返回 404，检查
+`SubconsciousWorkerService.TryProcessPeriodicJobAsync` 是否只调用了 `CompleteAsync`，
+却没有先调用 `RecordResultAsync`。周期自进化任务即使本轮没有候选或没有实际写入，
+也必须保存零操作 Report；否则无法区分“正常无产出”和“结果丢失”。
+
+正常结果类型：
+
+- Auto-Dream：`memory.auto_dream.v1`
+- 经验提取：`skill.pattern_extraction.v1`
+- Skill 改进：`skill.improvement.v1`
+
+结果中的 `metadata` 应至少包含 `subconscious_job_id`、`job_type`、`workspace_id`、
+`agent_instance_id`、`duration_ms`、`timestamp_utc` 和对应管道的计数字段。
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~DurableWorker_PeriodicEvolutionJob_ShouldPersistReportBeforeCompleting"
 ```
 
 ## 12. 修改后的最低验收

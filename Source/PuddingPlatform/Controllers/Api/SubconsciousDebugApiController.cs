@@ -136,6 +136,94 @@ public sealed class SubconsciousDebugApiController : ControllerBase
         });
     }
 
+    [HttpPost("evolution/trigger")]
+    public async Task<ActionResult<SubconsciousDebugEvolutionTriggerResponse>> TriggerEvolution(
+        [FromBody] SubconsciousDebugEvolutionTriggerRequest? request,
+        CancellationToken ct)
+    {
+        if (!_options.Value.DebugApiEnabled)
+            return NotFound();
+
+        request ??= new SubconsciousDebugEvolutionTriggerRequest();
+        var requestedAction = string.IsNullOrWhiteSpace(request.Action)
+            ? "all"
+            : request.Action.Trim().ToLowerInvariant();
+        var steps = ResolveEvolutionSteps(requestedAction);
+        if (steps is null)
+        {
+            return BadRequest(new
+            {
+                error = $"Unknown action '{request.Action}'. Valid: auto_dream, extract_patterns, improve_skills, all.",
+            });
+        }
+
+        var scheduling = _options.Value.Scheduling;
+        var workspaceId = string.IsNullOrWhiteSpace(request.WorkspaceId)
+            ? scheduling.DefaultWorkspaceId.Trim()
+            : request.WorkspaceId.Trim();
+        var agentInstanceId = string.IsNullOrWhiteSpace(request.AgentInstanceId)
+            ? scheduling.DefaultAgentInstanceId.Trim()
+            : request.AgentInstanceId.Trim();
+        if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(agentInstanceId))
+        {
+            return BadRequest(new
+            {
+                error = "workspaceId and agentInstanceId are required, either in the request or Subconscious:Scheduling defaults.",
+            });
+        }
+
+        var requestId = string.IsNullOrWhiteSpace(request.RequestId)
+            ? Guid.NewGuid().ToString("N")
+            : request.RequestId.Trim();
+        var jobs = new List<SubconsciousDebugEvolutionJobResponse>(steps.Count);
+        foreach (var (action, jobType) in steps)
+        {
+            var idempotencyKey = $"debug:evolution:{requestId}:{jobType}";
+            var queueItem = await _jobQueue.FindLatestAsync(
+                new SubconsciousJobLookupQuery
+                {
+                    IdempotencyKey = idempotencyKey,
+                },
+                ct);
+            var reused = queueItem is not null;
+            queueItem ??= await _jobQueue.EnqueueAsync(
+                new SubconsciousJobEnqueueRequest
+                {
+                    JobType = jobType,
+                    IdempotencyKey = idempotencyKey,
+                    SourceHookName = "debug.subconscious.evolution",
+                    SourceCompactionId = requestId,
+                    Job = new ConsolidationJob
+                    {
+                        SessionId = $"debug:evolution:{action}:{requestId}",
+                        WorkspaceId = workspaceId,
+                        AgentId = agentInstanceId,
+                        AgentTemplateId = agentInstanceId,
+                    },
+                },
+                ct);
+
+            jobs.Add(new SubconsciousDebugEvolutionJobResponse
+            {
+                Action = action,
+                JobId = queueItem.JobId,
+                JobType = queueItem.JobType,
+                Status = queueItem.Status,
+                IdempotencyKey = queueItem.IdempotencyKey,
+                Reused = reused,
+            });
+        }
+
+        return Accepted(new SubconsciousDebugEvolutionTriggerResponse
+        {
+            RequestId = requestId,
+            Action = requestedAction,
+            WorkspaceId = workspaceId,
+            AgentInstanceId = agentInstanceId,
+            Jobs = jobs,
+        });
+    }
+
     [HttpPost("hooks/session-compressed")]
     public async Task<ActionResult<SubconsciousDebugHookTriggerResponse>> TriggerSessionCompressedHook(
         [FromBody] SubconsciousDebugSessionCompressedHookRequest request,
@@ -262,6 +350,21 @@ public sealed class SubconsciousDebugApiController : ControllerBase
 
         return Ok(result);
     }
+
+    private static IReadOnlyList<(string Action, string JobType)>? ResolveEvolutionSteps(string action)
+        => action switch
+        {
+            "auto_dream" => [("auto_dream", SubconsciousJobTypes.AutoDream)],
+            "extract_patterns" => [("extract_patterns", SubconsciousJobTypes.ExtractPatterns)],
+            "improve_skills" => [("improve_skills", SubconsciousJobTypes.ImproveSkills)],
+            "all" =>
+            [
+                ("auto_dream", SubconsciousJobTypes.AutoDream),
+                ("extract_patterns", SubconsciousJobTypes.ExtractPatterns),
+                ("improve_skills", SubconsciousJobTypes.ImproveSkills),
+            ],
+            _ => null,
+        };
 }
 
 public sealed record SubconsciousDebugTriggerRequest
@@ -289,6 +392,33 @@ public sealed record SubconsciousDebugTriggerResponse
     public required string AgentTemplateId { get; init; }
     public string? SourceEventId { get; init; }
     public string? SourceCompactionId { get; init; }
+}
+
+public sealed record SubconsciousDebugEvolutionTriggerRequest
+{
+    public string? Action { get; init; }
+    public string? WorkspaceId { get; init; }
+    public string? AgentInstanceId { get; init; }
+    public string? RequestId { get; init; }
+}
+
+public sealed record SubconsciousDebugEvolutionTriggerResponse
+{
+    public required string RequestId { get; init; }
+    public required string Action { get; init; }
+    public required string WorkspaceId { get; init; }
+    public required string AgentInstanceId { get; init; }
+    public IReadOnlyList<SubconsciousDebugEvolutionJobResponse> Jobs { get; init; } = [];
+}
+
+public sealed record SubconsciousDebugEvolutionJobResponse
+{
+    public required string Action { get; init; }
+    public required string JobId { get; init; }
+    public required string JobType { get; init; }
+    public required string Status { get; init; }
+    public required string IdempotencyKey { get; init; }
+    public bool Reused { get; init; }
 }
 
 public sealed record SubconsciousDebugSessionCompressedHookRequest

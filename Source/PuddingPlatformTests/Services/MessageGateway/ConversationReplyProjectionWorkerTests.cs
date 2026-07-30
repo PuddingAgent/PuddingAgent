@@ -108,6 +108,85 @@ public sealed class ConversationReplyProjectionWorkerTests
             .ReplyProjectedAt);
     }
 
+    [TestMethod]
+    public async Task ProjectBatchAsync_ProjectsFailedTerminalAsClearConnectorError()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var sent = new RecordingMessageSystem();
+        var services = new ServiceCollection();
+        services.AddDbContext<PlatformDbContext>(
+            options => options.UseSqlite(connection));
+        services.AddSingleton<IMessageSystem>(sent);
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+            {
+                CommandId = "command-failed",
+                BatchId = "batch-failed",
+                ClientRequestId = "request-failed",
+                WorkspaceId = "default",
+                SessionId = "conversation-failed",
+                MessageId = "assistant-message-failed",
+                UserMessageId = "gateway-message-failed",
+                TurnId = "turn-failed",
+                AgentInstanceId = "assistant",
+                ChannelId = "feishu",
+                Status = "failed",
+                TerminalSequence = 2,
+                CreatedAt = 100,
+                CompletedAt = 200,
+                MetadataJson = JsonSerializer.Serialize(
+                    new Dictionary<string, string>
+                    {
+                        [MessageGatewayMetadata.IsGatewayIngress] = "true",
+                        [MessageGatewayMetadata.ChannelId] = "feishu",
+                        [MessageGatewayMetadata.ChannelType] = "feishu",
+                        [MessageGatewayMetadata.ConnectorId] =
+                            "feishu:assistant",
+                        [MessageGatewayMetadata.ExternalConversationId] =
+                            "oc_failed",
+                        [MessageGatewayMetadata.ExternalMessageId] =
+                            "om_failed",
+                    }),
+            });
+            db.ConversationEvents.Add(new ConversationEventEntity
+            {
+                ConversationId = "conversation-failed",
+                Sequence = 2,
+                EventId = "event-failed",
+                WorkspaceId = "default",
+                TurnId = "turn-failed",
+                CommandId = "command-failed",
+                RunId = "run-failed",
+                MessageId = "assistant-message-failed",
+                Type = ConversationEventTypes.TurnFailed,
+                Payload =
+                    """{"kind":"Failed","errorCode":"agent_configuration_invalid","errorMessage":"preferredModelId is invalid","reply":null}""",
+                OccurredAt = "2026-07-29T00:00:00Z",
+                CommittedAt = "2026-07-29T00:00:00Z",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var worker = new ConversationReplyProjectionWorker(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ConversationReplyProjectionWorker>.Instance);
+
+        Assert.AreEqual(1, await worker.ProjectBatchAsync());
+        Assert.AreEqual(0, await worker.ProjectBatchAsync());
+        var envelope = sent.Envelopes.Single();
+        StringAssert.Contains(envelope.Content, "请求失败");
+        StringAssert.Contains(envelope.Content, "agent_configuration_invalid");
+        StringAssert.Contains(envelope.Content, "preferredModelId is invalid");
+        Assert.AreEqual("om_failed", envelope.ReplyToMessageId);
+    }
+
     private sealed class RecordingMessageSystem : IMessageSystem
     {
         public List<MessageEnvelope> Envelopes { get; } = [];

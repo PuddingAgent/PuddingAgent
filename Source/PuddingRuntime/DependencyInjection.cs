@@ -79,8 +79,11 @@ public static class RuntimeServiceExtensions
             {
                 SingleReader = true,
                 SingleWriter = false,
-            });
+        });
         services.AddSingleton(subconsciousChannel);
+        services.TryAddSingleton<AgentSkillFileService>();
+        services.TryAddSingleton<ISkillEvolutionTrajectorySource, ConversationSkillEvolutionTrajectorySource>();
+        services.TryAddSingleton<IAgentSkillEvolutionStore, AgentSkillEvolutionStore>();
         services.AddSingleton<ISubconsciousOrchestrator, SubconsciousOrchestrator>();
         services.TryAddSingleton<ISubconsciousJobQueue, SubconsciousJobQueue>();
         services.AddOptions<SubconsciousDiagnosticLogOptions>();
@@ -110,7 +113,7 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<ProviderRateLimiter>();
 
         services.AddSingleton<SystemPromptBuilder>();
-        services.AddSingleton<AgentSkillFileService>();
+        services.TryAddSingleton<AgentSkillFileService>();
                 services.AddSingleton<SessionSummaryStore>();
         services.AddSingleton<AgentCompactionNotifier>();
         services.AddSingleton<SubconsciousRecallPipeline>();

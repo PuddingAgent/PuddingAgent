@@ -1,0 +1,6 @@
+MSBUILD : error MSB1008: 只能指定一个项目。
+    完整命令行:“C:\Program Files\dotnet\sdk\10.0.302\MSBuild.exe -maxcpucount --verbosity:m -tlp:default=auto --property:VSTestNoLogo=true --property:NuGetInteractive=false --property:VSTestVerbosity=normal --property:VSTestArtifactsProcessingMode=collect --property:VSTestSessionCorrelationId=35224_4968a3ba-e3a6-4b40-ab73-171b4407cd0b --restoreProperty:VSTestNoLogo=true --restoreProperty:NuGetInteractive=false --restoreProperty:VSTestVerbosity=normal --restoreProperty:VSTestArtifactsProcessingMode=collect --restoreProperty:VSTestSessionCorrelationId=35224_4968a3ba-e3a6-4b40-ab73-171b4407cd0b --restoreProperty:EnableDefaultCompileItems=false --restoreProperty:EnableDefaultEmbeddedResourceItems=false --restoreProperty:EnableDefaultNoneItems=false --target:VSTest --verbosity:normal --nologo -nodereuse:false E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj ; echo "EXIT_CODE=$LASTEXITCODE" -restore -distributedlogger:Microsoft.DotNet.Cli.Commands.MSBuild.MSBuildLogger,C:\Program Files\dotnet\sdk\10.0.302\dotnet.dll*Microsoft.DotNet.Cli.Commands.MSBuild.MSBuildForwardingLogger,C:\Program Files\dotnet\sdk\10.0.302\dotnet.dll”
+  响应文件追加的开关: 
+开关:;
+
+若要显示开关的语法，请键入“MSBuild -help”

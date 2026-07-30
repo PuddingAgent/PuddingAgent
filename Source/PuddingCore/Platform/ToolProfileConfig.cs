@@ -5,6 +5,9 @@
 /// </summary>
 public static class ToolProfileConfig
 {
+    public const string HeartbeatProfileName = "heartbeat";
+    public const string SubAgentProfileName = "sub_agent";
+
     /// <summary>心跳/维护场景的最小工具集</summary>
     public static readonly HashSet<string> Heartbeat = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -27,9 +30,46 @@ public static class ToolProfileConfig
     {
         return profileName switch
         {
-            "heartbeat" => Heartbeat.Contains(toolId),
-            "sub_agent" => SubAgent.Contains(toolId),
+            HeartbeatProfileName => Heartbeat.Contains(toolId),
+            SubAgentProfileName => SubAgent.Contains(toolId),
             _ => true // 默认包含所有工具
         };
     }
+
+    /// <summary>
+    /// 根据可信运行时元数据选择工具配置。用户消息文本不参与系统场景识别，
+    /// 避免普通消息伪造心跳标记。显式工具选择优先于子代理兜底配置。
+    /// </summary>
+    public static string? ResolveProfile(
+        RuntimeDispatchRequest request,
+        CapabilityPolicy? capability = null,
+        AgentTemplateDefinition? template = null)
+    {
+        if (request.Origin is
+            {
+                FromKind: var fromKind,
+                FromId: var fromId,
+            }
+            && string.Equals(fromKind, PuddingCode.Models.MessageEndpointKinds.System, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(fromId, "heartbeat", StringComparison.OrdinalIgnoreCase))
+        {
+            return HeartbeatProfileName;
+        }
+
+        if (request.ExecutionIdentity?.Kind != PuddingCode.Runtime.RuntimeExecutionKind.SubAgent)
+            return null;
+
+        if (HasExplicitToolSelection(capability, template))
+            return null;
+
+        return SubAgentProfileName;
+    }
+
+    private static bool HasExplicitToolSelection(
+        CapabilityPolicy? capability,
+        AgentTemplateDefinition? template)
+        => capability?.AllowedToolNames is { Count: > 0 }
+           || capability?.DefaultToolNames is { Count: > 0 }
+           || capability?.RequiresGrantToolNames is { Count: > 0 }
+           || template?.AllowedSkillIds is { Count: > 0 };
 }

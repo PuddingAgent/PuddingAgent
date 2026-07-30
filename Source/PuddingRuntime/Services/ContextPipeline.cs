@@ -300,7 +300,6 @@ public sealed class ContextPipeline
                 if (!string.IsNullOrWhiteSpace(contextAugmentStr))
                 {
                     contextAugmentTokens = EstimateTokens(contextAugmentStr);
-                    usedBudget += contextAugmentTokens;
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -323,7 +322,6 @@ public sealed class ContextPipeline
                 {
                     contextAugmentLayerName = "L6-AGENT-LOG-RECALL";
                     contextAugmentTokens = EstimateTokens(contextAugmentStr);
-                    usedBudget += contextAugmentTokens;
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -333,6 +331,25 @@ public sealed class ContextPipeline
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[ContextPipeline] AgentLogRecallService failed, skip recall layer");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(contextAugmentStr))
+        {
+            var rawContextAugmentTokens = contextAugmentTokens;
+            contextAugmentStr = TrimToTokenBudget(contextAugmentStr, MaxContextAugmentTokens);
+            contextAugmentTokens = EstimateTokens(contextAugmentStr);
+            usedBudget += contextAugmentTokens;
+
+            if (contextAugmentTokens < rawContextAugmentTokens)
+            {
+                _logger.LogInformation(
+                    "[ContextPipeline] Trimmed {LayerName} before budget accounting session={Session} rawTokens={RawTokens} retainedTokens={RetainedTokens} limit={Limit}",
+                    contextAugmentLayerName,
+                    request.SessionId,
+                    rawContextAugmentTokens,
+                    contextAugmentTokens,
+                    MaxContextAugmentTokens);
             }
         }
 
@@ -360,9 +377,6 @@ public sealed class ContextPipeline
         // ── L6-CONTEXT-AUGMENT 注入：潜意识召回管道输出（替代原 RECALLED + AGENT-LOG-RECALL）──
         if (!string.IsNullOrWhiteSpace(contextAugmentStr))
         {
-            // P0 硬上限：防止日志召回层膨胀（历史最大 55,905 tokens →  cap 5,000）
-            contextAugmentStr = TrimToTokenBudget(contextAugmentStr, MaxContextAugmentTokens);
-            contextAugmentTokens = EstimateTokens(contextAugmentStr);
             AppendLayer(sb, contextAugmentStr);
             layers.Add(new ContextLayerSnapshot("上下文增强", contextAugmentTokens, (double)contextAugmentTokens / totalBudget * 100));
             layerInfos.Add(new ContextLayerInfo
@@ -1501,18 +1515,22 @@ public sealed class ContextPipeline
         if (maxTokens <= 0) return string.Empty;
         if (EstimateTokens(text) <= maxTokens) return text;
 
+        const string suffix = "\n[TRUNCATED – context budget exceeded]";
+        if (EstimateTokens(suffix) > maxTokens)
+            return string.Empty;
+
         var low = 0;
         var high = text.Length;
         while (low < high)
         {
             var mid = low + ((high - low + 1) / 2);
-            if (EstimateTokens(text[..mid]) <= maxTokens)
+            if (EstimateTokens(text[..mid] + suffix) <= maxTokens)
                 low = mid;
             else
                 high = mid - 1;
         }
 
-        return TruncateText(text, low) + "\n[TRUNCATED – context budget exceeded]";
+        return text[..low] + suffix;
     }
 
     /// <summary>

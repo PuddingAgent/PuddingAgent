@@ -1,6 +1,8 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 
@@ -8,6 +10,7 @@ namespace PuddingRuntime.Services.Background;
 
 /// <summary>
 /// 潜意识后台消费服务：串行消费 ConsolidationJob 队列并调用编排器。
+/// 同时运行三个定时循环：经验提取(12h)、记忆整理(6h)、Skill 改进(4h)。
 /// </summary>
 public sealed class SubconsciousWorkerService : BackgroundService
 {
@@ -25,6 +28,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
     private readonly MemoryWikiPageUpdateService? _wikiPageUpdateService;
     private readonly WikiPageWriteEntry? _wikiPageWriteEntry;
     private readonly ISubconsciousRuntimeControl? _runtimeControl;
+    private readonly SubconsciousSchedulingOptions _scheduling;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<SubconsciousWorkerService> _logger;
     private readonly string _leaseOwner = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
@@ -39,7 +44,9 @@ public sealed class SubconsciousWorkerService : BackgroundService
         IMemoryWriteCoordinator? memoryWriteCoordinator = null,
         MemoryWikiPageUpdateService? wikiPageUpdateService = null,
         WikiPageWriteEntry? wikiPageWriteEntry = null,
-        ISubconsciousRuntimeControl? runtimeControl = null)
+        ISubconsciousRuntimeControl? runtimeControl = null,
+        IOptions<SubconsciousOptions>? options = null,
+        TimeProvider? timeProvider = null)
     {
         _channel = channel;
         _orchestrator = orchestrator;
@@ -51,11 +58,13 @@ public sealed class SubconsciousWorkerService : BackgroundService
         _wikiPageUpdateService = wikiPageUpdateService;
         _wikiPageWriteEntry = wikiPageWriteEntry;
         _runtimeControl = runtimeControl;
+        _scheduling = options?.Value.Scheduling ?? new SubconsciousSchedulingOptions();
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger;
     }
 
     /// <summary>
-    /// 后台执行循环：读取任务并调用潜意识编排器。
+    /// 后台执行循环：并行运行队列消费 + 三个定时循环。
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -64,6 +73,31 @@ public sealed class SubconsciousWorkerService : BackgroundService
             _leaseOwner,
             _jobQueue is not null);
 
+        var loops = new List<Task> { ConsumeQueueLoopAsync(stoppingToken) };
+        if (_scheduling.PeriodicJobsEnabled && _jobQueue is not null)
+        {
+            loops.Add(PatternExtractionLoopAsync(stoppingToken));
+            loops.Add(AutoDreamLoopAsync(stoppingToken));
+            loops.Add(SkillImprovementLoopAsync(stoppingToken));
+        }
+        else
+        {
+            _logger.LogWarning(
+                "[SubconsciousWorker] Periodic jobs disabled enabled={Enabled} durableQueue={HasDurableQueue}",
+                _scheduling.PeriodicJobsEnabled,
+                _jobQueue is not null);
+        }
+
+        await Task.WhenAll(loops);
+
+        _logger.LogInformation("[SubconsciousWorker] Stopped.");
+    }
+
+    /// <summary>
+    /// 队列消费循环：从持久队列和 Channel 中消费 ConsolidationJob。
+    /// </summary>
+    private async Task ConsumeQueueLoopAsync(CancellationToken stoppingToken)
+    {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -111,8 +145,6 @@ public sealed class SubconsciousWorkerService : BackgroundService
                 await Task.Delay(IdlePollDelay, stoppingToken);
             }
         }
-
-        _logger.LogInformation("[SubconsciousWorker] Stopped.");
     }
 
     private async Task ProcessDurableJobAsync(
@@ -121,6 +153,9 @@ public sealed class SubconsciousWorkerService : BackgroundService
     {
         try
         {
+            if (await TryProcessPeriodicJobAsync(queueItem, stoppingToken))
+                return;
+
             if (_wikiPageUpdateService is not null && _wikiPageWriteEntry is not null)
             {
                 await ProcessDurableWikiPageUpdateAsync(queueItem, stoppingToken);
@@ -162,6 +197,138 @@ public sealed class SubconsciousWorkerService : BackgroundService
                 queueItem.Job.SessionId,
                 queueItem.Job.WorkspaceId);
         }
+    }
+
+    private async Task<bool> TryProcessPeriodicJobAsync(
+        SubconsciousJobQueueItem queueItem,
+        CancellationToken ct)
+    {
+        SubconsciousJobResultEnvelope result;
+        switch (queueItem.JobType)
+        {
+            case SubconsciousJobTypes.AutoDream:
+                var autoDreamReport = await _orchestrator.AutoDreamAsync(
+                    queueItem.Job.WorkspaceId,
+                    null,
+                    ct);
+                result = CreateAutoDreamResultEnvelope(queueItem, autoDreamReport);
+                break;
+            case SubconsciousJobTypes.ExtractPatterns:
+                var patternReport = await _orchestrator.ExtractPatternsAsync(
+                    queueItem.Job.WorkspaceId,
+                    queueItem.Job.AgentId,
+                    null,
+                    ct);
+                result = CreatePatternExtractionResultEnvelope(queueItem, patternReport);
+                break;
+            case SubconsciousJobTypes.ImproveSkills:
+                var improvementReport = await _orchestrator.ImproveSkillsAsync(
+                    queueItem.Job.WorkspaceId,
+                    queueItem.Job.AgentId,
+                    null,
+                    ct);
+                result = CreateSkillImprovementResultEnvelope(queueItem, improvementReport);
+                break;
+            default:
+                return false;
+        }
+
+        if (_jobQueue is not null)
+        {
+            await _jobQueue.RecordResultAsync(queueItem.JobId, _leaseOwner, result, ct);
+            await _jobQueue.CompleteAsync(queueItem.JobId, _leaseOwner, ct);
+        }
+        return true;
+    }
+
+    private static SubconsciousJobResultEnvelope CreateAutoDreamResultEnvelope(
+        SubconsciousJobQueueItem queueItem,
+        AutoDreamReport report)
+    {
+        var metadata = CreatePeriodicResultMetadata(queueItem, report.DurationMs, report.Timestamp);
+        metadata["suggested_count"] = report.Suggested.ToString();
+        metadata["executed_count"] = report.Executed.ToString();
+        metadata["merged_count"] = report.Merged.ToString();
+        metadata["archived_count"] = report.Archived.ToString();
+        metadata["deleted_count"] = report.Deleted.ToString();
+
+        return CreateCompletedPeriodicResult(
+            SubconsciousJobResultKinds.MemoryAutoDream,
+            report.Executed,
+            report.Summary,
+            metadata);
+    }
+
+    private static SubconsciousJobResultEnvelope CreatePatternExtractionResultEnvelope(
+        SubconsciousJobQueueItem queueItem,
+        PatternExtractionReport report)
+    {
+        var metadata = CreatePeriodicResultMetadata(queueItem, report.DurationMs, report.Timestamp);
+        metadata["candidates_found_count"] = report.CandidatesFound.ToString();
+        metadata["promoted_count"] = report.Promoted.ToString();
+        metadata["demoted_to_memory_count"] = report.DemotedToMemory.ToString();
+        metadata["skipped_count"] = report.Skipped.ToString();
+        metadata["created_skill_ids"] = string.Join(",", report.CreatedSkillIds);
+
+        return CreateCompletedPeriodicResult(
+            SubconsciousJobResultKinds.SkillPatternExtraction,
+            report.Promoted + report.DemotedToMemory,
+            report.Summary,
+            metadata);
+    }
+
+    private static SubconsciousJobResultEnvelope CreateSkillImprovementResultEnvelope(
+        SubconsciousJobQueueItem queueItem,
+        SkillImprovementReport report)
+    {
+        var metadata = CreatePeriodicResultMetadata(queueItem, report.DurationMs, report.Timestamp);
+        metadata["evaluated_count"] = report.Evaluated.ToString();
+        metadata["patched_count"] = report.Patched.ToString();
+        metadata["skipped_count"] = report.Skipped.ToString();
+        metadata["improved_skill_ids"] = string.Join(",", report.ImprovedSkillIds);
+
+        return CreateCompletedPeriodicResult(
+            SubconsciousJobResultKinds.SkillImprovement,
+            report.Patched,
+            report.Summary,
+            metadata);
+    }
+
+    private static SubconsciousJobResultEnvelope CreateCompletedPeriodicResult(
+        string kind,
+        int operationCount,
+        string? summary,
+        IReadOnlyDictionary<string, string> metadata)
+        => new()
+        {
+            Kind = kind,
+            Status = SubconsciousJobResultStatuses.Completed,
+            Decision = SubconsciousJobResultDecisions.ExecutionCompleted,
+            NextAction = SubconsciousJobResultNextActions.CompleteJob,
+            Valid = true,
+            OperationCount = operationCount,
+            Summary = summary,
+            Metadata = metadata,
+        };
+
+    private static Dictionary<string, string> CreatePeriodicResultMetadata(
+        SubconsciousJobQueueItem queueItem,
+        long durationMs,
+        DateTime timestamp)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["subconscious_job_id"] = queueItem.JobId,
+            ["job_type"] = queueItem.JobType,
+            ["workspace_id"] = queueItem.Job.WorkspaceId,
+            ["session_id"] = queueItem.Job.SessionId,
+            ["agent_instance_id"] = queueItem.Job.AgentId,
+            ["duration_ms"] = durationMs.ToString(),
+            ["timestamp_utc"] = timestamp.ToUniversalTime().ToString("O"),
+        };
+        if (!string.IsNullOrWhiteSpace(queueItem.SourceCompactionId))
+            metadata["request_id"] = queueItem.SourceCompactionId!;
+        return metadata;
     }
 
     private async Task ProcessDurableWikiPageUpdateAsync(
@@ -504,86 +671,46 @@ public sealed class SubconsciousWorkerService : BackgroundService
     // ── Pattern Extraction 定时循环 ──
     private async Task PatternExtractionLoopAsync(CancellationToken ct)
     {
-        // 启动后延迟 10 分钟，先让 Auto-Dream 跑完首次
-        await Task.Delay(TimeSpan.FromMinutes(10), ct);
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                if (_runtimeControl?.IsPaused == true)
-                {
-                    await Task.Delay(TimeSpan.FromMinutes(30), ct);
-                    continue;
-                }
-
-                _logger.LogInformation("[PatternExtraction] Triggering periodic pattern scan");
-                await _orchestrator.ExtractPatternsAsync("default", null, ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[PatternExtraction] Timer loop error");
-            }
-
-            // 每 12 小时检查一次
-            await Task.Delay(TimeSpan.FromHours(12), ct);
-        }
+        await RunPeriodicEnqueueLoopAsync(
+            SubconsciousJobTypes.ExtractPatterns,
+            TimeSpan.FromSeconds(Math.Max(0, _scheduling.PatternExtractionInitialDelaySeconds)),
+            TimeSpan.FromSeconds(Math.Max(1, _scheduling.PatternExtractionIntervalSeconds)),
+            ct);
     }
 
     // ── Auto-Dream 定时循环 ──
     private async Task AutoDreamLoopAsync(CancellationToken ct)
     {
-        // 启动后延迟 5 分钟，让系统稳定
-        await Task.Delay(TimeSpan.FromMinutes(5), ct);
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                if (_runtimeControl?.IsPaused == true)
-                {
-                    await Task.Delay(TimeSpan.FromMinutes(10), ct);
-                    continue;
-                }
-
-                _logger.LogInformation("[AutoDream] Triggering periodic maintenance");
-                await _orchestrator.AutoDreamAsync("default", null, ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[AutoDream] Timer loop error");
-            }
-
-            // 每 6 小时检查一次
-            await Task.Delay(TimeSpan.FromHours(6), ct);
-        }
+        await RunPeriodicEnqueueLoopAsync(
+            SubconsciousJobTypes.AutoDream,
+            TimeSpan.FromSeconds(Math.Max(0, _scheduling.AutoDreamInitialDelaySeconds)),
+            TimeSpan.FromSeconds(Math.Max(1, _scheduling.AutoDreamIntervalSeconds)),
+            ct);
     }
     // ── Skill Self-Improvement 定时循环 ──
     private async Task SkillImprovementLoopAsync(CancellationToken ct)
     {
-        // 启动后延迟 15 分钟，先让 Auto-Dream 和 PatternExtraction 跑完首次
-        await Task.Delay(TimeSpan.FromMinutes(15), ct);
+        await RunPeriodicEnqueueLoopAsync(
+            SubconsciousJobTypes.ImproveSkills,
+            TimeSpan.FromSeconds(Math.Max(0, _scheduling.SkillImprovementInitialDelaySeconds)),
+            TimeSpan.FromSeconds(Math.Max(1, _scheduling.SkillImprovementIntervalSeconds)),
+            ct);
+    }
+
+    private async Task RunPeriodicEnqueueLoopAsync(
+        string jobType,
+        TimeSpan initialDelay,
+        TimeSpan interval,
+        CancellationToken ct)
+    {
+        await Task.Delay(initialDelay, _timeProvider, ct);
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                if (_runtimeControl?.IsPaused == true)
-                {
-                    await Task.Delay(TimeSpan.FromMinutes(30), ct);
-                    continue;
-                }
-
-                _logger.LogInformation("[SkillImprovement] Triggering periodic skill self-improvement");
-                await _orchestrator.ImproveSkillsAsync("default", null, ct);
+                if (_runtimeControl?.IsPaused != true)
+                    await EnqueuePeriodicJobAsync(jobType, interval, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -591,11 +718,55 @@ public sealed class SubconsciousWorkerService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[SkillImprovement] Timer loop error");
+                _logger.LogWarning(ex, "[SubconsciousWorker] Periodic enqueue failed jobType={JobType}", jobType);
             }
 
-            // 每 4 小时检查一次
-            await Task.Delay(TimeSpan.FromHours(4), ct);
+            await Task.Delay(interval, _timeProvider, ct);
         }
+    }
+
+    private async Task EnqueuePeriodicJobAsync(
+        string jobType,
+        TimeSpan interval,
+        CancellationToken ct)
+    {
+        if (_jobQueue is null)
+            return;
+
+        var workspaceId = _scheduling.DefaultWorkspaceId.Trim();
+        var agentInstanceId = _scheduling.DefaultAgentInstanceId.Trim();
+        var bucket = _timeProvider.GetUtcNow().UtcTicks / Math.Max(1, interval.Ticks);
+        var idempotencyKey = $"periodic:{jobType}:{workspaceId}:{agentInstanceId}:{bucket}";
+        if (await _jobQueue.FindLatestAsync(new SubconsciousJobLookupQuery
+            {
+                IdempotencyKey = idempotencyKey,
+            }, ct) is not null)
+        {
+            _logger.LogDebug(
+                "[SubconsciousWorker] Periodic job already exists key={IdempotencyKey}",
+                idempotencyKey);
+            return;
+        }
+
+        await _jobQueue.EnqueueAsync(new SubconsciousJobEnqueueRequest
+        {
+            JobType = jobType,
+            IdempotencyKey = idempotencyKey,
+            SourceHookName = "subconscious.periodic",
+            Job = new ConsolidationJob
+            {
+                SessionId = $"periodic:{jobType}",
+                WorkspaceId = workspaceId,
+                AgentId = agentInstanceId,
+                AgentTemplateId = agentInstanceId,
+            },
+        }, ct);
+
+        _logger.LogInformation(
+            "[SubconsciousWorker] Enqueued periodic job type={JobType} workspace={WorkspaceId} agent={AgentInstanceId} bucket={Bucket}",
+            jobType,
+            workspaceId,
+            agentInstanceId,
+            bucket);
     }
 }

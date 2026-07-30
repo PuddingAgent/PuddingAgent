@@ -54,7 +54,9 @@ public sealed class ConversationReplyProjectionWorker(
 
         var commands = await db.ChatExecutionCommands
             .Where(command =>
-                command.Status == "succeeded"
+                (command.Status == "succeeded"
+                 || command.Status == "failed"
+                 || command.Status == "cancelled")
                 && command.TerminalSequence != null
                 && command.ReplyProjectedAt == null
                 && command.MetadataJson != null
@@ -122,8 +124,9 @@ public sealed class ConversationReplyProjectionWorker(
             if (terminalEvent is null)
                 continue;
 
-            var reply = ReadReply(terminalEvent.Payload);
-            if (string.IsNullOrWhiteSpace(reply))
+            var presentation =
+                ConversationTerminalMessageFormatter.Parse(terminalEvent.Payload);
+            if (presentation is null)
             {
                 command.ReplyProjectedAt =
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -170,7 +173,7 @@ public sealed class ConversationReplyProjectionWorker(
                     Audience = MessageAudiences.Direct,
                     Visibility = MessageVisibilities.Private,
                     ContentType = MessageContentTypes.Text,
-                    Content = reply,
+                    Content = presentation.Content,
                     Metadata = metadata,
                 },
                 ct);
@@ -206,22 +209,6 @@ public sealed class ConversationReplyProjectionWorker(
         catch (JsonException)
         {
             return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-    }
-
-    private static string? ReadReply(string payload)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(payload);
-            return document.RootElement.TryGetProperty("reply", out var reply)
-                   && reply.ValueKind == JsonValueKind.String
-                ? reply.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
         }
     }
 

@@ -176,6 +176,11 @@ public sealed record ToolExecutionContext
     public bool? AllowSubDelegation { get; init; }
     public string? RoleInPlan { get; init; }
     public bool IsYoloMode { get; init; }
+    /// <summary>
+    /// 当前执行快照的工具能力边界。目录类工具只能用它缩小可发现范围；
+    /// 实际执行仍必须再次经过 ToolExecutionService/AgentFirewall 授权。
+    /// </summary>
+    public PuddingCode.Platform.CapabilityPolicy? CapabilityPolicy { get; init; }
 }
 
 /// <summary>平台传给 Tool 的执行请求。</summary>

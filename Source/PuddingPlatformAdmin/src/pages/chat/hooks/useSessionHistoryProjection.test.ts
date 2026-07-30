@@ -1,6 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { listSessionMessages } from '@/services/platform/api';
-import { useSessionHistoryProjection } from './useSessionHistoryProjection';
+import {
+  reconcileBootstrapTerminalTurns,
+  useSessionHistoryProjection,
+} from './useSessionHistoryProjection';
 
 jest.mock('@/services/platform/api', () => ({
   listSessionMessages: jest.fn(),
@@ -75,7 +78,7 @@ describe('useSessionHistoryProjection', () => {
     const turnsRef = { current: [] as any[] };
     const setTurns = jest.fn();
     const setLoading = jest.fn();
-    const syncCursor = jest.fn().mockResolvedValue(undefined);
+    const syncCursor = jest.fn().mockResolvedValue([]);
     const { result } = renderHook(() =>
       useSessionHistoryProjection({
         identity: {
@@ -104,5 +107,61 @@ describe('useSessionHistoryProjection', () => {
     expect(setTurns).toHaveBeenCalledWith(turnsRef.current);
     expect(setLoading).toHaveBeenCalledWith(false);
     expect(syncCursor).toHaveBeenCalledWith('session-1');
+  });
+
+  it('restores a failed bootstrap turn as a persistent error card', () => {
+    const current = [
+      {
+        turnId: 'hist-turn-1',
+        userMessage: {
+          id: 'user-failed',
+          text: 'question',
+          timestamp: 1,
+          status: 'success' as const,
+        },
+        assistant: {
+          id: 'hist-assistant-1',
+          status: 'success' as const,
+          timelineItems: [],
+          answerMarkdown: '',
+          isStreaming: false,
+          renderMode: 'legacy' as const,
+        },
+      },
+    ];
+
+    const reconciled = reconcileBootstrapTerminalTurns(
+      current,
+      [
+        {
+          turnId: 'turn-failed',
+          status: 'failed',
+          userMessageId: 'user-failed',
+          assistantMessageId: 'assistant-failed',
+          createdAt: 1,
+          terminalSequence: 2,
+          errorCode: 'agent_configuration_invalid',
+          errorMessage: 'preferredModelId is invalid',
+        },
+      ],
+      'session-1',
+    );
+
+    expect(reconciled[0]).toMatchObject({
+      turnId: 'turn-failed',
+      assistant: {
+        id: 'assistant-failed',
+        status: 'error',
+        isStreaming: false,
+        renderMode: 'structured',
+      },
+    });
+    expect(reconciled[0].assistant.answerMarkdown).toContain('## 请求失败');
+    expect(reconciled[0].assistant.answerMarkdown).toContain(
+      'agent_configuration_invalid',
+    );
+    expect(reconciled[0].assistant.answerMarkdown).toContain(
+      'preferredModelId is invalid',
+    );
   });
 });

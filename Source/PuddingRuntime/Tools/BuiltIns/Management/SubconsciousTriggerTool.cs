@@ -36,6 +36,7 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
     {
         var action = args.Action ?? "all";
         var workspaceId = args.WorkspaceId ?? "default";
+        var agentInstanceId = context.AgentInstanceId;
 
         _logger.LogInformation("[SubconsciousTrigger] Manual trigger action={Action} workspace={Workspace}",
             action, workspaceId);
@@ -44,11 +45,11 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
         {
             var result = action switch
             {
-                "auto_dream" => await RunAutoDreamAsync(workspaceId, ct),
-                "extract_patterns" => await RunExtractPatternsAsync(workspaceId, ct),
-                "improve_skills" => await RunImproveSkillsAsync(workspaceId, ct),
+                "auto_dream" => await RunAutoDreamAsync(workspaceId, agentInstanceId, ct),
+                "extract_patterns" => await RunExtractPatternsAsync(workspaceId, agentInstanceId, ct),
+                "improve_skills" => await RunImproveSkillsAsync(workspaceId, agentInstanceId, ct),
                 "consolidate" => SkipConsolidate(),
-                "all" => await RunAllAsync(workspaceId, ct),
+                "all" => await RunAllAsync(workspaceId, agentInstanceId, ct),
                 _ => new { error = $"Unknown action '{action}'. Valid: auto_dream, extract_patterns, improve_skills, consolidate, all." }
             };
 
@@ -67,7 +68,10 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
 
     // ── 单个管道触发（每个方法可被 CLI/Admin API 复用）──
 
-    private async Task<object> RunAutoDreamAsync(string workspaceId, CancellationToken ct)
+    private async Task<object> RunAutoDreamAsync(
+        string workspaceId,
+        string agentInstanceId,
+        CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var report = await _orchestrator.AutoDreamAsync(workspaceId, null, ct);
@@ -84,10 +88,13 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
         };
     }
 
-    private async Task<object> RunExtractPatternsAsync(string workspaceId, CancellationToken ct)
+    private async Task<object> RunExtractPatternsAsync(
+        string workspaceId,
+        string agentInstanceId,
+        CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var report = await _orchestrator.ExtractPatternsAsync(workspaceId, null, ct);
+        var report = await _orchestrator.ExtractPatternsAsync(workspaceId, agentInstanceId, null, ct);
         return new
         {
             action = "extract_patterns",
@@ -101,10 +108,13 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
         };
     }
 
-    private async Task<object> RunImproveSkillsAsync(string workspaceId, CancellationToken ct)
+    private async Task<object> RunImproveSkillsAsync(
+        string workspaceId,
+        string agentInstanceId,
+        CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var report = await _orchestrator.ImproveSkillsAsync(workspaceId, null, ct);
+        var report = await _orchestrator.ImproveSkillsAsync(workspaceId, agentInstanceId, null, ct);
         return new
         {
             action = "improve_skills",
@@ -129,13 +139,16 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
 
     // ── 全管道串联 ──
 
-    private async Task<object> RunAllAsync(string workspaceId, CancellationToken ct)
+    private async Task<object> RunAllAsync(
+        string workspaceId,
+        string agentInstanceId,
+        CancellationToken ct)
     {
         var results = new List<object>();
         var totalSw = Stopwatch.StartNew();
 
         // 安全顺序：清理 → 提取 → 改进
-        var steps = new (string name, Func<string, CancellationToken, Task<object>> runner)[]
+        var steps = new (string name, Func<string, string, CancellationToken, Task<object>> runner)[]
         {
             ("auto_dream", RunAutoDreamAsync),
             ("extract_patterns", RunExtractPatternsAsync),
@@ -147,7 +160,7 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
             try
             {
                 _logger.LogInformation("[SubconsciousTrigger] all → {Step}", name);
-                var result = await runner(workspaceId, ct);
+                var result = await runner(workspaceId, agentInstanceId, ct);
                 results.Add(result);
             }
             catch (Exception ex)

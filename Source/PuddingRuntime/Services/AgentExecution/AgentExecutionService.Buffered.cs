@@ -352,6 +352,7 @@ public sealed partial class AgentExecutionService
         int  toolOutputTruncatedCount = 0;
         long toolOutputChars = 0;
         string? firstToolFailureSummary = null;
+        var loadedToolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
@@ -416,35 +417,40 @@ public sealed partial class AgentExecutionService
                 var availableToolNames = runtimeTools
                     .Select(t => t.Name)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var llmTools = request.ToolDefinitions is { Count: > 0 }
+                var allLlmTools = request.ToolDefinitions is { Count: > 0 }
                     ? request.ToolDefinitions
                         .Where(t => availableToolNames.Contains(t.Name))
                         .ToList()
                     : runtimeTools.ToList();
 
                 // 合并运行时中 DB 未覆盖的工具（如 spawn_sub_agent）
-                var dbToolNames = llmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var dbToolNames = allLlmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var runtimeMergedTools = new List<string>();
                 foreach (var rt in runtimeTools)
                 {
                     if (!dbToolNames.Contains(rt.Name))
                     {
-                        llmTools.Add(rt);
+                        allLlmTools.Add(rt);
                         runtimeMergedTools.Add(rt.Name);
                         _logger.LogDebug("[AgentExec] Merged runtime tool: {Tool}", rt.Name);
                     }
                 }
+                var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, loadedToolIds);
+                var llmTools = exposurePlan.VisibleTools.ToList();
                 _logger.LogDebug(
-                    "[AgentExec:Tools] Prepared LLM tools session={Session} agent={Agent} template={Template} round={Round} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} finalToolCount={FinalToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
+                    "[AgentExec:Tools] Prepared LLM tools session={Session} agent={Agent} template={Template} round={Round} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
                     request.SessionId,
                     instance.AgentInstanceId,
                     request.AgentTemplateId,
                     round + 1,
                     request.ToolDefinitions?.Count ?? 0,
                     runtimeTools.Count,
-                    request.ToolDefinitions is { Count: > 0 } ? llmTools.Count - runtimeMergedTools.Count : 0,
+                    request.ToolDefinitions is { Count: > 0 } ? allLlmTools.Count - runtimeMergedTools.Count : 0,
                     runtimeMergedTools.Count,
+                    exposurePlan.AvailableToolCount,
                     llmTools.Count,
+                    exposurePlan.DeferredLoadingEnabled,
+                    exposurePlan.DeferredToolCount,
                     SummarizeToolDefinitions(request.ToolDefinitions),
                     SummarizeToolDefinitions(runtimeTools),
                     SummarizeToolNames(runtimeMergedTools),
@@ -972,6 +978,21 @@ public sealed partial class AgentExecutionService
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
 
+                        var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
+                            call.Name,
+                            skillResult.Success,
+                            skillResult.Output,
+                            loadedToolIds,
+                            allLlmTools);
+                        if (newlyLoadedToolCount > 0)
+                        {
+                            _logger.LogInformation(
+                                "[AgentExec:ToolDiscovery] Loaded {AddedCount} tool definition(s) for next round session={Session} loadedTools={LoadedTools}",
+                                newlyLoadedToolCount,
+                                request.SessionId,
+                                SummarizeToolNames(loadedToolIds));
+                        }
+
                         var toolPayloadRaw = skillResult.Success
                             ? $"✅ Tool '{call.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
                             : BuildToolFailurePayload(call.Name, skillResult, request.SessionId, isPermissionError:
@@ -1399,6 +1420,21 @@ public sealed partial class AgentExecutionService
                         : await _keyVaultService.StripAsync(skillResult.Error, ct);
 
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
+
+                    var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
+                        toolName,
+                        skillResult.Success,
+                        skillResult.Output,
+                        loadedToolIds,
+                        allLlmTools);
+                    if (newlyLoadedToolCount > 0)
+                    {
+                        _logger.LogInformation(
+                            "[AgentExec:ToolDiscovery] Loaded {AddedCount} tool definition(s) for next round session={Session} loadedTools={LoadedTools}",
+                            newlyLoadedToolCount,
+                            request.SessionId,
+                            SummarizeToolNames(loadedToolIds));
+                    }
 
                     var toolMsgRaw = skillResult.Success
                         ? $"✅ Tool '{toolName}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"

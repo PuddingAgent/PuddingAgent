@@ -42,6 +42,7 @@
 36. [62ADR-062前端ChatUI模块化审计与渐进拆分ADR](62ADR-062前端ChatUI模块化审计与渐进拆分ADR.md)
 37. [63ADR-063飞书Agent绑定与可靠消息网关ADR](63ADR-063飞书Agent绑定与可靠消息网关ADR.md)
 38. [64ADR-064Codex独立执行服务与Pudding自修复重启ADR](64ADR-064Codex独立执行服务与Pudding自修复重启ADR.md)
+39. [65ADR-064自进化PuddingAgent vs Hermes Agent对比分析ADR](65ADR-064自进化PuddingAgent%20vs%20Hermes%20Agent对比分析ADR.md)（当前与上一项编号冲突，待统一重编号）
 
 文档分工：
 

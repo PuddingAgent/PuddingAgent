@@ -62,6 +62,43 @@ public sealed class ContextPipelineAgentLogRecallLayerTests
             "Agent private log recall must be tracked as its own context layer for cache and recall observability.");
     }
 
+    [TestMethod]
+    public async Task AssembleAsync_Trims_Agent_Log_Recall_Before_Charging_Used_Budget()
+    {
+        using var temp = new TempDataRoot();
+        var agentId = "agent-large-recall";
+        var messageRoot = temp.Paths.AgentInstanceMessageLogsRoot(agentId);
+        Directory.CreateDirectory(Path.Combine(messageRoot, "2026-06-15"));
+        var oversizedSnippet = string.Join(' ', Enumerable.Repeat("oversized-recall-token", 12000));
+        var engine = new FakeFullTextSearchEngine
+        {
+            Results =
+            {
+                [messageRoot] =
+                [
+                    new FullTextSearchMatch(
+                        Path.Combine(messageRoot, "2026-06-15", "s1.md"),
+                        2,
+                        oversizedSnippet)
+                ],
+            },
+        };
+        var logRecallService = new AgentLogRecallService(
+            temp.Paths,
+            engine,
+            () => new DateTimeOffset(2026, 6, 16, 10, 0, 0, TimeSpan.Zero));
+        var pipeline = CreatePipeline(new ContextAssemblyStore(), logRecallService);
+
+        var result = await pipeline.AssembleAsync(CreateRequest(agentId), CancellationToken.None);
+
+        var augment = result.Layers.Single(layer => layer.LayerName == "上下文增强");
+        Assert.IsLessThanOrEqualTo(5000, augment.EstimatedTokens);
+        Assert.IsLessThanOrEqualTo(
+            result.Layers.Sum(layer => layer.EstimatedTokens),
+            result.UsedTokens,
+            "UsedTokens must charge the trimmed L6 payload, not the oversized raw recall payload.");
+    }
+
     private static ContextRequest CreateRequest(string agentInstanceId) => new()
     {
         Template = new AgentTemplateDefinition

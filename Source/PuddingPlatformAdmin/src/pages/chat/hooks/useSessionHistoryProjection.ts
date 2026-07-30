@@ -1,13 +1,17 @@
 ﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback } from 'react';
 import {
+  type ConversationBootstrapResponse,
   listSessionMessages,
   type MessageListResponse,
 } from '@/services/platform/api';
 import { recordPerfEvent } from '@/utils/debug';
 import type { ChatTurn, TimelineItem } from '../types';
 import { MESSAGE_PAGE_SIZE } from '../types/chatStateTypes';
-import { logChatDiag } from '../utils/chatDiagnostics';
+import {
+  formatChatErrorDiagnostic,
+  logChatDiag,
+} from '../utils/chatDiagnostics';
 import {
   createAssistant,
   getHistoryReconcileBlockReason,
@@ -30,10 +34,83 @@ interface SessionHistoryTurnPort {
 
 interface SessionHistoryIntegrationPort {
   mergeCompactionLifecycleTurns: (turns: ChatTurn[]) => ChatTurn[];
-  syncCompletedHistoryEventCursor: (sessionId: string) => Promise<void>;
+  syncCompletedHistoryEventCursor: (
+    sessionId: string,
+  ) => Promise<ConversationBootstrapResponse['turns']>;
   bindHistoryProjector: (
     projector: (response: MessageListResponse) => ChatTurn[],
   ) => void;
+}
+
+export function reconcileBootstrapTerminalTurns(
+  turns: ChatTurn[],
+  snapshots: ConversationBootstrapResponse['turns'],
+  sessionId: string,
+): ChatTurn[] {
+  const terminalSnapshots = snapshots.filter(
+    (snapshot) =>
+      snapshot.status === 'failed' || snapshot.status === 'cancelled',
+  );
+  if (terminalSnapshots.length === 0) return turns;
+
+  const byTurnId = new Map(
+    terminalSnapshots.map((snapshot) => [snapshot.turnId, snapshot]),
+  );
+  const byUserMessageId = new Map(
+    terminalSnapshots.map((snapshot) => [snapshot.userMessageId, snapshot]),
+  );
+
+  let changed = false;
+  const reconciled = turns.map((turn) => {
+    const snapshot =
+      byTurnId.get(turn.turnId) ??
+      byUserMessageId.get(turn.userMessage.id);
+    if (!snapshot) return turn;
+
+    const isFailed = snapshot.status === 'failed';
+    const answerMarkdown = isFailed
+      ? formatChatErrorDiagnostic(
+          {
+            type: 'error',
+            message: snapshot.errorMessage ?? '请求处理失败。',
+            errorCode: snapshot.errorCode ?? undefined,
+            turnId: snapshot.turnId,
+          },
+          { sessionId, turnId: snapshot.turnId },
+        )
+      : snapshot.errorMessage || '请求已取消，Agent 未生成回复。';
+
+    const nextStatus: ChatTurn['assistant']['status'] = isFailed
+      ? 'error'
+      : 'cancelled';
+    const nextAssistantId =
+      snapshot.assistantMessageId || turn.assistant.id;
+    if (
+      turn.turnId === snapshot.turnId &&
+      turn.assistant.id === nextAssistantId &&
+      turn.assistant.status === nextStatus &&
+      turn.assistant.answerMarkdown === answerMarkdown &&
+      turn.assistant.isStreaming === false &&
+      turn.assistant.renderMode === 'structured'
+    ) {
+      return turn;
+    }
+
+    changed = true;
+    return {
+      ...turn,
+      turnId: snapshot.turnId,
+      assistant: {
+        ...turn.assistant,
+        id: nextAssistantId,
+        status: nextStatus,
+        answerMarkdown,
+        isStreaming: false,
+        renderMode: 'structured' as const,
+      },
+    };
+  });
+  return changed ? reconciled : turns;
 }
 
 interface UseSessionHistoryProjectionOptions {
@@ -266,7 +343,20 @@ export function useSessionHistoryProjection({
       latestTurnIdRef.current =
         reconciledTurns[reconciledTurns.length - 1]?.turnId ?? null;
       setLoading(false);
-      await syncCompletedHistoryEventCursor(sessionId);
+      const bootstrapTurns =
+        await syncCompletedHistoryEventCursor(sessionId);
+      const terminalReconciledTurns = reconcileBootstrapTerminalTurns(
+        turnsRef.current,
+        bootstrapTurns,
+        sessionId,
+      );
+      if (terminalReconciledTurns !== turnsRef.current) {
+        setTurns(terminalReconciledTurns);
+        turnsRef.current = terminalReconciledTurns;
+        latestTurnIdRef.current =
+          terminalReconciledTurns[terminalReconciledTurns.length - 1]
+            ?.turnId ?? null;
+      }
     },
     [
       mergeCompactionLifecycleTurns,

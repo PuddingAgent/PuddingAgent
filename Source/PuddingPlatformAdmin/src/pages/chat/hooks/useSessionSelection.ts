@@ -2,6 +2,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
 import {
+  type ConversationBootstrapResponse,
   listSessionMessages,
   type MessageListResponse,
 } from '@/services/platform/api';
@@ -15,6 +16,7 @@ import {
   shouldReplayEventsAfterHistory,
 } from '../utils/chatStateUtils';
 import type { ScrollIntent } from '../viewport/types';
+import { reconcileBootstrapTerminalTurns } from './useSessionHistoryProjection';
 
 interface SessionSelectionCatalogPort {
   workspaceId?: string;
@@ -62,7 +64,7 @@ interface SessionSelectionStreamPort {
   syncCompletedCursor: (
     sessionId: string,
     signal?: AbortSignal,
-  ) => Promise<void>;
+  ) => Promise<ConversationBootstrapResponse['turns']>;
   projectionOwnedSessionIdsRef: MutableRefObject<Set<string>>;
   lastSequenceNumRef: MutableRefObject<number>;
 }
@@ -242,6 +244,29 @@ export function useSessionSelection({
         const activeCount = turnsRef.current.filter(
           isActiveAssistantTurn,
         ).length;
+        const applyBootstrapTerminals = (
+          snapshots: ConversationBootstrapResponse['turns'],
+        ) => {
+          if (controller.signal.aborted) return;
+          const reconciled = reconcileBootstrapTerminalTurns(
+            turnsRef.current,
+            snapshots,
+            sessionId,
+          );
+          if (reconciled === turnsRef.current) return;
+
+          turnsRef.current = reconciled;
+          setTurns(reconciled);
+          latestTurnIdRef.current =
+            reconciled[reconciled.length - 1]?.turnId ?? null;
+          const hasActiveTurn = reconciled.some(isActiveAssistantTurn);
+          reconcileWorkingAgents(
+            sessionId,
+            sessionAgentId ? [sessionAgentId] : [],
+            hasActiveTurn,
+          );
+          setLoading(hasActiveTurn);
+        };
         if (activeCount > 0) {
           logChatDiag('session.select.preserveActiveTurns', {
             traceId,
@@ -253,7 +278,11 @@ export function useSessionSelection({
             loadedLatestUser:
               loadedTurns[loadedTurns.length - 1]?.userMessage.text,
           });
-          await syncCompletedCursor(sessionId, controller.signal);
+          const bootstrapTurns = await syncCompletedCursor(
+            sessionId,
+            controller.signal,
+          );
+          applyBootstrapTerminals(bootstrapTurns);
           return;
         }
 
@@ -273,6 +302,7 @@ export function useSessionSelection({
           setOldestMessageCursor(response.oldestCreatedAt);
         }
 
+        let bootstrapTurns: ConversationBootstrapResponse['turns'];
         if (shouldReplayEventsAfterHistory(loadedTurns)) {
           const replayStartedAt = performance.now();
           await replayLatestTurn(sessionId, loadedTurns, controller.signal);
@@ -287,9 +317,16 @@ export function useSessionSelection({
               turnCount: loadedTurns.length,
             },
           );
+          bootstrapTurns = await syncCompletedCursor(
+            sessionId,
+            controller.signal,
+          );
         } else {
           const cursorStartedAt = performance.now();
-          await syncCompletedCursor(sessionId, controller.signal);
+          bootstrapTurns = await syncCompletedCursor(
+            sessionId,
+            controller.signal,
+          );
           recordPerfStep(
             'session.select',
             'events.syncCompletedCursor',
@@ -302,6 +339,7 @@ export function useSessionSelection({
             },
           );
         }
+        applyBootstrapTerminals(bootstrapTurns);
 
         recordPerfStep('session.select', 'select.finish', selectStartedAt, {
           traceId,

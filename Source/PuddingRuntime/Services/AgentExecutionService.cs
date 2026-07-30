@@ -925,8 +925,8 @@ public sealed partial class AgentExecutionService
                 tools.Count,
                 removedSubAgentTool,
                 0,
-                                SummarizeToolDefinitions(tools));
-            return ApplyToolProfile(tools, request);
+                SummarizeToolDefinitions(tools));
+            return ApplyToolProfile(tools, request, capability, template);
         }
 
         var allowed = new HashSet<string>(template.AllowedSkillIds, StringComparer.OrdinalIgnoreCase);
@@ -943,8 +943,8 @@ public sealed partial class AgentExecutionService
             filtered.Count,
             removedSubAgentTool,
             template.AllowedSkillIds.Count,
-                        SummarizeToolDefinitions(filtered));
-        return ApplyToolProfile(filtered, request);
+            SummarizeToolDefinitions(filtered));
+        return ApplyToolProfile(filtered, request, capability, template);
     }
 
     /// <summary>
@@ -953,9 +953,11 @@ public sealed partial class AgentExecutionService
     /// </summary>
     private IReadOnlyList<LlmToolDefinition> ApplyToolProfile(
         IReadOnlyList<LlmToolDefinition> tools,
-        RuntimeDispatchRequest request)
+        RuntimeDispatchRequest request,
+        CapabilityPolicy? capability,
+        AgentTemplateDefinition? template)
     {
-        var profileName = ResolveToolProfile(request);
+        var profileName = ToolProfileConfig.ResolveProfile(request, capability, template);
         if (profileName is null)
             return tools;
 
@@ -975,27 +977,6 @@ public sealed partial class AgentExecutionService
         }
 
         return filtered;
-    }
-
-    /// <summary>
-    /// 根据请求上下文决定工具 profile 名称。返回 null 表示使用完整工具集。
-    /// </summary>
-    private static string? ResolveToolProfile(RuntimeDispatchRequest request)
-    {
-        // 心跳场景：消息内容包含系统心跳标记
-        if (request.MessageText is not null
-            && request.MessageText.Contains("── 系统心跳 ──", StringComparison.Ordinal))
-        {
-            return "heartbeat";
-        }
-
-        // 子代理场景
-        if (request.ExecutionIdentity?.Kind == RuntimeExecutionKind.SubAgent)
-        {
-            return "sub_agent";
-        }
-
-        return null; // 默认：完整工具集
     }
 
     private static string SummarizeToolDefinitions(IReadOnlyList<LlmToolDefinition>? tools)

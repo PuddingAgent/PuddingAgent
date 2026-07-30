@@ -51,7 +51,7 @@ Source/
 | 文件 | 用途 |
 |------|------|
 | `Services/AgentExecutionService.cs` | 🔑 Agent 执行编排入口；所有入口先经过 session 单写者，工具调用轮次在 Assistant + 全部 Tool results 完整后原子写入历史；把父 `ExecutionDeadlineUtc` 传入每次工具调用；以稳定 identity 报告 LLM/工具/子代理的 liveness 与带指纹 meaningful progress；子代理执行按 runId 发出 round/LLM/tool/terminal 审计事件，并以绝对 deadline 区分 timed_out/cancelled、以实际 round-start 计数提交终态统计；对 canonical `ExpectedOutputContract` 保留最近一次合格报告，防止最终 DONE 状态摘要覆盖完整交付；纯工具参数转换、KeyVault 空实现与流式诊断聚合已移入 `Services/AgentExecution/` |
-| `Services/AgentExecution/AgentExecutionService.Buffered.cs` + `AgentExecutionService.Streaming.cs` | 同一执行器的过渡期 partial 主循环边界；分别承载结构化非流式循环和面向 UI 的 SSE 流式循环，先降低单文件导航/冲突成本，后续仍须沿 facade 继续拆解长方法 |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` + `AgentExecutionService.Streaming.cs` | 同一执行器的过渡期 partial 主循环边界；分别承载结构化非流式循环和面向 UI 的 SSE 流式循环；大工具集按通用 OpenAI-compatible 顶层 `tools` 做首轮收敛，并在 `search_tools` 返回后于下一轮注入命中的标准函数定义；后续仍须沿 facade 继续拆解长方法 |
 | `Services/AgentExecution/AgentToolArguments.cs` | LLM tool-call JSON 到 legacy skill 参数与 terminal payload 的纯转换边界；执行器保留薄委托以兼容既有反射测试 |
 | `Services/AgentExecution/NoOpKeyVaultService.cs` + `StreamPipelineDiagnosticsAccumulator.cs` | 可选 KeyVault 的无副作用 fallback，以及流式 KeyVault/SSM 热路径指标的线程安全聚合；均不再作为执行器内嵌类型 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | Smart 子代理五段报告合同的共享解析/校验与执行期候选保留器；只在显式 canonical `ExpectedOutputContract` 下恢复完整报告 |
@@ -76,7 +76,7 @@ Source/
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
 | `Services/LlmProfileResolver.cs` | 解析遗留 Profile/Binding 配置；主 Agent 执行模型不从此处选择 |
-| `Services/LlmOptions.cs` | LLM 请求选项（RecordProviderUsage 只更新诊断字段，不覆盖上下文快照） |
+| `Services/LlmOptions.cs` | LLM 请求选项与 `ContextUsageSnapshotStore`；最终请求快照同时记录工具定义 token 和规范化 schema 哈希，`RecordProviderUsage` 只更新 Provider 诊断字段并保留请求快照事实 |
 | `Services/ProviderRateLimiter.cs` | Provider 级限流器 |
 
 ### 上下文管理
@@ -87,7 +87,7 @@ Source/
 | `Services/ContextCompactionService.cs` | 上下文压缩执行与 ContextHealth 用量解析；provider/snapshot/Memory 均无数据时，以最近 500 条 canonical ChatMessages 估算并标记 `canonical_chat_transcript`，避免重启后错误显示 0 used |
 | `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估 + 容量预测（PredictCapacity） |
 | `Services/ContextAssemblyService.cs` | 上下文组装（System Prompt + 历史 + 记忆） |
-| `Services/ContextPipeline.cs` | 上下文管线编排 |
+| `Services/ContextPipeline.cs` | 上下文管线编排；L6 召回内容严格限制为 5K tokens，并在裁剪完成后才计入 `UsedTokens`，保证注入内容、层快照和预算账目一致 |
 
 ### 工具系统
 | 文件 | 用途 |
@@ -96,7 +96,9 @@ Source/
 | `Tools/Platform/PuddingToolRegistry.cs` | 🔑 工具注册表与执行硬边界；支持 `IWorkspacePuddingToolSource` 的 Workspace 动态工具快照，强制 MainAgentOnly/DelegatedSubAgent、AllowSubDelegation 和 DelegationDepth，模型无法用伪造工具名或跨 Workspace 绕过 |
 | `Tools/Platform/ToolInvocationService.cs` | 工具调用分发（解析工具名 → 透传配置所有者/委派深度 → 执行） |
 | `Tools/Platform/ToolPermissionPolicyService.cs` | 工具权限策略（安全区检查） |
+| `Services/Tools/ToolExposurePlanner.cs` | Provider 无关的工具暴露规划器；工具数超过阈值时只暴露核心工具与已检索工具，解析 `search_tools` 结果时只接受当前已授权目录中的工具 id |
 | `Tools/Approval/InMemoryToolApprovalService.cs` | 高危工具审批服务 |
+| `PuddingCore/Platform/ToolProfileConfig.cs` | 工具 schema 场景配置；心跳仅由可信 `system:heartbeat` Origin 触发，子代理显式 capability/template 工具选择优先于静态兜底配置，主代理默认保持完整工具集 |
 
 ### 核心工具
 | 目录 | 工具 | 用途 |
@@ -106,6 +108,7 @@ Source/
 | `Tools/BuiltIns/Agents/` | `SubAgentTool.cs` | 🔑 子代理派生入口；将 model/capability 一次解析为不可变 `LlmProfile + LlmConfig` 路由快照，并完整保留 `origin_tool_id + reuse_parent_context + pool_* + max_rounds + WorkingDirectory + ConfigurationAgentInstanceId + DelegationDepth + ParentExecutionDeadlineUtc`；同步委派由 Manager 统一保留父级收尾时间 |
 | `Tools/BuiltIns/Agents/` | `AgentSleepTool.cs` | 心跳睡眠控制（max 86400s） |
 | `Tools/BuiltIns/Search/` | `SmartSearchTool.cs` | 🔑 语义代码搜索 — 薄包装子代理，三层搜索协议，MainAgentOnly，Explorer 模型 |
+| `Tools/BuiltIns/Search/` | `SearchToolsTool.cs` | 通用工具目录检索；只查询当前 CapabilityPolicy/Workspace 可见目录，返回工具 id 供 Agent Loop 下一轮以标准顶层 `tools` 暴露 |
 | `Tools/BuiltIns/Search/` | `AnySearchSearchTool.cs` | AnySearch 通用搜索（Web/文档） |
 | `Tools/BuiltIns/Search/` | `DoubaoSearchTool.cs` | 豆包搜索 Global 版；从 `search.providers.json` 的 `doubao_search` 节读取凭据，映射文本/图片摘要并保留双层业务错误与 RequestId |
 | `Tools/BuiltIns/Search/` | `GitHubSearchTool.cs` | GitHub REST API 搜索 |
@@ -143,8 +146,8 @@ Source/
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts` | Chat 页面组合与跨域协调入口（1,314 行）；P0/P1 业务逻辑已委托专用 hook，并通过兼容导出维持现有调用方 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useWorkspaceAgentSelection.ts` | Workspace/Agent 选择域：路由解析、列表加载、默认 Agent 创建、选择项投影、`creatingSession` 与一次性主会话重建抑制 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionCatalog.ts` | Session 目录与身份 ref 所有者：列表刷新、主/选中会话、重命名、删除、归档 |
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionSelection.ts` | Session 切换事务：取消旧请求、加载历史、恢复 replay、同步 route 与 unread；通过分组端口协调其他域 |
-| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionHistoryProjection.ts` | 持久消息到 `ChatTurn` 的投影与安全历史对账；完成后同步事件 cursor |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionSelection.ts` | Session 切换事务：取消旧请求、加载历史、恢复 replay、同步 route 与 unread；replay/cursor 两条分支都用 bootstrap failed/cancelled Turn 快照收口，防止首块前失败在刷新后表现为卡住 |
+| `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionHistoryProjection.ts` | 持久消息到 `ChatTurn` 的投影与安全历史对账；完成后同步事件 cursor，并消费 bootstrap 的 failed/cancelled Turn 快照，把未持久化 Agent 正文的终态恢复成明确且可刷新的错误卡片 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts` | delta/thinking 批处理缓冲与 timer 所有者 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts` | Conversation SSE 连接、健康重连、在线恢复与 replay poll 生命周期；首次连接保留历史/bootstrap 已同步的 cursor 并通过 `Last-Event-ID` 续读，禁止刷新时从 sequence 0 重放完整事件库 |
 | `PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventReplay.ts` | 按 sequence/cursor 的缺口恢复、条件补偿与最新 Turn replay；分页最大 sequence 必须以有限哨兵归并并单调推进，不能以 `NaN` 为 reduce 初值；对仍 active 的子代理低频读取 canonical session 状态，校正有界 bootstrap 遗漏的历史终态 |
@@ -230,7 +233,7 @@ Source/
 | `Services/ConversationEventStore.cs` | Conversation Sequence 分配、事件追加、历史读取和 `subagent.*` 类型前缀补读；事件分页读取 `limit + 1` 条并准确计算 `hasMore` |
 | `Services/ConversationProjector.cs` | Event Store 到查询模型的 checkpoint 投影；除按稳定身份物化 ChatMessages 外，还将带不可变 Provider/Model 归因的 `usage.recorded` v2 必达写入 Token 明细账本 |
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
-| `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync` |
+| `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync`；`layer-v2` 将 `L1-TOOL-DEFINITIONS` 插入真实前缀顺序，按规范化 schema 哈希追踪跨轮变更 |
 | `Services/TokenUsageSchemaBootstrapper.cs` | Platform SQLite 的 Token 用量 Schema 升级边界；启动时幂等补齐 `TokenUsageEvents.ParentSessionId` 与索引，DDL 失败直接阻止启动，避免 EF 模型与旧数据库静默失配 |
 | `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json/reply_projected_at`，避免已有数据库在 Turn 受理或渠道回复投影时因 EF 模型漂移失败 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
@@ -296,11 +299,11 @@ Source/
 | `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；持久化渠道路由事实，并从 `queued/retrying` 投递发现待处理 Agent/Connector 目标 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
 | `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
-| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 succeeded Command 的 committed terminal event 幂等创建 Connector delivery；活跃 CardKit stream 拥有终态投影，只有 stream `failed` 才走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
+| `Services/MessageGateway/ConversationTerminalMessageFormatter.cs` + `ConversationReplyProjectionWorker.cs` | 从 succeeded/failed/cancelled Command 的 committed terminal event 生成统一用户文案并幂等创建 Connector delivery；失败包含稳定错误码与原因；活跃 CardKit stream 拥有终态投影，stream `failed` 后走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
 | `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 channel-owned Connector、渠道实例与 Agent `channelIds` 引用，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按渠道 `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
 | `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从启用的渠道服务商/渠道实例和 Agent 引用动态装配一 Agent 一机器人；Connector 身份为 `feishu:{channelId}`，拒绝重复 AppId，凭据不进入公共 DTO |
 | `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1 实体创建、引用回复、累计元素更新与关闭 streaming；图片 `image_key` 在 ACK 前经消息资源 API 下载、签名校验并以稳定 ID 落入 Web 共用 Vision Artifact，再用 `visionArtifactIds` 进入 canonical Conversation；入站使用 `message_type`，出站 OpenAPI 使用 `msg_type` |
-| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 投影到同一飞书流式卡片；sequence/uuid 稳定重试，终态通过 Message Fabric delivery 收口，失败回退普通文本而不重跑 Agent |
+| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 投影到同一飞书流式卡片；sequence/uuid 稳定重试，failed/cancelled 终态用统一错误文案关闭卡片；任一投影阶段连续失败 5 次进入 `failed` 并回退普通文本，不无限重试、不重跑 Agent |
 | `Data/Entities/ConnectorStreamProjectionEntity.cs` + `Services/ConnectorStreamProjectionSchemaBootstrapper.cs` | `connector_stream_projections` 的 CardKit resource、累计正文、Conversation cursor、操作 sequence、重试与生命周期状态；SQLite 幂等建表升级 |
 | `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter；CardKit 终态 ACK 后同步完成 stream projection，出站故障不重跑 Agent |
 | `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片 metadata 进入真实 SQLite Message Fabric/canonical SubmitTurn、图片资源稳定落盘与重投复用，以及 CardKit create/publish/delta/final durable delivery，只替换外部飞书与 Agent 执行结果 |
@@ -658,14 +661,17 @@ WorkspaceAgentSettingsDrawer
 
 > 后台异步自循环，5 条专业化管道 + 完整作业队列 + 运行时控制 + 多层可观测性。
 
-### 触发入口（3 条路径）
+### 触发入口（5 条路径）
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
 | **SubconsciousConsolidationHook** | `PuddingRuntime/Services/Background/SubconsciousConsolidationHook.cs` | AgentLoop Hook：每轮对话结束 → `Channel<ConsolidationJob>` 入队 |
 | **SubconsciousJobScheduler** | `PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs` | 定时调度：9 种跳过条件（空闲冷却/并发限制/预算耗尽/DryRun...） → `TryLeaseNextAsync` |
 | **SubconsciousTriggerTool** | `PuddingRuntime/Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | 手动触发：`auto_dream` / `extract_patterns` / `improve_skills` / `consolidate` / `all` |
-| **SubconsciousWorkerService** | `PuddingRuntime/Services/Background/SubconsciousWorkerService.cs` | ⚠️ HOSTED-DISABLED — 定时后台服务（已注释） |
+| **SubconsciousDebugApiController** | `PuddingPlatform/Controllers/Api/SubconsciousDebugApiController.cs` | 认证调试 API：`POST /api/debug/subconscious/evolution/trigger` 主动入队 `auto_dream` / `extract_patterns` / `improve_skills` / `all`；返回 202 + Job IDs，相同 requestId 幂等复用 |
+| **SubconsciousWorkerService** | `PuddingRuntime/Services/Background/SubconsciousWorkerService.cs` | ✅ HOSTED — 消费持久队列；三个周期循环只负责按时间桶幂等入队；执行后先持久化 AutoDream/PatternExtraction/SkillImprovement Report envelope，再完成 Job；宿主从 DLL 目录的 `bootstrapConfiguration` 读取启用开关与调度参数 |
+| **ConversationSkillEvolutionTrajectorySource** | `PuddingRuntime/Services/Skills/ConversationSkillEvolutionTrajectorySource.cs` | 从规范 `conversation_events` + 成功 Command 读取 workspace/agent 隔离的已验证工具轨迹 |
+| **AgentSkillEvolutionStore** | `PuddingRuntime/Services/Skills/AgentSkillEvolutionStore.cs` | 自进化适配器：通过 `AgentSkillFileService` 创建/更新真实 SKILL.md、manifest 与 index |
 
 ### 作业队列
 
@@ -681,15 +687,15 @@ WorkspaceAgentSettingsDrawer
 |------|------|------|------|
 | **事实提取** | `ConsolidateAsync` | LLM → 事实/偏好 → Jaccard≥0.8 去重合并 → MemoryFacts/Preferences → Library | `SubconsciousJobLogEntity` |
 | **记忆整理** | `AutoDreamAsync` | Flash 分析 Library 快照 → merge/archive/delete（≤5 op, 30d 过期） | `AutoDreamReport` |
-| **经验→SKILL** | `ExtractPatternsAsync` | 扫描会话 → 检测黄金路径 → 3 条件过滤（passing/named-failure/ruled-out） → SKILL.md | `PatternExtractionReport` |
-| **Skill 改进** | `ImproveSkillsAsync` | 列出 auto-generated 技能 → Flash 逐条评估 → 修补 + Bump 版本 | `SkillImprovementReport` |
+| **经验→SKILL** | `ExtractPatternsAsync` | 成功 Command + 规范工具事件 → 黄金路径 → passing/reusable/safe 门禁 → Agent 私有 SKILL.md + manifest/index | `PatternExtractionReport` |
+| **Skill 改进** | `ImproveSkillsAsync` | 读取 Agent 私有 auto-generated Skill 的完整 Markdown → 评估 → 原地修补 + Bump 版本 + 重建索引 | `SkillImprovementReport` |
 | **增强召回** | `RecallAugmentedAsync` | LLM 直接阅读全量 MemoryFacts + Preferences，自主判断相关性（不做 LIKE/FTS5） | `RecallDiagnostics` |
 
 ```text
 ConsolidateAsync:  消息 → LLM抽取 → ExtractionPayload(JSON) → 去重(Jaccard) → Facts/Prefs → Library
 AutoDreamAsync:    MemorySnapshot → LLM规划(AutoDreamPlan) → merge/archive/delete
-ExtractPatternsAsync: 会话消息 → LLM检测(PatternCandidate[]) → 3条件过滤 → promote(SKILL) / demote(笔记) / skip
-ImproveSkillsAsync: auto-generated技能 → LLM评估(SkillEvaluation) → 修补 → Bump版本 → 写回Library
+ExtractPatternsAsync: conversation_events成功工具链 → LLM检测(PatternCandidate[]) → passing/reusable/safe → AgentSkillFileService
+ImproveSkillsAsync: Agent私有auto-generated SKILL.md → LLM评估(SkillEvaluation) → 修补 → Bump版本 → manifest/index同步
 RecallAugmentedAsync: 用户消息 + 全量Facts → LLM编译 → 截断(maxTokens*4 chars)
 ```
 
@@ -717,8 +723,8 @@ RecallAugmentedAsync: 用户消息 + 全量Facts → LLM编译 → 截断(maxTok
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
-| **SubconsciousOptions** | `PuddingCore/Configuration/SubconsciousOptions.cs` | 开关：EnableLegacyConsolidationHook / DebugApiEnabled |
-| **SubconsciousSchedulingOptions** | 同上 | 调度：IdleCooldown(60s) / MaxGlobalConcurrent(1) / MaxRetryAttempts(3) / BudgetWindow(60min) / MaxJobsPerWorkspacePerHour(20) |
+| **SubconsciousOptions** | `PuddingCore/Configuration/SubconsciousOptions.cs` | 开关：EnableWorker / EnableLegacyConsolidationHook / DebugApiEnabled；主宿主绑定 `AppContext.BaseDirectory` 配置源 |
+| **SubconsciousSchedulingOptions** | 同上 | 调度：周期作业开关、默认 workspace/agent、三个首次延迟与周期，以及 IdleCooldown(60s) / MaxGlobalConcurrent(1) / MaxRetryAttempts(3) / BudgetWindow(60min) / MaxJobsPerWorkspacePerHour(20) |
 
 ### 数据流水线
 
@@ -727,6 +733,7 @@ RecallAugmentedAsync: 用户消息 + 全量Facts → LLM编译 → 截断(maxTok
   AgentLoopHook → Channel<ConsolidationJob>
   SubconsciousJobScheduler → ISubconsciousJobQueue.LeaseNextAsync() → Worker → Orchestrator
   SubconsciousTriggerTool → Orchestrator（手动调试）
+  SubconsciousDebugApiController → ISubconsciousJobQueue（认证 HTTP 主动调试）→ Worker → Orchestrator → ResultJson → 调试结果 API
 
 Orchestrator:
   PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs（1614 行）

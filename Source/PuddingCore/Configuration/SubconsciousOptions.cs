@@ -46,4 +46,15 @@ public sealed class SubconsciousSchedulingOptions
     public int MaxRetryAttempts { get; init; } = 3;
     public int RetryBackoffSeconds { get; init; } = 60;
     public int BudgetWindowMinutes { get; init; } = 60;
+
+    /// <summary>Enables durable periodic Auto-Dream and Skill evolution jobs.</summary>
+    public bool PeriodicJobsEnabled { get; init; } = true;
+    public string DefaultWorkspaceId { get; init; } = "default";
+    public string DefaultAgentInstanceId { get; init; } = "default.general-assistant-001";
+    public int AutoDreamInitialDelaySeconds { get; init; } = 300;
+    public int AutoDreamIntervalSeconds { get; init; } = 21_600;
+    public int PatternExtractionInitialDelaySeconds { get; init; } = 600;
+    public int PatternExtractionIntervalSeconds { get; init; } = 43_200;
+    public int SkillImprovementInitialDelaySeconds { get; init; } = 900;
+    public int SkillImprovementIntervalSeconds { get; init; } = 14_400;
 }

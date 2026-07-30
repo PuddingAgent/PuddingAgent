@@ -315,7 +315,9 @@ public sealed partial class AgentExecutionService
         // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
         var toolBuildStartedAt = DateTimeOffset.UtcNow;
         var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
+        var loadedToolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         HashSet<string> availableToolNames;
+        List<LlmToolDefinition> allLlmTools;
         List<LlmToolDefinition> llmTools;
         int runtimeMergedToolCount;
         try
@@ -324,26 +326,28 @@ public sealed partial class AgentExecutionService
             availableToolNames = runtimeTools2
                 .Select(t => t.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            llmTools = request.ToolDefinitions is { Count: > 0 }
+            allLlmTools = request.ToolDefinitions is { Count: > 0 }
                 ? request.ToolDefinitions
                     .Where(t => availableToolNames.Contains(t.Name))
                     .ToList()
                 : runtimeTools2.ToList();
 
             // 合并运行时中 DB 未覆盖的工具
-            var dbToolNames2 = llmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var dbToolNames2 = allLlmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             runtimeMergedToolCount = 0;
             var runtimeMergedToolNames = new List<string>();
             foreach (var rt in runtimeTools2)
             {
                 if (!dbToolNames2.Contains(rt.Name))
                 {
-                    llmTools.Add(rt);
+                    allLlmTools.Add(rt);
                     runtimeMergedToolCount++;
                     runtimeMergedToolNames.Add(rt.Name);
                     _logger.LogDebug("[AgentExec] Stream merged runtime tool: {Tool}", rt.Name);
                 }
             }
+            var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, loadedToolIds);
+            llmTools = exposurePlan.VisibleTools.ToList();
 
             var terminalToolNames = llmTools
                 .Where(t => t.Name.StartsWith("terminal_", StringComparison.OrdinalIgnoreCase))
@@ -363,15 +367,18 @@ public sealed partial class AgentExecutionService
                 terminalToolSummary);
 
             _logger.LogDebug(
-                "[AgentExec:Tools] Prepared streaming LLM tools session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} finalToolCount={FinalToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
+                "[AgentExec:Tools] Prepared streaming LLM tools session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
                 request.SessionId,
                 instance.AgentInstanceId,
                 request.AgentTemplateId,
                 request.ToolDefinitions?.Count ?? 0,
                 runtimeTools2.Count,
-                request.ToolDefinitions is { Count: > 0 } ? llmTools.Count - runtimeMergedToolCount : 0,
+                request.ToolDefinitions is { Count: > 0 } ? allLlmTools.Count - runtimeMergedToolCount : 0,
                 runtimeMergedToolCount,
+                exposurePlan.AvailableToolCount,
                 llmTools.Count,
+                exposurePlan.DeferredLoadingEnabled,
+                exposurePlan.DeferredToolCount,
                 SummarizeToolDefinitions(request.ToolDefinitions),
                 SummarizeToolDefinitions(runtimeTools2),
                 SummarizeToolNames(runtimeMergedToolNames),
@@ -1133,6 +1140,25 @@ public sealed partial class AgentExecutionService
                         Type = StreamingEventTypes.AgentToolResult,
                         Data = new { name = tc.Name, exitCode = result.ExitCode, output = result.Output, error = result.Error }
                     }, ct);
+
+                    var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
+                        tc.Name,
+                        result.Success,
+                        result.Output,
+                        loadedToolIds,
+                        allLlmTools);
+                    if (newlyLoadedToolCount > 0)
+                    {
+                        llmTools = ToolExposurePlanner
+                            .CreatePlan(allLlmTools, loadedToolIds)
+                            .VisibleTools
+                            .ToList();
+                        _logger.LogInformation(
+                            "[AgentExec:ToolDiscovery] Stream loaded {AddedCount} tool definition(s) for next round session={Session} loadedTools={LoadedTools}",
+                            newlyLoadedToolCount,
+                            request.SessionId,
+                            SummarizeToolNames(loadedToolIds));
+                    }
 
                     // ── terminal_execute 兼容入口：立即转为后台 terminal job ──
                     if (tc.Name is "terminal_execute" && result.Success)

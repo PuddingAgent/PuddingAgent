@@ -129,6 +129,94 @@ public sealed class TokenUsageRecorderPrefixDiagnosticsTests
         Assert.AreEqual(0.5, layers[1].EstimatedCacheHitRate);
     }
 
+    [TestMethod]
+    public async Task RecordAsync_WhenToolDefinitionsExist_InsertsOrderedLayerAndTracksSchemaChanges()
+    {
+        await using var scope = await CreateScopeAsync();
+        var contextStore = scope.Provider.GetRequiredService<ContextAssemblyStore>();
+        var usageStore = scope.Provider.GetRequiredService<ContextUsageSnapshotStore>();
+        contextStore.Set(new ContextAssemblySnapshot
+        {
+            SessionId = "s-tools",
+            AssembledAt = DateTimeOffset.Parse("2026-06-06T00:00:00Z"),
+            TotalTokens = 100,
+            Layers =
+            [
+                new ContextLayerInfo
+                {
+                    LayerName = "L0-STATIC",
+                    TokenCount = 40,
+                    ContentPreview = "stable system prompt",
+                },
+                new ContextLayerInfo
+                {
+                    LayerName = "L5-RECENT",
+                    TokenCount = 60,
+                    ContentPreview = "recent conversation",
+                },
+            ],
+        });
+        var recorder = new TokenUsageRecorder(
+            scope.Provider.GetRequiredService<IServiceScopeFactory>(),
+            new TokenUsageNormalizer(),
+            NullLogger<TokenUsageRecorder>.Instance,
+            contextAssemblyStore: contextStore,
+            contextUsageSnapshotStore: usageStore);
+        var messages = new[] { new ChatMessage(ChatRole.System, "You are Pudding.") };
+        var usage = new TokenUsageDto
+        {
+            PromptTokens = 100,
+            CompletionTokens = 10,
+            TotalTokens = 110,
+            PromptCacheHitTokens = 70,
+            PromptCacheMissTokens = 30,
+        };
+
+        usageStore.CaptureLlmRequest("s-tools", messages, [CreateTool("lookup", "query")]);
+        await recorder.RecordAsync(
+            usage,
+            sourceType: "chat_message",
+            sourceId: "tools-m1",
+            workspaceId: "w1",
+            sessionId: "s-tools",
+            providerId: "deepseek",
+            modelId: "deepseek-chat",
+            occurredAtUtc: DateTimeOffset.Parse("2026-06-06T00:01:00Z"));
+
+        usageStore.CaptureLlmRequest("s-tools", messages, [CreateTool("lookup", "path")]);
+        await recorder.RecordAsync(
+            usage,
+            sourceType: "chat_message",
+            sourceId: "tools-m2",
+            workspaceId: "w1",
+            sessionId: "s-tools",
+            providerId: "deepseek",
+            modelId: "deepseek-chat",
+            occurredAtUtc: DateTimeOffset.Parse("2026-06-06T00:02:00Z"));
+
+        var db = scope.Provider.GetRequiredService<PlatformDbContext>();
+        var firstLayers = await db.ContextLayerMetricEvents
+            .Where(e => e.SourceId == "tools-m1")
+            .OrderBy(e => e.LayerOrder)
+            .ToListAsync();
+        Assert.HasCount(3, firstLayers);
+        CollectionAssert.AreEqual(
+            new[] { "L0-STATIC", "L1-TOOL-DEFINITIONS", "L5-RECENT" },
+            firstLayers.Select(layer => layer.LayerName).ToArray());
+        for (var i = 1; i < firstLayers.Count; i++)
+        {
+            Assert.AreEqual(firstLayers[i - 1].EndsAtToken, firstLayers[i].StartsAtToken);
+        }
+
+        var firstToolLayer = firstLayers[1];
+        Assert.AreEqual("stable_prefix", firstToolLayer.LayerRole);
+        var secondToolLayer = await db.ContextLayerMetricEvents.SingleAsync(
+            e => e.SourceId == "tools-m2" && e.LayerName == "L1-TOOL-DEFINITIONS");
+        Assert.AreEqual(firstToolLayer.ContentHash, secondToolLayer.PreviousHash);
+        Assert.IsTrue(secondToolLayer.IsChanged);
+        Assert.AreEqual("tool_spec_changed", secondToolLayer.ChangeReason);
+    }
+
     private static PromptPrefixSnapshot CreateSnapshot(
         string prefixHash,
         string systemPromptHash,
@@ -141,6 +229,15 @@ public sealed class TokenUsageRecorderPrefixDiagnosticsTests
             ToolCount = 2,
         };
 
+    private static LlmToolDefinition CreateTool(string name, string parameterName) => new()
+    {
+        Name = name,
+        Description = $"Tool {name}",
+        Parameters = new ToolParameterSchema(
+            [new ToolParameter(parameterName, "string", $"Tool {parameterName}")],
+            [parameterName]),
+    };
+
     private static async Task<TestScope> CreateScopeAsync()
     {
         var connection = new SqliteConnection("DataSource=:memory:");
@@ -148,6 +245,7 @@ public sealed class TokenUsageRecorderPrefixDiagnosticsTests
         var services = new ServiceCollection();
         services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton<ContextAssemblyStore>();
+        services.AddSingleton<ContextUsageSnapshotStore>();
         var provider = services.BuildServiceProvider();
         var db = provider.GetRequiredService<PlatformDbContext>();
         await db.Database.EnsureCreatedAsync();

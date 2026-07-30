@@ -128,6 +128,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<SandboxExecutor>();
         builder.Services.AddSingleton<AgentSkillPackageRegistry>();
         builder.Services.AddSingleton<AgentSkillFileService>();
+        builder.Services.AddSingleton<ISkillEvolutionTrajectorySource, ConversationSkillEvolutionTrajectorySource>();
+        builder.Services.AddSingleton<IAgentSkillEvolutionStore, AgentSkillEvolutionStore>();
         builder.Services.AddSingleton<SkillEnforcerService>();
         builder.Services.AddSingleton<SessionSummaryStore>();
         builder.Services.AddSingleton<SessionRedirectStore>();
@@ -224,7 +226,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
         builder.Services.AddSingleton<IAgentLoopHook, EmbeddingGenerationHook>();
         builder.Services.Configure<SubconsciousOptions>(
-            builder.Configuration.GetSection(SubconsciousOptions.SectionName));
+            bootstrapConfiguration.GetSection(SubconsciousOptions.SectionName));
 
         // ── 潜意识记忆系统（阶段 2：LLM 抽取与后台整合）────────────────
         var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(
@@ -235,13 +237,13 @@ public static partial class PuddingServiceCollectionExtensions
             });
         builder.Services.AddSingleton(subconsciousChannel);
         builder.Services.AddSingleton<ISubconsciousOrchestrator, SubconsciousOrchestrator>();
-        if (builder.Configuration.GetValue<bool>(
+        if (bootstrapConfiguration.GetValue<bool>(
                 $"{SubconsciousOptions.SectionName}:{nameof(SubconsciousOptions.EnableLegacyConsolidationHook)}"))
         {
             builder.Services.AddSingleton<SubconsciousConsolidationHook>();
             builder.Services.AddSingleton<IAgentLoopHook>(sp => sp.GetRequiredService<SubconsciousConsolidationHook>());
         }
-        if (builder.Configuration.GetValue<bool>(
+        if (bootstrapConfiguration.GetValue<bool>(
                 $"{SubconsciousOptions.SectionName}:{nameof(SubconsciousOptions.EnableWorker)}"))
         {
             builder.Services.AddHostedService<SubconsciousWorkerService>();

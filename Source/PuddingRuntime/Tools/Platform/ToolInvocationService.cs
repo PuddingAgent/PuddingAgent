@@ -89,6 +89,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 MaxDelegationDepth = request.MaxDelegationDepth,
                 AllowSubDelegation = request.AllowSubDelegation,
                 RoleInPlan = request.RoleInPlan,
+                CapabilityPolicy = request.CapabilityPolicy,
                 ExecutionIdentity = request.ExecutionIdentity is null
                     ? null
                     : request.ExecutionIdentity with { ToolCallId = request.ToolCallId },
