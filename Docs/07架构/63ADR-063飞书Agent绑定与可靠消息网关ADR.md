@@ -1,8 +1,8 @@
 # ADR-063：飞书 Agent 绑定与可靠消息网关
 
-> 状态：**Accepted（V1.3 共享系统指令与 `/status` 已实现）**
-> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28
-> 范围：渠道服务商、渠道实例、Agent channel 引用、飞书 Connector、Message Gateway、Message Fabric、Conversation、Vision Artifact、CardKit 流式投影、回复投递
+> 状态：**Accepted（V1.4 Agent 显式语音回复已实现）**
+> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28；显式语音回复修订：2026-07-31
+> 范围：渠道服务商、渠道实例、Agent channel 引用、飞书 Connector、Message Gateway、Message Fabric、Conversation、Vision Artifact、CardKit 流式投影、TTS 语音回复、回复投递
 > 关联：[ADR-045 双向消息系统](46ADR-045双向消息系统与聊天室客户端ADR.md)、[ADR-057 可靠 Conversation 事件流](58ADR-057前后端可靠SSE与Conversation事件流架构ADR.md)、[ADR-059 Conversation 执行内核](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 
 ---
@@ -165,6 +165,9 @@ flowchart LR
     E --> R["ConversationReplyProjectionWorker<br/>text fallback"]
     S --> O["Message Fabric<br/>durable final-card Delivery"]
     R --> O
+    E --> V["voice fence / send_voice<br/>explicit Agent intent"]
+    V --> T["FeishuTtsProjection<br/>durable audio delivery"]
+    T --> O
     O --> CD["ConnectorDeliveryDispatcher"]
     CD --> F
 ```
@@ -232,6 +235,8 @@ V1 将绑定机器人的消息投递到 Agent main Conversation，使 Web 观察
 | Agent delivery → Conversation | 稳定 `clientRequestId/clientMessageId` | ADR-059 幂等受理 |
 | committed content delta → CardKit | `projectionId + eventSequence + operationSequence` | 持久化累计正文与 cursor；同序列、同 uuid 重试 |
 | terminal → connector delivery | `commandId + connectorId + externalMessageId` | 投影重放复用同一 MessageId |
+| voice fence terminal → TTS delivery | `gateway-reply-tts + commandId + connectorId + externalMessageId` | 与文本/卡片分离，合成、上传或发送失败只重试语音 delivery |
+| `send_voice` → TTS delivery | `gateway-reply-tts + commandId + toolCallId + connectorId + externalMessageId` | 只允许当前 Feishu Turn 的受信任路由；重放同一工具调用不重复发送 |
 | connector delivery → 飞书 | MessageId 作为飞书 `uuid` | 独立指数退避，最多 10 次后 dead-letter |
 
 关键不变量：
@@ -265,6 +270,95 @@ Conversation 的权威地位。
 故障只重试出站，不会重跑 Agent。普通 `ConversationReplyProjectionWorker` 在 projection 处于
 非 `failed` 状态时跳过同一终态，防止“流式卡片 + 第二条文本”重复答复。
 
+### 2.8 可替换 TTS 与飞书语音回复
+
+TTS 的业务入口统一为 `IVoiceSynthesisService`。Web `VoiceController` 与飞书
+`FeishuTtsDeliveryService` 都不得直接构造 DashScope/Qwen Provider；共享服务从
+`config/voice/providers.json` 解析启用的 Provider 与模型，再通过 `IVoiceProviderFactory`
+创建对应 `ITtsProvider`。显式切换 Provider 且未指定模型时，必须选择该 Provider 自己的默认
+TTS 模型，不能误用其它 Provider 的全局默认模型。当前实现仍使用已有 DashScope/Qwen/CosyVoice
+适配器，新增服务来源只需扩展 Provider 工厂/适配器，不改变 Web 或飞书渠道代码。
+
+飞书渠道实例增加：
+
+- `ttsRepliesEnabled`：默认关闭；开启后允许 Agent 通过 `voice` Markdown 围栏或 `send_voice`
+  工具显式发送语音；普通终态答复仍只发送文字。
+- `ttsVoice`：渠道级音色，默认 `Cherry`；Provider 与模型仍由系统语音配置统一选择。
+
+入站时把开关与音色快照进受信任的 `gateway_*` metadata，保证执行期间修改配置不会改变本次投影。
+Agent 可使用如下 Provider-neutral 协议声明语音，不要求 DeepSeek、Qwen 等模型理解飞书 API：
+
+````markdown
+```voice
+今天天气真好
+```
+````
+
+该协议必须进入 Agent 实际收到的系统提示，而不能只存在于渠道投影代码或文档中。
+`SystemPromptBuilder.AppendVoiceOutputProtocol` 是唯一规则来源，`SystemPromptBuilder` 的分层提示入口与
+`ContextPipeline` 的动态 SKILLS 层都复用它。系统提示要求 Agent 从当前 `pudding-message`
+信封的 `channel_type=feishu` metadata 判断是否适用，并明确区分：
+
+- `send_voice`：仅语音、立即发送；只传朗读文本，不传目标 ID，成功后不得再输出确认文字。
+- `voice` 围栏：最终答复的显式协议；每个正文非空、不可嵌套，多个围栏按顺序合并朗读，总计不超过
+  1000 字符。普通文字可以与围栏共存。
+- V1 无论纯围栏还是混合回复，都先原样显示完整最终 Markdown（包括围栏），再追加语音。
+
+这份协议位于动态 SKILLS 层，因此现有 Session 的静态提示缓存不会阻止规则更新；旧的
+`voice.enabled` / `voice.tts_text` 消息字段提示不得再进入 Agent system prompt。
+
+`AgentReplyVoiceDirective` 在 committed terminal reply 上统一解析该协议：
+
+- 只要存在有效的非空 `voice` 围栏，V1 都先把 Agent 完整原始 Markdown（包括围栏和围栏正文）
+  作为文字/CardKit 终态发送，再追加合并后的语音 delivery；纯围栏回复同样如此。
+- 保留围栏是 V1 的可观测性决策，便于直接在飞书客户端核对 Agent 实际输出。后续如改为隐藏，
+  必须作为独立的渠道呈现策略演进，不能修改 canonical terminal fact。
+- 普通回复、空围栏或未闭合围栏保持原样，只发送文字。
+- 渠道未开启 TTS 或语音正文超过 1000 字符时，不丢内容：完整原始 Markdown 照常发送，
+  但不创建语音 delivery。
+
+流式 CardKit 按 committed delta 原样投影，包括可能被 token 拆分的 `voice` 开围栏、围栏正文与
+结束围栏；终态仍以完整原始 Markdown 完成卡片，再排队语音。围栏在流式和终态中可见是预期行为，
+不得因 TTS 解析而改写或延迟 canonical 文本投影。
+
+`send_voice` 是另一条显式入口，只接受语音文本，不接受收件人或 Connector 参数。工具从当前
+main Conversation Turn 的受信任 Command metadata 解析回复目标；成功排队后写入
+`gateway_voice_tool_suppress_final_text=true`，终态投影不再发送工具调用后的模型确认文字。
+若文字 CardKit 已开始发布，工具拒绝发送并要求 Agent 改用混合 `voice` 围栏，从而保持
+“文字在前、语音在后”的确定顺序。
+
+`FeishuTtsProjection` 为围栏和工具共用的唯一 durable audio 构造器，生成
+`contentType=audio`、`visibility=system` 的稳定 delivery。音频 delivery 会移除所有 CardKit
+stream metadata，避免重试语音时重复 finalize 卡片。
+
+飞书 Connector 收到 typed `tts_audio` payload 后执行：
+
+1. 通过 `IVoiceSynthesisService` 请求 WAV 并物化为有界内存字节。
+2. `ManagedOggOpusTranscoder` 使用 NAudio.Core + Concentus，在 C# 进程内完成立体声/单声道 WAV
+   到 16 kHz、单声道、24 kbps Ogg/Opus 的短音频转码；不依赖 ffmpeg 或原生 codec。部分流式
+   TTS WAV 会用大整数表示未知 RIFF/data 长度，时长必须按实际读取的 PCM 样本数计算，不能信任头部
+   推导的 `TotalTime`。
+3. 调 `POST /open-apis/im/v1/files`，以 `file_type=opus` 上传并获取 `file_key`。
+4. 调原消息 reply API，发送 `msg_type=audio` 与 `{"file_key":"..."}`；MessageId 继续作为稳定 uuid。
+
+TTS 合成、下载、转码、上传或 audio reply 任一失败都只进入 Connector delivery 的既有
+retry/dead-letter 流程，不修改 succeeded Command，不重新执行 Agent，也不阻塞 Web canonical
+Conversation。V1 不缓存语音 artifact，也不为普通回复、失败/取消答复或系统指令自动生成语音。
+
+管理员可通过受控 HTTP 调试端口验证真实的 Pudding → Message Fabric → Connector → 飞书语音链路：
+
+- `GET /api/workspaces/{workspaceId}/debug/feishu-voice/channels/{channelId}/route` 只预览该频道
+  最近一次可信入站 Command 的脱敏回复路由。
+- `POST /api/workspaces/{workspaceId}/debug/feishu-voice/channels/{channelId}/send` 必须提交
+  `confirmSend=true`，并只允许把不超过 1000 字符的调试文本投递到上述可信路由；调用方不能提供
+  任意飞书 `chat_id` 或 `message_id`。
+- `GET /api/workspaces/{workspaceId}/debug/feishu-voice/messages/{messageId}` 只查询带调试标记的
+  typed audio 消息及其 delivery 状态。
+
+三个端口均要求 `admin` 角色。调试发送仍走 `FeishuTtsProjection` 和 durable delivery，不直接调用
+飞书 SDK，因此可以验证真实生产链路的合成、转码、上传、回复、重试与 delivered 状态。频道没有
+可信入站路由时必须先向机器人发送一条消息，禁止以手填外部目标绕过 Gateway 信任边界。
+
 ## 3. 飞书协议实现边界
 
 长连接实现遵循飞书官方 `pbbp2.Frame` wire contract：
@@ -281,6 +375,8 @@ Conversation 的权威地位。
 
 参考：[飞书官方 Node SDK](https://github.com/larksuite/node-sdk)、
 [获取消息中的资源文件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-resource/get)、
+[上传文件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/file/create)、
+[回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply?lang=zh-CN)、
 [官方 Go SDK CardKit resource](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/service/cardkit/v1/resource.go)
 与 [CardKit model](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/service/cardkit/v1/model.go)。
 
@@ -316,6 +412,10 @@ dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-resto
   --filter "FullyQualifiedName~MessageGateway|FullyQualifiedName~MessageFabric|FullyQualifiedName~VisionArtifactStorageServiceTests|FullyQualifiedName~VisualArtifactObservationServiceTests|FullyQualifiedName~ConnectorStreamProjectionSchemaBootstrapperTests"
 dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
   --filter "FullyQualifiedName~FeishuClientReplyTests"
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ManagedOggOpusTranscoderTests|FullyQualifiedName~DashScopeTtsProviderTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~VoiceSynthesisServiceTests|FullyQualifiedName~ConversationReplyProjectionWorkerTests|FullyQualifiedName~ChannelConfigurationFileServiceTests"
 dotnet build .\Source\PuddingAgent\PuddingAgent.csproj --no-restore
 ```
 
@@ -326,6 +426,9 @@ Fake 飞书测试保留真实 `MessageGatewayIngress → Message Fabric → Mess
 通过 durable delivery 更新最终正文并关闭 streaming，普通文本投影不得重复发送。
 图片用例另外锁定 `image_key → authenticated resource download → stable Vision Artifact →
 visionArtifactIds → canonical SubmitTurn`，同一飞书消息重投不得重复下载或创建第二个 artifact。
+语音用例锁定 Provider 自有默认模型解析、纯托管 WAV→Ogg/Opus、`file_type=opus` 上传、
+`msg_type=audio` reply、纯语音/混合围栏投影、流式卡片原样保留围栏、`send_voice` 当前 Turn
+路由与终态文字抑制，以及 CardKit 终态后独立追加无 stream metadata 的 audio delivery。
 Platform 测试锁定文本主模型强制视觉预识别、原生视觉模型不重复调用、视觉失败阻断主 Agent，以及
 观察结果进入上下文时的媒体 prompt-injection 边界。
 
@@ -361,3 +464,11 @@ CONTROL/ping；收到真实格式的 pbbp2 DATA/event 后可解析文本并回�
    `Inbound accepted`，文本主模型场景还必须在主 `[LlmInvocation]` 前出现
    `[VisualObservation] Analyze` 与 `[VisualObservation] Completed`。Web 用户气泡显示同一图片，
    Agent 的对象与显著文字识别应和原图一致，不再回复“只能看到 `[image]`”或无依据猜测。
+10. 在渠道管理开启“Agent 语音回复”并选择当前 TTS 模型支持的音色，分别让 Agent 返回纯
+    `voice` 围栏与“普通 Markdown + `voice` 围栏”。两种场景都先出现 Agent 的完整原始
+    Markdown（包括 `voice` 围栏），再出现一条可播放语音。日志出现
+    `[VoiceTts] Audio materialized`、`[FeishuTts] Audio prepared` 与对应的
+    `[ConnectorDelivery] Delivered`；普通回复不得自动追加语音。
+11. 让 Agent 调用 `send_voice`；工具不得接收任意目标，飞书收到当前消息线程中的语音，且
+    工具后的最终确认文字不再投递。临时让 TTS 或上传失败时，只有 audio delivery 重试，
+    Command 不重新执行。

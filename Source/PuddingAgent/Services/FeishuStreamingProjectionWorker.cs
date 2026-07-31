@@ -153,6 +153,12 @@ public sealed class FeishuStreamingProjectionWorker(
             {
                 return false;
             }
+            if (IsTrue(Get(
+                    metadata,
+                    MessageGatewayMetadata.VoiceToolSuppressFinalText)))
+            {
+                return false;
+            }
 
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             projection = new ConnectorStreamProjectionEntity
@@ -347,8 +353,7 @@ public sealed class FeishuStreamingProjectionWorker(
             {
                 [ConnectorStreamParameters.ResourceId] = RequireResourceId(projection),
                 [ConnectorStreamParameters.ElementId] = projection.ElementId,
-                [ConnectorStreamParameters.Content] =
-                    string.IsNullOrEmpty(projection.Content) ? "..." : projection.Content,
+                [ConnectorStreamParameters.Content] = projection.Content,
                 [ConnectorStreamParameters.Sequence] =
                     projection.OperationSequence.ToString(),
                 [ConnectorStreamParameters.Uuid] = StableId(
@@ -389,9 +394,14 @@ public sealed class FeishuStreamingProjectionWorker(
                 evt => evt.ConversationId == command.SessionId
                        && evt.Sequence == command.TerminalSequence,
                 ct);
-        var reply = terminalEvent is null ? null : ReadReply(terminalEvent.Payload);
-        if (string.IsNullOrWhiteSpace(reply))
+        var rawReply = terminalEvent is null ? null : ReadReply(terminalEvent.Payload);
+        if (string.IsNullOrWhiteSpace(rawReply))
             return false;
+        var plan = FeishuTtsProjection.CreatePlan(
+            command.Status,
+            rawReply,
+            metadata);
+        var reply = plan.TextContent ?? string.Empty;
         var replyBytes = Encoding.UTF8.GetByteCount(reply);
         if (replyBytes > MaxStreamingContentBytes)
         {
@@ -439,45 +449,67 @@ public sealed class FeishuStreamingProjectionWorker(
         metadata[ConnectorStreamMetadata.FinishSequence] =
             projection.OperationSequence.ToString();
 
-        command.ReplyProjectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var messageSystem = services.GetRequiredService<IMessageSystem>();
-        await messageSystem.SendAsync(
-            new MessageEnvelope
-            {
-                MessageId = replyMessageId,
-                From = new MessageAddress
+        if (!string.IsNullOrWhiteSpace(plan.TextContent))
+        {
+            await messageSystem.SendAsync(
+                new MessageEnvelope
                 {
-                    Kind = MessageEndpointKinds.Agent,
-                    Id = command.AgentInstanceId,
-                    WorkspaceId = command.WorkspaceId,
-                },
-                To =
-                [
-                    new MessageAddress
+                    MessageId = replyMessageId,
+                    From = new MessageAddress
                     {
-                        Kind = MessageEndpointKinds.Connector,
-                        Id = projection.ConnectorId,
+                        Kind = MessageEndpointKinds.Agent,
+                        Id = command.AgentInstanceId,
                         WorkspaceId = command.WorkspaceId,
                     },
-                ],
-                RoomId = command.SessionId,
-                ConversationId = command.SessionId,
-                ReplyToMessageId = externalMessageId,
-                CorrelationId = command.SessionId,
-                CausationId = command.TurnId,
-                Audience = MessageAudiences.Direct,
-                Visibility = MessageVisibilities.Private,
-                ContentType = MessageContentTypes.Text,
-                Content = reply,
-                Metadata = metadata,
-            },
-            ct);
+                    To =
+                    [
+                        new MessageAddress
+                        {
+                            Kind = MessageEndpointKinds.Connector,
+                            Id = projection.ConnectorId,
+                            WorkspaceId = command.WorkspaceId,
+                        },
+                    ],
+                    RoomId = command.SessionId,
+                    ConversationId = command.SessionId,
+                    ReplyToMessageId = externalMessageId,
+                    CorrelationId = command.SessionId,
+                    CausationId = command.TurnId,
+                    Audience = MessageAudiences.Direct,
+                    Visibility = MessageVisibilities.Private,
+                    ContentType = MessageContentTypes.Text,
+                    Content = plan.TextContent,
+                    Metadata = metadata,
+                },
+                ct);
+        }
+        string? ttsMessageId = null;
+        if (!string.IsNullOrWhiteSpace(plan.VoiceContent))
+        {
+            ttsMessageId = await FeishuTtsProjection.QueueAsync(
+                messageSystem,
+                command.CommandId,
+                command.WorkspaceId,
+                command.AgentInstanceId,
+                projection.ConnectorId,
+                command.SessionId,
+                command.TurnId,
+                externalMessageId,
+                projection.ExternalConversationId,
+                plan.VoiceContent,
+                metadata,
+                ct);
+        }
+        command.ReplyProjectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await db.SaveChangesAsync(ct);
         logger.LogInformation(
-            "[FeishuStream] Final delivery projected command={CommandId} projection={ProjectionId} message={MessageId}",
+            "[FeishuStream] Final delivery projected command={CommandId} projection={ProjectionId} message={MessageId} voiceDirective={VoiceDirective} ttsMessage={TtsMessageId}",
             command.CommandId,
             projection.ProjectionId,
-            replyMessageId);
+            string.IsNullOrWhiteSpace(plan.TextContent) ? null : replyMessageId,
+            plan.HasVoiceDirective,
+            ttsMessageId);
         return true;
     }
 

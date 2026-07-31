@@ -44,5 +44,12 @@ public sealed record FeishuChannelSettings
     public string AppId { get; init; } = "";
     public string AppSecret { get; init; } = "";
     public bool StreamingRepliesEnabled { get; init; } = true;
+    /// <summary>
+    /// Allow explicit Agent voice replies through a Markdown voice fence or the
+    /// send_voice tool. Provider and model selection remain centralized in
+    /// voice/providers.json.
+    /// </summary>
+    public bool TtsRepliesEnabled { get; init; }
+    public string TtsVoice { get; init; } = "Cherry";
     public IReadOnlyList<string> PrivilegedUserOpenIds { get; init; } = [];
 }

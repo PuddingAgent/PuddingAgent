@@ -239,7 +239,9 @@ public sealed class FakeFeishuRoundTripTests
         const string connectorId = "feishu:fake-stream-agent";
         const string externalMessageId = "om_fake_stream_source";
         const string externalChatId = "oc_fake_stream_chat";
-        const string replyText = "第一段，第二段，完成。";
+        const string replyText =
+            "第一段，第二段，完成。\n\n```voice\n这是追加的语音内容。\n```";
+        const string projectedVoice = "这是追加的语音内容。";
 
         var dataRoot = Path.Combine(
             Path.GetTempPath(),
@@ -330,6 +332,22 @@ public sealed class FakeFeishuRoundTripTests
                 "1",
                 update.Parameters[ConnectorStreamParameters.Sequence]);
 
+            await AppendStreamingDeltaAsync(
+                provider,
+                conversationId,
+                "完成。\n\n```voice\n这是追加的语音内容。\n```");
+            Assert.AreEqual(1, await streamWorker.ProjectBatchAsync());
+            var voiceAwareUpdate = fakeFeishu.Operations
+                .Where(item => item.Operation == ConnectorStreamOperations.Update)
+                .Single(item =>
+                    item.Parameters[ConnectorStreamParameters.Sequence] == "2");
+            Assert.AreEqual(
+                replyText,
+                voiceAwareUpdate.Parameters[ConnectorStreamParameters.Content]);
+            Assert.IsTrue(
+                voiceAwareUpdate.Parameters[ConnectorStreamParameters.Content]
+                    .Contains("```voice", StringComparison.Ordinal));
+
             await CompleteStreamingCommandAsync(
                 provider,
                 conversationId,
@@ -343,19 +361,30 @@ public sealed class FakeFeishuRoundTripTests
                 "An active card stream must suppress the duplicate terminal text reply.");
 
             Assert.AreEqual(1, await streamWorker.ProjectBatchAsync());
-            Assert.HasCount(1, fakeFeishu.SentMessages);
-            var final = fakeFeishu.SentMessages.Single();
+            Assert.HasCount(2, fakeFeishu.SentMessages);
+            var final = fakeFeishu.SentMessages.Single(message =>
+                !message.Metadata.ContainsKey(ConnectorPayloadMetadata.Kind));
             Assert.AreEqual(replyText, final.Content);
             Assert.AreEqual(
                 ConnectorStreamMetadata.FinalizeReplyMode,
                 final.Metadata[ConnectorStreamMetadata.ReplyMode]);
             Assert.AreEqual(
-                "2",
+                "3",
                 final.Metadata[ConnectorStreamMetadata.ContentSequence]);
             Assert.AreEqual(
-                "3",
+                "4",
                 final.Metadata[ConnectorStreamMetadata.FinishSequence]);
             Assert.AreEqual(externalMessageId, final.Metadata["message_id"]);
+            var audio = fakeFeishu.SentMessages.Single(message =>
+                message.Metadata.TryGetValue(
+                    ConnectorPayloadMetadata.Kind,
+                    out var kind)
+                && kind == ConnectorPayloadKinds.TtsAudio);
+            Assert.AreEqual(projectedVoice, audio.Content);
+            Assert.AreEqual("Cherry", audio.Metadata[MessageGatewayMetadata.TtsVoice]);
+            Assert.IsFalse(
+                audio.Metadata.ContainsKey(ConnectorStreamMetadata.ReplyMode));
+            Assert.AreNotEqual(final.Metadata["uuid"], audio.Metadata["uuid"]);
             Assert.AreEqual(0, await ordinaryProjector.ProjectBatchAsync());
 
             await using var verifyScope = provider.CreateAsyncScope();
@@ -525,6 +554,8 @@ public sealed class FakeFeishuRoundTripTests
                     [MessageGatewayMetadata.ExternalConversationId] = externalChatId,
                     [MessageGatewayMetadata.ExternalMessageId] = externalMessageId,
                     [MessageGatewayMetadata.ExternalUserId] = "ou_fake_sender",
+                    [MessageGatewayMetadata.TtsRepliesEnabled] = "true",
+                    [MessageGatewayMetadata.TtsVoice] = "Cherry",
                 }),
         });
         db.ConversationEvents.Add(new ConversationEventEntity
@@ -557,13 +588,16 @@ public sealed class FakeFeishuRoundTripTests
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var command = await db.ChatExecutionCommands.SingleAsync();
         var now = DateTimeOffset.UtcNow;
+        var terminalSequence = await db.ConversationEvents
+            .Where(evt => evt.ConversationId == conversationId)
+            .MaxAsync(evt => evt.Sequence) + 1;
         command.Status = "succeeded";
-        command.TerminalSequence = 2;
+        command.TerminalSequence = terminalSequence;
         command.CompletedAt = now.ToUnixTimeMilliseconds();
         db.ConversationEvents.Add(new ConversationEventEntity
         {
             ConversationId = conversationId,
-            Sequence = 2,
+            Sequence = terminalSequence,
             EventId = "fake-stream-terminal",
             WorkspaceId = command.WorkspaceId,
             TurnId = command.TurnId,
@@ -582,6 +616,36 @@ public sealed class FakeFeishuRoundTripTests
         await db.SaveChangesAsync();
     }
 
+    private static async Task AppendStreamingDeltaAsync(
+        IServiceProvider provider,
+        string conversationId,
+        string delta)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var command = await db.ChatExecutionCommands.SingleAsync();
+        var now = DateTimeOffset.UtcNow;
+        var sequence = await db.ConversationEvents
+            .Where(evt => evt.ConversationId == conversationId)
+            .MaxAsync(evt => evt.Sequence) + 1;
+        db.ConversationEvents.Add(new ConversationEventEntity
+        {
+            ConversationId = conversationId,
+            Sequence = sequence,
+            EventId = $"fake-stream-delta-{sequence}",
+            WorkspaceId = command.WorkspaceId,
+            TurnId = command.TurnId,
+            CommandId = command.CommandId,
+            RunId = command.RunId,
+            MessageId = command.MessageId,
+            Type = ConversationEventTypes.MessageContentAppended,
+            Payload = JsonSerializer.Serialize(new { delta }),
+            OccurredAt = now.ToString("O"),
+            CommittedAt = now.ToString("O"),
+        });
+        await db.SaveChangesAsync();
+    }
+
     private sealed class FakeFeishuConnector(
         string connectorId,
         string workspaceId,
@@ -594,7 +658,7 @@ public sealed class FakeFeishuRoundTripTests
             ConnectorId = connectorId,
             ConnectorType = "feishu",
             Protocol = "fake-feishu",
-            Capabilities = ["receive", "send", "stream"],
+            Capabilities = ["receive", "send", "stream", "audio"],
         };
 
         public List<ConnectorMessage> SentMessages { get; } = [];

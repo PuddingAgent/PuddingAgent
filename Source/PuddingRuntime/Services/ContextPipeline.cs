@@ -963,14 +963,7 @@ public sealed class ContextPipeline
         if (availableSkills.Count == 0 && pkgs.Count == 0 && runtimeSkillCount == 0)
             sb.AppendLine("(No skills or skill packages loaded.)");
 
-        // Voice 语音输出能力
-        sb.AppendLine();
-        sb.AppendLine("Voice output:");
-        sb.AppendLine("You may attach a `voice` field to messages suitable for spoken delivery.");
-        sb.AppendLine("- voice.enabled: true → frontend auto-plays");
-        sb.AppendLine("- voice.tts_text: optional spoken version (remove symbols, more conversational)");
-        sb.AppendLine("Use for: greetings, farewells, storytelling, explanations, casual chat.");
-        sb.AppendLine("Skip for: code, tables, tech specs, file paths, CLI.");
+        SystemPromptBuilder.AppendVoiceOutputProtocol(sb);
 
         return sb.ToString();
     }

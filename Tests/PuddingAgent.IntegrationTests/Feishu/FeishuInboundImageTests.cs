@@ -41,7 +41,9 @@ public sealed class FeishuInboundImageTests
                 "default",
                 "app_test",
                 "secret_test",
-                null);
+                null,
+                TtsRepliesEnabled: true,
+                TtsVoice: "Stella");
             var evt = CreateImageEvent();
 
             var envelope = await mapper.MapAsync(
@@ -58,6 +60,12 @@ public sealed class FeishuInboundImageTests
             Assert.AreEqual("image", envelope.MessageType);
             Assert.AreEqual("用户从飞书发送了一张图片。", envelope.MessageText);
             Assert.AreEqual("image", envelope.Metadata["inputMode"]);
+            Assert.AreEqual(
+                "true",
+                envelope.Metadata["gateway_tts_replies_enabled"]);
+            Assert.AreEqual(
+                "Stella",
+                envelope.Metadata["gateway_tts_voice"]);
             var artifactId = envelope.Metadata["visionArtifactId"];
             Assert.AreEqual(artifactId, envelope.Metadata["visionArtifactIds"]);
             Assert.AreEqual(artifactId, retried.Metadata["visionArtifactId"]);

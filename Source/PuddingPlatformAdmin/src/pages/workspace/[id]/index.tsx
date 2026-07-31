@@ -1036,6 +1036,8 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
     form.setFieldsValue({
       providerId: providers[0]?.providerId ?? 'feishu',
       streamingRepliesEnabled: true,
+      ttsRepliesEnabled: false,
+      ttsVoice: 'Cherry',
       privilegedUserOpenIds: [],
       isEnabled: true,
     });
@@ -1053,6 +1055,8 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       appId: item.appId,
       appSecret: undefined,
       streamingRepliesEnabled: item.streamingRepliesEnabled,
+      ttsRepliesEnabled: item.ttsRepliesEnabled,
+      ttsVoice: item.ttsVoice || 'Cherry',
       privilegedUserOpenIds: item.privilegedUserOpenIds,
       isEnabled: item.isEnabled,
     });
@@ -1110,6 +1114,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
           <Text type={r.hasAppSecret ? 'success' : 'danger'} style={{ fontSize: 12 }}>
             {r.hasAppSecret ? 'Secret 已配置' : 'Secret 未配置'}
             {r.streamingRepliesEnabled ? ' · 流式回复' : ' · 普通回复'}
+            {r.ttsRepliesEnabled ? ` · 语音回复（${r.ttsVoice}）` : ''}
           </Text>
         </Space>
       ),
@@ -1219,6 +1224,17 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             extra="只控制 /yolo 等高权限系统指令，不限制普通聊天。"
           />
           <ProFormSwitch name="streamingRepliesEnabled" label="CardKit 流式回复" />
+          <ProFormSwitch
+            name="ttsRepliesEnabled"
+            label="Agent 语音回复"
+            extra="允许 Agent 使用 send_voice 工具或 Markdown 的 ```voice 代码块发送语音；V1 会保留 Agent 的完整 Markdown（含围栏）并追加语音，方便核对原始输出。"
+          />
+          <ProFormText
+            name="ttsVoice"
+            label="TTS 音色"
+            placeholder="Cherry"
+            extra="音色必须由当前默认 TTS 模型支持。"
+          />
           <ProFormSwitch name="isEnabled" label="启用" />
         </ProForm>
       </Drawer>

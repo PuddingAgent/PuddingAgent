@@ -22,6 +22,7 @@ public static class MessageAudiences
 public static class MessageContentTypes
 {
     public const string Text = "text";
+    public const string Audio = "audio";
     /// <summary>System heartbeat / proactive check-in messages.</summary>
     public const string Heartbeat = "heartbeat";
 }

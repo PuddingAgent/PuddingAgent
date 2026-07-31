@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-28 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Web/飞书共享 `/status` 状态快照与斜杠指令入口
+> 最后更新: 2026-07-31 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +可替换 TTS、纯 C# Ogg/Opus 转码与飞书可靠语音回复
 
 ---
 
@@ -87,7 +87,7 @@ Source/
 | `Services/ContextCompactionService.cs` | 上下文压缩执行与 ContextHealth 用量解析；provider/snapshot/Memory 均无数据时，以最近 500 条 canonical ChatMessages 估算并标记 `canonical_chat_transcript`，避免重启后错误显示 0 used |
 | `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估 + 容量预测（PredictCapacity） |
 | `Services/ContextAssemblyService.cs` | 上下文组装（System Prompt + 历史 + 记忆） |
-| `Services/ContextPipeline.cs` | 上下文管线编排；L6 召回内容严格限制为 5K tokens，并在裁剪完成后才计入 `UsedTokens`，保证注入内容、层快照和预算账目一致 |
+| `Services/SystemPromptBuilder.cs` + `Services/ContextPipeline.cs` | 系统提示与上下文管线编排；两条提示入口复用唯一的飞书语音协议，依据入站 `channel_type=feishu` 指导 Agent 选择 `send_voice` 或 `voice` 围栏，并锁定 V1 原文可见后追加语音；L6 召回内容严格限制为 5K tokens，并在裁剪完成后才计入 `UsedTokens`，保证注入内容、层快照和预算账目一致 |
 
 ### 工具系统
 | 文件 | 用途 |
@@ -260,7 +260,7 @@ Source/
 ### 工作空间 Agent 管理前端
 | 文件 | 用途 |
 |------|------|
-| `PuddingPlatformAdmin/src/pages/workspace/[id]/index.tsx` | 工作空间 Agent 列表、渠道服务商、渠道管理及其它 Workspace 配置入口；渠道 Secret 只允许写入、不回显 |
+| `PuddingPlatformAdmin/src/pages/workspace/[id]/index.tsx` | 工作空间 Agent 列表、渠道服务商、渠道管理及其它 Workspace 配置入口；渠道 Secret 只允许写入、不回显；飞书可独立开启成功终态语音并配置渠道音色 |
 | `PuddingPlatformAdmin/src/pages/workspace/[id]/WorkspaceAgentSettingsDrawer.tsx` | Agent 自包含设置抽屉；单 Form 的六个互斥面板、错误分组跳转、脏表单关闭确认、Markdown/高级环境折叠与 `maxReplyTokens` 编辑 |
 | `PuddingPlatformAdmin/src/pages/workspace/[id]/SmartRoleModelFields.tsx` | 7 个 Smart 子代理角色模型下拉；读取服务商模型目录并写入 Agent manifest 字段，支持批量填充未配置项或全部角色 |
 
@@ -299,14 +299,18 @@ Source/
 | `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；持久化渠道路由事实，并从 `queued/retrying` 投递发现待处理 Agent/Connector 目标 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
 | `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
-| `Services/MessageGateway/ConversationTerminalMessageFormatter.cs` + `ConversationReplyProjectionWorker.cs` | 从 succeeded/failed/cancelled Command 的 committed terminal event 生成统一用户文案并幂等创建 Connector delivery；失败包含稳定错误码与原因；活跃 CardKit stream 拥有终态投影，stream `failed` 后走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
+| `PuddingCore/Models/AgentReplyVoiceDirective.cs` + `Services/MessageGateway/ConversationTerminalMessageFormatter.cs` + `ConversationReplyProjectionWorker.cs` + `FeishuTtsProjection.cs` | 从 succeeded/failed/cancelled Command 的 committed terminal event 生成统一用户文案并幂等创建 Connector delivery；成功答复仅在显式 `voice` 围栏时追加 typed audio，V1 的纯围栏与混合回复都先发送含围栏的完整原始 Markdown，配置关闭/超长时保留原文且只发文字；活跃 CardKit stream 拥有终态投影，stream `failed` 后走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
+| `PuddingCore/Abstractions/IVoiceSynthesisService.cs` + `PuddingPlatform/Services/VoiceSynthesisService.cs` + `PuddingRuntime/Services/VoiceProviderFactory.cs` | Web/渠道共享的 Provider-neutral TTS 边界；从 `config/voice/providers.json` 解析 Provider/模型与 Provider 自有默认模型，通过 `ITtsProvider` 适配 Qwen/CosyVoice 等服务，并将 URL/Provider 输出收敛为有界音频字节 |
+| `PuddingCore/Abstractions/IAudioTranscoder.cs` + `PuddingRuntime/Services/ManagedOggOpusTranscoder.cs` | 进程内短音频转码边界；NAudio.Core 解析/降混 WAV，Concentus 重采样并编码 16 kHz 单声道 24 kbps Ogg/Opus，不依赖 ffmpeg/native codec；按实际读取的 PCM 样本计算时长，兼容未知长度占位的流式 WAV 头 |
 | `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 channel-owned Connector、渠道实例与 Agent `channelIds` 引用，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按渠道 `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
 | `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从启用的渠道服务商/渠道实例和 Agent 引用动态装配一 Agent 一机器人；Connector 身份为 `feishu:{channelId}`，拒绝重复 AppId，凭据不进入公共 DTO |
-| `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1 实体创建、引用回复、累计元素更新与关闭 streaming；图片 `image_key` 在 ACK 前经消息资源 API 下载、签名校验并以稳定 ID 落入 Web 共用 Vision Artifact，再用 `visionArtifactIds` 进入 canonical Conversation；入站使用 `message_type`，出站 OpenAPI 使用 `msg_type` |
-| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 投影到同一飞书流式卡片；sequence/uuid 稳定重试，failed/cancelled 终态用统一错误文案关闭卡片；任一投影阶段连续失败 5 次进入 `failed` 并回退普通文本，不无限重试、不重跑 Agent |
+| `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `PuddingAgent/Services/FeishuTtsDeliveryService.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1 实体创建/更新/关闭；图片入站落 Web 共用 Vision Artifact；语音出站经共享 TTS、纯托管 Opus 转码、file upload 与 `msg_type=audio` reply；入站使用 `message_type`，出站使用 `msg_type` |
+| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 原样投影到同一飞书流式卡片，V1 有意保留 `voice` 围栏供客户端核对 Agent 输出，并在 durable final-card delivery 后追加语音；sequence/uuid 稳定重试；failed/cancelled 用统一错误文案关闭卡片；任一投影阶段连续失败 5 次进入 `failed` 并回退普通文本，不无限重试、不重跑 Agent |
+| `PuddingAgent/Tools/SendVoiceTool.cs` | Agent 显式语音工具；仅从当前 Feishu main Turn 的受信任 Command metadata 解析目标，以 `commandId + toolCallId` 幂等排队 audio delivery，不允许模型指定任意收件人；成功后抑制工具调用后的终态确认文字，已开始文字流时拒绝并提示改用混合 `voice` 围栏 |
 | `Data/Entities/ConnectorStreamProjectionEntity.cs` + `Services/ConnectorStreamProjectionSchemaBootstrapper.cs` | `connector_stream_projections` 的 CardKit resource、累计正文、Conversation cursor、操作 sequence、重试与生命周期状态；SQLite 幂等建表升级 |
 | `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter；CardKit 终态 ACK 后同步完成 stream projection，出站故障不重跑 Agent |
-| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片 metadata 进入真实 SQLite Message Fabric/canonical SubmitTurn、图片资源稳定落盘与重投复用，以及 CardKit create/publish/delta/final durable delivery，只替换外部飞书与 Agent 执行结果 |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` + `SendVoiceToolTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片/TTS metadata 进入真实 SQLite Message Fabric/canonical SubmitTurn、图片资源稳定落盘与重投复用、CardKit create/publish/delta/final durable delivery、V1 流式围栏原样可见、无 stream metadata 的独立 audio delivery，以及 `send_voice` 当前 Turn 路由/禁用保护/终态文字抑制 |
+| `PuddingRuntimeTests/Services/ContextPipelineLayerTests.cs` + `ManagedOggOpusTranscoderTests.cs` + `PuddingPlatformTests/Services/VoiceSynthesisServiceTests.cs` + `Tests/HarnessAgent.Core.Tests/Feishu/FeishuClientReplyTests.cs` | TTS/语音协议回归；锁定 Agent 最终系统提示只包含一份 canonical 飞书语音协议且不再暴露旧 `voice.enabled` 规则、Provider 自有默认模型、WAV→Ogg/Opus 参数与文件头、飞书 multipart `file_type=opus` 上传和稳定 uuid audio reply |
 | `PuddingPlatformTests/Services/VisualArtifactObservationServiceTests.cs` | 视觉预处理回归；覆盖文本主模型强制观察、原生视觉直通、视觉失败阻断，以及观察上下文的媒体 prompt-injection 安全边界 |
 | `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 channel-owned open_id 白名单、`/whoami` 身份透传、`/status` 非特权共享处理、`/compact` 只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
 | `PuddingPlatformTests/Services/ChannelConfigurationFileServiceTests.cs` | 渠道文件配置回归；覆盖 Secret 不回显、空 Secret 更新保留、旧 Agent 飞书配置迁移和重复 App ID 拒绝 |
@@ -328,6 +332,7 @@ Source/
 | `Api/ToolCatalogApiController.cs` | 工具目录 |
 | `Api/WorkspaceSkillApiController.cs` | Workspace Skill CRUD；MCP 配置校验/规范化、热重载与 runtime-status 查询 |
 | `Api/ChannelProviderApiController.cs` / `Api/WorkspaceChannelApiController.cs` | 渠道服务商目录与 Workspace 渠道实例 API；后者同步维护 Agent channel 引用且不返回 Secret |
+| `Api/FeishuVoiceDebugController.cs` | admin-only 飞书真实语音链路调试 API；预览最近可信入站路由，显式确认后经 Message Fabric 排队 typed audio，并查询 delivery 状态；禁止手填任意飞书目标 |
 | `Api/MemoryLibraryAdminController.cs` | 记忆图书馆管理 |
 
 ---

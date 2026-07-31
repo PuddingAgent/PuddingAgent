@@ -65,7 +65,7 @@ public sealed class DashScopeTtsProvider : ITtsProvider
     {
         var body = BuildRequestBody(request, stream: false);
         var json = await PostAsync(body, stream: false, ct);
-        return ParseNonStreamResponse(json, request.MessageId);
+        return ParseNonStreamResponse(json, request);
     }
 
     /// <summary>流式语音合成（SSE）。POST + X-DashScope-SSE → IAsyncEnumerable&lt;AudioDelta&gt;。</summary>
@@ -185,27 +185,30 @@ public sealed class DashScopeTtsProvider : ITtsProvider
     }
 
     private static VoiceSynthesisResult ParseNonStreamResponse(
-        string json, string messageId)
+        string json,
+        VoiceSynthesisRequest request)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         var output = root.GetProperty("output");
-        var audio = output.GetProperty("audio");
 
         // CosyVoice non-stream: output.audio.url
         // Qwen-TTS non-stream: output.audio_url
-        var audioUrl = (audio.TryGetProperty("url", out var url) ? url.GetString()
+        var audioUrl = (output.TryGetProperty("audio", out var audio)
+                        && audio.TryGetProperty("url", out var url)
+                ? url.GetString()
             : output.TryGetProperty("audio_url", out var au) ? au.GetString()
             : null) ?? "";
 
         return new VoiceSynthesisResult
         {
-            MessageId = messageId,
+            MessageId = request.MessageId,
+            DeliveryId = request.DeliveryId,
             AudioUrl = audioUrl,
-            Format = VoiceAudioFormats.Mp3,
-            SampleRate = 24_000,
-            Provider = VoiceSynthesisProviders.DashScope,
-            Model = "cosyvoice-v3-flash",
+            Format = request.AudioFormat,
+            SampleRate = request.SampleRate,
+            Provider = request.Provider,
+            Model = request.Model,
         };
     }
 

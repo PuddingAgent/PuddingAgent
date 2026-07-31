@@ -13,6 +13,7 @@ public sealed class FeishuConnectorFactory(
     AgentManifestCatalog manifests,
     ChannelConfigurationFileService channels,
     FeishuInboundMessageMapper inboundMessageMapper,
+    FeishuTtsDeliveryService ttsDeliveryService,
     ILoggerFactory loggerFactory,
     ILogger<FeishuConnectorFactory> logger)
 {
@@ -92,9 +93,12 @@ public sealed class FeishuConnectorFactory(
                     binding.Channel.Feishu!.AppId,
                     binding.Channel.Feishu.AppSecret,
                     binding.Channel.Description,
-                    binding.Channel.ChannelId),
+                    binding.Channel.ChannelId,
+                    binding.Channel.Feishu.TtsRepliesEnabled,
+                    binding.Channel.Feishu.TtsVoice),
                 loggerFactory.CreateLogger<FeishuConnector>(),
-                inboundMessageMapper))
+                inboundMessageMapper,
+                ttsDeliveryService))
             .ToList();
 
         logger.LogInformation(

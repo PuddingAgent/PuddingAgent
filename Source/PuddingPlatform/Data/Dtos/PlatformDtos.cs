@@ -151,7 +151,9 @@ public record WorkspaceChannelDto(
     List<string> PrivilegedUserOpenIds,
     bool IsEnabled,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
+    DateTimeOffset UpdatedAt,
+    bool TtsRepliesEnabled = false,
+    string TtsVoice = "Cherry"
 );
 
 public record UpsertWorkspaceChannelRequest(
@@ -163,5 +165,7 @@ public record UpsertWorkspaceChannelRequest(
     string? AppSecret,
     bool StreamingRepliesEnabled,
     List<string>? PrivilegedUserOpenIds,
-    bool IsEnabled
+    bool IsEnabled,
+    bool TtsRepliesEnabled = false,
+    string? TtsVoice = null
 );

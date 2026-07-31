@@ -104,6 +104,12 @@ public sealed record VoiceSynthesisResult
     public required string MessageId { get; init; }
     public string? DeliveryId { get; init; }
     public string? AudioArtifactId { get; init; }
+    /// <summary>
+    /// Provider-neutral audio payload materialized by the application-level
+    /// synthesis service. Vendor adapters may return only <see cref="AudioUrl"/>;
+    /// callers should depend on IVoiceSynthesisService when bytes are required.
+    /// </summary>
+    public byte[]? AudioBytes { get; init; }
     public string? AudioUrl { get; init; }
     public long? ExpiresAt { get; init; }
     public required string Format { get; init; }

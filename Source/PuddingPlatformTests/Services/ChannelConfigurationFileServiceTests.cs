@@ -30,11 +30,15 @@ public sealed class ChannelConfigurationFileServiceTests
                     "top-secret",
                     true,
                     [" ou_admin ", "ou_admin"],
-                    true));
+                    true,
+                    TtsRepliesEnabled: true,
+                    TtsVoice: " Stella "));
 
             Assert.IsTrue(created.HasAppSecret);
             Assert.AreEqual("cli_channel_test", created.AppId);
             Assert.AreEqual("agent-01", created.BoundAgentId);
+            Assert.IsTrue(created.TtsRepliesEnabled);
+            Assert.AreEqual("Stella", created.TtsVoice);
             CollectionAssert.AreEqual(
                 new[] { "ou_admin" },
                 created.PrivilegedUserOpenIds.ToArray());
@@ -59,13 +63,19 @@ public sealed class ChannelConfigurationFileServiceTests
                     AppSecret: " ",
                     StreamingRepliesEnabled: false,
                     PrivilegedUserOpenIds: [],
-                    IsEnabled: true));
+                    IsEnabled: true,
+                    TtsRepliesEnabled: false,
+                    TtsVoice: "Cherry"));
 
             Assert.IsTrue(updated.HasAppSecret);
             Assert.IsFalse(updated.StreamingRepliesEnabled);
+            Assert.IsFalse(updated.TtsRepliesEnabled);
+            Assert.AreEqual("Cherry", updated.TtsVoice);
             var stored = await service.GetChannelAsync(created.ChannelId);
             Assert.IsNotNull(stored);
             Assert.AreEqual("top-secret", stored!.Feishu!.AppSecret);
+            Assert.IsFalse(stored.Feishu.TtsRepliesEnabled);
+            Assert.AreEqual("Cherry", stored.Feishu.TtsVoice);
         }
         finally
         {

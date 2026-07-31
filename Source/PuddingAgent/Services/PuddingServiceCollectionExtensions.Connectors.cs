@@ -80,6 +80,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IPuddingConnector>(sp => sp.GetRequiredService<MqttConnector>());
 
         // ── 飞书连接器（从 Agent manifest 动态创建；一个 Agent 一个机器人）──────
+        builder.Services.AddSingleton<FeishuTtsDeliveryService>();
         builder.Services.AddSingleton<FeishuConnectorFactory>();
 
         // ── 网关鉴权（SM2 + 白名单）────────────────────────
@@ -240,7 +241,13 @@ public static partial class PuddingServiceCollectionExtensions
         {
             client.Timeout = TimeSpan.FromSeconds(60);
         });
+        builder.Services.AddHttpClient("VoiceAudioDownload", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
         builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceProviderFactory, PuddingRuntime.Services.VoiceProviderFactory>();
+        builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceSynthesisService, PuddingPlatform.Services.VoiceSynthesisService>();
+        builder.Services.AddSingleton<PuddingCode.Abstractions.IAudioTranscoder, PuddingRuntime.Services.ManagedOggOpusTranscoder>();
 
     }
 

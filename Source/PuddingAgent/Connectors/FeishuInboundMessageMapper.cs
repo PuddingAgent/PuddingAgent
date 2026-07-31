@@ -40,6 +40,12 @@ public sealed class FeishuInboundMessageMapper(
             ["chat_id"] = chatId,
             ["sender_id"] = senderId,
             ["feishu_message_type"] = messageType,
+            [MessageGatewayMetadata.TtsRepliesEnabled] =
+                binding.TtsRepliesEnabled ? "true" : "false",
+            [MessageGatewayMetadata.TtsVoice] =
+                string.IsNullOrWhiteSpace(binding.TtsVoice)
+                    ? "Cherry"
+                    : binding.TtsVoice,
         };
 
         var text = evt.ExtractText();

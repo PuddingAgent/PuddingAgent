@@ -88,6 +88,33 @@ public sealed class ContextPipelineLayerTests
     }
 
     [TestMethod]
+    public async Task AssembleAsync_Includes_Canonical_Feishu_Voice_Protocol()
+    {
+        var store = new ContextAssemblyStore();
+        var pipeline = CreatePipeline(store);
+
+        var result = await pipeline.AssembleAsync(CreateRequest(), CancellationToken.None);
+
+        StringAssert.Contains(result.SystemPrompt, "Voice output protocol (Feishu):");
+        StringAssert.Contains(result.SystemPrompt, "`channel_type=feishu`");
+        StringAssert.Contains(result.SystemPrompt, "Choose exactly one of these mechanisms:");
+        StringAssert.Contains(result.SystemPrompt, "Use the `send_voice` tool for an immediate voice-only reply.");
+        StringAssert.Contains(result.SystemPrompt, "The combined content of all `voice` fences must not exceed 1000 characters.");
+        StringAssert.Contains(result.SystemPrompt, "sends the entire final Markdown unchanged, including all `voice` fences");
+        StringAssert.Contains(result.SystemPrompt, "A final answer containing only a `voice` fence still shows that complete fence before the audio.");
+        StringAssert.Contains(result.SystemPrompt, "这是文字说明。");
+        StringAssert.Contains(result.SystemPrompt, "今天天气真好");
+        Assert.IsFalse(result.SystemPrompt.Contains("voice.enabled", StringComparison.Ordinal),
+            "The obsolete voice metadata protocol must not reach the Agent.");
+        Assert.AreEqual(
+            1,
+            result.SystemPrompt.Split(
+                "Voice output protocol (Feishu):",
+                StringSplitOptions.None).Length - 1,
+            "The canonical voice protocol should appear exactly once in the final system prompt.");
+    }
+
+    [TestMethod]
     public async Task AssembleAsync_Cache_Gives_Same_Output()
     {
         var store = new ContextAssemblyStore();

@@ -20,6 +20,7 @@ public sealed class FeishuConnector : IPuddingConnector
     private readonly ILogger<FeishuConnector> _logger;
     private readonly FeishuConnectorBinding _binding;
     private readonly FeishuInboundMessageMapper _inboundMessageMapper;
+    private readonly FeishuTtsDeliveryService _ttsDeliveryService;
     private readonly FeishuConfig _config;
     private ConnectorContext? _context;
     private FeishuClient? _client;
@@ -37,11 +38,13 @@ public sealed class FeishuConnector : IPuddingConnector
     public FeishuConnector(
         FeishuConnectorBinding binding,
         ILogger<FeishuConnector> logger,
-        FeishuInboundMessageMapper inboundMessageMapper)
+        FeishuInboundMessageMapper inboundMessageMapper,
+        FeishuTtsDeliveryService ttsDeliveryService)
     {
         _binding = binding;
         _logger = logger;
         _inboundMessageMapper = inboundMessageMapper;
+        _ttsDeliveryService = ttsDeliveryService;
         _config = new FeishuConfig
         {
             AppId = binding.AppId,
@@ -56,7 +59,7 @@ public sealed class FeishuConnector : IPuddingConnector
             Protocol = "Feishu OpenAPI",
             Version = "1.1",
             Description = $"飞书机器人（Agent: {binding.AgentId}）",
-            Capabilities = ["receive", "send", "stream"],
+            Capabilities = ["receive", "send", "stream", "audio"],
         };
     }
 
@@ -136,6 +139,13 @@ public sealed class FeishuConnector : IPuddingConnector
                 ? stableUuid
                 : null;
             if (string.Equals(
+                    Get(message.Metadata, ConnectorPayloadMetadata.Kind),
+                    ConnectorPayloadKinds.TtsAudio,
+                    StringComparison.Ordinal))
+            {
+                await SendTtsAudioAsync(message, uuid, ct);
+            }
+            else if (string.Equals(
                     Get(message.Metadata, ConnectorStreamMetadata.ReplyMode),
                     ConnectorStreamMetadata.FinalizeReplyMode,
                     StringComparison.Ordinal))
@@ -199,6 +209,59 @@ public sealed class FeishuConnector : IPuddingConnector
                 Descriptor.ConnectorId,
                 _binding.AgentId);
             throw;
+        }
+    }
+
+    private async Task SendTtsAudioAsync(
+        ConnectorMessage message,
+        string? uuid,
+        CancellationToken ct)
+    {
+        if (_client is null)
+            throw new InvalidOperationException("Feishu connector not started");
+        if (string.IsNullOrWhiteSpace(uuid))
+            throw new InvalidOperationException("Feishu TTS delivery requires a stable uuid.");
+
+        var audio = await _ttsDeliveryService.CreateAudioAsync(
+            _binding,
+            message,
+            ct);
+        var upload = await _client.UploadAudioAsync(
+            audio.Content,
+            $"pudding-{uuid}.opus",
+            audio.DurationMs,
+            ct);
+        var fileKey = upload.Data?.FileKey;
+        if (upload.Code != 0 || string.IsNullOrWhiteSpace(fileKey))
+        {
+            throw new InvalidOperationException(
+                $"Feishu audio upload failed: code={upload.Code}, msg={upload.Msg}");
+        }
+
+        SendMessageResponse sendResult;
+        if (message.Metadata.TryGetValue("message_id", out var messageId)
+            && !string.IsNullOrWhiteSpace(messageId))
+        {
+            sendResult = await _client.ReplyAudioAsync(
+                messageId,
+                fileKey,
+                uuid,
+                ct);
+        }
+        else
+        {
+            var content = JsonSerializer.Serialize(new { file_key = fileKey });
+            sendResult = await _client.SendMessageAsync(
+                message.Target,
+                "audio",
+                content,
+                uuid,
+                ct);
+        }
+        if (sendResult.Code != 0)
+        {
+            throw new InvalidOperationException(
+                $"Feishu audio send failed: code={sendResult.Code}, msg={sendResult.Msg}");
         }
     }
 
@@ -605,4 +668,6 @@ public sealed record FeishuConnectorBinding(
     string AppId,
     string AppSecret,
     string? Description,
-    string? ChannelId = null);
+    string? ChannelId = null,
+    bool TtsRepliesEnabled = false,
+    string TtsVoice = "Cherry");

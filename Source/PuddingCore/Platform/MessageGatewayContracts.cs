@@ -37,4 +37,8 @@ public static class MessageGatewayMetadata
     public const string GatewayCommand = "gateway_command_text";
     public const string ReplyProjectedMessageId = "gateway_reply_message_id";
     public const string IdempotencyKey = "gateway_idempotency_key";
+    public const string TtsRepliesEnabled = "gateway_tts_replies_enabled";
+    public const string TtsVoice = "gateway_tts_voice";
+    public const string VoiceToolSuppressFinalText =
+        "gateway_voice_tool_suppress_final_text";
 }

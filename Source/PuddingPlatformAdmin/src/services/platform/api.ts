@@ -1846,6 +1846,8 @@ export interface WorkspaceChannelDto {
   appId?: string;
   hasAppSecret: boolean;
   streamingRepliesEnabled: boolean;
+  ttsRepliesEnabled: boolean;
+  ttsVoice: string;
   privilegedUserOpenIds: string[];
   isEnabled: boolean;
   createdAt: string;
@@ -1860,6 +1862,8 @@ export interface UpsertWorkspaceChannelRequest {
   appId?: string;
   appSecret?: string;
   streamingRepliesEnabled: boolean;
+  ttsRepliesEnabled: boolean;
+  ttsVoice?: string;
   privilegedUserOpenIds?: string[];
   isEnabled: boolean;
 }

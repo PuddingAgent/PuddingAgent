@@ -72,6 +72,18 @@ public sealed record ConnectorMessage
     public Dictionary<string, string> Metadata { get; init; } = [];
 }
 
+/// <summary>Stable metadata keys for typed Connector deliveries.</summary>
+public static class ConnectorPayloadMetadata
+{
+    public const string Kind = "connector_payload_kind";
+}
+
+/// <summary>Typed Connector delivery payloads supported by the channel layer.</summary>
+public static class ConnectorPayloadKinds
+{
+    public const string TtsAudio = "tts_audio";
+}
+
 /// <summary>连接器操作结果。</summary>
 public sealed record ConnectorOperationResult
 {

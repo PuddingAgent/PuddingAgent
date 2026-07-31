@@ -1711,6 +1711,107 @@ dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore
   --filter "FullyQualifiedName~DurableWorker_PeriodicEvolutionJob_ShouldPersistReportBeforeCompleting"
 ```
 
+### 11.22 飞书显式语音未出现，或原始 `voice` 围栏不符合预期
+
+飞书 TTS 是独立出站投递，不应通过重跑 Agent 修复。先按以下链路定位：
+
+```text
+committed succeeded terminal with voice fence
+  -> FeishuTtsProjection (typed audio delivery)
+  -> ConnectorDeliveryDispatcher
+  -> IVoiceSynthesisService / configured ITtsProvider
+  -> ManagedOggOpusTranscoder
+  -> Feishu file upload
+  -> Feishu audio reply
+```
+
+普通终态回复不会自动生成语音。确认 Agent 最终回复包含完整、非空、独占行的 `voice` 围栏，
+或成功调用了 `send_voice`；同时确认渠道 manifest 的
+`feishu.ttsRepliesEnabled=true`，`ttsVoice` 属于当前默认 TTS 模型支持的音色，并在修改后
+重启 Connector。V1 会把 Agent 的完整 Markdown（包括 `voice` 围栏）先显示在 CardKit/文字回复中，
+随后追加语音；这不是标记泄露。失败时按同一个 audio message/delivery ID 查询：
+
+如果 Agent 完全没有按协议输出，先验证实际 ContextPipeline 的系统提示已经包含 canonical 规则，
+且旧的 `voice.enabled` 提示已移除：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ContextPipelineLayerTests.AssembleAsync_Includes_Canonical_Feishu_Voice_Protocol"
+rg -n "Voice output protocol|voice\.enabled|voice\.tts_text" `
+  .\Source\PuddingRuntime\Services\SystemPromptBuilder.cs `
+  .\Source\PuddingRuntime\Services\ContextPipeline.cs
+```
+
+系统提示要求从当前 `pudding-message` 的 `channel_type=feishu` metadata 判断渠道；该字段由
+`AgentExecutionService.BuildOriginMetadata` 从受信任的 Message Origin 写入。不要让 Agent
+根据用户正文猜测渠道，也不要把飞书目标 ID 写入提示词。
+
+```powershell
+rg -n "\[SendVoiceTool\]|\[FeishuVoiceDebug\]|\[VoiceTts\]|\[FeishuTts\]|voiceDirective=|\[ConnectorDelivery\].*(Retrying|Dead-lettered|Delivered)|Feishu audio" `
+  .\tmp\dev\backend.out.log .\tmp\dev\backend.err.log
+```
+
+| 证据 | 结论 |
+|---|---|
+| 普通回复没有 `ttsMessage=` | 正常；只有显式围栏或 `send_voice` 才生成语音 |
+| 围栏终态日志没有 `voiceDirective=True` | 围栏为空、未闭合、不是独占行，或 Command 非 succeeded |
+| 围栏原文显示后没有追加语音 | 渠道 TTS 未开启、语音正文超过 1000 字符，或 audio delivery 仍在 retry/dead-letter |
+| CardKit 显示 `voice` 围栏原文 | V1 预期行为；运行 `FakeFeishuStreamingCard_ProjectsDeltasAndFinalizesThroughDurableDelivery` 可验证原样投影 |
+| `send_voice` 返回 current turn/route 错误 | 工具不在 Feishu main Conversation Turn，或受信任 gateway metadata 不完整 |
+| `send_voice` 返回 streaming text started | 文字卡片已经开始；改为在最终回复使用混合 `voice` 围栏 |
+| `TTS provider ... not found or disabled` | `D:\data\config\voice\providers.json` 默认 Provider/模型不可用 |
+| `[VoiceTts] Audio materialized` 后转码失败 | Provider 返回的实际文件不是请求声明的 WAV，或 WAV 声道/内容不受支持 |
+| `[FeishuTts] durationMs` 显示数小时但语音实际很短 | Provider 使用未知长度的流式 WAV 头；时长必须按实际读取的 PCM 样本数计算，并运行 `TranscodeAsync_StreamingWavLengthSentinel_UsesActualSamplesForDuration` |
+| `[FeishuTts] Audio prepared` 后 `audio upload failed` | 查飞书文件上传权限、限流与 OpenAPI code/msg |
+| 上传成功后 `audio send failed` | 查 reply API 权限、原 `message_id` 和 `file_key`；不得重新合成来掩盖回复失败 |
+| 文本 delivery 为 delivered、audio delivery 为 retrying | 正常的故障隔离；Agent Command 应保持 succeeded |
+
+不经过 LLM 验证真实飞书语音链路时，先登录取得管理员 JWT，再预览频道最近的可信入站路由：
+
+```powershell
+$baseUri = "http://localhost"
+$login = Invoke-RestMethod -Method Post -Uri "$baseUri/api/login/account" `
+  -ContentType "application/json" `
+  -Body (@{ username = "admin"; password = "Admin@123"; type = "account" } | ConvertTo-Json)
+$headers = @{ Authorization = "Bearer $($login.token)" }
+$channelId = "feishu-default.global_general-assistant.6a8"
+Invoke-RestMethod -Headers $headers `
+  -Uri "$baseUri/api/workspaces/default/debug/feishu-voice/channels/$channelId/route"
+```
+
+路由存在后，显式确认真实发送，并按返回的 `messageId` 查询状态：
+
+```powershell
+$request = @{
+  text = "Pudding 飞书语音链路调试成功。"
+  confirmSend = $true
+  idempotencyKey = "manual-voice-debug-001"
+} | ConvertTo-Json
+$queued = Invoke-RestMethod -Method Post -Headers $headers `
+  -ContentType "application/json" -Body $request `
+  -Uri "$baseUri/api/workspaces/default/debug/feishu-voice/channels/$channelId/send"
+Invoke-RestMethod -Headers $headers `
+  -Uri "$baseUri/api/workspaces/default/debug/feishu-voice/messages/$($queued.messageId)"
+```
+
+调试 API 不能接收 `chat_id` 或飞书 `message_id`，只会复用指定频道最近的可信 Gateway 入站
+Command。route 返回 409 时，先在目标飞书会话给机器人发一条消息；不要通过修改数据库或手填目标绕过。
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ManagedOggOpusTranscoderTests|FullyQualifiedName~DashScopeTtsProviderTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~VoiceSynthesisServiceTests|FullyQualifiedName~ConversationReplyProjectionWorkerTests|FullyQualifiedName~ChannelConfigurationFileServiceTests|FullyQualifiedName~FeishuVoiceDebugControllerTests"
+dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
+  --filter "FullyQualifiedName~AgentReplyVoiceDirectiveTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SendVoiceToolTests|FullyQualifiedName~FakeFeishuStreamingCard_ProjectsDeltasAndFinalizesThroughDurableDelivery"
+dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
+  --filter "FullyQualifiedName~FeishuClientReplyTests"
+```
+
 ## 12. 修改后的最低验收
 
 ```powershell

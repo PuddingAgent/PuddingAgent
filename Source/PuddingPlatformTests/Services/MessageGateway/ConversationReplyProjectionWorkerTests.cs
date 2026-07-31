@@ -60,6 +60,8 @@ public sealed class ConversationReplyProjectionWorkerTests
                             "oc_chat",
                         [MessageGatewayMetadata.ExternalMessageId] =
                             "om_external",
+                        [MessageGatewayMetadata.TtsRepliesEnabled] = "true",
+                        [MessageGatewayMetadata.TtsVoice] = "Cherry",
                     }),
             });
             db.ConversationEvents.Add(new ConversationEventEntity
@@ -88,7 +90,8 @@ public sealed class ConversationReplyProjectionWorkerTests
         Assert.AreEqual(0, await worker.ProjectBatchAsync());
         Assert.AreEqual(1, sent.Envelopes.Count);
 
-        var envelope = sent.Envelopes.Single();
+        var envelope = sent.Envelopes.Single(item =>
+            item.ContentType == MessageContentTypes.Text);
         Assert.AreEqual("agent answer", envelope.Content);
         Assert.AreEqual("conversation-1", envelope.ConversationId);
         Assert.AreEqual("om_external", envelope.ReplyToMessageId);
@@ -106,6 +109,47 @@ public sealed class ConversationReplyProjectionWorkerTests
         Assert.IsNotNull(
             (await verifyDb.ChatExecutionCommands.SingleAsync())
             .ReplyProjectedAt);
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_VoiceOnlyDirective_PreservesRawTextThenProjectsAudio()
+    {
+        const string reply = "```voice\n今天天气真好\n```";
+        var sent = await ProjectSucceededReplyAsync(
+            reply);
+
+        Assert.AreEqual(2, sent.Envelopes.Count);
+        var text = sent.Envelopes.Single(item =>
+            item.ContentType == MessageContentTypes.Text);
+        var audio = AssertHasSingleAudio(sent);
+        Assert.AreEqual(reply, text.Content);
+        Assert.AreEqual("今天天气真好", audio.Content);
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_MixedVoiceDirective_ProjectsTextThenAudio()
+    {
+        const string reply =
+            "文字说明。\n\n```voice\n语音说明。\n```\n\n补充文字。";
+        var sent = await ProjectSucceededReplyAsync(
+            reply);
+
+        Assert.AreEqual(2, sent.Envelopes.Count);
+        var text = sent.Envelopes.Single(item =>
+            item.ContentType == MessageContentTypes.Text);
+        var audio = AssertHasSingleAudio(sent);
+        Assert.AreEqual(reply, text.Content);
+        Assert.AreEqual("语音说明。", audio.Content);
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_VoiceToolSuppression_DropsTerminalText()
+    {
+        var sent = await ProjectSucceededReplyAsync(
+            "工具已发送语音。",
+            suppressFinalText: true);
+
+        Assert.AreEqual(0, sent.Envelopes.Count);
     }
 
     [TestMethod]
@@ -203,5 +247,103 @@ public sealed class ConversationReplyProjectionWorkerTests
                 DeliveryIds = [$"delivery-{envelope.MessageId}"],
             });
         }
+    }
+
+    private static MessageEnvelope AssertHasSingleAudio(
+        RecordingMessageSystem sent)
+    {
+        var audio = sent.Envelopes.Single(item =>
+            item.ContentType == MessageContentTypes.Audio);
+        Assert.AreEqual(MessageVisibilities.System, audio.Visibility);
+        Assert.AreEqual(
+            ConnectorPayloadKinds.TtsAudio,
+            audio.Metadata[ConnectorPayloadMetadata.Kind]);
+        Assert.AreEqual(
+            "Cherry",
+            audio.Metadata[MessageGatewayMetadata.TtsVoice]);
+        return audio;
+    }
+
+    private static async Task<RecordingMessageSystem> ProjectSucceededReplyAsync(
+        string reply,
+        bool suppressFinalText = false)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var sent = new RecordingMessageSystem();
+        var services = new ServiceCollection();
+        services.AddDbContext<PlatformDbContext>(
+            options => options.UseSqlite(connection));
+        services.AddSingleton<IMessageSystem>(sent);
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            var metadata = new Dictionary<string, string>
+            {
+                [MessageGatewayMetadata.IsGatewayIngress] = "true",
+                [MessageGatewayMetadata.ChannelId] = "feishu",
+                [MessageGatewayMetadata.ChannelType] = "feishu",
+                [MessageGatewayMetadata.ConnectorId] = "feishu:assistant",
+                [MessageGatewayMetadata.ExternalConversationId] = "oc_voice",
+                [MessageGatewayMetadata.ExternalMessageId] = "om_voice",
+                [MessageGatewayMetadata.TtsRepliesEnabled] = "true",
+                [MessageGatewayMetadata.TtsVoice] = "Cherry",
+            };
+            if (suppressFinalText)
+            {
+                metadata[MessageGatewayMetadata.VoiceToolSuppressFinalText] =
+                    "true";
+            }
+
+            db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+            {
+                CommandId = "command-voice",
+                BatchId = "batch-voice",
+                ClientRequestId = "request-voice",
+                WorkspaceId = "default",
+                SessionId = "conversation-voice",
+                MessageId = "assistant-message-voice",
+                UserMessageId = "gateway-message-voice",
+                TurnId = "turn-voice",
+                AgentInstanceId = "assistant",
+                ChannelId = "feishu",
+                Status = "succeeded",
+                TerminalSequence = 2,
+                CreatedAt = 100,
+                CompletedAt = 200,
+                MetadataJson = JsonSerializer.Serialize(metadata),
+            });
+            db.ConversationEvents.Add(new ConversationEventEntity
+            {
+                ConversationId = "conversation-voice",
+                Sequence = 2,
+                EventId = "event-voice",
+                WorkspaceId = "default",
+                TurnId = "turn-voice",
+                CommandId = "command-voice",
+                RunId = "run-voice",
+                MessageId = "assistant-message-voice",
+                Type = ConversationEventTypes.TurnCompleted,
+                Payload = JsonSerializer.Serialize(new
+                {
+                    kind = "Completed",
+                    reply,
+                }),
+                OccurredAt = "2026-07-31T00:00:00Z",
+                CommittedAt = "2026-07-31T00:00:00Z",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var worker = new ConversationReplyProjectionWorker(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ConversationReplyProjectionWorker>.Instance);
+        Assert.AreEqual(1, await worker.ProjectBatchAsync());
+        Assert.AreEqual(0, await worker.ProjectBatchAsync());
+        return sent;
     }
 }

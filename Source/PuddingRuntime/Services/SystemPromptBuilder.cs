@@ -189,14 +189,7 @@ public sealed class SystemPromptBuilder
             }
         }
 
-        // Voice 语音输出能力（与 ContextPipeline SKILLS 层对齐）
-        sb.AppendLine();
-        sb.AppendLine("Voice output:");
-        sb.AppendLine("You may attach a `voice` field to messages suitable for spoken delivery.");
-        sb.AppendLine("- voice.enabled: true → frontend auto-plays");
-        sb.AppendLine("- voice.tts_text: optional spoken version (remove symbols, more conversational)");
-        sb.AppendLine("Use for: greetings, farewells, storytelling, explanations, casual chat.");
-        sb.AppendLine("Skip for: code, tables, tech specs, file paths, CLI.");
+        AppendVoiceOutputProtocol(sb);
 
         // ── 5. USER 层 ──
         sb.AppendLine("--- LAYER: USER ---");
@@ -322,6 +315,41 @@ public sealed class SystemPromptBuilder
         }
 
         return sb.ToString();
+    }
+
+    internal static void AppendVoiceOutputProtocol(StringBuilder sb)
+    {
+        sb.AppendLine();
+        sb.AppendLine("Voice output protocol (Feishu):");
+        sb.AppendLine("Apply this protocol only when the current inbound pudding-message metadata contains `channel_type=feishu`.");
+        sb.AppendLine("Choose exactly one of these mechanisms:");
+        sb.AppendLine();
+        sb.AppendLine("1. Use the `send_voice` tool for an immediate voice-only reply.");
+        sb.AppendLine("- Pass only the text to speak. Never invent or pass recipient, chat, connector, channel, or message IDs.");
+        sb.AppendLine("- After the tool succeeds, emit no final text, confirmation, or duplicate spoken content.");
+        sb.AppendLine("- Do not call it after text or CardKit streaming has started. If the reply also needs visible text, use a `voice` fence instead.");
+        sb.AppendLine();
+        sb.AppendLine("2. Use Markdown fenced blocks labeled exactly `voice` in the final answer when the reply needs visible Markdown followed by audio.");
+        sb.AppendLine("- Put the opening marker (three backticks immediately followed by lowercase `voice`) and the closing three backticks on their own lines.");
+        sb.AppendLine("- Every fence body must be non-empty, natural spoken text. The combined content of all `voice` fences must not exceed 1000 characters.");
+        sb.AppendLine("- One or more non-nested `voice` fences are allowed. Pudding speaks their bodies in order.");
+        sb.AppendLine("- Text outside the fences remains visible but is not spoken. Do not repeat the same spoken text outside a fence.");
+        sb.AppendLine("- Feishu V1 sends the entire final Markdown unchanged, including all `voice` fences, and then appends the generated voice.");
+        sb.AppendLine("- A final answer containing only a `voice` fence still shows that complete fence before the audio.");
+        sb.AppendLine();
+        sb.AppendLine("Voice-only fenced example:");
+        sb.AppendLine("```voice");
+        sb.AppendLine("今天天气真好");
+        sb.AppendLine("```");
+        sb.AppendLine();
+        sb.AppendLine("Mixed visible-text and voice example:");
+        sb.AppendLine("这是文字说明。");
+        sb.AppendLine("```voice");
+        sb.AppendLine("今天天气真好");
+        sb.AppendLine("```");
+        sb.AppendLine();
+        sb.AppendLine("Do not put code, tables, technical specifications, file paths, CLI commands, secrets, or very long content in a `voice` fence.");
+        sb.AppendLine("For non-Feishu requests, answer normally unless another channel-specific voice protocol is explicitly provided.");
     }
 
     /// <summary>

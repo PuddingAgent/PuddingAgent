@@ -48,6 +48,19 @@ public class MessageData
     public string? MessageId { get; set; }
 }
 
+/// <summary>Feishu IM file upload response.</summary>
+public class UploadFileResponse
+{
+    public int Code { get; set; }
+    public string? Msg { get; set; }
+    public UploadFileData? Data { get; set; }
+}
+
+public class UploadFileData
+{
+    public string? FileKey { get; set; }
+}
+
 /// <summary>CardKit create/update response.</summary>
 public class CardKitResponse
 {

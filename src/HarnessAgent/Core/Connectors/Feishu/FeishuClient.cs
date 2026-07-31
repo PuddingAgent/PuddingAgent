@@ -11,6 +11,7 @@ namespace HarnessAgent.Core.Connectors.Feishu;
 public class FeishuClient : IDisposable
 {
     private const int MaxMessageResourceBytes = 10 * 1024 * 1024;
+    private const int MaxUploadFileBytes = 30 * 1024 * 1024;
     private readonly FeishuConfig _config;
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;
@@ -231,6 +232,94 @@ public class FeishuClient : IDisposable
             _json,
             ct);
         return result ?? new SendMessageResponse { Code = -1, Msg = "empty response" };
+    }
+
+    /// <summary>Uploads an Ogg/Opus audio file and returns its Feishu file_key.</summary>
+    public async Task<UploadFileResponse> UploadAudioAsync(
+        byte[] content,
+        string fileName,
+        long? durationMs = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        if (content.Length == 0)
+            throw new ArgumentException("Audio file is empty.", nameof(content));
+        if (content.Length > MaxUploadFileBytes)
+        {
+            throw new ArgumentException(
+                $"Audio file exceeds {MaxUploadFileBytes} bytes.",
+                nameof(content));
+        }
+
+        var token = await GetAccessTokenAsync(ct);
+        using var multipart = new MultipartFormDataContent();
+        multipart.Add(new StringContent("opus"), "file_type");
+        multipart.Add(new StringContent(fileName), "file_name");
+        if (durationMs is > 0)
+        {
+            multipart.Add(
+                new StringContent(
+                    durationMs.Value.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture)),
+                "duration");
+        }
+        var audio = new ByteArrayContent(content);
+        audio.Headers.ContentType = new("audio/ogg");
+        multipart.Add(audio, "file", fileName);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{BaseUrl}/im/v1/files")
+        {
+            Content = multipart,
+        };
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await _http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<UploadFileResponse>(
+            _json,
+            ct);
+        return result ?? new UploadFileResponse
+        {
+            Code = -1,
+            Msg = "empty response",
+        };
+    }
+
+    /// <summary>Replies to a Feishu message with an uploaded audio file.</summary>
+    public async Task<SendMessageResponse> ReplyAudioAsync(
+        string messageId,
+        string fileKey,
+        string? uuid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileKey);
+        var token = await GetAccessTokenAsync(ct);
+        var content = JsonSerializer.Serialize(new { file_key = fileKey }, _json);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{BaseUrl}/im/v1/messages/{Uri.EscapeDataString(messageId)}/reply")
+        {
+            Content = JsonContent.Create(new
+            {
+                content,
+                msg_type = "audio",
+                uuid,
+            }, options: _json),
+        };
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await _http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<SendMessageResponse>(
+            _json,
+            ct);
+        return result ?? new SendMessageResponse
+        {
+            Code = -1,
+            Msg = "empty response",
+        };
     }
 
     /// <summary>Create a CardKit v1 card entity from a JSON 2.0 card.</summary>

@@ -19,43 +19,31 @@ public sealed class VoiceController : ControllerBase
     [Produces("audio/wav", "audio/mpeg")]
     public async Task<IActionResult> Synthesize(
         [FromBody] TtsSynthesizeRequest request,
-        [FromServices] IVoiceProviderFactory factory,
-        [FromServices] VoiceProviderFileService voiceService,
+        [FromServices] IVoiceSynthesisService synthesisService,
         CancellationToken ct)
     {
-        var voiceConfig = await voiceService.LoadAsync(ct);
-        if (voiceConfig is null || voiceConfig.Providers.Count == 0)
-            return Problem("Voice providers not configured.", statusCode: 503);
-
-        var provider = factory.CreateTtsProvider(voiceConfig,
-            providerId: request.ProviderId,
-            modelId: request.ModelId);
-
-        var result = await provider.SynthesizeAsync(new VoiceSynthesisRequest
+        var result = await synthesisService.SynthesizeAsync(new VoiceSynthesisRequest
         {
             WorkspaceId = "default",
             MessageId = Guid.NewGuid().ToString("N"),
             Text = request.Text,
-            Provider = provider.Provider,
-            Model = request.ModelId ?? voiceConfig.DefaultTtsModelId ?? "",
+            Provider = request.ProviderId ?? VoiceSynthesisProviders.Unknown,
+            Model = request.ModelId ?? "",
             Voice = request.Voice ?? "Cherry",
             AudioFormat = request.Format ?? "wav",
             SampleRate = request.SampleRate > 0 ? request.SampleRate : 24000,
             Instructions = request.Instructions,
         }, ct);
 
-        byte[] audioBytes;
-        if (!string.IsNullOrWhiteSpace(result.AudioUrl))
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            audioBytes = await http.GetByteArrayAsync(result.AudioUrl, ct);
-        }
-        else
-        {
+        if (result.AudioBytes is not { Length: > 0 } audioBytes)
             return Problem("TTS returned no audio data.", statusCode: 502);
-        }
 
-        var contentType = request.Format == "mp3" ? "audio/mpeg" : "audio/wav";
+        var contentType = string.Equals(
+            result.Format,
+            VoiceAudioFormats.Mp3,
+            StringComparison.OrdinalIgnoreCase)
+            ? "audio/mpeg"
+            : "audio/wav";
         return File(audioBytes, contentType);
     }
 

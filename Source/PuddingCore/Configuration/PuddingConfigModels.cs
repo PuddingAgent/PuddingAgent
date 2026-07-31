@@ -368,6 +368,12 @@ public sealed record AgentFeishuBotConfig
     /// </summary>
     public bool StreamingRepliesEnabled { get; init; } = true;
     /// <summary>
+    /// Allows explicit voice output through Markdown voice fences or send_voice.
+    /// Plain successful replies remain text-only.
+    /// </summary>
+    public bool TtsRepliesEnabled { get; init; }
+    public string TtsVoice { get; init; } = "Cherry";
+    /// <summary>
     /// Feishu sender open_ids allowed to execute privileged Pudding commands
     /// through this Agent-owned bot. Regular chat is not restricted by this list.
     /// </summary>

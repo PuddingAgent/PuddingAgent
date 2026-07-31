@@ -32,7 +32,7 @@ public sealed class ChannelConfigurationFileService(
         Description = "飞书企业自建应用，通过 WebSocket 长连接接收消息并可靠回复。",
         IsBuiltIn = true,
         IsEnabled = true,
-        Capabilities = ["text", "image", "streaming", "slash_commands"],
+        Capabilities = ["text", "image", "audio", "streaming", "slash_commands"],
     };
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -329,6 +329,10 @@ public sealed class ChannelConfigurationFileService(
                         AppId = feishu.AppId,
                         AppSecret = feishu.AppSecret,
                         StreamingRepliesEnabled = feishu.StreamingRepliesEnabled,
+                        TtsRepliesEnabled = feishu.TtsRepliesEnabled,
+                        TtsVoice = string.IsNullOrWhiteSpace(feishu.TtsVoice)
+                            ? "Cherry"
+                            : feishu.TtsVoice.Trim(),
                         PrivilegedUserOpenIds = feishu.PrivilegedUserOpenIds,
                     },
                 };
@@ -437,6 +441,8 @@ public sealed class ChannelConfigurationFileService(
                 AppId = appId,
                 AppSecret = appSecret,
                 StreamingRepliesEnabled = request.StreamingRepliesEnabled,
+                TtsRepliesEnabled = request.TtsRepliesEnabled,
+                TtsVoice = NormalizeOptional(request.TtsVoice) ?? "Cherry",
                 PrivilegedUserOpenIds = (request.PrivilegedUserOpenIds ?? [])
                     .Select(NormalizeOptional)
                     .Where(value => value is not null)
@@ -489,7 +495,11 @@ public sealed class ChannelConfigurationFileService(
         channel.Feishu?.PrivilegedUserOpenIds.ToList() ?? [],
         channel.IsEnabled,
         channel.CreatedAt,
-        channel.UpdatedAt);
+        channel.UpdatedAt,
+        channel.Feishu?.TtsRepliesEnabled ?? false,
+        string.IsNullOrWhiteSpace(channel.Feishu?.TtsVoice)
+            ? "Cherry"
+            : channel.Feishu.TtsVoice);
 
     private static void EnsureWorkspace(ChannelInstanceManifest channel, string workspaceId)
     {

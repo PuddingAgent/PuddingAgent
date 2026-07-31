@@ -137,55 +137,92 @@ public sealed class ConversationReplyProjectionWorker(
             var externalMessageId = Get(
                 metadata,
                 MessageGatewayMetadata.ExternalMessageId);
-            var replyMessageId = StableId(
-                "gateway-reply",
-                command.CommandId,
-                connectorId,
-                externalMessageId ?? externalConversationId);
-            metadata[MessageGatewayMetadata.ReplyProjectedMessageId] =
-                replyMessageId;
-            metadata[MessageGatewayMetadata.IdempotencyKey] = replyMessageId;
+            var plan = FeishuTtsProjection.CreatePlan(
+                command.Status,
+                presentation.Content,
+                metadata);
+            if (IsTrue(Get(
+                    metadata,
+                    MessageGatewayMetadata.VoiceToolSuppressFinalText)))
+            {
+                plan = new FeishuReplyProjectionPlan(
+                    TextContent: null,
+                    VoiceContent: null,
+                    HasVoiceDirective: false);
+            }
 
-            await messageSystem.SendAsync(
-                new MessageEnvelope
-                {
-                    MessageId = replyMessageId,
-                    From = new MessageAddress
+            string? replyMessageId = null;
+            if (!string.IsNullOrWhiteSpace(plan.TextContent))
+            {
+                replyMessageId = StableId(
+                    "gateway-reply",
+                    command.CommandId,
+                    connectorId,
+                    externalMessageId ?? externalConversationId);
+                metadata[MessageGatewayMetadata.ReplyProjectedMessageId] =
+                    replyMessageId;
+                metadata[MessageGatewayMetadata.IdempotencyKey] = replyMessageId;
+
+                await messageSystem.SendAsync(
+                    new MessageEnvelope
                     {
-                        Kind = MessageEndpointKinds.Agent,
-                        Id = command.AgentInstanceId,
-                        WorkspaceId = command.WorkspaceId,
-                    },
-                    To =
-                    [
-                        new MessageAddress
+                        MessageId = replyMessageId,
+                        From = new MessageAddress
                         {
-                            Kind = MessageEndpointKinds.Connector,
-                            Id = connectorId,
+                            Kind = MessageEndpointKinds.Agent,
+                            Id = command.AgentInstanceId,
                             WorkspaceId = command.WorkspaceId,
                         },
-                    ],
-                    RoomId = command.SessionId,
-                    ConversationId = command.SessionId,
-                    ReplyToMessageId = externalMessageId,
-                    CorrelationId = command.SessionId,
-                    CausationId = command.TurnId,
-                    Audience = MessageAudiences.Direct,
-                    Visibility = MessageVisibilities.Private,
-                    ContentType = MessageContentTypes.Text,
-                    Content = presentation.Content,
-                    Metadata = metadata,
-                },
-                ct);
+                        To =
+                        [
+                            new MessageAddress
+                            {
+                                Kind = MessageEndpointKinds.Connector,
+                                Id = connectorId,
+                                WorkspaceId = command.WorkspaceId,
+                            },
+                        ],
+                        RoomId = command.SessionId,
+                        ConversationId = command.SessionId,
+                        ReplyToMessageId = externalMessageId,
+                        CorrelationId = command.SessionId,
+                        CausationId = command.TurnId,
+                        Audience = MessageAudiences.Direct,
+                        Visibility = MessageVisibilities.Private,
+                        ContentType = MessageContentTypes.Text,
+                        Content = plan.TextContent,
+                        Metadata = metadata,
+                    },
+                    ct);
+            }
 
+            string? ttsMessageId = null;
+            if (!string.IsNullOrWhiteSpace(plan.VoiceContent))
+            {
+                ttsMessageId = await FeishuTtsProjection.QueueAsync(
+                    messageSystem,
+                    command.CommandId,
+                    command.WorkspaceId,
+                    command.AgentInstanceId,
+                    connectorId,
+                    command.SessionId,
+                    command.TurnId,
+                    externalMessageId,
+                    externalConversationId,
+                    plan.VoiceContent,
+                    metadata,
+                    ct);
+            }
             command.ReplyProjectedAt =
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             projected++;
             logger.LogInformation(
-                "[MessageGateway] Reply projected command={CommandId} connector={ConnectorId} message={MessageId}",
+                "[MessageGateway] Reply projected command={CommandId} connector={ConnectorId} message={MessageId} voiceDirective={VoiceDirective} ttsMessage={TtsMessageId}",
                 command.CommandId,
                 connectorId,
-                replyMessageId);
+                replyMessageId,
+                plan.HasVoiceDirective,
+                ttsMessageId);
         }
 
         if (db.ChangeTracker.HasChanges())

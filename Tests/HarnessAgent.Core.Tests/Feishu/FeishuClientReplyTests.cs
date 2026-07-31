@@ -84,6 +84,60 @@ public sealed class FeishuClientReplyTests
     }
 
     [TestMethod]
+    public async Task AudioReply_UploadsOpusThenRepliesWithFileKeyAndStableUuid()
+    {
+        var handler = new RecordingHandler();
+        using var http = new HttpClient(handler);
+        using var client = new FeishuClient(
+            new FeishuConfig
+            {
+                AppId = "cli_test",
+                AppSecret = "secret_test",
+            },
+            http);
+
+        var uploaded = await client.UploadAudioAsync(
+            [0x4F, 0x67, 0x67, 0x53],
+            "pudding.opus",
+            durationMs: 250);
+        Assert.AreEqual("file_opus_123", uploaded.Data?.FileKey);
+        var replied = await client.ReplyAudioAsync(
+            "om/audio id",
+            uploaded.Data!.FileKey!,
+            "audio-stable-uuid");
+        Assert.AreEqual(0, replied.Code);
+
+        Assert.HasCount(3, handler.Requests);
+        var upload = handler.Requests[1];
+        Assert.AreEqual(
+            "https://open.feishu.cn/open-apis/im/v1/files",
+            upload.Uri);
+        Assert.AreEqual("Bearer", upload.AuthorizationScheme);
+        StringAssert.Contains(upload.Body, "name=file_type");
+        StringAssert.Contains(upload.Body, "opus");
+        StringAssert.Contains(upload.Body, "name=duration");
+        StringAssert.Contains(upload.Body, "250");
+        StringAssert.Contains(upload.Body, "audio/ogg");
+
+        var reply = handler.Requests[2];
+        Assert.AreEqual(
+            "https://open.feishu.cn/open-apis/im/v1/messages/om%2Faudio%20id/reply",
+            reply.Uri);
+        using var outer = JsonDocument.Parse(reply.Body);
+        Assert.AreEqual(
+            "audio",
+            outer.RootElement.GetProperty("msg_type").GetString());
+        Assert.AreEqual(
+            "audio-stable-uuid",
+            outer.RootElement.GetProperty("uuid").GetString());
+        using var content = JsonDocument.Parse(
+            outer.RootElement.GetProperty("content").GetString()!);
+        Assert.AreEqual(
+            "file_opus_123",
+            content.RootElement.GetProperty("file_key").GetString());
+    }
+
+    [TestMethod]
     public async Task CardKitStreaming_UsesCardEntityReferenceAndOrderedUpdates()
     {
         var handler = new RecordingHandler();
@@ -210,6 +264,8 @@ public sealed class FeishuClientReplyTests
 
             var json = isToken
                 ? """{"code":0,"msg":"ok","tenant_access_token":"tenant-token","expire":7200}"""
+                : path.EndsWith("/im/v1/files", StringComparison.Ordinal)
+                    ? """{"code":0,"msg":"ok","data":{"file_key":"file_opus_123"}}"""
                 : path.EndsWith("/cardkit/v1/cards", StringComparison.Ordinal)
                     ? """{"code":0,"msg":"ok","data":{"card_id":"card_123"}}"""
                     : path.EndsWith("/reply", StringComparison.Ordinal)
