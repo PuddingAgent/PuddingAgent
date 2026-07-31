@@ -306,7 +306,11 @@ public sealed partial class AgentExecutionService
                 history[0] = new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt);
             }
         }
-                history.Add(new ChatMessage(ChatRole.User, BuildUserMessageForLlm(request), VisualArtifactIds: request.VisualArtifactIds));
+                history.Add(new ChatMessage(
+                    ChatRole.User,
+                    BuildUserMessageForLlm(request),
+                    VisualArtifactIds: request.VisualArtifactIds,
+                    AudioArtifactIds: request.AudioArtifactIds));
 
         // ── 初始化 Loop 上下文 ────────────────────────────────────────
         var maxRounds = request.MaxRounds > 0

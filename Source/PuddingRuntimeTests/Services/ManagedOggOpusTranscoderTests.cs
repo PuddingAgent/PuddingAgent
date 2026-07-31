@@ -80,6 +80,47 @@ public sealed class ManagedOggOpusTranscoderTests
         Assert.IsTrue(result.DurationMs is >= 249 and <= 251);
     }
 
+    [TestMethod]
+    public async Task TranscodeAsync_OggOpus_ProducesMono16KhzPcmWav()
+    {
+        var transcoder = new ManagedOggOpusTranscoder();
+        var sourceWav = CreateStereoPcm16Wav(
+            sampleRate: 24_000,
+            duration: TimeSpan.FromMilliseconds(500));
+        var opus = await transcoder.TranscodeAsync(
+            new AudioTranscodingRequest
+            {
+                Content = sourceWav,
+                SourceFormat = VoiceAudioFormats.Wav,
+                TargetFormat = VoiceAudioFormats.Opus,
+                TargetSampleRate = 16_000,
+                TargetChannels = 1,
+            });
+
+        var wav = await transcoder.TranscodeAsync(
+            new AudioTranscodingRequest
+            {
+                Content = opus.Content,
+                SourceFormat = VoiceAudioFormats.Opus,
+                TargetFormat = VoiceAudioFormats.Wav,
+                TargetSampleRate = 16_000,
+                TargetChannels = 1,
+            });
+
+        Assert.AreEqual(VoiceAudioFormats.Wav, wav.Format);
+        Assert.AreEqual("audio/wav", wav.MediaType);
+        Assert.AreEqual(16_000, wav.SampleRate);
+        Assert.AreEqual(1, wav.Channels);
+        Assert.IsTrue(wav.DurationMs is >= 490 and <= 510);
+        CollectionAssert.AreEqual(
+            Encoding.ASCII.GetBytes("RIFF"),
+            wav.Content[..4]);
+        CollectionAssert.AreEqual(
+            Encoding.ASCII.GetBytes("WAVE"),
+            wav.Content[8..12]);
+        Assert.IsGreaterThan(44, wav.Content.Length);
+    }
+
     private static byte[] CreateStereoPcm16Wav(
         int sampleRate,
         TimeSpan duration)

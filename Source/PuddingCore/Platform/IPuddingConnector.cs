@@ -76,12 +76,14 @@ public sealed record ConnectorMessage
 public static class ConnectorPayloadMetadata
 {
     public const string Kind = "connector_payload_kind";
+    public const string ArtifactId = "connector_artifact_id";
 }
 
 /// <summary>Typed Connector delivery payloads supported by the channel layer.</summary>
 public static class ConnectorPayloadKinds
 {
     public const string TtsAudio = "tts_audio";
+    public const string VisionImage = "vision_image";
 }
 
 /// <summary>连接器操作结果。</summary>

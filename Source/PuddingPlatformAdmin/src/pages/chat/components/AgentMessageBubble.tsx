@@ -72,12 +72,14 @@ const StreamingAnswer = React.memo(function StreamingAnswer({
   content,
   isStreaming,
   className,
+  workspaceId,
   quotedMessage,
   onContextMenu,
 }: {
   content: string;
   isStreaming?: boolean;
   className: string;
+  workspaceId?: string;
   quotedMessage?: ChatQuotedMessage;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
@@ -94,6 +96,7 @@ const StreamingAnswer = React.memo(function StreamingAnswer({
       <MessageItem
         markdownText={content}
         isStreaming={isStreaming}
+        workspaceId={workspaceId}
         stableMarkdown={typewriter.stableMarkdown}
         liveText={typewriter.liveText}
         visibleLiveText={typewriter.visibleLiveText}
@@ -564,6 +567,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                     content={content}
                     isStreaming={isStreaming}
                     className={bubbleClassName}
+                    workspaceId={workspaceId}
                     quotedMessage={quotedMessage}
                     onContextMenu={handleContextMenu}
                   />
@@ -575,7 +579,11 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                     {quotedMessage && (
                       <QuotedMessageBlock quotedMessage={quotedMessage} />
                     )}
-                    <MessageItem markdownText={content} isStreaming={false} />
+                    <MessageItem
+                      markdownText={content}
+                      isStreaming={false}
+                      workspaceId={workspaceId}
+                    />
                     {showCompletionParticles && (
                       <div
                         className={styles.answerParticlesContainer}

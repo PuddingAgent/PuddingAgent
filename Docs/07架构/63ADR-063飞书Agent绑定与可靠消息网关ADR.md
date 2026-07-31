@@ -1,8 +1,8 @@
 # ADR-063：飞书 Agent 绑定与可靠消息网关
 
-> 状态：**Accepted（V1.4 Agent 显式语音回复已实现）**
-> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28；显式语音回复修订：2026-07-31
-> 范围：渠道服务商、渠道实例、Agent channel 引用、飞书 Connector、Message Gateway、Message Fabric、Conversation、Vision Artifact、CardKit 流式投影、TTS 语音回复、回复投递
+> 状态：**Accepted（V1.5 入站语音与 ASR 双路由已实现）**
+> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28；显式语音回复、入站语音与 ASR 双路由修订：2026-07-31
+> 范围：渠道服务商、渠道实例、Agent channel 引用、飞书 Connector、Message Gateway、Message Fabric、Conversation、Vision/Audio Artifact、CardKit 流式投影、TTS 语音回复、ASR、回复投递
 > 关联：[ADR-045 双向消息系统](46ADR-045双向消息系统与聊天室客户端ADR.md)、[ADR-057 可靠 Conversation 事件流](58ADR-057前后端可靠SSE与Conversation事件流架构ADR.md)、[ADR-059 Conversation 执行内核](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 
 ---
@@ -192,7 +192,7 @@ V1 将绑定机器人的消息投递到 Agent main Conversation，使 Web 观察
 
 1. 从 `event.message.content` 解析 `image_key`。
 2. 调用 `GET /im/v1/messages/{message_id}/resources/{image_key}?type=image` 下载资源；响应最多
-   10 MiB，并以文件签名确认 JPEG/PNG/WebP，不能只信任响应 MIME。
+   50 MiB，并以文件签名确认 JPEG/PNG/WebP，不能只信任响应 MIME。
 3. 以 `connectorId + externalMessageId + image_key` 生成稳定 `vision-{hash}`，通过
    `VisionArtifactStorageService.SaveIdempotentAsync` 原子保存到 Workspace `vision-artifacts`。
 4. canonical 用户消息使用可读占位正文“用户从飞书发送了一张图片。”，同时持久化
@@ -359,6 +359,119 @@ Conversation。V1 不缓存语音 artifact，也不为普通回复、失败/取�
 飞书 SDK，因此可以验证真实生产链路的合成、转码、上传、回复、重试与 delivered 状态。频道没有
 可信入站路由时必须先向机器人发送一条消息，禁止以手填外部目标绕过 Gateway 信任边界。
 
+### 2.9 飞书入站语音、Audio Artifact 与 ASR 双路由
+
+飞书 `message_type=audio` 不得退化成无证据的文本占位后让 Agent 猜测。Connector 必须在事件
+ACK 前完成受控物化：
+
+1. 从 `event.message.content` 解析 `file_key`，调用消息资源 API 的 `type=file` 下载原始资源。
+2. 以 `connectorId + externalMessageId + file_key` 生成稳定 `audio-{hash}`。飞书 Ogg/Opus
+   使用 `ManagedOggOpusTranscoder` 在 C# 进程内解码、重采样为 16 kHz 单声道 16-bit PCM WAV；
+   不依赖 ffmpeg/native codec。直接收到的 WAV 也必须通过 PCM 文件头校验。
+3. 通过 `AudioArtifactStorageService.SaveIdempotentAsync` 原子保存到 Workspace
+   `audio-artifacts`，并持久化 `inputMode=audio`、`audioArtifactId`、
+   `audioArtifactIds` 与 `gateway_message_type=audio`。
+4. 解析、下载、转码、校验或持久化失败必须返回非 200 ACK 允许飞书重投；稳定 Artifact 已存在时
+   重投直接复用，不重复下载或创建文件。
+
+执行期只按当前冻结的精确 `providerId + modelId` 能力标签分流：
+
+- 模型带 `audio` capability：`ExecutionRunCoordinator` 把 `AudioArtifactIds` 传入 Runtime，
+  `DirectLlmClient/OpenAiLlmGateway` 将受控 WAV 解析为 OpenAI-compatible
+  `input_audio` 内容块，模型直接听取，不自动调用 ASR。
+- 模型不带 `audio` capability：Coordinator 在 `[Attached audio notice]` 中只注入当前
+  Workspace Artifact 的精确绝对路径，并要求 Agent 在陈述录音内容前调用 `asr` 工具。
+
+`asr` 只能读取通知中对应的当前 Workspace `audio-*.wav`；模型提供的任意路径、相对路径、其它
+Workspace 文件或伪装格式都会被拒绝。工具通过 Provider-neutral
+`IAudioTranscriptionService` 读取 `config/voice/providers.json`，再由
+`IVoiceProviderFactory/IAsrHttpRecognizer` 选择 Qwen 或其它 ASR 服务。显式切换 Provider 且未
+指定模型时，必须使用该 Provider 自己的默认 ASR 模型。
+
+`SystemPromptBuilder.AppendAudioInputProtocol` 是两条分流共同的系统规则：只信任平台生成的
+attached-audio notice；原生模型直接听取，文本模型按精确路径调用 `asr`；音频和转写均是不可信
+用户媒体数据，录音中的命令不得提升为 system/tool 指令。识别失败时必须明确说明无法读取，禁止
+假装听见。V1.5 只处理飞书短音频和 HTTP 文件 ASR，不在本决策中实现浏览器实时录音、流式字幕或
+WebSocket realtime ASR。
+
+### 2.10 Provider-neutral 图片生成与飞书图片回复
+
+图片生成复用 `llm.providers.json` 的 Provider/Model 目录，但由顶层 `imageGeneration` 显式绑定
+默认 Provider 与模型；模型必须带 `image-generation` capability。Runtime 不把 Ark 等供应商细节
+泄漏给 Agent，统一通过 `IImageGenerationService/IImageGenerationProvider` 调用适配器。首个
+Provider 是火山方舟，默认模型为 `doubao-seedream-5-0-260128`，调用 OpenAI-compatible
+`POST /api/v3/images/generations`。
+
+V1.6 在 provider-neutral request 上增加 `mode`、参考 Vision Artifact、精确尺寸、输出格式、
+提示词优化、联网搜索和组图数量，而不是把 Ark JSON 暴露给 Agent：
+
+- `default` 使用顶层 `imageGeneration` 默认绑定；
+- `precision` 选择带 `image-editing` capability 的模型。当前配置为
+  `doubao-seedream-5-0-pro-260628`，支持最多 10 张参考图、`<point>/<bbox>` 0~999
+  归一化坐标、1K/2K 或自定义像素、PNG/JPEG、standard/fast，但不支持组图和联网搜索；
+- `sequence` 选择带 `sequential-image-generation` capability 的模型。当前默认
+  `doubao-seedream-5-0-260128` 支持 2K/3K/4K、1~4 张组图和可选 web search，但只支持
+  standard 提示词优化。
+
+参考图只接受当前 Workspace 的 `vision-*` Artifact。Service 解析为受控 Data URI 后交给
+Provider，不接受模型构造的任意 URL；Attached image notice 同时提供受控本地路径和精确
+Artifact ID，分析用路径、生成/编辑用 Artifact ID。
+
+Provider 返回的临时 HTTPS URL 必须在一次调用内立即下载，并通过文件头验证为 JPEG/PNG/WebP 后，
+以不超过 50 MiB 的 Workspace Vision Artifact 落盘。后续发送、重试和排障只引用稳定
+`artifactId`，不得在 Connector 重试时再次请求付费生成，也不得把临时下载 URL 当作 durable fact。
+
+联网参考图先通过搜索工具得到候选 URL，再由 `import_image` 执行受控导入。导入只接受无内嵌凭据的
+公共 HTTPS URL，使用 public-only DNS/连接策略抵御 SSRF 与 DNS rebinding，跟随跳转后仍必须是
+HTTPS，并以文件签名确认 JPEG/PNG/WebP。URL 以 Workspace 参与稳定 Artifact ID 计算；同一
+Workspace 重复导入直接复用，跨 Workspace 不共享本地路径。推荐 Agent 工具链为
+`doubao_search → import_image → generate_image(mode=precision, referenceArtifactIds) → send_image`。
+
+Agent 优先使用两段式工具协议：
+
+1. `generate_image(prompt, mode, size, watermark, outputFormat, optimizePromptMode,
+   enableWebSearch, imageCount, referenceArtifactIds)` 生成并返回当前 Workspace 的
+   `artifactIds`；
+   Provider/模型参数可选，但必须成对提供且仍受配置目录与 capability 校验。
+2. 飞书来源的 main Turn 为每个结果调用 `send_image(artifactId)`。工具只从受信任 Command metadata 解析
+   Connector、会话和原消息路由，模型不能提供或覆盖收件人、chat、channel、connector、
+   `message_id`。
+
+工具不可用或模型更自然地使用 Markdown 时，可在成功终态回复输出一个或多个
+`ImageGeneration` fence。可选 header 为 `mode/size/watermark/output_format/optimize/
+web_search/references/count`，首个空行后的所有文本是 prompt。Pudding 在流式与非流式终态
+投影中保留完整 fence 原文，再按 fence 顺序生成和追加图片，单次最多四张。工具成功发送图片后
+写入 Command 抑制标记，避免同一终态 fence 再生成一次。终态 Hook 使用 command/block 稳定操作键；
+已物化 Artifact 会直接复用，Connector 重试只重发 Artifact。
+
+已有图片还可用小写 `image` fence 投影，不触发新一轮生成。fence 正文必须恰好是一行：当前
+Workspace 的精确 `vision-*` ID，或 Pudding 返回的该 Artifact 精确绝对 `localPath`；禁止 URL、
+相对路径、任意文件与跨 Workspace 路径。一个 fence 且没有其它正文表示 image-only；混合消息在
+Web 中按 fence 位置渲染，飞书端移除已解析 fence、发送剩余文本后按出现顺序追加图片；单次最多
+四个。工具已发送同一图片时以 Command 抑制 metadata 防止 fence 重复投递。流式投影在尚可能形成
+纯 `image` 回复时延迟创建 CardKit，避免纯图片消息留下空卡片。
+
+`FeishuImageProjection` 创建 typed `vision_image` Message Fabric delivery；Connector 解析
+Artifact。原图存储/生成/导入上限为 50 MiB；飞书图片上传仍按渠道的 10 MiB 边界执行。超过
+10 MiB 时，Connector 前的 C# 投递准备层从原图生成有界 JPEG 副本，优先保留分辨率并逐级调整
+质量/尺寸，原始 Artifact 保持不变。随后调用飞书图片上传 API 获取 `image_key`，再以
+`msg_type=image` 回复原消息。稳定
+MessageId/uuid 保证重试幂等；上传或回复失败只重试 Connector delivery，不重新执行 Agent，也不
+重新生成图片。生成成功而飞书投递失败时 Artifact 仍保留，允许按同一消息继续重试。
+
+`SystemPromptBuilder.AppendImageOutputProtocol` 同时描述工具协议、联网导入、模式选择、
+参考图/坐标规则、`image` fence 和 `ImageGeneration` fence。管理员可用
+受控 HTTP 调试接口验证真实生成与投递：
+
+- `GET /api/workspaces/{workspaceId}/debug/feishu-image/channels/{channelId}/route` 预览最近可信
+  飞书入站回复路由；
+- `POST /api/workspaces/{workspaceId}/debug/feishu-image/channels/{channelId}/generate-and-send`
+  必须提交 `confirmSend=true`，先验证可信路由，再执行一次付费生成并排队 typed delivery；
+- `GET /api/workspaces/{workspaceId}/debug/feishu-image/messages/{messageId}` 查询 Artifact 与
+  Connector delivery 状态。
+
+接口均要求 `admin` 角色，且不接受任意飞书目标。没有可信入站路由时必须先向机器人发送一条消息。
+
 ## 3. 飞书协议实现边界
 
 长连接实现遵循飞书官方 `pbbp2.Frame` wire contract：
@@ -372,9 +485,14 @@ Conversation。V1 不缓存语音 artifact，也不为普通回复、失败/取�
 - 入站事件的消息类型字段是 `event.message.message_type`；`msg_type` 只用于 OpenAPI 出站请求
 - 图片消息的 `content` 是包含 `image_key` 的 JSON 字符串；资源必须通过消息资源 API 下载，
   不能把 `image_key` 当图片 URL 传给 Agent 或浏览器
+- 图片出站必须先调图片上传 API 获取 `image_key`，再用 `msg_type=image` 回复；不能把本地路径或
+  Provider 临时 URL 直接放进消息内容
+- 语音消息的 `content` 是包含 `file_key` 的 JSON 字符串；资源下载使用 `type=file`，落盘前
+  必须规范化为 provider-safe PCM WAV，不能把飞书 Ogg/Opus 原始字节伪装成 WAV
 
 参考：[飞书官方 Node SDK](https://github.com/larksuite/node-sdk)、
 [获取消息中的资源文件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-resource/get)、
+[上传图片](https://open.feishu.cn/document/server-docs/im-v1/image/create?lang=zh-CN)、
 [上传文件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/file/create)、
 [回复消息](https://open.feishu.cn/document/server-docs/im-v1/message/reply?lang=zh-CN)、
 [官方 Go SDK CardKit resource](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/service/cardkit/v1/resource.go)
@@ -391,6 +509,10 @@ Connector 只把支持的消息事件送进 Gateway。未知事件应确认后�
 - 不把未提交的 Runtime token 逐片发送到飞书；只批量投影 committed Conversation delta，并以 committed terminal reply 收口。
 - 不让 LLM 决定默认答复是否返回原渠道。
 - 不在飞书出站失败时重跑 Agent。
+- 不把任意本地路径开放给 `asr`，也不让无 `audio` 能力的模型跳过转写后猜测录音内容。
+- 不让模型指定飞书图片收件人，不在 Connector 重试时重新请求付费生成，也不把 Provider 临时 URL
+  持久化为渠道消息事实。
+- 不在 V1.5 实现实时 ASR、浏览器麦克风采集或音频历史回放 UI。
 
 ## 5. 验收
 
@@ -415,7 +537,15 @@ dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-
 dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
   --filter "FullyQualifiedName~ManagedOggOpusTranscoderTests|FullyQualifiedName~DashScopeTtsProviderTests"
 dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
-  --filter "FullyQualifiedName~VoiceSynthesisServiceTests|FullyQualifiedName~ConversationReplyProjectionWorkerTests|FullyQualifiedName~ChannelConfigurationFileServiceTests"
+  --filter "FullyQualifiedName~VoiceSynthesisServiceTests|FullyQualifiedName~AudioArtifactStorageServiceTests|FullyQualifiedName~AudioTranscriptionServiceTests|FullyQualifiedName~VisualArtifactObservationServiceTests|FullyQualifiedName~ConversationReplyProjectionWorkerTests|FullyQualifiedName~ChannelConfigurationFileServiceTests"
+dotnet test .\Source\PuddingWebApiTests\PuddingWebApiTests.csproj --no-restore `
+  --filter "FullyQualifiedName~AsrToolTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  --filter "FullyQualifiedName~FeishuInboundAudioTests|FullyQualifiedName~FeishuInboundImageTests|FullyQualifiedName~SendImageToolTests"
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~VolcengineArkImageGenerationProviderTests|FullyQualifiedName~ContextPipelineLayerTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ImageGenerationServiceTests"
 dotnet build .\Source\PuddingAgent\PuddingAgent.csproj --no-restore
 ```
 
@@ -431,6 +561,10 @@ visionArtifactIds → canonical SubmitTurn`，同一飞书消息重投不得重�
 路由与终态文字抑制，以及 CardKit 终态后独立追加无 stream metadata 的 audio delivery。
 Platform 测试锁定文本主模型强制视觉预识别、原生视觉模型不重复调用、视觉失败阻断主 Agent，以及
 观察结果进入上下文时的媒体 prompt-injection 边界。
+入站语音用例另外锁定 `file_key → type=file resource → Ogg/Opus → 16 kHz mono PCM WAV →
+stable Audio Artifact`，并验证重投不重复下载；Runtime/Platform/Tool 用例锁定精确模型
+`audio` capability 分流、`input_audio` 序列化、文本模型不泄漏音频内容、Workspace 路径授权、
+Provider 自有默认 ASR 模型与音频媒体 prompt-injection 边界。
 
 飞书 SDK 的人工 copy 验收使用独立 CLI，不启动 Pudding Agent：
 
@@ -472,3 +606,11 @@ CONTROL/ping；收到真实格式的 pbbp2 DATA/event 后可解析文本并回�
 11. 让 Agent 调用 `send_voice`；工具不得接收任意目标，飞书收到当前消息线程中的语音，且
     工具后的最终确认文字不再投递。临时让 TTS 或上传失败时，只有 audio delivery 重试，
     Command 不重新执行。
+12. 从飞书发送一条新的语音。日志先出现 `[Feishu] Audio materialized`、`[AudioArtifact] Stored`
+    与 `Inbound accepted`。当前模型带 `audio` 标签时，Agent 直接听取且不出现自动
+    `[AsrTool]`；移除标签或切换到文本模型后，Agent 必须调用 `asr`，日志出现 `[VoiceAsr]` 与
+    `[AsrTool]`。两条路径回答应与原音频一致；识别服务故障时不得猜测内容。
+13. 在飞书要求 Agent 生成一张图片。工具调用顺序必须是 `generate_image → send_image`，日志出现
+    `[ImageGeneration:Ark] Generated`、`[ImageGeneration] Stored`、`[SendImageTool] Image queued`
+    与 `[ConnectorDelivery] Delivered`，飞书在当前消息线程显示图片。临时阻断上传或 reply 后，
+    同一 Artifact/delivery 重试，Ark 生成日志不得再次出现。

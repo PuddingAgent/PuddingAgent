@@ -61,6 +61,19 @@ public class UploadFileData
     public string? FileKey { get; set; }
 }
 
+/// <summary>Feishu IM image upload response.</summary>
+public class UploadImageResponse
+{
+    public int Code { get; set; }
+    public string? Msg { get; set; }
+    public UploadImageData? Data { get; set; }
+}
+
+public class UploadImageData
+{
+    public string? ImageKey { get; set; }
+}
+
 /// <summary>CardKit create/update response.</summary>
 public class CardKitResponse
 {
@@ -147,6 +160,13 @@ public class FeishuTextContent
 public class FeishuImageContent
 {
     public string? ImageKey { get; set; }
+}
+
+/// <summary>Audio/file message content (Content JSON).</summary>
+public class FeishuFileContent
+{
+    public string? FileKey { get; set; }
+    public string? FileName { get; set; }
 }
 
 /// <summary>Downloaded message resource returned by Feishu OpenAPI.</summary>

@@ -151,4 +151,31 @@ describe('MessageItem markdown code rendering', () => {
     expect(container.textContent).toContain('第七段：会话切换');
     expect(container.querySelector('strong')).toBeTruthy();
   });
+
+  it('renders a current-workspace vision artifact from an image fence', () => {
+    const artifactId = 'vision-0123456789abcdef0123456789abcdef';
+    render(
+      <MessageItem
+        markdownText={`\`\`\`image\nD:\\data\\workspaces\\default\\vision\\${artifactId}.png\n\`\`\``}
+        workspaceId="default"
+      />,
+    );
+
+    const image = screen.getByRole('img', { name: 'Agent 生成的图片' });
+    expect(image.getAttribute('src')).toBe(
+      `/api/workspaces/default/vision-artifacts/${artifactId}`,
+    );
+  });
+
+  it('keeps an untrusted image fence as visible code', () => {
+    const { container } = render(
+      <MessageItem
+        markdownText={'```image\nD:\\temp\\arbitrary.png\n```'}
+        workspaceId="default"
+      />,
+    );
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('D:\\temp\\arbitrary.png')).toBeTruthy();
+  });
 });

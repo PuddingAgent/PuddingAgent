@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingAgent.Connectors;
 using PuddingCode.Configuration;
 using PuddingPlatform.Services;
+using PuddingRuntime.Services;
 
 namespace PuddingAgent.IntegrationTests.Feishu;
 
@@ -24,8 +25,13 @@ public sealed class FeishuInboundImageTests
             var storage = new VisionArtifactStorageService(
                 PuddingDataPaths.FromRoot(root),
                 NullLogger<VisionArtifactStorageService>.Instance);
+            var audioStorage = new AudioArtifactStorageService(
+                PuddingDataPaths.FromRoot(root),
+                NullLogger<AudioArtifactStorageService>.Instance);
             var mapper = new FeishuInboundMessageMapper(
                 storage,
+                audioStorage,
+                new ManagedOggOpusTranscoder(),
                 NullLogger<FeishuInboundMessageMapper>.Instance);
             var handler = new FeishuImageHandler();
             using var http = new HttpClient(handler);

@@ -39,6 +39,7 @@ public sealed class TurnExecutorAdapter(
             MaxToolCallsTotal = context.MaxToolCallsTotal ?? 0,
             ExecutionIdentity = context.ExecutionIdentity,
             VisualArtifactIds = context.VisualArtifactIds,
+            AudioArtifactIds = context.AudioArtifactIds,
             Origin = context.Origin,
         };
 

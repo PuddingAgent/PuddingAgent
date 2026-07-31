@@ -68,6 +68,36 @@ public static class MessageMapper
         }
     }
 
+    /// <summary>Extracts file_key from an audio or file message.</summary>
+    public static string? ExtractFileKey(this FeishuEvent evt)
+    {
+        var message = evt.Event?.Message;
+        if (message is null
+            || (!string.Equals(
+                    message.MessageType,
+                    "audio",
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(
+                    message.MessageType,
+                    "file",
+                    StringComparison.OrdinalIgnoreCase))
+            || string.IsNullOrWhiteSpace(message.Content))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<FeishuFileContent>(
+                message.Content,
+                JsonOptions)?.FileKey;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// 提取发送者 ID。
     /// </summary>

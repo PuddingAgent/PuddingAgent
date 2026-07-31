@@ -141,6 +141,24 @@ public sealed class FeishuStreamingProjectionWorker(
             if (!string.Equals(command.Status, "running", StringComparison.Ordinal))
                 return false;
 
+            var initialEvents = await db.ConversationEvents
+                .AsNoTracking()
+                .Where(evt =>
+                    evt.CommandId == command.CommandId
+                    && evt.Type ==
+                    ConversationEventTypes.MessageContentAppended)
+                .OrderBy(evt => evt.Sequence)
+                .Take(100)
+                .ToListAsync(ct);
+            var initialContent = string.Concat(
+                initialEvents.Select(ReadDelta));
+            if (string.IsNullOrEmpty(initialContent)
+                || AgentReplyImageDirective.CouldBePureImagePrefix(
+                    initialContent))
+            {
+                return false;
+            }
+
             var channelId = Get(metadata, MessageGatewayMetadata.ChannelId);
             var channel = channelId is null
                 ? null
@@ -397,9 +415,17 @@ public sealed class FeishuStreamingProjectionWorker(
         var rawReply = terminalEvent is null ? null : ReadReply(terminalEvent.Payload);
         if (string.IsNullOrWhiteSpace(rawReply))
             return false;
+        var imageArtifactPlan =
+            await FeishuImageArtifactProjection.CreatePlanAsync(
+                services.GetRequiredService<VisionArtifactStorageService>(),
+                logger,
+                command.WorkspaceId,
+                rawReply,
+                metadata,
+                ct);
         var plan = FeishuTtsProjection.CreatePlan(
             command.Status,
-            rawReply,
+            imageArtifactPlan.TextContent ?? string.Empty,
             metadata);
         var reply = plan.TextContent ?? string.Empty;
         var replyBytes = Encoding.UTF8.GetByteCount(reply);
@@ -501,15 +527,53 @@ public sealed class FeishuStreamingProjectionWorker(
                 metadata,
                 ct);
         }
+        var imageArtifactProjection =
+            await FeishuImageArtifactProjection.QueueAsync(
+                imageArtifactPlan,
+                messageSystem,
+                command.CommandId,
+                command.WorkspaceId,
+                command.AgentInstanceId,
+                projection.ConnectorId,
+                command.SessionId,
+                command.TurnId,
+                externalMessageId,
+                projection.ExternalConversationId,
+                metadata,
+                ct);
+        var imageProjection =
+            await FeishuImageGenerationProjection.QueueAsync(
+                services.GetRequiredService<IImageGenerationService>(),
+                messageSystem,
+                logger,
+                command.Status,
+                rawReply,
+                command.CommandId,
+                command.WorkspaceId,
+                command.AgentInstanceId,
+                projection.ConnectorId,
+                command.SessionId,
+                command.TurnId,
+                externalMessageId,
+                projection.ExternalConversationId,
+                metadata,
+                ct);
         command.ReplyProjectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await db.SaveChangesAsync(ct);
         logger.LogInformation(
-            "[FeishuStream] Final delivery projected command={CommandId} projection={ProjectionId} message={MessageId} voiceDirective={VoiceDirective} ttsMessage={TtsMessageId}",
+            "[FeishuStream] Final delivery projected command={CommandId} projection={ProjectionId} message={MessageId} voiceDirective={VoiceDirective} ttsMessage={TtsMessageId} imageArtifactDirective={ImageArtifactDirective} pureImage={PureImage} imageArtifactMessages={ImageArtifactMessageCount} imageArtifactFailures={ImageArtifactFailures} imageGenerationDirective={ImageGenerationDirective} imageGenerationMessages={ImageGenerationMessageCount} imageGenerationFailures={ImageGenerationFailures}",
             command.CommandId,
             projection.ProjectionId,
             string.IsNullOrWhiteSpace(plan.TextContent) ? null : replyMessageId,
             plan.HasVoiceDirective,
-            ttsMessageId);
+            ttsMessageId,
+            imageArtifactProjection.HasDirective,
+            imageArtifactProjection.IsPureImage,
+            imageArtifactProjection.MessageIds.Count,
+            imageArtifactProjection.FailedImages,
+            imageProjection.HasDirective,
+            imageProjection.MessageIds.Count,
+            imageProjection.FailedBlocks);
         return true;
     }
 

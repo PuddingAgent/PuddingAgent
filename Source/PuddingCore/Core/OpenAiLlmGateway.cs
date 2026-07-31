@@ -23,7 +23,10 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     /// <summary>Vision artifact resolver — injected by the runtime before each call. Set after construction.</summary>
     public IVisualArtifactResolver? VisualArtifactResolver { get; set; }
 
-    /// <summary>Workspace ID for vision artifact resolution. Set after construction alongside VisualArtifactResolver.</summary>
+    /// <summary>Audio artifact resolver — injected only for models tagged with the audio capability.</summary>
+    public IAudioArtifactResolver? AudioArtifactResolver { get; set; }
+
+    /// <summary>Workspace ID for multimodal artifact resolution.</summary>
     public string? WorkspaceId { get; set; }
 
     private string? _thinkingMode = NormalizeThinkingMode(options.EnableThinking switch
@@ -307,16 +310,20 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
             if (msg.Content is not null)
             {
-                // ── Vision multimodal content ──
+                // ── Provider-authorized multimodal content ──
                 if (msg.Role == ChatRole.User
-                    && msg.VisualArtifactIds is { Count: > 0 }
-                    && VisualArtifactResolver is not null
+                    && ((msg.VisualArtifactIds is { Count: > 0 }
+                         && VisualArtifactResolver is not null)
+                        || (msg.AudioArtifactIds is { Count: > 0 }
+                            && AudioArtifactResolver is not null))
                     && !string.IsNullOrWhiteSpace(WorkspaceId))
                 {
-                    var visionContent = await BuildVisionContentArrayAsync(msg, ct);
-                    if (visionContent is not null)
+                    var multimodalContent = await BuildMultimodalContentArrayAsync(
+                        msg,
+                        ct);
+                    if (multimodalContent is not null)
                     {
-                        msgObj["content"] = visionContent;
+                        msgObj["content"] = multimodalContent;
                     }
                     else
                     {
@@ -459,48 +466,88 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     }
 
     /// <summary>
-    /// Build OpenAI vision multimodal content array for a user message with artifact references.
+    /// Build an OpenAI-compatible multimodal content array for a user message.
     /// Returns null when resolution fails for all artifacts.
     /// </summary>
-    private async Task<JsonArray?> BuildVisionContentArrayAsync(
+    private async Task<JsonArray?> BuildMultimodalContentArrayAsync(
         ChatMessage msg,
         CancellationToken ct)
     {
-        if (msg.VisualArtifactIds is null || VisualArtifactResolver is null || string.IsNullOrWhiteSpace(WorkspaceId))
+        if (string.IsNullOrWhiteSpace(WorkspaceId))
             return null;
 
         var content = new JsonArray();
         var resolvedAny = false;
 
-        foreach (var artifactId in msg.VisualArtifactIds)
+        if (msg.VisualArtifactIds is { Count: > 0 }
+            && VisualArtifactResolver is not null)
         {
-            try
+            foreach (var artifactId in msg.VisualArtifactIds)
             {
-                var resolved = await VisualArtifactResolver.ResolveAsync(WorkspaceId!, artifactId, ct);
-                if (resolved is not null)
+                try
                 {
-                    content.Add(new JsonObject
+                    var resolved = await VisualArtifactResolver.ResolveAsync(
+                        WorkspaceId!,
+                        artifactId,
+                        ct);
+                    if (resolved is not null)
                     {
-                        ["type"] = "image_url",
-                        ["image_url"] = new JsonObject
+                        content.Add(new JsonObject
                         {
-                            ["url"] = resolved.DataUri,
-                        },
-                    });
-                    resolvedAny = true;
+                            ["type"] = "image_url",
+                            ["image_url"] = new JsonObject
+                            {
+                                ["url"] = resolved.DataUri,
+                            },
+                        });
+                        resolvedAny = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[OpenAiLlmGateway] Failed to resolve vision artifact '{artifactId}': {ex.Message}");
                 }
             }
-            catch (Exception ex)
+        }
+
+        if (msg.AudioArtifactIds is { Count: > 0 }
+            && AudioArtifactResolver is not null)
+        {
+            foreach (var artifactId in msg.AudioArtifactIds)
             {
-                // Degrade gracefully — skip unresolvable artifacts
-                System.Diagnostics.Debug.WriteLine($"[OpenAiLlmGateway] Failed to resolve vision artifact '{artifactId}': {ex.Message}");
+                try
+                {
+                    var resolved = await AudioArtifactResolver.ResolveAsync(
+                        WorkspaceId!,
+                        artifactId,
+                        ct);
+                    if (resolved is not null)
+                    {
+                        content.Add(new JsonObject
+                        {
+                            ["type"] = "input_audio",
+                            ["input_audio"] = new JsonObject
+                            {
+                                ["data"] = resolved.DataUri,
+                                ["format"] = resolved.Format,
+                            },
+                        });
+                        resolvedAny = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[OpenAiLlmGateway] Failed to resolve audio artifact '{artifactId}': {ex.Message}");
+                }
             }
         }
 
         if (!resolvedAny)
             return null;
 
-        // Prepend text content before images
+        // Text precedes binary modalities so the model sees the user intent first.
         if (!string.IsNullOrWhiteSpace(msg.Content))
         {
             content.Insert(0, new JsonObject

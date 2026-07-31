@@ -138,6 +138,58 @@ public sealed class FeishuClientReplyTests
     }
 
     [TestMethod]
+    public async Task ImageReply_UploadsMessageImageThenRepliesWithImageKey()
+    {
+        var handler = new RecordingHandler();
+        using var http = new HttpClient(handler);
+        using var client = new FeishuClient(
+            new FeishuConfig
+            {
+                AppId = "cli_test",
+                AppSecret = "secret_test",
+            },
+            http);
+
+        var uploaded = await client.UploadImageAsync(
+            [0x89, 0x50, 0x4E, 0x47],
+            "pudding.png",
+            "image/png");
+        Assert.AreEqual("img_generated_123", uploaded.Data?.ImageKey);
+        var replied = await client.ReplyImageAsync(
+            "om/image id",
+            uploaded.Data!.ImageKey!,
+            "image-stable-uuid");
+        Assert.AreEqual(0, replied.Code);
+
+        Assert.HasCount(3, handler.Requests);
+        var upload = handler.Requests[1];
+        Assert.AreEqual(
+            "https://open.feishu.cn/open-apis/im/v1/images",
+            upload.Uri);
+        StringAssert.Contains(upload.Body, "name=image_type");
+        StringAssert.Contains(upload.Body, "message");
+        StringAssert.Contains(upload.Body, "name=image");
+        StringAssert.Contains(upload.Body, "image/png");
+
+        var reply = handler.Requests[2];
+        Assert.AreEqual(
+            "https://open.feishu.cn/open-apis/im/v1/messages/om%2Fimage%20id/reply",
+            reply.Uri);
+        using var outer = JsonDocument.Parse(reply.Body);
+        Assert.AreEqual(
+            "image",
+            outer.RootElement.GetProperty("msg_type").GetString());
+        Assert.AreEqual(
+            "image-stable-uuid",
+            outer.RootElement.GetProperty("uuid").GetString());
+        using var content = JsonDocument.Parse(
+            outer.RootElement.GetProperty("content").GetString()!);
+        Assert.AreEqual(
+            "img_generated_123",
+            content.RootElement.GetProperty("image_key").GetString());
+    }
+
+    [TestMethod]
     public async Task CardKitStreaming_UsesCardEntityReferenceAndOrderedUpdates()
     {
         var handler = new RecordingHandler();
@@ -266,6 +318,8 @@ public sealed class FeishuClientReplyTests
                 ? """{"code":0,"msg":"ok","tenant_access_token":"tenant-token","expire":7200}"""
                 : path.EndsWith("/im/v1/files", StringComparison.Ordinal)
                     ? """{"code":0,"msg":"ok","data":{"file_key":"file_opus_123"}}"""
+                : path.EndsWith("/im/v1/images", StringComparison.Ordinal)
+                    ? """{"code":0,"msg":"ok","data":{"image_key":"img_generated_123"}}"""
                 : path.EndsWith("/cardkit/v1/cards", StringComparison.Ordinal)
                     ? """{"code":0,"msg":"ok","data":{"card_id":"card_123"}}"""
                     : path.EndsWith("/reply", StringComparison.Ordinal)

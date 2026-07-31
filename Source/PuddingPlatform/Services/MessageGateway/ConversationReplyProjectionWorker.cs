@@ -51,6 +51,10 @@ public sealed class ConversationReplyProjectionWorker(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
+        var imageGeneration =
+            scope.ServiceProvider.GetRequiredService<IImageGenerationService>();
+        var visionArtifacts =
+            scope.ServiceProvider.GetRequiredService<VisionArtifactStorageService>();
 
         var commands = await db.ChatExecutionCommands
             .Where(command =>
@@ -137,9 +141,17 @@ public sealed class ConversationReplyProjectionWorker(
             var externalMessageId = Get(
                 metadata,
                 MessageGatewayMetadata.ExternalMessageId);
+            var imageArtifactPlan =
+                await FeishuImageArtifactProjection.CreatePlanAsync(
+                    visionArtifacts,
+                    logger,
+                    command.WorkspaceId,
+                    presentation.Content,
+                    metadata,
+                    ct);
             var plan = FeishuTtsProjection.CreatePlan(
                 command.Status,
-                presentation.Content,
+                imageArtifactPlan.TextContent ?? string.Empty,
                 metadata);
             if (IsTrue(Get(
                     metadata,
@@ -213,16 +225,54 @@ public sealed class ConversationReplyProjectionWorker(
                     metadata,
                     ct);
             }
+            var imageArtifactProjection =
+                await FeishuImageArtifactProjection.QueueAsync(
+                    imageArtifactPlan,
+                    messageSystem,
+                    command.CommandId,
+                    command.WorkspaceId,
+                    command.AgentInstanceId,
+                    connectorId,
+                    command.SessionId,
+                    command.TurnId,
+                    externalMessageId,
+                    externalConversationId,
+                    metadata,
+                    ct);
+            var imageProjection =
+                await FeishuImageGenerationProjection.QueueAsync(
+                    imageGeneration,
+                    messageSystem,
+                    logger,
+                    command.Status,
+                    presentation.Content,
+                    command.CommandId,
+                    command.WorkspaceId,
+                    command.AgentInstanceId,
+                    connectorId,
+                    command.SessionId,
+                    command.TurnId,
+                    externalMessageId,
+                    externalConversationId,
+                    metadata,
+                    ct);
             command.ReplyProjectedAt =
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             projected++;
             logger.LogInformation(
-                "[MessageGateway] Reply projected command={CommandId} connector={ConnectorId} message={MessageId} voiceDirective={VoiceDirective} ttsMessage={TtsMessageId}",
+                "[MessageGateway] Reply projected command={CommandId} connector={ConnectorId} message={MessageId} voiceDirective={VoiceDirective} ttsMessage={TtsMessageId} imageArtifactDirective={ImageArtifactDirective} pureImage={PureImage} imageArtifactMessages={ImageArtifactMessageCount} imageArtifactFailures={ImageArtifactFailures} imageGenerationDirective={ImageGenerationDirective} imageGenerationMessages={ImageGenerationMessageCount} imageGenerationFailures={ImageGenerationFailures}",
                 command.CommandId,
                 connectorId,
                 replyMessageId,
                 plan.HasVoiceDirective,
-                ttsMessageId);
+                ttsMessageId,
+                imageArtifactProjection.HasDirective,
+                imageArtifactProjection.IsPureImage,
+                imageArtifactProjection.MessageIds.Count,
+                imageArtifactProjection.FailedImages,
+                imageProjection.HasDirective,
+                imageProjection.MessageIds.Count,
+                imageProjection.FailedBlocks);
         }
 
         if (db.ChangeTracker.HasChanges())

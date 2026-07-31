@@ -97,6 +97,7 @@ public sealed record PuddingLlmProvidersConfig
     public List<PuddingLlmProviderConfig> Providers { get; init; } = [];
     public Dictionary<string, PuddingLlmProfileConfig> Profiles { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public PuddingLlmRoleConfig Roles { get; init; } = new();
+    public PuddingLlmImageGenerationConfig? ImageGeneration { get; init; }
     public PuddingLlmEmbeddingConfig? Embedding { get; init; }
     public PuddingVoiceProvidersConfig? Voice { get; init; }
 }
@@ -232,6 +233,13 @@ public sealed record PuddingLlmEmbeddingConfig
     public string? ProviderId { get; init; }
     public string? ModelId { get; init; }
     public int? Dimension { get; init; }
+}
+
+/// <summary>Default provider/model binding for image generation tools.</summary>
+public sealed record PuddingLlmImageGenerationConfig
+{
+    public string? ProviderId { get; init; }
+    public string? ModelId { get; init; }
 }
 
 public sealed record AgentTemplateManifest

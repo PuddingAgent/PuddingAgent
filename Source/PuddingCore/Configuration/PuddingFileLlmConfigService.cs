@@ -163,6 +163,43 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
         };
     }
 
+    public LlmProfileInfo? GetImageGenerationProfile()
+    {
+        var config = Snapshot();
+        var binding = config.ImageGeneration;
+        if (string.IsNullOrWhiteSpace(binding?.ProviderId)
+            || string.IsNullOrWhiteSpace(binding.ModelId))
+        {
+            return null;
+        }
+
+        var provider = config.Providers.FirstOrDefault(item =>
+            item.IsEnabled
+            && string.Equals(
+                item.ProviderId,
+                binding.ProviderId,
+                StringComparison.OrdinalIgnoreCase));
+        if (provider is null)
+            return null;
+
+        var model = ResolveModel(provider, binding.ModelId);
+        if (model is null
+            || !model.CapabilityTags.Contains(
+                "image-generation",
+                StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return new LlmProfileInfo
+        {
+            ProfileId = "image-generation",
+            ProviderId = provider.ProviderId,
+            ModelId = model.ModelId,
+            Config = ToLlmConfig(provider, model, profile: null),
+        };
+    }
+
     public LlmProviderStrategy? GetProviderStrategy(string providerId)
     {
         var config = Snapshot();

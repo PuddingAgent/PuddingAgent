@@ -5,7 +5,7 @@ namespace PuddingCode.Abstractions;
 
 /// <summary>
 /// TTS/ASR Provider 工厂接口 — 定义在 PuddingCore 以支持跨层 DI 注入。
-/// Phase 1 仅 TTS，ASR 后续补充。
+/// 文件式 TTS 与 HTTP 文件 ASR 共用该 Provider-neutral 创建边界。
 /// </summary>
 public interface IVoiceProviderFactory
 {

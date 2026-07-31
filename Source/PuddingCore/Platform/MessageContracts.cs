@@ -189,6 +189,8 @@ public sealed record RuntimeDispatchRequest
         public string? ExpectedOutputContract { get; init; }
     /// <summary>视觉附件 ID 列表，用于构建多模态请求（图片/视频）。</summary>
     public IReadOnlyList<string>? VisualArtifactIds { get; init; }
+    /// <summary>音频附件 ID 列表；仅声明 audio capability 的模型会收到原生音频内容。</summary>
+    public IReadOnlyList<string>? AudioArtifactIds { get; init; }
     /// <summary>Agent Loop 最大轮数。与 AgentExecutionGuardrails.MaxRounds(默认200) 保持一致。0 或负数表示使用护栏默认值。</summary>
     public int MaxRounds { get; init; }
     /// <summary>Agent Loop 最大总耗时秒数。0 或负数表示使用平台护栏默认值。</summary>

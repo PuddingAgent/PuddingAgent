@@ -10,7 +10,8 @@ namespace HarnessAgent.Core.Connectors.Feishu;
 /// </summary>
 public class FeishuClient : IDisposable
 {
-    private const int MaxMessageResourceBytes = 10 * 1024 * 1024;
+    private const int MaxDownloadedMessageResourceBytes = 50 * 1024 * 1024;
+    private const int MaxUploadedImageBytes = 10 * 1024 * 1024;
     private const int MaxUploadFileBytes = 30 * 1024 * 1024;
     private readonly FeishuConfig _config;
     private readonly HttpClient _http;
@@ -171,10 +172,10 @@ public class FeishuClient : IDisposable
             ct);
         response.EnsureSuccessStatusCode();
 
-        if (response.Content.Headers.ContentLength is > MaxMessageResourceBytes)
+        if (response.Content.Headers.ContentLength is > MaxDownloadedMessageResourceBytes)
         {
             throw new InvalidOperationException(
-                $"Feishu message resource exceeds {MaxMessageResourceBytes} bytes.");
+                $"Feishu message resource exceeds {MaxDownloadedMessageResourceBytes} bytes.");
         }
 
         await using var source = await response.Content.ReadAsStreamAsync(ct);
@@ -185,10 +186,10 @@ public class FeishuClient : IDisposable
             var read = await source.ReadAsync(buffer, ct);
             if (read == 0)
                 break;
-            if (destination.Length + read > MaxMessageResourceBytes)
+            if (destination.Length + read > MaxDownloadedMessageResourceBytes)
             {
                 throw new InvalidOperationException(
-                    $"Feishu message resource exceeds {MaxMessageResourceBytes} bytes.");
+                    $"Feishu message resource exceeds {MaxDownloadedMessageResourceBytes} bytes.");
             }
 
             await destination.WriteAsync(buffer.AsMemory(0, read), ct);
@@ -306,6 +307,93 @@ public class FeishuClient : IDisposable
             {
                 content,
                 msg_type = "audio",
+                uuid,
+            }, options: _json),
+        };
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await _http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<SendMessageResponse>(
+            _json,
+            ct);
+        return result ?? new SendMessageResponse
+        {
+            Code = -1,
+            Msg = "empty response",
+        };
+    }
+
+    /// <summary>Uploads an image for use in a Feishu message.</summary>
+    public async Task<UploadImageResponse> UploadImageAsync(
+        byte[] content,
+        string fileName,
+        string mimeType,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mimeType);
+        if (content.Length == 0)
+            throw new ArgumentException("Image file is empty.", nameof(content));
+        if (content.Length > MaxUploadedImageBytes)
+        {
+            throw new ArgumentException(
+                $"Image file exceeds {MaxUploadedImageBytes} bytes.",
+                nameof(content));
+        }
+        if (mimeType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mimeType),
+                mimeType,
+                "Feishu message image must be JPEG, PNG, or WebP.");
+        }
+
+        var token = await GetAccessTokenAsync(ct);
+        using var multipart = new MultipartFormDataContent();
+        multipart.Add(new StringContent("message"), "image_type");
+        var image = new ByteArrayContent(content);
+        image.Headers.ContentType = new(mimeType);
+        multipart.Add(image, "image", fileName);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{BaseUrl}/im/v1/images")
+        {
+            Content = multipart,
+        };
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await _http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<UploadImageResponse>(
+            _json,
+            ct);
+        return result ?? new UploadImageResponse
+        {
+            Code = -1,
+            Msg = "empty response",
+        };
+    }
+
+    /// <summary>Replies to a Feishu message with an uploaded image.</summary>
+    public async Task<SendMessageResponse> ReplyImageAsync(
+        string messageId,
+        string imageKey,
+        string? uuid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(imageKey);
+        var token = await GetAccessTokenAsync(ct);
+        var content = JsonSerializer.Serialize(new { image_key = imageKey }, _json);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{BaseUrl}/im/v1/messages/{Uri.EscapeDataString(messageId)}/reply")
+        {
+            Content = JsonContent.Create(new
+            {
+                content,
+                msg_type = "image",
                 uuid,
             }, options: _json),
         };

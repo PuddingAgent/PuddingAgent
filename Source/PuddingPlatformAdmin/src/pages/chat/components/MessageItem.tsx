@@ -127,6 +127,8 @@ const CodeBlock: React.FC<{ code: string; className?: string; isStreaming?: bool
 interface MessageItemProps {
   markdownText: string;
   isStreaming?: boolean;
+  /** 当前工作区，用于把受控 vision-* image 代码块解析为 Artifact URL */
+  workspaceId?: string;
   /** ADR-InkBloom: 流式模式下可安全渲染的稳定 Markdown */
   stableMarkdown?: string;
   /** ADR-InkBloom: 未稳定的尾段完整文本 */
@@ -140,6 +142,7 @@ interface MessageItemProps {
 const MessageItem: React.FC<MessageItemProps> = ({
   markdownText,
   isStreaming,
+  workspaceId,
   stableMarkdown,
   liveText,
   visibleLiveText,
@@ -249,7 +252,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
     return (
       <div ref={outputRef} className={styles.markdownBody}>
         {stableMarkdown ? (
-          <MarkdownBlock markdownText={stableMarkdown} styles={styles} isStreaming />
+          <MarkdownBlock
+            markdownText={stableMarkdown}
+            styles={styles}
+            isStreaming
+            workspaceId={workspaceId}
+          />
         ) : null}
         {liveTextToRender ? (
           <span className={styles.liveTextSpan}>{liveTextToRender}</span>
@@ -265,6 +273,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         markdownText={markdownText || (isStreaming ? ' ' : '')}
         styles={styles}
         isStreaming={isStreaming}
+        workspaceId={workspaceId}
       />
       {isStreaming && <span className={styles.streamingCursor}>▌</span>}
     </div>
@@ -276,10 +285,12 @@ const MarkdownBlock = React.memo(
     markdownText,
     styles,
     isStreaming,
+    workspaceId,
   }: {
     markdownText: string;
     styles: Record<string, string>;
     isStreaming?: boolean;
+    workspaceId?: string;
   }) {
     const renderStart = performance.now();
     const preprocessMsRef = React.useRef(0);
@@ -289,7 +300,10 @@ const MarkdownBlock = React.memo(
       preprocessMsRef.current = performance.now() - start;
       return processed;
     }, [markdownText]);
-    const components = React.useMemo(() => sharedComponents(styles, isStreaming), [styles, isStreaming]);
+    const components = React.useMemo(
+      () => sharedComponents(styles, isStreaming, workspaceId),
+      [styles, isStreaming, workspaceId],
+    );
     React.useEffect(() => {
       recordPerfEvent(
         'chat.markdown.render',
@@ -312,11 +326,18 @@ const MarkdownBlock = React.memo(
       </ReactMarkdown>
     );
   },
-  (prev, next) => prev.markdownText === next.markdownText,
+  (prev, next) =>
+    prev.markdownText === next.markdownText &&
+    prev.isStreaming === next.isStreaming &&
+    prev.workspaceId === next.workspaceId,
 );
 
 /** 共享的 ReactMarkdown components 配置 */
-function sharedComponents(styles: Record<string, string>, isStreaming?: boolean) {
+function sharedComponents(
+  styles: Record<string, string>,
+  isStreaming?: boolean,
+  workspaceId?: string,
+) {
   return {
     table: ({
       children,
@@ -352,6 +373,24 @@ function sharedComponents(styles: Record<string, string>, isStreaming?: boolean)
       node?: unknown;
     }) => {
       const c = String(children ?? '').replace(/\n$/, '');
+      if (className === 'language-image' && workspaceId) {
+        const artifactId = resolveVisionArtifactId(c);
+        if (artifactId) {
+          const src =
+            `/api/workspaces/${encodeURIComponent(workspaceId)}` +
+            `/vision-artifacts/${encodeURIComponent(artifactId)}`;
+          return (
+            <span className={styles.artifactImageWrap}>
+              <img
+                className={styles.artifactImage}
+                src={src}
+                alt="Agent 生成的图片"
+                loading="lazy"
+              />
+            </span>
+          );
+        }
+      }
       const hasLanguageClass = /\blanguage-/.test(className ?? '');
       const isInlineCode =
         inline === true || (!hasLanguageClass && !c.includes('\n'));
@@ -364,6 +403,25 @@ function sharedComponents(styles: Record<string, string>, isStreaming?: boolean)
       return <CodeBlock code={c} className={className} isStreaming={isStreaming} />;
     },
   };
+}
+
+const VISION_ARTIFACT_ID = /^vision-[a-f0-9]{32}$/i;
+const VISION_ARTIFACT_FILE =
+  /(?:^|[\\/])(vision-[a-f0-9]{32})\.(?:jpe?g|png|webp)$/i;
+
+function resolveVisionArtifactId(reference: string): string | undefined {
+  const value = reference.trim();
+  if (
+    !value ||
+    value.includes('\n') ||
+    /^https?:\/\//i.test(value)
+  ) {
+    return undefined;
+  }
+  if (VISION_ARTIFACT_ID.test(value)) {
+    return value.toLowerCase();
+  }
+  return VISION_ARTIFACT_FILE.exec(value)?.[1].toLowerCase();
 }
 
 export default MessageItem;

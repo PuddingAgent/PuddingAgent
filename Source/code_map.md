@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-31 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +可替换 TTS、纯 C# Ogg/Opus 转码与飞书可靠语音回复
+> 最后更新: 2026-07-31 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +可替换图片生成、Vision Artifact 与飞书可靠图片回复
 
 ---
 
@@ -71,7 +71,7 @@ Source/
 | 文件 | 用途 |
 |------|------|
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
-| `PuddingCore/Core/OpenAiLlmGateway.cs` + `PuddingCore/Models/StreamDelta.cs` | OpenAI-compatible Chat Completions 适配；流式解析保留同一 chunk 的全部 `tool_calls`，按 index 维持延迟 ID，并为缺失/重复 ID 生成单轮稳定协议 ID，避免工具结果在下一轮被判 orphan |
+| `PuddingCore/Core/OpenAiLlmGateway.cs` + `PuddingCore/Models/ChatMessage.cs` + `PuddingCore/Models/StreamDelta.cs` | OpenAI-compatible Chat Completions 适配；只为带对应 capability 的模型解析受控 Vision/Audio Artifact，音频序列化为 `input_audio` Data URI；流式解析保留同一 chunk 的全部 `tool_calls`，按 index 维持延迟 ID，并为缺失/重复 ID 生成单轮稳定协议 ID，避免工具结果在下一轮被判 orphan |
 | `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；仅当当前模型带 `vision` 能力标签时才把 workspace 授权视觉制品序列化为多模态内容，文本模型不再接收 `image_url` |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
@@ -87,7 +87,7 @@ Source/
 | `Services/ContextCompactionService.cs` | 上下文压缩执行与 ContextHealth 用量解析；provider/snapshot/Memory 均无数据时，以最近 500 条 canonical ChatMessages 估算并标记 `canonical_chat_transcript`，避免重启后错误显示 0 used |
 | `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估 + 容量预测（PredictCapacity） |
 | `Services/ContextAssemblyService.cs` | 上下文组装（System Prompt + 历史 + 记忆） |
-| `Services/SystemPromptBuilder.cs` + `Services/ContextPipeline.cs` | 系统提示与上下文管线编排；两条提示入口复用唯一的飞书语音协议，依据入站 `channel_type=feishu` 指导 Agent 选择 `send_voice` 或 `voice` 围栏，并锁定 V1 原文可见后追加语音；L6 召回内容严格限制为 5K tokens，并在裁剪完成后才计入 `UsedTokens`，保证注入内容、层快照和预算账目一致 |
+| `Services/SystemPromptBuilder.cs` + `Services/ContextPipeline.cs` | 系统提示与上下文管线编排；两条提示入口复用唯一的飞书语音输出协议与音频输入安全协议，出站依据 `channel_type=feishu` 指导 `send_voice`/`voice` 围栏，入站依据平台 attached-audio notice 指导原生听取或精确路径 `asr`；L6 召回内容严格限制为 5K tokens，并在裁剪完成后才计入 `UsedTokens`，保证注入内容、层快照和预算账目一致 |
 
 ### 工具系统
 | 文件 | 用途 |
@@ -223,7 +223,10 @@ Source/
 | `Services/ChannelConfigurationFileService.cs` | 文件化渠道配置唯一写入边界；维护 `config/channel.providers.json` 与 `channels/{channelId}/manifest.json`，Secret 只返回是否已配置，校验唯一 Feishu App ID 和 Agent 绑定，并在启动时把旧 Agent `feishu` 对象原地迁移为渠道实例 |
 | `Services/Mcp/McpServerConfig.cs` + `McpConnectionManager.cs` | Workspace MCP Client 生命周期；官方 SDK Streamable HTTP/SSE 与本地 stdio 子进程、严格配置、KeyVault Bearer 引用、受限子进程环境、DNS/SSRF 防线、工具热发现和 fail-closed 状态；Codex 自修复场景连接独立 HTTP Service，不由 Backend 托管进程 |
 | `Services/Mcp/McpPuddingTool.cs` | MCP Tool → `IPuddingTool` 适配；稳定命名空间、原始 JSON Schema、高风险审批、Workspace 二次隔离、超时与结果上限 |
-| `Services/VisionArtifactStorageService.cs` + `Controllers/Api/VisionArtifactApiController.cs` + `Services/VisualArtifactReference.cs` + `Services/VisualArtifactResolverBridge.cs` | 无状态 singleton 视觉制品存储/解析边界；只持久化 provider-safe JPEG/PNG/WebP，同时提供 LLM 可消费引用与经过 workspace 根目录校验的受控本地路径；不支持的 MIME 返回 HTTP 415，不得成为 500 |
+| `Services/VisionArtifactStorageService.cs` + `Controllers/Api/VisionArtifactApiController.cs` + `Services/VisualArtifactReference.cs` + `Services/VisualArtifactResolverBridge.cs` + `Services/RemoteImageArtifactImportService.cs` | 无状态 singleton 视觉制品存储/解析边界；只持久化 provider-safe JPEG/PNG/WebP，同时提供 LLM 可消费引用与经过 workspace 根目录校验的受控本地路径；远程导入只接受 public HTTPS、以 public-only DNS/连接策略防 SSRF，并在 50 MiB 内按 Workspace 稳定复用；不支持的 MIME 返回 HTTP 415，不得成为 500 |
+| `Services/AudioArtifactStorageService.cs` + `Services/AudioArtifactReference.cs` + `Services/AudioArtifactResolverBridge.cs` | Workspace 受控音频制品边界；只持久化经过文件头校验的 16-bit mono/stereo PCM WAV，以稳定 `audio-*` 身份同时提供精确本地路径与 provider-safe Data URI，拒绝路径穿越和伪装格式 |
+| `PuddingCore/Abstractions/IAudioTranscriptionService.cs` + `PuddingPlatform/Services/AudioTranscriptionService.cs` | Provider-neutral 文件 ASR 边界；从 `config/voice/providers.json` 解析 Provider/模型与 Provider 自有默认 ASR 模型，再通过 `IVoiceProviderFactory/IAsrHttpRecognizer` 调用具体服务 |
+| `PuddingCore/Abstractions/IImageGenerationService.cs` + `PuddingPlatform/Services/ImageGenerationService.cs` + `PuddingRuntime/Services/VolcengineArkImageGenerationProvider.cs` | Provider-neutral 图片生成/编辑边界；按 default/precision/sequence capability 选择 Seedream Lite/Pro，支持最多 10 个参考 Vision Artifact、0~999 坐标提示、精确尺寸、PNG/JPEG、提示词优化、联网搜索和 1~4 张组图；Ark 临时 URL 立即限流下载并物化为 Workspace Vision Artifact，终态稳定操作键可复用已生成 Artifact |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件，再按持久游标投影到父执行身份对应的 canonical Conversation Event，供父 Chat 的 bootstrap/replay/live SSE 观察；有界后台补投使用跨轮次扫描游标，避免 run 数量超过单批上限后永久饥饿 |
@@ -238,7 +241,7 @@ Source/
 | `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json/reply_projected_at`，避免已有数据库在 Turn 受理或渠道回复投影时因 EF 模型漂移失败 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
 | `Services/AgentChat/ChatExecutionWorker.cs` | Worker v5 — 通过 IExecutionLeaseStore 原子 CAS 领取，透传 Lease 到 Coordinator |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；从 gateway metadata 构造 typed `MessageOrigin`，让 Runtime 明确识别飞书来源；附图不改写主模型路由，文本主模型先获得平台视觉观察；终态写入失败时执行 fenced 基础设施兜底 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` + `ExecutionWatchdogPolicy.cs` | Execution Kernel 入口 — 接收 Lease，冻结 24h 硬上限并运行 1h 滑动无进展看门狗，读取 Command 稳定引用，组装 Snapshot，执行 Runtime，向全部输出事件贯穿 assistant MessageId，仲裁 `execution_timeout/execution_stalled/cancelled` 并提交 Journal；从 gateway metadata 构造 typed `MessageOrigin`；附图由文本主模型先获平台视觉观察，附音频按精确 Provider+Model `audio` capability 在原生 `AudioArtifactIds` 与受控路径 `asr` notice 间分流；终态写入失败时执行 fenced 基础设施兜底 |
 | `Services/VisualArtifactObservationService.cs` | 文本主模型的强制视觉预处理边界；按 `vision` capability 选择视觉模型，把多图事实/OCR 与不确定性作为不可信媒体观察注入本轮，失败即阻断主 Agent；原生视觉主模型跳过二次调用 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Runtime delta 聚合边界；持久事件必须持有独立 JsonElement，非 delta 事件必须原样保留 Runtime SchemaVersion |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 历史与活动 Run 查询投影；Agent 来源名取实例 manifest 显示名（禁止拿 Session title 冒充发送者），以 `conversation_events` 为过程事实源，按 `ChatMessages.turn_id` 或 command 的 user/assistant message 映射补齐 canonical `turnId`；初始 conversation 只返回过程计数摘要且不读取事件 payload，完整过程按稳定 `messageId/runId` 经单消息详情端点延迟加载 |
@@ -301,17 +304,21 @@ Source/
 | `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
 | `PuddingCore/Models/AgentReplyVoiceDirective.cs` + `Services/MessageGateway/ConversationTerminalMessageFormatter.cs` + `ConversationReplyProjectionWorker.cs` + `FeishuTtsProjection.cs` | 从 succeeded/failed/cancelled Command 的 committed terminal event 生成统一用户文案并幂等创建 Connector delivery；成功答复仅在显式 `voice` 围栏时追加 typed audio，V1 的纯围栏与混合回复都先发送含围栏的完整原始 Markdown，配置关闭/超长时保留原文且只发文字；活跃 CardKit stream 拥有终态投影，stream `failed` 后走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
 | `PuddingCore/Abstractions/IVoiceSynthesisService.cs` + `PuddingPlatform/Services/VoiceSynthesisService.cs` + `PuddingRuntime/Services/VoiceProviderFactory.cs` | Web/渠道共享的 Provider-neutral TTS 边界；从 `config/voice/providers.json` 解析 Provider/模型与 Provider 自有默认模型，通过 `ITtsProvider` 适配 Qwen/CosyVoice 等服务，并将 URL/Provider 输出收敛为有界音频字节 |
-| `PuddingCore/Abstractions/IAudioTranscoder.cs` + `PuddingRuntime/Services/ManagedOggOpusTranscoder.cs` | 进程内短音频转码边界；NAudio.Core 解析/降混 WAV，Concentus 重采样并编码 16 kHz 单声道 24 kbps Ogg/Opus，不依赖 ffmpeg/native codec；按实际读取的 PCM 样本计算时长，兼容未知长度占位的流式 WAV 头 |
+| `PuddingCore/Abstractions/IAudioTranscoder.cs` + `PuddingRuntime/Services/ManagedOggOpusTranscoder.cs` | 进程内短音频双向转码边界；NAudio.Core/Concentus 完成 WAV→16 kHz mono 24 kbps Ogg/Opus 出站与飞书 Ogg/Opus→16 kHz mono PCM WAV 入站，不依赖 ffmpeg/native codec；按实际样本计算时长并限制解码时长 |
 | `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 channel-owned Connector、渠道实例与 Agent `channelIds` 引用，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按渠道 `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
 | `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从启用的渠道服务商/渠道实例和 Agent 引用动态装配一 Agent 一机器人；Connector 身份为 `feishu:{channelId}`，拒绝重复 AppId，凭据不进入公共 DTO |
-| `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `PuddingAgent/Services/FeishuTtsDeliveryService.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1 实体创建/更新/关闭；图片入站落 Web 共用 Vision Artifact；语音出站经共享 TTS、纯托管 Opus 转码、file upload 与 `msg_type=audio` reply；入站使用 `message_type`，出站使用 `msg_type` |
-| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 原样投影到同一飞书流式卡片，V1 有意保留 `voice` 围栏供客户端核对 Agent 输出，并在 durable final-card delivery 后追加语音；sequence/uuid 稳定重试；failed/cancelled 用统一错误文案关闭卡片；任一投影阶段连续失败 5 次进入 `failed` 并回退普通文本，不无限重试、不重跑 Agent |
+| `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `PuddingAgent/Services/FeishuTtsDeliveryService.cs` + `FeishuImageUploadPreparationService.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1；图片入站按 50 MiB 边界落 Vision Artifact，图片出站从 Artifact 上传并以 `msg_type=image` 回复，超过飞书 10 MiB 上传边界时在 C# 层生成有界 JPEG 投递副本且保留原图；语音入站按 `file_key/type=file` 下载、纯托管解码并幂等落 Audio Artifact；语音出站经共享 TTS、Opus 转码、file upload 与 `msg_type=audio` reply |
+| `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 原样投影到同一飞书流式卡片，V1 有意保留 `voice`/`ImageGeneration` 围栏供客户端核对 Agent 输出；对可能成为纯 `image` 围栏的前缀延迟建卡，终态解析已有图片围栏后追加 Artifact；sequence/uuid 稳定重试；failed/cancelled 用统一错误文案关闭卡片；任一投影阶段连续失败 5 次进入 `failed` 并回退普通文本，不无限重试、不重跑 Agent |
 | `PuddingAgent/Tools/SendVoiceTool.cs` | Agent 显式语音工具；仅从当前 Feishu main Turn 的受信任 Command metadata 解析目标，以 `commandId + toolCallId` 幂等排队 audio delivery，不允许模型指定任意收件人；成功后抑制工具调用后的终态确认文字，已开始文字流时拒绝并提示改用混合 `voice` 围栏 |
+| `PuddingAgent/Tools/AsrTool.cs` | 文本模型的受控音频读取工具；只接受 attached-audio notice 中当前 Workspace `audio-*.wav` 的精确绝对路径，拒绝任意文件和跨 Workspace 访问，并把 Provider-neutral ASR 结果标记为不可信用户媒体 |
+| `PuddingAgent/Tools/ImportImageTool.cs` + `GenerateImageTool.cs` + `SendImageTool.cs` + `PuddingCore/Models/AgentReplyImageDirective.cs` + `AgentReplyImageGenerationDirective.cs` + `PuddingPlatform/Services/MessageGateway/FeishuImageArtifactProjection.cs` + `FeishuImageGenerationProjection.cs` + `FeishuImageProjection.cs` | Agent 图片工具与 Markdown 多入口；联网参考图按 search→受控导入→precision 编辑，工具支持普通生成、参考图精细编辑/坐标定位及组图并逐 Artifact 发送；小写 `image` 围栏只解析当前 Workspace Artifact，纯围栏为 image-only、混合回复去围栏文本后追加，最多四张；`ImageGeneration` 围栏保留原文后按序生成/追加；可信 metadata 决定目标并抑制重复 |
+| `PuddingPlatform/Controllers/Api/FeishuImageDebugController.cs` | Admin-only 增强图片链路调试端口；复用最近可信 Feishu ingress route，`confirmSend=true` 后可带 mode、参考 Artifact、尺寸/格式/优化/web search/组图参数执行真实生成并逐 Artifact 排队，不接受任意外部目标 |
 | `Data/Entities/ConnectorStreamProjectionEntity.cs` + `Services/ConnectorStreamProjectionSchemaBootstrapper.cs` | `connector_stream_projections` 的 CardKit resource、累计正文、Conversation cursor、操作 sequence、重试与生命周期状态；SQLite 幂等建表升级 |
 | `PuddingAgent/Services/ConnectorDeliveryDispatcher.cs` | Connector endpoint 的 durable egress 消费器；独立 claim/ack/指数退避/dead-letter；CardKit 终态 ACK 后同步完成 stream projection，出站故障不重跑 Agent |
-| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` + `SendVoiceToolTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片/TTS metadata 进入真实 SQLite Message Fabric/canonical SubmitTurn、图片资源稳定落盘与重投复用、CardKit create/publish/delta/final durable delivery、V1 流式围栏原样可见、无 stream metadata 的独立 audio delivery，以及 `send_voice` 当前 Turn 路由/禁用保护/终态文字抑制 |
-| `PuddingRuntimeTests/Services/ContextPipelineLayerTests.cs` + `ManagedOggOpusTranscoderTests.cs` + `PuddingPlatformTests/Services/VoiceSynthesisServiceTests.cs` + `Tests/HarnessAgent.Core.Tests/Feishu/FeishuClientReplyTests.cs` | TTS/语音协议回归；锁定 Agent 最终系统提示只包含一份 canonical 飞书语音协议且不再暴露旧 `voice.enabled` 规则、Provider 自有默认模型、WAV→Ogg/Opus 参数与文件头、飞书 multipart `file_type=opus` 上传和稳定 uuid audio reply |
-| `PuddingPlatformTests/Services/VisualArtifactObservationServiceTests.cs` | 视觉预处理回归；覆盖文本主模型强制观察、原生视觉直通、视觉失败阻断，以及观察上下文的媒体 prompt-injection 安全边界 |
+| `Tests/PuddingAgent.IntegrationTests/Feishu/FakeFeishuRoundTripTests.cs` + `FeishuInboundImageTests.cs` + `FeishuInboundAudioTests.cs` + `SendVoiceToolTests.cs` | 无外网 Fake 飞书往返验收；覆盖文本/图片/音频/TTS metadata、图片/音频资源稳定落盘与重投复用、Ogg/Opus 入站规范化、CardKit durable delivery，以及 `send_voice` 当前 Turn 路由/禁用保护/终态文字抑制 |
+| `PuddingRuntimeTests/Services/ContextPipelineLayerTests.cs` + `LlmStreamObservabilityTests.cs` + `ManagedOggOpusTranscoderTests.cs` + `PuddingPlatformTests/Services/AudioArtifactStorageServiceTests.cs` + `AudioTranscriptionServiceTests.cs` + `PuddingWebApiTests/Tools/AsrToolTests.cs` | 语音输入/输出协议回归；锁定唯一系统提示、原生 `input_audio` 与文本模型不泄漏、双向托管 Opus 转码、PCM Artifact 校验、Provider 自有默认 TTS/ASR 模型和 `asr` Workspace 路径授权 |
+| `PuddingPlatformTests/Services/VisualArtifactObservationServiceTests.cs` | 多模态执行预处理回归；覆盖文本主模型强制视觉观察、原生视觉直通、视觉失败阻断、精确音频 capability 双分流，以及媒体 prompt-injection 安全边界 |
+| `PuddingCoreTests/MessageFabric/AgentReplyImageDirectiveTests.cs` + `AgentReplyImageGenerationDirectiveTests.cs` + `PuddingRuntimeTests/Services/VolcengineArkImageGenerationProviderTests.cs` + `PuddingPlatformTests/Services/RemoteImageArtifactImportServiceTests.cs` + `ImageGenerationServiceTests.cs` + `MessageGateway/ConversationReplyProjectionWorkerTests.cs` + `Tests/PuddingAgent.IntegrationTests/Feishu/SendImageToolTests.cs` + `FeishuImageUploadPreparationServiceTests.cs` + `Tests/HarnessAgent.Core.Tests/Feishu/FeishuClientReplyTests.cs` | 图片生成/投递回归；覆盖已有图片围栏授权/纯图片/混合追加、HTTPS 导入复用、Pro 参考图/坐标请求、capability 路由、稳定操作复用、工具抑制、可信 Turn 路由、15 MiB 原图的 C# 有界投递副本、飞书 multipart 上传和稳定 uuid reply |
 | `Tests/PuddingAgent.IntegrationTests/Feishu/FeishuCommandInterceptionTests.cs` | 飞书系统指令边界回归；验证 channel-owned open_id 白名单、`/whoami` 身份透传、`/status` 非特权共享处理、`/compact` 只回复 Connector 不投递 Agent，以及显式 `ForwardToAgent` 契约 |
 | `PuddingPlatformTests/Services/ChannelConfigurationFileServiceTests.cs` | 渠道文件配置回归；覆盖 Secret 不回显、空 Secret 更新保留、旧 Agent 飞书配置迁移和重复 App ID 拒绝 |
 | `Tests/HarnessAgent.Cli/Program.cs` (`feishu-echo`) | 独立飞书 SDK Echo 程序；真实长连接收到文本后以稳定 uuid 调 reply API 原样回复，支持 `--once/--timeout-seconds/--config` |
@@ -801,7 +808,7 @@ Orchestrator:
 |------|------|------|
 | `hooks/useSessionEventConnection.ts` | SSE 断流状态条 | `reconnectCountRef` → ChatMain Alert banner |
 | `components/AgentMessageBubble.tsx` | TTFB + 停滞检测 + 语音气泡 | 3s/10s 阈值；计时使用服务端 Turn 时间，重挂载不归零；15s 琥珀脉冲；`modality='voice'` 波形 |
-| `components/MessageItem.tsx` | 代码懒高亮 + Settle FLIP | 流式跳过 Prism；200ms transform 平滑切换 |
+| `components/MessageItem.tsx` | 代码懒高亮 + Settle FLIP + Vision Artifact 围栏 | 流式跳过 Prism；200ms transform 平滑切换；小写 `image` 代码块只把当前 Workspace 的 `vision-*`/精确本地 Artifact 路径映射为受控 API 图片，任意路径仍按代码显示 |
 | `hooks/useTypewriterStreaming.ts` | 增量扫描 + 自适应打字机 | O(n)→O(delta)；48-200 chars 动态缓冲 |
 | `viewport/useMessageViewportRuntime.ts` | 高度缓存 + 滚动锚定 | Map 缓存；500ms 挂起；rAF×2 重试 |
 | `components/MessageList.tsx` | 未读 badge + 诊断导出 + 骨架屏 | 红点计数；Alert 诊断复制；Skeleton |

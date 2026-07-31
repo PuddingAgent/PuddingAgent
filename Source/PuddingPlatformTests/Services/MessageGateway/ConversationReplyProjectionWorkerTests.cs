@@ -4,10 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 using PuddingPlatform.Services.MessageGateway;
 
 namespace PuddingPlatformTests.Services.MessageGateway;
@@ -26,6 +28,9 @@ public sealed class ConversationReplyProjectionWorkerTests
         services.AddDbContext<PlatformDbContext>(
             options => options.UseSqlite(connection));
         services.AddSingleton<IMessageSystem>(sent);
+        services.AddSingleton<IImageGenerationService>(
+            new StubImageGenerationService());
+        services.AddSingleton(CreateVisionStorage());
         await using var provider = services.BuildServiceProvider();
 
         await using (var scope = provider.CreateAsyncScope())
@@ -143,6 +148,90 @@ public sealed class ConversationReplyProjectionWorkerTests
     }
 
     [TestMethod]
+    public async Task ProjectBatchAsync_ImageGenerationFences_PreserveTextThenAppendImages()
+    {
+        const string reply =
+            "生成两张图。\n\n```ImageGeneration\n第一张布丁猫。\n```\n\n```ImageGeneration\n第二张布丁猫。\n```";
+        var sent = await ProjectSucceededReplyAsync(reply);
+
+        Assert.AreEqual(3, sent.Envelopes.Count);
+        Assert.AreEqual(
+            reply,
+            sent.Envelopes.Single(item =>
+                item.ContentType == MessageContentTypes.Text).Content);
+        Assert.HasCount(
+            2,
+            sent.Envelopes.Where(item =>
+                item.ContentType == MessageContentTypes.Image));
+        foreach (var image in sent.Envelopes.Where(item =>
+                     item.ContentType == MessageContentTypes.Image))
+        {
+            Assert.AreEqual(
+                ConnectorPayloadKinds.VisionImage,
+                image.Metadata[ConnectorPayloadMetadata.Kind]);
+            Assert.AreEqual(
+                "vision-0123456789abcdef0123456789abcdef",
+                image.Metadata[ConnectorPayloadMetadata.ArtifactId]);
+        }
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_ImageToolSuppression_PreservesFenceWithoutRegeneration()
+    {
+        const string reply = "```ImageGeneration\n一只布丁猫。\n```";
+        var sent = await ProjectSucceededReplyAsync(
+            reply,
+            suppressImageDirective: true);
+
+        Assert.AreEqual(1, sent.Envelopes.Count);
+        Assert.AreEqual(MessageContentTypes.Text, sent.Envelopes[0].ContentType);
+        Assert.AreEqual(reply, sent.Envelopes[0].Content);
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_PureImageFence_ProjectsOnlyImage()
+    {
+        var sent = await ProjectSucceededReplyAsync(
+            "```image\n{{IMAGE_PATH}}\n```");
+
+        Assert.AreEqual(1, sent.Envelopes.Count);
+        var image = sent.Envelopes.Single();
+        Assert.AreEqual(MessageContentTypes.Image, image.ContentType);
+        Assert.AreEqual(
+            "vision-0123456789abcdef0123456789abcdef",
+            image.Metadata[ConnectorPayloadMetadata.ArtifactId]);
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_MixedImageFence_RemovesPathAndAppendsImage()
+    {
+        var sent = await ProjectSucceededReplyAsync(
+            "说明文字。\n\n```image\n{{IMAGE_PATH}}\n```\n\n补充文字。");
+
+        Assert.AreEqual(2, sent.Envelopes.Count);
+        var text = sent.Envelopes.Single(item =>
+            item.ContentType == MessageContentTypes.Text);
+        Assert.AreEqual("说明文字。\n\n\n补充文字。", text.Content);
+        Assert.IsFalse(text.Content.Contains("vision-", StringComparison.Ordinal));
+        Assert.AreEqual(
+            MessageContentTypes.Image,
+            sent.Envelopes.Single(item =>
+                item.ContentType == MessageContentTypes.Image).ContentType);
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_ImageFenceOutsideWorkspace_RemainsText()
+    {
+        const string reply =
+            "```image\nD:\\data\\workspaces\\other\\vision-artifacts\\vision-0123456789abcdef0123456789abcdef.png\n```";
+        var sent = await ProjectSucceededReplyAsync(reply);
+
+        Assert.AreEqual(1, sent.Envelopes.Count);
+        Assert.AreEqual(MessageContentTypes.Text, sent.Envelopes[0].ContentType);
+        Assert.AreEqual(reply, sent.Envelopes[0].Content);
+    }
+
+    [TestMethod]
     public async Task ProjectBatchAsync_VoiceToolSuppression_DropsTerminalText()
     {
         var sent = await ProjectSucceededReplyAsync(
@@ -163,6 +252,9 @@ public sealed class ConversationReplyProjectionWorkerTests
         services.AddDbContext<PlatformDbContext>(
             options => options.UseSqlite(connection));
         services.AddSingleton<IMessageSystem>(sent);
+        services.AddSingleton<IImageGenerationService>(
+            new StubImageGenerationService());
+        services.AddSingleton(CreateVisionStorage());
         await using var provider = services.BuildServiceProvider();
 
         await using (var scope = provider.CreateAsyncScope())
@@ -266,7 +358,8 @@ public sealed class ConversationReplyProjectionWorkerTests
 
     private static async Task<RecordingMessageSystem> ProjectSucceededReplyAsync(
         string reply,
-        bool suppressFinalText = false)
+        bool suppressFinalText = false,
+        bool suppressImageDirective = false)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -276,6 +369,29 @@ public sealed class ConversationReplyProjectionWorkerTests
         services.AddDbContext<PlatformDbContext>(
             options => options.UseSqlite(connection));
         services.AddSingleton<IMessageSystem>(sent);
+        services.AddSingleton<IImageGenerationService>(
+            new StubImageGenerationService());
+        var visionStorage = CreateVisionStorage();
+        services.AddSingleton(visionStorage);
+        const string artifactId =
+            "vision-0123456789abcdef0123456789abcdef";
+        await using (var image = new MemoryStream(
+                         [0x89, 0x50, 0x4E, 0x47]))
+        {
+            await visionStorage.SaveIdempotentAsync(
+                "default",
+                artifactId,
+                image,
+                "image/png");
+        }
+        var localImage = await visionStorage.ResolveLocalFileAsync(
+            "default",
+            artifactId);
+        Assert.IsNotNull(localImage);
+        reply = reply.Replace(
+            "{{IMAGE_PATH}}",
+            localImage.Path,
+            StringComparison.Ordinal);
         await using var provider = services.BuildServiceProvider();
 
         await using (var scope = provider.CreateAsyncScope())
@@ -296,6 +412,11 @@ public sealed class ConversationReplyProjectionWorkerTests
             if (suppressFinalText)
             {
                 metadata[MessageGatewayMetadata.VoiceToolSuppressFinalText] =
+                    "true";
+            }
+            if (suppressImageDirective)
+            {
+                metadata[MessageGatewayMetadata.ImageToolSuppressDirective] =
                     "true";
             }
 
@@ -345,5 +466,37 @@ public sealed class ConversationReplyProjectionWorkerTests
         Assert.AreEqual(1, await worker.ProjectBatchAsync());
         Assert.AreEqual(0, await worker.ProjectBatchAsync());
         return sent;
+    }
+
+    private sealed class StubImageGenerationService : IImageGenerationService
+    {
+        public Task<ImageGenerationResult> GenerateAsync(
+            ImageGenerationRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult(new ImageGenerationResult
+            {
+                ProviderId = "test",
+                ModelId = "test-image",
+                Artifacts =
+                [
+                    new ImageGenerationArtifact
+                    {
+                        ArtifactId =
+                            "vision-0123456789abcdef0123456789abcdef",
+                        MimeType = "image/png",
+                    },
+                ],
+            });
+    }
+
+    private static VisionArtifactStorageService CreateVisionStorage()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"pudding-projection-vision-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        return new VisionArtifactStorageService(
+            PuddingDataPaths.FromRoot(root),
+            NullLogger<VisionArtifactStorageService>.Instance);
     }
 }

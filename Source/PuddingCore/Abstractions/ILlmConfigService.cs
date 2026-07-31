@@ -49,6 +49,7 @@ public interface ILlmConfigService
     LlmProfileInfo? ResolveProfile(string profileId);
     LlmConfig? GetMemoryConfig();
     LlmConfig? GetEmbeddingConfig();
+    LlmProfileInfo? GetImageGenerationProfile() => null;
     LlmProviderStrategy? GetProviderStrategy(string providerId);
 
     /// <summary>

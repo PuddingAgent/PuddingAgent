@@ -81,6 +81,7 @@ public static partial class PuddingServiceCollectionExtensions
 
         // ── 飞书连接器（从 Agent manifest 动态创建；一个 Agent 一个机器人）──────
         builder.Services.AddSingleton<FeishuTtsDeliveryService>();
+        builder.Services.AddSingleton<FeishuImageUploadPreparationService>();
         builder.Services.AddSingleton<FeishuConnectorFactory>();
 
         // ── 网关鉴权（SM2 + 白名单）────────────────────────
@@ -247,6 +248,7 @@ public static partial class PuddingServiceCollectionExtensions
         });
         builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceProviderFactory, PuddingRuntime.Services.VoiceProviderFactory>();
         builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceSynthesisService, PuddingPlatform.Services.VoiceSynthesisService>();
+        builder.Services.AddSingleton<PuddingCode.Abstractions.IAudioTranscriptionService, PuddingPlatform.Services.AudioTranscriptionService>();
         builder.Services.AddSingleton<PuddingCode.Abstractions.IAudioTranscoder, PuddingRuntime.Services.ManagedOggOpusTranscoder>();
 
     }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using HarnessAgent.Core.Connectors.Feishu;
 using PuddingAgent.Services;
 using PuddingCode.Platform;
+using PuddingPlatform.Services;
 
 namespace PuddingAgent.Connectors;
 
@@ -21,6 +22,9 @@ public sealed class FeishuConnector : IPuddingConnector
     private readonly FeishuConnectorBinding _binding;
     private readonly FeishuInboundMessageMapper _inboundMessageMapper;
     private readonly FeishuTtsDeliveryService _ttsDeliveryService;
+    private readonly FeishuImageUploadPreparationService
+        _imageUploadPreparation;
+    private readonly VisionArtifactStorageService _visionArtifacts;
     private readonly FeishuConfig _config;
     private ConnectorContext? _context;
     private FeishuClient? _client;
@@ -39,12 +43,16 @@ public sealed class FeishuConnector : IPuddingConnector
         FeishuConnectorBinding binding,
         ILogger<FeishuConnector> logger,
         FeishuInboundMessageMapper inboundMessageMapper,
-        FeishuTtsDeliveryService ttsDeliveryService)
+        FeishuTtsDeliveryService ttsDeliveryService,
+        FeishuImageUploadPreparationService imageUploadPreparation,
+        VisionArtifactStorageService visionArtifacts)
     {
         _binding = binding;
         _logger = logger;
         _inboundMessageMapper = inboundMessageMapper;
         _ttsDeliveryService = ttsDeliveryService;
+        _imageUploadPreparation = imageUploadPreparation;
+        _visionArtifacts = visionArtifacts;
         _config = new FeishuConfig
         {
             AppId = binding.AppId,
@@ -59,7 +67,7 @@ public sealed class FeishuConnector : IPuddingConnector
             Protocol = "Feishu OpenAPI",
             Version = "1.1",
             Description = $"飞书机器人（Agent: {binding.AgentId}）",
-            Capabilities = ["receive", "send", "stream", "audio"],
+            Capabilities = ["receive", "send", "stream", "audio", "image"],
         };
     }
 
@@ -144,6 +152,13 @@ public sealed class FeishuConnector : IPuddingConnector
                     StringComparison.Ordinal))
             {
                 await SendTtsAudioAsync(message, uuid, ct);
+            }
+            else if (string.Equals(
+                         Get(message.Metadata, ConnectorPayloadMetadata.Kind),
+                         ConnectorPayloadKinds.VisionImage,
+                         StringComparison.Ordinal))
+            {
+                await SendVisionImageAsync(message, uuid, ct);
             }
             else if (string.Equals(
                     Get(message.Metadata, ConnectorStreamMetadata.ReplyMode),
@@ -262,6 +277,70 @@ public sealed class FeishuConnector : IPuddingConnector
         {
             throw new InvalidOperationException(
                 $"Feishu audio send failed: code={sendResult.Code}, msg={sendResult.Msg}");
+        }
+    }
+
+    private async Task SendVisionImageAsync(
+        ConnectorMessage message,
+        string? uuid,
+        CancellationToken ct)
+    {
+        if (_client is null)
+            throw new InvalidOperationException("Feishu connector not started");
+        if (string.IsNullOrWhiteSpace(uuid))
+            throw new InvalidOperationException(
+                "Feishu image delivery requires a stable uuid.");
+
+        var artifactId = Get(
+                message.Metadata,
+                ConnectorPayloadMetadata.ArtifactId)
+            ?? message.Content;
+        var image = await _visionArtifacts.ResolveLocalFileAsync(
+            _binding.WorkspaceId,
+            artifactId,
+            ct)
+            ?? throw new InvalidOperationException(
+                $"Vision Artifact '{artifactId}' was not found.");
+        var uploadPayload = await _imageUploadPreparation.PrepareAsync(
+            image,
+            ct);
+        var upload = await _client.UploadImageAsync(
+            uploadPayload.Content,
+            uploadPayload.FileName,
+            uploadPayload.MimeType,
+            ct);
+        var imageKey = upload.Data?.ImageKey;
+        if (upload.Code != 0 || string.IsNullOrWhiteSpace(imageKey))
+        {
+            throw new InvalidOperationException(
+                $"Feishu image upload failed: code={upload.Code}, msg={upload.Msg}");
+        }
+
+        SendMessageResponse sendResult;
+        if (message.Metadata.TryGetValue("message_id", out var messageId)
+            && !string.IsNullOrWhiteSpace(messageId))
+        {
+            sendResult = await _client.ReplyImageAsync(
+                messageId,
+                imageKey,
+                uuid,
+                ct);
+        }
+        else
+        {
+            var contentJson =
+                JsonSerializer.Serialize(new { image_key = imageKey });
+            sendResult = await _client.SendMessageAsync(
+                message.Target,
+                "image",
+                contentJson,
+                uuid,
+                ct);
+        }
+        if (sendResult.Code != 0)
+        {
+            throw new InvalidOperationException(
+                $"Feishu image send failed: code={sendResult.Code}, msg={sendResult.Msg}");
         }
     }
 

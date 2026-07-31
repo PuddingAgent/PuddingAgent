@@ -59,6 +59,22 @@ export const useMarkdownStyles = createStyles(({ token }) => ({
     right: 8,
     zIndex: 1,
   },
+  artifactImageWrap: {
+    display: 'block',
+    maxWidth: '100%',
+    margin: '10px 0',
+    lineHeight: 0,
+  },
+  artifactImage: {
+    display: 'block',
+    maxWidth: '100%',
+    maxHeight: '70vh',
+    width: 'auto',
+    height: 'auto',
+    borderRadius: 10,
+    objectFit: 'contain' as const,
+    boxShadow: '0 4px 18px color-mix(in srgb, var(--earth-brown) 14%, transparent)',
+  },
   inkChunk: {
     display: 'inline' as const,
   },

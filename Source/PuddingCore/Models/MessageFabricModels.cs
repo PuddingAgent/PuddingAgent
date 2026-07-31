@@ -23,6 +23,7 @@ public static class MessageContentTypes
 {
     public const string Text = "text";
     public const string Audio = "audio";
+    public const string Image = "image";
     /// <summary>System heartbeat / proactive check-in messages.</summary>
     public const string Heartbeat = "heartbeat";
 }

@@ -41,4 +41,6 @@ public static class MessageGatewayMetadata
     public const string TtsVoice = "gateway_tts_voice";
     public const string VoiceToolSuppressFinalText =
         "gateway_voice_tool_suppress_final_text";
+    public const string ImageToolSuppressDirective =
+        "gateway_image_tool_suppress_directive";
 }

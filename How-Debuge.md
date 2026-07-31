@@ -1430,7 +1430,7 @@ Get-ChildItem D:\data\workspaces\default\vision-artifacts `
 | 最后证据 | 结论 |
 |---|---|
 | WS 有 `message_type=image`，没有 `Image materialized` | 查 `content.image_key`、消息资源读取权限和 OpenAPI HTTP 状态 |
-| 下载报资源超过 10 MiB | 当前安全上限拒绝该资源；不要改成无界 `ReadAsByteArrayAsync` |
+| 下载报资源超过 50 MiB | 当前安全上限拒绝该资源；不要改成无界 `ReadAsByteArrayAsync` |
 | 报 unsupported MIME/signature | 当前只接收 JPEG/PNG/WebP；响应 MIME 不能代替文件签名校验 |
 | 有 `Image materialized`，没有 `Inbound accepted` | artifact 已落盘，但 Gateway durable acceptance 失败；飞书应收到非 200 并重投 |
 | Web 正文是图片提示但无图片 | 查 RoomMessage metadata 是否仍含 `visionArtifactId(s)`，再查 artifact GET；不要把二进制/base64 写进 SQLite |
@@ -1808,6 +1808,200 @@ dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
   --filter "FullyQualifiedName~AgentReplyVoiceDirectiveTests"
 dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
   --filter "FullyQualifiedName~SendVoiceToolTests|FullyQualifiedName~FakeFeishuStreamingCard_ProjectsDeltasAndFinalizesThroughDurableDelivery"
+dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
+  --filter "FullyQualifiedName~FeishuClientReplyTests"
+```
+
+### 11.23 飞书入站语音无法识别、Agent 假装听见或 `asr` 路径被拒绝
+
+先按同一 `connectorId/messageId/audioArtifactId/runId` 区分物化、分流和识别三段：
+
+```text
+Feishu message_type=audio + file_key
+  -> GET message resource type=file
+  -> ManagedOggOpusTranscoder (Ogg/Opus -> 16 kHz mono PCM WAV)
+  -> AudioArtifactStorageService
+  -> MessageGateway / canonical user message
+  -> ExecutionRunCoordinator
+     -> current Provider+Model has audio tag: native input_audio
+     -> no audio tag: attached-audio path notice -> asr tool -> configured ASR provider
+```
+
+先查脱敏日志，不打印音频、转写正文或飞书用户 ID：
+
+```powershell
+rg -n "\[Feishu\] Audio materialized|\[AudioArtifact\] Stored|\[MessageGateway\] Ingress accepted|\[VoiceAsr\]|\[AsrTool\]" `
+  D:\data\logs
+```
+
+Audio Artifact 位于
+`D:\data\workspaces\<workspaceId>\audio-artifacts\audio-*.wav/.json`。WAV 应为 16 kHz、
+单声道、16-bit PCM；不要把飞书下载到的 Ogg/Opus 政名为 `.wav`。同一
+`connectorId + message_id + file_key` 重投应复用同一 Artifact，资源请求只发生一次。
+
+分流只看 `D:\data\config\llm.providers.json` 中当前冻结的精确 Provider+Model
+`capabilityTags`。带 `audio` 时请求应包含 `input_audio`，不会自动出现 `[AsrTool]`；没有标签时
+Agent 必须先调用 `asr`。不要只给同名的其它 Provider 模型加标签，也不要因 ASR 配置存在就误判
+主模型具有原生听觉。
+
+文本模型路径下，`D:\data\config\voice\providers.json` 必须配置启用的
+`defaultAsrProviderId/defaultAsrModelId`。`asr` 只接受平台 notice 中当前 Workspace Artifact 的
+精确绝对路径；相对路径、手写路径、其它 Workspace 文件和非 PCM WAV 被拒绝是安全边界，不应放宽。
+
+| 现象 | 判断 |
+|---|---|
+| 没有 `[Feishu] Audio materialized` | `file_key` 解析、`type=file` 下载、资源格式或托管 Opus 解码失败；事件应非 200 让飞书重投 |
+| 有 Artifact、没有 `Inbound accepted` | Gateway durable acceptance 失败；不要手工重复投递 Agent |
+| 文本模型没有 `[AsrTool]` 却描述录音 | 检查 Audio input protocol 是否进入最终 system prompt，以及 Agent 是否收到 `[Attached audio notice]` |
+| `path is not an authorized audio artifact` | 模型没有原样使用 notice 路径，或 Artifact 不属于当前 Workspace；不要开放任意文件读取 |
+| `No default ASR provider configured` | 修复 `voice/providers.json` 默认 ASR Provider/模型 |
+| `[VoiceAsr]` 后无 `[AsrTool]` 成功 | Provider 返回空转写、网络错误或工具调用失败；Agent 必须如实说明，不能猜测 |
+| 带 `audio` 标签仍走 `asr` | 当前执行冻结的 Provider/Model 与加标签对象不一致，或服务尚未重启加载新配置 |
+
+聚焦验收：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "Name=TranscodeAsync_OggOpus_ProducesMono16KhzPcmWav|Name=ChatAsync_TextOnlyModel_DoesNotSerializeHistoricalAudioArtifact|Name=ChatAsync_AudioModel_SerializesResolvedAudioArtifact|Name=AssembleAsync_Includes_Canonical_Feishu_Voice_Protocol"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~AudioArtifactStorageServiceTests|FullyQualifiedName~AudioTranscriptionServiceTests|Name=BuildAudioMessageTextAsync_RoutesByExactPrimaryModelCapability"
+dotnet test .\Source\PuddingWebApiTests\PuddingWebApiTests.csproj --no-restore `
+  --filter "FullyQualifiedName~AsrToolTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  --filter "FullyQualifiedName~FeishuInboundAudioTests|FullyQualifiedName~FeishuInboundImageTests"
+```
+
+运行中的 PuddingAgent 锁住默认输出时，不要据此判断测试失败；使用独立 `OutDir` 构建测试项目，
+再对临时目录中的测试 DLL 执行 `dotnet vstest`。
+
+### 11.24 Agent 看不到图片生成工具，或飞书没有收到生成图片
+
+生成和投递是两段独立链路：
+
+```text
+generate_image
+  -> configured IImageGenerationProvider
+  -> Ark /images/generations
+  -> immediate HTTPS download
+  -> workspace Vision Artifact
+send_image
+  -> trusted current Feishu Command route
+  -> typed vision_image Message Fabric delivery
+  -> Feishu image upload
+  -> msg_type=image reply
+```
+
+先确认 `D:\data\config\llm.providers.json` 顶层 `imageGeneration` 指向启用的
+Provider/Model。普通/组图默认模型 `doubao-seedream-5-0-260128` 应带
+`sequential-image-generation`，精细编辑模型 `doubao-seedream-5-0-pro-260628` 应带
+`image-editing`，二者都必须带 `image-generation`。不要在日志、命令行历史或调试响应中输出
+API Key。
+
+如果模型完全看不到工具，检查当前 Agent 实例 manifest 的 `allowedToolIds` 同时包含
+`cap-doubao-search`、`cap-import-image`、`cap-generate-image` 与 `cap-send-image`；只改 preset
+不会自动改变已经实例化的 Agent。重启后用 `GET /api/capabilities` 验证 `doubao_search`、
+`import_image`、`generate_image`、`send_image` 已注册，再检查最终 system prompt
+只包含一份 `Image generation and Feishu delivery protocol:`。
+
+```powershell
+rg -n "\[RemoteImageImport\]|\[ImportImageTool\]|\[ImageDirective\]|\[ImageGeneration:Ark\]|\[ImageGeneration\]|\[GenerateImageTool\]|\[SendImageTool\]|\[FeishuImage\]|\[ConnectorDelivery\].*(Retrying|Dead-lettered|Delivered)|Feishu image" `
+  D:\data\logs
+```
+
+| 证据 | 结论 |
+|---|---|
+| `No default image generation provider/model is configured` | `imageGeneration` 绑定缺失或服务未重启 |
+| `not an enabled image generation model` | Provider/Model ID 不匹配、已禁用或缺少 capability |
+| `No configured image generation model provides capability 'image-editing'` | `mode=precision` 但未配置 Pro/其它精细编辑模型 |
+| `Reference image artifact ... was not found` | Agent 构造了 ID，或没有复制 Attached image notice 中当前 Workspace 的精确 `vision-*` ID |
+| Pro 报组图/web search 不支持 | 精细编辑使用 `mode=precision` 且 `imageCount=1`；连贯组图/联网内容改用 `mode=sequence/default` |
+| Pro 返回 ``sequential_image_generation is not supported`` | Pro 请求体不应携带 `sequential_image_generation`（即使值为 `disabled`）；该字段及 options 仅在支持组图的模型请求中发送 |
+| Lite 报 fast/尺寸不支持 | Lite 只用 standard，档位为 2K/3K/4K；Pro 档位为 1K/2K |
+| Ark HTTP 4xx | 检查模型 ID、账号权限、配额与请求参数；不要记录 Bearer Key |
+| Ark 成功但 Artifact 未创建 | 临时 URL 下载失败、非 HTTPS、格式不是 JPEG/PNG/WebP 或超过 50 MiB |
+| `import_image` 拒绝 URL | 只接受公共 HTTPS；检查内嵌凭据、跳转后的协议、私网/DNS rebinding 或非图片响应 |
+| `[ImageDirective] Rejected` | `image` fence 不是当前 Workspace 的精确 `vision-*`/localPath，或引用的 Artifact 不存在 |
+| `send_image ... current turn/Feishu-originated` | 工具不在 Feishu main Conversation Turn，或可信 Gateway metadata 不完整 |
+| `[FeishuImage] Prepared delivery copy` | 原图超过飞书 10 MiB 上传边界，已在 C# 层生成 JPEG 投递副本；原始 Artifact 未改动 |
+| upload 失败 | 检查飞书图片上传权限、格式、投递副本是否仍超过 10 MiB 与 OpenAPI code/msg |
+| upload 成功、reply 失败 | 检查原消息是否仍可回复；只重试 delivery，不要重新生成 |
+| delivery 为 retrying、Artifact 存在 | 预期的故障隔离；Agent Command 和已付费生成结果应保持不变 |
+
+不经过 Agent 验证真实 Pudding → Ark → Artifact → 飞书链路时，登录管理员 API，先预览可信路由：
+
+```powershell
+$baseUri = "http://localhost"
+$login = Invoke-RestMethod -Method Post -Uri "$baseUri/api/login/account" `
+  -ContentType "application/json" `
+  -Body (@{ username = "admin"; password = "Admin@123"; type = "account" } | ConvertTo-Json)
+$headers = @{ Authorization = "Bearer $($login.token)" }
+$channelId = "feishu-default.global_general-assistant.6a8"
+Invoke-RestMethod -Headers $headers `
+  -Uri "$baseUri/api/workspaces/default/debug/feishu-image/channels/$channelId/route"
+```
+
+路由存在后显式确认一次真实付费生成和发送，并轮询返回的 `messageId`：
+
+```powershell
+$request = @{
+  prompt = "一只戴黄色围巾的布丁猫，简洁插画，浅色背景"
+  mode = "default"
+  size = "2K"
+  outputFormat = "png"
+  optimizePromptMode = "standard"
+  imageCount = 1
+  watermark = $true
+  confirmSend = $true
+} | ConvertTo-Json
+$queued = Invoke-RestMethod -Method Post -Headers $headers `
+  -ContentType "application/json" -Body $request `
+  -Uri "$baseUri/api/workspaces/default/debug/feishu-image/channels/$channelId/generate-and-send"
+Invoke-RestMethod -Headers $headers `
+  -Uri "$baseUri/api/workspaces/default/debug/feishu-image/messages/$($queued.messageId)"
+```
+
+调试 API 不接受 `chat_id`、`message_id` 或 Connector ID。route 返回 409 时，先在目标飞书会话给
+机器人发一条消息。参考图精细编辑时，把 Attached image notice 中的 `vision-*` 放进
+`referenceArtifactIds`，将 `mode` 改为 `precision`；坐标必须写进 prompt，例如
+`<bbox>120 180 640 760</bbox>`，范围为 0~999。
+
+联网参考图用 `doubao_search` 结果里的精确图片 HTTPS URL 调 `import_image`，再把返回的
+`artifactId` 放进 `generate_image(mode=precision)`。若只需把已有 Artifact 展示/发送，可用：
+
+````markdown
+```image
+vision-0123456789abcdef0123456789abcdef
+```
+````
+
+整个终态只有这个 fence 时应只发图片、不创建文本卡片；混合普通文本时飞书应先发送去除 fence 后
+的文字，再按顺序追加图片。网页则在 fence 原位置加载当前 Workspace 的受控 Artifact API。URL、
+相对路径、任意本地文件与跨 Workspace 路径都应保持为普通代码块或被飞书投影拒绝。
+
+Agent 使用终态 Markdown 时，V1.6 应先显示原始 fence，再追加图片：
+
+````markdown
+```ImageGeneration
+mode: precision
+size: 2K
+references: vision-0123456789abcdef0123456789abcdef
+
+把图 1 <bbox>120 180 640 760</bbox> 区域内的左侧人物换成机器人，其他区域保持不变。
+```
+````
+
+没有出现 `[ImageGenerationDirective]` 日志通常表示 fence 未闭合、正文为空、header 非法、
+Command 非 succeeded、并非飞书来源，或同一 Turn 已成功调用 `send_image` 触发抑制。聚焦回归：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~VolcengineArkImageGenerationProviderTests|FullyQualifiedName~ContextPipelineLayerTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~ImageGenerationServiceTests|FullyQualifiedName~RemoteImageArtifactImportServiceTests|FullyQualifiedName~ConversationReplyProjectionWorkerTests"
+dotnet test .\Source\PuddingCoreTests\PuddingCoreTests.csproj --no-restore `
+  --filter "FullyQualifiedName~AgentReplyImageGenerationDirectiveTests|FullyQualifiedName~AgentReplyImageDirectiveTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SendImageToolTests|FullyQualifiedName~FeishuImageUploadPreparationServiceTests"
 dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
   --filter "FullyQualifiedName~FeishuClientReplyTests"
 ```

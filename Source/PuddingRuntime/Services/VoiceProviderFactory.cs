@@ -7,7 +7,7 @@ namespace PuddingRuntime.Services;
 /// <summary>
 /// TTS/ASR Provider 工厂 — 根据配置文件按需创建 Provider 实例。
 /// 不缓存实例，每次调用创建新实例（Provider 本身无状态）。
-/// Phase 1 仅支持 TTS；ASR 工厂方法后续补充。
+/// 当前内置 DashScope TTS 与 HTTP 文件 ASR；其它来源在此扩展适配器。
 /// </summary>
 public sealed class VoiceProviderFactory : IVoiceProviderFactory
 {

@@ -165,6 +165,44 @@ public sealed class PuddingFileConfigLoader
                 errors.Add($"llm.providers.json profile '{profileId}' references missing provider/model '{profile.ProviderId}/{profile.ModelId}'.");
         }
 
+        if (config.ImageGeneration is { } imageGeneration)
+        {
+            if (string.IsNullOrWhiteSpace(imageGeneration.ProviderId)
+                || string.IsNullOrWhiteSpace(imageGeneration.ModelId))
+            {
+                errors.Add(
+                    "llm.providers.json imageGeneration must define providerId and modelId.");
+            }
+            else if (!ProviderHasModel(
+                         config,
+                         imageGeneration.ProviderId,
+                         imageGeneration.ModelId))
+            {
+                errors.Add(
+                    $"llm.providers.json imageGeneration references missing provider/model '{imageGeneration.ProviderId}/{imageGeneration.ModelId}'.");
+            }
+            else
+            {
+                var imageModel = config.Providers
+                    .First(provider => string.Equals(
+                        provider.ProviderId,
+                        imageGeneration.ProviderId,
+                        StringComparison.OrdinalIgnoreCase))
+                    .Models
+                    .First(model => string.Equals(
+                        model.ModelId,
+                        imageGeneration.ModelId,
+                        StringComparison.OrdinalIgnoreCase));
+                if (!imageModel.CapabilityTags.Contains(
+                        "image-generation",
+                        StringComparer.OrdinalIgnoreCase))
+                {
+                    errors.Add(
+                        $"llm.providers.json imageGeneration model '{imageGeneration.ProviderId}/{imageGeneration.ModelId}' lacks the image-generation capability tag.");
+                }
+            }
+        }
+
         // Profiles and role aliases are optional legacy metadata. Agent execution
         // is bound explicitly by manifest.json preferredProviderId/preferredModelId,
         // so dangling role aliases must not prevent the provider/model registry from starting.

@@ -43,7 +43,8 @@ public sealed record TurnExecutionContext(
     string? ChannelId,
     string? UserExternalId,
     RunCancellation RunCancellation,
-    IReadOnlyList<string>? VisualArtifactIds
+    IReadOnlyList<string>? VisualArtifactIds,
+    IReadOnlyList<string>? AudioArtifactIds
 )
 {
     /// <summary>由 Execution Kernel 创建的稳定身份。</summary>

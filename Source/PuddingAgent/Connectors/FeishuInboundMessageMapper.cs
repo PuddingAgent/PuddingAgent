@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using HarnessAgent.Core.Connectors.Feishu;
+using PuddingCode.Abstractions;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Services;
 
@@ -13,6 +15,8 @@ namespace PuddingAgent.Connectors;
 /// </summary>
 public sealed class FeishuInboundMessageMapper(
     VisionArtifactStorageService artifactStorage,
+    AudioArtifactStorageService audioArtifactStorage,
+    IAudioTranscoder audioTranscoder,
     ILogger<FeishuInboundMessageMapper> logger)
 {
     public async Task<PuddingIngressEnvelope> MapAsync(
@@ -59,7 +63,10 @@ public sealed class FeishuInboundMessageMapper(
                     "Feishu image message is missing image_key.");
             }
 
-            var artifactId = StableArtifactId(connectorId, messageId, imageKey);
+            var artifactId = StableImageArtifactId(
+                connectorId,
+                messageId,
+                imageKey);
             var existing = await artifactStorage.ResolveLocalFileAsync(
                 binding.WorkspaceId,
                 artifactId,
@@ -96,6 +103,58 @@ public sealed class FeishuInboundMessageMapper(
                 messageId,
                 artifactId);
         }
+        else if (string.Equals(messageType, "audio", StringComparison.Ordinal))
+        {
+            var fileKey = evt.ExtractFileKey();
+            if (string.IsNullOrWhiteSpace(fileKey))
+            {
+                throw new InvalidOperationException(
+                    "Feishu audio message is missing file_key.");
+            }
+
+            var artifactId = StableAudioArtifactId(
+                connectorId,
+                messageId,
+                fileKey);
+            var existing = await audioArtifactStorage.ResolveLocalFileAsync(
+                binding.WorkspaceId,
+                artifactId,
+                ct);
+            if (existing is null)
+            {
+                var resource = await client.DownloadMessageResourceAsync(
+                    messageId,
+                    fileKey,
+                    "file",
+                    ct);
+                var normalized = await NormalizeAudioAsync(
+                    resource.Content,
+                    audioTranscoder,
+                    ct);
+                await using var stream = new MemoryStream(
+                    normalized.Content,
+                    writable: false);
+                await audioArtifactStorage.SaveIdempotentAsync(
+                    binding.WorkspaceId,
+                    artifactId,
+                    stream,
+                    normalized.DurationMs,
+                    ParseCreateTime(evt.Event?.Message?.CreateTime),
+                    ct);
+            }
+
+            metadata["inputMode"] = "audio";
+            metadata["audioArtifactId"] = artifactId;
+            metadata["audioArtifactIds"] = artifactId;
+            text = "用户从飞书发送了一条语音消息。";
+            gatewayMessageType = "audio";
+
+            logger.LogInformation(
+                "[Feishu] Audio materialized connector={ConnectorId} message={MessageId} artifact={ArtifactId}",
+                connectorId,
+                messageId,
+                artifactId);
+        }
 
         return new PuddingIngressEnvelope
         {
@@ -114,7 +173,7 @@ public sealed class FeishuInboundMessageMapper(
         };
     }
 
-    private static string StableArtifactId(
+    private static string StableImageArtifactId(
         string connectorId,
         string messageId,
         string resourceKey)
@@ -123,6 +182,57 @@ public sealed class FeishuInboundMessageMapper(
             $"feishu-image\n{connectorId}\n{messageId}\n{resourceKey}");
         var hash = SHA256.HashData(raw);
         return $"vision-{Convert.ToHexString(hash.AsSpan(0, 16)).ToLowerInvariant()}";
+    }
+
+    private static string StableAudioArtifactId(
+        string connectorId,
+        string messageId,
+        string resourceKey)
+    {
+        var raw = Encoding.UTF8.GetBytes(
+            $"feishu-audio\n{connectorId}\n{messageId}\n{resourceKey}");
+        var hash = SHA256.HashData(raw);
+        return $"audio-{Convert.ToHexString(hash.AsSpan(0, 16)).ToLowerInvariant()}";
+    }
+
+    private static async Task<AudioTranscodingResult> NormalizeAudioAsync(
+        byte[] content,
+        IAudioTranscoder transcoder,
+        CancellationToken ct)
+    {
+        if (content.Length >= 12
+            && content.AsSpan(0, 4).SequenceEqual("RIFF"u8)
+            && content.AsSpan(8, 4).SequenceEqual("WAVE"u8))
+        {
+            return new AudioTranscodingResult
+            {
+                Content = content,
+                Format = VoiceAudioFormats.Wav,
+                MediaType = "audio/wav",
+                SampleRate = 0,
+                Channels = 0,
+                DurationMs = 0,
+            };
+        }
+
+        if (content.Length >= 4
+            && content.AsSpan(0, 4).SequenceEqual("OggS"u8)
+            && content.AsSpan().IndexOf("OpusHead"u8) >= 0)
+        {
+            return await transcoder.TranscodeAsync(
+                new AudioTranscodingRequest
+                {
+                    Content = content,
+                    SourceFormat = VoiceAudioFormats.Opus,
+                    TargetFormat = VoiceAudioFormats.Wav,
+                    TargetSampleRate = 16_000,
+                    TargetChannels = 1,
+                },
+                ct);
+        }
+
+        throw new InvalidDataException(
+            "Feishu audio is neither PCM WAV nor Ogg/Opus.");
     }
 
     private static long? ParseCreateTime(string? value)

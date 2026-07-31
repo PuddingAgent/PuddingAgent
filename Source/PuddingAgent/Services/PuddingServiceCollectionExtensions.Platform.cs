@@ -155,8 +155,24 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<VisionArtifactStorageService>();
         builder.Services.AddSingleton<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
         builder.Services.AddSingleton<IVisualArtifactLocalFileResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
+        builder.Services.AddHttpClient(
+                RemoteImageArtifactImportService.HttpClientName,
+                client => client.Timeout = TimeSpan.FromSeconds(60))
+            .ConfigurePrimaryHttpMessageHandler(
+                RemoteImageArtifactImportService.CreatePublicNetworkHandler);
+        builder.Services.AddSingleton<RemoteImageArtifactImportService>();
+        builder.Services.AddHttpClient("ImageGeneration", client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(3);
+        });
+        builder.Services.AddSingleton<IImageGenerationProvider, VolcengineArkImageGenerationProvider>();
+        builder.Services.AddSingleton<IImageGenerationService, ImageGenerationService>();
+        builder.Services.AddSingleton<AudioArtifactStorageService>();
+        builder.Services.AddSingleton<IAudioArtifactReferenceResolver>(sp => sp.GetRequiredService<AudioArtifactStorageService>());
+        builder.Services.AddSingleton<IAudioArtifactLocalFileResolver>(sp => sp.GetRequiredService<AudioArtifactStorageService>());
         builder.Services.AddSingleton<FeishuInboundMessageMapper>();
         builder.Services.AddSingleton<IVisualArtifactResolver, VisualArtifactResolverBridge>();
+        builder.Services.AddSingleton<IAudioArtifactResolver, AudioArtifactResolverBridge>();
         builder.Services.AddScoped<SessionTitleService>();
         builder.Services.AddScoped<TokenCostService>();
         builder.Services.AddScoped<IVisualReasoningService, DefaultVisualReasoningService>();

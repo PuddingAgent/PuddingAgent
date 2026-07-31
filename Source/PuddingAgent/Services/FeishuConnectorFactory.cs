@@ -14,6 +14,8 @@ public sealed class FeishuConnectorFactory(
     ChannelConfigurationFileService channels,
     FeishuInboundMessageMapper inboundMessageMapper,
     FeishuTtsDeliveryService ttsDeliveryService,
+    FeishuImageUploadPreparationService imageUploadPreparation,
+    VisionArtifactStorageService visionArtifacts,
     ILoggerFactory loggerFactory,
     ILogger<FeishuConnectorFactory> logger)
 {
@@ -98,7 +100,9 @@ public sealed class FeishuConnectorFactory(
                     binding.Channel.Feishu.TtsVoice),
                 loggerFactory.CreateLogger<FeishuConnector>(),
                 inboundMessageMapper,
-                ttsDeliveryService))
+                ttsDeliveryService,
+                imageUploadPreparation,
+                visionArtifacts))
             .ToList();
 
         logger.LogInformation(

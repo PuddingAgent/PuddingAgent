@@ -197,6 +197,73 @@ public sealed class LlmStreamObservabilityTests
     }
 
     [TestMethod]
+    public async Task ChatAsync_TextOnlyModel_DoesNotSerializeHistoricalAudioArtifact()
+    {
+        var handler = new CapturingJsonHandler();
+        var resolver = new FixedAudioArtifactResolver();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(supportsAudio: false),
+            NullLogger<DirectLlmClient>.Instance,
+            audioArtifactResolver: resolver);
+
+        await client.ChatAsync(
+            "default",
+            "session-text-audio",
+            "template-1",
+            [new ChatMessage(ChatRole.User, "hello", AudioArtifactIds: ["audio-1"])],
+            llmConfig: new LlmConfig
+            {
+                Endpoint = "https://provider.test/v1",
+                ApiKey = "test-key",
+                ModelId = "test-model",
+            });
+
+        using var body = JsonDocument.Parse(handler.RequestBody!);
+        var content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
+        Assert.AreEqual(JsonValueKind.String, content.ValueKind);
+        Assert.AreEqual("hello", content.GetString());
+        Assert.AreEqual(0, resolver.ResolveCount);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_AudioModel_SerializesResolvedAudioArtifact()
+    {
+        var handler = new CapturingJsonHandler();
+        var resolver = new FixedAudioArtifactResolver();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(supportsAudio: true),
+            NullLogger<DirectLlmClient>.Instance,
+            audioArtifactResolver: resolver);
+
+        await client.ChatAsync(
+            "default",
+            "session-native-audio",
+            "template-1",
+            [new ChatMessage(ChatRole.User, "请回答录音内容", AudioArtifactIds: ["audio-1"])],
+            llmConfig: new LlmConfig
+            {
+                Endpoint = "https://provider.test/v1",
+                ApiKey = "test-key",
+                ModelId = "test-model",
+            });
+
+        using var body = JsonDocument.Parse(handler.RequestBody!);
+        var content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
+        Assert.AreEqual(JsonValueKind.Array, content.ValueKind);
+        Assert.AreEqual("text", content[0].GetProperty("type").GetString());
+        Assert.AreEqual("input_audio", content[1].GetProperty("type").GetString());
+        Assert.AreEqual(
+            "data:audio/wav;base64,UklGRg==",
+            content[1].GetProperty("input_audio").GetProperty("data").GetString());
+        Assert.AreEqual(
+            "wav",
+            content[1].GetProperty("input_audio").GetProperty("format").GetString());
+        Assert.AreEqual(1, resolver.ResolveCount);
+    }
+
+    [TestMethod]
     public async Task ChatStreamAsync_WhenProviderNeverYieldsChunk_RecordsFirstChunkWaitMetric()
     {
         var telemetry = new RecordingTelemetrySink();
@@ -340,6 +407,24 @@ public sealed class LlmStreamObservabilityTests
                 artifactId,
                 "data:image/png;base64,iVBORw0KGgo=",
                 "image/png"));
+        }
+    }
+
+    private sealed class FixedAudioArtifactResolver : IAudioArtifactResolver
+    {
+        public int ResolveCount { get; private set; }
+
+        public Task<AudioArtifactResolveResult?> ResolveAsync(
+            string workspaceId,
+            string artifactId,
+            CancellationToken ct = default)
+        {
+            ResolveCount++;
+            return Task.FromResult<AudioArtifactResolveResult?>(new(
+                artifactId,
+                "data:audio/wav;base64,UklGRg==",
+                "audio/wav",
+                "wav"));
         }
     }
 
@@ -565,7 +650,8 @@ public sealed class LlmStreamObservabilityTests
         int maxConcurrentRequests = 50,
         int maxRetries = 2,
         int retryDelaySeconds = 1,
-        bool supportsVision = false) : ILlmConfigService
+        bool supportsVision = false,
+        bool supportsAudio = false) : ILlmConfigService
     {
         public IReadOnlyList<LlmProviderInfo> GetEnabledProviders() =>
         [
@@ -585,7 +671,11 @@ public sealed class LlmStreamObservabilityTests
             {
                 ProviderId = "provider-a",
                 ModelId = "test-model",
-                CapabilityTags = supportsVision ? ["vision"] : ["text"],
+                CapabilityTags = new[] {
+                    "text",
+                    supportsVision ? "vision" : null,
+                    supportsAudio ? "audio" : null,
+                }.Where(tag => tag is not null).Cast<string>().ToList(),
             },
         ];
 

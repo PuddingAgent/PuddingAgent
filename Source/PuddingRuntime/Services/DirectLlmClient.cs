@@ -29,6 +29,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly ProviderRateLimiter? _rateLimiter;
     private readonly ConcurrentDictionary<string, CircuitBreakerState> _circuitBreakers = new();
     private readonly IVisualArtifactResolver? _visualArtifactResolver;
+    private readonly IAudioArtifactResolver? _audioArtifactResolver;
     private readonly IRuntimeExecutionConfigService? _executionConfig;
 
     public DirectLlmClient(
@@ -41,7 +42,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     IRuntimeTraceAccessor? traceAccessor = null,
     ProviderRateLimiter? rateLimiter = null,
     IVisualArtifactResolver? visualArtifactResolver = null,
-    IRuntimeExecutionConfigService? executionConfig = null)
+    IRuntimeExecutionConfigService? executionConfig = null,
+    IAudioArtifactResolver? audioArtifactResolver = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -53,6 +55,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _rateLimiter = rateLimiter;
         _visualArtifactResolver = visualArtifactResolver;
         _executionConfig = executionConfig;
+        _audioArtifactResolver = audioArtifactResolver;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -696,6 +699,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             string.Equals(candidate.ProviderId, matched.ProviderId, StringComparison.OrdinalIgnoreCase)
             && string.Equals(candidate.ModelId, model, StringComparison.OrdinalIgnoreCase)
             && candidate.CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase));
+        var supportsAudio = _llmConfigService.GetAllModels().Any(candidate =>
+            string.Equals(candidate.ProviderId, matched.ProviderId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.ModelId, model, StringComparison.OrdinalIgnoreCase)
+            && candidate.CapabilityTags.Contains("audio", StringComparer.OrdinalIgnoreCase));
 
         return new ResolvedGatewayConfig(
             endpoint,
@@ -705,7 +712,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             thinkingMode,
             matched.ProviderId,
             strategy,
-            supportsVision);
+            supportsVision,
+            supportsAudio);
     }
 
     private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)
@@ -725,6 +733,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         // content and therefore cannot be poisoned by an earlier image turn.
         gateway.VisualArtifactResolver = config.SupportsVision
             ? _visualArtifactResolver
+            : null;
+        gateway.AudioArtifactResolver = config.SupportsAudio
+            ? _audioArtifactResolver
             : null;
         gateway.WorkspaceId = workspaceId;
         return gateway;
@@ -982,7 +993,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string? ThinkingMode,
         string ProviderId,
         LlmProviderStrategy Strategy,
-        bool SupportsVision);
+        bool SupportsVision,
+        bool SupportsAudio);
 
     private sealed class LlmStreamDiagnosticsAccumulator
     {

@@ -74,9 +74,14 @@ public sealed class FakeFeishuRoundTripTests
             var submitHandler = new RecordingSubmitTurnHandler();
             var services = new ServiceCollection();
             services.AddLogging();
+            services.AddSingleton(
+                new VisionArtifactStorageService(
+                    paths,
+                    NullLogger<VisionArtifactStorageService>.Instance));
             services.AddDbContext<PlatformDbContext>(
                 options => options.UseSqlite(connection));
             services.AddSingleton<IInternalEventBus>(eventBus);
+            services.AddSingleton<IImageGenerationService, UnusedImageGenerationService>();
             services.AddSingleton<ISubmitTurnHandler>(submitHandler);
             services.AddSingleton<IRuntimeAgentDispatcher, UnusedRuntimeAgentDispatcher>();
             services.AddSingleton<IWorkspaceAgentCatalog>(
@@ -263,9 +268,14 @@ public sealed class FakeFeishuRoundTripTests
             var eventBus = new SynchronousInternalEventBus();
             var services = new ServiceCollection();
             services.AddLogging();
+            services.AddSingleton(
+                new VisionArtifactStorageService(
+                    paths,
+                    NullLogger<VisionArtifactStorageService>.Instance));
             services.AddDbContext<PlatformDbContext>(
                 options => options.UseSqlite(connection));
             services.AddSingleton<IInternalEventBus>(eventBus);
+            services.AddSingleton<IImageGenerationService, UnusedImageGenerationService>();
             services.AddSingleton<IWorkspaceAgentCatalog>(
                 new FakeWorkspaceAgentCatalog(agentId, conversationId));
             services.AddScoped<IMessageRouter, MessageRouter>();
@@ -882,6 +892,16 @@ public sealed class FakeFeishuRoundTripTests
             CancellationToken ct = default)
             => throw new AssertFailedException(
                 "Gateway ingress must use canonical SubmitTurn, not direct Runtime dispatch.");
+    }
+
+    private sealed class UnusedImageGenerationService : IImageGenerationService
+    {
+        public Task<ImageGenerationResult> GenerateAsync(
+            ImageGenerationRequest request,
+            CancellationToken ct = default)
+            => Task.FromException<ImageGenerationResult>(
+                new InvalidOperationException(
+                    "Image generation is not expected in this fake Feishu test."));
     }
 
     private sealed class SynchronousInternalEventBus : IInternalEventBus

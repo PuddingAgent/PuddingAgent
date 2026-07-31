@@ -211,9 +211,9 @@ public sealed class ContextPipeline
         var toolsTrimmed = TrimToTokenBudget(toolsCtx, toolsBudget);
         RecordLayer(sb, toolsTrimmed, "动态工具", "L1-TOOLS", ref usedBudget, totalBudget, layers, layerInfos);
 
-        // ── L2: 动态 Skills（5%）──
+        // ── L2: 动态 Skills 与多模态渠道协议（8%）──
         var skillsCtx = await BuildSkillsLayerAsync(request, ct);
-        var skillsBudget = budget.AllocatePercent(ctx, 0.05);
+        var skillsBudget = budget.AllocatePercent(ctx, 0.08);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
                 RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
 
@@ -964,6 +964,8 @@ public sealed class ContextPipeline
             sb.AppendLine("(No skills or skill packages loaded.)");
 
         SystemPromptBuilder.AppendVoiceOutputProtocol(sb);
+        SystemPromptBuilder.AppendAudioInputProtocol(sb);
+        SystemPromptBuilder.AppendImageOutputProtocol(sb);
 
         return sb.ToString();
     }
