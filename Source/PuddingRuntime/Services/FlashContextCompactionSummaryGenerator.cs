@@ -123,26 +123,33 @@ public sealed class FlashContextCompactionSummaryGenerator : IContextCompactionS
 
         var userMessage = sb.ToString();
 
-                // 从 Agent 模板的潜意识配置中解析 flash 模型 ID，而非硬编码
-        var templateId = request.AgentTemplateId ?? request.AgentId ?? "default-agent";
-        var memoryConfig = await _llmConfigResolver.ResolveMemoryAsync(templateId, request.WorkspaceId, ct);
-        var flashModelId = memoryConfig?.ModelId;
-        if (string.IsNullOrWhiteSpace(flashModelId))
-        {
-            _logger.LogWarning(
-                "[FlashCompaction] No memory model configured for template={TemplateId}, using fallback",
-                templateId);
-            flashModelId = "deepseek-v4-flash"; // 最后防线：平台级默认 flash 模型
-        }
+        // 按 Agent 实例的 subconscious 角色解析，不允许硬编码或平台默认模型兜底。
+        var configurationAgentId = request.AgentId
+            ?? throw new InvalidOperationException("Context compaction requires an Agent instance id.");
+        var roleRoute = await _llmConfigResolver.ResolveRoleAsync(
+            request.WorkspaceId,
+            configurationAgentId,
+            AgentLlmRoleIds.Subconscious,
+            ct);
 
         _logger.LogInformation(
-            "[FlashCompaction] Resolved flash model session={SessionId} template={TemplateId} model={ModelId}",
-            request.SessionId, templateId, flashModelId);
+            "[FlashCompaction] Resolved subconscious role session={SessionId} agent={AgentId} provider={ProviderId} model={ModelId}",
+            request.SessionId, configurationAgentId, roleRoute.ProviderId, roleRoute.ModelId);
 
         var flashConfig = new MemoryLlmConfig(
-            Endpoint: null,
-            ApiKey: null,
-            ModelId: flashModelId);
+            Endpoint: roleRoute.Config.Endpoint,
+#pragma warning disable CS0618
+            ApiKey: roleRoute.Config.ApiKey,
+#pragma warning restore CS0618
+            ModelId: roleRoute.ModelId)
+        {
+            ProviderId = roleRoute.ProviderId,
+            ProfileId = roleRoute.ProfileId,
+            WorkspaceId = request.WorkspaceId,
+            SessionId = request.SessionId,
+            AgentInstanceId = configurationAgentId,
+            Stage = "context-compaction",
+        };
 
         using var timeoutCts = new CancellationTokenSource(
             TimeSpan.FromSeconds(_options.FlashTimeoutSeconds));

@@ -117,22 +117,29 @@ public sealed class SubconsciousJobQueue : ISubconsciousJobQueue
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.SubconsciousJobs
-            .Select(j => new { j.Status, j.WorkspaceId, j.SessionId })
+            .Select(j => new { j.Status, j.WorkspaceId, j.SessionId, j.LeaseUntil })
             .ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var activeProcessing = rows
+            .Where(j => j.Status == "processing" && j.LeaseUntil is not null && j.LeaseUntil > now)
+            .ToArray();
+        var expiredProcessingCount = rows.Count(j =>
+            j.Status == "processing" && (j.LeaseUntil is null || j.LeaseUntil <= now));
 
         return new SubconsciousJobQueueStats
         {
-            Pending = rows.Count(j => j.Status == "pending"),
+            // An expired processing lease is immediately eligible for LeaseNextAsync,
+            // so expose it as pending backlog instead of active concurrency. Otherwise
+            // the scheduler's global limit can permanently prevent its own recovery.
+            Pending = rows.Count(j => j.Status == "pending") + expiredProcessingCount,
             Retrying = rows.Count(j => j.Status == "retrying"),
-            Processing = rows.Count(j => j.Status == "processing"),
+            Processing = activeProcessing.Length,
             Completed = rows.Count(j => j.Status == "completed"),
             DeadLetter = rows.Count(j => j.Status == "dead_letter"),
-            ProcessingByWorkspace = rows
-                .Where(j => j.Status == "processing")
+            ProcessingByWorkspace = activeProcessing
                 .GroupBy(j => j.WorkspaceId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal),
-            ProcessingBySession = rows
-                .Where(j => j.Status == "processing")
+            ProcessingBySession = activeProcessing
                 .GroupBy(j => j.SessionId, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal),
         };

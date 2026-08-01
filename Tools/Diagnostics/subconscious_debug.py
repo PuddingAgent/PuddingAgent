@@ -6,6 +6,8 @@ Examples:
   python Tools/Diagnostics/subconscious_debug.py start --reason "resume"
   python Tools/Diagnostics/subconscious_debug.py trigger --session-id debug-1 --last-user-message "..." --last-assistant-reply "..." --wait
   python Tools/Diagnostics/subconscious_debug.py hook-session-compressed --session-id debug-1 --summary-preview "..." --wait
+  python Tools/Diagnostics/subconscious_debug.py evolution --action all --agent-instance-id <agentId> --wait
+  python Tools/Diagnostics/subconscious_debug.py daily-summary --day 2026-07-31
   python Tools/Diagnostics/subconscious_debug.py job --source-compaction-id <compactionId>
   python Tools/Diagnostics/subconscious_debug.py result --job-id <jobId>
 """
@@ -24,7 +26,7 @@ from urllib.parse import urlencode
 
 DEFAULT_BASE_URL = "http://localhost"
 DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "Admin@123456"
+DEFAULT_PASSWORD = "Admin@123"
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "command",
-        choices=("status", "start", "stop", "trigger", "hook-session-compressed", "job", "result"),
+        choices=("status", "start", "stop", "trigger", "hook-session-compressed", "evolution", "daily-summary", "job", "result"),
         help="Debug command to run.",
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -50,12 +52,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--requested-by", default="subconscious_debug.py")
     parser.add_argument("--workspace-id", default="default")
     parser.add_argument("--session-id")
-    parser.add_argument("--agent-id", default="codex-debug-agent")
-    parser.add_argument("--agent-template-id", default="global:general-assistant")
+    parser.add_argument("--agent-id")
+    parser.add_argument("--agent-template-id")
+    parser.add_argument("--agent-instance-id")
+    parser.add_argument(
+        "--action",
+        choices=("auto_dream", "extract_patterns", "improve_skills", "all"),
+        default="all",
+    )
+    parser.add_argument("--request-id")
+    parser.add_argument("--day")
     parser.add_argument("--last-user-message")
     parser.add_argument("--last-assistant-reply")
     parser.add_argument("--new-session-id")
     parser.add_argument("--summary-preview")
+    parser.add_argument(
+        "--memory-note",
+        action="append",
+        default=[],
+        help="Memory note for hook-session-compressed. Repeat for multiple notes.",
+    )
     parser.add_argument("--source-event-id")
     parser.add_argument("--source-compaction-id")
     parser.add_argument("--idempotency-key")
@@ -95,9 +111,43 @@ def main() -> int:
         )
     elif args.command == "job":
         response = lookup_job(base_url, token, args)
+    elif args.command == "evolution":
+        response = call_api(
+            base_url,
+            "POST",
+            "/api/debug/subconscious/evolution/trigger",
+            token,
+            {
+                "action": args.action,
+                "workspaceId": args.workspace_id,
+                "agentInstanceId": args.agent_instance_id,
+                "requestId": args.request_id,
+            },
+        )
+        if args.wait and 200 <= response.status < 300:
+            response = wait_for_evolution_results(
+                base_url,
+                token,
+                response,
+                timeout_seconds=args.timeout_seconds,
+                poll_seconds=args.poll_seconds,
+            )
+    elif args.command == "daily-summary":
+        if not args.day:
+            raise SystemExit("--day is required for daily-summary.")
+        response = call_api(
+            base_url,
+            "POST",
+            "/api/debug/subconscious/daily-summary/trigger",
+            token,
+            {"day": args.day},
+            timeout_seconds=args.timeout_seconds,
+        )
     elif args.command == "hook-session-compressed":
         if not args.session_id:
             raise SystemExit("--session-id is required for hook-session-compressed.")
+        if not args.agent_id:
+            raise SystemExit("--agent-id is required for hook-session-compressed.")
         response = call_api(
             base_url,
             "POST",
@@ -108,10 +158,11 @@ def main() -> int:
                 "originalSessionId": args.session_id,
                 "newSessionId": args.new_session_id,
                 "agentId": args.agent_id,
-                "agentTemplateId": args.agent_template_id,
+                "agentTemplateId": args.agent_template_id or args.agent_id,
                 "compactionId": args.source_compaction_id,
                 "reason": args.reason,
                 "summaryPreview": args.summary_preview or args.last_assistant_reply,
+                "memoryNotes": args.memory_note,
             },
         )
         if args.wait and 200 <= response.status < 300:
@@ -125,6 +176,8 @@ def main() -> int:
     else:
         if not args.session_id:
             raise SystemExit("--session-id is required for trigger.")
+        if not args.agent_id:
+            raise SystemExit("--agent-id is required for trigger.")
         response = call_api(
             base_url,
             "POST",
@@ -134,7 +187,7 @@ def main() -> int:
                 "workspaceId": args.workspace_id,
                 "sessionId": args.session_id,
                 "agentId": args.agent_id,
-                "agentTemplateId": args.agent_template_id,
+                "agentTemplateId": args.agent_template_id or args.agent_id,
                 "lastUserMessage": args.last_user_message,
                 "lastAssistantReply": args.last_assistant_reply,
                 "sourceEventId": args.source_event_id,
@@ -295,6 +348,59 @@ def wait_for_result(
     )
 
 
+def wait_for_evolution_results(
+    base_url: str,
+    token: str,
+    trigger_response: ApiResponse,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> ApiResponse:
+    if not isinstance(trigger_response.body, dict):
+        return trigger_response
+
+    jobs = trigger_response.body.get("jobs")
+    if not isinstance(jobs, list):
+        return trigger_response
+
+    deadline = time.monotonic() + timeout_seconds
+    results: list[dict[str, Any]] = []
+    for job in jobs:
+        if not isinstance(job, dict) or not job.get("jobId"):
+            results.append({"job": job, "error": "Evolution response did not include jobId."})
+            continue
+
+        polled = wait_for_result(
+            base_url,
+            token,
+            ApiResponse(trigger_response.status, job),
+            timeout_seconds=max(0.2, deadline - time.monotonic()),
+            poll_seconds=poll_seconds,
+        )
+        if polled.status != 200:
+            return ApiResponse(
+                polled.status,
+                {
+                    "trigger": trigger_response.body,
+                    "completed": results,
+                    "failedPoll": polled.body,
+                },
+            )
+        results.append(
+            {
+                "job": job,
+                "result": polled.body.get("result") if isinstance(polled.body, dict) else polled.body,
+            }
+        )
+
+    return ApiResponse(
+        200,
+        {
+            "trigger": trigger_response.body,
+            "results": results,
+        },
+    )
+
+
 def login(base_url: str, username: str, password: str) -> str:
     response = call_api(
         base_url,
@@ -323,6 +429,7 @@ def call_api(
     path: str,
     token: str | None,
     payload: dict[str, Any] | None = None,
+    timeout_seconds: float = 30.0,
 ) -> ApiResponse:
     data = None
     headers = {"Accept": "application/json"}
@@ -340,7 +447,7 @@ def call_api(
     )
 
     try:
-        with request.urlopen(req, timeout=30) as resp:
+        with request.urlopen(req, timeout=timeout_seconds) as resp:
             return ApiResponse(resp.status, decode_body(resp.read()))
     except error.HTTPError as exc:
         return ApiResponse(exc.code, decode_body(exc.read()))

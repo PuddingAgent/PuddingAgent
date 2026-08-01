@@ -44,7 +44,40 @@
 .\.venv\Scripts\python.exe Tools\Diagnostics\query_timeline.py --help
 ```
 
-当前工具只使用 Python 标准库，`requirements.txt` 为空。
+大部分只读查询工具只使用 Python 标准库，`requirements.txt` 为空。
+
+`run_benchmarks.py` 复用开发环境已有的 `requests`；如果使用项目 `.venv`，先确认该依赖已安装。
+
+## 可重复 Agent 基准
+
+先只预览将运行的 deterministic suite，不调用付费模型：
+
+```powershell
+.\.venv\Scripts\python.exe Tools\Diagnostics\run_benchmarks.py --dry-run
+```
+
+运行单个 smoke case 并输出 JSON/Markdown 基线：
+
+```powershell
+.\.venv\Scripts\python.exe Tools\Diagnostics\run_benchmarks.py `
+  --case workspace-markdown-summary `
+  --label flash-routing-p2
+```
+
+稳定性对比建议每题重复三次；不传 `--case` 时只选择服务端声明 `hasEvaluation=true` 的案例：
+
+```powershell
+.\.venv\Scripts\python.exe Tools\Diagnostics\run_benchmarks.py --repeat 3 --label candidate
+```
+
+runner 会使用 fresh session、等待 canonical Turn 终态、调用 run evaluator，并默认写到仓库 `.tmp-test-out/benchmark-p2`。消息携带 `excludeFromLearning=true`，经验→SKILL 管道会排除这些轨迹。当前仍使用指定 workspace，运行有 seed 的案例前应避免和人工任务并发修改同一 workspace；run 专属 workspace 是 P2.1 隔离项。
+
+已有 run 可独立重评，无需再次调用模型：
+
+```powershell
+.\.venv\Scripts\python.exe Tools\Diagnostics\run_benchmarks.py `
+  --evaluate-run brun_xxx --session-id bench_xxx
+```
 
 ## 潜意识调试
 

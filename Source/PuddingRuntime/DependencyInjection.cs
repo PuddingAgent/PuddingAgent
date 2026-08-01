@@ -84,6 +84,7 @@ public static class RuntimeServiceExtensions
         services.TryAddSingleton<AgentSkillFileService>();
         services.TryAddSingleton<ISkillEvolutionTrajectorySource, ConversationSkillEvolutionTrajectorySource>();
         services.TryAddSingleton<IAgentSkillEvolutionStore, AgentSkillEvolutionStore>();
+        services.TryAddSingleton<SkillEvolutionDeduplicationService>();
         services.AddSingleton<ISubconsciousOrchestrator, SubconsciousOrchestrator>();
         services.TryAddSingleton<ISubconsciousJobQueue, SubconsciousJobQueue>();
         services.AddOptions<SubconsciousDiagnosticLogOptions>();

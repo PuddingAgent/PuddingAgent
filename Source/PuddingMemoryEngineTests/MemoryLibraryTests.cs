@@ -424,6 +424,41 @@ public sealed class MemoryLibraryTests
     }
 
     [TestMethod]
+    public async Task SmartSearch_WithRoleResolver_ShouldNotLaunchUnscopedDeepExplore()
+    {
+        var library = new Mock<IMemoryLibrary>();
+        library
+            .Setup(item => item.SearchBooksFtsScoredAsync(
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RankedResult>());
+        library
+            .Setup(item => item.SearchChaptersFtsScoredAsync(
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RankedResult>());
+        library
+            .Setup(item => item.SearchBooksByTagAsync(
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<BookRecord>());
+        var llm = new Mock<IMemoryLlmClient>();
+        var roleResolver = new Mock<ILLMConfigResolver>();
+        var convenience = new MemoryLibraryConvenience(
+            library.Object,
+            llm.Object,
+            roleResolver.Object);
+
+        var results = await convenience.SmartSearchAsync("ambiguous memory query", topK: 5);
+
+        Assert.AreEqual(0, results.Count);
+        llm.Verify(
+            item => item.ChatAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<object>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [TestMethod]
     public async Task GetOrCreateBook_ShouldDeduplicate()
     {
         await using var scope = await CreateLibraryScopeAsync();

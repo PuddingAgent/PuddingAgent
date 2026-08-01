@@ -1,16 +1,7 @@
-﻿import React, { useEffect, useState } from 'react';
-import {
-  PlayCircleOutlined,
-} from '@ant-design/icons';
-import {
-  Button,
-  Select,
-  Tag,
-  Typography,
-} from 'antd';
-import type {
-  BenchmarkCaseSummaryDto,
-} from '@/services/platform/api';
+﻿import { PlayCircleOutlined } from '@ant-design/icons';
+import { Button, Select, Tag, Typography } from 'antd';
+import React, { useEffect, useState } from 'react';
+import type { BenchmarkCaseSummaryDto } from '@/services/platform/api';
 import {
   getBenchmarkCase,
   listBenchmarkCases,
@@ -101,6 +92,7 @@ const BenchmarkTab: React.FC<BenchmarkTabProps> = ({
         benchmarkRunId: prepared?.runId ?? '',
         benchmarkSeedId: prepared?.seed.seedId ?? '',
         benchmarkSeedFiles: String(prepared?.seed.files.length ?? 0),
+        excludeFromLearning: 'true',
       });
     } catch {
       setBenchmarkError('发送试题失败');
@@ -126,9 +118,7 @@ const BenchmarkTab: React.FC<BenchmarkTabProps> = ({
           label: item.title,
         }))}
         style={{ width: '100%' }}
-        disabled={
-          loadingBenchmarkCases || benchmarkCases.length === 0
-        }
+        disabled={loadingBenchmarkCases || benchmarkCases.length === 0}
       />
       {selectedBenchmarkCaseId && (
         <div className={styles.devPerfDiagnosisList}>
@@ -145,9 +135,7 @@ const BenchmarkTab: React.FC<BenchmarkTabProps> = ({
                   {item.category}
                   {' · '}
                   {item.difficulty}
-                  {item.estimatedRounds
-                    ? ` · ${item.estimatedRounds} 轮`
-                    : ''}
+                  {item.estimatedRounds ? ` · ${item.estimatedRounds} 轮` : ''}
                 </Typography.Text>
                 <div className={styles.devPerfCounts}>
                   {item.coverage.map((tag) => (

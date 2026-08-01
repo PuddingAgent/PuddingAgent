@@ -25,14 +25,21 @@ public sealed class ConversationSkillEvolutionTrajectorySource(
             throw new ArgumentException("Agent instance id is required.", nameof(agentInstanceId));
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+        // Filter to usable trajectories after loading events. Looking at only the
+        // latest N successful commands starves the pipeline whenever those turns
+        // contain fewer than two tool calls, even if older verified chains exist.
+        var scanLimit = Math.Clamp(limit * 20, 20, 200);
         var commands = await db.ChatExecutionCommands
             .AsNoTracking()
             .Where(command => command.WorkspaceId == workspaceId
                               && command.AgentInstanceId == agentInstanceId
                               && command.Status == "succeeded")
             .OrderByDescending(command => command.CompletedAt ?? command.CreatedAt)
-            .Take(Math.Clamp(limit, 1, 20))
+            .Take(scanLimit)
             .ToListAsync(ct);
+        commands = commands
+            .Where(command => !IsExcludedFromLearning(command.MetadataJson))
+            .ToList();
 
         if (commands.Count == 0)
             return [];
@@ -77,6 +84,9 @@ public sealed class ConversationSkillEvolutionTrajectorySource(
                 Goal = goals.GetValueOrDefault(command.UserMessageId) ?? string.Empty,
                 Steps = steps,
             });
+
+            if (trajectories.Count >= Math.Clamp(limit, 1, 20))
+                break;
         }
 
         logger.LogInformation(
@@ -154,4 +164,25 @@ public sealed class ConversationSkillEvolutionTrajectorySource(
         => payload.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    internal static bool IsExcludedFromLearning(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("excludeFromLearning", out var value)
+                && (value.ValueKind == JsonValueKind.True
+                    || value.ValueKind == JsonValueKind.String
+                    && bool.TryParse(value.GetString(), out var parsed)
+                    && parsed);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 }

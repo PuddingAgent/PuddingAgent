@@ -55,6 +55,7 @@ public sealed class BenchmarkCaseCatalogService
                 EstimatedRounds = item.EstimatedRounds,
                 SeedId = item.SeedId,
                 CapabilityTargets = item.CapabilityTargets,
+                HasEvaluation = item.Evaluation?.Artifacts.Count > 0,
                 SortOrder = item.SortOrder,
             })
             .ToList();
@@ -105,7 +106,11 @@ public sealed class BenchmarkCaseCatalogService
         foreach (var item in configured)
         {
             if (!string.IsNullOrWhiteSpace(item.Id))
-                merged[item.Id] = item;
+            {
+                merged[item.Id] = merged.TryGetValue(item.Id, out var defaultItem)
+                    ? item with { Evaluation = item.Evaluation ?? defaultItem.Evaluation }
+                    : item;
+            }
         }
 
         return merged.Values
@@ -185,6 +190,7 @@ public sealed class BenchmarkCaseFileService
 public sealed record BenchmarkCaseConfig
 {
     public required string Id { get; init; }
+    public string Version { get; init; } = "1";
     public required string Title { get; init; }
     public required string Category { get; init; }
     public IReadOnlyList<string> Coverage { get; init; } = [];
@@ -193,8 +199,33 @@ public sealed record BenchmarkCaseConfig
     public string? SeedId { get; init; }
     public IReadOnlyList<string> CapabilityTargets { get; init; } = [];
     public required string Prompt { get; init; }
+    /// <summary>
+    /// Optional deterministic evaluation contract. Cases without a contract remain observable,
+    /// but are never reported as instruction-complete by the automated evaluator.
+    /// </summary>
+    public BenchmarkEvaluationContract? Evaluation { get; init; }
     public bool IsEnabled { get; init; } = true;
     public int SortOrder { get; init; } = 100;
+}
+
+public sealed record BenchmarkEvaluationContract
+{
+    public IReadOnlyList<BenchmarkArtifactExpectation> Artifacts { get; init; } = [];
+    public int? MaxDurationSeconds { get; init; }
+    public int? MaxRounds { get; init; }
+    public long? MaxTotalTokens { get; init; }
+    public decimal? MaxCostCny { get; init; }
+    public int MaxFailedToolResults { get; init; }
+}
+
+public sealed record BenchmarkArtifactExpectation
+{
+    /// <summary>Workspace-relative path. '*' and '?' are supported inside path segments.</summary>
+    public required string Path { get; init; }
+    public long MinBytes { get; init; } = 1;
+    public bool MustBeModifiedAfterRun { get; init; } = true;
+    public IReadOnlyList<string> RequiredContents { get; init; } = [];
+    public IReadOnlyList<string> ForbiddenContents { get; init; } = [];
 }
 
 public sealed record BenchmarkCaseSummaryDto
@@ -207,6 +238,7 @@ public sealed record BenchmarkCaseSummaryDto
     public string? EstimatedRounds { get; init; }
     public string? SeedId { get; init; }
     public IReadOnlyList<string> CapabilityTargets { get; init; } = [];
+    public bool HasEvaluation { get; init; }
     public int SortOrder { get; init; }
 }
 

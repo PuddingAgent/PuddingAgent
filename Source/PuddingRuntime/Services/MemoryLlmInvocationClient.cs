@@ -174,14 +174,15 @@ public sealed class MemoryLlmInvocationClient(
         CancellationToken ct)
     {
         var profile = ResolveSubconsciousProfile(overrideConfig);
-        var workspaceId = DefaultWorkspaceId;
-        var sessionId = DefaultSessionId;
+        var workspaceId = overrideConfig?.WorkspaceId ?? DefaultWorkspaceId;
+        var sessionId = overrideConfig?.SessionId ?? DefaultSessionId;
+        var agentInstanceId = overrideConfig?.AgentInstanceId ?? DefaultAgentInstanceId;
         var invocationRequest = new LlmInvocationRequest
         {
             WorkspaceId = workspaceId,
             SessionId = sessionId,
-            AgentInstanceId = DefaultAgentInstanceId,
-            AgentTemplateId = DefaultAgentTemplateId,
+            AgentInstanceId = agentInstanceId,
+            AgentTemplateId = agentInstanceId,
             Profile = profile,
             ConfigOverride = ToOverrideConfig(overrideConfig),
             Messages =
@@ -206,7 +207,7 @@ public sealed class MemoryLlmInvocationClient(
             await tokenUsageRecorder.RecordRequiredAsync(
                 result.Usage,
                 sourceType: "subconscious_memory",
-                sourceId: $"llm:{invocationRequest.InvocationId}",
+                sourceId: BuildUsageSourceId(overrideConfig?.Stage, invocationRequest.InvocationId),
                 workspaceId: workspaceId,
                 sessionId: sessionId,
                 providerId: result.ProviderId,
@@ -225,14 +226,17 @@ public sealed class MemoryLlmInvocationClient(
         SubconsciousMemoryScope? targetScope = null)
     {
         var profile = ResolveSubconsciousProfile(overrideConfig);
-        var workspaceId = targetScope?.WorkspaceId ?? DefaultWorkspaceId;
-        var sessionId = targetScope?.SessionId ?? DefaultSessionId;
+        var workspaceId = targetScope?.WorkspaceId ?? overrideConfig?.WorkspaceId ?? DefaultWorkspaceId;
+        var sessionId = targetScope?.SessionId ?? overrideConfig?.SessionId ?? DefaultSessionId;
+        var agentInstanceId = targetScope?.AgentId
+            ?? overrideConfig?.AgentInstanceId
+            ?? DefaultAgentInstanceId;
         var invocationRequest = new LlmInvocationRequest
         {
             WorkspaceId = workspaceId,
             SessionId = sessionId,
-            AgentInstanceId = targetScope?.AgentId ?? DefaultAgentInstanceId,
-            AgentTemplateId = targetScope?.AgentTemplateId ?? DefaultAgentTemplateId,
+            AgentInstanceId = agentInstanceId,
+            AgentTemplateId = targetScope?.AgentTemplateId ?? agentInstanceId,
             Profile = profile,
             ConfigOverride = ToOverrideConfig(overrideConfig),
             Messages =
@@ -257,7 +261,7 @@ public sealed class MemoryLlmInvocationClient(
             await tokenUsageRecorder.RecordRequiredAsync(
                 result.Usage,
                 sourceType: "subconscious_memory",
-                sourceId: $"llm:{invocationRequest.InvocationId}",
+                sourceId: BuildUsageSourceId(overrideConfig?.Stage, invocationRequest.InvocationId),
                 workspaceId: workspaceId,
                 sessionId: sessionId,
                 providerId: result.ProviderId,
@@ -268,8 +272,27 @@ public sealed class MemoryLlmInvocationClient(
         return result.ReplyText ?? string.Empty;
     }
 
+    private static string BuildUsageSourceId(string? stage, string invocationId)
+        => string.IsNullOrWhiteSpace(stage)
+            ? $"llm:{invocationId}"
+            : $"llm:{stage.Trim().ToLowerInvariant()}:{invocationId}";
+
     private LlmInvocationProfile ResolveSubconsciousProfile(MemoryLlmConfig? overrideConfig)
     {
+        if (!string.IsNullOrWhiteSpace(overrideConfig?.ProviderId)
+            && !string.IsNullOrWhiteSpace(overrideConfig.ModelId))
+        {
+            return new LlmInvocationProfile
+            {
+                ProviderId = overrideConfig.ProviderId,
+                ProfileId = string.IsNullOrWhiteSpace(overrideConfig.ProfileId)
+                    ? "agent:subconscious"
+                    : overrideConfig.ProfileId,
+                ModelId = overrideConfig.ModelId,
+                Role = AgentLlmRoleIds.Subconscious,
+            };
+        }
+
         var configured = llmConfigService?.ResolveProfile(DefaultSubconsciousProfileId);
         var memoryConfig = llmConfigService?.GetMemoryConfig();
         var modelId = FirstNonBlank(

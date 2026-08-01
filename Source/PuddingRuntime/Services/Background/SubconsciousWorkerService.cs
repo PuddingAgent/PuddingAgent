@@ -203,13 +203,37 @@ public sealed class SubconsciousWorkerService : BackgroundService
         SubconsciousJobQueueItem queueItem,
         CancellationToken ct)
     {
+        if (queueItem.JobType is not (
+                SubconsciousJobTypes.AutoDream
+                or SubconsciousJobTypes.ExtractPatterns
+                or SubconsciousJobTypes.ImproveSkills))
+        {
+            return false;
+        }
+
+        var (mode, memoryLlmConfig) = await ResolveMemoryOptionsAsync(queueItem.Job, ct);
+        if (mode == "off")
+        {
+            if (_jobQueue is not null)
+            {
+                var disabledResult = CreateCompletedPeriodicResult(
+                    queueItem.JobType,
+                    0,
+                    "Subconscious role is disabled for this Agent.",
+                    CreatePeriodicResultMetadata(queueItem, 0, DateTime.UtcNow));
+                await _jobQueue.RecordResultAsync(queueItem.JobId, _leaseOwner, disabledResult, ct);
+                await _jobQueue.CompleteAsync(queueItem.JobId, _leaseOwner, ct);
+            }
+            return true;
+        }
+
         SubconsciousJobResultEnvelope result;
         switch (queueItem.JobType)
         {
             case SubconsciousJobTypes.AutoDream:
                 var autoDreamReport = await _orchestrator.AutoDreamAsync(
                     queueItem.Job.WorkspaceId,
-                    null,
+                    memoryLlmConfig,
                     ct);
                 result = CreateAutoDreamResultEnvelope(queueItem, autoDreamReport);
                 break;
@@ -217,7 +241,7 @@ public sealed class SubconsciousWorkerService : BackgroundService
                 var patternReport = await _orchestrator.ExtractPatternsAsync(
                     queueItem.Job.WorkspaceId,
                     queueItem.Job.AgentId,
-                    null,
+                    memoryLlmConfig,
                     ct);
                 result = CreatePatternExtractionResultEnvelope(queueItem, patternReport);
                 break;
@@ -225,7 +249,7 @@ public sealed class SubconsciousWorkerService : BackgroundService
                 var improvementReport = await _orchestrator.ImproveSkillsAsync(
                     queueItem.Job.WorkspaceId,
                     queueItem.Job.AgentId,
-                    null,
+                    memoryLlmConfig,
                     ct);
                 result = CreateSkillImprovementResultEnvelope(queueItem, improvementReport);
                 break;
@@ -266,13 +290,16 @@ public sealed class SubconsciousWorkerService : BackgroundService
         var metadata = CreatePeriodicResultMetadata(queueItem, report.DurationMs, report.Timestamp);
         metadata["candidates_found_count"] = report.CandidatesFound.ToString();
         metadata["promoted_count"] = report.Promoted.ToString();
+        metadata["merged_count"] = report.Merged.ToString();
+        metadata["deferred_count"] = report.Deferred.ToString();
         metadata["demoted_to_memory_count"] = report.DemotedToMemory.ToString();
         metadata["skipped_count"] = report.Skipped.ToString();
         metadata["created_skill_ids"] = string.Join(",", report.CreatedSkillIds);
+        metadata["updated_skill_ids"] = string.Join(",", report.UpdatedSkillIds);
 
         return CreateCompletedPeriodicResult(
             SubconsciousJobResultKinds.SkillPatternExtraction,
-            report.Promoted + report.DemotedToMemory,
+            report.Promoted + report.Merged + report.DemotedToMemory,
             report.Summary,
             metadata);
     }
@@ -284,12 +311,14 @@ public sealed class SubconsciousWorkerService : BackgroundService
         var metadata = CreatePeriodicResultMetadata(queueItem, report.DurationMs, report.Timestamp);
         metadata["evaluated_count"] = report.Evaluated.ToString();
         metadata["patched_count"] = report.Patched.ToString();
+        metadata["consolidated_count"] = report.Consolidated.ToString();
         metadata["skipped_count"] = report.Skipped.ToString();
         metadata["improved_skill_ids"] = string.Join(",", report.ImprovedSkillIds);
+        metadata["disabled_duplicate_skill_ids"] = string.Join(",", report.DisabledDuplicateSkillIds);
 
         return CreateCompletedPeriodicResult(
             SubconsciousJobResultKinds.SkillImprovement,
-            report.Patched,
+            report.Patched + report.Consolidated,
             report.Summary,
             metadata);
     }
@@ -526,30 +555,32 @@ public sealed class SubconsciousWorkerService : BackgroundService
         {
             try
             {
-                var memoryCfg = await _llmConfigResolver.ResolveMemoryAsync(
-                    job.AgentTemplateId,
+                var roleRoute = await _llmConfigResolver.ResolveRoleAsync(
                     job.WorkspaceId,
+                    job.AgentId,
+                    AgentLlmRoleIds.Subconscious,
                     stoppingToken);
-
-                if (memoryCfg is not null)
+                mode = roleRoute.SearchMode;
+                memoryLlmConfig = new MemoryLlmConfig(
+                    roleRoute.Config.Endpoint,
+#pragma warning disable CS0618
+                    roleRoute.Config.ApiKey,
+#pragma warning restore CS0618
+                    roleRoute.ModelId)
                 {
-                    mode = memoryCfg.SearchMode;
-
-                    if (!string.IsNullOrWhiteSpace(memoryCfg.Endpoint)
-                        || !string.IsNullOrWhiteSpace(memoryCfg.ModelId))
-                    {
-                        memoryLlmConfig = new MemoryLlmConfig(
-                            memoryCfg.Endpoint,
-                            memoryCfg.ApiKey,
-                            memoryCfg.ModelId);
-                    }
-                }
+                    ProviderId = roleRoute.ProviderId,
+                    ProfileId = roleRoute.ProfileId,
+                    WorkspaceId = job.WorkspaceId,
+                    SessionId = job.SessionId,
+                    AgentInstanceId = job.AgentId,
+                    Stage = "subconscious-job",
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "[SubconsciousWorker] Resolve memory LLM config failed template={Template} workspace={Workspace}; job will fail without fallback",
-                    job.AgentTemplateId, job.WorkspaceId);
+                    "[SubconsciousWorker] Resolve subconscious role failed agent={AgentId} workspace={Workspace}; job will fail without fallback",
+                    job.AgentId, job.WorkspaceId);
                 throw;
             }
         }

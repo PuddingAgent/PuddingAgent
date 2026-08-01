@@ -78,7 +78,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IMemoryLibraryConvenience>(sp =>
             new MemoryLibraryConvenience(
                 sp.GetRequiredService<IMemoryLibrary>(),
-                sp.GetService<IMemoryLlmClient>()));
+                sp.GetService<IMemoryLlmClient>(),
+                sp.GetService<ILLMConfigResolver>()));
         builder.Services.AddSingleton<MemoryQualityFilter>();
         builder.Services.AddSingleton<IMemoryLibrarian, MemoryLibrarian>();
         builder.Services.AddSingleton<FactMemoryService>();
@@ -130,6 +131,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<AgentSkillFileService>();
         builder.Services.AddSingleton<ISkillEvolutionTrajectorySource, ConversationSkillEvolutionTrajectorySource>();
         builder.Services.AddSingleton<IAgentSkillEvolutionStore, AgentSkillEvolutionStore>();
+        builder.Services.AddSingleton<SkillEvolutionDeduplicationService>();
         builder.Services.AddSingleton<SkillEnforcerService>();
         builder.Services.AddSingleton<SessionSummaryStore>();
         builder.Services.AddSingleton<SessionRedirectStore>();
@@ -276,6 +278,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.TryAddSingleton<MemoryWriteCommandValidator>();
         builder.Services.TryAddSingleton<IMemoryWriteCoordinator, MemoryWriteCoordinator>();
         builder.Services.TryAddSingleton<SubconsciousPlanGenerationService>();
+        builder.Services.TryAddSingleton<MemoryWikiPageUpdateService>();
+        builder.Services.TryAddSingleton<WikiPageWriteEntry>();
         builder.Services.AddSingleton<IdleDetector>();
         builder.Services.AddSingleton<IIdleDetector>(sp => sp.GetRequiredService<IdleDetector>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<IdleDetector>());
@@ -304,7 +308,10 @@ public static partial class PuddingServiceCollectionExtensions
 
         // 分发器：PriorityQueue 出队 → IEventHandler.HandleAsync()
         // HOSTED-DISABLED: builder.Services.AddHostedService<EventDispatcher>();
-        // HOSTED-DISABLED: builder.Services.AddHostedService<SessionCompressedMemoryMaintenanceHook>();
+        // Lifecycle hook subscriber: session.compressed -> durable subconscious job.
+        // EventIngressBridge deliberately skips hook lifecycle events, so this
+        // subscriber is the single owner of memory-maintenance enqueueing.
+        builder.Services.AddHostedService<SessionCompressedMemoryMaintenanceHook>();
 
         builder.Services.AddSingleton<ProviderRateLimiter>();
         builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();

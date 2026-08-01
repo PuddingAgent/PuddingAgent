@@ -106,9 +106,11 @@ public sealed class AgentDailySummaryServiceTests
         Assert.AreEqual(1, results.Count);
         Assert.IsFalse(results[0].Skipped);
         Assert.IsTrue(File.Exists(temp.Paths.AgentInstanceMemoryIndexFile("agent-1")));
-        Assert.AreEqual("template-1", resolver.LastTemplateId);
+        Assert.AreEqual("agent-1", resolver.LastAgentInstanceId);
         Assert.AreEqual("workspace-1", resolver.LastWorkspaceId);
+        Assert.AreEqual(AgentLlmRoleIds.Subconscious, resolver.LastRoleId);
         Assert.AreEqual("memory-model", text.LastDailyRequest!.MemoryLlmConfig!.ModelId);
+        Assert.AreEqual("memory-provider", text.LastDailyRequest.MemoryLlmConfig.ProviderId);
     }
 
     [TestMethod]
@@ -121,10 +123,12 @@ public sealed class AgentDailySummaryServiceTests
 
         var text = new RecordingTextProcessingService("## 2026-06-15\n- yesterday work");
         var summaryService = new AgentDailySummaryService(temp.Paths, text);
+        var resolver = new RecordingLlmConfigResolver();
         var batch = new AgentDailySummaryBatchService(
             temp.Paths,
             summaryService,
-            NullLogger<AgentDailySummaryBatchService>.Instance);
+            NullLogger<AgentDailySummaryBatchService>.Instance,
+            resolver);
 
         var results = await batch.GeneratePreviousDayAsync(new DateTimeOffset(2026, 6, 16, 0, 0, 0, TimeSpan.FromHours(8)));
 
@@ -153,8 +157,34 @@ public sealed class AgentDailySummaryServiceTests
 
     private sealed class RecordingLlmConfigResolver : ILLMConfigResolver
     {
-        public string? LastTemplateId { get; private set; }
+        public string? LastAgentInstanceId { get; private set; }
         public string? LastWorkspaceId { get; private set; }
+        public string? LastRoleId { get; private set; }
+
+        public Task<AgentRoleLlmRoutingConfig> ResolveRoleAsync(
+            string workspaceId,
+            string configurationAgentInstanceId,
+            string roleId,
+            CancellationToken ct = default)
+        {
+            LastWorkspaceId = workspaceId;
+            LastAgentInstanceId = configurationAgentInstanceId;
+            LastRoleId = roleId;
+            return Task.FromResult(new AgentRoleLlmRoutingConfig
+            {
+                RoleId = roleId,
+                ConfigurationAgentInstanceId = configurationAgentInstanceId,
+                ProviderId = "memory-provider",
+                ProfileId = $"agent:{configurationAgentInstanceId}:{roleId}",
+                ModelId = "memory-model",
+                Config = new LlmConfig
+                {
+                    Endpoint = "https://memory.local",
+                    ApiKey = "key",
+                    ModelId = "memory-model",
+                },
+            });
+        }
 
         public Task<LlmRoutingConfig?> ResolveConsciousAsync(
             string templateId,
@@ -172,7 +202,6 @@ public sealed class AgentDailySummaryServiceTests
             string? workspaceId,
             CancellationToken ct = default)
         {
-            LastTemplateId = templateId;
             LastWorkspaceId = workspaceId;
             return Task.FromResult<MemoryLlmRoutingConfig?>(new MemoryLlmRoutingConfig
             {

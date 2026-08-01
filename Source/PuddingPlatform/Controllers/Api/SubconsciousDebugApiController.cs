@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -17,17 +18,20 @@ public sealed class SubconsciousDebugApiController : ControllerBase
     private readonly ISubconsciousJobQueue _jobQueue;
     private readonly IHookPublisher _hookPublisher;
     private readonly IOptions<SubconsciousOptions> _options;
+    private readonly AgentDailySummaryBatchService? _dailySummaryBatchService;
 
     public SubconsciousDebugApiController(
         ISubconsciousRuntimeControl runtimeControl,
         ISubconsciousJobQueue jobQueue,
         IHookPublisher hookPublisher,
-        IOptions<SubconsciousOptions> options)
+        IOptions<SubconsciousOptions> options,
+        AgentDailySummaryBatchService? dailySummaryBatchService = null)
     {
         _runtimeControl = runtimeControl;
         _jobQueue = jobQueue;
         _hookPublisher = hookPublisher;
         _options = options;
+        _dailySummaryBatchService = dailySummaryBatchService;
     }
 
     [HttpGet("debug")]
@@ -224,6 +228,39 @@ public sealed class SubconsciousDebugApiController : ControllerBase
         });
     }
 
+    [HttpPost("daily-summary/trigger")]
+    public async Task<ActionResult<SubconsciousDebugDailySummaryResponse>> TriggerDailySummary(
+        [FromBody] SubconsciousDebugDailySummaryRequest? request,
+        CancellationToken ct)
+    {
+        if (!_options.Value.DebugApiEnabled)
+            return NotFound();
+
+        if (_dailySummaryBatchService is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        if (!DateOnly.TryParseExact(
+                request?.Day?.Trim(),
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var day))
+        {
+            return BadRequest(new { error = "day must use the format yyyy-MM-dd." });
+        }
+
+        var normalizedDay = day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var results = await _dailySummaryBatchService.GenerateForDayAsync(normalizedDay, ct);
+        return Ok(new SubconsciousDebugDailySummaryResponse
+        {
+            Day = normalizedDay,
+            Discovered = results.Count,
+            Generated = results.Count(result => !result.Skipped),
+            Skipped = results.Count(result => result.Skipped),
+            Results = results,
+        });
+    }
+
     [HttpPost("hooks/session-compressed")]
     public async Task<ActionResult<SubconsciousDebugHookTriggerResponse>> TriggerSessionCompressedHook(
         [FromBody] SubconsciousDebugSessionCompressedHookRequest request,
@@ -267,6 +304,12 @@ public sealed class SubconsciousDebugApiController : ControllerBase
             SummaryPreview = string.IsNullOrWhiteSpace(request.SummaryPreview)
                 ? null
                 : request.SummaryPreview.Trim(),
+            MemoryNotes = request.MemoryNotes?
+                .Where(note => !string.IsNullOrWhiteSpace(note))
+                .Select(note => note.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Take(32)
+                .ToArray() ?? [],
         };
 
         var eventId = await _hookPublisher.PublishAsync(
@@ -402,6 +445,20 @@ public sealed record SubconsciousDebugEvolutionTriggerRequest
     public string? RequestId { get; init; }
 }
 
+public sealed record SubconsciousDebugDailySummaryRequest
+{
+    public string? Day { get; init; }
+}
+
+public sealed record SubconsciousDebugDailySummaryResponse
+{
+    public required string Day { get; init; }
+    public int Discovered { get; init; }
+    public int Generated { get; init; }
+    public int Skipped { get; init; }
+    public IReadOnlyList<AgentDailySummaryResult> Results { get; init; } = [];
+}
+
 public sealed record SubconsciousDebugEvolutionTriggerResponse
 {
     public required string RequestId { get; init; }
@@ -431,6 +488,7 @@ public sealed record SubconsciousDebugSessionCompressedHookRequest
     public string? CompactionId { get; init; }
     public string? Reason { get; init; }
     public string? SummaryPreview { get; init; }
+    public IReadOnlyList<string>? MemoryNotes { get; init; }
 }
 
 public sealed record SubconsciousDebugHookTriggerResponse

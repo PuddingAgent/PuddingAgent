@@ -10,6 +10,17 @@ namespace PuddingCode.Abstractions;
 public interface ILLMConfigResolver
 {
     /// <summary>
+    /// Resolve one semantic LLM role from the persistent Agent instance that owns
+    /// configuration for the execution. Callers choose a role; they never choose
+    /// a provider/model fallback in code.
+    /// </summary>
+    Task<AgentRoleLlmRoutingConfig> ResolveRoleAsync(
+        string workspaceId,
+        string configurationAgentInstanceId,
+        string roleId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// [Obsolete] 解析显意识 LLM 配置。请改用 ResolveAsync(AgentLlmBinding)。
     /// </summary>
     [Obsolete("Use ResolveAsync(AgentLlmBinding) instead. Template-based resolution is deprecated.")]
@@ -41,6 +52,35 @@ public interface ILLMConfigResolver
     Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(
         AgentLlmBinding binding,
         CancellationToken ct = default);
+}
+
+/// <summary>Stable semantic LLM role identifiers.</summary>
+public static class AgentLlmRoleIds
+{
+    public const string Conscious = "conscious";
+    public const string Subconscious = "subconscious";
+    public const string Explorer = "explorer";
+    public const string Researcher = "researcher";
+    public const string Planner = "planner";
+    public const string Reviewer = "reviewer";
+    public const string Developer = "developer";
+    public const string Deployer = "deployer";
+    public const string Tester = "tester";
+}
+
+/// <summary>
+/// Immutable route snapshot for one Agent semantic role. Provider/model identity
+/// comes from the Agent instance; endpoint and credentials come from the provider registry.
+/// </summary>
+public sealed record AgentRoleLlmRoutingConfig
+{
+    public required string RoleId { get; init; }
+    public required string ConfigurationAgentInstanceId { get; init; }
+    public required string ProviderId { get; init; }
+    public required string ProfileId { get; init; }
+    public required string ModelId { get; init; }
+    public required LlmConfig Config { get; init; }
+    public string SearchMode { get; init; } = "deep";
 }
 
 /// <summary>显意识 LLM 路由配置。</summary>

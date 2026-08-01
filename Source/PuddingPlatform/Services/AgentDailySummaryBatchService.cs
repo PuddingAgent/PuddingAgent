@@ -10,7 +10,7 @@ public sealed class AgentDailySummaryBatchService(
     PuddingDataPaths paths,
     AgentDailySummaryService summaryService,
     ILogger<AgentDailySummaryBatchService> logger,
-    ILLMConfigResolver? llmConfigResolver = null)
+    ILLMConfigResolver llmConfigResolver)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -46,7 +46,7 @@ public sealed class AgentDailySummaryBatchService(
             try
             {
                 var manifest = await ReadManifestAsync(agentInstanceId, ct);
-                var memoryConfig = await ResolveMemoryConfigAsync(manifest, ct);
+                var memoryConfig = await ResolveMemoryConfigAsync(manifest, day, ct);
                 var result = await summaryService.GenerateAsync(
                     new AgentDailySummaryGenerateRequest(
                         WorkspaceId: manifest.WorkspaceId ?? "default",
@@ -130,32 +130,28 @@ public sealed class AgentDailySummaryBatchService(
 
     private async Task<MemoryLlmConfig?> ResolveMemoryConfigAsync(
         AgentDailySummaryManifest manifest,
+        string day,
         CancellationToken ct)
     {
-        if (llmConfigResolver is null || string.IsNullOrWhiteSpace(manifest.TemplateId))
-            return null;
-
-        try
+        var route = await llmConfigResolver.ResolveRoleAsync(
+            manifest.WorkspaceId ?? "default",
+            manifest.AgentInstanceId,
+            AgentLlmRoleIds.Subconscious,
+            ct);
+        return new MemoryLlmConfig(
+            route.Config.Endpoint,
+#pragma warning disable CS0618
+            route.Config.ApiKey,
+#pragma warning restore CS0618
+            route.ModelId)
         {
-            var cfg = await llmConfigResolver.ResolveMemoryAsync(manifest.TemplateId, manifest.WorkspaceId, ct);
-            if (cfg is null
-                || string.IsNullOrWhiteSpace(cfg.Endpoint)
-                || string.IsNullOrWhiteSpace(cfg.ModelId))
-            {
-                return null;
-            }
-
-            return new MemoryLlmConfig(cfg.Endpoint, cfg.ApiKey ?? string.Empty, cfg.ModelId);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(
-                ex,
-                "[AgentDailySummaryBatch] Resolve memory LLM config failed agent={AgentInstanceId} template={TemplateId}",
-                manifest.AgentInstanceId,
-                manifest.TemplateId);
-            return null;
-        }
+            ProviderId = route.ProviderId,
+            ProfileId = route.ProfileId,
+            WorkspaceId = manifest.WorkspaceId ?? "default",
+            SessionId = $"daily-summary:{day}",
+            AgentInstanceId = manifest.AgentInstanceId,
+            Stage = "daily-summary",
+        };
     }
 
     private sealed record AgentDailySummaryManifest(

@@ -155,6 +155,7 @@ export interface BenchmarkCaseSummaryDto {
   estimatedRounds?: string;
   seedId?: string;
   capabilityTargets: string[];
+  hasEvaluation: boolean;
   sortOrder: number;
 }
 

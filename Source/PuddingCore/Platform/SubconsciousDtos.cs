@@ -302,7 +302,23 @@ public record MemoryEntryDto
 public record MemoryLlmConfig(
     string? Endpoint,
     string? ApiKey,
-    string? ModelId);
+    string? ModelId)
+{
+    /// <summary>
+    /// Explicit provider identity resolved from the owning Agent role binding.
+    /// Memory callers must not infer this value from the model, endpoint or key.
+    /// </summary>
+    public string? ProviderId { get; init; }
+
+    /// <summary>Invocation profile identity used for audit; provider/model remain authoritative.</summary>
+    public string? ProfileId { get; init; }
+
+    /// <summary>Owning execution scope used for usage attribution.</summary>
+    public string? WorkspaceId { get; init; }
+    public string? SessionId { get; init; }
+    public string? AgentInstanceId { get; init; }
+    public string? Stage { get; init; }
+}
 ﻿
 /// <summary>Auto-Dream 执行报告。由 AutoDreamAsync 返回。</summary>
 public sealed record AutoDreamReport
@@ -394,6 +410,7 @@ public sealed record AgentSkillEvolutionDocument
     public string? Description { get; init; }
     public IReadOnlyList<string> Tags { get; init; } = [];
     public IReadOnlyList<string> Keywords { get; init; } = [];
+    public bool Enabled { get; init; } = true;
     public required string Markdown { get; init; }
 }
 
@@ -433,9 +450,12 @@ public sealed record PatternExtractionReport
     public long DurationMs { get; init; }
     public int CandidatesFound { get; init; }
     public int Promoted { get; init; }
+    public int Merged { get; init; }
+    public int Deferred { get; init; }
     public int DemotedToMemory { get; init; }
     public int Skipped { get; init; }
     public string[] CreatedSkillIds { get; init; } = [];
+    public string[] UpdatedSkillIds { get; init; } = [];
     public string? Summary { get; init; }
     public DateTime Timestamp { get; init; }
 }
@@ -463,8 +483,10 @@ public sealed record SkillImprovementReport
     public long DurationMs { get; init; }
     public int Evaluated { get; init; }
     public int Patched { get; init; }
+    public int Consolidated { get; init; }
     public int Skipped { get; init; }
     public string[] ImprovedSkillIds { get; init; } = [];
+    public string[] DisabledDuplicateSkillIds { get; init; } = [];
     public string? Summary { get; init; }
     public DateTime Timestamp { get; init; }
 }

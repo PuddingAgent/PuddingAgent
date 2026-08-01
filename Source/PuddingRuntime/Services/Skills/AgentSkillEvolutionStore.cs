@@ -74,6 +74,16 @@ public sealed class AgentSkillEvolutionStore(AgentSkillFileService skillFileServ
         return await ToDocumentAsync(agentInstanceId, record, ct);
     }
 
+    public async Task<AgentSkillEvolutionDocument> SetEnabledAsync(
+        string agentInstanceId,
+        string skillId,
+        bool enabled,
+        CancellationToken ct = default)
+    {
+        var record = await skillFileService.SetEnabledAsync(agentInstanceId, skillId, enabled, ct);
+        return await ToDocumentAsync(agentInstanceId, record, ct);
+    }
+
     private async Task<AgentSkillEvolutionDocument> ToDocumentAsync(
         string agentInstanceId,
         AgentSkillRecord record,
@@ -92,6 +102,7 @@ public sealed class AgentSkillEvolutionStore(AgentSkillFileService skillFileServ
             Description = record.Manifest.Description,
             Tags = record.Manifest.Tags,
             Keywords = record.Manifest.Keywords,
+            Enabled = record.Manifest.Enabled,
             Markdown = markdown.Content,
         };
     }

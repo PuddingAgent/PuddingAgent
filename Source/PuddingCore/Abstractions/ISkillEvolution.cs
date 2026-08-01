@@ -34,5 +34,10 @@ public interface IAgentSkillEvolutionStore
         string skillId,
         AgentSkillEvolutionWriteRequest request,
         CancellationToken ct = default);
-}
 
+    Task<AgentSkillEvolutionDocument> SetEnabledAsync(
+        string agentInstanceId,
+        string skillId,
+        bool enabled,
+        CancellationToken ct = default);
+}

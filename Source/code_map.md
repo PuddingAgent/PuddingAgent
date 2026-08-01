@@ -217,7 +217,8 @@ Source/
 | `Services/SessionRedirectStore.cs` | 会话重定向（压缩后新旧 Session 映射） |
 | `Services/PlatformApiClient.cs` | 平台 API 客户端（内部调用） |
 | `Services/ChatHistoryService.cs` | 聊天历史查询 |
-| `Services/AgentLLMConfigResolver.cs` | Agent 的 LLM 配置解析 |
+| `Services/AgentLLMConfigResolver.cs` | Agent 语义角色的 LLM 路由边界：从持久 Agent 实例解析 `conscious` / `subconscious` / smart 子代理角色，再从 provider registry 精确补齐连接配置；缺失、跨 workspace、profile 不一致或路由不存在时 fail-closed，不在调用方硬编码模型 |
+| `Services/AgentDailySummaryBatchService.cs` | 按日期发现 Agent 消息日志，使用该 Agent 的 `subconscious` 角色生成 `memory/daily/{day}.md` 并维护 `memory/index.json`；源哈希不变时幂等跳过，角色解析失败时不回退到平台默认模型 |
 | `Services/AgentRuntimeProfileResolver.cs` | Agent 执行配置唯一解析边界；只以实例 manifest 的 `preferredProviderId + preferredModelId` 作为主 Agent 模型身份，再由 `llm.providers.json` 精确补齐连接配置；缺失或无效时返回 `agent_configuration_invalid`，不回退 |
 | `Services/WorkspaceAgentFileService.cs` | Agent 实例定义写入权威；创建/管理端更新同步维护 manifest、Markdown 与 `config/llm.json`，实现 `IAgentSelfMaintenanceService` 的受控自维护写入，并以 `IAgentChannelBinder` 单写者维护 Agent `channelIds` 引用 |
 | `Services/ChannelConfigurationFileService.cs` | 文件化渠道配置唯一写入边界；维护 `config/channel.providers.json` 与 `channels/{channelId}/manifest.json`，Secret 只返回是否已配置，校验唯一 Feishu App ID 和 Agent 绑定，并在启动时把旧 Agent `feishu` 对象原地迁移为渠道实例 |
@@ -237,6 +238,8 @@ Source/
 | `Services/ConversationProjector.cs` | Event Store 到查询模型的 checkpoint 投影；除按稳定身份物化 ChatMessages 外，还将带不可变 Provider/Model 归因的 `usage.recorded` v2 必达写入 Token 明细账本 |
 | `Services/ConversationProjectionWorker.cs` | 按持久 Conversation Head/Checkpoint 扫描投影积压；与具体事件写入者解耦并支持重启追平 |
 | `Services/TokenUsageRecorder.cs` | Token 明细账本唯一增量写入器；计费用量事实使用 `RecordRequiredAsync` 并由拥有方等待完成，只有非权威遥测可使用 best-effort `RecordAsync`；`layer-v2` 将 `L1-TOOL-DEFINITIONS` 插入真实前缀顺序，按规范化 schema 哈希追踪跨轮变更 |
+| `Services/BenchmarkCaseCatalogService.cs` + `BenchmarkRunService.cs` + `BenchmarkEvaluationService.cs` | 可重复 Agent 评估闭环；case 配置声明 deterministic artifact/budget contract，run 固化版本与配置哈希，evaluator 汇总 parent/subagent Token/成本/缓存/轮次/模型与 role/profile，并将 `passed/failed/unscored` 结果原子归档到 `runtime/benchmark-runs`；无 oracle 不得伪造完成分 |
+| `Controllers/Api/BenchmarkCasesController.cs` + `Tools/Diagnostics/run_benchmarks.py` | Benchmark list/prepare/evaluate/result API 与无人值守 CLI runner；runner 使用 fresh session、等待 canonical Turn 终态、支持 repeat/baseline 输出，并用 `excludeFromLearning=true` 阻止经验→SKILL 测试集污染 |
 | `Services/TokenUsageSchemaBootstrapper.cs` | Platform SQLite 的 Token 用量 Schema 升级边界；启动时幂等补齐 `TokenUsageEvents.ParentSessionId` 与索引，DDL 失败直接阻止启动，避免 EF 模型与旧数据库静默失配 |
 | `Services/ConversationCommandSchemaBootstrapper.cs` | Platform SQLite 的可靠命令 Schema 升级边界；启动时通过 `PRAGMA table_info` 幂等补齐 `chat_execution_commands.metadata_json/reply_projected_at`，避免已有数据库在 Turn 受理或渠道回复投影时因 EF 模型漂移失败 |
 | `Services/TokenUsageRebuildService.cs` | 从 Conversation Event Store 的 `usage.recorded` v2 重建 `agent_llm` 明细，再从完整账本重建月度汇总；禁止猜测历史路由，仅在同一事务中替换可成功重建的 sourceId，未归因事实不得触发删除 |
@@ -673,23 +676,26 @@ WorkspaceAgentSettingsDrawer
 
 > 后台异步自循环，5 条专业化管道 + 完整作业队列 + 运行时控制 + 多层可观测性。
 
-### 触发入口（5 条路径）
+### 主要触发与学习入口
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
 | **SubconsciousConsolidationHook** | `PuddingRuntime/Services/Background/SubconsciousConsolidationHook.cs` | AgentLoop Hook：每轮对话结束 → `Channel<ConsolidationJob>` 入队 |
 | **SubconsciousJobScheduler** | `PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs` | 定时调度：9 种跳过条件（空闲冷却/并发限制/预算耗尽/DryRun...） → `TryLeaseNextAsync` |
-| **SubconsciousTriggerTool** | `PuddingRuntime/Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | 手动触发：`auto_dream` / `extract_patterns` / `improve_skills` / `consolidate` / `all` |
-| **SubconsciousDebugApiController** | `PuddingPlatform/Controllers/Api/SubconsciousDebugApiController.cs` | 认证调试 API：`POST /api/debug/subconscious/evolution/trigger` 主动入队 `auto_dream` / `extract_patterns` / `improve_skills` / `all`；返回 202 + Job IDs，相同 requestId 幂等复用 |
-| **SubconsciousWorkerService** | `PuddingRuntime/Services/Background/SubconsciousWorkerService.cs` | ✅ HOSTED — 消费持久队列；三个周期循环只负责按时间桶幂等入队；执行后先持久化 AutoDream/PatternExtraction/SkillImprovement Report envelope，再完成 Job；宿主从 DLL 目录的 `bootstrapConfiguration` 读取启用开关与调度参数 |
-| **ConversationSkillEvolutionTrajectorySource** | `PuddingRuntime/Services/Skills/ConversationSkillEvolutionTrajectorySource.cs` | 从规范 `conversation_events` + 成功 Command 读取 workspace/agent 隔离的已验证工具轨迹 |
+| **SessionCompressedMemoryMaintenanceHook** | `PuddingRuntime/Services/Background/SessionCompressedMemoryMaintenanceHook.cs` | ✅ HOSTED — 订阅 `session.compressed`，把压缩前抢救出的 Memory Notes 以稳定幂等键送入持久潜意识 Job |
+| **SubconsciousTriggerTool** | `PuddingRuntime/Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | 对主 Agent 透明的语义工具：`auto_dream` / `extract_patterns` / `improve_skills` / `consolidate` / `all`；内部按 Agent 的 `subconscious` 角色路由模型 |
+| **SubconsciousDebugApiController** | `PuddingPlatform/Controllers/Api/SubconsciousDebugApiController.cs` | 认证调试 API：主动触发 evolution、指定日期 daily summary、`session.compressed` Hook，并查询 Job/Result；DebugApi 开关关闭时返回 404 |
+| **AgentDailySummaryBatchService** | `PuddingPlatform/Services/AgentDailySummaryBatchService.cs` | 从实际 Agent 日志生成外部 Markdown 记忆索引；`POST /api/debug/subconscious/daily-summary/trigger` 可按日回填，源哈希保证重跑不重复消费 Token |
+| **SubconsciousWorkerService** | `PuddingRuntime/Services/Background/SubconsciousWorkerService.cs` | ✅ HOSTED — 消费持久队列；三个周期循环只负责按时间桶幂等入队；执行时按 Job 所属 Agent 的 `subconscious` 角色解析模型，先持久化 Report envelope 再完成 Job；解析失败不回退 |
+| **ConversationSkillEvolutionTrajectorySource** | `PuddingRuntime/Services/Skills/ConversationSkillEvolutionTrajectorySource.cs` | 从规范 `conversation_events` + 成功 Command 读取 workspace/agent 隔离的已验证工具轨迹；有界扫描最近最多 200 条成功 Command，在质量过滤后截取候选，避免近期简单对话饿死较早黄金路径 |
 | **AgentSkillEvolutionStore** | `PuddingRuntime/Services/Skills/AgentSkillEvolutionStore.cs` | 自进化适配器：通过 `AgentSkillFileService` 创建/更新真实 SKILL.md、manifest 与 index |
+| **SkillEvolutionDeduplicationService** | `PuddingMemoryEngine/Services/SkillEvolutionDeduplicationService.cs` | 自值守 Skill 准入与去重：Flash 提议 create/merge/skip/defer 或重复组，确定性置信度、工具指纹、文本/来源证据复核；合并后禁用重复项而不删除；按 Skill 版本写 dedup/evaluation 水位避免周期空转 |
 
 ### 作业队列
 
 | 组件 | 文件 | 用途 |
 |------|------|------|
-| **SubconsciousJobQueue** | `PuddingMemoryEngine/Services/SubconsciousJobQueue.cs` | 持久队列：Enqueue(幂等键) → Lease(超时) → Complete/Fail/DeadLetter；遥测指标 |
+| **SubconsciousJobQueue** | `PuddingMemoryEngine/Services/SubconsciousJobQueue.cs` | 持久队列：Enqueue(幂等键) → Lease(超时) → Complete/Fail/DeadLetter；过期 `processing` 租约在统计中转为 pending backlog，避免并发门禁阻止 Worker 重启后自恢复；遥测指标 |
 | **SubconsciousJobEntity** | `PuddingMemoryEngine/Entities/SubconsciousEntities.cs` | EF 实体：JobId/Type/IdempotencyKey/Status/RetryCount/LeaseUntil |
 | **SubconsciousJobLogEntity** | 同上 | 作业日志：SessionId/Status/FactsExtracted/FactsMerged/ElapsedMs/ErrorMessage |
 
@@ -699,15 +705,15 @@ WorkspaceAgentSettingsDrawer
 |------|------|------|------|
 | **事实提取** | `ConsolidateAsync` | LLM → 事实/偏好 → Jaccard≥0.8 去重合并 → MemoryFacts/Preferences → Library | `SubconsciousJobLogEntity` |
 | **记忆整理** | `AutoDreamAsync` | Flash 分析 Library 快照 → merge/archive/delete（≤5 op, 30d 过期） | `AutoDreamReport` |
-| **经验→SKILL** | `ExtractPatternsAsync` | 成功 Command + 规范工具事件 → 黄金路径 → passing/reusable/safe 门禁 → Agent 私有 SKILL.md + manifest/index | `PatternExtractionReport` |
-| **Skill 改进** | `ImproveSkillsAsync` | 读取 Agent 私有 auto-generated Skill 的完整 Markdown → 评估 → 原地修补 + Bump 版本 + 重建索引 | `SkillImprovementReport` |
-| **增强召回** | `RecallAugmentedAsync` | LLM 直接阅读全量 MemoryFacts + Preferences，自主判断相关性（不做 LIKE/FTS5） | `RecallDiagnostics` |
+| **经验→SKILL** | `ExtractPatternsAsync` | 成功 Command + 规范工具事件 → 来源 Turn 去重 → 黄金路径 → passing/reusable/safe → Flash 语义准入(create/merge/skip/defer) → Agent 私有 Skill | `PatternExtractionReport` |
+| **Skill 改进** | `ImproveSkillsAsync` | Flash 语义聚类 + 确定性复核 → 规范 Skill 吸收证据、重复项可恢复禁用 → 对启用 Skill 完整 Markdown 评估与原地修补 | `SkillImprovementReport` |
+| **增强召回** | `RecallAugmentedAsync` | LLM 直接阅读全量 MemoryFacts + Preferences，自主判断相关性（不做 LIKE/FTS5）；LLM 判断同样按 Agent 的 `subconscious` 角色路由 | `RecallDiagnostics` |
 
 ```text
 ConsolidateAsync:  消息 → LLM抽取 → ExtractionPayload(JSON) → 去重(Jaccard) → Facts/Prefs → Library
 AutoDreamAsync:    MemorySnapshot → LLM规划(AutoDreamPlan) → merge/archive/delete
-ExtractPatternsAsync: conversation_events成功工具链 → LLM检测(PatternCandidate[]) → passing/reusable/safe → AgentSkillFileService
-ImproveSkillsAsync: Agent私有auto-generated SKILL.md → LLM评估(SkillEvaluation) → 修补 → Bump版本 → manifest/index同步
+ExtractPatternsAsync: conversation_events成功工具链 → source-turn去重 → LLM检测 → 三重质量门禁 → 语义准入 → create/merge/skip/defer
+ImproveSkillsAsync: Agent私有auto-generated SKILL.md → 语义聚类+确定性复核 → 可恢复禁用重复项 → LLM评估 → 修补+Bump版本
 RecallAugmentedAsync: 用户消息 + 全量Facts → LLM编译 → 截断(maxTokens*4 chars)
 ```
 
@@ -737,15 +743,19 @@ RecallAugmentedAsync: 用户消息 + 全量Facts → LLM编译 → 截断(maxTok
 |------|------|------|
 | **SubconsciousOptions** | `PuddingCore/Configuration/SubconsciousOptions.cs` | 开关：EnableWorker / EnableLegacyConsolidationHook / DebugApiEnabled；主宿主绑定 `AppContext.BaseDirectory` 配置源 |
 | **SubconsciousSchedulingOptions** | 同上 | 调度：周期作业开关、默认 workspace/agent、三个首次延迟与周期，以及 IdleCooldown(60s) / MaxGlobalConcurrent(1) / MaxRetryAttempts(3) / BudgetWindow(60min) / MaxJobsPerWorkspacePerHour(20) |
+| **AgentLlmRoleIds / ResolveRoleAsync** | `PuddingCore/Abstractions/ILLMConfigResolver.cs` | 稳定语义角色契约；业务调用方只声明角色，provider/model/profile 来自 Agent 实例配置，账单记录保留 workspace/session/stage 归因 |
+| **MemoryLibraryConvenience** | `PuddingMemoryEngine/Data/MemoryLibraryConvenience.cs` | 记忆写入的语义去重按所属 Agent 的 `subconscious` 角色调用 LLM；无 workspace/Agent 身份的旧 `SmartSearchAsync` 不在主宿主偷偷启动默认-profile 深度探索，主会话由 role-scoped recall pipeline 完成 Flash 判断 |
 
 ### 数据流水线
 
 ```text
 触发:
   AgentLoopHook → Channel<ConsolidationJob>
+  session.compressed → SessionCompressedMemoryMaintenanceHook → ISubconsciousJobQueue → Wiki page update
   SubconsciousJobScheduler → ISubconsciousJobQueue.LeaseNextAsync() → Worker → Orchestrator
-  SubconsciousTriggerTool → Orchestrator（手动调试）
-  SubconsciousDebugApiController → ISubconsciousJobQueue（认证 HTTP 主动调试）→ Worker → Orchestrator → ResultJson → 调试结果 API
+  SubconsciousTriggerTool → role(subconscious) → Orchestrator（语义工具）
+  SubconsciousDebugApiController → evolution/daily-summary/hook（认证 HTTP 主动调试）
+  AgentDailySummaryBatchService → role(subconscious) → memory/daily/*.md + memory/index.json
 
 Orchestrator:
   PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs（1614 行）

@@ -1727,6 +1727,91 @@ dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore
   --filter "FullyQualifiedName~DurableWorker_PeriodicEvolutionJob_ShouldPersistReportBeforeCompleting"
 ```
 
+### 11.21.1 潜意识没有学习、Flash 用量异常或历史日志未生成日摘要
+
+先确认宿主加载了真实潜意识链路，而不是只确认 Worker 存活：
+
+```powershell
+python .\dev-up.py --status
+Invoke-RestMethod http://localhost/health
+$log = Get-ChildItem D:\data\logs\system\pudding-*.log |
+  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+rg -n "SessionCompressedMemoryMaintenanceHook subscribed|Resolved Agent role route|SubconsciousWorker" $log.FullName
+```
+
+必须出现 `SessionCompressedMemoryMaintenanceHook subscribed event=session.compressed`。若 Debug API
+发布 Hook 后一直没有 Job，优先检查主宿主是否注册该 Hosted Service；`EventIngressBridge` 不负责转发
+Hook 生命周期事件。若 Wiki Job 返回旧版 F5 dry-run 或 `missing_required_field`，检查主宿主是否注册
+`MemoryWikiPageUpdateService` 与 `WikiPageWriteEntry`。
+
+使用诊断脚本逐条验证，不要直接调用 Orchestrator 绕过队列：
+
+```powershell
+$agentId = "default.global_general-assistant.6a8"
+
+# 指定日期日志 -> memory/daily/{day}.md；同一源哈希重跑应 skipped=1
+python .\Tools\Diagnostics\subconscious_debug.py daily-summary `
+  --agent-instance-id $agentId --day 2026-07-30 --timeout-seconds 180
+
+# 成功轨迹 -> Skill，随后基于完整 SKILL.md 改进
+python .\Tools\Diagnostics\subconscious_debug.py evolution `
+  --agent-instance-id $agentId --action extract_patterns --request-id debug-extract-001 --wait
+python .\Tools\Diagnostics\subconscious_debug.py evolution `
+  --agent-instance-id $agentId --action improve_skills --request-id debug-improve-001 --wait
+
+# session.compressed -> 持久 Job -> Wiki page update
+python .\Tools\Diagnostics\subconscious_debug.py hook-session-compressed `
+  --session-id debug-session --agent-id $agentId `
+  --source-compaction-id debug-compaction-001 `
+  --memory-note "一条可验证的长期事实" --wait
+```
+
+正常的 LLM 路由日志应同时包含 `agent`、`role=subconscious`、`provider` 和 `model`。Token 明细应为
+`SourceType=subconscious_memory`，并使用实际 workspace；每日摘要的 `SourceId` 前缀是
+`llm:daily-summary:`，`SessionId` 是 `daily-summary:{day}`。若角色配置缺失或 registry 无对应模型，
+任务应失败或跳过，不能静默退回硬编码 Flash/平台默认配置。
+
+若主会话构造 Context 时出现 `workspace=memory agent=subconscious-memory provider=subconscious
+model=subconscious`，通常不是 role-scoped recall judge，而是旧 `MemoryLibraryConvenience.SmartSearchAsync`
+歧义分支偷偷启动了无 Agent 身份的后台深度探索。主宿主存在 `ILLMConfigResolver` 时该隐式调用必须
+关闭；记忆写入语义去重则可从 `ExperiencePackage.AgentInstanceId` 解析 `subconscious` 角色。
+
+经验提取显示 `No candidates found` 时，不要只看最近 N 条成功 Command。轨迹源应在有界窗口内先
+读取成功 Command，再过滤至少两步、配对完整且 `exitCode=0` 的工具链，最后截取所需候选；否则
+近期的纯聊天/单工具任务会长期饿死较早的黄金路径。
+
+P1 起，自进化是无人审批的自值守流程。经验提取会从现有 Skill 的 `source-turn:*` 标签或旧版
+`- Turn:` 证据中构造已处理集合；日志出现 `Suppressed N already-processed verified trajectories` 表示
+重复轨迹已在调用 Flash 前被抑制。新候选的 `skill-admission` 只接受高置信度 `create/merge/skip`，
+无效 JSON、目标不存在或低置信度自动记为 `deferred_count`，本轮不写入。
+
+`improve_skills` 会先运行 `skill-consolidation`。只有 Flash 置信度至少 0.92，且工具指纹完全一致、
+名称/描述相似度与来源证据门禁通过，才会更新规范 Skill 并把重复项设为 `Enabled=false`。结果中的
+`consolidated_count`、`disabled_duplicate_skill_ids` 可用于审计；被禁用 Skill 的 manifest 应包含
+`superseded` 与 `superseded-by:{canonicalSkillId}`，文件仍然存在。若两个 Skill 只共享工具但意图不同，
+它们应保持启用。恢复时通过 `AgentSkillFileService.SetEnabledAsync` 或对应管理 API 重新启用，不要重建文件。
+
+正常完成一次去重/评估后，启用 Skill 的 tags 会出现与 manifest 当前版本一致的
+`dedup-reviewed:{version}` / `self-evaluated:{version}`。前者只写给已安全合并或被 Flash 明确判为 distinct
+的 Skill，不确定项不写水位并在后续周期重试。下一周期同版本应直接跳过对应 Flash 调用；
+若 marker 版本落后，说明 Skill 在上次审查后被创建、合并或改写，应自动重新审查。不要为了让任务显示为
+“有操作”而移除水位，否则会恢复每 4 小时重复评估的 Token 空转。
+
+若进程在 LLM 调用期间重启，Job 可能暂时保持 `processing`。租约未过期时这是正常现象；租约过期后
+`GetStatsAsync` 必须把它视为 pending backlog，`Processing`/workspace/session 并发计数只包含仍有效
+的租约。否则 `MaxGlobalConcurrentJobs=1` 会让过期 Job 自己占住门禁，Worker 永久无法重新租用。
+
+针对性回归：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore `
+  --filter "FullyQualifiedName~MemoryLlmInvocationClientUsageTests|FullyQualifiedName~SubconsciousRecallPipelineTests|FullyQualifiedName~SubconsciousWorkerServiceTests|FullyQualifiedName~ConversationSkillEvolutionTrajectorySourceTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore `
+  --filter "FullyQualifiedName~AgentRuntimeProfileResolverTests|FullyQualifiedName~AgentDailySummaryServiceTests|FullyQualifiedName~SubconsciousDebugApiControllerTests"
+dotnet test .\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj --no-restore `
+  --filter "FullyQualifiedName~SubconsciousJobQueueTests|FullyQualifiedName~SkillEvolutionDeduplicationServiceTests"
+```
+
 ### 11.22 飞书显式语音未出现，或原始 `voice` 围栏不符合预期
 
 飞书 TTS 是独立出站投递，不应通过重跑 Agent 修复。先按以下链路定位：
@@ -2021,6 +2106,25 @@ dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.
 dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
   --filter "FullyQualifiedName~FeishuClientReplyTests"
 ```
+
+## 11.9 Agent Benchmark 诊断
+
+先 dry-run 检查服务端当前识别出的 deterministic cases；该操作不会调用付费模型：
+
+```powershell
+.\.venv\Scripts\python.exe Tools\Diagnostics\run_benchmarks.py --dry-run
+```
+
+单题 smoke：
+
+```powershell
+.\.venv\Scripts\python.exe Tools\Diagnostics\run_benchmarks.py `
+  --case workspace-markdown-summary --label local-smoke
+```
+
+run 元数据和评价快照位于 `D:\data\runtime\benchmark-runs\`。出现 `unscored` 时先检查该 case 是否有 artifact oracle；不要把 Session diagnostics 的启发式分数当作任务完成。Token 为 0 时检查 `TokenUsageEvents` 的 `SessionId/ParentSessionId`，角色为空时检查 `sub_agent_runs.task_planning_metadata_json` 是否包含 `role_in_plan/profile_id`。
+
+Benchmark Turn 必须在 ChatMessage/Command metadata 中保留 `excludeFromLearning=true`。经验→SKILL 意外收录基准轨迹时，先过滤该字段；不要通过按模型名猜测角色来修正统计。
 
 ## 12. 修改后的最低验收
 

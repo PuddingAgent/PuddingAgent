@@ -31,6 +31,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
     private readonly IStreamingEventBus? _eventBus;
     private readonly ISkillEvolutionTrajectorySource _skillTrajectorySource;
     private readonly IAgentSkillEvolutionStore _skillStore;
+    private readonly SkillEvolutionDeduplicationService _skillDeduplication;
 
     public SubconsciousOrchestrator(
         IMemoryLibrary memoryLibrary,
@@ -41,6 +42,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         IDbContextFactory<MemoryDbContext> memoryDbContextFactory,
         ISkillEvolutionTrajectorySource skillTrajectorySource,
         IAgentSkillEvolutionStore skillStore,
+        SkillEvolutionDeduplicationService skillDeduplication,
         IEmbeddingService? embeddingService = null,
         IStreamingEventBus? eventBus = null)
     {
@@ -54,6 +56,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         _eventBus = eventBus;
         _skillTrajectorySource = skillTrajectorySource;
         _skillStore = skillStore;
+        _skillDeduplication = skillDeduplication;
     }
 
     /// <summary>
@@ -1177,8 +1180,9 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        int candidatesFound = 0, promoted = 0, demotedToMemory = 0, skipped = 0;
+        int candidatesFound = 0, promoted = 0, merged = 0, deferred = 0, demotedToMemory = 0, skipped = 0;
         var createdSkillIds = new List<string>();
+        var updatedSkillIds = new List<string>();
 
         _logger.LogInformation(
             "[PatternExtraction] Phase1-Scan: scanning canonical trajectories workspace={Workspace} agent={AgentInstanceId}",
@@ -1199,9 +1203,48 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             switch (evaluation.Decision)
             {
                 case "promote":
-                    var skillId = await MaterializeSkillAsync(candidate, evaluation, ct);
-                    if (skillId is not null) { createdSkillIds.Add(skillId); promoted++; }
-                    else skipped++;
+                    var admission = await _skillDeduplication.EvaluateAdmissionAsync(
+                        candidate,
+                        memoryLlmConfig,
+                        ct);
+                    if (string.Equals(admission.Action, SkillAdmissionActions.Create, StringComparison.Ordinal))
+                    {
+                        var skillId = await MaterializeSkillAsync(candidate, evaluation, ct);
+                        if (skillId is not null)
+                        {
+                            createdSkillIds.Add(skillId);
+                            promoted++;
+                        }
+                        else
+                        {
+                            skipped++;
+                        }
+                    }
+                    else if (string.Equals(admission.Action, SkillAdmissionActions.Merge, StringComparison.Ordinal)
+                             && !string.IsNullOrWhiteSpace(admission.TargetSkillId))
+                    {
+                        var updated = await _skillDeduplication.MergeCandidateAsync(
+                            candidate,
+                            admission.TargetSkillId,
+                            ct);
+                        if (updated is not null)
+                        {
+                            updatedSkillIds.Add(updated.SkillId);
+                            merged++;
+                        }
+                        else
+                        {
+                            deferred++;
+                        }
+                    }
+                    else if (string.Equals(admission.Action, SkillAdmissionActions.Skip, StringComparison.Ordinal))
+                    {
+                        skipped++;
+                    }
+                    else
+                    {
+                        deferred++;
+                    }
                     break;
                 case "demote":
                     await SaveAsMemoryNoteAsync(candidate, evaluation, workspaceId, ct);
@@ -1216,9 +1259,11 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         var report = new PatternExtractionReport
         {
             DurationMs = sw.ElapsedMilliseconds, CandidatesFound = candidatesFound,
-            Promoted = promoted, DemotedToMemory = demotedToMemory, Skipped = skipped,
+            Promoted = promoted, Merged = merged, Deferred = deferred,
+            DemotedToMemory = demotedToMemory, Skipped = skipped,
             CreatedSkillIds = createdSkillIds.ToArray(),
-            Summary = $"found {candidatesFound}, promoted {promoted}, demoted {demotedToMemory}, skipped {skipped}",
+            UpdatedSkillIds = updatedSkillIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Summary = $"found {candidatesFound}, created {promoted}, merged {merged}, deferred {deferred}, demoted {demotedToMemory}, skipped {skipped}",
             Timestamp = DateTime.UtcNow
         };
         _logger.LogInformation("[PatternExtraction] Completed: {Summary}", report.Summary);
@@ -1244,7 +1289,19 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 _logger.LogInformation("[PatternExtraction] No verified tool trajectories to scan");
                 return candidates;
             }
-            foreach (var trajectory in trajectories)
+            var existingSkills = await _skillStore.ListAutoGeneratedAsync(agentInstanceId, ct);
+            var processedTurnIds = SkillEvolutionDeduplicationService.ExtractProcessedTurnIds(existingSkills);
+            var unprocessedTrajectories = trajectories
+                .Where(trajectory => !processedTurnIds.Contains(trajectory.TurnId))
+                .ToArray();
+            var suppressed = trajectories.Count - unprocessedTrajectories.Length;
+            if (suppressed > 0)
+            {
+                _logger.LogInformation(
+                    "[PatternExtraction] Suppressed {Count} already-processed verified trajectories",
+                    suppressed);
+            }
+            foreach (var trajectory in unprocessedTrajectories)
             {
                 if (ct.IsCancellationRequested) break;
                 var detected = await DetectGoldenPathsInSessionAsync(trajectory, memoryLlmConfig, ct);
@@ -1358,7 +1415,13 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 Name = candidate.Title,
                 Version = "1.0.0",
                 Description = candidate.Goal,
-                Tags = ["auto-generated", "self-evolution"],
+                Tags =
+                [
+                    "auto-generated",
+                    "self-evolution",
+                    $"source-turn:{candidate.TurnId}",
+                    $"source-session:{candidate.SessionId}",
+                ],
                 Keywords = candidate.ToolSequence
                     .Append(candidate.Title)
                     .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -1472,6 +1535,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         var sw = Stopwatch.StartNew();
         int evaluated = 0, patched = 0, skipped = 0;
         var improvedIds = new List<string>();
+        var consolidation = new SkillConsolidationResult();
 
         try
         {
@@ -1480,17 +1544,21 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 workspaceId,
                 agentInstanceId);
 
+            consolidation = await _skillDeduplication.ConsolidateExistingAsync(
+                agentInstanceId,
+                memoryLlmConfig,
+                ct);
+
             var allSkills = await _skillStore.ListAutoGeneratedAsync(agentInstanceId, ct);
             var candidates = allSkills
+                .Where(skill => skill.Enabled)
+                .Where(skill => !SkillEvolutionDeduplicationService.HasCurrentEvaluation(skill))
                 .Take(5)
                 .ToList();
 
             evaluated = candidates.Count;
             _logger.LogInformation("[SkillImprovement] Phase1-Scan: {Total} total, {Candidates} candidates",
                 allSkills.Count, candidates.Count);
-
-            if (candidates.Count == 0)
-                return new SkillImprovementReport { Summary = "No auto-generated skills to evaluate.", DurationMs = sw.ElapsedMilliseconds, Timestamp = DateTime.UtcNow };
 
             var config = memoryLlmConfig;
 
@@ -1500,8 +1568,14 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 _logger.LogInformation("[SkillImprovement] Phase2-Evaluate: {SkillId}", skill.SkillId);
 
                 var eval = await EvaluateOneSkillAsync(skill, config, ct);
+                if (eval is null)
+                {
+                    skipped++;
+                    continue;
+                }
                 if (!eval.NeedsUpdate)
                 {
+                    await _skillDeduplication.MarkEvaluatedAsync(agentInstanceId, skill, ct);
                     skipped++;
                     continue;
                 }
@@ -1515,15 +1589,20 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 }
 
                 var newVersion = BumpVersion(skill.Version);
+                var normalizedImproved = Regex.Replace(
+                    improved,
+                    @"^(\s*version:\s*)[^\r\n]+$",
+                    $"${{1}}{newVersion}",
+                    RegexOptions.IgnoreCase | RegexOptions.Multiline);
                 await _skillStore.UpdateAsync(agentInstanceId, skill.SkillId, new AgentSkillEvolutionWriteRequest
                 {
                     SkillId = skill.SkillId,
                     Name = skill.Name,
                     Version = newVersion,
                     Description = skill.Description,
-                    Tags = skill.Tags,
+                    Tags = SkillEvolutionDeduplicationService.WithEvaluationMarker(skill.Tags, newVersion),
                     Keywords = skill.Keywords,
-                    Markdown = improved,
+                    Markdown = normalizedImproved,
                 }, ct);
                 patched++;
                 improvedIds.Add(skill.SkillId);
@@ -1539,16 +1618,16 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             DurationMs = sw.ElapsedMilliseconds,
             Evaluated = evaluated,
             Patched = patched,
+            Consolidated = consolidation.Consolidated,
             Skipped = skipped,
             ImprovedSkillIds = improvedIds.ToArray(),
-            Summary = patched > 0
-                ? $"Improved {patched} skill(s): {string.Join(", ", improvedIds)}"
-                : $"Evaluated {evaluated} skill(s), none needed update (skipped {skipped})",
+            DisabledDuplicateSkillIds = consolidation.DisabledSkillIds.ToArray(),
+            Summary = $"Consolidated {consolidation.Consolidated} duplicate(s); evaluated {evaluated}, improved {patched}, skipped {skipped}",
             Timestamp = DateTime.UtcNow
         };
     }
 
-    private async Task<SkillEvaluation> EvaluateOneSkillAsync(
+    private async Task<SkillEvaluation?> EvaluateOneSkillAsync(
         AgentSkillEvolutionDocument skill,
         MemoryLlmConfig? config,
         CancellationToken ct)
@@ -1571,14 +1650,19 @@ Output JSON only: {{""needs_update"":true/false,""reason"":""...""}}";
         try
         {
             var json = JsonSerializer.Deserialize<JsonElement>(jsonText ?? "{}");
+            if (!json.TryGetProperty("needs_update", out var needsUpdate)
+                || needsUpdate.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return null;
+            }
             return new SkillEvaluation
             {
                 SkillId = skill.SkillId, SkillName = skill.Name, CurrentVersion = skill.Version,
-                NeedsUpdate = json.TryGetProperty("needs_update", out var nu) && nu.GetBoolean(),
+                NeedsUpdate = needsUpdate.GetBoolean(),
                 Reason = json.TryGetProperty("reason", out var r) ? r.GetString() : null
             };
         }
-        catch { return new SkillEvaluation { SkillId = skill.SkillId, SkillName = skill.Name, CurrentVersion = skill.Version, NeedsUpdate = false }; }
+        catch { return null; }
     }
 
     private async Task<string?> GenerateImprovedSkillContentAsync(

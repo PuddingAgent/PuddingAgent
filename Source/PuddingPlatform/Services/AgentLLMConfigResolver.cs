@@ -1,6 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using PuddingCode.Abstractions;
+using PuddingCode.Agents;
 using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
@@ -16,17 +18,117 @@ namespace PuddingPlatform.Services;
 public sealed class AgentLLMConfigResolver : ILLMConfigResolver
 {
     private readonly AgentTemplateFileService _templateFileService;
+    private readonly AgentProfileProvider _agentProfileProvider;
     private readonly ILlmConfigService _llmConfigService;
     private readonly ILogger<AgentLLMConfigResolver> _logger;
 
     public AgentLLMConfigResolver(
         AgentTemplateFileService templateFileService,
+        AgentProfileProvider agentProfileProvider,
         ILlmConfigService llmConfigService,
         ILogger<AgentLLMConfigResolver> logger)
     {
         _templateFileService = templateFileService;
+        _agentProfileProvider = agentProfileProvider;
         _llmConfigService = llmConfigService;
         _logger = logger;
+    }
+
+    public async Task<AgentRoleLlmRoutingConfig> ResolveRoleAsync(
+        string workspaceId,
+        string configurationAgentInstanceId,
+        string roleId,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configurationAgentInstanceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
+
+        AgentFileProfile profile;
+        try
+        {
+            profile = await _agentProfileProvider.LoadAsync(configurationAgentInstanceId, ct);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or JsonException or InvalidOperationException)
+        {
+            throw new AgentConfigurationException(
+                configurationAgentInstanceId,
+                $"Agent '{configurationAgentInstanceId}' definition is incomplete or invalid: {ex.Message}");
+        }
+
+        if (!string.Equals(profile.Instance.WorkspaceId, workspaceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new AgentConfigurationException(
+                configurationAgentInstanceId,
+                $"Agent '{configurationAgentInstanceId}' belongs to workspace " +
+                $"'{profile.Instance.WorkspaceId}', not '{workspaceId}'.");
+        }
+
+        var normalizedRole = roleId.Trim().ToLowerInvariant();
+        var (providerId, modelId, profileId) = ResolveRoleBinding(profile, normalizedRole);
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
+        {
+            throw new AgentConfigurationException(
+                configurationAgentInstanceId,
+                $"Agent '{configurationAgentInstanceId}' is missing the provider/model binding for role '{normalizedRole}'.");
+        }
+
+        var config = _llmConfigService.Resolve(providerId, modelId);
+        if (config is null)
+        {
+            throw new AgentConfigurationException(
+                configurationAgentInstanceId,
+                $"Agent '{configurationAgentInstanceId}' role '{normalizedRole}' references unavailable route " +
+                $"'{providerId}/{modelId}' in data/config/llm.providers.json. No fallback model was selected.");
+        }
+
+        if (!string.Equals(config.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new AgentConfigurationException(
+                configurationAgentInstanceId,
+                $"Agent '{configurationAgentInstanceId}' role '{normalizedRole}' resolved model " +
+                $"'{config.ModelId}', but the configured model is '{modelId}'.");
+        }
+
+        var resolvedProfileId = string.IsNullOrWhiteSpace(profileId)
+            ? $"agent:{configurationAgentInstanceId}:{normalizedRole}"
+            : profileId;
+
+        if (!string.IsNullOrWhiteSpace(profileId))
+        {
+            var configuredProfile = _llmConfigService.ResolveProfile(profileId);
+            if (configuredProfile is null
+                || !string.Equals(configuredProfile.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(configuredProfile.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new AgentConfigurationException(
+                    configurationAgentInstanceId,
+                    $"Agent '{configurationAgentInstanceId}' role '{normalizedRole}' profile '{profileId}' " +
+                    $"does not resolve to the configured route '{providerId}/{modelId}'.");
+            }
+        }
+
+        _logger.LogInformation(
+            "[LLMConfig] Resolved Agent role route workspace={WorkspaceId} agent={AgentId} role={RoleId} provider={ProviderId} profile={ProfileId} model={ModelId}",
+            workspaceId,
+            configurationAgentInstanceId,
+            normalizedRole,
+            providerId,
+            resolvedProfileId,
+            modelId);
+
+        return new AgentRoleLlmRoutingConfig
+        {
+            RoleId = normalizedRole,
+            ConfigurationAgentInstanceId = configurationAgentInstanceId,
+            ProviderId = providerId,
+            ProfileId = resolvedProfileId,
+            ModelId = modelId,
+            Config = config,
+            SearchMode = normalizedRole == AgentLlmRoleIds.Subconscious
+                ? profile.Instance.MemorySearchMode ?? "deep"
+                : "deep",
+        };
     }
 
     public async Task<LlmRoutingConfig?> ResolveConsciousAsync(
@@ -203,6 +305,52 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
             ModelId = config.ModelId,
             SearchMode = "deep",
         });
+    }
+
+    private static (string? ProviderId, string? ModelId, string? ProfileId) ResolveRoleBinding(
+        AgentFileProfile profile,
+        string roleId)
+    {
+        return roleId switch
+        {
+            AgentLlmRoleIds.Conscious => (
+                profile.Instance.PreferredProviderId,
+                profile.Instance.PreferredModelId,
+                profile.LlmConfig.Conscious?.ProfileId),
+            AgentLlmRoleIds.Subconscious => (
+                profile.Instance.MemoryLlmProviderId,
+                profile.Instance.MemoryLlmModelId,
+                profile.LlmConfig.Subconscious?.ProfileId),
+            AgentLlmRoleIds.Explorer => ParseModelRoute(profile.Instance.ExplorerModel, roleId),
+            AgentLlmRoleIds.Researcher => ParseModelRoute(profile.Instance.ResearcherModel, roleId),
+            AgentLlmRoleIds.Planner => ParseModelRoute(profile.Instance.PlannerModel, roleId),
+            AgentLlmRoleIds.Reviewer => ParseModelRoute(profile.Instance.ReviewerModel, roleId),
+            AgentLlmRoleIds.Developer => ParseModelRoute(profile.Instance.DeveloperModel, roleId),
+            AgentLlmRoleIds.Deployer => ParseModelRoute(profile.Instance.DeployerModel, roleId),
+            AgentLlmRoleIds.Tester => ParseModelRoute(profile.Instance.TesterModel, roleId),
+            _ => throw new AgentConfigurationException(
+                profile.Instance.AgentInstanceId,
+                $"Unknown Agent LLM role '{roleId}'."),
+        };
+    }
+
+    private static (string? ProviderId, string? ModelId, string? ProfileId) ParseModelRoute(
+        string? route,
+        string roleId)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+            return (null, null, null);
+
+        var parts = route.Split('/', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2
+            || string.IsNullOrWhiteSpace(parts[0])
+            || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            throw new InvalidOperationException(
+                $"Agent role '{roleId}' route '{route}' must use the format 'providerId/modelId'.");
+        }
+
+        return (parts[0], parts[1], null);
     }
 
     private static (string CanonicalId, bool IsExplicitGlobal) NormalizeTemplateId(string templateId)

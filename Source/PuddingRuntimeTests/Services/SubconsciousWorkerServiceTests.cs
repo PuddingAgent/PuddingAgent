@@ -211,8 +211,8 @@ public sealed class SubconsciousWorkerServiceTests
 
     [TestMethod]
     [DataRow(SubconsciousJobTypes.AutoDream, SubconsciousJobResultKinds.MemoryAutoDream, 2)]
-    [DataRow(SubconsciousJobTypes.ExtractPatterns, SubconsciousJobResultKinds.SkillPatternExtraction, 2)]
-    [DataRow(SubconsciousJobTypes.ImproveSkills, SubconsciousJobResultKinds.SkillImprovement, 1)]
+    [DataRow(SubconsciousJobTypes.ExtractPatterns, SubconsciousJobResultKinds.SkillPatternExtraction, 3)]
+    [DataRow(SubconsciousJobTypes.ImproveSkills, SubconsciousJobResultKinds.SkillImprovement, 2)]
     public async Task DurableWorker_PeriodicEvolutionJob_ShouldPersistReportBeforeCompleting(
         string jobType,
         string expectedResultKind,
@@ -266,12 +266,17 @@ public sealed class SubconsciousWorkerServiceTests
             case SubconsciousJobTypes.ExtractPatterns:
                 Assert.AreEqual("3", queue.RecordedResult.Metadata["candidates_found_count"]);
                 Assert.AreEqual("1", queue.RecordedResult.Metadata["promoted_count"]);
+                Assert.AreEqual("1", queue.RecordedResult.Metadata["merged_count"]);
+                Assert.AreEqual("0", queue.RecordedResult.Metadata["deferred_count"]);
                 Assert.AreEqual("skill-create-pr", queue.RecordedResult.Metadata["created_skill_ids"]);
+                Assert.AreEqual("skill-health-check", queue.RecordedResult.Metadata["updated_skill_ids"]);
                 break;
             case SubconsciousJobTypes.ImproveSkills:
                 Assert.AreEqual("2", queue.RecordedResult.Metadata["evaluated_count"]);
                 Assert.AreEqual("1", queue.RecordedResult.Metadata["patched_count"]);
+                Assert.AreEqual("1", queue.RecordedResult.Metadata["consolidated_count"]);
                 Assert.AreEqual("skill-create-pr", queue.RecordedResult.Metadata["improved_skill_ids"]);
+                Assert.AreEqual("skill-create-pr-old", queue.RecordedResult.Metadata["disabled_duplicate_skill_ids"]);
                 break;
         }
     }
@@ -530,9 +535,12 @@ public sealed class SubconsciousWorkerServiceTests
                 DurationMs = 23,
                 CandidatesFound = 3,
                 Promoted = 1,
+                Merged = 1,
+                Deferred = 0,
                 DemotedToMemory = 1,
                 Skipped = 1,
                 CreatedSkillIds = ["skill-create-pr"],
+                UpdatedSkillIds = ["skill-health-check"],
                 Summary = "found 3, promoted 1, demoted 1, skipped 1",
                 Timestamp = new DateTime(2026, 7, 30, 4, 1, 0, DateTimeKind.Utc),
             });
@@ -550,8 +558,10 @@ public sealed class SubconsciousWorkerServiceTests
                 DurationMs = 34,
                 Evaluated = 2,
                 Patched = 1,
+                Consolidated = 1,
                 Skipped = 1,
                 ImprovedSkillIds = ["skill-create-pr"],
+                DisabledDuplicateSkillIds = ["skill-create-pr-old"],
                 Summary = "Improved 1 skill",
                 Timestamp = new DateTime(2026, 7, 30, 4, 2, 0, DateTimeKind.Utc),
             });

@@ -213,6 +213,26 @@ public sealed class SubconsciousJobQueueTests
     }
 
     [TestMethod]
+    public async Task GetStatsAsync_ShouldExposeExpiredProcessingLeaseAsPendingBacklog()
+    {
+        await using var scope = await TestScope.CreateAsync();
+        var queue = new SubconsciousJobQueue(scope.Factory, NullLogger<SubconsciousJobQueue>.Instance);
+        await queue.EnqueueAsync(CreateRequest("session-expired", "cmp-expired"));
+        _ = await queue.LeaseNextAsync("worker-stopped", TimeSpan.FromSeconds(-1));
+
+        var stats = await queue.GetStatsAsync();
+
+        Assert.AreEqual(1, stats.Pending);
+        Assert.AreEqual(0, stats.Processing);
+        Assert.AreEqual(0, stats.ProcessingByWorkspace.Count);
+        Assert.AreEqual(0, stats.ProcessingBySession.Count);
+
+        var reclaimed = await queue.LeaseNextAsync("worker-restarted", TimeSpan.FromMinutes(5));
+        Assert.IsNotNull(reclaimed);
+        Assert.AreEqual("session-expired", reclaimed.Job.SessionId);
+    }
+
+    [TestMethod]
     public async Task GetWorkspaceLeaseCountsAsync_ShouldCountStartedJobsSinceWindow()
     {
         await using var scope = await TestScope.CreateAsync();

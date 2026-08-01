@@ -14,7 +14,8 @@ namespace PuddingPlatform.Controllers.Api;
 public sealed class BenchmarkCasesController(
     BenchmarkCaseCatalogService catalog,
     BenchmarkWorkspaceSeedService seedService,
-    BenchmarkRunService runService) : ControllerBase
+    BenchmarkRunService runService,
+    BenchmarkEvaluationService evaluationService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<BenchmarkCaseSummaryDto>>> List(CancellationToken ct)
@@ -51,6 +52,32 @@ public sealed class BenchmarkCasesController(
             Seed = seed,
         });
     }
+
+    [HttpPost("runs/{runId}/evaluate")]
+    public async Task<ActionResult<BenchmarkEvaluationResultDto>> Evaluate(
+        string runId,
+        [FromBody] BenchmarkEvaluateRequestDto request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await evaluationService.EvaluateAsync(runId, request.SessionId, ct);
+            return result is null ? NotFound() : Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("runs/{runId}/evaluation")]
+    public async Task<ActionResult<BenchmarkEvaluationResultDto>> GetEvaluation(
+        string runId,
+        CancellationToken ct)
+    {
+        var result = await runService.GetEvaluationAsync(runId, ct);
+        return result is null ? NotFound() : Ok(result);
+    }
 }
 
 public sealed record BenchmarkPrepareRequestDto
@@ -66,4 +93,9 @@ public sealed record BenchmarkPrepareResultDto
     public required string WorkspaceId { get; init; }
     public string? SessionId { get; init; }
     public required BenchmarkSeedResultDto Seed { get; init; }
+}
+
+public sealed record BenchmarkEvaluateRequestDto
+{
+    public string? SessionId { get; init; }
 }

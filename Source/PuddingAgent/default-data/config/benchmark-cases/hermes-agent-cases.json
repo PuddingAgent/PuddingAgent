@@ -9,6 +9,19 @@
     "seedId": "docs-mixed-notes",
     "capabilityTargets": ["file", "execution", "verification"],
     "prompt": "请创建一个 Markdown 摘要脚本，用途是扫描当前目录中的 .md 文件并生成 summary.md；功能是列出文件名、标题、字数估算和前两行内容，并运行一次验证。",
+    "evaluation": {
+      "artifacts": [
+        {
+          "path": "summary.md",
+          "requiredContents": ["README.md", "draft-old.md", "sprint-kickoff.md"]
+        }
+      ],
+      "maxDurationSeconds": 1200,
+      "maxRounds": 24,
+      "maxTotalTokens": 250000,
+      "maxCostCny": 2.0,
+      "maxFailedToolResults": 2
+    },
     "isEnabled": true,
     "sortOrder": 10
   },
@@ -22,6 +35,19 @@
     "seedId": "text-index-corpus",
     "capabilityTargets": ["file", "analysis"],
     "prompt": "请整理当前工作空间中的所有 .txt 文件，用途是形成一个便于检索的 index.md；功能是记录文件名、大小、修改时间和内容前两行。",
+    "evaluation": {
+      "artifacts": [
+        {
+          "path": "index.md",
+          "requiredContents": ["alpha.txt", "beta.txt"]
+        }
+      ],
+      "maxDurationSeconds": 1200,
+      "maxRounds": 24,
+      "maxTotalTokens": 250000,
+      "maxCostCny": 2.0,
+      "maxFailedToolResults": 2
+    },
     "isEnabled": true,
     "sortOrder": 20
   },
@@ -96,6 +122,19 @@
     "seedId": "workspace-report-snapshot",
     "capabilityTargets": ["file", "analysis", "verification"],
     "prompt": "请创建一份当前工作空间的简短报告，用途是帮助新成员快速了解现状；内容包括目录概览、近期产物、可疑问题和建议的下一步行动，并保存为 workspace-report.md。",
+    "evaluation": {
+      "artifacts": [
+        {
+          "path": "workspace-report.md",
+          "requiredContents": ["目录", "问题", "下一步"]
+        }
+      ],
+      "maxDurationSeconds": 1200,
+      "maxRounds": 28,
+      "maxTotalTokens": 300000,
+      "maxCostCny": 2.5,
+      "maxFailedToolResults": 2
+    },
     "isEnabled": true,
     "sortOrder": 80
   },
@@ -109,6 +148,27 @@
     "seedId": "incident-log-remediation",
     "capabilityTargets": ["logs", "file", "execution", "debug", "reporting"],
     "prompt": "请整理当前工作空间里的运行日志和脚本文件，用途是找出导出流程失败的原因并给出修复；需要修复可复用脚本，生成一份 incident-report.md，并用样例数据跑通验证。",
+    "evaluation": {
+      "artifacts": [
+        {
+          "path": "incident-report.md",
+          "requiredContents": ["email_address", "email", "output.csv"]
+        },
+        {
+          "path": "exports/output.csv",
+          "requiredContents": ["ada@example.com", "ben@example.com"]
+        },
+        {
+          "path": "scripts/export_customers.py",
+          "forbiddenContents": ["row[\"email_address\"]"]
+        }
+      ],
+      "maxDurationSeconds": 2400,
+      "maxRounds": 48,
+      "maxTotalTokens": 600000,
+      "maxCostCny": 5.0,
+      "maxFailedToolResults": 4
+    },
     "isEnabled": true,
     "sortOrder": 90
   },
@@ -122,6 +182,22 @@
     "seedId": "customer-export-reconciliation",
     "capabilityTargets": ["file", "data", "execution", "reporting"],
     "prompt": "请核对当前工作空间中的客户导出资料，用途是找出缺失、重复和字段不一致的问题；需要生成 reconciliation-report.md，并提供一个可重复运行的核对脚本。",
+    "evaluation": {
+      "artifacts": [
+        {
+          "path": "reconciliation-report.md",
+          "requiredContents": ["C-003", "C-004", "ben@example.com", "ben.rao@example.com"]
+        },
+        {
+          "path": "*.py"
+        }
+      ],
+      "maxDurationSeconds": 2400,
+      "maxRounds": 52,
+      "maxTotalTokens": 650000,
+      "maxCostCny": 5.5,
+      "maxFailedToolResults": 4
+    },
     "isEnabled": true,
     "sortOrder": 100
   },
@@ -135,6 +211,19 @@
     "seedId": "noisy-repo-triage",
     "capabilityTargets": ["long_context", "file", "analysis", "planning"],
     "prompt": "请从当前工作空间的大量资料中筛出真正和发布阻塞有关的内容，用途是形成 release-triage.md；需要区分事实、猜测和无关噪声，并给出可执行的下一步清单。",
+    "evaluation": {
+      "artifacts": [
+        {
+          "path": "release-triage.md",
+          "requiredContents": ["RB-17", "uppercase", "bootstrap password"]
+        }
+      ],
+      "maxDurationSeconds": 3600,
+      "maxRounds": 72,
+      "maxTotalTokens": 1000000,
+      "maxCostCny": 8.0,
+      "maxFailedToolResults": 4
+    },
     "isEnabled": true,
     "sortOrder": 110
   },

@@ -251,6 +251,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<BenchmarkCaseFileService>();
         builder.Services.AddSingleton<BenchmarkWorkspaceSeedService>();
         builder.Services.AddSingleton<BenchmarkRunService>();
+        builder.Services.AddScoped<BenchmarkEvaluationService>();
         // ── Workspace Agent 实例配置与运行目录写入权威 ──
         builder.Services.AddSingleton<WorkspaceAgentFileService>();
         builder.Services.AddSingleton<IWorkspaceAgentCatalog>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());

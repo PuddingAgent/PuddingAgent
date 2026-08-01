@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingRuntime.Services;
 
@@ -49,6 +50,35 @@ public sealed class MemoryLlmInvocationClientUsageTests
             () => client.ChatAsync("system", "user"));
 
         Assert.AreEqual("ledger unavailable", error.Message);
+    }
+
+    [TestMethod]
+    public async Task ChatWithConfigAsync_AttributesUsageToExplicitAgentScopeAndStage()
+    {
+        var invocation = new RecordingInvocationService();
+        var recorder = new RecordingTokenUsageRecorder();
+        var client = new MemoryLlmInvocationClient(
+            invocation,
+            NullLogger<MemoryLlmInvocationClient>.Instance,
+            llmConfigService: null,
+            tokenUsageRecorder: recorder);
+
+        await client.ChatWithConfigAsync("system", "user", new MemoryLlmConfig(null, null, "deepseek-v4-flash")
+        {
+            ProviderId = "deepseek",
+            ProfileId = "agent:agent-1:subconscious",
+            WorkspaceId = "workspace-1",
+            SessionId = "daily-summary:2026-07-31",
+            AgentInstanceId = "agent-1",
+            Stage = "daily-summary",
+        });
+
+        Assert.AreEqual("workspace-1", invocation.Request!.WorkspaceId);
+        Assert.AreEqual("daily-summary:2026-07-31", invocation.Request.SessionId);
+        Assert.AreEqual("agent-1", invocation.Request.AgentInstanceId);
+        Assert.AreEqual("workspace-1", recorder.WorkspaceId);
+        Assert.AreEqual("daily-summary:2026-07-31", recorder.SessionId);
+        StringAssert.StartsWith(recorder.SourceId!, "llm:daily-summary:");
     }
 
     private sealed class RecordingInvocationService : ILlmInvocationService

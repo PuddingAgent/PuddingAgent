@@ -82,20 +82,33 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
 
             var userMessage = BuildUserMessage(messages, request);
 
-            // 2. 解析 Flash 模型
-            var templateId = request.AgentTemplateId ?? request.AgentId ?? "default-agent";
-            var memoryConfig = await _llmConfigResolver.ResolveMemoryAsync(
-                templateId, request.WorkspaceId, ct);
-            var flashModelId = memoryConfig?.ModelId ?? "deepseek-v4-flash";
+            // 2. 按 Agent 实例的 subconscious 角色解析模型；不按任务或模板硬编码模型。
+            var configurationAgentId = request.AgentId
+                ?? throw new InvalidOperationException("Pre-compaction flush requires an Agent instance id.");
+            var roleRoute = await _llmConfigResolver.ResolveRoleAsync(
+                request.WorkspaceId,
+                configurationAgentId,
+                AgentLlmRoleIds.Subconscious,
+                ct);
 
             _logger.LogInformation(
-                "[PreCompactFlush] Calling Flash LLM session={SessionId} model={ModelId} msgCount={Count}",
-                request.SessionId, flashModelId, messages.Count);
+                "[PreCompactFlush] Calling subconscious LLM session={SessionId} agent={AgentId} provider={ProviderId} model={ModelId} msgCount={Count}",
+                request.SessionId, configurationAgentId, roleRoute.ProviderId, roleRoute.ModelId, messages.Count);
 
             var flashConfig = new MemoryLlmConfig(
-                Endpoint: null,
-                ApiKey: null,
-                ModelId: flashModelId);
+                Endpoint: roleRoute.Config.Endpoint,
+#pragma warning disable CS0618
+                ApiKey: roleRoute.Config.ApiKey,
+#pragma warning restore CS0618
+                ModelId: roleRoute.ModelId)
+            {
+                ProviderId = roleRoute.ProviderId,
+                ProfileId = roleRoute.ProfileId,
+                WorkspaceId = request.WorkspaceId,
+                SessionId = request.SessionId,
+                AgentInstanceId = configurationAgentId,
+                Stage = "pre-compaction-flush",
+            };
 
             // 3. 调用 Flash LLM
             string result;

@@ -53,6 +53,12 @@ public sealed class SkillEvolutionServicesTests
         Assert.IsNotNull(updated);
         Assert.AreEqual("1.0.1", updated.Version);
         StringAssert.Contains(updated.Markdown, "Report the PR URL");
+
+        var disabled = await store.SetEnabledAsync("agent-1", skill.SkillId, enabled: false);
+        Assert.IsFalse(disabled.Enabled);
+        Assert.IsNull(await enforcer.EnforceAsync(
+            "agent-1",
+            "Please create GitHub PR for this branch"));
     }
 
     [TestMethod]
@@ -107,6 +113,122 @@ public sealed class SkillEvolutionServicesTests
             new[] { "github_list_branches", "github_create_pr" },
             result[0].Steps.Select(step => step.ToolName).ToArray());
         Assert.AreEqual(0, (await source.GetRecentSuccessfulAsync("workspace-1", "agent-2", 5)).Count);
+    }
+
+    [TestMethod]
+    public async Task TrajectorySource_ShouldScanPastRecentCommandsWithoutReusableToolChains()
+    {
+        await using var scope = await PlatformScope.CreateAsync();
+        await using (var db = scope.Factory.CreateDbContext())
+        {
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = "message-reusable",
+                SessionId = "session-reusable",
+                WorkspaceId = "workspace-1",
+                AgentInstanceId = "agent-1",
+                Role = "user",
+                Content = "Run the reusable workflow",
+                CreatedAt = 1,
+            });
+
+            var reusable = Command(
+                "command-reusable",
+                "batch-reusable",
+                "workspace-1",
+                "session-reusable",
+                "turn-reusable",
+                "agent-1",
+                "message-reusable");
+            reusable.CreatedAt = 1;
+            reusable.CompletedAt = 2;
+            db.ChatExecutionCommands.Add(reusable);
+
+            for (var i = 0; i < 5; i++)
+            {
+                var recent = Command(
+                    $"command-recent-{i}",
+                    $"batch-recent-{i}",
+                    "workspace-1",
+                    $"session-recent-{i}",
+                    $"turn-recent-{i}",
+                    "agent-1",
+                    $"message-recent-{i}");
+                recent.CreatedAt = 100 + i;
+                recent.CompletedAt = 200 + i;
+                db.ChatExecutionCommands.Add(recent);
+            }
+
+            db.ConversationEvents.AddRange(
+                Event(1, "command-reusable", "session-reusable", "turn-reusable", ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"step_one\",\"arguments\":\"{}\"}"),
+                Event(2, "command-reusable", "session-reusable", "turn-reusable", ConversationEventTypes.ToolCallCompleted,
+                    "{\"name\":\"step_one\",\"exitCode\":0,\"output\":\"ok\",\"error\":null}"),
+                Event(3, "command-reusable", "session-reusable", "turn-reusable", ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"step_two\",\"arguments\":\"{}\"}"),
+                Event(4, "command-reusable", "session-reusable", "turn-reusable", ConversationEventTypes.ToolCallCompleted,
+                    "{\"name\":\"step_two\",\"exitCode\":0,\"output\":\"ok\",\"error\":null}"));
+            await db.SaveChangesAsync();
+        }
+
+        var source = new ConversationSkillEvolutionTrajectorySource(
+            scope.Factory,
+            NullLogger<ConversationSkillEvolutionTrajectorySource>.Instance);
+
+        var result = await source.GetRecentSuccessfulAsync("workspace-1", "agent-1", 1);
+
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("turn-reusable", result[0].TurnId);
+        CollectionAssert.AreEqual(
+            new[] { "step_one", "step_two" },
+            result[0].Steps.Select(step => step.ToolName).ToArray());
+    }
+
+    [TestMethod]
+    public async Task TrajectorySource_ShouldExcludeBenchmarkRunsFromLearning()
+    {
+        await using var scope = await PlatformScope.CreateAsync();
+        await using (var db = scope.Factory.CreateDbContext())
+        {
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = "message-benchmark",
+                SessionId = "session-benchmark",
+                WorkspaceId = "workspace-1",
+                AgentInstanceId = "agent-1",
+                Role = "user",
+                Content = "Generate the benchmark artifact",
+                CreatedAt = 1,
+            });
+            var command = Command(
+                "command-benchmark",
+                "batch-benchmark",
+                "workspace-1",
+                "session-benchmark",
+                "turn-benchmark",
+                "agent-1",
+                "message-benchmark");
+            command.MetadataJson = "{\"source\":\"benchmark_runner\",\"excludeFromLearning\":\"true\"}";
+            db.ChatExecutionCommands.Add(command);
+            db.ConversationEvents.AddRange(
+                Event(1, command.CommandId, command.SessionId, command.TurnId, ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"step_one\",\"arguments\":\"{}\"}"),
+                Event(2, command.CommandId, command.SessionId, command.TurnId, ConversationEventTypes.ToolCallCompleted,
+                    "{\"name\":\"step_one\",\"exitCode\":0,\"output\":\"ok\",\"error\":null}"),
+                Event(3, command.CommandId, command.SessionId, command.TurnId, ConversationEventTypes.ToolCallRequested,
+                    "{\"name\":\"step_two\",\"arguments\":\"{}\"}"),
+                Event(4, command.CommandId, command.SessionId, command.TurnId, ConversationEventTypes.ToolCallCompleted,
+                    "{\"name\":\"step_two\",\"exitCode\":0,\"output\":\"ok\",\"error\":null}"));
+            await db.SaveChangesAsync();
+        }
+
+        var source = new ConversationSkillEvolutionTrajectorySource(
+            scope.Factory,
+            NullLogger<ConversationSkillEvolutionTrajectorySource>.Instance);
+
+        var result = await source.GetRecentSuccessfulAsync("workspace-1", "agent-1", 5);
+
+        Assert.AreEqual(0, result.Count);
     }
 
     private static ChatExecutionCommandEntity Command(

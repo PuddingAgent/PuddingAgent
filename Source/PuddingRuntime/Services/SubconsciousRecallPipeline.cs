@@ -20,6 +20,7 @@ public sealed class SubconsciousRecallPipeline
 {
     private readonly IMemoryRecallService _memoryRecall;
     private readonly IMemoryLlmClient _memoryLlmClient;
+    private readonly ILLMConfigResolver? _llmConfigResolver;
     private readonly SessionSummaryStore? _summaryStore;
     private readonly ILogger<SubconsciousRecallPipeline> _logger;
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = 50 });
@@ -49,12 +50,14 @@ public sealed class SubconsciousRecallPipeline
         IMemoryRecallService memoryRecall,
         IMemoryLlmClient memoryLlmClient,
         ILogger<SubconsciousRecallPipeline> logger,
-        SessionSummaryStore? summaryStore = null)
+        SessionSummaryStore? summaryStore = null,
+        ILLMConfigResolver? llmConfigResolver = null)
     {
         _memoryRecall = memoryRecall;
         _memoryLlmClient = memoryLlmClient;
         _logger = logger;
         _summaryStore = summaryStore;
+        _llmConfigResolver = llmConfigResolver;
     }
 
     /// <summary>
@@ -366,11 +369,43 @@ public sealed class SubconsciousRecallPipeline
 
         try
         {
-            var response = await _memoryLlmClient.ChatAsync(
-                "你是记忆检索助手。严格按JSON格式输出判断结果。",
-                prompt,
-                tools: null,
-                ct: ct);
+            string response;
+            if (_llmConfigResolver is null)
+            {
+                response = await _memoryLlmClient.ChatAsync(
+                    "你是记忆检索助手。严格按JSON格式输出判断结果。",
+                    prompt,
+                    tools: null,
+                    ct: ct);
+            }
+            else
+            {
+                var route = await _llmConfigResolver.ResolveRoleAsync(
+                    workspaceId,
+                    agentInstanceId,
+                    AgentLlmRoleIds.Subconscious,
+                    ct);
+                var memoryConfig = new PuddingCode.Platform.MemoryLlmConfig(
+                    route.Config.Endpoint,
+#pragma warning disable CS0618
+                    route.Config.ApiKey,
+#pragma warning restore CS0618
+                    route.ModelId)
+                {
+                    ProviderId = route.ProviderId,
+                    ProfileId = route.ProfileId,
+                    WorkspaceId = workspaceId,
+                    SessionId = $"subconscious-recall:{agentInstanceId}",
+                    AgentInstanceId = agentInstanceId,
+                    Stage = "subconscious-recall",
+                };
+                response = await _memoryLlmClient.ChatWithConfigAsync(
+                    "你是记忆检索助手。严格按JSON格式输出判断结果。",
+                    prompt,
+                    memoryConfig,
+                    tools: null,
+                    ct: ct);
+            }
 
             if (string.IsNullOrWhiteSpace(response))
                 return forceRecall ? new FlashRecallResult { NeedRecall = true, RelevantIds = Enumerable.Range(1, Math.Min(5, hits.Count)).ToList(), Reason = "force" } : null;

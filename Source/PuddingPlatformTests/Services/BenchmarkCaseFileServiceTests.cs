@@ -71,6 +71,7 @@ public sealed class BenchmarkCaseFileServiceTests
         var cases = await service.LoadAsync();
 
         Assert.IsTrue(cases.Count > 0);
+        Assert.AreEqual(6, cases.Count(item => item.Evaluation?.Artifacts.Count > 0));
         foreach (var item in cases)
             Assert.IsTrue(BenchmarkCaseFileService.IsPromptSafe(item.Prompt), $"Unsafe prompt: {item.Id}");
     }

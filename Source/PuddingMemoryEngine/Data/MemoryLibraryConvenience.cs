@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using PuddingCode.Abstractions;
+using PuddingCode.Platform;
 
 namespace PuddingMemoryEngine.Data;
 
@@ -12,14 +13,19 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
 {
     private readonly IMemoryLibrary _library;
     private readonly IMemoryLlmClient? _llmClient;
+    private readonly ILLMConfigResolver? _llmConfigResolver;
 
     /// <summary>后台深度探索结果缓存，key=query前30字符的哈希。</summary>
     private readonly ConcurrentDictionary<string, List<RankedResult>> _pendingExplorations = new();
 
-    public MemoryLibraryConvenience(IMemoryLibrary library, IMemoryLlmClient? llmClient = null)
+    public MemoryLibraryConvenience(
+        IMemoryLibrary library,
+        IMemoryLlmClient? llmClient = null,
+        ILLMConfigResolver? llmConfigResolver = null)
     {
         _library = library;
         _llmClient = llmClient;
+        _llmConfigResolver = llmConfigResolver;
     }
 
     /// <summary>
@@ -92,7 +98,11 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
             return new ExperienceWriteResult(book, existingChapter);
         }
 
-        var semanticDecision = await DecideChapterWriteWithLlmAsync(chapters, experience, ct);
+        var semanticDecision = await DecideChapterWriteWithLlmAsync(
+            workspaceId,
+            chapters,
+            experience,
+            ct);
         if (semanticDecision is { Action: "reuse_existing" })
         {
             return new ExperienceWriteResult(book, semanticDecision.Chapter);
@@ -154,6 +164,7 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
     }
 
     private async Task<ChapterWriteDecision?> DecideChapterWriteWithLlmAsync(
+        string workspaceId,
         IReadOnlyList<ChapterRecord> chapters,
         ExperiencePackage experience,
         CancellationToken ct)
@@ -198,7 +209,43 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
         string raw;
         try
         {
-            raw = await _llmClient.ChatAsync(systemPrompt, payload, null, ct);
+            if (_llmConfigResolver is null)
+            {
+                // Standalone/test host compatibility. The main Pudding host always
+                // supplies the role resolver and never enters this branch.
+                raw = await _llmClient.ChatAsync(systemPrompt, payload, null, ct);
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(experience.AgentInstanceId))
+                    return null;
+
+                var route = await _llmConfigResolver.ResolveRoleAsync(
+                    workspaceId,
+                    experience.AgentInstanceId,
+                    AgentLlmRoleIds.Subconscious,
+                    ct);
+                raw = await _llmClient.ChatWithConfigAsync(
+                    systemPrompt,
+                    payload,
+                    new MemoryLlmConfig(
+                        route.Config.Endpoint,
+#pragma warning disable CS0618
+                        route.Config.ApiKey,
+#pragma warning restore CS0618
+                        route.ModelId)
+                    {
+                        ProviderId = route.ProviderId,
+                        ProfileId = route.ProfileId,
+                        WorkspaceId = workspaceId,
+                        SessionId = experience.SourceSessionId
+                            ?? $"memory-write:{experience.AgentInstanceId}",
+                        AgentInstanceId = experience.AgentInstanceId,
+                        Stage = "memory-write-dedup",
+                    },
+                    tools: null,
+                    ct: ct);
+            }
         }
         catch
         {
@@ -383,8 +430,11 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
         // ── 歧义检测 ──
         var isAmbiguous = IsAmbiguous(merged);
 
-        if (isAmbiguous && _llmClient is not null)
+        if (isAmbiguous && _llmClient is not null && _llmConfigResolver is null)
         {
+            // This legacy API has no workspace/Agent scope. In the main host the
+            // role resolver is present, so do not launch an unscoped background
+            // LLM call. Context recall already performs its scoped Flash judge.
             // 标记 IsPendingDeepExplore，后台启动异步探索
             merged = merged.Select(r => r with { IsPendingDeepExplore = true }).ToList();
 
@@ -441,7 +491,10 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
     /// </summary>
     public async Task StartDeepExploreAsync(string query, CancellationToken ct = default)
     {
-        if (_llmClient is null) return;
+        // The legacy signature cannot carry workspace/Agent identity. Main-host
+        // callers must use the role-scoped recall pipeline instead of an implicit
+        // provider/model default.
+        if (_llmClient is null || _llmConfigResolver is not null) return;
 
         const string systemPrompt =
             "你是记忆探索助手。用户查询需要找到记忆图书馆中的相关经验。请: " +
