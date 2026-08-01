@@ -1,8 +1,8 @@
 <Project>
   <!--
     PuddingMemoryEngine Jieba 资源传递 Target
-    确保任何引用 PuddingMemoryEngine 的项目输出目录都包含 jieba.NET 的 Resources/ 文件。
-    条件：仅当 jieba.NET NuGet 包已恢复到本地缓存时执行。
+    仅当当前项目的已解析运行时依赖包含 JiebaNet.Segmenter.dll 时复制 Resources/。
+    不能只检查全局 NuGet 缓存，否则无关项目（例如 PuddingCodexService）也会携带词典。
   -->
   <Target Name="CopyJiebaResourcesTransitive"
           AfterTargets="Build"
@@ -13,15 +13,18 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <_JiebaRuntimeAssemblies Include="@(ReferenceCopyLocalPaths)"
+                               Condition="'%(ReferenceCopyLocalPaths.Filename)' == 'JiebaNet.Segmenter'" />
       <_JiebaResourceFiles Include="$(_JiebaNuGetResources)\**\*" />
     </ItemGroup>
 
     <Copy SourceFiles="@(_JiebaResourceFiles)"
           DestinationFolder="$(OutputPath)Resources\%(RecursiveDir)"
           SkipUnchangedFiles="true"
-          Condition="'@(_JiebaResourceFiles)' != ''" />
+          Condition="'@(_JiebaRuntimeAssemblies)' != '' and '@(_JiebaResourceFiles)' != ''" />
 
     <Message Importance="low"
+             Condition="'@(_JiebaRuntimeAssemblies)' != ''"
              Text="[PuddingMemoryEngine] Jieba Resources 已复制到 $(OutputPath)Resources\ (%(_JiebaResourceFiles.RecursiveDir) 个文件)" />
   </Target>
 

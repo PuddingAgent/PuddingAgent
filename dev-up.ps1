@@ -10,6 +10,7 @@
 #   .\dev-up.ps1 -Down        # stop
 #   .\dev-up.ps1 -Restart     # restart
 #   .\dev-up.ps1 -Rebuild     # stop, rebuild backend, start
+#   .\dev-up.ps1 -Clear       # clear repository-local logs/temp after stop
 
 param(
     [switch]$Down,
@@ -17,6 +18,7 @@ param(
     [switch]$Status,
     [switch]$Restart,
     [switch]$Rebuild,
+    [switch]$Clear,
     [switch]$NoInstall
 )
 
@@ -29,6 +31,7 @@ if ($Logs) { $ArgsList += "--logs" }
 if ($Status) { $ArgsList += "--status" }
 if ($Restart) { $ArgsList += "--restart" }
 if ($Rebuild) { $ArgsList += "--rebuild" }
+if ($Clear) { $ArgsList += "--clear" }
 if ($NoInstall) { $ArgsList += "--no-install" }
 
 python (Join-Path $Root "dev-up.py") @ArgsList

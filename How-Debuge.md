@@ -54,6 +54,22 @@ $runtimeLogs = Join-Path $dataRoot "logs"
 `tmp/dev/frontend.err.log` 的第一条编译错误。前端在 30 秒内连续退出 3 次后，
 `dev-up.py` 会停止整组进程并打印错误日志路径，避免确定性编译错误形成无限重启循环。
 
+#### 清理仓库开发日志和临时输出
+
+先停止全部受管进程，再执行：
+
+```powershell
+python .\dev-up.py --down
+python .\dev-up.py --clear
+```
+
+PowerShell 包装命令等价为 `.\dev-up.ps1 -Clear`。`--clear` 只删除仓库内明确
+归 dev-up/测试构建所有的 `tmp/`、`.tmp/`、`.tmp-build/`、`.tmp-test-out/`、
+`.codex-out/` 和 `data/logs/`。任一受管进程仍在运行时命令会拒绝执行。
+
+该命令不清理 `D:\data`、项目 `bin/obj`、`publish`、前端 `dist/node_modules`、
+源码或 `data/agents`。需要保留诊断证据时，先归档对应日志再执行清理。
+
 ### 3.2 应用结构化日志
 
 应用日志位于 `<dataRoot>/logs`：

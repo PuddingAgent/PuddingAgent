@@ -420,6 +420,74 @@ class DevUpSupervisorTests(unittest.TestCase):
 
         self.assertEqual(dev_up.DEFAULT_LOG_TAIL_LINES, args.logs)
 
+    def test_clear_argument_is_exclusive(self):
+        dev_up = load_dev_up_module()
+
+        self.assertTrue(dev_up.parse_args(["--clear"]).clear)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            dev_up.parse_args(["--clear", "--status"])
+
+    def test_clear_generated_files_removes_only_allowlisted_repository_paths(self):
+        dev_up = load_dev_up_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            clear_targets = (
+                root / "tmp",
+                root / ".tmp",
+                root / ".tmp-build",
+                root / ".tmp-test-out",
+                root / ".codex-out",
+                root / "data" / "logs",
+            )
+            for target in clear_targets:
+                target.mkdir(parents=True)
+                (target / "generated.bin").write_bytes(b"generated")
+
+            preserved = (
+                root / "data" / "agents" / "manifest.json",
+                root / "Source" / "PuddingAgent" / "bin" / "PuddingAgent.dll",
+                root / "publish" / "app" / "PuddingAgent.dll",
+                root / "Source" / "PuddingPlatformAdmin" / "node_modules" / "package.json",
+            )
+            for path in preserved:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("keep", encoding="utf-8")
+
+            with patch.object(dev_up, "write_stdout"):
+                dev_up.clear_generated_files(root, require_stopped=False)
+
+            for target in clear_targets:
+                self.assertFalse(target.exists(), target)
+            for path in preserved:
+                self.assertTrue(path.exists(), path)
+
+    def test_clear_generated_files_refuses_while_a_managed_process_is_running(self):
+        dev_up = load_dev_up_module()
+
+        with (
+            patch.object(dev_up, "status_snapshot", return_value={"backend": {"alive": True}}),
+            patch.object(dev_up, "fail", side_effect=SystemExit) as fail,
+            self.assertRaises(SystemExit),
+        ):
+            dev_up.clear_generated_files()
+
+        self.assertIn("Run --down first", fail.call_args.args[0])
+
+    def test_main_clear_does_not_create_run_dir_or_start_services(self):
+        dev_up = load_dev_up_module()
+
+        with (
+            patch.object(dev_up, "clear_generated_files") as clear,
+            patch.object(dev_up, "ensure_run_dir") as ensure_run_dir,
+            patch.object(dev_up, "start_all") as start_all,
+        ):
+            self.assertEqual(0, dev_up.main(["--clear"]))
+
+        clear.assert_called_once_with()
+        ensure_run_dir.assert_not_called()
+        start_all.assert_not_called()
+
     def test_tail_file_lines_reads_last_lines_from_large_file(self):
         dev_up = load_dev_up_module()
 

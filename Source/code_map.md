@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-07-31 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +可替换图片生成、Vision Artifact 与飞书可靠图片回复
+> 最后更新: 2026-08-01 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +构建输出隔离、Jieba 依赖门禁与 dev-up 安全清理
 
 ---
 
@@ -14,7 +14,7 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 
 | 文件 | 用途 |
 |------|------|
-| `../dev-up.py` | 本地 Backend/Codex MCP Service/Frontend/Proxy 监督器；以 `tmp/dev/supervisor.pid` 保证重启时先终止旧监督器，避免旧实例抢占重建；`--rebuild` 复用预构建产物且 `--auto-yolo` 通过仓库根 `yolo.signal` 激活 Runtime；各受管角色有快速失败熔断 |
+| `../dev-up.py` | 本地 Backend/Codex MCP Service/Frontend/Proxy 监督器；以 `tmp/dev/supervisor.pid` 保证重启时先终止旧监督器，避免旧实例抢占重建；`--rebuild` 复用预构建产物且 `--auto-yolo` 通过仓库根 `yolo.signal` 激活 Runtime；`--clear` 仅在进程全停后清理仓库白名单日志/临时目录并拒绝触碰 `D:\data`；各受管角色有快速失败熔断 |
 | `../How-Debuge.md` | 可重复使用的启动、会话、SSE、子代理与工具诊断路径 |
 
 ---

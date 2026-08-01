@@ -50,6 +50,8 @@ function Invoke-Native {
 }
 
 # ── 0. 检查 JSON 配置源 ───────────────────────────────────
+# 这里准备的是仓库本地运行态配置。PuddingAgent.csproj 不得把 $Root\data
+# 复制进 build/publish 输出，避免日志、数据库和密钥随发布包分发。
 $configDir = "$Root\data\config"
 $defaultConfigDir = "$Root\Source\PuddingAgent\default-data\config"
 if (-not (Test-Path "$configDir")) {

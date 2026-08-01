@@ -216,6 +216,7 @@ flowchart LR
 |------|------|
 | `dev-up.ps1` | 新增，宿主机后台启动/停止/查看开发进程 |
 | `tmp/dev/` | 运行时生成，保存 PID 和日志，不提交 |
+| `dev-up.py --clear` | 全部受管进程停止后，清理仓库白名单日志和临时构建目录 |
 | `Source/PuddingPlatformAdmin/config/proxy.ts` | 检查并确保 dev server API proxy 指向 `http://localhost:5000` |
 | `build-and-up.ps1` | 后续增量优化，增加 skip 参数，移除重复装配 |
 | `Source/PuddingAgent/Dockerfile` | 后续按 ADR-037 移除 Admin SPA 直接 COPY |
@@ -233,7 +234,8 @@ flowchart LR
 3. 修改前端 `.tsx` / `.less` / `.css` 文件后，浏览器通过 HMR 更新，不执行 `pnpm run build`；
 4. 前端 dev server 能调用后端 API；
 5. `.\dev-up.ps1 -Down` 能停止开发环境；
-6. `.\dev-up.ps1 -Logs` 能跟随后端和前端日志。
+6. `.\dev-up.ps1 -Logs` 能跟随后端和前端日志；
+7. `python dev-up.py --clear` 只在全部受管进程停止后删除仓库白名单日志/临时目录，且不触碰 `D:\data`、源码或依赖目录。
 
 ### 6.2 快速集成链路
 
@@ -273,3 +275,11 @@ flowchart LR
 | 首次启动依赖安装慢 | 依赖安装发生在宿主机已有缓存中，脚本支持 `-NoInstall` 跳过安装 |
 | 发布链路被开发链路污染 | `build-and-up.ps1` 普通模式不调用 `dev-up.ps1`，开发进程日志和 PID 放在 `tmp/dev/` |
 | ADR-037 尚未落地导致装配逻辑重复 | 本次先保证开发链路可用，后续独立任务收敛装配职责 |
+
+---
+
+## 9. 2026-08-01 实施收敛
+
+1. `PuddingAgent.csproj` 不再把仓库根 `data/**/*` 纳入 build/publish；运行态配置、日志、数据库和 Agent 实例必须留在 `PUDDING_DATA_ROOT`，发布包只携带 `default-data` 模板。
+2. Jieba 词典复制 Target 以当前项目解析到的 `JiebaNet.Segmenter.dll` 为执行条件，避免 PuddingCodexService 等无关输出携带全量词典。
+3. `dev-up.py --clear` 与 `dev-up.ps1 -Clear` 清理 `tmp/`、`.tmp/`、`.tmp-build/`、`.tmp-test-out/`、`.codex-out/` 和仓库 `data/logs/`；命令与启动、停止、状态和日志参数互斥，并在任一受管进程存活时失败关闭。

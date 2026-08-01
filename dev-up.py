@@ -133,6 +133,72 @@ def ensure_run_dir() -> None:
     RUN_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def repository_clear_targets(root: Path | None = None) -> tuple[Path, ...]:
+    """Return the exact repository-local roots owned by ``--clear``."""
+    repository_root = (root or ROOT).resolve()
+    return (
+        repository_root / "tmp",
+        repository_root / ".tmp",
+        repository_root / ".tmp-build",
+        repository_root / ".tmp-test-out",
+        repository_root / ".codex-out",
+        repository_root / "data" / "logs",
+    )
+
+
+def _validate_clear_target(repository_root: Path, target: Path) -> None:
+    resolved_root = repository_root.resolve()
+    resolved_target = target.resolve(strict=False)
+    if resolved_target == resolved_root or resolved_root not in resolved_target.parents:
+        raise ValueError(f"Refusing to clear path outside repository: {target}")
+
+
+def _remove_clear_target(repository_root: Path, target: Path) -> bool:
+    _validate_clear_target(repository_root, target)
+    if not target.exists() and not target.is_symlink():
+        return False
+
+    is_junction = getattr(target, "is_junction", lambda: False)
+    if target.is_symlink() or is_junction() or target.is_file():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+    return True
+
+
+def clear_generated_files(
+    root: Path | None = None,
+    *,
+    require_stopped: bool = True,
+) -> None:
+    """Delete only allowlisted repository logs and temporary build directories."""
+    if require_stopped:
+        running_roles = [
+            role
+            for role, state in status_snapshot().items()
+            if bool(state.get("alive"))
+        ]
+        if running_roles:
+            fail(
+                "Cannot clear while development processes are running: "
+                f"{', '.join(running_roles)}. Run --down first."
+            )
+
+    repository_root = (root or ROOT).resolve()
+    removed: list[Path] = []
+    for target in repository_clear_targets(repository_root):
+        if _remove_clear_target(repository_root, target):
+            removed.append(target)
+
+    if removed:
+        relative_paths = "\n".join(
+            f"  - {path.relative_to(repository_root)}" for path in removed
+        )
+        write_stdout(f"Cleared repository-local logs and temporary directories:\n{relative_paths}\n")
+    else:
+        write_stdout("Nothing to clear.\n")
+
+
 def resolve_command(name: str) -> str | None:
     if os.name == "nt":
         for candidate in (f"{name}.cmd", f"{name}.exe", name):
@@ -1526,7 +1592,9 @@ def _run_supervisor_loop(
         "Logs:\n"
         "  python dev-up.py --logs\n\n"
         "Stop:\n"
-        "  python dev-up.py --down\n"
+        "  python dev-up.py --down\n\n"
+        "Clear repository logs/temp after stop:\n"
+        "  python dev-up.py --clear\n"
     )
 
     stopping = False
@@ -1795,6 +1863,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start Pudding Agent local development services.")
     parser.add_argument("--down", action="store_true", help="Stop tracked development processes.")
     parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete allowlisted repository logs/temp directories; all development processes must be stopped.",
+    )
+    parser.add_argument(
         "--logs",
         nargs="?",
         const=DEFAULT_LOG_TAIL_LINES,
@@ -1815,11 +1888,30 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--frontend-url", default=f"http://{LOCAL_CONNECT_HOST}:{FRONTEND_PORT}", help=argparse.SUPPRESS)
     parser.add_argument("--auto-yolo", action="store_true", help="After restart, activate YOLO without creating an Agent turn.")
     parser.add_argument("--yolo-user-id", default="admin", help="Audit user ID recorded in the YOLO signal")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.clear and (
+        args.down
+        or args.logs is not None
+        or args.status
+        or args.restart
+        or args.rebuild
+        or args.no_install
+        or args.frontend_only
+        or args.init
+        or args.proxy
+        or args.auto_yolo
+    ):
+        parser.error("--clear cannot be combined with start, stop, status, logs, init, or proxy options.")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+
+    if args.clear:
+        clear_generated_files()
+        return 0
+
     ensure_run_dir()
 
     if args.proxy:
