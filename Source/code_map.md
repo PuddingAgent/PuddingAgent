@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-08-02 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅
+> 最后更新: 2026-08-02 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1 验收证据收口中 ⚠️
 
 ---
 
@@ -19,7 +19,11 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 |------|----------|
 | `../Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md` | 通用 Browser 能力与 Douyin 分层决策来源；Desktop 进程边界以 68 实施规格的 Phase 1A 更新为准 |
 | `../Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md` | Phase 1A 当前事实：WPF Launcher 以子进程监督 ASP.NET Core Core，Windows 11 Shell 内嵌隔离的 WebView2CompositionControl Workbench；Browser AgentTools、Douyin 仍待实现 |
-| `../Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md` | Phase 1B/2 开发输入；Phase 1B-R Runtime Center 与 Phase 1B-S Storage 已完成，下一阶段是 Agent Browser 多标签与 Core/Desktop Bridge |
+| `../Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md` | Phase 1B/2 开发输入；Phase 1B-R/S 已完成；Phase 2A Bridge 修正为现有动态 HTTP 端口上的认证 WebSocket，不采用同端口明文原生 gRPC |
+| `../Docs/07架构/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md` | 可直接交给开发 Agent 的 Phase 2A-1 工作包；包含 Protocol、Core WebSocket Broker、Desktop Client/Dispatcher、真实 WebView2 双标签 UI、函数签名、测试和 DoD |
+| `../Docs/07架构/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md` | Phase 2A-1 初始实现验收结论与收口工作包；要求替换占位 UI、接通真实 Runtime/Context/Page、修复 Hello/单发送循环/心跳/连接代际/重连，并补齐 Host/Desktop 测试和隔离 smoke |
+| `../Docs/07架构/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md` | 对 71 第二轮实现的最终验收修复；关闭 HelloAck 接收死锁、阻塞 Receive 超时、可测试 transport、Tab/Activity 绑定、Surface/Agent target、UI 线程、初始化重试和新版 smoke 阻断 |
+| `../Docs/07架构/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md` | 对当前源码的准入复核与最后收口；保留已完成的 Bridge 时序修复，只补 UI 单一状态源、DataRoot Ready 初始化、Client/Endpoint 测试、Release publish 和新版可见 smoke |
 
 关键 Desktop 入口：
 

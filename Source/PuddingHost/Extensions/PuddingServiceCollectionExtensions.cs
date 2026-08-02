@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -52,6 +52,7 @@ using PuddingFullTextIndex.Infrastructure.Search;
 using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services.Events;
+using PuddingHost.Hosting;
 using System.Threading.Channels;
 
 namespace PuddingAgent.Services;
@@ -72,6 +73,7 @@ public static partial class PuddingServiceCollectionExtensions
         AddRuntimeServices(builder, dataPaths, bootstrapConfiguration);
         AddConnectorServices(builder);
         AddBootstrapServices(builder, dataPaths);
+        AddBrowserBridgeServices(builder);
         return builder;
     }
 

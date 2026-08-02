@@ -9,12 +9,12 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 
 ## PuddingDesktop 产品边界
 
-- `PuddingDesktop` 保持 `Microsoft.NET.Sdk` + WPF，不引用 `PuddingHost` 或 ASP.NET Core；Desktop 与 Core 只通过子进程协议和动态 Loopback HTTP/gRPC 通信。
+- `PuddingDesktop` 保持 `Microsoft.NET.Sdk` + WPF，不引用 `PuddingHost` 或 ASP.NET Core；Desktop 与 Core 只通过子进程协议、动态 Loopback HTTP 和认证 WebSocket Bridge 通信。
 - Desktop 必须在 Core 启动失败、配置缺失或 DataRoot 未设置时仍可启动，并允许用户进入设置和运行中心执行修复、启动、停止或重启。
 - Desktop 是单实例产品进程。关闭按钮默认隐藏到系统托盘并保持 Core 运行；只有“退出 Pudding”、Windows 会话结束或配置为 `ExitAndStopCore` 时才停止 Core 并释放 WebView2。
 - `desktop.json` 保存 DesktopHome 范围的 DataRoot、Core 路径、窗口和关闭行为；`<DataRoot>/config/system.json` 保存 Core 端口、ControlToken、启动超时和自动恢复策略。Token 不放环境变量，不在 UI 或诊断包回显。
 - `dev-up.py` 和 Desktop 不共享 PID、端口所有权。使用同一个 `D:\data` 验证 Desktop 前必须先停止 dev-up 管理的 Core，反之亦然，避免两个 Core 同时访问数据库。
-- Phase 1A、Phase 1B-R Runtime Center、Phase 1B-S Storage 已完成。下一阶段是 Phase 2A：通用 Agent Browser、多标签页、Core/Desktop 双向 Bridge；底层保持通用，抖音能力只位于上层适配器。
+- Phase 1A、Phase 1B-R Runtime Center、Phase 1B-S Storage 已完成。Phase 2A-1 已完成 HelloAck 接收顺序、可取消 watchdog、连接 generation 和 Controller Surface/AgentTarget 主体修复；当前仍缺 UI 单一数据源、DataRoot Ready 初始化、Desktop Client/Host Endpoint 阻断性测试、Release publish 与新版可见 smoke。下一批次必须执行 Docs/07架构/73 的准入验收收口；全部通过后才进入 Phase 2A-2。底层保持通用，抖音能力只位于上层适配器。
 
 ## 兼容性和补丁约定
 

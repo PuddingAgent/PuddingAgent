@@ -133,7 +133,7 @@ flowchart LR
 - `PuddingBrowser.AgentTools` 不得引用 WPF、WebView2、Douyin，只依赖 Browser Abstractions 和 Pudding Tool 契约；
 - `PuddingIntegration.Douyin` 不得引用 `Microsoft.Web.WebView2`；
 - `PuddingHost` 不得引用 `PuddingDesktop`；
-- `PuddingDesktop` 不得引用 `PuddingHost` 或 ASP.NET Core；只允许通过发布包中的 `core/PuddingAgent.exe` 和 Loopback HTTP/gRPC 协议通信；
+- `PuddingDesktop` 不得引用 `PuddingHost` 或 ASP.NET Core；只允许通过发布包中的 `core/PuddingAgent.exe`、Loopback HTTP 和认证 WebSocket Bridge 通信；
 - `PuddingAgent` 不得成为 Desktop 的编译期组合根依赖；
 - `PuddingBrowser.WebView2` 不得引用 Douyin。
 

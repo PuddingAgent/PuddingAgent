@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <!-- Protocol is a pure JSON DTO project: System.Text.Json only.
+       No WPF, WebView2, ASP.NET Core, PuddingHost or PuddingDesktop references. -->
+</Project>

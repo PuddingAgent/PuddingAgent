@@ -84,6 +84,9 @@ public static class PuddingWebApplicationExtensions
         var hostOptions = app.Services.GetRequiredService<PuddingHostOptions>();
         app.MapDesktopChildEndpoints(hostOptions);
 
+        // ── Desktop Browser Bridge WebSocket ──
+        app.MapDesktopBrowserBridgeEndpoint();
+
         // ── 路由后诊断 ── 确认请求到达了控制器路由层 ──
         app.Use(async (ctx, next) =>
         {

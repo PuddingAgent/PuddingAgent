@@ -1,11 +1,13 @@
 ﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using PuddingDesktop.Browser;
 using PuddingDesktop.Hosting;
 using PuddingDesktop.Diagnostics;
 using PuddingDesktop.Runtime;
 using PuddingDesktop.Theming;
 using PuddingDesktop.ViewModels;
+using PuddingDesktop.Views;
 
 namespace PuddingDesktop;
 
@@ -18,6 +20,7 @@ public sealed partial class MainWindow : Window
     private bool _isClosing;
     private bool _shutdownCompleted;
     private bool _webViewInitialized;
+    private bool _browserInitialized;
     private bool _initialized;
 
     public MainWindow() : this(new DesktopApplicationCoordinator()) { }
@@ -70,13 +73,21 @@ public sealed partial class MainWindow : Window
             UpdateNavigation();
 
             if (e.Current == DesktopStartupState.CoreReady && e.CoreAddress is not null)
+            {
                 _ = InitializeWebView2Async(e.CoreAddress);
+                _ = InitializeBrowserWorkspaceAsync();
+                _ = ConnectBrowserBridgeAsync(e.CoreAddress);
+            }
 
             if (e.Current is DesktopStartupState.CoreStopped
                 or DesktopStartupState.CoreFailed
                 or DesktopStartupState.CoreRestartScheduled
                 or DesktopStartupState.CoreCircuitOpen)
+            {
                 ResetWebView2();
+                // Core stop does NOT destroy Browser Context/Page — only disconnects Bridge
+                _ = DisconnectBrowserBridgeAsync();
+            }
         });
     }
 
@@ -102,6 +113,58 @@ public sealed partial class MainWindow : Window
     {
         _webViewInitialized = false;
         WorkbenchPage.ResetForCoreStop();
+    }
+
+    /// <summary>
+    /// Initializes the Browser Workspace (real WebView2 runtime) once DataRoot is available.
+    /// Core not being started does NOT block this — user can still browse.
+    /// Uses the Coordinator's existing BridgeDispatcher and BridgeClient.
+    /// </summary>
+    private async Task InitializeBrowserWorkspaceAsync()
+    {
+        if (_browserInitialized) return;
+
+        var dataRoot = _coordinator.DataRoot;
+        if (string.IsNullOrWhiteSpace(dataRoot)) return;
+
+        try
+        {
+            if (BrowserPage is BrowserWorkspaceView browserView)
+            {
+                await browserView.InitializeAsync(
+                    dataRoot,
+                    _coordinator.BridgeDispatcher,
+                    _coordinator.BridgeClient,
+                    CancellationToken.None);
+            }
+            _browserInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            DesktopDiagnosticLog.Write("BrowserWorkspaceInit", ex);
+        }
+    }
+
+    /// <summary>
+    /// Connects the Browser Bridge to Core. Called on Core Ready.
+    /// The Coordinator already manages bridge connection internally.
+    /// </summary>
+    private Task ConnectBrowserBridgeAsync(Uri coreAddress)
+    {
+        // Bridge connection is managed by the Coordinator's internal lifecycle.
+        // BrowserWorkspaceView subscribes to BridgeClient.StateChanged for UI updates.
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Disconnects the Browser Bridge on Core Stop/Restart.
+    /// Does NOT destroy Browser Context/Page — tabs remain visible.
+    /// The Coordinator already manages bridge disconnection internally.
+    /// </summary>
+    private Task DisconnectBrowserBridgeAsync()
+    {
+        // Bridge disconnection is managed by the Coordinator's internal lifecycle.
+        return Task.CompletedTask;
     }
 
     private void OnWorkbenchReady(object? sender, EventArgs e)
@@ -186,6 +249,18 @@ public sealed partial class MainWindow : Window
         WorkbenchPage.DisposeWebView();
         StoragePage.DisposeOperations();
         RuntimeCenterPage.DisposeOperations();
+
+        // Dispose Browser Workspace (await to ensure WebView2 cleanup)
+        try
+        {
+            if (BrowserPage is BrowserWorkspaceView browserView)
+                await browserView.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            DesktopDiagnosticLog.Write("BrowserDispose", ex);
+        }
+
         _statusVm.Dispose();
         _trayIconService.Dispose();
         _shutdownCompleted = true;
@@ -204,6 +279,7 @@ public sealed partial class MainWindow : Window
         if (sender is RadioButton btn)
         {
             WorkbenchPage.Visibility = Visibility.Collapsed;
+            BrowserPage.Visibility = Visibility.Collapsed;
             SettingsPage.Visibility = Visibility.Collapsed;
             RuntimeCenterPage.Visibility = Visibility.Collapsed;
             StoragePage.Visibility = Visibility.Collapsed;
@@ -216,6 +292,8 @@ public sealed partial class MainWindow : Window
                 RuntimeCenterPage.Visibility = WorkbenchPage.Visibility == Visibility.Visible
                     ? Visibility.Collapsed : Visibility.Visible;
             }
+            else if (btn == navBrowser)
+                BrowserPage.Visibility = Visibility.Visible;
             else if (btn == navCore)
                 RuntimeCenterPage.Visibility = Visibility.Visible;
             else if (btn == navStorage)

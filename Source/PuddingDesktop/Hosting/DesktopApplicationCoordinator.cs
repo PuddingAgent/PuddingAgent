@@ -1,4 +1,5 @@
-using PuddingCode.Configuration;
+﻿using PuddingCode.Configuration;
+using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
 using PuddingDesktop.Core;
 using PuddingDesktop.Runtime;
@@ -16,6 +17,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private readonly IDesktopControlTokenService _tokenService;
     private readonly IDesktopRuntimeOrchestrator _runtime;
     private readonly DesktopBackgroundModeService _backgroundMode = new();
+    private readonly BrowserBridgeCommandDispatcher _bridgeDispatcher = new();
+    private readonly DesktopBrowserBridgeClient _bridgeClient;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
 
     private MainWindow? _mainWindow;
@@ -35,6 +38,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     public DesktopRuntimeSnapshot RuntimeSnapshot => _runtime.Snapshot;
     public string? CoreExecutablePath => _runtimeOptions?.ExecutablePath;
     public DesktopBackgroundModeService BackgroundMode => _backgroundMode;
+    public BrowserBridgeCommandDispatcher BridgeDispatcher => _bridgeDispatcher;
+    public IDesktopBrowserBridgeClient BridgeClient => _bridgeClient;
 
     public event EventHandler<DesktopStateChangedEventArgs>? StateChanged;
     public event EventHandler<DesktopRuntimeChangedEventArgs>? RuntimeChanged;
@@ -46,6 +51,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _tokenService = new DesktopControlTokenService(_systemConfigService);
         _supervisor = new CoreProcessSupervisor();
         _runtime = new DesktopRuntimeOrchestrator(_supervisor);
+        _bridgeClient = new DesktopBrowserBridgeClient(_bridgeDispatcher);
         _runtime.Changed += OnRuntimeChanged;
     }
 
@@ -323,23 +329,29 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 case DesktopRuntimeState.Ready when e.Current.Session is not null:
                     _coreAddress = e.Current.Session.BaseAddress;
                     TransitionTo(DesktopStartupState.CoreReady, _coreAddress);
+                    _ = ConnectBridgeAsync(_coreAddress);
                     break;
                 case DesktopRuntimeState.Stopping:
+                    _ = DisconnectBridgeAsync();
                     TransitionTo(DesktopStartupState.CoreStopping);
                     break;
                 case DesktopRuntimeState.Stopped:
+                    _ = DisconnectBridgeAsync();
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreStopped);
                     break;
                 case DesktopRuntimeState.RestartScheduled:
+                    _ = DisconnectBridgeAsync();
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreRestartScheduled, error: e.Current.LastError);
                     break;
                 case DesktopRuntimeState.CircuitOpen:
+                    _ = DisconnectBridgeAsync();
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreCircuitOpen, error: e.Current.LastError);
                     break;
                 case DesktopRuntimeState.Failed:
+                    _ = DisconnectBridgeAsync();
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreFailed, error: e.Current.LastError);
                     break;
@@ -431,6 +443,10 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
         _lifetimeCts?.Cancel();
         _startCts?.Cancel();
+
+        // Dispose Bridge before stopping Core
+        await _bridgeClient.DisposeAsync();
+
         await _operationLock.WaitAsync();
         try
         {
@@ -448,5 +464,24 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _startCts?.Dispose();
         _lifetimeCts?.Dispose();
         _operationLock.Dispose();
+    }
+
+    private async Task ConnectBridgeAsync(Uri coreAddress)
+    {
+        try
+        {
+            var dataRoot = _bootstrapSettings?.DataRoot;
+            if (dataRoot is null) return;
+
+            var token = await _tokenService.GetOrCreateAsync(dataRoot, CancellationToken.None);
+            await _bridgeClient.ConnectAsync(coreAddress, token, CancellationToken.None);
+        }
+        catch { /* Bridge connection failure is non-fatal; reconnection will retry */ }
+    }
+
+    private async Task DisconnectBridgeAsync()
+    {
+        try { await _bridgeClient.DisconnectAsync(CancellationToken.None); }
+        catch { /* best effort */ }
     }
 }

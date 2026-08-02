@@ -1,0 +1,256 @@
+﻿<UserControl x:Class="PuddingDesktop.Views.BrowserWorkspaceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="1000"
+             Background="{DynamicResource BackgroundColor}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ═══ Row 0: Tab Strip ═══ -->
+        <Border Grid.Row="0" Background="{DynamicResource SurfaceColor}" Padding="4,2">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Tab items (horizontal scroll) -->
+                <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled" x:Name="TabScrollViewer">
+                    <ItemsControl x:Name="TabStrip" ItemsSource="{Binding Tabs}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border x:Name="TabBorder" Margin="2,0" Padding="10,5" CornerRadius="6"
+                                        Background="Transparent" Cursor="Hand"
+                                        MouseLeftButtonUp="TabItem_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Title}" MaxWidth="140"
+                                                   TextTrimming="CharacterEllipsis" FontSize="12"
+                                                   Foreground="{DynamicResource TextPrimaryColor}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text=" &#xE711;" FontFamily="Segoe Fluent Icons"
+                                                   FontSize="10" Margin="6,0,0,0"
+                                                   Foreground="{DynamicResource TextSecondaryColor}"
+                                                   VerticalAlignment="Center" Cursor="Hand"
+                                                   MouseLeftButtonUp="TabClose_Click"
+                                                   ToolTip="Close tab"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- New Tab button -->
+                <Button Grid.Column="1" x:Name="NewTabButton" Click="NewTab_Click"
+                        Width="28" Height="28" Margin="4,0"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        ToolTip="New tab">
+                    <TextBlock Text="&#xE710;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                               Foreground="{DynamicResource TextPrimaryColor}"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ═══ Row 1: Toolbar ═══ -->
+        <Border Grid.Row="1" Background="{DynamicResource SurfaceColor}" Padding="6,4"
+                BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Navigation buttons -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button x:Name="BackButton" Click="Back_Click" Width="30" Height="30"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand" ToolTip="Back">
+                        <TextBlock Text="&#xE72B;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                   Foreground="{DynamicResource TextPrimaryColor}"/>
+                    </Button>
+                    <Button x:Name="ForwardButton" Click="Forward_Click" Width="30" Height="30"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand" ToolTip="Forward">
+                        <TextBlock Text="&#xE72A;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                   Foreground="{DynamicResource TextPrimaryColor}"/>
+                    </Button>
+                    <Button x:Name="ReloadStopButton" Click="ReloadStop_Click" Width="30" Height="30"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand" ToolTip="Reload / Stop">
+                        <TextBlock x:Name="ReloadStopIcon" Text="&#xE72C;" FontFamily="Segoe Fluent Icons"
+                                   FontSize="14" Foreground="{DynamicResource TextPrimaryColor}"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Address bar -->
+                <Border Grid.Column="1" Margin="6,0" CornerRadius="6"
+                        Background="{DynamicResource BackgroundColor}"
+                        BorderBrush="{DynamicResource BorderColor}" BorderThickness="1">
+                    <TextBox x:Name="AddressBar" KeyDown="AddressBar_KeyDown"
+                             VerticalContentAlignment="Center" Padding="8,4"
+                             FontSize="13" BorderThickness="0"
+                             Background="Transparent"
+                             Foreground="{DynamicResource TextPrimaryColor}"
+                             CaretBrush="{DynamicResource TextPrimaryColor}"/>
+                </Border>
+
+                <!-- Agent handoff button -->
+                <Button Grid.Column="2" x:Name="AgentHandoffButton" Click="AgentHandoff_Click"
+                        Padding="8,4" Margin="4,0,0,0" Cursor="Hand"
+                        Background="{DynamicResource AccentColor}" BorderThickness="0"
+                        ToolTip="Hand this page to Agent">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons" FontSize="12"
+                                   Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock Text=" Agent" FontSize="12" Foreground="White"
+                                   VerticalAlignment="Center" Margin="4,0,0,0"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ═══ Row 2: Content Area (Surface + Activity Pane) ═══ -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- WebView2 Surface Container -->
+            <Grid Grid.Column="0" x:Name="SurfaceContainer" Background="{DynamicResource BackgroundColor}">
+                <!-- Empty state when no tabs -->
+                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="Visible">
+                    <TextBlock Text="&#xE774;" FontFamily="Segoe Fluent Icons" FontSize="48"
+                               HorizontalAlignment="Center" Margin="0,0,0,12"
+                               Foreground="{DynamicResource TextSecondaryColor}"/>
+                    <TextBlock Text="No open tabs" FontSize="15" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryColor}"/>
+                    <TextBlock Text="Click + to open a new tab" FontSize="12" HorizontalAlignment="Center"
+                               Margin="0,4,0,0" Foreground="{DynamicResource TextSecondaryColor}"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Agent Activity Pane (collapsible, ~300px) -->
+            <Border Grid.Column="1" x:Name="ActivityPane" Width="300"
+                    Background="{DynamicResource SurfaceColor}"
+                    BorderBrush="{DynamicResource BorderColor}" BorderThickness="1,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Pane header -->
+                    <Border Grid.Row="0" Padding="10,8"
+                            BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <TextBlock Text="Agent Activity" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryColor}"
+                                       VerticalAlignment="Center"/>
+                            <Button x:Name="CollapsePaneButton" Click="CollapsePane_Click"
+                                    HorizontalAlignment="Right" Width="24" Height="24"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    ToolTip="Collapse panel">
+                                <TextBlock Text="&#xE76C;" FontFamily="Segoe Fluent Icons" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryColor}"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Bridge status -->
+                    <Border Grid.Row="1" Padding="10,6">
+                        <StackPanel>
+                            <TextBlock Text="Bridge Status" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryColor}"/>
+                            <TextBlock x:Name="BridgeStatusText" Text="Disconnected" FontSize="12"
+                                       Margin="0,2,0,0" Foreground="{DynamicResource TextPrimaryColor}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Control state + buttons -->
+                    <Border Grid.Row="2" Padding="10,6"
+                            BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
+                        <StackPanel>
+                            <TextBlock Text="Control" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryColor}"/>
+                            <TextBlock x:Name="ControlStateText" Text="Idle" FontSize="12"
+                                       Margin="0,2,0,6" Foreground="{DynamicResource TextPrimaryColor}"/>
+                            <WrapPanel>
+                                <Button x:Name="PauseButton" Click="Pause_Click" Content="Pause"
+                                        Margin="0,0,4,4" Padding="8,3" FontSize="11" Cursor="Hand"/>
+                                <Button x:Name="TakeoverButton" Click="Takeover_Click" Content="Takeover"
+                                        Margin="0,0,4,4" Padding="8,3" FontSize="11" Cursor="Hand"/>
+                                <Button x:Name="ResumeButton" Click="Resume_Click" Content="Resume"
+                                        Margin="0,0,4,4" Padding="8,3" FontSize="11" Cursor="Hand"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Activity log -->
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Padding="10,6">
+                        <ItemsControl x:Name="ActivityList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="0,3" BorderBrush="{DynamicResource BorderColor}"
+                                            BorderThickness="0,0,0,1">
+                                        <StackPanel>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource TextPrimaryColor}">
+                                                <Run Text="{Binding CommandName, Mode=OneWay}"/>
+                                                <Run Text=" → " Foreground="{DynamicResource TextSecondaryColor}"/>
+                                                <Run Text="{Binding Target, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="10" Foreground="{DynamicResource TextSecondaryColor}">
+                                                <Run Text="{Binding StartedAt, Mode=OneWay, StringFormat=HH:mm:ss}"/>
+                                                <Run Text="{Binding ErrorCode, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Target summary -->
+                    <Border Grid.Row="4" Padding="10,6"
+                            BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0">
+                        <TextBlock x:Name="TargetSummaryText" Text="No agent target"
+                                   FontSize="11" Foreground="{DynamicResource TextSecondaryColor}"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ═══ Row 3: Status Bar ═══ -->
+        <Border Grid.Row="3" Background="{DynamicResource SurfaceColor}" Padding="8,3"
+                BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,1,0,0">
+            <Grid>
+                <TextBlock x:Name="StatusBarText" Text="Ready" FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryColor}" VerticalAlignment="Center"/>
+                <Button x:Name="ExpandPaneButton" Click="ExpandPane_Click"
+                        HorizontalAlignment="Right" Visibility="Collapsed"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        ToolTip="Show Activity Panel">
+                    <TextBlock Text="&#xE76B;" FontFamily="Segoe Fluent Icons" FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryColor}"/>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

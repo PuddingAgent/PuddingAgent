@@ -1,12 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-  <!--
-    PuddingHost — Shared Host Composition Root
-    Extracted from PuddingAgent per Phase 0 of ADR-066.
-    Contains: Connectors, Controllers, P2P, Services, Tools,
-    BuiltInAgentTemplates, Config, Prompts, default-data.
-    Executable hosts import Build/PuddingHostContent.props for publish content.
-  -->
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -44,6 +36,7 @@
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <ProjectReference Include="..\..\external\github.hyfree.GM\github.hyfree.GM\github.hyfree.GM.csproj" />
     <ProjectReference Include="..\..\src\HarnessAgent\Core\HarnessAgent.Core.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@
     PuddingDesktop — WPF Windows Desktop Launcher
     Phase 1A: Windows 11 Desktop Launcher, Persistent Configuration,
     Core Lifecycle Management &amp; Workbench WebView2.
+    Phase 2A-1: Agent Browser Bridge, WebSocket Client, Browser Workspace.
     Core runs as a child process (Process.Start), not in-process.
   -->
 
@@ -18,6 +19,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.WebView2\PuddingBrowser.WebView2.csproj" />
   </ItemGroup>
 
   <ItemGroup>

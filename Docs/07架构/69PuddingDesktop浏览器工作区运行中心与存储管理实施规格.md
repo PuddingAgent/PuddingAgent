@@ -1,6 +1,6 @@
 # 69 PuddingDesktop 浏览器工作区、运行中心与存储管理实施规格
 
-> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 2 待实施**
+> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 2A-1 最终验收阻断修复待执行**
 > - 日期：2026-08-02
 > - 前置文档：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)、[WebView2 实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
@@ -183,13 +183,15 @@ Agent Browser 与 Workbench 一样使用 `WebView2CompositionControl`。现有 `
 
 ### 4.1 通信方向
 
-采用 **Desktop 主动连接 Core 的双向 gRPC stream**。gRPC 服务由现有 ASP.NET Core 动态 Loopback 端口提供；Desktop 是客户端，因此 Desktop 不需要监听第二个端口，也不需要引用 `PuddingHost`。
+采用 **Desktop 主动连接 Core 的认证 WebSocket 全双工通道**。端点位于现有 ASP.NET Core 动态 Loopback HTTP 端口的 `/desktop/browser-bridge`；Desktop 是客户端，因此 Desktop 不监听第二个端口，也不引用 `PuddingHost`。
+
+这里明确修正早期“同一明文 HTTP 端口承载双向原生 gRPC”的设计：ASP.NET Core 原生 gRPC 要求 HTTP/2；微软文档明确说明，没有 TLS 时 `Http1AndHttp2` 无法协商并会回落 HTTP/1.1，而 gRPC-Web 在 HTTP/1.1 上又不支持客户端流和双向流。Pudding V1 不为本机 Bridge 引入证书、第二端口或 gRPC-Web 降级，因此同端口 WebSocket 是更简单、可测试且保留全双工语义的实现。参考：[ASP.NET Core gRPC protocol negotiation](https://learn.microsoft.com/en-us/aspnet/core/grpc/aspnetcore?view=aspnetcore-10.0)、[gRPC-Web streaming limitations](https://learn.microsoft.com/en-us/aspnet/core/grpc/grpcweb?view=aspnetcore-10.0)。
 
 ```text
 Core Agent Tool
   -> RemoteBrowserRuntime (IBrowserRuntime proxy)
   -> DesktopBrowserCommandBroker
-  -> gRPC DesktopBrowserBridge.Connect (duplex stream)
+  -> /desktop/browser-bridge (authenticated WebSocket)
   -> DesktopBrowserBridgeClient
   -> BrowserBridgeCommandDispatcher
   -> WebView2BrowserRuntime
@@ -197,39 +199,37 @@ Core Agent Tool
   -> WpfBrowserSurfaceHost / BrowserWorkspaceView
 ```
 
-Desktop 在收到 Core Ready 后，用同一个 ControlToken 建立 Bridge；Core 重启会中断 stream，Desktop 将所有未完成命令完成为 `browser_bridge_disconnected`，然后按新地址重连。
+Desktop 在收到 Core Ready 后，用同一个 ControlToken 建立 Bridge；Core 重启会中断 WebSocket，Desktop 将所有未完成命令完成为 `browser_bridge_disconnected`，然后按新地址重连。断线时不能自动重放已发送命令。
 
 ### 4.2 新项目
 
-新增 `Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj`，目标框架为 `net10.0`，只包含协议、错误码和映射，不引用 WPF/WebView2。
+新增 `Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj`，目标框架为 `net10.0`，只包含协议常量、JSON Envelope、消息模型、稳定错误码和序列化上下文，不引用 WPF/WebView2/ASP.NET Core。
 
-```protobuf
-service DesktopBrowserBridge {
-  rpc Connect(stream DesktopEnvelope) returns (stream CoreEnvelope);
+```csharp
+public sealed record BrowserBridgeEnvelope
+{
+    public int ProtocolVersion { get; init; } = BrowserBridgeProtocol.CurrentVersion;
+    public required Guid MessageId { get; init; }
+    public Guid? CorrelationId { get; init; }
+    public required BrowserBridgeMessageKind Kind { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
+    public required JsonElement Payload { get; init; }
 }
 
-message DesktopEnvelope {
-  string connection_id = 1;
-  oneof payload {
-    DesktopHello hello = 10;
-    BrowserCommandResult result = 11;
-    BrowserEventEnvelope browser_event = 12;
-    BridgeHeartbeat heartbeat = 13;
-  }
-}
-
-message CoreEnvelope {
-  oneof payload {
-    BrowserCommand command = 10;
-    CancelBrowserCommand cancel = 11;
-    BridgeHeartbeat heartbeat = 12;
-  }
+public sealed record BrowserBridgeCommand
+{
+    public required Guid OperationId { get; init; }
+    public string? ContextId { get; init; }
+    public string? PageId { get; init; }
+    public required DateTimeOffset DeadlineUtc { get; init; }
+    public required string Name { get; init; }
+    public required JsonElement Arguments { get; init; }
 }
 ```
 
-每个命令包含 `operation_id`、`context_id`、`page_id`、`deadline_utc` 和具体 payload。重复 `operation_id` 只允许返回缓存的终态结果，不能重复执行 click/fill/type 等有副作用操作。
+一个 WebSocket Text Message 对应一个 UTF-8 JSON Envelope，V1 单消息上限 1 MiB。重复 `operation_id` 只允许返回 Desktop 缓存的终态结果，不能重复执行 click/fill/type 等有副作用操作。每个连接只有一个发送循环，业务线程通过 bounded `Channel<BrowserBridgeEnvelope>` 排队，禁止并发调用 `SendAsync`。
 
-Screenshot、PDF、下载等大结果写入 DataRoot 受控目录，Bridge 只返回 artifact id、相对路径、MIME、长度和 SHA-256；不通过 gRPC 发送无限大的 Base64。
+Screenshot、PDF、下载等大结果写入 DataRoot 受控目录，Bridge 只返回 artifact id、相对路径、MIME、长度和 SHA-256；不通过 WebSocket 发送无限大的 Base64。
 
 ### 4.3 Core 侧接口
 
@@ -282,7 +282,7 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
 }
 ```
 
-`BrowserBridgeCommandDispatcher` 只负责查找 Runtime/Context/Page、派发和转换稳定错误；所有 WebView2 调用仍必须经过 `IWebView2UiDispatcher`，禁止在 gRPC 回调线程直接访问控件。
+`BrowserBridgeCommandDispatcher` 只负责查找 Runtime/Context/Page、派发和转换稳定错误；所有 WebView2 调用仍必须经过 `IWebView2UiDispatcher`，禁止在 WebSocket 接收循环直接访问控件。
 
 ## 5. 运行中心与开发脚本边界
 
@@ -464,19 +464,22 @@ public interface ILogRetentionService
 
 ### 7.1 Browser Workspace/Bridge
 
-新增 1 个共享项目和 19 个主要源文件：
+新增 1 个共享项目和以下主要源文件；以职责边界为准，不再以固定文件数量作为验收条件：
 
 ```text
 PuddingBrowser.Protocol/
   PuddingBrowser.Protocol.csproj
-  Protos/browser_bridge.proto
-  BrowserBridgeEnvelopeMapper.cs
+  BrowserBridgeProtocol.cs
+  BrowserBridgeEnvelope.cs
+  BrowserBridgeMessages.cs
+  BrowserBridgeJsonSerializerContext.cs
   BrowserBridgeErrorCodes.cs
 
 PuddingHost/BrowserBridge/
-  DesktopBrowserBridgeGrpcService.cs
+  DesktopBrowserBridgeWebSocketEndpoint.cs
   DesktopBrowserCommandBroker.cs
   DesktopBrowserConnectionRegistry.cs
+  DesktopBrowserConnection.cs
   RemoteBrowserRuntime.cs
   RemoteBrowserContext.cs
   RemoteBrowserPage.cs
@@ -484,6 +487,7 @@ PuddingHost/BrowserBridge/
 PuddingDesktop/Browser/
   DesktopBrowserBridgeClient.cs
   BrowserBridgeCommandDispatcher.cs
+  BrowserOperationResultCache.cs
   BrowserWorkspaceController.cs
   BrowserWorkspaceViewModel.cs
   BrowserTabViewModel.cs
@@ -492,11 +496,9 @@ PuddingDesktop/Browser/
 PuddingDesktop/Views/
   BrowserWorkspaceView.xaml
   BrowserWorkspaceView.xaml.cs
-  BrowserWindow.xaml
-  BrowserWindow.xaml.cs
 ```
 
-同时实现现有 `WebView2BrowserRuntime`、`WpfBrowserSurfaceHost`，并修改 `MainWindow`、`DesktopApplicationCoordinator` 和两个项目引用。生成的 protobuf `.cs` 文件不计入手写文件数。
+同时实现现有 `WebView2BrowserRuntime`、`WpfBrowserSurfaceHost`，并修改 `MainWindow`、`DesktopApplicationCoordinator` 和项目引用。首批不实现独立 `BrowserWindow.xaml(.cs)` 的 Surface 转移，待双标签主窗口闭环稳定后再进入 Phase 2A-2。
 
 ### 7.2 运行中心
 
@@ -636,11 +638,13 @@ PuddingDesktop/Views/StorageView.xaml.cs
 
 下一开发批次实施 **Phase 2A Browser Workspace 与 Core/Desktop Bridge**，继续保留 ASP.NET Core 业务核心，也不修改 `dev-up.py` 的产品边界：
 
-1. 新建 `PuddingBrowser.Protocol`，定义双向 gRPC stream、命令/结果/事件 envelope、稳定错误码、deadline 和 operation id 幂等语义；
-2. 在 Core 实现 `DesktopBrowserCommandBroker`、连接注册表和 gRPC Service；Desktop 未连接时 Browser Tool 必须立即返回 `browser_not_available`；
+1. 新建 `PuddingBrowser.Protocol`，定义 WebSocket JSON envelope、命令/结果/事件、稳定错误码、deadline 和 operation id 幂等语义；
+2. 在 Core 实现 `DesktopBrowserCommandBroker`、连接注册表和认证 WebSocket Endpoint；Desktop 未连接时 Browser Tool 必须立即返回 `browser_not_available`；
 3. 在 Desktop 实现 Bridge Client、断线重连和 Dispatcher，所有 WebView2 调用统一切换到 WPF UI Dispatcher，Core 重启时终结旧命令且不得重放副作用；
 4. 新增 Agent Browser 导航项、Browser Workspace、Tab Strip、地址栏、后退/前进/刷新/停止、Activity Pane 和暂停/接管/继续状态；WorkBench 继续使用自己的 UDF；
 5. 先完成 Context/Page/Navigation 的两个标签页闭环，再进入 DOM/Input/CDP/Network 等完整 Driver；不为抖音写入底层特例；
 6. 新增 Protocol、Broker、Dispatcher、重连和两个 Tab 的定向测试，并使用系统 Temp 下的隔离 DesktopHome/DataRoot/UDF 做真实窗口 smoke。
+
+Phase 2A-1 初始任务包见：[70 Phase 2A-1 开发工作指令](70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md)，第一轮收口见：[71 Phase 2A-1 验收补丁](71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md)。当前必须继续执行：[72 Phase 2A-1 最终验收修复](72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md)，关闭真实握手、Watchdog、Surface/UI 数据流、集成测试和新版 smoke 阻断后才能进入 Phase 2A-2。
 
 `dev-up.py` 继续只承担源码开发环境；最终产品进程主管始终是 `PuddingDesktop.exe`。

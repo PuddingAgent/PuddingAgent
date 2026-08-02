@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-02（Desktop First：新增 Agent Browser Workspace、运行中心和存储管理实施规格）
+最后更新：2026-08-02（Desktop First：Phase 1B-R/S 已完成，Phase 2A-1 进入验收证据收口）
 
 ## 文档定位
 
@@ -44,6 +44,10 @@
 - `Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md`
 - `Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md`
 - `Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md`
+- `Docs/07架构/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md`
+- `Docs/07架构/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md`
+- `Docs/07架构/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md`
+- `Docs/07架构/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md`
 
 ### 2. 智能体、运行时与协作
 
@@ -84,6 +88,6 @@
 
 ## 当前实现状态说明
 
-- Phase 1A Desktop Launcher、动态 Loopback 和 Workbench 已落地；Browser Driver、运行中心增强和存储管理仍按实施规格推进。`dev-up.py` 保留为源码开发脚本，不进入最终产品。
+- Phase 1A Desktop Launcher、Phase 1B-R Runtime Center 和 Phase 1B-S Storage 已落地。Phase 2A-1 已完成 HelloAck 接收顺序、可唤醒 watchdog、连接 generation 及 Controller Surface/AgentTarget 主体修复；当前 build 0 error、Host 29/29、Desktop 74/74，但 UI 单一数据源、DataRoot Ready 初始化、Client/Endpoint 阻断性测试、Release publish 和新版可见 smoke 尚未闭环。下一批次按 73 完成准入验收，之后才能进入 Phase 2A-2。`dev-up.py` 保留为源码开发脚本，不进入最终产品。
 - 当前源码中仍保留旧架构和开发脚本入口，阅读 Desktop 主线时以 68、69 实施规格为准。
 - 任务状态通过 Todo API 管理，不在文档或代码中硬编码。

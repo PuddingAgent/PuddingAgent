@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Configuration;
@@ -29,7 +29,17 @@ public sealed class DesktopControlTokenValidator
     {
         if (string.IsNullOrWhiteSpace(presentedToken))
             return false;
+        return ValidateAgainstStored(presentedToken);
+    }
 
+    public Task<bool> ValidateAsync(Microsoft.AspNetCore.Http.IHeaderDictionary headers)
+    {
+        var token = headers[PuddingBrowser.Protocol.BrowserBridgeProtocol.ControlTokenHeader].FirstOrDefault();
+        return Task.FromResult(Validate(token));
+    }
+
+    private bool ValidateAgainstStored(string presentedToken)
+    {
         var storedToken = ReadStoredToken();
         if (string.IsNullOrWhiteSpace(storedToken))
             return false;

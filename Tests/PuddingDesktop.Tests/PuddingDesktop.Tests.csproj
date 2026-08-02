@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Source\PuddingDesktop\PuddingDesktop.csproj" />
+    <ProjectReference Include="..\..\Source\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Source\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>
