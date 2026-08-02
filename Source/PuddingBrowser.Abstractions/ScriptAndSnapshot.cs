@@ -31,6 +31,7 @@ public sealed record SnapshotOptions
     public bool IncludeHtml { get; init; }
     public int MaxNodes { get; init; } = 5_000;
     public int MaxTextLength { get; init; } = 200_000;
+    public int MaxDepth { get; init; } = 24;
 }
 
 public sealed record PageSnapshot

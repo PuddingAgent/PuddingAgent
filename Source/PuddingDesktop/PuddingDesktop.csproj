@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PuddingAgent\PuddingAgent.csproj" />
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
@@ -29,9 +30,7 @@
   </ItemGroup>
 
   <!-- Phase 1A Publish Layout: bundle Core + default-data + wwwroot -->
-  <Target Name="PublishCoreBundle"
-          AfterTargets="Publish"
-          Condition="'$(SkipCorePublish)' != 'true'">
+  <Target Name="PublishCoreBundle" AfterTargets="Publish" Condition="'$(SkipCorePublish)' != 'true'">
     <PropertyGroup>
       <CorePublishDir>$(PublishDir)core\</CorePublishDir>
     </PropertyGroup>
@@ -39,15 +38,10 @@
     <Message Importance="high" Text="[DesktopPublish] Publishing Core to $(CorePublishDir)..." />
 
     <!-- Publish PuddingAgent as Core child process -->
-    <MSBuild Projects="$(MSBuildThisFileDirectory)..\PuddingAgent\PuddingAgent.csproj"
-             Targets="Publish"
-             BuildInParallel="false"
-             Properties="Configuration=$(Configuration);PublishDir=$(CorePublishDir);OutDir=$(CorePublishDir);Restore=false;SkipCorePublish=true" />
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\PuddingAgent\PuddingAgent.csproj" Targets="Publish" BuildInParallel="false" Properties="Configuration=$(Configuration);PublishDir=$(CorePublishDir);OutDir=$(CorePublishDir);Restore=false;SkipCorePublish=true" />
 
-    <Error Condition="!Exists('$(CorePublishDir)PuddingAgent.exe')"
-           Text="Desktop publish is incomplete: core/PuddingAgent.exe is missing." />
-    <Error Condition="!Exists('$(CorePublishDir)wwwroot\admin\index.html')"
-           Text="Desktop publish is incomplete: core/wwwroot/admin/index.html is missing." />
+    <Error Condition="!Exists('$(CorePublishDir)PuddingAgent.exe')" Text="Desktop publish is incomplete: core/PuddingAgent.exe is missing." />
+    <Error Condition="!Exists('$(CorePublishDir)wwwroot\admin\index.html')" Text="Desktop publish is incomplete: core/wwwroot/admin/index.html is missing." />
 
     <Message Importance="high" Text="[DesktopPublish] Publish layout complete. Core at $(CorePublishDir)" />
   </Target>

@@ -1,12 +1,12 @@
 # 71 Phase 2A-1 验收补丁：真实 Browser Workspace 与 Bridge 可靠性工作指令
 
-> - 状态：**second implementation present / final acceptance blocked**
+> - 状态：**completed / accepted（2026-08-02，经 73 最终验收）**
 > - 日期：2026-08-02
 > - 执行者：Pudding 自身 Agent
 > - 前置文档：[69 实施规格](69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md)、[70 Phase 2A-1 工作指令](70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md)
 > - 本批次性质：对已有 Phase 2A-1 初始实现做验收补丁，不进入 Phase 2A-2、DOM Driver 或 Douyin Adapter
 
-> 2026-08-02 复核：第二轮代码已达到 Protocol/WebView2/Host/Desktop build 0 error、Host 29/29、Desktop 74/74，但发现 HelloAck Receive Loop 启动顺序会导致真实连接必然超时，Heartbeat timeout 无法唤醒阻塞 Receive，Tab/Activity/Surface/Agent target 数据流与计划集成测试、publish、UI smoke 尚未闭环。最终收口按 [72 工作指令](72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md) 执行。
+> 2026-08-02 最终说明：本文保留第二轮复核时的历史缺口；Hello/Watchdog/generation、Tab/Activity/Surface/Agent target、集成测试、publish 和 UI smoke 已由 72、73 完成并验收。
 
 ## 0. 可直接发送给 Pudding Agent 的指令
 

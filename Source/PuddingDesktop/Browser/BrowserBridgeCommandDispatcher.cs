@@ -12,6 +12,7 @@ public sealed class BrowserBridgeCommandDispatcher
 {
     private readonly BrowserOperationResultCache _resultCache = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeOperations = new();
+    private readonly ConcurrentDictionary<Guid, (string Code, string Message)> _forcedFailures = new();
     private readonly ConcurrentQueue<AgentBrowserActivity> _activities = new();
     private const int MaxActivities = 100;
 
@@ -23,7 +24,9 @@ public sealed class BrowserBridgeCommandDispatcher
 
     public bool IsPaused => _paused;
     public bool IsUserTakeover => _userTakeover;
-    public IReadOnlyCollection<AgentBrowserActivity> RecentActivities => _activities.ToArray();
+    public IReadOnlyCollection<AgentBrowserActivitySnapshot> RecentActivities
+        => _activities.Select(activity => activity.Snapshot()).ToArray();
+    public event EventHandler<AgentBrowserActivityChangedEventArgs>? ActivityChanged;
 
     public void SetHandler(IBrowserCommandHandler handler) => _handler = handler;
 
@@ -86,7 +89,10 @@ public sealed class BrowserBridgeCommandDispatcher
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalCt, deadlineCts.Token);
         _activeOperations[command.OperationId] = linkedCts;
 
-        var activity = new AgentBrowserActivity(command.Name, command.PageId ?? command.ContextId ?? "-");
+        var activity = new AgentBrowserActivity(
+            command.OperationId,
+            command.Name,
+            command.PageId ?? command.ContextId ?? "-");
         RecordActivity(activity);
 
         try
@@ -104,30 +110,46 @@ public sealed class BrowserBridgeCommandDispatcher
                 result = await _handler.ExecuteAsync(command, linkedCts.Token);
             }
 
+            if (_forcedFailures.TryRemove(command.OperationId, out var forcedFailure))
+            {
+                result = Error(command.OperationId, forcedFailure.Code, forcedFailure.Message);
+            }
+
             activity.Complete(result.Success, result.ErrorCode);
+            PublishActivity(activity);
             return CacheAndReturn(result);
         }
         catch (OperationCanceledException) when (deadlineCts.IsCancellationRequested)
         {
             activity.Complete(false, BrowserBridgeErrorCodes.BrowserDeadlineExceeded);
+            PublishActivity(activity);
             return CacheAndReturn(Error(command.OperationId,
                 BrowserBridgeErrorCodes.BrowserDeadlineExceeded, "Command deadline exceeded"));
         }
         catch (OperationCanceledException)
         {
+            if (_forcedFailures.TryRemove(command.OperationId, out var forcedFailure))
+            {
+                activity.Complete(false, forcedFailure.Code);
+                PublishActivity(activity);
+                return CacheAndReturn(Error(command.OperationId, forcedFailure.Code, forcedFailure.Message));
+            }
             activity.Complete(false, BrowserBridgeErrorCodes.BrowserCancelled);
+            PublishActivity(activity);
             return CacheAndReturn(Error(command.OperationId,
                 BrowserBridgeErrorCodes.BrowserCancelled, "Command cancelled"));
         }
         catch (Exception ex)
         {
             activity.Complete(false, BrowserBridgeErrorCodes.BrowserOperationFailed);
+            PublishActivity(activity);
             return CacheAndReturn(Error(command.OperationId,
                 BrowserBridgeErrorCodes.BrowserOperationFailed, ex.Message));
         }
         finally
         {
             _activeOperations.TryRemove(command.OperationId, out _);
+            _forcedFailures.TryRemove(command.OperationId, out _);
         }
     }
 
@@ -143,9 +165,9 @@ public sealed class BrowserBridgeCommandDispatcher
     {
         foreach (var kvp in _activeOperations)
         {
+            _forcedFailures[kvp.Key] = (errorCode, message);
             kvp.Value.Cancel();
         }
-        _activeOperations.Clear();
     }
 
     private BrowserBridgeCommandResult CacheAndReturn(BrowserBridgeCommandResult result)
@@ -161,7 +183,13 @@ public sealed class BrowserBridgeCommandDispatcher
         {
             _activities.TryDequeue(out _);
         }
+        PublishActivity(activity);
     }
+
+    private void PublishActivity(AgentBrowserActivity activity)
+        => ActivityChanged?.Invoke(
+            this,
+            new AgentBrowserActivityChangedEventArgs(activity.Snapshot()));
 
     private static BrowserBridgeCommandResult Error(Guid operationId, string code, string message)
         => new()
@@ -186,6 +214,7 @@ public interface IBrowserCommandHandler
 /// </summary>
 public sealed class AgentBrowserActivity
 {
+    public Guid OperationId { get; }
     public string CommandName { get; }
     public string Target { get; }
     public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
@@ -193,8 +222,9 @@ public sealed class AgentBrowserActivity
     public bool? Success { get; private set; }
     public string? ErrorCode { get; private set; }
 
-    public AgentBrowserActivity(string commandName, string target)
+    public AgentBrowserActivity(Guid operationId, string commandName, string target)
     {
+        OperationId = operationId;
         CommandName = commandName;
         Target = target;
     }
@@ -205,4 +235,35 @@ public sealed class AgentBrowserActivity
         Success = success;
         ErrorCode = errorCode;
     }
+
+    public AgentBrowserActivitySnapshot Snapshot() => new()
+    {
+        OperationId = OperationId,
+        CommandName = CommandName,
+        Target = Target,
+        StartedAt = StartedAt,
+        CompletedAt = CompletedAt,
+        Success = Success,
+        ErrorCode = ErrorCode
+    };
+}
+
+public sealed record AgentBrowserActivitySnapshot
+{
+    public required Guid OperationId { get; init; }
+    public required string CommandName { get; init; }
+    public required string Target { get; init; }
+    public required DateTimeOffset StartedAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
+    public bool? Success { get; init; }
+    public string? ErrorCode { get; init; }
+    public bool IsCompleted => CompletedAt.HasValue;
+}
+
+public sealed class AgentBrowserActivityChangedEventArgs : EventArgs
+{
+    public AgentBrowserActivitySnapshot Snapshot { get; }
+
+    public AgentBrowserActivityChangedEventArgs(AgentBrowserActivitySnapshot snapshot)
+        => Snapshot = snapshot;
 }

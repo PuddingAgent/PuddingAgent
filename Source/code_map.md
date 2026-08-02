@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-08-02 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1 验收证据收口中 ⚠️
+> 最后更新: 2026-08-02 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1/2 accepted ✅ | Phase 2A-3 automated accepted ✅（真实 DeepSeek smoke pending）
 
 ---
 
@@ -13,17 +13,20 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 
 技术栈: .NET 10 / SQLite (EF Core) / React + TypeScript / Serilog / WPF / WebView2
 
-### Windows Desktop 与通用浏览器（Phase 0 / Phase 1A / Phase 1B-R/S 已落地）
+### Windows Desktop 与通用浏览器（Phase 0 / Phase 1A / Phase 1B-R/S / Phase 2A-1/2/3 已落地）
 
 | 文档 | 规划边界 |
 |------|----------|
 | `../Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md` | 通用 Browser 能力与 Douyin 分层决策来源；Desktop 进程边界以 68 实施规格的 Phase 1A 更新为准 |
-| `../Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md` | Phase 1A 当前事实：WPF Launcher 以子进程监督 ASP.NET Core Core，Windows 11 Shell 内嵌隔离的 WebView2CompositionControl Workbench；Browser AgentTools、Douyin 仍待实现 |
+| `../Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md` | 分阶段总实施规格；WPF Launcher 监督 ASP.NET Core Core，Windows 11 Shell 内嵌隔离 WebView2；Phase 2A-3 已开放 Snapshot/Locator/Interact/Wait，Douyin Adapter 仍待实现 |
 | `../Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md` | Phase 1B/2 开发输入；Phase 1B-R/S 已完成；Phase 2A Bridge 修正为现有动态 HTTP 端口上的认证 WebSocket，不采用同端口明文原生 gRPC |
 | `../Docs/07架构/70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md` | 可直接交给开发 Agent 的 Phase 2A-1 工作包；包含 Protocol、Core WebSocket Broker、Desktop Client/Dispatcher、真实 WebView2 双标签 UI、函数签名、测试和 DoD |
 | `../Docs/07架构/71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md` | Phase 2A-1 初始实现验收结论与收口工作包；要求替换占位 UI、接通真实 Runtime/Context/Page、修复 Hello/单发送循环/心跳/连接代际/重连，并补齐 Host/Desktop 测试和隔离 smoke |
 | `../Docs/07架构/72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md` | 对 71 第二轮实现的最终验收修复；关闭 HelloAck 接收死锁、阻塞 Receive 超时、可测试 transport、Tab/Activity 绑定、Surface/Agent target、UI 线程、初始化重试和新版 smoke 阻断 |
-| `../Docs/07架构/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md` | 对当前源码的准入复核与最后收口；保留已完成的 Bridge 时序修复，只补 UI 单一状态源、DataRoot Ready 初始化、Client/Endpoint 测试、Release publish 和新版可见 smoke |
+| `../Docs/07架构/73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md` | Phase 2A-1 最终验收记录；Host 43/43、Desktop 92/92、Release publish 和真实双标签/Bridge restart/Stop/Exit smoke 已通过；后续 Phase 2A-2 结果转入 74 |
+| `../Docs/07架构/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md` | Phase 2A-2 最小闭环验收；记录 Remote Runtime/Context/Page、三项 Agent Tools、DesktopChild 条件注册、54/54 Host、94/94 Desktop、7/7 AgentTools、Release publish 与退出 smoke |
+| `../Docs/07架构/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md` | Phase 2A-3 开发契约；定义 Snapshot 预算、版本化 ref、Locator、八项交互、Wait、稳定错误和分层测试矩阵 |
+| `../Docs/07架构/76Phase2A-3通用WebView2页面操作实施验收报告.md` | Phase 2A-3 自动验收；10/10 AgentTools、56/56 Host、102/102 Desktop、真实 WebView2 TestSite、Release/Desktop smoke；真实 DeepSeek smoke 仍需用户测试配置 |
 
 关键 Desktop 入口：
 
@@ -31,16 +34,23 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 |------|------|
 | `PuddingDesktop/App.xaml` | Windows 11 Light/Dark 动态颜色、Typography、Corner、Card、Button、Navigation 和 Caption 样式 Token |
 | `PuddingDesktop/App.xaml.cs` | WPF 产品入口；在创建 Coordinator 前取得单实例所有权，第二实例通过 Named Pipe 激活主窗口，并将早期未处理异常写入 Desktop 独立日志 |
-| `PuddingDesktop/MainWindow.xaml(.cs)` | 48px 自定义标题栏、240px Navigation、Workbench/Runtime/Storage/Settings 页面、Core 状态控制条、关闭到托盘和明确退出生命周期 |
-| `PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs` | 始终可用的 Launcher 与可失败 Core 子进程之间的状态机；协调 Runtime Orchestrator、Workbench Ready、后台模式和明确退出 |
-| `PuddingDesktop/Core/CoreProcessSupervisor.cs` | 启动 `core/PuddingAgent.exe --desktop-child`、解析 Ready、健康检查、环形 stdout/stderr、关闭与进程树回收 |
+| `PuddingDesktop/MainWindow.xaml(.cs)` | 48px 自定义标题栏、240px Navigation、Workbench/Agent Browser/Runtime/Storage/Settings 页面、Core 状态控制条、Workbench 可见时按需 WebView2 初始化，以及有界 Browser 释放/明确退出生命周期 |
+| `PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs` | 始终可用的 Launcher 与可失败 Core 子进程之间的状态机；DataRoot Ready 后独立初始化 Browser，协调 Runtime Orchestrator、Bridge intent generation、Workbench Ready、后台模式和明确退出 |
+| `PuddingDesktop/Core/CoreProcessSupervisor.cs` | 启动 `core/PuddingAgent.exe --desktop-child`、隔离为 Production 子进程环境并以 Core 目录作为工作目录、解析 Ready、健康检查、环形 stdout/stderr、关闭与进程树回收 |
 | `PuddingDesktop/Runtime/DesktopRuntimeOrchestrator.cs`、`CoreRestartPolicy.cs` | 在单进程 Supervisor 上实现异常退出恢复、2s/4s/8s 退避、60 秒 3 次熔断，以及用户 Stop/Restart 与恢复取消语义 |
-| `PuddingDesktop/Runtime/DesktopSingleInstanceService.cs`、`DesktopTrayIconService.cs` | 本地命名 Semaphore + 当前用户 Named Pipe 单实例激活；纯 WPF/Win32 托盘菜单和 Explorer 重启后的图标恢复 |
+| `PuddingDesktop/Runtime/DesktopSingleInstanceService.cs`、`DesktopTrayIconService.cs` | 本地命名 Semaphore + 当前用户 Named Pipe 单实例激活；纯 WPF/Win32 托盘菜单（独立浅色可读调色板）和 Explorer 重启后的图标恢复 |
 | `PuddingDesktop/Runtime/DesktopBackgroundModeService.cs`、`AutoStartRegistrationService.cs` | 默认关闭到托盘/明确退出策略，以及只在用户保存设置时写入 HKCU Run 的登录后启动 |
-| `PuddingDesktop/ViewModels/RuntimeCenterViewModel.cs`、`Views/RuntimeCenterView.xaml(.cs)` | Windows 11 运行中心；显示 Core 状态、PID、健康、退出/恢复、环境、最近 500 行输出并提供启停重启与诊断操作 |
+| `PuddingDesktop/ViewModels/RuntimeCenterViewModel.cs`、`Views/RuntimeCenterView.xaml(.cs)` | Windows 11 运行中心；显示 Core 状态、PID、健康、退出/恢复、环境、最近 500 行输出并提供启停重启与诊断操作；日志 TextBox 覆盖单行默认高度，以 340px 顶部对齐可滚动视口展示 |
 | `PuddingDesktop/Runtime/DiagnosticBundleService.cs` | 用户触发的诊断 ZIP；只收集脱敏运行快照、配置键名和最近日志，过滤 Token/Cookie/Authorization/Secret |
 | `PuddingDesktop/Configuration/SystemConfigurationService.cs` | `<DataRoot>/config/system.json` 的保留未知字段 Patch 与原子写入 |
 | `PuddingDesktop/Views/WorkbenchView.xaml(.cs)` | 使用隔离 UDF 的 `WebView2CompositionControl`；加载/失败原生遮罩、导航和进程故障处理 |
+| `PuddingDesktop/Views/BrowserWorkspaceView.xaml(.cs)`、`Browser/BrowserWorkspaceController.cs` | Phase 2A-1 Agent Browser；Controller 是 Tab/Activity/active/target/navigation 的唯一 UI 状态源，View 承载双标签、地址栏、Surface 和 Agent Activity Pane |
+| `PuddingDesktop/Browser/DesktopBrowserBridgeClient.cs`、`BrowserBridgeCommandDispatcher.cs` | Desktop 认证 WebSocket Client；单 Receive Loop、HelloAck、heartbeat/watchdog、connection generation、重连/断线隔离，并把命令安全摘要投影到 UI Activity |
+| `PuddingBrowser.Abstractions/BrowserInterfaces.cs`、`PuddingBrowser.WebView2/WebView2BrowserPage.cs`、`WebView2DomClient.cs` | 通用 Browser Runtime/Context/Page/Surface 契约与真实 WebView2 Driver；提供导航、Snapshot、Locator、八项交互、Wait、版本化 ref 与稳定错误，不依赖 Douyin |
+| `PuddingHost/BrowserBridge/RemoteBrowserRuntime.cs`、`RemoteBrowserContext.cs`、`RemoteBrowserPage.cs` | Core 侧平台无关 Browser 代理；把 Context/Page/导航调用映射到认证 Bridge，使用稳定错误码，并保证 Core proxy Dispose 不关闭 Desktop 浏览器状态 |
+| `PuddingHost/BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 仅在 DesktopChild + BrowserAutomationEnabled 注册 Broker、Remote Runtime 和 Browser Agent Tools；Console/disabled Host 不暴露工具 |
+| `PuddingBrowser.AgentTools/BrowserContextTool.cs`、`BrowserTabsTool.cs`、`BrowserNavigateTool.cs` | Phase 2A-2 Context/Tab/Navigation 工具；统一结构化成功/错误结果 |
+| `PuddingBrowser.AgentTools/BrowserSnapshotTool.cs`、`BrowserLocateTool.cs`、`BrowserInteractTool.cs`、`BrowserWaitForTool.cs` | Phase 2A-3 页面观察/操作工具；只依赖 `IBrowserRuntime`，不回显 fill/type 值，交互提交后不重查旧 Locator |
 | `PuddingDesktop/Storage/StorageAnalysisService.cs`、`StorageCategoryCatalog.cs` | DataRoot first-match 分类与文件逻辑大小扫描；跳过 Junction/Reparse Point，并同时返回卷总量/可用量和 Warning |
 | `PuddingDesktop/Storage/LogRetentionService.cs`、`DataRootSafetyValidator.cs` | 只在真实 `<DataRoot>/logs` 内执行 24 小时日志 Preview/重校验/逐文件删除；拒绝盘符根、越界、链接和变化文件 |
 | `PuddingDesktop/ViewModels/StorageViewModel.cs`、`Views/StorageView.xaml(.cs)` | Windows 11 存储空间页；后台扫描、分类统计、内联清理确认/结果与完成后重扫 |
@@ -48,7 +58,10 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 | `PuddingDesktop/Theming/WindowsThemeService.cs` | 读取 Windows Apps Light/Dark 与 DWM Accent，更新动态 Resource |
 | `PuddingDesktop/Theming/WindowsBackdropService.cs` | Windows 11 Mica、沉浸式深色和系统圆角；Windows 10/失败时无阻塞回退 |
 | `PuddingDesktop/Diagnostics/DesktopDiagnosticLog.cs` | Core/Serilog 尚不可用时写 `%LOCALAPPDATA%/Pudding/logs/desktop.log` |
-| `../TestScripts/start-phase1a-desktop-smoke.ps1` | 以系统 Temp 下隔离 DesktopHome/DataRoot 启动发布包进行真实窗口/Core/WebView2 smoke |
+| `../TestScripts/start-phase1a-desktop-smoke.ps1` | 以系统 Temp 下隔离 DesktopHome/DataRoot 启动 Phase 1A/1B 发布包进行真实窗口/Core/WebView2 smoke |
+| `../TestScripts/start-phase2a1-browser-smoke.ps1` | Phase 2A-1 发布 smoke 入口；校验 Desktop/Core/Workbench 布局，使用独立 Temp DesktopHome/DataRoot/UDF，报告 PID/路径并验证退出后子进程回收 |
+| `../TestScripts/start-phase2a3-webview2-smoke.ps1`、`../Tests/PuddingBrowser.TestSite/`、`../Tests/PuddingBrowser.WebView2.Smoke/` | 真实 WPF/WebView2 页面操作 smoke；覆盖八项 Interact、Wait、Snapshot、版本化 ref 和 stale navigation，DataRoot 位于系统 Temp |
+| `../Tests/PuddingDesktop.Tests/Browser/`、`../Tests/PuddingHost.Tests/BrowserBridge/`、`../Tests/PuddingBrowser.AgentTools.Tests/` | Browser Controller/Client、Host Endpoint、Remote proxy 与七项 Agent Tools 阻断性测试；覆盖认证、重连、Tool → authenticated Bridge、Snapshot/Locator/Interact/Wait 和结构化错误 |
 
 ### 开发启动与诊断
 
@@ -66,9 +79,10 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 Source/
 ├── PuddingAgent/              # 入口项目 (Program.cs, 启动配置)
 ├── PuddingHost/               # 🔑 唯一 Host 组合根 — Console 与 Desktop 共用 (Phase 0 Closeout ✅)
-├── PuddingDesktop/            # Windows WPF 产品 Launcher（Phase 1A + Phase 1B-R Runtime Center + Phase 1B-S Storage 已落地）
+├── PuddingDesktop/            # Windows WPF 产品 Launcher（Phase 1A + Phase 1B-R/S + Phase 2A-1/3 已落地）
+├── PuddingBrowser.AgentTools/ # 七项通用 Browser Agent Tools（Phase 2A-2/3）
 ├── PuddingBrowser.Abstractions/ # 通用 Agent Browser 契约
-├── PuddingBrowser.WebView2/   # WebView2 Driver（当前为骨架）
+├── PuddingBrowser.WebView2/   # 通用 WebView2 Driver（Context/Page/Surface/Snapshot/Locator/Interact/Wait）
 ├── PuddingCodexService/       # 🔑 宿主外 Codex MCP Sidecar（持久任务/自修复重启握手）
 ├── PuddingRuntime/            # 🔑 运行时核心 (Agent Loop, LLM 调用, 工具系统)
 ├── PuddingPlatform/           # 🔑 平台层 (Session 管理, API, 数据持久化)

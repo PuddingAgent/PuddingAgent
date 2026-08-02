@@ -14,7 +14,7 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 - Desktop 是单实例产品进程。关闭按钮默认隐藏到系统托盘并保持 Core 运行；只有“退出 Pudding”、Windows 会话结束或配置为 `ExitAndStopCore` 时才停止 Core 并释放 WebView2。
 - `desktop.json` 保存 DesktopHome 范围的 DataRoot、Core 路径、窗口和关闭行为；`<DataRoot>/config/system.json` 保存 Core 端口、ControlToken、启动超时和自动恢复策略。Token 不放环境变量，不在 UI 或诊断包回显。
 - `dev-up.py` 和 Desktop 不共享 PID、端口所有权。使用同一个 `D:\data` 验证 Desktop 前必须先停止 dev-up 管理的 Core，反之亦然，避免两个 Core 同时访问数据库。
-- Phase 1A、Phase 1B-R Runtime Center、Phase 1B-S Storage 已完成。Phase 2A-1 已完成 HelloAck 接收顺序、可取消 watchdog、连接 generation 和 Controller Surface/AgentTarget 主体修复；当前仍缺 UI 单一数据源、DataRoot Ready 初始化、Desktop Client/Host Endpoint 阻断性测试、Release publish 与新版可见 smoke。下一批次必须执行 Docs/07架构/73 的准入验收收口；全部通过后才进入 Phase 2A-2。底层保持通用，抖音能力只位于上层适配器。
+- Phase 1A、Phase 1B-R Runtime Center、Phase 1B-S Storage、Phase 2A-1、Phase 2A-2 与 Phase 2A-3 确定性实现已于 2026-08-02 完成自动验收。DesktopChild 在启用 Browser Automation 时提供 `browser_context`、`browser_tabs`、`browser_navigate`、`browser_snapshot`、`browser_locate`、`browser_interact`、`browser_wait_for` 七项工具；Snapshot ref 必须携带 PageVersion，交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot 获取。进入 Douyin Adapter 前仍需用用户明确选择的测试 Agent/DataRoot 完成真实 DeepSeek 可见 smoke；不得读取或复制 `D:\data` 中的 LLM Secret 来绕过该准入。底层始终保持通用，抖音能力只位于上层适配器。
 
 ## 兼容性和补丁约定
 

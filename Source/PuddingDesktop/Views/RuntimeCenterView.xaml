@@ -212,7 +212,7 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="260" />
+                        <RowDefinition Height="340" />
                     </Grid.RowDefinitions>
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -241,14 +241,20 @@
                     </Grid>
                     <TextBox Grid.Row="1"
                              Margin="0,16,0,0"
+                             Height="Auto"
+                             MinHeight="300"
+                             Padding="12,10"
                              Text="{Binding CoreLogText, Mode=OneWay}"
                              IsReadOnly="True"
                              AcceptsReturn="True"
                              TextWrapping="NoWrap"
+                             VerticalAlignment="Stretch"
+                             VerticalContentAlignment="Top"
                              VerticalScrollBarVisibility="Auto"
                              HorizontalScrollBarVisibility="Auto"
                              FontFamily="Cascadia Mono, Consolas"
-                             FontSize="12" />
+                             FontSize="12"
+                             AutomationProperties.Name="最近 Core 输出" />
                 </Grid>
             </Border>
 

@@ -57,6 +57,41 @@ public sealed partial class BuiltInAgentTemplatesTests
         }
     }
 
+    [TestMethod]
+    public void NonAuditTemplates_ExposeMinimalBrowserToolSet()
+    {
+        foreach (var template in new[]
+                 {
+                     BuiltInAgentTemplates.WorkspaceServiceAgent,
+                     BuiltInAgentTemplates.WorkspaceTaskAgent,
+                     BuiltInAgentTemplates.CodeAgent
+                 })
+        {
+            var tools = (template.Capability?.AllowedToolNames ?? [])
+                .Concat(template.Capability?.GetAllEffectiveToolNames() ?? [])
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            Assert.IsTrue(tools.Contains("browser_context"), template.TemplateId);
+            Assert.IsTrue(tools.Contains("browser_tabs"), template.TemplateId);
+            Assert.IsTrue(tools.Contains("browser_navigate"), template.TemplateId);
+            Assert.IsTrue(tools.Contains("browser_snapshot"), template.TemplateId);
+            Assert.IsTrue(tools.Contains("browser_locate"), template.TemplateId);
+            Assert.IsTrue(tools.Contains("browser_interact"), template.TemplateId);
+            Assert.IsTrue(tools.Contains("browser_wait_for"), template.TemplateId);
+            Assert.IsTrue(template.Capability?.AllowNetworkAccess, template.TemplateId);
+        }
+
+        var auditTools = (BuiltInAgentTemplates.WorkspaceAuditAgent.Capability?.AllowedToolNames ?? [])
+            .Concat(BuiltInAgentTemplates.WorkspaceAuditAgent.Capability?.GetAllEffectiveToolNames() ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.IsFalse(auditTools.Contains("browser_context"));
+        Assert.IsFalse(auditTools.Contains("browser_tabs"));
+        Assert.IsFalse(auditTools.Contains("browser_navigate"));
+        Assert.IsFalse(auditTools.Contains("browser_snapshot"));
+        Assert.IsFalse(auditTools.Contains("browser_locate"));
+        Assert.IsFalse(auditTools.Contains("browser_interact"));
+        Assert.IsFalse(auditTools.Contains("browser_wait_for"));
+    }
+
     [GeneratedRegex("^[a-zA-Z0-9_]+$")]
     private static partial Regex ValidToolIdRegex();
 }

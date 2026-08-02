@@ -1,6 +1,6 @@
 ﻿# 68 抖音接入与通用 WebView2 自动化开发实施规格
 
-> - 状态：**Phase 1A implemented / Phase 1B-R/S implemented / Phase 2 developer-ready**
+> - 状态：**Phase 1A implemented / Phase 1B-R/S implemented / Phase 2A-1/2 accepted / Phase 2A-3 automated accepted（真实 DeepSeek smoke pending，2026-08-02）**
 > - 日期：2026-08-02
 > - 决策来源：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)
 > - Desktop UI/Bridge/运行中心/存储细化：[69实施规格](69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md)
@@ -1635,11 +1635,11 @@ result/errorCode
 
 改动：安装/升级包、WebView2 Evergreen Runtime 缺失提示、窗口位置持久化、运行中心、存储统计与旧日志清理、自动化 UI smoke 和崩溃恢复体验。详细类拆分和交互见 69 实施规格。
 
-当前进度：**Phase 1B-R Runtime Center 与 Phase 1B-S Storage 已完成（2026-08-02）**。Runtime Center 已交付 Supervisor/Orchestrator 分层、异常退出退避与熔断、单实例激活、托盘后台运行、明确退出、登录后启动设置、脱敏诊断包和 Windows 11 运行状态页；Storage 已交付 DataRoot 安全校验、first-match 分类和逻辑大小扫描、卷容量统计、只限 `<DataRoot>/logs` 的 24 小时清理预览/重校验/逐文件删除，以及 Windows 11 存储页面。安装/升级包、WebView2 Runtime 缺失引导、窗口位置持久化和更完整的 DPI/系统关闭矩阵仍待实施。
+当前进度：**Phase 1B-R Runtime Center、Phase 1B-S Storage、Phase 2A-1/2 与 Phase 2A-3 确定性实现已完成（2026-08-02）**。Runtime Center 已交付 Supervisor/Orchestrator 分层、异常退出退避与熔断、单实例激活、托盘后台运行、明确退出、登录后启动设置、脱敏诊断包和 Windows 11 运行状态页；Storage 已交付 DataRoot 安全校验、first-match 分类和逻辑大小扫描、卷容量统计、只限 `<DataRoot>/logs` 的 24 小时清理；Phase 2A-1/2 已交付通用 Browser Protocol、认证 Bridge、独立 WebView2 Context/Page、双标签/Agent target/Activity UI、Remote Runtime 和三项导航工具；Phase 2A-3 已交付 Snapshot、Locator、八项 Interact、Wait、版本化 ref、四项新工具、真实 WebView2 TestSite 和发布 smoke。安装/升级包、WebView2 Runtime 缺失引导、窗口位置持久化、更完整的 DPI/系统关闭矩阵、真实 DeepSeek 工具选择 smoke 和 Douyin Adapter 仍待实施。
 
 验收：干净 Windows 10/11 环境可安装、首次配置、启动、停止、重启、升级和卸载；用户数据不随卸载删除。
 
-Phase 1A/1B 均不向 Agent 暴露 Browser Tool。
+Phase 1A/1B 均不向 Agent 暴露 Browser Tool；Phase 2A-3 仅在 DesktopChild + BrowserAutomationEnabled 下暴露七项通用 Browser Tool。
 
 ### Phase 2：Browser Abstractions 和 WebView2 Core
 

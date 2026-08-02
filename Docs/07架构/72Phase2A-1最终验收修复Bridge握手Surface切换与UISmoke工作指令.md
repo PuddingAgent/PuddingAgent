@@ -1,10 +1,12 @@
 # 72 Phase 2A-1 最终验收修复：Bridge 握手、Surface 切换与 UI Smoke 工作指令
 
-> - 状态：**developer-ready / final acceptance blocked**
+> - 状态：**completed / accepted（2026-08-02，经 73 最终验收）**
 > - 日期：2026-08-02
 > - 执行者：Pudding 自身 Agent
 > - 前置文档：[70 初始工作包](70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md)、[71 Acceptance Patch](71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md)
 > - 本批次目标：只关闭 Phase 2A-1 已确认的最终阻断项；验收通过前不得进入 Phase 2A-2
+
+> 2026-08-02 最终说明：本文列出的阻断项已关闭。最终验收为 Host 43/43、Desktop 92/92、Release publish、双标签/Agent target/Core restart/Bridge reconnect/Workbench 按需初始化/Stop/Exit 可见 smoke 通过，详见 73。
 
 ## 0. 可直接发送给 Pudding Agent 的指令
 

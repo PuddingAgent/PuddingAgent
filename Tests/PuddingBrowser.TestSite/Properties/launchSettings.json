@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "PuddingBrowser.TestSite": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:7064;http://localhost:7065"
+    }
+  }
+}

@@ -2,6 +2,7 @@
   <Folder Name="/Source/">
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
+    <Project Path="Source/PuddingBrowser.AgentTools/PuddingBrowser.AgentTools.csproj" />
     <Project Path="Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
     <Project Path="Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj" />
     <Project Path="Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj" />
@@ -21,6 +22,9 @@
   <Folder Name="/Tests/">
     <Project Path="Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj" />
     <Project Path="Tests/PuddingAgent.IntegrationTests/PuddingAgent.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingBrowser.AgentTools.Tests/PuddingBrowser.AgentTools.Tests.csproj" />
+    <Project Path="Tests/PuddingBrowser.TestSite/PuddingBrowser.TestSite.csproj" />
+    <Project Path="Tests/PuddingBrowser.WebView2.Smoke/PuddingBrowser.WebView2.Smoke.csproj" />
     <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />

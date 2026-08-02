@@ -131,6 +131,32 @@ public class CoreProcessSupervisorTests
     }
 
     [Fact]
+    public void CreateProcessStartInfo_IsolatesDesktopChildEnvironment()
+    {
+        var executablePath = Path.Combine(
+            Path.GetTempPath(),
+            "pudding-desktop-tests",
+            "core",
+            "PuddingAgent.exe");
+        var options = new CoreProcessStartOptions
+        {
+            ExecutablePath = executablePath,
+            DataRoot = "D:\\data",
+            Port = 0,
+            ParentProcessId = 1234,
+            ControlToken = "test-token",
+        };
+
+        var startInfo = CoreProcessSupervisor.CreateProcessStartInfo(options);
+
+        Assert.Equal("Production", startInfo.Environment["ASPNETCORE_ENVIRONMENT"]);
+        Assert.Equal("Production", startInfo.Environment["DOTNET_ENVIRONMENT"]);
+        Assert.Equal(Path.GetDirectoryName(executablePath), startInfo.WorkingDirectory);
+        Assert.False(startInfo.UseShellExecute);
+        Assert.Contains("--desktop-child", startInfo.ArgumentList);
+    }
+
+    [Fact]
     public void LogBuffer_Capacity_Enforced()
     {
         var buffer = new CoreProcessLogBuffer(3);

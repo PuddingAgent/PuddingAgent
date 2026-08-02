@@ -132,7 +132,11 @@ public static class PuddingApplicationHost
         builder.Services.AddHostedService<ConnectorHostLifecycleService>();
 
         // ── Business service registrations ─────────────────
-        builder.AddPuddingApplicationServices(dataPaths, bootstrapConfiguration, aspnetcoreEnvironment);
+        builder.AddPuddingApplicationServices(
+            dataPaths,
+            bootstrapConfiguration,
+            aspnetcoreEnvironment,
+            options);
 
         return builder;
     }

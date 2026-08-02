@@ -57,6 +57,9 @@ public interface IBrowserPage : IAsyncDisposable
     BrowserContextId ContextId { get; }
     long PageVersion { get; }
     PageInfo Info { get; }
+    bool CanGoBack { get; }
+    bool CanGoForward { get; }
+    bool IsLoading { get; }
 
     Task<NavigationResult> GotoAsync(Uri url, NavigationOptions options, CancellationToken ct);
     Task GoBackAsync(CancellationToken ct);
@@ -103,6 +106,7 @@ public interface IElementHandle : IAsyncDisposable
     long PageVersion { get; }
     int? BackendNodeId { get; }
     string LocatorFingerprint { get; }
+    BrowserElementInfo Info { get; }
 
     Task<BoundingBox?> GetBoundingBoxAsync(CancellationToken ct);
     Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct);

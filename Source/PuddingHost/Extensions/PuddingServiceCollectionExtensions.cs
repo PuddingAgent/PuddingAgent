@@ -67,13 +67,14 @@ public static partial class PuddingServiceCollectionExtensions
         this WebApplicationBuilder builder,
         PuddingDataPaths dataPaths,
         IConfiguration bootstrapConfiguration,
-        string aspnetcoreEnvironment)
+        string aspnetcoreEnvironment,
+        PuddingHostOptions hostOptions)
     {
         AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
         AddRuntimeServices(builder, dataPaths, bootstrapConfiguration);
         AddConnectorServices(builder);
         AddBootstrapServices(builder, dataPaths);
-        AddBrowserBridgeServices(builder);
+        AddBrowserBridgeServices(builder, hostOptions);
         return builder;
     }
 

@@ -10,6 +10,11 @@ public static class BrowserBridgeErrorCodes
     public const string BrowserCancelled = "browser_cancelled";
     public const string BrowserContextNotFound = "browser_context_not_found";
     public const string BrowserPageNotFound = "browser_page_not_found";
+    public const string BrowserElementNotFound = "browser_element_not_found";
+    public const string BrowserLocatorAmbiguous = "browser_locator_ambiguous";
+    public const string BrowserElementNotVisible = "browser_element_not_visible";
+    public const string BrowserElementDisabled = "browser_element_disabled";
+    public const string StaleElementReference = "stale_element_reference";
     public const string BrowserOperationNotSupported = "browser_operation_not_supported";
     public const string BrowserOperationFailed = "browser_operation_failed";
     public const string BrowserPaused = "browser_paused";

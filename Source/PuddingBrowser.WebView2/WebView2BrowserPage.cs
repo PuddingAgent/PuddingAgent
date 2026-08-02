@@ -14,8 +14,12 @@ public sealed class WebView2BrowserPage : IBrowserPage
     private readonly IWebView2UiDispatcher _dispatcher;
     private readonly Func<WebView2BrowserPage, Task>? _onNavigationChanged;
     private readonly SemaphoreSlim _navigationGate = new(1, 1);
+    private readonly SemaphoreSlim _domGate = new(1, 1);
     private CoreWebView2? _coreWebView;
     private long _pageVersion;
+    private bool _canGoBack;
+    private bool _canGoForward;
+    private bool _isLoading;
     private bool _disposed;
 
     public PageId Id { get; }
@@ -24,6 +28,9 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     public long PageVersion => Interlocked.Read(ref _pageVersion);
     public PageInfo Info { get; private set; }
+    public bool CanGoBack => _canGoBack;
+    public bool CanGoForward => _canGoForward;
+    public bool IsLoading => _isLoading;
 
     internal WebView2BrowserPage(
         PageId id,
@@ -56,6 +63,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     private void SubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
     {
+        coreWebView.NavigationStarting += OnNavigationStarting;
         coreWebView.NavigationCompleted += OnNavigationCompleted;
         coreWebView.DocumentTitleChanged += OnDocumentTitleChanged;
         coreWebView.SourceChanged += OnSourceChanged;
@@ -64,10 +72,16 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     private void UnsubscribeCoreWebViewEvents(CoreWebView2 coreWebView)
     {
+        coreWebView.NavigationStarting -= OnNavigationStarting;
         coreWebView.NavigationCompleted -= OnNavigationCompleted;
         coreWebView.DocumentTitleChanged -= OnDocumentTitleChanged;
         coreWebView.SourceChanged -= OnSourceChanged;
         coreWebView.ProcessFailed -= OnProcessFailed;
+    }
+
+    private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        _isLoading = true;
     }
 
     private void OnSourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
@@ -82,6 +96,9 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        _isLoading = false;
+        _canGoBack = _coreWebView?.CanGoBack == true;
+        _canGoForward = _coreWebView?.CanGoForward == true;
         Interlocked.Increment(ref _pageVersion);
         Info = Info with
         {
@@ -137,6 +154,7 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 };
 
                 _coreWebView.NavigationCompleted += handler;
+                _isLoading = true;
                 _coreWebView.Navigate(url.ToString());
                 Info = Info with { Url = url.ToString() };
 
@@ -155,11 +173,13 @@ public sealed class WebView2BrowserPage : IBrowserPage
                 {
                     _coreWebView.NavigationCompleted -= handler;
                     _coreWebView.Stop();
+                    _isLoading = false;
                     return new NavigationResult { Url = url, Ok = false, ErrorText = "Navigation timeout" };
                 }
                 catch (OperationCanceledException)
                 {
                     _coreWebView.NavigationCompleted -= handler;
+                    _isLoading = false;
                     return new NavigationResult { Url = url, Ok = false, ErrorText = "Navigation cancelled" };
                 }
             }, ct);
@@ -214,12 +234,30 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
     public Task BringToFrontAsync(CancellationToken ct) => Task.CompletedTask;
 
-    public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct)
-        => throw new NotSupportedException("Snapshot not in Phase 2A-1");
-    public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
-    public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+    public async Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
+        var webView = RequireWebView();
+        return await _dispatcher.InvokeAsync(
+            () => WebView2DomClient.SnapshotAsync(webView, PageVersion, options, ct), ct);
+    }
+
+    public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
+        => (await QueryAllAsync(locator, ct)).FirstOrDefault();
+
+    public async Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(locator);
+        var webView = RequireWebView();
+        var version = PageVersion;
+        var elements = await _dispatcher.InvokeAsync(
+            () => WebView2DomClient.LocateAsync(webView, version, locator, ct), ct);
+        var fingerprint = $"{locator.Kind}:{locator.Value}:{locator.Name}:{locator.Nth}:{locator.HasText}";
+        return elements.Select(info => (IElementHandle)new WebView2ElementHandle(
+            Id, version, fingerprint, info)).ToArray();
+    }
     public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct)
         => throw new NotSupportedException("CDP not in Phase 2A-1");
     public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct)
@@ -231,27 +269,64 @@ public sealed class WebView2BrowserPage : IBrowserPage
     public Task UnsubscribeAsync(BrowserSubscriptionId sid, CancellationToken ct)
         => throw new NotSupportedException("CDP not in Phase 2A-1");
     public Task ClickAsync(Locator l, ClickOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("click", l, value: null, deltaX: null, deltaY: null, ct);
     public Task FillAsync(Locator l, string v, FillOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("fill", l, v, deltaX: null, deltaY: null, ct);
     public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("type", l, t, deltaX: null, deltaY: null, ct);
     public Task PressAsync(Locator l, string k, KeyOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("press", l, k, deltaX: null, deltaY: null, ct);
     public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("hover", l, value: null, deltaX: null, deltaY: null, ct);
     public Task ScrollAsync(ScrollOptions o, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("scroll", locator: null, value: null, o.DeltaX, o.DeltaY, ct);
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct)
         => throw new NotSupportedException("DOM not in Phase 2A-1");
     public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("select", l, v, deltaX: null, deltaY: null, ct);
     public Task CheckAsync(Locator l, bool c, CancellationToken ct)
-        => throw new NotSupportedException("DOM not in Phase 2A-1");
+        => ExecuteInteractionAsync("check", l, c, deltaX: null, deltaY: null, ct);
     public Task SetInputFilesAsync(Locator l, IReadOnlyList<string> p, CancellationToken ct)
         => throw new NotSupportedException("DOM not in Phase 2A-1");
-    public Task<WaitResult> WaitForAsync(WaitCondition c, CancellationToken ct)
-        => throw new NotSupportedException("Not in Phase 2A-1");
+    public async Task<WaitResult> WaitForAsync(WaitCondition c, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(c);
+        if (string.IsNullOrWhiteSpace(c.Selector)
+            && string.IsNullOrWhiteSpace(c.SelectorToHide)
+            && string.IsNullOrWhiteSpace(c.UrlPattern))
+        {
+            throw new BrowserOperationException(
+                "browser_invalid_arguments", "A selector, selectorToHide, or urlPattern is required");
+        }
+
+        var timeout = TimeSpan.FromMilliseconds(Math.Clamp(c.TimeoutMs, 1, 120_000));
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var webView = RequireWebView();
+        while (started.Elapsed < timeout)
+        {
+            ct.ThrowIfCancellationRequested();
+            var matched = true;
+            if (!string.IsNullOrWhiteSpace(c.Selector))
+            {
+                matched &= await _dispatcher.InvokeAsync(
+                    () => WebView2DomClient.EvaluateSelectorConditionAsync(
+                        webView, c.Selector, hidden: false, ct), ct);
+            }
+            if (!string.IsNullOrWhiteSpace(c.SelectorToHide))
+            {
+                matched &= await _dispatcher.InvokeAsync(
+                    () => WebView2DomClient.EvaluateSelectorConditionAsync(
+                        webView, c.SelectorToHide, hidden: true, ct), ct);
+            }
+            if (!string.IsNullOrWhiteSpace(c.UrlPattern))
+                matched &= WebView2DomClient.WildcardMatch(Info.Url, c.UrlPattern);
+            if (matched)
+                return new WaitResult { TimedOut = false };
+            await Task.Delay(100, ct);
+        }
+        return new WaitResult { TimedOut = true, Error = "Timeout" };
+    }
     public Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions o, CancellationToken ct)
         => throw new NotSupportedException("Not in Phase 2A-1");
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct)
@@ -265,6 +340,33 @@ public sealed class WebView2BrowserPage : IBrowserPage
             _coreWebView?.OpenDevToolsWindow();
             return Task.CompletedTask;
         }, ct);
+    }
+
+    private CoreWebView2 RequireWebView()
+        => _coreWebView ?? throw new BrowserOperationException(
+            "browser_not_available", "The browser page has no WebView2 surface");
+
+    private async Task ExecuteInteractionAsync(
+        string action,
+        Locator? locator,
+        object? value,
+        double? deltaX,
+        double? deltaY,
+        CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var webView = RequireWebView();
+        await _domGate.WaitAsync(ct);
+        try
+        {
+            _ = await _dispatcher.InvokeAsync(
+                () => WebView2DomClient.InteractAsync(
+                    webView, PageVersion, action, locator, value, deltaX, deltaY, ct), ct);
+        }
+        finally
+        {
+            _domGate.Release();
+        }
     }
 
     /// <summary>
@@ -292,5 +394,6 @@ public sealed class WebView2BrowserPage : IBrowserPage
 
         // Do NOT dispose Surface here — WpfBrowserSurfaceHost owns it
         _navigationGate.Dispose();
+        _domGate.Dispose();
     }
 }

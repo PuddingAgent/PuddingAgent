@@ -84,6 +84,7 @@ public static class PuddingHostOptionsFactory
             DataRoot = dataRoot,
             Urls = [listenUrl],
             ServeAdminSpa = true,
+            BrowserAutomationEnabled = true,
             DesktopParentPid = parentPid,
         };
     }

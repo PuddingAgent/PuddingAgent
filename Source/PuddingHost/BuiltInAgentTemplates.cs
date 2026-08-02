@@ -19,10 +19,12 @@ public static class BuiltInAgentTemplates
         {
             AllowFileWrite = false,
             AllowShellExecution = false,
-            AllowNetworkAccess = false,
+            AllowNetworkAccess = true,
             DefaultToolNames = ["search_memory", "save_memory", "manage_memory", "grep_memory",
                 "query_sessions", "query_session_logs", "http_fetch", "file_read", "list_dir", "file_search", "search_grep",
-                "spawn_sub_agent", "manage_tasks", "event_subscribe", "sleep", "goal_read", "goal_update"],
+                "spawn_sub_agent", "manage_tasks", "event_subscribe", "sleep", "goal_read", "goal_update",
+                "browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
+                "browser_locate", "browser_interact", "browser_wait_for"],
             RequiresGrantToolNames = [],
         },
         Runtime = new RuntimeProfile { MaxContextTokens = 1048576 },
@@ -47,10 +49,12 @@ public static class BuiltInAgentTemplates
         {
             AllowFileWrite = true,
             AllowShellExecution = true,
-            AllowNetworkAccess = false,
+            AllowNetworkAccess = true,
             DefaultToolNames = ["search_memory", "save_memory", "manage_memory", "grep_memory",
                 "query_sessions", "query_session_logs", "http_fetch", "file_read", "list_dir", "file_search", "search_grep",
-                "spawn_sub_agent", "manage_tasks", "event_subscribe", "sleep", "goal_read", "goal_update"],
+                "spawn_sub_agent", "manage_tasks", "event_subscribe", "sleep", "goal_read", "goal_update",
+                "browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
+                "browser_locate", "browser_interact", "browser_wait_for"],
             RequiresGrantToolNames =
             [
                 "file_patch",
@@ -87,10 +91,12 @@ public static class BuiltInAgentTemplates
         {
             AllowFileWrite = true,
             AllowShellExecution = true,
-            AllowNetworkAccess = false,
+            AllowNetworkAccess = true,
             DefaultToolNames = ["search_memory", "save_memory", "grep_memory",
                 "query_sessions", "query_session_logs", "http_fetch", "file_read", "list_dir", "file_search", "search_grep",
-                "spawn_sub_agent", "manage_tasks", "event_subscribe", "sleep", "goal_read", "goal_update"],
+                "spawn_sub_agent", "manage_tasks", "event_subscribe", "sleep", "goal_read", "goal_update",
+                "browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
+                "browser_locate", "browser_interact", "browser_wait_for"],
             RequiresGrantToolNames =
             [
                 "file_patch",

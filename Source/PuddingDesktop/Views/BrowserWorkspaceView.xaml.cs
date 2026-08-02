@@ -22,10 +22,11 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
     private bool _initialized;
     private bool _disposed;
 
+    public event EventHandler? RetryInitializationRequested;
+
     public BrowserWorkspaceView()
     {
         InitializeComponent();
-        DataContext = this;
     }
 
     /// <summary>
@@ -40,6 +41,7 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         if (_initialized) return;
+        ObjectDisposedException.ThrowIf(_disposed, this);
         _dataRoot = dataRoot;
         _dispatcher = dispatcher;
         _bridgeClient = bridgeClient;
@@ -59,12 +61,14 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
             // Create controller with constructor injection (no half-init state)
             _controller = new BrowserWorkspaceController(_runtime, _surfaceHost, uiDispatcher);
             _controller.PropertyChanged += OnControllerPropertyChanged;
+            DataContext = _controller;
 
             // Initialize controller (creates persistent context)
             await _controller.InitializeAsync(dataRoot, cancellationToken);
 
             // Bind dispatcher to controller — this is the critical product wiring
             dispatcher.SetHandler(_controller);
+            dispatcher.ActivityChanged += OnActivityChanged;
 
             // Subscribe to bridge state changes
             _bridgeClient.StateChanged += OnBridgeStateChanged;
@@ -73,16 +77,27 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
             UpdateBridgeStatus();
             _initialized = true;
 
+            InitializationErrorPanel.Visibility = Visibility.Collapsed;
             StatusBarText.Text = "Browser workspace ready";
         }
         catch (Exception ex)
         {
-            // Initialization failure shows recoverable error in Browser page only
-            // Does NOT block Desktop, Settings, Runtime Center or Workbench
-            StatusBarText.Text = $"Browser init failed: {ex.Message}";
-            EmptyState.Visibility = Visibility.Visible;
+            await CleanupPartialInitializationAsync();
+            ShowInitializationError(ex.Message);
+            throw;
         }
     }
+
+    private void ShowInitializationError(string message)
+    {
+        StatusBarText.Text = $"Browser init failed: {message}";
+        InitializationErrorText.Text = message;
+        InitializationErrorPanel.Visibility = Visibility.Visible;
+        EmptyState.Visibility = Visibility.Collapsed;
+    }
+
+    private void RetryInitialization_Click(object sender, RoutedEventArgs e)
+        => RetryInitializationRequested?.Invoke(this, EventArgs.Empty);
 
     // ─── Tab Events ──────────────────────────────────────────────────────────
 
@@ -181,9 +196,11 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
 
     private async void AgentHandoff_Click(object sender, RoutedEventArgs e)
     {
-        if (_controller is null) return;
+        if (_controller?.ActivePageId is not { } pageId) return;
+        await _controller.AssignAgentTargetAsync(pageId, CancellationToken.None);
         await _controller.SetUserTakeoverAsync(false, CancellationToken.None);
-        StatusBarText.Text = "Page handed to Agent";
+        _dispatcher?.SetUserTakeover(false);
+        StatusBarText.Text = "Page assigned as Agent target";
     }
 
     private async void Pause_Click(object sender, RoutedEventArgs e)
@@ -245,6 +262,24 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
             case nameof(BrowserWorkspaceController.Tabs):
                 UpdateEmptyState();
                 break;
+            case nameof(BrowserWorkspaceController.AgentTargetPageId):
+                TargetSummaryText.Text = _controller?.AgentTargetSummary ?? "No agent target";
+                break;
+        }
+    }
+
+    private async void OnActivityChanged(object? sender, AgentBrowserActivityChangedEventArgs e)
+    {
+        var controller = _controller;
+        if (controller is null) return;
+
+        try
+        {
+            await controller.ApplyActivityAsync(e.Snapshot, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            StatusBarText.Text = $"Activity update failed: {ex.Message}";
         }
     }
 
@@ -295,11 +330,21 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
 
+        await CleanupPartialInitializationAsync();
+    }
+
+    private async Task CleanupPartialInitializationAsync()
+    {
+        _initialized = false;
+
         try
         {
             // Unset handler first to reject new commands (type-safe clear)
             if (_controller is not null)
                 _dispatcher?.ClearHandler(_controller);
+
+            if (_dispatcher is not null)
+                _dispatcher.ActivityChanged -= OnActivityChanged;
 
             if (_bridgeClient is not null)
                 _bridgeClient.StateChanged -= OnBridgeStateChanged;
@@ -310,13 +355,19 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
                 await _controller.DisposeAsync();
             }
 
-            // Runtime disposal is handled by Controller
+            else if (_runtime is not null)
+            {
+                await _runtime.DisposeAsync();
+            }
+
+            DataContext = null;
+            _controller = null;
             _runtime = null;
             _surfaceHost = null;
         }
-        catch
+        catch (Exception ex)
         {
-            // Browser disposal errors must not block Desktop exit
+            StatusBarText.Text = $"Browser cleanup failed: {ex.Message}";
         }
     }
 }

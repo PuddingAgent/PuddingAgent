@@ -108,3 +108,20 @@ public sealed class SystemBrowserBridgeClock : IBrowserBridgeClock
     public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         => Task.Delay(delay, cancellationToken);
 }
+
+/// <summary>
+/// Timing policy for the Desktop Browser Bridge client. Production uses the
+/// protocol defaults; deterministic tests inject short/fake-clock intervals.
+/// </summary>
+public sealed record DesktopBrowserBridgeClientOptions
+{
+    public TimeSpan HelloTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan WatchdogInterval { get; init; } = TimeSpan.FromSeconds(2);
+    public IReadOnlyList<TimeSpan> ReconnectDelays { get; init; } =
+    [
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10)
+    ];
+}

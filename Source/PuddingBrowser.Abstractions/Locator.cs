@@ -3,6 +3,7 @@
 /// <summary>Locator strategy for finding DOM elements.</summary>
 public enum LocatorKind
 {
+    Ref,
     Css,
     XPath,
     Text,
@@ -12,6 +13,23 @@ public enum LocatorKind
     AltText,
     Title,
     TestId
+}
+
+/// <summary>
+/// Safe, by-value metadata returned by locator resolution. It contains no DOM object,
+/// JavaScript handle, form value, cookie, or authentication secret.
+/// </summary>
+public sealed record BrowserElementInfo
+{
+    public required string Ref { get; init; }
+    public required string Tag { get; init; }
+    public string? Role { get; init; }
+    public string? Name { get; init; }
+    public string? Text { get; init; }
+    public bool Visible { get; init; }
+    public bool Enabled { get; init; }
+    public bool? Checked { get; init; }
+    public BoundingBox? BoundingBox { get; init; }
 }
 
 /// <summary>Optional frame selector for cross-frame locators.</summary>

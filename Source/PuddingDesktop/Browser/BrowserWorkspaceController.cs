@@ -21,6 +21,7 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
     bool CanGoBack { get; }
     bool CanGoForward { get; }
     bool IsLoading { get; }
+    string AgentTargetSummary { get; }
 
     Task InitializeAsync(string dataRoot, CancellationToken ct);
     Task<BrowserContextId> CreateContextAsync(CancellationToken ct);
@@ -36,6 +37,7 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
     Task AssignAgentTargetAsync(PageId pageId, CancellationToken ct);
     Task SetUserTakeoverAsync(bool enabled, CancellationToken ct);
     Task SetPausedAsync(bool paused, CancellationToken ct);
+    Task ApplyActivityAsync(AgentBrowserActivitySnapshot snapshot, CancellationToken ct);
 }
 
 /// <summary>
@@ -43,15 +45,40 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
 /// </summary>
 public sealed class AgentBrowserActivityItem : INotifyPropertyChanged
 {
-    public string CommandName { get; init; } = "";
-    public string Target { get; init; } = "";
-    public DateTimeOffset StartedAt { get; init; } = DateTimeOffset.Now;
-    public string? ErrorCode { get; set; }
-    public bool IsCompleted { get; set; }
-    public long DurationMs { get; set; }
+    private DateTimeOffset? _completedAt;
+    private string? _errorCode;
+    private bool _isCompleted;
+    private bool? _success;
+
+    public required Guid OperationId { get; init; }
+    public required string CommandName { get; init; }
+    public required string Target { get; init; }
+    public required DateTimeOffset StartedAt { get; init; }
+    public DateTimeOffset? CompletedAt => _completedAt;
+    public string? ErrorCode => _errorCode;
+    public bool IsCompleted => _isCompleted;
+    public bool? Success => _success;
+    public long DurationMs => _completedAt is { } completed
+        ? Math.Max(0, (long)(completed - StartedAt).TotalMilliseconds)
+        : 0;
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    public void NotifyCompleted() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCompleted)));
+
+    public void Apply(AgentBrowserActivitySnapshot snapshot)
+    {
+        _completedAt = snapshot.CompletedAt;
+        _errorCode = snapshot.ErrorCode;
+        _isCompleted = snapshot.IsCompleted;
+        _success = snapshot.Success;
+        OnPropertyChanged(nameof(CompletedAt));
+        OnPropertyChanged(nameof(ErrorCode));
+        OnPropertyChanged(nameof(IsCompleted));
+        OnPropertyChanged(nameof(Success));
+        OnPropertyChanged(nameof(DurationMs));
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
 /// <summary>
@@ -123,6 +150,9 @@ public sealed class BrowserWorkspaceController :
     public bool CanGoBack => ActiveTab?.CanGoBack ?? false;
     public bool CanGoForward => ActiveTab?.CanGoForward ?? false;
     public bool IsLoading => ActiveTab?.IsLoading ?? false;
+    public string AgentTargetSummary => _agentTargetPageId is { } pageId
+        ? $"Agent target: {Tabs.FirstOrDefault(tab => tab.PageId == pageId)?.Title ?? pageId.Value}"
+        : "No agent target";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -282,13 +312,21 @@ public sealed class BrowserWorkspaceController :
     /// </summary>
     private async Task ActivateInternalAsync(PageId pageId, CancellationToken ct)
     {
-        if (!_pages.ContainsKey(pageId)) return;
+        if (!_pages.TryGetValue(pageId, out var page)) return;
 
         // Actually activate the Surface (shows it, hides others)
         await _surfaceHost.ActivateAsync(pageId, ct);
+        await page.BringToFrontAsync(ct);
+
+        await _uiDispatcher.InvokeAsync(() =>
+        {
+            foreach (var tab in Tabs)
+                tab.IsActive = tab.PageId == pageId;
+            return Task.CompletedTask;
+        }, ct);
 
         ActivePageId = pageId;
-        SyncNavigationState(pageId);
+        await SyncNavigationStateAsync(pageId, ct);
     }
 
     public async Task ClosePageAsync(PageId pageId, CancellationToken ct)
@@ -311,10 +349,10 @@ public sealed class BrowserWorkspaceController :
         {
             if (!_pages.TryGetValue(pageId, out var page)) return;
 
-            UpdateTabLoading(pageId, true);
-            var result = await page.GotoAsync(uri, new NavigationOptions(), ct);
-            UpdateTabLoading(pageId, false);
-            SyncNavigationState(pageId);
+            await UpdateTabLoadingAsync(pageId, true, ct);
+            await page.GotoAsync(uri, new NavigationOptions(), ct);
+            await UpdateTabLoadingAsync(pageId, false, ct);
+            await SyncNavigationStateAsync(pageId, ct);
         }
         finally
         {
@@ -330,7 +368,7 @@ public sealed class BrowserWorkspaceController :
             if (_pages.TryGetValue(pageId, out var page))
             {
                 await page.GoBackAsync(ct);
-                SyncNavigationState(pageId);
+                await SyncNavigationStateAsync(pageId, ct);
             }
         }
         finally
@@ -347,7 +385,7 @@ public sealed class BrowserWorkspaceController :
             if (_pages.TryGetValue(pageId, out var page))
             {
                 await page.GoForwardAsync(ct);
-                SyncNavigationState(pageId);
+                await SyncNavigationStateAsync(pageId, ct);
             }
         }
         finally
@@ -363,10 +401,10 @@ public sealed class BrowserWorkspaceController :
         {
             if (_pages.TryGetValue(pageId, out var page))
             {
-                UpdateTabLoading(pageId, true);
+                await UpdateTabLoadingAsync(pageId, true, ct);
                 await page.ReloadAsync(ct);
-                UpdateTabLoading(pageId, false);
-                SyncNavigationState(pageId);
+                await UpdateTabLoadingAsync(pageId, false, ct);
+                await SyncNavigationStateAsync(pageId, ct);
             }
         }
         finally
@@ -383,8 +421,8 @@ public sealed class BrowserWorkspaceController :
             if (_pages.TryGetValue(pageId, out var page))
             {
                 await page.StopAsync(ct);
-                UpdateTabLoading(pageId, false);
-                SyncNavigationState(pageId);
+                await UpdateTabLoadingAsync(pageId, false, ct);
+                await SyncNavigationStateAsync(pageId, ct);
             }
         }
         finally
@@ -397,13 +435,27 @@ public sealed class BrowserWorkspaceController :
     /// Assigns the Agent target page. This page is used for Bridge commands without explicit PageId.
     /// Does NOT change when user switches visible tab (2.7 fix).
     /// </summary>
-    public Task AssignAgentTargetAsync(PageId pageId, CancellationToken ct)
+    public async Task AssignAgentTargetAsync(PageId pageId, CancellationToken ct)
     {
-        if (!_pages.ContainsKey(pageId))
-            return Task.CompletedTask;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (!_pages.ContainsKey(pageId))
+                return;
 
-        AgentTargetPageId = pageId;
-        return Task.CompletedTask;
+            AgentTargetPageId = pageId;
+            await _uiDispatcher.InvokeAsync(() =>
+            {
+                foreach (var tab in Tabs)
+                    tab.IsAgentTarget = tab.PageId == pageId;
+                return Task.CompletedTask;
+            }, ct);
+            OnPropertyChanged(nameof(AgentTargetSummary));
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public Task SetUserTakeoverAsync(bool enabled, CancellationToken ct)
@@ -423,19 +475,13 @@ public sealed class BrowserWorkspaceController :
     public async Task<BrowserBridgeCommandResult> ExecuteAsync(
         BrowserBridgeCommand command, CancellationToken ct)
     {
-        var activity = new AgentBrowserActivityItem
-        {
-            CommandName = command.Name,
-            Target = command.PageId ?? "active",
-            StartedAt = DateTimeOffset.Now
-        };
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
         try
         {
-            var result = command.Name switch
+            return command.Name switch
             {
                 BrowserBridgeCommandNames.ContextCreate => await HandleContextCreateAsync(command, ct),
+                BrowserBridgeCommandNames.ContextList => await HandleContextListAsync(command, ct),
+                BrowserBridgeCommandNames.ContextGetInfo => await HandleContextGetInfoAsync(command, ct),
                 BrowserBridgeCommandNames.ContextClose => await HandleContextCloseAsync(command, ct),
                 BrowserBridgeCommandNames.PageCreate => await HandlePageCreateAsync(command, ct),
                 BrowserBridgeCommandNames.PageList => await HandlePageListAsync(command, ct),
@@ -447,33 +493,25 @@ public sealed class BrowserWorkspaceController :
                 BrowserBridgeCommandNames.PageGoForward => await HandlePageNavAsync(command, "forward", ct),
                 BrowserBridgeCommandNames.PageReload => await HandlePageNavAsync(command, "reload", ct),
                 BrowserBridgeCommandNames.PageStop => await HandlePageNavAsync(command, "stop", ct),
+                BrowserBridgeCommandNames.PageSnapshot => await HandlePageSnapshotAsync(command, ct),
+                BrowserBridgeCommandNames.PageLocate => await HandlePageLocateAsync(command, ct),
+                BrowserBridgeCommandNames.PageInteract => await HandlePageInteractAsync(command, ct),
+                BrowserBridgeCommandNames.PageWaitFor => await HandlePageWaitForAsync(command, ct),
                 _ => Error(command.OperationId, BrowserBridgeErrorCodes.BrowserOperationNotSupported,
                     $"Unknown command: {command.Name}")
             };
 
-            sw.Stop();
-            activity.DurationMs = sw.ElapsedMilliseconds;
-            activity.IsCompleted = true;
-            if (!result.Success) activity.ErrorCode = result.ErrorCode;
-            AddActivity(activity);
-            return result;
         }
         catch (OperationCanceledException)
         {
-            sw.Stop();
-            activity.DurationMs = sw.ElapsedMilliseconds;
-            activity.ErrorCode = BrowserBridgeErrorCodes.BrowserCancelled;
-            activity.IsCompleted = true;
-            AddActivity(activity);
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserCancelled, "Cancelled");
+        }
+        catch (BrowserOperationException ex)
+        {
+            return Error(command.OperationId, ex.Code, ex.Message);
         }
         catch (Exception ex)
         {
-            sw.Stop();
-            activity.DurationMs = sw.ElapsedMilliseconds;
-            activity.ErrorCode = BrowserBridgeErrorCodes.BrowserOperationFailed;
-            activity.IsCompleted = true;
-            AddActivity(activity);
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserOperationFailed, ex.Message);
         }
     }
@@ -493,10 +531,54 @@ public sealed class BrowserWorkspaceController :
         return Success(command.OperationId, descriptor);
     }
 
+    private Task<BrowserBridgeCommandResult> HandleContextListAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        IReadOnlyList<BrowserContextDescriptor> contexts = _context is null
+            ? []
+            :
+            [
+                new BrowserContextDescriptor
+                {
+                    ContextId = _context.Id.Value,
+                    UserDataDirectory = _context.Info.UserDataDirectory,
+                    PageCount = _pages.Count
+                }
+            ];
+
+        return Task.FromResult(Success(command.OperationId,
+            new BrowserContextListDescriptor { Contexts = contexts }));
+    }
+
+    private Task<BrowserBridgeCommandResult> HandleContextGetInfoAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        var args = DeserializeArgs<ContextGetInfoArguments>(command);
+        var requestedId = args?.ContextId ?? command.ContextId;
+        if (_context is null
+            || (!string.IsNullOrWhiteSpace(requestedId)
+                && !string.Equals(requestedId, _context.Id.Value, StringComparison.Ordinal)))
+        {
+            return Task.FromResult(Error(command.OperationId,
+                BrowserBridgeErrorCodes.BrowserContextNotFound, "Context not found"));
+        }
+
+        return Task.FromResult(Success(command.OperationId, new BrowserContextDescriptor
+        {
+            ContextId = _context.Id.Value,
+            UserDataDirectory = _context.Info.UserDataDirectory,
+            PageCount = _pages.Count
+        }));
+    }
+
     private async Task<BrowserBridgeCommandResult> HandleContextCloseAsync(
         BrowserBridgeCommand command, CancellationToken ct)
     {
-        if (_activeContextId is null)
+        var args = DeserializeArgs<ContextCloseArguments>(command);
+        var requestedId = args?.ContextId ?? command.ContextId;
+        if (_activeContextId is null
+            || (!string.IsNullOrWhiteSpace(requestedId)
+                && !string.Equals(requestedId, _activeContextId.Value.Value, StringComparison.Ordinal)))
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserContextNotFound, "No context");
         await CloseContextAsync(_activeContextId.Value, ct);
         return SuccessEmpty(command.OperationId);
@@ -509,6 +591,8 @@ public sealed class BrowserWorkspaceController :
         var pageId = await CreatePageAsync(args?.InitialUrl, args?.Activate ?? true, ct);
         if (!_pages.TryGetValue(pageId, out var page))
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page creation failed");
+        if (args?.Activate ?? true)
+            await AssignAgentTargetAsync(pageId, ct);
         return Success(command.OperationId, BuildPageDescriptor(page, pageId));
     }
 
@@ -539,6 +623,7 @@ public sealed class BrowserWorkspaceController :
         if (!_pages.ContainsKey(pageId))
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
         await ActivateAsync(pageId, ct);
+        await AssignAgentTargetAsync(pageId, ct);
         return Success(command.OperationId, BuildPageDescriptor(_pages[pageId], pageId));
     }
 
@@ -566,8 +651,19 @@ public sealed class BrowserWorkspaceController :
         if (pageId is null || !_pages.TryGetValue(pageId.Value, out var page))
             return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
 
-        var navResult = await page.GotoAsync(uri, new NavigationOptions { TimeoutMs = args.TimeoutMs }, ct);
-        SyncNavigationState(pageId.Value);
+        await _gate.WaitAsync(ct);
+        NavigationResult navResult;
+        try
+        {
+            await UpdateTabLoadingAsync(pageId.Value, true, ct);
+            navResult = await page.GotoAsync(uri, new NavigationOptions { TimeoutMs = args.TimeoutMs }, ct);
+            await UpdateTabLoadingAsync(pageId.Value, false, ct);
+            await SyncNavigationStateAsync(pageId.Value, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
 
         var descriptor = new BrowserNavigationResultDescriptor
         {
@@ -589,14 +685,142 @@ public sealed class BrowserWorkspaceController :
 
         switch (action)
         {
-            case "back": await page.GoBackAsync(ct); break;
-            case "forward": await page.GoForwardAsync(ct); break;
-            case "reload": await page.ReloadAsync(ct); break;
-            case "stop": await page.StopAsync(ct); break;
+            case "back": await GoBackAsync(pageId.Value, ct); break;
+            case "forward": await GoForwardAsync(pageId.Value, ct); break;
+            case "reload": await ReloadAsync(pageId.Value, ct); break;
+            case "stop": await StopAsync(pageId.Value, ct); break;
+        }
+        return Success(command.OperationId, BuildPageDescriptor(page, pageId.Value));
+    }
+
+    private async Task<BrowserBridgeCommandResult> HandlePageSnapshotAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        var page = ResolvePage(command, out var pageId);
+        if (page is null)
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
+        var args = DeserializeArgs<PageSnapshotArguments>(command) ?? new PageSnapshotArguments();
+        var snapshot = await page.SnapshotAsync(new SnapshotOptions
+        {
+            IncludeDom = args.IncludeDom,
+            IncludeAccessibilityTree = args.IncludeAccessibilityTree,
+            IncludeHidden = args.IncludeHidden,
+            IncludeIframes = args.IncludeIframes,
+            IncludeShadowDom = args.IncludeShadowDom,
+            IncludeHtml = args.IncludeHtml,
+            MaxNodes = args.MaxNodes,
+            MaxTextLength = args.MaxTextLength,
+            MaxDepth = args.MaxDepth
+        }, ct);
+        return Success(command.OperationId, new BrowserSnapshotDescriptor
+        {
+            DomText = snapshot.DomText,
+            AccessibilityTree = snapshot.AccessibilityTree,
+            Html = snapshot.Html,
+            Truncated = snapshot.Truncated,
+            NodeCount = snapshot.NodeCount,
+            PageVersion = page.PageVersion
+        });
+    }
+
+    private async Task<BrowserBridgeCommandResult> HandlePageLocateAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        var page = ResolvePage(command, out _);
+        if (page is null)
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
+        var args = DeserializeArgs<PageLocateArguments>(command);
+        if (args?.Locator is null)
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand, "Missing locator");
+        var locator = ToLocator(args.Locator);
+        var handles = await page.QueryAllAsync(locator, ct);
+        var descriptors = handles.Take(100).Select(handle => ToElementDescriptor(handle.Info, handle.PageVersion)).ToArray();
+        foreach (var handle in handles)
+            await handle.DisposeAsync();
+        return Success(command.OperationId, new BrowserLocateResultDescriptor
+        {
+            Elements = descriptors,
+            Truncated = handles.Count > descriptors.Length
+        });
+    }
+
+    private async Task<BrowserBridgeCommandResult> HandlePageInteractAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        var page = ResolvePage(command, out var pageId);
+        if (page is null)
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
+        var args = DeserializeArgs<PageInteractArguments>(command);
+        var action = args?.Action?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(action))
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand, "Missing action");
+        var locator = args?.Locator is null ? null : ToLocator(args.Locator);
+        switch (action)
+        {
+            case "click" when locator is not null:
+                await page.ClickAsync(locator, new ClickOptions(), ct);
+                break;
+            case "fill" when locator is not null:
+                await page.FillAsync(locator, args?.Text ?? string.Empty, new FillOptions(), ct);
+                break;
+            case "type" when locator is not null:
+                await page.TypeAsync(locator, args?.Text ?? string.Empty, new TypeOptions(), ct);
+                break;
+            case "press" when locator is not null && !string.IsNullOrWhiteSpace(args?.Text):
+                await page.PressAsync(locator, args.Text, new KeyOptions(), ct);
+                break;
+            case "hover" when locator is not null:
+                await page.HoverAsync(locator, new PointerOptions(), ct);
+                break;
+            case "scroll":
+                await page.ScrollAsync(new ScrollOptions { DeltaX = args?.DeltaX, DeltaY = args?.DeltaY }, ct);
+                break;
+            case "select" when locator is not null && args?.Values is { Count: > 0 }:
+                await page.SelectAsync(locator, args.Values, ct);
+                break;
+            case "check" when locator is not null && args?.Checked is not null:
+                await page.CheckAsync(locator, args.Checked.Value, ct);
+                break;
+            case "drag" or "upload":
+                throw new BrowserOperationException(
+                    BrowserBridgeErrorCodes.BrowserOperationNotSupported,
+                    $"Interaction '{action}' is not available in Phase 2A-3");
+            default:
+                return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserInvalidCommand,
+                    "Invalid interaction arguments");
         }
 
-        SyncNavigationState(pageId.Value);
-        return Success(command.OperationId, BuildPageDescriptor(page, pageId.Value));
+        await SyncNavigationStateAsync(pageId, ct);
+        return Success(command.OperationId, new BrowserInteractionResultDescriptor
+        {
+            // Do not query the locator again after a committed interaction. Click,
+            // press and form actions may already have navigated or replaced the node;
+            // a post-action lookup would misreport success as a stale-reference error.
+            Element = null,
+            Page = BuildPageDescriptor(page, pageId)
+        });
+    }
+
+    private async Task<BrowserBridgeCommandResult> HandlePageWaitForAsync(
+        BrowserBridgeCommand command, CancellationToken ct)
+    {
+        var page = ResolvePage(command, out var pageId);
+        if (page is null)
+            return Error(command.OperationId, BrowserBridgeErrorCodes.BrowserPageNotFound, "Page not found");
+        var args = DeserializeArgs<PageWaitForArguments>(command) ?? new PageWaitForArguments();
+        var result = await page.WaitForAsync(new WaitCondition
+        {
+            Selector = args.Selector,
+            SelectorToHide = args.SelectorToHide,
+            UrlPattern = args.UrlPattern,
+            TimeoutMs = args.TimeoutMs
+        }, ct);
+        return Success(command.OperationId, new BrowserWaitResultDescriptor
+        {
+            TimedOut = result.TimedOut,
+            Error = result.Error,
+            Page = BuildPageDescriptor(page, pageId)
+        });
     }
 
     // ─── Target Resolution (2.7 fix) ────────────────────────────────────────
@@ -613,6 +837,56 @@ public sealed class BrowserWorkspaceController :
             return new PageId(command.PageId);
         return _agentTargetPageId;
     }
+
+    private IBrowserPage? ResolvePage(BrowserBridgeCommand command, out PageId pageId)
+    {
+        var resolved = ResolveTargetPageId(command);
+        if (resolved is not null && _pages.TryGetValue(resolved.Value, out var page))
+        {
+            pageId = resolved.Value;
+            return page;
+        }
+        pageId = default;
+        return null;
+    }
+
+    private static Locator ToLocator(BrowserLocatorDescriptor descriptor)
+    {
+        var normalized = descriptor.Kind.Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal);
+        if (!Enum.TryParse<LocatorKind>(normalized, ignoreCase: true, out var kind))
+            throw new BrowserOperationException("browser_invalid_arguments", $"Unknown locator kind: {descriptor.Kind}");
+        return new Locator
+        {
+            Kind = kind,
+            Value = descriptor.Value,
+            Name = descriptor.Name,
+            Exact = descriptor.Exact,
+            Nth = descriptor.Nth,
+            HasText = descriptor.HasText
+        };
+    }
+
+    private static BrowserElementDescriptor ToElementDescriptor(BrowserElementInfo info, long pageVersion)
+        => new()
+        {
+            Ref = info.Ref,
+            Tag = info.Tag,
+            Role = info.Role,
+            Name = info.Name,
+            Text = info.Text,
+            Visible = info.Visible,
+            Enabled = info.Enabled,
+            Checked = info.Checked,
+            PageVersion = pageVersion,
+            BoundingBox = info.BoundingBox is null ? null : new BrowserBoundingBoxDescriptor
+            {
+                X = info.BoundingBox.X,
+                Y = info.BoundingBox.Y,
+                Width = info.BoundingBox.Width,
+                Height = info.BoundingBox.Height
+            }
+        };
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -638,7 +912,10 @@ public sealed class BrowserWorkspaceController :
 
             // Clear agent target if this was the target (2.7)
             if (_agentTargetPageId == pageId)
+            {
                 AgentTargetPageId = null;
+                OnPropertyChanged(nameof(AgentTargetSummary));
+            }
 
             // Activate adjacent page if this was active
             if (_activePageId == pageId)
@@ -658,42 +935,56 @@ public sealed class BrowserWorkspaceController :
     /// Syncs navigation state (Title, Url, IsLoading) from the real page to the Tab ViewModel.
     /// PageInfo does not expose CanGoBack/CanGoForward — those are tracked via page events.
     /// </summary>
-    private void SyncNavigationState(PageId pageId)
+    private async Task SyncNavigationStateAsync(PageId pageId, CancellationToken ct)
     {
         if (!_pages.TryGetValue(pageId, out var page)) return;
         var tab = Tabs.FirstOrDefault(t => t.PageId == pageId);
         if (tab is null) return;
 
         var info = page.Info;
-        _ = _uiDispatcher.InvokeAsync(() =>
+        await _uiDispatcher.InvokeAsync(() =>
         {
             tab.Title = info.Title;
             tab.Url = info.Url;
-            tab.IsLoading = false;
+            tab.IsLoading = page.IsLoading;
+            tab.CanGoBack = page.CanGoBack;
+            tab.CanGoForward = page.CanGoForward;
             return Task.CompletedTask;
-        }, CancellationToken.None);
+        }, ct);
 
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(CanGoForward));
         OnPropertyChanged(nameof(IsLoading));
     }
 
-    private void UpdateTabLoading(PageId pageId, bool loading)
+    private async Task UpdateTabLoadingAsync(PageId pageId, bool loading, CancellationToken ct)
     {
         var tab = Tabs.FirstOrDefault(t => t.PageId == pageId);
         if (tab is not null)
-            _ = _uiDispatcher.InvokeAsync(() => { tab.IsLoading = loading; return Task.CompletedTask; }, CancellationToken.None);
+            await _uiDispatcher.InvokeAsync(() => { tab.IsLoading = loading; return Task.CompletedTask; }, ct);
     }
 
-    private void AddActivity(AgentBrowserActivityItem item)
+    public async Task ApplyActivityAsync(AgentBrowserActivitySnapshot snapshot, CancellationToken ct)
     {
-        _ = _uiDispatcher.InvokeAsync(() =>
+        await _uiDispatcher.InvokeAsync(() =>
         {
-            Activities.Insert(0, item);
+            var item = Activities.FirstOrDefault(existing => existing.OperationId == snapshot.OperationId);
+            if (item is null)
+            {
+                item = new AgentBrowserActivityItem
+                {
+                    OperationId = snapshot.OperationId,
+                    CommandName = snapshot.CommandName,
+                    Target = snapshot.Target,
+                    StartedAt = snapshot.StartedAt
+                };
+                Activities.Insert(0, item);
+            }
+            item.Apply(snapshot);
             while (Activities.Count > MaxActivityItems)
                 Activities.RemoveAt(Activities.Count - 1);
             return Task.CompletedTask;
-        }, CancellationToken.None);
+        }, ct);
     }
 
     private BrowserPageDescriptor BuildPageDescriptor(IBrowserPage page, PageId pageId)
@@ -705,7 +996,11 @@ public sealed class BrowserWorkspaceController :
             Title = page.Info.Title,
             Url = page.Info.Url,
             PageVersion = page.PageVersion,
-            IsActive = pageId == _activePageId
+            IsActive = pageId == _activePageId,
+            IsAgentTarget = pageId == _agentTargetPageId,
+            CanGoBack = page.CanGoBack,
+            CanGoForward = page.CanGoForward,
+            IsLoading = page.IsLoading
         };
     }
 
@@ -713,10 +1008,7 @@ public sealed class BrowserWorkspaceController :
     {
         try
         {
-            return command.Arguments.Deserialize<T>(new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            return command.Arguments.Deserialize<T>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
         }
         catch { return null; }
     }
@@ -780,6 +1072,7 @@ public sealed class BrowserWorkspaceController :
             await _runtime.DisposeAsync();
             ActivePageId = null;
             AgentTargetPageId = null;
+            OnPropertyChanged(nameof(AgentTargetSummary));
             _activeContextId = null;
         }
         finally

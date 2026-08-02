@@ -34,11 +34,25 @@ public sealed class WpfBrowserSurfaceHost : IBrowserSurfaceHost
         {
             var control = new WebView2CompositionControl
             {
-                Visibility = System.Windows.Visibility.Visible
+                // Hidden keeps the control in WPF layout so WebView2 can finish
+                // initialization; Collapsed can leave EnsureCoreWebView2Async waiting.
+                // The controller makes exactly one initialized surface visible.
+                Visibility = System.Windows.Visibility.Hidden,
+                IsHitTestVisible = false,
             };
 
             _surfaceContainer.Children.Add(control);
-            await control.EnsureCoreWebView2Async(environment);
+            try
+            {
+                await control.EnsureCoreWebView2Async(environment);
+                control.Visibility = System.Windows.Visibility.Collapsed;
+            }
+            catch
+            {
+                _surfaceContainer.Children.Remove(control);
+                control.Dispose();
+                throw;
+            }
 
             return new WebView2BrowserSurface(pageId, control);
         }, ct);
@@ -53,9 +67,11 @@ public sealed class WpfBrowserSurfaceHost : IBrowserSurfaceHost
         {
             foreach (var (id, surface) in _surfaces)
             {
-                surface.Control.Visibility = id == pageId
+                var isActive = id == pageId;
+                surface.Control.Visibility = isActive
                     ? System.Windows.Visibility.Visible
                     : System.Windows.Visibility.Collapsed;
+                surface.Control.IsHitTestVisible = isActive;
             }
             return Task.CompletedTask;
         }, ct);

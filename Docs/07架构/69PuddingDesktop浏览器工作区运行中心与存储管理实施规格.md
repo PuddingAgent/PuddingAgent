@@ -1,6 +1,6 @@
 # 69 PuddingDesktop 浏览器工作区、运行中心与存储管理实施规格
 
-> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 2A-1 最终验收阻断修复待执行**
+> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 2A-1/2 accepted；Phase 2A-3 automated accepted（真实 DeepSeek smoke pending，2026-08-02）**
 > - 日期：2026-08-02
 > - 前置文档：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)、[WebView2 实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
@@ -645,6 +645,6 @@ PuddingDesktop/Views/StorageView.xaml.cs
 5. 先完成 Context/Page/Navigation 的两个标签页闭环，再进入 DOM/Input/CDP/Network 等完整 Driver；不为抖音写入底层特例；
 6. 新增 Protocol、Broker、Dispatcher、重连和两个 Tab 的定向测试，并使用系统 Temp 下的隔离 DesktopHome/DataRoot/UDF 做真实窗口 smoke。
 
-Phase 2A-1 初始任务包见：[70 Phase 2A-1 开发工作指令](70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md)，第一轮收口见：[71 Phase 2A-1 验收补丁](71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md)。当前必须继续执行：[72 Phase 2A-1 最终验收修复](72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md)，关闭真实握手、Watchdog、Surface/UI 数据流、集成测试和新版 smoke 阻断后才能进入 Phase 2A-2。
+Phase 2A-1 初始任务包见 [70](70Phase2A-1通用BrowserBridge与双标签工作区开发工作指令.md)，两轮收口见 [71](71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md)、[72](72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md)，最终测试、发布与可见 smoke 证据见 [73](73Phase2A-1验收证据收口与Phase2A-2准入工作指令.md)。Phase 2A-2 最小 Remote Runtime/Context/Page 与三项 Agent Tools 已 accepted，证据见 [74](74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md)；Phase 2A-3 Snapshot/Locator/Interact/Wait 契约与自动验收见 [75](75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md)、[76](76Phase2A-3通用WebView2页面操作实施验收报告.md)。下一准入项是真实 DeepSeek Agent 可见 smoke，通过后再进入 Douyin Adapter。
 
 `dev-up.py` 继续只承担源码开发环境；最终产品进程主管始终是 `PuddingDesktop.exe`。

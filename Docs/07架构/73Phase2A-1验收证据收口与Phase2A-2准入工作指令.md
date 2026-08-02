@@ -1,10 +1,32 @@
 # 73 Phase 2A-1 验收证据收口与 Phase 2A-2 准入工作指令
 
-> - 状态：**developer-ready / acceptance evidence required**
+> - 状态：**completed / Phase 2A-1 accepted（2026-08-02）**
 > - 日期：2026-08-02
 > - 执行者：Pudding 自身 Agent
 > - 前置文档：[72 最终验收修复](72Phase2A-1最终验收修复Bridge握手Surface切换与UISmoke工作指令.md)
 > - 本批次性质：Phase 2A-1 最后一个收口批次，不增加 Phase 2A-2 功能
+
+## 验收结果
+
+Phase 2A-1 已完成并通过准入验收。本文后续“当前缺口”和执行指令保留为验收前历史快照，不能再用来判断当前源码状态。
+
+| 证据 | 最终结果 |
+|---|---|
+| Host Bridge 本地集成测试 | 43/43 passed |
+| Desktop Browser/Client/配置测试 | 92/92 passed |
+| Release publish | `.tmp-build/phase2a1-final-preview` 成功，包含 Desktop、`core/PuddingAgent.exe`、`core/wwwroot/admin/index.html` |
+| 可见 Desktop | PID 40588，来自验收发布目录；退出码 0 |
+| Core 启动/重启 | PID 46272 → 45380；动态端口 8959 → 10398 |
+| Bridge | Browser 页面启动 Core 后进入 Connected；重启后自动回到 Connected |
+| Browser | Core 未启动时创建真实 Page；双标签分别加载 `example.com` / `example.org`，切换只有 active Surface 可见 |
+| Agent target | 指定第二标签后切回第一标签，target 不变化 |
+| Workbench | 只在用户进入 Workbench 时初始化，随后进入 Workbench Ready；不再阻塞 Core Ready |
+| Stop / Exit | Stop 后 Browser Context/Page 保留；退出后 Desktop/Core 子进程全部回收 |
+| 隔离目录 | `%TEMP%\PuddingAgent\phase2a1-browser-09d488f8542949d5ab86472806122411`，Workbench 与 Agent Browser UDF 分离，未触碰 `D:\data` |
+
+Activity 的开始/完成、错误码和 100 条上限由确定性 Dispatcher/Controller 测试覆盖。Phase 2A-1 明确不包含 Remote Browser/Agent Tools，因此本轮可见 UI 没有伪造一个产品外“Agent 发命令”入口；真实 Agent Tool 驱动 Activity 的窗口验收进入 Phase 2A-2 首批工作。
+
+验收期间额外关闭了三个仅在真实发布窗口暴露的问题：Brush 属性误绑定 Color 资源、`desktop.json` 的字符串关闭行为无法反序列化、Collapsed WebView2 初始化挂起；同时把 Workbench 改为可见时按需初始化，并为退出阶段 Browser 释放增加有界等待。
 
 ## 0. 可直接发送给 Pudding Agent 的指令
 
@@ -307,20 +329,20 @@ Phase 2A-1 accepted（2026-08-02）
 
 ## 9. Definition of Done
 
-- [ ] UI 只有一个 Browser Workspace 状态源，Tab 和 Activity 在真实界面可见。
-- [ ] active tab 与 agent target 是两个独立状态，切换 Tab 不改变 target。
-- [ ] 创建/切换/关闭 Page 会真实切换 Surface，只有 active Surface 可见。
-- [ ] Browser 在 DataRoot Ready 后初始化，不依赖 CoreReady；失败可清理并重试。
-- [ ] Desktop Client 的 Hello、watchdog、generation、reconnect 有确定性测试。
-- [ ] Host Endpoint 的认证、握手、heartbeat、断线有本地集成测试。
-- [ ] Workspace 的 Surface、target、UI dispatcher、activity 和重试测试通过。
-- [ ] Protocol/WebView2/Host/Desktop build 全部 0 error。
-- [ ] Host/Desktop 定向测试全部通过，并报告本轮新增用例数。
-- [ ] Release publish 包含 Desktop、Core 与 Workbench 静态资源。
-- [ ] 新版可见 UI smoke 覆盖双 Tab、真实 Bridge、Restart、Stop 与 Exit。
-- [ ] smoke 全程使用系统 Temp 隔离数据，未触碰 `D:\data`。
-- [ ] 未静默终止旧 Desktop，未修改或回滚无关 dirty files。
-- [ ] 文档、Agents 和 code_map 状态一致。
+- [x] UI 只有一个 Browser Workspace 状态源，Tab 和 Activity 绑定到同一 Controller。
+- [x] active tab 与 agent target 是两个独立状态，切换 Tab 不改变 target。
+- [x] 创建/切换/关闭 Page 会真实切换 Surface，只有 active Surface 可见。
+- [x] Browser 在 DataRoot Ready 后初始化，不依赖 CoreReady；失败可清理并重试。
+- [x] Desktop Client 的 Hello、watchdog、generation、reconnect 有确定性测试。
+- [x] Host Endpoint 的认证、握手、heartbeat、断线有本地集成测试。
+- [x] Workspace 的 Surface、target、UI dispatcher、activity 和重试测试通过。
+- [x] Protocol/WebView2/Host/Desktop build 全部 0 error。
+- [x] Host/Desktop 定向测试全部通过：43/43、92/92。
+- [x] Release publish 包含 Desktop、Core 与 Workbench 静态资源。
+- [x] 新版可见 UI smoke 覆盖双 Tab、真实 Bridge、Restart、Stop 与 Exit；Activity 的命令投影由自动化覆盖，真实 Agent Tool 驱动进入 Phase 2A-2。
+- [x] smoke 全程使用系统 Temp 隔离数据，未触碰 `D:\data`。
+- [x] 旧 Desktop 由用户明确退出；未修改或回滚无关 dirty files。
+- [x] 文档、Agents 和 code_map 状态一致。
 
 只有上述全部满足，才能创建 Phase 2A-2 工作指令。Phase 2A-2 的首批范围应另行评审，不能偷偷混入本批次。
 
@@ -338,3 +360,7 @@ Phase 2A-1 accepted（2026-08-02）
 8. 明确结论：`Phase 2A-1 accepted` 或 `Phase 2A-1 not accepted`。
 
 只报告“代码完成”“29/29、74/74 通过”或“UI 留待手工验证”不算验收完成。
+
+## 11. 后续状态（2026-08-02）
+
+Phase 2A-2 最小 Remote Browser Runtime/Context/Page 与 `browser_context`、`browser_tabs`、`browser_navigate` 已实现并完成自动化、发布和可见 Desktop smoke 验收。实现边界、类签名、测试证据和下一批 Phase 2A-3 指令见 [74](74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md)。

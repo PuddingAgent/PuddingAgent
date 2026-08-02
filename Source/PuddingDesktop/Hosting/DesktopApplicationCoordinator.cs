@@ -20,6 +20,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private readonly BrowserBridgeCommandDispatcher _bridgeDispatcher = new();
     private readonly DesktopBrowserBridgeClient _bridgeClient;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
+    private readonly SemaphoreSlim _bridgeOperationLock = new(1, 1);
 
     private MainWindow? _mainWindow;
     private CancellationTokenSource? _lifetimeCts;
@@ -29,6 +30,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private DesktopStartupState _state = DesktopStartupState.NeedsDataRoot;
     private Uri? _coreAddress;
     private string? _lastError;
+    private long _bridgeIntentVersion;
     private int _disposeState;
 
     public DesktopStartupState State => _state;
@@ -92,6 +94,10 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
             return;
         }
 
+        // Agent Browser is a Desktop capability. It becomes available as soon as
+        // DataRoot and system configuration are ready, independently of Core.
+        await TryInitializeBrowserWorkspaceAsync(dataRoot, _lifetimeCts.Token);
+
         if (systemResult.Config.Desktop.Core.AutoStart)
             _ = TryStartCoreAsync(_lifetimeCts.Token);
         else
@@ -130,6 +136,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 cancellationToken,
                 _lifetimeCts?.Token ?? CancellationToken.None);
             _startCts = operationCts;
+            await TryInitializeBrowserWorkspaceAsync(dataRoot, operationCts.Token);
             await ConfigureRuntimeAsync(
                 _bootstrapSettings,
                 dataRoot,
@@ -207,6 +214,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 cancellationToken,
                 _lifetimeCts?.Token ?? CancellationToken.None);
             _startCts = operationCts;
+            await TryInitializeBrowserWorkspaceAsync(dataRoot, operationCts.Token);
             await ConfigureRuntimeAsync(
                 _bootstrapSettings,
                 dataRoot,
@@ -302,6 +310,36 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _runtime.Configure(_runtimeOptions, CreateRestartPolicy(coreConfig));
     }
 
+    private async Task TryInitializeBrowserWorkspaceAsync(
+        string dataRoot,
+        CancellationToken cancellationToken)
+    {
+        var window = _mainWindow;
+        if (window is null) return;
+
+        try
+        {
+            if (window.Dispatcher.CheckAccess())
+            {
+                await window.InitializeBrowserWorkspaceAsync(dataRoot, cancellationToken);
+                return;
+            }
+
+            var nestedTask = await window.Dispatcher.InvokeAsync(
+                () => window.InitializeBrowserWorkspaceAsync(dataRoot, cancellationToken));
+            await nestedTask;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Desktop shutdown owns cancellation.
+        }
+        catch
+        {
+            // Browser initialization failure is shown in its own page and never
+            // blocks the Launcher or Core process supervisor.
+        }
+    }
+
     private static CoreRestartPolicy CreateRestartPolicy(PuddingDesktopCoreConfig config) => new()
     {
         Enabled = config.AutoRestart,
@@ -329,29 +367,29 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 case DesktopRuntimeState.Ready when e.Current.Session is not null:
                     _coreAddress = e.Current.Session.BaseAddress;
                     TransitionTo(DesktopStartupState.CoreReady, _coreAddress);
-                    _ = ConnectBridgeAsync(_coreAddress);
+                    QueueBridgeIntent(connect: true, _coreAddress);
                     break;
                 case DesktopRuntimeState.Stopping:
-                    _ = DisconnectBridgeAsync();
+                    QueueBridgeIntent(connect: false, null);
                     TransitionTo(DesktopStartupState.CoreStopping);
                     break;
                 case DesktopRuntimeState.Stopped:
-                    _ = DisconnectBridgeAsync();
+                    QueueBridgeIntent(connect: false, null);
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreStopped);
                     break;
                 case DesktopRuntimeState.RestartScheduled:
-                    _ = DisconnectBridgeAsync();
+                    QueueBridgeIntent(connect: false, null);
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreRestartScheduled, error: e.Current.LastError);
                     break;
                 case DesktopRuntimeState.CircuitOpen:
-                    _ = DisconnectBridgeAsync();
+                    QueueBridgeIntent(connect: false, null);
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreCircuitOpen, error: e.Current.LastError);
                     break;
                 case DesktopRuntimeState.Failed:
-                    _ = DisconnectBridgeAsync();
+                    QueueBridgeIntent(connect: false, null);
                     _coreAddress = null;
                     TransitionTo(DesktopStartupState.CoreFailed, error: e.Current.LastError);
                     break;
@@ -444,8 +482,18 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _lifetimeCts?.Cancel();
         _startCts?.Cancel();
 
-        // Dispose Bridge before stopping Core
-        await _bridgeClient.DisposeAsync();
+        Interlocked.Increment(ref _bridgeIntentVersion);
+        await _bridgeOperationLock.WaitAsync();
+        try
+        {
+            // Dispose Bridge before stopping Core and after any owned lifecycle
+            // transition has observed Desktop cancellation.
+            await _bridgeClient.DisposeAsync();
+        }
+        finally
+        {
+            _bridgeOperationLock.Release();
+        }
 
         await _operationLock.WaitAsync();
         try
@@ -463,25 +511,60 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         await _supervisor.DisposeAsync();
         _startCts?.Dispose();
         _lifetimeCts?.Dispose();
+        _bridgeOperationLock.Dispose();
         _operationLock.Dispose();
     }
 
-    private async Task ConnectBridgeAsync(Uri coreAddress)
+    private void QueueBridgeIntent(bool connect, Uri? coreAddress)
+    {
+        var version = Interlocked.Increment(ref _bridgeIntentVersion);
+        var lifetimeToken = _lifetimeCts?.Token ?? CancellationToken.None;
+        _ = RunBridgeIntentAsync(version, connect, coreAddress, lifetimeToken);
+    }
+
+    private async Task RunBridgeIntentAsync(
+        long version,
+        bool connect,
+        Uri? coreAddress,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var dataRoot = _bootstrapSettings?.DataRoot;
-            if (dataRoot is null) return;
+            await _bridgeOperationLock.WaitAsync(cancellationToken);
+            try
+            {
+                if (version != Interlocked.Read(ref _bridgeIntentVersion))
+                    return;
 
-            var token = await _tokenService.GetOrCreateAsync(dataRoot, CancellationToken.None);
-            await _bridgeClient.ConnectAsync(coreAddress, token, CancellationToken.None);
+                if (!connect)
+                {
+                    await _bridgeClient.DisconnectAsync(cancellationToken);
+                    return;
+                }
+
+                var dataRoot = _bootstrapSettings?.DataRoot;
+                if (dataRoot is null || coreAddress is null)
+                    return;
+
+                var token = await _tokenService.GetOrCreateAsync(dataRoot, cancellationToken);
+                if (version != Interlocked.Read(ref _bridgeIntentVersion))
+                    return;
+
+                await _bridgeClient.ConnectAsync(coreAddress, token, cancellationToken);
+            }
+            finally
+            {
+                _bridgeOperationLock.Release();
+            }
         }
-        catch { /* Bridge connection failure is non-fatal; reconnection will retry */ }
-    }
-
-    private async Task DisconnectBridgeAsync()
-    {
-        try { await _bridgeClient.DisconnectAsync(CancellationToken.None); }
-        catch { /* best effort */ }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Desktop lifetime owns cancellation.
+        }
+        catch
+        {
+            // Bridge connection failure is non-fatal; the client will retry
+            // while the same owned intent remains current.
+        }
     }
 }

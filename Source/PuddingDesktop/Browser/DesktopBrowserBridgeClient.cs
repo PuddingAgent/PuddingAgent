@@ -16,9 +16,15 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
     public CancellationTokenSource Lifetime { get; }
     public Channel<BrowserBridgeEnvelope> Outbound { get; }
     public TaskCompletionSource<BrowserBridgeHelloAck> HelloAck { get; }
+    public TaskCompletionSource ReceiveStarted { get; }
     public DateTimeOffset LastReceivedAt { get; set; }
+    public Task SendTask { get; set; } = Task.CompletedTask;
+    public Task ReceiveTask { get; set; } = Task.CompletedTask;
+    public Task HeartbeatTask { get; set; } = Task.CompletedTask;
+    public Task WatchdogTask { get; set; } = Task.CompletedTask;
 
     private int _completed;
+    private int _disposed;
 
     public DesktopBrowserClientConnection(
         long generation,
@@ -31,6 +37,8 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
         Lifetime = lifetime;
         LastReceivedAt = clock.UtcNow;
         HelloAck = new TaskCompletionSource<BrowserBridgeHelloAck>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        ReceiveStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         Outbound = Channel.CreateBounded<BrowserBridgeEnvelope>(new BoundedChannelOptions(128)
         {
@@ -55,6 +63,7 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         TryComplete();
         await Socket.DisposeAsync();
         Lifetime.Dispose();
@@ -73,17 +82,10 @@ internal sealed class DesktopBrowserClientConnection : IAsyncDisposable
 /// </summary>
 public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
 {
-    private static readonly TimeSpan[] ReconnectDelays =
-    [
-        TimeSpan.FromSeconds(1),
-        TimeSpan.FromSeconds(2),
-        TimeSpan.FromSeconds(5),
-        TimeSpan.FromSeconds(10)
-    ];
-
     private readonly BrowserBridgeCommandDispatcher _dispatcher;
     private readonly IDesktopBrowserWebSocketFactory _wsFactory;
     private readonly IBrowserBridgeClock _clock;
+    private readonly DesktopBrowserBridgeClientOptions _options;
     private readonly string _desktopInstanceId = Guid.NewGuid().ToString("N");
 
     private readonly object _stateLock = new();
@@ -98,10 +100,6 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     // Per-connection state (guarded by generation)
     private long _generation;
     private DesktopBrowserClientConnection? _connection;
-    private Task? _receiveTask;
-    private Task? _sendTask;
-    private Task? _heartbeatTask;
-    private Task? _watchdogTask;
     private Task? _reconnectTask;
 
     public BrowserBridgeConnectionState State => _state;
@@ -110,15 +108,24 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     public DesktopBrowserBridgeClient(
         BrowserBridgeCommandDispatcher dispatcher,
         IDesktopBrowserWebSocketFactory? wsFactory = null,
-        IBrowserBridgeClock? clock = null)
+        IBrowserBridgeClock? clock = null,
+        DesktopBrowserBridgeClientOptions? options = null)
     {
         _dispatcher = dispatcher;
         _wsFactory = wsFactory ?? new DefaultDesktopBrowserWebSocketFactory();
         _clock = clock ?? new SystemBrowserBridgeClock();
+        _options = options ?? new DesktopBrowserBridgeClientOptions();
+        if (_options.HelloTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "Hello timeout must be positive.");
+        if (_options.WatchdogInterval <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "Watchdog interval must be positive.");
+        if (_options.ReconnectDelays.Count == 0 || _options.ReconnectDelays.Any(delay => delay < TimeSpan.Zero))
+            throw new ArgumentOutOfRangeException(nameof(options), "Reconnect delays must be non-empty and non-negative.");
     }
 
     public async Task ConnectAsync(Uri coreBaseAddress, string controlToken, CancellationToken cancellationToken)
     {
+        DesktopBrowserClientConnection? existing;
         lock (_stateLock)
         {
             if (_desiredConnected && _coreBaseAddress == coreBaseAddress && _controlToken == controlToken
@@ -130,37 +137,41 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             _coreBaseAddress = coreBaseAddress;
             _controlToken = controlToken;
             _desiredConnected = true;
-            _lifetimeCts ??= CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (_lifetimeCts is null || _lifetimeCts.IsCancellationRequested)
+            {
+                _lifetimeCts?.Dispose();
+                _lifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            }
+            existing = _connection;
         }
+
+        if (existing is not null)
+            await CloseSessionAsync(existing, cancellationToken, closeSocket: true);
 
         await ConnectInternalAsync(_lifetimeCts!.Token);
     }
 
     public async Task DisconnectAsync(CancellationToken cancellationToken)
     {
+        CancellationTokenSource? lifetime;
+        DesktopBrowserClientConnection? conn;
+        Task? reconnect;
         lock (_stateLock)
         {
             _desiredConnected = false;
+            lifetime = _lifetimeCts;
+            _lifetimeCts = null;
+            conn = _connection;
+            reconnect = _reconnectTask;
+            _reconnectTask = null;
         }
 
-        var conn = _connection;
+        lifetime?.Cancel();
         if (conn is not null)
-        {
-            conn.TryComplete();
-
-            if (conn.Socket.State == WebSocketState.Open)
-            {
-                try
-                {
-                    await conn.Socket.CloseAsync(WebSocketCloseStatus.NormalClosure,
-                        "Desktop disconnecting", cancellationToken);
-                }
-                catch { /* best effort */ }
-            }
-        }
-
-        await AwaitConnectionTasksAsync();
-        CleanupConnection();
+            await CloseSessionAsync(conn, cancellationToken, closeSocket: true);
+        if (reconnect is not null)
+            await reconnect.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        lifetime?.Dispose();
         TransitionTo(BrowserBridgeConnectionState.Disconnected, "Intentional disconnect");
     }
 
@@ -212,10 +223,14 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         var connCt = connectionCts.Token;
 
         // Step 2: Start Send Loop (only writer to WebSocket)
-        _sendTask = Task.Run(() => SendLoopAsync(session, connCt), CancellationToken.None);
+        session.SendTask = Task.Run(() => SendLoopAsync(session, connCt), CancellationToken.None);
 
         // Step 3: Start Receive Loop BEFORE Hello (fixes HelloAck deadlock)
-        _receiveTask = Task.Run(() => ReceiveLoopAsync(session, connCt), CancellationToken.None);
+        session.ReceiveTask = Task.Run(() => ReceiveLoopAsync(session, connCt), CancellationToken.None);
+
+        // Do not merely schedule the receive loop: wait until it has actually
+        // entered its receive phase before making Hello observable on the wire.
+        await session.ReceiveStarted.Task.WaitAsync(connCt);
 
         // Step 4: Enqueue Hello
         var helloEnvelope = new BrowserBridgeEnvelope
@@ -227,7 +242,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             {
                 ProtocolVersion = BrowserBridgeProtocol.CurrentVersion,
                 DesktopInstanceId = _desktopInstanceId,
-                Capabilities = ["context", "page", "navigation"]
+                Capabilities = ["context", "page", "navigation", "snapshot", "locator", "interact", "wait"]
             }, BrowserBridgeSerializerOptions.Default)
         };
 
@@ -245,7 +260,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         BrowserBridgeHelloAck? ack = null;
         using (var helloTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(connCt))
         {
-            helloTimeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            helloTimeoutCts.CancelAfter(_options.HelloTimeout);
             try
             {
                 ack = await session.HelloAck.Task.WaitAsync(helloTimeoutCts.Token);
@@ -260,11 +275,9 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         if (ack is not { Accepted: true })
         {
             session.TryComplete();
-            await AwaitConnectionTasksAsync();
-            await session.DisposeAsync();
-            CleanupConnection();
             TransitionTo(BrowserBridgeConnectionState.Failed,
                 ack is not null ? $"Hello rejected: {ack.ErrorMessage}" : "Hello timeout");
+            await CloseSessionAsync(session, CancellationToken.None, closeSocket: true);
             ScheduleReconnect(gen, ct);
             return;
         }
@@ -273,8 +286,8 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         TransitionTo(BrowserBridgeConnectionState.Connected, null);
 
         // Start Heartbeat and Watchdog
-        _heartbeatTask = Task.Run(() => HeartbeatLoopAsync(session, connCt), CancellationToken.None);
-        _watchdogTask = Task.Run(() => WatchdogLoopAsync(session, connCt), CancellationToken.None);
+        session.HeartbeatTask = Task.Run(() => HeartbeatLoopAsync(session, connCt), CancellationToken.None);
+        session.WatchdogTask = Task.Run(() => WatchdogLoopAsync(session, connCt), CancellationToken.None);
     }
 
     private async Task SendLoopAsync(DesktopBrowserClientConnection session, CancellationToken ct)
@@ -301,6 +314,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     {
         var buffer = new byte[64 * 1024];
         var messageBuffer = new MemoryStream();
+        session.ReceiveStarted.TrySetResult();
 
         try
         {
@@ -330,8 +344,6 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
                     }
                 } while (!result.EndOfMessage);
 
-                session.LastReceivedAt = _clock.UtcNow;
-
                 var span = new ReadOnlySpan<byte>(messageBuffer.GetBuffer(), 0, (int)messageBuffer.Length);
                 BrowserBridgeEnvelope envelope;
                 try
@@ -340,9 +352,11 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
                 }
                 catch
                 {
-                    continue; // skip malformed
+                    CompleteConnectionOnce(session, "Malformed protocol message");
+                    return;
                 }
 
+                session.LastReceivedAt = _clock.UtcNow;
                 await HandleEnvelopeAsync(session, envelope, ct);
             }
         }
@@ -362,7 +376,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         {
             while (!ct.IsCancellationRequested)
             {
-                await _clock.DelayAsync(TimeSpan.FromSeconds(2), ct);
+                await _clock.DelayAsync(_options.WatchdogInterval, ct);
 
                 var elapsed = _clock.UtcNow - session.LastReceivedAt;
                 if (elapsed > BrowserBridgeProtocol.DefaultHeartbeatTimeout)
@@ -401,6 +415,14 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
     private async Task HandleEnvelopeAsync(
         DesktopBrowserClientConnection session, BrowserBridgeEnvelope envelope, CancellationToken ct)
     {
+        if (envelope.Kind != BrowserBridgeMessageKind.HelloAck
+            && (!session.HelloAck.Task.IsCompletedSuccessfully
+                || session.HelloAck.Task.Result is not { Accepted: true }))
+        {
+            CompleteConnectionOnce(session, "Message received before accepted HelloAck");
+            return;
+        }
+
         switch (envelope.Kind)
         {
             case BrowserBridgeMessageKind.HelloAck:
@@ -409,8 +431,6 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
                 break;
 
             case BrowserBridgeMessageKind.Command:
-                // Only process commands after handshake
-                if (!session.HelloAck.Task.IsCompleted) break;
                 var command = BrowserBridgeSerializer.DeserializePayload<BrowserBridgeCommand>(envelope);
                 var result = await _dispatcher.DispatchAsync(command, ct);
                 await EnqueueResultAsync(session, result, envelope.MessageId, ct);
@@ -506,7 +526,7 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             }
 
             TransitionTo(BrowserBridgeConnectionState.Reconnecting, $"Attempt {attempt + 1}");
-            var delay = ReconnectDelays[Math.Min(attempt, ReconnectDelays.Length - 1)];
+            var delay = _options.ReconnectDelays[Math.Min(attempt, _options.ReconnectDelays.Count - 1)];
 
             try { await _clock.DelayAsync(delay, ct); }
             catch (OperationCanceledException) { return; }
@@ -520,6 +540,10 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
 
             try
             {
+                var failedSession = GetCurrentConnection(failedGen);
+                if (failedSession is not null)
+                    await CloseSessionAsync(failedSession, CancellationToken.None, closeSocket: true);
+
                 await ConnectInternalAsync(ct);
                 if (_state == BrowserBridgeConnectionState.Connected)
                     return;
@@ -529,25 +553,47 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
         }
     }
 
-    private async Task AwaitConnectionTasksAsync()
+    private DesktopBrowserClientConnection? GetCurrentConnection(long generation)
     {
-        if (_receiveTask is not null)
-            await _receiveTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (_sendTask is not null)
-            await _sendTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (_heartbeatTask is not null)
-            await _heartbeatTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (_watchdogTask is not null)
-            await _watchdogTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        lock (_stateLock)
+            return _connection?.Generation == generation ? _connection : null;
     }
 
-    private void CleanupConnection()
+    private static async Task AwaitConnectionTasksAsync(DesktopBrowserClientConnection session)
     {
-        _connection = null;
-        _receiveTask = null;
-        _sendTask = null;
-        _heartbeatTask = null;
-        _watchdogTask = null;
+        await session.ReceiveTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await session.SendTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await session.HeartbeatTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await session.WatchdogTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+    }
+
+    private async Task CloseSessionAsync(
+        DesktopBrowserClientConnection session,
+        CancellationToken cancellationToken,
+        bool closeSocket)
+    {
+        session.TryComplete();
+
+        if (closeSocket && session.Socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+        {
+            try
+            {
+                await session.Socket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "Desktop connection closing",
+                    cancellationToken);
+            }
+            catch { /* best effort */ }
+        }
+
+        await AwaitConnectionTasksAsync(session);
+        await session.DisposeAsync();
+
+        lock (_stateLock)
+        {
+            if (ReferenceEquals(_connection, session))
+                _connection = null;
+        }
     }
 
     private void TransitionTo(BrowserBridgeConnectionState newState, string? reason)
@@ -579,26 +625,20 @@ public sealed class DesktopBrowserBridgeClient : IDesktopBrowserBridgeClient
             _desiredConnected = false;
         }
 
-        _lifetimeCts?.Cancel();
-        _connection?.TryComplete();
+        var lifetime = _lifetimeCts;
+        _lifetimeCts = null;
+        lifetime?.Cancel();
 
-        if (_connection?.Socket.State == WebSocketState.Open)
-        {
-            try
-            {
-                await _connection.Socket.CloseAsync(WebSocketCloseStatus.NormalClosure,
-                    "Disposing", CancellationToken.None);
-            }
-            catch { }
-        }
+        var session = _connection;
+        if (session is not null)
+            await CloseSessionAsync(session, CancellationToken.None, closeSocket: true);
 
-        await AwaitConnectionTasksAsync();
+        var reconnect = _reconnectTask;
+        if (reconnect is not null)
+            await reconnect.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
-        if (_connection is not null)
-            await _connection.DisposeAsync();
-
-        CleanupConnection();
-        _lifetimeCts?.Dispose();
+        _reconnectTask = null;
+        lifetime?.Dispose();
     }
 }
 

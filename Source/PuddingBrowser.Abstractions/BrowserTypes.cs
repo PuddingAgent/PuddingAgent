@@ -130,6 +130,21 @@ public sealed class StaleBrowserHandleException : InvalidOperationException
         : base($"Stale handle: page {pageId.Value} version {expected}, current {actual}") { }
 }
 
+/// <summary>
+/// Stable browser-domain failure propagated across an out-of-process browser runtime.
+/// Tool layers should surface <see cref="Code"/> instead of parsing exception text.
+/// </summary>
+public sealed class BrowserOperationException : InvalidOperationException
+{
+    public BrowserOperationException(string code, string message)
+        : base(message)
+    {
+        Code = string.IsNullOrWhiteSpace(code) ? "browser_operation_failed" : code;
+    }
+
+    public string Code { get; }
+}
+
 // ── Browser Event Model ──────────────────────────────────
 
 public abstract record BrowserEvent(

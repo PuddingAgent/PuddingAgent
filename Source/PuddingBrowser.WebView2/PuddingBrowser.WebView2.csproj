@@ -21,4 +21,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingDesktop.Tests" />
+  </ItemGroup>
 </Project>

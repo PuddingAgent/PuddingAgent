@@ -9,6 +9,7 @@ namespace PuddingDesktop.Core;
 /// </summary>
 public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
 {
+    internal const string DesktopChildEnvironmentName = "Production";
     private static readonly TimeSpan HealthPollInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -166,9 +167,24 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
 
     private Process CreateProcess(CoreProcessStartOptions options)
     {
+        var startInfo = CreateProcessStartInfo(options);
+
+        _logBuffer.Append(
+            $"[Desktop] Starting Core: {options.ExecutablePath} {string.Join(" ", startInfo.ArgumentList)}");
+
+        return new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+    }
+
+    internal static ProcessStartInfo CreateProcessStartInfo(CoreProcessStartOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var executablePath = Path.GetFullPath(options.ExecutablePath);
         var startInfo = new ProcessStartInfo
         {
-            FileName = options.ExecutablePath,
+            FileName = executablePath,
+            WorkingDirectory = Path.GetDirectoryName(executablePath)
+                ?? AppContext.BaseDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -185,10 +201,13 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
         startInfo.ArgumentList.Add("--urls");
         startInfo.ArgumentList.Add($"http://127.0.0.1:{options.Port}");
 
-        _logBuffer.Append(
-            $"[Desktop] Starting Core: {options.ExecutablePath} {string.Join(" ", startInfo.ArgumentList)}");
+        // PuddingDesktop is a WPF process, so its Visual Studio launch profile must
+        // not leak Development static-web-assets behavior into the Core child.
+        // DesktopChild always serves the physical wwwroot bundled beside the Core.
+        startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = DesktopChildEnvironmentName;
+        startInfo.Environment["DOTNET_ENVIRONMENT"] = DesktopChildEnvironmentName;
 
-        return new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        return startInfo;
     }
 
     private async Task StopUnderLockAsync(CancellationToken cancellationToken)

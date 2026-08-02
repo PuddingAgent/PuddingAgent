@@ -17,6 +17,7 @@ public sealed partial class MainWindow : Window
     private readonly RuntimeCenterViewModel _statusVm;
     private readonly WindowsThemeService _themeService;
     private readonly DesktopTrayIconService _trayIconService;
+    private readonly CancellationTokenSource _browserLifetimeCts = new();
     private bool _isClosing;
     private bool _shutdownCompleted;
     private bool _webViewInitialized;
@@ -60,6 +61,7 @@ public sealed partial class MainWindow : Window
 
         WorkbenchPage.WorkbenchReady += OnWorkbenchReady;
         WorkbenchPage.WorkbenchFailed += OnWorkbenchFailed;
+        BrowserPage.RetryInitializationRequested += OnBrowserRetryInitializationRequested;
 
         UpdateStatusDisplay();
         UpdateNavigation();
@@ -72,11 +74,11 @@ public sealed partial class MainWindow : Window
         {
             UpdateNavigation();
 
-            if (e.Current == DesktopStartupState.CoreReady && e.CoreAddress is not null)
+            if (e.Current == DesktopStartupState.CoreReady
+                && e.CoreAddress is not null
+                && navWorkbench.IsChecked == true)
             {
                 _ = InitializeWebView2Async(e.CoreAddress);
-                _ = InitializeBrowserWorkspaceAsync();
-                _ = ConnectBrowserBridgeAsync(e.CoreAddress);
             }
 
             if (e.Current is DesktopStartupState.CoreStopped
@@ -85,8 +87,6 @@ public sealed partial class MainWindow : Window
                 or DesktopStartupState.CoreCircuitOpen)
             {
                 ResetWebView2();
-                // Core stop does NOT destroy Browser Context/Page — only disconnects Bridge
-                _ = DisconnectBrowserBridgeAsync();
             }
         });
     }
@@ -120,51 +120,42 @@ public sealed partial class MainWindow : Window
     /// Core not being started does NOT block this — user can still browse.
     /// Uses the Coordinator's existing BridgeDispatcher and BridgeClient.
     /// </summary>
-    private async Task InitializeBrowserWorkspaceAsync()
+    internal async Task<bool> InitializeBrowserWorkspaceAsync(
+        string dataRoot,
+        CancellationToken cancellationToken)
     {
-        if (_browserInitialized) return;
-
-        var dataRoot = _coordinator.DataRoot;
-        if (string.IsNullOrWhiteSpace(dataRoot)) return;
+        if (_browserInitialized) return true;
+        if (string.IsNullOrWhiteSpace(dataRoot)) return false;
 
         try
         {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                _browserLifetimeCts.Token);
             if (BrowserPage is BrowserWorkspaceView browserView)
             {
                 await browserView.InitializeAsync(
                     dataRoot,
                     _coordinator.BridgeDispatcher,
                     _coordinator.BridgeClient,
-                    CancellationToken.None);
+                    linkedCts.Token);
             }
             _browserInitialized = true;
+            return true;
         }
         catch (Exception ex)
         {
+            _browserInitialized = false;
             DesktopDiagnosticLog.Write("BrowserWorkspaceInit", ex);
+            return false;
         }
     }
 
-    /// <summary>
-    /// Connects the Browser Bridge to Core. Called on Core Ready.
-    /// The Coordinator already manages bridge connection internally.
-    /// </summary>
-    private Task ConnectBrowserBridgeAsync(Uri coreAddress)
+    private async void OnBrowserRetryInitializationRequested(object? sender, EventArgs e)
     {
-        // Bridge connection is managed by the Coordinator's internal lifecycle.
-        // BrowserWorkspaceView subscribes to BridgeClient.StateChanged for UI updates.
-        return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Disconnects the Browser Bridge on Core Stop/Restart.
-    /// Does NOT destroy Browser Context/Page — tabs remain visible.
-    /// The Coordinator already manages bridge disconnection internally.
-    /// </summary>
-    private Task DisconnectBrowserBridgeAsync()
-    {
-        // Bridge disconnection is managed by the Coordinator's internal lifecycle.
-        return Task.CompletedTask;
+        var dataRoot = _coordinator.DataRoot;
+        if (string.IsNullOrWhiteSpace(dataRoot)) return;
+        await InitializeBrowserWorkspaceAsync(dataRoot, _browserLifetimeCts.Token);
     }
 
     private void OnWorkbenchReady(object? sender, EventArgs e)
@@ -249,12 +240,17 @@ public sealed partial class MainWindow : Window
         WorkbenchPage.DisposeWebView();
         StoragePage.DisposeOperations();
         RuntimeCenterPage.DisposeOperations();
+        _browserLifetimeCts.Cancel();
 
         // Dispose Browser Workspace (await to ensure WebView2 cleanup)
         try
         {
             if (BrowserPage is BrowserWorkspaceView browserView)
-                await browserView.DisposeAsync();
+            {
+                await browserView.DisposeAsync()
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5));
+            }
         }
         catch (Exception ex)
         {
@@ -263,6 +259,8 @@ public sealed partial class MainWindow : Window
 
         _statusVm.Dispose();
         _trayIconService.Dispose();
+        BrowserPage.RetryInitializationRequested -= OnBrowserRetryInitializationRequested;
+        _browserLifetimeCts.Dispose();
         _shutdownCompleted = true;
         Dispatcher.Invoke(Close);
     }
@@ -291,6 +289,16 @@ public sealed partial class MainWindow : Window
                     or DesktopStartupState.WebViewInitializing ? Visibility.Visible : Visibility.Collapsed;
                 RuntimeCenterPage.Visibility = WorkbenchPage.Visibility == Visibility.Visible
                     ? Visibility.Collapsed : Visibility.Visible;
+
+                // A collapsed WebView2CompositionControl cannot reliably complete
+                // initialization. Defer Workbench creation until this page is visible;
+                // Core and the Agent Browser Bridge remain independently usable.
+                if (WorkbenchPage.Visibility == Visibility.Visible
+                    && s == DesktopStartupState.CoreReady
+                    && _coordinator.CoreAddress is { } coreAddress)
+                {
+                    _ = InitializeWebView2Async(coreAddress);
+                }
             }
             else if (btn == navBrowser)
                 BrowserPage.Visibility = Visibility.Visible;

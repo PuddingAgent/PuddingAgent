@@ -19,7 +19,8 @@ public static class BuiltInAgentTemplates
         {
             AllowFileWrite = false,
             AllowShellExecution = false,
-            AllowNetworkAccess = false,
+            AllowNetworkAccess = true,
+            DefaultToolNames = ["browser_context", "browser_tabs", "browser_navigate", "browser_snapshot", "browser_locate", "browser_interact", "browser_wait_for"],
         },
         Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy
@@ -43,7 +44,7 @@ public static class BuiltInAgentTemplates
         {
             AllowFileWrite = true,
             AllowShellExecution = true,
-            AllowNetworkAccess = false,
+            AllowNetworkAccess = true,
             AllowedToolNames =
             [
                 "terminal_start",
@@ -58,7 +59,15 @@ public static class BuiltInAgentTemplates
                 "file_write",
                 "file_patch",
                 "apply_patch",
+                "browser_context",
+                "browser_tabs",
+                "browser_navigate",
+                "browser_snapshot",
+                "browser_locate",
+                "browser_interact",
+                "browser_wait_for",
             ],
+            DefaultToolNames = ["browser_context", "browser_tabs", "browser_navigate", "browser_snapshot", "browser_locate", "browser_interact", "browser_wait_for"],
         },
         Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy
@@ -82,7 +91,7 @@ public static class BuiltInAgentTemplates
         {
             AllowFileWrite = true,
             AllowShellExecution = true,
-            AllowNetworkAccess = false,
+            AllowNetworkAccess = true,
             AllowedToolNames =
             [
                 "terminal_start",
@@ -97,7 +106,15 @@ public static class BuiltInAgentTemplates
                 "file_write",
                 "file_patch",
                 "apply_patch",
+                "browser_context",
+                "browser_tabs",
+                "browser_navigate",
+                "browser_snapshot",
+                "browser_locate",
+                "browser_interact",
+                "browser_wait_for",
             ],
+            DefaultToolNames = ["browser_context", "browser_tabs", "browser_navigate", "browser_snapshot", "browser_locate", "browser_interact", "browser_wait_for"],
         },
         Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
         Memory = new MemoryPolicy

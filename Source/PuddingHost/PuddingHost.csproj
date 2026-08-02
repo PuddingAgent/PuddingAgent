@@ -37,6 +37,8 @@
     <ProjectReference Include="..\..\external\github.hyfree.GM\github.hyfree.GM\github.hyfree.GM.csproj" />
     <ProjectReference Include="..\..\src\HarnessAgent\Core\HarnessAgent.Core.csproj" />
     <ProjectReference Include="..\PuddingBrowser.Protocol\PuddingBrowser.Protocol.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+    <ProjectReference Include="..\PuddingBrowser.AgentTools\PuddingBrowser.AgentTools.csproj" />
   </ItemGroup>
 
 </Project>

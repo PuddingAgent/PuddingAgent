@@ -139,6 +139,11 @@ public sealed class DesktopTrayIconService : IDisposable
             Placement = PlacementMode.AbsolutePoint,
             HorizontalOffset = point.X,
             VerticalOffset = point.Y,
+            // This popup is hosted by Explorer rather than the Desktop window.
+            // Keep its palette self-contained: the application may be dark while
+            // the native WPF popup still receives the light Windows menu surface.
+            Background = TrayMenuBackgroundBrush,
+            Foreground = TrayMenuForegroundBrush,
         };
         menu.Items.Add(CreateItem("打开 Pudding", () => OpenRequested?.Invoke(this, EventArgs.Empty)));
         menu.Items.Add(new Separator());
@@ -152,10 +157,21 @@ public sealed class DesktopTrayIconService : IDisposable
 
     private static MenuItem CreateItem(string header, Action action)
     {
-        var item = new MenuItem { Header = header };
+        var item = new MenuItem
+        {
+            Header = header,
+            Background = TrayMenuBackgroundBrush,
+            Foreground = TrayMenuForegroundBrush,
+        };
         item.Click += (_, _) => action();
         return item;
     }
+
+    private static readonly System.Windows.Media.Brush TrayMenuBackgroundBrush =
+        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(249, 249, 249));
+
+    private static readonly System.Windows.Media.Brush TrayMenuForegroundBrush =
+        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(31, 31, 31));
 
     public void Dispose()
     {

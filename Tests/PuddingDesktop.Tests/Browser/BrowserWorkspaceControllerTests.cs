@@ -363,6 +363,373 @@ public class BrowserWorkspaceControllerTests
     }
 
     [Fact]
+    public async Task TwoPages_CreateTwoSurfaces_AndActivateOnlySelectedPage()
+    {
+        var surfaceHost = new FakeBrowserSurfaceHost();
+        var runtime = new FakeBrowserRuntime(surfaceHost);
+        var controller = new BrowserWorkspaceController(runtime, surfaceHost, new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var first = await controller.CreatePageAsync(null, true);
+            var second = await controller.CreatePageAsync(null, false);
+
+            Assert.Equal([first, second], surfaceHost.CreatedSurfaces);
+            Assert.Equal(first, controller.ActivePageId);
+            Assert.Equal(first, surfaceHost.ActivatedSurfaces.Last());
+
+            await controller.ActivateAsync(second, CancellationToken.None);
+
+            Assert.Equal(second, controller.ActivePageId);
+            Assert.Equal(second, surfaceHost.ActivatedSurfaces.Last());
+            Assert.True(controller.Tabs.Single(tab => tab.PageId == second).IsActive);
+            Assert.False(controller.Tabs.Single(tab => tab.PageId == first).IsActive);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task AgentTarget_RemainsStableAcrossVisibleTabSwitch_AndDrivesImplicitCommand()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var first = await controller.CreatePageAsync(null, true);
+            var second = await controller.CreatePageAsync(null, true);
+            await controller.AssignAgentTargetAsync(first, CancellationToken.None);
+            await controller.ActivateAsync(second, CancellationToken.None);
+
+            var result = await controller.ExecuteAsync(new BrowserBridgeCommand
+            {
+                OperationId = Guid.NewGuid(),
+                Name = BrowserBridgeCommandNames.PageGoto,
+                DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+                Arguments = JsonSerializer.SerializeToElement(new { url = "https://target.example/" })
+            }, CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.Equal(first, controller.AgentTargetPageId);
+            Assert.Equal(second, controller.ActivePageId);
+            Assert.Equal("https://target.example/", controller.Tabs.Single(tab => tab.PageId == first).Url);
+            Assert.Equal("about:blank", controller.Tabs.Single(tab => tab.PageId == second).Url);
+            Assert.True(controller.Tabs.Single(tab => tab.PageId == first).IsAgentTarget);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ClosingAgentTarget_DoesNotFallBackToActivePage()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var target = await controller.CreatePageAsync(null, true);
+            await controller.CreatePageAsync(null, true);
+            await controller.AssignAgentTargetAsync(target, CancellationToken.None);
+            await controller.ClosePageAsync(target, CancellationToken.None);
+
+            var result = await controller.ExecuteAsync(new BrowserBridgeCommand
+            {
+                OperationId = Guid.NewGuid(),
+                Name = BrowserBridgeCommandNames.PageGetInfo,
+                DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+                Arguments = JsonSerializer.SerializeToElement(new { })
+            }, CancellationToken.None);
+
+            Assert.False(result.Success);
+            Assert.Equal(BrowserBridgeErrorCodes.BrowserPageNotFound, result.ErrorCode);
+            Assert.Null(controller.AgentTargetPageId);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task NavigationOperations_UpdateTabStateThroughUiDispatcher()
+    {
+        var uiDispatcher = new FakeUiDispatcher();
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), uiDispatcher);
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var page = await controller.CreatePageAsync(null, true);
+            await controller.NavigateAsync(page, new Uri("https://example.com/"), CancellationToken.None);
+
+            Assert.True(controller.CanGoBack);
+            Assert.False(controller.CanGoForward);
+
+            await controller.GoBackAsync(page, CancellationToken.None);
+            Assert.False(controller.CanGoBack);
+            Assert.True(controller.CanGoForward);
+
+            await controller.GoForwardAsync(page, CancellationToken.None);
+            Assert.True(controller.CanGoBack);
+            Assert.False(controller.CanGoForward);
+            Assert.True(uiDispatcher.InvocationCount >= 4);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ActivityProjection_UpsertsCompletion_AndKeepsLatestHundred()
+    {
+        var controller = new BrowserWorkspaceController(
+            new FakeBrowserRuntime(), new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+
+        for (var index = 0; index < 101; index++)
+        {
+            var operationId = Guid.NewGuid();
+            var started = DateTimeOffset.UtcNow.AddSeconds(index);
+            await controller.ApplyActivityAsync(new AgentBrowserActivitySnapshot
+            {
+                OperationId = operationId,
+                CommandName = BrowserBridgeCommandNames.PageGoto,
+                Target = $"page-{index}",
+                StartedAt = started
+            }, CancellationToken.None);
+
+            await controller.ApplyActivityAsync(new AgentBrowserActivitySnapshot
+            {
+                OperationId = operationId,
+                CommandName = BrowserBridgeCommandNames.PageGoto,
+                Target = $"page-{index}",
+                StartedAt = started,
+                CompletedAt = started.AddMilliseconds(25),
+                Success = true
+            }, CancellationToken.None);
+        }
+
+        Assert.Equal(100, controller.Activities.Count);
+        Assert.All(controller.Activities, activity => Assert.True(activity.IsCompleted));
+        Assert.DoesNotContain(controller.Activities, activity => activity.Target == "page-0");
+        await controller.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Dispatcher_PublishesStartAndCompletion_AndClearHandlerRejectsNewCommands()
+    {
+        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var handler = new SuccessfulBrowserHandler();
+        dispatcher.SetHandler(handler);
+        var snapshots = new List<AgentBrowserActivitySnapshot>();
+        dispatcher.ActivityChanged += (_, args) => snapshots.Add(args.Snapshot);
+        var command = new BrowserBridgeCommand
+        {
+            OperationId = Guid.NewGuid(),
+            Name = BrowserBridgeCommandNames.ContextCreate,
+            DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+            Arguments = JsonSerializer.SerializeToElement(new { })
+        };
+
+        var completed = await dispatcher.DispatchAsync(command, CancellationToken.None);
+
+        Assert.True(completed.Success);
+        Assert.Equal(2, snapshots.Count);
+        Assert.False(snapshots[0].IsCompleted);
+        Assert.True(snapshots[1].IsCompleted);
+
+        dispatcher.ClearHandler(handler);
+        var unavailable = await dispatcher.DispatchAsync(command with { OperationId = Guid.NewGuid() }, CancellationToken.None);
+        Assert.False(unavailable.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserNotAvailable, unavailable.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Dispatcher_DisconnectFailsActiveCommandWithDisconnectedCode()
+    {
+        var dispatcher = new BrowserBridgeCommandDispatcher();
+        var handler = new BlockingBrowserHandler();
+        dispatcher.SetHandler(handler);
+        var command = new BrowserBridgeCommand
+        {
+            OperationId = Guid.NewGuid(),
+            Name = BrowserBridgeCommandNames.ContextCreate,
+            DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+            Arguments = JsonSerializer.SerializeToElement(new { })
+        };
+
+        var pending = dispatcher.DispatchAsync(command, CancellationToken.None);
+        await handler.Started.Task;
+        dispatcher.FailAllPending(
+            BrowserBridgeErrorCodes.BrowserBridgeDisconnected,
+            "Bridge disconnected during command");
+
+        var result = await pending;
+        Assert.False(result.Success);
+        Assert.Equal(BrowserBridgeErrorCodes.BrowserBridgeDisconnected, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task InitializeFailure_CanRetryWithoutDuplicateContext()
+    {
+        var runtime = new FakeBrowserRuntime { FailNextContextCreation = true };
+        var controller = new BrowserWorkspaceController(runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => controller.InitializeAsync(tempDir, CancellationToken.None));
+
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+
+            Assert.NotNull(controller.ActiveContextId);
+            Assert.Equal(1, runtime.ContextCount);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task BridgeContextList_ReturnsInitializedDesktopContext()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(
+            runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var command = new BrowserBridgeCommand
+            {
+                OperationId = Guid.NewGuid(),
+                Name = BrowserBridgeCommandNames.ContextList,
+                DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+                Arguments = JsonSerializer.SerializeToElement(new { })
+            };
+
+            var result = await controller.ExecuteAsync(command, CancellationToken.None);
+
+            Assert.True(result.Success);
+            var descriptor = result.Value!.Value.Deserialize<BrowserContextListDescriptor>(
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var context = Assert.Single(descriptor!.Contexts);
+            Assert.Equal(controller.ActiveContextId!.Value.Value, context.ContextId);
+            Assert.Equal(0, context.PageCount);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task BridgePageCreate_AssignsAgentTarget_WhileUserTabSwitchDoesNotChangeIt()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(
+            runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var first = await controller.CreatePageAsync(activate: true, ct: CancellationToken.None);
+            var command = new BrowserBridgeCommand
+            {
+                OperationId = Guid.NewGuid(),
+                ContextId = controller.ActiveContextId!.Value.Value,
+                Name = BrowserBridgeCommandNames.PageCreate,
+                DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1),
+                Arguments = JsonSerializer.SerializeToElement(new PageCreateArguments { Activate = true })
+            };
+
+            var result = await controller.ExecuteAsync(command, CancellationToken.None);
+            var created = result.Value!.Value.Deserialize<BrowserPageDescriptor>(
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            await controller.ActivateAsync(first, CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.NotNull(created);
+            Assert.Equal(created!.PageId, controller.AgentTargetPageId!.Value.Value);
+            Assert.Equal(first, controller.ActivePageId);
+            Assert.NotEqual(controller.ActivePageId, controller.AgentTargetPageId);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task BridgeSnapshotLocateInteractAndWait_DelegateToPageAndReturnTypedResults()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var controller = new BrowserWorkspaceController(
+            runtime, new FakeBrowserSurfaceHost(), new FakeUiDispatcher());
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            await controller.InitializeAsync(tempDir, CancellationToken.None);
+            var pageId = await controller.CreatePageAsync(activate: true, ct: CancellationToken.None);
+            var snapshot = await controller.ExecuteAsync(MakeCommand(
+                BrowserBridgeCommandNames.PageSnapshot, pageId.Value, args: new PageSnapshotArguments()), CancellationToken.None);
+            var locate = await controller.ExecuteAsync(MakeCommand(
+                BrowserBridgeCommandNames.PageLocate, pageId.Value, args: new PageLocateArguments
+                {
+                    Locator = new BrowserLocatorDescriptor { Kind = "role", Value = "button", Name = "Save" }
+                }), CancellationToken.None);
+            var interact = await controller.ExecuteAsync(MakeCommand(
+                BrowserBridgeCommandNames.PageInteract, pageId.Value, args: new PageInteractArguments
+                {
+                    Action = "click",
+                    Locator = new BrowserLocatorDescriptor { Kind = "ref", Value = "v0-n1" }
+                }), CancellationToken.None);
+            var wait = await controller.ExecuteAsync(MakeCommand(
+                BrowserBridgeCommandNames.PageWaitFor, pageId.Value, args: new PageWaitForArguments
+                {
+                    Selector = "#saved",
+                    TimeoutMs = 1000
+                }), CancellationToken.None);
+
+            Assert.True(snapshot.Success);
+            Assert.True(locate.Success, $"{locate.ErrorCode}: {locate.ErrorMessage}");
+            Assert.True(interact.Success, $"{interact.ErrorCode}: {interact.ErrorMessage}");
+            Assert.True(wait.Success, $"{wait.ErrorCode}: {wait.ErrorMessage}");
+            Assert.Contains("v0-n1", locate.Value!.Value.GetRawText(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            await controller.DisposeAsync();
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public void AgentBrowserUdf_DiffersFrom_WorkbenchUdf()
     {
         var dataRoot = Path.Combine(Path.GetTempPath(), $"pwtest-{Guid.NewGuid():N}");
@@ -371,6 +738,13 @@ public class BrowserWorkspaceControllerTests
 
         Assert.NotEqual(agentUdf, workbenchUdf);
     }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"pwtest-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
 }
 
 // ─── Fake implementations for testing without real WebView2 ──────────────────
@@ -378,13 +752,25 @@ public class BrowserWorkspaceControllerTests
 internal sealed class FakeBrowserRuntime : IBrowserRuntime
 {
     private readonly Dictionary<BrowserContextId, FakeBrowserContext> _contexts = new();
+    private readonly FakeBrowserSurfaceHost? _surfaceHost;
+
+    public bool FailNextContextCreation { get; set; }
+    public int ContextCount => _contexts.Count;
 
     public BrowserRuntimeState State { get; private set; } = BrowserRuntimeState.Created;
 
+    public FakeBrowserRuntime(FakeBrowserSurfaceHost? surfaceHost = null)
+        => _surfaceHost = surfaceHost;
+
     public Task<IBrowserContext> CreateContextAsync(BrowserContextOptions options, CancellationToken ct)
     {
+        if (FailNextContextCreation)
+        {
+            FailNextContextCreation = false;
+            throw new InvalidOperationException("Scripted context creation failure");
+        }
         var id = options.Id ?? new BrowserContextId(Guid.NewGuid().ToString("N"));
-        var context = new FakeBrowserContext(id, options);
+        var context = new FakeBrowserContext(id, options, _surfaceHost);
         _contexts[id] = context;
         State = BrowserRuntimeState.Ready;
         return Task.FromResult<IBrowserContext>(context);
@@ -427,8 +813,14 @@ internal sealed class FakeBrowserContext : IBrowserContext
     public BrowserContextId Id { get; }
     public BrowserContextInfo Info { get; private set; }
 
-    public FakeBrowserContext(BrowserContextId id, BrowserContextOptions options)
+    private readonly FakeBrowserSurfaceHost? _surfaceHost;
+
+    public FakeBrowserContext(
+        BrowserContextId id,
+        BrowserContextOptions options,
+        FakeBrowserSurfaceHost? surfaceHost = null)
     {
+        _surfaceHost = surfaceHost;
         Id = id;
         Info = new BrowserContextInfo
         {
@@ -439,13 +831,15 @@ internal sealed class FakeBrowserContext : IBrowserContext
         };
     }
 
-    public Task<IBrowserPage> NewPageAsync(PageCreateOptions options, CancellationToken ct)
+    public async Task<IBrowserPage> NewPageAsync(PageCreateOptions options, CancellationToken ct)
     {
         var pageId = new PageId(Guid.NewGuid().ToString("N"));
+        if (_surfaceHost is not null)
+            await _surfaceHost.CreateAsync(Id, pageId, null!, options, ct);
         var page = new FakeBrowserPage(pageId, Id);
         _pages[pageId] = page;
         Info = Info with { PageCount = _pages.Count };
-        return Task.FromResult<IBrowserPage>(page);
+        return page;
     }
 
     public Task<IBrowserPage?> GetPageAsync(PageId id, CancellationToken ct)
@@ -485,6 +879,9 @@ internal sealed class FakeBrowserPage : IBrowserPage
     public PageId Id { get; }
     public BrowserContextId ContextId { get; }
     public long PageVersion => Interlocked.Read(ref _version);
+    public bool CanGoBack { get; private set; }
+    public bool CanGoForward { get; private set; }
+    public bool IsLoading { get; private set; }
     public PageInfo Info { get; private set; }
 
     public FakeBrowserPage(PageId id, BrowserContextId contextId)
@@ -498,37 +895,89 @@ internal sealed class FakeBrowserPage : IBrowserPage
     {
         Interlocked.Increment(ref _version);
         Info = Info with { Url = url.ToString(), PageVersion = PageVersion };
+        CanGoBack = true;
+        CanGoForward = false;
+        IsLoading = false;
         return Task.FromResult(new NavigationResult { Url = url, Ok = true, StatusCode = 200 });
     }
 
-    public Task GoBackAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task GoForwardAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task GoBackAsync(CancellationToken ct)
+    {
+        CanGoBack = false;
+        CanGoForward = true;
+        return Task.CompletedTask;
+    }
+    public Task GoForwardAsync(CancellationToken ct)
+    {
+        CanGoBack = true;
+        CanGoForward = false;
+        return Task.CompletedTask;
+    }
     public Task ReloadAsync(CancellationToken ct) => Task.CompletedTask;
     public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
     public Task BringToFrontAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct) => throw new NotSupportedException();
-    public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
-    public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct) => throw new NotSupportedException();
+    public Task<PageSnapshot> SnapshotAsync(SnapshotOptions options, CancellationToken ct)
+        => Task.FromResult(new PageSnapshot
+        {
+            AccessibilityTree = $"button ref=v{PageVersion}-n1 name=\"Save\"",
+            NodeCount = 1
+        });
+    public async Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
+        => (await QueryAllAsync(locator, ct)).FirstOrDefault();
+    public Task<IReadOnlyList<IElementHandle>> QueryAllAsync(Locator locator, CancellationToken ct)
+    {
+        if (locator.Kind == LocatorKind.Ref && locator.Value != $"v{PageVersion}-n1")
+            throw new BrowserOperationException("stale_element_reference", "stale ref");
+        return Task.FromResult<IReadOnlyList<IElementHandle>>(
+        [
+            new ControllerFakeElementHandle(Id, PageVersion, new BrowserElementInfo
+            {
+                Ref = $"v{PageVersion}-n1", Tag = "button", Role = "button", Name = "Save",
+                Text = "Save", Visible = true, Enabled = true
+            })
+        ]);
+    }
     public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
     public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
     public Task<JsonDocument> SendCdpAsync(string method, JsonElement? parameters, CancellationToken ct) => throw new NotSupportedException();
     public Task<BrowserSubscriptionId> SubscribeCdpAsync(string eventName, CancellationToken ct) => throw new NotSupportedException();
     public Task UnsubscribeAsync(BrowserSubscriptionId sid, CancellationToken ct) => throw new NotSupportedException();
-    public Task ClickAsync(Locator l, ClickOptions o, CancellationToken ct) => throw new NotSupportedException();
-    public Task FillAsync(Locator l, string v, FillOptions o, CancellationToken ct) => throw new NotSupportedException();
-    public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct) => throw new NotSupportedException();
-    public Task PressAsync(Locator l, string k, KeyOptions o, CancellationToken ct) => throw new NotSupportedException();
-    public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct) => throw new NotSupportedException();
-    public Task ScrollAsync(ScrollOptions o, CancellationToken ct) => throw new NotSupportedException();
+    public Task ClickAsync(Locator l, ClickOptions o, CancellationToken ct) => Task.CompletedTask;
+    public Task FillAsync(Locator l, string v, FillOptions o, CancellationToken ct) => Task.CompletedTask;
+    public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct) => Task.CompletedTask;
+    public Task PressAsync(Locator l, string k, KeyOptions o, CancellationToken ct) => Task.CompletedTask;
+    public Task HoverAsync(Locator l, PointerOptions o, CancellationToken ct) => Task.CompletedTask;
+    public Task ScrollAsync(ScrollOptions o, CancellationToken ct) => Task.CompletedTask;
     public Task DragAsync(Locator s, Locator t, DragOptions o, CancellationToken ct) => throw new NotSupportedException();
-    public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct) => throw new NotSupportedException();
-    public Task CheckAsync(Locator l, bool c, CancellationToken ct) => throw new NotSupportedException();
+    public Task SelectAsync(Locator l, IReadOnlyList<string> v, CancellationToken ct) => Task.CompletedTask;
+    public Task CheckAsync(Locator l, bool c, CancellationToken ct) => Task.CompletedTask;
     public Task SetInputFilesAsync(Locator l, IReadOnlyList<string> p, CancellationToken ct) => throw new NotSupportedException();
-    public Task<WaitResult> WaitForAsync(WaitCondition c, CancellationToken ct) => throw new NotSupportedException();
+    public Task<WaitResult> WaitForAsync(WaitCondition c, CancellationToken ct)
+        => Task.FromResult(new WaitResult { TimedOut = false });
     public Task<ScreenshotResult> ScreenshotAsync(ScreenshotOptions o, CancellationToken ct) => throw new NotSupportedException();
     public Task<PdfResult> PrintToPdfAsync(PdfOptions o, CancellationToken ct) => throw new NotSupportedException();
     public Task OpenDevToolsAsync(CancellationToken ct) => Task.CompletedTask;
 
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class ControllerFakeElementHandle : IElementHandle
+{
+    public ControllerFakeElementHandle(PageId pageId, long pageVersion, BrowserElementInfo info)
+    {
+        PageId = pageId;
+        PageVersion = pageVersion;
+        Info = info;
+        Id = new ElementHandleId(info.Ref);
+    }
+    public ElementHandleId Id { get; }
+    public PageId PageId { get; }
+    public long PageVersion { get; }
+    public int? BackendNodeId => null;
+    public string LocatorFingerprint => "controller-fake";
+    public BrowserElementInfo Info { get; }
+    public Task<BoundingBox?> GetBoundingBoxAsync(CancellationToken ct) => Task.FromResult(Info.BoundingBox);
+    public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct) => throw new NotSupportedException();
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
@@ -574,6 +1023,39 @@ internal sealed class FakeBrowserSurface : PuddingBrowser.WebView2.IBrowserSurfa
 
 internal sealed class FakeUiDispatcher : PuddingBrowser.WebView2.IWebView2UiDispatcher
 {
-    public Task InvokeAsync(Func<Task> action, CancellationToken ct) => action();
-    public Task<T> InvokeAsync<T>(Func<Task<T>> action, CancellationToken ct) => action();
+    private int _invocationCount;
+    public int InvocationCount => Volatile.Read(ref _invocationCount);
+    public Task InvokeAsync(Func<Task> action, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _invocationCount);
+        return action();
+    }
+    public Task<T> InvokeAsync<T>(Func<Task<T>> action, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _invocationCount);
+        return action();
+    }
+}
+
+internal sealed class SuccessfulBrowserHandler : IBrowserCommandHandler
+{
+    public Task<BrowserBridgeCommandResult> ExecuteAsync(BrowserBridgeCommand command, CancellationToken ct)
+        => Task.FromResult(new BrowserBridgeCommandResult
+        {
+            OperationId = command.OperationId,
+            Success = true,
+            Value = JsonSerializer.SerializeToElement(new { ok = true })
+        });
+}
+
+internal sealed class BlockingBrowserHandler : IBrowserCommandHandler
+{
+    public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async Task<BrowserBridgeCommandResult> ExecuteAsync(BrowserBridgeCommand command, CancellationToken ct)
+    {
+        Started.TrySetResult();
+        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        throw new InvalidOperationException("Unreachable");
+    }
 }

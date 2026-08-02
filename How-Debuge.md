@@ -2315,11 +2315,148 @@ Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Wind
 <DesktopHome>/desktop.instance.<instance-key>
 ```
 
-默认关闭按钮只隐藏主窗口，Core 和外部 HTTP API 会继续运行；这不是退出失败。使用托盘菜单“退出 Pudding”才会执行明确退出并停止 Core/WebView2。托盘图标在 Explorer 重启后由 `TaskbarCreated` 消息重建。若托盘初始化失败，检查 `%LOCALAPPDATA%\Pudding\logs\desktop.log` 中的 `[Desktop] Tray initialization failed`，窗口仍应保持可用。
+默认关闭按钮只隐藏主窗口，Core 和外部 HTTP API 会继续运行；这不是退出失败。使用托盘菜单“退出 Pudding”才会执行明确退出并停止 Core/WebView2。托盘图标在 Explorer 重启后由 `TaskbarCreated` 消息重建。若托盘初始化失败，检查 `%LOCALAPPDATA%\Pudding\logs\desktop.log` 中的 `[Desktop] Tray initialization failed`，窗口仍应保持可用。若菜单文字在浅色弹出层上不可见，检查 `DesktopTrayIconService` 的独立 `Background` / `Foreground`；不要让它继承 Desktop 深色主题的文字色。若标题栏最小化、最大化、关闭图标过小或不可见，检查 `TitleBarButtonStyle` 的 Fluent 图标字号，以及其 `ContentPresenter` 是否显式传递 `Foreground`、`FontFamily` 与 `FontSize`。
+
+从 Visual Studio 启动 Desktop 后，若 Core 在 Ready 前连续退出并报告 `DirectoryNotFoundException: Source\PuddingAgent\wwwroot`，说明 WPF 启动环境错误地把 ASP.NET Core 的 Development 静态资源清单行为传给了子进程。`CoreProcessSupervisor` 必须对 DesktopChild 显式设置 `ASPNETCORE_ENVIRONMENT=Production` 和 `DOTNET_ENVIRONMENT=Production`，并把工作目录设为 Core 可执行文件目录；Workbench 由输出或发布目录中的物理 `wwwroot` 提供。`PuddingDesktop/Properties/launchSettings.json` 不应包含 ASP.NET Core URL 或环境变量。
 
 运行中心“生成诊断包”只在用户点击时写入 `<DataRoot>/diagnostics/`。ZIP 应只包含运行快照、最近 Core 输出和配置键名；出现 ControlToken、Authorization、Cookie、API Key 或 Secret 值即视为缺陷。不要把完整 `system.json` 或 WebView2 UDF 直接加入诊断包。
 
 “登录 Windows 后启动”只在用户保存 Desktop 设置时更新 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，不应在普通启动或测试构造期间隐式修改注册表。后台启动使用 `--background`；窗口创建和配置错误仍然完成，随后隐藏到托盘，不能因 Core 启动失败终止 Desktop。
+
+运行中心的多行日志框若只显示成一行，先检查 `App.xaml` 的全局 `TextBox` 样式：普通输入框默认 `Height=34`，日志控件必须显式使用 `Height=Auto`、足够的 `MinHeight` 和顶部内容对齐。`PART_ContentHost` 应保持 Stretch，并通过 `HorizontalContentAlignment` / `VerticalContentAlignment` 承接控件设置；不要把 ScrollViewer 自身设为 Top，否则它仍可能按单行内容高度测量。该问题能通过编译，必须在重启 Desktop 后做实际窗口检查。
+
+## 11.13 Phase 2A Agent Browser 与 Desktop Bridge 诊断
+
+先区分三个互不等价的状态：窗口底部 `Core` 表示子进程/健康状态，Agent Browser 右栏 `Bridge Status` 表示认证 WebSocket 状态，Workbench Ready 表示 `/admin/` 的 WebView2 导航完成。Core 可以运行而 Workbench 尚未打开；Browser 在 Core 停止时也应保持可用。
+
+标准验证命令：
+
+```powershell
+dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj --no-restore --nologo
+dotnet test .\Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo
+dotnet publish .\Source\PuddingDesktop\PuddingDesktop.csproj `
+  -c Release -o .\.tmp-build\phase2a1-final-preview --nologo
+.\TestScripts\start-phase2a1-browser-smoke.ps1 `
+  -PublishRoot .\.tmp-build\phase2a1-final-preview -KeepArtifacts
+```
+
+smoke 只使用 `%TEMP%\PuddingAgent\phase2a1-browser-<guid>`，不得改指向 `D:\data`。脚本拒绝在另一个 Desktop 运行时启动，报告 Desktop/Core PID、两个 UDF 和退出后的残留子进程。Workbench UDF 是 `<DataRoot>/browser/workbench/user-data`，Agent Browser UDF 是 `<DataRoot>/browser/agent-browser/user-data`；两者相同即为缺陷。
+
+Bridge 排查顺序：
+
+1. `Core 运行中` 但 Bridge 为 `Disconnected`：先核对 Core 是 `--desktop-child`、地址是动态 Loopback，并检查 `system.json` 的 ControlToken 是否存在；Token 只允许进入 `X-Pudding-Desktop-Token` Header，禁止写入 UI、异常或诊断包。
+2. 一直 `Connecting`：检查 Desktop 是否先启动 Receive Loop 再发送 Hello；HelloAck 前不能进入 Connected，也不能有第二个 Receive Loop。
+3. 立即 `Failed`：Host 只接受 Loopback WebSocket、DesktopChild 模式、正确 Token 和匹配协议版本。用 `DesktopBrowserBridgeAuthenticationTests` 与 `DesktopBrowserBridgeHandshakeTests` 区分 401/403、非 WebSocket、首消息错误和协议拒绝。
+4. 静默连接 45 秒后仍不掉线：检查 heartbeat watchdog 是否可取消阻塞 Receive。测试必须使用 fake clock，不等待真实 45 秒。
+5. Restart 后旧错误覆盖新连接：检查 connection generation。generation N 的 Receive/finally/pending 完成不得改变 N+1；旧命令断线后不得重放。
+6. pending 命令在断线后悬挂：应返回 `browser_bridge_disconnected`；Dispatcher handler 被移除时应返回 `browser_not_available`。
+
+Tab/Surface 排查顺序：
+
+- `BrowserWorkspaceController` 是 `Tabs`、`Activities`、`ActivePageId`、`AgentTargetPageId` 和导航状态的唯一事实源；View 不得再次使用 `DataContext=this` 或维护复制集合。
+- active tab 只决定可见 Surface，Agent target 只决定无显式 PageId 的命令目标。切换 active tab 不得改 target；关闭 target 后命令返回 `page_not_found`，不能偷偷回退 active tab。
+- 每次创建 Page 必须创建一个 Surface；`WpfBrowserSurfaceHost.ActivateAsync` 只让目标 Surface `Visible/IsHitTestVisible`。若页面创建永久等待，检查新 `WebView2CompositionControl` 是否在 `EnsureCoreWebView2Async` 前被设为 `Collapsed`；初始化阶段应使用 `Hidden` 保持在 WPF layout，完成后再由 Controller 激活。
+- Workbench 只在其页面可见时初始化。若从 Agent Browser 启动 Core 后长期停在 `Workbench 加载中`，检查是否又对父级为 Collapsed 的 Workbench 调用了 `EnsureCoreWebView2Async`。
+- Activity 只保存动作名、Page 摘要、时间、结果和错误码，最多 100 条；不得显示完整 Arguments、脚本、Token、Cookie 或表单值。
+
+发布窗口在 `InitializeComponent` 前后退出时读取：
+
+```text
+<DesktopHome>/logs/desktop.log
+```
+
+`XamlParseException` 提示 `#AARRGGBB` 不是 `Foreground` 有效值，通常是把 `*Color` 资源直接绑定到了 Brush 属性，应改用对应 `*Brush`。`desktop.json` 的 `closeBehavior` 使用 `MinimizeToTray` 或 `ExitAndStopCore` 字符串；无法反序列化时检查 `DesktopCloseBehavior` 的 `JsonStringEnumConverter`。退出阶段 Browser/WebView2 释放必须有界，正常明确退出的脚本结果应为 Desktop exitCode 0 且 `remainingChildProcessIds=[]`。
+
+## 11.14 Phase 2A-2 Remote Browser 与 Agent Tools 诊断
+
+先确认工具是否应该存在。`browser_context`、`browser_tabs`、`browser_navigate` 只在以下两个条件同时满足时注册：
+
+```text
+PuddingHostOptions.Mode == DesktopChild
+PuddingHostOptions.BrowserAutomationEnabled == true
+```
+
+普通 Console/dev Host 看不到 Browser Tools 是正确隔离，不应通过注册空实现或全局打开能力“修复”。DesktopChild 仍看不到工具时检查 `AddPuddingApplicationServices(hostOptions)` 是否把同一个 `PuddingHostOptions` 传到 `AddDesktopBrowserAutomation()`，并运行：
+
+```powershell
+dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj `
+  --no-restore --nologo `
+  --filter "FullyQualifiedName~BrowserBridgeServiceCollectionExtensionsTests"
+```
+
+工具错误按稳定 `error.code` 排查：
+
+1. `browser_not_available`：Desktop 尚未为 Browser Workspace 安装 Dispatcher，通常是 DataRoot 未 Ready、Browser 初始化失败或 Desktop 正在退出。
+2. `browser_bridge_disconnected`：Core Broker 没有已完成 HelloAck 的当前 Desktop 连接。先看 Agent Browser 的 Bridge Status，再检查 generation、watchdog 和 Core Restart 日志。
+3. `browser_context_not_found` / `browser_page_not_found`：重新调用 `browser_context list` 或 `browser_tabs list`，不要从旧 Core proxy 缓存推测 Desktop 状态。
+4. `browser_operation_not_supported`：调用了 Phase 2A-2 尚未开放的 Snapshot、Locator、输入、Evaluate、CDP、Cookie 或文件能力；这是明确边界，不是 Bridge 失败。
+5. `browser_invalid_arguments`：检查 action 枚举以及 ContextId、PageId、Url 必填组合。
+6. `browser_deadline_exceeded` / `browser_cancelled`：检查 Tool cancellation、Bridge command `DeadlineUtc` 和 Desktop WebView2 是否仍在 UI 线程响应；调用方取消应继续表现为 `OperationCanceledException`。
+
+最短自动化闭环：
+
+```powershell
+dotnet test .\Tests\PuddingBrowser.AgentTools.Tests\PuddingBrowser.AgentTools.Tests.csproj `
+  --no-restore --nologo
+dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj `
+  --no-restore --nologo `
+  --filter "FullyQualifiedName~BrowserAgentToolBridgeIntegrationTests|FullyQualifiedName~RemoteBrowserRuntimeTests"
+```
+
+第二条测试证明 Tool → `IBrowserRuntime` → Remote proxy → Broker → 认证 WebSocket → Desktop result，不需要真实模型或外网。若它通过而真实 Agent 看不到工具，检查 Agent capability：新通用助手默认包含 `cap-browser-context`、`cap-browser-tabs`、`cap-browser-navigate`，既有 Agent 不会被升级过程静默扩权，必须在配置界面选择对应能力。
+
+Core Restart 后 Tab 消失通常不是 Remote proxy 的预期行为。`RemoteBrowserRuntime.DisposeAsync()` 不发送 close；Desktop 仍拥有 Context/Page。新 Core 应先执行 `context.list` 并恢复代理。若 Tab 真被关闭，搜索显式 `context.close`/`page.close` Activity，而不是给 proxy Dispose 添加兼容性恢复。
+
+Agent Activity 只允许记录动作名、Context/Page 摘要、时间、结果和错误码。不得为了诊断写入完整 tool arguments、脚本、URL query secret、Cookie、Token 或表单值。
+
+Phase 2A-2 发布 smoke 继续使用：
+
+```powershell
+.\TestScripts\start-phase2a1-browser-smoke.ps1 `
+  -PublishRoot .\.tmp-build\phase2a2-minimal-preview `
+  -KeepArtifacts
+```
+
+正常明确退出必须同时满足 Desktop exitCode 0 和 `remainingChildProcessIds=[]`。本 smoke 只证明 Desktop/WebView2/Bridge/退出表现；真实模型是否正确选择 Browser Tool 必须另做 DeepSeek 可见 smoke，不能由集成测试替代。
+
+## 11.15 Phase 2A-3 Snapshot、Locator、Interact 与 Wait 诊断
+
+DesktopChild 启用 Browser Automation 后应有七项 Browser Tool。若只有三项导航工具，先检查运行的 Core 是否来自最新 Release，以及 Agent 是否显式拥有以下新增能力；既有 Agent 不会被升级过程静默扩权：
+
+```text
+cap-browser-snapshot
+cap-browser-locate
+cap-browser-interact
+cap-browser-wait-for
+```
+
+典型调用顺序是 `browser_snapshot` → 使用返回 ref 或 `browser_locate` → `browser_interact` → `browser_wait_for`/新 Snapshot。ref 格式为 `v{PageVersion}-n{sequence}`。导航后出现 `stale_element_reference` 是正确保护，必须重新 Snapshot；禁止去掉版本校验或自动回退到文本/CSS Locator。
+
+稳定错误按 code 排查：
+
+1. `browser_element_not_found`：Locator 为 0 个匹配；重新 Snapshot，检查动态 DOM 和 PageId；
+2. `browser_locator_ambiguous`：多个匹配但没有 `Nth`；缩小 role/name/text 或明确索引；
+3. `browser_element_not_visible` / `browser_element_disabled`：页面状态尚未就绪；先 Wait，不能强制 JS click；
+4. `stale_element_reference`：PageVersion 已变化；重新 Snapshot，不重复已经提交的动作；
+5. `browser_operation_not_supported`：Frame/复合 Has、drag、upload、Evaluate、CDP、Cookie 等不在 Phase 2A-3；
+6. `browser_invalid_arguments`：检查 interaction action 的 Locator、text、values、checked 组合。
+
+click、press 或表单动作可能已经提交并触发导航。Desktop 和 Agent Tool 在交互成功后不会重新查询旧 Locator，返回的 `Element` 可以为空；调用方应 Wait 或新 Snapshot。若 Activity/Tool result 中看到 fill/type 的原始值、完整 Locator、页面正文、ControlToken 或 Cookie，视为敏感信息泄漏缺陷。
+
+确定性与真实 WebView2 验收：
+
+```powershell
+dotnet test .\Tests\PuddingBrowser.AgentTools.Tests\PuddingBrowser.AgentTools.Tests.csproj --no-restore --nologo
+dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj --no-restore --nologo
+dotnet test .\Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo
+dotnet build .\Tests\PuddingBrowser.TestSite\PuddingBrowser.TestSite.csproj --no-restore --nologo
+dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke.csproj --no-restore --nologo
+.\TestScripts\start-phase2a3-webview2-smoke.ps1 -HoldSeconds 0
+```
+
+正常 smoke 输出包含 `phase2a3-webview2-smoke-passed`、`pageVersion=2`、`finalContainsSaved=true` 和 `staleCode=stale_element_reference`。脚本只使用 `%TEMP%\PuddingAgent\phase2a3-webview2-*`；WebView2 子进程可能在 WPF 退出后短暂锁定 UDF，因此清理有界重试，最终锁定只报告 Warning，不能掩盖页面断言结果。测试进程退出后若仍有 Pudding/TestSite 进程，按脚本输出的精确 PID、ExecutablePath 和 Temp DataRoot 核对所有权，禁止按名称批量终止用户的 WebView2/浏览器进程。
+
+真实 DeepSeek smoke 不能由上述集成测试代替。只有用户明确选择测试 Agent/DataRoot 后才能执行；不得读取、复制或回显 `D:\data` 中的 LLM Secret。需要保留的证据是脱敏 Tool 顺序、provider/model/role、Bridge Activity、最终页面和退出结果，不包含表单值、Token、Cookie 或 API Key。
 
 ## 12. 修改后的最低验收
 

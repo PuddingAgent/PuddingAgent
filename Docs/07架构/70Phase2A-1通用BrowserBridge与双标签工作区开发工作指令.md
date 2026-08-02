@@ -1,12 +1,12 @@
 # 70 Phase 2A-1 通用 Browser Bridge 与双标签工作区开发工作指令
 
-> - 状态：**initial implementation present / acceptance incomplete**
+> - 状态：**completed / accepted（2026-08-02，经 73 最终验收）**
 > - 日期：2026-08-02
 > - 执行者：Pudding 自身 Agent
 > - 前置状态：Phase 1A、Phase 1B-R、Phase 1B-S 已完成
 > - 依赖文档：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)、[总体实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)、[Desktop/Browser 实施规格](69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md)
 
-> 2026-08-02 验收说明：Protocol、Host/Desktop Bridge 和 WebView2 类型已有可编译初始实现，但 Browser Workspace 仍是占位 UI，Controller 未接入真实 Runtime/Page，Dispatcher 未绑定 Handler，Bridge 的 Hello/心跳/单发送循环/连接代际/重连及计划测试尚未闭环。继续开发必须按 [71 Phase 2A-1 验收补丁](71Phase2A-1验收补丁真实BrowserWorkspace与Bridge可靠性工作指令.md) 收口，不得直接进入 Phase 2A-2。
+> 2026-08-02 最终说明：本文记录初始工作包及当时缺口；这些缺口已由 71、72、73 关闭。最终结果为 Host 43/43、Desktop 92/92、Release publish 和隔离可见 WPF/WebView2 smoke 通过。后续 Phase 2A-2 最小闭环已经完成，结果见 [74](74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md)。
 
 ## 0. 可直接发送给 Pudding Agent 的指令
 
