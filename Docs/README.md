@@ -51,6 +51,8 @@
 - `Docs/07架构/74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md`
 - `Docs/07架构/75Phase2A-3SnapshotLocatorInteractWait开发工作指令.md`
 - `Docs/07架构/76Phase2A-3通用WebView2页面操作实施验收报告.md`
+- `Docs/07架构/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md`
+- `Docs/07架构/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md`
 
 ### 2. 智能体、运行时与协作
 
@@ -92,5 +94,6 @@
 ## 当前实现状态说明
 
 - Phase 1A Desktop Launcher、Phase 1B-R Runtime Center、Phase 1B-S Storage、Phase 2A-1/2 和 Phase 2A-3 确定性实现已于 2026-08-02 验收。Phase 2A-3 已交付 Snapshot、Locator、八项 Interact、Wait、版本化 ref、四项新 Agent Tools、真实 WebView2 TestSite、Release publish 与可见 Desktop 退出 smoke；结果见 76。真实 DeepSeek Agent 的工具选择 smoke 仍需用户明确选择测试 Agent/DataRoot，完成前不进入 Douyin Adapter。`dev-up.py` 保留为源码开发脚本，不进入最终产品。
+- Phase 2A-3B 的真实 DeepSeek 工具选择验收按 77 执行；通过前不得开始 Douyin Adapter 实现。
 - 当前源码中仍保留旧架构和开发脚本入口，阅读 Desktop 主线时以 68、69 实施规格为准。
 - 任务状态通过 Todo API 管理，不在文档或代码中硬编码。

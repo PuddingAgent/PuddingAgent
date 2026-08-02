@@ -174,3 +174,5 @@ Publish 中仍有仓库既有 NuGet 安全和 nullable/analyzer warnings；本�
 7. 验收通过后再编写 Phase 2A-4 Douyin Adapter 工作指令，Douyin 层只能依赖通用 Browser Tools。
 
 若用户没有提供可安全使用的测试 Agent/DataRoot，本项保持 `pending`，不得读取真实运行目录中的密钥来“自动完成”验收。
+
+> 执行更新：完整的角色隔离、测试提示、证据结构、自宿主退出限制与 DoD 已拆分到 [77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令](77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md)。

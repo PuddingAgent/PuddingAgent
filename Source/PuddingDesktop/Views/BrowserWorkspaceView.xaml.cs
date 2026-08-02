@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.Diagnostics;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using PuddingBrowser.Abstractions;
@@ -27,6 +28,8 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
     public BrowserWorkspaceView()
     {
         InitializeComponent();
+        // Disable export button until browser is initialized
+        ExportActivityButton.IsEnabled = false;
     }
 
     /// <summary>
@@ -76,6 +79,9 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
             // Update UI state
             UpdateBridgeStatus();
             _initialized = true;
+
+            // Enable export button now that browser is ready
+            ExportActivityButton.IsEnabled = true;
 
             InitializationErrorPanel.Visibility = Visibility.Collapsed;
             StatusBarText.Text = "Browser workspace ready";
@@ -224,6 +230,74 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
         await _controller.SetUserTakeoverAsync(false, CancellationToken.None);
         _dispatcher?.SetPaused(false);
         _dispatcher?.SetUserTakeover(false);
+    }
+
+    // ─── Export Activity Evidence ────────────────────────────────────────────
+
+    /// <summary>
+    /// Captures sanitized activity evidence and saves to DataRoot/diagnostics/browser-activity/.
+    /// Displays result path in status bar and opens in Explorer.
+    /// Does not block UI thread; failures show short error only.
+    /// </summary>
+    private async void ExportActivity_Click(object sender, RoutedEventArgs e)
+    {
+        if (_controller is null)
+        {
+            SetExportStatusError("Browser not initialized");
+            return;
+        }
+
+        ExportActivityButton.IsEnabled = false;
+        try
+        {
+            var destinationDir = GetExportDirectory();
+            var document = await _controller.CaptureActivityEvidenceAsync(
+                DateTimeOffset.UtcNow, CancellationToken.None);
+
+            var exporter = new BrowserActivityEvidenceExporter();
+            var filePath = await exporter.ExportAsync(document, destinationDir, CancellationToken.None);
+
+            // Show result
+            StatusBarText.Text = $"Exported: {filePath}";
+
+            // Open in Explorer (select the file)
+            OpenExportInExplorer(filePath);
+        }
+        catch (Exception ex)
+        {
+            SetExportStatusError(ex.Message);
+        }
+        finally
+        {
+            ExportActivityButton.IsEnabled = true;
+        }
+    }
+
+    private string GetExportDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(_dataRoot))
+            return Path.Combine(_dataRoot, "diagnostics", "browser-activity");
+
+        // Fallback if DataRoot is somehow not available
+        return Path.Combine(Path.GetTempPath(), "PuddingAgent", "browser-activity");
+    }
+
+    private static void OpenExportInExplorer(string filePath)
+    {
+        try
+        {
+            var args = $"/select,\"{filePath}\"";
+            Process.Start("explorer.exe", args);
+        }
+        catch
+        {
+            // Non-critical: best-effort only
+        }
+    }
+
+    private void SetExportStatusError(string message)
+    {
+        StatusBarText.Text = $"Export failed: {message}";
     }
 
     // ─── Activity Pane ───────────────────────────────────────────────────────

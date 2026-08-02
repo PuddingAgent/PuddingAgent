@@ -15,6 +15,7 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 - `desktop.json` 保存 DesktopHome 范围的 DataRoot、Core 路径、窗口和关闭行为；`<DataRoot>/config/system.json` 保存 Core 端口、ControlToken、启动超时和自动恢复策略。Token 不放环境变量，不在 UI 或诊断包回显。
 - `dev-up.py` 和 Desktop 不共享 PID、端口所有权。使用同一个 `D:\data` 验证 Desktop 前必须先停止 dev-up 管理的 Core，反之亦然，避免两个 Core 同时访问数据库。
 - Phase 1A、Phase 1B-R Runtime Center、Phase 1B-S Storage、Phase 2A-1、Phase 2A-2 与 Phase 2A-3 确定性实现已于 2026-08-02 完成自动验收。DesktopChild 在启用 Browser Automation 时提供 `browser_context`、`browser_tabs`、`browser_navigate`、`browser_snapshot`、`browser_locate`、`browser_interact`、`browser_wait_for` 七项工具；Snapshot ref 必须携带 PageVersion，交互提交后不得重查旧 Locator，后续状态用 Wait 或新 Snapshot 获取。进入 Douyin Adapter 前仍需用用户明确选择的测试 Agent/DataRoot 完成真实 DeepSeek 可见 smoke；不得读取或复制 `D:\data` 中的 LLM Secret 来绕过该准入。底层始终保持通用，抖音能力只位于上层适配器。
+- 运行在 Pudding 内部的 Agent 可以测试当前进程已经加载的成品代码和工具，包括真实模型调用、Browser Tools、TestSite 页面操作、Bridge Activity 和无需重启的功能行为；但它不能证明刚修改的代码已被当前进程加载，也不能独立验收承载自身的 Desktop/Core 生命周期。单实例会把第二次启动转发给旧进程，退出后 Agent 也无法继续观察子进程回收。因此采用两段式验收：内部开发 Agent 先交付 `ready-for-external-deploy`，进程外控制器重启到明确的新构建；随后 Pudding 内的新测试会话执行功能 smoke 并交付 `in-product-functional-complete`，最终启动/重启/崩溃恢复/退出回收结论仍由外部控制器判定。
 
 ## 兼容性和补丁约定
 

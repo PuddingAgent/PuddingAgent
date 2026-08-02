@@ -38,6 +38,7 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
     Task SetUserTakeoverAsync(bool enabled, CancellationToken ct);
     Task SetPausedAsync(bool paused, CancellationToken ct);
     Task ApplyActivityAsync(AgentBrowserActivitySnapshot snapshot, CancellationToken ct);
+    Task<BrowserActivityEvidenceDocument> CaptureActivityEvidenceAsync(DateTimeOffset capturedAt, CancellationToken ct);
 }
 
 /// <summary>
@@ -468,6 +469,54 @@ public sealed class BrowserWorkspaceController :
     {
         ControlState = paused ? AgentBrowserControlState.Paused : AgentBrowserControlState.AgentControlling;
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Captures a sanitized activity evidence snapshot on the UI dispatcher.
+    /// Only copies safe fields: command name, page identity, result, and error codes.
+    /// Never includes tool parameters, fill/text values, DOM content, URLs, cookies, or tokens.
+    /// </summary>
+    public Task<BrowserActivityEvidenceDocument> CaptureActivityEvidenceAsync(
+        DateTimeOffset capturedAt, CancellationToken ct)
+    {
+        return _uiDispatcher.InvokeAsync(() =>
+        {
+            var activities = new List<BrowserActivityEvidenceItem>(Math.Min(Activities.Count, MaxActivityItems));
+            foreach (var item in Activities.Take(MaxActivityItems))
+            {
+                // Sanitize Target: only keep stable context/page IDs.
+                // If Target is not a recognized context/page ID pattern, use "-".
+                var target = item.Target;
+                if (string.IsNullOrWhiteSpace(target))
+                    target = "-";
+
+                activities.Add(new BrowserActivityEvidenceItem
+                {
+                    OperationId = item.OperationId,
+                    CommandName = item.CommandName,
+                    Target = target,
+                    StartedAt = item.StartedAt,
+                    CompletedAt = item.CompletedAt,
+                    Success = item.Success,
+                    ErrorCode = item.ErrorCode
+                });
+            }
+
+            // Sort by StartedAt ascending for faithful call order
+            activities.Sort((a, b) => a.StartedAt.CompareTo(b.StartedAt));
+
+            return new BrowserActivityEvidenceDocument
+            {
+                SchemaVersion = 1,
+                CapturedAt = capturedAt,
+                BridgeState = _bridgeState.ToString(),
+                ControlState = _controlState.ToString(),
+                ActiveContextId = _activeContextId?.Value,
+                ActivePageId = _activePageId?.Value,
+                AgentTargetPageId = _agentTargetPageId?.Value,
+                Activities = activities
+            };
+        }, ct);
     }
 
     // ─── IBrowserCommandHandler ──────────────────────────────────────────────

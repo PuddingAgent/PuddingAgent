@@ -165,7 +165,7 @@
                 <Border x:Name="InitializationErrorPanel"
                         Panel.ZIndex="20"
                         Width="420" Padding="24"
-                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        HorizontalAlignment="Center" VerticalAlignment=" Center"
                         Background="{DynamicResource SurfaceBrush}"
                         BorderBrush="{DynamicResource WarningBrush}" BorderThickness="1"
                         CornerRadius="12" Visibility="Collapsed">
@@ -195,20 +195,28 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Pane header -->
+                    <!-- Pane header with Export button -->
                     <Border Grid.Row="0" Padding="10,8"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                         <Grid>
                             <TextBlock Text="Agent Activity" FontSize="13" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        VerticalAlignment="Center"/>
-                            <Button x:Name="CollapsePaneButton" Click="CollapsePane_Click"
-                                    HorizontalAlignment="Right" Width="24" Height="24"
-                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
-                                    ToolTip="Collapse panel">
-                                <TextBlock Text="&#xE76C;" FontFamily="Segoe Fluent Icons" FontSize="12"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            </Button>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="ExportActivityButton" Click="ExportActivity_Click"
+                                        Width="Auto" Height="24" Padding="6,0"
+                                        Background="{DynamicResource SubtleFillBrush}" BorderThickness="0"
+                                        Cursor="Hand" ToolTip="Export sanitized activity record"
+                                        FontSize="11" Content="导出记录"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                <Button x:Name="CollapsePaneButton" Click="CollapsePane_Click"
+                                        Width="24" Height="24" Margin="4,0,0,0"
+                                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                        ToolTip="Collapse panel">
+                                    <TextBlock Text="&#xE76C;" FontFamily="Segoe Fluent Icons" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </Button>
+                            </StackPanel>
                         </Grid>
                     </Border>
 
