@@ -16,5 +16,14 @@
   },
   "paths": {
     "dataRoot": "/app/data"
+  },
+  "desktop": {
+    "core": {
+      "autoStart": true,
+      "port": 0,
+      "startupTimeoutSeconds": 60,
+      "shutdownTimeoutSeconds": 15,
+      "controlToken": null
+    }
   }
 }

@@ -155,7 +155,7 @@ async IAsyncEnumerable<ServerSentEventFrame> ExecuteStreamAsync(...) {
 
 **关键参数**：
 - `maxRounds` 默认 5（流式路径护栏，避免无限循环）
-- 护栏复用现有 `AgentExecutionGuardrails`（MaxToolCallsTotal / MaxElapsed / MaxSameToolRepeat）
+- 最大耗时与重复工具策略复用 `AgentExecutionGuardrails`；最大工具调用总数直接采用执行快照中的 `RuntimeDispatchRequest.MaxToolCallsTotal`，不再由全局默认值二次裁剪
 - 中间层 `LlmProxyController` 需同步支持 `tools` 参数的 SSE 透传
 
 ### 影响面

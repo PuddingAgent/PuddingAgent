@@ -1,8 +1,9 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using PuddingHost.Hosting;
 using PuddingPlatform.Services;
 
 namespace PuddingAgent.Services;
@@ -64,18 +65,24 @@ public static class PuddingWebApplicationExtensions
         });
 
         // ── 静态文件（同时从输出目录 wwwroot/ 和项目 wwwroot/ 提供）─
-        // 输出目录 wwwroot 由脚本复制前端产物，支持热加载
+        // Desktop 将 Core 嵌套发布到 core/。这里必须以物理输出目录为准，
+        // 不能依赖 Static Web Assets 清单；嵌套 OutDir 会让清单端点返回空内容。
         var outputWwwRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         if (Directory.Exists(outputWwwRoot))
         {
             var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(outputWwwRoot);
+            app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
             app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
         }
-        app.MapStaticAssets();
+        app.UseDefaultFiles();
         app.UseStaticFiles();
 
         // ── API 路由（必须在 Fallback 前）────────────────────
         app.MapControllers();
+
+        // ── DesktopChild shutdown endpoint (registered after controllers) ──
+        var hostOptions = app.Services.GetRequiredService<PuddingHostOptions>();
+        app.MapDesktopChildEndpoints(hostOptions);
 
         // ── 路由后诊断 ── 确认请求到达了控制器路由层 ──
         app.Use(async (ctx, next) =>
@@ -98,8 +105,7 @@ public static class PuddingWebApplicationExtensions
         // ── MVC Controller 路由 ──────────────────────────────
         app.MapControllerRoute(
             name: "platform",
-            pattern: "platform/{controller=Home}/{action=Index}/{id?}")
-            .WithStaticAssets();
+            pattern: "platform/{controller=Home}/{action=Index}/{id?}");
 
         // ── 健康检查（liveness 只检查进程；readiness 检查 Conversation 执行链）────
         app.MapGet("/health/live", () => Results.Ok(new
@@ -127,7 +133,6 @@ public static class PuddingWebApplicationExtensions
         {
             var assembly = System.Reflection.Assembly.GetExecutingAssembly();
             var version = assembly.GetName().Version?.ToString() ?? "0.0.0";
-            // 散列 Runtime + MemoryEngine 程序集（覆盖最常变更的业务逻辑）
             string? imageHash = null;
             string? buildTime = null;
             try
@@ -140,7 +145,7 @@ public static class PuddingWebApplicationExtensions
                     if (File.Exists(path))
                     {
                         using var stream = File.OpenRead(path);
-                        var hash = sha.ComputeHash(stream); // 累积散列
+                        var hash = sha.ComputeHash(stream);
                         buildTime = File.GetLastWriteTimeUtc(path).ToString("o");
                     }
                 }
@@ -160,13 +165,13 @@ public static class PuddingWebApplicationExtensions
             }, statusCode: readiness.IsReady ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
         });
 
-        // ── 配置热重载接口（文件配置为唯一来源；端点保留向后兼容）───────
+        // ── 配置热重载接口 ───────
         app.MapMethods("/admin/reload", new[] { "GET", "POST" }, () =>
         {
             return Results.Ok(new { status = "file-backed", timestamp = DateTimeOffset.UtcNow });
         });
 
-        // ── 潜意识 LLM 状态（可观测性）──────────────────────
+        // ── 潜意识 LLM 状态 ──────────────────────
         app.MapGet("/health/subconscious", async (
             IDbContextFactory<PuddingMemoryEngine.Data.MemoryDbContext> dbFactory,
             ILoggerFactory loggerFactory,
@@ -221,9 +226,6 @@ public static class PuddingWebApplicationExtensions
         });
 
         // ── Legacy Chat API ──────────────────────────────────
-        // This route cannot identify an Agent instance and therefore cannot resolve the
-        // explicit manifest-owned provider/model pair. Keep a diagnostic response instead
-        // of silently selecting a model from the provider registry.
         app.MapPost("/api/chat", () => Results.Problem(
             statusCode: StatusCodes.Status410Gone,
             title: "Legacy chat endpoint is not executable",
@@ -232,13 +234,25 @@ public static class PuddingWebApplicationExtensions
                 "Agent LLM routing is read from manifest.json preferredProviderId/preferredModelId; " +
                 "the LLM resource pool has no default route."));
 
-        // ── Admin SPA fallback（/admin 下的前端路由回退）───────────
-        app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
+        // ── Admin SPA fallback ───────────
+        // MapFallbackToFile uses IWebHostEnvironment.WebRootFileProvider, which may not
+        // point at Desktop's nested core/wwwroot. Return the physical publish artifact.
+        var adminIndexPath = Path.Combine(outputWwwRoot, "admin", "index.html");
+        if (File.Exists(adminIndexPath))
+        {
+            app.MapFallback(
+                "/admin/{*path:nonfile}",
+                () => Results.File(adminIndexPath, "text/html; charset=utf-8"));
+        }
 
-        // ── Chat SPA fallback（根路径 → Chat，必须最后！）──────
-        app.MapFallbackToFile("index.html");
-
+        // ── Chat SPA fallback ──────
+        var chatIndexPath = Path.Combine(outputWwwRoot, "index.html");
+        if (File.Exists(chatIndexPath))
+        {
+            app.MapFallback(() => Results.File(chatIndexPath, "text/html; charset=utf-8"));
+        }
 
         return app;
     }
+
 }

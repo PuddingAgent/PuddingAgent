@@ -24,9 +24,9 @@ describe('admin workspace menu routing', () => {
   it('keeps admin routes separate from user-facing workspace routes', () => {
     expect(findRoute('/')).toEqual(expect.objectContaining({
       path: '/',
-      name: 'adminHome',
-      icon: 'dashboard',
-      component: './Admin',
+      name: 'home',
+      icon: 'home',
+      component: './home',
     }));
 
     expect(findRoute('/workspace')).toEqual(expect.objectContaining({
@@ -72,7 +72,7 @@ describe('admin workspace menu routing', () => {
 
   it('uses the management label expected by the admin sidebar', () => {
     expect(zhCNMenu['menu.workspace']).toBe('工作区管理');
-    expect(zhCNMenu['menu.adminHome']).toBe('后台首页');
+    expect(zhCNMenu['menu.home']).toBe('首页');
   });
 
   it('groups system-level account and permission pages under system config', () => {

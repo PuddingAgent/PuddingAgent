@@ -26,7 +26,7 @@ public sealed class PuddingFileConfigLoader
     {
         var loadResult = await LoadJsonAsync<PuddingLlmProvidersConfig>(
             _paths.SystemConfigFile("llm.providers.json"),
-            ct);
+            ct).ConfigureAwait(false);
 
         if (!loadResult.Success)
             return loadResult;
@@ -43,7 +43,7 @@ public sealed class PuddingFileConfigLoader
     {
         var loadResult = await LoadJsonAsync<PuddingSystemConfig>(
             _paths.SystemConfigFile("system.json"),
-            ct);
+            ct).ConfigureAwait(false);
 
         if (!loadResult.Success)
             return loadResult;
@@ -56,7 +56,7 @@ public sealed class PuddingFileConfigLoader
     {
         var loadResult = await LoadJsonAsync<PuddingSecurityConfig>(
             _paths.SystemConfigFile("security.json"),
-            ct);
+            ct).ConfigureAwait(false);
 
         if (!loadResult.Success)
             return loadResult;
@@ -69,7 +69,7 @@ public sealed class PuddingFileConfigLoader
     {
         var loadResult = await LoadJsonAsync<PuddingConnectorsConfig>(
             _paths.SystemConfigFile("connectors.json"),
-            ct);
+            ct).ConfigureAwait(false);
 
         if (!loadResult.Success)
             return loadResult;
@@ -86,7 +86,8 @@ public sealed class PuddingFileConfigLoader
         try
         {
             await using var stream = File.OpenRead(path);
-            var config = await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, ct);
+            var config = await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, ct)
+                .ConfigureAwait(false);
             return config is null
                 ? ConfigLoadResult<T>.Fail($"{Path.GetFileName(path)}: deserialization returned null")
                 : ConfigLoadResult<T>.Ok(config);

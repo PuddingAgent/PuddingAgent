@@ -1374,6 +1374,30 @@ Message/Delivery/Conversation acceptance 都应命中稳定幂等身份，不能
 飞书长连接要求事件处理尽快完成。Gateway 只等待 durable acceptance，不等待 Agent 完成；
 如果 ACK 仍超时，查 SQLite 锁、事件发布订阅阻塞和 schema 初始化，而不是缩短 Agent 执行时间。
 
+### 11.12.1 飞书长文本进入 Agent 后变成 `[post]`
+
+这不是空消息。先检查 canonical `ChatMessages.Content` 是否为 `[post]`，同时检查其
+`metadata_json.feishu_message_type` 是否为 `post`。如果系统日志中的 `Inbound accepted` 正常、
+随后 `[AgentExec] ... msgLen=6`，说明故障位于飞书协议内容转换层，不能通过修改 Prompt、Context
+Pipeline 或 LLM 修复。
+
+飞书普通文本的 `content` 是 `{"text":"..."}`；富文本 `post` 则是
+`title + content/content_v2` 的段落和元素数组。当前 `MessageMapper.ExtractText` 应调用
+`FeishuPostContentConverter`，先转 Markdown，再对未知结构提取纯文本。若代码仍直接把
+`FeishuTextContent` 用于所有消息类型，就会在找不到顶层 `text` 后回退成 `[post]`。
+
+聚焦回归：
+
+```powershell
+dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-restore `
+  --filter "FullyQualifiedName~ProtobufFrameTests"
+dotnet test .\Tests\PuddingAgent.IntegrationTests\PuddingAgent.IntegrationTests.csproj --no-restore `
+  --filter "FullyQualifiedName~FeishuInboundPostTests"
+```
+
+第一组锁定直接/locale 包装、`content_v2` 优先、Markdown 与畸形 JSON 降级；第二组锁定转换后的
+正文和 `feishu_message_type=post` metadata 进入 Gateway envelope，且纯富文本不触发资源下载。
+
 ### 11.13 飞书流式卡片未出现、停止更新或重复回复
 
 先确认渠道 manifest 的 `feishu.streamingRepliesEnabled` 没有显式关闭，并确认飞书应用已开通
@@ -2125,6 +2149,116 @@ dotnet test .\Tests\HarnessAgent.Core.Tests\HarnessAgent.Core.Tests.csproj --no-
 run 元数据和评价快照位于 `D:\data\runtime\benchmark-runs\`。出现 `unscored` 时先检查该 case 是否有 artifact oracle；不要把 Session diagnostics 的启发式分数当作任务完成。Token 为 0 时检查 `TokenUsageEvents` 的 `SessionId/ParentSessionId`，角色为空时检查 `sub_agent_runs.task_planning_metadata_json` 是否包含 `role_in_plan/profile_id`。
 
 Benchmark Turn 必须在 ChatMessage/Command metadata 中保留 `excludeFromLearning=true`。经验→SKILL 意外收录基准轨迹时，先过滤该字段；不要通过按模型名猜测角色来修正统计。
+
+## 11.10 PuddingDesktop 发布与 Workbench 静态资源诊断
+
+Desktop 发布前先生成 Workbench：
+
+```powershell
+pnpm --dir .\Source\PuddingPlatformAdmin run build
+dotnet publish .\Source\PuddingDesktop\PuddingDesktop.csproj -c Release --no-restore
+```
+
+Desktop 发布产物必须同时包含：
+
+- `PuddingDesktop.exe`；
+- `Microsoft.Windows.SDK.NET.dll`（`WebView2CompositionControl` 需要）；
+- `core/PuddingAgent.exe`；
+- `core/wwwroot/admin/index.html`。
+
+缺失静态资源时先检查
+`Source/PuddingPlatformAdmin/dist/index.html`，再检查可执行宿主是否导入
+`PuddingHost/Build/PuddingHostContent.props`。`PuddingHost` 类库自身不导入该 props，
+否则 Web SDK 可能在 `DiscoverPrecompressedAssets` 报同一 `dist` 文件 key 重复。
+
+使用隔离的系统 Temp 配置启动真实 Desktop smoke，禁止复用 `D:\data`：
+
+```powershell
+.\TestScripts\start-phase1a-desktop-smoke.ps1 `
+  -PublishRoot .\.tmp-build\phase1a-win11-preview
+```
+
+窗口底部显示实际 Loopback 地址。确认以下路径均有非零响应体：
+
+```powershell
+$base = 'http://127.0.0.1:<status-bar-port>'
+Invoke-WebRequest "$base/health/ready" -UseBasicParsing
+Invoke-WebRequest "$base/admin/" -UseBasicParsing
+Invoke-WebRequest "$base/admin/index.html" -UseBasicParsing
+```
+
+如果 `/admin/index.html`、CSS 或 JS 返回 `200` 但 `RawContentLength=0`，检查
+`PuddingWebApplicationExtensions.MapPuddingApplication` 是否重新启用了
+`MapStaticAssets()`。Desktop 的嵌套 `core/` 发布布局必须通过
+`AppContext.BaseDirectory/wwwroot` 的 `PhysicalFileProvider` 提供静态文件，并用物理
+`admin/index.html` 处理 SPA fallback。
+
+如果 WebView2 报 `RedirectFailed`，检查是否显式映射了 `/admin` 到 `/admin/`。
+ASP.NET Core 路由默认忽略末尾斜杠，这种映射会同时匹配 `/admin/` 并形成重定向循环；
+让 `UseDefaultFiles` 单独处理即可。
+
+如果标准 WebView2 覆盖标题栏或导航栏，确认 Workbench 使用
+`WebView2CompositionControl`，项目 TFM 为
+`net10.0-windows10.0.17763.0`。如果启动异常包含缺失
+`Microsoft.Windows.SDK.NET, Version=10.0.17763.10`，检查发布目录是否包含
+`Microsoft.Windows.SDK.NET.dll`。CompositionControl 创建后必须在
+`EnsureCoreWebView2Async` 前设为 `Visible`，否则可能一直停留在初始化遮罩。
+
+Desktop 在 Core 和 Serilog 之前发生的启动/XAML/WebView2 异常写入：
+
+```text
+%LOCALAPPDATA%\Pudding\logs\desktop.log
+```
+
+smoke 脚本通过 `PUDDING_DESKTOP_HOME` 将该日志重定向到
+`<smokeRoot>/desktop-home/logs/desktop.log`。该环境变量只控制 Desktop 自身配置目录，
+Core Token、端口和 DataRoot 仍必须通过配置文件与启动参数传递。
+
+如果 Desktop 中出现“系统初始化”，但日常开发环境已经初始化，先看窗口底部的
+`数据` 路径。`start-phase1a-desktop-smoke.ps1` 会故意创建新的系统 Temp DataRoot，
+该目录没有 `runtime/bootstrap-state.json`，因此显示初始化向导是正确行为；它不能
+代表 `D:\data` 的初始化状态。使用真实数据验证时必须先停止 `dev-up.py`，避免两个
+Core 同时访问 `D:\data`，再让 Desktop 的 `desktop.json` 指向 `D:\data`。已初始化
+环境的正确首屏是登录页，认证完成后进入 Workbench `/` 产品首页；如果仍进入
+`/bootstrap`，依次检查窗口底部 DataRoot、`/api/bootstrap/status` 和浏览器 UDF。
+
+Desktop 项目切换到带 Windows 版本的 TFM 后，如果构建提示
+`project.assets.json` 缺少 `net10.0-windows10.0.17763.0`，先执行：
+
+```powershell
+dotnet restore .\Source\PuddingDesktop\PuddingDesktop.csproj
+dotnet build .\Source\PuddingDesktop\PuddingDesktop.csproj --no-restore
+```
+
+这是旧 NuGet assets 的目标框架缓存，不应通过降低 TFM 或移除
+`WebView2CompositionControl` 解决。导航 XAML 改名后若 IDE 仍报告 `navLogs`，先用
+`rg -n "navLogs" Source/PuddingDesktop` 核对磁盘源码；当前导航字段是
+`navWorkbench`、`navCore`、`navSettings`，磁盘已无旧引用时重新加载项目或重建即可。
+
+如果 Desktop Workbench 的 `GET /api/workspaces/{workspaceId}/agents/status` 返回 500，
+先用响应中的 `errorId` 搜索 `D:\data\logs\error` 和 `D:\data\logs\system`。若堆栈落在
+`PlatformApiClient.GetSessionsAsync`，并显示连接 `localhost:5000` 被拒绝，说明 Core 已经
+动态绑定端口，但内部控制面请求仍在使用固定默认地址。检查
+`PuddingControllerAddressRewriteHandler` 是否已注册到 `PlatformApiClient`，以及
+`PuddingApplicationHost.CaptureBoundAddresses` 是否已把实际地址写入
+`IPuddingServerAddressAccessor`。
+
+HttpClient 的起始日志可能在 DelegatingHandler 执行前显示原始
+`http://localhost:5000/...`，不能仅凭这一行判定重写失败。有效验收证据是后续
+`Sending HTTP request` 指向窗口状态栏中的动态 `127.0.0.1:<port>`，下游请求返回 200，
+并且原始 Agent 状态接口也返回 200。
+
+发布报 `NETSDK1152` 且路径同时出现两个
+`Microsoft.CodeAnalysis.Workspaces.MSBuild` 版本时，查各被引用项目的传递依赖：
+
+```powershell
+dotnet list .\Source\PuddingMemoryEngine\PuddingMemoryEngine.csproj package --include-transitive
+dotnet list .\Source\PuddingPlatform\PuddingPlatform.csproj package --include-transitive
+dotnet list .\Source\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj package --include-transitive
+```
+
+EF Design 和运行时 Code Intelligence 必须解析到同一 Roslyn Workspace 版本；
+不要通过禁用 `ErrorOnDuplicatePublishOutputFiles` 隐藏冲突。
 
 ## 12. 修改后的最低验收
 

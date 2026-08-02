@@ -200,8 +200,13 @@ public sealed record RuntimeDispatchRequest
     /// Runtime 据此区分用户取消与超时取消，禁止从异常文本推断。
     /// </summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
-    /// <summary>Agent Loop 最大工具调用总数。0 或负数表示使用平台护栏默认值。</summary>
-    public int MaxToolCallsTotal { get; init; }
+    /// <summary>未显式指定工具调用总数时使用的请求默认值。</summary>
+    public const int DefaultMaxToolCallsTotal = 100;
+    /// <summary>
+    /// Agent Loop 最大工具调用总数。本次请求是该预算的唯一来源；
+    /// 0 或负数仅用于兼容旧的直连 Runtime 入口，并回退到请求默认值。
+    /// </summary>
+    public int MaxToolCallsTotal { get; init; } = DefaultMaxToolCallsTotal;
     /// <summary>ADR-042: 入站消息的发送 Agent ID（agent-to-agent 消息时非空）。</summary>
     public string? InboundSourceAgentId { get; init; }
     /// <summary>ADR-042: 入站消息的发送 Agent 名称。</summary>

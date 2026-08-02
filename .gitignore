@@ -387,3 +387,4 @@ Resources/
 /.codex-out
 /.tmp-build
 /.tmp-test-out
+/build_out.txt

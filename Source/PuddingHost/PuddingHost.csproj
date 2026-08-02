@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    PuddingHost — Shared Host Composition Root
+    Extracted from PuddingAgent per Phase 0 of ADR-066.
+    Contains: Connectors, Controllers, P2P, Services, Tools,
+    BuiltInAgentTemplates, Config, Prompts, default-data.
+    Executable hosts import Build/PuddingHostContent.props for publish content.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PuddingHost</AssemblyName>
+    <RootNamespace>PuddingHost</RootNamespace>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.14.28" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.14.28" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.14.28" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.NET.StringTools" Version="17.14.28" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Map" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
+    <ProjectReference Include="..\PuddingController\PuddingController.csproj" />
+    <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
+    <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
+    <ProjectReference Include="..\..\external\github.hyfree.GM\github.hyfree.GM\github.hyfree.GM.csproj" />
+    <ProjectReference Include="..\..\src\HarnessAgent\Core\HarnessAgent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

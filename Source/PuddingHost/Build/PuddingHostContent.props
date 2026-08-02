@@ -1,0 +1,38 @@
+﻿<Project>
+  <!--
+    Shared content items for Console (PuddingAgent) and Desktop (PuddingDesktop) hosts.
+    Imported by consuming projects. Paths are relative to MSBuildThisFileDirectory (Build/).
+  -->
+  <ItemGroup>
+    <!-- default-data tree -->
+    <Content Include="$(MSBuildThisFileDirectory)..\default-data\**\*" Link="default-data\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+
+    <!-- Agent avatars config -->
+    <Content Include="$(MSBuildThisFileDirectory)..\Config\agent-avatars.json" Link="Config\agent-avatars.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+
+    <!-- Heartbeat prompt -->
+    <Content Include="$(MSBuildThisFileDirectory)..\Prompts\HeartbeatPrompt.md" Link="Prompts\HeartbeatPrompt.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <!-- Admin SPA (Workbench) — PuddingPlatformAdmin/dist/** → wwwroot/admin/** -->
+    <Content Include="$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist\**\*"
+             Link="wwwroot\admin\%(RecursiveDir)%(Filename)%(Extension)"
+             Condition="Exists('$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist\index.html')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Publish-time check: admin SPA must be built -->
+  <Target Name="EnsureAdminDistExists" BeforeTargets="Publish" Condition="'$(SkipAdminDistCheck)' != 'true'">
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist\index.html')"
+           Text="Admin SPA dist is missing. Run 'pnpm run build' in Source/PuddingPlatformAdmin first, or set SkipAdminDistCheck=true for backend-only development." />
+  </Target>
+</Project>

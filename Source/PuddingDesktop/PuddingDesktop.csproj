@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PuddingDesktop — WPF Windows Desktop Launcher
+    Phase 1A: Windows 11 Desktop Launcher, Persistent Configuration,
+    Core Lifecycle Management &amp; Workbench WebView2.
+    Core runs as a child process (Process.Start), not in-process.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PuddingDesktop</AssemblyName>
+    <RootNamespace>PuddingDesktop</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+  <!-- Phase 1A Publish Layout: bundle Core + default-data + wwwroot -->
+  <Target Name="PublishCoreBundle"
+          AfterTargets="Publish"
+          Condition="'$(SkipCorePublish)' != 'true'">
+    <PropertyGroup>
+      <CorePublishDir>$(PublishDir)core\</CorePublishDir>
+    </PropertyGroup>
+
+    <Message Importance="high" Text="[DesktopPublish] Publishing Core to $(CorePublishDir)..." />
+
+    <!-- Publish PuddingAgent as Core child process -->
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\PuddingAgent\PuddingAgent.csproj"
+             Targets="Publish"
+             BuildInParallel="false"
+             Properties="Configuration=$(Configuration);PublishDir=$(CorePublishDir);OutDir=$(CorePublishDir);Restore=false;SkipCorePublish=true" />
+
+    <Error Condition="!Exists('$(CorePublishDir)PuddingAgent.exe')"
+           Text="Desktop publish is incomplete: core/PuddingAgent.exe is missing." />
+    <Error Condition="!Exists('$(CorePublishDir)wwwroot\admin\index.html')"
+           Text="Desktop publish is incomplete: core/wwwroot/admin/index.html is missing." />
+
+    <Message Importance="high" Text="[DesktopPublish] Publish layout complete. Core at $(CorePublishDir)" />
+  </Target>
+</Project>

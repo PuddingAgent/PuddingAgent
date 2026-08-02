@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-08-01 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +构建输出隔离、Jieba 依赖门禁与 dev-up 安全清理
+> 最后更新: 2026-08-02 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Phase 1A Windows 11 Desktop Launcher 与 Workbench
 
 ---
 
@@ -9,6 +9,30 @@
 PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、工具调用、记忆系统和任务规划。
 
 技术栈: .NET 10 / SQLite (EF Core) / React + TypeScript / Serilog
+
+### Windows Desktop 与通用浏览器（Phase 0 / Phase 1A 已落地）
+
+| 文档 | 规划边界 |
+|------|----------|
+| `../Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md` | 通用 Browser 能力与 Douyin 分层决策来源；Desktop 进程边界以 68 实施规格的 Phase 1A 更新为准 |
+| `../Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md` | Phase 1A 当前事实：WPF Launcher 以子进程监督 ASP.NET Core Core，Windows 11 Shell 内嵌隔离的 WebView2CompositionControl Workbench；Browser AgentTools、Douyin 仍待实现 |
+
+关键 Desktop 入口：
+
+| 文件 | 用途 |
+|------|------|
+| `PuddingDesktop/App.xaml` | Windows 11 Light/Dark 动态颜色、Typography、Corner、Card、Button、Navigation 和 Caption 样式 Token |
+| `PuddingDesktop/App.xaml.cs` | WPF 产品入口；创建 Coordinator，并将早期未处理异常写入 Desktop 独立日志 |
+| `PuddingDesktop/MainWindow.xaml(.cs)` | 48px 自定义标题栏、240px Navigation、Workbench/Core/Settings 页面和 Core 状态控制条 |
+| `PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs` | 始终可用的 Launcher 与可失败 Core 子进程之间的状态机、启停重启及 Workbench Ready 协调 |
+| `PuddingDesktop/Core/CoreProcessSupervisor.cs` | 启动 `core/PuddingAgent.exe --desktop-child`、解析 Ready、健康检查、环形 stdout/stderr、关闭与进程树回收 |
+| `PuddingDesktop/Configuration/SystemConfigurationService.cs` | `<DataRoot>/config/system.json` 的保留未知字段 Patch 与原子写入 |
+| `PuddingDesktop/Views/WorkbenchView.xaml(.cs)` | 使用隔离 UDF 的 `WebView2CompositionControl`；加载/失败原生遮罩、导航和进程故障处理 |
+| `PuddingPlatformAdmin/src/pages/home/index.tsx` | Workbench 认证后默认首页；展示 Core 就绪、工作空间概览、最近工作入口和对话/模型/诊断快捷入口 |
+| `PuddingDesktop/Theming/WindowsThemeService.cs` | 读取 Windows Apps Light/Dark 与 DWM Accent，更新动态 Resource |
+| `PuddingDesktop/Theming/WindowsBackdropService.cs` | Windows 11 Mica、沉浸式深色和系统圆角；Windows 10/失败时无阻塞回退 |
+| `PuddingDesktop/Diagnostics/DesktopDiagnosticLog.cs` | Core/Serilog 尚不可用时写 `%LOCALAPPDATA%/Pudding/logs/desktop.log` |
+| `../TestScripts/start-phase1a-desktop-smoke.ps1` | 以系统 Temp 下隔离 DesktopHome/DataRoot 启动发布包进行真实窗口/Core/WebView2 smoke |
 
 ### 开发启动与诊断
 
@@ -24,6 +48,10 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 ```
 Source/
 ├── PuddingAgent/              # 入口项目 (Program.cs, 启动配置)
+├── PuddingHost/               # ASP.NET Core Core 子进程的 Service/API 组合根
+├── PuddingDesktop/            # Windows WPF 产品 Launcher（Phase 1A 已落地）
+├── PuddingBrowser.Abstractions/ # 通用 Agent Browser 契约
+├── PuddingBrowser.WebView2/   # WebView2 Driver（当前为骨架）
 ├── PuddingCodexService/       # 🔑 宿主外 Codex MCP Sidecar（持久任务/自修复重启握手）
 ├── PuddingRuntime/            # 🔑 运行时核心 (Agent Loop, LLM 调用, 工具系统)
 ├── PuddingPlatform/           # 🔑 平台层 (Session 管理, API, 数据持久化)
@@ -62,7 +90,7 @@ Source/
 | `Services/SessionExecutionGate.cs` + `PuddingCore/Runtime/ISessionExecutionGate.cs` | Runtime 会话进程内单写者；统一串行化 Conversation Worker、MessageDelivery、Heartbeat 与直接 Runtime 调度对同一 session 的状态修改 |
 | `Services/AgentLoop/CompletionPolicy.cs` | 判断 Agent 何时完成（stop reason 处理） |
 | `Services/AgentLoop/ExecutionJournal.cs` | 执行日志记录 |
-| `Services/AgentLoop/AgentExecutionGuardrails.cs` | 执行护栏（最大轮次等） |
+| `Services/AgentLoop/AgentExecutionGuardrails.cs` | 全局执行护栏（最大轮次、最大耗时、重复工具与无进展）；工具调用总预算由 `RuntimeDispatchRequest.MaxToolCallsTotal` 唯一决定，不再接受全局二次裁剪 |
 | `Services/AgentLoop/ExecutionControlRegistry.cs` | 注册执行控制策略 |
 | `Services/YoloSignalService.cs` | 开发机 `--auto-yolo` 文件信号消费者；从显式 `PUDDING_REPOSITORY_ROOT` 定位仓库根，消费后切换共享 Runtime mode 并删除信号文件 |
 | `Services/StreamWatchdog.cs` + `DirectLlmClient.cs` | LLM 流操作级滑动看门狗；首块默认 300 秒，首块后相邻流块默认 120 秒，Provider 配置只能收紧空闲窗口，不再施加固定流总时长；使用 Stopwatch 单调时钟 |
@@ -285,13 +313,15 @@ Source/
 | `PuddingPlatformAdmin/src/pages/llm-resource-pool/providerTemplates.ts` | 服务商预设目录；包含 DeepSeek、Moonshot Kimi K3、小米 MiMo、DashScope、OpenAI、BigModel 等 Provider/Model 初始配置 |
 | `PuddingPlatformAdmin/src/pages/llm-resource-pool/index.tsx` | LLM 服务商与模型管理；服务商配置支持并发数、TPM、RPM 并写入 `llm.providers.json` |
 
-### PuddingAgent Host 组合根
+### PuddingHost 组合根
 | 文件 | 用途 |
 |------|------|
-| `PuddingAgent/Program.cs` | Host 顶层生命周期入口；只保留数据根准备、基础 Web/JWT 配置、组合根调用、进程生命周期和 `Run` |
-| `PuddingAgent/Services/PuddingServiceCollectionExtensions*.cs` | 服务注册组合根；入口文件只表达调用顺序，Platform、Runtime、Connector、Bootstrap 四个 partial 文件分别拥有各自注册边界，并保持原始注册顺序 |
-| `PuddingAgent/Services/PuddingWebApplicationExtensions.cs` | HTTP middleware、健康检查、Legacy API 诊断与 SPA fallback；路由顺序是运行时契约 |
-| `PuddingAgent/Services/PuddingApplicationInitializationExtensions.cs` | Platform/Memory schema 幂等初始化、Conversation Event Store 建表、Workspace Catalog 加载与 jieba 回填 |
+| `PuddingAgent/Program.cs` | Console 开发/诊断薄入口；调用 `PuddingHostOptionsFactory`、`PuddingApplicationHost` 后运行 Host |
+| `PuddingHost/Hosting/PuddingApplicationHost.cs` | Console 与 DesktopChild Core 共用的 Host 创建、middleware 组装、初始化和启动后 Loopback 地址捕获入口 |
+| `PuddingHost/Hosting/PuddingControllerAddressRewriteHandler.cs` | Desktop/DesktopChild 内部控制面请求重写器；将 `PlatformApiClient` 的路径发送到 Host 启动后捕获的真实动态 Loopback，Console 保留配置端点 |
+| `PuddingHost/Extensions/PuddingServiceCollectionExtensions*.cs` | Platform、Runtime、Connector、Bootstrap 的服务注册组合根 |
+| `PuddingHost/Extensions/PuddingWebApplicationExtensions.cs` | HTTP middleware、健康检查、Legacy API 诊断与 Workbench SPA fallback；路由顺序是运行时契约 |
+| `PuddingHost/Hosting/PuddingApplicationInitializer.cs` | Phase 0 Closeout: 单次初始化权威（Platform/Memory schema、Conversation Event Store、Workspace Catalog、jieba backfill） |
 
 ### 消息系统
 | 文件 | 用途 |
@@ -310,7 +340,7 @@ Source/
 | `PuddingCore/Abstractions/IAudioTranscoder.cs` + `PuddingRuntime/Services/ManagedOggOpusTranscoder.cs` | 进程内短音频双向转码边界；NAudio.Core/Concentus 完成 WAV→16 kHz mono 24 kbps Ogg/Opus 出站与飞书 Ogg/Opus→16 kHz mono PCM WAV 入站，不依赖 ffmpeg/native codec；按实际样本计算时长并限制解码时长 |
 | `PuddingAgent/Services/MessageGatewayIngress.cs` | 飞书 V1 Gateway ingress；验证 channel-owned Connector、渠道实例与 Agent `channelIds` 引用，解析 Agent main Conversation，以外部 message_id 生成稳定消息/请求身份；斜杠指令在 Agent delivery 前拦截，并按渠道 `privilegedUserOpenIds` 校验特权用户、可靠回复飞书 |
 | `PuddingAgent/Services/FeishuConnectorFactory.cs` + `AgentManifestCatalog.cs` | 从启用的渠道服务商/渠道实例和 Agent 引用动态装配一 Agent 一机器人；Connector 身份为 `feishu:{channelId}`，拒绝重复 AppId，凭据不进入公共 DTO |
-| `PuddingAgent/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `PuddingAgent/Services/FeishuTtsDeliveryService.cs` + `FeishuImageUploadPreparationService.cs` + `src/HarnessAgent/Core/Connectors/Feishu/` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；CardKit v1；图片入站按 50 MiB 边界落 Vision Artifact，图片出站从 Artifact 上传并以 `msg_type=image` 回复，超过飞书 10 MiB 上传边界时在 C# 层生成有界 JPEG 投递副本且保留原图；语音入站按 `file_key/type=file` 下载、纯托管解码并幂等落 Audio Artifact；语音出站经共享 TTS、Opus 转码、file upload 与 `msg_type=audio` reply |
+| `PuddingHost/Connectors/FeishuConnector.cs` + `FeishuInboundMessageMapper.cs` + `PuddingHost/Services/FeishuTtsDeliveryService.cs` + `FeishuImageUploadPreparationService.cs` + `src/HarnessAgent/Core/Connectors/Feishu/MessageMapper.cs` + `FeishuPostContentConverter.cs` | 飞书 OpenAPI/长连接协议适配；官方 pbbp2 长连；`post` 入站优先把 `content_v2/content` 转 Markdown、未知结构至少提取纯文本，禁止降级为 `[post]`；CardKit v1；图片入站按 50 MiB 边界落 Vision Artifact，图片出站从 Artifact 上传并以 `msg_type=image` 回复，超过飞书 10 MiB 上传边界时在 C# 层生成有界 JPEG 投递副本且保留原图；语音入站按 `file_key/type=file` 下载、纯托管解码并幂等落 Audio Artifact；语音出站经共享 TTS、Opus 转码、file upload 与 `msg_type=audio` reply |
 | `PuddingAgent/Services/FeishuStreamingProjectionWorker.cs` + `PuddingCore/Platform/ConnectorStreamContracts.cs` | 将 committed `message.content.appended` 按 durable cursor 原样投影到同一飞书流式卡片，V1 有意保留 `voice`/`ImageGeneration` 围栏供客户端核对 Agent 输出；对可能成为纯 `image` 围栏的前缀延迟建卡，终态解析已有图片围栏后追加 Artifact；sequence/uuid 稳定重试；failed/cancelled 用统一错误文案关闭卡片；任一投影阶段连续失败 5 次进入 `failed` 并回退普通文本，不无限重试、不重跑 Agent |
 | `PuddingAgent/Tools/SendVoiceTool.cs` | Agent 显式语音工具；仅从当前 Feishu main Turn 的受信任 Command metadata 解析目标，以 `commandId + toolCallId` 幂等排队 audio delivery，不允许模型指定任意收件人；成功后抑制工具调用后的终态确认文字，已开始文字流时拒绝并提示改用混合 `voice` 围栏 |
 | `PuddingAgent/Tools/AsrTool.cs` | 文本模型的受控音频读取工具；只接受 attached-audio notice 中当前 Workspace `audio-*.wav` 的精确绝对路径，拒绝任意文件和跨 Workspace 访问，并把 Provider-neutral ASR 结果标记为不可信用户媒体 |
@@ -667,8 +697,9 @@ WorkspaceAgentSettingsDrawer
 - `sourceTemplateId` 创建后只作为来源审计信息，运行时不得据此读取模板
 - `maxContextTokens` 不进入 Agent 表单或 Agent 配置，容量只由 Provider Model 解析
 - 最大轮次、最大耗时、最大工具调用进入不可变执行快照；默认父 Turn 最大耗时为
-  86400 秒最终安全上限，Runtime 以实例值和平台 `AgentExecutionGuardrails` 中较小者为
-  有效硬上限；正常停滞由 3600 秒滑动 meaningful-progress 窗口终结
+  86400 秒最终安全上限，最大轮次与耗时仍受平台 `AgentExecutionGuardrails` 约束；工具调用
+  总预算直接采用快照写入的 `RuntimeDispatchRequest.MaxToolCallsTotal`，不再受隐藏全局值裁剪；
+  正常停滞由 3600 秒滑动 meaningful-progress 窗口终结
 
 ---
 

@@ -512,7 +512,7 @@ const Bootstrap: React.FC = () => {
       }
       message.success('初始化完成，即将进入运行时');
       setTimeout(() => {
-        window.location.href = '/admin/chat';
+        window.location.href = '/admin/';
       }, 1000);
     } catch {
       message.error('网络错误，请检查后端服务是否启动');

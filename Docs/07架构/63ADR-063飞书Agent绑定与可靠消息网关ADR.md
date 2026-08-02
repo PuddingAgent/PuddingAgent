@@ -1,7 +1,7 @@
 # ADR-063：飞书 Agent 绑定与可靠消息网关
 
-> 状态：**Accepted（V1.5 入站语音与 ASR 双路由已实现）**
-> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28；显式语音回复、入站语音与 ASR 双路由修订：2026-07-31
+> 状态：**Accepted（入站 `post` 富文本 Markdown 已实现）**
+> 日期：2026-07-25；流式回复、入站图片与渠道配置修订：2026-07-26；共享 `/status` 修订：2026-07-28；显式语音回复、入站语音与 ASR 双路由修订：2026-07-31；入站 `post` 富文本修订：2026-08-02
 > 范围：渠道服务商、渠道实例、Agent channel 引用、飞书 Connector、Message Gateway、Message Fabric、Conversation、Vision/Audio Artifact、CardKit 流式投影、TTS 语音回复、ASR、回复投递
 > 关联：[ADR-045 双向消息系统](46ADR-045双向消息系统与聊天室客户端ADR.md)、[ADR-057 可靠 Conversation 事件流](58ADR-057前后端可靠SSE与Conversation事件流架构ADR.md)、[ADR-059 Conversation 执行内核](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 
@@ -209,6 +209,29 @@ V1 将绑定机器人的消息投递到 Agent main Conversation，使 Web 观察
 稳定 artifact 已存在时重投直接复用，不重复下载和落盘。解析、下载或持久化失败必须让事件返回
 非 200 ACK，允许飞书重投；禁止 ACK 后只向 Agent 投递 `[image]`。V1.1 入站图片仅接受网页/模型
 已支持的 JPEG、PNG、WebP；其它格式需要在后续增加安全的服务端规范化后再开放。
+
+#### 2.4.2 入站 `post` 富文本降维
+
+飞书客户端会把带段落、列表、链接或其它样式的用户文本发送为 `message_type=post`。它的
+`event.message.content` 是 `title + content/content_v2` 的结构化 JSON，不是普通文本消息的
+`{"text":"..."}`。Connector 禁止把无法按普通文本模型反序列化的 `post` 降级为 `[post]`；否则
+Gateway、Conversation 与 LLM 虽然都成功，Agent 实际只会收到 6 个占位符字符。
+
+入站转换使用以下有序策略：
+
+1. 兼容直接 payload 和 `zh_cn/en_us/ja_jp` locale 包装；优先读取 `content_v2`，为空时回退
+   `content`，避免两个等价字段产生重复正文。
+2. 优先生成 Markdown：标题转一级标题，段落保留换行，`text` 保留文本及常用样式，`a` 转
+   Markdown 链接，`at` 转可读 `@名称`，代码块转 fenced code；图片、媒体与表情使用明确的可读
+   标记。
+3. 遇到未来新增或未知 tag 时，至少递归提取其中的 `text`，保证信息降维而不是丢弃。
+4. JSON 畸形或真正没有可读文本时，投递明确的“富文本消息无可提取文本”说明；不得再把
+   `[post]` 送入 Agent。
+
+转换后的 envelope 仍使用 `MessageType=chat`，并保留 `feishu_message_type=post` metadata，后续
+Gateway、Conversation 和回复路由无需为富文本建立平行链路。V1 对富文本中的内嵌图片只给出
+`[图片]` 标记；若需要图文混合理解，应在后续复用 Vision Artifact 物化边界，而不是把资源 key
+或外部 URL 直接交给 Agent。
 
 ### 2.5 默认回复由系统代投
 

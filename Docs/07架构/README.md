@@ -43,6 +43,8 @@
 37. [63ADR-063飞书Agent绑定与可靠消息网关ADR](63ADR-063飞书Agent绑定与可靠消息网关ADR.md)
 38. [64ADR-064Codex独立执行服务与Pudding自修复重启ADR](64ADR-064Codex独立执行服务与Pudding自修复重启ADR.md)
 39. [65ADR-064自进化PuddingAgent vs Hermes Agent对比分析ADR](65ADR-064自进化PuddingAgent%20vs%20Hermes%20Agent对比分析ADR.md)（当前与上一项编号冲突，待统一重编号）
+40. [67ADR-066抖音个人开发者评论接入与浏览器自动化ADR](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)
+41. [68抖音接入与通用WebView2自动化开发实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)
 
 文档分工：
 
@@ -58,4 +60,5 @@
 - 若需要继续细化事件命名、Envelope、重放与死信策略，应优先阅读 [10事件系统与事件总线](10事件系统与事件总线.md)。
 - 若需要研究 token 成本、前缀缓存命中、工具输出/日志/RAG 进入 LLM 前压缩和 Headroom 参考路线，应优先阅读 [18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[43ADR-042上下文自动压缩与主动Compact命令ADR](43ADR-042上下文自动压缩与主动Compact命令ADR.md) 与 [44ADR-043缓存统计闭环ADR](44ADR-043缓存统计闭环ADR.md)。
 - 若需要讨论 Hermes 型系统的 1~7 开发方向、优先级和待细化问题，应优先阅读 [49ADR-048Hermes型系统开发方向参考ADR](49ADR-048Hermes型系统开发方向参考ADR.md)。
+- 若需要实现 Windows 桌面宿主、Agent 通用 WebView2 控制或个人账号抖音评论接入，应先阅读 [67ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)，再按 [68开发实施规格](68抖音接入与通用WebView2自动化开发实施规格.md) 分阶段开发；Playwright 仅作为模型熟悉的交互语义参考，Douyin 只能依赖通用 Browser Abstractions。
 - **2026-05-03**：Workspace 保留为"场景"分组概念。Chat 为一级入口（顶栏含场景选择器+Agent选择器），场景管理和 Agent 管理退入设置后台。Agent 模板简化为全局模板库。详见 [../架构.md#场景sceneworkspace与-agent-关系模型](../架构.md#场景sceneworkspace与-agent-关系模型)。

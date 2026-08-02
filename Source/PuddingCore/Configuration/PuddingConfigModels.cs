@@ -51,6 +51,21 @@ public sealed record PuddingSystemConfig
     public PuddingLoggingConfig Logging { get; init; } = new();
     public PuddingRuntimeConfig Runtime { get; init; } = new();
     public PuddingPathConfig Paths { get; init; } = new();
+    public PuddingDesktopConfig Desktop { get; init; } = new();
+}
+
+public sealed record PuddingDesktopConfig
+{
+    public PuddingDesktopCoreConfig Core { get; init; } = new();
+}
+
+public sealed record PuddingDesktopCoreConfig
+{
+    public bool AutoStart { get; init; } = true;
+    public int Port { get; init; }
+    public int StartupTimeoutSeconds { get; init; } = 60;
+    public int ShutdownTimeoutSeconds { get; init; } = 15;
+    public string? ControlToken { get; init; }
 }
 
 public sealed record PuddingHttpConfig

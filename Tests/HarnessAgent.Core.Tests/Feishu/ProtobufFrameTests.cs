@@ -128,4 +128,128 @@ public sealed class ProtobufFrameTests
         Assert.AreEqual("img_v3_test", evt!.ExtractImageKey());
         Assert.AreEqual("[image]", evt.ExtractText());
     }
+
+    [TestMethod]
+    public void FeishuPostEvent_DirectContent_ConvertsToMarkdown()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "post",
+                    Content =
+                        """
+                        {
+                          "title": "开发计划",
+                          "content": [
+                            [{"tag":"text","text":"旧格式内容"}]
+                          ],
+                          "content_v2": [
+                            [{"tag":"text","text":"核心文件："}],
+                            [
+                              {"tag":"text","text":"- "},
+                              {
+                                "tag":"a",
+                                "href":"/E:/repo/ADR-066.md",
+                                "text":"ADR-066"
+                              }
+                            ],
+                            [],
+                            [
+                              {
+                                "tag":"at",
+                                "user_id":"ou_user",
+                                "user_name":"小明"
+                              },
+                              {"tag":"text","text":" 请开始"}
+                            ],
+                            [
+                              {
+                                "tag":"code_block",
+                                "language":"csharp",
+                                "text":"var ready = true;"
+                              }
+                            ]
+                          ]
+                        }
+                        """,
+                },
+            },
+        };
+
+        var markdown = evt.ExtractText();
+
+        Assert.AreEqual(
+            "# 开发计划\n\n"
+            + "核心文件：\n"
+            + "- [ADR-066](/E:/repo/ADR-066.md)\n\n"
+            + "@小明 请开始\n"
+            + "```csharp\nvar ready = true;\n```",
+            markdown);
+        Assert.DoesNotContain("旧格式内容", markdown);
+        Assert.DoesNotContain("[post]", markdown);
+    }
+
+    [TestMethod]
+    public void FeishuPostEvent_LocalizedContent_UsesReadableTextFallback()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "post",
+                    Content =
+                        """
+                        {
+                          "zh_cn": {
+                            "title": "",
+                            "content": [
+                              [
+                                {
+                                  "tag":"future_container",
+                                  "children":[
+                                    {
+                                      "tag":"future_tag",
+                                      "text":"至少降维成文本"
+                                    }
+                                  ]
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                        """,
+                },
+            },
+        };
+
+        Assert.AreEqual("至少降维成文本", evt.ExtractText());
+    }
+
+    [TestMethod]
+    public void FeishuPostEvent_MalformedContent_DoesNotReturnTypePlaceholder()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "post",
+                    Content = "{not-json",
+                },
+            },
+        };
+
+        var text = evt.ExtractText();
+
+        Assert.AreEqual(
+            "用户从飞书发送了一条富文本消息，但其中没有可提取的文本内容。",
+            text);
+        Assert.AreNotEqual("[post]", text);
+    }
 }

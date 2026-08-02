@@ -13,7 +13,7 @@ public static class MessageMapper
     };
 
     /// <summary>
-    /// 从飞书事件中提取纯文本内容。
+    /// 从飞书事件中提取 Agent 可读内容；post 富文本转换为 Markdown。
     /// </summary>
     public static string ExtractText(this FeishuEvent evt)
     {
@@ -29,6 +29,15 @@ public static class MessageMapper
             // 解析 Content JSON
             if (!string.IsNullOrWhiteSpace(msg.Content))
             {
+                if (string.Equals(
+                        msg.MessageType,
+                        "post",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return FeishuPostContentConverter.ConvertToMarkdown(
+                        msg.Content);
+                }
+
                 try
                 {
                     var content = JsonSerializer.Deserialize<FeishuTextContent>(
@@ -37,6 +46,14 @@ public static class MessageMapper
                         return content.Text;
                 }
                 catch { }
+            }
+
+            if (string.Equals(
+                    msg.MessageType,
+                    "post",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return FeishuPostContentConverter.EmptyPostMessage;
             }
 
             return $"[{msg.MessageType ?? "unknown"}]";

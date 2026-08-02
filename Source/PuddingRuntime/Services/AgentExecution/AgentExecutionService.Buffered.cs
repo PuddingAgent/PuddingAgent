@@ -51,7 +51,7 @@ public sealed partial class AgentExecutionService
         var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
         var maxElapsed = ResolveMaxElapsed(request);
-        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request);
+        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal);
 
         var execTrace = RuntimeTraceContext.CreateNew(
             sessionId: request.SessionId,

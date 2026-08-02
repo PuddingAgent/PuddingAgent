@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-05-18（Phase 5 上下文缓存可观测性归档）
+最后更新：2026-08-01（新增 WPF/WebView2 桌面宿主、通用 Agent 浏览器与抖音接入实施规格）
 
 ## 文档定位
 
@@ -40,6 +40,9 @@
 - `Docs/06智能体网关/`
 - `Docs/Config/hooks.md`
 - `Docs/Config/pudding-yaml.md`
+- `Docs/07架构/63ADR-063飞书Agent绑定与可靠消息网关ADR.md`
+- `Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md`
+- `Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md`
 
 ### 2. 智能体、运行时与协作
 

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,52 +12,40 @@ using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.MessageFabric;
 
-namespace PuddingAgent.Services;
+namespace PuddingHost.Hosting;
 
 /// <summary>
-/// Applies idempotent database/schema initialization and loads startup catalogs.
+/// Idempotent database/schema initialization, workspace catalog loading,
+/// and jieba token backfill. Extracted from PuddingApplicationInitializationExtensions.
 /// </summary>
-public static class PuddingApplicationInitializationExtensions
+public static class PuddingApplicationInitializer
 {
-    public static async Task InitializePuddingDataAsync(this WebApplication app)
+    public static async Task InitializeAsync(WebApplication app, CancellationToken cancellationToken)
     {
-        // ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
+        // ── Platform DB ───────────────────────────────────
         Console.WriteLine("[Startup] Ensuring Platform DB tables...");
         try
         {
-            using (var scope = app.Services.CreateScope())
-            {
-                var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                var schemaLogger = scope.ServiceProvider
-                    .GetRequiredService<ILoggerFactory>()
-                    .CreateLogger("PlatformSchema");
+            using var scope = app.Services.CreateScope();
+            var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var schemaLogger = scope.ServiceProvider
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("PlatformSchema");
 
-                await platformDb.Database.EnsureCreatedAsync();
-                await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(
-                    platformDb,
-                    schemaLogger,
-                    CancellationToken.None);
-                await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(
-                    platformDb,
-                    schemaLogger,
-                    CancellationToken.None);
-                await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(
-                    platformDb,
-                    schemaLogger,
-                    CancellationToken.None);
-                await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(
-                    platformDb,
-                    schemaLogger,
-                    CancellationToken.None);
-            }
+            await platformDb.Database.EnsureCreatedAsync(cancellationToken);
+            await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+
             Console.WriteLine("[Startup] Platform DB tables and schema upgrades ensured");
 
-            // ADR-057: Ensure conversation event store tables exist (not lazy).
+            // ── Conversation Event Store ──────────────────
             try
             {
                 using var scope2 = app.Services.CreateScope();
                 var eventStore = scope2.ServiceProvider.GetRequiredService<IConversationEventStore>();
-                await eventStore.EnsureTablesAsync(CancellationToken.None);
+                await eventStore.EnsureTablesAsync(cancellationToken);
                 Console.WriteLine("[Startup] Conversation Event Store tables ensured");
             }
             catch (Exception ex)
@@ -71,34 +59,31 @@ public static class PuddingApplicationInitializationExtensions
             throw;
         }
 
+        // ── Memory DB ────────────────────────────────────
         Console.WriteLine("[Startup] Ensuring Memory DB tables...");
         using (var scope = app.Services.CreateScope())
         {
             var coreMemoryFactory = scope.ServiceProvider.GetRequiredService<
-                IDbContextFactory<PuddingMemoryEngine.Data.MemoryDbContext>>();
+                IDbContextFactory<MemoryDbContext>>();
             var libraryMemoryFactory = scope.ServiceProvider.GetRequiredService<
-                IDbContextFactory<PuddingMemoryEngine.Data.MemoryLibraryDbContext>>();
+                IDbContextFactory<MemoryLibraryDbContext>>();
             var memoryLogger = scope.ServiceProvider
                 .GetRequiredService<ILoggerFactory>()
                 .CreateLogger("MemoryDatabaseInitialization");
 
-            await PuddingMemoryEngine.Data.MemoryDbInitializer.InitializeAsync(coreMemoryFactory);
-            await PuddingMemoryEngine.Data.MemoryLibraryDbInitializer.InitializeAsync(
-                libraryMemoryFactory,
-                memoryLogger);
+            await MemoryDbInitializer.InitializeAsync(coreMemoryFactory);
+            await MemoryLibraryDbInitializer.InitializeAsync(libraryMemoryFactory, memoryLogger);
         }
         Console.WriteLine("[Startup] Memory DB tables ensured");
 
-        // ── Workspace Catalog 初始化：从 DB 加载或播种 default workspace ──
+        // ── Workspace Catalog ─────────────────────────────
         Console.WriteLine("[Startup] Initializing Workspace Catalog...");
         try
         {
             var catalog = app.Services.GetRequiredService<InMemoryWorkspaceCatalog>();
-            using (var scope = app.Services.CreateScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<ControllerDbContext>();
-                await db.Database.EnsureCreatedAsync();
-            }
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ControllerDbContext>();
+            await db.Database.EnsureCreatedAsync(cancellationToken);
             await catalog.LoadAsync();
             Console.WriteLine($"[Startup] Workspace Catalog loaded, {catalog.GetAll().Count} workspace(s)");
         }
@@ -107,7 +92,7 @@ public static class PuddingApplicationInitializationExtensions
             Console.WriteLine($"[Startup] Workspace Catalog init failed: {ex.Message}");
         }
 
-        // ── jieba 分词回填：存量 Chapter 的 TitleTokens / ContentTokens ──
+        // ── jieba backfill ───────────────────────────────
         Console.WriteLine("[Startup] Starting jieba backfill...");
         try
         {
@@ -122,6 +107,5 @@ public static class PuddingApplicationInitializationExtensions
         {
             Console.WriteLine($"[startup] jieba tokens backfill skipped: {ex.Message}");
         }
-
     }
 }

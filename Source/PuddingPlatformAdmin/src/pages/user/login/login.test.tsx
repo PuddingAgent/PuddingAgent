@@ -5,12 +5,17 @@ import { act } from 'react';
 
 const mockLogin = jest.fn();
 const mockCurrentUser = jest.fn();
+const mockListWorkspaces = jest.fn();
 
 jest.mock('../../chat/components/WorkspaceStudioGameCanvas', () => () => null);
 
 jest.mock('@/services/ant-design-pro/api', () => ({
   login: (...args: any[]) => mockLogin(...args),
   currentUser: (...args: any[]) => mockCurrentUser(...args),
+}));
+
+jest.mock('@/services/platform/api', () => ({
+  listWorkspaces: (...args: any[]) => mockListWorkspaces(...args),
 }));
 
 const waitTime = (time: number = 100) => {
@@ -36,11 +41,13 @@ describe('Login Page', () => {
         access: 'admin',
       },
     });
+    mockListWorkspaces.mockResolvedValue([]);
   });
 
   afterEach(() => {
     mockLogin.mockReset();
     mockCurrentUser.mockReset();
+    mockListWorkspaces.mockReset();
     localStorage.removeItem('pudding_token');
   });
 
@@ -87,7 +94,7 @@ describe('Login Page', () => {
     rootContainer.unmount();
   });
 
-  it('uses an in-app transition before navigating to the workspace entry after login success', async () => {
+  it('uses an in-app transition before navigating to the home page after login success', async () => {
     const historyRef = React.createRef<any>();
     const rootContainer = render(
       <TestBrowser
@@ -130,7 +137,7 @@ describe('Login Page', () => {
       await waitTime(400);
     });
 
-    expect(historyRef.current?.location?.pathname).toBe('/pudding/workspaces');
+    expect(historyRef.current?.location?.pathname).toBe('/');
 
     rootContainer.unmount();
   });

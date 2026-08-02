@@ -30,9 +30,9 @@ export default [
   },
   {
     path: '/',
-    name: 'adminHome',
-    icon: 'dashboard',
-    component: './Admin',
+    name: 'home',
+    icon: 'home',
+    component: './home',
   },
   {
     path: '/chat',

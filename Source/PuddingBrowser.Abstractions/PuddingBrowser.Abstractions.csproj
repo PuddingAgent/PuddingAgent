@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PuddingBrowser.Abstractions — Platform-neutral Browser Automation Interfaces.
+    Phase 2: ID types, models, and core interfaces.
+    Must NOT reference WPF, WebView2, or Douyin.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PuddingBrowser.Abstractions</AssemblyName>
+    <RootNamespace>PuddingBrowser.Abstractions</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+  </ItemGroup>
+</Project>

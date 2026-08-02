@@ -52,6 +52,7 @@ using PuddingFullTextIndex.Infrastructure.Search;
 using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services.Events;
+using PuddingHost.Hosting;
 using System.Threading.Channels;
 
 namespace PuddingAgent.Services;
@@ -64,12 +65,15 @@ public static partial class PuddingServiceCollectionExtensions
         string aspnetcoreEnvironment)
     {
         // ── PlatformApiClient（通过 Controller API 操作控制面）──
-        builder.Services.AddHttpClient<PlatformApiClient>(client =>
-        {
-            var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:5000";
-            client.BaseAddress = new Uri(endpoint);
-            client.Timeout = TimeSpan.FromSeconds(30);
-        });
+        builder.Services.AddTransient<PuddingControllerAddressRewriteHandler>();
+        builder.Services
+            .AddHttpClient<PlatformApiClient>(client =>
+            {
+                var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:5000";
+                client.BaseAddress = new Uri(endpoint);
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .AddHttpMessageHandler<PuddingControllerAddressRewriteHandler>();
 
         // ── Workspace 业务层 ──────────────────────────────────
         builder.Services.AddScoped<WorkspaceBusinessService>();

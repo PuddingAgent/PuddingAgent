@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PuddingBrowser.WebView2 — WebView2-based browser driver for Windows.
+    Phase 3: Implements IBrowserRuntime/Context/Page via WebView2.
+    Must NOT reference Douyin.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PuddingBrowser.WebView2</AssemblyName>
+    <RootNamespace>PuddingBrowser.WebView2</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

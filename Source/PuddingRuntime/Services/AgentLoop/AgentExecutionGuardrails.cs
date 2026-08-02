@@ -15,9 +15,6 @@ public sealed record AgentExecutionGuardrails
     /// </summary>
     public TimeSpan MaxElapsed { get; init; } = TimeSpan.FromHours(24);
 
-    /// <summary>整次执行内工具调用总次数上限。默认 100。</summary>
-    public int MaxToolCallsTotal { get; init; } = 100;
-
     /// <summary>
     /// 相同工具 + 相同参数哈希在连续轮次中最多允许重复的次数。
     /// 超出后注入引导消息，强迫 LLM 换策略或声明 FAILED。默认 3。

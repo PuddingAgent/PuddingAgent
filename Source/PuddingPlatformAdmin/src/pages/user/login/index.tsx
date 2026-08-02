@@ -18,14 +18,13 @@ import React, { useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Footer } from '@/components';
 import { login } from '@/services/ant-design-pro/api';
-import { PUDDING_WORKSPACES_PATH } from '@/utils/workspaceNavigation';
 import Settings from '../../../../config/defaultSettings';
 
 const LOGIN_TRANSITION_MS = 240;
 const LOGIN_AMBIENT_BG = '/admin/assets/images/login-ambient-workspace-bg.png';
 
 const normalizeRouteTarget = (target: string | null): string => {
-  if (!target) return PUDDING_WORKSPACES_PATH;
+  if (!target) return '/';
 
   try {
     const url = new URL(target, window.location.origin);

@@ -1,12 +1,16 @@
-<Solution>
+﻿<Solution>
   <Folder Name="/Source/">
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
+    <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
+    <Project Path="Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj" />
     <Project Path="Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj" />
     <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
     <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />
+    <Project Path="Source/PuddingDesktop/PuddingDesktop.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
     <Project Path="Source/PuddingGateway/PuddingGateway.csproj" Id="842799f5-bc91-4674-8f5a-69168d500288" />
+    <Project Path="Source/PuddingHost/PuddingHost.csproj" />
     <Project Path="Source/PuddingMemoryEngine/PuddingMemoryEngine.csproj" Id="184bffb0-b17d-495a-971c-faee05af8d8c" />
     <Project Path="Source/PuddingMemoryEngineBenchmarks/PuddingMemoryEngineBenchmarks.csproj" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
@@ -16,6 +20,8 @@
   <Folder Name="/Tests/">
     <Project Path="Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj" />
     <Project Path="Tests/PuddingAgent.IntegrationTests/PuddingAgent.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
+    <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />

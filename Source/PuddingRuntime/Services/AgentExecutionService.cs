@@ -707,10 +707,10 @@ public sealed partial class AgentExecutionService
         return requested < _guardrails.MaxElapsed ? requested : _guardrails.MaxElapsed;
     }
 
-    private int ResolveMaxToolCallsTotal(RuntimeDispatchRequest request)
-        => request.MaxToolCallsTotal > 0
-            ? Math.Min(request.MaxToolCallsTotal, _guardrails.MaxToolCallsTotal)
-            : _guardrails.MaxToolCallsTotal;
+    internal static int ResolveMaxToolCallsTotal(int requestedMaxToolCallsTotal)
+        => requestedMaxToolCallsTotal > 0
+            ? requestedMaxToolCallsTotal
+            : RuntimeDispatchRequest.DefaultMaxToolCallsTotal;
 
     private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
         timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;
