@@ -13,6 +13,8 @@ public enum DesktopStartupState
     CoreReady,
     CoreStopping,
     CoreFailed,
+    CoreRestartScheduled,
+    CoreCircuitOpen,
     WebViewInitializing,
     WorkbenchReady,
     WorkbenchFailed,

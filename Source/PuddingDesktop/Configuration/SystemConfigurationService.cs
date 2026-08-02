@@ -51,6 +51,11 @@ public sealed class SystemConfigurationService : ISystemConfigurationService
     private static readonly HashSet<string> KnownCoreProperties = new(StringComparer.OrdinalIgnoreCase)
     {
         "autoStart",
+        "autoRestart",
+        "restartMaxAttempts",
+        "restartWindowSeconds",
+        "restartInitialDelaySeconds",
+        "restartMaxDelaySeconds",
         "port",
         "startupTimeoutSeconds",
         "shutdownTimeoutSeconds",

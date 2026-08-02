@@ -1,6 +1,7 @@
 using PuddingCode.Configuration;
 using PuddingDesktop.Configuration;
 using PuddingDesktop.Core;
+using PuddingDesktop.Runtime;
 
 namespace PuddingDesktop.Hosting;
 
@@ -13,12 +14,15 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private readonly IDesktopBootstrapSettingsStore _bootstrapStore;
     private readonly ISystemConfigurationService _systemConfigService;
     private readonly IDesktopControlTokenService _tokenService;
+    private readonly IDesktopRuntimeOrchestrator _runtime;
+    private readonly DesktopBackgroundModeService _backgroundMode = new();
     private readonly SemaphoreSlim _operationLock = new(1, 1);
 
     private MainWindow? _mainWindow;
     private CancellationTokenSource? _lifetimeCts;
     private CancellationTokenSource? _startCts;
     private DesktopBootstrapSettings? _bootstrapSettings;
+    private CoreProcessStartOptions? _runtimeOptions;
     private DesktopStartupState _state = DesktopStartupState.NeedsDataRoot;
     private Uri? _coreAddress;
     private string? _lastError;
@@ -28,8 +32,12 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     public Uri? CoreAddress => _coreAddress;
     public string? DataRoot => _bootstrapSettings?.DataRoot;
     public CoreProcessLogBuffer CoreLogBuffer => _supervisor.LogBuffer;
+    public DesktopRuntimeSnapshot RuntimeSnapshot => _runtime.Snapshot;
+    public string? CoreExecutablePath => _runtimeOptions?.ExecutablePath;
+    public DesktopBackgroundModeService BackgroundMode => _backgroundMode;
 
     public event EventHandler<DesktopStateChangedEventArgs>? StateChanged;
+    public event EventHandler<DesktopRuntimeChangedEventArgs>? RuntimeChanged;
 
     public DesktopApplicationCoordinator()
     {
@@ -37,8 +45,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _systemConfigService = new SystemConfigurationService();
         _tokenService = new DesktopControlTokenService(_systemConfigService);
         _supervisor = new CoreProcessSupervisor();
-
-        _supervisor.UnexpectedExit += OnSupervisorUnexpectedExit;
+        _runtime = new DesktopRuntimeOrchestrator(_supervisor);
+        _runtime.Changed += OnRuntimeChanged;
     }
 
     public async Task StartAsync(string[] args, CancellationToken cancellationToken)
@@ -53,6 +61,9 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         });
 
         _bootstrapSettings = await _bootstrapStore.LoadAsync(_lifetimeCts.Token);
+        _backgroundMode.Configure(_bootstrapSettings.CloseBehavior);
+        if (args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase)))
+            _mainWindow?.Hide();
         if (!TryValidateDataRoot(_bootstrapSettings, out var dataRoot))
             return;
 
@@ -109,34 +120,16 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 return;
             }
 
-            var coreConfig = systemResult.Config.Desktop.Core;
-            ValidateCoreConfiguration(coreConfig);
-
-            var controlToken = coreConfig.ControlToken
-                ?? await _tokenService.GetOrCreateAsync(dataRoot, cancellationToken);
-            var executablePath = CoreExecutableResolver.Resolve(_bootstrapSettings.CoreExecutablePath);
-
             operationCts = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCts?.Token ?? CancellationToken.None);
             _startCts = operationCts;
-            TransitionTo(DesktopStartupState.CoreStarting);
-
-            var session = await _supervisor.StartAsync(
-                new CoreProcessStartOptions
-                {
-                    ExecutablePath = executablePath,
-                    DataRoot = dataRoot,
-                    Port = coreConfig.Port,
-                    ParentProcessId = Environment.ProcessId,
-                    ControlToken = controlToken,
-                    StartupTimeout = TimeSpan.FromSeconds(coreConfig.StartupTimeoutSeconds),
-                    ShutdownTimeout = TimeSpan.FromSeconds(coreConfig.ShutdownTimeoutSeconds),
-                },
+            await ConfigureRuntimeAsync(
+                _bootstrapSettings,
+                dataRoot,
+                systemResult.Config.Desktop.Core,
                 operationCts.Token);
-
-            _coreAddress = session.BaseAddress;
-            TransitionTo(DesktopStartupState.CoreReady, _coreAddress);
+            await _runtime.StartAsync(operationCts.Token);
         }
         catch (OperationCanceledException) when (
             operationCts?.IsCancellationRequested == true || cancellationToken.IsCancellationRequested)
@@ -171,10 +164,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 return;
             }
 
-            TransitionTo(DesktopStartupState.CoreStopping);
-            await _supervisor.StopAsync(cancellationToken);
-            _coreAddress = null;
-            TransitionTo(DesktopStartupState.CoreStopped);
+            await _runtime.StopAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -189,9 +179,66 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
     public async Task RestartCoreAsync(CancellationToken cancellationToken)
     {
-        await StopCoreAsync(cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        await StartCoreAsync(cancellationToken);
+        _startCts?.Cancel();
+        await _operationLock.WaitAsync(cancellationToken);
+        CancellationTokenSource? operationCts = null;
+        try
+        {
+            _bootstrapSettings = await _bootstrapStore.LoadAsync(cancellationToken);
+            if (!TryValidateDataRoot(_bootstrapSettings, out var dataRoot))
+                return;
+
+            var systemResult = await _systemConfigService.LoadAsync(dataRoot, cancellationToken);
+            if (!systemResult.Success || systemResult.Config is null)
+            {
+                TransitionTo(
+                    DesktopStartupState.InvalidConfiguration,
+                    error: $"系统配置加载失败: {string.Join("; ", systemResult.Errors)}");
+                return;
+            }
+
+            operationCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                _lifetimeCts?.Token ?? CancellationToken.None);
+            _startCts = operationCts;
+            await ConfigureRuntimeAsync(
+                _bootstrapSettings,
+                dataRoot,
+                systemResult.Config.Desktop.Core,
+                operationCts.Token);
+            await _runtime.RestartAsync(operationCts.Token);
+        }
+        catch (OperationCanceledException) when (
+            operationCts?.IsCancellationRequested == true || cancellationToken.IsCancellationRequested)
+        {
+            _coreAddress = null;
+            TransitionTo(DesktopStartupState.CoreStopped);
+        }
+        catch (Exception ex)
+        {
+            _coreAddress = null;
+            TransitionTo(DesktopStartupState.CoreFailed, error: ex.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_startCts, operationCts))
+                _startCts = null;
+            operationCts?.Dispose();
+            _operationLock.Release();
+        }
+    }
+
+    public async Task SetAutoRestartAsync(bool enabled, CancellationToken cancellationToken)
+    {
+        _bootstrapSettings = await _bootstrapStore.LoadAsync(cancellationToken);
+        if (!TryValidateDataRoot(_bootstrapSettings, out var dataRoot))
+            return;
+
+        await _systemConfigService.UpdateDesktopCoreSettingsAsync(
+            dataRoot,
+            current => current with { AutoRestart = enabled },
+            cancellationToken);
+        await _runtime.SetAutoRestartAsync(enabled, cancellationToken);
     }
 
     private bool TryValidateDataRoot(DesktopBootstrapSettings settings, out string dataRoot)
@@ -222,7 +269,41 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
             throw new InvalidOperationException("Core 启动超时必须为 1 到 600 秒。");
         if (config.ShutdownTimeoutSeconds is < 1 or > 120)
             throw new InvalidOperationException("Core 停止超时必须为 1 到 120 秒。");
+
+        _ = CreateRestartPolicy(config).Validate();
     }
+
+    private async Task ConfigureRuntimeAsync(
+        DesktopBootstrapSettings bootstrapSettings,
+        string dataRoot,
+        PuddingDesktopCoreConfig coreConfig,
+        CancellationToken cancellationToken)
+    {
+        ValidateCoreConfiguration(coreConfig);
+        var controlToken = coreConfig.ControlToken
+            ?? await _tokenService.GetOrCreateAsync(dataRoot, cancellationToken);
+
+        _runtimeOptions = new CoreProcessStartOptions
+        {
+            ExecutablePath = CoreExecutableResolver.Resolve(bootstrapSettings.CoreExecutablePath),
+            DataRoot = dataRoot,
+            Port = coreConfig.Port,
+            ParentProcessId = Environment.ProcessId,
+            ControlToken = controlToken,
+            StartupTimeout = TimeSpan.FromSeconds(coreConfig.StartupTimeoutSeconds),
+            ShutdownTimeout = TimeSpan.FromSeconds(coreConfig.ShutdownTimeoutSeconds),
+        };
+        _runtime.Configure(_runtimeOptions, CreateRestartPolicy(coreConfig));
+    }
+
+    private static CoreRestartPolicy CreateRestartPolicy(PuddingDesktopCoreConfig config) => new()
+    {
+        Enabled = config.AutoRestart,
+        MaxAttempts = config.RestartMaxAttempts,
+        WindowSeconds = config.RestartWindowSeconds,
+        InitialDelaySeconds = config.RestartInitialDelaySeconds,
+        MaxDelaySeconds = config.RestartMaxDelaySeconds,
+    };
 
     private async Task TryStartCoreAsync(CancellationToken cancellationToken)
     {
@@ -230,14 +311,48 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         catch (OperationCanceledException) { }
     }
 
-    private void OnSupervisorUnexpectedExit(object? sender, CoreProcessExitedEventArgs e)
+    private void OnRuntimeChanged(object? sender, DesktopRuntimeChangedEventArgs e)
     {
-        var error = $"Core 进程意外退出 (PID: {e.ProcessId}, exit code: {e.ExitCode})";
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        void Apply()
         {
-            _coreAddress = null;
-            TransitionTo(DesktopStartupState.CoreFailed, error: error);
-        });
+            switch (e.Current.State)
+            {
+                case DesktopRuntimeState.Starting:
+                    TransitionTo(DesktopStartupState.CoreStarting);
+                    break;
+                case DesktopRuntimeState.Ready when e.Current.Session is not null:
+                    _coreAddress = e.Current.Session.BaseAddress;
+                    TransitionTo(DesktopStartupState.CoreReady, _coreAddress);
+                    break;
+                case DesktopRuntimeState.Stopping:
+                    TransitionTo(DesktopStartupState.CoreStopping);
+                    break;
+                case DesktopRuntimeState.Stopped:
+                    _coreAddress = null;
+                    TransitionTo(DesktopStartupState.CoreStopped);
+                    break;
+                case DesktopRuntimeState.RestartScheduled:
+                    _coreAddress = null;
+                    TransitionTo(DesktopStartupState.CoreRestartScheduled, error: e.Current.LastError);
+                    break;
+                case DesktopRuntimeState.CircuitOpen:
+                    _coreAddress = null;
+                    TransitionTo(DesktopStartupState.CoreCircuitOpen, error: e.Current.LastError);
+                    break;
+                case DesktopRuntimeState.Failed:
+                    _coreAddress = null;
+                    TransitionTo(DesktopStartupState.CoreFailed, error: e.Current.LastError);
+                    break;
+            }
+
+            RuntimeChanged?.Invoke(this, e);
+        }
+
+        var application = System.Windows.Application.Current;
+        if (application is null || application.Dispatcher.CheckAccess())
+            Apply();
+        else
+            application.Dispatcher.BeginInvoke(Apply);
     }
 
     public void BeginWebViewInitialization()
@@ -257,6 +372,34 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         if (_state == DesktopStartupState.WebViewInitializing)
             TransitionTo(DesktopStartupState.WorkbenchFailed, _coreAddress, error);
     }
+
+    public void ActivateMainWindow()
+    {
+        var window = _mainWindow;
+        if (window is null)
+            return;
+
+        void Activate()
+        {
+            window.Show();
+            if (window.WindowState == System.Windows.WindowState.Minimized)
+                window.WindowState = System.Windows.WindowState.Normal;
+            window.Activate();
+            window.Topmost = true;
+            window.Topmost = false;
+            window.Focus();
+        }
+
+        if (window.Dispatcher.CheckAccess())
+            Activate();
+        else
+            window.Dispatcher.BeginInvoke(Activate);
+    }
+
+    public void RequestExplicitExit() => _backgroundMode.RequestExplicitExit();
+
+    public void ApplyCloseBehavior(DesktopCloseBehavior closeBehavior)
+        => _backgroundMode.Configure(closeBehavior);
 
     private void TransitionTo(
         DesktopStartupState newState,
@@ -299,7 +442,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
             _operationLock.Release();
         }
 
-        _supervisor.UnexpectedExit -= OnSupervisorUnexpectedExit;
+        _runtime.Changed -= OnRuntimeChanged;
+        await _runtime.DisposeAsync();
         await _supervisor.DisposeAsync();
         _startCts?.Dispose();
         _lifetimeCts?.Dispose();

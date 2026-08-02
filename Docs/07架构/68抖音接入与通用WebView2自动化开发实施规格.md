@@ -1,8 +1,9 @@
 ﻿# 68 抖音接入与通用 WebView2 自动化开发实施规格
 
-> - 状态：**Phase 1A implemented / Phase 1B developer-ready**
+> - 状态：**Phase 1A implemented / Phase 1B-R/S implemented / Phase 2 developer-ready**
 > - 日期：2026-08-02
 > - 决策来源：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)
+> - Desktop UI/Bridge/运行中心/存储细化：[69实施规格](69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md)
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
 > - 本文用途：作为开发拆分、接口评审、编码和验收的直接输入
 
@@ -44,7 +45,7 @@ PuddingDesktop.exe (产品入口 / Launcher)
 6. 抖音工具建立在通用 Browser API 之上；
 7. 个人账号在可见 WebView2 中扫码登录后，可查看作品、评论并回复；
 8. 用户 Chrome Profile 和浏览记录不被读取或修改；
-9. 产品运行不需要 `dev-up.py`，Console Host 和开发脚本继续可用。
+9. 产品运行不需要 `dev-up.py`；该脚本保留为源码开发工具，不进入最终安装包，Console Host 继续可用。
 
 ## 2. V1 范围
 
@@ -132,7 +133,7 @@ flowchart LR
 - `PuddingBrowser.AgentTools` 不得引用 WPF、WebView2、Douyin，只依赖 Browser Abstractions 和 Pudding Tool 契约；
 - `PuddingIntegration.Douyin` 不得引用 `Microsoft.Web.WebView2`；
 - `PuddingHost` 不得引用 `PuddingDesktop`；
-- `PuddingDesktop` 不得引用 `PuddingHost` 或 ASP.NET Core；只允许通过发布包中的 `core/PuddingAgent.exe` 和 Loopback HTTP 协议通信；
+- `PuddingDesktop` 不得引用 `PuddingHost` 或 ASP.NET Core；只允许通过发布包中的 `core/PuddingAgent.exe` 和 Loopback HTTP/gRPC 协议通信；
 - `PuddingAgent` 不得成为 Desktop 的编译期组合根依赖；
 - `PuddingBrowser.WebView2` 不得引用 Douyin。
 
@@ -364,13 +365,30 @@ PuddingDesktop/
   Hosting/DesktopApplicationCoordinator.cs
   Hosting/DesktopStartupState.cs
   Hosting/DesktopStateChangedEventArgs.cs
+  Runtime/
+    DesktopRuntimeOrchestrator.cs
+    DesktopRuntimeSnapshot.cs
+    CoreRestartPolicy.cs
+    CoreRestartAttemptWindow.cs
+    DesktopSingleInstanceService.cs
+    DesktopBackgroundModeService.cs
+    DesktopTrayIconService.cs
+    AutoStartRegistrationService.cs
+    DiagnosticBundleService.cs
+  Storage/
+    StorageAnalysisService.cs
+    StorageCategoryCatalog.cs
+    DataRootSafetyValidator.cs
+    LogRetentionService.cs
   Theming/WindowsThemeService.cs
   Theming/WindowsBackdropService.cs
   Diagnostics/DesktopDiagnosticLog.cs
-  ViewModels/CoreStatusViewModel.cs
+  ViewModels/RuntimeCenterViewModel.cs
+  ViewModels/StorageViewModel.cs
   ViewModels/SettingsViewModel.cs
   Views/WorkbenchView.xaml
-  Views/CoreStatusView.xaml
+  Views/RuntimeCenterView.xaml
+  Views/StorageView.xaml
   Views/SettingsView.xaml
 ```
 
@@ -436,6 +454,8 @@ MainWindow Closing 先取消本次关闭
 ```
 
 `async void` 只允许存在于 WPF 生命周期 override 和事件处理器；内部全部返回 `Task`。
+
+上述关闭顺序是 Phase 1A 当前实现。Phase 1B 按 69 实施规格增加后台守护行为：关闭按钮默认隐藏到系统托盘并保留 Core；只有明确“退出 Pudding”、Windows 会话结束或系统关闭才执行完整关闭顺序。
 
 ### 5.3 主窗口布局
 
@@ -1613,7 +1633,9 @@ result/errorCode
 
 ### Phase 1B：Desktop 可交付性加固
 
-改动：安装/升级包、WebView2 Evergreen Runtime 缺失提示、窗口位置持久化、Core 日志查看器、自动化 UI smoke 和崩溃恢复体验。
+改动：安装/升级包、WebView2 Evergreen Runtime 缺失提示、窗口位置持久化、运行中心、存储统计与旧日志清理、自动化 UI smoke 和崩溃恢复体验。详细类拆分和交互见 69 实施规格。
+
+当前进度：**Phase 1B-R Runtime Center 与 Phase 1B-S Storage 已完成（2026-08-02）**。Runtime Center 已交付 Supervisor/Orchestrator 分层、异常退出退避与熔断、单实例激活、托盘后台运行、明确退出、登录后启动设置、脱敏诊断包和 Windows 11 运行状态页；Storage 已交付 DataRoot 安全校验、first-match 分类和逻辑大小扫描、卷容量统计、只限 `<DataRoot>/logs` 的 24 小时清理预览/重校验/逐文件删除，以及 Windows 11 存储页面。安装/升级包、WebView2 Runtime 缺失引导、窗口位置持久化和更完整的 DPI/系统关闭矩阵仍待实施。
 
 验收：干净 Windows 10/11 环境可安装、首次配置、启动、停止、重启、升级和卸载；用户数据不随卸载删除。
 
@@ -1663,7 +1685,7 @@ Phase 1A/1B 均不向 Agent 暴露 Browser Tool。
 - 不把 UDF、下载或截图放入代码仓库和 build/publish 输出；
 - 不向远程网页暴露通用 Host Object；
 - 不在点击发送后由高层 Douyin 工具盲目重试；
-- 不删除 Console Host 或 `dev-up.py`；
+- 不删除 Console Host 或 `dev-up.py`；后者只服务源码开发，不得成为最终产品的运行依赖；
 - 不为了旧开发数据引入长期兼容层。
 
 ## 18. Definition of Done
@@ -1685,6 +1707,19 @@ Phase 1A/1B 均不向 Agent 暴露 Browser Tool。
 
 ### 18.2 全部 Douyin/Browser 目标
 
+Phase 1B-R/S 完成项：
+
+- [x] Core 单次进程管理与自动恢复策略分层，支持 2s/4s/8s 退避、60 秒 3 次熔断和用户停止抑制恢复；
+- [x] Desktop 单实例、Named Pipe 激活、默认关闭到托盘、托盘启停重启/明确退出及可选登录后启动已实现；
+- [x] Runtime Center 展示进程、健康、动态地址、退出信息、恢复策略、环境和最近 500 行日志；
+- [x] 用户触发的诊断包只包含脱敏状态、配置键名和最近日志；
+- [x] 系统 Temp 隔离桌面 smoke 验证第二实例、后台隐藏、Core 意外恢复、用户主动停止不拉起，以及明确退出释放 Desktop/Core/WebView2；
+
+- [x] Storage 扫描不重复计数且不跟随 Junction/Reparse Point；
+- [x] 数据库、会话、记忆、Browser UDF、附件、备份和未知目录只统计；
+- [x] 旧日志使用 Preview/Confirm/重校验，保留一天内文件并跳过变化、占用、越界或非日志文件；
+- [x] Storage 定向测试及系统 Temp 隔离桌面 smoke 通过，未修改 `D:\data`；
+
 - [ ] 6 个产品项目和 4 个测试项目加入 Solution；
 - [x] Console Core 使用 `PuddingHost`，Desktop 通过子进程协议复用同一 Core；
 - [x] WPF 启动/关闭顺序通过定向测试与 smoke；
@@ -1699,5 +1734,5 @@ Phase 1A/1B 均不向 Agent 暴露 Browser Tool。
 - [ ] ReplyIntent 在歧义失败后不会自动重复发送；
 - [ ] 运行时数据全部位于 `PUDDING_DATA_ROOT`；
 - [x] `PuddingDesktop.exe` 独立运行，不依赖 `dev-up.py`；
-- [ ] `How-Debuge.md`、`Source/code_map.md`、Docs 索引同步更新；
-- [ ] 定向构建和测试结果在交付说明中列出。
+- [x] `How-Debuge.md`、`Source/code_map.md` 和 Desktop 架构文档同步更新；
+- [x] Phase 1B-R/S 定向构建、测试、发布和隔离窗口 smoke 结果在交付说明中列出。

@@ -2233,7 +2233,7 @@ dotnet build .\Source\PuddingDesktop\PuddingDesktop.csproj --no-restore
 这是旧 NuGet assets 的目标框架缓存，不应通过降低 TFM 或移除
 `WebView2CompositionControl` 解决。导航 XAML 改名后若 IDE 仍报告 `navLogs`，先用
 `rg -n "navLogs" Source/PuddingDesktop` 核对磁盘源码；当前导航字段是
-`navWorkbench`、`navCore`、`navSettings`，磁盘已无旧引用时重新加载项目或重建即可。
+`navWorkbench`、`navCore`、`navStorage`、`navSettings`，磁盘已无旧引用时重新加载项目或重建即可。
 
 如果 Desktop Workbench 的 `GET /api/workspaces/{workspaceId}/agents/status` 返回 500，
 先用响应中的 `errorId` 搜索 `D:\data\logs\error` 和 `D:\data\logs\system`。若堆栈落在
@@ -2259,6 +2259,67 @@ dotnet list .\Source\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj pack
 
 EF Design 和运行时 Code Intelligence 必须解析到同一 Roslyn Workspace 版本；
 不要通过禁用 `ErrorOnDuplicatePublishOutputFiles` 隐藏冲突。
+
+## 11.11 PuddingDesktop Storage 统计与旧日志清理诊断
+
+Storage 页面显示的是 DataRoot 中文件的**逻辑大小**，不是 NTFS 精确物理占用；顶部磁盘条来自 `DriveInfo`，表示整个卷的已用/可用空间。两者口径不同，不能用分类大小之和反推磁盘已用空间。
+
+Storage 定向验证必须使用系统 Temp 下的隔离 DataRoot，禁止让自动化测试或清理 smoke 指向 `D:\data`：
+
+```powershell
+dotnet test .\Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo
+dotnet publish .\Source\PuddingDesktop\PuddingDesktop.csproj `
+  -c Release --no-restore `
+  -o .\.tmp-build\phase1b-storage-preview
+.\TestScripts\start-phase1a-desktop-smoke.ps1 `
+  -PublishRoot .\.tmp-build\phase1b-storage-preview
+```
+
+扫描出现 Warning 时按页面给出的路径检查访问权限、扫描中消失的文件和 Junction/Reparse Point。扫描器不会跟随链接，也不会因为单个目录无权访问而让窗口崩溃。分类采用 first-match：`browser/downloads`、`screenshots`、`traces` 必须先于 Browser UDF；各分类文件数和逻辑大小之和应等于总计。
+
+V1 日志清理边界固定为：
+
+- 只允许真实 `<DataRoot>/logs`，DataRoot 不能是空路径、相对路径、盘符根目录或 Reparse Point；
+- 只处理 `.log`、`.jsonl`、`.txt`、`.gz`、`.zip`，且 `LastWriteTimeUtc` 早于 24 小时 cutoff；
+- UI 必须先 Preview，再内联确认；执行前重新检查路径、长度、创建/修改时间和 cutoff；
+- 已变化、已消失、正在占用、越界或扩展名不允许的文件跳过/失败，不能扩大为递归通用删除；
+- 只移除 logs 下已经为空的真实子目录，不删除 logs 根目录；完成后立即重扫。
+
+启动即出现 `XamlParseException` 且提示只读属性不能 `TwoWay` 绑定时，检查 `ProgressBar.Value` 等控件是否显式使用 `Mode=OneWay`。该问题可以通过编译但会在真实窗口加载时失败，因此 Storage 改动必须保留发布包视觉 smoke。
+
+WPF 会生成 `PuddingDesktop_*_wpftmp.csproj`。若自定义 `BaseOutputPath` 后出现临时项目找不到 `PuddingCore.dll`，先回到普通项目输出或只用 `dotnet publish -o <仓库临时目录>` 隔离发布产物；不要把 `BaseOutputPath`、`OutDir` 或测试输出指向运行时 DataRoot。
+
+## 11.12 PuddingDesktop 运行中心、单实例与自动恢复诊断
+
+运行中心的进程职责分为两层：`CoreProcessSupervisor` 只管理一次 Core 启停和进程树，`DesktopRuntimeOrchestrator` 管理异常恢复、退避、熔断和用户意图。默认策略是 2s/4s/8s 退避，60 秒窗口内允许 3 次恢复，继续失败进入 `CoreCircuitOpen`。用户点击“停止”、配置无效或 DataRoot 缺失都不得自动拉起。
+
+定向验证：
+
+```powershell
+dotnet build .\Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo
+dotnet test .\Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo
+dotnet publish .\Source\PuddingDesktop\PuddingDesktop.csproj `
+  -c Release --no-restore `
+  -o .\.tmp-build\phase1b-runtime-preview
+.\TestScripts\start-phase1a-desktop-smoke.ps1 `
+  -PublishRoot .\.tmp-build\phase1b-runtime-preview
+```
+
+上述 Desktop build/test/publish 必须串行执行。`dotnet build PuddingDesktop` 与引用同一 WPF 项目的 `dotnet test PuddingDesktop.Tests` 若并行共享默认 `obj`，可能在 `Microsoft.WinFX.targets` 报 `RG1000` 和重复 `mainwindow.baml`；串行重跑即可，不要因此修改 XAML 资源名或清理 DataRoot。
+
+真实故障恢复 smoke 必须使用脚本创建的系统 Temp `DesktopHome` 和 DataRoot。终止进程前同时核对 Core 的 `ParentProcessId`、`ExecutablePath`、`--data-root` 参数与隔离目录，禁止对真实 `D:\data` Core 或名称匹配的一组进程执行批量 Kill。正常结果是：旧 Core 退出后运行中心先进入“等待自动恢复”，随后出现新的 PID 和动态 Loopback 地址；点击“停止”后至少等待一个最大退避周期，Desktop 仍存活但 Core 子进程数保持为 0。
+
+Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Windows 用户可访问的 Named Pipe 发送激活信号。发现第二个窗口或第二个 Core 时，检查两个启动进程是否使用同一版本的 Desktop 和同一 `PUDDING_DESKTOP_HOME`；开发中的旧版本不参与新版单实例协议。实例发现文件位于：
+
+```text
+<DesktopHome>/desktop.instance.<instance-key>
+```
+
+默认关闭按钮只隐藏主窗口，Core 和外部 HTTP API 会继续运行；这不是退出失败。使用托盘菜单“退出 Pudding”才会执行明确退出并停止 Core/WebView2。托盘图标在 Explorer 重启后由 `TaskbarCreated` 消息重建。若托盘初始化失败，检查 `%LOCALAPPDATA%\Pudding\logs\desktop.log` 中的 `[Desktop] Tray initialization failed`，窗口仍应保持可用。
+
+运行中心“生成诊断包”只在用户点击时写入 `<DataRoot>/diagnostics/`。ZIP 应只包含运行快照、最近 Core 输出和配置键名；出现 ControlToken、Authorization、Cookie、API Key 或 Secret 值即视为缺陷。不要把完整 `system.json` 或 WebView2 UDF 直接加入诊断包。
+
+“登录 Windows 后启动”只在用户保存 Desktop 设置时更新 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，不应在普通启动或测试构造期间隐式修改注册表。后台启动使用 `--background`；窗口创建和配置错误仍然完成，随后隐藏到托盘，不能因 Core 启动失败终止 Desktop。
 
 ## 12. 修改后的最低验收
 

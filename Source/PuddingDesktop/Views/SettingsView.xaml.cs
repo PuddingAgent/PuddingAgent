@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using PuddingDesktop.Configuration;
+using PuddingDesktop.Runtime;
 using PuddingDesktop.ViewModels;
 using UserControl = System.Windows.Controls.UserControl;
 
@@ -103,6 +104,14 @@ public partial class SettingsView : UserControl
         {
             await _viewModel.SaveBootstrapAsync(CancellationToken.None);
             await _viewModel.SaveCoreSettingsAsync(CancellationToken.None);
+            if (!_viewModel.HasError && Window.GetWindow(this) is MainWindow mainWindow)
+            {
+                await mainWindow.ApplyDesktopRuntimeSettingsAsync(
+                    _viewModel.AutoRestart,
+                    _viewModel.MinimizeToTray
+                        ? DesktopCloseBehavior.MinimizeToTray
+                        : DesktopCloseBehavior.ExitAndStopCore);
+            }
             ShowFeedback(
                 _viewModel.HasError ? _viewModel.ValidationError! : "设置已保存；Core 参数将在下次启动或重启后生效。",
                 _viewModel.HasError);
@@ -156,9 +165,37 @@ public partial class SettingsView : UserControl
             return false;
         }
 
+        if (!int.TryParse(RestartAttemptsBox.Text, out var restartAttempts))
+        {
+            ShowFeedback("自动恢复次数必须是整数。", isError: true);
+            return false;
+        }
+
+        if (!int.TryParse(RestartWindowBox.Text, out var restartWindow))
+        {
+            ShowFeedback("恢复统计窗口必须是整数秒。", isError: true);
+            return false;
+        }
+
+        if (!int.TryParse(RestartInitialDelayBox.Text, out var restartInitialDelay))
+        {
+            ShowFeedback("恢复初始延迟必须是整数秒。", isError: true);
+            return false;
+        }
+
+        if (!int.TryParse(RestartMaxDelayBox.Text, out var restartMaxDelay))
+        {
+            ShowFeedback("恢复最大延迟必须是整数秒。", isError: true);
+            return false;
+        }
+
         _viewModel.Port = port;
         _viewModel.StartupTimeoutSeconds = startupTimeout;
         _viewModel.ShutdownTimeoutSeconds = shutdownTimeout;
+        _viewModel.RestartMaxAttempts = restartAttempts;
+        _viewModel.RestartWindowSeconds = restartWindow;
+        _viewModel.RestartInitialDelaySeconds = restartInitialDelay;
+        _viewModel.RestartMaxDelaySeconds = restartMaxDelay;
         return true;
     }
 

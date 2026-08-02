@@ -2,6 +2,8 @@
 using System.Windows.Controls;
 using System.Windows.Input;
 using PuddingDesktop.Hosting;
+using PuddingDesktop.Diagnostics;
+using PuddingDesktop.Runtime;
 using PuddingDesktop.Theming;
 using PuddingDesktop.ViewModels;
 
@@ -10,8 +12,9 @@ namespace PuddingDesktop;
 public sealed partial class MainWindow : Window
 {
     private readonly DesktopApplicationCoordinator _coordinator;
-    private readonly CoreStatusViewModel _statusVm;
+    private readonly RuntimeCenterViewModel _statusVm;
     private readonly WindowsThemeService _themeService;
+    private readonly DesktopTrayIconService _trayIconService;
     private bool _isClosing;
     private bool _shutdownCompleted;
     private bool _webViewInitialized;
@@ -22,14 +25,26 @@ public sealed partial class MainWindow : Window
     public MainWindow(DesktopApplicationCoordinator coordinator)
     {
         _coordinator = coordinator;
-        _statusVm = new CoreStatusViewModel(coordinator);
+        _statusVm = new RuntimeCenterViewModel(coordinator);
         _themeService = new WindowsThemeService();
+        _trayIconService = new DesktopTrayIconService();
         _themeService.ApplyTo(System.Windows.Application.Current.Resources);
         DataContext = _statusVm;
 
         InitializeComponent();
-        SourceInitialized += (_, _) => WindowsBackdropService.Apply(this, _themeService.IsDarkMode);
+        SourceInitialized += (_, _) =>
+        {
+            WindowsBackdropService.Apply(this, _themeService.IsDarkMode);
+            try { _trayIconService.Initialize(this); }
+            catch (Exception ex) { DesktopDiagnosticLog.Write("TrayIconInitialization", ex); }
+        };
         StateChanged += (_, _) => UpdateMaximizeGlyph();
+
+        _trayIconService.OpenRequested += (_, _) => _coordinator.ActivateMainWindow();
+        _trayIconService.StartRequested += async (_, _) => await RunTrayCommandAsync(_coordinator.StartCoreAsync);
+        _trayIconService.StopRequested += async (_, _) => await RunTrayCommandAsync(_coordinator.StopCoreAsync);
+        _trayIconService.RestartRequested += async (_, _) => await RunTrayCommandAsync(_coordinator.RestartCoreAsync);
+        _trayIconService.ExitRequested += async (_, _) => await RequestCloseAsync(explicitExit: true);
 
         // Mark initialized before wiring events — prevents NavButton_Checked
         // from accessing null x:Name fields during XAML load.
@@ -57,7 +72,10 @@ public sealed partial class MainWindow : Window
             if (e.Current == DesktopStartupState.CoreReady && e.CoreAddress is not null)
                 _ = InitializeWebView2Async(e.CoreAddress);
 
-            if (e.Current is DesktopStartupState.CoreStopped or DesktopStartupState.CoreFailed)
+            if (e.Current is DesktopStartupState.CoreStopped
+                or DesktopStartupState.CoreFailed
+                or DesktopStartupState.CoreRestartScheduled
+                or DesktopStartupState.CoreCircuitOpen)
                 ResetWebView2();
         });
     }
@@ -105,12 +123,12 @@ public sealed partial class MainWindow : Window
                 or DesktopStartupState.WebViewInitializing)
             {
                 WorkbenchPage.Visibility = Visibility.Visible;
-                CoreStatusPage.Visibility = Visibility.Collapsed;
+                RuntimeCenterPage.Visibility = Visibility.Collapsed;
             }
             else
             {
                 WorkbenchPage.Visibility = Visibility.Collapsed;
-                CoreStatusPage.Visibility = Visibility.Visible;
+                RuntimeCenterPage.Visibility = Visibility.Visible;
             }
         }
     }
@@ -123,6 +141,7 @@ public sealed partial class MainWindow : Window
         StartButton.IsEnabled = _statusVm.CanStart;
         StopButton.IsEnabled = _statusVm.CanStop;
         RestartButton.IsEnabled = _statusVm.CanRestart;
+        _trayIconService.UpdateToolTip($"Pudding · {_statusVm.StatusText}");
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -137,17 +156,26 @@ public sealed partial class MainWindow : Window
     private void UpdateMaximizeGlyph()
         => MaximizeButton.Content = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
     private async void CloseButton_Click(object sender, RoutedEventArgs e)
-        => await RequestCloseAsync();
+        => await RequestCloseAsync(explicitExit: false);
     private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_shutdownCompleted) return;
         e.Cancel = true;
-        await RequestCloseAsync();
+        await RequestCloseAsync(explicitExit: false);
     }
-    private async Task RequestCloseAsync()
+    private async Task RequestCloseAsync(bool explicitExit)
     {
         if (_isClosing) return;
         _isClosing = true;
+
+        if (!explicitExit && _coordinator.BackgroundMode.ShouldMinimizeToTray())
+        {
+            Hide();
+            _isClosing = false;
+            return;
+        }
+
+        _coordinator.RequestExplicitExit();
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -156,8 +184,18 @@ public sealed partial class MainWindow : Window
         catch { }
 
         WorkbenchPage.DisposeWebView();
+        StoragePage.DisposeOperations();
+        RuntimeCenterPage.DisposeOperations();
+        _statusVm.Dispose();
+        _trayIconService.Dispose();
         _shutdownCompleted = true;
         Dispatcher.Invoke(Close);
+    }
+
+    private async Task RunTrayCommandAsync(Func<CancellationToken, Task> command)
+    {
+        try { await command(CancellationToken.None); }
+        catch (Exception ex) { DesktopDiagnosticLog.Write("TrayCommand", ex); }
     }
 
     private void NavButton_Checked(object sender, RoutedEventArgs e)
@@ -167,18 +205,25 @@ public sealed partial class MainWindow : Window
         {
             WorkbenchPage.Visibility = Visibility.Collapsed;
             SettingsPage.Visibility = Visibility.Collapsed;
-            CoreStatusPage.Visibility = Visibility.Collapsed;
+            RuntimeCenterPage.Visibility = Visibility.Collapsed;
+            StoragePage.Visibility = Visibility.Collapsed;
 
             if (btn == navWorkbench)
             {
                 var s = _coordinator.State;
                 WorkbenchPage.Visibility = s is DesktopStartupState.CoreReady or DesktopStartupState.WorkbenchReady
                     or DesktopStartupState.WebViewInitializing ? Visibility.Visible : Visibility.Collapsed;
-                CoreStatusPage.Visibility = WorkbenchPage.Visibility == Visibility.Visible
+                RuntimeCenterPage.Visibility = WorkbenchPage.Visibility == Visibility.Visible
                     ? Visibility.Collapsed : Visibility.Visible;
             }
             else if (btn == navCore)
-                CoreStatusPage.Visibility = Visibility.Visible;
+                RuntimeCenterPage.Visibility = Visibility.Visible;
+            else if (btn == navStorage)
+            {
+                StoragePage.Visibility = Visibility.Visible;
+                StoragePage.SetDataRoot(_coordinator.DataRoot);
+                _ = StoragePage.RefreshAsync();
+            }
             else if (btn == navSettings)
                 SettingsPage.Visibility = Visibility.Visible;
         }
@@ -201,4 +246,12 @@ public sealed partial class MainWindow : Window
     }
     internal async Task RestartCoreViaCoordinatorAsync()
         => await _coordinator.RestartCoreAsync(CancellationToken.None);
+
+    internal async Task ApplyDesktopRuntimeSettingsAsync(
+        bool autoRestart,
+        DesktopCloseBehavior closeBehavior)
+    {
+        _coordinator.ApplyCloseBehavior(closeBehavior);
+        await _coordinator.SetAutoRestartAsync(autoRestart, CancellationToken.None);
+    }
 }

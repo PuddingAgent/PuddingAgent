@@ -1,33 +1,45 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-08-02 | 维护原则: 仅收录核心常用类，不追求全覆盖 | +Phase 1A Windows 11 Desktop Launcher 与 Workbench
+> 最后更新: 2026-08-02 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅
 
 ---
 
 ## 项目概览
 
-PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、工具调用、记忆系统和任务规划。
+Pudding 是 Windows 桌面智能助手与 IDE（V1: Windows First and Only, DeepSeek First）。
+ASP.NET Core 是由 Desktop 子进程托管的独立 Core API/Service Plane，不是产品入口。
+Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
+产品界面统一称为 Workbench，`/admin/` 是 Workbench 的内部路由。
 
-技术栈: .NET 10 / SQLite (EF Core) / React + TypeScript / Serilog
+技术栈: .NET 10 / SQLite (EF Core) / React + TypeScript / Serilog / WPF / WebView2
 
-### Windows Desktop 与通用浏览器（Phase 0 / Phase 1A 已落地）
+### Windows Desktop 与通用浏览器（Phase 0 / Phase 1A / Phase 1B-R/S 已落地）
 
 | 文档 | 规划边界 |
 |------|----------|
 | `../Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md` | 通用 Browser 能力与 Douyin 分层决策来源；Desktop 进程边界以 68 实施规格的 Phase 1A 更新为准 |
 | `../Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md` | Phase 1A 当前事实：WPF Launcher 以子进程监督 ASP.NET Core Core，Windows 11 Shell 内嵌隔离的 WebView2CompositionControl Workbench；Browser AgentTools、Douyin 仍待实现 |
+| `../Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md` | Phase 1B/2 开发输入；Phase 1B-R Runtime Center 与 Phase 1B-S Storage 已完成，下一阶段是 Agent Browser 多标签与 Core/Desktop Bridge |
 
 关键 Desktop 入口：
 
 | 文件 | 用途 |
 |------|------|
 | `PuddingDesktop/App.xaml` | Windows 11 Light/Dark 动态颜色、Typography、Corner、Card、Button、Navigation 和 Caption 样式 Token |
-| `PuddingDesktop/App.xaml.cs` | WPF 产品入口；创建 Coordinator，并将早期未处理异常写入 Desktop 独立日志 |
-| `PuddingDesktop/MainWindow.xaml(.cs)` | 48px 自定义标题栏、240px Navigation、Workbench/Core/Settings 页面和 Core 状态控制条 |
-| `PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs` | 始终可用的 Launcher 与可失败 Core 子进程之间的状态机、启停重启及 Workbench Ready 协调 |
+| `PuddingDesktop/App.xaml.cs` | WPF 产品入口；在创建 Coordinator 前取得单实例所有权，第二实例通过 Named Pipe 激活主窗口，并将早期未处理异常写入 Desktop 独立日志 |
+| `PuddingDesktop/MainWindow.xaml(.cs)` | 48px 自定义标题栏、240px Navigation、Workbench/Runtime/Storage/Settings 页面、Core 状态控制条、关闭到托盘和明确退出生命周期 |
+| `PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs` | 始终可用的 Launcher 与可失败 Core 子进程之间的状态机；协调 Runtime Orchestrator、Workbench Ready、后台模式和明确退出 |
 | `PuddingDesktop/Core/CoreProcessSupervisor.cs` | 启动 `core/PuddingAgent.exe --desktop-child`、解析 Ready、健康检查、环形 stdout/stderr、关闭与进程树回收 |
+| `PuddingDesktop/Runtime/DesktopRuntimeOrchestrator.cs`、`CoreRestartPolicy.cs` | 在单进程 Supervisor 上实现异常退出恢复、2s/4s/8s 退避、60 秒 3 次熔断，以及用户 Stop/Restart 与恢复取消语义 |
+| `PuddingDesktop/Runtime/DesktopSingleInstanceService.cs`、`DesktopTrayIconService.cs` | 本地命名 Semaphore + 当前用户 Named Pipe 单实例激活；纯 WPF/Win32 托盘菜单和 Explorer 重启后的图标恢复 |
+| `PuddingDesktop/Runtime/DesktopBackgroundModeService.cs`、`AutoStartRegistrationService.cs` | 默认关闭到托盘/明确退出策略，以及只在用户保存设置时写入 HKCU Run 的登录后启动 |
+| `PuddingDesktop/ViewModels/RuntimeCenterViewModel.cs`、`Views/RuntimeCenterView.xaml(.cs)` | Windows 11 运行中心；显示 Core 状态、PID、健康、退出/恢复、环境、最近 500 行输出并提供启停重启与诊断操作 |
+| `PuddingDesktop/Runtime/DiagnosticBundleService.cs` | 用户触发的诊断 ZIP；只收集脱敏运行快照、配置键名和最近日志，过滤 Token/Cookie/Authorization/Secret |
 | `PuddingDesktop/Configuration/SystemConfigurationService.cs` | `<DataRoot>/config/system.json` 的保留未知字段 Patch 与原子写入 |
 | `PuddingDesktop/Views/WorkbenchView.xaml(.cs)` | 使用隔离 UDF 的 `WebView2CompositionControl`；加载/失败原生遮罩、导航和进程故障处理 |
+| `PuddingDesktop/Storage/StorageAnalysisService.cs`、`StorageCategoryCatalog.cs` | DataRoot first-match 分类与文件逻辑大小扫描；跳过 Junction/Reparse Point，并同时返回卷总量/可用量和 Warning |
+| `PuddingDesktop/Storage/LogRetentionService.cs`、`DataRootSafetyValidator.cs` | 只在真实 `<DataRoot>/logs` 内执行 24 小时日志 Preview/重校验/逐文件删除；拒绝盘符根、越界、链接和变化文件 |
+| `PuddingDesktop/ViewModels/StorageViewModel.cs`、`Views/StorageView.xaml(.cs)` | Windows 11 存储空间页；后台扫描、分类统计、内联清理确认/结果与完成后重扫 |
 | `PuddingPlatformAdmin/src/pages/home/index.tsx` | Workbench 认证后默认首页；展示 Core 就绪、工作空间概览、最近工作入口和对话/模型/诊断快捷入口 |
 | `PuddingDesktop/Theming/WindowsThemeService.cs` | 读取 Windows Apps Light/Dark 与 DWM Accent，更新动态 Resource |
 | `PuddingDesktop/Theming/WindowsBackdropService.cs` | Windows 11 Mica、沉浸式深色和系统圆角；Windows 10/失败时无阻塞回退 |
@@ -38,6 +50,7 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 
 | 文件 | 用途 |
 |------|------|
+| `../Agents.md` | 仓库级开发约束；明确 Desktop 为最终产品入口、ASP.NET Core 子进程边界、dev-up 仅用于源码开发，以及 Desktop 串行构建与 DataRoot 隔离要求 |
 | `../dev-up.py` | 本地 Backend/Codex MCP Service/Frontend/Proxy 监督器；以 `tmp/dev/supervisor.pid` 保证重启时先终止旧监督器，避免旧实例抢占重建；`--rebuild` 复用预构建产物且 `--auto-yolo` 通过仓库根 `yolo.signal` 激活 Runtime；`--clear` 仅在进程全停后清理仓库白名单日志/临时目录并拒绝触碰 `D:\data`；各受管角色有快速失败熔断 |
 | `../How-Debuge.md` | 可重复使用的启动、会话、SSE、子代理与工具诊断路径 |
 
@@ -48,8 +61,8 @@ PuddingAgent 是一个 AI Agent 运行时平台，支持多 Agent、多会话、
 ```
 Source/
 ├── PuddingAgent/              # 入口项目 (Program.cs, 启动配置)
-├── PuddingHost/               # ASP.NET Core Core 子进程的 Service/API 组合根
-├── PuddingDesktop/            # Windows WPF 产品 Launcher（Phase 1A 已落地）
+├── PuddingHost/               # 🔑 唯一 Host 组合根 — Console 与 Desktop 共用 (Phase 0 Closeout ✅)
+├── PuddingDesktop/            # Windows WPF 产品 Launcher（Phase 1A + Phase 1B-R Runtime Center + Phase 1B-S Storage 已落地）
 ├── PuddingBrowser.Abstractions/ # 通用 Agent Browser 契约
 ├── PuddingBrowser.WebView2/   # WebView2 Driver（当前为骨架）
 ├── PuddingCodexService/       # 🔑 宿主外 Codex MCP Sidecar（持久任务/自修复重启握手）
@@ -321,7 +334,11 @@ Source/
 | `PuddingHost/Hosting/PuddingControllerAddressRewriteHandler.cs` | Desktop/DesktopChild 内部控制面请求重写器；将 `PlatformApiClient` 的路径发送到 Host 启动后捕获的真实动态 Loopback，Console 保留配置端点 |
 | `PuddingHost/Extensions/PuddingServiceCollectionExtensions*.cs` | Platform、Runtime、Connector、Bootstrap 的服务注册组合根 |
 | `PuddingHost/Extensions/PuddingWebApplicationExtensions.cs` | HTTP middleware、健康检查、Legacy API 诊断与 Workbench SPA fallback；路由顺序是运行时契约 |
-| `PuddingHost/Hosting/PuddingApplicationInitializer.cs` | Phase 0 Closeout: 单次初始化权威（Platform/Memory schema、Conversation Event Store、Workspace Catalog、jieba backfill） |
+| `PuddingHost/Hosting/PuddingApplicationInitializer.cs` | 🔑 Phase 0 Closeout: 单次初始化权威（Platform/Memory schema、Conversation Event Store、Workspace Catalog、jieba backfill）；仅此一条执行路径 |
+| `PuddingHost/Hosting/PuddingServerAddressAccessor.cs` | Phase 0 Closeout: Loopback HTTP 地址捕获（仅在 StartAsync 后可用） |
+| `PuddingHost/Hosting/ConnectorHostLifecycleService.cs` | Phase 0 Closeout: 三阶段启动（P2P 失败不阻断 Connector） |
+| `PuddingHost/Build/PuddingHostContent.props` | Phase 0 Closeout: 统一内容发布（default-data/Config/Prompts/Admin SPA → wwwroot/admin） |
+| `PuddingRuntimeTests/Hosting/HostLifecycleTests.cs` | Phase 0 Closeout: Host 生命周期测试 |
 
 ### 消息系统
 | 文件 | 用途 |

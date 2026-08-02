@@ -62,6 +62,11 @@ public sealed record PuddingDesktopConfig
 public sealed record PuddingDesktopCoreConfig
 {
     public bool AutoStart { get; init; } = true;
+    public bool AutoRestart { get; init; } = true;
+    public int RestartMaxAttempts { get; init; } = 3;
+    public int RestartWindowSeconds { get; init; } = 60;
+    public int RestartInitialDelaySeconds { get; init; } = 2;
+    public int RestartMaxDelaySeconds { get; init; } = 30;
     public int Port { get; init; }
     public int StartupTimeoutSeconds { get; init; } = 60;
     public int ShutdownTimeoutSeconds { get; init; } = 15;

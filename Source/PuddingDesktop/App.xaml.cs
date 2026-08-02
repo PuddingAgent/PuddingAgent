@@ -3,6 +3,7 @@ using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using PuddingDesktop.Diagnostics;
 using PuddingDesktop.Hosting;
+using PuddingDesktop.Runtime;
 
 namespace PuddingDesktop;
 
@@ -15,6 +16,8 @@ namespace PuddingDesktop;
 public sealed partial class App : Application
 {
     private DesktopApplicationCoordinator? _coordinator;
+    private DesktopSingleInstanceService? _singleInstance;
+    private bool _pendingActivation;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -28,10 +31,25 @@ public sealed partial class App : Application
                 DesktopDiagnosticLog.Write("AppDomainUnhandledException", exception);
         };
 
-        _coordinator = new DesktopApplicationCoordinator();
         try
         {
+            _singleInstance = new DesktopSingleInstanceService();
+            if (!_singleInstance.TryAcquirePrimary())
+            {
+                using var activationCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _singleInstance.SignalPrimaryAsync(activationCts.Token);
+                Shutdown(0);
+                return;
+            }
+
+            _singleInstance.ActivationRequested += OnActivationRequested;
+            _coordinator = new DesktopApplicationCoordinator();
             await _coordinator.StartAsync(e.Args, CancellationToken.None);
+            if (_pendingActivation)
+            {
+                _pendingActivation = false;
+                _coordinator.ActivateMainWindow();
+            }
         }
         catch (Exception ex)
         {
@@ -43,6 +61,17 @@ public sealed partial class App : Application
                 MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    private void OnActivationRequested(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_coordinator is null)
+                _pendingActivation = true;
+            else
+                _coordinator.ActivateMainWindow();
+        });
     }
 
     protected override async void OnExit(ExitEventArgs e)
@@ -61,6 +90,19 @@ public sealed partial class App : Application
             }
         }
 
+        if (_singleInstance is not null)
+        {
+            _singleInstance.ActivationRequested -= OnActivationRequested;
+            try { await _singleInstance.DisposeAsync(); }
+            catch { }
+        }
+
         base.OnExit(e);
+    }
+
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        _coordinator?.RequestExplicitExit();
+        base.OnSessionEnding(e);
     }
 }

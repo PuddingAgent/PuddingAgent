@@ -184,4 +184,44 @@ public class SystemConfigurationServiceTokenPreservationTests
 
         try { Directory.Delete(tempDir, recursive: true); } catch { }
     }
+
+    [Fact]
+    public async Task UpdateDesktopCoreSettings_PersistsRestartPolicyAndPreservesToken()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "PuddingAgent", "runtime-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(tempDir, "config"));
+        await File.WriteAllTextAsync(
+            Path.Combine(tempDir, "config", "system.json"),
+            """{"desktop":{"core":{"controlToken":"KEEP_ME","futureRestartField":42}}}""");
+
+        try
+        {
+            var service = new SystemConfigurationService();
+            await service.UpdateDesktopCoreSettingsAsync(
+                tempDir,
+                current => current with
+                {
+                    AutoRestart = false,
+                    RestartMaxAttempts = 5,
+                    RestartWindowSeconds = 120,
+                    RestartInitialDelaySeconds = 3,
+                    RestartMaxDelaySeconds = 45,
+                },
+                CancellationToken.None);
+
+            var result = await service.LoadAsync(tempDir, CancellationToken.None);
+            var core = result.Config!.Desktop.Core;
+            Assert.False(core.AutoRestart);
+            Assert.Equal(5, core.RestartMaxAttempts);
+            Assert.Equal(120, core.RestartWindowSeconds);
+            Assert.Equal(3, core.RestartInitialDelaySeconds);
+            Assert.Equal(45, core.RestartMaxDelaySeconds);
+            Assert.Equal("KEEP_ME", core.ControlToken);
+            Assert.Contains("futureRestartField", await File.ReadAllTextAsync(result.FilePath!));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
 }

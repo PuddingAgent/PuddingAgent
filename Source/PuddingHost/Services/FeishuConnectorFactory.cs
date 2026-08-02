@@ -1,4 +1,4 @@
-using PuddingAgent.Connectors;
+﻿using PuddingAgent.Connectors;
 using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingPlatform.Services;
@@ -31,14 +31,42 @@ public sealed class FeishuConnectorFactory(
                     StringComparison.OrdinalIgnoreCase))
             .Select(provider => provider.ProviderId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var agents = (await manifests.ListAsync(ct))
+        logger.LogInformation(
+            "[Feishu][diag] enabled feishu provider ids: [{Ids}]",
+            string.Join(", ", enabledProviderIds));
+
+        var allAgents = await manifests.ListAsync(ct);
+        logger.LogInformation(
+            "[Feishu][diag] all agents on disk: [{Agents}]",
+            string.Join(
+                " | ",
+                allAgents.Select(a =>
+                    a.AgentInstanceId
+                    + "(enabled=" + a.IsEnabled
+                    + ",frozen=" + a.IsFrozen
+                    + ",channels=[" + string.Join(",", a.ChannelIds) + "])")));
+        var agents = allAgents
             .Where(agent => agent.IsEnabled && !agent.IsFrozen)
             .ToList();
-        var configuredChannels = (await channels.ListAllChannelsAsync(ct))
+
+        var allChannels = await channels.ListAllChannelsAsync(ct);
+        logger.LogInformation(
+            "[Feishu][diag] all channels on disk: [{Channels}]",
+            string.Join(
+                " | ",
+                allChannels.Select(c =>
+                    c.ChannelId
+                    + "(provider=" + c.ProviderId
+                    + ",enabled=" + c.IsEnabled
+                    + ",workspace=" + c.WorkspaceId + ")")));
+        var configuredChannels = allChannels
             .Where(channel =>
                 channel.IsEnabled
                 && enabledProviderIds.Contains(channel.ProviderId))
             .ToList();
+        logger.LogInformation(
+            "[Feishu][diag] configured feishu channels after filter: [{Channels}]",
+            string.Join(", ", configuredChannels.Select(c => c.ChannelId)));
 
         var bindings = new List<(AgentInstanceManifest Agent, ChannelInstanceManifest Channel)>();
         foreach (var channel in configuredChannels)
@@ -47,6 +75,11 @@ public sealed class FeishuConnectorFactory(
                     string.Equals(agent.WorkspaceId, channel.WorkspaceId, StringComparison.Ordinal)
                     && agent.ChannelIds.Contains(channel.ChannelId, StringComparer.Ordinal))
                 .ToList();
+            logger.LogInformation(
+                "[Feishu][diag] channel={ChannelId} matched bound agents: [{Agents}] count={Count}",
+                channel.ChannelId,
+                string.Join(", ", boundAgents.Select(a => a.AgentInstanceId)),
+                boundAgents.Count);
             if (boundAgents.Count != 1)
             {
                 logger.LogError(
@@ -64,6 +97,11 @@ public sealed class FeishuConnectorFactory(
                     channel.ChannelId);
                 continue;
             }
+            logger.LogInformation(
+                "[Feishu][diag] channel={ChannelId} accepted binding agent={AgentId} appId={AppId}",
+                channel.ChannelId,
+                boundAgents[0].AgentInstanceId,
+                settings.AppId);
             bindings.Add((boundAgents[0], channel));
         }
 

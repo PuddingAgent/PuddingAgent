@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using PuddingDesktop.Configuration;
+using PuddingDesktop.Runtime;
 using PuddingCode.Configuration;
 
 namespace PuddingDesktop.ViewModels;
@@ -10,11 +11,19 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private readonly IDesktopBootstrapSettingsStore _bootstrapStore;
     private readonly ISystemConfigurationService _systemConfigService;
     private readonly IDesktopControlTokenService _tokenService;
+    private readonly AutoStartRegistrationService _autoStartRegistrationService;
 
     private string _dataRoot = "D:\\data";
     private string _coreExecutablePath = "";
     private int _port;
     private bool _autoStart = true;
+    private bool _autoRestart = true;
+    private int _restartMaxAttempts = 3;
+    private int _restartWindowSeconds = 60;
+    private int _restartInitialDelaySeconds = 2;
+    private int _restartMaxDelaySeconds = 30;
+    private bool _minimizeToTray = true;
+    private bool _startWithWindows;
     private int _startupTimeoutSeconds = 60;
     private int _shutdownTimeoutSeconds = 15;
     private bool _hasToken;
@@ -23,11 +32,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public SettingsViewModel(
         IDesktopBootstrapSettingsStore bootstrapStore,
         ISystemConfigurationService systemConfigService,
-        IDesktopControlTokenService tokenService)
+        IDesktopControlTokenService tokenService,
+        AutoStartRegistrationService? autoStartRegistrationService = null)
     {
         _bootstrapStore = bootstrapStore;
         _systemConfigService = systemConfigService;
         _tokenService = tokenService;
+        _autoStartRegistrationService = autoStartRegistrationService ?? new AutoStartRegistrationService();
     }
 
     public string DataRoot
@@ -52,6 +63,48 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         get => _autoStart;
         set { _autoStart = value; OnPropertyChanged(); }
+    }
+
+    public bool AutoRestart
+    {
+        get => _autoRestart;
+        set { _autoRestart = value; OnPropertyChanged(); }
+    }
+
+    public int RestartMaxAttempts
+    {
+        get => _restartMaxAttempts;
+        set { _restartMaxAttempts = value; OnPropertyChanged(); }
+    }
+
+    public int RestartWindowSeconds
+    {
+        get => _restartWindowSeconds;
+        set { _restartWindowSeconds = value; OnPropertyChanged(); }
+    }
+
+    public int RestartInitialDelaySeconds
+    {
+        get => _restartInitialDelaySeconds;
+        set { _restartInitialDelaySeconds = value; OnPropertyChanged(); }
+    }
+
+    public int RestartMaxDelaySeconds
+    {
+        get => _restartMaxDelaySeconds;
+        set { _restartMaxDelaySeconds = value; OnPropertyChanged(); }
+    }
+
+    public bool MinimizeToTray
+    {
+        get => _minimizeToTray;
+        set { _minimizeToTray = value; OnPropertyChanged(); }
+    }
+
+    public bool StartWithWindows
+    {
+        get => _startWithWindows;
+        set { _startWithWindows = value; OnPropertyChanged(); }
     }
 
     public int StartupTimeoutSeconds
@@ -87,6 +140,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         var bootstrap = await _bootstrapStore.LoadAsync(ct);
         DataRoot = bootstrap.DataRoot ?? "D:\\data";
         CoreExecutablePath = bootstrap.CoreExecutablePath ?? "";
+        MinimizeToTray = bootstrap.CloseBehavior == DesktopCloseBehavior.MinimizeToTray;
+        StartWithWindows = bootstrap.StartWithWindows;
 
         if (!string.IsNullOrEmpty(bootstrap.DataRoot))
         {
@@ -96,6 +151,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 var core = systemResult.Config.Desktop.Core;
                 Port = core.Port;
                 AutoStart = core.AutoStart;
+                AutoRestart = core.AutoRestart;
+                RestartMaxAttempts = core.RestartMaxAttempts;
+                RestartWindowSeconds = core.RestartWindowSeconds;
+                RestartInitialDelaySeconds = core.RestartInitialDelaySeconds;
+                RestartMaxDelaySeconds = core.RestartMaxDelaySeconds;
                 StartupTimeoutSeconds = core.StartupTimeoutSeconds;
                 ShutdownTimeoutSeconds = core.ShutdownTimeoutSeconds;
                 HasToken = !string.IsNullOrEmpty(core.ControlToken);
@@ -111,8 +171,32 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             SchemaVersion = 1,
             DataRoot = DataRoot.Trim(),
             CoreExecutablePath = string.IsNullOrWhiteSpace(CoreExecutablePath) ? null : CoreExecutablePath,
+            CloseBehavior = MinimizeToTray
+                ? DesktopCloseBehavior.MinimizeToTray
+                : DesktopCloseBehavior.ExitAndStopCore,
+            StartWithWindows = StartWithWindows,
         };
-        await _bootstrapStore.SaveAsync(settings, ct);
+
+        var previouslyRegistered = _autoStartRegistrationService.IsEnabled();
+        try
+        {
+            _autoStartRegistrationService.SetEnabled(
+                StartWithWindows,
+                Environment.ProcessPath
+                    ?? throw new InvalidOperationException("无法确定 PuddingDesktop 可执行文件路径。"));
+            await _bootstrapStore.SaveAsync(settings, ct);
+        }
+        catch
+        {
+            try
+            {
+                _autoStartRegistrationService.SetEnabled(
+                    previouslyRegistered,
+                    Environment.ProcessPath ?? string.Empty);
+            }
+            catch { }
+            throw;
+        }
     }
 
     public async Task SaveCoreSettingsAsync(CancellationToken ct)
@@ -141,12 +225,34 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             return;
         }
 
+        try
+        {
+            _ = new CoreRestartPolicy
+            {
+                Enabled = AutoRestart,
+                MaxAttempts = RestartMaxAttempts,
+                WindowSeconds = RestartWindowSeconds,
+                InitialDelaySeconds = RestartInitialDelaySeconds,
+                MaxDelaySeconds = RestartMaxDelaySeconds,
+            }.Validate();
+        }
+        catch (Exception ex)
+        {
+            ValidationError = ex.Message;
+            return;
+        }
+
         // Patch: only update UI-mutable fields; ControlToken is preserved
         await _systemConfigService.UpdateDesktopCoreSettingsAsync(
             DataRoot,
             current => current with
             {
                 AutoStart = AutoStart,
+                AutoRestart = AutoRestart,
+                RestartMaxAttempts = RestartMaxAttempts,
+                RestartWindowSeconds = RestartWindowSeconds,
+                RestartInitialDelaySeconds = RestartInitialDelaySeconds,
+                RestartMaxDelaySeconds = RestartMaxDelaySeconds,
                 Port = Port,
                 StartupTimeoutSeconds = StartupTimeoutSeconds,
                 ShutdownTimeoutSeconds = ShutdownTimeoutSeconds,

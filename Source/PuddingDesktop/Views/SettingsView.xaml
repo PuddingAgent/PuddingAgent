@@ -17,6 +17,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <StackPanel>
@@ -171,12 +172,90 @@
                                          Text="{Binding ShutdownTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
                             </StackPanel>
                         </Grid>
+
+                        <Border Height="1"
+                                Margin="0,20,0,18"
+                                Background="{DynamicResource DividerBrush}" />
+
+                        <CheckBox IsChecked="{Binding AutoRestart, Mode=TwoWay}"
+                                  Content="Core 意外退出后自动恢复"
+                                  Margin="0,0,0,14" />
+
+                        <UniformGrid Columns="4">
+                            <StackPanel Margin="0,0,8,0">
+                                <TextBlock Text="最多尝试" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="1–20 次"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="RestartAttemptsBox"
+                                         Text="{Binding RestartMaxAttempts, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Margin="8,0">
+                                <TextBlock Text="统计窗口" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="10–3600 秒"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="RestartWindowBox"
+                                         Text="{Binding RestartWindowSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Margin="8,0">
+                                <TextBlock Text="初始延迟" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="默认 2 秒"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="RestartInitialDelayBox"
+                                         Text="{Binding RestartInitialDelaySeconds, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Margin="8,0,0,0">
+                                <TextBlock Text="最大延迟" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="默认 30 秒"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="RestartMaxDelayBox"
+                                         Text="{Binding RestartMaxDelaySeconds, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Desktop background behavior -->
+            <Border Grid.Row="3"
+                    Margin="0,12,0,0"
+                    Style="{StaticResource CardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="44" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Width="36" Height="36"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Background="{DynamicResource AccentLightBrush}"
+                            CornerRadius="9">
+                        <TextBlock Text="&#xE7F4;"
+                                   Style="{StaticResource FluentIconTextStyle}"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   FontSize="17" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="桌面后台与托盘" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="Pudding Desktop 是产品进程主管；关闭窗口后可继续守护 Core 和本地 API。"
+                                   Style="{StaticResource CaptionTextStyle}"
+                                   Margin="0,4,0,14" />
+                        <CheckBox IsChecked="{Binding MinimizeToTray, Mode=TwoWay}"
+                                  Content="关闭窗口时隐藏到系统托盘（取消后将退出并停止 Core）" />
+                        <CheckBox IsChecked="{Binding StartWithWindows, Mode=TwoWay}"
+                                  Content="登录 Windows 后在后台启动 Pudding"
+                                  Margin="0,12,0,0" />
                     </StackPanel>
                 </Grid>
             </Border>
 
             <!-- Security -->
-            <Border Grid.Row="3"
+            <Border Grid.Row="4"
                     Margin="0,12,0,0"
                     Style="{StaticResource CardStyle}">
                 <Grid>
@@ -222,7 +301,7 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Row="4"
+            <Border Grid.Row="5"
                     Margin="0,12,0,0"
                     Padding="14"
                     Background="{DynamicResource ErrorFillBrush}"
@@ -242,7 +321,7 @@
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="5" Margin="0,20,0,0">
+            <Grid Grid.Row="6" Margin="0,20,0,0">
                 <TextBlock x:Name="SaveFeedback"
                            Visibility="Collapsed"
                            VerticalAlignment="Center"

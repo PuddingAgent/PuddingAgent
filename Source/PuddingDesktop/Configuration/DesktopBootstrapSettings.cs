@@ -10,6 +10,8 @@ public sealed record DesktopBootstrapSettings
     public int SchemaVersion { get; init; } = 1;
     public string? DataRoot { get; init; }
     public string? CoreExecutablePath { get; init; }
+    public Runtime.DesktopCloseBehavior CloseBehavior { get; init; } = Runtime.DesktopCloseBehavior.MinimizeToTray;
+    public bool StartWithWindows { get; init; }
     public DesktopWindowSettings Window { get; init; } = new();
 }
 

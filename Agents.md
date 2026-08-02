@@ -1,9 +1,20 @@
 ﻿# Pudding Agent 项目指令
 
 ## 项目概述
-Pudding 是一个 .NET 10 的自主 Agent 框架，支持六层记忆体系、Skill 系统、子代理委派、潜意识后台管道。
+Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层记忆体系、Skill 系统、子代理委派、潜意识后台管道。
 
-dev-up.py是守护进程脚本，用于控制后端、前端的编译、启动。也可以直接直接启动前端和后端。
+最终产品入口是 `PuddingDesktop.exe`。WPF Desktop 提供 Windows 11 风格 Shell、WebView2 Workbench、配置、运行中心、存储管理和桌面系统集成；ASP.NET Core 作为独立 Core API/Service Plane，由 Desktop 以 `core/PuddingAgent.exe --desktop-child` 子进程方式启动和监督。业务逻辑、Agent、Connector、数据库和 Runtime 继续属于 Core，不能迁入 WPF。
+
+`dev-up.py` 只用于源码开发和调试，负责开发态后端、前端开发服务器、代理和相关工具进程。它不是最终产品守护进程，不进入交付包，也不能替代 Desktop 的产品进程主管职责。
+
+## PuddingDesktop 产品边界
+
+- `PuddingDesktop` 保持 `Microsoft.NET.Sdk` + WPF，不引用 `PuddingHost` 或 ASP.NET Core；Desktop 与 Core 只通过子进程协议和动态 Loopback HTTP/gRPC 通信。
+- Desktop 必须在 Core 启动失败、配置缺失或 DataRoot 未设置时仍可启动，并允许用户进入设置和运行中心执行修复、启动、停止或重启。
+- Desktop 是单实例产品进程。关闭按钮默认隐藏到系统托盘并保持 Core 运行；只有“退出 Pudding”、Windows 会话结束或配置为 `ExitAndStopCore` 时才停止 Core 并释放 WebView2。
+- `desktop.json` 保存 DesktopHome 范围的 DataRoot、Core 路径、窗口和关闭行为；`<DataRoot>/config/system.json` 保存 Core 端口、ControlToken、启动超时和自动恢复策略。Token 不放环境变量，不在 UI 或诊断包回显。
+- `dev-up.py` 和 Desktop 不共享 PID、端口所有权。使用同一个 `D:\data` 验证 Desktop 前必须先停止 dev-up 管理的 Core，反之亦然，避免两个 Core 同时访问数据库。
+- Phase 1A、Phase 1B-R Runtime Center、Phase 1B-S Storage 已完成。下一阶段是 Phase 2A：通用 Agent Browser、多标签页、Core/Desktop 双向 Bridge；底层保持通用，抖音能力只位于上层适配器。
 
 ## 兼容性和补丁约定
 
@@ -29,7 +40,7 @@ dev-up.py是守护进程脚本，用于控制后端、前端的编译、启动�
 
 ## dev-up脚本python：
 
-dev-up是用于开发环境的调试和代理python工具，方便快速启动环境。修改代码之后，需要重启或者重新编译。
+dev-up 是源码开发环境的调试和代理 Python 工具，方便快速启动前后端开发栈。修改开发态 Core/Workbench 代码后可用它重启或重新编译；最终用户不使用这些命令。
 
 ```bash
 # 只启动前端端，然后使用命令行启动后端，用于调试后端服务：
@@ -74,6 +85,11 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 ## 代码修改约定
 - 所有修改先 dry_run 预览 → 确认后 dry_run=false
 - 编译命令: `dotnet build PuddingRuntime --no-restore`
+- Desktop 定向构建: `dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo`
+- Desktop 定向测试: `dotnet test Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo`
+- Desktop Release 预览发布: `dotnet publish Source\PuddingDesktop\PuddingDesktop.csproj -c Release --no-restore -o .tmp-build\desktop-preview --nologo`
+- Desktop build/test/publish 必须串行执行；并行构建同一 WPF 项目会共享 `obj`，可能产生重复 `mainwindow.baml` 的 `RG1000`。
+- 构建、测试和发布输出只允许放在仓库 `.tmp-build`、`.tmp-test-out` 或系统 Temp，不得放到 `D:\data`。
 
 
 ## 长效学习管道（已建成）

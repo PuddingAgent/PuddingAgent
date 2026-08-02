@@ -1,0 +1,309 @@
+<UserControl x:Class="PuddingDesktop.Views.StorageView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="920"
+                    HorizontalAlignment="Center"
+                    Margin="40,34,40,48">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="存储空间" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="查看 Pudding 数据与磁盘占用；当前版本只清理一天前的日志。"
+                               Style="{StaticResource CaptionTextStyle}"
+                               Margin="0,6,0,0" />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="重新扫描"
+                        MinWidth="92"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource DefaultButtonStyle}"
+                        IsEnabled="{Binding CanRefresh}"
+                        Click="Refresh_Click" />
+            </Grid>
+
+            <Border Margin="0,24,0,0"
+                    Padding="24"
+                    Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Pudding 数据" Style="{StaticResource SectionTitleStyle}" />
+                            <TextBlock Text="{Binding TotalSizeText}"
+                                       Margin="0,4,0,0"
+                                       FontFamily="{StaticResource DisplayFont}"
+                                       FontSize="30"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SuccessBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom">
+                            <TextBlock Text="{Binding LastScanText}"
+                                       HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       FontSize="12" />
+                            <TextBlock Text="{Binding StatusText}"
+                                       Margin="0,4,0,0"
+                                       HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Height="12" Margin="0,20,0,0" ClipToBounds="True">
+                        <Border Background="{DynamicResource SubtleFillBrush}" CornerRadius="6" />
+                        <ProgressBar Minimum="0" Maximum="100"
+                                     Value="{Binding DriveUsedPercent, Mode=OneWay}"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource WarningBrush}"
+                                     BorderThickness="0" />
+                        <ProgressBar Minimum="0" Maximum="100"
+                                     Value="{Binding PuddingDrivePercent, Mode=OneWay}"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource SuccessBrush}"
+                                     BorderThickness="0" />
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Ellipse Width="8" Height="8" Fill="{DynamicResource SuccessBrush}" />
+                        <TextBlock Text="Pudding 数据"
+                                   Margin="6,0,18,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12" />
+                        <Ellipse Width="8" Height="8" Fill="{DynamicResource WarningBrush}" />
+                        <TextBlock Text="磁盘其他已用空间"
+                                   Margin="6,0,18,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12" />
+                        <Ellipse Width="8" Height="8" Fill="{DynamicResource SubtleFillBrush}" />
+                        <TextBlock Text="可用空间"
+                                   Margin="6,0,0,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12" />
+                    </StackPanel>
+
+                    <Border Height="1" Margin="0,18,0,14" Background="{DynamicResource DividerBrush}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="数据目录"
+                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                   FontSize="12" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding DataRoot}"
+                                   Margin="12,0,0,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                    <TextBlock Text="{Binding DriveSummaryText}"
+                               Margin="0,6,0,0"
+                               Style="{StaticResource CaptionTextStyle}" />
+                    <TextBlock Text="Pudding 数据使用文件逻辑大小；磁盘条展示整个卷的已用和可用空间。"
+                               Margin="0,5,0,0"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               FontSize="11" />
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="14"
+                    Background="{DynamicResource ErrorFillBrush}"
+                    BorderBrush="{DynamicResource ErrorBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibility}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xEA39;"
+                               Style="{StaticResource FluentIconTextStyle}"
+                               Foreground="{DynamicResource ErrorBrush}"
+                               Margin="0,0,10,0" />
+                    <TextBlock Text="{Binding ErrorText}"
+                               Foreground="{DynamicResource ErrorBrush}"
+                               FontSize="13"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="14"
+                    Background="{DynamicResource WarningFillBrush}"
+                    BorderBrush="{DynamicResource WarningBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Visibility="{Binding HasWarnings, Converter={StaticResource BooleanToVisibility}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE7BA;"
+                               Style="{StaticResource FluentIconTextStyle}"
+                               Foreground="{DynamicResource WarningBrush}"
+                               Margin="0,0,10,0" />
+                    <TextBlock Text="{Binding WarningText}"
+                               Foreground="{DynamicResource WarningBrush}"
+                               FontSize="13"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="18"
+                    Background="{DynamicResource WarningFillBrush}"
+                    BorderBrush="{DynamicResource WarningBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Visibility="{Binding HasCleanupPreview, Converter={StaticResource BooleanToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding CleanupPreviewTitle}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                        <TextBlock Text="{Binding CleanupPreviewDescription}"
+                                   Margin="0,5,0,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="18,0,0,0">
+                        <Button Content="取消"
+                                Style="{StaticResource DefaultButtonStyle}"
+                                Click="CancelCleanup_Click" />
+                        <Button Content="确认清理"
+                                Margin="8,0,0,0"
+                                Style="{StaticResource AccentButtonStyle}"
+                                IsEnabled="{Binding CanCleanLogs}"
+                                Click="ConfirmCleanup_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="14"
+                    Background="{DynamicResource SuccessFillBrush}"
+                    CornerRadius="8"
+                    Visibility="{Binding HasCleanupResult, Converter={StaticResource BooleanToVisibility}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE73E;"
+                               Style="{StaticResource FluentIconTextStyle}"
+                               Foreground="{DynamicResource SuccessBrush}"
+                               Margin="0,0,10,0" />
+                    <TextBlock Text="{Binding CleanupResultText}"
+                               Foreground="{DynamicResource SuccessBrush}"
+                               FontSize="13"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="0"
+                    Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="数据分类"
+                               Margin="20,18,20,8"
+                               Style="{StaticResource SectionTitleStyle}" />
+                    <ItemsControl ItemsSource="{Binding Categories}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="20,10,20,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="42" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="100" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Width="34" Height="34"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"
+                                            Background="{DynamicResource AccentLightBrush}"
+                                            CornerRadius="9">
+                                        <TextBlock Text="{Binding IconGlyph}"
+                                                   Style="{StaticResource FluentIconTextStyle}"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   FontSize="16" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Description}"
+                                                   Margin="0,4,0,0"
+                                                   Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock Text="{Binding FileCountText}"
+                                                   Margin="0,3,0,0"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   FontSize="11" />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding SizeText}"
+                                               Margin="20,0,20,0"
+                                               VerticalAlignment="Center"
+                                               FontFamily="{StaticResource DisplayFont}"
+                                               FontSize="16"
+                                               FontWeight="SemiBold" />
+
+                                    <Grid Grid.Column="3" VerticalAlignment="Center">
+                                        <TextBlock Text="只读统计"
+                                                   HorizontalAlignment="Center"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   FontSize="12">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanClean}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Button Content="清理"
+                                                HorizontalAlignment="Center"
+                                                IsEnabled="{Binding DataContext.CanCleanLogs, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                Click="PreviewCleanup_Click">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanClean}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Height="1" Margin="20,8,20,0" Background="{DynamicResource DividerBrush}" />
+                    <TextBlock Text="数据库、会话、记忆、Browser UDF、附件、备份和未知目录当前只统计，不会被一键删除。"
+                               Margin="20,14,20,18"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               FontSize="11"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

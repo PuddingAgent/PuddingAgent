@@ -1,10 +1,10 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-01（新增 WPF/WebView2 桌面宿主、通用 Agent 浏览器与抖音接入实施规格）
+最后更新：2026-08-02（Desktop First：新增 Agent Browser Workspace、运行中心和存储管理实施规格）
 
 ## 文档定位
 
-这里是 Pudding Agent 的设计入口。当前主线为 V1 单进程模型：一个可执行文件，内嵌 Web UI + Controller + Runtime + SQLite，双击启动，浏览器自动打开即用。支持 LLM 多轮对话（带工具调用）及 P2P 节点发现与直连通信（mDNS + HTTP/gRPC）。仓库正在从旧分布式架构（Platform/Controller/Runtime 多服务）向单进程 V1 模型迁移。
+这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 `PuddingDesktop.exe`：WPF 负责 Windows 11 Shell、WebView2 和进程监督，独立的 ASP.NET Core 子进程继续承载 API、Controller、Runtime、Connector 和 SQLite。现有 Web Workbench 通过内置静态资源复用，产品运行不依赖命令行、Python 或 Node。
 
 ## 建议阅读顺序
 
@@ -43,6 +43,7 @@
 - `Docs/07架构/63ADR-063飞书Agent绑定与可靠消息网关ADR.md`
 - `Docs/07架构/67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md`
 - `Docs/07架构/68抖音接入与通用WebView2自动化开发实施规格.md`
+- `Docs/07架构/69PuddingDesktop浏览器工作区运行中心与存储管理实施规格.md`
 
 ### 2. 智能体、运行时与协作
 
@@ -73,15 +74,16 @@
 
 ## 当前架构基线
 
-- V1 目标：单进程 Pudding Agent，内嵌 Web UI + Controller + Runtime + SQLite
-- 双击启动，浏览器自动打开即用
+- V1 目标：`PuddingDesktop.exe` 双击启动并监督独立 ASP.NET Core 子进程
+- WPF 提供 Windows 11 Shell、Workbench WebView2、Agent Browser、运行中心和存储管理
+- Core 继续承载 Web UI 静态资源、Controller、Runtime、Connector 与 SQLite
 - 支持 LLM 多轮对话（带工具调用）
 - 支持 P2P 节点发现与直连通信（mDNS + HTTP/gRPC）
-- 支持裸进程运行或 Docker 单容器部署
+- Console Host 只作为开发和诊断入口
 - 任务管理已迁移至 Todo API（`python .github/skills/todo-api/todo_api.py`）
 
 ## 当前实现状态说明
 
-- 仓库正在从旧分布式架构（Platform/Controller/Runtime 多服务 + PuddingCode CLI）向单进程 V1 模型迁移。
-- 当前源码中仍保留较多旧架构残留，阅读时请以本文档和 `Docs/Tasks.md` 作为 V1 目标状态参考。
+- Phase 1A Desktop Launcher、动态 Loopback 和 Workbench 已落地；Browser Driver、运行中心增强和存储管理仍按实施规格推进。`dev-up.py` 保留为源码开发脚本，不进入最终产品。
+- 当前源码中仍保留旧架构和开发脚本入口，阅读 Desktop 主线时以 68、69 实施规格为准。
 - 任务状态通过 Todo API 管理，不在文档或代码中硬编码。

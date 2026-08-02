@@ -149,8 +149,15 @@
                         <RadioButton x:Name="navCore"
                                      GroupName="MainNavigation"
                                      Tag="&#xE9D9;"
-                                     Content="Core 与诊断"
-                                     ToolTip="Core 状态与运行日志"
+                                     Content="运行中心"
+                                     ToolTip="Core 进程、自动恢复与诊断"
+                                     Style="{StaticResource NavItemStyle}"
+                                     Checked="NavButton_Checked" />
+                        <RadioButton x:Name="navStorage"
+                                     GroupName="MainNavigation"
+                                     Tag="&#xED25;"
+                                     Content="存储空间"
+                                     ToolTip="数据目录统计与旧日志清理"
                                      Style="{StaticResource NavItemStyle}"
                                      Checked="NavButton_Checked" />
                         <RadioButton x:Name="navSettings"
@@ -202,7 +209,8 @@
                 <Grid>
                     <views:WorkbenchView x:Name="WorkbenchPage" Visibility="Visible" />
                     <views:SettingsView x:Name="SettingsPage" Visibility="Collapsed" />
-                    <views:CoreStatusView x:Name="CoreStatusPage" Visibility="Collapsed" />
+                    <views:RuntimeCenterView x:Name="RuntimeCenterPage" Visibility="Collapsed" />
+                    <views:StorageView x:Name="StoragePage" Visibility="Collapsed" />
                 </Grid>
             </Border>
         </Grid>
