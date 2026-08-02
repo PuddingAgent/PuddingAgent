@@ -1,4 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.AgentTools;
 using PuddingCode.Tools;
@@ -25,6 +26,9 @@ public static class BrowserBridgeServiceCollectionExtensions
         {
             return services;
         }
+
+        // Register Origin accessor (AsyncLocal, singleton for process lifetime)
+        services.TryAddSingleton<IBrowserOperationOriginAccessor, BrowserOperationOriginAccessor>();
 
         services.AddSingleton<IDesktopBrowserConnectionRegistry, DesktopBrowserConnectionRegistry>();
         services.AddSingleton<IDesktopBrowserCommandBroker, DesktopBrowserCommandBroker>();

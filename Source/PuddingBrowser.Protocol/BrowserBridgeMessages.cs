@@ -17,6 +17,17 @@ public sealed record BrowserBridgeHelloAck
     public string? ErrorMessage { get; init; }
 }
 
+public sealed record BrowserBridgeCommandOrigin
+{
+    public required string WorkspaceId { get; init; }
+    public required string AgentInstanceId { get; init; }
+    public required string SessionId { get; init; }
+    public string? ConversationId { get; init; }
+    public string? RunId { get; init; }
+    public string? ToolCallId { get; init; }
+    public required string ToolName { get; init; }
+}
+
 public sealed record BrowserBridgeCommand
 {
     public required Guid OperationId { get; init; }
@@ -25,6 +36,7 @@ public sealed record BrowserBridgeCommand
     public required DateTimeOffset DeadlineUtc { get; init; }
     public required string Name { get; init; }
     public required JsonElement Arguments { get; init; }
+    public BrowserBridgeCommandOrigin? Origin { get; init; }
 }
 
 public sealed record BrowserBridgeCommandResult

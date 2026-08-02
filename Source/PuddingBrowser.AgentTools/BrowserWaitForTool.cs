@@ -22,7 +22,7 @@ public sealed record BrowserWaitForArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe)]
-public sealed class BrowserWaitForTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserWaitForArgs>
+public sealed class BrowserWaitForTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserWaitForArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserWaitForArgs args, ToolExecutionContext context, CancellationToken ct)

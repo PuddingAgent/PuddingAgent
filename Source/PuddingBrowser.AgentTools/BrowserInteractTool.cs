@@ -27,7 +27,7 @@ public sealed record BrowserInteractArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.RequiresNetwork)]
-public sealed class BrowserInteractTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserInteractArgs>
+public sealed class BrowserInteractTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserInteractArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserInteractArgs args, ToolExecutionContext context, CancellationToken ct)

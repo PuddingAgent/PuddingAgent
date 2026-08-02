@@ -19,7 +19,7 @@ public sealed record BrowserLocateArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe)]
-public sealed class BrowserLocateTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserLocateArgs>
+public sealed class BrowserLocateTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserLocateArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserLocateArgs args, ToolExecutionContext context, CancellationToken ct)

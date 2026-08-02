@@ -29,7 +29,7 @@ public sealed record BrowserTabsArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork)]
-public sealed class BrowserTabsTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserTabsArgs>
+public sealed class BrowserTabsTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserTabsArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserTabsArgs args,

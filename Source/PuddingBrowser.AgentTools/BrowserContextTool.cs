@@ -20,7 +20,7 @@ public sealed record BrowserContextArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe)]
-public sealed class BrowserContextTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserContextArgs>
+public sealed class BrowserContextTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserContextArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserContextArgs args,

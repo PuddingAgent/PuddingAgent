@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingBrowser.Protocol;
@@ -13,11 +13,15 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
 {
     private static readonly JsonSerializerOptions s_jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IDesktopBrowserCommandBroker _broker;
+    private readonly IBrowserOperationOriginAccessor? _originAccessor;
     private bool _disposed;
 
-    public RemoteBrowserRuntime(IDesktopBrowserCommandBroker broker)
+    public RemoteBrowserRuntime(
+        IDesktopBrowserCommandBroker broker,
+        IBrowserOperationOriginAccessor? originAccessor = null)
     {
         _broker = broker ?? throw new ArgumentNullException(nameof(broker));
+        _originAccessor = originAccessor;
     }
 
     public BrowserRuntimeState State => _disposed
@@ -110,6 +114,25 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
         ct.ThrowIfCancellationRequested();
 
         var operationId = Guid.NewGuid();
+
+        // Snapshot the current origin at command creation time.
+        // Do NOT cache it lazily — AsyncLocal must be read on the calling thread.
+        BrowserBridgeCommandOrigin? origin = null;
+        var currentOrigin = _originAccessor?.Current;
+        if (currentOrigin is not null)
+        {
+            origin = new BrowserBridgeCommandOrigin
+            {
+                WorkspaceId = Truncate(currentOrigin.WorkspaceId, 128),
+                AgentInstanceId = Truncate(currentOrigin.AgentInstanceId, 128),
+                SessionId = Truncate(currentOrigin.SessionId, 128),
+                ConversationId = Truncate(currentOrigin.ConversationId, 128),
+                RunId = Truncate(currentOrigin.RunId, 128),
+                ToolCallId = Truncate(currentOrigin.ToolCallId, 128),
+                ToolName = Truncate(currentOrigin.ToolName, 128)
+            };
+        }
+
         var result = await _broker.ExecuteAsync(new BrowserBridgeCommand
         {
             OperationId = operationId,
@@ -117,7 +140,8 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
             PageId = pageId?.Value,
             DeadlineUtc = DateTimeOffset.UtcNow.Add(timeout > TimeSpan.Zero ? timeout : TimeSpan.FromSeconds(30)),
             Name = name,
-            Arguments = JsonSerializer.SerializeToElement(arguments, s_jsonOptions)
+            Arguments = JsonSerializer.SerializeToElement(arguments, s_jsonOptions),
+            Origin = origin
         }, ct);
 
         if (!result.Success)
@@ -166,9 +190,13 @@ public sealed class RemoteBrowserRuntime : IBrowserRuntime
 
     public ValueTask DisposeAsync()
     {
-        // Core restart must not close Desktop-owned contexts or tabs. Explicit close commands
-        // are the only operations that mutate their lifetime.
         _disposed = true;
         return ValueTask.CompletedTask;
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        if (value is null) return null;
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 }

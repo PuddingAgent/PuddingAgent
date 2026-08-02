@@ -28,7 +28,7 @@ public sealed record BrowserSnapshotArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe)]
-public sealed class BrowserSnapshotTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserSnapshotArgs>
+public sealed class BrowserSnapshotTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserSnapshotArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserSnapshotArgs args, ToolExecutionContext context, CancellationToken ct)

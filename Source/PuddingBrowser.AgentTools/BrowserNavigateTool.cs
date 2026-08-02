@@ -29,7 +29,7 @@ public sealed record BrowserNavigateArgs
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork)]
-public sealed class BrowserNavigateTool(IBrowserRuntime runtime) : PuddingToolBase<BrowserNavigateArgs>
+public sealed class BrowserNavigateTool(IBrowserRuntime runtime, IBrowserOperationOriginAccessor originAccessor) : BrowserAgentToolBase<BrowserNavigateArgs>(originAccessor)
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         BrowserNavigateArgs args,
