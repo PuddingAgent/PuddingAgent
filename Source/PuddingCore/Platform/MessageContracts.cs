@@ -44,6 +44,11 @@ public sealed record LlmConfig
     /// Agent 模板/实例只应持有 provider/model 绑定，不能复制或兜底模型容量。
     /// </summary>
     public int? MaxContextTokens { get; init; }
+    /// <summary>
+    /// Provider 接受的最大输入长度。部分模型的输入上限小于完整上下文窗口，
+    /// 因此不能从 MaxContextTokens 或 MaxOutputTokens 反推。
+    /// </summary>
+    public int? MaxInputTokens { get; init; }
     /// <summary>当前模型的最大输出长度，来自 LLM 服务商模型配置。</summary>
     public int? MaxOutputTokens { get; init; }
     /// <summary>推理深度："low" | "medium" | "high"</summary>

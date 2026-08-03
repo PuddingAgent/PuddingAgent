@@ -365,6 +365,7 @@ export interface LlmModelDto {
   name: string;
   description?: string;
   maxContextTokens: number;
+  maxInputTokens?: number;
   maxOutputTokens: number;
   inputPricePer1MTokens: number;
   outputPricePer1MTokens: number;
@@ -397,6 +398,7 @@ export interface UpsertLlmModelRequest {
   name: string;
   description?: string;
   maxContextTokens: number;
+  maxInputTokens?: number;
   maxOutputTokens: number;
   inputPricePer1MTokens: number;
   outputPricePer1MTokens: number;

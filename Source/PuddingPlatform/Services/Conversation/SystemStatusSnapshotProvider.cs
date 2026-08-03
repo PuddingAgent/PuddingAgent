@@ -108,6 +108,7 @@ public sealed class SystemStatusSnapshotProvider(
                     ct,
                     contextWindowTokens: capacity.Value.ContextWindowTokens,
                     maxOutputTokens: capacity.Value.MaxOutputTokens,
+                    maxInputTokens: capacity.Value.MaxInputTokens,
                     toolCount: profile?.ToolDefinitions?.Count ?? 0);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -145,7 +146,7 @@ public sealed class SystemStatusSnapshotProvider(
             warnings);
     }
 
-    private (int ContextWindowTokens, int? MaxOutputTokens)? ResolveContextCapacity(
+    private (int ContextWindowTokens, int? MaxOutputTokens, int? MaxInputTokens)? ResolveContextCapacity(
         AgentRuntimeProfile? profile,
         string? providerId,
         string? modelId)
@@ -156,6 +157,9 @@ public sealed class SystemStatusSnapshotProvider(
                 profile.LlmConfig.MaxContextTokens.Value,
                 profile.LlmConfig.MaxOutputTokens is > 0
                     ? profile.LlmConfig.MaxOutputTokens
+                    : null,
+                profile.LlmConfig.MaxInputTokens is > 0
+                    ? profile.LlmConfig.MaxInputTokens
                     : null);
         }
 
@@ -171,7 +175,8 @@ public sealed class SystemStatusSnapshotProvider(
         return model?.MaxContextTokens > 0
             ? (
                 model.MaxContextTokens,
-                model.MaxOutputTokens > 0 ? model.MaxOutputTokens : null)
+                model.MaxOutputTokens > 0 ? model.MaxOutputTokens : null,
+                model.MaxInputTokens is > 0 ? model.MaxInputTokens : null)
             : null;
     }
 }

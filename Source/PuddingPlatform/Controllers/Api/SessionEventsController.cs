@@ -657,7 +657,8 @@ public class SessionEventsController : ControllerBase
             sessionId,
             ct,
             contextWindowTokens: capacity.ContextWindowTokens,
-            maxOutputTokens: capacity.MaxOutputTokens);
+            maxOutputTokens: capacity.MaxOutputTokens,
+            maxInputTokens: capacity.MaxInputTokens);
         return Ok(health);
     }
 
@@ -708,7 +709,8 @@ public class SessionEventsController : ControllerBase
         {
             return new ResolvedContextCapacity(
                 profile.LlmConfig.MaxContextTokens.Value,
-                profile.LlmConfig.MaxOutputTokens is > 0 ? profile.LlmConfig.MaxOutputTokens : null);
+                profile.LlmConfig.MaxOutputTokens is > 0 ? profile.LlmConfig.MaxOutputTokens : null,
+                profile.LlmConfig.MaxInputTokens is > 0 ? profile.LlmConfig.MaxInputTokens : null);
         }
 
         var model = _llmConfigService.GetAllModels().FirstOrDefault(item =>
@@ -716,7 +718,10 @@ public class SessionEventsController : ControllerBase
             && string.Equals(item.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
 
         return model?.MaxContextTokens > 0
-            ? new ResolvedContextCapacity(model.MaxContextTokens, model.MaxOutputTokens > 0 ? model.MaxOutputTokens : null)
+            ? new ResolvedContextCapacity(
+                model.MaxContextTokens,
+                model.MaxOutputTokens > 0 ? model.MaxOutputTokens : null,
+                model.MaxInputTokens is > 0 ? model.MaxInputTokens : null)
             : null;
     }
 
@@ -1160,7 +1165,8 @@ public class SessionEventsController : ControllerBase
 
     private sealed record ResolvedContextCapacity(
         int ContextWindowTokens,
-        int? MaxOutputTokens);
+        int? MaxOutputTokens,
+        int? MaxInputTokens);
 }
 
 public sealed record CompactSessionRequest(

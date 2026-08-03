@@ -52,7 +52,7 @@ public sealed record ContextHealthSnapshot(
     public int? MessageCount { get; init; }
     public int? ToolCount { get; init; }
     public int? ProviderPromptTokens { get; init; }
-        public int? ProviderCompletionTokens { get; init; }
+    public int? ProviderCompletionTokens { get; init; }
     public int? ProviderTotalTokens { get; init; }
 }
 
@@ -157,6 +157,7 @@ public interface IContextCompactionService
         CancellationToken ct = default,
         int? contextWindowTokens = null,
         int? maxOutputTokens = null,
+        int? maxInputTokens = null,
         int toolCount = 0);
 
     Task<ContextCompactionResult> CompactAsync(

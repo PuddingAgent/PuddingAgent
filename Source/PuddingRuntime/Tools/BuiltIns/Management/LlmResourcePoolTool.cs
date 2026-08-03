@@ -93,6 +93,7 @@ public sealed class LlmResourcePoolTool : PuddingToolBase<LlmResourcePoolArgs>
                 ModelId = m.ModelId,
                 Name = m.Name,
                 MaxContextTokens = m.MaxContextTokens ?? 0,
+                MaxInputTokens = m.MaxInputTokens,
                 MaxOutputTokens = m.MaxOutputTokens ?? 0,
                 CapabilityTags = m.CapabilityTags ?? [],
                 Pricing = m.PricePer1MInputTokens.HasValue || m.PricePer1MOutputTokens.HasValue
@@ -174,6 +175,7 @@ public sealed record LlmModelSummary
     public string ModelId { get; init; } = "";
     public string Name { get; init; } = "";
     public int MaxContextTokens { get; init; }
+    public int? MaxInputTokens { get; init; }
     public int MaxOutputTokens { get; init; }
     public List<string> CapabilityTags { get; init; } = [];
 

@@ -23,6 +23,7 @@ public sealed class AgentRuntimeProfileResolverTests
               "templateId": "general-assistant",
               "workspaceId": "workspace-1",
               "memorySearchMode": "deep",
+              "maxReplyTokens": 4096,
               "memoryLlmProviderId": "deepseek",
               "memoryLlmModelId": "deepseek-v4-flash",
               "developerModel": "qwen/qwen3.8-max-preview"
@@ -50,6 +51,8 @@ public sealed class AgentRuntimeProfileResolverTests
         Assert.AreEqual("agent:agent-1:subconscious", subconscious.ProfileId);
         Assert.AreEqual("qwen", developer.ProviderId);
         Assert.AreEqual("qwen3.8-max-preview", developer.ModelId);
+        Assert.AreEqual(983_616, developer.Config.MaxInputTokens);
+        Assert.AreEqual(4_096, developer.Config.MaxOutputTokens);
     }
 
     [TestMethod]
@@ -91,6 +94,7 @@ public sealed class AgentRuntimeProfileResolverTests
             PreferredProviderId = "qwen",
             PreferredModelId = "qwen-max",
             ReasoningEffort = "high",
+            MaxReplyTokens = 4096,
         };
 
         var route = AgentRuntimeProfileResolver.ResolveConsciousLlm(
@@ -103,6 +107,8 @@ public sealed class AgentRuntimeProfileResolverTests
         Assert.AreEqual("qwen-max", route.ModelId);
         Assert.AreEqual("qwen-max", route.Config.ModelId);
         Assert.AreEqual("high", route.Config.ReasoningEffort);
+        Assert.AreEqual(983_616, route.Config.MaxInputTokens);
+        Assert.AreEqual(4_096, route.Config.MaxOutputTokens);
         Assert.IsNull(route.ProfileId);
     }
 
@@ -181,6 +187,9 @@ public sealed class AgentRuntimeProfileResolverTests
                         {
                             ModelId = "qwen-max",
                             Name = "Qwen Max",
+                            MaxContextTokens = 1_000_000,
+                            MaxInputTokens = 983_616,
+                            MaxOutputTokens = 65_000,
                             IsDeprecated = false,
                         },
                     ],
@@ -213,7 +222,13 @@ public sealed class AgentRuntimeProfileResolverTests
                     IsEnabled = true,
                     Models =
                     [
-                        new PuddingLlmModelConfig { ModelId = "qwen3.8-max-preview" },
+                        new PuddingLlmModelConfig
+                        {
+                            ModelId = "qwen3.8-max-preview",
+                            MaxContextTokens = 1_000_000,
+                            MaxInputTokens = 983_616,
+                            MaxOutputTokens = 65_000,
+                        },
                     ],
                 },
             ],

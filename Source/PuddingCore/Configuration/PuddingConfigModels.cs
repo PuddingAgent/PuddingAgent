@@ -170,6 +170,7 @@ public sealed record PuddingLlmModelConfig
     public string ModelId { get; init; } = "";
     public string Name { get; init; } = "";
     public int? MaxContextTokens { get; init; }
+    public int? MaxInputTokens { get; init; }
     public int? MaxOutputTokens { get; init; }
     public List<string> CapabilityTags { get; init; } = [];
     public bool IsDefault { get; init; }

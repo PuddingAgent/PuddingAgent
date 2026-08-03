@@ -9,14 +9,20 @@ public sealed class ContextHealthEvaluator
         int usedTokens,
         int contextWindowTokens,
         int maxOutputTokens,
-        int safetyBufferTokens = 0)
+        int safetyBufferTokens = 0,
+        int? maxInputTokens = null)
     {
-        // Main context health is intentionally based on the model's advertised
-        // context window. UI and auto-compaction need the current session's
-        // remaining window, not a hidden derived budget after output reservation.
         var modelWindow = Math.Max(1, contextWindowTokens);
-        var remaining = Math.Max(0, modelWindow - Math.Max(0, usedTokens));
-        var ratio = Math.Max(0, usedTokens) / (double)modelWindow;
+        var reservedOutput = Math.Max(0, maxOutputTokens);
+        var safetyBuffer = Math.Max(0, safetyBufferTokens);
+        var contextDerivedInputLimit = Math.Max(1, modelWindow - reservedOutput - safetyBuffer);
+        var providerInputLimit = maxInputTokens is > 0
+            ? maxInputTokens.Value
+            : int.MaxValue;
+        var effectiveWindow = Math.Max(1, Math.Min(contextDerivedInputLimit, providerInputLimit));
+        var normalizedUsedTokens = Math.Max(0, usedTokens);
+        var remaining = Math.Max(0, effectiveWindow - normalizedUsedTokens);
+        var ratio = normalizedUsedTokens / (double)effectiveWindow;
         var state = ratio switch
         {
             >= 0.92 => ContextHealthState.Blocking,
@@ -26,11 +32,11 @@ public sealed class ContextHealthEvaluator
             _ => ContextHealthState.Healthy,
         };
 
-                return new ContextHealthSnapshot(
+        return new ContextHealthSnapshot(
             sessionId,
-            Math.Max(0, usedTokens),
-            Math.Max(0, contextWindowTokens),
+            normalizedUsedTokens,
             modelWindow,
+            effectiveWindow,
             remaining,
             ratio,
             state,

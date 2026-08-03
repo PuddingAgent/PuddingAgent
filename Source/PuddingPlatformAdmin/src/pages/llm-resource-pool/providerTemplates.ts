@@ -386,6 +386,7 @@ export const getProviderTemplateModelValues = (
     name: model.name,
     description: model.description,
     maxContextTokens: model.maxContextTokens,
+    maxInputTokens: model.maxInputTokens,
     maxOutputTokens: model.maxOutputTokens,
     inputPricePer1MTokens: toApiPrice(model.inputPricePer1MTokensRmb),
     outputPricePer1MTokens: toApiPrice(model.outputPricePer1MTokensRmb),

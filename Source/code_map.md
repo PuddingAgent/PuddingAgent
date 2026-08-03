@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-08-02 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1/2 accepted ✅ | Phase 2A-3 automated accepted ✅（真实 DeepSeek smoke pending）
+> 最后更新: 2026-08-03 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1/2 accepted ✅ | Phase 2A-3 automated accepted ✅（真实 DeepSeek smoke pending）
 
 ---
 
@@ -30,6 +30,7 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 | `../Docs/07架构/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md` | 两段式验收：内部开发 Agent 交付 ready-for-external-deploy，外部控制器重启到新版本，Pudding 内新会话测试已加载的 DeepSeek Browser Tools 并交付 in-product-functional-complete，最终生命周期和退出回收仍由外部控制器验收 |
 | `../Docs/07架构/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md` | 可交给 Pudding 内部开发 Agent 的下一包：实现 Browser Activity 脱敏导出和外部 Desktop/TestSite 生命周期控制脚本；内部只运行 PrepareOnly 并交付 ready-for-external-deploy，正式验收由外部 Codex 执行 |
 | `../Docs/07架构/79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md` | 真实 Agent 控制闭环开发包：冻结 cap-browser 到七项工具映射，沿 ToolExecution/RemoteRuntime/Bridge 传递脱敏调用来源，自动投影 Desktop 控制状态和 Agent Activity，并补齐 Runtime Profile 到认证 Bridge 的组合测试 |
+| `../Docs/QA/QA-2026-08-03-LLM输入预算与Provider上限修复.md` | Qwen 983,616 输入硬上限事故修复验收；覆盖独立 maxInputTokens、输出预留、Provider 用量校准、最终请求裁剪、单次受控恢复及验证命令 |
 
 关键 Desktop 入口：
 
@@ -134,7 +135,7 @@ Source/
 |------|------|
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端接口 |
 | `PuddingCore/Core/OpenAiLlmGateway.cs` + `PuddingCore/Models/ChatMessage.cs` + `PuddingCore/Models/StreamDelta.cs` | OpenAI-compatible Chat Completions 适配；只为带对应 capability 的模型解析受控 Vision/Audio Artifact，音频序列化为 `input_audio` Data URI；流式解析保留同一 chunk 的全部 `tool_calls`，按 index 维持延迟 ID，并为缺失/重复 ID 生成单轮稳定协议 ID，避免工具结果在下一轮被判 orphan |
-| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；仅当当前模型带 `vision` 能力标签时才把 workspace 授权视觉制品序列化为多模态内容，文本模型不再接收 `image_url` |
+| `Services/DirectLlmClient.cs` | 直连 LLM 客户端；统一区分 HTTP/网络瞬态错误，流式路径仅在首个 Delta 前按 Provider 策略重试，首块后禁止重试以避免重复输出/工具调用；将解析后的输出上限下传为 Provider `max_tokens`；仅当当前模型带 `vision` 能力标签时才把 workspace 授权视觉制品序列化为多模态内容，文本模型不再接收 `image_url` |
 | `Services/ControllerRoutedLlmClient.cs` | 通过代理路由的 LLM 客户端 |
 | `Services/LlmInvocationService.cs` | LLM 调用服务（统一入口）；Provider 调用前校验/修复 tool-call 消息序列并记录诊断；调用方取消必须重新抛出，禁止降级为普通 Provider 失败 |
 | `Services/LlmProfileResolver.cs` | 解析遗留 Profile/Binding 配置；主 Agent 执行模型不从此处选择 |
@@ -146,8 +147,9 @@ Source/
 |------|------|
 | `Services/ContextWindowManager.cs` | 🔑 上下文窗口管理（token 驱动裁剪 + 自动压缩触发）；比较持久化快照前先修复内存中的不完整工具轮次 |
 | `PuddingCore/Models/LlmMessageSequenceNormalizer.cs` | OpenAI-compatible 消息协议守卫；保留完整工具轮次、移除 orphan Tool、降级或丢弃不完整 Assistant tool-call |
-| `Services/ContextCompactionService.cs` | 上下文压缩执行与 ContextHealth 用量解析；provider/snapshot/Memory 均无数据时，以最近 500 条 canonical ChatMessages 估算并标记 `canonical_chat_transcript`，避免重启后错误显示 0 used |
-| `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估 + 容量预测（PredictCapacity） |
+| `Services/ContextCompactionService.cs` | 上下文压缩执行与 ContextHealth 用量解析；Provider usage 是本地估算的硬下界；provider/snapshot/Memory 均无数据时，以最近 500 条 canonical ChatMessages 估算并标记 `canonical_chat_transcript`，避免重启后错误显示 0 used |
+| `Services/ContextHealthEvaluator.cs` | 🔑 上下文健康度评估；有效窗口为 `min(maxInputTokens, maxContextTokens - maxOutputTokens - safetyBuffer)` |
+| `Services/LlmRequestBudgetGuard.cs` + `PuddingCore/Platform/LlmOptions.cs` | 最终 LLM 请求预算守卫与 Provider 校准快照；完整计入 reasoning/tool-call payload，超限时按会话单元裁剪最旧历史；识别 Provider 输入范围 400，并在单次执行内校准后恢复一次 |
 | `Services/ContextAssemblyService.cs` | 上下文组装（System Prompt + 历史 + 记忆） |
 | `Services/SystemPromptBuilder.cs` + `Services/ContextPipeline.cs` | 系统提示与上下文管线编排；两条提示入口复用唯一的飞书语音输出协议与音频输入安全协议，出站依据 `channel_type=feishu` 指导 `send_voice`/`voice` 围栏，入站依据平台 attached-audio notice 指导原生听取或精确路径 `asr`；L6 召回内容严格限制为 5K tokens，并在裁剪完成后才计入 `UsedTokens`，保证注入内容、层快照和预算账目一致 |
 
@@ -537,7 +539,9 @@ Source/
 ### 2. Token 预算与自动压缩
 ```
 ContextWindowManager.EnsureCapacity()
-  → ContextHealthEvaluator.Evaluate(usedTokens, maxBudget)
+  → 解析 Provider Model: maxContextTokens / maxInputTokens / maxOutputTokens
+  → effectiveInput = min(maxInputTokens, maxContextTokens - maxOutputTokens - safetyBuffer)
+  → ContextHealthEvaluator.Evaluate(usedTokens, effectiveInput)
     ├── < 60% → 不裁剪
     ├── 60-80% → TrimHistory（token 驱动，修剪到 70%）  // 动态计算 maxMessages = budget/2500
     └── >= 80% → TryAutoCompactAsync()  // LLM 压缩
@@ -545,6 +549,9 @@ ContextWindowManager.EnsureCapacity()
       → CompactionEventEmitter.EmitAsync()
       → conversation_events → resumable SSE → 前端
   → CapacityPrediction: 剩余 tokens + 预计几轮后触发各阈值
+  → LlmRequestBudgetGuard.Prepare(final messages + tools)
+    ├── 超限 → 按完整会话单元移除最旧历史并重新计量
+    └── Provider 明确输入范围 400 → 校准 tokenizer 比率，同一执行恢复一次
 ```
 
 ### 3. 手动 `/compact` 与新会话切换
@@ -849,7 +856,7 @@ Orchestrator:
 2. **双轨记忆系统**: 传统图书馆（Book/Chapter）+ 结构化事实库（Fact）并存，未来融合
 3. **Smart* 工具有界委派模式**: 七个工具统一 `task` 合同；单次共享上限 3600 秒，`smart_plan=3600 秒/48 轮`，`smart_explore=1800 秒/32 轮`；除 `smart_explore=DelegatedSubAgent` 外保持 `MainAgentOnly`，唯一嵌套边为 `smart_plan → smart_explore`，并由 capability whitelist、委派开关和深度硬门共同防循环
 4. **能力标签系统 (P2)**: `ILlmResolver.ResolveRouteAsync(requiredCapabilityTags)` 按标签选择唯一配置源中的模型；显式 model 路由优先
-5. **Token 预算准确**: `RecordProviderUsage` 不再覆盖上下文快照；`TrimHistory` 改为 token 驱动（`maxTokenBudget/2500`）
+5. **Token 预算准确**: Provider usage 不得被更小本地估算覆盖；估算完整计入 reasoning/tool-call payload，并按 session + model 校准；有效输入预算同时受 Provider 输入硬上限、输出预留和安全余量约束
 6. **会话持久化**: `SessionStateStore` 在状态变更时异步写入 `data/sessions/{id}.json`，重启后恢复
 7. **EF Core Migration**: Platform 用 Code-First Migration，MemoryEngine 用 DbInitializer 手动建表
 8. **SSE 双轨迁移**: 新聊天链路以 `ConversationEventStore` 为事实源并按 sequence 重放；`SessionStateManager` 仅保留遗留 Session 流
@@ -861,7 +868,7 @@ Orchestrator:
 14. **Control 安全边界**: Inbox 只读后确认；Cancel 在终态成功后确认；Steering 在 Runtime 消费器完成前返回 501
 15. **启动与健康门禁**: 所有环境启用 DI Build/Scope 校验；`/health/live` 与 `/health/ready` 分离
 16. **Agent LLM 快照**: `data/agents/{agentId}/manifest.json` 的 `preferredProviderId + preferredModelId` 是主 Agent 执行模型的唯一真相源；`config/llm.json` 仅作为管理兼容镜像，不参与主 Agent 路由，Resolver 对缺失/无效配置返回 `agent_configuration_invalid`，不得回查模板、资源池默认或系统默认模型
-17. **Agent 不复制模型容量**: `maxContextTokens` 只从 `llm.providers.json` 的 Provider Model 解析；Agent manifest、Agent DTO 和 `config/llm.json` binding 不保存该字段
+17. **Agent 不复制模型容量**: `maxContextTokens`、`maxInputTokens`、模型 `maxOutputTokens` 只从 `llm.providers.json` 的 Provider Model 解析；Agent manifest、Agent DTO 和 `config/llm.json` binding 不保存这些字段，`maxReplyTokens` 仅收紧实例输出并下传 Provider
 18. **前端终态游标**: `turn.accepted` 负责尽早迁移 optimistic Turn 身份；终态按 Turn 清除全部关联 messageId，事件只有成功归并后才能推进 cursor
 19. **Agent 执行护栏生效链**: Agent manifest → RuntimeProfile → ExecutionSnapshot → TurnExecutionContext → RuntimeDispatchRequest；实例上限不得超过平台 Guardrails
 20. **渠道配置独立化**: `data/config/channel.providers.json` 声明已安装 Connector，`data/channels/{channelId}/manifest.json` 保存渠道实例和密钥，Agent manifest 只保存 `channelIds`；管理 API 不回显 Secret，运行时按 channel-owned identity 装配 Connector

@@ -90,6 +90,13 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
                 $"'{config.ModelId}', but the configured model is '{modelId}'.");
         }
 
+        var roleBinding = normalizedRole == AgentLlmRoleIds.Subconscious
+            ? profile.LlmConfig.Subconscious
+            : profile.LlmConfig.Conscious;
+        config = ApplyRequestedReplyLimit(
+            config,
+            roleBinding?.MaxReplyTokens ?? profile.Instance.MaxReplyTokens);
+
         var resolvedProfileId = string.IsNullOrWhiteSpace(profileId)
             ? $"agent:{configurationAgentInstanceId}:{normalizedRole}"
             : profileId;
@@ -156,6 +163,8 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
             ?? (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId)
                 ? null
                 : _llmConfigService.Resolve(providerId, modelId));
+        if (config is not null)
+            config = ApplyRequestedReplyLimit(config, global?.MaxReplyTokens);
         var reasoningEffort = global?.ReasoningEffort;
         if (config is not null && config.ReasoningEffort is null && !string.IsNullOrWhiteSpace(reasoningEffort))
             config = config with { ReasoningEffort = reasoningEffort };
@@ -272,13 +281,27 @@ public sealed class AgentLLMConfigResolver : ILLMConfigResolver
         // Apply agent-level reasoning effort override
         if (result?.Config is not null)
         {
-            var cfg = result.Config;
+            var cfg = ApplyRequestedReplyLimit(result.Config, binding.MaxReplyTokens);
             if (!string.IsNullOrWhiteSpace(binding.ReasoningEffort) && cfg.ReasoningEffort is null)
                 cfg = cfg with { ReasoningEffort = binding.ReasoningEffort };
             result = result with { Config = cfg };
         }
 
         return Task.FromResult(result);
+    }
+
+    private static LlmConfig ApplyRequestedReplyLimit(LlmConfig config, int? requestedMaxReplyTokens)
+    {
+        if (requestedMaxReplyTokens is not > 0)
+            return config;
+
+        var modelLimit = config.MaxOutputTokens is > 0
+            ? config.MaxOutputTokens.Value
+            : requestedMaxReplyTokens.Value;
+        return config with
+        {
+            MaxOutputTokens = Math.Min(modelLimit, requestedMaxReplyTokens.Value),
+        };
     }
 
     public Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(

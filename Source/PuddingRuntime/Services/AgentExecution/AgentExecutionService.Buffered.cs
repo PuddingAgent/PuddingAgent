@@ -357,6 +357,7 @@ public sealed partial class AgentExecutionService
         long toolOutputChars = 0;
         string? firstToolFailureSummary = null;
         var loadedToolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var providerInputRecoveryAttempted = false;
 
         try
         {
@@ -484,12 +485,31 @@ public sealed partial class AgentExecutionService
                         injectedHistory = await BuildInjectedHistoryAsync(history, ct);
                     }
                 }
+                ContextUsageSnapshot? contextUsageSnapshot = null;
+                if (_contextUsageSnapshotStore is not null)
+                {
+                    var budgetedRequest = LlmRequestBudgetGuard.Prepare(
+                        _contextUsageSnapshotStore,
+                        request.SessionId,
+                        injectedHistory,
+                        llmTools,
+                        effectiveLlmConfig);
+                    injectedHistory = budgetedRequest.Messages.ToList();
+                    contextUsageSnapshot = budgetedRequest.Snapshot;
+                    if (budgetedRequest.RemovedMessageCount > 0)
+                    {
+                        _logger.LogWarning(
+                            "[AgentExec:ContextBudget] Trimmed outbound history session={Session} round={Round} removed={Removed} estimated={Estimated} rawEstimated={RawEstimated} inputLimit={InputLimit} calibration={Calibration:F3}",
+                            request.SessionId,
+                            round + 1,
+                            budgetedRequest.RemovedMessageCount,
+                            budgetedRequest.Snapshot.UsedTokens,
+                            budgetedRequest.Snapshot.RawEstimatedTokens,
+                            budgetedRequest.EffectiveInputLimit,
+                            budgetedRequest.Snapshot.PromptCalibrationRatio);
+                    }
+                }
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(injectedHistory, llmTools);
-                var contextUsageSnapshot = _contextUsageSnapshotStore?.CaptureLlmRequest(
-                    request.SessionId,
-                    injectedHistory,
-                    llmTools,
-                    effectiveLlmConfig?.ModelId);
                 lastPrefixSnapshot = prefixSnapshot;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.started", new
                 {
@@ -522,6 +542,24 @@ public sealed partial class AgentExecutionService
 
                         if (!facadeResult.Success)
                         {
+                            if (!providerInputRecoveryAttempted
+                                && LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(
+                                    facadeResult.Error,
+                                    out var providerMaxInputTokens))
+                            {
+                                providerInputRecoveryAttempted = true;
+                                _contextUsageSnapshotStore?.RecordProviderInputLimitFailure(
+                                    request.SessionId,
+                                    providerMaxInputTokens);
+                                _logger.LogWarning(
+                                    "[AgentExec:ContextBudget] Provider rejected input length; recalibrating and retrying once session={Session} round={Round} providerMaxInput={ProviderMaxInput}",
+                                    request.SessionId,
+                                    round + 1,
+                                    providerMaxInputTokens);
+                                round--;
+                                continue;
+                            }
+
                             _logger.LogError(
                                 "[AgentExec] LLM facade error round={Round} session={Session} error={Error}",
                                 round + 1, request.SessionId, facadeResult.Error);
@@ -561,6 +599,23 @@ public sealed partial class AgentExecutionService
                 }
                 catch (Exception ex)
                 {
+                    if (!providerInputRecoveryAttempted
+                        && LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(ex, out var providerMaxInputTokens))
+                    {
+                        providerInputRecoveryAttempted = true;
+                        _contextUsageSnapshotStore?.RecordProviderInputLimitFailure(
+                            request.SessionId,
+                            providerMaxInputTokens);
+                        _logger.LogWarning(
+                            ex,
+                            "[AgentExec:ContextBudget] Provider rejected input length; recalibrating and retrying once session={Session} round={Round} providerMaxInput={ProviderMaxInput}",
+                            request.SessionId,
+                            round + 1,
+                            providerMaxInputTokens);
+                        round--;
+                        continue;
+                    }
+
                     _logger.LogError(ex, "[AgentExec] LLM API error round={Round} session={Session}", round + 1, request.SessionId);
                     executionError = $"LLM API call failed: {ex.Message}";
                     finalMessage = executionError;
@@ -1582,11 +1637,13 @@ public sealed partial class AgentExecutionService
             await _contextManager.TrimHistoryAsync(
                 request.SessionId,
                 history,
-                template.Runtime?.MaxContextTokens ?? 8192,
+                effectiveLlmConfig?.MaxContextTokens ?? template.Runtime?.MaxContextTokens ?? 8192,
                 preferDbContextWindow: false,
                 request.WorkspaceId,
                 instance.AgentInstanceId,
-                ct);
+                ct,
+                maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
+                maxInputTokens: effectiveLlmConfig?.MaxInputTokens);
         }
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);

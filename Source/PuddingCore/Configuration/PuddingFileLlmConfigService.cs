@@ -60,6 +60,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
                 ProviderId = p.ProviderId,
                 Name = m.Name,
                 MaxContextTokens = m.MaxContextTokens ?? 0,
+                MaxInputTokens = m.MaxInputTokens,
                 MaxOutputTokens = m.MaxOutputTokens ?? 0,
                 InputPricePer1MTokens = m.PricePer1MInputTokens ?? 0,
                 OutputPricePer1MTokens = m.PricePer1MOutputTokens ?? 0,
@@ -159,6 +160,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             KeyVaultId = NormalizeKeyVaultId(provider.ApiKeyRef),
             ModelId = model.ModelId,
             MaxContextTokens = model.MaxContextTokens,
+            MaxInputTokens = model.MaxInputTokens,
             MaxOutputTokens = model.MaxOutputTokens,
         };
     }
@@ -302,6 +304,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             KeyVaultId = NormalizeKeyVaultId(provider.ApiKeyRef),
             ModelId = model.ModelId,
             MaxContextTokens = model.MaxContextTokens,
+            MaxInputTokens = model.MaxInputTokens,
             MaxOutputTokens = model.MaxOutputTokens,
             ReasoningEffort = profile?.ReasoningEffort,
         };

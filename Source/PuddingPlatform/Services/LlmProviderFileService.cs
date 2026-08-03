@@ -103,7 +103,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 SortOrder: m.SortOrder,
                 MaxConcurrentRequests: m.MaxConcurrentRequests,
                 CreatedAt: DateTimeOffset.UtcNow,
-                UpdatedAt: DateTimeOffset.UtcNow
+                UpdatedAt: DateTimeOffset.UtcNow,
+                MaxInputTokens: m.MaxInputTokens
             )).ToList(),
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow
@@ -348,7 +349,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             SortOrder: m.SortOrder,
             MaxConcurrentRequests: m.MaxConcurrentRequests,
             CreatedAt: DateTimeOffset.UtcNow,
-            UpdatedAt: DateTimeOffset.UtcNow
+            UpdatedAt: DateTimeOffset.UtcNow,
+            MaxInputTokens: m.MaxInputTokens
         )).ToList();
     }
 
@@ -372,6 +374,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 ModelId = req.ModelId,
                 Name = req.Name,
                 MaxContextTokens = req.MaxContextTokens,
+                MaxInputTokens = req.MaxInputTokens,
                 MaxOutputTokens = req.MaxOutputTokens,
                 PricePer1MInputTokens = req.InputPricePer1MTokens,
                 PricePer1MOutputTokens = req.OutputPricePer1MTokens,
@@ -405,7 +408,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 SortOrder: newModel.SortOrder,
                 MaxConcurrentRequests: newModel.MaxConcurrentRequests,
                 CreatedAt: DateTimeOffset.UtcNow,
-                UpdatedAt: DateTimeOffset.UtcNow
+                UpdatedAt: DateTimeOffset.UtcNow,
+                MaxInputTokens: newModel.MaxInputTokens
             );
         }
         finally
@@ -436,6 +440,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             {
                 Name = req.Name,
                 MaxContextTokens = req.MaxContextTokens,
+                MaxInputTokens = req.MaxInputTokens,
                 MaxOutputTokens = req.MaxOutputTokens,
                 PricePer1MInputTokens = req.InputPricePer1MTokens,
                 PricePer1MOutputTokens = req.OutputPricePer1MTokens,
@@ -468,7 +473,8 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 SortOrder: updated.SortOrder,
                 MaxConcurrentRequests: updated.MaxConcurrentRequests,
                 CreatedAt: DateTimeOffset.UtcNow,
-                UpdatedAt: DateTimeOffset.UtcNow
+                UpdatedAt: DateTimeOffset.UtcNow,
+                MaxInputTokens: updated.MaxInputTokens
             );
         }
         finally

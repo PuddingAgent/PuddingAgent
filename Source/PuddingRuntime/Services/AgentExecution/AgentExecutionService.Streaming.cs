@@ -550,6 +550,7 @@ public sealed partial class AgentExecutionService
             StreamErrorDiagnostic? terminalStreamError = null;
             string? terminalStreamStatus = null;
             var streamRoundsStarted = 0;
+            var providerInputRecoveryAttempted = false;
 
             for (int round = 0; round < maxRounds; round++)
             {
@@ -666,6 +667,31 @@ public sealed partial class AgentExecutionService
                     error: null,
                     ct: CancellationToken.None);
 
+                ContextUsageSnapshot? contextUsageSnapshot = null;
+                if (_contextUsageSnapshotStore is not null)
+                {
+                    var budgetedRequest = LlmRequestBudgetGuard.Prepare(
+                        _contextUsageSnapshotStore,
+                        request.SessionId,
+                        injectedHistory,
+                        llmTools,
+                        effectiveLlmConfig);
+                    injectedHistory = budgetedRequest.Messages.ToList();
+                    contextUsageSnapshot = budgetedRequest.Snapshot;
+                    if (budgetedRequest.RemovedMessageCount > 0)
+                    {
+                        _logger.LogWarning(
+                            "[AgentExec:ContextBudget] Trimmed outbound history session={Session} round={Round} removed={Removed} estimated={Estimated} rawEstimated={RawEstimated} inputLimit={InputLimit} calibration={Calibration:F3}",
+                            request.SessionId,
+                            round + 1,
+                            budgetedRequest.RemovedMessageCount,
+                            budgetedRequest.Snapshot.UsedTokens,
+                            budgetedRequest.Snapshot.RawEstimatedTokens,
+                            budgetedRequest.EffectiveInputLimit,
+                            budgetedRequest.Snapshot.PromptCalibrationRatio);
+                    }
+                }
+
                 var prefixStartedAt = DateTimeOffset.UtcNow;
                 var prefixSw = System.Diagnostics.Stopwatch.StartNew();
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(injectedHistory, llmTools);
@@ -689,11 +715,6 @@ public sealed partial class AgentExecutionService
                     error: null,
                     ct: CancellationToken.None);
                 lastPrefixSnapshot = prefixSnapshot;
-                var contextUsageSnapshot = _contextUsageSnapshotStore?.CaptureLlmRequest(
-                    request.SessionId,
-                    injectedHistory,
-                    llmTools,
-                    effectiveLlmConfig?.ModelId);
                 IAsyncEnumerator<StreamDelta> llmEnumerator;
                 ReportLiveness(request, "llm.started");
                 if (_llmInvocationService is not null)
@@ -865,6 +886,23 @@ public sealed partial class AgentExecutionService
                 // LLM API 出错 → 发送结构化 error，并将本 turn 标记为终止错误。
                 if (llmException != null)
                 {
+                    if (!providerInputRecoveryAttempted
+                        && LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(llmException, out var providerMaxInputTokens))
+                    {
+                        providerInputRecoveryAttempted = true;
+                        _contextUsageSnapshotStore?.RecordProviderInputLimitFailure(
+                            request.SessionId,
+                            providerMaxInputTokens);
+                        _logger.LogWarning(
+                            llmException,
+                            "[AgentExec:ContextBudget] Provider rejected input length; recalibrating and retrying once session={Session} round={Round} providerMaxInput={ProviderMaxInput}",
+                            request.SessionId,
+                            round + 1,
+                            providerMaxInputTokens);
+                        round--;
+                        continue;
+                    }
+
                     consecutiveLlmFailures++;
                     var errorTimestampUtc = DateTimeOffset.UtcNow;
                     _logger.LogError(llmException,
@@ -1282,7 +1320,9 @@ public sealed partial class AgentExecutionService
                     preferDbContextWindow: true,
                     request.WorkspaceId,
                     instance.AgentInstanceId,
-                    postLoopCt);
+                    postLoopCt,
+                    maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
+                    maxInputTokens: effectiveLlmConfig?.MaxInputTokens);
             }
             _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);

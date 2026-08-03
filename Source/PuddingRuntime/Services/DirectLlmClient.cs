@@ -710,6 +710,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             model,
             reasoningEffort,
             thinkingMode,
+            effectiveRequestConfig?.MaxOutputTokens,
             matched.ProviderId,
             strategy,
             supportsVision,
@@ -724,6 +725,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 config.Endpoint,
                 config.ApiKey,
                 config.Model,
+                MaxTokens: config.MaxOutputTokens,
                 ReasoningEffort: config.ReasoningEffort,
                 ThinkingMode: config.ThinkingMode));
         gateway.Compat = config.Strategy.Compat;
@@ -884,6 +886,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             metadata["reasoning_effort"] = config.ReasoningEffort;
         if (!string.IsNullOrWhiteSpace(config.ThinkingMode))
             metadata["thinking_mode"] = config.ThinkingMode;
+        if (config.MaxOutputTokens is > 0)
+            metadata["max_output_tokens"] = config.MaxOutputTokens.Value.ToString();
 
         if (usage is not null)
         {
@@ -991,6 +995,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string Model,
         string? ReasoningEffort,
         string? ThinkingMode,
+        int? MaxOutputTokens,
         string ProviderId,
         LlmProviderStrategy Strategy,
         bool SupportsVision,

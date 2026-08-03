@@ -169,6 +169,14 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
       render: (_, r) => `${r.maxOutputTokens.toLocaleString()} tokens`,
     },
     {
+      title: '输入上限',
+      dataIndex: 'maxInputTokens',
+      width: 120,
+      render: (_, r) => r.maxInputTokens
+        ? `${r.maxInputTokens.toLocaleString()} tokens`
+        : '自动计算',
+    },
+    {
       title: '输入价格 (RMB/1M)',
       dataIndex: 'inputPricePer1MTokens',
       width: 130,
@@ -249,6 +257,9 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
           <ProFormTextArea name="description" label="描述" rows={3} />
           <ProFormDigit name="maxContextTokens" label="上下文长度 (tokens)"
             rules={[{ required: true }]} min={1024} />
+          <ProFormDigit name="maxInputTokens" label="Provider 输入上限 (tokens)"
+            min={1}
+            tooltip="可选。仅当 Provider 的最大输入长度小于完整上下文窗口时填写。" />
           <ProFormDigit name="maxOutputTokens" label="输出长度 (tokens)"
             rules={[{ required: true }]} min={1} />
           <ProFormDigit name="inputPricePer1MTokens" label="输入价格 (RMB/1M tokens)"

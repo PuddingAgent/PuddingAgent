@@ -108,7 +108,8 @@ public record LlmModelDto(
     int SortOrder,
     int? MaxConcurrentRequests,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
+    DateTimeOffset UpdatedAt,
+    int? MaxInputTokens = null
 );
 
 public record UpsertLlmModelRequest(
@@ -125,7 +126,8 @@ public record UpsertLlmModelRequest(
     bool IsDefault,
     bool IsEmbedding,
     int SortOrder,
-    int? MaxConcurrentRequests
+    int? MaxConcurrentRequests,
+    int? MaxInputTokens = null
 );
 
 // ── TTS/ASR 语音服务商 ────────────────────────────────────────

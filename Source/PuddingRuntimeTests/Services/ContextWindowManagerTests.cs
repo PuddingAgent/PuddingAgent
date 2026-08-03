@@ -715,6 +715,7 @@ public sealed class ContextWindowManagerTests
             CancellationToken ct = default,
             int? contextWindowTokens = null,
             int? maxOutputTokens = null,
+            int? maxInputTokens = null,
             int toolCount = 0)
         {
             LastContextWindowTokens = contextWindowTokens;

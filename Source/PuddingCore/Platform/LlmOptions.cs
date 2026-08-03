@@ -90,6 +90,8 @@ namespace PuddingCode.Platform
         public string SessionId { get; set; } = string.Empty;
         public DateTimeOffset RecordedAt { get; set; }
         public int UsedTokens { get; set; }
+        /// <summary>使用通用 Tokenizer 得到的原始请求估算，未应用 Provider 校准。</summary>
+        public int RawEstimatedTokens { get; set; }
         public int MessageTokens { get; set; }
         public int ToolDefinitionTokens { get; set; }
         public int SystemMessageTokens { get; set; }
@@ -103,6 +105,8 @@ namespace PuddingCode.Platform
         public int? ProviderPromptTokens { get; set; }
         public int? ProviderCompletionTokens { get; set; }
         public int? ProviderTotalTokens { get; set; }
+        public string? ModelId { get; set; }
+        public double PromptCalibrationRatio { get; set; } = 1.0;
     }
 
     /// <summary>
@@ -114,6 +118,7 @@ namespace PuddingCode.Platform
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
         private static readonly ConcurrentDictionary<string, Tokenizer> Tokenizers = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
+        private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
 
         public void Set(ContextUsageSnapshot snapshot)
         {
@@ -141,7 +146,7 @@ namespace PuddingCode.Platform
             var historyTokens = 0;
             foreach (var message in messages)
             {
-                var tokenCount = CountTokens(message.Content, modelId) + 4;
+                var tokenCount = CountMessageTokens(message, modelId);
                 messageTokens += tokenCount;
                 if (message.Role == ChatRole.System)
                     systemTokens += tokenCount;
@@ -150,6 +155,11 @@ namespace PuddingCode.Platform
             }
 
             var toolTokens = CountToolDefinitionTokens(tools, modelId);
+            var rawEstimatedTokens = Math.Max(0, messageTokens + toolTokens);
+            var calibrationRatio = GetPromptCalibrationRatio(sessionId, modelId);
+            var calibratedTokens = (int)Math.Min(
+                int.MaxValue,
+                Math.Ceiling(rawEstimatedTokens * calibrationRatio));
             var toolDefinitionHash = tools is { Count: > 0 }
                 ? PrefixCacheSnapshotBuilder.Build(messages, tools).ToolSpecHash
                 : null;
@@ -157,7 +167,8 @@ namespace PuddingCode.Platform
             {
                 SessionId = sessionId,
                 RecordedAt = DateTimeOffset.UtcNow,
-                UsedTokens = Math.Max(0, messageTokens + toolTokens),
+                UsedTokens = calibratedTokens,
+                RawEstimatedTokens = rawEstimatedTokens,
                 MessageTokens = messageTokens,
                 ToolDefinitionTokens = toolTokens,
                 SystemMessageTokens = systemTokens,
@@ -165,8 +176,10 @@ namespace PuddingCode.Platform
                 MessageCount = messages.Count,
                 ToolCount = tools?.Count ?? 0,
                 ToolDefinitionHash = toolDefinitionHash,
-                Source = "llm_request",
-                Confidence = "estimated",
+                Source = calibrationRatio > 1.0001 ? "llm_request_calibrated" : "llm_request",
+                Confidence = calibrationRatio > 1.0001 ? "provider_calibrated" : "estimated",
+                ModelId = modelId,
+                PromptCalibrationRatio = calibrationRatio,
             };
             Set(snapshot);
             return snapshot;
@@ -188,20 +201,34 @@ namespace PuddingCode.Platform
             }
 
             var existing = TryGet(sessionId, out var found) ? found : null;
+            var providerPromptTokens = Math.Max(0, usage.PromptTokens ?? 0);
+            var rawEstimatedTokens = existing?.RawEstimatedTokens > 0
+                ? existing.RawEstimatedTokens
+                : existing?.UsedTokens ?? 0;
+            var calibrationRatio = existing?.PromptCalibrationRatio ?? 1.0;
+            if (providerPromptTokens > 0 && rawEstimatedTokens > 0)
+            {
+                var observedRatio = Math.Max(1.0, providerPromptTokens / (double)rawEstimatedTokens);
+                var calibrationKey = BuildCalibrationKey(sessionId, existing?.ModelId);
+                calibrationRatio = _promptCalibrationRatios.AddOrUpdate(
+                    calibrationKey,
+                    observedRatio,
+                    (_, current) => Math.Max(current, observedRatio));
+            }
 
-            // Preserve CaptureLlmRequest's accurate cumulative token count.
-            // Single-request provider usage (TotalTokens) represents only the
-            // most recent API call, not the full context window. Fall back to
-            // provider usage only when no prior snapshot exists.
-            var usedTokens = existing is { UsedTokens: > 0 }
-                ? existing.UsedTokens
-                : Math.Max(0, usage.TotalTokens ?? usage.PromptTokens ?? 0);
+            // Provider TotalTokens is the best lower bound for the next request:
+            // the completion becomes the next assistant-history message. Never let
+            // a provider-reported value be replaced by a smaller local estimate.
+            var usedTokens = Math.Max(
+                existing?.UsedTokens ?? 0,
+                Math.Max(0, usage.TotalTokens ?? usage.PromptTokens ?? 0));
 
             var snapshot = new ContextUsageSnapshot
             {
                 SessionId = sessionId,
                 RecordedAt = DateTimeOffset.UtcNow,
                 UsedTokens = usedTokens,
+                RawEstimatedTokens = rawEstimatedTokens,
                 MessageTokens = existing?.MessageTokens ?? 0,
                 ToolDefinitionTokens = existing?.ToolDefinitionTokens ?? 0,
                 SystemMessageTokens = existing?.SystemMessageTokens ?? 0,
@@ -214,9 +241,45 @@ namespace PuddingCode.Platform
                 ProviderPromptTokens = usage.PromptTokens,
                 ProviderCompletionTokens = usage.CompletionTokens,
                 ProviderTotalTokens = usage.TotalTokens,
+                ModelId = existing?.ModelId,
+                PromptCalibrationRatio = calibrationRatio,
             };
             Set(snapshot);
             return snapshot;
+        }
+
+        /// <summary>
+        /// Learns a conservative tokenizer lower bound from a Provider input-length rejection.
+        /// The Provider did not return the actual request size, but it proved that the current
+        /// request is larger than <paramref name="maxInputTokens"/>.
+        /// </summary>
+        public void RecordProviderInputLimitFailure(string sessionId, int maxInputTokens)
+        {
+            if (maxInputTokens <= 0 || !TryGet(sessionId, out var snapshot) || snapshot is null)
+                return;
+
+            var rawEstimatedTokens = snapshot.RawEstimatedTokens > 0
+                ? snapshot.RawEstimatedTokens
+                : snapshot.UsedTokens;
+            if (rawEstimatedTokens <= 0)
+                return;
+
+            var conservativeRatio = Math.Max(
+                1.05,
+                ((maxInputTokens + 1d) / rawEstimatedTokens) * 1.05);
+            var calibrationKey = BuildCalibrationKey(sessionId, snapshot.ModelId);
+            _promptCalibrationRatios.AddOrUpdate(
+                calibrationKey,
+                conservativeRatio,
+                (_, current) => Math.Max(current, conservativeRatio));
+        }
+
+        public double GetPromptCalibrationRatio(string sessionId, string? modelId)
+        {
+            var calibrationKey = BuildCalibrationKey(sessionId, modelId);
+            return _promptCalibrationRatios.TryGetValue(calibrationKey, out var ratio)
+                ? Math.Max(1.0, ratio)
+                : 1.0;
         }
 
         public static int CountTokens(string? text, string? modelId = null)
@@ -234,6 +297,26 @@ namespace PuddingCode.Platform
 
             var json = JsonSerializer.Serialize(tools, JsonOptions);
             return CountTokens(json, modelId);
+        }
+
+        private static int CountMessageTokens(ChatMessage message, string? modelId)
+        {
+            var tokenCount = CountTokens(message.Content, modelId)
+                + CountTokens(message.ReasoningContent, modelId)
+                + CountTokens(message.ToolCallId, modelId)
+                + 4;
+            if (message.ToolCalls is null)
+                return tokenCount;
+
+            foreach (var toolCall in message.ToolCalls)
+            {
+                tokenCount += CountTokens(toolCall.Id, modelId)
+                    + CountTokens(toolCall.Name, modelId)
+                    + CountTokens(toolCall.ArgumentsJson, modelId)
+                    + 8;
+            }
+
+            return tokenCount;
         }
 
         private static Tokenizer GetTokenizer(string? modelId)
@@ -269,5 +352,8 @@ namespace PuddingCode.Platform
 
             return "o200k_base";
         }
+
+        private static string BuildCalibrationKey(string sessionId, string? modelId)
+            => $"{sessionId}\u001f{modelId?.Trim() ?? string.Empty}";
     }
 }

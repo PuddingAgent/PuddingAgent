@@ -151,6 +151,9 @@ public sealed class LlmInvocationService : ILlmInvocationService
 #pragma warning restore CS0618
             KeyVaultId = FirstNonBlank(configOverride.KeyVaultId, resolved.Config.KeyVaultId),
             ModelId = FirstNonBlank(configOverride.ModelId, resolved.Config.ModelId),
+            MaxContextTokens = configOverride.MaxContextTokens ?? resolved.Config.MaxContextTokens,
+            MaxInputTokens = configOverride.MaxInputTokens ?? resolved.Config.MaxInputTokens,
+            MaxOutputTokens = configOverride.MaxOutputTokens ?? resolved.Config.MaxOutputTokens,
             ReasoningEffort = FirstNonBlank(configOverride.ReasoningEffort, resolved.Config.ReasoningEffort),
         };
 

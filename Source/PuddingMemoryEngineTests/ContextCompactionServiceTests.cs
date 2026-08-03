@@ -25,8 +25,8 @@ public sealed class ContextCompactionServiceTests
             maxOutputTokens: 20_000);
 
         Assert.AreEqual(ContextHealthState.Critical, health.State);
-        Assert.AreEqual(200_000, health.EffectiveWindowTokens);
-        Assert.AreEqual(40_000, health.RemainingTokens);
+        Assert.AreEqual(180_000, health.EffectiveWindowTokens);
+        Assert.AreEqual(20_000, health.RemainingTokens);
         Assert.IsTrue(health.ShouldAutoCompact);
         Assert.IsFalse(health.ShouldBlockSend);
     }
@@ -62,10 +62,10 @@ public sealed class ContextCompactionServiceTests
             maxOutputTokens: 20_000);
 
         Assert.AreEqual(90_000, health.UsedTokens);
-        Assert.AreEqual(130_000, health.EffectiveWindowTokens);
-        Assert.AreEqual(40_000, health.RemainingTokens);
-        Assert.AreEqual(ContextHealthState.Warning, health.State);
-        Assert.IsFalse(health.ShouldAutoCompact);
+        Assert.AreEqual(110_000, health.EffectiveWindowTokens);
+        Assert.AreEqual(20_000, health.RemainingTokens);
+        Assert.AreEqual(ContextHealthState.Critical, health.State);
+        Assert.IsTrue(health.ShouldAutoCompact);
     }
 
     [TestMethod]
@@ -104,12 +104,28 @@ public sealed class ContextCompactionServiceTests
             maxOutputTokens: 20_000);
 
         Assert.AreEqual(175_000, health.UsedTokens);
-        Assert.AreEqual(25_000, health.RemainingTokens);
+        Assert.AreEqual(5_000, health.RemainingTokens);
         Assert.AreEqual("provider_usage", health.UsageSource);
         Assert.AreEqual("provider_reported", health.UsageConfidence);
         Assert.AreEqual(150_000, health.ProviderPromptTokens);
         Assert.AreEqual(175_000, health.ProviderTotalTokens);
         Assert.IsTrue(health.ShouldAutoCompact);
+    }
+
+    [TestMethod]
+    public void ContextHealthEvaluator_UsesExplicitProviderInputLimit()
+    {
+        var health = new ContextHealthEvaluator().Evaluate(
+            sessionId: "session-qwen",
+            usedTokens: 985_215,
+            contextWindowTokens: 1_000_000,
+            maxOutputTokens: 4_096,
+            maxInputTokens: 983_616);
+
+        Assert.AreEqual(983_616, health.EffectiveWindowTokens);
+        Assert.AreEqual(0, health.RemainingTokens);
+        Assert.AreEqual(ContextHealthState.Blocking, health.State);
+        Assert.IsTrue(health.ShouldBlockSend);
     }
 
     [TestMethod]

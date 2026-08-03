@@ -56,6 +56,7 @@ public class JsonLlmConfigService : ILlmConfigService
                 ProviderId = m.ProviderId,
                 Name = m.Name,
                 MaxContextTokens = m.MaxContextTokens,
+                MaxInputTokens = m.MaxInputTokens,
                 MaxOutputTokens = m.MaxOutputTokens,
                 InputPricePer1MTokens = 0,
                 OutputPricePer1MTokens = 0,
@@ -91,6 +92,7 @@ public class JsonLlmConfigService : ILlmConfigService
             ApiKey = provider.ApiKey,
             ModelId = model.ModelId,
             MaxContextTokens = model.MaxContextTokens,
+            MaxInputTokens = model.MaxInputTokens,
             MaxOutputTokens = model.MaxOutputTokens,
         };
     }
@@ -124,6 +126,7 @@ public class JsonLlmConfigService : ILlmConfigService
             ApiKey = mem.ApiKey ?? provider.ApiKey,
             ModelId = resolvedModelId,
             MaxContextTokens = model?.MaxContextTokens,
+            MaxInputTokens = model?.MaxInputTokens,
             MaxOutputTokens = model?.MaxOutputTokens,
         };
     }
@@ -261,6 +264,7 @@ internal sealed record LlmModelEntry
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
     public int MaxContextTokens { get; init; } = 1048576;
+    public int? MaxInputTokens { get; init; }
     public int MaxOutputTokens { get; init; } = 16384;
     public bool IsDefault { get; init; }
     public bool IsDeprecated { get; init; }

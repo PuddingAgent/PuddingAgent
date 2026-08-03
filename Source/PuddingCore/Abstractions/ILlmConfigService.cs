@@ -82,6 +82,7 @@ public sealed record LlmModelInfo
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
     public int MaxContextTokens { get; init; }
+    public int? MaxInputTokens { get; init; }
     public int MaxOutputTokens { get; init; }
     public decimal InputPricePer1MTokens { get; init; }
     public decimal OutputPricePer1MTokens { get; init; }

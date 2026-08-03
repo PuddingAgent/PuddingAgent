@@ -90,9 +90,12 @@ Workspace Agent 编辑器应覆盖上述 Agent 可编辑字段，并按“基础
 再由 `TurnExecutionContext` 传给 Runtime。平台 `AgentExecutionGuardrails` 是硬上限，
 实例只能收紧上限，不能突破平台安全边界。
 
-`maxContextTokens` 不属于 Agent 实例配置。上下文容量的唯一运行时来源是
+`maxContextTokens`、`maxInputTokens` 与模型最大输出能力不属于 Agent 实例配置。模型容量的唯一运行时来源是
 `data/config/llm.providers.json` 中选中 Provider Model 的配置，执行快照通过
-provider/model 引用解析容量，禁止在 Agent manifest、Agent DTO 或 LLM Binding 中复制该值。
+provider/model 引用解析容量，禁止在 Agent manifest、Agent DTO 或 LLM Binding 中复制这些值。
+其中 `maxInputTokens` 用于表达 Provider 单次输入硬上限；有效输入预算统一取
+`min(maxInputTokens, maxContextTokens - maxOutputTokens - safetyBuffer)`。Agent manifest 的
+`maxReplyTokens` 只负责收紧本次执行的输出上限，并必须下传为 Provider 请求的 `max_tokens`。
 
 ## 内嵌 Web UI
 

@@ -62,6 +62,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         CancellationToken ct = default,
         int? contextWindowTokens = null,
         int? maxOutputTokens = null,
+        int? maxInputTokens = null,
         int toolCount = 0)
     {
         if (contextWindowTokens is not > 0)
@@ -75,7 +76,8 @@ public sealed class ContextCompactionService : IContextCompactionService
             sessionId,
             usage.UsedTokens,
             contextWindowTokens: contextWindowTokens.Value,
-            maxOutputTokens: maxOutputTokens ?? 2_048) with
+            maxOutputTokens: maxOutputTokens ?? 2_048,
+            maxInputTokens: maxInputTokens) with
         {
             UsageSource = usage.Source,
             UsageConfidence = usage.Confidence,

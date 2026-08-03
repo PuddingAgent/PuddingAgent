@@ -295,6 +295,7 @@ public sealed class SessionEventsControllerTests
             CancellationToken ct = default,
             int? contextWindowTokens = null,
             int? maxOutputTokens = null,
+            int? maxInputTokens = null,
             int toolCount = 0)
             => Task.FromResult(new ContextHealthSnapshot(
                 sessionId,
@@ -336,6 +337,7 @@ public sealed class SessionEventsControllerTests
             CancellationToken ct = default,
             int? contextWindowTokens = null,
             int? maxOutputTokens = null,
+            int? maxInputTokens = null,
             int toolCount = 0)
             => throw new NotSupportedException();
 

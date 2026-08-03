@@ -26,7 +26,7 @@ public sealed class ContextWindowManager
     private readonly IDbContextFactory<MemoryDbContext>? _memoryDbFactory;
     private readonly PuddingCode.Services.JsonlSessionReader? _jsonlReader;
     private readonly IContextCompactionService? _compactionService;
-        private readonly int _defaultToolCount;
+    private readonly int _defaultToolCount;
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _histories;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _historyLastAccessedAt;
     private readonly ConcurrentDictionary<string, TimeSpan> _historyTimeouts;
@@ -392,9 +392,18 @@ public sealed class ContextWindowManager
         bool preferDbContextWindow,
         string? workspaceId,
         string? agentId,
-        CancellationToken ct)
+        CancellationToken ct,
+        int? maxOutputTokens = null,
+        int? maxInputTokens = null)
     {
-        var autoCompacted = await TryAutoCompactAsync(sessionId, workspaceId, agentId, maxTokenBudget, ct);
+        var autoCompacted = await TryAutoCompactAsync(
+            sessionId,
+            workspaceId,
+            agentId,
+            maxTokenBudget,
+            maxOutputTokens,
+            maxInputTokens,
+            ct);
 
         if ((preferDbContextWindow || autoCompacted) && _memoryDbFactory is not null)
         {
@@ -430,6 +439,8 @@ public sealed class ContextWindowManager
         string? workspaceId,
         string? agentId,
         int maxTokenBudget,
+        int? maxOutputTokens,
+        int? maxInputTokens,
         CancellationToken ct)
     {
         if (_compactionService is null || string.IsNullOrWhiteSpace(workspaceId))
@@ -450,6 +461,8 @@ public sealed class ContextWindowManager
                 sessionId,
                 ct,
                 contextWindowTokens: maxTokenBudget,
+                maxOutputTokens: maxOutputTokens,
+                maxInputTokens: maxInputTokens,
                 toolCount: _defaultToolCount);
             var healthMs = (System.Diagnostics.Stopwatch.GetTimestamp() - healthStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;
 
