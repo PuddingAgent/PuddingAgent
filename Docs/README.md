@@ -53,6 +53,7 @@
 - `Docs/07架构/76Phase2A-3通用WebView2页面操作实施验收报告.md`
 - `Docs/07架构/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md`
 - `Docs/07架构/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md`
+- `Docs/07架构/79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md`
 
 ### 2. 智能体、运行时与协作
 

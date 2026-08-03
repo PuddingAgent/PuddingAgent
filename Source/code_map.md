@@ -29,6 +29,7 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 | `../Docs/07架构/76Phase2A-3通用WebView2页面操作实施验收报告.md` | Phase 2A-3 自动验收；10/10 AgentTools、56/56 Host、102/102 Desktop、真实 WebView2 TestSite、Release/Desktop smoke；真实 DeepSeek smoke 仍需用户测试配置 |
 | `../Docs/07架构/77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md` | 两段式验收：内部开发 Agent 交付 ready-for-external-deploy，外部控制器重启到新版本，Pudding 内新会话测试已加载的 DeepSeek Browser Tools 并交付 in-product-functional-complete，最终生命周期和退出回收仍由外部控制器验收 |
 | `../Docs/07架构/78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md` | 可交给 Pudding 内部开发 Agent 的下一包：实现 Browser Activity 脱敏导出和外部 Desktop/TestSite 生命周期控制脚本；内部只运行 PrepareOnly 并交付 ready-for-external-deploy，正式验收由外部 Codex 执行 |
+| `../Docs/07架构/79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md` | 真实 Agent 控制闭环开发包：冻结 cap-browser 到七项工具映射，沿 ToolExecution/RemoteRuntime/Bridge 传递脱敏调用来源，自动投影 Desktop 控制状态和 Agent Activity，并补齐 Runtime Profile 到认证 Bridge 的组合测试 |
 
 关键 Desktop 入口：
 
