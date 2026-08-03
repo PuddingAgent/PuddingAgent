@@ -389,3 +389,4 @@ Resources/
 /.tmp-test-out
 /build_out.txt
 ﻿/.tmp-*
+external/  
