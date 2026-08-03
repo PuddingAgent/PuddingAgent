@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
 using PuddingCode.Observability;
@@ -13,10 +14,14 @@ namespace PuddingRuntime.Services.Tools;
 /// Agent 自我诊断工具 — 让 Agent 读取自身的运行时指标，
 /// 实现自我观察 → 自我优化的反馈闭环。
 ///
-/// 支持三种诊断模式：
+/// 支持七种诊断模式：
 ///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）
 ///   - slowest_tools: 列出最慢的 N 个工具
 ///   - cache_health: 查询缓存命中率和 prefix churn 来源
+///   - sub_agent_stats: 查询子代理调用统计
+///   - compaction_stats: 查询压缩统计
+///   - latency_breakdown: 查询延迟分解
+///   - token_breakdown: 返回当前（或指定 session_id）最近一次请求的分层 token 分解（MessageTokens/ToolDefinitionTokens/SystemMessageTokens/HistoryMessageTokens）
 /// </summary>
 [Tool(
     id: "agent_diagnostics",
@@ -59,8 +64,9 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "cache_health" => await GetCacheHealthAsync(sessionId, ct),
             "sub_agent_stats" => await GetSubAgentStatsAsync(args, context, ct),
             "compaction_stats" => await GetCompactionStatsAsync(args, limit, ct),
-            "latency_breakdown" => await GetLatencyBreakdownAsync(args, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown." })
+                        "latency_breakdown" => await GetLatencyBreakdownAsync(args, ct),
+            "token_breakdown" => await GetTokenBreakdownAsync(args, context, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -403,6 +409,78 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         }
     }
 
+        private async Task<string> GetTokenBreakdownAsync(AgentDiagnosticsArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        try
+        {
+            var sessionId = args.SessionId ?? context.SessionId;
+
+            // 优先从内存 ContextUsageSnapshotStore 获取
+            using var scope = _scopeFactory.CreateScope();
+            var snapshotStore = scope.ServiceProvider.GetService<PuddingCode.Platform.ContextUsageSnapshotStore>();
+
+            if (snapshotStore is not null && !string.IsNullOrWhiteSpace(sessionId)
+                && snapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    source = "memory",
+                    session_id = sessionId,
+                    recorded_at = snapshot.RecordedAt,
+                    message_tokens = snapshot.MessageTokens,
+                    tool_definition_tokens = snapshot.ToolDefinitionTokens,
+                    system_message_tokens = snapshot.SystemMessageTokens,
+                    history_message_tokens = snapshot.HistoryMessageTokens,
+                    total_estimated_tokens = snapshot.UsedTokens,
+                    message_count = snapshot.MessageCount,
+                    tool_count = snapshot.ToolCount,
+                    confidence = snapshot.Confidence,
+                }, new JsonSerializerOptions { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            }
+
+            // 回退 DB 最新记录
+            var db = scope.ServiceProvider.GetRequiredService<PuddingPlatform.Data.PlatformDbContext>();
+            var latest = await db.TokenUsageEvents
+                .AsNoTracking()
+                .Where(e => e.SessionId == sessionId && (e.MessageTokens != null || e.ToolDefinitionTokens != null || e.SystemMessageTokens != null || e.HistoryMessageTokens != null))
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Select(e => new
+                {
+                    e.SessionId,
+                    e.OccurredAtUtc,
+                    e.MessageTokens,
+                    e.ToolDefinitionTokens,
+                    e.SystemMessageTokens,
+                    e.HistoryMessageTokens,
+                    e.PromptTokens,
+                    e.CompletionTokens,
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (latest is not null)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    source = "db",
+                    session_id = latest.SessionId,
+                    recorded_at = latest.OccurredAtUtc,
+                    message_tokens = latest.MessageTokens,
+                    tool_definition_tokens = latest.ToolDefinitionTokens,
+                    system_message_tokens = latest.SystemMessageTokens,
+                    history_message_tokens = latest.HistoryMessageTokens,
+                    prompt_tokens = latest.PromptTokens,
+                    completion_tokens = latest.CompletionTokens,
+                }, new JsonSerializerOptions { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            }
+
+            return JsonSerializer.Serialize(new { error = "No token breakdown data available for this session.", session_id = sessionId });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = "Failed to compute token breakdown.", detail = ex.Message });
+        }
+    }
+
     private static string TruncateError(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return "(empty)";
@@ -412,7 +490,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
 public sealed record AgentDiagnosticsArgs
 {
-    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, or sub_agent_stats")]
+    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, or token_breakdown")]
     public string? Action { get; init; }
 
     [ToolParam("tool name to query (for tool_stats action)")]

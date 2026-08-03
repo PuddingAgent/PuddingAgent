@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
@@ -390,8 +390,12 @@ public class StatsApiController(
                 e.TotalTokens,
                 e.CacheHitTokens,
                 e.CacheMissTokens,
-                e.CacheEligibleTokens,
+                                e.CacheEligibleTokens,
                 e.CacheHitRate,
+                e.MessageTokens,
+                e.ToolDefinitionTokens,
+                e.SystemMessageTokens,
+                e.HistoryMessageTokens,
                 e.InputCost,
                 e.OutputCost,
                 e.CacheHitCost,

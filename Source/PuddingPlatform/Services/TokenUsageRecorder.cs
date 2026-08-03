@@ -198,7 +198,11 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 TotalTokens = normalized.TotalTokens,
                 CacheHitTokens = normalized.CacheHitTokens,
                 CacheMissTokens = normalized.CacheMissTokens,
-                CacheEligibleTokens = normalized.CacheEligibleTokens,
+                                CacheEligibleTokens = normalized.CacheEligibleTokens,
+                MessageTokens = ResolveLayerToken(sessionId, s => s.MessageTokens),
+                ToolDefinitionTokens = ResolveLayerToken(sessionId, s => s.ToolDefinitionTokens),
+                SystemMessageTokens = ResolveLayerToken(sessionId, s => s.SystemMessageTokens),
+                HistoryMessageTokens = ResolveLayerToken(sessionId, s => s.HistoryMessageTokens),
                 CacheHitRate = normalized.CacheHitRate,
                 InputCost = normalized.InputCost,
                 OutputCost = normalized.OutputCost,
@@ -575,6 +579,17 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             PrefixChangeReason = reason,
             CreatedAtUtc = occurredAtUtc,
         };
+    }
+
+    private int? ResolveLayerToken(string? sessionId, Func<ContextUsageSnapshot, int> selector)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || _contextUsageSnapshotStore is null)
+            return null;
+
+        if (_contextUsageSnapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
+            return selector(snapshot);
+
+        return null;
     }
 
     private static string ClassifyPrefixChange(

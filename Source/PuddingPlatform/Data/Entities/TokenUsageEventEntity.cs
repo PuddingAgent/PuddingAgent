@@ -55,6 +55,18 @@ public class TokenUsageEventEntity
     public long CacheMissTokens { get; set; }
     public long CacheEligibleTokens { get; set; }
 
+    /// <summary>请求消息（user + assistant + system）的 token 估算值（分层分解）。</summary>
+    public int? MessageTokens { get; set; }
+
+    /// <summary>工具定义的 token 估算值（分层分解）。</summary>
+    public int? ToolDefinitionTokens { get; set; }
+
+    /// <summary>System 消息的 token 估算值（分层分解）。</summary>
+    public int? SystemMessageTokens { get; set; }
+
+    /// <summary>历史消息（非 system）的 token 估算值（分层分解）。</summary>
+    public int? HistoryMessageTokens { get; set; }
+
     /// <summary>缓存命中率 0.0 ~ 1.0，无缓存事件时为 null</summary>
     public double? CacheHitRate { get; set; }
 
