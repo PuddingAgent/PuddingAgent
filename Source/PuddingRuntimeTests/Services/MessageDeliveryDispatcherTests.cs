@@ -191,6 +191,37 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
+    public async Task HandleAsync_OrdinaryDeliveryBusyDeferral_StaysImmediatelyClaimableForIdleDrain()
+    {
+        // Busy deferral is queueing, not failure backoff. AvailableAt must stay in
+        // the present so the agent.availability.changed(idle) drain (and the recovery
+        // loop) can claim the delivery immediately after the agent frees up. A future
+        // AvailableAt is filtered out by ClaimNextAsync (AvailableAt <= now) and
+        // re-introduces the 30s wake delay this test guards against.
+        var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames =
+            [
+                ServerSentEventFrame.Json("error", new
+                {
+                    error = "Agent 'agent-b' is busy.",
+                    executionState = "Busy",
+                }),
+            ],
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        Assert.HasCount(1, inbox.Retried);
+        Assert.AreEqual("d1", inbox.Retried[0].DeliveryId);
+        Assert.IsTrue(
+            inbox.Retried[0].AvailableAt <= DateTimeOffset.UtcNow,
+            $"busy deferral must stay immediately claimable but AvailableAt was {inbox.Retried[0].AvailableAt:o}");
+    }
+
+    [TestMethod]
     public async Task HandleAsync_DeadLettersDeliveryWhenThirdRuntimeAttemptFails()
     {
         var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };

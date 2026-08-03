@@ -467,13 +467,18 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
             if (result.ExecutionState == AgentExecutionState.Busy)
             {
+                // Busy deferral is queueing, not failure backoff: keep the delivery
+                // immediately claimable so the agent.availability.changed(idle) drain
+                // delivers it the moment the agent frees up. A future AvailableAt is
+                // filtered out by ClaimNextAsync and re-introduces the 30s wake delay.
+                // The 10s recovery loop remains the backstop if the idle event is lost.
                 foreach (var item in batch)
                 {
                     await inbox.RetryAsync(
                         item.DeliveryId,
                         executionId,
                         error,
-                        DateTimeOffset.UtcNow.AddSeconds(30),
+                        DateTimeOffset.UtcNow,
                         ct);
                     LogExecutionResult(
                         item,
