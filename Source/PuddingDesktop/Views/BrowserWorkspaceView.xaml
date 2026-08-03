@@ -191,6 +191,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
@@ -230,8 +231,34 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Control state + buttons -->
+                    <!-- Agent Status Card (doc 6.3): compact status display -->
                     <Border Grid.Row="2" Padding="10,6"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                            x:Name="AgentStatusCard">
+                        <StackPanel>
+                            <!-- State indicator row -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                                <Ellipse x:Name="StatusDot" Width="8" Height="8" Margin="0,0,6,0"
+                                         Fill="{DynamicResource TextSecondaryBrush}"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock x:Name="StatusTitleText" Text="等待 Agent 操作"
+                                           FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <!-- Agent summary line -->
+                            <TextBlock x:Name="AgentSummaryLine" Text="-"
+                                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="14,0,0,1" TextWrapping="Wrap"/>
+                            <!-- Target line -->
+                            <TextBlock x:Name="AgentTargetLine" Text="目标：-"
+                                       FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="14,0,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Control state + buttons -->
+                    <Border Grid.Row="3" Padding="10,6"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                         <StackPanel>
                             <TextBlock Text="Control" FontSize="11" FontWeight="SemiBold"
@@ -250,7 +277,7 @@
                     </Border>
 
                     <!-- Activity log -->
-                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Padding="10,6">
+                    <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto" Padding="10,6">
                         <ItemsControl x:Name="ActivityList" ItemsSource="{Binding Activities}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -274,7 +301,7 @@
                     </ScrollViewer>
 
                     <!-- Target summary -->
-                    <Border Grid.Row="4" Padding="10,6"
+                    <Border Grid.Row="5" Padding="10,6"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
                         <TextBlock x:Name="TargetSummaryText" Text="{Binding AgentTargetSummary}"
                                    FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"

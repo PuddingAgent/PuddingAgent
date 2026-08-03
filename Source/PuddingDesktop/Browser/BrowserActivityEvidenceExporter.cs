@@ -71,10 +71,19 @@ public sealed class BrowserActivityEvidenceExporter : IBrowserActivityEvidenceEx
         var finalPath = Path.Combine(destinationDirectory, fileName);
         var tempPath = finalPath + ".tmp";
 
+        // Sort activities by time for audit traceability
+        var ordered = document with
+        {
+            Activities = document.Activities
+                .OrderBy(a => a.StartedAt)
+                .ThenBy(a => a.CommandName, StringComparer.Ordinal)
+                .ToList()
+        };
+
         // Write to temp file first
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await JsonSerializer.SerializeAsync(stream, document, JsonOptions, cancellationToken);
+            await JsonSerializer.SerializeAsync(stream, ordered, JsonOptions, cancellationToken);
             await stream.FlushAsync(cancellationToken);
         }
 

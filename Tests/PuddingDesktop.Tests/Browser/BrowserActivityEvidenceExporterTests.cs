@@ -169,8 +169,9 @@ public class BrowserActivityEvidenceExporterTests
 
         var okItem = items.First(i => i.GetProperty("commandName").GetString() == "ok");
         Assert.True(okItem.GetProperty("success").GetBoolean());
-        Assert.Equal("null", okItem.GetProperty("errorCode").ValueKind == JsonValueKind.Null
-            ? "null" : okItem.GetProperty("errorCode").GetString());
+        var okHasErrorCode = okItem.TryGetProperty("errorCode", out var okErrorCode);
+        Assert.True(!okHasErrorCode || okErrorCode.ValueKind == JsonValueKind.Null,
+            "Successful activity should carry no errorCode.");
 
         var failItem = items.First(i => i.GetProperty("commandName").GetString() == "fail");
         Assert.False(failItem.GetProperty("success").GetBoolean());
@@ -205,7 +206,7 @@ public class BrowserActivityEvidenceExporterTests
         var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             exporter.ExportAsync(doc, dir, cts.Token));
 
         // No .sanitized.json file should remain

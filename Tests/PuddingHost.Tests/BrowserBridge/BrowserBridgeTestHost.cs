@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.WebSockets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -9,6 +9,7 @@ using PuddingBrowser.Protocol;
 using PuddingHost.BrowserBridge;
 using PuddingHost.Hosting;
 using PuddingRuntime.Services.Tools;
+using PuddingRuntime.Services;
 
 namespace PuddingHost.Tests.BrowserBridge;
 
@@ -84,6 +85,7 @@ internal sealed class BrowserBridgeTestHost : IAsyncDisposable
         }
         builder.Services.AddSingleton<IBrowserBridgeClock>(clock);
         builder.Services.AddPuddingToolRegistry();
+        builder.Services.AddSingleton<SandboxExecutor>();
         builder.Services.AddSingleton(new DesktopControlTokenValidator(dataRoot));
         builder.Services.AddSingleton(hostOptions);
 

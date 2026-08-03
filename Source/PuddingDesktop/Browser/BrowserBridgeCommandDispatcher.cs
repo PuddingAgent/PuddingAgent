@@ -27,6 +27,7 @@ public sealed class BrowserBridgeCommandDispatcher
     public IReadOnlyCollection<AgentBrowserActivitySnapshot> RecentActivities
         => _activities.Select(activity => activity.Snapshot()).ToArray();
     public event EventHandler<AgentBrowserActivityChangedEventArgs>? ActivityChanged;
+    public event EventHandler<AgentBrowserOperationStateChangedEventArgs>? OperationStateChanged;
 
     public void SetHandler(IBrowserCommandHandler handler) => _handler = handler;
 
@@ -53,15 +54,26 @@ public sealed class BrowserBridgeCommandDispatcher
             return cached!;
         }
 
-        // Gate: pause/takeover rejects new Agent commands
+        // Gate: pause/takeover rejects new Agent commands.
+        // Record a failed activity so Agent and user understand the rejection (doc 6.1).
         if (_paused)
         {
+            var pausedActivity = new AgentBrowserActivity(
+                command.OperationId, command.Name,
+                command.PageId ?? command.ContextId ?? "-", command.Origin);
+            pausedActivity.Complete(false, BrowserBridgeErrorCodes.BrowserPaused);
+            RecordActivity(pausedActivity);
             return CacheAndReturn(Error(command.OperationId,
                 BrowserBridgeErrorCodes.BrowserPaused, "Browser is paused"));
         }
 
         if (_userTakeover)
         {
+            var takeoverActivity = new AgentBrowserActivity(
+                command.OperationId, command.Name,
+                command.PageId ?? command.ContextId ?? "-", command.Origin);
+            takeoverActivity.Complete(false, BrowserBridgeErrorCodes.BrowserUserTakeover);
+            RecordActivity(takeoverActivity);
             return CacheAndReturn(Error(command.OperationId,
                 BrowserBridgeErrorCodes.BrowserUserTakeover, "User has taken over browser control"));
         }
@@ -89,10 +101,14 @@ public sealed class BrowserBridgeCommandDispatcher
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalCt, deadlineCts.Token);
         _activeOperations[command.OperationId] = linkedCts;
 
+        // Publish operation state after command passes gates and enters active set (doc 6.1)
+        PublishOperationState(command.Origin);
+
         var activity = new AgentBrowserActivity(
             command.OperationId,
             command.Name,
-            command.PageId ?? command.ContextId ?? "-");
+            command.PageId ?? command.ContextId ?? "-",
+            command.Origin);
         RecordActivity(activity);
 
         try
@@ -150,6 +166,9 @@ public sealed class BrowserBridgeCommandDispatcher
         {
             _activeOperations.TryRemove(command.OperationId, out _);
             _forcedFailures.TryRemove(command.OperationId, out _);
+
+            // Publish operation state after command completes / is removed (doc 6.1)
+            PublishOperationState(null);
         }
     }
 
@@ -187,9 +206,37 @@ public sealed class BrowserBridgeCommandDispatcher
     }
 
     private void PublishActivity(AgentBrowserActivity activity)
-        => ActivityChanged?.Invoke(
-            this,
-            new AgentBrowserActivityChangedEventArgs(activity.Snapshot()));
+    {
+        try
+        {
+            ActivityChanged?.Invoke(
+                this,
+                new AgentBrowserActivityChangedEventArgs(activity.Snapshot()));
+        }
+        catch
+        {
+            // Subscriber exception must not break command execution (doc 6.1)
+        }
+    }
+
+    private void PublishOperationState(BrowserBridgeCommandOrigin? mostRecentOrigin)
+    {
+        try
+        {
+            OperationStateChanged?.Invoke(
+                this,
+                new AgentBrowserOperationStateChangedEventArgs(
+                    new AgentBrowserOperationStateSnapshot
+                    {
+                        ActiveOperationCount = _activeOperations.Count,
+                        MostRecentOrigin = mostRecentOrigin
+                    }));
+        }
+        catch
+        {
+            // Subscriber exception must not break command execution (doc 6.1)
+        }
+    }
 
     private static BrowserBridgeCommandResult Error(Guid operationId, string code, string message)
         => new()
@@ -221,12 +268,22 @@ public sealed class AgentBrowserActivity
     public DateTimeOffset? CompletedAt { get; private set; }
     public bool? Success { get; private set; }
     public string? ErrorCode { get; private set; }
+    public string? AgentInstanceId { get; }
+    public string? SessionId { get; }
+    public string? RunId { get; }
+    public string? ToolCallId { get; }
+    public string? ToolName { get; }
 
-    public AgentBrowserActivity(Guid operationId, string commandName, string target)
+    public AgentBrowserActivity(Guid operationId, string commandName, string target, BrowserBridgeCommandOrigin? origin = null)
     {
         OperationId = operationId;
         CommandName = commandName;
         Target = target;
+        AgentInstanceId = origin?.AgentInstanceId;
+        SessionId = origin?.SessionId;
+        RunId = origin?.RunId;
+        ToolCallId = origin?.ToolCallId;
+        ToolName = origin?.ToolName;
     }
 
     public void Complete(bool success, string? errorCode)
@@ -244,7 +301,12 @@ public sealed class AgentBrowserActivity
         StartedAt = StartedAt,
         CompletedAt = CompletedAt,
         Success = Success,
-        ErrorCode = ErrorCode
+        ErrorCode = ErrorCode,
+        AgentInstanceId = AgentInstanceId,
+        SessionId = SessionId,
+        RunId = RunId,
+        ToolCallId = ToolCallId,
+        ToolName = ToolName
     };
 }
 
@@ -257,6 +319,11 @@ public sealed record AgentBrowserActivitySnapshot
     public DateTimeOffset? CompletedAt { get; init; }
     public bool? Success { get; init; }
     public string? ErrorCode { get; init; }
+    public string? AgentInstanceId { get; init; }
+    public string? SessionId { get; init; }
+    public string? RunId { get; init; }
+    public string? ToolCallId { get; init; }
+    public string? ToolName { get; init; }
     public bool IsCompleted => CompletedAt.HasValue;
 }
 
@@ -265,5 +332,25 @@ public sealed class AgentBrowserActivityChangedEventArgs : EventArgs
     public AgentBrowserActivitySnapshot Snapshot { get; }
 
     public AgentBrowserActivityChangedEventArgs(AgentBrowserActivitySnapshot snapshot)
+        => Snapshot = snapshot;
+}
+
+/// <summary>
+/// Snapshot of current operation state for automatic control state management (doc 6.2).
+/// </summary>
+public sealed record AgentBrowserOperationStateSnapshot
+{
+    public required int ActiveOperationCount { get; init; }
+    public BrowserBridgeCommandOrigin? MostRecentOrigin { get; init; }
+}
+
+/// <summary>
+/// Event args for OperationStateChanged, carrying the current operation state snapshot.
+/// </summary>
+public sealed class AgentBrowserOperationStateChangedEventArgs : EventArgs
+{
+    public AgentBrowserOperationStateSnapshot Snapshot { get; }
+
+    public AgentBrowserOperationStateChangedEventArgs(AgentBrowserOperationStateSnapshot snapshot)
         => Snapshot = snapshot;
 }

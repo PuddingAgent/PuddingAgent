@@ -72,6 +72,7 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
             // Bind dispatcher to controller — this is the critical product wiring
             dispatcher.SetHandler(_controller);
             dispatcher.ActivityChanged += OnActivityChanged;
+            dispatcher.OperationStateChanged += OnOperationStateChanged;
 
             // Subscribe to bridge state changes
             _bridgeClient.StateChanged += OnBridgeStateChanged;
@@ -332,12 +333,19 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
                 break;
             case nameof(BrowserWorkspaceController.ControlState):
                 ControlStateText.Text = _controller?.ControlState.ToString() ?? "Idle";
+                UpdateStatusCardVisuals();
                 break;
             case nameof(BrowserWorkspaceController.Tabs):
                 UpdateEmptyState();
                 break;
             case nameof(BrowserWorkspaceController.AgentTargetPageId):
                 TargetSummaryText.Text = _controller?.AgentTargetSummary ?? "No agent target";
+                AgentTargetLine.Text = _controller?.AgentTargetPageId is { } pageId
+                    ? $"目标：{pageId.Value}"
+                    : "目标：-";
+                break;
+            case nameof(BrowserWorkspaceController.CurrentAgentSummary):
+                AgentSummaryLine.Text = _controller?.CurrentAgentSummary ?? "-";
                 break;
         }
     }
@@ -354,6 +362,70 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
         catch (Exception ex)
         {
             StatusBarText.Text = $"Activity update failed: {ex.Message}";
+        }
+    }
+
+    private async void OnOperationStateChanged(object? sender, AgentBrowserOperationStateChangedEventArgs e)
+    {
+        if (_disposed) return;
+        var controller = _controller;
+        if (controller is null) return;
+
+        try
+        {
+            // Must dispatch to UI thread before calling controller (doc 6.3)
+            if (!Dispatcher.CheckAccess())
+            {
+                await Dispatcher.InvokeAsync(
+                    () => controller.ApplyOperationStateAsync(e.Snapshot, CancellationToken.None));
+            }
+            else
+            {
+                await controller.ApplyOperationStateAsync(e.Snapshot, CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusBarText.Text = $"Operation state update failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Updates the status card visuals based on current ControlState (doc 6.3).
+    /// </summary>
+    private void UpdateStatusCardVisuals()
+    {
+        var state = _controller?.ControlState ?? AgentBrowserControlState.Idle;
+        switch (state)
+        {
+            case AgentBrowserControlState.AgentControlling:
+                StatusDot.Fill = FindResource("AccentBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.DodgerBlue;
+                StatusTitleText.Text = "● Agent 正在控制";
+                StatusTitleText.Foreground = FindResource("AccentBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.DodgerBlue;
+                break;
+            case AgentBrowserControlState.Paused:
+                StatusDot.Fill = FindResource("WarningBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Orange;
+                StatusTitleText.Text = "● 已暂停";
+                StatusTitleText.Foreground = FindResource("WarningBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Orange;
+                break;
+            case AgentBrowserControlState.UserTakeover:
+                StatusDot.Fill = FindResource("TextPrimaryBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Gray;
+                StatusTitleText.Text = "👤 你正在控制";
+                StatusTitleText.Foreground = FindResource("TextPrimaryBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Gray;
+                break;
+            default: // Idle
+                StatusDot.Fill = FindResource("TextSecondaryBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Gray;
+                StatusTitleText.Text = "等待 Agent 操作";
+                StatusTitleText.Foreground = FindResource("TextSecondaryBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Gray;
+                break;
         }
     }
 
@@ -418,7 +490,10 @@ public partial class BrowserWorkspaceView : UserControl, IAsyncDisposable
                 _dispatcher?.ClearHandler(_controller);
 
             if (_dispatcher is not null)
+            {
                 _dispatcher.ActivityChanged -= OnActivityChanged;
+                _dispatcher.OperationStateChanged -= OnOperationStateChanged;
+            }
 
             if (_bridgeClient is not null)
                 _bridgeClient.StateChanged -= OnBridgeStateChanged;

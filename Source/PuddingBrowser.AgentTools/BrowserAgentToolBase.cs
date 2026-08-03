@@ -19,13 +19,8 @@ public abstract class BrowserAgentToolBase<TArgs>(
     /// Pushes the tool call origin derived from the execution context.
     /// The origin is available to RemoteBrowserRuntime via IBrowserOperationOriginAccessor.Current.
     /// </summary>
-    public override async Task<ToolExecutionResult> ExecuteAsync(
-        ToolExecutionRequest request,
-        CancellationToken ct = default)
-    {
-        using var _ = PushOrigin(request);
-        return await base.ExecuteAsync(request, ct);
-    }
+    protected override IDisposable? BeginExecutionScope(ToolExecutionRequest request)
+        => PushOrigin(request);
 
     private IDisposable PushOrigin(ToolExecutionRequest request)
     {
@@ -33,12 +28,12 @@ public abstract class BrowserAgentToolBase<TArgs>(
         var identity = context.ExecutionIdentity;
         var origin = new BrowserOperationOrigin
         {
-            WorkspaceId = identity.WorkspaceId ?? "",
-            AgentInstanceId = identity.ConfigurationAgentInstanceId ?? identity.AgentInstanceId ?? "",
-            SessionId = identity.SessionId ?? "",
-            ConversationId = identity.ConversationId,
-            RunId = identity.RunId,
-            ToolCallId = identity.ToolCallId,
+            WorkspaceId = context.WorkspaceId,
+            AgentInstanceId = context.ConfigurationAgentInstanceId ?? context.AgentInstanceId,
+            SessionId = context.SessionId,
+            ConversationId = identity?.ConversationId,
+            RunId = identity?.RunId,
+            ToolCallId = identity?.ToolCallId,
             ToolName = Descriptor.ToolId
         };
         return OriginAccessor.Push(origin);

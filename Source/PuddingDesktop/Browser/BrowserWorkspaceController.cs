@@ -38,7 +38,9 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
     Task SetUserTakeoverAsync(bool enabled, CancellationToken ct);
     Task SetPausedAsync(bool paused, CancellationToken ct);
     Task ApplyActivityAsync(AgentBrowserActivitySnapshot snapshot, CancellationToken ct);
+    Task ApplyOperationStateAsync(AgentBrowserOperationStateSnapshot snapshot, CancellationToken ct);
     Task<BrowserActivityEvidenceDocument> CaptureActivityEvidenceAsync(DateTimeOffset capturedAt, CancellationToken ct);
+    string CurrentAgentSummary { get; }
 }
 
 /// <summary>
@@ -59,6 +61,11 @@ public sealed class AgentBrowserActivityItem : INotifyPropertyChanged
     public string? ErrorCode => _errorCode;
     public bool IsCompleted => _isCompleted;
     public bool? Success => _success;
+    public string? AgentInstanceId { get; init; }
+    public string? SessionId { get; init; }
+    public string? RunId { get; init; }
+    public string? ToolCallId { get; init; }
+    public string? ToolName { get; init; }
     public long DurationMs => _completedAt is { } completed
         ? Math.Max(0, (long)(completed - StartedAt).TotalMilliseconds)
         : 0;
@@ -116,6 +123,12 @@ public sealed class BrowserWorkspaceController :
     private string? _dataRoot;
     private bool _disposed;
 
+    // State machine flags (doc 6.2): UserTakeover > Paused > AgentControlling > Idle
+    private bool _userTakeover;
+    private bool _paused;
+    private AgentBrowserOperationStateSnapshot? _lastOperationSnapshot;
+    private string? _currentAgentSummary;
+
     public ObservableCollection<BrowserTabViewModel> Tabs { get; } = new();
     public ObservableCollection<AgentBrowserActivityItem> Activities { get; } = new();
 
@@ -140,7 +153,14 @@ public sealed class BrowserWorkspaceController :
     public BrowserBridgeConnectionState BridgeState
     {
         get => _bridgeState;
-        set { _bridgeState = value; OnPropertyChanged(); }
+        set
+        {
+            _bridgeState = value;
+            OnPropertyChanged();
+            // Clear current agent summary when bridge disconnects (doc 6.2)
+            if (value == BrowserBridgeConnectionState.Disconnected)
+                CurrentAgentSummary = null;
+        }
     }
 
     public BrowserContextId? ActiveContextId => _activeContextId;
@@ -154,6 +174,12 @@ public sealed class BrowserWorkspaceController :
     public string AgentTargetSummary => _agentTargetPageId is { } pageId
         ? $"Agent target: {Tabs.FirstOrDefault(tab => tab.PageId == pageId)?.Title ?? pageId.Value}"
         : "No agent target";
+
+    public string CurrentAgentSummary
+    {
+        get => _currentAgentSummary ?? "-";
+        private set { _currentAgentSummary = value; OnPropertyChanged(); }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -461,14 +487,52 @@ public sealed class BrowserWorkspaceController :
 
     public Task SetUserTakeoverAsync(bool enabled, CancellationToken ct)
     {
-        ControlState = enabled ? AgentBrowserControlState.UserTakeover : AgentBrowserControlState.AgentControlling;
+        _userTakeover = enabled;
+        RecalculateControlState();
         return Task.CompletedTask;
     }
 
     public Task SetPausedAsync(bool paused, CancellationToken ct)
     {
-        ControlState = paused ? AgentBrowserControlState.Paused : AgentBrowserControlState.AgentControlling;
+        _paused = paused;
+        RecalculateControlState();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Applies operation state snapshot from Dispatcher and recalculates control state.
+    /// Priority: UserTakeover > Paused > AgentControlling > Idle (doc 6.2).
+    /// </summary>
+    public async Task ApplyOperationStateAsync(AgentBrowserOperationStateSnapshot snapshot, CancellationToken ct)
+    {
+        await _uiDispatcher.InvokeAsync(() =>
+        {
+            _lastOperationSnapshot = snapshot;
+
+            // Update current agent summary from most recent origin
+            if (snapshot.MostRecentOrigin is { } origin)
+            {
+                CurrentAgentSummary = $"{origin.AgentInstanceId} · {origin.ToolName}";
+            }
+
+            RecalculateControlState();
+            return Task.CompletedTask;
+        }, ct);
+    }
+
+    /// <summary>
+    /// Recalculates ControlState per fixed priority: UserTakeover > Paused > AgentControlling > Idle.
+    /// </summary>
+    private void RecalculateControlState()
+    {
+        if (_userTakeover)
+            ControlState = AgentBrowserControlState.UserTakeover;
+        else if (_paused)
+            ControlState = AgentBrowserControlState.Paused;
+        else if (_lastOperationSnapshot?.ActiveOperationCount > 0)
+            ControlState = AgentBrowserControlState.AgentControlling;
+        else
+            ControlState = AgentBrowserControlState.Idle;
     }
 
     /// <summary>
@@ -476,19 +540,18 @@ public sealed class BrowserWorkspaceController :
     /// Only copies safe fields: command name, page identity, result, and error codes.
     /// Never includes tool parameters, fill/text values, DOM content, URLs, cookies, or tokens.
     /// </summary>
-    public Task<BrowserActivityEvidenceDocument> CaptureActivityEvidenceAsync(
+    public async Task<BrowserActivityEvidenceDocument> CaptureActivityEvidenceAsync(
         DateTimeOffset capturedAt, CancellationToken ct)
     {
-        return _uiDispatcher.InvokeAsync(() =>
+        BrowserActivityEvidenceDocument? result = null;
+        await _uiDispatcher.InvokeAsync(() =>
         {
             var activities = new List<BrowserActivityEvidenceItem>(Math.Min(Activities.Count, MaxActivityItems));
             foreach (var item in Activities.Take(MaxActivityItems))
             {
                 // Sanitize Target: only keep stable context/page IDs.
                 // If Target is not a recognized context/page ID pattern, use "-".
-                var target = item.Target;
-                if (string.IsNullOrWhiteSpace(target))
-                    target = "-";
+                var target = SanitizeEvidenceTarget(item.Target);
 
                 activities.Add(new BrowserActivityEvidenceItem
                 {
@@ -505,7 +568,7 @@ public sealed class BrowserWorkspaceController :
             // Sort by StartedAt ascending for faithful call order
             activities.Sort((a, b) => a.StartedAt.CompareTo(b.StartedAt));
 
-            return new BrowserActivityEvidenceDocument
+            result = new BrowserActivityEvidenceDocument
             {
                 SchemaVersion = 1,
                 CapturedAt = capturedAt,
@@ -516,7 +579,31 @@ public sealed class BrowserWorkspaceController :
                 AgentTargetPageId = _agentTargetPageId?.Value,
                 Activities = activities
             };
+            return Task.CompletedTask;
         }, ct);
+        return result!;
+    }
+
+    /// <summary>
+    /// Allowlist validation for evidence Target values. Real page/context IDs
+    /// contain only letters, digits, dots and hyphens (GUID-like tokens), max
+    /// 128 chars. Anything else (URLs, selectors, free text, or values with
+    /// underscores/colons/slashes) is replaced with "-" so the sanitized
+    /// export can never leak user data smuggled through Target (doc 79 7.3).
+    /// </summary>
+    private static string SanitizeEvidenceTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+            return "-";
+        if (target.Length > 128)
+            return "-";
+        foreach (var c in target)
+        {
+            var allowed = c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '.' or '-';
+            if (!allowed)
+                return "-";
+        }
+        return target;
     }
 
     // ─── IBrowserCommandHandler ──────────────────────────────────────────────
@@ -964,6 +1051,9 @@ public sealed class BrowserWorkspaceController :
             {
                 AgentTargetPageId = null;
                 OnPropertyChanged(nameof(AgentTargetSummary));
+
+                // Clear current agent summary when target page closes (doc 6.2)
+                CurrentAgentSummary = null;
             }
 
             // Activate adjacent page if this was active
@@ -1025,7 +1115,12 @@ public sealed class BrowserWorkspaceController :
                     OperationId = snapshot.OperationId,
                     CommandName = snapshot.CommandName,
                     Target = snapshot.Target,
-                    StartedAt = snapshot.StartedAt
+                    StartedAt = snapshot.StartedAt,
+                    AgentInstanceId = snapshot.AgentInstanceId,
+                    SessionId = snapshot.SessionId,
+                    RunId = snapshot.RunId,
+                    ToolCallId = snapshot.ToolCallId,
+                    ToolName = snapshot.ToolName
                 };
                 Activities.Insert(0, item);
             }
@@ -1123,6 +1218,13 @@ public sealed class BrowserWorkspaceController :
             AgentTargetPageId = null;
             OnPropertyChanged(nameof(AgentTargetSummary));
             _activeContextId = null;
+
+            // Clear agent operation state on dispose (doc 6.2)
+            _lastOperationSnapshot = null;
+            CurrentAgentSummary = null;
+            _userTakeover = false;
+            _paused = false;
+            ControlState = AgentBrowserControlState.Idle;
         }
         finally
         {

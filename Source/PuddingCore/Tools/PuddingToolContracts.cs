@@ -294,8 +294,12 @@ public abstract class PuddingToolBase<TArgs> : IPuddingTool
         Descriptor = ToolDescriptorFactory.Create(GetType(), typeof(TArgs));
     }
 
+    protected virtual IDisposable? BeginExecutionScope(ToolExecutionRequest request)
+        => null;
+
     public async Task<ToolExecutionResult> ExecuteAsync(ToolExecutionRequest request, CancellationToken ct = default)
     {
+        using var scope = BeginExecutionScope(request);
         try
         {
             var args = DeserializeArgs(request.ArgumentsJson);
