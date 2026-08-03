@@ -838,7 +838,7 @@ public sealed class SubAgentManager : ISubAgentManager
             ["requires_response"] = "true",
             ["sub_agent_id"] = subSessionId,
             ["subagent_status"] = status,
-            ["task"] = task,
+            ["task"] = task.Length > 200 ? task[..200] + "..." : task,
             ["tool_failure_count"] = toolFailureCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["tool_output_truncated_count"] = toolOutputTruncatedCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["tool_output_chars"] = toolOutputChars.ToString(System.Globalization.CultureInfo.InvariantCulture),
