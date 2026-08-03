@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests;
@@ -37,24 +37,32 @@ public sealed class AvatarCatalogTestFixture : IDisposable
         catch { /* best-effort */ }
     }
 
+    /// <summary>
+    /// The canonical source copy lives in Source/PuddingHost/Config;
+    /// Source/PuddingAgent/Config is kept as a fallback for older layouts.
+    /// </summary>
+    private static readonly string[] CandidateRelativePaths =
+    {
+        Path.Combine("Source", "PuddingHost", "Config", "agent-avatars.json"),
+        Path.Combine("Source", "PuddingAgent", "Config", "agent-avatars.json"),
+    };
+
     private static string FindJsonSourcePath()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
         while (current is not null)
         {
-            var candidate = Path.Combine(
-                current.FullName,
-                "Source",
-                "PuddingAgent",
-                "Config",
-                "agent-avatars.json");
-            if (File.Exists(candidate))
-                return candidate;
+            foreach (var relative in CandidateRelativePaths)
+            {
+                var candidate = Path.Combine(current.FullName, relative);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
 
             current = current.Parent;
         }
 
         throw new InvalidOperationException(
-            "Could not locate Source/PuddingAgent/Config/agent-avatars.json");
+            "Could not locate agent-avatars.json under Source/PuddingHost/Config or Source/PuddingAgent/Config");
     }
 }
