@@ -76,7 +76,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "Read a UTF-8 text file from the host workspace.",
+    description: "Read a UTF-8 text file from the host workspace. By default, files larger than 300 lines or 40KB trigger an automatic guardrail that returns only the first 200 lines plus a META header (total lines, bytes, truncation notice, and usage hints). Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, MaxChars for char-level truncation, or FullFile=true to bypass the guardrail and read the complete file. Pagination: HeadLines=read first N lines (highest priority); TailLines=read last N lines; OffsetLines=0-based line offset (use with LimitLines); LimitLines=max lines when paired with OffsetLines; MaxChars=max characters (default 100000). FullFile: set true to read the entire file regardless of size. Example: file_read(path=\"log.txt\", HeadLines=50) reads first 50 lines; file_read(path=\"log.txt\", FullFile=true) reads the complete file.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -129,7 +129,17 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 var totalChars = content.Length;
                 var totalLines = content.Count(c => c == '\n') + 1;
 
-                var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
+                                var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
+
+                // Guardrail: auto-truncate large files when no explicit pagination or FullFile
+                var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
+                if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 40_000))
+                {
+                    var lines = content.Split('\n');
+                    var preview = string.Join("\n", lines.Take(200));
+                    return ToolExecutionResult.Ok(
+                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 200 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, or FullFile=true to read the complete file.]");
+                }
 
                 if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
                 {
@@ -158,10 +168,19 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 return ToolExecutionResult.Ok($"{meta}\n{content}");
             }
 
-            // Large file path: use FileChunkService for streaming reads
+                        // Large file path: use FileChunkService for streaming reads
             var totalLinesLarge = await _chunk.CountLinesAsync(fullPath, ct);
             var totalCharsLarge = (int)Math.Min(fileInfo.Length, int.MaxValue);
             var metaLarge = $"[META: size={totalCharsLarge} chars, lines={totalLinesLarge}, encoding=utf-8]";
+
+            // Guardrail: auto-truncate large files when no explicit pagination or FullFile
+            var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
+            if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 40_000))
+            {
+                var preview = await _chunk.ReadChunkAsync(fullPath, 0, 200, ct);
+                return ToolExecutionResult.Ok(
+                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first 200 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, or FullFile=true to read the complete file.]");
+            }
 
             // MaxChars requires full read for accurate char count — warn and truncate
             if (args.MaxChars.HasValue)
@@ -225,8 +244,11 @@ public sealed record FileReadArgs
     [ToolParam("0-based line offset to start reading from. Use with LimitLines.")]
     public int? OffsetLines { get; init; }
 
-    [ToolParam("Maximum lines to read. Use with OffsetLines for arbitrary window.")]
+        [ToolParam("Maximum lines to read. Use with OffsetLines for arbitrary window.")]
     public int? LimitLines { get; init; }
+
+    [ToolParam("Set true to bypass the guardrail and read the full file content, regardless of size.")]
+    public bool? FullFile { get; init; }
 }
 
 [Tool(
