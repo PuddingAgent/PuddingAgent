@@ -5,6 +5,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Services;
 using PuddingPlatform.Services.MessageFabric;
 
 namespace PuddingPlatformTests.Services;
@@ -33,8 +35,7 @@ public class MessageFabricDedupTests : IDisposable
             new FakeRouter(),
             _store,
             _eventBus,
-            new PuddingPlatform.Services.MessageFabric.WorkspaceRoomParticipantProvider(
-                NullLogger<PuddingPlatform.Services.MessageFabric.WorkspaceRoomParticipantProvider>.Instance),
+            new WorkspaceRoomParticipantProvider(new FakeAgentCatalog()),
             NullLogger<MessageSystem>.Instance);
     }
 
@@ -79,7 +80,8 @@ public class MessageFabricDedupTests : IDisposable
 
         _eventBus.Published.Clear();
         FakeRouter.NextEnvelope = env;
-        await _system.SendAsync(env);
+        var r2 = await _system.SendAsync(env);
+        Assert.AreEqual(0, r2.DeliveryIds.Count, "Duplicate should return empty delivery ids");
         Assert.AreEqual(0, _eventBus.Published.Count, "Duplicate should not publish");
     }
 
@@ -116,7 +118,7 @@ public class MessageFabricDedupTests : IDisposable
         private static MessageRoutePlan MakePlan(MessageEnvelope env) => new()
         {
             MessageId = env.MessageId,
-            RoomMessage = new RoomMessage
+            RoomMessage = new RoomMessageDraft
             {
                 MessageId = env.MessageId, RoomId = env.RoomId!, From = env.From,
                 Audience = env.Audience, Visibility = env.Visibility, Content = env.Content,
@@ -126,9 +128,9 @@ public class MessageFabricDedupTests : IDisposable
             },
             Deliveries =
             [
-                new MessageDelivery { DeliveryId = Guid.NewGuid().ToString(), MessageId = env.MessageId,
+                new MessageDeliveryDraft { DeliveryId = Guid.NewGuid().ToString(), MessageId = env.MessageId,
                     Target = new MessageAddress { Kind = MessageEndpointKinds.User, Id = "u1", WorkspaceId = "default" }, Priority = 0 },
-                new MessageDelivery { DeliveryId = Guid.NewGuid().ToString(), MessageId = env.MessageId,
+                new MessageDeliveryDraft { DeliveryId = Guid.NewGuid().ToString(), MessageId = env.MessageId,
                     Target = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "a1", WorkspaceId = "default" }, Priority = 0 }
             ]
         };
@@ -142,5 +144,11 @@ public class MessageFabricDedupTests : IDisposable
         public Task PublishAsync(InternalEvent evt, CancellationToken ct) { Published.Add(evt); return Task.CompletedTask; }
         public Task<IEventSubscriptionHandle> SubscribeAsync(string eventTypePattern, Func<InternalEvent, Task> handler, CancellationToken ct = default) => throw new NotImplementedException();
         public Task UnsubscribeAsync(IEventSubscriptionHandle handle) => throw new NotImplementedException();
+    }
+
+    private sealed class FakeAgentCatalog : IWorkspaceAgentCatalog
+    {
+        public Task<IReadOnlyList<WorkspaceAgentDto>> ListAgentsAsync(string workspaceId, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<WorkspaceAgentDto>>(Array.Empty<WorkspaceAgentDto>());
     }
 }
