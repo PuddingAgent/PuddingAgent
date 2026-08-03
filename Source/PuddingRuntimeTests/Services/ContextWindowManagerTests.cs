@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Models;
@@ -687,7 +687,217 @@ public sealed class ContextWindowManagerTests
         Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-1"));
         Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-2"),
             "Different messages in the same session should both be allowed.");
+        }
+
+    // ── History Pruning (Batch2-4) ──
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_PrunesHeartbeatAndSystemMessages_WhenPruningEnabled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = "session-prune-heartbeat",
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-1", SessionId = "session-prune-heartbeat", Sequence = 1, Role = "user", ContentType = "text", Content = "real user question", CreatedAt = 1 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-2", SessionId = "session-prune-heartbeat", Sequence = 2, Role = "agent", ContentType = "text", Content = "[HEARTBEAT] ping", CreatedAt = 2 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-3", SessionId = "session-prune-heartbeat", Sequence = 3, Role = "user", ContentType = "text", Content = "[SYSTEM] auto notification", CreatedAt = 3 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-4", SessionId = "session-prune-heartbeat", Sequence = 4, Role = "agent", ContentType = "text", Content = "real assistant answer", CreatedAt = 4 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-5", SessionId = "session-prune-heartbeat", Sequence = 5, Role = "tool", ContentType = "text", Content = "tool result", CreatedAt = 5 });
+        await db.SaveChangesAsync();
+
+        var compactionOpts = new ContextCompactionOptions { EnableHistoryPruning = true, HistoryPruningMaxMessages = 50 };
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: compactionOpts);
+        var history = manager.GetOrCreateHistory("session-prune-heartbeat");
+
+        await manager.TryHydrateStreamHistoryFromDbAsync("session-prune-heartbeat", history, maxTokenBudget: 8000, CancellationToken.None);
+
+        Assert.IsTrue(history.Any(m => m.Content == "real user question"), "Real user message should survive pruning");
+        Assert.IsTrue(history.Any(m => m.Content == "real assistant answer"), "Real assistant message should survive pruning");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("[HEARTBEAT]", StringComparison.OrdinalIgnoreCase) == true), "HEARTBEAT messages must be pruned");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("[SYSTEM]", StringComparison.OrdinalIgnoreCase) == true), "SYSTEM messages must be pruned");
+        Assert.IsFalse(history.Any(m => m.Role == ChatRole.Tool), "Tool messages must be pruned");
     }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_TruncatesLongMessages_WhenPruningEnabled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = "session-prune-long",
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+        var longContent = new string('A', 2500);
+        db.Messages.Add(new MessageEntity { MessageId = "msg-1", SessionId = "session-prune-long", Sequence = 1, Role = "user", ContentType = "text", Content = longContent, CreatedAt = 1 });
+        await db.SaveChangesAsync();
+
+        var compactionOpts = new ContextCompactionOptions { EnableHistoryPruning = true, HistoryPruningMaxMessages = 50 };
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: compactionOpts);
+        var history = manager.GetOrCreateHistory("session-prune-long");
+
+        await manager.TryHydrateStreamHistoryFromDbAsync("session-prune-long", history, maxTokenBudget: 8000, CancellationToken.None);
+
+        Assert.AreEqual(1, history.Count);
+        var content = history[0].Content!;
+        Assert.IsTrue(content.EndsWith("..."), "Long messages should be truncated with trailing ellipsis");
+        Assert.IsTrue(content.Length <= 2003, $"Truncated length {content.Length} should be <= 2003 (2000 + '...')");
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_RespectsHistoryPruningMaxMessages_WhenPruningEnabled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = "session-prune-limit",
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+        for (var i = 1; i <= 20; i++)
+        {
+            db.Messages.Add(new MessageEntity { MessageId = $"msg-{i}", SessionId = "session-prune-limit", Sequence = i, Role = i % 2 == 0 ? "agent" : "user", ContentType = "text", Content = $"message {i}", CreatedAt = i });
+        }
+        await db.SaveChangesAsync();
+
+        var compactionOpts = new ContextCompactionOptions { EnableHistoryPruning = true, HistoryPruningMaxMessages = 5 };
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: compactionOpts);
+        var history = manager.GetOrCreateHistory("session-prune-limit");
+
+        await manager.TryHydrateStreamHistoryFromDbAsync("session-prune-limit", history, maxTokenBudget: 8000, CancellationToken.None);
+
+        Assert.AreEqual(5, history.Count, "Only 5 most recent messages should survive");
+        Assert.AreEqual("message 20", history[4].Content, "Most recent message should be preserved");
+        Assert.AreEqual("message 16", history[0].Content, "The 5th-from-last message should be the oldest survivor");
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_NoPruning_WhenPruningDisabled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = "session-no-prune",
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-1", SessionId = "session-no-prune", Sequence = 1, Role = "user", ContentType = "text", Content = "real user question", CreatedAt = 1 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-2", SessionId = "session-no-prune", Sequence = 2, Role = "agent", ContentType = "text", Content = "[HEARTBEAT] ping", CreatedAt = 2 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-3", SessionId = "session-no-prune", Sequence = 3, Role = "user", ContentType = "text", Content = "[SYSTEM] auto notification", CreatedAt = 3 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-4", SessionId = "session-no-prune", Sequence = 4, Role = "agent", ContentType = "text", Content = "real assistant answer", CreatedAt = 4 });
+        await db.SaveChangesAsync();
+
+        var compactionOpts = new ContextCompactionOptions { EnableHistoryPruning = false, HistoryPruningMaxMessages = 50 };
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: compactionOpts);
+        var history = manager.GetOrCreateHistory("session-no-prune");
+
+        await manager.TryHydrateStreamHistoryFromDbAsync("session-no-prune", history, maxTokenBudget: 8000, CancellationToken.None);
+
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("[HEARTBEAT]", StringComparison.OrdinalIgnoreCase) == true), "HEARTBEAT should survive when pruning is disabled");
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("[SYSTEM]", StringComparison.OrdinalIgnoreCase) == true), "SYSTEM should survive when pruning is disabled");
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_NoPruning_WhenOptionsIsNull()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = "session-null-opts",
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-1", SessionId = "session-null-opts", Sequence = 1, Role = "user", ContentType = "text", Content = "real user question", CreatedAt = 1 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-2", SessionId = "session-null-opts", Sequence = 2, Role = "agent", ContentType = "text", Content = "[HEARTBEAT] ping", CreatedAt = 2 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-3", SessionId = "session-null-opts", Sequence = 3, Role = "user", ContentType = "text", Content = "[SYSTEM] auto notification", CreatedAt = 3 });
+        db.Messages.Add(new MessageEntity { MessageId = "msg-4", SessionId = "session-null-opts", Sequence = 4, Role = "agent", ContentType = "text", Content = "real assistant answer", CreatedAt = 4 });
+        await db.SaveChangesAsync();
+
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: null);
+        var history = manager.GetOrCreateHistory("session-null-opts");
+
+        await manager.TryHydrateStreamHistoryFromDbAsync("session-null-opts", history, maxTokenBudget: 8000, CancellationToken.None);
+
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("[HEARTBEAT]", StringComparison.OrdinalIgnoreCase) == true), "HEARTBEAT should survive when options is null");
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("[SYSTEM]", StringComparison.OrdinalIgnoreCase) == true), "SYSTEM should survive when options is null");
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_CustomMaxMessages_TakesEffect()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = "session-custom-max",
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+        for (var i = 1; i <= 15; i++)
+        {
+            db.Messages.Add(new MessageEntity { MessageId = $"msg-{i}", SessionId = "session-custom-max", Sequence = i, Role = i % 2 == 0 ? "agent" : "user", ContentType = "text", Content = $"message {i}", CreatedAt = i });
+        }
+        await db.SaveChangesAsync();
+
+        var compactionOpts = new ContextCompactionOptions { EnableHistoryPruning = true, HistoryPruningMaxMessages = 3 };
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options), compactionOptions: compactionOpts);
+        var history = manager.GetOrCreateHistory("session-custom-max");
+
+        await manager.TryHydrateStreamHistoryFromDbAsync("session-custom-max", history, maxTokenBudget: 8000, CancellationToken.None);
+
+        Assert.AreEqual(3, history.Count, "Custom HistoryPruningMaxMessages=3 should leave exactly 3 messages");
+    }
+
     private static ContextWindowManager CreateManager()
         => CreateManager(compactionService: null);
 

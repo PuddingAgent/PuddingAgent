@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
@@ -333,6 +333,24 @@ public sealed class ContextWindowManager
                 return;
 
             var hydratedContext = SanitizeForLlmContext(hydrated.Messages.Where(m => m.Role != ChatRole.System));
+
+            // Apply history pruning if enabled (Batch2-4)
+            if (_compactionOptions?.EnableHistoryPruning == true)
+            {
+                var maxPruned = _compactionOptions.HistoryPruningMaxMessages > 0
+                    ? _compactionOptions.HistoryPruningMaxMessages
+                    : 100;
+                var originalCount = hydratedContext.Count;
+                var prunedMessages = ContextPipeline.PruneSessionMessages(hydratedContext, maxPruned);
+                hydratedContext = prunedMessages.Select(pm => new ChatMessage(
+                    Role: pm.Role == "user" ? ChatRole.User : ChatRole.Assistant,
+                    Content: pm.Content
+                )).ToList();
+                _logger.LogInformation(
+                    "[AgentExec] History pruning applied session={Session} original={OriginalCount} pruned={PrunedCount} maxMessages={MaxMessages}",
+                    sessionId, originalCount, hydratedContext.Count, maxPruned);
+            }
+
             var existingContextCount = history.Count(m => m.Role != ChatRole.System);
             if (existingContextCount > 0 && hydratedContext.Count < existingContextCount)
             {

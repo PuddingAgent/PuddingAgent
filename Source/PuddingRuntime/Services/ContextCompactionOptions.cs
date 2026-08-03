@@ -35,4 +35,10 @@ public sealed class ContextCompactionOptions
     /// 超过此时长后不再等待，直接强制压缩。默认 180（3 分钟）。
     /// </summary>
     public int MaxWaitForWorkSummarySeconds { get; init; } = 180;
+
+    /// <summary>是否在水合会话历史时启用心跳/系统/非对话角色剪枝。默认 true。</summary>
+    public bool EnableHistoryPruning { get; init; } = true;
+
+    /// <summary>剪枝后保留的最大消息条数。必须 > 0，非法值回退默认 100。</summary>
+    public int HistoryPruningMaxMessages { get; init; } = 100;
 }

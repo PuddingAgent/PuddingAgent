@@ -556,7 +556,7 @@ public sealed class ContextPipeline
     }
 
     /// <summary>剪枝会话消息：仅保留最近 N 条 user/assistant 正文，移除 tool_call/tool_result/thinking/heartbeat。</summary>
-    private static List<PrunedMessage> PruneSessionMessages(IReadOnlyList<ChatMessage> history, int maxMessages)
+    internal static List<PrunedMessage> PruneSessionMessages(IReadOnlyList<ChatMessage> history, int maxMessages)
     {
         var candidates = new List<PrunedMessage>();
         foreach (var msg in history)
