@@ -185,6 +185,38 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 return;
             }
 
+            // ── 检查是否有未 ack 的 pending 心跳投递 ──
+            // 若该 agent 已有未确认的心跳 delivery (queued/delivering/retrying)，
+            // 则跳过本次心跳，避免重复投递形成风暴。
+            var inbox = scope.ServiceProvider.GetService<IMessageInbox>();
+            if (inbox is not null)
+            {
+                var pendingQuery = new MessageInboxQuery
+                {
+                    Endpoint = new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.Agent,
+                        Id = request.AgentId,
+                        WorkspaceId = workspaceId,
+                    },
+                    WorkspaceId = workspaceId,
+                    Limit = 50,
+                    IncludeDelivered = false,
+                };
+                var pending = await inbox.ListAsync(pendingQuery, ct);
+                var hasPendingHeartbeat = pending.Any(item =>
+                    string.Equals(item.From.Kind, MessageEndpointKinds.System, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.From.Id, "heartbeat", StringComparison.OrdinalIgnoreCase));
+                if (hasPendingHeartbeat)
+                {
+                    _logger.LogInformation(
+                        "[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (pending heartbeat delivery exists)",
+                        request.AgentId);
+                    _idleDetector.ReArm();
+                    return;
+                }
+            }
+
             var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
             var heartbeatPrompt = await agentConfig.GetAgentHeartbeatPromptAsync(workspaceId, request.AgentId, ct);
             var queuedSeconds = (int)(DateTime.UtcNow - request.EnqueuedAt).TotalSeconds;
