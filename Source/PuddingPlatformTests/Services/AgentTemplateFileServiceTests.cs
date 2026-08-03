@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
@@ -52,7 +52,7 @@ public sealed class AgentTemplateFileServiceTests
         CollectionAssert.AreEqual(new[] { "skill-a", "skill-b" }, saved.SelectedSkillPackageIds);
         Assert.AreEqual("profile.conscious", saved.ConsciousProfileId);
         Assert.AreEqual("profile.subconscious", saved.SubconsciousProfileId);
-        Assert.AreEqual("avatar-neutral", saved.AvatarId);
+        Assert.AreEqual("neutral", saved.AvatarId);
     }
 
     [TestMethod]

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
@@ -82,8 +82,9 @@ public sealed class RawSessionLogServiceTests
     {
         await using var scope = await CreateScopeAsync();
         scope.Db.ChatMessages.AddRange(
-            new ChatMessageEntity
+                        new ChatMessageEntity
             {
+                MessageId = "msg-user-1",
                 SessionId = "session-a",
                 Role = "user",
                 Content = "what happened yesterday?",
@@ -91,6 +92,7 @@ public sealed class RawSessionLogServiceTests
             },
             new ChatMessageEntity
             {
+                MessageId = "msg-agent-1",
                 SessionId = "session-a",
                 Role = "agent",
                 Content = "final answer only",
@@ -118,8 +120,9 @@ public sealed class RawSessionLogServiceTests
     {
         await using var scope = await CreateScopeAsync();
         scope.Db.ChatMessages.AddRange(
-            new ChatMessageEntity
+                        new ChatMessageEntity
             {
+                MessageId = "msg-filter-one",
                 WorkspaceId = "ws-a",
                 AgentInstanceId = "agent-1",
                 SessionId = "session-a",
@@ -129,6 +132,7 @@ public sealed class RawSessionLogServiceTests
             },
             new ChatMessageEntity
             {
+                MessageId = "msg-filter-two",
                 WorkspaceId = "ws-a",
                 AgentInstanceId = "agent-2",
                 SessionId = "session-a",
@@ -153,8 +157,9 @@ public sealed class RawSessionLogServiceTests
     {
         await using var scope = await CreateScopeAsync();
         scope.Db.ChatMessages.AddRange(
-            new ChatMessageEntity
+                        new ChatMessageEntity
             {
+                MessageId = "msg-grep-one",
                 WorkspaceId = "ws-a",
                 AgentInstanceId = "agent-1",
                 SessionId = "session-a",
@@ -164,6 +169,7 @@ public sealed class RawSessionLogServiceTests
             },
             new ChatMessageEntity
             {
+                MessageId = "msg-grep-two",
                 WorkspaceId = "ws-a",
                 AgentInstanceId = "agent-2",
                 SessionId = "session-b",

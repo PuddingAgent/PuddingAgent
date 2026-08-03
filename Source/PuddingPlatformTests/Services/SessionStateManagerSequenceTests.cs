@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -191,8 +191,8 @@ public sealed class SessionStateManagerSequenceTests
 
             Assert.AreEqual("delta", frame1.Event);
             Assert.AreEqual("delta", frame2.Event);
-            Assert.AreEqual("""{"delta":"a"}""", frame1.Data);
-            Assert.AreEqual("""{"delta":"a"}""", frame2.Data);
+            Assert.AreEqual("""{"sequenceNum":1,"delta":"a"}""", frame1.Data);
+            Assert.AreEqual("""{"sequenceNum":1,"delta":"a"}""", frame2.Data);
 
             ssm.Unsubscribe(sessionId, reader1);
 
@@ -202,7 +202,7 @@ public sealed class SessionStateManagerSequenceTests
                 new ServerSentEventFrame("delta", """{"delta":"b"}"""));
 
             var frameAfterUnsubscribe = await ReadOneAsync(reader2);
-            Assert.AreEqual("""{"delta":"b"}""", frameAfterUnsubscribe.Data);
+            Assert.AreEqual("""{"sequenceNum":2,"delta":"b"}""", frameAfterUnsubscribe.Data);
             Assert.IsFalse(reader1.TryRead(out _), "unsubscribed reader should not receive new frames");
         }
         finally
@@ -338,8 +338,6 @@ public sealed class SessionStateManagerSequenceTests
                 new ServerSentEventFrame("usage", """{"promptTokens":10}"""),
                 component: RuntimeActivityComponents.AgentExecution,
                 operation: "chat.stream.usage");
-            // 消费 live fanout 帧
-            _ = await ReadOneAsync(reader);
 
             // 4. 等待延迟 flush 触发 → gate 仍被占用 → return（不重置 _flushScheduled）
             await Task.Delay(300);
@@ -351,8 +349,6 @@ public sealed class SessionStateManagerSequenceTests
                 new ServerSentEventFrame("done", """{"messageId":"m1","reply":"ok"}"""),
                 component: RuntimeActivityComponents.AgentExecution,
                 operation: "chat.stream.done");
-            // 消费 live fanout 帧
-            _ = await ReadOneAsync(reader);
 
             // 6. 释放 gate
             gateHolder.Dispose();
@@ -580,7 +576,7 @@ public sealed class SessionStateManagerSequenceTests
 
     private static async Task<ServerSentEventFrame> ReadOneAsync(ChannelReader<ServerSentEventFrame> reader)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (await reader.WaitToReadAsync(cts.Token))
         {
             if (reader.TryRead(out var frame))

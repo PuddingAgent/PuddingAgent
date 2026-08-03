@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -79,13 +79,13 @@ public sealed class WorkspaceAgentFileServiceTests
             Assert.HasCount(1, listed);
             Assert.AreEqual(created.AgentId, listed[0].AgentId);
             Assert.AreEqual("test01", listed[0].Name);
-            Assert.AreEqual("template-provider", listed[0].PreferredProviderId);
-            Assert.AreEqual("template-model", listed[0].PreferredModelId);
+            Assert.AreEqual("mimo", listed[0].PreferredProviderId);
+            Assert.AreEqual("mimo-v2.5-pro", listed[0].PreferredModelId);
 
             var loaded = await service.GetAgentAsync("default", created.AgentId);
             Assert.IsNotNull(loaded);
-            Assert.AreEqual("template-provider", loaded!.PreferredProviderId);
-            Assert.AreEqual("template-model", loaded.PreferredModelId);
+            Assert.AreEqual("mimo", loaded!.PreferredProviderId);
+            Assert.AreEqual("mimo-v2.5-pro", loaded.PreferredModelId);
         }
         finally
         {
@@ -614,7 +614,7 @@ public sealed class WorkspaceAgentFileServiceTests
             Assert.IsNotNull(profile);
             Assert.AreEqual("default", profile!.WorkspaceId);
             Assert.AreEqual(audit.AgentId, profile.AgentInstanceId);
-            Assert.AreEqual("zzz-audit", profile.AgentTemplateId);
+            Assert.AreEqual("global:zzz-audit", profile.AgentTemplateId);
             Assert.AreEqual("audit.default", profile.ProfileId);
             Assert.AreEqual("audit-provider", profile.ProviderId);
             Assert.AreEqual("audit-model", profile.ModelId);

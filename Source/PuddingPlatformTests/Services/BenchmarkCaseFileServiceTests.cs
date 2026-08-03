@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingPlatform.Services;
 
@@ -64,7 +64,7 @@ public sealed class BenchmarkCaseFileServiceTests
             "..",
             "..",
             "..",
-            "PuddingAgent",
+            "PuddingHost",
             "default-data"));
         var service = new BenchmarkCaseFileService(new BenchmarkCaseCatalogService(PuddingDataPaths.FromRoot(root)));
 
