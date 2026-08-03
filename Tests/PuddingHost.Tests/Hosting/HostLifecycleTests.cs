@@ -1,10 +1,11 @@
 ﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingHost.Hosting;
 using Xunit;
 
-namespace PuddingRuntimeTests.Hosting;
+namespace PuddingHost.Tests.Hosting;
 
 public class HostLifecycleTests
 {
