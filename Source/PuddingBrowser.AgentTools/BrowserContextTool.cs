@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -14,7 +14,7 @@ public sealed record BrowserContextArgs
 }
 
 [Tool(
-    id: "browser_context",
+    id: BrowserAgentToolIds.Context,
     name: "Browser context",
     description: "Create, list, inspect, or close Desktop browser contexts.",
     category: ToolCategory.Network,

@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -21,7 +21,7 @@ public sealed record BrowserInteractArgs
 }
 
 [Tool(
-    id: "browser_interact",
+    id: BrowserAgentToolIds.Interact,
     name: "Browser interact",
     description: "Click, fill, type, press, hover, scroll, select, or check an element in a visible Desktop browser tab.",
     category: ToolCategory.Network,

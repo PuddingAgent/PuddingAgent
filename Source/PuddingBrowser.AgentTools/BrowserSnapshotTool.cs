@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -22,7 +22,7 @@ public sealed record BrowserSnapshotArgs
 }
 
 [Tool(
-    id: "browser_snapshot",
+    id: BrowserAgentToolIds.Snapshot,
     name: "Browser snapshot",
     description: "Read a bounded DOM and accessibility snapshot from a visible Desktop browser tab. Interactive nodes include reusable versioned refs.",
     category: ToolCategory.Network,

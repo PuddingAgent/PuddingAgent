@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -23,7 +23,7 @@ public sealed record BrowserTabsArgs
 }
 
 [Tool(
-    id: "browser_tabs",
+    id: BrowserAgentToolIds.Tabs,
     name: "Browser tabs",
     description: "Create, list, activate, or close visible Desktop browser tabs.",
     category: ToolCategory.Network,

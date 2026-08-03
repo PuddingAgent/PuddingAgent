@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PuddingBrowser.Abstractions;
 using PuddingCode.Tools;
@@ -7,19 +7,21 @@ namespace PuddingBrowser.AgentTools.Tests;
 
 public sealed class BrowserAgentToolsTests
 {
+    private readonly BrowserOperationOriginAccessor _originAccessor = new();
+
     [Fact]
     public void ToolDescriptors_UseStableNamesAndStructuredSchemas()
     {
         var runtime = new FakeBrowserRuntime();
         var tools = new IPuddingTool[]
         {
-            new BrowserContextTool(runtime),
-            new BrowserTabsTool(runtime),
-            new BrowserNavigateTool(runtime),
-            new BrowserSnapshotTool(runtime),
-            new BrowserLocateTool(runtime),
-            new BrowserInteractTool(runtime),
-            new BrowserWaitForTool(runtime)
+            new BrowserContextTool(runtime, _originAccessor),
+            new BrowserTabsTool(runtime, _originAccessor),
+            new BrowserNavigateTool(runtime, _originAccessor),
+            new BrowserSnapshotTool(runtime, _originAccessor),
+            new BrowserLocateTool(runtime, _originAccessor),
+            new BrowserInteractTool(runtime, _originAccessor),
+            new BrowserWaitForTool(runtime, _originAccessor)
         };
 
         Assert.Equal(
@@ -35,7 +37,7 @@ public sealed class BrowserAgentToolsTests
     public async Task BrowserContext_CreateListGetAndClose_UseRuntimeAbstraction()
     {
         var runtime = new FakeBrowserRuntime();
-        var tool = new BrowserContextTool(runtime);
+        var tool = new BrowserContextTool(runtime, _originAccessor);
 
         var created = await ExecuteAsync(tool, """{"action":"create","context_id":"ctx-1"}""");
         var listed = await ExecuteAsync(tool, """{"action":"list"}""");
@@ -57,7 +59,7 @@ public sealed class BrowserAgentToolsTests
         var context = await runtime.CreateContextAsync(
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") },
             CancellationToken.None);
-        var tool = new BrowserTabsTool(runtime);
+        var tool = new BrowserTabsTool(runtime, _originAccessor);
 
         var created = await ExecuteAsync(tool,
             """{"action":"new","context_id":"ctx-1","url":"https://example.com"}""");
@@ -84,7 +86,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") },
             CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
-        var tool = new BrowserNavigateTool(runtime);
+        var tool = new BrowserNavigateTool(runtime, _originAccessor);
 
         var result = await ExecuteAsync(tool,
             $$"""{"action":"goto","context_id":"ctx-1","page_id":"{{page.Id.Value}}","url":"https://example.org"}""");
@@ -98,7 +100,7 @@ public sealed class BrowserAgentToolsTests
     public async Task InvalidAction_ReturnsStableStructuredFailure()
     {
         var result = await ExecuteAsync(
-            new BrowserTabsTool(new FakeBrowserRuntime()),
+            new BrowserTabsTool(new FakeBrowserRuntime(), _originAccessor),
             """{"action":"teleport"}""");
 
         Assert.False(result.Success);
@@ -116,7 +118,7 @@ public sealed class BrowserAgentToolsTests
         };
 
         var result = await ExecuteAsync(
-            new BrowserContextTool(runtime),
+            new BrowserContextTool(runtime, _originAccessor),
             """{"action":"list"}""");
 
         Assert.False(result.Success);
@@ -132,7 +134,7 @@ public sealed class BrowserAgentToolsTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            ExecuteAsync(new BrowserContextTool(new FakeBrowserRuntime()),
+            ExecuteAsync(new BrowserContextTool(new FakeBrowserRuntime(), _originAccessor),
                 """{"action":"list"}""", cts.Token));
     }
 
@@ -144,9 +146,9 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
-        var snapshot = await ExecuteAsync(new BrowserSnapshotTool(runtime),
+        var snapshot = await ExecuteAsync(new BrowserSnapshotTool(runtime, _originAccessor),
             $$"""{"page_id":"{{page.Id.Value}}","context_id":"ctx-1","max_nodes":100}""");
-        var locate = await ExecuteAsync(new BrowserLocateTool(runtime),
+        var locate = await ExecuteAsync(new BrowserLocateTool(runtime, _originAccessor),
             JsonSerializer.Serialize(new
             {
                 page_id = page.Id.Value,
@@ -169,7 +171,7 @@ public sealed class BrowserAgentToolsTests
         var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
         const string secret = "do-not-echo-this-value";
 
-        var interact = await ExecuteAsync(new BrowserInteractTool(runtime),
+        var interact = await ExecuteAsync(new BrowserInteractTool(runtime, _originAccessor),
             JsonSerializer.Serialize(new
             {
                 action = "fill",
@@ -178,7 +180,7 @@ public sealed class BrowserAgentToolsTests
                 locator = new { kind = "label", value = "Name" },
                 text = secret
             }));
-        var wait = await ExecuteAsync(new BrowserWaitForTool(runtime),
+        var wait = await ExecuteAsync(new BrowserWaitForTool(runtime, _originAccessor),
             $$"""{"page_id":"{{page.Id.Value}}","context_id":"ctx-1","selector":"#saved","timeout_ms":1000}""");
 
         Assert.True(interact.Success);
@@ -196,7 +198,7 @@ public sealed class BrowserAgentToolsTests
             new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
         var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
 
-        var result = await ExecuteAsync(new BrowserLocateTool(runtime),
+        var result = await ExecuteAsync(new BrowserLocateTool(runtime, _originAccessor),
             JsonSerializer.Serialize(new
             {
                 page_id = page.Id.Value,

@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -16,7 +16,7 @@ public sealed record BrowserWaitForArgs
 }
 
 [Tool(
-    id: "browser_wait_for",
+    id: BrowserAgentToolIds.WaitFor,
     name: "Browser wait for",
     description: "Wait for a CSS selector to appear or hide, or for a wildcard URL pattern in a Desktop browser tab.",
     category: ToolCategory.Network,

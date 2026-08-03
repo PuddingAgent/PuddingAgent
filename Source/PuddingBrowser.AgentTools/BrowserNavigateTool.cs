@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -23,7 +23,7 @@ public sealed record BrowserNavigateArgs
 }
 
 [Tool(
-    id: "browser_navigate",
+    id: BrowserAgentToolIds.Navigate,
     name: "Browser navigate",
     description: "Navigate a visible Desktop browser tab with goto, back, forward, reload, or stop.",
     category: ToolCategory.Network,

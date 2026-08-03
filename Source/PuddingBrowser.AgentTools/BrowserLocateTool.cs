@@ -1,4 +1,4 @@
-using PuddingBrowser.Abstractions;
+﻿using PuddingBrowser.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -13,7 +13,7 @@ public sealed record BrowserLocateArgs
 }
 
 [Tool(
-    id: "browser_locate",
+    id: BrowserAgentToolIds.Locate,
     name: "Browser locate",
     description: "Resolve a ref, CSS, XPath, text, role, label, placeholder, alt text, title, or test-id locator in a Desktop browser tab.",
     category: ToolCategory.Network,
