@@ -137,6 +137,17 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
             var oldLineCount = string.IsNullOrEmpty(existing) ? 0 : existing.Split('\n').Length;
             var newLineCount = newContent.Split('\n').Length;
 
+            // 写入后检查文件大小是否超过告警阈值（32 KB）
+            var newSize = newContent.Length;
+            string? sizeWarning = null;
+            if (newSize > GoalReadTool.WarnLimitBytes)
+            {
+                var sizeKB = newSize / 1024.0;
+                sizeWarning = $"goal.md 已达 {sizeKB:F1} KB（建议上限 {GoalReadTool.WarnLimitBytes / 1024} KB），请尽快用 content_base64 覆盖整理，将历史归档到 memory/ 或记忆库。";
+                _logger.LogWarning("[GoalUpdate] goal.md size warning path={Path} size={Size} limit={Limit}",
+                    pathLabel, newSize, GoalReadTool.WarnLimitBytes);
+            }
+
             return JsonSerializer.Serialize(new
             {
                 status = "ok",
@@ -147,13 +158,14 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
                 change = new
                 {
                     old_size = oldSize,
-                    new_size = newContent.Length,
-                    bytes_changed = Math.Abs(newContent.Length - oldSize),
+                    new_size = newSize,
+                    bytes_changed = Math.Abs(newSize - oldSize),
                     old_lines = oldLineCount,
                     new_lines = newLineCount,
                     lines_changed = newLineCount - oldLineCount,
                 },
                 timestamp,
+                size_warning = sizeWarning,
             });
         }
         catch (Exception ex)

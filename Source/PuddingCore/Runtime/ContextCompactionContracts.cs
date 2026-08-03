@@ -128,7 +128,8 @@ public sealed record ContextCompactionResult(
     string SummaryPreview,
     string SummaryMarkdown,
     IReadOnlyList<string>? MemoryNotes = null,
-    ContextCompactionDiagnostics? Diagnostics = null);
+    ContextCompactionDiagnostics? Diagnostics = null,
+    bool SkippedDueToTokenIncrease = false);
 
 public sealed record ContextCompactionSummaryRequest(
     string WorkspaceId,

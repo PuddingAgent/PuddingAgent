@@ -373,6 +373,66 @@ public sealed class ContextCompactionService : IContextCompactionService
             "[ContextCompaction:Phase] generateSummary session={SessionId} summaryLen={SummaryLen} elapsedMs={ElapsedMs}",
             request.SessionId, summary.Length, summaryMs);
 
+                // SkipWhenSummaryIncreasesTokens: 摘要 token 数 ≥ 被压缩内容 token 数时跳过本次压缩
+        var skipDueToTokenIncrease = false;
+        if (_options is not null && _options.SkipWhenSummaryIncreasesTokens)
+        {
+            var summaryTokens = ContextUsageSnapshotStore.CountTokens(summary);
+            var inputTokens = summaryInput.Messages.Sum(m => ContextUsageSnapshotStore.CountTokens(m.Content ?? string.Empty));
+            if (summaryTokens >= inputTokens)
+            {
+                _logger.LogWarning(
+                    "[ContextCompaction] Skipping compaction summary increases tokens compactionId={CompactionId} session={SessionId} summaryTokens={SummaryTokens} inputTokens={InputTokens}",
+                    compactionId, request.SessionId, summaryTokens, inputTokens);
+
+                // 向 compaction-log.jsonl 追加跳过记录
+                try
+                {
+                    var logDir = _dataPaths is not null
+                        ? _dataPaths.DiagnosticsLogsRoot
+                        : Path.Combine(Directory.GetCurrentDirectory(), "data");
+                    Directory.CreateDirectory(logDir);
+                    var logPath = Path.Combine(logDir, "compaction-log.jsonl");
+                    var logLine = JsonSerializer.Serialize(new
+                    {
+                        timestamp = DateTimeOffset.UtcNow.ToString("O"),
+                        compactionId,
+                        sessionId = request.SessionId,
+                        workspaceId = request.WorkspaceId,
+                        agentId = request.AgentId,
+                        mode = request.Mode.ToString(),
+                        reason = "summary_increases_tokens",
+                        beforeTokens = inputTokens,
+                        afterTokens = summaryTokens,
+                        summaryTokens,
+                        inputTokens,
+                        compactedMessageCount = 0,
+                        durationMs = sw.ElapsedMilliseconds,
+                        summaryGenerator = ResolveSummaryGeneratorName(),
+                    }, JsonOptions);
+                    await File.AppendAllTextAsync(logPath, logLine + Environment.NewLine, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "[ContextCompaction] Failed to write skip log session={SessionId}",
+                        request.SessionId);
+                }
+
+                skipDueToTokenIncrease = true;
+            }
+        }
+
+        if (skipDueToTokenIncrease)
+        {
+            sw.Stop();
+            var skipResult = new ContextCompactionResult(
+                request.SessionId, string.Empty, request.Mode, request.Level,
+                EstimateMessages(activeMessages), EstimateMessages(activeMessages),
+                0, string.Empty, string.Empty, [], null, SkippedDueToTokenIncrease: true);
+            return skipResult;
+        }
+
         var beforeTokens = EstimateMessages(activeMessages);
         var summaryMessage = new MessageEntity
         {

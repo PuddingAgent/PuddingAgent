@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Models;
@@ -228,6 +228,134 @@ public sealed class ContextCompactionServiceTests
 
         public Task<MemoryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(CreateDbContext());
+    }
+
+        [TestMethod]
+    public async Task FullCompactAsync_SkipWhenSummaryIncreasesTokens_SkipsCompaction()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-skip", messageCount: 30);
+
+        // Generate a summary that is deliberately longer than the input messages
+        // Each seeded message is "message N" (~9 chars). 30 messages = ~270 chars.
+        // Create a summary >1000 chars to exceed the token count of the input.
+        var longSummary = new string('x', 2000);
+
+        var compactionOptions = new ContextCompactionOptions
+        {
+            SkipWhenSummaryIncreasesTokens = true,
+        };
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator(longSummary),
+            NullLogger<ContextCompactionService>.Instance,
+            options: compactionOptions);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-skip",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "test skip when summary increases tokens"));
+
+        // Assert: compaction was skipped
+        Assert.IsTrue(result.SkippedDueToTokenIncrease);
+        Assert.AreEqual(0, result.CompactedMessageCount);
+        Assert.AreEqual(string.Empty, result.SummaryMessageId);
+        Assert.AreEqual(result.BeforeTokens, result.AfterTokens);
+
+        // Verify no summary message was written to DB
+        db.ChangeTracker.Clear();
+        var messages = await db.Messages
+            .AsNoTracking()
+            .Where(m => m.SessionId == "session-skip")
+            .ToListAsync();
+        Assert.AreEqual(30, messages.Count(m => m.ContentType == "text"));
+        Assert.AreEqual(0, messages.Count(m => m.ContentType == "compact_summary"));
+
+        // Verify no messages were marked as compacted
+        Assert.AreEqual(0, messages.Count(m => m.CompactedBy != null));
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_SkipWhenSummaryIncreasesTokens_Disabled_CompactsNormally()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-noskip", messageCount: 30);
+
+        var longSummary = new string('x', 2000);
+
+        var compactionOptions = new ContextCompactionOptions
+        {
+            SkipWhenSummaryIncreasesTokens = false, // explicitly disabled
+        };
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator(longSummary),
+            NullLogger<ContextCompactionService>.Instance,
+            options: compactionOptions);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-noskip",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "test no-skip when disabled"));
+
+        // Assert: compaction was NOT skipped
+        Assert.IsFalse(result.SkippedDueToTokenIncrease);
+        Assert.IsTrue(result.CompactedMessageCount > 0);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_SummaryShorterThanInput_CompactsNormally()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-good", messageCount: 30);
+
+        // Summary is short — should NOT be skipped
+        var shortSummary = "short summary";
+
+        var compactionOptions = new ContextCompactionOptions
+        {
+            SkipWhenSummaryIncreasesTokens = true,
+        };
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator(shortSummary),
+            NullLogger<ContextCompactionService>.Instance,
+            options: compactionOptions);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-good",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "test normal compaction"));
+
+        // Assert: compaction was NOT skipped
+        Assert.IsFalse(result.SkippedDueToTokenIncrease);
+        Assert.IsTrue(result.CompactedMessageCount > 0);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
     }
 
     private sealed class FixedSummaryGenerator : IContextCompactionSummaryGenerator
