@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Observability;
@@ -203,7 +203,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         LlmConfig = request.LlmConfig,
                 LlmProfile = request.LlmProfile,
         ParentContextSnapshot = request.ParentContextSnapshot,
-        MaxRounds = request.MaxRounds ?? 10,
+        MaxRounds = request.MaxRounds ?? 200, // align with AgentExecutionGuardrails.MaxRounds ceiling (default 10 was too low, sub-agents repeatedly hit the cap)
         CapabilityPolicy = request.CapabilityPolicy,
         TaskPlanId = request.TaskPlanId,
         TaskNodeId = request.TaskNodeId,
@@ -238,7 +238,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         LlmConfig = request.LlmConfig,
                 LlmProfile = request.LlmProfile,
         ParentContextSnapshot = request.ParentContextSnapshot,
-        MaxRounds = request.MaxRounds ?? 10,
+        MaxRounds = request.MaxRounds ?? 200, // align with AgentExecutionGuardrails.MaxRounds ceiling (default 10 was too low, sub-agents repeatedly hit the cap)
         CapabilityPolicy = request.CapabilityPolicy,
         TaskPlanId = request.TaskPlanId,
         TaskNodeId = task.TaskId,

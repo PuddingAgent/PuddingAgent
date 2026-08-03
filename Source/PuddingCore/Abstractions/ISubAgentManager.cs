@@ -1,4 +1,4 @@
-﻿using PuddingCode.Models;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
@@ -124,7 +124,7 @@ public sealed record SubAgentSpawnRequest
     /// <summary>复用已有子代理会话 ID。非空时跳过新 ID 生成，直接使用此 ID。
     /// 用于子代理池复用场景，保持会话连续以利用 KV-cache。</summary>
     public string? ReuseSubSessionId { get; init; }
-    public int MaxRounds { get; init; } = 10;
+    public int MaxRounds { get; init; } = 200; // align with AgentExecutionGuardrails.MaxRounds ceiling (default 10 was too low)
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public string? TaskPlanId { get; init; }
     public string? TaskNodeId { get; init; }
