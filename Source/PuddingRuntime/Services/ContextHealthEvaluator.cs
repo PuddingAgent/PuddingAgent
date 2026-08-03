@@ -4,14 +4,16 @@ namespace PuddingRuntime.Services;
 
 public sealed class ContextHealthEvaluator
 {
-    public ContextHealthSnapshot Evaluate(
+        public ContextHealthSnapshot Evaluate(
         string sessionId,
         int usedTokens,
         int contextWindowTokens,
         int maxOutputTokens,
         int safetyBufferTokens = 0,
-        int? maxInputTokens = null)
+        int? maxInputTokens = null,
+        double compactionThreshold = 0.65)
     {
+        var effectiveThreshold = compactionThreshold is > 0 and <= 1 ? compactionThreshold : 0.65;
         var modelWindow = Math.Max(1, contextWindowTokens);
         var reservedOutput = Math.Max(0, maxOutputTokens);
         var safetyBuffer = Math.Max(0, safetyBufferTokens);
@@ -26,11 +28,17 @@ public sealed class ContextHealthEvaluator
         var state = ratio switch
         {
             >= 0.92 => ContextHealthState.Blocking,
-            >= 0.80 => ContextHealthState.Critical,
-            >= 0.75 => ContextHealthState.Unhealthy,
-            >= 0.60 => ContextHealthState.Warning,
             _ => ContextHealthState.Healthy,
         };
+        if (state == ContextHealthState.Healthy)
+        {
+            if (ratio >= effectiveThreshold)
+                state = ContextHealthState.Critical;
+            else if (ratio >= 0.75)
+                state = ContextHealthState.Unhealthy;
+            else if (ratio >= 0.60)
+                state = ContextHealthState.Warning;
+        }
 
         return new ContextHealthSnapshot(
             sessionId,

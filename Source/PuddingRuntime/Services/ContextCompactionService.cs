@@ -72,12 +72,16 @@ public sealed class ContextCompactionService : IContextCompactionService
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var usage = await ResolveCurrentContextUsageAsync(db, sessionId, ct);
 
+                var threshold = _options?.AutoCompactionThreshold is > 0 and <= 1
+            ? _options.AutoCompactionThreshold
+            : 0.65;
         return new ContextHealthEvaluator().Evaluate(
             sessionId,
             usage.UsedTokens,
             contextWindowTokens: contextWindowTokens.Value,
             maxOutputTokens: maxOutputTokens ?? 2_048,
-            maxInputTokens: maxInputTokens) with
+            maxInputTokens: maxInputTokens,
+            compactionThreshold: threshold) with
         {
             UsageSource = usage.Source,
             UsageConfidence = usage.Confidence,

@@ -21,6 +21,9 @@ public sealed class ContextCompactionOptions
     /// <summary>摘要后 tokens 不降反升时是否跳过压缩写入。默认 true。</summary>
     public bool SkipWhenSummaryIncreasesTokens { get; init; } = true;
 
+    /// <summary>自动压缩触发阈值比例（0 &lt; x ≤ 1），达到此使用率时触发自动压缩。默认 0.65。</summary>
+    public double AutoCompactionThreshold { get; init; } = 0.65;
+
     /// <summary>
     /// 等待 Agent 生成工作总结的最大重试次数。
     /// 注入提示词后若 Agent 未响应，最多重试此次数后强制压缩。默认 3。
