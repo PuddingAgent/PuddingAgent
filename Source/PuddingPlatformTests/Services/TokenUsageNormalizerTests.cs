@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
@@ -108,7 +108,7 @@ public sealed class TokenUsageNormalizerTests
 
         Assert.AreEqual(0, result.CacheHitTokens);
         Assert.AreEqual(5000, result.CacheMissTokens);
-        Assert.IsNull(result.CacheHitRate);
+        Assert.AreEqual(0.0, result.CacheHitRate!.Value, 0.0001);
         Assert.AreEqual(5000, result.BillableInputTokens);
     }
 

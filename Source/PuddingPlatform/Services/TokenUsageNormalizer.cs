@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 
 namespace PuddingPlatform.Services;
 
@@ -72,9 +72,12 @@ public class TokenUsageNormalizer
         var cacheHit = (decimal)(usage.PromptCacheHitTokens ?? 0);
         var cacheMiss = (decimal)ResolveMissTokens(usage);
 
+        // 当 cacheHitPrice 为 0 时回退到 inputPrice（部分模型缓存命中与输入同价）
+        var effectiveCacheHitPrice = cacheHitPrice == 0m ? inputPrice : cacheHitPrice;
+
         var inputCost = cacheMiss / 1_000_000m * inputPrice;
         var outputCost = completion / 1_000_000m * outputPrice;
-        var cacheHitCost = cacheHit / 1_000_000m * cacheHitPrice;
+        var cacheHitCost = cacheHit / 1_000_000m * effectiveCacheHitPrice;
         var totalCost = inputCost + outputCost + cacheHitCost;
 
         return (Math.Round(inputCost, 10), Math.Round(outputCost, 10), Math.Round(cacheHitCost, 10), Math.Round(totalCost, 10));
