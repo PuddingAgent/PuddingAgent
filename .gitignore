@@ -388,5 +388,5 @@ Resources/
 /.tmp-build
 /.tmp-test-out
 /build_out.txt
-﻿/.tmp-*
+.tmp-*
 external/  
