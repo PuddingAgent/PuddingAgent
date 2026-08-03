@@ -1,3 +1,4 @@
+﻿using System.Collections.Concurrent;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using HarnessAgent.Core.Connectors.Feishu;
@@ -29,6 +30,10 @@ public sealed class FeishuConnector : IPuddingConnector
     private ConnectorContext? _context;
     private FeishuClient? _client;
     private FeishuWebSocket? _webSocket;
+
+    // ── External message id dedup (TTL-based LRU) ──
+    private readonly ConcurrentDictionary<string, long> _recentExternalMessageIds = new();
+    private static readonly TimeSpan DedupTtl = TimeSpan.FromHours(2);
 
     private long _messagesReceived;
     private long _messagesSent;
@@ -703,6 +708,39 @@ public sealed class FeishuConnector : IPuddingConnector
         if (_client is null)
             throw new InvalidOperationException("Feishu connector not started");
 
+        // ── Connector-layer external message id TTL dedup ──
+        // Feishu webhook/WS may retry the same external event. If the
+        // connector generates a new internal message_id each time, the
+        // fabric-layer dedup cannot intercept the retry.  We record
+        // (connector_id, external_message_id) → expiry timestamp and
+        // drop duplicates within the TTL window (2 hours).
+        var externalMessageId = evt.ExtractMessageId();
+        if (!string.IsNullOrWhiteSpace(externalMessageId))
+        {
+            var key = $"{Descriptor.ConnectorId}\u001f{externalMessageId}";
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var expiry = nowMs + (long)DedupTtl.TotalMilliseconds;
+            if (!_recentExternalMessageIds.TryAdd(key, expiry))
+            {
+                // Re-check expiry: if the previous entry has expired,
+                // replace it (treat as new).
+                if (_recentExternalMessageIds.TryGetValue(key, out var existing)
+                    && existing < nowMs)
+                {
+                    _recentExternalMessageIds.TryRemove(key, out _);
+                    _recentExternalMessageIds.TryAdd(key, expiry);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "[Feishu][dedup] duplicate external_message_id={ExternalMessageId} connector={ConnectorId} skipped",
+                        externalMessageId, Descriptor.ConnectorId);
+                    return;
+                }
+            }
+            PruneExpiredDedupEntries(nowMs);
+        }
+
         var envelope = await _inboundMessageMapper.MapAsync(
             _binding,
             Descriptor.ConnectorId,
@@ -736,8 +774,25 @@ public sealed class FeishuConnector : IPuddingConnector
                 _binding.AgentId,
                 chatId,
                 messageId);
-            throw;
+                            throw;
         }
+    }
+
+    private void PruneExpiredDedupEntries(long nowMs)
+    {
+        // Best-effort lazy cleanup: only prune when the cache grows
+        // beyond a threshold, to avoid O(n) traversal on every event.
+        if (_recentExternalMessageIds.Count < 10_000)
+            return;
+
+        var expired = new List<string>();
+        foreach (var kvp in _recentExternalMessageIds)
+        {
+            if (kvp.Value < nowMs)
+                expired.Add(kvp.Key);
+        }
+        foreach (var key in expired)
+            _recentExternalMessageIds.TryRemove(key, out _);
     }
 }
 
