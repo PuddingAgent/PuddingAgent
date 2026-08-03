@@ -107,6 +107,30 @@ public sealed partial class AgentExecutionService
         var perfHistorySw = System.Diagnostics.Stopwatch.StartNew();
         var perfHistoryStartedAt = DateTimeOffset.UtcNow;
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
+
+        // ── 入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
+        //     不再重复进入 LLM 历史、不再重复执行。
+        if (!string.IsNullOrWhiteSpace(request.MessageId)
+            && !_contextManager.TryMarkMessageDispatched(request.SessionId, request.MessageId))
+        {
+            _logger.LogInformation(
+                "[AgentExec] STREAM duplicate message detected session={Session} messageId={MessageId} — skipping execution",
+                request.SessionId, request.MessageId);
+            _contextManager.MarkSessionExecutionCompleted(request.SessionId);
+            _skillPackageRegistry.Remove(instance.AgentInstanceId);
+            _controlRegistry.Remove(request.SessionId);
+            yield return ServerSentEventFrame.Json(SseEventTypes.Done, new
+            {
+                reply = "(duplicate message — already processed)",
+                sessionId = request.SessionId,
+                messageId = request.MessageId,
+                isError = false,
+                toolFailureCount = 0,
+                toolOutputTruncatedCount = 0,
+                toolOutputChars = 0L,
+            });
+            yield break;
+        }
         try
         {
             await _contextManager.TryHydrateStreamHistoryFromDbAsync(

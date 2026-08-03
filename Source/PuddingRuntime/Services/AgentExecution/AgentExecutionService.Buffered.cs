@@ -110,6 +110,25 @@ public sealed partial class AgentExecutionService
 
         // ── 构建对话历史 ─────────────────────────────────────────────
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
+
+        // ── 入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
+        //     不再重复进入 LLM 历史、不再重复执行。
+        if (!string.IsNullOrWhiteSpace(request.MessageId)
+            && !_contextManager.TryMarkMessageDispatched(request.SessionId, request.MessageId))
+        {
+            _logger.LogInformation(
+                "[AgentExec] Duplicate message detected session={Session} messageId={MessageId} — skipping execution",
+                request.SessionId, request.MessageId);
+            return new RuntimeDispatchResult
+            {
+                SessionId = request.SessionId,
+                AgentInstanceId = instance.AgentInstanceId,
+                ReplyText = "(duplicate message — already processed)",
+                IsSuccess = true,
+                ExecutionState = AgentExecutionState.Completed,
+                StopReason = "DuplicateMessage",
+            };
+        }
         if (history.Count == 0)
         {
             var ctxAssembleStartedAt = DateTimeOffset.UtcNow;

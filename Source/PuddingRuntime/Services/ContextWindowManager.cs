@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
@@ -41,6 +41,10 @@ public sealed class ContextWindowManager
     // 工作总结重试跟踪：每个 session 注入提示词的次数和首次注入时间
     private readonly ConcurrentDictionary<string, int> _workSummaryRetryCount = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _workSummaryFirstInjectedAt = new();
+
+    // Per-session dedup of inbound message IDs to prevent duplicate LLM history entries
+    // when Ack loss triggers retry dispatch of the same message.
+    private readonly ConcurrentDictionary<string, HashSet<string>> _dispatchedMessageIds = new();
 
     private sealed record HydratedHistorySnapshot(List<ChatMessage> Messages, long LastCreatedAt);
 
@@ -92,6 +96,40 @@ public sealed class ContextWindowManager
         _historyTimeouts[sessionId] = NormalizeSessionTimeout(sessionTimeout);
     }
 
+    /// <summary>
+    /// 标记消息已成功 dispatch。首次调用返回 true，重复调用返回 false。
+    /// 用于运行时层入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
+    /// 不再重复进入 LLM 历史、不再重复执行。
+    /// </summary>
+    public bool TryMarkMessageDispatched(string sessionId, string messageId)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+            return true; // 无 messageId 的消息不做去重
+
+        var set = _dispatchedMessageIds.GetOrAdd(sessionId, _ => new HashSet<string>());
+        lock (set)
+        {
+            return set.Add(messageId);
+        }
+    }
+
+    /// <summary>
+    /// 取消消息 dispatch 标记——执行失败时调用，允许后续重试。
+    /// </summary>
+    public void UnmarkMessageDispatched(string sessionId, string messageId)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+            return;
+
+        if (_dispatchedMessageIds.TryGetValue(sessionId, out var set))
+        {
+            lock (set)
+            {
+                set.Remove(messageId);
+            }
+        }
+    }
+
     public void MarkSessionExecuting(string sessionId)
     {
         _activeExecutions.AddOrUpdate(sessionId, 1, static (_, current) => current + 1);
@@ -135,6 +173,7 @@ public sealed class ContextWindowManager
             _runtimeSessionStore.Terminate(sessionId, "timeout");
             _controlRegistry.Remove(sessionId);
             _journal.ClearAnchor(sessionId);
+            _dispatchedMessageIds.TryRemove(sessionId, out _);
         }
 
         _logger.LogInformation(
@@ -169,6 +208,7 @@ public sealed class ContextWindowManager
 
             _historyLastAccessedAt.TryRemove(sessionId, out _);
             _historyTimeouts.TryRemove(sessionId, out _);
+            _dispatchedMessageIds.TryRemove(sessionId, out _);
         }
 
         if (removedCount > 0)

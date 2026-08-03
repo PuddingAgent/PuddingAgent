@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Models;
@@ -623,6 +623,71 @@ public sealed class ContextWindowManagerTests
         }
     }
 
+
+    [TestMethod]
+    public void TryMarkMessageDispatched_FirstCall_ReturnsTrue()
+    {
+        var manager = CreateManager();
+        var result = manager.TryMarkMessageDispatched("session-1", "msg-1");
+        Assert.IsTrue(result, "First dispatch of a message should return true.");
+    }
+
+    [TestMethod]
+    public void TryMarkMessageDispatched_DuplicateCall_ReturnsFalse()
+    {
+        var manager = CreateManager();
+        manager.TryMarkMessageDispatched("session-1", "msg-1");
+        var result = manager.TryMarkMessageDispatched("session-1", "msg-1");
+        Assert.IsFalse(result, "Duplicate message dispatch should return false.");
+    }
+
+    [TestMethod]
+    public void TryMarkMessageDispatched_DifferentSessions_Independent()
+    {
+        var manager = CreateManager();
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-1"));
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-2", "msg-1"),
+            "Same message ID in different sessions should not collide.");
+    }
+
+    [TestMethod]
+    public void TryMarkMessageDispatched_NullOrEmptyMessageId_ReturnsTrue()
+    {
+        var manager = CreateManager();
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", null!),
+            "Null message ID should bypass dedup.");
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", ""),
+            "Empty message ID should bypass dedup.");
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "   "),
+            "Whitespace message ID should bypass dedup.");
+    }
+
+    [TestMethod]
+    public void UnmarkMessageDispatched_AllowsRetry()
+    {
+        var manager = CreateManager();
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-1"));
+        manager.UnmarkMessageDispatched("session-1", "msg-1");
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-1"),
+            "After unmark, the message should be dispatchable again.");
+    }
+
+    [TestMethod]
+    public void UnmarkMessageDispatched_NonExistentSession_DoesNotThrow()
+    {
+        var manager = CreateManager();
+        manager.UnmarkMessageDispatched("nonexistent", "msg-1");
+        // Should not throw
+    }
+
+    [TestMethod]
+    public void TryMarkMessageDispatched_DifferentMessages_SameSession()
+    {
+        var manager = CreateManager();
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-1"));
+        Assert.IsTrue(manager.TryMarkMessageDispatched("session-1", "msg-2"),
+            "Different messages in the same session should both be allowed.");
+    }
     private static ContextWindowManager CreateManager()
         => CreateManager(compactionService: null);
 
