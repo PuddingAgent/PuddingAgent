@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,15 +28,14 @@ public sealed class MessageFabricStore : IMessageInbox
         _logger = logger ?? NullLogger<MessageFabricStore>.Instance;
     }
 
-    public async Task PersistRouteAsync(
+    public async Task<bool> PersistRouteAsync(
         string workspaceId,
         MessageRoutePlan plan,
         CancellationToken ct = default)
     {
         var exists = await _db.RoomMessages
             .AnyAsync(message => message.MessageId == plan.MessageId, ct);
-        if (exists)
-            return;
+        if (exists) return false;
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         _db.RoomMessages.Add(new RoomMessageEntity
@@ -93,6 +92,7 @@ public sealed class MessageFabricStore : IMessageInbox
                 correlationId: null,
                 causationId: null);
         }
+        return true;
     }
 
     public async Task<IReadOnlyList<MessageInboxItem>> ListAsync(

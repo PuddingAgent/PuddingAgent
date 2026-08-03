@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -55,7 +55,19 @@ public sealed class MessageSystem : IMessageSystem
             envelope.CorrelationId,
             envelope.CausationId);
 
-        await _store.PersistRouteAsync(workspaceId, plan, ct);
+        var persisted = await _store.PersistRouteAsync(workspaceId, plan, ct);
+        if (!persisted)
+        {
+            _logger.LogInformation(
+                "[MessageFabric][dedup] duplicate message_id={message_id} skipped",
+                envelope.MessageId);
+            return new MessageSendResult
+            {
+                MessageId = envelope.MessageId,
+                RoomId = roomId,
+                DeliveryIds = [],
+            };
+        }
 
         foreach (var delivery in plan.Deliveries)
         {
