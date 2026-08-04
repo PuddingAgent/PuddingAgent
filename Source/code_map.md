@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 最后更新: 2026-08-03 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1/2 accepted ✅ | Phase 2A-3 automated accepted ✅（真实 DeepSeek smoke pending）
+> 最后更新: 2026-08-04 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1/2 accepted ✅ | Phase 2A-3 automated accepted ✅ | Git Tools ✅ | 29 项目（真实 DeepSeek smoke pending）
 
 ---
 
@@ -79,24 +79,104 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 
 ## 顶层目录结构
 
-```
-Source/
-├── PuddingAgent/              # 入口项目 (Program.cs, 启动配置)
-├── PuddingHost/               # 🔑 唯一 Host 组合根 — Console 与 Desktop 共用 (Phase 0 Closeout ✅)
-├── PuddingDesktop/            # Windows WPF 产品 Launcher（Phase 1A + Phase 1B-R/S + Phase 2A-1/3 已落地）
-├── PuddingBrowser.AgentTools/ # 七项通用 Browser Agent Tools（Phase 2A-2/3）
-├── PuddingBrowser.Abstractions/ # 通用 Agent Browser 契约
-├── PuddingBrowser.WebView2/   # 通用 WebView2 Driver（Context/Page/Surface/Snapshot/Locator/Interact/Wait）
-├── PuddingCodexService/       # 🔑 宿主外 Codex MCP Sidecar（持久任务/自修复重启握手）
-├── PuddingRuntime/            # 🔑 运行时核心 (Agent Loop, LLM 调用, 工具系统)
-├── PuddingPlatform/           # 🔑 平台层 (Session 管理, API, 数据持久化)
-├── PuddingMemoryEngine/       # 🔑 记忆引擎 (Library/Book/Chapter, FTS5)
-├── PuddingCore/               # 🔑 核心抽象与契约 (接口、模型、解析器)
-├── PuddingController/         # 代理控制层
-├── PuddingGateway/            # LLM 网关适配
-├── PuddingCodeIntelligence/   # 代码索引/分析
-├── PuddingFullTextIndex/      # 全文索引引擎
-```
+| 项目 | 类型 | 说明 |
+|------|------|------|
+| `PuddingAgent/` | 🔑 入口 | 入口项目 (Program.cs, 启动配置) |
+| `PuddingHost/` | 🔑 核心 | 唯一 Host 组合根 — Console 与 Desktop 共用 (Phase 0 Closeout ✅) |
+| `PuddingDesktop/` | 🔑 核心 | Windows WPF 产品 Launcher（Phase 1A + Phase 1B-R/S + Phase 2A-1/3 已落地） |
+| `PuddingBrowser.AgentTools/` | 生产 | 七项通用 Browser Agent Tools（Phase 2A-2/3） |
+| `PuddingBrowser.Abstractions/` | 生产 | 通用 Agent Browser 契约 |
+| `PuddingBrowser.WebView2/` | 生产 | 通用 WebView2 Driver（Context/Page/Surface/Snapshot/Locator/Interact/Wait） |
+| `PuddingCodexService/` | 🔑 核心 | 宿主外 Codex MCP Sidecar（持久任务/自修复重启握手） |
+| `PuddingRuntime/` | 🔑 核心 | 运行时核心 (Agent Loop, LLM 调用, 工具系统, Git 工具) |
+| `PuddingPlatform/` | 🔑 核心 | 平台层 (Session 管理, API, 数据持久化) |
+| `PuddingMemoryEngine/` | 🔑 核心 | 记忆引擎 (Library/Book/Chapter, FTS5) |
+| `PuddingCore/` | 🔑 核心 | 核心抽象与契约 (接口、模型、解析器) |
+| `PuddingController/` | 生产 | 代理控制层 |
+| `PuddingGateway/` | 生产 | LLM 网关适配 |
+| `PuddingCodeIntelligence/` | 生产 | 代码索引/分析 |
+| `PuddingFullTextIndex/` | 生产 | 全文索引引擎 |
+| `PuddingBrowser.Protocol/` | 🆕 生产 | Browser Bridge 线协议（命令名/载荷/信封/错误码/序列化，8 个 .cs） |
+| `PuddingCodeIndexer.Cli/` | 🆕 生产 | 代码索引 CLI（index/search/status/watch/definition/references/hover） |
+| `PuddingGit.Tools/` | 🆕 生产 | Git 工具（实现在 PuddingRuntime/Tools/BuiltIns/Git/，20 tools + GitConstants） |
+| `PuddingPlatformAdmin/` | 🆕 生产 | Workbench 管理前端（Ant Design Pro v6, React 19, UmiJS, TypeScript） |
+| `PuddingCoreTests/` | 🧪 测试 | 核心抽象与契约测试 |
+| `PuddingRuntimeTests/` | 🧪 测试 | 运行时核心测试 |
+| `PuddingPlatformTests/` | 🧪 测试 | 平台层测试 |
+| `PuddingMemoryEngineTests/` | 🧪 测试 | 记忆引擎测试 |
+| `PuddingMemoryEngineBenchmarks/` | 🧪 测试 | 记忆引擎基准测试 |
+| `PuddingCodeIntelligenceTests/` | 🧪 测试 | 代码索引/分析测试 |
+| `PuddingCodexServiceTests/` | 🧪 测试 | 宿主外 Codex MCP Service 测试 |
+| `PuddingFullTextIndexTests/` | 🧪 测试 | 全文索引引擎测试 |
+| `PuddingWebApiTests/` | 🧪 测试 | Web API 测试 |
+| `build/` | 构建 | 构建输出目录（Release publish / smoke 产物） |
+
+## 🆕 PuddingBrowser.Protocol — Browser Bridge 线协议
+
+Phase 2A-1/2/3 认证 WebSocket Bridge 的独立线协议契约库；只包含命令名/载荷/信封/错误码/序列化，不依赖具体传输，Host Remote Browser 代理与 Desktop Client 共用。
+
+| 文件 | 用途 |
+|------|------|
+| `BrowserBridgeProtocol.cs` | 协议版本与能力常量 |
+| `BrowserBridgeCommandNames.cs` | 全部 Bridge 命令名 |
+| `BrowserBridgeCommandPayloads.cs` | 各命令载荷模型 |
+| `BrowserBridgeEnvelope.cs` | 请求/响应统一信封 |
+| `BrowserBridgeErrorCodes.cs` | 稳定错误码（与 Remote Browser proxy 共用） |
+| `BrowserBridgeMessages.cs` | 消息类型与序列化标记 |
+| `BrowserBridgeSerializer.cs` | 协议序列化实现 |
+| `BrowserBridgeJsonSerializerContext.cs` | 源生成 JSON 序列化上下文 |
+
+## 🆕 PuddingCodeIndexer.Cli — 代码索引 CLI
+
+基于 PuddingCodeIntelligence 的独立命令行入口：
+
+| 文件 | 用途 |
+|------|------|
+| `Program.cs` | CLI 入口；index / search / status / watch / definition / references / hover 子命令 |
+| `Scripts/` | 索引与发布辅助脚本 |
+| `TestFixtures/` | 索引查询测试夹具 |
+| `pub/` | 发布产物输出 |
+
+## 🆕 PuddingGit.Tools — Git 工具集
+
+Git 工具工程壳；20 个工具 + GitConstants 实现在 `PuddingRuntime/Tools/BuiltIns/Git/`，由 Runtime 注册为内置工具：
+
+| 工具 | 用途 |
+|------|------|
+| `GitInitTool` / `GitCloneTool` | 初始化 / 克隆仓库 |
+| `GitStatusTool` / `GitLogTool` / `GitDiffTool` / `GitBlameTool` | 仓库状态与历史查询 |
+| `GitAddTool` / `GitCommitTool` / `GitResetTool` / `GitStashTool` | 暂存 / 提交 / 回退 / 储藏 |
+| `GitBranchListTool` / `GitBranchCreateTool` / `GitBranchSwitchTool` / `GitCheckoutTool` / `GitMergeTool` | 分支列表 / 创建 / 切换 / 检出 / 合并 |
+| `GitFetchTool` / `GitPullTool` / `GitPushTool` / `GitRemoteTool` / `GitTagTool` | 远程同步与标签 |
+| `GitConstants.cs` | 工具名与参数常量 |
+
+## 🆕 PuddingPlatformAdmin — Workbench 管理前端
+
+Workbench 的 React 管理前端（Ant Design Pro v6 + React 19 + UmiJS + TypeScript，pnpm workspace）：
+
+| 目录 / 文件 | 用途 |
+|------|------|
+| `src/pages/chat/` | Chat 工作台（多模态、子代理运行坞、SSE/replay、视口虚拟化） |
+| `src/pages/workspace/[id]/` | 工作空间 Agent 管理（六面板设置抽屉、Smart 角色模型） |
+| `src/pages/memory-library/` | 记忆图书馆工作台 |
+| `src/pages/llm-resource-pool/` | LLM 服务商与模型管理 |
+| `src/pages/home/index.tsx` | Workbench 认证后默认首页 |
+| `config/` + `package.json` + `pnpm-lock.yaml` | UmiJS 配置与依赖锁定 |
+| `dist/` | 构建产物（发布到 Host wwwroot/admin） |
+
+## 🧪 测试项目总览
+
+| 项目 | 覆盖范围 |
+|------|------|
+| `PuddingCoreTests/` | 核心抽象与契约（工具契约、LLM 网关、消息围栏、MessageFabric） |
+| `PuddingRuntimeTests/` | 运行时核心（Host 生命周期、Agent Loop、上下文管线、语音/图片 Provider） |
+| `PuddingPlatformTests/` | 平台层（渠道配置、Artifact 存储、视觉观察、图片生成/投递） |
+| `PuddingMemoryEngineTests/` | 记忆引擎（Library/Book/Chapter、FTS5、Skill 进化去重） |
+| `PuddingMemoryEngineBenchmarks/` | 记忆引擎基准测试（BenchmarkDotNet） |
+| `PuddingCodeIntelligenceTests/` | 代码索引/分析 |
+| `PuddingCodexServiceTests/` | 宿主外 Codex MCP Service |
+| `PuddingFullTextIndexTests/` | 全文索引引擎 |
+| `PuddingWebApiTests/` | Web API（含 asr/图片工具授权回归） |
 
 ---
 
