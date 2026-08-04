@@ -165,11 +165,16 @@ public sealed class HeartbeatOrchestrator : IHostedService
                     .GetRequiredService<IAgentExecutionStateRegistry>()
                     .Get(workspaceId, request.AgentId);
 
-            if (!availability.CanStartMessageDelivery)
+                        if (!availability.CanStartMessageDelivery)
             {
                 _logger.LogInformation(
                     "[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (busy: {Status})",
                     request.AgentId, availability.Status);
+                // R7: Re-enqueue with min 30s delay to prevent silent drop from wake queue
+                var skipDelay = request.MinIdle < TimeSpan.FromSeconds(30)
+                    ? TimeSpan.FromSeconds(30)
+                    : request.MinIdle;
+                await _wakeQueue.EnqueueAsync(request.AgentId, skipDelay, request.MaxIdle, ct);
                 _idleDetector.ReArm();
                 return;
             }
@@ -181,6 +186,11 @@ public sealed class HeartbeatOrchestrator : IHostedService
             if (agent?.IsFrozen == true)
             {
                 _logger.LogInformation("[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (frozen)", request.AgentId);
+                // R7: Re-enqueue with min 30s delay to prevent silent drop from wake queue
+                var skipDelay = request.MinIdle < TimeSpan.FromSeconds(30)
+                    ? TimeSpan.FromSeconds(30)
+                    : request.MinIdle;
+                await _wakeQueue.EnqueueAsync(request.AgentId, skipDelay, request.MaxIdle, ct);
                 _idleDetector.ReArm();
                 return;
             }
@@ -212,6 +222,11 @@ public sealed class HeartbeatOrchestrator : IHostedService
                     _logger.LogInformation(
                         "[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (pending heartbeat delivery exists)",
                         request.AgentId);
+                    // R7: Re-enqueue with min 30s delay to prevent silent drop from wake queue
+                    var skipDelay = request.MinIdle < TimeSpan.FromSeconds(30)
+                        ? TimeSpan.FromSeconds(30)
+                        : request.MinIdle;
+                    await _wakeQueue.EnqueueAsync(request.AgentId, skipDelay, request.MaxIdle, ct);
                     _idleDetector.ReArm();
                     return;
                 }

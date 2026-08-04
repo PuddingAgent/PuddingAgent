@@ -242,6 +242,146 @@ public sealed class AgentWakeQueueTests
         Assert.IsNull(await queue.GetWakeRequestAsync("unknown", CancellationToken.None));
     }
 
+    // ── R7: Skip re-enqueue (prevent silent drop from wake queue) ──
+
+    [TestMethod]
+    public async Task DequeueThenReEnqueue_PreservesCustomMaxIdle()
+    {
+        // Simulates the fix: after TryDequeueAsync removes an agent,
+        // calling EnqueueAsync re-adds it with the same MaxIdle preserved.
+        var queue = CreateQueue();
+        var ct = CancellationToken.None;
+        var agentId = "agent-skip";
+        var originalMin = TimeSpan.FromSeconds(60);
+        var originalMax = TimeSpan.FromSeconds(300);
+
+        await queue.EnqueueAsync(agentId, originalMin, originalMax, ct);
+        Assert.IsTrue(await queue.IsInQueueAsync(agentId, ct));
+
+        // Dequeue is not immediately ready (EarliestWakeAt = now+60s)
+        var dequeued = await queue.TryDequeueAsync(ct);
+        Assert.IsNull(dequeued, "Should not be ready before EarliestWakeAt");
+        Assert.AreEqual(1, await queue.CountAsync(ct));
+
+        // Now simulate removing (like ClearAsync) and re-enqueue with MinIdle clamped
+        await queue.ClearAsync(agentId, ct);
+        Assert.AreEqual(0, await queue.CountAsync(ct));
+
+        // Re-enqueue with skipDelay (min 30s) and original MaxIdle
+        var skipDelay = TimeSpan.FromSeconds(30);
+        await queue.EnqueueAsync(agentId, skipDelay, originalMax, ct);
+        Assert.AreEqual(1, await queue.CountAsync(ct));
+
+        var req = await queue.GetWakeRequestAsync(agentId, ct);
+        Assert.IsNotNull(req);
+        Assert.AreEqual(skipDelay, req.MinIdle, "MinIdle should be the skip delay");
+        Assert.AreEqual(originalMax, req.MaxIdle, "MaxIdle should be preserved from original");
+    }
+
+    [TestMethod]
+    public async Task ReEnqueueWithShortMinIdle_ClampsTo30Seconds()
+    {
+        var queue = CreateQueue();
+        var ct = CancellationToken.None;
+        var agentId = "agent-short-min";
+        var shortMin = TimeSpan.FromSeconds(10);
+        var originalMax = TimeSpan.FromSeconds(60);
+        var now = DateTime.UtcNow;
+
+        // First enqueue with short min
+        await queue.EnqueueAsync(agentId, shortMin, originalMax, ct);
+
+        // Clear and re-enqueue with clamped skip delay
+        await queue.ClearAsync(agentId, ct);
+        var skipDelay = shortMin < TimeSpan.FromSeconds(30)
+            ? TimeSpan.FromSeconds(30)
+            : shortMin;
+        await queue.EnqueueAsync(agentId, skipDelay, originalMax, ct);
+
+        var req = await queue.GetWakeRequestAsync(agentId, ct);
+        Assert.IsNotNull(req);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), req.MinIdle, "MinIdle should be clamped to 30s");
+        Assert.IsTrue(req.EarliestWakeAt >= now.Add(TimeSpan.FromSeconds(30)),
+            "EarliestWakeAt should be at least 30s from now");
+
+        // Immediately after re-enqueue, agent should NOT be dequeuable
+        // (EarliestWakeAt is 30s in the future)
+        var early = await queue.TryDequeueAsync(ct);
+        Assert.IsNull(early, "Should not dequeue immediately after re-enqueue with 30s delay");
+    }
+
+    [TestMethod]
+    public async Task ConsecutiveSkipCycles_PushEarliestWakeAtFurther()
+    {
+        // Anti-hot-loop: each skip cycle should push EarliestWakeAt and prevent immediate re-dequeue
+        var queue = CreateQueue();
+        var ct = CancellationToken.None;
+        var agentId = "agent-hotloop";
+        var shortMin = TimeSpan.FromSeconds(5);
+        var customMax = TimeSpan.FromSeconds(300);
+
+        // Enqueue with short min (would normally be ready in 5s)
+        await queue.EnqueueAsync(agentId, shortMin, customMax, ct);
+
+        // First skip cycle: clear + re-enqueue with clamped 30s
+        await queue.ClearAsync(agentId, ct);
+        var skipDelay1 = shortMin < TimeSpan.FromSeconds(30)
+            ? TimeSpan.FromSeconds(30)
+            : shortMin;
+        await queue.EnqueueAsync(agentId, skipDelay1, customMax, ct);
+
+        var req1 = await queue.GetWakeRequestAsync(agentId, ct);
+        Assert.IsNotNull(req1);
+        var firstEarliestWake = req1.EarliestWakeAt;
+
+        // Verify not immediately dequeuable
+        Assert.IsNull(await queue.TryDequeueAsync(ct));
+
+        // Second skip cycle: clear + re-enqueue again
+        await queue.ClearAsync(agentId, ct);
+        var skipDelay2 = skipDelay1 < TimeSpan.FromSeconds(30)
+            ? TimeSpan.FromSeconds(30)
+            : skipDelay1;
+        await queue.EnqueueAsync(agentId, skipDelay2, customMax, ct);
+
+        var req2 = await queue.GetWakeRequestAsync(agentId, ct);
+        Assert.IsNotNull(req2);
+        Assert.IsTrue(req2.EarliestWakeAt >= firstEarliestWake,
+            "Second re-enqueue should push EarliestWakeAt at least as far as first");
+
+        // Still not dequeuable
+        Assert.IsNull(await queue.TryDequeueAsync(ct));
+
+        // Custom MaxIdle preserved through all cycles
+        Assert.AreEqual(customMax, req2.MaxIdle);
+    }
+
+    [TestMethod]
+    public async Task SkipReEnqueue_PreservesCustomAgentInQueue()
+    {
+        // Verifies that after skip-style re-enqueue, EnsureDefaultAsync does not override
+        var queue = CreateQueue();
+        var ct = CancellationToken.None;
+        var agentId = "agent-custom-preserved";
+        var customMin = TimeSpan.FromSeconds(120);
+        var customMax = TimeSpan.FromSeconds(600);
+
+        // Custom sleep registration
+        await queue.EnqueueAsync(agentId, customMin, customMax, ct);
+
+        // Simulate skip: clear and re-enqueue
+        await queue.ClearAsync(agentId, ct);
+        var skipDelay = customMin < TimeSpan.FromSeconds(30) ? TimeSpan.FromSeconds(30) : customMin;
+        await queue.EnqueueAsync(agentId, skipDelay, customMax, ct);
+
+        // EnsureDefaultAsync should NOT override (agent is in queue)
+        await queue.EnsureDefaultAsync(agentId, ct);
+
+        var req = await queue.GetWakeRequestAsync(agentId, ct);
+        Assert.IsNotNull(req);
+        Assert.AreEqual(customMax, req.MaxIdle, "Custom MaxIdle should survive EnsureDefaultAsync");
+    }
+
     // ── 并发安全 ──
 
     [TestMethod]
