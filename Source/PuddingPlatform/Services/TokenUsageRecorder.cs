@@ -203,6 +203,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 ToolDefinitionTokens = ResolveLayerToken(sessionId, s => s.ToolDefinitionTokens),
                 SystemMessageTokens = ResolveLayerToken(sessionId, s => s.SystemMessageTokens),
                 HistoryMessageTokens = ResolveLayerToken(sessionId, s => s.HistoryMessageTokens),
+                SystemMessageEntropy = ResolveLayerEntropy(sessionId, s => s.SystemMessageEntropy),
+                HistoryMessageEntropy = ResolveLayerEntropy(sessionId, s => s.HistoryMessageEntropy),
+                ToolDefinitionEntropy = ResolveLayerEntropy(sessionId, s => s.ToolDefinitionEntropy),
                 CacheHitRate = normalized.CacheHitRate,
                 InputCost = normalized.InputCost,
                 OutputCost = normalized.OutputCost,
@@ -582,6 +585,17 @@ public class TokenUsageRecorder : ITokenUsageRecorder
     }
 
     private int? ResolveLayerToken(string? sessionId, Func<ContextUsageSnapshot, int> selector)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || _contextUsageSnapshotStore is null)
+            return null;
+
+        if (_contextUsageSnapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
+            return selector(snapshot);
+
+        return null;
+    }
+
+    private double? ResolveLayerEntropy(string? sessionId, Func<ContextUsageSnapshot, double?> selector)
     {
         if (string.IsNullOrWhiteSpace(sessionId) || _contextUsageSnapshotStore is null)
             return null;

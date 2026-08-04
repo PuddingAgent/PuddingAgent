@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PuddingGit.Tools — Structured Git tools for Pudding Agents.
+    Phase 1: status / log / diff (read-only MVP).
+    Uses LibGit2Sharp for process-in-memory Git operations.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PuddingGit.Tools</AssemblyName>
+    <RootNamespace>PuddingGit.Tools</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
+  </ItemGroup>
+</Project>

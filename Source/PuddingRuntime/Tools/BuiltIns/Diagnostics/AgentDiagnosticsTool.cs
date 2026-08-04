@@ -22,6 +22,7 @@ namespace PuddingRuntime.Services.Tools;
 ///   - compaction_stats: 查询压缩统计
 ///   - latency_breakdown: 查询延迟分解
 ///   - token_breakdown: 返回当前（或指定 session_id）最近一次请求的分层 token 分解（MessageTokens/ToolDefinitionTokens/SystemMessageTokens/HistoryMessageTokens）
+///   - entropy_probe: 返回当前（或指定 session_id）最近一次请求各层的 gzip 压缩比（SystemMessage/HistoryMessage/ToolDefinition）
 /// </summary>
 [Tool(
     id: "agent_diagnostics",
@@ -66,7 +67,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "compaction_stats" => await GetCompactionStatsAsync(args, limit, ct),
                         "latency_breakdown" => await GetLatencyBreakdownAsync(args, ct),
             "token_breakdown" => await GetTokenBreakdownAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown." })
+            "entropy_probe" => await GetEntropyProbeAsync(args, context, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -478,6 +480,75 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         catch (Exception ex)
         {
             return JsonSerializer.Serialize(new { error = "Failed to compute token breakdown.", detail = ex.Message });
+        }
+    }
+
+    private async Task<string> GetEntropyProbeAsync(AgentDiagnosticsArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        try
+        {
+            var sessionId = args.SessionId ?? context.SessionId;
+
+            // 优先从内存 ContextUsageSnapshotStore 获取
+            using var scope = _scopeFactory.CreateScope();
+            var snapshotStore = scope.ServiceProvider.GetService<PuddingCode.Platform.ContextUsageSnapshotStore>();
+
+            if (snapshotStore is not null && !string.IsNullOrWhiteSpace(sessionId)
+                && snapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    source = "memory",
+                    session_id = sessionId,
+                    recorded_at = snapshot.RecordedAt,
+                    system_message_entropy = snapshot.SystemMessageEntropy,
+                    history_message_entropy = snapshot.HistoryMessageEntropy,
+                    tool_definition_entropy = snapshot.ToolDefinitionEntropy,
+                    message_count = snapshot.MessageCount,
+                    tool_count = snapshot.ToolCount,
+                    total_estimated_tokens = snapshot.UsedTokens,
+                }, new JsonSerializerOptions { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            }
+
+            // 回退 DB 最新记录
+            var db = scope.ServiceProvider.GetRequiredService<PuddingPlatform.Data.PlatformDbContext>();
+            var latest = await db.TokenUsageEvents
+                .AsNoTracking()
+                .Where(e => e.SessionId == sessionId
+                    && (e.SystemMessageEntropy != null || e.HistoryMessageEntropy != null || e.ToolDefinitionEntropy != null))
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Select(e => new
+                {
+                    e.SessionId,
+                    e.OccurredAtUtc,
+                    e.SystemMessageEntropy,
+                    e.HistoryMessageEntropy,
+                    e.ToolDefinitionEntropy,
+                    e.MessageTokens,
+                    e.ToolDefinitionTokens,
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (latest is not null)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    source = "db",
+                    session_id = latest.SessionId,
+                    recorded_at = latest.OccurredAtUtc,
+                    system_message_entropy = latest.SystemMessageEntropy,
+                    history_message_entropy = latest.HistoryMessageEntropy,
+                    tool_definition_entropy = latest.ToolDefinitionEntropy,
+                    message_tokens = latest.MessageTokens,
+                    tool_definition_tokens = latest.ToolDefinitionTokens,
+                }, new JsonSerializerOptions { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            }
+
+            return JsonSerializer.Serialize(new { error = "No entropy probe data available for this session.", session_id = sessionId });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = "Failed to compute entropy probe.", detail = ex.Message });
         }
     }
 

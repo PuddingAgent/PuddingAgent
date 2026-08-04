@@ -67,6 +67,15 @@ public class TokenUsageEventEntity
     /// <summary>历史消息（非 system）的 token 估算值（分层分解）。</summary>
     public int? HistoryMessageTokens { get; set; }
 
+    /// <summary>System 消息层 gzip 压缩比（熵探针）。</summary>
+    public double? SystemMessageEntropy { get; set; }
+
+    /// <summary>历史消息层 gzip 压缩比（熵探针）。</summary>
+    public double? HistoryMessageEntropy { get; set; }
+
+    /// <summary>工具定义层 gzip 压缩比（熵探针）。</summary>
+    public double? ToolDefinitionEntropy { get; set; }
+
     /// <summary>缓存命中率 0.0 ~ 1.0，无缓存事件时为 null</summary>
     public double? CacheHitRate { get; set; }
 

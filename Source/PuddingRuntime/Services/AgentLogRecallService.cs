@@ -1,4 +1,4 @@
-using PuddingCode.Configuration;
+﻿using PuddingCode.Configuration;
 using PuddingFullTextIndex.Contracts;
 
 namespace PuddingRuntime.Services;
@@ -53,7 +53,7 @@ public sealed class AgentLogRecallService
 
         var recentThirtyDaysMessages = messageMatches
             .Select(match => ToRecallMatch(match, AgentLogRecallSource.MessageLog, messageRoot))
-            .Where(match => IsWithinDays(match.Day, now, 30))
+            .Where(match => IsWithinDays(match.Day, now, 30) && !IsWithinDays(match.Day, now, 5))
             .Take(Math.Max(request.RecentThirtyDaysMessageLimit, 0))
             .ToList();
 

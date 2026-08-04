@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using Microsoft.ML.Tokenizers;
 using PuddingCode.Models;
@@ -101,7 +102,13 @@ namespace PuddingCode.Platform
         /// <summary>规范化工具名称、描述和参数 schema 的稳定哈希。</summary>
         public string? ToolDefinitionHash { get; set; }
         public string Source { get; set; } = "unknown";
-        public string Confidence { get; set; } = "estimated";
+                public string Confidence { get; set; } = "estimated";
+        /// <summary>System 消息层 gzip 压缩比（熵探针）。</summary>
+        public double? SystemMessageEntropy { get; set; }
+        /// <summary>历史消息层 gzip 压缩比（熵探针）。</summary>
+        public double? HistoryMessageEntropy { get; set; }
+        /// <summary>工具定义层 gzip 压缩比（熵探针）。</summary>
+        public double? ToolDefinitionEntropy { get; set; }
         public int? ProviderPromptTokens { get; set; }
         public int? ProviderCompletionTokens { get; set; }
         public int? ProviderTotalTokens { get; set; }
@@ -141,20 +148,34 @@ namespace PuddingCode.Platform
             IReadOnlyList<LlmToolDefinition>? tools,
             string? modelId = null)
         {
-            var messageTokens = 0;
+                        var messageTokens = 0;
             var systemTokens = 0;
             var historyTokens = 0;
+            var systemText = new StringBuilder();
+            var historyText = new StringBuilder();
             foreach (var message in messages)
             {
+                var content = message.Content ?? string.Empty;
                 var tokenCount = CountMessageTokens(message, modelId);
                 messageTokens += tokenCount;
                 if (message.Role == ChatRole.System)
+                {
                     systemTokens += tokenCount;
+                    if (content.Length > 0)
+                        systemText.AppendLine(content);
+                }
                 else
+                {
                     historyTokens += tokenCount;
+                    if (content.Length > 0)
+                        historyText.AppendLine(content);
+                }
             }
 
             var toolTokens = CountToolDefinitionTokens(tools, modelId);
+            var toolText = tools is { Count: > 0 }
+                ? JsonSerializer.Serialize(tools, JsonOptions)
+                : null;
             var rawEstimatedTokens = Math.Max(0, messageTokens + toolTokens);
             var calibrationRatio = GetPromptCalibrationRatio(sessionId, modelId);
             var calibratedTokens = (int)Math.Min(
@@ -180,6 +201,9 @@ namespace PuddingCode.Platform
                 Confidence = calibrationRatio > 1.0001 ? "provider_calibrated" : "estimated",
                 ModelId = modelId,
                 PromptCalibrationRatio = calibrationRatio,
+                SystemMessageEntropy = EntropyProbe.ComputeGzipRatio(systemText.ToString()),
+                HistoryMessageEntropy = EntropyProbe.ComputeGzipRatio(historyText.ToString()),
+                ToolDefinitionEntropy = EntropyProbe.ComputeGzipRatio(toolText),
             };
             Set(snapshot);
             return snapshot;

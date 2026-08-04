@@ -1,4 +1,4 @@
-ï»¿using System.Text.Json;
+using System.Text.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -14,32 +14,32 @@ using PuddingPlatform.Services;
 namespace PuddingRuntime.Services.Skills;
 
 /// <summary>
-/// SubAgentTool â€” ä¸» Agent æ´¾ç”Ÿå­ä»£ç†æ‰§è¡Œä»»åŠ¡çš„ Skillã€‚
+/// SubAgentTool ¡ª Ö÷ Agent ÅÉÉú×Ó´úÀíÖ´ĞĞÈÎÎñµÄ Skill¡£
 /// 
-/// è®¾è®¡åŸåˆ™ï¼š
-///   Â· å¤ç”¨ AgentExecutionService â€” å­ä»£ç†ä¸ä¸»ä»£ç†ä½¿ç”¨åŒä¸€æ‰§è¡Œå¼•æ“ï¼Œä¸å¦èµ·ç‚‰ç¶
-///   Â· æƒé™ç»§æ‰¿ â€” å­ä»£ç»§æ‰¿çˆ¶ä»£ç†çš„èƒ½åŠ›ç­–ç•¥ï¼Œçˆ¶ä»£ç†å¯ä¸‹è°ƒï¼ˆä¸å¯å‡çº§ï¼‰
-///   Â· å·¥å…·ç»§æ‰¿ â€” é»˜è®¤ç»§æ‰¿çˆ¶ä»£ç†çš„å·¥å…·é›†ï¼Œå¯æŒ‡å®šå­é›†
-///   Â· æ¨¡å‹è·¯ç”± â€” é€šè¿‡ ILlmResolver ä» llm.providers.json å”¯ä¸€é…ç½®æºè§£æèº«ä»½ä¸é…ç½®å¿«ç…§
-///   Â· åŒæ­¥æ¨¡å¼ â€” çˆ¶ä»£ç†ç­‰å¾…å­ä»£ç†å®Œæˆï¼Œç»“æœæ³¨å…¥çˆ¶ä»£ç†ä¸Šä¸‹æ–‡
-///   Â· å¼‚æ­¥æ¨¡å¼ â€” çˆ¶ä»£ç†ç»§ç»­æ‰§è¡Œï¼Œå­ä»£ç†å®Œæˆåé€šè¿‡äº‹ä»¶ç³»ç»Ÿå›è°ƒé€šçŸ¥
-///   Â· å‚æ•°æ ¡éªŒ â€” æ— æ•ˆæ¨¡æ¿åè¿”å›å¯ç”¨åˆ—è¡¨ï¼Œä¸è®© LLM ç›²çŒœ
-///   Â· å»¶è¿Ÿè§£æ â€” ä½¿ç”¨ IServiceProvider é¿å… AgentExecutionService çš„ DI æ­»é”
+/// Éè¼ÆÔ­Ôò£º
+///   ¡¤ ¸´ÓÃ AgentExecutionService ¡ª ×Ó´úÀíÓëÖ÷´úÀíÊ¹ÓÃÍ¬Ò»Ö´ĞĞÒıÇæ£¬²»ÁíÆğÂ¯Ôî
+///   ¡¤ È¨ÏŞ¼Ì³Ğ ¡ª ×Ó´ú¼Ì³Ğ¸¸´úÀíµÄÄÜÁ¦²ßÂÔ£¬¸¸´úÀí¿ÉÏÂµ÷£¨²»¿ÉÉı¼¶£©
+///   ¡¤ ¹¤¾ß¼Ì³Ğ ¡ª Ä¬ÈÏ¼Ì³Ğ¸¸´úÀíµÄ¹¤¾ß¼¯£¬¿ÉÖ¸¶¨×Ó¼¯
+///   ¡¤ Ä£ĞÍÂ·ÓÉ ¡ª Í¨¹ı ILlmResolver ´Ó llm.providers.json Î¨Ò»ÅäÖÃÔ´½âÎöÉí·İÓëÅäÖÃ¿ìÕÕ
+///   ¡¤ Í¬²½Ä£Ê½ ¡ª ¸¸´úÀíµÈ´ı×Ó´úÀíÍê³É£¬½á¹û×¢Èë¸¸´úÀíÉÏÏÂÎÄ
+///   ¡¤ Òì²½Ä£Ê½ ¡ª ¸¸´úÀí¼ÌĞøÖ´ĞĞ£¬×Ó´úÀíÍê³ÉºóÍ¨¹ıÊÂ¼şÏµÍ³»Øµ÷Í¨Öª
+///   ¡¤ ²ÎÊıĞ£Ñé ¡ª ÎŞĞ§Ä£°åÃû·µ»Ø¿ÉÓÃÁĞ±í£¬²»ÈÃ LLM Ã¤²Â
+///   ¡¤ ÑÓ³Ù½âÎö ¡ª Ê¹ÓÃ IServiceProvider ±ÜÃâ AgentExecutionService µÄ DI ËÀËø
 /// 
-/// åŸç”Ÿ Pudding Toolï¼Œå¯¹åº” Claude Code AgentTool / SendMessageTool çš„å­ä»£ç†æ¨¡å¼ã€‚
+/// Ô­Éú Pudding Tool£¬¶ÔÓ¦ Claude Code AgentTool / SendMessageTool µÄ×Ó´úÀíÄ£Ê½¡£
 /// </summary>
 [Tool(
     id: "spawn_sub_agent",
     name: "spawn_sub_agent",
-    description: "æ´¾ç”Ÿå­ä»£ç†æ‰§è¡Œç‹¬ç«‹ä»»åŠ¡ã€‚å­ä»£ç†æ‹¥æœ‰ç‹¬ç«‹çš„ä¸Šä¸‹æ–‡çª—å£ï¼Œçœ‹ä¸åˆ°ä¸»ä»£ç†çš„å¯¹è¯å†å²ã€‚" +
-                 "æ¨èä½¿ç”¨ç»“æ„åŒ–å§”æ´¾åè®®å‚æ•°ï¼šquestionã€scopeã€already_knownã€effortã€stop_conditionã€outputï¼›" +
-                 "ä¹Ÿå¯ä»¥ä½¿ç”¨æ—§ taskï¼Œæˆ–ä½¿ç”¨ tasks JSON array æ‰¹é‡å‘èµ·å¤šä¸ªç»“æ„åŒ–å­ä»»åŠ¡ã€‚" +
-                 "å‚æ•°ï¼štaskï¼ˆä»»åŠ¡æè¿°ï¼‰ã€agent_templateï¼ˆå¯é€‰ï¼Œé»˜è®¤ workspace-task-agentï¼‰ã€" +
-                 "modelï¼ˆå¯é€‰ï¼Œå¦‚ mimo/mimo-v2.5-pro æˆ– deepseek/deepseek-v3ï¼Œä¸æŒ‡å®šåˆ™ç”¨å¹³å°é»˜è®¤æ¨¡å‹ï¼‰ã€" +
-                 "syncï¼ˆå¯é€‰ï¼Œtrue=åŒæ­¥é˜»å¡ç­‰å¾…ç»“æœ / false=å¼‚æ­¥ç«‹å³è¿”å›ï¼Œé»˜è®¤ trueï¼‰ã€‚" +
-                 "åŒæ­¥æ¨¡å¼è¿”å›ç»“æ„åŒ–ç»“æœåˆåŒï¼šSUMMARYã€CHANGESã€EVIDENCEã€RISKSã€BLOCKERSã€‚" +
-                 "å¼‚æ­¥æ¨¡å¼ä¸‹ç«‹å³è¿”å› agentIdï¼Œç¨åé€šè¿‡ agent.sub_completed äº‹ä»¶é€šçŸ¥ç»“æœã€‚" +
-                 "provider æ ¼å¼ä¸º {providerId}/{modelId}ï¼Œå¹³å°å·²åœ¨ LLM èµ„æºæ± æ³¨å†Œæ¨¡å‹ã€‚",
+    description: "ÅÉÉú×Ó´úÀíÖ´ĞĞ¶ÀÁ¢ÈÎÎñ¡£×Ó´úÀíÓµÓĞ¶ÀÁ¢µÄÉÏÏÂÎÄ´°¿Ú£¬¿´²»µ½Ö÷´úÀíµÄ¶Ô»°ÀúÊ·¡£" +
+                 "ÍÆ¼öÊ¹ÓÃ½á¹¹»¯Î¯ÅÉĞ­Òé²ÎÊı£ºquestion¡¢scope¡¢already_known¡¢effort¡¢stop_condition¡¢output£»" +
+                 "Ò²¿ÉÒÔÊ¹ÓÃ¾É task£¬»òÊ¹ÓÃ tasks JSON array ÅúÁ¿·¢Æğ¶à¸ö½á¹¹»¯×ÓÈÎÎñ¡£" +
+                 "²ÎÊı£ºtask£¨ÈÎÎñÃèÊö£©¡¢agent_template£¨¿ÉÑ¡£¬Ä¬ÈÏ workspace-task-agent£©¡¢" +
+                 "model£¨¿ÉÑ¡£¬Èç mimo/mimo-v2.5-pro »ò deepseek/deepseek-v3£¬²»Ö¸¶¨ÔòÓÃÆ½Ì¨Ä¬ÈÏÄ£ĞÍ£©¡¢" +
+                 "sync£¨¿ÉÑ¡£¬true=Í¬²½×èÈûµÈ´ı½á¹û / false=Òì²½Á¢¼´·µ»Ø£¬Ä¬ÈÏ true£©¡£" +
+                 "Í¬²½Ä£Ê½·µ»Ø½á¹¹»¯½á¹ûºÏÍ¬£ºSUMMARY¡¢CHANGES¡¢EVIDENCE¡¢RISKS¡¢BLOCKERS¡£" +
+                 "Òì²½Ä£Ê½ÏÂÁ¢¼´·µ»Ø agentId£¬ÉÔºóÍ¨¹ı agent.sub_completed ÊÂ¼şÍ¨Öª½á¹û¡£" +
+                 "provider ¸ñÊ½Îª {providerId}/{modelId}£¬Æ½Ì¨ÒÑÔÚ LLM ×ÊÔ´³Ø×¢²áÄ£ĞÍ¡£",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]
@@ -57,7 +57,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
     private const string DelegationProtocolVersion = "SUBAGENTS.md/v1";
     private const string DefaultSubAgentOutputContract = "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS";
-    private const int DefaultSubAgentMaxRounds = 10;
+    private const int DefaultSubAgentMaxRounds = 500;
     private const int MaximumSubAgentMaxRounds = 200;
     private static readonly string[] ResultSectionNames = ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
 
@@ -92,9 +92,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var batchTasksResult = TryReadBatchTasks(json);
 
         if (!string.IsNullOrWhiteSpace(task) && batchTasksResult.Tasks is not null)
-            return Fail("å‚æ•° 'task' å’Œ 'tasks' å¿…é¡»äºŒé€‰ä¸€ï¼Œä¸èƒ½åŒæ—¶ä¼ å…¥ã€‚");
+            return Fail("²ÎÊı 'task' ºÍ 'tasks' ±ØĞë¶şÑ¡Ò»£¬²»ÄÜÍ¬Ê±´«Èë¡£");
         if (string.IsNullOrWhiteSpace(task) && batchTasksResult.Tasks is null)
-            return Fail("å‚æ•° 'task' æˆ– 'tasks' æ˜¯å¿…éœ€çš„ã€‚æ‰¹é‡æ¨¡å¼å¿…é¡»ä¼ å…¥ JSON arrayã€‚");
+            return Fail("²ÎÊı 'task' »ò 'tasks' ÊÇ±ØĞèµÄ¡£ÅúÁ¿Ä£Ê½±ØĞë´«Èë JSON array¡£");
         if (batchTasksResult.Error is not null)
             return Fail(batchTasksResult.Error);
 
@@ -107,7 +107,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                   ?? (request.Parameters.TryGetValue("sync", out var syncVal)
                         && bool.TryParse(syncVal, out var syncBool) && syncBool);
 
-        // æ²¡æœ‰æ˜¾å¼æŒ‡å®š sync â†’ é»˜è®¤åŒæ­¥
+        // Ã»ÓĞÏÔÊ½Ö¸¶¨ sync ¡ú Ä¬ÈÏÍ¬²½
         if (!HasProp(json, "sync") && !request.Parameters.ContainsKey("sync"))
             isSync = true;
 
@@ -136,7 +136,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                                  ?? GetStringProp(json, "capabilityRequirements")
                                  ?? request.Parameters.GetValueOrDefault("capability_requirements");
 
-        // â”€â”€ Session Fork: å¤ç”¨çˆ¶ä»£ç†ä¸Šä¸‹æ–‡ â”€â”€
+        // ©¤©¤ Session Fork: ¸´ÓÃ¸¸´úÀíÉÏÏÂÎÄ ©¤©¤
         var reuseParentCtx = GetBoolProp(json, "reuse_parent_context")
             ?? GetBoolProp(json, "reuseParentContext")
             ?? args.ReuseParentContext;
@@ -153,19 +153,19 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
         }
 
-        // ç¡®å®šå­ä»£ç†æ¨¡æ¿
+        // È·¶¨×Ó´úÀíÄ£°å
         var template = ResolveTemplate(templateId);
         if (template == null)
         {
             var available = string.Join(", ", BuiltInAgentTemplates.GetAll().Select(t => t.TemplateId));
-            return Fail($"æœªçŸ¥çš„ Agent æ¨¡æ¿ '{templateId}'ã€‚å¯ç”¨æ¨¡æ¿ï¼š{available}");
+            return Fail($"Î´ÖªµÄ Agent Ä£°å '{templateId}'¡£¿ÉÓÃÄ£°å£º{available}");
         }
 
-        // æ„é€ å­ä»£ç†çš„ Capabilityï¼ˆç»§æ‰¿çˆ¶ä»£ç†ï¼Œå¯ä¸‹è°ƒä¸å¯å‡çº§ï¼‰
+        // ¹¹Ôì×Ó´úÀíµÄ Capability£¨¼Ì³Ğ¸¸´úÀí£¬¿ÉÏÂµ÷²»¿ÉÉı¼¶£©
         var childCapability = BuildChildCapability(json, request, template, permissionMode);
 
-        // åœ¨è°ƒç”¨å…¥å£ä¸€æ¬¡æ€§è§£æä¸å¯å˜è·¯ç”±èº«ä»½å’Œè°ƒç”¨é…ç½®ã€‚
-        // åç»­ InvocationService / Manager åªèƒ½é€ä¼ ï¼Œç¦æ­¢ä» Endpointã€å¯†é’¥æˆ– model å­—ç¬¦ä¸²åæ¨ Providerã€‚
+        // ÔÚµ÷ÓÃÈë¿ÚÒ»´ÎĞÔ½âÎö²»¿É±äÂ·ÓÉÉí·İºÍµ÷ÓÃÅäÖÃ¡£
+        // ºóĞø InvocationService / Manager Ö»ÄÜÍ¸´«£¬½ûÖ¹´Ó Endpoint¡¢ÃÜÔ¿»ò model ×Ö·û´®·´ÍÆ Provider¡£
         ResolvedChildLlmRoute childLlmRoute;
         try
         {
@@ -194,18 +194,18 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             childLlmRoute.Profile.ModelId,
             request.SessionId);
 
-        // === æ± åŒ–å­ä»£ç†è·¯ç”± ===
-        // å½“ pool_name éç©ºæ—¶ï¼Œèµ°æ± åŒ–å¤ç”¨è·¯å¾„ï¼›å¦åˆ™èµ°åŸæœ‰ä¸€æ¬¡æ€§å­ä»£ç†é€»è¾‘ã€‚
+        // === ³Ø»¯×Ó´úÀíÂ·ÓÉ ===
+        // µ± pool_name ·Ç¿ÕÊ±£¬×ß³Ø»¯¸´ÓÃÂ·¾¶£»·ñÔò×ßÔ­ÓĞÒ»´ÎĞÔ×Ó´úÀíÂß¼­¡£
         if (!string.IsNullOrWhiteSpace(args.PoolName))
         {
             var pool = _services.GetService<SubAgentPool>();
             if (pool == null)
                 return ToolExecutionResult.Fail(
-                    "âŒ SubAgentPool æœåŠ¡æœªæ³¨å†Œã€‚è¯·æ£€æŸ¥ DI é…ç½®ã€‚");
+                    "? SubAgentPool ·şÎñÎ´×¢²á¡£Çë¼ì²é DI ÅäÖÃ¡£");
 
-            // æ‰¹é‡æ¨¡å¼ä¸æ”¯æŒæ± åŒ–ï¼ˆè¯­ä¹‰å†²çªï¼‰
+            // ÅúÁ¿Ä£Ê½²»Ö§³Ö³Ø»¯£¨ÓïÒå³åÍ»£©
             if (batchTasksResult.Tasks is not null)
-                return Fail("æ‰¹é‡ä»»åŠ¡æ¨¡å¼ (tasks) ä¸æ”¯æŒæ± åŒ–å­ä»£ç†ã€‚è¯·ä½¿ç”¨å•ä»»åŠ¡ (task) + pool_nameã€‚");
+                return Fail("ÅúÁ¿ÈÎÎñÄ£Ê½ (tasks) ²»Ö§³Ö³Ø»¯×Ó´úÀí¡£ÇëÊ¹ÓÃµ¥ÈÎÎñ (task) + pool_name¡£");
 
             var action = args.PoolAction?.ToLowerInvariant() ?? "execute";
 
@@ -215,7 +215,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 {
                     case "create":
                     {
-                        // ä»…åˆ›å»ºæ± åŒ–å­ä»£ç†ï¼Œä¸æ‰§è¡Œä»»åŠ¡
+                        // ½ö´´½¨³Ø»¯×Ó´úÀí£¬²»Ö´ĞĞÈÎÎñ
                         var spawnRequest = BuildSpawnRequest(
                             args, request, context, json, task!,
                             template, childLlmRoute, childCapability,
@@ -225,13 +225,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var createResult = await pool.CreateAsync(
                             args.PoolName, spawnRequest, ct);
                         return Success(
-                            $"âœ… æ± åŒ–å­ä»£ç† '{args.PoolName}' å·²åˆ›å»ºã€‚",
+                            $"? ³Ø»¯×Ó´úÀí '{args.PoolName}' ÒÑ´´½¨¡£",
                             new
                             {
                                 status = createResult.Status.ToString(),
                                 subSessionId = createResult.SubSessionId,
-                                role = args.PoolRole ?? "(æœªæŒ‡å®š)",
-                                hint = $"ä½¿ç”¨ pool_name=\"{args.PoolName}\" (ä¸å¸¦ pool_action) æ¥æ‰§è¡Œä»»åŠ¡ã€‚",
+                                role = args.PoolRole ?? "(Î´Ö¸¶¨)",
+                                hint = $"Ê¹ÓÃ pool_name=\"{args.PoolName}\" (²»´ø pool_action) À´Ö´ĞĞÈÎÎñ¡£",
                             });
                     }
 
@@ -239,26 +239,26 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     {
                         var destroyed = await pool.DestroyAsync(args.PoolName, ct);
                         return destroyed
-                            ? Success($"âœ… æ± åŒ–å­ä»£ç† '{args.PoolName}' å·²é”€æ¯ã€‚")
-                            : Fail($"âŒ å­ä»£ç† '{args.PoolName}' ä¸å­˜åœ¨æˆ–å·²é”€æ¯ã€‚");
+                            ? Success($"? ³Ø»¯×Ó´úÀí '{args.PoolName}' ÒÑÏú»Ù¡£")
+                            : Fail($"? ×Ó´úÀí '{args.PoolName}' ²»´æÔÚ»òÒÑÏú»Ù¡£");
                     }
 
                     case "sleep":
                     {
                         var slept = await pool.SleepAsync(args.PoolName, ct);
                         return slept
-                            ? Success($"âœ… æ± åŒ–å­ä»£ç† '{args.PoolName}' å·²ä¼‘çœ ã€‚")
-                            : Fail($"âŒ å­ä»£ç† '{args.PoolName}' ä¸å­˜åœ¨æˆ–å·²é”€æ¯ã€‚");
+                            ? Success($"? ³Ø»¯×Ó´úÀí '{args.PoolName}' ÒÑĞİÃß¡£")
+                            : Fail($"? ×Ó´úÀí '{args.PoolName}' ²»´æÔÚ»òÒÑÏú»Ù¡£");
                     }
 
                     case "list":
                     {
                         var agents = pool.List();
                         if (agents.Count == 0)
-                            return Success("æ± ä¸ºç©ºã€‚ä½¿ç”¨ pool_name=\"<name>\" pool_action=\"create\" åˆ›å»ºæ–°çš„æ± åŒ–å­ä»£ç†ã€‚");
+                            return Success("³ØÎª¿Õ¡£Ê¹ÓÃ pool_name=\"<name>\" pool_action=\"create\" ´´½¨ĞÂµÄ³Ø»¯×Ó´úÀí¡£");
                         var sb = new StringBuilder();
-                        sb.AppendLine($"## å­ä»£ç†æ± çŠ¶æ€ ({agents.Count} ä¸ª)\n");
-                        sb.AppendLine("| åç§° | çŠ¶æ€ | è§’è‰² | ä»»åŠ¡æ•° | æœ€åä½¿ç”¨ | SubSessionId |");
+                        sb.AppendLine($"## ×Ó´úÀí³Ø×´Ì¬ ({agents.Count} ¸ö)\n");
+                        sb.AppendLine("| Ãû³Æ | ×´Ì¬ | ½ÇÉ« | ÈÎÎñÊı | ×îºóÊ¹ÓÃ | SubSessionId |");
                         sb.AppendLine("|------|------|------|--------|----------|-------------|");
                         foreach (var a in agents)
                             sb.AppendLine($"| {a.Name} | {a.Status} | {a.Role ?? "-"} | {a.TaskCount} | {a.LastUsedAt:HH:mm:ss} | {a.SubSessionId?.Substring(0, Math.Min(8, a.SubSessionId.Length))}... |");
@@ -267,18 +267,18 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
                     case "cleanup":
                     {
-                        // æ¸…ç†å•ä¸ªæ± åŒ–å­ä»£ç†ï¼šä»æ± ä¸­é”€æ¯ + æ¸…ç†æŒä¹…åŒ–è®°å½•
+                        // ÇåÀíµ¥¸ö³Ø»¯×Ó´úÀí£º´Ó³ØÖĞÏú»Ù + ÇåÀí³Ö¾Ã»¯¼ÇÂ¼
                         var subAgentManager = _services.GetService<ISubAgentManager>();
                         if (subAgentManager == null)
-                            return Fail("âŒ ISubAgentManager æœåŠ¡æœªæ³¨å†Œã€‚");
+                            return Fail("? ISubAgentManager ·şÎñÎ´×¢²á¡£");
 
-                        // å…ˆè·å–å­ä»£ç†ä¿¡æ¯ç”¨äºæ¸…ç†æŒä¹…åŒ–è®°å½•
+                        // ÏÈ»ñÈ¡×Ó´úÀíĞÅÏ¢ÓÃÓÚÇåÀí³Ö¾Ã»¯¼ÇÂ¼
                         var poolAgent = await pool.GetAsync(args.PoolName, ct);
 
-                        // ä»æ± ä¸­é”€æ¯
+                        // ´Ó³ØÖĞÏú»Ù
                         var destroyed = await pool.DestroyAsync(args.PoolName, ct);
 
-                        // æ¸…ç†æŒä¹…åŒ–è®°å½•
+                        // ÇåÀí³Ö¾Ã»¯¼ÇÂ¼
                         int dbCleaned = 0;
                         if (poolAgent != null)
                         {
@@ -294,17 +294,17 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         }
 
                         return Success(
-                            $"âœ… å­ä»£ç† '{args.PoolName}' å·²æ¸…ç†ã€‚" +
-                            (destroyed ? " æ± æ¡ç›®å·²é”€æ¯ã€‚" : " æ± æ¡ç›®ä¸å­˜åœ¨æˆ–å·²é”€æ¯ã€‚") +
-                            $" æŒä¹…åŒ–è®°å½•å·²æ¸…ç† {dbCleaned} æ¡ã€‚");
+                            $"? ×Ó´úÀí '{args.PoolName}' ÒÑÇåÀí¡£" +
+                            (destroyed ? " ³ØÌõÄ¿ÒÑÏú»Ù¡£" : " ³ØÌõÄ¿²»´æÔÚ»òÒÑÏú»Ù¡£") +
+                            $" ³Ö¾Ã»¯¼ÇÂ¼ÒÑÇåÀí {dbCleaned} Ìõ¡£");
                     }
 
                     case "cleanup-bulk":
                     {
-                        // æ‰¹é‡æ¸…ç†ï¼šä¸é™äºæ± åŒ–å­ä»£ç†ï¼Œæ¸…ç†æ•´ä¸ªçˆ¶ä¼šè¯ä¸‹çš„å­ä»£ç†è®°å½•
+                        // ÅúÁ¿ÇåÀí£º²»ÏŞÓÚ³Ø»¯×Ó´úÀí£¬ÇåÀíÕû¸ö¸¸»á»°ÏÂµÄ×Ó´úÀí¼ÇÂ¼
                         var subAgentManager = _services.GetService<ISubAgentManager>();
                         if (subAgentManager == null)
-                            return Fail("âŒ ISubAgentManager æœåŠ¡æœªæ³¨å†Œã€‚");
+                            return Fail("? ISubAgentManager ·şÎñÎ´×¢²á¡£");
 
                         var cleaned = await subAgentManager.CleanupAsync(
                             request.SessionId,
@@ -320,13 +320,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         if (args.CleanupOlderThanDays.HasValue)
                             filterDesc += $", older than {args.CleanupOlderThanDays} days";
 
-                        return Success($"âœ… æ‰¹é‡æ¸…ç†å®Œæˆ: {cleaned} ä¸ªå­ä»£ç†å·²æ¸…ç†ï¼ˆç­›é€‰: {filterDesc}ï¼‰ã€‚");
+                        return Success($"? ÅúÁ¿ÇåÀíÍê³É: {cleaned} ¸ö×Ó´úÀíÒÑÇåÀí£¨É¸Ñ¡: {filterDesc}£©¡£");
                     }
 
                     case "execute":
                     default:
                     {
-                        // æ‰§è¡Œä»»åŠ¡ï¼ˆè‡ªåŠ¨åˆ›å»ºæˆ–å¤ç”¨ï¼‰
+                        // Ö´ĞĞÈÎÎñ£¨×Ô¶¯´´½¨»ò¸´ÓÃ£©
                         var execSpawnRequest = BuildSpawnRequest(
                             args, request, context, json, task!,
                             template, childLlmRoute, childCapability,
@@ -336,7 +336,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var result = await pool.ExecuteAsync(
                             args.PoolName, execSpawnRequest, ct);
 
-                        // åŒ…è£…ä¸ºç»“æ„åŒ– JSONï¼Œç¡®ä¿ä¸ SmartWorkflowToolBase.ExtractRawReport å…¼å®¹
+                        // °ü×°Îª½á¹¹»¯ JSON£¬È·±£Óë SmartWorkflowToolBase.ExtractRawReport ¼æÈİ
                         var wrapped = JsonSerializer.Serialize(new
                         {
                             schema = "pudding-subagent-result",
@@ -360,13 +360,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
             catch (InvalidOperationException ex)
             {
-                // æ± æ»¡/å¿™/ä¸å­˜åœ¨ç­‰ä¸šåŠ¡å¼‚å¸¸
+                // ³ØÂú/Ã¦/²»´æÔÚµÈÒµÎñÒì³£
                 return Fail(
-                    $"âŒ æ± æ“ä½œå¤±è´¥: {ex.Message}\n\næç¤º: ä½¿ç”¨ pool_name=\"{args.PoolName}\" pool_action=\"list\" æŸ¥çœ‹å½“å‰æ± çŠ¶æ€ã€‚");
+                    $"? ³Ø²Ù×÷Ê§°Ü: {ex.Message}\n\nÌáÊ¾: Ê¹ÓÃ pool_name=\"{args.PoolName}\" pool_action=\"list\" ²é¿´µ±Ç°³Ø×´Ì¬¡£");
             }
         }
 
-        // === åŸæœ‰ä¸€æ¬¡æ€§å­ä»£ç†é€»è¾‘ï¼ˆpool_name ä¸ºç©ºæ—¶ï¼‰ ===
+        // === Ô­ÓĞÒ»´ÎĞÔ×Ó´úÀíÂß¼­£¨pool_name Îª¿ÕÊ±£© ===
 
         if (batchTasksResult.Tasks is not null)
         {
@@ -479,8 +479,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 invocationResult.SubSessionId, request.SessionId);
 
             return Success(
-                $"å¼‚æ­¥å­ä»£ç†å·²åˆ›å»ºã€‚sub_agent_id = {invocationResult.SubSessionId}ã€‚" +
-                $"å®Œæˆåå°†é€šè¿‡ 'agent.sub_completed' äº‹ä»¶é€šçŸ¥ã€‚",
+                $"Òì²½×Ó´úÀíÒÑ´´½¨¡£sub_agent_id = {invocationResult.SubSessionId}¡£" +
+                $"Íê³Éºó½«Í¨¹ı 'agent.sub_completed' ÊÂ¼şÍ¨Öª¡£",
                 new
                 {
                     schema = "pudding-subagent-spawn",
@@ -499,7 +499,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         }
     }
 
-    // â”€â”€ ç§æœ‰è¾…åŠ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ©¤©¤ Ë½ÓĞ¸¨Öú ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
 
     private static JsonObject? TryParseJson(string? input)
     {
@@ -771,26 +771,26 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var policy = _services.GetService<ITaskDelegationPolicy>();
         if (taskStore is null || policy is null)
         {
-            return Fail("ä»»åŠ¡è§„åˆ’å§”æ´¾ç­–ç•¥æœªæ³¨å†Œï¼Œæ— æ³•åˆ›å»ºå¸¦ task planning ä¸Šä¸‹æ–‡çš„å­ä»£ç†ã€‚");
+            return Fail("ÈÎÎñ¹æ»®Î¯ÅÉ²ßÂÔÎ´×¢²á£¬ÎŞ·¨´´½¨´ø task planning ÉÏÏÂÎÄµÄ×Ó´úÀí¡£");
         }
 
         var plan = await taskStore.GetPlanAsync(planning.TaskPlanId!, ct);
         if (plan is null)
-            return Fail($"ä»»åŠ¡è§„åˆ’è®¡åˆ’ä¸å­˜åœ¨ï¼š{planning.TaskPlanId}");
+            return Fail($"ÈÎÎñ¹æ»®¼Æ»®²»´æÔÚ£º{planning.TaskPlanId}");
 
         var node = await taskStore.GetNodeAsync(planning.TaskNodeId!, ct);
         if (node is null)
-            return Fail($"ä»»åŠ¡èŠ‚ç‚¹ä¸å­˜åœ¨ï¼š{planning.TaskNodeId}");
+            return Fail($"ÈÎÎñ½Úµã²»´æÔÚ£º{planning.TaskNodeId}");
 
         if (!string.Equals(node.PlanId, plan.PlanId, StringComparison.Ordinal))
-            return Fail($"ä»»åŠ¡èŠ‚ç‚¹ {node.TaskNodeId} ä¸å±äºè®¡åˆ’ {plan.PlanId}ã€‚");
+            return Fail($"ÈÎÎñ½Úµã {node.TaskNodeId} ²»ÊôÓÚ¼Æ»® {plan.PlanId}¡£");
 
         var decision = await policy.CanAssignAsync(node, plan, TaskAssignmentKinds.SubAgent, ct);
         if (decision.Allowed)
             return null;
 
         return Fail(
-            $"ä»»åŠ¡è§„åˆ’ç­–ç•¥æ‹’ç»åˆ›å»ºå­ä»£ç†ï¼š{decision.Reason} " +
+            $"ÈÎÎñ¹æ»®²ßÂÔ¾Ü¾ø´´½¨×Ó´úÀí£º{decision.Reason} " +
             $"(depth={decision.CurrentDepth}, max_depth={decision.MaxDepth})");
     }
 
@@ -862,15 +862,15 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         return null;
     }
 
-        /// <summary>è§£ææ¨¡æ¿ IDï¼Œæ”¯æŒç²¾ç¡®åŒ¹é… + æ¨¡ç³Šå›é€€ã€‚</summary>
+        /// <summary>½âÎöÄ£°å ID£¬Ö§³Ö¾«È·Æ¥Åä + Ä£ºı»ØÍË¡£</summary>
     private static AgentTemplateDefinition? ResolveTemplate(string templateId)
     {
         return BuiltInAgentTemplates.ResolveBest(templateId);
     }
 
     /// <summary>
-    /// æ„é€  SubAgentSpawnRequestï¼Œä¾›æ± åŒ–è·¯å¾„ï¼ˆCreate/Executeï¼‰ä½¿ç”¨ã€‚
-    /// å¤ç”¨ä¸ä¸€æ¬¡æ€§è·¯å¾„ç›¸åŒçš„è§£æç»“æœï¼ˆæ¨¡æ¿ã€LLM è·¯ç”±ã€èƒ½åŠ›ç­–ç•¥ç­‰ï¼‰ã€‚
+    /// ¹¹Ôì SubAgentSpawnRequest£¬¹©³Ø»¯Â·¾¶£¨Create/Execute£©Ê¹ÓÃ¡£
+    /// ¸´ÓÃÓëÒ»´ÎĞÔÂ·¾¶ÏàÍ¬µÄ½âÎö½á¹û£¨Ä£°å¡¢LLM Â·ÓÉ¡¢ÄÜÁ¦²ßÂÔµÈ£©¡£
     /// </summary>
     private static SubAgentSpawnRequest BuildSpawnRequest(
         SubAgentToolArgs args,
@@ -925,8 +925,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
 
     /// <summary>
-    /// å­ä»£ç†èƒ½åŠ›ï¼šç»§æ‰¿çˆ¶ä»£ç†ç­–ç•¥ï¼Œå¯ä¸‹è°ƒä¸å¯å‡çº§ã€‚
-    /// çˆ¶ä»£ç†å¯é€šè¿‡å‚æ•°æŒ‡å®š AllowedToolNames å­é›†ã€‚
+    /// ×Ó´úÀíÄÜÁ¦£º¼Ì³Ğ¸¸´úÀí²ßÂÔ£¬¿ÉÏÂµ÷²»¿ÉÉı¼¶¡£
+    /// ¸¸´úÀí¿ÉÍ¨¹ı²ÎÊıÖ¸¶¨ AllowedToolNames ×Ó¼¯¡£
     /// </summary>
     private CapabilityPolicy BuildChildCapability(
         JsonObject? json,
@@ -936,7 +936,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     {
         var basePolicy = template.Capability ?? new CapabilityPolicy();
 
-        // å…è®¸è°ƒç”¨çš„å·¥å…·å­é›†
+        // ÔÊĞíµ÷ÓÃµÄ¹¤¾ß×Ó¼¯
         var toolsJson = GetStringProp(json, "tools");
         var toolsParam = request.Parameters.GetValueOrDefault("tools");
         var toolsStr = toolsJson ?? toolsParam;
@@ -951,7 +951,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             basePolicy = basePolicy with { AllowedToolNames = allowedTools };
         }
 
-                // â”€â”€ none mode: zero tools, pure reasoning â”€â”€
+                // ©¤©¤ none mode: zero tools, pure reasoning ©¤©¤
         if (string.Equals(permissionMode, SubAgentPermissionModes.None, StringComparison.OrdinalIgnoreCase))
         {
             return basePolicy with
@@ -1003,8 +1003,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     /// <summary>
-    /// ä»ç»Ÿä¸€ LLM Resolver è·å–å”¯ä¸€é…ç½®æºå·²ç»è§£æå¥½çš„ Provider/Model ä¸é…ç½®å¿«ç…§ï¼Œ
-    /// æœ¬å±‚åªè¡¥å……å­ä»£ç†è°ƒç”¨è¯­ä¹‰ï¼ˆProfileId/Roleï¼‰ã€‚
+    /// ´ÓÍ³Ò» LLM Resolver »ñÈ¡Î¨Ò»ÅäÖÃÔ´ÒÑ¾­½âÎöºÃµÄ Provider/Model ÓëÅäÖÃ¿ìÕÕ£¬
+    /// ±¾²ãÖ»²¹³ä×Ó´úÀíµ÷ÓÃÓïÒå£¨ProfileId/Role£©¡£
     /// </summary>
     private async Task<ResolvedChildLlmRoute> ResolveChildLlmRouteAsync(
         string? modelId,
@@ -1191,31 +1191,31 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
         private sealed record BatchTaskParseResult(IReadOnlyList<SubAgentBatchTask>? Tasks, string? Error);
 
-    /// <summary>ä»çˆ¶ä»£ç†ä¸Šä¸‹æ–‡å¿«ç…§æ„å»ºå­ä»£ç†ç»§æ‰¿çš„ä¸Šä¸‹æ–‡å­—ç¬¦ä¸²ã€‚</summary>
+    /// <summary>´Ó¸¸´úÀíÉÏÏÂÎÄ¿ìÕÕ¹¹½¨×Ó´úÀí¼Ì³ĞµÄÉÏÏÂÎÄ×Ö·û´®¡£</summary>
     /// <remarks>
-    /// v2: é™æ€å±‚ï¼ˆL0-L2ï¼‰è¾“å‡º FullContent åŸæ–‡ï¼ˆé›¶å‰ªæï¼Œä¿è¯ KV-cache å‰ç¼€ä¸€è‡´ï¼‰ï¼›
-    /// åŠ¨æ€å±‚ä»…è¾“å‡ºæ‘˜è¦å…ƒæ•°æ®ã€‚
+    /// v2: ¾²Ì¬²ã£¨L0-L2£©Êä³ö FullContent Ô­ÎÄ£¨Áã¼ôÖ¦£¬±£Ö¤ KV-cache Ç°×ºÒ»ÖÂ£©£»
+    /// ¶¯Ì¬²ã½öÊä³öÕªÒªÔªÊı¾İ¡£
     /// </remarks>
     private static string BuildParentContextSnapshot(ContextAssemblySnapshot snapshot)
     {
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: INHERITED-CONTEXT ---");
-        sb.AppendLine("[ä»¥ä¸‹ä¸Šä¸‹æ–‡ä»çˆ¶ä»£ç†ä¼šè¯ Forkï¼Œå·²å‰ªæï¼šç§»é™¤å·¥å…·è°ƒç”¨ã€æ€ç»´é“¾ã€å¿ƒè·³]");
-        sb.AppendLine($"çˆ¶ä¼šè¯: {snapshot.SessionId}");
-        sb.AppendLine($"ç»„è£…æ—¶é—´: {snapshot.AssembledAt:O}");
-        sb.AppendLine($"æ€» Token æ•°: {snapshot.TotalTokens}");
-        sb.AppendLine($"é™æ€å±‚æŒ‡çº¹(SHA-256): {snapshot.StaticLayersFingerprint ?? "æ— "}");
+        sb.AppendLine("[ÒÔÏÂÉÏÏÂÎÄ´Ó¸¸´úÀí»á»° Fork£¬ÒÑ¼ôÖ¦£ºÒÆ³ı¹¤¾ßµ÷ÓÃ¡¢Ë¼Î¬Á´¡¢ĞÄÌø]");
+        sb.AppendLine($"¸¸»á»°: {snapshot.SessionId}");
+        sb.AppendLine($"×é×°Ê±¼ä: {snapshot.AssembledAt:O}");
+        sb.AppendLine($"×Ü Token Êı: {snapshot.TotalTokens}");
+        sb.AppendLine($"¾²Ì¬²ãÖ¸ÎÆ(SHA-256): {snapshot.StaticLayersFingerprint ?? "ÎŞ"}");
         if (!string.IsNullOrEmpty(snapshot.StaticLayersFingerprint))
-            sb.AppendLine("å­ä»£ç†å¯å¯¹æ¯”è‡ªèº«é™æ€å±‚æŒ‡çº¹ç¡®è®¤ KV-cache æ˜¯å¦å¯å‘½ä¸­ã€‚");
+            sb.AppendLine("×Ó´úÀí¿É¶Ô±È×ÔÉí¾²Ì¬²ãÖ¸ÎÆÈ·ÈÏ KV-cache ÊÇ·ñ¿ÉÃüÖĞ¡£");
         sb.AppendLine();
 
-        // é™æ€å±‚ï¼šåŸæ ·è¾“å‡º FullContent
+        // ¾²Ì¬²ã£ºÔ­ÑùÊä³ö FullContent
         var staticLayers = snapshot.Layers
             .Where(l => l.IsStatic && !string.IsNullOrWhiteSpace(l.FullContent))
             .ToList();
         if (staticLayers.Count > 0)
         {
-            sb.AppendLine("## ç»§æ‰¿é™æ€å±‚ï¼ˆé€å­—èŠ‚ä¸€è‡´ï¼Œä¿è¯ KV-cache å‘½ä¸­ï¼‰");
+            sb.AppendLine("## ¼Ì³Ğ¾²Ì¬²ã£¨Öğ×Ö½ÚÒ»ÖÂ£¬±£Ö¤ KV-cache ÃüÖĞ£©");
             sb.AppendLine();
             foreach (var layer in staticLayers)
             {
@@ -1225,24 +1225,24 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
         }
 
-        // åŠ¨æ€å±‚ï¼šä»…è¾“å‡ºæ‘˜è¦
+        // ¶¯Ì¬²ã£º½öÊä³öÕªÒª
         var dynamicLayers = snapshot.Layers
             .Where(l => !l.IsStatic && !string.IsNullOrWhiteSpace(l.ContentPreview))
             .ToList();
         if (dynamicLayers.Count > 0)
         {
-            sb.AppendLine("## çˆ¶ä»£ç†åŠ¨æ€å±‚æ‘˜è¦");
+            sb.AppendLine("## ¸¸´úÀí¶¯Ì¬²ãÕªÒª");
             foreach (var layer in dynamicLayers)
             {
                 sb.AppendLine($"- [{layer.LayerName}] ({layer.TokenCount} tokens): {TruncatePreview(layer.ContentPreview, 500)}");
             }
         }
 
-        // P1: çˆ¶ä»£ç†æœ€è¿‘ N è½®å¯¹è¯ï¼ˆä¸¤çº§ä¼ é€’ï¼šæœ€è¿‘æ¶ˆæ¯å…¨æ–‡ + æ›´æ—©æ‘˜è¦ï¼‰
+        // P1: ¸¸´úÀí×î½ü N ÂÖ¶Ô»°£¨Á½¼¶´«µİ£º×î½üÏûÏ¢È«ÎÄ + ¸üÔçÕªÒª£©
         if (snapshot.RecentMessages is { Count: > 0 })
         {
             sb.AppendLine();
-            sb.AppendLine("## çˆ¶ä»£ç†å¯¹è¯å†å²ï¼ˆå‰ªæåï¼‰");
+            sb.AppendLine("## ¸¸´úÀí¶Ô»°ÀúÊ·£¨¼ôÖ¦ºó£©");
             var recentCount = Math.Min(snapshot.RecentMessages.Count, 6);
             for (int i = 0; i < recentCount; i++)
             {
@@ -1251,7 +1251,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
             if (snapshot.RecentMessages.Count > 6)
             {
-                sb.AppendLine($"... (å…± {snapshot.RecentMessages.Count} æ¡å‰ªææ¶ˆæ¯ï¼Œä»¥ä¸Šä¸ºæœ€è¿‘ {recentCount} æ¡)");
+                sb.AppendLine($"... (¹² {snapshot.RecentMessages.Count} Ìõ¼ôÖ¦ÏûÏ¢£¬ÒÔÉÏÎª×î½ü {recentCount} Ìõ)");
             }
         }
         return sb.ToString();
@@ -1303,7 +1303,7 @@ public sealed record SubAgentToolArgs
         [ToolParam("Optional model id or provider/model id.")]
     public string? Model { get; init; }
 
-    [ToolParam("å¤ç”¨çˆ¶ä»£ç†å·²ç»„è£…çš„ä¸Šä¸‹æ–‡ï¼ˆFork + å‰ªæåæ³¨å…¥å­ä»£ç†ï¼‰ã€‚é»˜è®¤ falseã€‚")]
+    [ToolParam("¸´ÓÃ¸¸´úÀíÒÑ×é×°µÄÉÏÏÂÎÄ£¨Fork + ¼ôÖ¦ºó×¢Èë×Ó´úÀí£©¡£Ä¬ÈÏ false¡£")]
     public bool? ReuseParentContext { get; init; }
 
     [ToolParam("Optional comma-separated allowed tool id subset for the child agent.")]
@@ -1361,28 +1361,28 @@ public sealed record SubAgentToolArgs
     public string? OriginToolId { get; init; }
 
     /// <summary>
-    /// æ± åŒ–å­ä»£ç†åç§°ã€‚æŒ‡å®šåä½¿ç”¨æ± åŒ–å¤ç”¨ï¼ˆä¿æŒä¼šè¯è¿ç»­ä»¥åˆ©ç”¨ KV-cacheï¼‰ï¼Œ
-    /// å¦åˆ™åˆ›å»ºä¸€æ¬¡æ€§å­ä»£ç†ï¼ˆæ¯æ¬¡æ–°å»ºä¼šè¯ï¼‰ã€‚
+    /// ³Ø»¯×Ó´úÀíÃû³Æ¡£Ö¸¶¨ºóÊ¹ÓÃ³Ø»¯¸´ÓÃ£¨±£³Ö»á»°Á¬ĞøÒÔÀûÓÃ KV-cache£©£¬
+    /// ·ñÔò´´½¨Ò»´ÎĞÔ×Ó´úÀí£¨Ã¿´ÎĞÂ½¨»á»°£©¡£
     /// </summary>
-    [ToolParam("æ± åŒ–å­ä»£ç†åç§°ã€‚æŒ‡å®šåä½¿ç”¨æ± åŒ–å¤ç”¨ï¼Œå¦åˆ™åˆ›å»ºä¸€æ¬¡æ€§å­ä»£ç†ã€‚")]
+    [ToolParam("³Ø»¯×Ó´úÀíÃû³Æ¡£Ö¸¶¨ºóÊ¹ÓÃ³Ø»¯¸´ÓÃ£¬·ñÔò´´½¨Ò»´ÎĞÔ×Ó´úÀí¡£")]
     public string? PoolName { get; init; }
 
     /// <summary>
-    /// æ± æ“ä½œ: create(ä»…åˆ›å»ºä¸æ‰§è¡Œ), execute(æ‰§è¡Œä»»åŠ¡,é»˜è®¤), destroy(é”€æ¯å­ä»£ç†), sleep(ä¼‘çœ ), list(åˆ—å‡ºæ± çŠ¶æ€)
+    /// ³Ø²Ù×÷: create(½ö´´½¨²»Ö´ĞĞ), execute(Ö´ĞĞÈÎÎñ,Ä¬ÈÏ), destroy(Ïú»Ù×Ó´úÀí), sleep(ĞİÃß), list(ÁĞ³ö³Ø×´Ì¬)
     /// </summary>
-    [ToolParam("æ± æ“ä½œ: create, execute(é»˜è®¤), destroy, sleep, list, cleanup, cleanup-bulk")]
+    [ToolParam("³Ø²Ù×÷: create, execute(Ä¬ÈÏ), destroy, sleep, list, cleanup, cleanup-bulk")]
     public string? PoolAction { get; init; }
 
     /// <summary>
-    /// æ± åŒ–å­ä»£ç†è§’è‰²æè¿°ï¼ˆå¯é€‰ï¼Œç”¨äºåŒºåˆ†ç”¨é€”ï¼Œå¦‚ dev-agent, reviewer, explorerï¼‰
+    /// ³Ø»¯×Ó´úÀí½ÇÉ«ÃèÊö£¨¿ÉÑ¡£¬ÓÃÓÚÇø·ÖÓÃÍ¾£¬Èç dev-agent, reviewer, explorer£©
     /// </summary>
-    [ToolParam("æ± åŒ–å­ä»£ç†è§’è‰²æè¿°ï¼ˆå¯é€‰ï¼Œç”¨äºåŒºåˆ†ç”¨é€”ï¼‰")]
+    [ToolParam("³Ø»¯×Ó´úÀí½ÇÉ«ÃèÊö£¨¿ÉÑ¡£¬ÓÃÓÚÇø·ÖÓÃÍ¾£©")]
     public string? PoolRole { get; init; }
 
-    [ToolParam("æ¸…ç†ç­›é€‰çŠ¶æ€: failed, completed, allï¼ˆä»…ç”¨äº cleanup/cleanup-bulkï¼‰")]
+    [ToolParam("ÇåÀíÉ¸Ñ¡×´Ì¬: failed, completed, all£¨½öÓÃÓÚ cleanup/cleanup-bulk£©")]
     public string? CleanupStatus { get; init; }
 
-    [ToolParam("ä»…æ¸…ç†æ—©äº N å¤©çš„å­ä»£ç†ï¼ˆä»…ç”¨äº cleanup-bulkï¼‰")]
+    [ToolParam("½öÇåÀíÔçÓÚ N ÌìµÄ×Ó´úÀí£¨½öÓÃÓÚ cleanup-bulk£©")]
     public int? CleanupOlderThanDays { get; init; }
 }
 
