@@ -14,7 +14,46 @@ namespace PuddingRuntime.Services.Tools;
 
 internal static class HostFileToolPaths
 {
-    public static string WorkspaceRoot => Path.GetFullPath(Directory.GetCurrentDirectory());
+    private static Lazy<string> s_workspaceRoot = new(ResolveWorkspaceRootInternal);
+
+    public static string WorkspaceRoot => s_workspaceRoot.Value;
+
+    private static string ResolveWorkspaceRootInternal()
+    {
+        // 1) PUDDING_REPOSITORY_ROOT env var (highest priority)
+        var envRoot = Environment.GetEnvironmentVariable("PUDDING_REPOSITORY_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+            return Path.GetFullPath(envRoot);
+
+        // 2) Walk up from BaseDirectory up to 8 levels looking for repo markers
+        var current = new DirectoryInfo(Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory));
+        for (var depth = 0; depth < 8 && current is not null; depth++, current = current.Parent)
+        {
+            if (Directory.Exists(Path.Combine(current.FullName, ".git"))
+                || File.Exists(Path.Combine(current.FullName, "dev-up.py"))
+                || File.Exists(Path.Combine(current.FullName, "checkpoint.json")))
+            {
+                return current.FullName;
+            }
+        }
+
+        // 3) Final fallback: process current directory
+        return Path.GetFullPath(Directory.GetCurrentDirectory());
+    }
+
+    /// <summary>
+    /// Test-only: reset the cached WorkspaceRoot so the next access re-resolves.
+    /// </summary>
+    internal static void InvalidateWorkspaceRootCache()
+    {
+        var field = typeof(HostFileToolPaths).GetField(
+            "s_workspaceRoot",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        if (field?.GetValue(null) is Lazy<string>)
+        {
+            field.SetValue(null, new Lazy<string>(ResolveWorkspaceRootInternal));
+        }
+    }
 
     public static string ResolveWorkspaceRoot(string? executionWorkingDirectory)
     {
@@ -29,7 +68,8 @@ internal static class HostFileToolPaths
         out string fullPath,
         out string error,
         bool skipWorkspaceCheck = false,
-        string? executionWorkingDirectory = null)
+        string? executionWorkingDirectory = null,
+        bool isYoloMode = false)
     {
         fullPath = null!;
         error = null!;
@@ -60,7 +100,14 @@ internal static class HostFileToolPaths
                 normalized.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            error = $"Access denied: path '{path}' is outside execution root '{workspaceRoot}'.";
+            // YOLO mode: degrade to warning and allow
+            if (isYoloMode)
+            {
+                error = BuildYoloWarning(path, fullPath, workspaceRoot);
+                return true;
+            }
+
+            error = BuildAccessDeniedError(path, workspaceRoot);
             return false;
         }
         catch (Exception ex)
@@ -70,6 +117,48 @@ internal static class HostFileToolPaths
                 $"Execution root: {requestedRoot}";
             return false;
         }
+    }
+
+    private static string BuildAccessDeniedError(string path, string workspaceRoot)
+    {
+        var isBinDirectory = workspaceRoot.IndexOf(
+            Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase) >= 0;
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Path '{path}' is outside the current execution root.");
+        sb.AppendLine($"Current execution root: {workspaceRoot}");
+        sb.AppendLine();
+        sb.AppendLine("This typically happens when a sub-agent inherits the parent runtime process working directory");
+        sb.AppendLine("(e.g. a build output bin/ directory) instead of the actual project workspace.");
+        sb.AppendLine();
+        sb.AppendLine("Recommendations:");
+        sb.AppendLine("  1. When spawning a sub-agent, pass the target project/workspace directory as the");
+        sb.AppendLine("     working_directory parameter so file operations resolve correctly.");
+        sb.AppendLine("  2. Set the PUDDING_REPOSITORY_ROOT environment variable to the repository root");
+        sb.AppendLine("     before starting the runtime.");
+
+        if (isBinDirectory)
+        {
+            sb.AppendLine();
+            sb.AppendLine("\u26a0 WARNING: The current execution root appears to be a build output (bin/) directory.");
+            sb.AppendLine("This is the parent runtime's own binary directory. Do NOT build, write, or modify");
+            sb.AppendLine("files inside it — doing so could corrupt or kill the running parent process.");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Examples:");
+        sb.AppendLine("  terminal_start: { \"command\": \"dotnet build\", \"cwd\": \"E:/github/MyRepo\" }");
+        sb.AppendLine("  file_write: pass working_directory via execution context pointing to the real workspace");
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string BuildYoloWarning(string path, string fullPath, string workspaceRoot)
+    {
+        return $"YOLO bypass: path '{path}' resolves to '{fullPath}' which is outside " +
+               $"the execution root '{workspaceRoot}'. Operation allowed because runtime is in YOLO mode. " +
+               $"Consider setting PUDDING_REPOSITORY_ROOT or passing working_directory to avoid this warning.";
     }
 }
 
@@ -105,7 +194,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         FileReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        // file_read �ǵͷ���ֻ�����ߣ�����������·������
+        // file_read is low-risk read-only — always skip workspace boundary check
         if (!HostFileToolPaths.TryResolveInsideWorkspace(
                 args.Path,
                 out var fullPath,
@@ -290,7 +379,8 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
                 out var fullPath,
                 out var error,
                 skipWorkspaceCheck: context.IsYoloMode,
-                executionWorkingDirectory: context.WorkingDirectory))
+                executionWorkingDirectory: context.WorkingDirectory,
+                isYoloMode: context.IsYoloMode))
         {
             _audit.Write(OperationZone.External, "file_write", context.AgentInstanceId,
                 args.Path, args.Reason, false, 0, context.Trace);
@@ -386,7 +476,8 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
                 path,
                 out var fullPath,
                 out var error,
-                executionWorkingDirectory: context.WorkingDirectory))
+                executionWorkingDirectory: context.WorkingDirectory,
+                isYoloMode: context.IsYoloMode))
             return Task.FromResult(ToolExecutionResult.Fail(error));
 
         if (!Directory.Exists(fullPath))
