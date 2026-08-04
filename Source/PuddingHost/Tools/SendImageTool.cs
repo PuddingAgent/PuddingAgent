@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -24,7 +24,7 @@ namespace PuddingAgent.Tools;
     category: ToolCategory.Messaging,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None,
-    SubAgentExposure = SubAgentExposure.MainAgentOnly,
+    SubAgentExposure = SubAgentExposure.Default,
     SortOrder = 20)]
 public sealed class SendImageTool(
     IServiceScopeFactory scopeFactory,
