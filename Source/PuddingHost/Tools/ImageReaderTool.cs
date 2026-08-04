@@ -1,4 +1,4 @@
-using PuddingCode.Abstractions;
+﻿using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
@@ -17,7 +17,7 @@ namespace PuddingAgent.Tools;
     description: "Analyze a local PNG/JPEG/WebP image and return a textual description. Use this when an attached-image notice contains a local path and the current model cannot inspect the image directly.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Medium,
-    safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.RequiresNetwork,
+    safety: ToolSafetyFlags.RequiresNetwork,
     SortOrder = 35)]
 public sealed class ImageReaderTool(
     VisionArtifactStorageService artifactStorage,
