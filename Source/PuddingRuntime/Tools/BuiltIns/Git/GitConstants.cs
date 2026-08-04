@@ -17,5 +17,13 @@ namespace PuddingRuntime.Services.Tools
         public const string PullId = "git_pull";
         public const string InitId = "git_init";
         public const string CloneId = "git_clone";
+        public const string StashId = "git_stash";
+        public const string MergeId = "git_merge";
+        public const string BlameId = "git_blame";
+        public const string TagId = "git_tag";
+        public const string RemoteId = "git_remote";
+        public const string CheckoutId = "git_checkout";
+        public const string ResetId = "git_reset";
+        public const string FetchId = "git_fetch";
     }
 }
