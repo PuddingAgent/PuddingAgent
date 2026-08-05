@@ -1,4 +1,5 @@
-﻿using PuddingCode.Configuration;
+﻿using System.Text;
+using PuddingCode.Configuration;
 using PuddingCode.Observability;
 using Serilog;
 using Serilog.Events;
@@ -18,6 +19,21 @@ public static class PuddingLoggingBootstrapper
         PuddingDataPaths dataPaths,
         IConfiguration bootstrapConfiguration)
     {
+        // Serilog 自检日志：sink 内部异常（写入失败、文件被删、格式化错误）
+        // 默认被静默吞掉，曾导致"日志文件 0KB 滚动"问题完全不可诊断。
+        // 落盘到 logs\system\serilog-selflog.log 以便事后取证。
+        try
+        {
+            var selfLogDir = Path.GetDirectoryName(dataPaths.SystemLogFile)!;
+            Directory.CreateDirectory(selfLogDir);
+            Serilog.Debugging.SelfLog.Enable(
+                new SelfLogAppendingWriter(Path.Combine(selfLogDir, "serilog-selflog.log")));
+        }
+        catch
+        {
+            // SelfLog 初始化失败不应阻止日志系统启动
+        }
+
         var logLevel = Environment.GetEnvironmentVariable("PUDDING_LOG_LEVEL") ?? "Information";
         var minLevel = logLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase)
             ? LogEventLevel.Debug
@@ -111,5 +127,50 @@ public static class PuddingLoggingBootstrapper
                 maxFileSizeBytes: MaxFileSize, retainedFileCountLimit: RetainedFiles,
                 outputTemplate: fileOutputTemplate))
             .CreateLogger();
+    }
+
+    /// <summary>
+    /// 线程安全的追加写入器，供 Serilog SelfLog 使用。
+    /// 带 10MB 体积上限，防止异常风暴下自检日志本身撑爆磁盘。
+    /// </summary>
+    private sealed class SelfLogAppendingWriter : TextWriter
+    {
+        private const long MaxSelfLogBytes = 10 * 1024 * 1024;
+        private readonly string _path;
+        private readonly object _gate = new();
+
+        public SelfLogAppendingWriter(string path) => _path = path;
+
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void WriteLine(string? value)
+        {
+            lock (_gate)
+            {
+                try
+                {
+                    var info = new FileInfo(_path);
+                    if (info.Exists && info.Length > MaxSelfLogBytes)
+                        return; // 超限后停止写入（保留现场）
+
+                    File.AppendAllText(_path, $"{DateTime.Now:O} {value}{Environment.NewLine}");
+                }
+                catch
+                {
+                    // SelfLog 写入失败必须静默
+                }
+            }
+        }
+
+        public override void Write(string? value)
+        {
+            if (!string.IsNullOrEmpty(value))
+                WriteLine(value);
+        }
+
+        public override void Write(char value)
+        {
+            // SelfLog 以行写入为主；逐字符写入忽略以避免碎片 IO
+        }
     }
 }
