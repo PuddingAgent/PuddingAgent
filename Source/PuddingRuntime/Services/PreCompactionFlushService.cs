@@ -150,7 +150,7 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
                     request.SessionId, flushContent);
             }
 
-            return new PreCompactionFlushResult(facts.Count, sw.ElapsedMilliseconds, flushContent);
+            return new PreCompactionFlushResult(facts.Count, sw.ElapsedMilliseconds, flushContent, facts);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

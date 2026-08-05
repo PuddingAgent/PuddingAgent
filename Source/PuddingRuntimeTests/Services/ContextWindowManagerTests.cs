@@ -93,6 +93,41 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
+    public async Task TrimHistoryAsync_PassesPreCompactionFacts_ToCompactionRequest()
+    {
+        var compaction = new FakeContextCompactionService(shouldAutoCompact: true);
+        var flush = new FakePreCompactionFlushService(
+        [
+            "项目路径：E:/github/AgentNetworkPlan/PuddingAgent",
+            "用户偏好：每个原子任务 commit 后立即 push",
+        ]);
+        var manager = CreateManager(compaction, preCompactionFlushService: flush);
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"),
+            new(ChatRole.User, "user"),
+            new(ChatRole.Assistant, "assistant"),
+        };
+
+        await manager.TrimHistoryAsync(
+            "session-1",
+            history,
+            maxTokenBudget: 8000,
+            preferDbContextWindow: false,
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            CancellationToken.None,
+            agentTemplateId: "template-1");
+
+        Assert.AreEqual(1, compaction.CompactCalls.Count);
+        Assert.IsNotNull(compaction.CompactCalls[0].PreCompactionFacts);
+        Assert.AreEqual(2, compaction.CompactCalls[0].PreCompactionFacts!.Count);
+        StringAssert.Contains(compaction.CompactCalls[0].PreCompactionFacts![0], "项目路径");
+        Assert.IsNotNull(flush.LastRequest);
+        Assert.AreEqual("template-1", flush.LastRequest!.AgentTemplateId);
+    }
+
+    [TestMethod]
     public async Task TrimHistoryAsync_EmitsAutoCompactionEvents_BeforeAndAfterCompaction()
     {
         var emitter = new RecordingCompactionEventEmitter(yieldBeforeRecord: true);
@@ -934,7 +969,8 @@ public sealed class ContextWindowManagerTests
         AgentCompactionNotifier? compactionNotifier = null,
         ContextCompactionOptions? compactionOptions = null,
         ISessionCompactionEventEmitter? compactionEventEmitter = null,
-        ITelemetryMetricSink? telemetrySink = null)
+        ITelemetryMetricSink? telemetrySink = null,
+        IPreCompactionFlushService? preCompactionFlushService = null)
         => new(
             new AgentSessionManager(NullLogger<AgentSessionManager>.Instance),
             new InMemoryRuntimeSessionStore(),
@@ -947,7 +983,8 @@ public sealed class ContextWindowManagerTests
             compactionNotifier: compactionNotifier,
             compactionOptions: compactionOptions,
             compactionEventEmitter: compactionEventEmitter,
-            telemetrySink: telemetrySink);
+            telemetrySink: telemetrySink,
+            preCompactionFlushService: preCompactionFlushService);
 
     private static string CreateTempJsonlRoot()
     {
@@ -993,6 +1030,20 @@ public sealed class ContextWindowManagerTests
         new DbContextOptionsBuilder<MemoryDbContext>()
             .UseSqlite(connection)
             .Options;
+
+    private sealed class FakePreCompactionFlushService(IReadOnlyList<string> facts) : IPreCompactionFlushService
+    {
+        public PreCompactionFlushRequest? LastRequest { get; private set; }
+
+        public Task<PreCompactionFlushResult> FlushAsync(
+            PreCompactionFlushRequest request,
+            CancellationToken ct = default)
+        {
+            LastRequest = request;
+            var content = facts.Count > 0 ? string.Join(" | ", facts) : null;
+            return Task.FromResult(new PreCompactionFlushResult(facts.Count, 1, content, facts));
+        }
+    }
 
     private sealed class FakeContextCompactionService(bool shouldAutoCompact) : IContextCompactionService
     {

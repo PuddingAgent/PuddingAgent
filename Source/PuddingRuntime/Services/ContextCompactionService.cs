@@ -531,7 +531,7 @@ public sealed class ContextCompactionService : IContextCompactionService
             summary,
             ResolveSummaryGeneratorName());
 
-        var memoryNotes = ExtractMemoryNotes(summary);
+        var memoryNotes = MergeMemoryNotes(request.PreCompactionFacts, ExtractMemoryNotes(summary));
         var result = new ContextCompactionResult(
             request.SessionId,
             summaryMessage.MessageId,
@@ -953,6 +953,30 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     private static int EstimateMessages(IReadOnlyList<MessageEntity> messages) =>
         messages.Sum(m => ContextUsageSnapshotStore.CountTokens(m.Content));
+
+    /// <summary>
+    /// 合并压缩前冲洗（Flash LLM 从原文提取）的事实与摘要派生 notes。
+    /// 原文事实优先（信息保真度更高），去重并限制总量，保证下游整合提示词有界。
+    /// </summary>
+    private static IReadOnlyList<string> MergeMemoryNotes(
+        IReadOnlyList<string>? preCompactionFacts,
+        IReadOnlyList<string> summaryNotes)
+    {
+        if (preCompactionFacts is null || preCompactionFacts.Count == 0)
+            return summaryNotes;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var merged = new List<string>(preCompactionFacts.Count + summaryNotes.Count);
+        foreach (var note in preCompactionFacts.Concat(summaryNotes))
+        {
+            var trimmed = (note ?? string.Empty).Trim();
+            if (trimmed.Length == 0 || !seen.Add(trimmed))
+                continue;
+            merged.Add(trimmed);
+        }
+
+        return merged.Count <= 24 ? merged : [.. merged.Take(24)];
+    }
 
     private static IReadOnlyList<string> ExtractMemoryNotes(string summary)
     {

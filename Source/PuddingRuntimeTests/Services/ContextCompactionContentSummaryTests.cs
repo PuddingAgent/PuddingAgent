@@ -66,6 +66,42 @@ public sealed class ContextCompactionContentSummaryTests
     }
 
     [TestMethod]
+    public async Task FullCompactAsync_MergesPreCompactionFacts_IntoMemoryNotes()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-1", messageCount: 10);
+
+        using var temp = new TempDataRoot();
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("用户目标：保留早期关键决策。"),
+            NullLogger<ContextCompactionService>.Instance,
+            new AgentContentSummaryService(temp.Paths, new ThrowingTextProcessingService()));
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-1",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command",
+            PreCompactionFacts:
+            [
+                "项目路径：E:/github/AgentNetworkPlan/PuddingAgent",
+                "用户偏好：每个原子任务 commit 后立即 push",
+            ]));
+
+        Assert.IsNotNull(result.MemoryNotes);
+        Assert.IsTrue(result.MemoryNotes!.Count >= 2);
+        Assert.AreEqual("项目路径：E:/github/AgentNetworkPlan/PuddingAgent", result.MemoryNotes[0]);
+        Assert.AreEqual("用户偏好：每个原子任务 commit 后立即 push", result.MemoryNotes[1]);
+    }
+
+    [TestMethod]
     public async Task FullCompactAsync_PublishesSessionCompressedHook()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

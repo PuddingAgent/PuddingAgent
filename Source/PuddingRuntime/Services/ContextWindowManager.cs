@@ -660,9 +660,10 @@ public sealed class ContextWindowManager
             // ---- Pre-Compaction Flush（借鉴 Claude Code）----
             // 压缩前用 Flash LLM 快速提取关键事实，防止信息丢失。
             // 失败不影响压缩继续执行。
+            IReadOnlyList<string> preCompactionFacts = [];
             if (_preCompactionFlushService is not null)
             {
-                await FlushMemoriesBeforeCompactionAsync(
+                preCompactionFacts = await FlushMemoriesBeforeCompactionAsync(
                     sessionId, workspaceId, agentId, agentTemplateId, agentWorkSummary, compactionId, ct);
             }
 
@@ -677,7 +678,8 @@ public sealed class ContextWindowManager
                     "context_window_auto_compaction",
                     AgentWorkSummary: agentWorkSummary,
                     CompactionId: compactionId,
-                    AgentTemplateId: agentTemplateId),
+                    AgentTemplateId: agentTemplateId,
+                    PreCompactionFacts: preCompactionFacts.Count > 0 ? preCompactionFacts : null),
                 ct);
             var compactMs = (System.Diagnostics.Stopwatch.GetTimestamp() - compactStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;
             compressionWatch.Stop();
@@ -1048,7 +1050,7 @@ public sealed class ContextWindowManager
     /// 冲洗结果写入会话历史，供后续潜意识 LLM 转化为正式记忆。
     /// 失败不抛异常，只记录日志。
     /// </summary>
-    private async Task FlushMemoriesBeforeCompactionAsync(
+    private async Task<IReadOnlyList<string>> FlushMemoriesBeforeCompactionAsync(
         string sessionId,
         string workspaceId,
         string? agentId,
@@ -1058,7 +1060,7 @@ public sealed class ContextWindowManager
         CancellationToken ct)
     {
         if (_preCompactionFlushService is null)
-            return;
+            return [];
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -1115,6 +1117,8 @@ public sealed class ContextWindowManager
                         $"[PreCompactFlush compaction={compactionId}]\n{result.FlushContent}");
                     history?.Add(flushMessage);
                 }
+
+                return result.Facts ?? [];
             }
             else
             {
@@ -1135,6 +1139,8 @@ public sealed class ContextWindowManager
                 "[PreCompactFlush] Failed (non-blocking) session={Session}: {Message}",
                 sessionId, ex.Message);
         }
+
+        return [];
     }
 
     private static ChatRole ParseChatRole(string role)

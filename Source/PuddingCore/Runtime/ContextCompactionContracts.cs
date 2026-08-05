@@ -86,7 +86,8 @@ public sealed record ContextCompactionRequest(
     LlmConfig? LlmConfig = null,
     CapabilityPolicy? CapabilityPolicy = null,
     IReadOnlyList<LlmToolDefinition>? ToolDefinitions = null,
-    IReadOnlyList<SkillPackageInfo>? SkillPackages = null);
+    IReadOnlyList<SkillPackageInfo>? SkillPackages = null,
+    IReadOnlyList<string>? PreCompactionFacts = null);
 
 public sealed record ContextCompactionDiagnostics(
     string CompactionId,
@@ -226,7 +227,8 @@ public sealed record PreCompactionFlushRequest(
 public sealed record PreCompactionFlushResult(
     int FactsExtracted,
     long DurationMs,
-    string? FlushContent = null)
+    string? FlushContent = null,
+    IReadOnlyList<string>? Facts = null)
 {
     public bool Success => FactsExtracted > 0;
 }
