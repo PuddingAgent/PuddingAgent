@@ -6,6 +6,7 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.MessageGateway;
 
@@ -55,13 +56,26 @@ public sealed class SendImageTool(
         var identity = context.ExecutionIdentity;
         if (identity is not
             {
-                Kind: RuntimeExecutionKind.ConversationTurn,
                 CommandId.Length: > 0,
                 ToolCallId.Length: > 0,
+                ConversationId.Length: > 0,
             })
         {
             return ToolExecutionResult.Fail(
-                "send_image is only available inside a main conversation turn.");
+                "send_image requires a valid execution identity.");
+        }
+
+        // 主会话 Turn 与子代理执行均可安全解析到 Feishu 命令路由：
+        // 子代理身份由编排层继承父 CommandId/ConversationId/TurnId，
+        // 命令行仍指向网关入口命令（含 Feishu 路由元数据）。
+        var isMainTurn = identity.Kind == RuntimeExecutionKind.ConversationTurn;
+        var isDelegatedSubAgent = identity.Kind == RuntimeExecutionKind.SubAgent
+            && identity.ParentRunId is { Length: > 0 };
+        if (!isMainTurn && !isDelegatedSubAgent)
+        {
+            return ToolExecutionResult.Fail(
+                "send_image is only available inside a main conversation turn "
+                + "or a delegated sub-agent run.");
         }
 
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -77,9 +91,10 @@ public sealed class SendImageTool(
                 context.WorkspaceId,
                 StringComparison.Ordinal)
             || !string.Equals(
-                command.AgentInstanceId,
-                context.AgentInstanceId,
-                StringComparison.Ordinal))
+                command.SessionId,
+                identity.ConversationId,
+                StringComparison.Ordinal)
+            || !MatchesExecutionAgent(command, context, isMainTurn))
         {
             return ToolExecutionResult.Fail(
                 "The current execution command could not be resolved safely.");
@@ -141,6 +156,31 @@ public sealed class SendImageTool(
                     imageDirectiveSuppressed = true,
                 },
                 JsonOptions));
+    }
+
+    /// <summary>
+    /// 校验命令归属的执行主体。主会话要求命令属于当前 AgentInstanceId；
+    /// 子代理运行使用临时 sub-session 身份（AgentInstanceId），
+    /// 但命令归属根 Agent，因此按 ConfigurationAgentInstanceId（根 Agent）校验。
+    /// </summary>
+    private static bool MatchesExecutionAgent(
+        ChatExecutionCommandEntity command,
+        ToolExecutionContext context,
+        bool isMainTurn)
+    {
+        if (isMainTurn)
+        {
+            return string.Equals(
+                command.AgentInstanceId,
+                context.AgentInstanceId,
+                StringComparison.Ordinal);
+        }
+
+        return context.ConfigurationAgentInstanceId is { Length: > 0 }
+               && string.Equals(
+                   command.AgentInstanceId,
+                   context.ConfigurationAgentInstanceId,
+                   StringComparison.Ordinal);
     }
 
     private static Dictionary<string, string> DeserializeMetadata(string? json)
