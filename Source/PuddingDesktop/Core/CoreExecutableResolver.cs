@@ -5,11 +5,15 @@
 /// Search order:
 /// 1. User-configured CoreExecutablePath from bootstrap settings
 /// 2. ./core/PuddingAgent.exe relative to Desktop executable
-/// 3. ../PuddingAgent/PuddingAgent.exe (dev layout)
+/// 3. ./PuddingAgent.exe copied by the current Desktop development build
+/// 4. ../PuddingAgent/PuddingAgent.exe (legacy dev layout fallback)
 /// </summary>
 public static class CoreExecutableResolver
 {
     public static string Resolve(string? configuredPath)
+        => Resolve(configuredPath, AppContext.BaseDirectory);
+
+    internal static string Resolve(string? configuredPath, string desktopDirectory)
     {
         // 1. User-configured absolute path
         if (!string.IsNullOrWhiteSpace(configuredPath))
@@ -23,12 +27,19 @@ public static class CoreExecutableResolver
         }
 
         // 2. Side-by-side: Desktop.exe / core / PuddingAgent.exe
-        var desktopDir = AppContext.BaseDirectory;
+        var desktopDir = Path.GetFullPath(desktopDirectory);
         var sideBySide = Path.Combine(desktopDir, "core", "PuddingAgent.exe");
         if (File.Exists(sideBySide))
             return sideBySide;
 
-        // 3. Dev layout: Source/PuddingDesktop / ../PuddingAgent/bin/...
+        // 3. Visual Studio / regular Build: ProjectReference copies the exact
+        // PuddingAgent output built for this Desktop invocation beside the WPF exe.
+        // Prefer it over timestamp-based discovery across Debug/Release/publish trees.
+        var currentBuildOutput = Path.Combine(desktopDir, "PuddingAgent.exe");
+        if (File.Exists(currentBuildOutput))
+            return currentBuildOutput;
+
+        // 4. Legacy dev layout: Source/PuddingDesktop / ../PuddingAgent/bin/...
         var devPath = Path.GetFullPath(Path.Combine(desktopDir,
             "..", "..", "..", "..", "PuddingAgent"));
         // Try to find PuddingAgent.exe under the dev output tree

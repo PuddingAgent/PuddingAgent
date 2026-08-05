@@ -40,7 +40,7 @@ Console Host (`PuddingAgent.exe`) 仅作为开发、诊断入口。
 | `PuddingDesktop/App.xaml.cs` | WPF 产品入口；在创建 Coordinator 前取得单实例所有权，第二实例通过 Named Pipe 激活主窗口，并将早期未处理异常写入 Desktop 独立日志 |
 | `PuddingDesktop/MainWindow.xaml(.cs)` | 48px 自定义标题栏、240px Navigation、Workbench/Agent Browser/Runtime/Storage/Settings 页面、Core 状态控制条、Workbench 可见时按需 WebView2 初始化，以及有界 Browser 释放/明确退出生命周期 |
 | `PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs` | 始终可用的 Launcher 与可失败 Core 子进程之间的状态机；DataRoot Ready 后独立初始化 Browser，协调 Runtime Orchestrator、Bridge intent generation、Workbench Ready、后台模式和明确退出 |
-| `PuddingDesktop/Core/CoreProcessSupervisor.cs` | 启动 `core/PuddingAgent.exe --desktop-child`、隔离为 Production 子进程环境并以 Core 目录作为工作目录、解析 Ready、健康检查、环形 stdout/stderr、关闭与进程树回收 |
+| `PuddingDesktop/Core/CoreExecutableResolver.cs`、`CoreProcessSupervisor.cs` | Core 路径按显式配置、发布包 `core/`、当前 Desktop Build 同源输出、旧开发树兜底的顺序确定性解析；随后以 `--desktop-child` 和 Production 子进程环境启动，以 Core 目录作为工作目录，并负责 Ready、健康检查、环形 stdout/stderr、关闭与进程树回收 |
 | `PuddingDesktop/Runtime/DesktopRuntimeOrchestrator.cs`、`CoreRestartPolicy.cs` | 在单进程 Supervisor 上实现异常退出恢复、2s/4s/8s 退避、60 秒 3 次熔断，以及用户 Stop/Restart 与恢复取消语义 |
 | `PuddingDesktop/Runtime/DesktopSingleInstanceService.cs`、`DesktopTrayIconService.cs` | 本地命名 Semaphore + 当前用户 Named Pipe 单实例激活；纯 WPF/Win32 托盘菜单（独立浅色可读调色板）和 Explorer 重启后的图标恢复 |
 | `PuddingDesktop/Runtime/DesktopBackgroundModeService.cs`、`AutoStartRegistrationService.cs` | 默认关闭到托盘/明确退出策略，以及只在用户保存设置时写入 HKCU Run 的登录后启动 |

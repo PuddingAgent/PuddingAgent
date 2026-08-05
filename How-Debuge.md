@@ -2319,6 +2319,10 @@ Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Wind
 
 从 Visual Studio 启动 Desktop 后，若 Core 在 Ready 前连续退出并报告 `DirectoryNotFoundException: Source\PuddingAgent\wwwroot`，说明 WPF 启动环境错误地把 ASP.NET Core 的 Development 静态资源清单行为传给了子进程。`CoreProcessSupervisor` 必须对 DesktopChild 显式设置 `ASPNETCORE_ENVIRONMENT=Production` 和 `DOTNET_ENVIRONMENT=Production`，并把工作目录设为 Core 可执行文件目录；Workbench 由输出或发布目录中的物理 `wwwroot` 提供。`PuddingDesktop/Properties/launchSettings.json` 不应包含 ASP.NET Core URL 或环境变量。
 
+从 Visual Studio 直接启动 `PuddingDesktop.csproj` 时，Desktop 的 ProjectReference 会先构建后端，并把本次构建的 `PuddingAgent.exe` 与依赖复制到 Desktop 输出目录。开发态 Core 解析必须优先使用这份与当前 Desktop Build 同源的输出，不能先在 `Source/PuddingAgent` 的 Debug、Release、publish 目录中按 exe 时间戳猜测，否则可能启动旧后端。修改后端源码后需要停止并重新启动 VS 调试会话；DesktopChild 不是 `dotnet watch` 进程，不支持在已运行子进程中热替换整套后端。
+
+Desktop 默认关闭到托盘且是单实例：窗口消失不代表进程退出。若旧实例仍在托盘，VS 启动的新进程只会激活旧实例，旧 Core 也会继续运行，看起来就像新后端没有生效。调试新构建前先从托盘选择“退出 Pudding”，再确认 `PuddingDesktop.exe` / 其子 `PuddingAgent.exe` 已退出；不要同时用 `dev-up.py` 和 Desktop 访问同一个 DataRoot。
+
 运行中心“生成诊断包”只在用户点击时写入 `<DataRoot>/diagnostics/`。ZIP 应只包含运行快照、最近 Core 输出和配置键名；出现 ControlToken、Authorization、Cookie、API Key 或 Secret 值即视为缺陷。不要把完整 `system.json` 或 WebView2 UDF 直接加入诊断包。
 
 “登录 Windows 后启动”只在用户保存 Desktop 设置时更新 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，不应在普通启动或测试构造期间隐式修改注册表。后台启动使用 `--background`；窗口创建和配置错误仍然完成，随后隐藏到托盘，不能因 Core 启动失败终止 Desktop。
