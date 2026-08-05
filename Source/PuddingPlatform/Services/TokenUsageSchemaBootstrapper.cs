@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingPlatform.Data;
@@ -21,9 +21,16 @@ public static class TokenUsageSchemaBootstrapper
     private static readonly (string Name, string Definition)[] RequiredColumns =
     [
         ("ParentSessionId", "TEXT NULL"),
+        // Prompt prefix 分层 token 分解簇
+        ("MessageTokens", "INTEGER NULL"),
+        ("ToolDefinitionTokens", "INTEGER NULL"),
+        ("SystemMessageTokens", "INTEGER NULL"),
+        ("HistoryMessageTokens", "INTEGER NULL"),
+        // 熵探针簇
         ("HistoryMessageEntropy", "REAL NULL"),
         ("SystemMessageEntropy", "REAL NULL"),
         ("ToolDefinitionEntropy", "REAL NULL"),
+        // agent loop 轮次/工具簇
         ("TurnRound", "INTEGER NULL"),
         ("ToolCallCount", "INTEGER NULL"),
         ("ToolNames", "TEXT NULL"),
