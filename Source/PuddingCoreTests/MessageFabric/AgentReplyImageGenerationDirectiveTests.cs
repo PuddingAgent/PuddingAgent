@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 
 namespace PuddingCoreTests.MessageFabric;
 
@@ -91,5 +91,37 @@ public sealed class AgentReplyImageGenerationDirectiveTests
 
         Assert.HasCount(4, result.Items);
         Assert.AreEqual(4, result.TotalImageCount);
+    }
+
+    [TestMethod]
+    public void StripBlocks_RemovesFencesAndPreservesSurroundingText()
+    {
+        const string reply =
+            "准备生成：\n\n```ImageGeneration\n一只戴黄色围巾的猫。\n```\n\n稍后补充。";
+
+        var stripped = AgentReplyImageGenerationDirective.StripBlocks(reply);
+
+        Assert.AreEqual("准备生成：\n\n\n稍后补充。", stripped);
+        Assert.IsFalse(
+            stripped.Contains("ImageGeneration", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void StripBlocks_PureFence_ReturnsEmpty()
+    {
+        var stripped = AgentReplyImageGenerationDirective.StripBlocks(
+            "```ImageGeneration\n一只布丁猫。\n```");
+
+        Assert.AreEqual(string.Empty, stripped);
+    }
+
+    [TestMethod]
+    public void StripBlocks_NoFence_ReturnsContentUnchanged()
+    {
+        const string reply = "普通回复，没有围栏。";
+
+        Assert.AreEqual(
+            reply,
+            AgentReplyImageGenerationDirective.StripBlocks(reply));
     }
 }

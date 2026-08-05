@@ -1,4 +1,4 @@
-using PuddingCode.Abstractions;
+﻿using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 
@@ -36,9 +36,16 @@ public static class FeishuImageArtifactProjection
         IReadOnlyDictionary<string, string> metadata,
         CancellationToken ct = default)
     {
+        var suppressed = IsTrue(Get(
+            metadata,
+            MessageGatewayMetadata.ImageToolSuppressDirective));
+
         var directive = AgentReplyImageDirective.Parse(content);
         if (!directive.HasImages)
-            return Empty(content);
+        {
+            return Empty(
+                suppressed ? content : StripImageGenerationBlocks(content));
+        }
 
         var resolved = new List<ResolvedAgentReplyImage>();
         var failed = 0;
@@ -62,9 +69,8 @@ public static class FeishuImageArtifactProjection
         }
 
         var text = RemoveResolvedBlocks(content, resolved);
-        var suppressed = IsTrue(Get(
-            metadata,
-            MessageGatewayMetadata.ImageToolSuppressDirective));
+        if (!suppressed)
+            text = StripImageGenerationBlocks(text);
         return new FeishuImageArtifactProjectionPlan(
             HasDirective: true,
             IsPureImage:
@@ -176,6 +182,9 @@ public static class FeishuImageArtifactProjection
         }
         return result;
     }
+
+    private static string StripImageGenerationBlocks(string content)
+        => AgentReplyImageGenerationDirective.StripBlocks(content);
 
     private static FeishuImageArtifactProjectionPlan Empty(string content)
         => new(

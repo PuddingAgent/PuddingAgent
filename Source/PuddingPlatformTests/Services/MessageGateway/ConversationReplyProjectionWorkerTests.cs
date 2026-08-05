@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -148,17 +148,18 @@ public sealed class ConversationReplyProjectionWorkerTests
     }
 
     [TestMethod]
-    public async Task ProjectBatchAsync_ImageGenerationFences_PreserveTextThenAppendImages()
+    public async Task ProjectBatchAsync_ImageGenerationFences_StripsFencesThenAppendImages()
     {
         const string reply =
             "生成两张图。\n\n```ImageGeneration\n第一张布丁猫。\n```\n\n```ImageGeneration\n第二张布丁猫。\n```";
         var sent = await ProjectSucceededReplyAsync(reply);
 
         Assert.AreEqual(3, sent.Envelopes.Count);
-        Assert.AreEqual(
-            reply,
-            sent.Envelopes.Single(item =>
-                item.ContentType == MessageContentTypes.Text).Content);
+        var text = sent.Envelopes.Single(item =>
+            item.ContentType == MessageContentTypes.Text);
+        Assert.AreEqual("生成两张图。", text.Content);
+        Assert.IsFalse(
+            text.Content.Contains("ImageGeneration", StringComparison.Ordinal));
         Assert.HasCount(
             2,
             sent.Envelopes.Where(item =>
@@ -173,6 +174,23 @@ public sealed class ConversationReplyProjectionWorkerTests
                 "vision-0123456789abcdef0123456789abcdef",
                 image.Metadata[ConnectorPayloadMetadata.ArtifactId]);
         }
+    }
+
+    [TestMethod]
+    public async Task ProjectBatchAsync_PureImageGenerationFence_ProjectsOnlyImages()
+    {
+        const string reply = "```ImageGeneration\n一只布丁猫。\n```";
+        var sent = await ProjectSucceededReplyAsync(reply);
+
+        Assert.AreEqual(1, sent.Envelopes.Count);
+        var image = sent.Envelopes.Single();
+        Assert.AreEqual(MessageContentTypes.Image, image.ContentType);
+        Assert.AreEqual(
+            ConnectorPayloadKinds.VisionImage,
+            image.Metadata[ConnectorPayloadMetadata.Kind]);
+        Assert.AreEqual(
+            "vision-0123456789abcdef0123456789abcdef",
+            image.Metadata[ConnectorPayloadMetadata.ArtifactId]);
     }
 
     [TestMethod]

@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace PuddingCode.Models;
 
@@ -72,6 +72,26 @@ public static class AgentReplyImageGenerationDirective
             OriginalContent = original,
             Items = items,
         };
+    }
+
+    /// <summary>
+    /// Removes ImageGeneration fences from a reply so channel projectors can
+    /// deliver the surrounding text without leaking the raw directive code.
+    /// Only the first <see cref="MaxBlocks"/> fences are removed, matching
+    /// <see cref="Parse(string?)"/>.
+    /// </summary>
+    public static string StripBlocks(string? content)
+    {
+        var original = content ?? string.Empty;
+        var result = original;
+        foreach (Match match in BlockRegex.Matches(original)
+                     .Cast<Match>()
+                     .Take(MaxBlocks)
+                     .OrderByDescending(match => match.Index))
+        {
+            result = result.Remove(match.Index, match.Length);
+        }
+        return result;
     }
 
     private static AgentReplyImageGenerationItem? ParseItem(
