@@ -27,6 +27,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <!-- jieba.NET netstandard2.0 运行时依赖：显式声明到最终可执行项目，
+         确保 System.Configuration.ConfigurationManager.dll 必然复制到 Desktop 输出目录，
+         不再依赖 PuddingAgent→PuddingCore→PuddingMemoryEngine 的传递流动。 -->
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="10.0.0" />
   </ItemGroup>
 
   <!-- Phase 1A Publish Layout: bundle Core + default-data + wwwroot -->
