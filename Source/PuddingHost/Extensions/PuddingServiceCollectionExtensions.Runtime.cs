@@ -366,6 +366,10 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         builder.Services.AddSingleton<ISessionCompactionEventEmitter, PuddingPlatform.Services.SessionCompactionEventEmitter>();
         builder.Services.AddSingleton<ContextWindowManager>();
+        // 压缩前冲洗（Pre-Compaction Flush）：压缩前用 Flash LLM 提取关键事实。
+        // 此前该组合根未注册此服务，ContextWindowManager 静默跳过冲洗，
+        // 导致压缩丢失用户偏好/项目事实。
+        builder.Services.AddSingleton<PuddingCode.Runtime.IPreCompactionFlushService, PuddingRuntime.Services.PreCompactionFlushService>();
         builder.Services.AddSingleton<ISessionExecutionGate, SessionExecutionGate>();
         // ── Agent Persona 文件读取器 ──
         builder.Services.AddSingleton(sp =>

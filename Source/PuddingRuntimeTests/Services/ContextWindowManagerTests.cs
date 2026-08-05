@@ -67,6 +67,32 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
+    public async Task TrimHistoryAsync_PassesAgentTemplateId_ToCompactionRequest()
+    {
+        var compaction = new FakeContextCompactionService(shouldAutoCompact: true);
+        var manager = CreateManager(compaction);
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"),
+            new(ChatRole.User, "user"),
+            new(ChatRole.Assistant, "assistant"),
+        };
+
+        await manager.TrimHistoryAsync(
+            "session-1",
+            history,
+            maxTokenBudget: 8000,
+            preferDbContextWindow: false,
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            CancellationToken.None,
+            agentTemplateId: "template-1");
+
+        Assert.AreEqual(1, compaction.CompactCalls.Count);
+        Assert.AreEqual("template-1", compaction.CompactCalls[0].AgentTemplateId);
+    }
+
+    [TestMethod]
     public async Task TrimHistoryAsync_EmitsAutoCompactionEvents_BeforeAndAfterCompaction()
     {
         var emitter = new RecordingCompactionEventEmitter(yieldBeforeRecord: true);

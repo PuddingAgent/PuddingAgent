@@ -452,7 +452,8 @@ public sealed class ContextWindowManager
         string? agentId,
         CancellationToken ct,
         int? maxOutputTokens = null,
-        int? maxInputTokens = null)
+        int? maxInputTokens = null,
+        string? agentTemplateId = null)
     {
         var autoCompacted = await TryAutoCompactAsync(
             sessionId,
@@ -461,6 +462,7 @@ public sealed class ContextWindowManager
             maxTokenBudget,
             maxOutputTokens,
             maxInputTokens,
+            agentTemplateId,
             ct);
 
         if ((preferDbContextWindow || autoCompacted) && _memoryDbFactory is not null)
@@ -499,6 +501,7 @@ public sealed class ContextWindowManager
         int maxTokenBudget,
         int? maxOutputTokens,
         int? maxInputTokens,
+        string? agentTemplateId,
         CancellationToken ct)
     {
         if (_compactionService is null || string.IsNullOrWhiteSpace(workspaceId))
@@ -660,7 +663,7 @@ public sealed class ContextWindowManager
             if (_preCompactionFlushService is not null)
             {
                 await FlushMemoriesBeforeCompactionAsync(
-                    sessionId, workspaceId, agentId, compactionId, ct);
+                    sessionId, workspaceId, agentId, agentTemplateId, agentWorkSummary, compactionId, ct);
             }
 
             var compactStart = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -673,7 +676,8 @@ public sealed class ContextWindowManager
                     ContextCompactionLevel.Full,
                     "context_window_auto_compaction",
                     AgentWorkSummary: agentWorkSummary,
-                    CompactionId: compactionId),
+                    CompactionId: compactionId,
+                    AgentTemplateId: agentTemplateId),
                 ct);
             var compactMs = (System.Diagnostics.Stopwatch.GetTimestamp() - compactStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;
             compressionWatch.Stop();
@@ -1048,6 +1052,8 @@ public sealed class ContextWindowManager
         string sessionId,
         string workspaceId,
         string? agentId,
+        string? agentTemplateId,
+        string? agentWorkSummary,
         string compactionId,
         CancellationToken ct)
     {
@@ -1087,7 +1093,8 @@ public sealed class ContextWindowManager
                 messages,
                 "context_window_auto_compaction")
             {
-                AgentTemplateId = agentId,
+                AgentTemplateId = agentTemplateId,
+                AgentWorkSummary = agentWorkSummary,
             };
 
             var result = await _preCompactionFlushService.FlushAsync(request, ct);

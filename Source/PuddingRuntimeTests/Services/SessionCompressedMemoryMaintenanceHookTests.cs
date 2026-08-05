@@ -90,6 +90,38 @@ public sealed class SessionCompressedMemoryMaintenanceHookTests
         Assert.IsNull(queue.LastRequest);
     }
 
+    [TestMethod]
+    public async Task HandleAsync_ShouldEnqueueWithFallback_WhenTemplateIdIsMissing()
+    {
+        var queue = new RecordingSubconsciousJobQueue();
+        var hook = new SessionCompressedMemoryMaintenanceHook(
+            new RecordingInternalEventBus(),
+            queue,
+            NullLogger<SessionCompressedMemoryMaintenanceHook>.Instance);
+
+        await hook.HandleAsync(new InternalEvent
+        {
+            EventId = "event-fallback",
+            Type = HookEventNames.SessionCompressed.Value,
+            WorkspaceId = "workspace-1",
+            Payload = new SessionCompressedHookPayload
+            {
+                WorkspaceId = "workspace-1",
+                OriginalSessionId = "session-1",
+                AgentId = "agent-1",
+                CompactionId = "cmp-fallback",
+                Mode = "Auto",
+                Level = "Full",
+                Reason = "auto threshold",
+            },
+        }, CancellationToken.None);
+
+        Assert.IsNotNull(queue.LastRequest);
+        Assert.AreEqual(SubconsciousJobTypes.MemoryConsolidateSession, queue.LastRequest.JobType);
+        Assert.AreEqual("agent-1", queue.LastRequest.Job.AgentId);
+        Assert.AreEqual(string.Empty, queue.LastRequest.Job.AgentTemplateId);
+    }
+
     private sealed class RecordingSubconsciousJobQueue : ISubconsciousJobQueue
     {
         public SubconsciousJobEnqueueRequest? LastRequest { get; private set; }

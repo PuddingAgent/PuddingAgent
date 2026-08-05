@@ -70,13 +70,24 @@ public sealed class SessionCompressedMemoryMaintenanceHook : BackgroundService
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(payload.AgentId)
-            || string.IsNullOrWhiteSpace(payload.AgentTemplateId))
+        if (string.IsNullOrWhiteSpace(payload.AgentId))
         {
-            _logger.LogDebug(
-                "[HookSystem] Skip session.compressed memory maintenance because agent identity is missing compactionId={CompactionId}",
-                payload.CompactionId);
+            _logger.LogWarning(
+                "[HookSystem] Skip session.compressed memory maintenance because agent instance id is missing compactionId={CompactionId} session={SessionId}",
+                payload.CompactionId,
+                payload.OriginalSessionId);
             return;
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.AgentTemplateId))
+        {
+            // 降级入队：Worker 通过 AgentId 解析 LLM 配置，模板 ID 缺失不应静默丢弃
+            // 记忆维护任务（修复自动压缩静默丢失整合任务的问题）。
+            _logger.LogWarning(
+                "[HookSystem] session.compressed payload missing AgentTemplateId; enqueueing with empty template compactionId={CompactionId} session={SessionId} agent={AgentId}",
+                payload.CompactionId,
+                payload.OriginalSessionId,
+                payload.AgentId);
         }
 
         var workspaceId = string.IsNullOrWhiteSpace(payload.WorkspaceId) ? evt.WorkspaceId : payload.WorkspaceId;
@@ -85,7 +96,7 @@ public sealed class SessionCompressedMemoryMaintenanceHook : BackgroundService
             SessionId = payload.OriginalSessionId,
             WorkspaceId = workspaceId,
             AgentId = payload.AgentId,
-            AgentTemplateId = payload.AgentTemplateId,
+            AgentTemplateId = payload.AgentTemplateId ?? string.Empty,
             LastAssistantReply = payload.SummaryPreview,
             MemoryNotes = payload.MemoryNotes,
         };
