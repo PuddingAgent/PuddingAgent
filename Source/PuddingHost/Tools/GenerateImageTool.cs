@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -85,7 +85,7 @@ public sealed class GenerateImageTool(
                         mimeType = result.MimeType,
                         providerId = result.ProviderId,
                         modelId = result.ModelId,
-                        next = "Call send_image once for every artifactId to send all generated images to the current Feishu conversation.",
+                        next = "可调用 send_image 发送生成的图片。",
                     },
                     JsonOptions));
         }
