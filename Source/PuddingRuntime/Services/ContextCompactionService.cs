@@ -1415,9 +1415,9 @@ public sealed class ExtractiveContextCompactionSummaryGenerator : IContextCompac
         var trimmed = content.Trim();
         if (trimmed.Equals("/yolo", StringComparison.OrdinalIgnoreCase))
             return true;
-        if (content.Contains("duplicate message — already processed", StringComparison.OrdinalIgnoreCase))
+        if (content.Contains(AgentExecutionConstants.DuplicateMessagePlaceholder, StringComparison.OrdinalIgnoreCase))
             return true;
-        if (content.Contains("duplicate message - already processed", StringComparison.OrdinalIgnoreCase))
+        if (content.Contains(AgentExecutionConstants.DuplicateMessagePlaceholderLegacyHyphen, StringComparison.OrdinalIgnoreCase))
             return true;
         if (content.TrimStart().StartsWith("Runtime mode is now Yolo", StringComparison.OrdinalIgnoreCase))
             return true;

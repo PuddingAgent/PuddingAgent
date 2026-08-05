@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -121,7 +121,7 @@ public sealed partial class AgentExecutionService
             _controlRegistry.Remove(request.SessionId);
             yield return ServerSentEventFrame.Json(SseEventTypes.Done, new
             {
-                reply = "(duplicate message — already processed)",
+                reply = AgentExecutionConstants.DuplicateMessagePlaceholder,
                 sessionId = request.SessionId,
                 messageId = request.MessageId,
                 isError = false,

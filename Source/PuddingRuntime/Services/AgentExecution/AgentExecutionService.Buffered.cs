@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -123,7 +123,7 @@ public sealed partial class AgentExecutionService
             {
                 SessionId = request.SessionId,
                 AgentInstanceId = instance.AgentInstanceId,
-                ReplyText = "(duplicate message — already processed)",
+                ReplyText = AgentExecutionConstants.DuplicateMessagePlaceholder,
                 IsSuccess = true,
                 ExecutionState = AgentExecutionState.Completed,
                 StopReason = "DuplicateMessage",

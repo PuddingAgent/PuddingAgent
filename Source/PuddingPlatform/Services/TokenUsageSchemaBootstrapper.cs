@@ -18,7 +18,7 @@ public static class TokenUsageSchemaBootstrapper
     /// were introduced after the last EF migration / model snapshot. Because EnsureCreated
     /// never alters an existing table, every one of them must be self-healed here.
     /// </summary>
-    private static readonly (string Name, string Definition)[] RequiredColumns =
+    internal static readonly (string Name, string Definition)[] RequiredColumns =
     [
         ("ParentSessionId", "TEXT NULL"),
         // Prompt prefix 分层 token 分解簇

@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System.Linq;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
@@ -10,19 +11,10 @@ public sealed class TokenUsageSchemaBootstrapperTests
 {
     /// <summary>
     /// Nullable columns the bootstrapper must self-heal on legacy SQLite databases.
-    /// Mirrors TokenUsageSchemaBootstrapper.RequiredColumns.
+    /// Derived from TokenUsageSchemaBootstrapper.RequiredColumns (single source of truth).
     /// </summary>
     private static readonly string[] ExpectedColumns =
-    [
-        "ParentSessionId",
-        "HistoryMessageEntropy",
-        "SystemMessageEntropy",
-        "ToolDefinitionEntropy",
-        "TurnRound",
-        "ToolCallCount",
-        "ToolNames",
-        "SubAgentId",
-    ];
+        TokenUsageSchemaBootstrapper.RequiredColumns.Select(c => c.Name).ToArray();
 
     [TestMethod]
     public async Task EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex()
