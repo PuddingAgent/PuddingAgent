@@ -12,8 +12,11 @@ public sealed class ContextCompactionOptions
     /// <summary>当前 Agent 生成压缩摘要的最长等待秒数。默认 120。</summary>
     public int AgentSummaryTimeoutSeconds { get; init; } = 120;
 
-    /// <summary>Flash LLM 调用超时秒数。默认 20。</summary>
-    public int FlashTimeoutSeconds { get; init; } = 20;
+    /// <summary>Flash LLM 调用超时秒数。默认 60。</summary>
+    public int FlashTimeoutSeconds { get; init; } = 60;
+
+    /// <summary>压缩前冲洗（Pre-Compaction Flush）LLM 调用超时秒数，最小钳制 5 秒。默认 30。</summary>
+    public int PreCompactFlushTimeoutSeconds { get; init; } = 30;
 
     /// <summary>语义摘要失败时是否 fallback 到 Extractive。默认 false，避免把降级摘录伪装成正常摘要。</summary>
     public bool FallbackToExtractive { get; init; }

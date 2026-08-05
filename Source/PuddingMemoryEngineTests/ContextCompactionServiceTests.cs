@@ -358,6 +358,122 @@ public sealed class ContextCompactionServiceTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
     }
 
+    [TestMethod]
+    public async Task ExtractiveGenerator_FiltersNoiseMessages()
+    {
+        var generator = new ExtractiveContextCompactionSummaryGenerator();
+        var messages = new List<ContextCompactionMessage>
+        {
+            new("m1", 1, "user", "请把上下文压缩管线修好，项目在 E:\\repo\\app。"),
+            new("m2", 2, "agent", "Runtime mode is now Yolo mode; 这是一条系统噪声。"),
+            new("m3", 3, "user", "/yolo"),
+            new("m4", 4, "agent", "duplicate message — already processed; 不要重复这条。"),
+            new("m5", 5, "agent", "已完成 ContextCompactionService.cs:120 的重构。"),
+        };
+
+        var summary = await generator.GenerateSummaryAsync(
+            new ContextCompactionSummaryRequest("workspace-1", "session-1", "agent-1", messages, "test"));
+
+        StringAssert.Contains(summary, "E:\\repo\\app");
+        StringAssert.Contains(summary, "ContextCompactionService.cs:120");
+        Assert.IsFalse(summary.Contains("/yolo", StringComparison.OrdinalIgnoreCase), "不应包含 /yolo 噪声。");
+        Assert.IsFalse(summary.Contains("duplicate message", StringComparison.OrdinalIgnoreCase), "不应包含 duplicate 占位噪声。");
+        Assert.IsFalse(summary.Contains("Runtime mode is now Yolo", StringComparison.OrdinalIgnoreCase), "不应包含 Runtime mode 噪声。");
+    }
+
+    [TestMethod]
+    public async Task ExtractiveGenerator_PreferenceAndMemoryNotesSections_DoNotShareSnippets()
+    {
+        var generator = new ExtractiveContextCompactionSummaryGenerator();
+        var messages = new List<ContextCompactionMessage>();
+        for (var i = 1; i <= 4; i++)
+        {
+            messages.Add(new ContextCompactionMessage(
+                $"u{i}", i * 2 - 1, "user", $"用户偏好 {i}：希望输出使用中文，路径是 E:\\proj\\src\\File{i}.cs。"));
+            messages.Add(new ContextCompactionMessage(
+                $"a{i}", i * 2, "agent", $"好的，已按偏好处理消息 {i}。"));
+        }
+
+        var summary = await generator.GenerateSummaryAsync(
+            new ContextCompactionSummaryRequest("workspace-1", "session-1", "agent-1", messages, "test"));
+
+        var preferenceBullets = ExtractSectionBullets(summary, "## 保留的用户偏好和约束");
+        var memoryNoteBullets = ExtractSectionBullets(summary, "## Memory Notes");
+
+        Assert.IsTrue(preferenceBullets.Count > 0, "偏好章节应有摘录。");
+        Assert.IsTrue(memoryNoteBullets.Count > 0, "Memory Notes 应有结构化事实。");
+        var overlap = preferenceBullets.Intersect(memoryNoteBullets, StringComparer.Ordinal).ToList();
+        Assert.AreEqual(0, overlap.Count, "偏好章节与 Memory Notes 不应重复同一批 snippets。");
+        StringAssert.Contains(summary, "涉及文件");
+    }
+
+    [TestMethod]
+    public async Task ExtractiveGenerator_ExtractsWindowsAbsolutePaths()
+    {
+        var generator = new ExtractiveContextCompactionSummaryGenerator();
+        var messages = new List<ContextCompactionMessage>
+        {
+            new("m1", 1, "user", "问题在 E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\ContextCompactionService.cs。"),
+            new("m2", 2, "agent", "好的，我来检查该文件。"),
+        };
+
+        var summary = await generator.GenerateSummaryAsync(
+            new ContextCompactionSummaryRequest("workspace-1", "session-1", "agent-1", messages, "test"));
+
+        var locationSection = ExtractSectionText(summary, "## 涉及文件和代码位置");
+        StringAssert.Contains(
+            locationSection,
+            "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\ContextCompactionService.cs");
+    }
+
+    private static List<string> ExtractSectionBullets(string summary, string sectionHeader)
+    {
+        var lines = summary.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var inSection = false;
+        var bullets = new List<string>();
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("## ", StringComparison.Ordinal))
+            {
+                inSection = line.Equals(sectionHeader, StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (inSection && line.StartsWith("- ", StringComparison.Ordinal))
+                bullets.Add(line);
+        }
+
+        return bullets;
+    }
+
+    private static string ExtractSectionText(string summary, string sectionHeader)
+    {
+        var lines = summary.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var inSection = false;
+        var sb = new System.Text.StringBuilder();
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("## ", StringComparison.Ordinal))
+            {
+                if (line.Equals(sectionHeader, StringComparison.OrdinalIgnoreCase))
+                {
+                    inSection = true;
+                    continue;
+                }
+
+                if (inSection)
+                    break;
+                continue;
+            }
+
+            if (inSection)
+                sb.AppendLine(line);
+        }
+
+        return sb.ToString();
+    }
     private sealed class FixedSummaryGenerator : IContextCompactionSummaryGenerator
     {
         private readonly string _summary;

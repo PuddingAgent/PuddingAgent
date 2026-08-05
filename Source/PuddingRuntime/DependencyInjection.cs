@@ -132,8 +132,8 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<ExtractiveContextCompactionSummaryGenerator>();
         services.AddSingleton<FlashContextCompactionSummaryGenerator>();
         services.AddSingleton<AgentContextCompactionSummaryGenerator>();
-        services.AddSingleton<IPreCompactionFlushService, PreCompactionFlushService>();
         services.AddSingleton<ContextCompactionOptions>();
+        services.AddSingleton<IPreCompactionFlushService, PreCompactionFlushService>();
         services.AddSingleton<IContextCompactionSummaryGenerator, CompositeContextCompactionSummaryGenerator>();
         services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         services.AddSingleton<IToolInvocationService, ToolInvocationService>();

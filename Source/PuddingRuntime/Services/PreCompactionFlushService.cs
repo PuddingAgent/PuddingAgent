@@ -28,6 +28,7 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
     private readonly IMemoryLlmClient _memoryLlmClient;
     private readonly ILLMConfigResolver _llmConfigResolver;
     private readonly ILogger<PreCompactionFlushService> _logger;
+    private readonly ContextCompactionOptions _options;
 
     private const string FlushSystemPrompt = """
 你是 Pudding 的压缩前冲洗服务。你的任务是从会话消息中提取值得长期保留的关键事实。
@@ -52,11 +53,13 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
     public PreCompactionFlushService(
         IMemoryLlmClient memoryLlmClient,
         ILLMConfigResolver llmConfigResolver,
-        ILogger<PreCompactionFlushService> logger)
+        ILogger<PreCompactionFlushService> logger,
+        ContextCompactionOptions options)
     {
         _memoryLlmClient = memoryLlmClient;
         _llmConfigResolver = llmConfigResolver;
         _logger = logger;
+        _options = options;
     }
 
     public async Task<PreCompactionFlushResult> FlushAsync(
@@ -112,7 +115,8 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
 
             // 3. 调用 Flash LLM
             string result;
-            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
+            var flushTimeoutSeconds = Math.Max(5, _options.PreCompactFlushTimeoutSeconds);
+            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(flushTimeoutSeconds)))
             using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token))
             {
                 try
@@ -127,8 +131,8 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
                 catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
                 {
                     _logger.LogWarning(
-                        "[PreCompactFlush] Timeout after 8s session={SessionId}",
-                        request.SessionId);
+                        "[PreCompactFlush] Timeout after {Seconds}s session={SessionId}",
+                        flushTimeoutSeconds, request.SessionId);
                     return new PreCompactionFlushResult(0, sw.ElapsedMilliseconds);
                 }
             }
@@ -188,8 +192,8 @@ public sealed class PreCompactionFlushService : IPreCompactionFlushService
         foreach (var message in messages)
         {
             var content = message.Content.Trim();
-            if (content.Length > 2000)
-                content = content[..2000] + "\n…[截断]";
+            if (content.Length > 4000)
+                content = content[..4000] + "\n…[截断]";
             sb.AppendLine($"[{message.Role}]");
             sb.AppendLine(content);
             sb.AppendLine();

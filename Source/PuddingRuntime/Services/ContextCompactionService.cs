@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
@@ -1197,56 +1198,370 @@ public sealed class ContextCompactionService : IContextCompactionService
     }
 }
 
+/// <summary>
+/// 抽取式兜底摘要生成器：噪声过滤 + 结构化事实抽取 + 去重的可用摘要。
+/// 不再 TakeLast(8) 丢弃内容，而是保留最近 3 条非噪声消息（时效），
+/// 再按信息密度评分补选最多 9 条（按原顺序输出），
+/// 并从消息中正则抽取 Windows 绝对路径、file:line 标记与 commit 短哈希，
+/// 用于填充摘要各章节；偏好章节与 Memory Notes 使用不同批次内容，避免重复。
+/// </summary>
 public sealed class ExtractiveContextCompactionSummaryGenerator : IContextCompactionSummaryGenerator
 {
+    private const int MaxPathFacts = 15;
+    private const int MaxPreferenceExcerpts = 6;
+    private const int MaxRecencyMessages = 3;
+    private const int MaxDenseMessages = 9;
+    private const int MaxExcerptChars = 400;
+    private const int MaxContentScore = 2000;
+    private const int FactScorePerMatch = 300;
+    private const int AgentRolePriorityBonus = 200;
+
+    private static readonly Regex WindowsPathRegex = new(
+        @"[A-Za-z]:\\[\w .-]+(?:\\[\w .-]+)*",
+        RegexOptions.Compiled);
+
+    private static readonly Regex FileLineRegex = new(
+        @"\b[\w.-]+\.(?:cs|sql|json|md|ts|tsx|ps1):\d+\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex CommitHashRegex = new(
+        @"\b[0-9a-fA-F]{7,12}\b",
+        RegexOptions.Compiled);
+
+    private static readonly string[] ErrorKeywords =
+    [
+        "error", "exception", "failed", "失败", "异常", "错误",
+    ];
+
+    private static readonly string[] ToolKeywords =
+    [
+        "tool", "命令", "执行", "运行", "result", "输出",
+    ];
+
     public Task<string> GenerateSummaryAsync(
         ContextCompactionSummaryRequest request,
         CancellationToken ct = default)
     {
-        var userMessages = request.Messages.Count(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
-        var agentMessages = request.Messages.Count(m => string.Equals(m.Role, "agent", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase));
-        var snippets = request.Messages
+        ct.ThrowIfCancellationRequested();
+
+        var allMessages = request.Messages
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
-            .TakeLast(8)
-            .Select(m => $"- [{m.Role} #{m.Sequence}] {Trim(m.Content, 240)}");
+            .OrderBy(m => m.Sequence)
+            .ToList();
+        var nonNoise = allMessages
+            .Where(m => !IsNoise(m.Content))
+            .ToList();
+
+        var userCount = nonNoise.Count(m => IsUserRole(m.Role));
+        var agentCount = nonNoise.Count(m => IsAgentRole(m.Role));
+
+        // 结构化事实抽取（跨所有非噪声消息）
+        var facts = ExtractFacts(nonNoise);
+
+        // 消息选择：最后 3 条非噪声（时效）+ 按信息密度评分最多 9 条，按原顺序输出
+        var recency = nonNoise
+            .TakeLast(Math.Min(MaxRecencyMessages, nonNoise.Count))
+            .ToList();
+        var scoringPool = nonNoise.Count <= recency.Count
+            ? []
+            : nonNoise
+                .Take(nonNoise.Count - recency.Count)
+                .Select(m => (Message: m, Score: ScoreMessage(m)))
+                .OrderByDescending(x => x.Score)
+                .Take(MaxDenseMessages)
+                .Select(x => x.Message)
+                .ToList();
+        var selected = recency
+            .Concat(scoringPool)
+            .OrderBy(m => m.Sequence)
+            .ToList();
+
+        var nl = Environment.NewLine;
+
+        // ── 涉及文件和代码位置：路径 + file:line（没有才写“未检测到”）──
+        var locationItems = facts.Paths
+            .Concat(facts.FileLines)
+            .Select(p => $"- {p}")
+            .ToList();
+        var locationSection = locationItems.Count > 0
+            ? string.Join(nl, locationItems)
+            : "- 未检测到涉及的文件或代码位置。";
+
+        // ── 已完成事项：检测到的 commit 列表 + 压缩规模 ──
+        var completedItems = facts.Commits
+            .Select(c => $"- 提交 {c}")
+            .ToList();
+        completedItems.Add(
+            $"- 已压缩 {request.Messages.Count} 条早期消息，其中用户消息 {userCount} 条，Agent/助手消息 {agentCount} 条。");
+        var completedSection = string.Join(nl, completedItems);
+
+        // ── 保留的用户偏好和约束：只放用户消息摘录（最多 6 条）──
+        var preferenceItems = nonNoise
+            .Where(m => IsUserRole(m.Role))
+            .TakeLast(MaxPreferenceExcerpts)
+            .Select(m => $"- [user #{m.Sequence}] {TruncateBySentence(m.Content, MaxExcerptChars)}")
+            .ToList();
+        var preferenceSection = preferenceItems.Count > 0
+            ? string.Join(nl, preferenceItems)
+            : "- 未从压缩内容中检测到明确的用户偏好或约束。";
+
+        // ── Memory Notes：结构化事实 + 偏好要点（与偏好章节不同批次，带前缀、不同截断）──
+        var memoryNotes = new List<string>();
+        memoryNotes.AddRange(facts.Paths.Select(p => $"- 涉及文件: {p}"));
+        memoryNotes.AddRange(facts.FileLines.Select(f => $"- 代码位置: {f}"));
+        memoryNotes.AddRange(facts.Commits.Select(c => $"- 提交: {c}"));
+        memoryNotes.AddRange(nonNoise
+            .Where(m => IsUserRole(m.Role))
+            .Take(MaxPreferenceExcerpts)
+            .Select(m => $"- 用户偏好: {TruncateBySentence(m.Content, 120)}"));
+        var memoryNotesSection = memoryNotes.Count > 0
+            ? string.Join(nl, memoryNotes)
+            : "- 未检测到需保留的结构化事实。";
+
+        // ── 用户目标：最早的用户消息摘录 ──
+        var firstUser = nonNoise.FirstOrDefault(m => IsUserRole(m.Role));
+        var goalSection = firstUser is null
+            ? "- 根据会话早期内容继续协助用户完成当前任务。"
+            : $"- {TruncateBySentence(firstUser.Content, 200)}";
+
+        // ── 关键决策：密度评分靠前的 Agent 消息 ──
+        var decisionItems = selected
+            .Where(m => IsAgentRole(m.Role))
+            .Take(3)
+            .Select(m => $"- 基于消息 #{m.Sequence}：{TruncateBySentence(m.Content, 200)}")
+            .ToList();
+        var decisionSection = decisionItems.Count > 0
+            ? string.Join(nl, decisionItems)
+            : "- 未检测到明确的决策记录。";
+
+        // ── 工具调用与重要输出 ──
+        var toolItems = nonNoise
+            .Where(m => IsAgentRole(m.Role)
+                && ToolKeywords.Any(k => m.Content.Contains(k, StringComparison.OrdinalIgnoreCase)))
+            .TakeLast(3)
+            .Select(m => $"- [agent #{m.Sequence}] {TruncateBySentence(m.Content, 200)}")
+            .ToList();
+        var toolSection = toolItems.Count > 0
+            ? string.Join(nl, toolItems)
+            : "- 未检测到结构化工具输出。";
+
+        // ── 错误、阻塞与修复 ──
+        var errorItems = nonNoise
+            .Where(m => ErrorKeywords.Any(k => m.Content.Contains(k, StringComparison.OrdinalIgnoreCase)))
+            .TakeLast(3)
+            .Select(m => $"- [{m.Role} #{m.Sequence}] {TruncateBySentence(m.Content, 200)}")
+            .ToList();
+        var errorSection = errorItems.Count > 0
+            ? string.Join(nl, errorItems)
+            : "- 未检测到结构化错误。";
+
+        // ── 当前工作状态：最后一条非噪声消息 ──
+        var lastMessage = nonNoise.LastOrDefault();
+        var statusSection = lastMessage is null
+            ? "- 后续上下文应结合最近未压缩消息继续执行。"
+            : $"- 最后一条消息（[{lastMessage.Role}] #{lastMessage.Sequence}）：{TruncateBySentence(lastMessage.Content, 200)}";
+
+        // ── 明确的下一步：最近一条用户请求 ──
+        var lastUser = nonNoise.LastOrDefault(m => IsUserRole(m.Role));
+        var nextSection = lastUser is null
+            ? "- 继续根据用户最新请求推进。"
+            : $"- 用户最近请求：{TruncateBySentence(lastUser.Content, 200)}";
 
         var summary = $"""
 <compact_summary>
 ## 用户目标
-根据会话早期内容继续协助用户完成当前任务。
+{goalSection}
 
 ## 已完成事项
-已压缩 {request.Messages.Count} 条早期消息，其中用户消息 {userMessages} 条，Agent 消息 {agentMessages} 条。
+{completedSection}
 
 ## 关键决策
-第一阶段使用抽取式摘要保留最近的早期上下文片段。
+{decisionSection}
 
 ## 涉及文件和代码位置
-未从压缩内容中检测结构化文件列表。
+{locationSection}
 
 ## 工具调用与重要输出
-未从压缩内容中检测结构化工具输出。
+{toolSection}
 
 ## 错误、阻塞与修复
-未从压缩内容中检测结构化错误。
+{errorSection}
 
 ## 当前工作状态
-后续上下文应结合最近未压缩消息继续执行。
+{statusSection}
 
 ## 明确的下一步
-继续根据用户最新请求推进。
+{nextSection}
 
 ## 保留的用户偏好和约束
-{string.Join(Environment.NewLine, snippets)}
+{preferenceSection}
 
 ## Memory Notes
-- {string.Join(Environment.NewLine + "- ", snippets)}
+{memoryNotesSection}
 </compact_summary>
 """;
+
         return Task.FromResult(summary);
     }
 
-    private static string Trim(string value, int maxChars) =>
-        value.Length <= maxChars ? value : value[..maxChars] + "...";
+    /// <summary>
+    /// 噪声过滤：跳过 duplicate 占位、/yolo 命令与 Runtime mode 切换的系统消息。
+    /// </summary>
+    private static bool IsNoise(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return true;
+
+        var trimmed = content.Trim();
+        if (trimmed.Equals("/yolo", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (content.Contains("duplicate message — already processed", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (content.Contains("duplicate message - already processed", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (content.TrimStart().StartsWith("Runtime mode is now Yolo", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private static bool IsUserRole(string role) =>
+        string.Equals(role, "user", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAgentRole(string role) =>
+        string.Equals(role, "agent", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(role, "assistant", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 结构化事实抽取：Windows 绝对路径（路径类去重最多 15 条）、file:line 标记、commit 短哈希。
+    /// </summary>
+    private static ExtractedFacts ExtractFacts(IEnumerable<ContextCompactionMessage> messages)
+    {
+        var paths = new List<string>();
+        var fileLines = new List<string>();
+        var commits = new List<string>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenFileLines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenCommits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var message in messages)
+        {
+            var content = message.Content ?? string.Empty;
+
+            foreach (Match match in WindowsPathRegex.Matches(content))
+            {
+                var path = TrimTrailingPunctuation(match.Value);
+                if (path.Length >= 3 && seenPaths.Add(path))
+                    paths.Add(path);
+            }
+
+            foreach (Match match in FileLineRegex.Matches(content))
+            {
+                if (seenFileLines.Add(match.Value))
+                    fileLines.Add(match.Value);
+            }
+
+            foreach (Match match in CommitHashRegex.Matches(content))
+            {
+                if (!HasCommitContext(content, match))
+                    continue;
+
+                var hash = match.Value.ToLowerInvariant();
+                if (seenCommits.Add(hash))
+                    commits.Add(hash);
+            }
+        }
+
+        return new ExtractedFacts(
+            paths.Take(MaxPathFacts).ToList(),
+            fileLines,
+            commits);
+    }
+
+    /// <summary>判断 7-12 位十六进制串附近是否出现 commit/提交/push 等提交语境。</summary>
+    private static bool HasCommitContext(string content, Match match)
+    {
+        var start = Math.Max(0, match.Index - 40);
+        var end = Math.Min(content.Length, match.Index + match.Length + 40);
+        var context = content[start..end];
+        return context.Contains("commit", StringComparison.OrdinalIgnoreCase)
+            || context.Contains("提交", StringComparison.Ordinal)
+            || context.Contains("push", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>信息密度评分：内容长度（上限 2000）+ 每个结构化事实 300 分 + Agent/assistant 角色优先加分。</summary>
+    private static int ScoreMessage(ContextCompactionMessage message)
+    {
+        var content = message.Content ?? string.Empty;
+        var score = Math.Min(content.Length, MaxContentScore);
+        score += CountStructuredFacts(content) * FactScorePerMatch;
+        if (IsAgentRole(message.Role))
+            score += AgentRolePriorityBonus;
+        return score;
+    }
+
+    private static int CountStructuredFacts(string content)
+    {
+        var count = WindowsPathRegex.Matches(content).Count;
+        count += FileLineRegex.Matches(content).Count;
+        foreach (Match match in CommitHashRegex.Matches(content))
+        {
+            if (HasCommitContext(content, match))
+                count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// 句子/换行边界截断：在极限内找最后一个 。！？!?\n，找不到时退回最后一个空白，
+    /// 每条最多 maxChars 字符，只追加一次 …，禁止词中间硬切。
+    /// </summary>
+    private static string TruncateBySentence(string value, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var text = value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
+        if (text.Length <= maxChars)
+            return text;
+
+        var window = text[..maxChars];
+        var boundary = -1;
+        for (var i = window.Length - 1; i >= 0; i--)
+        {
+            var c = window[i];
+            if (c is '。' or '！' or '？' or '!' or '?' or '\n')
+            {
+                boundary = i;
+                break;
+            }
+        }
+
+        if (boundary < 0)
+        {
+            for (var i = window.Length - 1; i >= 0; i--)
+            {
+                if (char.IsWhiteSpace(window[i]))
+                {
+                    boundary = i;
+                    break;
+                }
+            }
+        }
+
+        var cut = boundary > 0 ? boundary + 1 : maxChars;
+        return window[..cut] + "…";
+    }
+
+    private static string TrimTrailingPunctuation(string value) =>
+        value.Trim().TrimEnd('.', ',', ';', ':', ')', ']', '}', '，', '。', '；', '、');
+
+    private sealed record ExtractedFacts(
+        IReadOnlyList<string> Paths,
+        IReadOnlyList<string> FileLines,
+        IReadOnlyList<string> Commits);
 }
