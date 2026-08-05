@@ -10,6 +10,14 @@ namespace PuddingFullTextIndex.Infrastructure.Text;
 /// 初始化失败时 _instance 保持为 null，下次访问 Instance 会重新尝试，
 /// 因此资源在进程运行期间补齐后无需重启即可自愈（不再被 Lazy 缓存失败）。
 ///
+/// 关键防护：JiebaSegmenter 的 CLR 类型初始化器（静态构造函数）在整个进程
+/// 生命周期内只运行一次。若首次运行因词典文件被瞬时锁定（杀软扫描刚构建
+/// 的文件、资源复制未完成等）而失败，TypeInitializationException 会被 CLR
+/// 永久缓存，该类型在进程存活期间将永远不可用，任何池级重试都无法绕过。
+/// 因此 Instance 在首次构造 JiebaSegmenter 之前会调用
+/// EnsureResourcesReadable 预校验所有词典文件可读（共享读打开 + 读 1 字节），
+/// 遇到锁定退避重试，确保类型初始化器运行时文件确实可用。
+///
 /// Resources 路径解析策略（按优先级）：
 /// 1. 当前程序集所在目录的 Resources/（须含 dict.txt）
 /// 2. 应用程序基目录的 Resources/（须含 dict.txt）
@@ -29,6 +37,19 @@ internal static class JiebaSegmenterPool
     internal static string? LastInitError { get; private set; }
 
     /// <summary>
+    /// Jieba 初始化可能读取的资源文件清单（预校验用）。
+    /// 缺失的文件不视为锁定错误——交由 Jieba 自身报错以给出更准确的信息。
+    /// </summary>
+    private static readonly string[] ResourceFilesToPrecheck =
+    {
+        "dict.txt", "idf.txt", "stopwords.txt",
+        "prob_emit.json", "prob_trans.json",
+        "char_state_tab.json", "pos_prob_emit.json",
+        "pos_prob_start.json", "pos_prob_trans.json",
+        "cn_synonym.txt"
+    };
+
+    /// <summary>
     /// 获取 JiebaSegmenter 单例。初始化失败时抛出 InvalidOperationException，
     /// 但失败不会被缓存——下次访问本属性会重新尝试初始化（自愈）。
     /// 线程安全：实例的创建与读取均在 SyncRoot 锁内完成。
@@ -45,6 +66,9 @@ internal static class JiebaSegmenterPool
                 try
                 {
                     var resourceDir = ResolveResourceDirectory();
+                    // 关键：在触发 JiebaSegmenter 类型初始化器之前确保词典文件可读，
+                    // 防止瞬时文件锁导致类型初始化器失败并被 CLR 永久缓存。
+                    EnsureResourcesReadable(resourceDir);
                     ConfigManager.ConfigFileBaseDir = resourceDir;
 
                     var seg = new JiebaSegmenter();
@@ -58,9 +82,65 @@ internal static class JiebaSegmenterPool
                 {
                     var error = BuildInitializationError(ex);
                     LastInitError = error;
+                    TryPersistErrorFile(error, ex);
                     throw new InvalidOperationException(error, ex);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// 预校验 Resources 文件可读：以共享读方式逐个打开并读取 1 字节。
+    /// 遇到 IOException/UnauthorizedAccessException（典型为杀软扫描或复制
+    /// 过程中的瞬时锁定）时退避重试，最多 10 次（约 10-15 秒窗口）。
+    /// 全部可读后返回；持续锁定则抛出 IOException（此时尚未触碰
+    /// JiebaSegmenter 类型，进程仍有机会在下次调用时自愈）。
+    /// </summary>
+    internal static void EnsureResourcesReadable(string resourceDir)
+    {
+        const int maxAttempts = 10;
+        var delayMs = 200;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            Exception? lockError = null;
+            string? lockedFile = null;
+
+            foreach (var fileName in ResourceFilesToPrecheck)
+            {
+                var path = Path.Combine(resourceDir, fileName);
+                if (!File.Exists(path))
+                    continue; // 缺失不视为锁定，交由 Jieba 报错
+
+                try
+                {
+                    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    fs.ReadByte();
+                }
+                catch (IOException ex)
+                {
+                    lockError = ex;
+                    lockedFile = path;
+                    break;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    lockError = ex;
+                    lockedFile = path;
+                    break;
+                }
+            }
+
+            if (lockError == null)
+                return;
+
+            if (attempt >= maxAttempts)
+                throw new IOException(
+                    $"Resources 文件在 {maxAttempts} 次尝试后仍被锁定，推迟初始化以避免类型初始化器永久失败：{lockedFile} -> {lockError.Message}",
+                    lockError);
+
+            Thread.Sleep(delayMs);
+            delayMs = Math.Min((int)(delayMs * 1.5), 2000);
         }
     }
 
@@ -141,8 +221,35 @@ internal static class JiebaSegmenterPool
     }
 
     /// <summary>
-    /// 构造包含逐目录探测结果的初始化错误信息，便于准确定位资源缺失原因
-    /// （每个探测目录均标注 Resources/ 与 dict.txt 的存在状态）。
+    /// 格式化完整异常链（类型 + 消息），最内层异常附带堆栈。
+    /// TypeInitializationException 的真实原因在 InnerException 中，
+    /// 只报告最外层 Message 会丢失根因。
+    /// </summary>
+    internal static string FormatExceptionChain(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        var cur = ex;
+        var depth = 0;
+        Exception innermost = ex;
+
+        while (cur != null && depth < 8)
+        {
+            if (sb.Length > 0) sb.Append(" ;; ");
+            sb.Append($"[{depth}] {cur.GetType().FullName}: {cur.Message}");
+            innermost = cur;
+            cur = cur.InnerException;
+            depth++;
+        }
+
+        var stack = innermost.StackTrace;
+        if (!string.IsNullOrEmpty(stack))
+            sb.Append(" ;; STACK: ").Append(stack.Replace("\r\n", " | ").Replace("\n", " | "));
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 构造包含逐目录探测结果与完整异常链的初始化错误信息。
     /// </summary>
     private static string BuildInitializationError(Exception ex)
     {
@@ -168,7 +275,25 @@ internal static class JiebaSegmenterPool
                $"BaseDirectory: {AppContext.BaseDirectory}, " +
                $"CWD: {Directory.GetCurrentDirectory()}, " +
                $"已探测: [{string.Join("; ", probeDetails)}], " +
-               $"原始错误: {ex.Message}";
+               $"异常链: {FormatExceptionChain(ex)}";
+    }
+
+    /// <summary>
+    /// 将完整错误落盘到临时目录，便于无控制台环境（Desktop）事后取证。
+    /// 写盘失败不影响主流程。
+    /// </summary>
+    private static void TryPersistErrorFile(string error, Exception ex)
+    {
+        try
+        {
+            var path = Path.Combine(Path.GetTempPath(), "pudding-jieba-init-error.log");
+            File.WriteAllText(path,
+                $"{DateTime.Now:O} PuddingFullTextIndex JiebaSegmenterPool 初始化失败\n{error}\n\nFULL:\n{ex}\n");
+        }
+        catch
+        {
+            // 诊断落盘失败不应掩盖原始错误
+        }
     }
 
     /// <summary>中文停用词（与 PuddingMemoryEngine 保持同步）。</summary>
