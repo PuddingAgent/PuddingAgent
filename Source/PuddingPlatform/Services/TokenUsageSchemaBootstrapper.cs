@@ -12,7 +12,23 @@ namespace PuddingPlatform.Services;
 public static class TokenUsageSchemaBootstrapper
 {
     private const string TableName = "TokenUsageEvents";
-    private const string ParentSessionIdColumn = "ParentSessionId";
+
+    /// <summary>
+    /// Nullable columns that exist on <see cref="Data.Entities.TokenUsageEventEntity"/> but
+    /// were introduced after the last EF migration / model snapshot. Because EnsureCreated
+    /// never alters an existing table, every one of them must be self-healed here.
+    /// </summary>
+    private static readonly (string Name, string Definition)[] RequiredColumns =
+    [
+        ("ParentSessionId", "TEXT NULL"),
+        ("HistoryMessageEntropy", "REAL NULL"),
+        ("SystemMessageEntropy", "REAL NULL"),
+        ("ToolDefinitionEntropy", "REAL NULL"),
+        ("TurnRound", "INTEGER NULL"),
+        ("ToolCallCount", "INTEGER NULL"),
+        ("ToolNames", "TEXT NULL"),
+        ("SubAgentId", "TEXT NULL"),
+    ];
 
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
@@ -22,19 +38,24 @@ public static class TokenUsageSchemaBootstrapper
         if (!db.Database.IsSqlite())
             return;
 
-        if (!await ColumnExistsAsync(db, TableName, ParentSessionIdColumn, ct))
+        foreach (var (columnName, columnDefinition) in RequiredColumns)
         {
-            await db.Database.ExecuteSqlRawAsync(
-                """
-                ALTER TABLE "TokenUsageEvents"
-                ADD COLUMN "ParentSessionId" TEXT NULL;
-                """,
-                ct);
+            if (!await ColumnExistsAsync(db, TableName, columnName, ct))
+            {
+#pragma warning disable EF1002 // Column names/definitions are compile-time constants from RequiredColumns
+                await db.Database.ExecuteSqlRawAsync(
+                    $"""
+                    ALTER TABLE "TokenUsageEvents"
+                    ADD COLUMN "{columnName}" {columnDefinition};
+                    """,
+                    ct);
+#pragma warning restore EF1002
 
-            logger?.LogInformation(
-                "[TokenUsageSchema] Added {Table}.{Column}",
-                TableName,
-                ParentSessionIdColumn);
+                logger?.LogInformation(
+                    "[TokenUsageSchema] Added {Table}.{Column}",
+                    TableName,
+                    columnName);
+            }
         }
 
         await db.Database.ExecuteSqlRawAsync(

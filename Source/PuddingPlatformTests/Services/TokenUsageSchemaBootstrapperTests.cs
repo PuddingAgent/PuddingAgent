@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
@@ -8,14 +8,33 @@ namespace PuddingPlatformTests.Services;
 [TestClass]
 public sealed class TokenUsageSchemaBootstrapperTests
 {
+    /// <summary>
+    /// Nullable columns the bootstrapper must self-heal on legacy SQLite databases.
+    /// Mirrors TokenUsageSchemaBootstrapper.RequiredColumns.
+    /// </summary>
+    private static readonly string[] ExpectedColumns =
+    [
+        "ParentSessionId",
+        "HistoryMessageEntropy",
+        "SystemMessageEntropy",
+        "ToolDefinitionEntropy",
+        "TurnRound",
+        "ToolCallCount",
+        "ToolNames",
+        "SubAgentId",
+    ];
+
     [TestMethod]
-    public async Task EnsureCreatedAsync_UpgradesLegacyTableWithColumnAndIndex()
+    public async Task EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex()
     {
         await using var scope = await CreateLegacyDatabaseAsync();
 
         await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
 
-        Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", "ParentSessionId"));
+        foreach (var column in ExpectedColumns)
+            Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", column),
+                $"Expected column '{column}' to be added.");
+
         Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_TokenUsageEvents_ParentSessionId"));
     }
 
@@ -27,11 +46,29 @@ public sealed class TokenUsageSchemaBootstrapperTests
         await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
         await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
 
-        Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", "ParentSessionId"));
+        foreach (var column in ExpectedColumns)
+            Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", column),
+                $"Expected column '{column}' to survive a second run.");
+
         Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_TokenUsageEvents_ParentSessionId"));
     }
 
-    private static async Task<TestDatabaseScope> CreateLegacyDatabaseAsync()
+    [TestMethod]
+    public async Task EnsureCreatedAsync_ColumnAlreadyExists_IsNoOp()
+    {
+        await using var scope = await CreateLegacyDatabaseAsync(
+            extraColumns: ExpectedColumns.Select(c => $"\"{c}\" TEXT NULL"));
+
+        await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+        await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+
+        foreach (var column in ExpectedColumns)
+            Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", column),
+                $"Expected pre-existing column '{column}' to remain untouched.");
+    }
+
+    private static async Task<TestDatabaseScope> CreateLegacyDatabaseAsync(
+        IEnumerable<string>? extraColumns = null)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -40,13 +77,17 @@ public sealed class TokenUsageSchemaBootstrapperTests
             .UseSqlite(connection)
             .Options;
         var db = new PlatformDbContext(options);
+
+        var extra = extraColumns is null ? string.Empty : ", " + string.Join(", ", extraColumns);
+#pragma warning disable EF1002 // Test-only SQL; extra columns come from the fixed ExpectedColumns constants
         await db.Database.ExecuteSqlRawAsync(
-            """
+            $"""
             CREATE TABLE "TokenUsageEvents" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_TokenUsageEvents" PRIMARY KEY AUTOINCREMENT,
-                "SessionId" TEXT NULL
+                "SessionId" TEXT NULL{extra}
             );
             """);
+#pragma warning restore EF1002
 
         return new TestDatabaseScope(connection, db);
     }
