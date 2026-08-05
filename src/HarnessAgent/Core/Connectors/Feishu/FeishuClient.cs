@@ -83,16 +83,26 @@ public class FeishuClient : IDisposable
     /// <summary>
     /// 发送消息（text/markdown/image/card 等）。
     /// </summary>
+    /// <param name="receiveId">接收方 ID（open_id 或 chat_id，由 receiveIdType 决定）。</param>
+    /// <param name="msgType">消息类型。</param>
+    /// <param name="content">消息内容。</param>
+    /// <param name="uuid">幂等键。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <param name="receiveIdType">
+    /// 接收方 ID 类型：open_id（私聊）或 chat_id（群聊）。
+    /// 群聊兜底时必须传 chat_id，否则 chat_id 会被误当 open_id 使用而发送失败。
+    /// </param>
     public async Task<SendMessageResponse> SendMessageAsync(
         string receiveId,
         string msgType,
         string content,
         string? uuid = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string receiveIdType = "open_id")
     {
         var token = await GetAccessTokenAsync(ct);
         var request = new HttpRequestMessage(HttpMethod.Post,
-            $"{BaseUrl}/im/v1/messages?receive_id_type=open_id")
+            $"{BaseUrl}/im/v1/messages?receive_id_type={Uri.EscapeDataString(receiveIdType)}")
         {
             Content = JsonContent.Create(new
             {

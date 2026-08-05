@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using HarnessAgent.Core.Connectors.Feishu;
@@ -49,6 +49,59 @@ public sealed class FeishuClientReplyTests
         Assert.AreEqual(
             "copy me",
             inner.RootElement.GetProperty("text").GetString());
+    }
+
+    [TestMethod]
+    public async Task SendMessageAsync_DefaultsToOpenIdType_AndSupportsChatIdType()
+    {
+        var handler = new RecordingHandler();
+        using var http = new HttpClient(handler);
+        using var client = new FeishuClient(
+            new FeishuConfig
+            {
+                AppId = "cli_test",
+                AppSecret = "secret_test",
+            },
+            http);
+
+        // 私聊：默认 receive_id_type=open_id
+        var dm = await client.SendMessageAsync(
+            "ou_user",
+            "text",
+            """{"text":"hi"}""",
+            "dm-uuid");
+        Assert.AreEqual(0, dm.Code);
+
+        // 群聊兜底：receive_id_type=chat_id，receive_id 必须是 chat_id
+        var group = await client.SendMessageAsync(
+            "oc_group_chat",
+            "text",
+            """{"text":"hello group"}""",
+            "group-uuid",
+            receiveIdType: "chat_id");
+        Assert.AreEqual(0, group.Code);
+
+        Assert.HasCount(3, handler.Requests);
+        var dmSend = handler.Requests[1];
+        var groupSend = handler.Requests[2];
+        Assert.AreEqual(
+            "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+            dmSend.Uri);
+        Assert.AreEqual(
+            "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+            groupSend.Uri);
+
+        using var dmBody = JsonDocument.Parse(dmSend.Body);
+        Assert.AreEqual(
+            "ou_user",
+            dmBody.RootElement.GetProperty("receive_id").GetString());
+        using var groupBody = JsonDocument.Parse(groupSend.Body);
+        Assert.AreEqual(
+            "oc_group_chat",
+            groupBody.RootElement.GetProperty("receive_id").GetString());
+        Assert.AreEqual(
+            "group-uuid",
+            groupBody.RootElement.GetProperty("uuid").GetString());
     }
 
     [TestMethod]
