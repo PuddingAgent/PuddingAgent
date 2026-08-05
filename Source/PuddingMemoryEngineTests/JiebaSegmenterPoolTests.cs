@@ -1,4 +1,4 @@
-using PuddingMemoryEngine.Infrastructure.Text;
+﻿using PuddingMemoryEngine.Infrastructure.Text;
 
 namespace PuddingMemoryEngineTests;
 
@@ -44,5 +44,63 @@ public sealed class JiebaSegmenterPoolTests
         {
             Assert.Fail($"JiebaSegmenterPool 初始化失败: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 验证"无 dict.txt 的 Resources 目录不被策略1-3 命中"。
+    /// 策略1-3 统一委托 TryResolveResourceDir 判定（要求 Resources/dict.txt
+    /// 存在），因此本测试用临时目录直接验证该判定：仅创建空的 Resources
+    /// 目录应返回 null（不命中），补齐 dict.txt 后应命中。
+    /// </summary>
+    [TestMethod]
+    public void TryResolveResourceDir_MissingDictTxt_ShouldNotMatchDirectStrategies()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "PuddingJiebaRes_" + Guid.NewGuid().ToString("N"));
+        var resourcesDir = Path.Combine(tempRoot, "Resources");
+        try
+        {
+            Directory.CreateDirectory(resourcesDir);
+
+            // 仅有 Resources 目录、缺少 dict.txt：策略1-3 的统一判定不命中。
+            Assert.IsNull(JiebaSegmenterPool.TryResolveResourceDir(tempRoot),
+                "仅存在 Resources 目录（无 dict.txt）不应被策略1-3 命中");
+
+            // 补齐 dict.txt 后命中。
+            File.WriteAllText(Path.Combine(resourcesDir, "dict.txt"), "dummy");
+            Assert.AreEqual(resourcesDir, JiebaSegmenterPool.TryResolveResourceDir(tempRoot),
+                "补齐 dict.txt 后 Resources 目录应被命中");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+                Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// 验证 ResolveResourceDirectory 在当前运行环境中能解析出包含
+    /// dict.txt 的 Resources 目录（正向命中，与上面的负向用例互补）。
+    /// </summary>
+    [TestMethod]
+    public void ResolveResourceDirectory_ShouldResolveDirectoryWithDictTxt()
+    {
+        var resolved = JiebaSegmenterPool.ResolveResourceDirectory();
+        Assert.IsNotNull(resolved, "ResolveResourceDirectory 不应返回 null");
+        Assert.IsTrue(
+            File.Exists(Path.Combine(resolved, "dict.txt")),
+            $"解析出的 Resources 目录缺少 dict.txt。解析结果: {resolved}");
+    }
+
+    /// <summary>
+    /// 验证成功初始化后 LastInitError 被清空（失败不缓存、成功自愈的
+    /// 诊断状态约定）。
+    /// </summary>
+    [TestMethod]
+    public void LastInitError_ShouldBeCleared_AfterSuccessfulInitialization()
+    {
+        var segmenter = JiebaSegmenterPool.Instance;
+        Assert.IsNotNull(segmenter);
+        Assert.IsNull(JiebaSegmenterPool.LastInitError,
+            "初始化成功后 LastInitError 应为 null");
     }
 }
