@@ -66,6 +66,42 @@ public sealed class ContextCompactionContentSummaryTests
     }
 
     [TestMethod]
+    public async Task FullCompactAsync_AppendsKeyFactsSection_ToSummary()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-1", messageCount: 10);
+
+        using var temp = new TempDataRoot();
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("用户目标：保留早期关键决策。"),
+            NullLogger<ContextCompactionService>.Instance,
+            new AgentContentSummaryService(temp.Paths, new ThrowingTextProcessingService()));
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-1",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command",
+            PreCompactionFacts:
+            [
+                "项目路径：E:/github/AgentNetworkPlan/PuddingAgent",
+                "用户偏好：每个原子任务 commit 后立即 push",
+            ]));
+
+        StringAssert.Contains(result.SummaryMarkdown, "## 关键事实（自动提取，须长期保留）");
+        StringAssert.Contains(result.SummaryMarkdown, "- 项目路径：E:/github/AgentNetworkPlan/PuddingAgent");
+        StringAssert.Contains(result.SummaryMarkdown, "- 用户偏好：每个原子任务 commit 后立即 push");
+        StringAssert.StartsWith(result.SummaryMarkdown, "用户目标：保留早期关键决策。");
+    }
+
+    [TestMethod]
     public async Task FullCompactAsync_MergesPreCompactionFacts_IntoMemoryNotes()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

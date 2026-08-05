@@ -437,6 +437,8 @@ public sealed class ContextCompactionService : IContextCompactionService
             return skipResult;
         }
 
+        summary = AppendKeyFactsSection(summary, request.PreCompactionFacts);
+
         var beforeTokens = EstimateMessages(activeMessages);
         var summaryMessage = new MessageEntity
         {
@@ -953,6 +955,35 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     private static int EstimateMessages(IReadOnlyList<MessageEntity> messages) =>
         messages.Sum(m => ContextUsageSnapshotStore.CountTokens(m.Content));
+
+
+
+
+    /// <summary>
+    /// 将压缩前冲洗提取的关键事实追加到摘要末尾，保证项目路径、用户偏好等
+    /// 重要信息随压缩摘要长期存续：摘要消息始终位于压缩后的上下文中，
+    /// 并经 SessionSummaryStore 进入跨会话召回，实现“保证注入”。
+    /// </summary>
+    private static string AppendKeyFactsSection(string summary, IReadOnlyList<string>? preCompactionFacts)
+    {
+        if (preCompactionFacts is null || preCompactionFacts.Count == 0)
+            return summary;
+
+        var lines = preCompactionFacts
+            .Take(24)
+            .Select(f => (f ?? string.Empty).Trim())
+            .Where(f => f.Length > 0)
+            .Select(f => "- " + f)
+            .ToArray();
+        if (lines.Length == 0)
+            return summary;
+
+        var nl = Environment.NewLine;
+        return summary.TrimEnd()
+            + nl + nl
+            + "## 关键事实（自动提取，须长期保留）" + nl
+            + string.Join(nl, lines);
+    }
 
     /// <summary>
     /// 合并压缩前冲洗（Flash LLM 从原文提取）的事实与摘要派生 notes。
