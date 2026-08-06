@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -208,6 +208,9 @@ public static partial class PuddingServiceCollectionExtensions
 
         // ── 潜意识管道触发工具：手动触发 Auto-Dream / 经验提取 / 技能改进 ──────────
         builder.Services.AddPuddingTool<SubconsciousTriggerTool>();
+
+        // ── Bootstrap 点火工具：Agent 自助触发 Desktop rebuild-restart（ADR-068 自举闭环）──────────
+        builder.Services.AddPuddingTool<BootstrapRebootTool>();
 
         // ── 统一 Tool 注册表：Agent 工具统一通过 IPuddingTool/native registry 暴露 ──────────
         builder.Services.AddPuddingToolsFromAssembly(typeof(Program).Assembly);
