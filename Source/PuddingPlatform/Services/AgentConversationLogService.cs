@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -14,7 +15,8 @@ namespace PuddingPlatform.Services;
 public sealed class AgentConversationLogService(
     IDbContextFactory<PlatformDbContext> dbFactory,
     PuddingDataPaths paths,
-    ILogger<AgentConversationLogService> logger)
+    ILogger<AgentConversationLogService> logger,
+    ISessionChunkIndexer? chunkIndexer = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -98,7 +100,22 @@ public sealed class AgentConversationLogService(
 
         db.ChatMessages.Add(entity);
         await db.SaveChangesAsync(ct);
+        // WP-L2b：消息落库成功后异步切块 + embedding + 写入 SessionChunkVectors（fire-and-forget，幂等）。
+        FireAndForgetIndex(entity);
         return entity.Id;
+    }
+
+    private void FireAndForgetIndex(ChatMessageEntity entity)
+    {
+        if (chunkIndexer is null)
+            return;
+        _ = Task.Run(() => chunkIndexer.IndexMessageAsync(
+            entity.WorkspaceId,
+            entity.SessionId,
+            entity.MessageId,
+            entity.Role,
+            entity.Content,
+            CancellationToken.None));
     }
 
     private async Task PersistPrivateFilesAsync(

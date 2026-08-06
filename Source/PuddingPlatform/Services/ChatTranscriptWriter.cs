@@ -20,17 +20,20 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
     private readonly ILogger<ChatTranscriptWriter> _logger;
     private readonly MessageTopicService? _messageTopicService;
     private readonly AgentConversationLogService? _agentConversationLogService;
+    private readonly ISessionChunkIndexer? _chunkIndexer;
 
     public ChatTranscriptWriter(
         IServiceScopeFactory scopeFactory,
         ILogger<ChatTranscriptWriter> logger,
         MessageTopicService? messageTopicService = null,
-        AgentConversationLogService? agentConversationLogService = null)
+        AgentConversationLogService? agentConversationLogService = null,
+        ISessionChunkIndexer? chunkIndexer = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _messageTopicService = messageTopicService;
         _agentConversationLogService = agentConversationLogService;
+        _chunkIndexer = chunkIndexer;
     }
     /// <summary>
     /// 幂等写入一条聊天转录消息。返回生成的 messageId，重复消息返回 null。
@@ -151,6 +154,8 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
                 transcriptDb.ChatMessages.Add(entity);
                 await transcriptDb.SaveChangesAsync(ct);
                 persistedId = entity.Id;
+                // WP-L2b：兜底路径落库成功后同样异步索引会话块向量（fire-and-forget，幂等）。
+                FireAndForgetIndex(entity);
 
                 _logger.LogInformation(
                     "[Chat:Transcript] Persisted transcript session={Session} role={Role} contentLen={ContentLen}",
@@ -166,5 +171,18 @@ public sealed class ChatTranscriptWriter : IChatTranscriptWriter
                 sessionId, role);
             return null;
         }
+    }
+
+    private void FireAndForgetIndex(ChatMessageEntity entity)
+    {
+        if (_chunkIndexer is null)
+            return;
+        _ = Task.Run(() => _chunkIndexer.IndexMessageAsync(
+            entity.WorkspaceId,
+            entity.SessionId,
+            entity.MessageId,
+            entity.Role,
+            entity.Content,
+            CancellationToken.None));
     }
 }

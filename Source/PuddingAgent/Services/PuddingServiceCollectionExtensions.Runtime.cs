@@ -227,6 +227,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
         builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
         builder.Services.AddSingleton<IAgentLoopHook, EmbeddingGenerationHook>();
+        builder.Services.AddSingleton<ISessionChunkIndexer, SessionChunkIndexer>();
         builder.Services.Configure<SubconsciousOptions>(
             bootstrapConfiguration.GetSection(SubconsciousOptions.SectionName));
 
