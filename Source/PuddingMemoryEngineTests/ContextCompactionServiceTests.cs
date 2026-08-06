@@ -181,7 +181,166 @@ public sealed class ContextCompactionServiceTests
         CollectionAssert.AreEqual(new long[] { 5, 6, 7, 8, 9, 10 }, retained);
     }
 
-    private static async Task SeedMessagesAsync(MemoryDbContext db, string sessionId, int messageCount)
+    [TestMethod]
+    public async Task FullCompactAsync_EvictsOversizedToolOutputInRetentionWindow()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        // 模拟事故现场：保留窗口内一条数百 KB 的巨型 tool_output（grep 命中 minified JS bundle）
+        var hugeToolOutput = new string('x', 200_000);
+        await SeedMessagesAsync(db, "session-evict", messageCount: 10, lastMessageContent: hugeToolOutput);
+
+        var generator = new CapturingSummaryGenerator();
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            generator,
+            NullLogger<ContextCompactionService>.Instance,
+            options: new ContextCompactionOptions()); // 默认 MaxVerbatimMessageBytes = 16KB
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-evict",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "test oversized tool_output eviction"));
+
+        // 逐条保留数量逻辑不变：仍只压缩前 4 条（10 - RecentMessagesToKeep=6）
+        Assert.AreEqual(4, result.CompactedMessageCount);
+
+        db.ChangeTracker.Clear();
+        var messages = await db.Messages
+            .AsNoTracking()
+            .Where(m => m.SessionId == "session-evict")
+            .OrderBy(m => m.Sequence)
+            .ToListAsync();
+
+        // 保留窗口仍为 5..10（未被压缩标记，逐条保留数量逻辑不变）
+        var retained = messages
+            .Where(m => m.ContentType == "text" && m.CompactedBy is null)
+            .Select(m => m.Sequence)
+            .ToArray();
+        CollectionAssert.AreEqual(new long[] { 5, 6, 7, 8, 9, 10 }, retained);
+
+        // 巨型 tool_output 不再原样保留全文：截断为 头部摘要 + 截断标记
+        var evicted = messages.Single(m => m.Sequence == 10);
+        Assert.IsTrue(
+            evicted.Content!.Length < 10_000,
+            $"巨型 tool_output 应被截断而非原样保留（实际长度 {evicted.Content.Length}）。");
+        StringAssert.Contains(evicted.Content, "截断标记");
+        StringAssert.Contains(evicted.Content, "session_event_log");
+        StringAssert.Contains(evicted.Content, "200000"); // 标记注明原始大小
+        Assert.IsFalse(
+            evicted.Content.Contains(new string('x', 100_000), StringComparison.Ordinal),
+            "截断后的保留副本不应包含巨型原文。");
+
+        // 被截断部分照常参与摘要侧处理：摘要生成器应收到完整原文
+        Assert.IsNotNull(generator.LastRequest);
+        var fullInput = generator.LastRequest!.Single(m => m.Sequence == 10).Content;
+        Assert.AreEqual(hugeToolOutput, fullInput);
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_NormalSizedRecentMessages_StayVerbatim()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-normal", messageCount: 10, contentPaddingChars: 300);
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("## 用户目标\n保留早期关键决策。"),
+            NullLogger<ContextCompactionService>.Instance,
+            options: new ContextCompactionOptions()); // 默认阈值 16KB
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-normal",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "test normal messages verbatim"));
+
+        Assert.AreEqual(4, result.CompactedMessageCount);
+
+        db.ChangeTracker.Clear();
+        var messages = await db.Messages
+            .AsNoTracking()
+            .Where(m => m.SessionId == "session-normal")
+            .OrderBy(m => m.Sequence)
+            .ToListAsync();
+
+        // 尺寸正常的最近消息仍按原规则原样保留，内容不被改动
+        var retained = messages
+            .Where(m => m.ContentType == "text" && m.CompactedBy is null)
+            .OrderBy(m => m.Sequence)
+            .ToList();
+        var expectedPadding = " " + new string('y', 300);
+        CollectionAssert.AreEqual(
+            new[] { 5, 6, 7, 8, 9, 10 }.Select(n => $"message {n}{expectedPadding}").ToArray(),
+            retained.Select(m => m.Content).ToArray());
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_ZeroThreshold_FallsBackToLegacyVerbatimBehavior()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var hugeToolOutput = new string('x', 100_000);
+        await SeedMessagesAsync(db, "session-legacy", messageCount: 10, lastMessageContent: hugeToolOutput, contentPaddingChars: 300);
+
+        var generator = new CapturingSummaryGenerator();
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            generator,
+            NullLogger<ContextCompactionService>.Instance,
+            options: new ContextCompactionOptions { MaxVerbatimMessageBytes = 0 }); // 禁用驱逐 → 旧行为
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-legacy",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "test zero threshold legacy behavior"));
+
+        Assert.AreEqual(4, result.CompactedMessageCount);
+
+        db.ChangeTracker.Clear();
+        var messages = await db.Messages
+            .AsNoTracking()
+            .Where(m => m.SessionId == "session-legacy")
+            .OrderBy(m => m.Sequence)
+            .ToListAsync();
+
+        // 旧行为：巨型消息仍原样保留全文，内容不被截断
+        var retainedGiant = messages.Single(m => m.Sequence == 10);
+        Assert.AreEqual(hugeToolOutput, retainedGiant.Content);
+
+        // 旧行为：摘要侧输入不出现完整原文克隆
+        Assert.IsNotNull(generator.LastRequest);
+        Assert.IsFalse(
+            generator.LastRequest!.Any(m => m.Sequence == 10),
+            "阈值=0 时不应把保留窗口消息注入摘要侧输入。");
+    }
+
+        private static async Task SeedMessagesAsync(
+        MemoryDbContext db,
+        string sessionId,
+        int messageCount,
+        string? lastMessageContent = null,
+        int contentPaddingChars = 0)
     {
         db.Sessions.Add(new SessionEntity
         {
@@ -193,8 +352,12 @@ public sealed class ContextCompactionServiceTests
             LastActivityAt = 1,
         });
 
-        for (var i = 1; i <= messageCount; i++)
+                for (var i = 1; i <= messageCount; i++)
         {
+            var padding = contentPaddingChars > 0 ? " " + new string('y', contentPaddingChars) : string.Empty;
+            var content = i == messageCount && lastMessageContent is not null
+                ? lastMessageContent
+                : $"message {i}{padding}";
             db.Messages.Add(new MessageEntity
             {
                 MessageId = $"msg-{i}",
@@ -202,7 +365,7 @@ public sealed class ContextCompactionServiceTests
                 Sequence = i,
                 Role = i % 2 == 0 ? "agent" : "user",
                 ContentType = "text",
-                Content = $"message {i}",
+                Content = content,
                 CreatedAt = i,
             });
         }
@@ -367,7 +530,7 @@ public sealed class ContextCompactionServiceTests
             new("m1", 1, "user", "请把上下文压缩管线修好，项目在 E:\\repo\\app。"),
             new("m2", 2, "agent", "Runtime mode is now Yolo mode; 这是一条系统噪声。"),
             new("m3", 3, "user", "/yolo"),
-            new("m4", 4, "agent", "duplicate message — already processed; 不要重复这条。"),
+            new("m4", 4, "agent", $"{AgentExecutionConstants.DuplicateMessagePlaceholder} 不要重复这条。"),
             new("m5", 5, "agent", "已完成 ContextCompactionService.cs:120 的重构。"),
         };
 
@@ -474,6 +637,19 @@ public sealed class ContextCompactionServiceTests
 
         return sb.ToString();
     }
+    private sealed class CapturingSummaryGenerator : IContextCompactionSummaryGenerator
+    {
+        public IReadOnlyList<ContextCompactionMessage>? LastRequest { get; private set; }
+
+        public Task<string> GenerateSummaryAsync(
+            ContextCompactionSummaryRequest request,
+            CancellationToken ct = default)
+        {
+            LastRequest = request.Messages;
+            return Task.FromResult("## 用户目标\n保留早期关键决策。");
+        }
+    }
+
     private sealed class FixedSummaryGenerator : IContextCompactionSummaryGenerator
     {
         private readonly string _summary;

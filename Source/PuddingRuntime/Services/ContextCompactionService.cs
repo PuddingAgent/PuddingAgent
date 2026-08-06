@@ -18,6 +18,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     private const int MaxCompactionInputMessages = 80;
     private const int MaxActiveMessagesToLoad = 500;
     private const int MaxHealthEstimateSampleSize = 2000;
+    private const int DefaultMaxVerbatimMessageBytes = 16 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IDbContextFactory<MemoryDbContext> _dbFactory;
@@ -321,10 +322,35 @@ public sealed class ContextCompactionService : IContextCompactionService
             return noOpResult;
         }
 
+        // ── 尺寸驱逐：保留窗口内超大消息不再原样保留全文 ──
+        // 事故背景：保留窗口内存在一条数百 KB 的巨型 tool_output（如 grep 命中整个 minified JS bundle）时，
+        // 按"最近 N 条原样保留"规则它永远豁免压缩，导致压缩后上下文仍接近满窗。
+        // 这里在保留逻辑内增加尺寸判定：单条消息（含 tool 载荷）超过 MaxVerbatimMessageBytes 时，
+        // 保留副本被截断为"头部摘要 + 截断标记"，完整原文以克隆形式进入摘要侧输入照常参与摘要处理；
+        // 尺寸正常的最近消息仍按原规则原样保留，逐条保留数量逻辑不变。
+        var beforeTokens = EstimateMessages(activeMessages); // 截断前快照，保证诊断口径准确
+        var verbatimEvictionClones = ApplyVerbatimSizeEviction(candidates, messagesToCompact);
+
         var expandStart = sw.ElapsedMilliseconds;
         var summaryBaseMessages = messagesToCompact.Count > 0
             ? messagesToCompact
             : candidates;
+        if (verbatimEvictionClones.Count > 0)
+        {
+            // 保留窗口内被驱逐的消息：摘要侧输入用携带完整原文的克隆替换截断副本；
+            // 若截断副本不在基础列表中（常规情况），则直接把克隆追加进摘要输入。
+            var baseIds = summaryBaseMessages
+                .Select(m => m.MessageId)
+                .ToHashSet(StringComparer.Ordinal);
+            var evictionById = verbatimEvictionClones
+                .ToDictionary(c => c.MessageId, StringComparer.Ordinal);
+            summaryBaseMessages = summaryBaseMessages
+                .Select(m => evictionById.TryGetValue(m.MessageId, out var fullClone) ? fullClone : m)
+                .Concat(verbatimEvictionClones.Where(c => !baseIds.Contains(c.MessageId)))
+                .OrderBy(m => m.Sequence)
+                .ToList();
+        }
+
         var expandedInput = await ExpandToMinimumInputAsync(db, request.SessionId, summaryBaseMessages, ct);
         _logger.LogInformation(
             "[ContextCompaction:Phase] expandInput session={SessionId} baseCount={BaseCount} expandedCount={ExpandedCount} supBefore={SuppBefore} elapsedMs={ElapsedMs}",
@@ -440,7 +466,6 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         summary = AppendKeyFactsSection(summary, request.PreCompactionFacts);
 
-        var beforeTokens = EstimateMessages(activeMessages);
         var summaryMessage = new MessageEntity
         {
             MessageId = Guid.NewGuid().ToString("N"),
@@ -956,6 +981,95 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     private static int EstimateMessages(IReadOnlyList<MessageEntity> messages) =>
         messages.Sum(m => ContextUsageSnapshotStore.CountTokens(m.Content));
+
+    /// <summary>
+    /// 对"最近消息原样保留窗口"执行尺寸驱逐（见 <see cref="ContextCompactionOptions.MaxVerbatimMessageBytes"/>）。
+    /// 保留窗口 = candidates 中未被 messagesToCompact 覆盖的尾部消息；逐条保留数量逻辑不变。
+    /// 仅当单条消息（含 tool 载荷）超过阈值时：保留副本被截断为"头部摘要 + 截断标记"，
+    /// 并返回携带完整原文的克隆列表，供调用方并入摘要侧输入（被截断部分照常参与摘要处理）。
+    /// 阈值 ≤ 0 时不做任何驱逐（保持旧行为）。
+    /// </summary>
+    private List<MessageEntity> ApplyVerbatimSizeEviction(
+        IReadOnlyList<MessageEntity> candidates,
+        IReadOnlyList<MessageEntity> messagesToCompact)
+    {
+        var evictionClones = new List<MessageEntity>();
+        var maxBytes = ResolveMaxVerbatimMessageBytes();
+        if (maxBytes <= 0)
+            return evictionClones;
+
+        var retained = candidates
+            .Skip(messagesToCompact.Count)
+            .ToList();
+        foreach (var message in retained)
+        {
+            var payloadBytes = EstimateVerbatimPayloadBytes(message);
+            if (payloadBytes <= maxBytes)
+                continue;
+
+            var originalContent = message.Content ?? string.Empty;
+            message.Content = BuildVerbatimTruncatedContent(message, originalContent, payloadBytes, maxBytes);
+            evictionClones.Add(CloneMessageWithContent(message, originalContent));
+            _logger.LogWarning(
+                "[ContextCompaction:VerbatimEviction] session={SessionId} message={MessageId} seq={Sequence} role={Role} originalBytes={OriginalBytes} threshold={Threshold}",
+                message.SessionId, message.MessageId, message.Sequence, message.Role, payloadBytes, maxBytes);
+        }
+
+        return evictionClones;
+    }
+
+    private int ResolveMaxVerbatimMessageBytes() =>
+        _options?.MaxVerbatimMessageBytes ?? DefaultMaxVerbatimMessageBytes;
+
+    /// <summary>
+    /// 计算单条消息的"原样保留尺寸"（字节）：正文 + tool 载荷（ToolCallsJson/ToolResultJson/Metadata）。
+    /// 事故中的巨型 tool_output 主要落在正文或 tool 载荷字段中，全部计入以避免漏判。
+    /// </summary>
+    private static int EstimateVerbatimPayloadBytes(MessageEntity message)
+    {
+        var total = message.Content?.Length ?? 0;
+        total += message.ToolCallsJson?.Length ?? 0;
+        total += message.ToolResultJson?.Length ?? 0;
+        total += message.Metadata?.Length ?? 0;
+        return total;
+    }
+
+    /// <summary>
+    /// 构造"头部摘要 + 截断标记"的保留副本：保留开头一小段原文，随后附加截断标记；
+    /// 标记注明原始大小，并提示完整内容可在会话原始日志 session_event_log 中查证。
+    /// </summary>
+    private static string BuildVerbatimTruncatedContent(
+        MessageEntity message,
+        string originalContent,
+        int originalBytes,
+        int maxBytes)
+    {
+        var headChars = Math.Clamp(maxBytes / 4, 256, 4096);
+        var head = originalContent.Length <= headChars
+            ? originalContent
+            : originalContent[..headChars];
+        var nl = Environment.NewLine;
+        var marker = $@"{nl}{nl}--- [ContextCompaction 截断标记] 该消息原始内容过大（原始大小 {originalBytes} 字节），"
+            + $"未原样保留全文，完整内容仍可在会话原始日志 session_event_log 中查证"
+            + $"（session={message.SessionId}, message={message.MessageId}, sequence={message.Sequence}）。---";
+        return head + marker;
+    }
+
+    /// <summary>
+    /// 为摘要侧输入克隆消息：仅替换为截断前的完整原文，序列/角色等保持不变。
+    /// 克隆仅用于摘要生成，不会写入数据库。
+    /// </summary>
+    private static MessageEntity CloneMessageWithContent(MessageEntity source, string originalContent) => new()
+    {
+        MessageId = source.MessageId,
+        SessionId = source.SessionId,
+        Sequence = source.Sequence,
+        Role = source.Role,
+        ContentType = source.ContentType,
+        Content = originalContent,
+        CreatedAt = source.CreatedAt,
+    };
+
 
 
 
