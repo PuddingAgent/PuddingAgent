@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
@@ -11,12 +12,12 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// WP-L2d：SessionChunkVectors 存量回填 job。
-/// IHostedService：宿主启动时跑一次即退出；Enabled=false（默认）时直接跳过。
+/// BackgroundService：宿主启动后在后台跑一次即退出；Enabled=false（默认）时直接跳过。
 /// 从 platform.db 的 ChatMessages（约 43 万行）按键集分页扫描，
 /// 批内先过滤 user/assistant 角色，再跳过 SessionChunkVectors 已存在的 MessageId，
 /// 剩余逐条调 ISessionChunkIndexer.IndexMessageAsync（索引器自身幂等兜底）。
 /// </summary>
-public sealed class SessionChunkBackfillService : IHostedService
+public sealed class SessionChunkBackfillService : BackgroundService
 {
     private readonly IDbContextFactory<PlatformDbContext> _platformDbFactory;
     private readonly IDbContextFactory<MemoryLibraryDbContext> _memoryDbFactory;
@@ -38,13 +39,18 @@ public sealed class SessionChunkBackfillService : IHostedService
         _logger = logger;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // BackgroundService.StartAsync invokes ExecuteAsync synchronously until
+        // the first incomplete await. Yield first so a large historical backfill
+        // can never delay WebApplication.StartAsync or the Desktop Ready signal.
+        await Task.Yield();
+
         try
         {
-            await RunAsync(cancellationToken);
+            await RunAsync(stoppingToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             _logger.LogInformation("[SessionChunkBackfill] cancelled by host shutdown");
         }
@@ -54,8 +60,6 @@ public sealed class SessionChunkBackfillService : IHostedService
             _logger.LogError(ex, "[SessionChunkBackfill] backfill failed");
         }
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
     /// 回填主流程（public 便于测试直调）：

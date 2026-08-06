@@ -171,12 +171,44 @@ public sealed class SessionChunkBackfillServiceTests
         }
     }
 
+    // ── e) Hosted service 启动：回填不能阻塞宿主 Ready ────────────────
+
+    [TestMethod]
+    public async Task StartAsync_BackfillStillRunning_ReturnsWithoutBlockingHostStartup()
+    {
+        var platformPath = CreateTempDbPath("platform");
+        var memoryPath = CreateTempDbPath("memory");
+        try
+        {
+            var platformFactory = new TestPlatformDbFactory(CreatePlatformOptions(platformPath));
+            await InitializePlatformDbAsync(platformFactory);
+            var memoryFactory = new TestMemoryDbFactory(CreateMemoryOptions(memoryPath));
+            await MemoryLibraryDbInitializer.InitializeAsync(memoryFactory);
+            await SeedMessagesAsync(platformFactory, ("msg-blocking", "user"));
+
+            var indexer = new BlockingIndexer();
+            var service = CreateService(platformFactory, memoryFactory, indexer, enabled: true);
+
+            await service.StartAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+            await indexer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.IsFalse(indexer.Completed, "回填仍在运行时，宿主 StartAsync 应已经返回");
+
+            await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            CleanupDbFile(platformPath);
+            CleanupDbFile(memoryPath);
+        }
+    }
+
     // ── Test Infrastructure ────────────────────────────────────────────
 
     private static SessionChunkBackfillService CreateService(
         TestPlatformDbFactory platformFactory,
         TestMemoryDbFactory memoryFactory,
-        FakeIndexer indexer,
+        ISessionChunkIndexer indexer,
         bool enabled,
         int batchSize = 50)
         => new(
@@ -272,6 +304,29 @@ public sealed class SessionChunkBackfillServiceTests
         {
             Calls.Add((messageId, role));
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingIndexer : ISessionChunkIndexer
+    {
+        public TaskCompletionSource Entered { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool Completed { get; private set; }
+
+        public async Task IndexMessageAsync(
+            string workspaceId, string sessionId, string messageId, string role, string? content,
+            CancellationToken ct = default)
+        {
+            Entered.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+            finally
+            {
+                Completed = true;
+            }
         }
     }
 
