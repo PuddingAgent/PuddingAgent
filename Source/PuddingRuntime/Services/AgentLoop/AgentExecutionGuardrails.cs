@@ -6,8 +6,17 @@ namespace PuddingRuntime.Services.AgentLoop;
 /// </summary>
 public sealed record AgentExecutionGuardrails
 {
+    /// <summary>配置节名（系统级覆盖入口，在 Runtime DependencyInjection 中绑定）。</summary>
+    public const string SectionName = "AgentLoop:Guardrails";
+
     /// <summary>最大迭代轮次（每轮 = 一次 LLM 调用）。默认 200。</summary>
     public int MaxRounds { get; init; } = 200;
+
+    /// <summary>
+    /// 累计工具调用次数的系统级默认预算。请求未携带显式预算（agent manifest
+    /// 未配置、子代理等）时生效；manifest 有值时以 manifest 为准。默认 400。
+    /// </summary>
+    public int MaxToolCallsTotal { get; init; } = 400;
 
     /// <summary>
     /// 整体执行的最大允许总耗时。它是不可续期的最终保险丝；

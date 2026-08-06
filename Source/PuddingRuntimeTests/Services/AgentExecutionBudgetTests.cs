@@ -1,4 +1,5 @@
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.AgentLoop;
 
 namespace PuddingRuntimeTests.Services;
 
@@ -14,10 +15,20 @@ public sealed class AgentExecutionBudgetTests
     }
 
     [TestMethod]
-    public void ResolveMaxToolCallsTotal_NonPositiveValueUsesRequestContractDefault()
+    public void ResolveMaxToolCallsTotal_NonPositiveValueUsesGuardrailsSystemDefault()
     {
         var actual = AgentExecutionService.ResolveMaxToolCallsTotal(0);
 
-        Assert.AreEqual(100, actual);
+        Assert.AreEqual(400, actual);
+    }
+
+    [TestMethod]
+    public void ResolveMaxToolCallsTotal_NonPositiveValueHonorsConfiguredGuardrails()
+    {
+        var guardrails = new AgentExecutionGuardrails { MaxToolCallsTotal = 777 };
+
+        var actual = AgentExecutionService.ResolveMaxToolCallsTotal(0, guardrails);
+
+        Assert.AreEqual(777, actual);
     }
 }

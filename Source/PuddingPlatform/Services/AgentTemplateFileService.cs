@@ -220,7 +220,7 @@ public sealed class AgentTemplateFileService
                 MaxReplyTokens = req.MaxReplyTokens,
                 MaxRounds = req.MaxRounds ?? 200,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? 86400,
-                MaxToolCallsTotal = req.MaxToolCallsTotal ?? 100,
+                MaxToolCallsTotal = req.MaxToolCallsTotal ?? 400,
                 ContainerImage = req.ContainerImage,
                 IsBuiltIn = false,
                 IsEnabled = req.IsEnabled,
@@ -465,7 +465,7 @@ public sealed class AgentTemplateFileService
             MaxReplyTokens = preset.MaxReplyTokens <= 0 ? 2048 : preset.MaxReplyTokens,
             MaxRounds = preset.MaxRounds <= 0 ? 200 : preset.MaxRounds,
             MaxElapsedSeconds = preset.MaxElapsedSeconds <= 0 ? 86400 : preset.MaxElapsedSeconds,
-            MaxToolCallsTotal = preset.MaxToolCallsTotal <= 0 ? 100 : preset.MaxToolCallsTotal,
+            MaxToolCallsTotal = preset.MaxToolCallsTotal <= 0 ? 400 : preset.MaxToolCallsTotal,
         };
 
     private static async Task WritePresetMarkdownFilesAsync(string templateDir, AgentTemplatePreset preset, CancellationToken ct)
@@ -576,7 +576,7 @@ public sealed class AgentTemplateFileService
         public string? SubconsciousProfileId { get; init; }
         public int MaxRounds { get; init; } = 200;
         public int MaxElapsedSeconds { get; init; } = 86400;
-        public int MaxToolCallsTotal { get; init; } = 100;
+        public int MaxToolCallsTotal { get; init; } = 400;
         public int MaxContextTokens { get; init; } = 8192;
         public int MaxReplyTokens { get; init; } = 2048;
         public string? ContainerImage { get; init; }

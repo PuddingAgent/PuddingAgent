@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -58,7 +58,7 @@ public sealed partial class AgentExecutionService
         var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
         var maxElapsed = ResolveMaxElapsed(request);
-        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal);
+        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal, _guardrails);
 
         _contextManager.CleanupExpiredSessions(request.SessionId);
 

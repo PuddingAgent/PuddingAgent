@@ -1,4 +1,4 @@
-﻿using PuddingCode.Models;
+using PuddingCode.Models;
 using PuddingCode.Runtime;
 
 namespace PuddingCode.Platform;
@@ -206,7 +206,7 @@ public sealed record RuntimeDispatchRequest
     /// </summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     /// <summary>未显式指定工具调用总数时使用的请求默认值。</summary>
-    public const int DefaultMaxToolCallsTotal = 100;
+    public const int DefaultMaxToolCallsTotal = 400;
     /// <summary>
     /// Agent Loop 最大工具调用总数。本次请求是该预算的唯一来源；
     /// 0 或负数仅用于兼容旧的直连 Runtime 入口，并回退到请求默认值。

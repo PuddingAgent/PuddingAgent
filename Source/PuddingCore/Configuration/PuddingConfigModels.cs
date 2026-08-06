@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace PuddingCode.Configuration;
 
@@ -329,7 +329,7 @@ public sealed record AgentTemplateManifest
     public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
     public int MaxElapsedSeconds { get; init; } = 86400;
-    public int MaxToolCallsTotal { get; init; } = 100;
+    public int MaxToolCallsTotal { get; init; } = 400;
     public string? ContainerImage { get; init; }
     public bool IsBuiltIn { get; init; }
     public bool IsEnabled { get; init; } = true;
@@ -402,7 +402,7 @@ public sealed record AgentInstanceManifest
     public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
     public int MaxElapsedSeconds { get; init; } = 86400;
-    public int MaxToolCallsTotal { get; init; } = 100;
+    public int MaxToolCallsTotal { get; init; } = 400;
     public string? ContainerImage { get; init; }
     public AgentDefaultLlmProfiles DefaultLlmProfiles { get; init; } = new();
     public AgentCapabilitiesConfig Capabilities { get; init; } = new();

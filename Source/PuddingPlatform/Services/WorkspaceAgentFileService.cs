@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
@@ -582,7 +582,7 @@ public sealed class WorkspaceAgentFileService :
                 MaxReplyTokens = req.MaxReplyTokens ?? template?.MaxReplyTokens ?? 4096,
                 MaxRounds = req.MaxRounds ?? template?.MaxRounds ?? 200,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? template?.MaxElapsedSeconds ?? 86400,
-                MaxToolCallsTotal = req.MaxToolCallsTotal ?? template?.MaxToolCallsTotal ?? 100,
+                MaxToolCallsTotal = req.MaxToolCallsTotal ?? template?.MaxToolCallsTotal ?? 400,
                 ContainerImage = req.ContainerImage ?? template?.ContainerImage,
                 DefaultLlmProfiles = new AgentDefaultLlmProfiles
                 {

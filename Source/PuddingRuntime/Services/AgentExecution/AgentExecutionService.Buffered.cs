@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -51,7 +51,7 @@ public sealed partial class AgentExecutionService
         var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
         var sessionTimeout = ResolveSessionTimeout(template);
         var maxElapsed = ResolveMaxElapsed(request);
-        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal);
+        var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal, _guardrails);
 
         var execTrace = RuntimeTraceContext.CreateNew(
             sessionId: request.SessionId,

@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -707,10 +707,17 @@ public sealed partial class AgentExecutionService
         return requested < _guardrails.MaxElapsed ? requested : _guardrails.MaxElapsed;
     }
 
-    internal static int ResolveMaxToolCallsTotal(int requestedMaxToolCallsTotal)
+    /// <summary>
+    /// 预算解析：显式请求值（agent manifest / spawn 参数） 大于 系统配置护栏默认 大于 契约常量默认。
+    /// </summary>
+    internal static int ResolveMaxToolCallsTotal(
+        int requestedMaxToolCallsTotal,
+        AgentExecutionGuardrails? guardrails = null)
         => requestedMaxToolCallsTotal > 0
             ? requestedMaxToolCallsTotal
-            : RuntimeDispatchRequest.DefaultMaxToolCallsTotal;
+            : guardrails is { MaxToolCallsTotal: > 0 }
+                ? guardrails.MaxToolCallsTotal
+                : RuntimeDispatchRequest.DefaultMaxToolCallsTotal;
 
     private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
         timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -63,7 +63,10 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IMemoryEngine>(sp => sp.GetRequiredService<MemoryEngine>());
         services.AddSingleton<IMemoryIndexer, TagTreeIndexer>();
 
-        services.AddSingleton<AgentExecutionGuardrails>();
+        // Agent Loop 护栏：优先读系统配置 AgentLoop:Guardrails（可覆盖 MaxToolCallsTotal 等默认值），缺省回退代码默认
+        services.AddSingleton(configuration is not null
+            ? configuration.GetSection(AgentExecutionGuardrails.SectionName).Get<AgentExecutionGuardrails>() ?? new AgentExecutionGuardrails()
+            : new AgentExecutionGuardrails());
         services.AddSingleton<ExecutionControlRegistry>();
         services.AddSingleton<IRuntimeControlService, RuntimeControlService>();
         services.AddSingleton<ISessionExecutionGate, SessionExecutionGate>();
