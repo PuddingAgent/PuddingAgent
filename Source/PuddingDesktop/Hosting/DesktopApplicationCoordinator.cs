@@ -1,7 +1,9 @@
 ﻿using PuddingCode.Configuration;
+using PuddingDesktop.Bootstrap;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
 using PuddingDesktop.Core;
+using PuddingDesktop.Diagnostics;
 using PuddingDesktop.Runtime;
 
 namespace PuddingDesktop.Hosting;
@@ -32,6 +34,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private string? _lastError;
     private long _bridgeIntentVersion;
     private int _disposeState;
+    private DesktopBootstrapSignalService? _bootstrapSignalService;
 
     public DesktopStartupState State => _state;
     public Uri? CoreAddress => _coreAddress;
@@ -98,10 +101,34 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         // DataRoot and system configuration are ready, independently of Core.
         await TryInitializeBrowserWorkspaceAsync(dataRoot, _lifetimeCts.Token);
 
+        // Guided bootstrap signal service: zero behavior change when disabled or
+        // when no signal file ever appears.
+        StartBootstrapSignalService(dataRoot, systemResult.Config.Desktop.Bootstrap, _lifetimeCts.Token);
+
         if (systemResult.Config.Desktop.Core.AutoStart)
             _ = TryStartCoreAsync(_lifetimeCts.Token);
         else
             TransitionTo(DesktopStartupState.CoreStopped);
+    }
+
+    private void StartBootstrapSignalService(
+        string dataRoot,
+        PuddingDesktopBootstrapConfig bootstrapConfig,
+        CancellationToken cancellationToken)
+    {
+        if (!bootstrapConfig.Enabled)
+            return;
+
+        try
+        {
+            var service = new DesktopBootstrapSignalService(this, dataRoot, bootstrapConfig, _tokenService);
+            service.Start(cancellationToken);
+            _bootstrapSignalService = service;
+        }
+        catch (Exception ex)
+        {
+            DesktopDiagnosticLog.Write("BootstrapSignalStart", ex);
+        }
     }
 
     public async Task StartCoreAsync(CancellationToken cancellationToken)
@@ -481,6 +508,13 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
         _lifetimeCts?.Cancel();
         _startCts?.Cancel();
+
+        if (_bootstrapSignalService is not null)
+        {
+            try { await _bootstrapSignalService.DisposeAsync(); }
+            catch { }
+            _bootstrapSignalService = null;
+        }
 
         Interlocked.Increment(ref _bridgeIntentVersion);
         await _bridgeOperationLock.WaitAsync();

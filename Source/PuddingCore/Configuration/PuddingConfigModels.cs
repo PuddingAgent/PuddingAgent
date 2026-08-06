@@ -57,6 +57,7 @@ public sealed record PuddingSystemConfig
 public sealed record PuddingDesktopConfig
 {
     public PuddingDesktopCoreConfig Core { get; init; } = new();
+    public PuddingDesktopBootstrapConfig Bootstrap { get; init; } = new();
 }
 
 public sealed record PuddingDesktopCoreConfig
@@ -71,6 +72,33 @@ public sealed record PuddingDesktopCoreConfig
     public int StartupTimeoutSeconds { get; init; } = 60;
     public int ShutdownTimeoutSeconds { get; init; } = 15;
     public string? ControlToken { get; init; }
+}
+
+/// <summary>
+/// Desktop guided-bootstrap signal service configuration (system.json → desktop.bootstrap).
+/// The Desktop polls a signal file and, on a valid "rebuild-restart" signal,
+/// stops Core, runs an incremental dotnet build, optionally writes yolo.signal
+/// and restarts Core. All paths are dynamic; nothing is hardcoded at runtime.
+/// </summary>
+public sealed record PuddingDesktopBootstrapConfig
+{
+    /// <summary>Master switch. When false the signal service does not start (zero behavior change).</summary>
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>Absolute signal file path. When null/empty defaults to &lt;DataRoot&gt;\config\rebuild.signal.</summary>
+    public string? SignalPath { get; init; }
+
+    /// <summary>Project to build, relative to the repository root. Default matches dev-up.py backend_build_command.</summary>
+    public string BuildProjectRelativePath { get; init; } = "Source/PuddingAgent/PuddingAgent.csproj";
+
+    /// <summary>Extra arguments appended to "dotnet build &lt;project&gt;". Empty by default.</summary>
+    public string BuildArguments { get; init; } = "";
+
+    /// <summary>When true, write yolo.signal after a successful build (Core enters YOLO mode on restart).</summary>
+    public bool AutoYolo { get; init; } = true;
+
+    /// <summary>Build timeout in seconds. Default 300.</summary>
+    public int BuildTimeoutSeconds { get; init; } = 300;
 }
 
 public sealed record PuddingHttpConfig
