@@ -894,6 +894,58 @@ public sealed class MemoryLibrary : IMemoryLibrary
     }
 
     /// <summary>
+    /// 嵌入向量搜索会话块——按 WorkspaceId 过滤，加载该工作区所有有 Embedding 的
+    /// SessionChunkVector，计算余弦相似度，排序返回 topK。
+    /// 与 SearchChaptersByVectorAsync 同构（姊妹路），时间复杂度 O(N*dim)。
+    /// </summary>
+    public async Task<IReadOnlyList<RankedResult>> SearchSessionChunksByVectorAsync(
+        float[] queryEmbedding, string workspaceId, int topK = 20, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+
+        // 加载 WorkspaceId 匹配且含 Embedding 的会话块（Embedding 为 null 的 chunk 不参与向量检索）
+        var chunks = await db.SessionChunkVectors.AsNoTracking()
+            .Where(c => c.WorkspaceId == workspaceId && c.Embedding != null)
+            .Select(c => new
+            {
+                c.ChunkId,
+                c.SessionId,
+                c.SourceText,
+                c.Embedding
+            })
+            .ToListAsync(ct);
+
+        if (chunks.Count == 0)
+            return Array.Empty<RankedResult>();
+
+        // 计算余弦相似度并排序
+        var scored = chunks
+            .Select(c => new
+            {
+                c.ChunkId,
+                c.SessionId,
+                c.SourceText,
+                Score = VectorSimilarity.CosineSimilarity(
+                    queryEmbedding,
+                    VectorSimilarity.BytesToFloats(c.Embedding!))
+            })
+            .OrderByDescending(x => x.Score)
+            .Take(topK)
+            .ToList();
+
+        // RankedResult 无 SessionId/ChunkId 字段：复用 ChapterId=ChunkId、ChapterTitle=SessionId
+        // 承载溯源信息；第 5 路适配时以 $"chunk:{SessionId}:{ChunkId}" 编码 SourceId（RRF 融合键防碰撞）。
+        return scored.Select(x => new RankedResult
+        {
+            ChapterId = x.ChunkId,
+            ChapterTitle = x.SessionId,
+            Snippet = x.SourceText.Length > 200 ? x.SourceText[..200] : x.SourceText,
+            Score = Math.Round(x.Score, 4),
+            MatchSource = "vector"
+        }).ToList();
+    }
+
+    /// <summary>
     /// 融合检索——并行执行 FTS5、TagTree、Vector 三路检索，
     /// 使用 RRF (Reciprocal Rank Fusion) 合并排名，取 topK。
     /// queryEmbedding 为 null 时跳过向量检索路。

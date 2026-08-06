@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -50,10 +50,15 @@ public sealed class MemoryRecallService : IMemoryRecallService
             workspaceId, agentInstanceId ?? "(shared)", query.Length, topK);
 
         // ── 第 4 路：Embedding 向量检索（可选增强）──
+        // ── 第 5 路：会话块向量检索（可选增强，复用第 4 路同一个 query embedding）──
         Task<IReadOnlyList<RecalledMemory>>? vectorTask = null;
+        Task<IReadOnlyList<RecalledMemory>>? chunkTask = null;
         if (_embeddingService is not null)
         {
-            vectorTask = SearchVectorAsync(query, workspaceId, topK * 2, ct);
+            // query embedding 只生成一次：同一 Task 交给第 4/5 路共享 await，严禁同一次召回调用两次 embedding API
+            var queryEmbeddingTask = GenerateQueryEmbeddingAsync(query, ct);
+            vectorTask = SearchVectorAsync(queryEmbeddingTask, workspaceId, topK * 2, ct);
+            chunkTask = SearchChunkVectorsAsync(queryEmbeddingTask, workspaceId, topK * 2, ct);
         }
 
         // ── 第 1 路：Library FTS5（scoped by workspace + AgentInstanceId）──
@@ -67,12 +72,14 @@ public sealed class MemoryRecallService : IMemoryRecallService
 
         await Task.WhenAll(
             libraryTask, factsTask, prefsTask,
-            vectorTask ?? Task.FromResult<IReadOnlyList<RecalledMemory>>(Array.Empty<RecalledMemory>()));
+            vectorTask ?? Task.FromResult<IReadOnlyList<RecalledMemory>>(Array.Empty<RecalledMemory>()),
+            chunkTask ?? Task.FromResult<IReadOnlyList<RecalledMemory>>(Array.Empty<RecalledMemory>()));
 
         var libraryResults = await libraryTask;
         var factResults = await factsTask;
         var prefResults = await prefsTask;
         var vectorResults = vectorTask is not null ? await vectorTask : Array.Empty<RecalledMemory>();
+        var chunkResults = chunkTask is not null ? await chunkTask : Array.Empty<RecalledMemory>();
 
         // ── RRF 融合排序 ──
         const double k = 60;
@@ -108,6 +115,9 @@ public sealed class MemoryRecallService : IMemoryRecallService
 
         AddRrf(vectorResults, weight: 0.7);
 
+        // 第 5 路：会话块向量与章节向量同权 0.7；SourceId 带 chunk: 前缀，RRF 融合键不与其他路碰撞
+        AddRrf(chunkResults, weight: 0.7);
+
         var merged = rrfScores.Values
             .OrderByDescending(x => x.Score)
             .ThenBy(x => x.Memory.SourceId ?? "")  // 确定性排序：相同 Score 时按 SourceId 稳定排列
@@ -123,12 +133,13 @@ public sealed class MemoryRecallService : IMemoryRecallService
             FactsHits = factResults.Count,
             PreferencesHits = prefResults.Count,
             VectorHits = vectorResults.Count,
+            ChunkVectorHits = chunkResults.Count,
         };
 
         _logger.LogInformation(
-            "[Recall] Complete workspace={Workspace} library={Lib} facts={Facts} pref={Pref} vector={Vec} merged={Merged} elapsed={ElapsedMs}",
+            "[Recall] Complete workspace={Workspace} library={Lib} facts={Facts} pref={Pref} vector={Vec} chunk={Chunk} merged={Merged} elapsed={ElapsedMs}",
             workspaceId, stats.LibraryHits, stats.FactsHits, stats.PreferencesHits,
-            stats.VectorHits, merged.Count, sw.ElapsedMilliseconds);
+            stats.VectorHits, stats.ChunkVectorHits, merged.Count, sw.ElapsedMilliseconds);
 
         return new MemoryRecallResult
         {
@@ -279,26 +290,16 @@ public sealed class MemoryRecallService : IMemoryRecallService
     // ── 第 4 路：向量检索（Embedding）──
 
     /// <summary>
-    /// 向量检索：生成查询 Embedding → 搜索 Chapters + Facts 的余弦相似度 Top-K。
+    /// 向量检索：复用 RecallAsync 已生成的 query embedding → 搜索 Chapters + Facts 的余弦相似度 Top-K。
     /// 任何一步失败均优雅降级，返回空列表。
     /// </summary>
     private async Task<IReadOnlyList<RecalledMemory>> SearchVectorAsync(
-        string query, string workspaceId, int topK, CancellationToken ct)
+        Task<float[]?> queryEmbeddingTask, string workspaceId, int topK, CancellationToken ct)
     {
         try
         {
-            float[] queryEmbedding;
-            try
-            {
-                queryEmbedding = await _embeddingService!.GenerateEmbeddingAsync(query, ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[Recall] Query embedding generation failed, skipping vector path");
-                return Array.Empty<RecalledMemory>();
-            }
-
-            if (queryEmbedding.Length == 0)
+            var queryEmbedding = await queryEmbeddingTask;
+            if (queryEmbedding is null || queryEmbedding.Length == 0)
                 return Array.Empty<RecalledMemory>();
 
             var chapterTask = _memoryLibrary.SearchChaptersByVectorAsync(queryEmbedding, topK, ct);
@@ -325,6 +326,59 @@ public sealed class MemoryRecallService : IMemoryRecallService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[Recall] Vector search failed, skipping");
+            return Array.Empty<RecalledMemory>();
+        }
+    }
+
+    /// <summary>
+    /// 生成查询 embedding（第 4/5 路共享，同一次召回只调用一次 embedding API）。
+    /// 失败或空向量返回 null，由调用方跳过向量路。
+    /// </summary>
+    private async Task<float[]?> GenerateQueryEmbeddingAsync(string query, CancellationToken ct)
+    {
+        try
+        {
+            var queryEmbedding = await _embeddingService!.GenerateEmbeddingAsync(query, ct);
+            return queryEmbedding.Length == 0 ? null : queryEmbedding;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Recall] Query embedding generation failed, skipping vector paths");
+            return null;
+        }
+    }
+
+    // ── 第 5 路：会话块向量检索（Embedding）──
+
+    /// <summary>
+    /// 会话块向量检索：复用同一个 query embedding，按 WorkspaceId 搜索 SessionChunkVectors 余弦相似度 Top-K。
+    /// SourceId 编码为 "chunk:{SessionId}:{ChunkId}"（RRF 融合键前缀防碰撞、可解析溯源）。
+    /// 任何一步失败均优雅降级，返回空列表。
+    /// </summary>
+    private async Task<IReadOnlyList<RecalledMemory>> SearchChunkVectorsAsync(
+        Task<float[]?> queryEmbeddingTask, string workspaceId, int topK, CancellationToken ct)
+    {
+        try
+        {
+            var queryEmbedding = await queryEmbeddingTask;
+            if (queryEmbedding is null || queryEmbedding.Length == 0)
+                return Array.Empty<RecalledMemory>();
+
+            var chunkResults = await _memoryLibrary.SearchSessionChunksByVectorAsync(queryEmbedding, workspaceId, topK, ct);
+
+            return chunkResults
+                .Select(r => new RecalledMemory
+                {
+                    Snippet = r.Snippet,
+                    RelevanceScore = r.Score,
+                    Source = "chunk-vector",
+                    SourceId = $"chunk:{r.ChapterTitle}:{r.ChapterId}",
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Recall] Chunk vector search failed, skipping");
             return Array.Empty<RecalledMemory>();
         }
     }

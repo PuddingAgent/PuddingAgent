@@ -1,4 +1,4 @@
-using PuddingCode.Platform;
+﻿using PuddingCode.Platform;
 
 namespace PuddingCode.Abstractions;
 
@@ -76,6 +76,8 @@ public sealed record RecallHitStats
     public int FactsHits { get; init; }
     public int PreferencesHits { get; init; }
     public int VectorHits { get; init; }
+    /// <summary>会话块向量召回命中数（第 5 路，WP-L2c）。</summary>
+    public int ChunkVectorHits { get; init; }
 }
 
 /// <summary>召回状态摘要。</summary>
