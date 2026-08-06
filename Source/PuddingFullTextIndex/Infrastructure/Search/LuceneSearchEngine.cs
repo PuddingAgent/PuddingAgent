@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -220,9 +220,9 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         }
     }
 
-    private async Task WriteLastIndexedAsync(string indexDir, string patternHash, CancellationToken ct)
+    private async Task WriteLastIndexedAsync(string indexDir, string patternHash, DateTime timestamp, CancellationToken ct)
     {
-        var json = JsonSerializer.Serialize(new { t = DateTime.UtcNow, p = patternHash });
+        var json = JsonSerializer.Serialize(new { t = timestamp, p = patternHash });
         await File.WriteAllTextAsync(GetLastIndexedFilePath(indexDir), json, ct);
     }
 
@@ -243,6 +243,9 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         var patternHash = HashPatterns(filePatterns);
 
         // ── 决定构建模式：增量还是全量 ──
+        // 扫描开始时间：作为 .last_indexed 时间戳与变更比较基准，
+        // 构建期间被修改的文件满足 LastWrite >= 扫描时间，下次增量能正确捕获
+        var scanTimestamp = DateTime.UtcNow;
         bool incremental = false;
         DateTime lastIndexedAt = DateTime.MinValue;
         bool hasExistingIndex = Directory.Exists(indexDir) && IndexHasDocuments(indexDir);
@@ -285,8 +288,10 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         }
 
         // 增量模式下筛选变更文件
+        // 用 >= 而非 >：文件系统时间戳同 tick 内的更新（测试与快速连续编辑场景）不能漏检；
+        // 增量路径 delete-then-add 保证重复处理幂等
         var changedFiles = incremental
-            ? allFiles.Where(f => f.LastWrite > lastIndexedAt).ToList()
+            ? allFiles.Where(f => f.LastWrite >= lastIndexedAt).ToList()
             : allFiles;
 
         // 变更比例 > 50% → 回退到全量重建
@@ -294,6 +299,37 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         {
             incremental = false;
             changedFiles = allFiles;
+        }
+
+        // 增量模式：磁盘上已删除的文件必须同步从索引移除，否则过期文档永久残留
+        List<string>? stalePaths = null;
+        if (incremental)
+        {
+            try
+            {
+                var currentPaths = new HashSet<string>(allFiles.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
+                using (var probeDir = FSDirectory.Open(indexDir))
+                using (var probeReader = DirectoryReader.Open(probeDir))
+                {
+                    stalePaths = new List<string>();
+                    foreach (var leaf in probeReader.Leaves)
+                    {
+                        var pathTerms = ((AtomicReader)leaf.Reader).GetTerms("path");
+                        if (pathTerms is null) continue;
+                        var termsEnum = pathTerms.GetEnumerator();
+                        while (termsEnum.MoveNext())
+                        {
+                            var indexedPath = termsEnum.Term.Utf8ToString();
+                            if (!currentPaths.Contains(indexedPath))
+                                stalePaths.Add(indexedPath);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                stalePaths = null; // 陈旧路径读取失败不阻塞本次构建，由下次全量重建兜底
+            }
         }
 
         // ── 准备索引目录 ──
@@ -336,6 +372,13 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
 
             using (writer)
             {
+                // 增量模式：先清除已删除文件的过期文档
+                if (stalePaths is { Count: > 0 })
+                {
+                    foreach (var stalePath in stalePaths)
+                        writer.DeleteDocuments(new Term("path", stalePath));
+                }
+
                 var indexedCount = 0;
                 var totalBytes = 0L;
 
@@ -366,8 +409,17 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
 
                 writer.Commit();
 
-                // 更新 .last_indexed 时间戳
-                await WriteLastIndexedAsync(indexDir, patternHash, ct);
+                // 索引变更后显式失效该目录的缓存 Reader/Searcher：
+                // 全量重建路径（RemoveIndex + CREATE）后目录已被替换，
+                // OpenIfChanged 未必可靠感知，陈旧 Reader 会继续看到过期文档
+                if (_readerCache.TryRemove(indexDir, out var staleReader))
+                {
+                    _searcherCache.TryRemove(indexDir, out _);
+                    try { staleReader.Dispose(); } catch { /* ignore */ }
+                }
+
+                // 更新 .last_indexed 时间戳（记录扫描开始时间而非构建完成时间）
+                await WriteLastIndexedAsync(indexDir, patternHash, scanTimestamp, ct);
 
                 return new FullTextIndexResult(true, indexedCount, totalBytes, sw.ElapsedMilliseconds, null);
             }
