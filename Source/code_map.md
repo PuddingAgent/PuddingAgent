@@ -1,4 +1,4 @@
-﻿# PuddingAgent CodeMAP
+# PuddingAgent CodeMAP
 
 > 最后更新: 2026-08-04 | Phase 0 Closeout ✅ | Phase 1A WPF Desktop ✅ | Phase 1B-R Runtime Center ✅ | Phase 1B-S Storage ✅ | Phase 2A-1/2 accepted ✅ | Phase 2A-3 automated accepted ✅ | Git Tools ✅ | 29 项目（真实 DeepSeek smoke pending）
 
@@ -373,6 +373,7 @@ Workbench 的 React 管理前端（Ant Design Pro v6 + React 19 + UmiJS + TypeSc
 | `PuddingCore/Abstractions/IAudioTranscriptionService.cs` + `PuddingPlatform/Services/AudioTranscriptionService.cs` | Provider-neutral 文件 ASR 边界；从 `config/voice/providers.json` 解析 Provider/模型与 Provider 自有默认 ASR 模型，再通过 `IVoiceProviderFactory/IAsrHttpRecognizer` 调用具体服务 |
 | `PuddingCore/Abstractions/IImageGenerationService.cs` + `PuddingPlatform/Services/ImageGenerationService.cs` + `PuddingRuntime/Services/VolcengineArkImageGenerationProvider.cs` | Provider-neutral 图片生成/编辑边界；按 default/precision/sequence capability 选择 Seedream Lite/Pro，支持最多 10 个参考 Vision Artifact、0~999 坐标提示、精确尺寸、PNG/JPEG、提示词优化、联网搜索和 1~4 张组图；Ark 临时 URL 立即限流下载并物化为 Workspace Vision Artifact，终态稳定操作键可复用已生成 Artifact |
 | `PuddingRuntime/Services/SessionChunkIndexer.cs` + `SessionChunkBackfillService.cs` | L2 会话消息切块/向量写入与存量回填；Backfill 必须作为 `BackgroundService` 在宿主 Ready 之后运行，禁止在 `IHostedService.StartAsync` 中等待完整扫描，否则 DesktopChild 无法在启动超时前发出 Ready 信号 |
+| `PuddingPlatform/Services/Diagnostics/DiagnosticRetentionService.cs` | platform.db 诊断表保留期裁剪（可配置保留天数、分批限速删除、session_event_log 投影水位保护、VACUUM 默认关） |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件，再按持久游标投影到父执行身份对应的 canonical Conversation Event，供父 Chat 的 bootstrap/replay/live SSE 观察；有界后台补投使用跨轮次扫描游标，避免 run 数量超过单批上限后永久饥饿 |

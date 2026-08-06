@@ -1,4 +1,4 @@
-﻿# PuddingAgent 调试与诊断指南
+# PuddingAgent 调试与诊断指南
 
 > 本文记录可重复使用的诊断路径、关键日志和验收方法。目标是找到故障发生在哪个架构边界，而不是根据前端现象直接打补丁。
 
@@ -2540,3 +2540,17 @@ python .\dev-up.py --restart
 - 当前启动周期 Error 数为 0；
 - `Source/code_map.md` 和相关 ADR 已同步；
 - 未覆盖用户已有的无关工作区修改。
+
+---
+
+## 11.18 诊断表保留期裁剪（Diagnostics:Retention）
+
+platform.db 的 append-only 诊断表（session_event_log / telemetry_metric_events / runtime_activity / conversation_events）此前零裁剪机制，库无限增长（2026-08-06 实测 2.48 GiB）。
+
+- 服务：`PuddingPlatform/Services/Diagnostics/DiagnosticRetentionService.cs`（BackgroundService，Task.Yield 起步不阻塞宿主）。
+- 配置节 `Diagnostics:Retention`：`Enabled` / `RunIntervalHours`(24) / `StartupDelaySeconds`(60) / `BatchSize`(5000) / `BatchDelayMs`(100) / `Tables:{表名:{Enabled,RetentionDays}}` / `Vacuum:{Enabled}`。
+- 已批准保留期（2026-08-06）：telemetry_metric_events 14 天、runtime_activity 14 天、conversation_events 30 天、session_event_log 14 天（受水位保护）。
+- 安全红线：session_event_log 是 ADR-056 权威事实源，仅当 `session_projection_cursors` 表存在且有 >0 水位时才按 min(保留期截止线, 水位) 裁剪；否则整表跳过。
+- SQLite 无 DELETE...LIMIT：用 rowid 子查询分批删，批间限速；时间戳为 "O" 格式字符串，字典序比较安全。
+- VACUUM 默认关闭：约 2.5 GiB 库 VACUUM 需要等量临时空间与较长锁，建议借 bootstrap 的 Core 停止窗口手动执行。
+- 验证：`PuddingPlatformTests/Services/DiagnosticRetentionServiceTests.cs`（4 用例：过期裁剪/禁用跳过/水位保护/白名单防注入）。

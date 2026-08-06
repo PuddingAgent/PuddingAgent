@@ -230,6 +230,15 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped(sp =>
             sp.GetRequiredService<IDbContextFactory<PlatformDbContext>>().CreateDbContext());
 
+        // ── 诊断表保留期裁剪（Diagnostics:Retention，默认关闭）──────────────
+        builder.Services.Configure<DiagnosticRetentionOptions>(
+            builder.Configuration.GetSection(DiagnosticRetentionOptions.SectionName));
+        if (builder.Configuration.GetValue<bool>(
+                $"{DiagnosticRetentionOptions.SectionName}:{nameof(DiagnosticRetentionOptions.Enabled)}"))
+        {
+            builder.Services.AddHostedService<DiagnosticRetentionService>();
+        }
+
         // ── 双向消息系统（事件系统之上的聊天室/Agent 消息抽象）──────────
         builder.Services.AddScoped<IMessageRouter, MessageRouter>();
         builder.Services.AddScoped<MessageFabricStore>();
