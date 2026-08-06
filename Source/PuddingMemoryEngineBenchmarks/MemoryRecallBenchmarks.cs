@@ -294,6 +294,9 @@ public class MemoryRecallBenchmarks
         public Task<IReadOnlyList<RankedResult>> SearchChaptersByVectorAsync(float[] queryEmbedding, int topK = 20, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<RankedResult>>(Array.Empty<RankedResult>());
 
+        public Task<IReadOnlyList<RankedResult>> SearchSessionChunksByVectorAsync(float[] queryEmbedding, string workspaceId, int topK = 20, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RankedResult>>(Array.Empty<RankedResult>());
+
         // Stub — remaining members throw to fail fast if called unexpectedly.
         public Task<LibraryRecord> CreateLibraryAsync(string workspaceId, string name, string? description, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<LibraryRecord?> GetLibraryAsync(string libraryId, CancellationToken ct = default) => throw new NotImplementedException();
