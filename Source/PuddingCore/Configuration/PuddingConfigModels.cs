@@ -75,21 +75,44 @@ public sealed record PuddingDesktopCoreConfig
 }
 
 /// <summary>
-/// Desktop guided-bootstrap signal service configuration (system.json → desktop.bootstrap).
-/// The Desktop polls a signal file and, on a valid "rebuild-restart" signal,
-/// stops Core, runs an incremental dotnet build, optionally writes yolo.signal
-/// and restarts Core. All paths are dynamic; nothing is hardcoded at runtime.
+/// Desktop guided-bootstrap configuration (system.json → desktop.bootstrap).
+/// The Desktop exposes a loopback HTTP control endpoint (default on) plus an
+/// opt-in signal-file polling loop. On a valid "rebuild-restart" trigger it
+/// stops Core, runs an incremental dotnet build, optionally writes yolo.signal,
+/// copies the build output into the Desktop run directory and restarts Core.
+/// All paths are dynamic; nothing is hardcoded at runtime.
 /// </summary>
 public sealed record PuddingDesktopBootstrapConfig
 {
-    /// <summary>Master switch. When false the signal service does not start (zero behavior change).</summary>
-    public bool Enabled { get; init; } = true;
+    /// <summary>Master switch for the signal-file polling loop. Defaults to false — polling is opt-in; the HTTP endpoint is the primary trigger.</summary>
+    public bool Enabled { get; init; } = false;
+
+    /// <summary>When true (default), starts the loopback-only HTTP control endpoint (POST /desktop/bootstrap/start, GET /desktop/bootstrap/status).</summary>
+    public bool HttpEnabled { get; init; } = true;
+
+    /// <summary>Loopback-only HTTP port for the control endpoint. Default 8199, deliberately away from the Core HTTP port (8080). Only 127.0.0.1 is bound — never a LAN interface.</summary>
+    public int HttpPort { get; init; } = 8199;
+
+    /// <summary>
+    /// When true, copies the build output into the Desktop run directory after
+    /// a successful build so Core starts side-by-side. Defaults to false — the
+    /// primary model is CoreExecutablePath pointing directly at the PuddingAgent
+    /// Debug output directory; output sync is only an optional compatibility
+    /// shim for the legacy layout.
+    /// </summary>
+    public bool SyncBuildOutput { get; init; } = false;
 
     /// <summary>Absolute signal file path. When null/empty defaults to &lt;DataRoot&gt;\config\rebuild.signal.</summary>
     public string? SignalPath { get; init; }
 
     /// <summary>Project to build, relative to the repository root. Default matches dev-up.py backend_build_command.</summary>
     public string BuildProjectRelativePath { get; init; } = "Source/PuddingAgent/PuddingAgent.csproj";
+
+    /// <summary>
+    /// Absolute path of the csproj to build. When set, it takes precedence over
+    /// BuildProjectRelativePath (absolute path prevents accidental re-routing).
+    /// </summary>
+    public string? BuildProjectPath { get; init; }
 
     /// <summary>Extra arguments appended to "dotnet build &lt;project&gt;". Empty by default.</summary>
     public string BuildArguments { get; init; } = "";

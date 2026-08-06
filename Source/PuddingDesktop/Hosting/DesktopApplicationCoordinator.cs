@@ -35,6 +35,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private long _bridgeIntentVersion;
     private int _disposeState;
     private DesktopBootstrapSignalService? _bootstrapSignalService;
+    private DesktopBootstrapHttpEndpoint? _bootstrapHttpEndpoint;
 
     public DesktopStartupState State => _state;
     public Uri? CoreAddress => _coreAddress;
@@ -101,9 +102,9 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         // DataRoot and system configuration are ready, independently of Core.
         await TryInitializeBrowserWorkspaceAsync(dataRoot, _lifetimeCts.Token);
 
-        // Guided bootstrap signal service: zero behavior change when disabled or
-        // when no signal file ever appears.
-        StartBootstrapSignalService(dataRoot, systemResult.Config.Desktop.Bootstrap, _lifetimeCts.Token);
+        // Guided bootstrap services: the loopback HTTP control endpoint (default
+        // on) plus the opt-in signal-file polling loop (default off).
+        StartBootstrapServices(dataRoot, systemResult.Config.Desktop.Bootstrap, _lifetimeCts.Token);
 
         if (systemResult.Config.Desktop.Core.AutoStart)
             _ = TryStartCoreAsync(_lifetimeCts.Token);
@@ -111,24 +112,60 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
             TransitionTo(DesktopStartupState.CoreStopped);
     }
 
-    private void StartBootstrapSignalService(
+    /// <summary>
+    /// Starts the bootstrap services. The signal service object is always
+    /// created (it powers both the API/UI trigger and the polling loop); the
+    /// polling loop only starts when config.Enabled, and the loopback HTTP
+    /// endpoint only when config.HttpEnabled. Failures are logged and never
+    /// block Desktop startup.
+    /// </summary>
+    private void StartBootstrapServices(
         string dataRoot,
         PuddingDesktopBootstrapConfig bootstrapConfig,
         CancellationToken cancellationToken)
     {
-        if (!bootstrapConfig.Enabled)
-            return;
-
         try
         {
             var service = new DesktopBootstrapSignalService(this, dataRoot, bootstrapConfig, _tokenService);
-            service.Start(cancellationToken);
             _bootstrapSignalService = service;
+
+            if (bootstrapConfig.Enabled)
+                service.Start(cancellationToken);
         }
         catch (Exception ex)
         {
             DesktopDiagnosticLog.Write("BootstrapSignalStart", ex);
+            _bootstrapSignalService = null;
         }
+
+        if (bootstrapConfig.HttpEnabled && _bootstrapSignalService is not null)
+        {
+            try
+            {
+                var endpoint = new DesktopBootstrapHttpEndpoint(
+                    _bootstrapSignalService, _tokenService, dataRoot, bootstrapConfig.HttpPort,
+                    () => RuntimeSnapshot.State.ToString());
+                endpoint.Start(cancellationToken);
+                _bootstrapHttpEndpoint = endpoint;
+            }
+            catch (Exception ex)
+            {
+                DesktopDiagnosticLog.Write("BootstrapHttpStart", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Manually triggers one rebuild-restart cycle (used by the UI button).
+    /// Delegates to the bootstrap signal service; throws InvalidOperationException
+    /// when another bootstrap is already running.
+    /// </summary>
+    public Task<DesktopBootstrapResult> TriggerBootstrapAsync(
+        string? requestedBy, bool yolo, CancellationToken ct = default)
+    {
+        var service = _bootstrapSignalService
+            ?? throw new InvalidOperationException("bootstrap signal service is not available.");
+        return service.TriggerRebuildRestartAsync(requestedBy, yolo, ct);
     }
 
     public async Task StartCoreAsync(CancellationToken cancellationToken)
@@ -508,6 +545,13 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
         _lifetimeCts?.Cancel();
         _startCts?.Cancel();
+
+        if (_bootstrapHttpEndpoint is not null)
+        {
+            try { await _bootstrapHttpEndpoint.DisposeAsync(); }
+            catch { }
+            _bootstrapHttpEndpoint = null;
+        }
 
         if (_bootstrapSignalService is not null)
         {
