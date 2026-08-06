@@ -2462,6 +2462,66 @@ dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke
 
 真实 DeepSeek smoke 不能由上述集成测试代替。只有用户明确选择测试 Agent/DataRoot 后才能执行；不得读取、复制或回显 `D:\data` 中的 LLM Secret。需要保留的证据是脱敏 Tool 顺序、provider/model/role、Bridge Activity、最终页面和退出结果，不包含表单值、Token、Cookie 或 API Key。
 
+## 11.16 用户消息无输出与过期心跳执行诊断
+
+聊天页出现用户消息、Core `/health` 仍为 200，但长期没有 `thinking/delta/terminal` 时，不要先归因前端或 Provider。按同一 `conversationId` 对齐四组事实：
+
+1. `chat_execution_commands` / Turn / Run：确认消息已受理，区分 `pending` 与 `running`，记录 `commandId/turnId/runId`；
+2. `session_event_log`：确认该 run 是否只有 `turn.accepted/turn.started`，以及同 Agent 另一会话最近执行的首条 thinking 是否来自 `system:heartbeat`；
+3. `message_deliveries`：检查心跳 delivery 的 `attempt_count/lease_until/claimed_by_execution_id/status`，重点查“旧 execution lease 过期 → recovery/reclaim → 新 execution Busy 后 ACK，但旧 execution 后续仍产生日志”；
+4. `runtime_activity` 与 `AgentExecutionStateRegistry`：若 Agent 实际持续跑工具而 registry 仍显示 idle，说明存在绕过 `RuntimeAgentDispatcher` 的入口。
+
+这个组合表明卡点在执行互斥和 delivery fencing，不是 SSE 渲染。当前不变量是：
+
+- 所有用户 Turn、Agent 消息和心跳必须经 `RuntimeAgentDispatcher` 共用 `TryBegin/Complete`；用户 Turn 遇 Busy 等待，心跳遇 Busy 丢弃；
+- 普通用户/Agent 消息到达时取消同 workspace/agent 的活动心跳；心跳是可抢占的低优先级工作；
+- Message Fabric 长执行每 2 分钟续 5 分钟租约，终态或回复前再校验一次；`RenewLeaseAsync=false` 后旧执行必须取消且不得 ACK/retry/dead-letter/reply；
+- 非空 `executionId` 必须与 `ClaimedByExecutionId` 完全相等，owner 被回收清空也不能让旧 execution 回写。
+
+关键日志：
+
+```text
+[TurnExecutorAdapter] Waiting for agent availability
+[MessageDeliveryDispatcher] User activity interrupted active heartbeat
+[MessageDeliveryDispatcher] Delivery lease ownership lost; cancelling stale runtime execution
+[MessageDeliveryDispatcher] Discarded stale execution before delivery mutation
+```
+
+定向回归：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --nologo `
+  --filter "FullyQualifiedName~MessageDeliveryDispatcherTests|FullyQualifiedName~TurnExecutorAdapterTests"
+dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore --nologo `
+  --filter "FullyQualifiedName~MessageFabricStoreTests"
+```
+
+## 11.17 Desktop 重启 Core 固定 60 秒失败，SessionChunk 回填反复从头开始
+
+若 `desktop/bootstrap/start` 的结果显示 `buildExitCode=0`，但约 60 秒后仍为
+`coreRestarted=false`，同时每次手工启动都能看到 `[SessionChunkBackfill] start`、若干
+`progress`，却永远没有 `completed`，先检查 Hosted Service 是否阻塞宿主启动：
+
+- DesktopChild 只有在 `await app.StartAsync()` 返回后才输出 `PUDDING_DESKTOP_READY`；
+- `IHostedService.StartAsync` 若直接等待完整历史扫描，Ready 信号会被回填时长阻塞；
+- Desktop 的 Core Supervisor 到达 `startupTimeoutSeconds` 后会终止该子进程，所以下次启动
+  又从 `lastId=0` 扫描，看起来像回填卡死或反复重启。
+
+修复边界是让一次性长回填继承 `BackgroundService`，在 `ExecuteAsync` 首先异步让出执行，
+并用 stopping token 支持宿主退出；不能靠单纯增大 Desktop 启动超时掩盖。验收必须同时满足：
+
+1. `/desktop/bootstrap/status` 在超时前进入 `coreState=Ready`；
+2. Core PID 跨过原来的启动超时仍存活；
+3. 日志最终出现 `[SessionChunkBackfill] completed`；
+4. `SessionChunkVectors` 计数持续增长且重启幂等跳过已有 `MessageId`。
+
+定向回归：
+
+```powershell
+dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --nologo `
+  --filter "FullyQualifiedName~SessionChunkBackfillServiceTests"
+```
+
 ## 12. 修改后的最低验收
 
 ```powershell

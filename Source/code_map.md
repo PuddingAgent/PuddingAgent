@@ -372,6 +372,7 @@ Workbench 的 React 管理前端（Ant Design Pro v6 + React 19 + UmiJS + TypeSc
 | `Services/AudioArtifactStorageService.cs` + `Services/AudioArtifactReference.cs` + `Services/AudioArtifactResolverBridge.cs` | Workspace 受控音频制品边界；只持久化经过文件头校验的 16-bit mono/stereo PCM WAV，以稳定 `audio-*` 身份同时提供精确本地路径与 provider-safe Data URI，拒绝路径穿越和伪装格式 |
 | `PuddingCore/Abstractions/IAudioTranscriptionService.cs` + `PuddingPlatform/Services/AudioTranscriptionService.cs` | Provider-neutral 文件 ASR 边界；从 `config/voice/providers.json` 解析 Provider/模型与 Provider 自有默认 ASR 模型，再通过 `IVoiceProviderFactory/IAsrHttpRecognizer` 调用具体服务 |
 | `PuddingCore/Abstractions/IImageGenerationService.cs` + `PuddingPlatform/Services/ImageGenerationService.cs` + `PuddingRuntime/Services/VolcengineArkImageGenerationProvider.cs` | Provider-neutral 图片生成/编辑边界；按 default/precision/sequence capability 选择 Seedream Lite/Pro，支持最多 10 个参考 Vision Artifact、0~999 坐标提示、精确尺寸、PNG/JPEG、提示词优化、联网搜索和 1~4 张组图；Ark 临时 URL 立即限流下载并物化为 Workspace Vision Artifact，终态稳定操作键可复用已生成 Artifact |
+| `PuddingRuntime/Services/SessionChunkIndexer.cs` + `SessionChunkBackfillService.cs` | L2 会话消息切块/向量写入与存量回填；Backfill 必须作为 `BackgroundService` 在宿主 Ready 之后运行，禁止在 `IHostedService.StartAsync` 中等待完整扫描，否则 DesktopChild 无法在启动超时前发出 Ready 信号 |
 | `Services/SubAgentManager.cs` | 子代理统一调度边界；按父 deadline 归一化子 deadline，同步委派额外保留默认 120 秒父级收尾窗口并在不足时拒绝创建 run，把并发门等待计入预算；每次执行创建新 run，再投影可复用 SubSessionId 当前状态，投影失败时终结 run |
 | `Services/SubAgentPool.cs` | 池化子代理生命周期；create/自动创建只原子预留稳定 SubSessionId，execute 才调用 `ExecuteSyncAsync`，避免隐藏异步 run 与首轮双执行 |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行审计与终态仲裁；`run.json/input.json/run.created` 持久化精确 `ExecutionDeadlineUtc`，终态提交前从 events.jsonl 合并真实轮次/工具/耗时/失败统计，先写自带 `run_id` 的事件，再按持久游标投影到父执行身份对应的 canonical Conversation Event，供父 Chat 的 bootstrap/replay/live SSE 观察；有界后台补投使用跨轮次扫描游标，避免 run 数量超过单批上限后永久饥饿 |
@@ -452,9 +453,9 @@ Workbench 的 React 管理前端（Ant Design Pro v6 + React 19 + UmiJS + TypeSc
 | `PuddingPlatformAdmin/src/pages/chat/viewport/messageProjection.ts` | 纯消息虚拟项投影；只生成用户、主 Agent、系统消息和历史加载项，不投影子代理 run，避免多子代理调用污染文档流 |
 | `Services/MessageFabric/MessageSystem.cs` | 消息系统核心 |
 | `Services/MessageFabric/MessageRouter.cs` | 消息路由（Topic → Channel → Room）；为 `(message,target)` 生成稳定 DeliveryId，并保留 Conversation/reply/correlation/causation/metadata |
-| `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/ack/retry；持久化渠道路由事实，并从 `queued/retrying` 投递发现待处理 Agent/Connector 目标 |
+| `Services/MessageFabric/MessageFabricStore.cs` | 消息持久化与 Inbox 原子 claim/renew/ack/retry；`ClaimedByExecutionId` 提供严格 execution fencing，租约过期、回收或转移后旧执行不得回写；持久化渠道路由事实，并从 `queued/retrying` 投递发现待处理 Agent/Connector 目标 |
 | `Services/MessageFabric/MessageQueueProjectionService.cs` | Agent 交互队列读模型；默认排除 `visibility=system`，诊断模式可显式包含并把 Pudding envelope 投影为正文 |
-| `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；普通消息保留 legacy Runtime 路径，`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
+| `PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs` | Runtime 消息投递唯一消费者；长执行定期续租且终态前复核 ownership，旧 execution 不产生 ACK/retry/reply；普通用户活动会取消同 Agent 的低优先级心跳；`gateway_ingress` delivery 坚持一条投递一个 ADR-059 Turn，并只在 canonical acceptance 成功后 ack |
 | `PuddingCore/Models/AgentReplyVoiceDirective.cs` + `Services/MessageGateway/ConversationTerminalMessageFormatter.cs` + `ConversationReplyProjectionWorker.cs` + `FeishuTtsProjection.cs` | 从 succeeded/failed/cancelled Command 的 committed terminal event 生成统一用户文案并幂等创建 Connector delivery；成功答复仅在显式 `voice` 围栏时追加 typed audio，V1 的纯围栏与混合回复都先发送含围栏的完整原始 Markdown，配置关闭/超长时保留原文且只发文字；活跃 CardKit stream 拥有终态投影，stream `failed` 后走普通文本兜底；`reply_projected_at` 与实际 Connector delivered 状态分离 |
 | `PuddingCore/Abstractions/IVoiceSynthesisService.cs` + `PuddingPlatform/Services/VoiceSynthesisService.cs` + `PuddingRuntime/Services/VoiceProviderFactory.cs` | Web/渠道共享的 Provider-neutral TTS 边界；从 `config/voice/providers.json` 解析 Provider/模型与 Provider 自有默认模型，通过 `ITtsProvider` 适配 Qwen/CosyVoice 等服务，并将 URL/Provider 输出收敛为有界音频字节 |
 | `PuddingCore/Abstractions/IAudioTranscoder.cs` + `PuddingRuntime/Services/ManagedOggOpusTranscoder.cs` | 进程内短音频双向转码边界；NAudio.Core/Concentus 完成 WAV→16 kHz mono 24 kbps Ogg/Opus 出站与飞书 Ogg/Opus→16 kHz mono PCM WAV 入站，不依赖 ffmpeg/native codec；按实际样本计算时长并限制解码时长 |
@@ -597,7 +598,7 @@ Workbench 的 React 管理前端（Ant Design Pro v6 + React 19 + UmiJS + TypeSc
       → IAgentExecutionSnapshotFactory             // 无密钥执行快照
       → LlmInvocationProfile                       // Provider/Profile/Model 类型化路由身份
       → ITurnExecutor                             // Agent Loop Runtime
-        → TurnExecutorAdapter                     // usage 帧封装为 v2：usage + 不可变 Provider/Profile/Model/Role
+        → TurnExecutorAdapter                     // 经 RuntimeAgentDispatcher 共用 Busy/Idle 权威；Busy 等待后续跑；usage 帧封装为 v2
       → TurnOutputChunker                         // delta 聚合
       → IExecutionJournal.AppendOutputAsync       // fenced 输出
       → IExecutionJournal.CommitTerminalAsync     // 原子终态（验证 runId/workerId/fence/lease）

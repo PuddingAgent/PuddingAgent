@@ -58,10 +58,12 @@
 ### B2. ✅（昨日）心跳重复投递 / 消息去重一期二期（403bbe1/5d4b30d/d01304c/ca730b0/05e7ede）
 - 已重启生效，生产日志见 [MessageFabric][dedup] 拦截记录。
 
-### B3. ⏳ ADR-059 网关路径不参与 AgentExecutionStateRegistry
-- ExecutionRunCoordinator 独立执行 turn，不走 RuntimeAgentDispatcher 的 TryBegin/Complete。
-  网关 turn 执行期间 registry 仍显示 idle → agent 间消息可并发进入同一 agent（R2 上下文
-  污染风险，设计稿已记录）。需在网关路径接入状态注册或等价互斥。
+### B3. ✅（2026-08-05）ADR-059 网关路径统一接入 AgentExecutionStateRegistry
+- `TurnExecutorAdapter` 改经 `RuntimeAgentDispatcher` 执行，网关 Turn、Agent 消息和心跳共用
+  `TryBegin/Complete` Busy/Idle 权威；用户 Turn 遇 Busy 时等待，不把暂时忙碌提交为失败终态。
+- 同时补齐心跳用户抢占与 Message Fabric delivery 续租/fencing，避免旧心跳租约过期、被回收
+  并 ACK 后仍继续执行。定向回归：`MessageDeliveryDispatcherTests` +
+  `TurnExecutorAdapterTests` 27/27，`MessageFabricStoreTests` 10/10。
 
 ## C. 工程 / 测试基建
 

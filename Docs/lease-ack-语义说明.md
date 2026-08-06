@@ -5,10 +5,11 @@
 ## 概述
 
 Pudding Message Fabric 为每条消息投递（Delivery）维护一个持久化状态机，
-确保消息在 `receive_messages` / `ack` 协议下的精确一次（at-least-once）投递语义。
+确保消息在 `receive_messages` / `ack` 协议下的至少一次（at-least-once）投递语义。
 
 核心原则：
 - **Lease（租约）**：消费者通过 `ClaimNextAsync` 声明一条待投递消息，获得一个有时限的独占处理权。
+- **Renew（续租）**：长执行通过 `RenewLeaseAsync` 周期续租；只有当前 `executionId` 且未过期的 owner 可以续租。
 - **Ack（确认）**：消费者处理完毕后调用 `AckAsync` 将投递标记为 `delivered`，释放租约。
 - **过期重投**：租约到期未 ack，系统自动将投递回退到 `retrying` 状态，允许其他消费者（或同一消费者重启后）重新声明。
 - **死信**：消费者可主动将投递标记为 `dead_letter`（不可恢复），或由外部策略（如超最大重试次数）触发。
@@ -83,7 +84,19 @@ if (!persisted) { /* 一期去重：message_id 已存在 → 跳过 */ }
 
 租约默认时长：`ClaimRequest.LeaseDuration`（默认 5 分钟）。
 
-### 3. 确认 → `delivered`
+### 3. 长执行续租与 execution fencing
+
+```csharp
+// MessageFabricStore.RenewLeaseAsync
+// WHERE delivery_id=... AND status=delivering
+//   AND claimed_by_execution_id=executionId AND lease_until>=now
+// → SET lease_until=now+leaseDuration
+```
+
+Runtime 消费者每 2 分钟为 5 分钟租约续期，并在 ACK/Retry/DeadLetter/发送回复前再次续租校验。
+返回 `false` 表示租约已过期、被回收或转移；旧 runtime execution 必须取消并丢弃结果，不得产生任何投递副作用。
+
+### 4. 确认 → `delivered`
 
 ```csharp
 // MessageFabricStore.AckAsync
@@ -91,9 +104,11 @@ if (!persisted) { /* 一期去重：message_id 已存在 → 跳过 */ }
 // → SET status=delivered, ack_at=now, lease_until=NULL, claimed_by_execution_id=NULL
 ```
 
-**所有权校验**：`AckAsync` 会检查 `ClaimedByExecutionId`，仅当调用者持有租约（或 executionId 为空兜底）时才允许 ack。
+**所有权校验**：`AckAsync`、`RetryAsync`、`DeadLetterAsync` 会严格检查
+`ClaimedByExecutionId`。非空 executionId 只有与当前 owner 完全一致才允许变更；租约回收把 owner
+清空后，旧 executionId 也不能回写。空 executionId 只保留给显式 legacy 管理入口。
 
-### 4. 租约过期 → `retrying`
+### 5. 租约过期 → `retrying`
 
 由后台调度器周期性调用（建议间隔 ≤ 租约时长的 1/3）：
 
@@ -106,7 +121,7 @@ if (!persisted) { /* 一期去重：message_id 已存在 → 跳过 */ }
 
 过期投递回到 `retrying` 状态后，`ClaimNextAsync` 可再次选中。
 
-### 5. 主动重试 → `retrying`
+### 6. 主动重试 → `retrying`
 
 ```csharp
 // MessageFabricStore.RetryAsync
@@ -114,7 +129,7 @@ if (!persisted) { /* 一期去重：message_id 已存在 → 跳过 */ }
 //   claimed_by_execution_id=NULL, last_error=error
 ```
 
-### 6. 死信 → `dead_letter`
+### 7. 死信 → `dead_letter`
 
 ```csharp
 // MessageFabricStore.DeadLetterAsync
@@ -145,14 +160,15 @@ consumer                                    MessageFabricStore
 
 **正确做法**：
 1. 调用 `receive_messages` 获取 `delivery_id`。
-2. 在租约到期前（`lease_until`）完成处理。
-3. 调用 `ack` 确认。
-4. 若处理失败且期望重试，调用 `retry`（设置 `available_at` 控制重试时机）。
-5. 若不可恢复，调用 `dead_letter`。
+2. 长处理在租约到期前调用 `renew`，并把同一 `executionId` 贯穿到终态操作。
+3. 在 ACK/Retry/DeadLetter 或外部回复前复核 ownership。
+4. 调用 `ack` 确认。
+5. 若处理失败且期望重试，调用 `retry`（设置 `available_at` 控制重试时机）。
+6. 若不可恢复，调用 `dead_letter`。
 
 **错误做法**：
 - 获取 delivery 后不 ack → 租约过期自动重投，消息被重复消费。
-- 租约过期后仍尝试 ack → 可能被拒绝（`ClaimedByExecutionId` 已清空）。
+- 租约过期后仍继续执行或尝试 ack → 必须被拒绝（`ClaimedByExecutionId` 已清空或已属于新 execution）。
 
 ## 与一期去重的关系
 
