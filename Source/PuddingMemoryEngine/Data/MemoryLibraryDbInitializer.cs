@@ -92,6 +92,21 @@ CREATE TABLE IF NOT EXISTS Chapters (
         // 不能把预期的 duplicate-column 异常当作正常控制流。
         await EnsureColumnAsync(conn, "Chapters", "AgentInstanceId", "TEXT", logger);
 
+        // ── WP-L2a: 会话块向量表（供会话级语义检索，幂等）
+        await ExecuteAsync(conn, """
+CREATE TABLE IF NOT EXISTS SessionChunkVectors (
+    ChunkId     TEXT PRIMARY KEY,
+    WorkspaceId TEXT NOT NULL,
+    SessionId   TEXT NOT NULL,
+    MessageId   TEXT NOT NULL,
+    ChunkSeq    INTEGER NOT NULL,
+    Role        TEXT NOT NULL,
+    SourceText  TEXT NOT NULL,
+    Embedding   BLOB,
+    CreatedAt   INTEGER NOT NULL
+);
+""");
+
         await ExecuteAsync(conn, """
 CREATE TABLE IF NOT EXISTS Pointers (
     PointerId   TEXT PRIMARY KEY,
@@ -404,6 +419,8 @@ CREATE TABLE IF NOT EXISTS ChapterRelations (
         "CREATE INDEX IF NOT EXISTS IX_MemoryFactAssociations_Target ON MemoryFactAssociations(WorkspaceId, AgentId, TargetKind, TargetKey);",
         "CREATE INDEX IF NOT EXISTS IX_MemoryFactAssociations_Fact ON MemoryFactAssociations(WorkspaceId, AgentId, FactId);",
         "CREATE INDEX IF NOT EXISTS IX_MemoryFactRevisions_Fact_CreatedAt ON MemoryFactRevisions(WorkspaceId, AgentId, FactId, CreatedAt);",
+        "CREATE INDEX IF NOT EXISTS IX_SessionChunkVectors_Workspace_Session_Seq ON SessionChunkVectors(WorkspaceId, SessionId, ChunkSeq);",
+        "CREATE UNIQUE INDEX IF NOT EXISTS UX_SessionChunkVectors_Message_Seq ON SessionChunkVectors(MessageId, ChunkSeq);",
     ];
 
     private static readonly string[] FtsStatements =

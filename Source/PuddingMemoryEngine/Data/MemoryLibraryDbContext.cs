@@ -29,6 +29,7 @@ public class MemoryLibraryDbContext : DbContext
     public DbSet<MemoryFactEntityMentionEntity> MemoryFactEntityMentions => Set<MemoryFactEntityMentionEntity>();
     public DbSet<MemoryFactAssociationEntity> MemoryFactAssociations => Set<MemoryFactAssociationEntity>();
     public DbSet<MemoryFactRevisionEntity> MemoryFactRevisions => Set<MemoryFactRevisionEntity>();
+    public DbSet<SessionChunkVectorEntity> SessionChunkVectors => Set<SessionChunkVectorEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,6 +73,14 @@ public class MemoryLibraryDbContext : DbContext
             entity.HasIndex(e => new { e.BookId, e.ChapterOrder });
             entity.HasIndex(e => new { e.BookId, e.Status, e.ChapterOrder });
             entity.HasIndex(e => e.SupersededByChapterId);
+        });
+
+        modelBuilder.Entity<SessionChunkVectorEntity>(entity =>
+        {
+            entity.ToTable("SessionChunkVectors");
+            entity.HasKey(e => e.ChunkId);
+            entity.HasIndex(e => new { e.WorkspaceId, e.SessionId, e.ChunkSeq });
+            entity.HasIndex(e => new { e.MessageId, e.ChunkSeq }).IsUnique();
         });
 
         modelBuilder.Entity<PointerEntity>(entity =>

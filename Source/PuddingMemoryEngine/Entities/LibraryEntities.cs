@@ -170,6 +170,49 @@ public class ChapterEntity
     public string? Tags { get; set; }
 }
 
+/// <summary>
+/// 会话块向量——按消息切分的块级向量，供会话级语义检索（WP-L2）。
+/// 投影落库时 agentInstanceId 恒为 null，必须按 SessionId 归属。
+/// </summary>
+public sealed class SessionChunkVectorEntity
+{
+    [Key]
+    [MaxLength(32)]
+    public string ChunkId { get; set; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>工作区 ID（ADR-042 agent 记忆隔离）。</summary>
+    [MaxLength(64)]
+    public string WorkspaceId { get; set; } = "";
+
+    /// <summary>会话归属——投影落库时 agentInstanceId 恒为 null，必须按 SessionId 归属。</summary>
+    [MaxLength(64)]
+    public string SessionId { get; set; } = "";
+
+    /// <summary>源消息 ID（溯源 + 回填幂等键，与 ChunkSeq 联合唯一）。</summary>
+    [MaxLength(64)]
+    public string MessageId { get; set; } = "";
+
+    /// <summary>同一消息内的块序号。</summary>
+    public int ChunkSeq { get; set; }
+
+    /// <summary>角色：user | assistant | tool。</summary>
+    [MaxLength(32)]
+    public string Role { get; set; } = "";
+
+    /// <summary>块文本。</summary>
+    public string SourceText { get; set; } = "";
+
+    /// <summary>
+    /// 嵌入向量（float32 字节数组，dim×4=字节数）。dim 随 provider 而定，
+    /// 当前 lmstudio qwen3-0.6b=1024（1024×4=4096B）。
+    /// </summary>
+    [MaxLength(1024 * 4)]
+    public byte[]? Embedding { get; set; }
+
+    /// <summary>Unix 时间戳（毫秒）。</summary>
+    public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+}
+
 /// <summary>章节关联关系——Chapter 之间的多对多关联，形成知识图谱边。</summary>
 public class ChapterRelationEntity
 {
