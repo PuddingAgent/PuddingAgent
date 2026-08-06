@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Tools;
 using PuddingFullTextIndex.Contracts;
@@ -184,6 +185,218 @@ public sealed class SearchGrepToolTests
 
             Assert.IsTrue(result.Success, result.Error);
             StringAssert.Contains(result.Output, "output.cs");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_SingleLine_Truncated_When_Line_TooLong()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var longLine = "NEEDLE-" + new string('x', 20000);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "bundle.js"), longLine + Environment.NewLine);
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.js", ["max_results"] = "5" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "bundle.js:1");
+            StringAssert.Contains(result.Output, "[truncated, original=");
+            Assert.IsFalse(result.Output.Contains(new string('x', 20000)), "the full long line must not be returned");
+            Assert.IsTrue(Encoding.UTF8.GetByteCount(result.Output) < 9000, "output must stay near the 8KB single-line cap");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_TotalBytesCap_Stops_Appending()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        for (int i = 1; i <= 10; i++)
+            await File.WriteAllTextAsync(Path.Combine(tempDir, $"f{i}.txt"), "NEEDLE-" + new string('a', 100) + Environment.NewLine);
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.txt",
+                ["max_results"] = "50",
+                ["max_total_bytes"] = "300",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "结果已截断，共命中");
+            StringAssert.Contains(result.Output, "请缩小范围");
+            StringAssert.Contains(result.Output, "f1.txt:1");
+            Assert.IsFalse(result.Output.Contains("f9.txt:1"), "matches beyond the total cap must be dropped");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_DefaultExcludeDirs_Skips_BuildArtifacts()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        Directory.CreateDirectory(Path.Combine(tempDir, "src"));
+        foreach (var d in new[] { "$outputWwwroot", "dist", "node_modules", "bin", "obj", ".git", "TestResults", "artifacts", "publish", ".venv", ".tmp" })
+            Directory.CreateDirectory(Path.Combine(tempDir, d));
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "src", "main.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "$outputWwwroot", "bundle.js"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "dist", "bundle.js"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "node_modules", "lib.js"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "bin", "out.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "obj", "gen.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, ".git", "config"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "TestResults", "res.txt"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "artifacts", "out.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "publish", "out.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, ".venv", "lib.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, ".tmp", "scratch.cs"), "NEEDLE");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["max_results"] = "50" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "main.cs");
+            Assert.IsFalse(result.Output.Contains("bundle.js"), "$outputWwwroot/dist must be excluded");
+            Assert.IsFalse(result.Output.Contains("lib.js"), "node_modules must be excluded");
+            Assert.IsFalse(result.Output.Contains("gen.cs"), "obj must be excluded");
+            Assert.IsFalse(result.Output.Contains("res.txt"), "TestResults must be excluded");
+            Assert.IsFalse(result.Output.Contains("scratch.cs"), ".tmp must be excluded");
+            Assert.IsFalse(result.Output.Contains("out.cs"), "bin/artifacts/publish must be excluded");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ExcludeDirsAppend_Adds_To_Defaults()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        Directory.CreateDirectory(Path.Combine(tempDir, "src"));
+        Directory.CreateDirectory(Path.Combine(tempDir, "custom_out"));
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "src", "main.cs"), "NEEDLE");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "custom_out", "gen.cs"), "NEEDLE");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["max_results"] = "50",
+                ["exclude_dirs_append"] = "custom_out",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "main.cs");
+            Assert.IsFalse(result.Output.Contains("gen.cs"), "appended exclude dir must be skipped");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_BinaryFile_Is_Skipped()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var binBytes = new List<byte>();
+        binBytes.AddRange(Encoding.ASCII.GetBytes("NEEDLE-binary-payload"));
+        binBytes.Add(0); // NUL 字节 → 二进制文件
+        binBytes.AddRange(Encoding.ASCII.GetBytes("-rest"));
+        await File.WriteAllBytesAsync(Path.Combine(tempDir, "data.bin"), binBytes.ToArray());
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "ok.txt"), "NEEDLE text");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["max_results"] = "50" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "ok.txt");
+            Assert.IsFalse(result.Output.Contains("data.bin"), "binary files must be skipped entirely");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_Regression_SmallFiles_Unchanged()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.txt"), "first line\nNEEDLE here\nthird line\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "b.txt"), "no match\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "a.txt:2: NEEDLE here");
+            Assert.IsFalse(result.Output.Contains("b.txt"));
+            Assert.IsFalse(result.Output.Contains("[truncated"), "small lines must not be truncated");
         }
         finally
         {

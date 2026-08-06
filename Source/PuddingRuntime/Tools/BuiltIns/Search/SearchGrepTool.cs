@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "search_grep",
     name: "search_grep",
-    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 bin;obj;node_modules;.git）。",
+    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 $outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 262144）。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
@@ -26,7 +26,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
     private const int DefaultMaxResults = 30;
     private const long MaxFileSizeBytes = 1 * 1024 * 1024;
-    private const string DefaultExcludeDirs = "bin;obj;node_modules;.git";
+    private const string DefaultExcludeDirs = "$outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp";
+    private const long DefaultMaxLineBytes = 8 * 1024;
+    private const long DefaultMaxTotalBytes = 256 * 1024;
+    private const string TruncatedMarker = "...[truncated, original={0} bytes]";
+    private const string TotalCapMessage = "结果已截断，共命中 {0} 处，请缩小范围";
 
     private static readonly TimeSpan ManagedSearchTimeout = TimeSpan.FromSeconds(10);
     private const int MaxEnumeratedFiles = 2000;
@@ -56,16 +60,20 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
         int maxResults = Math.Clamp(args.MaxResults ?? DefaultMaxResults, 1, 200);
         bool caseSensitive = args.CaseSensitive?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        long maxLineBytes = args.MaxLineBytes is null ? DefaultMaxLineBytes : Math.Max(0, args.MaxLineBytes.Value);
+        long maxTotalBytes = args.MaxTotalBytes is null ? DefaultMaxTotalBytes : Math.Max(0, args.MaxTotalBytes.Value);
         var excludeDirs = ParseExcludeDirs(args.ExcludeDirs);
+        AppendExcludeDirs(excludeDirs, args.ExcludeDirsAppend);
 
         return await SearchCoreAsync(
             query, args.Pattern, args.FileExt, args.Directory,
-            caseSensitive, maxResults, excludeDirs, ct);
+            caseSensitive, maxResults, excludeDirs, maxLineBytes, maxTotalBytes, ct);
     }
 
     private async Task<ToolExecutionResult> SearchCoreAsync(
         string query, string? pattern, string? fileExt, string? directory,
-        bool caseSensitive, int maxResults, HashSet<string> excludeDirs, CancellationToken ct)
+        bool caseSensitive, int maxResults, HashSet<string> excludeDirs,
+        long maxLineBytes, long maxTotalBytes, CancellationToken ct)
     {
         var filter = fileExt?.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(e => e.StartsWith('.') ? e : "." + e).ToArray();
@@ -91,13 +99,28 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             {
                 var sb = new StringBuilder();
                 var added = 0;
+                long totalBytes = 0;
+                long matchCount = 0;
+                bool capReached = false;
                 foreach (var r in luceneResults.Matches)
                 {
                     if (added >= maxResults) break;
                     if (IsPathInExcludedDir(r.FilePath, directory, excludeDirs)) continue;
-                    sb.AppendLine($"{r.FilePath}:{r.LineNumber}: {r.LineText}");
+                    matchCount++;
+                    var lineText = TruncateLine(r.LineText, maxLineBytes);
+                    var entry = $"{r.FilePath}:{r.LineNumber}: {lineText}";
+                    var entryBytes = Encoding.UTF8.GetByteCount(entry);
+                    if (maxTotalBytes > 0 && totalBytes + entryBytes > maxTotalBytes)
+                    {
+                        capReached = true;
+                        break;
+                    }
+                    totalBytes += entryBytes;
+                    sb.AppendLine(entry);
                     added++;
                 }
+                if (capReached)
+                    sb.AppendLine(string.Format(TotalCapMessage, matchCount));
                 if (added > 0)
                     return ToolExecutionResult.Ok(sb.ToString().TrimEnd());
             }
@@ -108,13 +131,14 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         }
 
         // 优先级2：托管 grep
-        return await ManagedGrepAsync(query, pattern, directory, caseSensitive, maxResults, filter ?? patternFilter, excludeDirs, ct);
+        return await ManagedGrepAsync(query, pattern, directory, caseSensitive, maxResults,
+            filter ?? patternFilter, excludeDirs, maxLineBytes, maxTotalBytes, ct);
     }
 
     private async Task<ToolExecutionResult> ManagedGrepAsync(
         string query, string? pattern, string? directory,
         bool caseSensitive, int maxResults, string[]? extFilter,
-        HashSet<string> excludeDirs, CancellationToken ct)
+        HashSet<string> excludeDirs, long maxLineBytes, long maxTotalBytes, CancellationToken ct)
     {
         var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
         if (!Directory.Exists(cwd))
@@ -126,6 +150,9 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var errors = 0;
         var scannedFiles = 0;
         long scannedBytes = 0;
+        long totalResultBytes = 0;
+        long matchCount = 0;
+        bool totalCapReached = false;
 
         var filePattern = string.IsNullOrWhiteSpace(pattern) ? "*.*" : pattern;
         try
@@ -157,7 +184,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
         foreach (var file in files)
         {
-            if (cts.IsCancellationRequested || scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes) break;
+            if (cts.IsCancellationRequested || totalCapReached
+                || scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes) break;
             if (errors >= MaxErrors) break;
 
             if (IsPathInExcludedDir(file, cwd, excludeDirs)) continue;
@@ -173,31 +201,51 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 var info = new FileInfo(file);
                 if (info.Length > MaxFileSizeBytes) continue;
 
-                var lines = await File.ReadAllLinesAsync(file, cts.Token);
+                var raw = await File.ReadAllBytesAsync(file, cts.Token);
                 scannedFiles++;
-                scannedBytes += info.Length;
+                scannedBytes += raw.Length;
+
+                // 二进制保护：含 NUL 字节视为二进制文件，跳过（不计入匹配）
+                if (Array.IndexOf(raw, (byte)0) >= 0) continue;
+
+                var text = Encoding.UTF8.GetString(raw);
+                if (text.Length > 0 && text[0] == '\uFEFF') text = text[1..]; // 去除 UTF-8 BOM
+                var lines = text.Split('\n');
 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (results.Count >= maxResults) break;
+                    if (results.Count >= maxResults || totalCapReached) break;
+                    var line = lines[i].TrimEnd('\r');
                     bool match = isRegex
-                        ? regex?.IsMatch(lines[i]) == true
-                        : lines[i].IndexOf(query, comparison) >= 0;
-                    if (match)
+                        ? regex?.IsMatch(line) == true
+                        : line.IndexOf(query, comparison) >= 0;
+                    if (!match) continue;
+
+                    matchCount++;
+                    var lineText = TruncateLine(line.Trim(), maxLineBytes);
+                    var relPath = Path.GetRelativePath(cwd, file);
+                    var entry = $"{relPath}:{i + 1}: {lineText}";
+                    var entryBytes = Encoding.UTF8.GetByteCount(entry);
+                    if (maxTotalBytes > 0 && totalResultBytes + entryBytes > maxTotalBytes)
                     {
-                        var relPath = Path.GetRelativePath(cwd, file);
-                        results.Add($"{relPath}:{i + 1}: {lines[i].Trim()}");
+                        totalCapReached = true;
+                        break;
                     }
+                    totalResultBytes += entryBytes;
+                    results.Add(entry);
                 }
             }
             catch (OperationCanceledException) { break; }
             catch { errors++; }
         }
 
-        if (results.Count == 0)
+        if (results.Count == 0 && !totalCapReached)
             return ToolExecutionResult.Ok(scannedFiles > 0 ? "(no matches)" : "(no files scanned)");
 
-        return ToolExecutionResult.Ok(string.Join("\n", results));
+        var output = string.Join("\n", results);
+        if (totalCapReached)
+            output += "\n" + string.Format(TotalCapMessage, matchCount);
+        return ToolExecutionResult.Ok(output);
     }
 
     private static bool LooksLikeRegex(string q) =>
@@ -216,6 +264,16 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         return set;
     }
 
+    private static void AppendExcludeDirs(HashSet<string> set, string? extra)
+    {
+        if (string.IsNullOrWhiteSpace(extra)) return;
+        foreach (var d in extra.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var trimmed = d.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (trimmed.Length > 0) set.Add(trimmed);
+        }
+    }
+
     private static bool IsPathInExcludedDir(string filePath, string? searchDir, HashSet<string> excludeDirs)
     {
         if (excludeDirs.Count == 0) return false;
@@ -228,6 +286,29 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             if (excludeDirs.Contains(part)) return true;
         }
         return false;
+    }
+
+    private static string TruncateLine(string line, long maxLineBytes)
+    {
+        if (maxLineBytes <= 0) return line;
+        var byteCount = Encoding.UTF8.GetByteCount(line);
+        if (byteCount <= maxLineBytes) return line;
+        return TruncateByBytes(line, maxLineBytes) + string.Format(TruncatedMarker, byteCount);
+    }
+
+    private static string TruncateByBytes(string s, long maxBytes)
+    {
+        var count = 0;
+        var i = 0;
+        while (i < s.Length)
+        {
+            int runeLen = char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]) ? 2 : 1;
+            int byteLen = runeLen == 2 ? 4 : s[i] <= 0x7F ? 1 : s[i] <= 0x7FF ? 2 : 3;
+            if (count + byteLen > maxBytes) break;
+            count += byteLen;
+            i += runeLen;
+        }
+        return s[..i];
     }
 
     private static string[]? PatternToExtensionFilter(string? pattern)
@@ -253,6 +334,12 @@ public sealed record SearchGrepArgs
     public int? MaxResults { get; init; }
     [ToolParam("Directory to search in. Default: current directory.")]
     public string? Directory { get; init; }
-    [ToolParam("Directories to exclude, semicolon-separated. Default: bin;obj;node_modules;.git")]
+    [ToolParam("Directories to exclude, semicolon-separated. Default: $outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp")]
     public string? ExcludeDirs { get; init; }
+    [ToolParam("Extra directories to exclude, appended to the effective exclude list, semicolon-separated")]
+    public string? ExcludeDirsAppend { get; init; }
+    [ToolParam("Max bytes per matching line before truncation. 0 disables truncation. Default: 8192")]
+    public long? MaxLineBytes { get; init; }
+    [ToolParam("Max total bytes of results before truncation. 0 disables the cap. Default: 262144")]
+    public long? MaxTotalBytes { get; init; }
 }
