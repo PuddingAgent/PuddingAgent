@@ -1,10 +1,7 @@
-﻿using JiebaNet.Segmenter;
-
-namespace PuddingFullTextIndex.Infrastructure.Text;
+﻿namespace PuddingFullTextIndex.Infrastructure.Text;
 
 /// <summary>
 /// JiebaSegmenter 懒加载单例。词典首次加载 ~100ms，之后零开销。
-/// 供 JiebaAnalyzer 和 JiebaTokenizer 共享同一个 Segmenter 实例。
 ///
 /// 初始化语义：首次失败不缓存。使用静态锁 + 可空实例字段，
 /// 初始化失败时 _instance 保持为 null，下次访问 Instance 会重新尝试，
@@ -19,17 +16,18 @@ namespace PuddingFullTextIndex.Infrastructure.Text;
 /// 遇到锁定退避重试，确保类型初始化器运行时文件确实可用。
 ///
 /// Resources 路径解析策略（按优先级）：
-/// 1. 当前程序集所在目录的 Resources/（须含 dict.txt）
-/// 2. 应用程序基目录的 Resources/（须含 dict.txt）
-/// 3. 从程序集位置向上查找源码树中的 Resources/（开发环境回退）
-/// 4. 从 AppContext.BaseDirectory 向上查找 Resources/
+/// 1. AppContext.BaseDirectory 的 Resources/（须含 dict.txt）
+/// 2. 当前程序集所在目录的 Resources/（须含 dict.txt）
+/// 3. 当前工作目录的 Resources/（须含 dict.txt）
+/// 4. 从程序集位置向上查找源码树中的 Resources/（开发环境回退）
+/// 5. 从 AppContext.BaseDirectory 向上查找 Resources/
 /// 所有策略统一要求 Resources/dict.txt 存在，仅目录存在不算命中，
 /// 避免把不完整的资源目录交给 Jieba 产生误导性错误。
 /// </summary>
 internal static class JiebaSegmenterPool
 {
     private static readonly object SyncRoot = new();
-    private static JiebaSegmenter? _instance;
+    private static JiebaNet.Segmenter.JiebaSegmenter? _instance;
 
     /// <summary>
     /// 最近一次初始化失败的诊断信息；成功初始化后清空（置为 null）。
@@ -54,7 +52,7 @@ internal static class JiebaSegmenterPool
     /// 但失败不会被缓存——下次访问本属性会重新尝试初始化（自愈）。
     /// 线程安全：实例的创建与读取均在 SyncRoot 锁内完成。
     /// </summary>
-    public static JiebaSegmenter Instance
+    public static JiebaNet.Segmenter.JiebaSegmenter Instance
     {
         get
         {
@@ -69,12 +67,12 @@ internal static class JiebaSegmenterPool
                     // 关键：在触发 JiebaSegmenter 类型初始化器之前确保词典文件可读，
                     // 防止瞬时文件锁导致类型初始化器失败并被 CLR 永久缓存。
                     EnsureResourcesReadable(resourceDir);
-                    ConfigManager.ConfigFileBaseDir = resourceDir;
+                    JiebaNet.Segmenter.ConfigManager.ConfigFileBaseDir = resourceDir;
 
-                    var seg = new JiebaSegmenter();
-                    seg.Cut("预热"); // 触发词典加载
+                    var segmenter = new JiebaNet.Segmenter.JiebaSegmenter();
+                    segmenter.Cut("预热"); // 触发词典加载
 
-                    _instance = seg;
+                    _instance = segmenter;
                     LastInitError = null; // 成功时清空失败记录
                     return _instance;
                 }
@@ -95,6 +93,7 @@ internal static class JiebaSegmenterPool
     /// 过程中的瞬时锁定）时退避重试，最多 10 次（约 10-15 秒窗口）。
     /// 全部可读后返回；持续锁定则抛出 IOException（此时尚未触碰
     /// JiebaSegmenter 类型，进程仍有机会在下次调用时自愈）。
+    /// internal static 以便单元测试验证。
     /// </summary>
     internal static void EnsureResourcesReadable(string resourceDir)
     {
@@ -147,45 +146,50 @@ internal static class JiebaSegmenterPool
     /// <summary>
     /// 按优先级解析 Resources 目录路径。所有策略统一要求
     /// Resources/dict.txt 存在，仅目录存在不算命中。
+    /// internal static 以便单元测试（PuddingFullTextIndexTests/PuddingMemoryEngineTests）直接验证。
     /// </summary>
     internal static string ResolveResourceDirectory()
     {
-        // 策略1: 当前程序集所在目录（PuddingFullTextIndex.dll 位置）
-        var assemblyDir = Path.GetDirectoryName(typeof(JiebaSegmenterPool).Assembly.Location);
-        var fromAssembly = TryResolveResourceDir(assemblyDir);
-        if (fromAssembly != null)
-            return fromAssembly;
-
-        // 策略2: 应用程序基目录（主机的 bin 目录）
+        // 策略1: AppContext.BaseDirectory（启动项目的 bin 目录）
         var appBase = AppContext.BaseDirectory;
         var fromAppBase = TryResolveResourceDir(appBase);
         if (fromAppBase != null)
             return fromAppBase;
 
-        // 策略3: 从当前程序集位置向上查找源码树中的 Resources
+        // 策略2: 当前程序集所在目录
+        var assemblyDir = Path.GetDirectoryName(typeof(JiebaSegmenterPool).Assembly.Location);
+        var fromAssembly = TryResolveResourceDir(assemblyDir);
+        if (fromAssembly != null)
+            return fromAssembly;
+
+        // 策略3: 当前工作目录
+        var fromCwd = TryResolveResourceDir(Directory.GetCurrentDirectory());
+        if (fromCwd != null)
+            return fromCwd;
+
+        // 策略4: 从程序集位置向上查找源码树中的 Resources
         if (assemblyDir != null)
         {
             var candidate = FindResourceDirUpTree(assemblyDir);
-            if (candidate != null)
-                return candidate;
+            if (candidate != null) return candidate;
         }
 
-        // 策略4: 从 AppContext.BaseDirectory 向上查找
+        // 策略5: 从 AppContext.BaseDirectory 向上查找
         if (!string.IsNullOrEmpty(appBase))
         {
             var candidate = FindResourceDirUpTree(appBase);
-            if (candidate != null)
-                return candidate;
+            if (candidate != null) return candidate;
         }
 
-        // 最后回退：仍然返回程序集目录（让 Jieba 自己报错，提供更好的错误信息）
-        return assemblyDir ?? ".";
+        // 最后回退：返回程序集目录（让 Jieba 自己报错，提供更好的错误信息）
+        return (assemblyDir ?? appBase) ?? ".";
     }
 
     /// <summary>
-    /// 策略1-2 的统一判定：给定基目录下存在 Resources/dict.txt 才算命中。
+    /// 策略1-3 的统一判定：给定基目录下存在 Resources/dict.txt 才算命中。
     /// 仅 Resources 目录存在而缺少 dict.txt 时返回 null（不命中），
-    /// 避免把不完整的资源目录交给 Jieba。
+    /// 避免把不完整的资源目录交给 Jieba。internal static 以便单元测试
+    /// 用临时目录验证"无 dict.txt 的 Resources 目录不被策略1-3 命中"。
     /// </summary>
     internal static string? TryResolveResourceDir(string? baseDir)
     {
@@ -296,7 +300,7 @@ internal static class JiebaSegmenterPool
         }
     }
 
-    /// <summary>中文停用词（与 PuddingMemoryEngine 保持同步）。</summary>
+    /// <summary>中文停用词（可后续扩展）。</summary>
     private static readonly HashSet<string> StopWords = new(StringComparer.Ordinal)
     {
         "的", "了", "是", "在", "我", "有", "和", "就",

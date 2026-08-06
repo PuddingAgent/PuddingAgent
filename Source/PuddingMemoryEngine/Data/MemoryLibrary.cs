@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingMemoryEngine.Entities;
 using PuddingMemoryEngine.Infrastructure.Text;
+using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingMemoryEngine.Services;
 
 namespace PuddingMemoryEngine.Data;

@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="PuddingFullTextIndexTests" />
+    <InternalsVisibleTo Include="PuddingMemoryEngine" />
+    <InternalsVisibleTo Include="PuddingMemoryEngineTests" />
   </ItemGroup>
 
   <ItemGroup>

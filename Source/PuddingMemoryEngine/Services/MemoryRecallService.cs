@@ -4,6 +4,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Infrastructure.Text;
+using PuddingFullTextIndex.Infrastructure.Text;
 
 namespace PuddingMemoryEngine.Services;
 

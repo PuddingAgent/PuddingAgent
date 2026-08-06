@@ -1,4 +1,4 @@
-﻿using PuddingMemoryEngine.Infrastructure.Text;
+﻿using PuddingFullTextIndex.Infrastructure.Text;
 
 namespace PuddingMemoryEngineTests;
 

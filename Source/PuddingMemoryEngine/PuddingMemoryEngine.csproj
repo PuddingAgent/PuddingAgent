@@ -44,6 +44,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
   </ItemGroup>
 
 </Project>
