@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -230,6 +230,15 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISessionChunkIndexer, SessionChunkIndexer>();
         builder.Services.Configure<SubconsciousOptions>(
             bootstrapConfiguration.GetSection(SubconsciousOptions.SectionName));
+
+        // ── SessionChunkVectors 存量回填 job（WP-L2d，默认关闭）─────────────
+        builder.Services.Configure<SessionChunkBackfillOptions>(
+            bootstrapConfiguration.GetSection(SessionChunkBackfillOptions.SectionName));
+        if (bootstrapConfiguration.GetValue<bool>(
+                $"{SessionChunkBackfillOptions.SectionName}:{nameof(SessionChunkBackfillOptions.Enabled)}"))
+        {
+            builder.Services.AddHostedService<SessionChunkBackfillService>();
+        }
 
         // ── 潜意识记忆系统（阶段 2：LLM 抽取与后台整合）────────────────
         var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(
