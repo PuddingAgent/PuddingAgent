@@ -27,6 +27,17 @@ public interface IMessageInbox
         int maxBatch,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Renews an active delivery lease only while <paramref name="executionId"/>
+    /// still owns the delivery. Returns false after expiry, recovery, or ownership
+    /// transfer so a stale runtime execution can stop before producing side effects.
+    /// </summary>
+    Task<bool> RenewLeaseAsync(
+        string deliveryId,
+        string executionId,
+        TimeSpan leaseDuration,
+        CancellationToken ct = default);
+
     Task<int> RecoverExpiredLeasesAsync(DateTimeOffset now, CancellationToken ct = default);
 
     Task AckAsync(string deliveryId, CancellationToken ct = default);

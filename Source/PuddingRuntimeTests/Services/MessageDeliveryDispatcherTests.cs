@@ -133,6 +133,22 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
+    public async Task HandleAsync_LostDeliveryLeaseDiscardsRuntimeResultWithoutSideEffects()
+    {
+        var inbox = new RecordingMessageInbox { RenewLeaseResult = false };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        Assert.HasCount(1, runtime.StreamRequests);
+        Assert.HasCount(1, inbox.Renewed);
+        Assert.IsEmpty(inbox.Acked);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
+    }
+
+    [TestMethod]
     public async Task HandleAsync_HeartbeatDeliveryWhenRuntimeBusy_AcksWithoutRetry()
     {
         var heartbeatFrom = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "heartbeat" };
@@ -159,6 +175,36 @@ public sealed class MessageDeliveryDispatcherTests
             CancellationToken.None);
 
         Assert.HasCount(1, runtime.StreamRequests);
+        Assert.HasCount(1, inbox.Acked);
+        Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_UserActivityCancelsRunningHeartbeatAndAcksItsDelivery()
+    {
+        var heartbeatFrom = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "heartbeat" };
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimFrom = heartbeatFrom,
+            ClaimContent = "── 系统心跳 ──\n\n[系统心跳] 你醒来了。",
+            MaxClaimCount = 1,
+        };
+        var runtime = new BlockingRuntimeAgentDispatcher();
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        var heartbeatTask = dispatcher.HandleAsync(
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
+            CancellationToken.None);
+        await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await dispatcher.HandleAsync(
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b"),
+            CancellationToken.None);
+        await heartbeatTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.IsTrue(runtime.CancellationObserved);
         Assert.HasCount(1, inbox.Acked);
         Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
         Assert.IsEmpty(inbox.Retried);
@@ -720,7 +766,7 @@ public sealed class MessageDeliveryDispatcherTests
 
     private static MessageDeliveryDispatcher CreateDispatcher(
         RecordingMessageInbox inbox,
-        RecordingRuntimeAgentDispatcher runtime,
+        IRuntimeAgentDispatcher runtime,
         RecordingAgentExecutionAvailabilityProvider? availability = null,
         RecordingInternalEventBus? eventBus = null,
         RecordingWorkspaceAgentCatalog? catalog = null,
@@ -836,8 +882,11 @@ public sealed class MessageDeliveryDispatcherTests
 
     private sealed class RecordingMessageInbox : IMessageInbox
     {
+        private int _claimCount;
+
         public MessageClaimRequest? LastClaim { get; private set; }
         public int ClaimAttemptCount { get; init; } = 1;
+        public int? MaxClaimCount { get; init; }
         public IReadOnlyDictionary<string, string>? ClaimMetadata { get; init; }
         public string? ClaimConversationId { get; init; }
         public string? ClaimContent { get; init; }
@@ -845,6 +894,8 @@ public sealed class MessageDeliveryDispatcherTests
         public IReadOnlyList<MessageInboxItem> BatchClaims { get; init; } = [];
         public IReadOnlyList<MessageDeliveryTarget> PendingTargets { get; init; } = [];
         public List<string> PendingTargetKinds { get; } = [];
+        public bool RenewLeaseResult { get; init; } = true;
+        public List<(string DeliveryId, string ExecutionId, TimeSpan LeaseDuration)> Renewed { get; } = [];
         public List<(string DeliveryId, string ExecutionId)> Acked { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error, DateTimeOffset AvailableAt)> Retried { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error)> DeadLettered { get; } = [];
@@ -863,6 +914,10 @@ public sealed class MessageDeliveryDispatcherTests
         public Task<MessageInboxItem?> ClaimNextAsync(MessageClaimRequest request, CancellationToken ct = default)
         {
             LastClaim = request;
+            if (MaxClaimCount is int maxClaimCount
+                && Interlocked.Increment(ref _claimCount) > maxClaimCount)
+                return Task.FromResult<MessageInboxItem?>(null);
+
             return Task.FromResult<MessageInboxItem?>(new MessageInboxItem
             {
                 DeliveryId = "d1",
@@ -887,6 +942,16 @@ public sealed class MessageDeliveryDispatcherTests
             int maxBatch,
             CancellationToken ct = default) =>
             Task.FromResult(BatchClaims);
+
+        public Task<bool> RenewLeaseAsync(
+            string deliveryId,
+            string executionId,
+            TimeSpan leaseDuration,
+            CancellationToken ct = default)
+        {
+            Renewed.Add((deliveryId, executionId, leaseDuration));
+            return Task.FromResult(RenewLeaseResult);
+        }
 
         public Task<int> RecoverExpiredLeasesAsync(DateTimeOffset now, CancellationToken ct = default) =>
             Task.FromResult(0);
@@ -970,6 +1035,35 @@ public sealed class MessageDeliveryDispatcherTests
             yield return ServerSentEventFrame.Json("delta", new { text = "ok" });
             await Task.Yield();
             yield return ServerSentEventFrame.Json("done", new { ok = true });
+        }
+    }
+
+    private sealed class BlockingRuntimeAgentDispatcher : IRuntimeAgentDispatcher
+    {
+        public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool CancellationObserved { get; private set; }
+
+        public Task<RuntimeDispatchResult> DispatchAsync(
+            RuntimeDispatchRequest request,
+            CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ServerSentEventFrame> DispatchStreamAsync(
+            RuntimeDispatchRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            Started.TrySetResult(true);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                CancellationObserved = true;
+                throw;
+            }
+
+            yield break;
         }
     }
 

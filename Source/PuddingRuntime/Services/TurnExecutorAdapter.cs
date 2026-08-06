@@ -8,11 +8,11 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// ADR-057 Phase 3: ITurnExecutor 桥接适配器。
-/// 将现有 AgentExecutionService.ExecuteStreamAsync（SSE 帧）→ TurnExecutionEvent（领域事件）。
-/// 短期方案；长期应直接在 AgentExecutionService 中实现 ITurnExecutor。
+/// 将统一 Runtime Dispatcher 的 SSE 帧转换为 TurnExecutionEvent（领域事件）。
+/// Runtime Dispatcher 是所有入口共享的 Agent Busy/Idle 权威；Busy 时等待后重试。
 /// </summary>
 public sealed class TurnExecutorAdapter(
-    AgentExecutionService executionService,
+    IRuntimeAgentDispatcher runtimeDispatcher,
     ILogger<TurnExecutorAdapter> logger) : ITurnExecutor
 {
     public async IAsyncEnumerable<TurnExecutionEvent> ExecuteAsync(
@@ -46,31 +46,50 @@ public sealed class TurnExecutorAdapter(
         var sawTerminal = false;
         var usageInvocationIndex = 0;
 
-        await foreach (var frame in executionService.ExecuteStreamAsync(request, ct))
+        while (true)
         {
-            sawTerminal |= frame.Event == "done" || frame.Event == "error" || frame.Event == "cancelled";
-
-            var payload = ParsePayload(frame.Data);
-            var (eventType, terminal, terminalInfo) = ConvertFrame(frame.Event, payload);
-            var schemaVersion = 1;
-            if (eventType == ConversationEventTypes.UsageRecorded)
+            var retryAfterBusy = false;
+            await foreach (var frame in runtimeDispatcher.DispatchStreamAsync(request, ct))
             {
-                usageInvocationIndex++;
-                payload = CreateUsageRecordedPayload(
-                    payload,
-                    context.LlmProfile,
-                    usageInvocationIndex);
-                schemaVersion = 2;
+                var payload = ParsePayload(frame.Data);
+                if (IsBusyFrame(frame.Event, payload))
+                {
+                    retryAfterBusy = true;
+                    logger.LogInformation(
+                        "[TurnExecutorAdapter] Waiting for agent availability conversation={ConversationId} run={RunId}",
+                        context.ConversationId,
+                        context.RunId);
+                    break;
+                }
+
+                sawTerminal |= frame.Event == "done" || frame.Event == "error" || frame.Event == "cancelled";
+
+                var (eventType, terminal, terminalInfo) = ConvertFrame(frame.Event, payload);
+                var schemaVersion = 1;
+                if (eventType == ConversationEventTypes.UsageRecorded)
+                {
+                    usageInvocationIndex++;
+                    payload = CreateUsageRecordedPayload(
+                        payload,
+                        context.LlmProfile,
+                        usageInvocationIndex);
+                    schemaVersion = 2;
+                }
+
+                yield return new TurnExecutionEvent(
+                    ProducerEventId: Guid.NewGuid().ToString("N"),
+                    Type: eventType,
+                    SchemaVersion: schemaVersion,
+                    Payload: payload,
+                    IsTerminal: terminal,
+                    TerminalInfo: terminalInfo
+                );
             }
 
-            yield return new TurnExecutionEvent(
-                ProducerEventId: Guid.NewGuid().ToString("N"),
-                Type: eventType,
-                SchemaVersion: schemaVersion,
-                Payload: payload,
-                IsTerminal: terminal,
-                TerminalInfo: terminalInfo
-            );
+            if (!retryAfterBusy)
+                break;
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
         }
 
         if (!sawTerminal)
@@ -121,6 +140,16 @@ public sealed class TurnExecutorAdapter(
                 TurnTerminalInfo.Cancelled()),
             _ => (eventType, false, null),
         };
+    }
+
+    private static bool IsBusyFrame(string eventType, JsonElement payload)
+    {
+        if (!string.Equals(eventType, "error", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var state = TryGetString(payload, "executionState")
+            ?? TryGetString(payload, "ExecutionState");
+        return string.Equals(state, AgentExecutionState.Busy.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonElement CreateUsageRecordedPayload(

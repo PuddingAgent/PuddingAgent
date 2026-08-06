@@ -322,6 +322,104 @@ public sealed class MessageFabricStoreTests
         Assert.AreEqual(2, reclaimed!.AttemptCount);
     }
 
+    [TestMethod]
+    public async Task RenewLeaseAsync_ExtendsOnlyTheCurrentExecutionOwner()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+
+        var claimed = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-owner",
+            LeaseDuration = TimeSpan.FromMinutes(1),
+        }, CancellationToken.None);
+
+        Assert.IsNotNull(claimed);
+        var originalLease = claimed!.LeaseUntil;
+        Assert.IsFalse(await store.RenewLeaseAsync(
+            claimed.DeliveryId,
+            "exec-stale",
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None));
+        Assert.IsTrue(await store.RenewLeaseAsync(
+            claimed.DeliveryId,
+            "exec-owner",
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None));
+
+        db.ChangeTracker.Clear();
+        var renewed = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.IsGreaterThan(originalLease!.Value, renewed.LeaseUntil!.Value);
+        Assert.AreEqual("exec-owner", renewed.ClaimedByExecutionId);
+    }
+
+    [TestMethod]
+    public async Task StaleExecutionCannotMutateDeliveryAfterRecoveryAndReclaim()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+
+        var first = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-stale",
+            LeaseDuration = TimeSpan.FromMilliseconds(-1),
+        }, CancellationToken.None);
+        Assert.IsNotNull(first);
+        Assert.AreEqual(1, await store.RecoverExpiredLeasesAsync(DateTimeOffset.UtcNow, CancellationToken.None));
+
+        var current = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-current",
+            LeaseDuration = TimeSpan.FromMinutes(5),
+        }, CancellationToken.None);
+        Assert.IsNotNull(current);
+
+        await store.AckAsync(current!.DeliveryId, "exec-stale", CancellationToken.None);
+        await store.RetryAsync(
+            current.DeliveryId,
+            "exec-stale",
+            "stale retry",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+        await store.DeadLetterAsync(
+            current.DeliveryId,
+            "exec-stale",
+            "stale dead letter",
+            CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var afterStaleMutations = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == current.DeliveryId);
+        Assert.AreEqual(MessageDeliveryStatuses.Delivering, afterStaleMutations.Status);
+        Assert.AreEqual("exec-current", afterStaleMutations.ClaimedByExecutionId);
+        Assert.IsNull(afterStaleMutations.AckAt);
+        Assert.IsNull(afterStaleMutations.LastError);
+
+        await store.AckAsync(current.DeliveryId, "exec-current", CancellationToken.None);
+        db.ChangeTracker.Clear();
+        Assert.AreEqual(
+            MessageDeliveryStatuses.Delivered,
+            (await db.MessageDeliveries.AsNoTracking()
+                .SingleAsync(delivery => delivery.DeliveryId == current.DeliveryId)).Status);
+    }
+
     private static DbContextOptions<PlatformDbContext> CreateOptions(string root)
     {
         var dbPath = Path.Combine(root, "platform.db");

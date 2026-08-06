@@ -281,6 +281,36 @@ public sealed class MessageFabricStore : IMessageInbox
         return expired.Count;
     }
 
+    public async Task<bool> RenewLeaseAsync(
+        string deliveryId,
+        string executionId,
+        TimeSpan leaseDuration,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(deliveryId))
+            throw new ArgumentException("Delivery id is required.", nameof(deliveryId));
+        if (string.IsNullOrWhiteSpace(executionId))
+            throw new ArgumentException("Execution id is required.", nameof(executionId));
+        if (leaseDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration), "Lease duration must be positive.");
+
+        var now = DateTimeOffset.UtcNow;
+        var nowMs = now.ToUnixTimeMilliseconds();
+        var leaseUntil = now.Add(leaseDuration).ToUnixTimeMilliseconds();
+        var updated = await _db.MessageDeliveries
+            .Where(delivery =>
+                delivery.DeliveryId == deliveryId
+                && delivery.Status == MessageDeliveryStatuses.Delivering
+                && delivery.ClaimedByExecutionId == executionId
+                && delivery.LeaseUntil != null
+                && delivery.LeaseUntil >= nowMs)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(delivery => delivery.LeaseUntil, leaseUntil)
+                .SetProperty(delivery => delivery.UpdatedAt, nowMs), ct);
+
+        return updated == 1;
+    }
+
     public async Task AckAsync(string deliveryId, CancellationToken ct = default)
         => await AckAsync(deliveryId, executionId: "", ct);
 
@@ -427,7 +457,6 @@ public sealed class MessageFabricStore : IMessageInbox
 
     private static bool MatchesExecution(MessageDeliveryEntity delivery, string executionId)
         => string.IsNullOrWhiteSpace(executionId)
-           || string.IsNullOrWhiteSpace(delivery.ClaimedByExecutionId)
            || string.Equals(delivery.ClaimedByExecutionId, executionId, StringComparison.Ordinal);
 
     private void LogDeliveryTransition(MessageDeliveryEntity delivery, string? executionId) =>

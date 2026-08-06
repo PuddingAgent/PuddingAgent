@@ -18,6 +18,8 @@ namespace PuddingRuntime.Services.Messaging;
 /// </summary>
 public sealed class MessageDeliveryDispatcher : IHostedService
 {
+    private static readonly TimeSpan DeliveryLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DeliveryLeaseRenewInterval = TimeSpan.FromMinutes(2);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -28,6 +30,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     private readonly AgentWakeQueue _wakeQueue;
     private readonly ILogger<MessageDeliveryDispatcher> _logger;
     private readonly ConcurrentDictionary<string, AgentDeliveryTarget> _knownAgentTargets = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeHeartbeatExecutions = new();
     private IEventSubscriptionHandle? _messageDeliverSubscription;
     private IEventSubscriptionHandle? _availabilitySubscription;
     private CancellationTokenSource? _recoveryCts;
@@ -66,6 +69,8 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         _messageDeliverSubscription = null;
         _availabilitySubscription = null;
         _recoveryCts?.Cancel();
+        foreach (var heartbeat in _activeHeartbeatExecutions.Values)
+            heartbeat.Cancel();
         if (_recoveryTask is not null)
         {
             try
@@ -139,6 +144,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         // must wake the agent — same path as user messages.
         if (!isHeartbeat)
         {
+            CancelActiveHeartbeat(payload.WorkspaceId, payload.Target.Id);
             await _wakeQueue.NotifyUserActivityAsync(payload.Target.Id, ct);
         }
 
@@ -265,7 +271,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             WorkspaceId = workspaceId,
             RoomId = roomId,
             ExecutionId = executionId,
-            LeaseDuration = TimeSpan.FromMinutes(5),
+            LeaseDuration = DeliveryLeaseDuration,
         }, ct);
 
         if (claimed is null)
@@ -320,7 +326,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 WorkspaceId = workspaceId,
                 RoomId = roomId,
                 ExecutionId = executionId,
-                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseDuration = DeliveryLeaseDuration,
             };
             var additional = await inbox.ClaimBatchAsync(batchRequest, maxBatch: 9, ct);
             if (additional.Count > 0)
@@ -374,8 +380,42 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             correlationId,
             causationId);
 
+        using var dispatchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var leaseRenewalCts = CancellationTokenSource.CreateLinkedTokenSource(dispatchCts.Token);
+        var heartbeatKey = claimedIsHeartbeat
+            ? BuildHeartbeatExecutionKey(claimed.WorkspaceId, claimed.Target.Id)
+            : null;
+        var heartbeatRegistered = false;
+        var leaseRenewalTask = Task.CompletedTask;
+
         try
         {
+            if (heartbeatKey is not null)
+            {
+                heartbeatRegistered = _activeHeartbeatExecutions.TryAdd(heartbeatKey, dispatchCts);
+                if (!heartbeatRegistered)
+                {
+                    await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+                    LogExecutionResult(
+                        claimed,
+                        MessageDeliveryStatuses.Delivered,
+                        executionId,
+                        correlationId,
+                        causationId);
+                    _logger.LogInformation(
+                        "[MessageDeliveryDispatcher] Dropped duplicate active heartbeat delivery={DeliveryId} agent={AgentId}",
+                        claimed.DeliveryId,
+                        claimed.Target.Id);
+                    return;
+                }
+            }
+
+            leaseRenewalTask = RunLeaseRenewalLoopAsync(
+                batch,
+                executionId,
+                dispatchCts,
+                leaseRenewalCts.Token);
+
             var dispatchFactory = scope.ServiceProvider.GetService<IAgentInvocationDispatchFactory>()
                 ?? throw new InvalidOperationException("Agent invocation dispatch factory is required for agent message delivery.");
             var dispatch = await dispatchFactory.CreateForWorkspaceAgentAsync(
@@ -391,7 +431,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     CausationId = causationId,
                     Metadata = effectiveMetadata,
                 },
-                ct);
+                dispatchCts.Token);
 
             var dispatchRequest = dispatch.Request;
 
@@ -402,7 +442,46 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 claimed.Target.Id,
                 transcriptWriter,
                 dispatch.UsesStreamDispatch ? null : claimed,
-                ct);
+                dispatchCts.Token);
+
+            if (dispatchCts.IsCancellationRequested)
+            {
+                var stillOwned = await RenewOwnedBatchAsync(batch, executionId, CancellationToken.None);
+                if (claimedIsHeartbeat && stillOwned)
+                {
+                    await inbox.AckAsync(claimed.DeliveryId, executionId, CancellationToken.None);
+                    LogExecutionResult(
+                        claimed,
+                        MessageDeliveryStatuses.Delivered,
+                        executionId,
+                        correlationId,
+                        causationId);
+                    _logger.LogInformation(
+                        "[MessageDeliveryDispatcher] Interrupted heartbeat for user activity delivery={DeliveryId} agent={AgentId}",
+                        claimed.DeliveryId,
+                        claimed.Target.Id);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "[MessageDeliveryDispatcher] Discarded cancelled stale execution delivery={DeliveryId} agent={AgentId} execution={ExecutionId}",
+                        claimed.DeliveryId,
+                        claimed.Target.Id,
+                        executionId);
+                }
+
+                return;
+            }
+
+            if (!await RenewOwnedBatchAsync(batch, executionId, ct))
+            {
+                _logger.LogWarning(
+                    "[MessageDeliveryDispatcher] Discarded stale execution before delivery mutation delivery={DeliveryId} agent={AgentId} execution={ExecutionId}",
+                    claimed.DeliveryId,
+                    claimed.Target.Id,
+                    executionId);
+                return;
+            }
 
             if (result.IsSuccess)
             {
@@ -528,6 +607,32 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         {
             throw;
         }
+        catch (OperationCanceledException) when (dispatchCts.IsCancellationRequested)
+        {
+            var stillOwned = await RenewOwnedBatchAsync(batch, executionId, CancellationToken.None);
+            if (claimedIsHeartbeat && stillOwned)
+            {
+                await inbox.AckAsync(claimed.DeliveryId, executionId, CancellationToken.None);
+                LogExecutionResult(
+                    claimed,
+                    MessageDeliveryStatuses.Delivered,
+                    executionId,
+                    correlationId,
+                    causationId);
+                _logger.LogInformation(
+                    "[MessageDeliveryDispatcher] Interrupted heartbeat for user activity delivery={DeliveryId} agent={AgentId}",
+                    claimed.DeliveryId,
+                    claimed.Target.Id);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "[MessageDeliveryDispatcher] Stopped execution after delivery lease ownership was lost delivery={DeliveryId} agent={AgentId} execution={ExecutionId}",
+                    claimed.DeliveryId,
+                    claimed.Target.Id,
+                    executionId);
+            }
+        }
         catch (Exception ex)
         {
             foreach (var item in batch)
@@ -553,7 +658,109 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 claimed.Target.Id,
                 batch.Count);
         }
+        finally
+        {
+            leaseRenewalCts.Cancel();
+            try
+            {
+                await leaseRenewalTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when dispatch finishes before the next renewal tick.
+            }
+
+            if (heartbeatRegistered
+                && heartbeatKey is not null
+                && _activeHeartbeatExecutions.TryGetValue(heartbeatKey, out var active)
+                && ReferenceEquals(active, dispatchCts))
+            {
+                _activeHeartbeatExecutions.TryRemove(heartbeatKey, out _);
+            }
+        }
     }
+
+    private async Task RunLeaseRenewalLoopAsync(
+        IReadOnlyList<MessageInboxItem> batch,
+        string executionId,
+        CancellationTokenSource dispatchCts,
+        CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(DeliveryLeaseRenewInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (await RenewOwnedBatchAsync(batch, executionId, ct))
+                    continue;
+
+                _logger.LogWarning(
+                    "[MessageDeliveryDispatcher] Delivery lease ownership lost; cancelling stale runtime execution delivery={DeliveryId} agent={AgentId} execution={ExecutionId}",
+                    batch[0].DeliveryId,
+                    batch[0].Target.Id,
+                    executionId);
+                dispatchCts.Cancel();
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Expected when the dispatch completes or is intentionally interrupted.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[MessageDeliveryDispatcher] Delivery lease renewal failed; cancelling runtime execution delivery={DeliveryId} agent={AgentId} execution={ExecutionId}",
+                batch[0].DeliveryId,
+                batch[0].Target.Id,
+                executionId);
+            dispatchCts.Cancel();
+        }
+    }
+
+    private async Task<bool> RenewOwnedBatchAsync(
+        IReadOnlyList<MessageInboxItem> batch,
+        string executionId,
+        CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
+        foreach (var item in batch)
+        {
+            if (!await inbox.RenewLeaseAsync(
+                    item.DeliveryId,
+                    executionId,
+                    DeliveryLeaseDuration,
+                    ct))
+                return false;
+        }
+
+        return true;
+    }
+
+    private void CancelActiveHeartbeat(string workspaceId, string agentId)
+    {
+        var key = BuildHeartbeatExecutionKey(workspaceId, agentId);
+        if (!_activeHeartbeatExecutions.TryGetValue(key, out var heartbeat))
+            return;
+
+        try
+        {
+            heartbeat.Cancel();
+            _logger.LogInformation(
+                "[MessageDeliveryDispatcher] User activity interrupted active heartbeat workspace={WorkspaceId} agent={AgentId}",
+                workspaceId,
+                agentId);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The heartbeat completed between lookup and cancellation.
+        }
+    }
+
+    private static string BuildHeartbeatExecutionKey(string workspaceId, string agentId)
+        => $"{workspaceId}\u001f{agentId}";
 
     private static async Task<RuntimeDispatchResult> DispatchStreamAndCollectAsync(
         IRuntimeAgentDispatcher runtime,

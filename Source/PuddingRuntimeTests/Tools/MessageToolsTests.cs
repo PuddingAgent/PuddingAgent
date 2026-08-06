@@ -227,6 +227,13 @@ public sealed class MessageToolsTests
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<MessageInboxItem>>([]);
 
+        public Task<bool> RenewLeaseAsync(
+            string deliveryId,
+            string executionId,
+            TimeSpan leaseDuration,
+            CancellationToken ct = default) =>
+            Task.FromResult(true);
+
         public Task<int> RecoverExpiredLeasesAsync(DateTimeOffset now, CancellationToken ct = default) =>
             Task.FromResult(0);
 
