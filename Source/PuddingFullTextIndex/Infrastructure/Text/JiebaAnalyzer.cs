@@ -14,7 +14,8 @@ public sealed class JiebaAnalyzer : Analyzer
 
     protected override TokenStreamComponents CreateComponents(string fieldName, System.IO.TextReader reader)
     {
-        // ① jieba 分词（共享单例 Segmenter，避免重复加载词典）
+        // ① jieba 分词（共享单例 Segmenter，避免重复加载词典；
+        //    tokenizer 已输出 posInc=1 与单调偏移，为后续接入 bigram/短语查询留好基础）
         var tokenizer = new JiebaTokenizer(reader, JiebaSegmenterPool.Instance);
 
         // ② 英文小写（对中文无影响）

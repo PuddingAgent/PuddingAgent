@@ -13,6 +13,8 @@ public sealed class JiebaTokenizer : Tokenizer
     private readonly JiebaSegmenter _segmenter;
     private readonly ICharTermAttribute _termAttr;
     private readonly IOffsetAttribute _offsetAttr;
+    private readonly IPositionIncrementAttribute _posIncrAttr;
+    private int _offsetPos;
     private IEnumerator<string>? _tokenEnumerator;
 
     public JiebaTokenizer(TextReader reader, JiebaSegmenter segmenter)
@@ -21,6 +23,7 @@ public sealed class JiebaTokenizer : Tokenizer
         _segmenter = segmenter;
         _termAttr = AddAttribute<ICharTermAttribute>();
         _offsetAttr = AddAttribute<IOffsetAttribute>();
+        _posIncrAttr = AddAttribute<IPositionIncrementAttribute>();
     }
 
     public override void Reset()
@@ -32,6 +35,7 @@ public sealed class JiebaTokenizer : Tokenizer
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .ToList();
         _tokenEnumerator = tokens.GetEnumerator();
+        _offsetPos = 0;
     }
 
     public override bool IncrementToken()
@@ -49,8 +53,12 @@ public sealed class JiebaTokenizer : Tokenizer
         var token = _tokenEnumerator.Current;
         ClearAttributes();
         _termAttr.Append(token);
-        // 使用基于 token 索引的粗略偏移
-        _offsetAttr.SetOffset(0, token.Length);
+        // posInc=1：令词元位置相邻，CJKBigramFilter/短语查询才能跨分词段工作
+        _posIncrAttr.PositionIncrement = 1;
+        // 偏移量累加单调递增（Lucene 要求 offsets 不得回退）
+        var start = _offsetPos;
+        _offsetPos += token.Length;
+        _offsetAttr.SetOffset(start, _offsetPos);
         return true;
     }
 }
