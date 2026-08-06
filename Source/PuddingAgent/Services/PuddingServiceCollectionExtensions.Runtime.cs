@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -202,6 +202,9 @@ public static partial class PuddingServiceCollectionExtensions
 
         // ── Agent 自我诊断工具：工具耗时统计 / 缓存健康检查 ──────────
         builder.Services.AddPuddingTool<AgentDiagnosticsTool>();
+
+        // ── 会话上下文手动压缩工具：Agent 自主决定压缩时机 ──────────
+        builder.Services.AddPuddingTool<SessionCompactTool>();
 
         // ── 潜意识管道触发工具：手动触发 Auto-Dream / 经验提取 / 技能改进 ──────────
         builder.Services.AddPuddingTool<SubconsciousTriggerTool>();
