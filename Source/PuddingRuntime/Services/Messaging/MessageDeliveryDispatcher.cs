@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +10,8 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
+
+using PuddingRuntime.Services.GoalMode;
 
 namespace PuddingRuntime.Services.Messaging;
 
@@ -522,6 +524,23 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                         claimed.DeliveryId,
                         claimed.From.Kind,
                         claimed.From.Id);
+                }
+
+                // Goal 模式：回合成功终态后，若开关开启且队列非空则注入下一目标
+                // （pi follow-up 注入模式）。注入是新事务，失败不得回滚已完成的投递。
+                try
+                {
+                    var goalMode = scope.ServiceProvider.GetService<IGoalModeService>();
+                    if (goalMode is not null)
+                        await goalMode.TryInjectNextGoalAsync(workspaceId, agentId, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "[MessageDeliveryDispatcher] Goal-mode injection failed delivery={DeliveryId} agent={AgentId}",
+                        claimed.DeliveryId,
+                        claimed.Target.Id);
                 }
 
                 return;

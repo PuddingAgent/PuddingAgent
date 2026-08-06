@@ -13,6 +13,7 @@ using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Background;
+using PuddingRuntime.Services.GoalMode;
 using PuddingRuntime.Services.Hooks;
 using PuddingRuntime.Services.Messaging;
 using PuddingRuntime.Services.Skills;
@@ -55,6 +56,13 @@ public static class RuntimeServiceExtensions
 
         // ── 多 Agent 心跳唤醒队列 ──
         services.AddSingleton<AgentWakeQueue>();
+
+        // ── Goal 模式：连续自主任务循环（pi follow-up 注入模式，默认关闭）──
+        if (configuration is not null)
+            services.Configure<GoalModeOptions>(configuration.GetSection(GoalModeOptions.SectionName));
+        else
+            services.AddOptions<GoalModeOptions>();
+        services.AddSingleton<IGoalModeService, GoalModeService>();
 
         services.AddSingleton<SessionMemoryStore>();
         services.AddSingleton<WorkspaceMemoryStore>();
