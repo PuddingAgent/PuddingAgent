@@ -1,0 +1,44 @@
+﻿# PuddingMemoryEngine CodeMAP
+
+> 记忆引擎 | Library/Book/Chapter · FTS5 全文搜索 · 潜意识处理
+
+## 核心引擎
+
+| 文件 | 用途 |
+|------|------|
+| `MemoryEngine.cs` | 🔑 记忆引擎主入口（25KB） |
+| `MemoryEntry.cs` | 记忆条目模型 |
+| `MemoryBoundaryService.cs` | 记忆边界服务 |
+| `BookRegistry.cs` | Book 注册表 |
+| `SessionMemoryStore.cs` | 会话级记忆存储（7KB） |
+| `WorkspaceMemoryStore.cs` | 工作区级记忆存储（7KB） |
+
+## 存储层
+
+| 目录/文件 | 用途 |
+|------|------|
+| `Data/` | 数据访问层 |
+| `Entities/` | 实体定义 |
+| `Schema/` | 数据库 Schema |
+
+## 服务
+
+| 文件 | 用途 |
+|------|------|
+| `Services/FactMemoryService.cs` | 事实记忆服务（23KB） |
+| `Services/MemoryRecallService.cs` | 记忆召回服务（19KB） |
+| `Services/MemoryLibrarian.cs` | 记忆图书馆员 |
+| `Services/SkillEvolutionDeduplicationService.cs` | 🔑 Skill 进化去重（26KB） |
+| `Services/SubconsciousOrchestrator.cs` | 潜意识编排（75KB，核心） |
+| `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（27KB） |
+
+## 基础设施
+
+| 文件 | 用途 |
+|------|------|
+| `Infrastructure/` | 基础设施（索引、存储实现） |
+
+## 测试
+
+`../PuddingMemoryEngineTests/` — Library/Book/Chapter、FTS5、Skill 进化去重（21/21 ✅）
+`../PuddingMemoryEngineBenchmarks/` — BenchmarkDotNet 基准测试
