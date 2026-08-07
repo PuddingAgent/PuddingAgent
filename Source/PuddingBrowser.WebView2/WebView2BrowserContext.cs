@@ -49,24 +49,31 @@ public sealed class WebView2BrowserContext : IBrowserContext
         ObjectDisposedException.ThrowIf(_disposed, this);
         ct.ThrowIfCancellationRequested();
 
-        var pageId = new PageId(Guid.NewGuid().ToString("N"));
-
-        IBrowserSurface? surface = null;
-        if (_surfaceHost is not null)
+        // All WebView2/WPF access must run on the UI thread.
+        // _surfaceHost.CreateAsync already dispatches internally, but the
+        // page constructor reads surface.CoreWebView (a WPF DependencyObject)
+        // which requires UI thread affinity.
+        return await _dispatcher.InvokeAsync(async () =>
         {
-            surface = await _surfaceHost.CreateAsync(Id, pageId, _environment, options, ct);
-        }
+            var pageId = new PageId(Guid.NewGuid().ToString("N"));
 
-        var page = new WebView2BrowserPage(pageId, Id, surface, _dispatcher, OnPageNavigationChangedAsync);
-        _pages[pageId] = page;
+            IBrowserSurface? surface = null;
+            if (_surfaceHost is not null)
+            {
+                surface = await _surfaceHost.CreateAsync(Id, pageId, _environment, options, ct);
+            }
 
-        if (options.InitialUrl is not null)
-        {
-            await page.GotoAsync(options.InitialUrl, new NavigationOptions(), ct);
-        }
+            var page = new WebView2BrowserPage(pageId, Id, surface, _dispatcher, OnPageNavigationChangedAsync);
+            _pages[pageId] = page;
 
-        Info = Info with { PageCount = _pages.Count };
-        return page;
+            if (options.InitialUrl is not null)
+            {
+                await page.GotoAsync(options.InitialUrl, new NavigationOptions(), ct);
+            }
+
+            Info = Info with { PageCount = _pages.Count };
+            return (IBrowserPage)page;
+        }, ct);
     }
 
     public Task<IBrowserPage?> GetPageAsync(PageId id, CancellationToken ct)
