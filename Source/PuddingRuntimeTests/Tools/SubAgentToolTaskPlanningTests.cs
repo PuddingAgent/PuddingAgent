@@ -258,10 +258,10 @@ public sealed class SubAgentToolTaskPlanningTests
         var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
 
         var result = await tool.ExecuteAsync(CreateRequest(
-            """{"task":"Inspect the runtime","sync":true,"max_rounds":201}"""));
+            """{"task":"Inspect the runtime","sync":true,"max_rounds":501}"""));
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "max_rounds must be between 1 and 200");
+        StringAssert.Contains(result.Error, "max_rounds must be between 1 and 500");
         Assert.IsNull(invocation.LastRequest);
     }
 
