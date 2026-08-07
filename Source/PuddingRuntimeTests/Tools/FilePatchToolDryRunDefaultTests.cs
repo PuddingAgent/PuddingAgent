@@ -82,7 +82,7 @@ public sealed class FilePatchToolDryRunDefaultTests
 
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual(original, File.ReadAllText(filePath, Encoding.UTF8), "dry-run must not modify the file");
-        StringAssert.Contains(result.Output, "dry-run preview");
+        StringAssert.Contains(result.Output, "no changes written");
     }
 
     // ── Path 2: unified diff (shared by file_patch patch_text and apply_patch) ──
@@ -140,7 +140,7 @@ public sealed class FilePatchToolDryRunDefaultTests
 
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual(original, File.ReadAllText(filePath, Encoding.UTF8), "dry-run must not modify the file");
-        StringAssert.Contains(result.Output, "dry-run preview");
+        StringAssert.Contains(result.Output, "no changes written");
     }
 
     // ── Helpers ──

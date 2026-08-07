@@ -167,7 +167,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 if (current == original)
                 {
-                    var msg = $"{relPath}: unchanged (dry-run preview)".TrimEnd();
+                    var msg = $"{relPath}: unchanged (dry_run=true - preview only, no changes written)".TrimEnd();
                     if (errors.Count > 0)
                         msg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
                     summaries.Add(msg);
@@ -175,7 +175,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 }
 
                 var diff = GenerateSimpleDiff(original, current);
-                summaries.Add($"{relPath}: (dry-run preview)\n{diff}");
+                summaries.Add($"{relPath}: (dry_run=true - preview only, no changes written)\n{diff}");
             }
 
             return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
@@ -941,7 +941,7 @@ internal static class UnifiedDiffPatchRunner
 
         var isDryRun = dryRun == true;
         var summaries = touchedFiles
-            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "dry-run preview" : "patched")}\n{GenerateSimpleDiff(file.Original, file.Current)}")
+            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "dry_run=true - preview only, no changes written" : "patched")}\n{GenerateSimpleDiff(file.Original, file.Current)}")
             .ToArray();
 
         if (isDryRun)
