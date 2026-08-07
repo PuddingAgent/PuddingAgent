@@ -159,7 +159,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         }
 
         // Phase 2: Atomic commit
-        var isDryRun = args.DryRun != false;
+        var isDryRun = args.DryRun == true;
         if (isDryRun)
         {
             // Dry-run: show all previews without writing
@@ -167,7 +167,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             {
                 if (current == original)
                 {
-                    var msg = $"{relPath}: unchanged (preview - set dry_run=false to apply)".TrimEnd();
+                    var msg = $"{relPath}: unchanged (dry-run preview)".TrimEnd();
                     if (errors.Count > 0)
                         msg += $"\n  {errors.Count} issue(s):\n    " + string.Join("\n    ", errors);
                     summaries.Add(msg);
@@ -175,7 +175,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 }
 
                 var diff = GenerateSimpleDiff(original, current);
-                summaries.Add($"{relPath}: (preview - set dry_run=false to apply)\n{diff}");
+                summaries.Add($"{relPath}: (dry-run preview)\n{diff}");
             }
 
             return ToolExecutionResult.Ok(string.Join(Environment.NewLine, summaries));
@@ -830,7 +830,7 @@ public sealed record FilePatchArgs
     [ToolParam("Single file path to patch.")]
     public string? Path { get; init; }
 
-    [ToolParam("Unified diff text to apply transactionally. When set, path/operations are ignored and dry_run still defaults to true.")]
+    [ToolParam("Unified diff text to apply transactionally. When set, path/operations are ignored.")]
     [JsonPropertyName("patch_text")]
     public string? PatchText { get; init; }
 
@@ -843,7 +843,7 @@ public sealed record FilePatchArgs
     [ToolParam("Reason for patching. Required when patching agent private files.")]
     public string? Reason { get; init; }
 
-    [ToolParam("If true, return diff preview without modifying files. Default: true (mandatory preview - set false to actually apply changes).")]
+    [ToolParam("If true, return diff preview without modifying files. Default: false (changes are applied directly; set true to preview only).")]
     public bool? DryRun { get; init; }
 
     [ToolParam("Optional 1-based start line to scope text replacements within this region.")]
@@ -939,9 +939,9 @@ internal static class UnifiedDiffPatchRunner
             touchedFiles.Add((patch, fullPath, original, applyResult.Content!, fileZone));
         }
 
-        var isDryRun = dryRun != false;
+        var isDryRun = dryRun == true;
         var summaries = touchedFiles
-            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "preview" : "patched")}\n{GenerateSimpleDiff(file.Original, file.Current)}")
+            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "dry-run preview" : "patched")}\n{GenerateSimpleDiff(file.Original, file.Current)}")
             .ToArray();
 
         if (isDryRun)

@@ -652,6 +652,6 @@ public sealed record ApplyPatchArgs
     [ToolParam("Reason for applying this patch. Required when patching agent private files.")]
     public string? Reason { get; init; }
 
-    [ToolParam("If true, return diff preview without modifying files. Default: true (set false to apply changes).")]
+    [ToolParam("If true, return diff preview without modifying files. Default: false (changes are applied directly; set true to preview only).")]
     public bool? DryRun { get; init; }
 }

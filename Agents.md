@@ -84,7 +84,7 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - 工作目录: `D:\data`  （见PathHelper，dev-up指定的环境变量或启动参数确定）
 
 ## 代码修改约定
-- 所有修改先 dry_run 预览 → 确认后 dry_run=false
+- dry_run 默认 false 直接写盘；仅当需要先看 diff 时显式传 dry_run=true
 - 编译命令: `dotnet build PuddingRuntime --no-restore`
 - Desktop 定向构建: `dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo`
 - Desktop 定向测试: `dotnet test Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo`
