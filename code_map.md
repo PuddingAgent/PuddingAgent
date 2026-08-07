@@ -33,18 +33,18 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/PuddingCore/` | 🔑 抽象与契约 · 接口 · 模型 | [code_map](Source/PuddingCore/code_map.md) |
 | `Source/PuddingPlatform/` | 🔑 Session · API · EF Core · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
 | `Source/PuddingMemoryEngine/` | 🔑 Library/Book/Chapter · FTS5 · 潜意识 | [code_map](Source/PuddingMemoryEngine/code_map.md) |
-| `Source/PuddingGateway/` | LLM 网关适配 | — |
-| `Source/PuddingController/` | 代理控制层 | — |
-| `Source/PuddingCodexService/` | Codex MCP Sidecar | — |
-| `Source/PuddingBrowser.AgentTools/` | 七项 Browser Agent Tools | — |
-| `Source/PuddingBrowser.Abstractions/` | Browser 契约 | — |
-| `Source/PuddingBrowser.WebView2/` | WebView2 Driver | — |
-| `Source/PuddingBrowser.Protocol/` | Bridge 线协议（8 .cs） | — |
-| `Source/PuddingCodeIntelligence/` | 代码索引/分析 | — |
-| `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | — |
-| `Source/PuddingFullTextIndex/` | 全文索引引擎 | — |
-| `Source/PuddingGit.Tools/` | Git 20 工具（实现在 Runtime） | — |
-| `Source/PuddingPlatformAdmin/` | React 管理前端 | — |
+| `Source/PuddingGateway/` | LLM 网关适配 | [code_map](Source/PuddingGateway/code_map.md) |
+| `Source/PuddingController/` | 代理控制层 | [code_map](Source/PuddingController/code_map.md) |
+| `Source/PuddingCodexService/` | Codex MCP Sidecar | [code_map](Source/PuddingCodexService/code_map.md) |
+| `Source/PuddingBrowser.AgentTools/` | 七项 Browser Agent Tools | [code_map](Source/PuddingBrowser.AgentTools/code_map.md) |
+| `Source/PuddingBrowser.Abstractions/` | Browser 契约 | [code_map](Source/PuddingBrowser.Abstractions/code_map.md) |
+| `Source/PuddingBrowser.WebView2/` | WebView2 Driver | [code_map](Source/PuddingBrowser.WebView2/code_map.md) |
+| `Source/PuddingBrowser.Protocol/` | Bridge 线协议（8 .cs） | [code_map](Source/PuddingBrowser.Protocol/code_map.md) |
+| `Source/PuddingCodeIntelligence/` | 代码索引/分析 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
+| `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
+| `Source/PuddingFullTextIndex/` | 全文索引引擎 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
+| `Source/PuddingGit.Tools/` | Git 20 工具（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
+| `Source/PuddingPlatformAdmin/` | React 管理前端 | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 
 ## 调用链路
 
