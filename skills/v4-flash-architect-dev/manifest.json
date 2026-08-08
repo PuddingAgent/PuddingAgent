@@ -1,0 +1,9 @@
+﻿{
+  "id": "v4-flash-architect-dev",
+  "name": "V4 Flash 架构师-开发者工作流",
+  "version": "1.0.0",
+  "description": "6a8（DeepSeek V4 Pro）负责架构设计与 ADR，DeepSeek V4 Flash 子代理按 ADR 执行原子施工任务。每次调用只完成一个原子任务。",
+  "tags": ["v4-flash", "sub-agent", "adr", "atomic-task", "architecture", "development"],
+  "keywords": ["DeepSeek V4 Flash", "ADR", "架构设计", "子代理", "原子任务", "开发施工"],
+  "path": "skills/v4-flash-architect-dev"
+}

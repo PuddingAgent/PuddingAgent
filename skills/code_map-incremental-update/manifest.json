@@ -1,0 +1,11 @@
+﻿{
+  "id": "code_map-incremental-update",
+  "name": "Code Map 增量更新",
+  "version": "1.0.0",
+  "description": "当新项目/模块加入时，自动发现无 code_map.md 的子项目，生成 L2 索引并更新 L1 根索引",
+  "author": "6a8",
+  "created": "2026-08-08",
+  "tags": ["code_map", "indexing", "documentation", "incremental", "auto-generated"],
+  "keywords": ["code_map", "增量更新", "索引", "文档", "L1", "L2", "csproj"],
+  "source_session": "acd7ee428f284f9a845663b1a4d971db"
+}
