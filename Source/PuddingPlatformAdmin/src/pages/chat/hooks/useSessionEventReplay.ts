@@ -6,7 +6,7 @@ import {
   getConversationBootstrap,
   getSessionSubAgents,
 } from '@/services/platform/api';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import {
   reconcileSubAgentRunStatuses,
   reduceSubAgentRunEvent,

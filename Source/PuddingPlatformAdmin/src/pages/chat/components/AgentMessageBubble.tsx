@@ -23,8 +23,12 @@ import {
   sanitizeProcessText,
 } from './processPreview';
 import { ReasoningPreview } from './ReasoningPreview';
-import SessionBenchmarkDrawer from './SessionBenchmarkDrawer';
 import { WaitingBubble } from './WaitingBubble';
+
+const SessionBenchmarkDrawer =
+  process.env.NODE_ENV === 'test'
+    ? (require('./SessionBenchmarkDrawer').default as typeof import('./SessionBenchmarkDrawer').default)
+    : React.lazy(() => import('./SessionBenchmarkDrawer'));
 
 interface AgentMessageBubbleProps {
   id: string;
@@ -690,11 +694,15 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 {usage.totalTokens.toLocaleString()} tokens
               </div>
             )}
-            <SessionBenchmarkDrawer
-              sessionId={sessionId}
-              open={diagnosticsOpen}
-              onClose={() => setDiagnosticsOpen(false)}
-            />
+            {diagnosticsOpen && (
+              <React.Suspense fallback={null}>
+                <SessionBenchmarkDrawer
+                  sessionId={sessionId}
+                  open
+                  onClose={() => setDiagnosticsOpen(false)}
+                />
+              </React.Suspense>
+            )}
           </div>
         </>
       )}

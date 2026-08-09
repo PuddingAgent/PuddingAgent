@@ -146,6 +146,8 @@ public sealed class PuddingFileConfigLoader
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' contains a model with empty modelId.");
                 else if (!modelIds.Add(model.ModelId))
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' contains duplicate modelId '{model.ModelId}'.");
+                if (!IsSupportedLlmProtocol(model.Protocol))
+                    errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' protocol must be 'openai', 'responses', or 'anthropic'.");
                 if (model.MaxConcurrentRequests is <= 0)
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' maxConcurrentRequests must be greater than zero.");
             }
@@ -210,6 +212,11 @@ public sealed class PuddingFileConfigLoader
 
         return errors;
     }
+
+    private static bool IsSupportedLlmProtocol(string? protocol)
+        => string.Equals(protocol, "openai", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(protocol, "responses", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(protocol, "anthropic", StringComparison.OrdinalIgnoreCase);
 
     private static bool ProviderHasModel(PuddingLlmProvidersConfig config, string providerId, string modelId)
     {

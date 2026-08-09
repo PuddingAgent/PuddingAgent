@@ -40,7 +40,7 @@
 | `Services/WorkspaceAgentFileService.cs` | 🔑 Agent 文件服务（65KB） |
 | `Services/AgentTemplateFileService.cs` | 模板文件服务（27KB） |
 | `Services/AgentTemplateProvider.cs` | 模板提供 |
-| `Services/AgentLLMConfigResolver.cs` | LLM 配置解析 |
+| `Services/AgentLLMConfigResolver.cs` | LLM 配置解析；把选中模型的协议写入 `LlmConfig` |
 | `Services/AgentRuntimeProfileResolver.cs` | Runtime Profile 解析（16KB） |
 | `Services/AgentConversationLogService.cs` | 对话日志 |
 
@@ -76,7 +76,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/LlmProviderFileService.cs` | LLM 提供商配置（27KB） |
+| `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置；协议只存在于模型 DTO 与模型写入请求 |
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
 | `Services/VoiceProviderFileService.cs` | 语音提供商（18KB） |
 

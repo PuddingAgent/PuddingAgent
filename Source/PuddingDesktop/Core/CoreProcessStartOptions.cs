@@ -11,8 +11,8 @@ public sealed record CoreProcessStartOptions
     /// <summary>Data root directory for Core.</summary>
     public required string DataRoot { get; init; }
 
-    /// <summary>Dynamic loopback port (0 = OS assigns).</summary>
-    public int Port { get; init; }
+    /// <summary>Fixed port exposed on all IPv4 interfaces by the Core child.</summary>
+    public int Port { get; init; } = PuddingCode.Configuration.PuddingDesktopCoreConfig.DefaultPort;
 
     /// <summary>Desktop process ID for parent monitoring.</summary>
     public required int ParentProcessId { get; init; }

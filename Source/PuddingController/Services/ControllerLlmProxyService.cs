@@ -24,8 +24,10 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
         CancellationToken ct = default)
     {
         var configSource = llmConfig is not null ? "request(Platform)" : ".env(fallback)";
-        var endpoint = NormalizeV1Endpoint(
-            llmConfig?.Endpoint ?? configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com/v1");
+        var protocol = ResolveProtocol(llmConfig);
+        var endpoint = NormalizeEndpoint(
+            llmConfig?.Endpoint ?? configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com/v1",
+            protocol);
         var apiKey = llmConfig?.ApiKey ?? configuration["Pudding:LlmApiKey"] ?? string.Empty;
         var model = llmConfig?.ModelId ?? configuration["Pudding:LlmModel"] ?? "gpt-4o-mini";
 
@@ -37,13 +39,13 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
 
         // 未来在这里加入 Workspace 级配额检查/扣减。
         logger.LogInformation(
-                "[ControllerLLM] CALL ws={WorkspaceId} session={SessionId} template={Template} model={Model} endpoint={Endpoint} configSource={ConfigSource} toolCount={ToolCount}",
-                workspaceId, sessionId, agentTemplateId, model, endpoint, configSource, tools?.Count ?? 0);
+            "[ControllerLLM] CALL ws={WorkspaceId} session={SessionId} template={Template} model={Model} protocol={Protocol} endpoint={Endpoint} configSource={ConfigSource} toolCount={ToolCount}",
+            workspaceId, sessionId, agentTemplateId, model, protocol, endpoint, configSource, tools?.Count ?? 0);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var gateway = new OpenAiLlmGateway(new HttpClient(), new LlmOptions(endpoint, apiKey, model));
+            var gateway = CreateGateway(endpoint, apiKey, model, protocol, llmConfig);
             var toolSpecs = (tools ?? []).Select(t => (ITool)new ProxyTool(t)).ToList();
             var result = await gateway.ChatAsync(messages, toolSpecs, ct);
             sw.Stop();
@@ -76,8 +78,10 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var configSource = llmConfig is not null ? "request(Platform)" : ".env(fallback)";
-        var endpoint = NormalizeV1Endpoint(
-            llmConfig?.Endpoint ?? configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com/v1");
+        var protocol = ResolveProtocol(llmConfig);
+        var endpoint = NormalizeEndpoint(
+            llmConfig?.Endpoint ?? configuration["Pudding:LlmEndpoint"] ?? "https://api.openai.com/v1",
+            protocol);
         var apiKey = llmConfig?.ApiKey ?? configuration["Pudding:LlmApiKey"] ?? string.Empty;
         var model = llmConfig?.ModelId ?? configuration["Pudding:LlmModel"] ?? "gpt-4o-mini";
 
@@ -88,11 +92,11 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
         }
 
         logger.LogInformation(
-            "[ControllerLLM] STREAM ws={WorkspaceId} session={SessionId} template={Template} model={Model} endpoint={Endpoint} configSource={ConfigSource} toolCount={ToolCount}",
-            workspaceId, sessionId, agentTemplateId, model, endpoint, configSource, tools?.Count ?? 0);
+            "[ControllerLLM] STREAM ws={WorkspaceId} session={SessionId} template={Template} model={Model} protocol={Protocol} endpoint={Endpoint} configSource={ConfigSource} toolCount={ToolCount}",
+            workspaceId, sessionId, agentTemplateId, model, protocol, endpoint, configSource, tools?.Count ?? 0);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var gateway = new OpenAiLlmGateway(new HttpClient(), new LlmOptions(endpoint, apiKey, model));
+        var gateway = CreateGateway(endpoint, apiKey, model, protocol, llmConfig);
         var toolSpecs = (tools ?? []).Select(t => (ITool)new ProxyTool(t)).ToList();
 
         await foreach (var delta in gateway.ChatStreamAsync(messages, toolSpecs, ct))
@@ -106,10 +110,48 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
             workspaceId, sessionId, sw.ElapsedMilliseconds);
     }
 
-    /// <summary>确保端点以 /v1 结尾（兼容已含 /v1 的 URL）。</summary>
-    private static string NormalizeV1Endpoint(string url)
+    private static ILlmGateway CreateGateway(
+        string endpoint,
+        string apiKey,
+        string model,
+        string protocol,
+        LlmConfig? config)
+    {
+        var options = new LlmOptions(
+            endpoint,
+            apiKey,
+            model,
+            MaxTokens: config?.MaxOutputTokens,
+            ReasoningEffort: config?.ReasoningEffort);
+        if (string.Equals(protocol, "responses", StringComparison.OrdinalIgnoreCase))
+            return new ResponsesLlmGateway(new HttpClient(), options);
+        if (string.Equals(protocol, "anthropic", StringComparison.OrdinalIgnoreCase))
+            return new AnthropicMessagesLlmGateway(new HttpClient(), options);
+        if (string.Equals(protocol, "openai", StringComparison.OrdinalIgnoreCase))
+            return new OpenAiLlmGateway(new HttpClient(), options);
+
+        throw new InvalidOperationException($"Unsupported model protocol '{protocol}'.");
+    }
+
+    private static string ResolveProtocol(LlmConfig? config)
+    {
+        var protocol = config?.Protocol;
+        if (!string.Equals(protocol, "openai", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(protocol, "responses", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(protocol, "anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "LLM model protocol is not configured. Set model.protocol to 'openai', 'responses', or 'anthropic'.");
+        }
+
+        return protocol!.ToLowerInvariant();
+    }
+
+    private static string NormalizeEndpoint(string url, string protocol)
     {
         var u = url.TrimEnd('/');
+        if (string.Equals(protocol, "responses", StringComparison.OrdinalIgnoreCase))
+            return u;
         return u.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? u : u + "/v1";
     }
 

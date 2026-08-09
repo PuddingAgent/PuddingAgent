@@ -29,7 +29,7 @@ import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
 import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { inboundDebug } from '../utils/inboundDebug';
-import { getPerfEvents } from '@/utils/debug';
+import { getPerfEvents } from '@/utils/perfEventRuntime';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
 import MessageStream from './MessageStream';
@@ -362,6 +362,7 @@ const createActiveRunTurn = (
       timelineItems: toTimelineItems(
         activeRun.outputSnapshot.processItems ?? [],
       ),
+      processSummary: activeRun.outputSnapshot.processSummary ?? undefined,
       answerMarkdown: answerMarkdown ?? activeRun.outputSnapshot.markdown,
       isStreaming: isActiveRunStreaming(activeRun.status),
       renderMode: 'structured',
@@ -444,6 +445,7 @@ const mergeLocalTurnsAwaitingProjection = (
   projectedTurns: ChatTurn[],
   localTurns: ChatTurn[],
 ): ChatTurn[] => {
+  if (projectedTurns.length === 0) return localTurns;
   let merged = projectedTurns;
 
   for (const localTurn of localTurns) {
@@ -505,7 +507,22 @@ const mergeLocalTurnsAwaitingProjection = (
     );
   }
 
-  return merged;
+  const firstProjectedAt = projectedTurns[0]?.userMessage.timestamp;
+  if (
+    !Number.isFinite(firstProjectedAt) ||
+    !localTurns.some((localTurn) =>
+      hasProjectedUserTurn(projectedTurns, localTurn),
+    )
+  ) {
+    return merged;
+  }
+  const olderHistory = localTurns.filter(
+    (localTurn) =>
+      !isPendingLocalTurn(localTurn) &&
+      localTurn.userMessage.timestamp < firstProjectedAt &&
+      !hasProjectedUserTurn(merged, localTurn),
+  );
+  return olderHistory.length > 0 ? [...olderHistory, ...merged] : merged;
 };
 
 const isActiveRunCoveredByLocalTerminal = (

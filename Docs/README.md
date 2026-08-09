@@ -87,6 +87,7 @@
 - V1 目标：`PuddingDesktop.exe` 双击启动并监督独立 ASP.NET Core 子进程
 - WPF 提供 Windows 11 Shell、Workbench WebView2、Agent Browser、运行中心和存储管理
 - Core 继续承载 Web UI 静态资源、Controller、Runtime、Connector 与 SQLite
+- Desktop 托管的 Core 使用 `system.json` 可配置固定端口（默认 8080）绑定 `0.0.0.0`；Desktop 控制流固定走同端口 `127.0.0.1`
 - 支持 LLM 多轮对话（带工具调用）
 - 支持 P2P 节点发现与直连通信（mDNS + HTTP/gRPC）
 - Console Host 只作为开发和诊断入口

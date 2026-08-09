@@ -46,7 +46,9 @@
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |
 | `Services/IndexPrebuildService.cs` | 索引预构建 |
-| `Hosting/` | 宿主启动配置 |
+| `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 |
+| `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 |
+| `Hosting/PuddingApplicationHost.cs` | 组合根、Kestrel 地址绑定与本机控制地址捕获 |
 | `Config/` | 默认配置 |
 | `Prompts/` | 系统提示模板 |
 | `P2P/` | P2P 通信 |

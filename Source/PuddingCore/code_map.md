@@ -16,6 +16,7 @@
 |------|------|
 | `ChatMessage.cs` | 聊天消息模型 |
 | `LlmResponse.cs` | LLM 响应 |
+| `LlmContinuationState.cs` | Provider opaque output items 跨工具轮次回放契约 |
 | `LlmOptions.cs` | LLM 选项 |
 | `StreamDelta.cs` | 流式增量 |
 | `ToolCall.cs` | 工具调用 |
@@ -36,12 +37,27 @@
 | `AudioTranscodingModels.cs` | 音频转码模型 |
 | `LlmMessageSequenceNormalizer.cs` | 消息序列规范化 |
 
+## LLM 网关（Core/）
+
+| 文件 | 用途 |
+|------|------|
+| `OpenAiLlmGateway.cs` | OpenAI-compatible Chat Completions 网关 |
+| `ResponsesLlmGateway.cs` | OpenAI Responses API 网关；flat tools、SSE tool state、终态错误、output items 回放 |
+| `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
+
 ## Agent 定义
 
 | 目录/文件 | 用途 |
 |------|------|
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
+
+## 子代理编排（Orchestration/）
+
+| 文件 | 用途 |
+|------|------|
+| `SubAgentOrchestrationModels.cs` | MOA 设计请求、专家成员、阶段门禁、只读 work item 与 Draft 计划契约 |
+| `DesignCouncilPlanCompiler.cs` | 纯计划编译器；校验精确模型路由/多样性/独立终审并生成六阶段 DAG，不启动子代理 |
 
 ## 工具契约
 
@@ -53,7 +69,7 @@
 
 | 目录/文件 | 用途 |
 |------|------|
-| `Configuration/` | 配置抽象 |
+| `Configuration/` | 配置抽象；`llm.providers.json` 的协议归属模型，支持同一 Provider 混合 `openai` / `responses` / `anthropic` |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 

@@ -341,8 +341,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
     private static void ValidateCoreConfiguration(PuddingDesktopCoreConfig config)
     {
-        if (config.Port is < 0 or > 65535)
-            throw new InvalidOperationException("Core 端口必须为 0 到 65535；0 表示动态端口。");
+        if (config.Port is < 1 or > 65535)
+            throw new InvalidOperationException("Core 固定监听端口必须为 1 到 65535。");
         if (config.StartupTimeoutSeconds is < 1 or > 600)
             throw new InvalidOperationException("Core 启动超时必须为 1 到 600 秒。");
         if (config.ShutdownTimeoutSeconds is < 1 or > 120)

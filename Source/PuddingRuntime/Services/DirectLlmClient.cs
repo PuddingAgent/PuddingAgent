@@ -15,7 +15,7 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// Runtime 直接调用 LLM API（OpenAI 兼容），不经过 Controller 中转。
-/// 同步与流式路径统一委托给 OpenAiLlmGateway，避免 Runtime 内部维护重复协议实现。
+/// 同步与流式路径根据选中模型的 protocol 委托给对应网关，避免 Runtime 内部维护重复协议实现。
 /// </summary>
 public sealed class DirectLlmClient : IRuntimeLlmClient
 {
@@ -76,8 +76,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var strategy = config.Strategy;
 
         _logger.LogInformation(
-            "[DirectLlm] REQUEST model={Model} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode} provider={Provider}",
+            "[DirectLlm] REQUEST model={Model} protocol={Protocol} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode} provider={Provider}",
             config.Model,
+            config.Protocol,
             config.Endpoint,
             messages.Count,
             toolSpecs.Count,
@@ -322,8 +323,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var effectiveCt = linkedCts.Token;
 
         _logger.LogInformation(
-            "[DirectLlm] STREAM model={Model} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode} provider={Provider}",
+            "[DirectLlm] STREAM model={Model} protocol={Protocol} endpoint={Endpoint} msgCount={Count} toolCount={ToolCount} thinkingMode={ThinkingMode} provider={Provider}",
             config.Model,
+            config.Protocol,
             config.Endpoint,
             messages.Count,
             toolSpecs.Count,
@@ -684,30 +686,38 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         // 通过 endpoint 匹配 provider，获取策略配置
         var enabledProviders = _llmConfigService.GetEnabledProviders().ToList();
-        var matched = enabledProviders.FirstOrDefault(p =>
-            endpoint.StartsWith(p.BaseUrl, StringComparison.OrdinalIgnoreCase));
-        if (matched is null)
+        var endpointProviders = enabledProviders
+            .Where(p => endpoint.StartsWith(p.BaseUrl, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var matchedModel = _llmConfigService.GetAllModels().FirstOrDefault(candidate =>
+            endpointProviders.Any(provider => string.Equals(
+                provider.ProviderId,
+                candidate.ProviderId,
+                StringComparison.OrdinalIgnoreCase))
+            && string.Equals(candidate.ModelId, model, StringComparison.OrdinalIgnoreCase));
+        var matched = matchedModel is null
+            ? null
+            : endpointProviders.FirstOrDefault(provider => string.Equals(
+                provider.ProviderId,
+                matchedModel.ProviderId,
+                StringComparison.OrdinalIgnoreCase));
+        if (matched is null || matchedModel is null)
         {
             throw new InvalidOperationException(
-                $"Cannot identify LLM provider from endpoint '{endpoint}'. " +
-                $"Ensure the endpoint matches one of the enabled providers in data/config/llm.providers.json. " +
+                $"Cannot identify LLM provider/model for endpoint '{endpoint}' and model '{model}'. " +
+                $"Ensure both match an enabled model in data/config/llm.providers.json. " +
                 $"Available providers: {string.Join(", ", enabledProviders.Select(p => $"{p.ProviderId}({p.BaseUrl})"))}");
         }
 
         var strategy = _llmConfigService.GetProviderStrategy(matched.ProviderId) ?? LlmProviderStrategy.Default;
-        var supportsVision = _llmConfigService.GetAllModels().Any(candidate =>
-            string.Equals(candidate.ProviderId, matched.ProviderId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(candidate.ModelId, model, StringComparison.OrdinalIgnoreCase)
-            && candidate.CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase));
-        var supportsAudio = _llmConfigService.GetAllModels().Any(candidate =>
-            string.Equals(candidate.ProviderId, matched.ProviderId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(candidate.ModelId, model, StringComparison.OrdinalIgnoreCase)
-            && candidate.CapabilityTags.Contains("audio", StringComparer.OrdinalIgnoreCase));
+        var supportsVision = matchedModel.CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase);
+        var supportsAudio = matchedModel.CapabilityTags.Contains("audio", StringComparer.OrdinalIgnoreCase);
 
         return new ResolvedGatewayConfig(
             endpoint,
             apiKey,
             model,
+            matchedModel.Protocol,
             reasoningEffort,
             thinkingMode,
             effectiveRequestConfig?.MaxOutputTokens,
@@ -717,8 +727,49 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             supportsAudio);
     }
 
-    private OpenAiLlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)
+    private ILlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)
     {
+        if (string.Equals(config.Protocol, "responses", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ResponsesLlmGateway(
+                _httpClientFactory.CreateClient("DirectLlm"),
+                new PuddingCode.Platform.Options.LlmOptions(
+                    config.Endpoint,
+                    config.ApiKey,
+                    config.Model,
+                    MaxTokens: config.MaxOutputTokens,
+                    ReasoningEffort: config.ReasoningEffort,
+                    ThinkingMode: config.ThinkingMode))
+            {
+                VisualArtifactResolver = config.SupportsVision ? _visualArtifactResolver : null,
+                AudioArtifactResolver = config.SupportsAudio ? _audioArtifactResolver : null,
+                WorkspaceId = workspaceId,
+            };
+        }
+
+        if (string.Equals(config.Protocol, "anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AnthropicMessagesLlmGateway(
+                _httpClientFactory.CreateClient("DirectLlm"),
+                new PuddingCode.Platform.Options.LlmOptions(
+                    config.Endpoint,
+                    config.ApiKey,
+                    config.Model,
+                    MaxTokens: config.MaxOutputTokens,
+                    ReasoningEffort: config.ReasoningEffort,
+                    ThinkingMode: config.ThinkingMode))
+            {
+                VisualArtifactResolver = config.SupportsVision ? _visualArtifactResolver : null,
+                WorkspaceId = workspaceId,
+            };
+        }
+
+        if (!string.Equals(config.Protocol, "openai", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Model '{config.ProviderId}/{config.Model}' has unsupported LLM protocol '{config.Protocol}'.");
+        }
+
         var gateway = new OpenAiLlmGateway(
             _httpClientFactory.CreateClient("DirectLlm"),
             new PuddingCode.Platform.Options.LlmOptions(
@@ -993,6 +1044,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string Endpoint,
         string ApiKey,
         string Model,
+        string Protocol,
         string? ReasoningEffort,
         string? ThinkingMode,
         int? MaxOutputTokens,

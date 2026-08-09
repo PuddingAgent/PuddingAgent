@@ -62,13 +62,16 @@ public sealed record PuddingDesktopConfig
 
 public sealed record PuddingDesktopCoreConfig
 {
+    public const int DefaultPort = 8080;
+
     public bool AutoStart { get; init; } = true;
     public bool AutoRestart { get; init; } = true;
     public int RestartMaxAttempts { get; init; } = 3;
     public int RestartWindowSeconds { get; init; } = 60;
     public int RestartInitialDelaySeconds { get; init; } = 2;
     public int RestartMaxDelaySeconds { get; init; } = 30;
-    public int Port { get; init; }
+    /// <summary>Fixed IPv4 wildcard listen port used by the Desktop-managed Core.</summary>
+    public int Port { get; init; } = DefaultPort;
     public int StartupTimeoutSeconds { get; init; } = 60;
     public int ShutdownTimeoutSeconds { get; init; } = 15;
     public string? ControlToken { get; init; }
@@ -177,7 +180,6 @@ public sealed record PuddingLlmProviderConfig
 {
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
-    public string Protocol { get; init; } = "openai";
     public string BaseUrl { get; init; } = "";
     [JsonPropertyName("apiKey")]
     public string? ApiKey { get; init; }
@@ -220,6 +222,8 @@ public sealed record PuddingLlmModelConfig
 {
     public string ModelId { get; init; } = "";
     public string Name { get; init; } = "";
+    /// <summary>Wire protocol used by this model. Supported values: openai, responses, anthropic.</summary>
+    public string Protocol { get; init; } = "";
     public int? MaxContextTokens { get; init; }
     public int? MaxInputTokens { get; init; }
     public int? MaxOutputTokens { get; init; }

@@ -18,6 +18,7 @@ public sealed class PuddingFileLlmConfigServiceTests
         Assert.AreEqual("https://token-plan-cn.xiaomimimo.com/v1", config.Endpoint);
         Assert.AreEqual("mimo-key", config.ApiKey);
         Assert.AreEqual("mimo-v2.5-pro", config.ModelId);
+        Assert.AreEqual("responses", config.Protocol);
         Assert.IsNull(config.ReasoningEffort);
     }
 
@@ -32,7 +33,22 @@ public sealed class PuddingFileLlmConfigServiceTests
         Assert.AreEqual("https://token-plan-cn.xiaomimimo.com/v1", config.Endpoint);
         Assert.AreEqual("mimo-key", config.ApiKey);
         Assert.AreEqual("mimo-v2.5", config.ModelId);
+        Assert.AreEqual("openai", config.Protocol);
         Assert.AreEqual("low", config.ReasoningEffort);
+    }
+
+    [TestMethod]
+    public void Resolve_Uses_Model_Specific_Protocol_Within_Same_Provider()
+    {
+        var service = new PuddingFileLlmConfigService(CreateConfig());
+
+        var responsesModel = service.Resolve("mimo", "mimo-v2.5-pro");
+        var chatCompletionsModel = service.Resolve("mimo", "mimo-v2.5");
+        var messagesModel = service.Resolve("mimo", "qwen3.8-max");
+
+        Assert.AreEqual("responses", responsesModel!.Protocol);
+        Assert.AreEqual("openai", chatCompletionsModel!.Protocol);
+        Assert.AreEqual("anthropic", messagesModel!.Protocol);
     }
 
     [TestMethod]
@@ -48,6 +64,7 @@ public sealed class PuddingFileLlmConfigServiceTests
         Assert.AreEqual("mimo-v2.5-pro", profile.ModelId);
         Assert.AreEqual("https://token-plan-cn.xiaomimimo.com/v1", profile.Config.Endpoint);
         Assert.AreEqual("mimo-key", profile.Config.ApiKey);
+        Assert.AreEqual("responses", profile.Config.Protocol);
         Assert.AreEqual("medium", profile.Config.ReasoningEffort);
     }
 
@@ -90,6 +107,7 @@ public sealed class PuddingFileLlmConfigServiceTests
                         {
                             ModelId = "mimo-v2.5-pro",
                             Name = "Mimo v2.5 Pro",
+                            Protocol = "responses",
                             MaxContextTokens = 1048576,
                             MaxOutputTokens = 131072,
                             IsDefault = true,
@@ -99,9 +117,19 @@ public sealed class PuddingFileLlmConfigServiceTests
                         {
                             ModelId = "mimo-v2.5",
                             Name = "Mimo v2.5",
+                            Protocol = "openai",
                             MaxContextTokens = 1048576,
                             MaxOutputTokens = 8192,
                             SortOrder = 2,
+                        },
+                        new PuddingLlmModelConfig
+                        {
+                            ModelId = "qwen3.8-max",
+                            Name = "Qwen3.8 Max",
+                            Protocol = "anthropic",
+                            MaxContextTokens = 1000000,
+                            MaxOutputTokens = 131072,
+                            SortOrder = 3,
                         },
                     ],
                 },
@@ -117,6 +145,7 @@ public sealed class PuddingFileLlmConfigServiceTests
                         {
                             ModelId = "gpt-4o-mini",
                             Name = "GPT-4o Mini",
+                            Protocol = "openai",
                             MaxContextTokens = 128000,
                             MaxOutputTokens = 4096,
                             IsDefault = true,

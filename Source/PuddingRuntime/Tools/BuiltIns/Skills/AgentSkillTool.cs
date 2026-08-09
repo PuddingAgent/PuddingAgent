@@ -1,5 +1,8 @@
-﻿using System.Text.Json;
+﻿using System.IO.Compression;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Skills;
@@ -14,7 +17,11 @@ namespace PuddingRuntime.Services.Tools;
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 45)]
-public sealed class AgentSkillTool(AgentSkillFileService skillService) : PuddingToolBase<AgentSkillArgs>
+public sealed class AgentSkillTool(
+    AgentSkillFileService skillService,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration
+) : PuddingToolBase<AgentSkillArgs>
 {
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         AgentSkillArgs args,
@@ -36,9 +43,10 @@ public sealed class AgentSkillTool(AgentSkillFileService skillService) : Pudding
             "enable" => ToolExecutionResult.Ok(ToJson(await SetEnabledAsync(agentInstanceId, args with { Enabled = true }, ct))),
             "disable" => ToolExecutionResult.Ok(ToJson(await SetEnabledAsync(agentInstanceId, args with { Enabled = false }, ct))),
             "delete" => ToolExecutionResult.Ok(ToJson(await DeleteAsync(agentInstanceId, args, ct))),
+            "push" => ToolExecutionResult.Ok(ToJson(await PushAsync(agentInstanceId, args, ct))),
             "rebuild_index" => ToolExecutionResult.Ok(ToJson(await RebuildIndexAsync(agentInstanceId, ct))),
             _ => ToolExecutionResult.Fail(
-                $"Unknown agent_skill action '{args.Action}'. Valid actions: list, get_index, get, read_file, initialize, create, update, set_enabled, enable, disable, delete, rebuild_index."),
+                $"Unknown agent_skill action '{args.Action}'. Valid actions: list, get_index, get, read_file, initialize, create, update, set_enabled, enable, disable, delete, push, rebuild_index."),
         };
     }
 
@@ -182,6 +190,81 @@ public sealed class AgentSkillTool(AgentSkillFileService skillService) : Pudding
         };
     }
 
+    private async Task<object> PushAsync(string agentInstanceId, AgentSkillArgs args, CancellationToken ct)
+    {
+        var skillId = RequireSkillId(args);
+        var record = await skillService.GetAsync(agentInstanceId, skillId, ct);
+        var skillRoot = record.PhysicalPath;
+        var manifest = record.Manifest;
+
+        // 打包为 zip
+        var tempDir = Path.Combine(Path.GetTempPath(), "pudding-skill-push", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var zipPath = Path.Combine(tempDir, $"{skillId}.zip");
+            ZipFile.CreateFromDirectory(skillRoot, zipPath);
+
+            // 构建 multipart form
+            await using var zipStream = File.OpenRead(zipPath);
+            var content = new MultipartFormDataContent();
+
+            // skill_id 转 skillPackageId（下划线→连字符，满足 [a-z0-9\-]+）
+            var packageId = skillId.Replace('_', '-');
+            content.Add(new StringContent(packageId), "skillPackageId");
+            content.Add(new StringContent(manifest.Name), "name");
+            if (!string.IsNullOrWhiteSpace(manifest.Description))
+                content.Add(new StringContent(manifest.Description), "description");
+            content.Add(new StringContent(args.PushVersion ?? manifest.Version), "version");
+
+            var fileContent = new StreamContent(zipStream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+            content.Add(fileContent, "file", $"{skillId}.zip");
+
+            // 发送 HTTP
+            var baseUrl = (configuration["AdminBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
+            var apiKey = configuration["AdminApiKey"];
+
+            using var httpClient = httpClientFactory.CreateClient("SkillPackagePush");
+            httpClient.BaseAddress = new Uri(baseUrl);
+            httpClient.Timeout = TimeSpan.FromMinutes(2);
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                httpClient.DefaultRequestHeaders.Add("X-Admin-Api-Key", apiKey);
+
+            var response = await httpClient.PostAsync("/api/skill-packages", content, ct);
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException(
+                    $"Push failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase}. {responseBody}");
+
+            return new
+            {
+                status = "ok",
+                action = "push",
+                agentInstanceId,
+                skillId,
+                skillPackageId = packageId,
+                version = args.PushVersion ?? manifest.Version,
+                serverResponse = responseBody.Length <= 2000
+                    ? JsonSerializer.Deserialize<object>(responseBody)
+                    : responseBody[..2000] + "...",
+            };
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempDir))
+                    Directory.Delete(tempDir, recursive: true);
+            }
+            catch
+            {
+                // 清理临时目录失败不影响主流程
+            }
+        }
+    }
+
     private async Task<object> RebuildIndexAsync(string agentInstanceId, CancellationToken ct)
     {
         var index = await skillService.RebuildIndexAsync(agentInstanceId, ct);
@@ -254,10 +337,10 @@ public sealed class AgentSkillTool(AgentSkillFileService skillService) : Pudding
 
 public sealed record AgentSkillArgs
 {
-    [ToolParam("Action to run: list, get_index, get, read_file, initialize, create, update, set_enabled, enable, disable, delete, rebuild_index.")]
+    [ToolParam("Action to run: list, get_index, get, read_file, initialize, create, update, set_enabled, enable, disable, delete, push, rebuild_index.")]
     public required string Action { get; init; }
 
-    [ToolParam("SKILL id for get, read_file, create, update, set_enabled, enable, disable, and delete actions.")]
+    [ToolParam("SKILL id for get, read_file, create, update, set_enabled, enable, disable, delete, and push actions.")]
     [JsonPropertyName("skill_id")]
     public string? SkillId { get; init; }
 
@@ -298,6 +381,10 @@ public sealed record AgentSkillArgs
 
     [ToolParam("Enabled state for set_enabled action.")]
     public bool? Enabled { get; init; }
+
+    [ToolParam("Override version for push action. Defaults to the SKILL manifest version.")]
+    [JsonPropertyName("push_version")]
+    public string? PushVersion { get; init; }
 }
 
 internal static class AgentSkillToolJson

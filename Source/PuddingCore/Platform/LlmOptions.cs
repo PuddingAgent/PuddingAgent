@@ -325,6 +325,11 @@ namespace PuddingCode.Platform
 
         private static int CountMessageTokens(ChatMessage message, string? modelId)
         {
+            if (message.ContinuationState is { OutputItemsJson.Count: > 0 } continuation)
+            {
+                return continuation.OutputItemsJson.Sum(item => CountTokens(item, modelId)) + 4;
+            }
+
             var tokenCount = CountTokens(message.Content, modelId)
                 + CountTokens(message.ReasoningContent, modelId)
                 + CountTokens(message.ToolCallId, modelId)

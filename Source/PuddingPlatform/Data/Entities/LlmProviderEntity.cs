@@ -4,7 +4,7 @@ namespace PuddingPlatform.Data.Entities;
 
 /// <summary>
 /// LLM 服务提供商（全局资源池）。
-/// 每个 Provider 可配置多个模型；支持多种协议，当前阶段以 OpenAI 协议为主。
+/// 每个 Provider 可配置多个模型；协议由模型自身配置。
 /// </summary>
 public class LlmProviderEntity
 {
@@ -18,10 +18,6 @@ public class LlmProviderEntity
     /// <summary>显示名称</summary>
     [Required, MaxLength(128)]
     public string Name { get; set; } = string.Empty;
-
-    /// <summary>接口协议类型，当前支持 "openai"，保留其他协议扩展。</summary>
-    [Required, MaxLength(32)]
-    public string Protocol { get; set; } = "openai";
 
     /// <summary>API 基础地址（需含 /v1，如 https://api.openai.com/v1）</summary>
     [Required, MaxLength(512)]

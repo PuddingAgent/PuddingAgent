@@ -4,7 +4,7 @@
 
 import { subscribeSessionEvents } from '@/services/platform/api';
 import type { AdminChatStreamEvent } from '@/services/platform/api';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 
 export interface SseClientOptions {
   sessionId: string;

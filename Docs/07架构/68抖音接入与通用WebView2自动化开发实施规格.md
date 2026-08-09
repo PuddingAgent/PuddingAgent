@@ -292,10 +292,10 @@ public static class PuddingApplicationHost
 DesktopChild 模式下的 Core 默认监听：
 
 ```text
-http://127.0.0.1:0
+http://0.0.0.0:8080
 ```
 
-启动后通过 `IServerAddressesFeature` 取得实际端口：
+固定端口来自 `<DataRoot>/config/system.json` 的 `desktop.core.port`，允许 `1–65535`（例如 `80`、`8080`），不再接受 `0` 动态分配。启动后通过 `IServerAddressesFeature` 捕获实际监听地址：
 
 ```csharp
 public interface IPuddingServerAddressAccessor
@@ -305,9 +305,9 @@ public interface IPuddingServerAddressAccessor
 }
 ```
 
-Core 通过 `PUDDING_DESKTOP_READY` stdout 消息把 `CaptureBoundAddresses` 的结果交给 Desktop。Desktop 只接受 Loopback HTTP 地址作为 Workbench 地址；Desktop 自身不监听 HTTP。Console 模式维持现有 URL 配置。
+`PuddingServerAddressAccessor` 将 `0.0.0.0:<port>` 投影为 `127.0.0.1:<port>` 本机控制地址。Core 通过 `PUDDING_DESKTOP_READY` stdout 消息把该控制地址交给 Desktop；Desktop 只接受 Loopback HTTP 地址作为健康检查、优雅关闭、Workbench 和 Browser Bridge 地址。外部 HTTP API 仍由同一 Kestrel 监听器通过机器网卡地址访问，Desktop 自身不监听 HTTP。Console 模式维持现有 URL 配置。
 
-Core 内部的 `PlatformApiClient` 同样属于控制面调用。Desktop/DesktopChild 使用端口 `0` 时，不能继续依赖配置中的 `Pudding:ControllerEndpoint` 或默认 `http://localhost:5000`。`PuddingControllerAddressRewriteHandler` 必须保留原请求的 path、query 和 fragment，并在发送前将 authority 重写为 `IPuddingServerAddressAccessor.BaseAddress`；Console 模式不重写。这样动态端口既服务 WebView2，也服务 Core 内部的 Controller 自调用。
+Core 内部的 `PlatformApiClient` 同样属于控制面调用，不能依赖配置中的 `Pudding:ControllerEndpoint` 或默认 `http://localhost:5000`。`PuddingControllerAddressRewriteHandler` 必须保留原请求的 path、query 和 fragment，并在发送前将 authority 重写为 `IPuddingServerAddressAccessor.BaseAddress`；Console 模式不重写。这样外部全网卡监听与内部可信 Loopback 控制地址保持分离。
 
 ### 4.5 Connector 生命周期
 
@@ -433,13 +433,13 @@ public interface ICoreProcessSupervisor : IAsyncDisposable
   -> CoreProcessSupervisor 启动 core/PuddingAgent.exe
   -> 传递 --desktop-child --desktop-parent-pid --data-root --urls
   -> 解析 stdout 的 PUDDING_DESKTOP_READY JSON
-  -> 校验动态 Loopback 地址和 /health/ready
+  -> 校验固定 0.0.0.0 监听端口、Loopback 控制地址和 /health/ready
   -> 初始化 WorkbenchView
   -> WebView2CompositionControl 导航 /admin/
   -> WorkbenchReady
 ```
 
-启动参数只由 Desktop 构造，不通过环境变量传递 Token、端口或 DataRoot。`Port=0` 表示由 Core 动态选择回环端口。Core 启动失败、配置缺失或进程意外退出只改变 `DesktopStartupState`，不得关闭主窗口。
+启动参数只由 Desktop 构造，不通过环境变量传递 Token、端口或 DataRoot。`Port` 必须为 `1–65535`，Supervisor 统一构造 `http://0.0.0.0:<port>`；`Port=0` 是配置错误。Core 启动失败、配置缺失、端口占用或进程意外退出只改变 `DesktopStartupState`，不得关闭主窗口。
 
 关闭顺序：
 
@@ -1467,20 +1467,14 @@ result/errorCode
 
 ## 14. 配置文件
 
-`{DataRoot}/config/desktop.json`：
+`<DesktopHome>/desktop.json` 只保存 DesktopHome 范围的 DataRoot、Core 路径、窗口和关闭行为，不保存 Core 端口。Core 固定监听端口位于 `{DataRoot}/config/system.json`：
 
 ```json
 {
-  "version": 1,
-  "window": {
-    "width": 1440,
-    "height": 900,
-    "theme": "system",
-    "backdrop": "mica"
-  },
-  "host": {
-    "urls": ["http://127.0.0.1:0"],
-    "serveAdminSpa": true
+  "desktop": {
+    "core": {
+      "port": 8080
+    }
   }
 }
 ```
@@ -1570,7 +1564,7 @@ result/errorCode
 ### 15.3 Host 回归
 
 - `PuddingAgent` Console 模式启动和 `/health/ready`；
-- Desktop 模式使用动态 Loopback 端口；
+- DesktopChild 使用配置的固定端口绑定 `0.0.0.0`，同时向 Desktop 提供同端口的 Loopback 控制地址；
 - Admin SPA 路由、API、SSE；
 - ConnectorHost 只启动一次；
 - Desktop 退出后端口、UDF 和 WebView2 子进程释放；
@@ -1626,10 +1620,10 @@ result/errorCode
 - Windows 11 NavigationView-like Shell、系统 Light/Dark、Accent、Mica 和圆角；
 - `WebView2CompositionControl` 承载 `/admin/` Workbench，使用隔离 UDF；
 - Workbench `/` 为认证后的产品首页；未初始化环境进入 `/bootstrap`，已初始化但未认证进入 `/user/login`，登录和初始化完成后统一返回首页；
-- DesktopChild 中 `PlatformApiClient` 的内部控制面请求使用启动后捕获的真实动态 Loopback，不假定 `localhost:5000`；
+- DesktopChild 中 `PlatformApiClient` 的内部控制面请求使用启动后派生的真实 Loopback 控制地址，不假定 `localhost:5000`；
 - Desktop 发布目标自动生成 `core/` 子进程包和 `core/wwwroot/admin/`。
 
-验收：无需 `dev-up.py` 即可启动 Desktop → Core 子进程 → 动态 Loopback → Workbench，Core/Settings 页面始终可访问，关闭 Desktop 后 Core 退出。
+验收：无需 `dev-up.py` 即可启动 Desktop → Core 子进程 → 固定 `0.0.0.0:<port>` 监听 + `127.0.0.1:<port>` 控制地址 → Workbench，Core/Settings 页面始终可访问，关闭 Desktop 后 Core 退出。
 
 ### Phase 1B：Desktop 可交付性加固
 
@@ -1694,13 +1688,13 @@ Phase 1A/1B 均不向 Agent 暴露 Browser Tool；Phase 2A-3 仅在 DesktopChild
 
 - [x] Desktop 为独立 WPF Launcher，不依赖 `dev-up.py`；
 - [x] Desktop 与 ASP.NET Core/Core 业务逻辑保持进程隔离；
-- [x] 动态 Loopback、Ready 协议、父进程监控和启停重启已实现；
+- [x] 可配置固定端口、IPv4 全网卡监听、Loopback Ready 控制地址、父进程监控和启停重启已实现；
 - [x] 配置缺失只提示，不阻止 Desktop 启动；
 - [x] Token 使用安全随机数生成并保存到 `system.json`，不写环境变量；
 - [x] Windows 11 Light/Dark、Accent、Mica、圆角和三页 Navigation Shell 已实现；
 - [x] Workbench 使用隔离 UDF 的 WebView2CompositionControl 并成功加载真实 `/admin/`；
 - [x] Workbench 初始化、登录和首页路由分离，认证后的默认入口为产品首页；
-- [x] DesktopChild 内部 Controller 自调用重写到实际动态 Loopback，Agent 状态和会话投影不依赖固定端口；
+- [x] DesktopChild 内部 Controller 自调用重写到同端口 Loopback 控制地址，外部监听地址不进入可信控制链路；
 - [x] Desktop 定向测试 21 项通过；
 - [x] 发布包包含 `core/PuddingAgent.exe` 和 `core/wwwroot/admin/index.html`；
 - [x] 临时 DataRoot 的桌面视觉 smoke 通过，不写入 `D:\data`。

@@ -21,7 +21,7 @@
 | 端点 | 路径 | 功能 |
 |------|------|------|
 | MessageIngressController | `/api/messageingress/stream` | 接收 Platform 转发的流式消息，路由到 Runtime |
-| LlmProxyController | `/api/internal/llm/chat/stream` | LLM 代理，将 Runtime 请求转发到 OpenAI 兼容 API |
+| LlmProxyController | `/api/internal/llm/chat/stream` | LLM 代理，按模型配置解析进 `LlmConfig.Protocol` 的值转发到 Chat Completions、Responses API 或 Anthropic Messages；不使用 Provider 协议回退 |
 
 流式端点与同步端点共用 SessionRouter 和 RuntimeDispatcher，区别在于：
 - 返回类型为 `IAsyncEnumerable<ServerSentEventFrame>`（通过 `ConfigureSseResponse` 写入 SSE 响应）

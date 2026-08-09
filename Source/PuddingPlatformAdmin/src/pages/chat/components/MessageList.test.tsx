@@ -1268,6 +1268,56 @@ describe('MessageList scroll performance', () => {
     expect(screen.queryByTestId('empty-state')).toBeNull();
   });
 
+  it('keeps paged local history that is older than the bounded projection window', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[
+          createTurn('older-local', 1_000, 'older local prompt', 'older local answer'),
+          createTurn('projected-turn', 2_000, 'projected prompt', 'fresh projected answer'),
+        ]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'projected-user',
+              turnId: 'projected-turn',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '1970-01-01T00:00:02.000Z',
+              content: 'projected prompt',
+              status: 'sent',
+              processItems: [],
+            },
+            {
+              messageId: 'projected-agent',
+              turnId: 'projected-turn',
+              role: 'agent',
+              sourceId: 'agent-a',
+              sourceName: 'Agent A',
+              createdAt: '1970-01-01T00:00:02.001Z',
+              content: 'fresh projected answer',
+              status: 'succeeded',
+              processItems: [],
+            },
+          ],
+          activeRun: null,
+          eventCursor: 2,
+          updatedAt: '1970-01-01T00:00:02.001Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('older local prompt')).toBeTruthy();
+    expect(screen.getByText('older local answer')).toBeTruthy();
+    expect(screen.getByText('projected prompt')).toBeTruthy();
+    expect(screen.getByText('fresh projected answer')).toBeTruthy();
+  });
+
   it('replaces the local running shell when the canonical turn reply is projected', () => {
     render(
       <MessageList

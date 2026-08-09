@@ -462,8 +462,8 @@ public sealed class AgentChatApiControllerTests
 
         var view = await response.Content.ReadFromJsonAsync<AgentConversationViewDto>(JsonOpts);
         Assert.IsNotNull(view);
-        Assert.HasCount(100, view!.Messages);
-        Assert.AreEqual("message-020", view.Messages[0].Content);
+        Assert.HasCount(20, view!.Messages);
+        Assert.AreEqual("message-100", view.Messages[0].Content);
         Assert.AreEqual("message-119", view.Messages[^1].Content);
         Assert.IsFalse(view.Messages.Any(message => message.Content == "message-000"));
     }
@@ -793,6 +793,71 @@ public sealed class AgentChatApiControllerTests
         Assert.AreEqual("tool_result", view.ActiveRun.OutputSnapshot.ProcessItems[2].Kind);
         Assert.AreEqual("README.md", view.ActiveRun.OutputSnapshot.ProcessItems[2].Output);
         Assert.AreEqual(0, view.ActiveRun.OutputSnapshot.ProcessItems[2].ExitCode);
+        Assert.AreEqual(3, view.ActiveRun.OutputSnapshot.ProcessSummary?.TotalItems);
+        Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ThinkingSteps);
+        Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ToolCalls);
+        Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ToolResults);
+        Assert.IsFalse(view.ActiveRun.OutputSnapshot.ProcessSummary?.HasDetails ?? true);
+    }
+
+    [TestMethod]
+    public async Task AgentConversationEndpoint_BoundsActiveProcessPayloadAndKeepsFullSummary()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-active-bounded",
+            agentTemplateId = "global:general-assistant",
+            title = "Bounded Active Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var api = scope.ServiceProvider.GetRequiredService<PlatformApiClient>();
+            await api.UpdateSessionAsync(
+                session!.SessionId,
+                new UpdateSessionRequest { Status = SessionStatus.Active },
+                CancellationToken.None);
+
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            var events = Enumerable.Range(1, 70)
+                .Select(sequence => NewConversationEvent(
+                    session.SessionId,
+                    sequence,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    $"{{\"delta\":\"step-{sequence}\"}}",
+                    now.AddMilliseconds(sequence),
+                    runId: "run-active-bounded"))
+                .ToList();
+            events.Add(NewConversationEvent(
+                session.SessionId,
+                71,
+                ConversationEventTypes.MessageContentAppended,
+                "{\"delta\":\"bounded answer\"}",
+                now.AddMilliseconds(71),
+                runId: "run-active-bounded"));
+            db.ConversationEvents.AddRange(events);
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync(
+            "/api/workspaces/default/agents/agent-active-bounded/conversation");
+        response.EnsureSuccessStatusCode();
+
+        var view = await response.Content.ReadFromJsonAsync<AgentConversationViewDto>(JsonOpts);
+        Assert.IsNotNull(view?.ActiveRun);
+        Assert.AreEqual("bounded answer", view!.ActiveRun!.OutputSnapshot.Markdown);
+        Assert.HasCount(64, view.ActiveRun.OutputSnapshot.ProcessItems);
+        Assert.AreEqual("step-7", view.ActiveRun.OutputSnapshot.ProcessItems[0].Text);
+        Assert.AreEqual("step-70", view.ActiveRun.OutputSnapshot.ProcessItems[^1].Text);
+        Assert.AreEqual(70, view.ActiveRun.OutputSnapshot.ProcessSummary?.TotalItems);
+        Assert.AreEqual(70, view.ActiveRun.OutputSnapshot.ProcessSummary?.ThinkingSteps);
+        Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ThinkingRounds);
     }
 
     [TestMethod]
@@ -1015,7 +1080,8 @@ public sealed class AgentChatApiControllerTests
 
     private sealed record AgentOutputSnapshotDto(
         string Markdown,
-        List<ProcessSummaryItemDto> ProcessItems);
+        List<ProcessSummaryItemDto> ProcessItems,
+        ConversationProcessSummaryDto? ProcessSummary = null);
 
     private sealed record ProcessSummaryItemDto(
         string Id,

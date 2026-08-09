@@ -160,7 +160,6 @@ const llmProviders: any[] = [
     id: 1,
     providerId: 'openai',
     name: 'OpenAI',
-    protocol: 'openai',
     baseUrl: 'https://api.openai.com/v1',
     description: 'OpenAI official API',
     isEnabled: true,
@@ -173,7 +172,6 @@ const llmProviders: any[] = [
     id: 2,
     providerId: 'deepseek',
     name: 'DeepSeek',
-    protocol: 'openai',
     baseUrl: 'https://api.deepseek.com/v1',
     description: 'DeepSeek API（兼容 OpenAI 协议）',
     isEnabled: true,
@@ -185,10 +183,10 @@ const llmProviders: any[] = [
 ];
 
 const llmModels: any[] = [
-  { id: 1, providerId: 1, modelId: 'gpt-4o-mini', name: 'GPT-4o Mini', description: '高性价比小模型', maxContextTokens: 128000, inputPricePer1MTokens: 0.15, outputPricePer1MTokens: 0.6, capabilityTags: ['chat', 'code', 'function-calling'], isDeprecated: false, isDefault: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 2, providerId: 1, modelId: 'gpt-4o', name: 'GPT-4o', description: '最强多模态旗舰模型', maxContextTokens: 128000, inputPricePer1MTokens: 5.0, outputPricePer1MTokens: 15.0, capabilityTags: ['chat', 'code', 'vision', 'function-calling', 'reasoning'], isDeprecated: false, isDefault: false, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 3, providerId: 2, modelId: 'deepseek-chat', name: 'DeepSeek Chat', description: 'DeepSeek V3 对话模型', maxContextTokens: 64000, inputPricePer1MTokens: 0.27, outputPricePer1MTokens: 1.1, capabilityTags: ['chat', 'code', 'function-calling'], isDeprecated: false, isDefault: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 4, providerId: 2, modelId: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: 'DeepSeek R1 推理模型', maxContextTokens: 64000, inputPricePer1MTokens: 0.55, outputPricePer1MTokens: 2.19, capabilityTags: ['chat', 'reasoning'], isDeprecated: false, isDefault: false, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: 1, providerId: 1, modelId: 'gpt-4o-mini', name: 'GPT-4o Mini', protocol: 'openai', description: '高性价比小模型', maxContextTokens: 128000, inputPricePer1MTokens: 0.15, outputPricePer1MTokens: 0.6, capabilityTags: ['chat', 'code', 'function-calling'], isDeprecated: false, isDefault: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: 2, providerId: 1, modelId: 'gpt-4o', name: 'GPT-4o', protocol: 'responses', description: '最强多模态旗舰模型', maxContextTokens: 128000, inputPricePer1MTokens: 5.0, outputPricePer1MTokens: 15.0, capabilityTags: ['chat', 'code', 'vision', 'function-calling', 'reasoning'], isDeprecated: false, isDefault: false, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: 3, providerId: 2, modelId: 'deepseek-chat', name: 'DeepSeek Chat', protocol: 'openai', description: 'DeepSeek V3 对话模型', maxContextTokens: 64000, inputPricePer1MTokens: 0.27, outputPricePer1MTokens: 1.1, capabilityTags: ['chat', 'code', 'function-calling'], isDeprecated: false, isDefault: true, sortOrder: 0, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: 4, providerId: 2, modelId: 'deepseek-reasoner', name: 'DeepSeek Reasoner', protocol: 'openai', description: 'DeepSeek R1 推理模型', maxContextTokens: 64000, inputPricePer1MTokens: 0.55, outputPricePer1MTokens: 2.19, capabilityTags: ['chat', 'reasoning'], isDeprecated: false, isDefault: false, sortOrder: 1, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
 ];
 
 // ── Global Agent Template mock data ──────────────────────────────

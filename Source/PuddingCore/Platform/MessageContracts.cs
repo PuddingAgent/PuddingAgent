@@ -53,6 +53,8 @@ public sealed record LlmConfig
     public int? MaxOutputTokens { get; init; }
     /// <summary>推理深度："low" | "medium" | "high"</summary>
     public string? ReasoningEffort { get; init; }
+    /// <summary>当前模型的 LLM 协议类型："openai"、"responses" 或 "anthropic"；不得从服务商级配置回退。</summary>
+    public string? Protocol { get; init; }
 }
 
 /// <summary>消息入口请求。</summary>

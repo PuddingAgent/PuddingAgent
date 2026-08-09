@@ -606,7 +606,12 @@ public sealed partial class AgentExecutionService
                             break;
                         }
 
-                        llmResp = new LlmResponse(facadeResult.ReplyText, facadeResult.ToolCalls, Usage: facadeResult.Usage);
+                        llmResp = new LlmResponse(
+                            facadeResult.ReplyText,
+                            facadeResult.ToolCalls,
+                            facadeResult.ReasoningContent,
+                            facadeResult.Usage,
+                            facadeResult.ContinuationState);
                     }
                     else
                     {
@@ -703,7 +708,8 @@ public sealed partial class AgentExecutionService
                             ChatRole.Assistant,
                             rawText,
                             ToolCalls: llmResp.ToolCalls,
-                            ReasoningContent: llmResp.ReasoningContent),
+                            ReasoningContent: llmResp.ReasoningContent,
+                            ContinuationState: llmResp.ContinuationState),
                     };
 
                     noProgressCount = 0;
@@ -1114,7 +1120,8 @@ public sealed partial class AgentExecutionService
                 }
 
                 history.Add(new ChatMessage(ChatRole.Assistant, rawText,
-                    ReasoningContent: llmResp.ReasoningContent));
+                    ReasoningContent: llmResp.ReasoningContent,
+                    ContinuationState: llmResp.ContinuationState));
 
                 var loopResp = AgentLoopResponse.Parse(rawText);
                 finalMessage = loopResp.Message ?? rawText;

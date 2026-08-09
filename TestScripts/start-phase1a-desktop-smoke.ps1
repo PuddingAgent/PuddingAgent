@@ -5,6 +5,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-FreeIpv4Port {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, 0)
+    try {
+        $listener.Start()
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    }
+    finally {
+        $listener.Stop()
+    }
+}
+
 $resolvedPublishRoot = [System.IO.Path]::GetFullPath($PublishRoot)
 $desktopExecutable = Join-Path $resolvedPublishRoot 'PuddingDesktop.exe'
 $coreExecutable = Join-Path $resolvedPublishRoot 'core\PuddingAgent.exe'
@@ -22,6 +33,7 @@ $desktopHome = Join-Path $smokeRoot 'desktop-home'
 $dataRoot = Join-Path $smokeRoot 'data'
 $configRoot = Join-Path $dataRoot 'config'
 New-Item -ItemType Directory -Path $desktopHome, $configRoot -Force | Out-Null
+$corePort = Get-FreeIpv4Port
 
 $desktopConfig = [ordered]@{
     schemaVersion = 1
@@ -41,7 +53,7 @@ $systemConfig = [ordered]@{
     desktop = [ordered]@{
         core = [ordered]@{
             autoStart = $true
-            port = 0
+            port = $corePort
             startupTimeoutSeconds = 120
             shutdownTimeoutSeconds = 15
             controlToken = $null
@@ -81,4 +93,5 @@ if ($desktopProcess.HasExited) {
     dataRoot = $dataRoot
     desktopExecutable = $desktopExecutable
     coreExecutable = $coreExecutable
+    coreListenAddress = "http://0.0.0.0:$corePort"
 } | ConvertTo-Json -Compress

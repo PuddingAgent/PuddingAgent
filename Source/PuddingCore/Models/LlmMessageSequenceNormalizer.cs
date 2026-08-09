@@ -80,6 +80,7 @@ public static class LlmMessageSequenceNormalizer
                         ToolCalls = null,
                         ToolCallId = null,
                         ToolName = null,
+                        ContinuationState = null,
                     });
                     downgradedAssistantMessages++;
                 }

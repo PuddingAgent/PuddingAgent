@@ -4,7 +4,7 @@ import {
   type AdminChatStreamEvent,
   subscribeSessionEvents,
 } from '@/services/platform/api';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import type { ChatTurn } from '../types';
 import { logChatDiag } from '../utils/chatDiagnostics';
 import { resolveSessionReplayPollInterval } from '../utils/chatStateUtils';

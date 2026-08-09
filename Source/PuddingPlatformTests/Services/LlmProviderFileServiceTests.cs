@@ -37,6 +37,7 @@ public sealed class LlmProviderFileServiceTests
                                 {
                                     ModelId = "baseline-model",
                                     Name = "Baseline Model",
+                                    Protocol = "openai",
                                 },
                             ],
                         },
@@ -62,7 +63,6 @@ public sealed class LlmProviderFileServiceTests
             var created = await service.CreateProviderAsync(new UpsertLlmProviderRequest(
                 ProviderId: "moonshot",
                 Name: "Moonshot（Kimi，按量付费）",
-                Protocol: "openai",
                 BaseUrl: "https://api.moonshot.cn/v1",
                 ApiKey: null,
                 Description: "Moonshot Kimi K3 按量付费",

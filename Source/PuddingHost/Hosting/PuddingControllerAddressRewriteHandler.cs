@@ -4,7 +4,7 @@ namespace PuddingHost.Hosting;
 
 /// <summary>
 /// Rewrites PlatformApiClient control-plane calls to the actual bound Core address
-/// when the Host is running with a dynamic Desktop loopback port.
+/// when the Host is running with the Desktop-managed local control address.
 /// </summary>
 public sealed class PuddingControllerAddressRewriteHandler(
     PuddingHostOptions hostOptions,

@@ -50,7 +50,7 @@ public static class CoreReadyMessageParser
 
         if (!address.IsLoopback)
             throw new InvalidOperationException(
-                $"Core must bind loopback only. Got: {raw.BaseAddress}");
+                $"Core control address must be loopback. Got: {raw.BaseAddress}");
 
         if (address.Scheme != Uri.UriSchemeHttp)
             throw new InvalidOperationException(

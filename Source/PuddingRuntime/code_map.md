@@ -39,8 +39,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端（50KB） |
-| `Services/LlmInvocationService.cs` | LLM 调用编排 |
+| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型的 protocol 路由 Chat Completions/Responses/Anthropic Messages |
+| `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径 |
 | `Services/LlmProfileResolver.cs` | Profile 解析 |
 | `Services/LlmRequestBudgetGuard.cs` | 预算守卫 |
 | `Services/ProviderRateLimiter.cs` | 速率限制 |

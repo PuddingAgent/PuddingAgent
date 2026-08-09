@@ -127,7 +127,7 @@
 
                     <StackPanel Grid.Column="1">
                         <TextBlock Text="Core 生命周期" Style="{StaticResource SectionTitleStyle}" />
-                        <TextBlock Text="这些参数由 Desktop 传递并监督；HTTP 仅绑定本机回环地址。"
+                        <TextBlock Text="Core HTTP 在所有 IPv4 网卡上使用固定端口；网络访问由 Windows 防火墙控制，保存后重启生效。"
                                    Style="{StaticResource CaptionTextStyle}"
                                    Margin="0,4,0,16" />
 
@@ -146,8 +146,8 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="HTTP 端口" FontWeight="SemiBold" FontSize="13" />
-                                <TextBlock Text="0 = 自动分配"
+                                <TextBlock Text="HTTP 监听端口" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="固定端口 1–65535，例如 80 或 8080"
                                            Style="{StaticResource CaptionTextStyle}"
                                            Margin="0,3,0,7" />
                                 <TextBox x:Name="PortBox"

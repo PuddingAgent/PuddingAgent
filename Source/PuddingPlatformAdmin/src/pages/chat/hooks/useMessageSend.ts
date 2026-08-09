@@ -13,7 +13,7 @@ import {
   measurePerf,
   recordPerfEvent,
   writeDebugSessionState,
-} from '@/utils/debug';
+} from '@/utils/perfEventRuntime';
 import {
   dequeueCommand,
   enqueueCommand,

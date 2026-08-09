@@ -63,11 +63,16 @@ import {
 const { Text } = Typography;
 
 const PROTOCOLS = [
-  { label: 'OpenAI 协议', value: 'openai' },
-  { label: 'Anthropic 协议', value: 'anthropic' },
-  { label: 'Azure OpenAI', value: 'azure-openai' },
-  { label: '自定义协议', value: 'custom' },
+  { label: 'Chat Completions', value: 'openai' },
+  { label: 'Responses API', value: 'responses' },
+  { label: 'Anthropic Messages', value: 'anthropic' },
 ];
+
+const protocolTagColor: Record<string, string> = {
+  openai: 'blue',
+  responses: 'purple',
+  anthropic: 'orange',
+};
 
 const CAPABILITY_TAGS = [
   { label: '文本', value: 'text' },
@@ -104,6 +109,7 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
     setEditModel(null);
     modelForm.resetFields();
     modelForm.setFieldsValue({
+      protocol: 'openai',
       sortOrder: 100,
       maxContextTokens: 8192,
       maxOutputTokens: 2048,
@@ -154,6 +160,15 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
           {r.isEmbedding && <Tag color="purple">Embedding</Tag>}
         </Space>
       ),
+    },
+    {
+      title: '协议',
+      dataIndex: 'protocol',
+      width: 150,
+      render: (_, r) => {
+        const protocol = PROTOCOLS.find((item) => item.value === r.protocol);
+        return <Tag color={protocolTagColor[r.protocol] ?? 'default'}>{protocol?.label ?? r.protocol}</Tag>;
+      },
     },
     { title: '名称', dataIndex: 'name', width: 160 },
     {
@@ -254,6 +269,12 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
           <ProFormText name="modelId" label="模型 ID" rules={[{ required: true }]}
             disabled={!!editModel} placeholder="如 gpt-4o-mini" />
           <ProFormText name="name" label="显示名称" rules={[{ required: true }]} />
+          <ProFormSelect
+            name="protocol"
+            label="API 协议"
+            options={PROTOCOLS}
+            rules={[{ required: true, message: '请选择模型使用的 API 协议' }]}
+          />
           <ProFormTextArea name="description" label="描述" rows={3} />
           <ProFormDigit name="maxContextTokens" label="上下文长度 (tokens)"
             rules={[{ required: true }]} min={1024} />
@@ -316,7 +337,7 @@ const LlmResourcePoolPage: React.FC = () => {
     setEditProvider(null);
     setProviderTemplateValue(undefined);
     providerForm.resetFields();
-    providerForm.setFieldsValue({ protocol: 'openai', isEnabled: true });
+    providerForm.setFieldsValue({ isEnabled: true });
     setApiKeyVisible(false);
     setProviderDrawer(true);
   };
@@ -402,15 +423,6 @@ const LlmResourcePoolPage: React.FC = () => {
           </Text>
         </Space>
       ),
-    },
-    {
-      title: '协议',
-      dataIndex: 'protocol',
-      width: 130,
-      render: (_, r) => {
-        const p = PROTOCOLS.find((x) => x.value === r.protocol);
-        return <Tag color="blue">{p?.label ?? r.protocol}</Tag>;
-      },
     },
     {
       title: 'API 地址',
@@ -504,7 +516,6 @@ const LlmResourcePoolPage: React.FC = () => {
             placeholder="如 openai、deepseek、my-provider"
           />
           <ProFormText name="name" label="名称" rules={[{ required: true }]} />
-          <ProFormSelect name="protocol" label="协议类型" options={PROTOCOLS} rules={[{ required: true }]} />
           <ProFormText name="baseUrl" label="API 基础地址" rules={[{ required: true }]}
             placeholder="如 https://api.openai.com/v1" />
           <Form.Item label="API Key" name="apiKey">

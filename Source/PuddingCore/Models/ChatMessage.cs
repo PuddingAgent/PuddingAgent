@@ -14,4 +14,5 @@ public sealed record ChatMessage(
     IReadOnlyList<ToolCall>? ToolCalls = null,
     string? ReasoningContent = null,
     IReadOnlyList<string>? VisualArtifactIds = null,
-    IReadOnlyList<string>? AudioArtifactIds = null);
+    IReadOnlyList<string>? AudioArtifactIds = null,
+    LlmContinuationState? ContinuationState = null);

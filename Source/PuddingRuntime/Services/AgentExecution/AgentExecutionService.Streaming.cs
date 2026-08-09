@@ -657,6 +657,7 @@ public sealed partial class AgentExecutionService
                 var hasToolCalls = false;
                 var accumulatedToolCalls = new List<AccumulatedToolCall>();
                 var synthesizedToolCallIndexes = new HashSet<int>();
+                LlmContinuationState? continuationState = null;
                 var replyBuf = new StringBuilder();
                 var reasoningBuf = new StringBuilder();
 
@@ -870,6 +871,9 @@ public sealed partial class AgentExecutionService
                             RecordProviderContextUsageSnapshot(request.SessionId, usage);
                         }
 
+                        if (delta.ContinuationState is not null)
+                            continuationState = delta.ContinuationState;
+
                         if (string.IsNullOrEmpty(delta.ReasoningDelta)
                             && string.IsNullOrEmpty(delta.ContentDelta)
                             && delta.ToolCallIndex is null)
@@ -1048,7 +1052,8 @@ public sealed partial class AgentExecutionService
                         ? reasoningBuf.ToString()
                         : null;
                     history.Add(new ChatMessage(ChatRole.Assistant, reply,
-                        ReasoningContent: assistantReasoningContent));
+                        ReasoningContent: assistantReasoningContent,
+                        ContinuationState: continuationState));
                     break;
                 }
                 consecutiveShortReplies = 0;
@@ -1084,7 +1089,8 @@ public sealed partial class AgentExecutionService
                         ChatRole.Assistant,
                         assistantContent,
                         ToolCalls: assistantToolCalls,
-                        ReasoningContent: reasoningBuf.Length > 0 ? reasoningBuf.ToString() : null),
+                        ReasoningContent: reasoningBuf.Length > 0 ? reasoningBuf.ToString() : null,
+                        ContinuationState: continuationState),
                 };
 
                 // 逐个工具调用：发送 tool_call → 执行 → 发送 tool_result

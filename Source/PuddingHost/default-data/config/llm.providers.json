@@ -1,7 +1,6 @@
 // ⚠️  SEED FILE — copied to data/config/llm.providers.json on first boot only.
 // After first boot, only data/config/llm.providers.json is read by the Agent runtime.
-// The admin UI /admin/llm-resource-pool writes to SQLite, NOT to this file.
-// See: LlmProviderApiController.cs (DB) vs PuddingFileConfigLoader.cs (JSON file).
+// The admin UI /admin/llm-resource-pool updates this file through the platform API.
 {
   "defaultProviderId": "fake",
   "defaultModelId": "fake-chat",
@@ -9,7 +8,6 @@
     {
       "providerId": "fake",
       "name": "Fake LLM",
-      "protocol": "openai",
       "baseUrl": "http://localhost:8080/__fake_llm/v1",
       "apiKey": "local-dev-only",
       "isEnabled": true,
@@ -23,6 +21,7 @@
         {
           "modelId": "fake-chat",
           "name": "Fake Chat",
+          "protocol": "openai",
           "maxContextTokens": 65536,
           "maxOutputTokens": 4096,
           "capabilityTags": ["text", "function-calling", "streaming"],

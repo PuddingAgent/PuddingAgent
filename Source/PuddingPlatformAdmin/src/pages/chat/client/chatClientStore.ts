@@ -1,4 +1,4 @@
-import { recordPerfStep } from '@/utils/debug';
+import { recordPerfStep } from '@/utils/perfEventRuntime';
 import { DEFAULT_AGENT_CHAT_OWNER_ID } from './clientIdentity';
 import type { AgentChatLocalCache } from './localCache';
 import type { AgentConversationView, AgentStatusProjection } from './types';
@@ -35,6 +35,28 @@ export const conversationNeedsProjectionCatchUp = (
   return messages.length > 0 && messages[messages.length - 1].role === 'user';
 };
 
+const statusProjectionEquals = (
+  previous: AgentStatusProjection,
+  next: AgentStatusProjection,
+): boolean =>
+  previous.workspaceId === next.workspaceId &&
+  previous.ownerUserId === next.ownerUserId &&
+  previous.agentId === next.agentId &&
+  previous.mainSessionId === next.mainSessionId &&
+  previous.status === next.status &&
+  previous.activeRunId === next.activeRunId &&
+  previous.summary === next.summary &&
+  previous.unreadCount === next.unreadCount &&
+  previous.eventCursor === next.eventCursor &&
+  previous.updatedAt === next.updatedAt;
+
+const statusProjectionsEqual = (
+  previous: AgentStatusProjection[],
+  next: AgentStatusProjection[],
+): boolean =>
+  previous.length === next.length &&
+  previous.every((status, index) => statusProjectionEquals(status, next[index]));
+
 export function createAgentChatClientStore(input: {
   cache: AgentChatLocalCache;
   api: AgentChatApiPort;
@@ -44,6 +66,7 @@ export function createAgentChatClientStore(input: {
   let selectionVersion = 0;
   let backgroundSyncVersion = 0;
   let syncInFlight = false;
+  let statusesSyncInFlight = false;
   let snapshot: AgentChatClientSnapshot = {
     ownerUserId,
     statuses: [],
@@ -138,6 +161,8 @@ export function createAgentChatClientStore(input: {
       }
     },
     async syncStatuses(workspaceId: string) {
+      if (statusesSyncInFlight) return;
+      statusesSyncInFlight = true;
       const traceId = createTraceId('agent-status-sync');
       const ownerUserId = DEFAULT_AGENT_CHAT_OWNER_ID;
       try {
@@ -149,6 +174,24 @@ export function createAgentChatClientStore(input: {
           ownerUserId,
           statusCount: fresh.length,
         });
+        if (
+          snapshot.workspaceId === workspaceId &&
+          snapshot.ownerUserId === ownerUserId &&
+          statusProjectionsEqual(snapshot.statuses, fresh)
+        ) {
+          recordPerfStep(
+            'agent.status',
+            'sync.skipped.same',
+            apiStartedAt,
+            {
+              traceId,
+              workspaceId,
+              ownerUserId,
+              statusCount: fresh.length,
+            },
+          );
+          return;
+        }
         const saveStartedAt = performance.now();
         await input.cache.saveStatuses(workspaceId, fresh, ownerUserId);
         recordPerfStep(
@@ -180,6 +223,8 @@ export function createAgentChatClientStore(input: {
             error: error instanceof Error ? error.message : String(error),
           });
         }
+      } finally {
+        statusesSyncInFlight = false;
       }
     },
     async selectAgent(workspaceId: string, agentId: string) {

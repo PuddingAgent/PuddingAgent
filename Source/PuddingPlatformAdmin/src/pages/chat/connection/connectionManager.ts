@@ -5,7 +5,7 @@
 
 import { createSseClient, type SseClientHandle } from '../transport/sseClient';
 import type { AdminChatStreamEvent } from '@/services/platform/api';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 
 export interface ConnectionState {
   connected: boolean;

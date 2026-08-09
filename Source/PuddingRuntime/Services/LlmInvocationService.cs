@@ -70,7 +70,9 @@ public sealed class LlmInvocationService : ILlmInvocationService
                 Success = true,
                 ReplyText = response.Content,
                 ToolCalls = response.ToolCalls ?? Array.Empty<ToolCall>(),
+                ReasoningContent = response.ReasoningContent,
                 Usage = response.Usage,
+                ContinuationState = response.ContinuationState,
                 ProviderId = resolved.ProviderId,
                 ModelId = resolved.ModelId,
                 PrefixSnapshot = request.PrefixSnapshot,
@@ -155,6 +157,9 @@ public sealed class LlmInvocationService : ILlmInvocationService
             MaxInputTokens = configOverride.MaxInputTokens ?? resolved.Config.MaxInputTokens,
             MaxOutputTokens = configOverride.MaxOutputTokens ?? resolved.Config.MaxOutputTokens,
             ReasoningEffort = FirstNonBlank(configOverride.ReasoningEffort, resolved.Config.ReasoningEffort),
+            // Protocol is owned by the selected model in llm.providers.json.
+            // Request/profile overrides must not reroute the model to another wire protocol.
+            Protocol = resolved.Config.Protocol,
         };
 
         return resolved with

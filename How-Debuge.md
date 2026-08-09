@@ -2178,10 +2178,10 @@ Desktop 发布产物必须同时包含：
   -PublishRoot .\.tmp-build\phase1a-win11-preview
 ```
 
-窗口底部显示实际 Loopback 地址。确认以下路径均有非零响应体：
+窗口底部显示 `0.0.0.0:<configured-port>` 监听端点；运行中心悬停可查看同端口 Loopback 控制地址。确认以下路径均有非零响应体：
 
 ```powershell
-$base = 'http://127.0.0.1:<status-bar-port>'
+$base = 'http://127.0.0.1:<configured-port>'
 Invoke-WebRequest "$base/health/ready" -UseBasicParsing
 Invoke-WebRequest "$base/admin/" -UseBasicParsing
 Invoke-WebRequest "$base/admin/index.html" -UseBasicParsing
@@ -2238,14 +2238,14 @@ dotnet build .\Source\PuddingDesktop\PuddingDesktop.csproj --no-restore
 如果 Desktop Workbench 的 `GET /api/workspaces/{workspaceId}/agents/status` 返回 500，
 先用响应中的 `errorId` 搜索 `D:\data\logs\error` 和 `D:\data\logs\system`。若堆栈落在
 `PlatformApiClient.GetSessionsAsync`，并显示连接 `localhost:5000` 被拒绝，说明 Core 已经
-动态绑定端口，但内部控制面请求仍在使用固定默认地址。检查
+按 Desktop 配置监听，但内部控制面请求仍在使用错误的默认地址。检查
 `PuddingControllerAddressRewriteHandler` 是否已注册到 `PlatformApiClient`，以及
 `PuddingApplicationHost.CaptureBoundAddresses` 是否已把实际地址写入
 `IPuddingServerAddressAccessor`。
 
 HttpClient 的起始日志可能在 DelegatingHandler 执行前显示原始
 `http://localhost:5000/...`，不能仅凭这一行判定重写失败。有效验收证据是后续
-`Sending HTTP request` 指向窗口状态栏中的动态 `127.0.0.1:<port>`，下游请求返回 200，
+`Sending HTTP request` 指向配置端口的 `127.0.0.1:<port>` 本机控制地址，下游请求返回 200，
 并且原始 Agent 状态接口也返回 200。
 
 发布报 `NETSDK1152` 且路径同时出现两个
@@ -2293,6 +2293,8 @@ WPF 会生成 `PuddingDesktop_*_wpftmp.csproj`。若自定义 `BaseOutputPath` �
 
 运行中心的进程职责分为两层：`CoreProcessSupervisor` 只管理一次 Core 启停和进程树，`DesktopRuntimeOrchestrator` 管理异常恢复、退避、熔断和用户意图。默认策略是 2s/4s/8s 退避，60 秒窗口内允许 3 次恢复，继续失败进入 `CoreCircuitOpen`。用户点击“停止”、配置无效或 DataRoot 缺失都不得自动拉起。
 
+DesktopChild 的监听端口来自 `<DataRoot>/config/system.json` 的 `desktop.core.port`，必须为 `1–65535`，默认 `8080`。进程命令行应包含 `--urls http://0.0.0.0:<port>`，`PUDDING_DESKTOP_READY` 则报告 `http://127.0.0.1:<port>` 给 Desktop 控制链路。若启动失败，先用 `Get-NetTCPConnection -State Listen -LocalPort <port>` 判断端口占用，再看运行中心最近 stderr 中的 Kestrel bind 错误；系统不会静默回退到随机端口。局域网访问还需确认 Windows 防火墙允许该入站端口。
+
 定向验证：
 
 ```powershell
@@ -2307,7 +2309,7 @@ dotnet publish .\Source\PuddingDesktop\PuddingDesktop.csproj `
 
 上述 Desktop build/test/publish 必须串行执行。`dotnet build PuddingDesktop` 与引用同一 WPF 项目的 `dotnet test PuddingDesktop.Tests` 若并行共享默认 `obj`，可能在 `Microsoft.WinFX.targets` 报 `RG1000` 和重复 `mainwindow.baml`；串行重跑即可，不要因此修改 XAML 资源名或清理 DataRoot。
 
-真实故障恢复 smoke 必须使用脚本创建的系统 Temp `DesktopHome` 和 DataRoot。终止进程前同时核对 Core 的 `ParentProcessId`、`ExecutablePath`、`--data-root` 参数与隔离目录，禁止对真实 `D:\data` Core 或名称匹配的一组进程执行批量 Kill。正常结果是：旧 Core 退出后运行中心先进入“等待自动恢复”，随后出现新的 PID 和动态 Loopback 地址；点击“停止”后至少等待一个最大退避周期，Desktop 仍存活但 Core 子进程数保持为 0。
+真实故障恢复 smoke 必须使用脚本创建的系统 Temp `DesktopHome` 和 DataRoot。终止进程前同时核对 Core 的 `ParentProcessId`、`ExecutablePath`、`--data-root` 参数与隔离目录，禁止对真实 `D:\data` Core 或名称匹配的一组进程执行批量 Kill。正常结果是：旧 Core 退出后运行中心先进入“等待自动恢复”，随后出现新的 PID，监听端点仍为同一个配置端口；点击“停止”后至少等待一个最大退避周期，Desktop 仍存活但 Core 子进程数保持为 0。
 
 Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Windows 用户可访问的 Named Pipe 发送激活信号。发现第二个窗口或第二个 Core 时，检查两个启动进程是否使用同一版本的 Desktop 和同一 `PUDDING_DESKTOP_HOME`；开发中的旧版本不参与新版单实例协议。实例发现文件位于：
 
@@ -2319,7 +2321,7 @@ Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Wind
 
 从 Visual Studio 启动 Desktop 后，若 Core 在 Ready 前连续退出并报告 `DirectoryNotFoundException: Source\PuddingAgent\wwwroot`，说明 WPF 启动环境错误地把 ASP.NET Core 的 Development 静态资源清单行为传给了子进程。`CoreProcessSupervisor` 必须对 DesktopChild 显式设置 `ASPNETCORE_ENVIRONMENT=Production` 和 `DOTNET_ENVIRONMENT=Production`，并把工作目录设为 Core 可执行文件目录；Workbench 由输出或发布目录中的物理 `wwwroot` 提供。`PuddingDesktop/Properties/launchSettings.json` 不应包含 ASP.NET Core URL 或环境变量。
 
-从 Visual Studio 直接启动 `PuddingDesktop.csproj` 时，Desktop 的 ProjectReference 会先构建后端，并把本次构建的 `PuddingAgent.exe` 与依赖复制到 Desktop 输出目录。开发态 Core 解析必须优先使用这份与当前 Desktop Build 同源的输出，不能先在 `Source/PuddingAgent` 的 Debug、Release、publish 目录中按 exe 时间戳猜测，否则可能启动旧后端。修改后端源码后需要停止并重新启动 VS 调试会话；DesktopChild 不是 `dotnet watch` 进程，不支持在已运行子进程中热替换整套后端。
+从 Visual Studio 直接启动 `PuddingDesktop.csproj` 时，Desktop 不再通过 ProjectReference 隐式构建 Core；WPF 与 ASP.NET Core 保持独立进程/项目边界。开发态解析顺序仍是显式配置、发布包 `core/PuddingAgent.exe`、Desktop 同目录产物、`Source/PuddingAgent` 旧布局兜底，因此只重新构建 Desktop 可能继续启动旧 Core。若运行中心反复退出，且异常文案与当前源码不一致（例如旧二进制仍要求 loopback，而 Desktop 已传入 `http://0.0.0.0:<port>`），先核对日志中的实际 `ExecutablePath`、文件时间和完整启动参数；自动恢复只会重启同一产物，不会编译源码。应在 Core 完全停止后，通过引导重建入口 `/desktop/bootstrap/start`（或对应 UI 操作）执行 `stop → dotnet build Source/PuddingAgent/PuddingAgent.csproj → restart`。验收必须同时看到 `/desktop/bootstrap/status` 的 `coreState=Ready`、新的 Core PID/产物时间，以及 `http://127.0.0.1:<port>/health` 返回 `healthy`；不能只看 build exit code。DesktopChild 不是 `dotnet watch`，源码修改不会热替换到已运行进程。
 
 Desktop 默认关闭到托盘且是单实例：窗口消失不代表进程退出。若旧实例仍在托盘，VS 启动的新进程只会激活旧实例，旧 Core 也会继续运行，看起来就像新后端没有生效。调试新构建前先从托盘选择“退出 Pudding”，再确认 `PuddingDesktop.exe` / 其子 `PuddingAgent.exe` 已退出；不要同时用 `dev-up.py` 和 Desktop 访问同一个 DataRoot。
 
@@ -2348,7 +2350,7 @@ smoke 只使用 `%TEMP%\PuddingAgent\phase2a1-browser-<guid>`，不得改指向 
 
 Bridge 排查顺序：
 
-1. `Core 运行中` 但 Bridge 为 `Disconnected`：先核对 Core 是 `--desktop-child`、地址是动态 Loopback，并检查 `system.json` 的 ControlToken 是否存在；Token 只允许进入 `X-Pudding-Desktop-Token` Header，禁止写入 UI、异常或诊断包。
+1. `Core 运行中` 但 Bridge 为 `Disconnected`：先核对 Core 是 `--desktop-child`、监听地址是配置的 `0.0.0.0:<port>`、Ready 控制地址是同端口 Loopback，并检查 `system.json` 的 ControlToken 是否存在；Token 只允许进入 `X-Pudding-Desktop-Token` Header，禁止写入 UI、异常或诊断包。
 2. 一直 `Connecting`：检查 Desktop 是否先启动 Receive Loop 再发送 Hello；HelloAck 前不能进入 Connected，也不能有第二个 Receive Loop。
 3. 立即 `Failed`：Host 只接受 Loopback WebSocket、DesktopChild 模式、正确 Token 和匹配协议版本。用 `DesktopBrowserBridgeAuthenticationTests` 与 `DesktopBrowserBridgeHandshakeTests` 区分 401/403、非 WebSocket、首消息错误和协议拒绝。
 4. 静默连接 45 秒后仍不掉线：检查 heartbeat watchdog 是否可取消阻塞 Receive。测试必须使用 fake clock，不等待真实 45 秒。
@@ -2554,3 +2556,31 @@ platform.db 的 append-only 诊断表（session_event_log / telemetry_metric_eve
 - SQLite 无 DELETE...LIMIT：用 rowid 子查询分批删，批间限速；时间戳为 "O" 格式字符串，字典序比较安全。
 - VACUUM 默认关闭：约 2.5 GiB 库 VACUUM 需要等量临时空间与较长锁，建议借 bootstrap 的 Core 停止窗口手动执行。
 - 验证：`PuddingPlatformTests/Services/DiagnosticRetentionServiceTests.cs`（4 用例：过期裁剪/禁用跳过/水位保护/白名单防注入）。
+
+## 11.19 Chat 首屏、渐进消息与滚动性能
+
+先区分网络 payload、React 重算和滚动提交三个层面，避免只凭视觉卡顿判断：
+
+1. 检查 `GET /api/workspaces/{workspaceId}/agents/{agentId}/conversation`：active run 的 `processItems` 最多 64 条，但 `processSummary` 应保留完整的思考/工具计数。
+2. 检查 `GET /api/conversations/{conversationId}/bootstrap?messageLimit=1`：`subAgentEvents` 最多 500 条；截断后 run 的终态由 `subAgentRunStatuses` 对账。
+3. 折叠过程面板不应执行 rounds/trace chips 构建；展开后才允许这部分 CPU 开销。
+4. 高频 scroll 事件只有在 `atBottom`、`nearTop` 或 `followMode` 改变时才提交 React state；首屏布局稳定后 100ms 贴底轮询应在约 500–800ms 内结束。
+5. 请求带 `Accept-Encoding: br, gzip` 时，动态 JSON 和前端静态资源应出现 `Content-Encoding`，用于确认 Host 响应压缩已生效。
+
+前端可使用 `?perf=1`（或 `localStorage.pudding_perf=1`）打开现有性能埋点，重点对比 conversation/bootstrap 响应字节数、首屏提交次数和滚动期间长任务。后端改动只有在 Desktop/Core 外部重启到新构建后才会生效，不能用承载当前 Agent 的旧进程作为验收依据。
+
+生产 bundle 基准（2026-08-09 第二批修复）：Chat 首始 chunk 从约 804KB 降到 333KB，Markdown 增强块约 472KB 按需加载；全局主包从约 2.08MB 降到 1.89MB。若后续构建中 Chat chunk 再次包含 `katex`、`react-markdown` 或 `parse5`，检查 `MessageItem.tsx` 是否重新出现静态 Markdown import；若主包重新包含 `SettingDrawer`，检查 `app.tsx` 是否恢复了 Pro Components 值导入。
+
+第三批基准：主包 `1,867,778` bytes，Chat 首始 chunk `303,521` bytes，二者名义合计 `2,171,299` bytes；相对第二批的 `2,221,844` bytes 再减少约 2.3%。子代理检查器 `20,374` bytes、摄像头输入 `8,909` bytes、会话诊断 Drawer `8,845` bytes 均为首次使用加载；完整性能诊断另在 async chunk。曾试验 Umi `granularChunks`，虽然 `umi.js` 降到约 1.67MB，但 HTML 新增同步 `framework.js` 约 220KB，合计没有下降且多一个阻塞请求，因此已撤销。后续比较必须读取 `dist/chat/index.html` 的全部同步 script，不能只看构建日志里的 `umi.js` 单文件大小。
+
+## 11.20 LLM 模型走错 Chat Completions / Responses / Anthropic Messages 协议
+
+如果 Responses 模型返回 403，且响应体出现 `object: "chat.completion"`，说明请求实际到达了旧的 `/chat/completions` 路径。不要只检查 Provider 的 BaseUrl；按同一个 `providerId/modelId` 对齐以下事实：
+
+1. `D:\data\config\llm.providers.json` 的目标模型必须有 `protocol: "responses"`；Provider 本身不应存在 `protocol` 字段。
+2. Admin 的 LLM 资源池模型列表与新增/编辑抽屉应显示同一个模型协议；Provider 列表和 Provider 表单不显示协议。
+3. Core 启动时配置校验会拒绝缺失协议或 `openai` / `responses` / `anthropic` 之外的值，不能用默认 Chat Completions 静默回退。
+4. 查看 `[DirectLlm] REQUEST/STREAM` 或 `[ControllerLLM] CALL/STREAM` 日志中的 `provider/model/protocol/endpoint`：`openai` 应进入 `/chat/completions`；`responses` 应进入 `/responses` 并发送 `store=false`；`anthropic` 应进入 `/messages` 并使用 `x-api-key` 与 `anthropic-version`。
+5. 若配置正确但日志仍显示 `protocol=openai`，核对运行中的 `PuddingAgent.exe` 是否加载了新构建；Desktop 托盘旧实例或未完成的 Core 重启会继续运行旧路由代码。
+
+协议的唯一事实源是模型配置。请求覆盖、Provider 字段和 Provider 默认协议都不能参与路由；混合 Provider 应使用不同模型定向证明 `openai → /chat/completions`、`responses → /responses`、`anthropic → /messages`。OpenCode Go 的 Qwen 若误走 Chat Completions 会返回 format 不兼容；若 `/messages` 返回 missing API key，检查是否误用了 Bearer 而非 `x-api-key`。

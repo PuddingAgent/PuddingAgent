@@ -10,6 +10,7 @@ namespace PuddingDesktop.Core;
 public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
 {
     internal const string DesktopChildEnvironmentName = "Production";
+    internal const string DesktopChildListenHost = "0.0.0.0";
     private static readonly TimeSpan HealthPollInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -121,6 +122,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
                 {
                     ProcessId = process.Id,
                     BaseAddress = readyMessage.BaseAddress,
+                    ListenAddress = new Uri(CreateListenUrl(options.Port)),
                     StartedAt = startedAt,
                     ReadyAt = DateTimeOffset.UtcNow,
                 };
@@ -199,7 +201,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
         startInfo.ArgumentList.Add("--data-root");
         startInfo.ArgumentList.Add(options.DataRoot);
         startInfo.ArgumentList.Add("--urls");
-        startInfo.ArgumentList.Add($"http://127.0.0.1:{options.Port}");
+        startInfo.ArgumentList.Add(CreateListenUrl(options.Port));
 
         // PuddingDesktop is a WPF process, so its Visual Studio launch profile must
         // not leak Development static-web-assets behavior into the Core child.
@@ -208,6 +210,17 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
         startInfo.Environment["DOTNET_ENVIRONMENT"] = DesktopChildEnvironmentName;
 
         return startInfo;
+    }
+
+    internal static string CreateListenUrl(int port)
+    {
+        if (port is < 1 or > 65535)
+            throw new ArgumentOutOfRangeException(
+                nameof(port),
+                port,
+                "Desktop-managed Core requires a fixed port from 1 to 65535.");
+
+        return $"http://{DesktopChildListenHost}:{port}";
     }
 
     private async Task StopUnderLockAsync(CancellationToken cancellationToken)

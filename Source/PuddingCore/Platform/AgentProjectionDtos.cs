@@ -33,7 +33,8 @@ public sealed record AgentRunView(
 /// <summary>Current output snapshot for an Agent run.</summary>
 public sealed record AgentOutputSnapshot(
     string Markdown,
-    IReadOnlyList<ProcessSummaryItem> ProcessItems);
+    IReadOnlyList<ProcessSummaryItem> ProcessItems,
+    ConversationProcessSummary? ProcessSummary = null);
 
 /// <summary>Compact process item shown through progressive disclosure in chat UI.</summary>
 public sealed record ProcessSummaryItem(

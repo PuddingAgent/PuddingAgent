@@ -16,10 +16,10 @@ import {
   submitConversationTurn,
 } from '@/services/platform/api';
 import {
-  installPerfDiagnostics,
+  isPerfDiagnosticsEnabled,
   recordPerfEvent,
   recordPerfStep,
-} from '@/utils/debug';
+} from '@/utils/perfEventRuntime';
 import {
   getThinkingRawText,
   sanitizeProcessText,
@@ -435,7 +435,14 @@ export function useChatState(
   });
 
   useEffect(() => {
-    installPerfDiagnostics();
+    if (!isPerfDiagnosticsEnabled()) return undefined;
+    let active = true;
+    void import('@/utils/debug').then(({ installPerfDiagnostics }) => {
+      if (active) installPerfDiagnostics();
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {

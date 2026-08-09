@@ -22,6 +22,10 @@ public class LlmModelEntity
     [Required, MaxLength(128)]
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>接口协议类型："openai"、"responses" 或 "anthropic"。</summary>
+    [Required, MaxLength(32)]
+    public string Protocol { get; set; } = string.Empty;
+
     /// <summary>描述信息（能力、适用场景等）</summary>
     [MaxLength(2048)]
     public string? Description { get; set; }

@@ -51,7 +51,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             Id: idx + 1,
             ProviderId: p.ProviderId,
             Name: p.Name,
-            Protocol: p.Protocol,
             BaseUrl: p.BaseUrl,
             HasApiKey: !string.IsNullOrWhiteSpace(p.ApiKey) || !string.IsNullOrWhiteSpace(p.ApiKeyRef),
             Description: p.Description,
@@ -76,7 +75,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             Id: config.Providers.IndexOf(p) + 1,
             ProviderId: p.ProviderId,
             Name: p.Name,
-            Protocol: p.Protocol,
             BaseUrl: p.BaseUrl,
             HasApiKey: !string.IsNullOrWhiteSpace(p.ApiKey) || !string.IsNullOrWhiteSpace(p.ApiKeyRef),
             Description: p.Description,
@@ -90,6 +88,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 ProviderId: 0,
                 ModelId: m.ModelId,
                 Name: m.Name,
+                Protocol: m.Protocol,
                 Description: null,
                 MaxContextTokens: m.MaxContextTokens ?? 0,
                 MaxOutputTokens: m.MaxOutputTokens ?? 0,
@@ -126,7 +125,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             {
                 ProviderId = req.ProviderId,
                 Name = req.Name,
-                Protocol = req.Protocol,
                 BaseUrl = req.BaseUrl,
                 ApiKey = req.ApiKey,
                 IsEnabled = req.IsEnabled,
@@ -146,7 +144,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 Id: config.Providers.Count,
                 ProviderId: newProvider.ProviderId,
                 Name: newProvider.Name,
-                Protocol: newProvider.Protocol,
                 BaseUrl: newProvider.BaseUrl,
                 HasApiKey: !string.IsNullOrWhiteSpace(newProvider.ApiKey) || !string.IsNullOrWhiteSpace(newProvider.ApiKeyRef),
                 Description: newProvider.Description,
@@ -181,7 +178,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                         var updated = p with
             {
                 Name = req.Name,
-                Protocol = req.Protocol,
                 BaseUrl = req.BaseUrl,
                 ApiKey = req.ApiKey ?? p.ApiKey,
                 IsEnabled = req.IsEnabled,
@@ -201,7 +197,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 Id: config.Providers.Count,
                 ProviderId: updated.ProviderId,
                 Name: updated.Name,
-                Protocol: updated.Protocol,
                 BaseUrl: updated.BaseUrl,
                 HasApiKey: !string.IsNullOrWhiteSpace(updated.ApiKey) || !string.IsNullOrWhiteSpace(updated.ApiKeyRef),
                 Description: updated.Description,
@@ -240,7 +235,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                         provider = provider with
             {
                 Name = providerRequest.Name,
-                Protocol = providerRequest.Protocol,
                 BaseUrl = providerRequest.BaseUrl,
                 ApiKey = providerRequest.ApiKey ?? provider.ApiKey,
                 IsEnabled = providerRequest.IsEnabled,
@@ -264,7 +258,6 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 Id: config.Providers.IndexOf(provider) + 1,
                 ProviderId: provider.ProviderId,
                 Name: provider.Name,
-                Protocol: provider.Protocol,
                 BaseUrl: provider.BaseUrl,
                 HasApiKey: !string.IsNullOrWhiteSpace(provider.ApiKey) || !string.IsNullOrWhiteSpace(provider.ApiKeyRef),
                 Description: provider.Description,
@@ -336,6 +329,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             ProviderId: 0,
             ModelId: m.ModelId,
             Name: m.Name,
+            Protocol: m.Protocol,
             Description: null,
             MaxContextTokens: m.MaxContextTokens ?? 0,
             MaxOutputTokens: m.MaxOutputTokens ?? 0,
@@ -373,6 +367,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             {
                 ModelId = req.ModelId,
                 Name = req.Name,
+                Protocol = req.Protocol,
                 MaxContextTokens = req.MaxContextTokens,
                 MaxInputTokens = req.MaxInputTokens,
                 MaxOutputTokens = req.MaxOutputTokens,
@@ -395,6 +390,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 ProviderId: 0,
                 ModelId: newModel.ModelId,
                 Name: newModel.Name,
+                Protocol: newModel.Protocol,
                 Description: null,
                 MaxContextTokens: newModel.MaxContextTokens ?? 0,
                 MaxOutputTokens: newModel.MaxOutputTokens ?? 0,
@@ -439,6 +435,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             var updated = m with
             {
                 Name = req.Name,
+                Protocol = req.Protocol,
                 MaxContextTokens = req.MaxContextTokens,
                 MaxInputTokens = req.MaxInputTokens,
                 MaxOutputTokens = req.MaxOutputTokens,
@@ -460,6 +457,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 ProviderId: 0,
                 ModelId: updated.ModelId,
                 Name: updated.Name,
+                Protocol: updated.Protocol,
                 Description: null,
                 MaxContextTokens: updated.MaxContextTokens ?? 0,
                 MaxOutputTokens: updated.MaxOutputTokens ?? 0,
@@ -534,6 +532,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             {
                 ModelId = req.ModelId,
                 Name = req.Name,
+                Protocol = req.Protocol,
                 MaxContextTokens = req.MaxContextTokens,
                 MaxOutputTokens = req.MaxOutputTokens,
                 PricePer1MInputTokens = req.InputPricePer1MTokens,

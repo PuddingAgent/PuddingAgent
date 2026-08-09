@@ -24,11 +24,12 @@ type BootstrapFormValues = {
   providerMode: 'custom' | 'skip';
   providerId?: string;
   providerName?: string;
-  protocol?: string;
   baseUrl?: string;
   apiKey?: string;
   chatModelId?: string;
+  chatModelProtocol?: string;
   memoryModelId?: string;
+  memoryModelProtocol?: string;
   workspaceName?: string;
   agentName?: string;
 };
@@ -392,10 +393,11 @@ const Bootstrap: React.FC = () => {
       providerMode: 'custom',
       providerId: 'default-openai',
       providerName: 'Default OpenAI-Compatible',
-      protocol: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       chatModelId: 'gpt-4o-mini',
+      chatModelProtocol: 'openai',
       memoryModelId: 'gpt-4o-mini',
+      memoryModelProtocol: 'openai',
       workspaceName: '默认工作空间',
       agentName: '默认助手',
     });
@@ -441,7 +443,7 @@ const Bootstrap: React.FC = () => {
     ['userId', 'email', 'password', 'confirmPassword'],
     providerMode === 'skip'
       ? ['providerMode']
-      : ['providerMode', 'providerId', 'providerName', 'protocol', 'baseUrl', 'chatModelId'],
+      : ['providerMode', 'providerId', 'providerName', 'baseUrl', 'chatModelId', 'chatModelProtocol'],
     ['workspaceName', 'agentName'],
     [],
   ];
@@ -476,11 +478,12 @@ const Bootstrap: React.FC = () => {
               mode: 'custom',
               providerId: allValues.providerId,
               name: allValues.providerName,
-              protocol: allValues.protocol || 'openai',
               baseUrl: allValues.baseUrl,
               apiKey: allValues.apiKey,
               chatModelId: allValues.chatModelId,
+              chatModelProtocol: allValues.chatModelProtocol,
               memoryModelId: allValues.memoryModelId,
+              memoryModelProtocol: allValues.memoryModelProtocol,
             };
 
       const res = await fetch('/api/bootstrap/complete', {
@@ -625,9 +628,6 @@ const Bootstrap: React.FC = () => {
           <Form.Item label="Provider 名称" name="providerName" rules={[{ required: true, message: '请输入 Provider 名称' }]}>
             <Input size="large" placeholder="显示名称" />
           </Form.Item>
-          <Form.Item label="协议" name="protocol" rules={[{ required: true, message: '请选择协议' }]}>
-            <Radio.Group options={[{ label: 'OpenAI', value: 'openai' }]} />
-          </Form.Item>
           <Form.Item label="Base URL" name="baseUrl" rules={[{ required: true, message: '请输入 Base URL' }]}>
             <Input size="large" placeholder="https://api.openai.com/v1" />
           </Form.Item>
@@ -637,8 +637,14 @@ const Bootstrap: React.FC = () => {
           <Form.Item label="默认聊天模型" name="chatModelId" rules={[{ required: true, message: '请输入默认聊天模型' }]}>
             <Input size="large" placeholder="默认聊天模型，如 gpt-4o-mini" />
           </Form.Item>
+          <Form.Item label="默认聊天模型协议" name="chatModelProtocol" rules={[{ required: true, message: '请选择默认聊天模型协议' }]}>
+            <Radio.Group options={[{ label: 'Chat Completions', value: 'openai' }, { label: 'Responses API', value: 'responses' }, { label: 'Anthropic Messages', value: 'anthropic' }]} />
+          </Form.Item>
           <Form.Item label="记忆模型" name="memoryModelId">
             <Input size="large" placeholder="记忆/总结模型，可选" />
+          </Form.Item>
+          <Form.Item label="记忆模型协议" name="memoryModelProtocol">
+            <Radio.Group options={[{ label: 'Chat Completions', value: 'openai' }, { label: 'Responses API', value: 'responses' }, { label: 'Anthropic Messages', value: 'anthropic' }]} />
           </Form.Item>
         </>
       )}

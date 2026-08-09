@@ -161,7 +161,7 @@ const getToolCompactDetail = (item: TimelineItem): string => {
 const getHistoricalSummaryText = (
   summary?: ConversationProcessSummary,
 ): string | null => {
-  if (!summary?.hasDetails) return null;
+  if (!summary) return null;
   const parts: string[] = [];
   if (summary.thinkingRounds > 0)
     parts.push(`已思考 ${summary.thinkingRounds} 轮`);
@@ -194,6 +194,21 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   const hasHistoricalDetails = Boolean(
     historicalSummary?.hasDetails && onLoadDetails,
   );
+  const summaryText =
+    loadedItems !== null || !historicalSummary
+      ? getProcessSummaryText(effectiveItems)
+      : getHistoricalSummaryText(historicalSummary);
+  const expandedModel = React.useMemo(() => {
+    if (!expanded) return null;
+    const rounds = buildProcessRounds(effectiveItems);
+    const displayItems = buildDisplayItems(effectiveItems);
+    const traceChips = buildTraceChips(effectiveItems);
+    const roundByItemId = new Map<string, number>();
+    rounds.forEach((round) => {
+      round.items.forEach((item) => roundByItemId.set(item.id, round.index));
+    });
+    return { displayItems, traceChips, roundByItemId };
+  }, [effectiveItems, expanded]);
 
   const expandWithDetails = async () => {
     setExpanded(true);
@@ -238,17 +253,6 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
     return null;
   }
 
-  const summary =
-    loadedItems !== null || !historicalSummary
-      ? getProcessSummaryText(effectiveItems)
-      : getHistoricalSummaryText(historicalSummary);
-  const rounds = buildProcessRounds(effectiveItems);
-  const displayItems = buildDisplayItems(effectiveItems);
-  const traceChips = buildTraceChips(effectiveItems);
-  const roundByItemId = new Map<string, number>();
-  rounds.forEach((round) => {
-    round.items.forEach((item) => roundByItemId.set(item.id, round.index));
-  });
   const toggleExpandedItem = (id: string, shouldExpand: boolean) => {
     const next = new Set(expandedItems);
     if (shouldExpand) {
@@ -274,8 +278,8 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
           }}
         >
           <span className={styles.processSummaryDot} />
-          {summary && (
-            <span className={styles.processSummaryText}>{summary}</span>
+          {summaryText && (
+            <span className={styles.processSummaryText}>{summaryText}</span>
           )}
           <span className={styles.processSummaryLink}>查看过程</span>
         </button>
@@ -294,6 +298,10 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
       </div>
     );
   }
+
+  const displayItems = expandedModel?.displayItems ?? [];
+  const traceChips = expandedModel?.traceChips ?? [];
+  const roundByItemId = expandedModel?.roundByItemId ?? new Map<string, number>();
 
   return (
     <div style={{ marginTop: 4 }}>

@@ -34,7 +34,6 @@ import {
 import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 import { useChatStyles } from '../styles';
-import CameraInputModal from './CameraInputModal';
 import CommandPalette, { type Command, filterCommands } from './CommandPalette';
 import ComposerActionMenu from './ComposerActionMenu';
 import ComposerFeedbackStrip, {
@@ -44,6 +43,11 @@ import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
 import { normalizeVisionArtifactFile } from './visionArtifactImage';
+
+const CameraInputModal =
+  process.env.NODE_ENV === 'test'
+    ? (require('./CameraInputModal').default as typeof import('./CameraInputModal').default)
+    : React.lazy(() => import('./CameraInputModal'));
 
 /** Composer 的聊天状态 */
 export type ChatStatus =
@@ -1237,15 +1241,19 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         </div>
       </div>
 
-      <CameraInputModal
-        open={showCameraInput}
-        workspaceId={workspaceId}
-        disabled={disabled || loading}
-        initialPrompt={draftValue}
-        cameraInputAdapter={cameraInputAdapter}
-        onCancel={() => setShowCameraInput(false)}
-        onSend={handleCameraSend}
-      />
+      {showCameraInput && (
+        <React.Suspense fallback={null}>
+          <CameraInputModal
+            open
+            workspaceId={workspaceId}
+            disabled={disabled || loading}
+            initialPrompt={draftValue}
+            cameraInputAdapter={cameraInputAdapter}
+            onCancel={() => setShowCameraInput(false)}
+            onSend={handleCameraSend}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

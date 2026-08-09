@@ -20,7 +20,7 @@
   "desktop": {
     "core": {
       "autoStart": true,
-      "port": 0,
+      "port": 8080,
       "startupTimeoutSeconds": 60,
       "shutdownTimeoutSeconds": 15,
       "controlToken": null

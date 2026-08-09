@@ -19,7 +19,6 @@ public sealed class PuddingFileConfigLoaderTests
                 {
                   "providerId": "openai",
                   "name": "OpenAI",
-                  "protocol": "openai",
                   "baseUrl": "https://api.openai.com/v1",
                   "apiKey": "openai-key",
                   "isEnabled": true,
@@ -27,6 +26,7 @@ public sealed class PuddingFileConfigLoaderTests
                     {
                       "modelId": "gpt-4o-mini",
                       "name": "GPT-4o Mini",
+                      "protocol": "openai",
                       "maxContextTokens": 128000,
                       "maxOutputTokens": 4096,
                       "capabilityTags": ["text", "streaming"],
@@ -38,7 +38,6 @@ public sealed class PuddingFileConfigLoaderTests
                 {
                   "providerId": "mimo",
                   "name": "Mimo",
-                  "protocol": "openai",
                   "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
                   "apiKey": "mimo-key",
                   "isEnabled": true,
@@ -46,6 +45,7 @@ public sealed class PuddingFileConfigLoaderTests
                     {
                       "modelId": "mimo-v2.5-pro",
                       "name": "Mimo v2.5 Pro",
+                      "protocol": "responses",
                       "maxContextTokens": 1048576,
                       "maxOutputTokens": 131072,
                       "capabilityTags": ["text", "function-calling", "streaming"],
@@ -55,11 +55,22 @@ public sealed class PuddingFileConfigLoaderTests
                     {
                       "modelId": "mimo-v2.5",
                       "name": "Mimo v2.5",
+                      "protocol": "openai",
                       "maxContextTokens": 1048576,
                       "maxOutputTokens": 8192,
                       "capabilityTags": ["text", "streaming"],
                       "isDefault": false,
                       "sortOrder": 2
+                    },
+                    {
+                      "modelId": "qwen3.8-max",
+                      "name": "Qwen3.8 Max",
+                      "protocol": "anthropic",
+                      "maxContextTokens": 1000000,
+                      "maxOutputTokens": 131072,
+                      "capabilityTags": ["text", "function-calling", "streaming"],
+                      "isDefault": false,
+                      "sortOrder": 3
                     }
                   ]
                 }
@@ -92,10 +103,43 @@ public sealed class PuddingFileConfigLoaderTests
         Assert.IsTrue(result.Success);
         var config = result.Config!;
         Assert.HasCount(2, config.Providers);
+        var mimoModels = config.Providers.Single(provider => provider.ProviderId == "mimo").Models;
+        Assert.AreEqual("responses", mimoModels.Single(model => model.ModelId == "mimo-v2.5-pro").Protocol);
+        Assert.AreEqual("openai", mimoModels.Single(model => model.ModelId == "mimo-v2.5").Protocol);
+        Assert.AreEqual("anthropic", mimoModels.Single(model => model.ModelId == "qwen3.8-max").Protocol);
         Assert.AreEqual("mimo", config.Profiles["default-conscious"].ProviderId);
         Assert.AreEqual("mimo-v2.5", config.Profiles["default-subconscious"].ModelId);
         Assert.AreEqual("default-conscious", config.Roles.Conscious);
         Assert.AreEqual("default-subconscious", config.Roles.Subconscious);
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_Fails_When_Model_Protocol_Is_Missing_Or_Unsupported()
+    {
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "mixed",
+                  "name": "Mixed Protocol Provider",
+                  "baseUrl": "https://example.invalid/v1",
+                  "models": [
+                    { "modelId": "missing", "name": "Missing Protocol" },
+                    { "modelId": "unsupported", "name": "Unsupported Protocol", "protocol": "legacy" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var result = await new PuddingFileConfigLoader(paths).LoadLlmProvidersAsync();
+
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Errors.Any(error => error.Contains("model 'missing' protocol", StringComparison.Ordinal)));
+        Assert.IsTrue(result.Errors.Any(error => error.Contains("model 'unsupported' protocol", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -110,7 +154,6 @@ public sealed class PuddingFileConfigLoaderTests
                 {
                   "providerId": "fake",
                   "name": "Fake LLM",
-                  "protocol": "openai",
                   "baseUrl": "http://localhost:5000/__fake_llm/v1",
                   "apiKey": "local-dev-only",
                   "isEnabled": true,
@@ -118,6 +161,7 @@ public sealed class PuddingFileConfigLoaderTests
                     {
                       "modelId": "fake-chat",
                       "name": "Fake Chat",
+                      "protocol": "openai",
                       "maxContextTokens": 65536,
                       "maxOutputTokens": 4096,
                       "isDefault": true,
@@ -159,7 +203,6 @@ public sealed class PuddingFileConfigLoaderTests
                 {
                   "providerId": "qwen",
                   "name": "Qwen",
-                  "protocol": "openai",
                   "baseUrl": "https://example.invalid/v1",
                   "apiKey": "test-only",
                   "isEnabled": true,
@@ -167,6 +210,7 @@ public sealed class PuddingFileConfigLoaderTests
                     {
                       "modelId": "qwen-max",
                       "name": "Qwen Max",
+                      "protocol": "openai",
                       "isDeprecated": false
                     }
                   ]
@@ -201,19 +245,17 @@ public sealed class PuddingFileConfigLoaderTests
                 {
                   "providerId": "dup",
                   "name": "Provider A",
-                  "protocol": "openai",
                   "baseUrl": "https://a.example.com/v1",
                   "models": [
-                    { "modelId": "model-a", "name": "Model A" }
+                    { "modelId": "model-a", "name": "Model A", "protocol": "openai" }
                   ]
                 },
                 {
                   "providerId": "dup",
                   "name": "Provider B",
-                  "protocol": "openai",
                   "baseUrl": "https://b.example.com/v1",
                   "models": [
-                    { "modelId": "model-b", "name": "Model B" }
+                    { "modelId": "model-b", "name": "Model B", "protocol": "openai" }
                   ]
                 }
               ],

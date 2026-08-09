@@ -11,6 +11,7 @@
 ## 前提条件
 
 - 项目根目录可通过 `.git` + 根 `code_map.md` 定位
+- L1 索引的唯一位置是 `{PROJECT_ROOT}/code_map.md`；不要再读取旧路径 `{PROJECT_ROOT}/Source/code_map.md`
 - 新增项目位于 `Source/{ProjectName}/`，含 `.csproj`
 - `list_dir`、`file_search`、`file_read`、`file_write` 工具可用
 

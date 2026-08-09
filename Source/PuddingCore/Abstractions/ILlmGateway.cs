@@ -3,8 +3,8 @@ using PuddingCode.Models;
 namespace PuddingCode.Abstractions;
 
 /// <summary>
-/// LLM API 网关。屏蔽不同供应商的差异（Claude / GPT / DeepSeek），
-/// 统一使用 OpenAI Chat Completions 兼容协议。
+/// LLM API 网关。屏蔽 Chat Completions、Responses 和 Anthropic Messages
+/// 等模型级 wire protocol 差异。
 /// </summary>
 public interface ILlmGateway
 {

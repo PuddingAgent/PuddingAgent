@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using PuddingAgent.Services;
@@ -7,6 +8,7 @@ using PuddingCode.Configuration;
 using PuddingPlatform.Controllers.Api;
 using PuddingPlatform.Services;
 using Serilog;
+using System.IO.Compression;
 using System.Text;
 
 namespace PuddingHost.Hosting;
@@ -78,6 +80,20 @@ public static class PuddingApplicationHost
                             | Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.ResponseStatusCode
                             | Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.Duration;
         });
+
+        // ── Response compression ─────────────────────────────
+        // Cold Workbench assets and diagnostic JSON responses are large enough
+        // that avoiding multi-megabyte loopback copies improves startup/polling.
+        builder.Services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            options.Providers.Add<BrotliCompressionProvider>();
+            options.Providers.Add<GzipCompressionProvider>();
+        });
+        builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+            options.Level = CompressionLevel.Fastest);
+        builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+            options.Level = CompressionLevel.Fastest);
 
         // ── CORS ─────────────────────────────────────────────
         var corsOrigins = (builder.Configuration["Cors:AllowedOrigins"]
@@ -168,8 +184,8 @@ public static class PuddingApplicationHost
 
     /// <summary>
     /// Phase 4: Capture server bound addresses (ONLY valid after StartAsync).
-    /// Accepts only Loopback HTTP; throws InvalidOperationException if no valid address found.
-    /// Returns the resolved loopback base address for Desktop mode.
+    /// Resolves a loopback control address from the bound HTTP listener. A wildcard
+    /// listener is projected to 127.0.0.1 with the same port for trusted local calls.
     /// </summary>
     public static Uri CaptureBoundAddresses(WebApplication application)
     {
@@ -185,10 +201,12 @@ public static class PuddingApplicationHost
 
         var baseAddress = addressAccessor?.BaseAddress
             ?? throw new InvalidOperationException(
-                "No loopback HTTP address found after server start. " +
+                "No local HTTP control address found after server start. " +
                 $"Bound addresses: [{string.Join(", ", addresses)}]");
 
-        Console.WriteLine($"[Startup] Server bound to {baseAddress}");
+        Console.WriteLine(
+            $"[Startup] Server bound addresses: [{string.Join(", ", addresses)}]; " +
+            $"local control address: {baseAddress}");
         return baseAddress;
     }
 }

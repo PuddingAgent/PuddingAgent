@@ -5,7 +5,10 @@ import type {
   TokenUsageDto,
   WorkspaceAgentDto,
 } from '@/services/platform/api';
-import { recordPerfEvent, writeDebugTrace } from '@/utils/debug';
+import {
+  recordPerfEvent,
+  writeDebugTrace,
+} from '@/utils/perfEventRuntime';
 import { sanitizeProcessText } from '../components/processPreview';
 import {
   projectSubAgentRunsToCards,

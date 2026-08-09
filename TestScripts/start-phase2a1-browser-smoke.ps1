@@ -7,6 +7,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-FreeIpv4Port {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, 0)
+    try {
+        $listener.Start()
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    }
+    finally {
+        $listener.Stop()
+    }
+}
+
 $resolvedPublishRoot = [System.IO.Path]::GetFullPath($PublishRoot)
 $desktopExecutable = Join-Path $resolvedPublishRoot 'PuddingDesktop.exe'
 $coreExecutable = Join-Path $resolvedPublishRoot 'core\PuddingAgent.exe'
@@ -34,6 +45,7 @@ $configRoot = Join-Path $dataRoot 'config'
 $workbenchUdf = Join-Path $dataRoot 'browser\workbench\user-data'
 $agentBrowserUdf = Join-Path $dataRoot 'browser\agent-browser\user-data'
 New-Item -ItemType Directory -Path $desktopHome, $configRoot -Force | Out-Null
+$corePort = Get-FreeIpv4Port
 
 $desktopConfig = [ordered]@{
     schemaVersion = 1
@@ -55,7 +67,7 @@ $systemConfig = [ordered]@{
         core = [ordered]@{
             autoStart = $false
             autoRestart = $true
-            port = 0
+            port = $corePort
             startupTimeoutSeconds = 120
             shutdownTimeoutSeconds = 15
             controlToken = $null
@@ -106,6 +118,7 @@ try {
         desktopExecutable = $desktopExecutable
         coreExecutable = $coreExecutable
         coreAutoStart = $false
+        coreListenAddress = "http://0.0.0.0:$corePort"
     } | ConvertTo-Json -Compress
 
     $reportedCorePid = $null
@@ -123,15 +136,16 @@ try {
         if ($null -ne $coreProcess -and $reportedCorePid -ne $coreProcess.ProcessId) {
             $reportedCorePid = $coreProcess.ProcessId
             $listenAddresses = @(Get-NetTCPConnection -State Listen -OwningProcess $reportedCorePid -ErrorAction SilentlyContinue |
-                Where-Object { $_.LocalAddress -in @('127.0.0.1', '::1') } |
-                ForEach-Object { "http://127.0.0.1:$($_.LocalPort)" } |
+                Where-Object { $_.LocalAddress -eq '0.0.0.0' -and $_.LocalPort -eq $corePort } |
+                ForEach-Object { "http://0.0.0.0:$($_.LocalPort)" } |
                 Sort-Object -Unique)
 
             [ordered]@{
                 event = 'core-observed'
                 desktopPid = $desktopProcess.Id
                 corePid = $reportedCorePid
-                loopbackAddresses = $listenAddresses
+                listenAddresses = $listenAddresses
+                localControlAddress = "http://127.0.0.1:$corePort"
                 commandLine = $coreProcess.CommandLine
             } | ConvertTo-Json -Compress
         }

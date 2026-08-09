@@ -16,7 +16,7 @@
 |------|------|
 | `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench |
 | `Core/CoreExecutableResolver.cs` | Core 路径确定性解析（配置→发布包→同源→兜底） |
-| `Core/CoreProcessSupervisor.cs` | Core 子进程启动、健康检查、环形 stdout/stderr、进程树回收 |
+| `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收 |
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
 | `Runtime/CoreRestartPolicy.cs` | 重启策略与取消语义 |
 
@@ -56,7 +56,8 @@
 | `Storage/LogRetentionService.cs` | 24h 日志清理 |
 | `Storage/DataRootSafetyValidator.cs` | 安全校验（拒绝越界、链接） |
 | `Configuration/SystemConfigurationService.cs` | system.json 原子写入 |
+| `ViewModels/SettingsViewModel.cs` | Desktop Core 固定监听端口（默认 8080）、恢复与关闭策略配置 |
 
 ## 测试
 
-`../Tests/PuddingDesktop.Tests/` — Browser Controller/Client 阻断性测试（102/102 ✅）
+`../../Tests/PuddingDesktop.Tests/` — Desktop 进程/配置与 Browser Controller/Client 阻断性测试（135/135 ✅，Release 2026-08-09）

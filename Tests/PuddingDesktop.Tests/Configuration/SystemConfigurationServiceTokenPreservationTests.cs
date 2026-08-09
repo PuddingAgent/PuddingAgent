@@ -6,6 +6,27 @@ namespace PuddingDesktop.Tests.Configuration;
 public class SystemConfigurationServiceTokenPreservationTests
 {
     [Fact]
+    public async Task LoadAsync_NoExistingFile_UsesFixedDefaultDesktopPort()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-test-{Guid.NewGuid():N}");
+
+        try
+        {
+            var result = await new SystemConfigurationService()
+                .LoadAsync(tempDir, CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.Equal(PuddingDesktopCoreConfig.DefaultPort, result.Config!.Desktop.Core.Port);
+            Assert.Equal(8080, result.Config.Desktop.Core.Port);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task UpdateDesktopCoreSettings_PreservesControlToken()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-test-{Guid.NewGuid():N}");
@@ -19,7 +40,7 @@ public class SystemConfigurationServiceTokenPreservationTests
           "desktop": {
             "core": {
               "autoStart": true,
-              "port": 0,
+              "port": 9090,
               "startupTimeoutSeconds": 60,
               "shutdownTimeoutSeconds": 15,
               "controlToken": "ORIGINAL_TOKEN_ABC123"
@@ -62,7 +83,7 @@ public class SystemConfigurationServiceTokenPreservationTests
           "desktop": {
             "core": {
               "autoStart": true,
-              "port": 0,
+              "port": 8080,
               "startupTimeoutSeconds": 60,
               "shutdownTimeoutSeconds": 15,
               "futureOption": { "enabled": true }

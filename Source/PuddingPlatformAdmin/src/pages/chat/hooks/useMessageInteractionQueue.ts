@@ -5,7 +5,7 @@ import {
   createChatSteeringMessage,
   getAgentMessageQueue,
 } from '@/services/platform/api';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import type { ChatTurn } from '../types';
 import {
   type ChatInteractionQueueItem,

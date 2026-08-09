@@ -38,7 +38,6 @@ public class JsonLlmConfigService : ILlmConfigService
             {
                 ProviderId = p.ProviderId,
                 Name = p.Name,
-                Protocol = p.Protocol,
                 BaseUrl = p.BaseUrl,
                 IsEnabled = p.IsEnabled,
                 HasApiKey = !string.IsNullOrWhiteSpace(p.ApiKey),
@@ -55,6 +54,7 @@ public class JsonLlmConfigService : ILlmConfigService
                 ModelId = m.ModelId,
                 ProviderId = m.ProviderId,
                 Name = m.Name,
+                Protocol = m.Protocol,
                 MaxContextTokens = m.MaxContextTokens,
                 MaxInputTokens = m.MaxInputTokens,
                 MaxOutputTokens = m.MaxOutputTokens,
@@ -91,6 +91,7 @@ public class JsonLlmConfigService : ILlmConfigService
             Endpoint = provider.BaseUrl,
             ApiKey = provider.ApiKey,
             ModelId = model.ModelId,
+            Protocol = model.Protocol,
             MaxContextTokens = model.MaxContextTokens,
             MaxInputTokens = model.MaxInputTokens,
             MaxOutputTokens = model.MaxOutputTokens,
@@ -119,15 +120,17 @@ public class JsonLlmConfigService : ILlmConfigService
             m.ProviderId == provider.ProviderId
             && !m.IsDeprecated
             && string.Equals(m.ModelId, resolvedModelId, StringComparison.OrdinalIgnoreCase));
+        if (model is null) return null;
 
         return new LlmConfig
         {
             Endpoint = mem.Endpoint ?? provider.BaseUrl,
             ApiKey = mem.ApiKey ?? provider.ApiKey,
             ModelId = resolvedModelId,
-            MaxContextTokens = model?.MaxContextTokens,
-            MaxInputTokens = model?.MaxInputTokens,
-            MaxOutputTokens = model?.MaxOutputTokens,
+            Protocol = model.Protocol,
+            MaxContextTokens = model.MaxContextTokens,
+            MaxInputTokens = model.MaxInputTokens,
+            MaxOutputTokens = model.MaxOutputTokens,
         };
     }
 
@@ -242,7 +245,6 @@ internal sealed record LlmProviderEntry
 {
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
-    public string Protocol { get; init; } = "openai";
     public string BaseUrl { get; init; } = "";
     public string ApiKey { get; init; } = "";
     public bool IsEnabled { get; init; } = true;
@@ -263,6 +265,7 @@ internal sealed record LlmModelEntry
     public string ModelId { get; init; } = "";
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
+    public string Protocol { get; init; } = "";
     public int MaxContextTokens { get; init; } = 1048576;
     public int? MaxInputTokens { get; init; }
     public int MaxOutputTokens { get; init; } = 16384;

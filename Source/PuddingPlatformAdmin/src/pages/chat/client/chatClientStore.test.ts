@@ -223,6 +223,41 @@ describe('agent chat client store', () => {
     ]);
   });
 
+  it('does not rewrite cache or notify subscribers when status polling is unchanged', async () => {
+    const status = {
+      workspaceId: 'default',
+      ownerUserId: 'single-user',
+      agentId: 'agent-a',
+      mainSessionId: 'session-a',
+      status: 'idle' as const,
+      summary: 'ready',
+      unreadCount: 0,
+      eventCursor: 4,
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    };
+    const memoryCache = createMemoryAgentChatCache();
+    const saveStatuses = jest.spyOn(memoryCache, 'saveStatuses');
+    const store = createAgentChatClientStore({
+      cache: memoryCache,
+      api: {
+        listStatuses: async () => [{ ...status }],
+        getConversation: async () => {
+          throw new Error('not used');
+        },
+      },
+    });
+
+    await store.refreshStatuses('default');
+    const listener = jest.fn();
+    const unsubscribe = store.subscribe(listener);
+
+    await store.syncStatuses('default');
+
+    expect(saveStatuses).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
   it('syncs the currently selected Agent conversation in the background', async () => {
     const cache = createMemoryAgentChatCache();
     const store = createAgentChatClientStore({

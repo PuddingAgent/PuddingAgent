@@ -1,129 +1,17 @@
-﻿// ── MessageItem：轻量 Markdown 文本块（用于 Timeline Answer 和旧版兼容）──
-import { CopyOutlined } from '@ant-design/icons';
-import { Button } from 'antd';
-import Prism from 'prismjs';
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import { isPerfDiagnosticsEnabled, recordPerfEvent } from '@/utils/debug';
+// ── MessageItem：轻量 Markdown 文本块（用于 Timeline Answer 和旧版兼容）──
+import React, { Suspense, useLayoutEffect, useRef } from 'react';
+import {
+  isPerfDiagnosticsEnabled,
+  recordPerfEvent,
+} from '@/utils/perfEventRuntime';
 import { useChatStyles } from '../styles';
 
-// ── Markdown 预处理：修复 GFM 表格渲染问题 ─────────────────
-// 问题1：LLM 在表格单元格内生成 fenced code block，跨行破坏 GFM 表结构
-// 问题2：标题 `##` 后紧接表格行（无空行），ReactMarkdown 把表格当标题内容
-// 问题3：标题和表格混在同一行 `## | 测试项 | ...`
-const preprocessMarkdown = (md: string): string => {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trim();
+const MarkdownBlock =
+  process.env.NODE_ENV === 'test'
+    ? (require('./MarkdownBlock')
+        .default as typeof import('./MarkdownBlock').default)
+    : React.lazy(() => import('./MarkdownBlock'));
 
-    // LLM 偶尔把 fenced code block 写成单独一行的双反引号，规范化后避免吞掉后续 Markdown。
-    if (trimmed === '``') {
-      out.push('```');
-      i++;
-      continue;
-    }
-
-    // 情况3：heading 行内混杂表格（## | 测试项 | 结果 |）→ 拆分为 heading + 空行 + 表格头
-    const headingMatch = /^(#{1,6}\s+)(.*)$/.exec(trimmed);
-    if (headingMatch && headingMatch[2].includes('|')) {
-      const prefix = headingMatch[1]; // "## "
-      const rest = headingMatch[2]; // "| 测试项 | ..." 或 "测试结果 | 测试项 | ..."
-      const pipeIdx = rest.indexOf('|');
-      const headingText = rest.substring(0, pipeIdx).trim();
-      const tablePart = rest.substring(pipeIdx).trim();
-      if (headingText) {
-        out.push(prefix + headingText);
-        out.push(''); // 空行分隔
-        out.push(tablePart); // 表格头
-        i++;
-        continue;
-      }
-      // heading 文本为空（如 "## | 测试项 |"），保留 ## 作为通用标题
-      out.push(prefix + '测试结果');
-      out.push('');
-      out.push(tablePart);
-      i++;
-      continue;
-    }
-
-    // 表格行（| ... | 或 |---|）→ 合并 code block 续行
-    if (/^\|.*\|$/.test(trimmed) || /^\|[-:| ]+\|$/.test(trimmed)) {
-      const parts: string[] = [line];
-      i++;
-      while (i < lines.length) {
-        const nl = lines[i].trim();
-        if (/^\|/.test(nl)) break; // 新表格行
-        if (nl === '') {
-          i++;
-          break;
-        } // 空行 → 表格结束
-        parts.push(lines[i]); // code block 续行
-        i++;
-      }
-      const joined = parts.join(' ');
-      const fixed = joined
-        .replace(/```[^\n`]*\s*/g, '`')
-        .replace(/\s*```/g, '`');
-      // 如果前一行是 heading（无空行分隔），补空行
-      if (out.length > 0 && /^#{1,6}\s/.test(out[out.length - 1].trim())) {
-        out.push('');
-      }
-      out.push(fixed);
-    } else {
-      out.push(line);
-      i++;
-    }
-  }
-  return out.join('\n');
-};
-
-// ── 内部 CodeBlock 组件 ──────────────────────────────────────
-const CodeBlock: React.FC<{ code: string; className?: string; isStreaming?: boolean }> = ({
-  code,
-  className,
-  isStreaming,
-}) => {
-  const { styles: rawStyles } = useChatStyles();
-  const styles = rawStyles as Record<string, string>;
-  const ref = useRef<HTMLElement>(null);
-  const lastHighlightRef = useRef(0);
-  useEffect(() => {
-    if (!ref.current) return;
-    // 流式输出时跳过Prism高亮: DOM频繁重建, 高亮无意义且浪费CPU
-    if (isStreaming) return;
-    // 非流式: 限制 Prism 高亮频率为每 300ms 最多一次
-    const now = performance.now();
-    if (now - lastHighlightRef.current < 300) return;
-    lastHighlightRef.current = now;
-    Prism.highlightElement(ref.current);
-  }, [code, className, isStreaming]);
-  return (
-    <div className={styles.codeBlockWrap}>
-      <Button
-        size="small"
-        className={styles.codeCopyButton}
-        icon={<CopyOutlined />}
-        onClick={() => navigator.clipboard.writeText(code)}
-      >
-        复制
-      </Button>
-      <pre>
-        <code ref={ref} className={className}>
-          {code}
-        </code>
-      </pre>
-    </div>
-  );
-};
-
-// ── MessageItem：渲染 Markdown 为轻量文本块 ─────────────────
 interface MessageItemProps {
   markdownText: string;
   isStreaming?: boolean;
@@ -139,6 +27,17 @@ interface MessageItemProps {
   visibleStartOffset?: number;
 }
 
+const DeferredMarkdownFallback: React.FC<{
+  markdownText: string;
+}> = ({ markdownText }) => (
+  <span
+    data-testid="deferred-markdown-fallback"
+    style={{ whiteSpace: 'pre-wrap' }}
+  >
+    {markdownText}
+  </span>
+);
+
 const MessageItem: React.FC<MessageItemProps> = ({
   markdownText,
   isStreaming,
@@ -153,39 +52,43 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const outputRef = useRef<HTMLDivElement | null>(null);
   const renderStart = performance.now();
 
-  // B3: Settle FLIP transition — smooth the DOM jump when streaming ends
+  // B3: Settle FLIP transition — smooth the DOM jump when streaming ends.
   const wasStreamingRef = useRef(false);
   const preSettleHeightRef = useRef<number | null>(null);
 
-  // Capture height before settle (while still streaming)
   useLayoutEffect(() => {
     if (isStreaming && outputRef.current) {
-      preSettleHeightRef.current = outputRef.current.getBoundingClientRect().height;
+      preSettleHeightRef.current =
+        outputRef.current.getBoundingClientRect().height;
     }
-    if (wasStreamingRef.current && !isStreaming && outputRef.current && preSettleHeightRef.current !== null) {
-      // FLIP: streaming just ended — animate from old height to new
-      const el = outputRef.current;
+    if (
+      wasStreamingRef.current &&
+      !isStreaming &&
+      outputRef.current &&
+      preSettleHeightRef.current !== null
+    ) {
+      const element = outputRef.current;
       const firstHeight = preSettleHeightRef.current;
-      const lastHeight = el.getBoundingClientRect().height;
+      const lastHeight = element.getBoundingClientRect().height;
       const delta = firstHeight - lastHeight;
       if (Math.abs(delta) > 2) {
-        el.style.transform = `translateY(${delta}px)`;
-        el.style.transition = 'none';
+        element.style.transform = `translateY(${delta}px)`;
+        element.style.transition = 'none';
         requestAnimationFrame(() => {
-          el.style.transition = 'transform 200ms ease-out';
-          el.style.transform = '';
-          // Clean up inline styles after transition
+          element.style.transition = 'transform 200ms ease-out';
+          element.style.transform = '';
           const onEnd = () => {
-            el.style.transition = '';
-            el.removeEventListener('transitionend', onEnd);
+            element.style.transition = '';
+            element.removeEventListener('transitionend', onEnd);
           };
-          el.addEventListener('transitionend', onEnd);
+          element.addEventListener('transitionend', onEnd);
         });
       }
       preSettleHeightRef.current = null;
     }
     wasStreamingRef.current = Boolean(isStreaming);
   }, [isStreaming]);
+
   const totalTextChars = markdownText.length;
   const stableChars =
     stableMarkdown?.length ?? (isStreaming ? 0 : markdownText.length);
@@ -212,7 +115,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
     const requestFrame =
       window.requestAnimationFrame ??
-      ((cb: FrameRequestCallback) => window.setTimeout(cb, 0));
+      ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
     const frameId = requestFrame(() => {
       const paintAt = performance.now();
       recordPerfEvent(
@@ -245,20 +148,24 @@ const MessageItem: React.FC<MessageItemProps> = ({
     renderStart,
   ]);
 
-  // ADR-InkBloom: 流式模式下 stableMarkdown 交给 MarkdownBlock（仅段落边界变化时重解析），
-  // visibleLiveText 用纯文本渲染（高频但不触发 ReactMarkdown 重解析）。
+  const renderMarkdown = (value: string, streaming?: boolean) => (
+    <Suspense fallback={<DeferredMarkdownFallback markdownText={value} />}>
+      <MarkdownBlock
+        markdownText={value}
+        styles={styles}
+        isStreaming={streaming}
+        workspaceId={workspaceId}
+      />
+    </Suspense>
+  );
+
+  // Stable Markdown is parsed only at paragraph boundaries. The live tail is
+  // painted as text, so token updates never re-run the Markdown parser.
   if (isStreaming && stableMarkdown !== undefined) {
     const liveTextToRender = liveText ?? visibleLiveText;
     return (
       <div ref={outputRef} className={styles.markdownBody}>
-        {stableMarkdown ? (
-          <MarkdownBlock
-            markdownText={stableMarkdown}
-            styles={styles}
-            isStreaming
-            workspaceId={workspaceId}
-          />
-        ) : null}
+        {stableMarkdown ? renderMarkdown(stableMarkdown, true) : null}
         {liveTextToRender ? (
           <span className={styles.liveTextSpan}>{liveTextToRender}</span>
         ) : null}
@@ -267,161 +174,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
     );
   }
 
+  const renderedMarkdown = markdownText || (isStreaming ? ' ' : '');
   return (
     <div ref={outputRef} className={styles.markdownBody}>
-      <MarkdownBlock
-        markdownText={markdownText || (isStreaming ? ' ' : '')}
-        styles={styles}
-        isStreaming={isStreaming}
-        workspaceId={workspaceId}
-      />
+      {renderMarkdown(renderedMarkdown, isStreaming)}
       {isStreaming && <span className={styles.streamingCursor}>▌</span>}
     </div>
   );
 };
-
-const MarkdownBlock = React.memo(
-  function MarkdownBlock({
-    markdownText,
-    styles,
-    isStreaming,
-    workspaceId,
-  }: {
-    markdownText: string;
-    styles: Record<string, string>;
-    isStreaming?: boolean;
-    workspaceId?: string;
-  }) {
-    const renderStart = performance.now();
-    const preprocessMsRef = React.useRef(0);
-    const processedMarkdown = React.useMemo(() => {
-      const start = performance.now();
-      const processed = preprocessMarkdown(markdownText);
-      preprocessMsRef.current = performance.now() - start;
-      return processed;
-    }, [markdownText]);
-    const components = React.useMemo(
-      () => sharedComponents(styles, isStreaming, workspaceId),
-      [styles, isStreaming, workspaceId],
-    );
-    React.useEffect(() => {
-      recordPerfEvent(
-        'chat.markdown.render',
-        {
-          chars: markdownText.length,
-          processedChars: processedMarkdown.length,
-          preprocessMs: Math.round(preprocessMsRef.current),
-          commitMs: Math.round(performance.now() - renderStart),
-        },
-        { throttleMs: 500 },
-      );
-    });
-    return (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, rehypeRaw]}
-        components={components}
-      >
-        {processedMarkdown}
-      </ReactMarkdown>
-    );
-  },
-  (prev, next) =>
-    prev.markdownText === next.markdownText &&
-    prev.isStreaming === next.isStreaming &&
-    prev.workspaceId === next.workspaceId,
-);
-
-/** 共享的 ReactMarkdown components 配置 */
-function sharedComponents(
-  styles: Record<string, string>,
-  isStreaming?: boolean,
-  workspaceId?: string,
-) {
-  return {
-    table: ({
-      children,
-      node: _node,
-      ...p
-    }: {
-      children?: React.ReactNode;
-      node?: unknown;
-    }) => (
-      <div className={styles.markdownTableScroll}>
-        <table {...p}>{children}</table>
-      </div>
-    ),
-    a: ({
-      children,
-      node: _node,
-      title: _title,
-      ...p
-    }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-      children?: React.ReactNode;
-      node?: unknown;
-    }) => <a {...p}>{children}</a>,
-    code: ({
-      inline,
-      className,
-      children,
-      node: _node,
-      ...p
-    }: {
-      inline?: boolean;
-      className?: string;
-      children?: React.ReactNode;
-      node?: unknown;
-    }) => {
-      const c = String(children ?? '').replace(/\n$/, '');
-      if (className === 'language-image' && workspaceId) {
-        const artifactId = resolveVisionArtifactId(c);
-        if (artifactId) {
-          const src =
-            `/api/workspaces/${encodeURIComponent(workspaceId)}` +
-            `/vision-artifacts/${encodeURIComponent(artifactId)}`;
-          return (
-            <span className={styles.artifactImageWrap}>
-              <img
-                className={styles.artifactImage}
-                src={src}
-                alt="Agent 生成的图片"
-                loading="lazy"
-              />
-            </span>
-          );
-        }
-      }
-      const hasLanguageClass = /\blanguage-/.test(className ?? '');
-      const isInlineCode =
-        inline === true || (!hasLanguageClass && !c.includes('\n'));
-      if (isInlineCode)
-        return (
-          <code className={styles.inlineCode} {...p}>
-            {children}
-          </code>
-        );
-      return <CodeBlock code={c} className={className} isStreaming={isStreaming} />;
-    },
-  };
-}
-
-const VISION_ARTIFACT_ID = /^vision-[a-f0-9]{32}$/i;
-const VISION_ARTIFACT_FILE =
-  /(?:^|[\\/])(vision-[a-f0-9]{32})\.(?:jpe?g|png|webp)$/i;
-
-function resolveVisionArtifactId(reference: string): string | undefined {
-  const value = reference.trim();
-  if (
-    !value ||
-    value.includes('\n') ||
-    /^https?:\/\//i.test(value)
-  ) {
-    return undefined;
-  }
-  if (VISION_ARTIFACT_ID.test(value)) {
-    return value.toLowerCase();
-  }
-  return VISION_ARTIFACT_FILE.exec(value)?.[1].toLowerCase();
-}
 
 export default MessageItem;

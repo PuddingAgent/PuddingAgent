@@ -15,7 +15,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     private string _dataRoot = "D:\\data";
     private string _coreExecutablePath = "";
-    private int _port;
+    private int _port = PuddingDesktopCoreConfig.DefaultPort;
     private bool _autoStart = true;
     private bool _autoRestart = true;
     private int _restartMaxAttempts = 3;
@@ -207,9 +207,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (Port is < 0 or > 65535)
+        if (Port is < 1 or > 65535)
         {
-            ValidationError = "端口必须为 0 到 65535；0 表示动态端口";
+            ValidationError = "固定监听端口必须为 1 到 65535";
             return;
         }
 

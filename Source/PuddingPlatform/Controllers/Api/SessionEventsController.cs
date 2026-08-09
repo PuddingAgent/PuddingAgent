@@ -24,6 +24,7 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/sessions")]
 public class SessionEventsController : ControllerBase
 {
+    private const int BootstrapSubAgentEventLimit = 500;
 
     private readonly ISessionStateManager _ssm;
     private readonly ISessionEventStream _eventStream;
@@ -478,14 +479,15 @@ public class SessionEventsController : ControllerBase
 
         try
         {
-            // A 150-round child can produce hundreds of internal events. Query
-            // by type prefix so message deltas cannot evict the run snapshot.
+            // Bootstrap is a bounded current-state snapshot, not a process-log
+            // export. Terminal status reconciliation repairs a window that starts
+            // inside an older run; complete process details remain lazy-loaded.
             var recentSubAgentEvents =
                 await _conversationEventStore.ReadByTypePrefixBackwardAsync(
                     conversationId,
                     "subagent.",
                     long.MaxValue,
-                    limit: 5000,
+                    limit: BootstrapSubAgentEventLimit,
                     ct);
             subAgentEvents.AddRange(
                 recentSubAgentEvents.Events.Select(e => (object)new

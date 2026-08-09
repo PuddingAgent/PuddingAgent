@@ -21,10 +21,9 @@ public sealed class DesktopConfigurationLoadingTests
                 {
                   "providerId": "deepseek",
                   "name": "DeepSeek",
-                  "protocol": "openai",
                   "baseUrl": "https://api.deepseek.com/v1",
                   "models": [
-                    { "modelId": "deepseek-chat", "name": "DeepSeek Chat" }
+                    { "modelId": "deepseek-chat", "name": "DeepSeek Chat", "protocol": "openai" }
                   ]
                 }
               ]

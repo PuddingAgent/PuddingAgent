@@ -364,15 +364,22 @@ public partial class BootstrapApiController(
         var providerRequest = new UpsertLlmProviderRequest(
             ProviderId: providerId,
             Name: provider.Name.Trim(),
-            Protocol: string.IsNullOrWhiteSpace(provider.Protocol) ? "openai" : provider.Protocol.Trim(),
             BaseUrl: provider.BaseUrl.Trim(),
             ApiKey: string.IsNullOrWhiteSpace(provider.ApiKey) ? null : provider.ApiKey,
             Description: "首次初始化创建",
             IsEnabled: true);
 
         var modelRequests = new List<UpsertLlmModelRequest>();
-        var chatModelId = CreateModelRequest(provider.ChatModelId, isDefault: true, modelRequests);
-        var memoryModelId = CreateModelRequest(provider.MemoryModelId, isDefault: false, modelRequests);
+        var chatModelId = CreateModelRequest(
+            provider.ChatModelId,
+            provider.ChatModelProtocol,
+            isDefault: true,
+            modelRequests);
+        var memoryModelId = CreateModelRequest(
+            provider.MemoryModelId,
+            provider.MemoryModelProtocol,
+            isDefault: false,
+            modelRequests);
         await llmProviderFileService.UpsertProviderWithModelsAsync(providerRequest, modelRequests, ct);
         // Reload is now automatic inside LlmProviderFileService.SaveConfigAsync via ILlmConfigService
 
@@ -387,16 +394,26 @@ public partial class BootstrapApiController(
 
     private static string? CreateModelRequest(
         string? modelId,
+        string? protocol,
         bool isDefault,
         List<UpsertLlmModelRequest> modelRequests)
     {
         if (string.IsNullOrWhiteSpace(modelId))
             return null;
+        if (!string.Equals(protocol, "openai", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(protocol, "responses", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(protocol, "anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"模型 '{modelId}' 必须选择 openai、responses 或 anthropic 协议。");
+        }
 
         var normalized = modelId.Trim();
+        var normalizedProtocol = protocol!.Trim().ToLowerInvariant();
         modelRequests.Add(new UpsertLlmModelRequest(
             ModelId: normalized,
             Name: normalized,
+            Protocol: normalizedProtocol,
             Description: isDefault ? "首次初始化默认聊天模型" : "首次初始化记忆/总结模型",
             MaxContextTokens: 8192,
             MaxOutputTokens: 2048,
@@ -482,11 +499,12 @@ public sealed record BootstrapProviderRequest(
     string Mode,
     string? ProviderId,
     string? Name,
-    string? Protocol,
     string? BaseUrl,
     string? ApiKey,
     string? ChatModelId,
-    string? MemoryModelId
+    string? ChatModelProtocol,
+    string? MemoryModelId,
+    string? MemoryModelProtocol
 );
 
 public sealed record BootstrapDefaultsRequest(

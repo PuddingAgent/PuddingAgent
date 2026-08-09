@@ -19,6 +19,40 @@ jest.mock('../styles', () => {
 });
 
 describe('MessageProcessSummary', () => {
+  it('uses the full active-run summary even when details are already inline', () => {
+    const onLoadDetails = jest.fn();
+    render(
+      <MessageProcessSummary
+        status="streaming"
+        items={[
+          {
+            id: 'thinking-recent',
+            type: 'thinking',
+            text: '最近一条过程事件',
+            timestamp: 1,
+            collapsed: true,
+          },
+        ]}
+        summary={{
+          totalItems: 70,
+          thinkingRounds: 7,
+          thinkingSteps: 70,
+          toolCalls: 0,
+          toolResults: 0,
+          failedTools: 0,
+          durationMs: 1200,
+          hasDetails: false,
+        }}
+        onLoadDetails={onLoadDetails}
+      />,
+    );
+
+    expect(screen.getByText(/已思考 7 轮/)).toBeTruthy();
+    fireEvent.click(screen.getByText('查看过程'));
+    expect(onLoadDetails).not.toHaveBeenCalled();
+    expect(screen.getByText('最近一条过程事件')).toBeTruthy();
+  });
+
   it('renders a compact historical summary and loads full details on expansion', async () => {
     const onLoadDetails = jest.fn().mockResolvedValue([
       {

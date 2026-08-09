@@ -4,7 +4,7 @@ namespace PuddingDesktop.Core;
 
 /// <summary>
 /// Parsed PUDDING_DESKTOP_READY signal from Core stdout.
-/// Format: PUDDING_DESKTOP_READY {"protocolVersion":1,"processId":1234,"baseAddress":"http://127.0.0.1:52137"}
+/// Format: PUDDING_DESKTOP_READY {"protocolVersion":1,"processId":1234,"baseAddress":"http://127.0.0.1:8080"}
 /// </summary>
 public sealed record CoreReadyMessage
 {

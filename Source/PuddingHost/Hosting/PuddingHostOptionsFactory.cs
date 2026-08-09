@@ -69,13 +69,24 @@ public static class PuddingHostOptionsFactory
         if (parentPid is not > 0)
             throw new InvalidOperationException("--desktop-parent-pid must be a positive process ID.");
 
-        var listenUrl = string.IsNullOrWhiteSpace(urls) ? "http://127.0.0.1:0" : urls;
+        var listenUrl = string.IsNullOrWhiteSpace(urls)
+            ? $"http://{System.Net.IPAddress.Any}:{PuddingCode.Configuration.PuddingDesktopCoreConfig.DefaultPort}"
+            : urls;
         if (!Uri.TryCreate(listenUrl, UriKind.Absolute, out var listenAddress)
             || listenAddress.Scheme != Uri.UriSchemeHttp
-            || !listenAddress.IsLoopback)
+            || !string.Equals(
+                listenAddress.Host,
+                System.Net.IPAddress.Any.ToString(),
+                StringComparison.Ordinal)
+            || listenAddress.Port is < 1 or > 65535
+            || !string.IsNullOrEmpty(listenAddress.UserInfo)
+            || listenAddress.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(listenAddress.Query)
+            || !string.IsNullOrEmpty(listenAddress.Fragment))
         {
             throw new InvalidOperationException(
-                $"DesktopChild must bind a loopback HTTP URL. Received: {listenUrl}");
+                "DesktopChild must bind a fixed IPv4 wildcard HTTP URL " +
+                $"(for example http://0.0.0.0:8080). Received: {listenUrl}");
         }
 
         return new PuddingHostOptions

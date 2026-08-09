@@ -18,6 +18,7 @@ public static class PuddingWebApplicationExtensions
     {
         // ── HTTP 请求日志（最先执行，记录所有请求）───────────
         app.UseHttpLogging();
+        app.UseResponseCompression();
 
         // ── 错误处理 ─────────────────────────────────────────
         if (!app.Environment.IsDevelopment())

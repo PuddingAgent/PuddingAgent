@@ -30,10 +30,12 @@ import type { ChatTurn, SubAgentCardMap } from '../types';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 
-import SubAgentActivityDock from './SubAgentActivityDock';
-
 const DevPanel = React.lazy(() => import('./DevPanel'));
 const HistorySearchModal = React.lazy(() => import('./HistorySearchModal'));
+const SubAgentActivityDock =
+  process.env.NODE_ENV === 'test'
+    ? (require('./SubAgentActivityDock').default as typeof import('./SubAgentActivityDock').default)
+    : React.lazy(() => import('./SubAgentActivityDock'));
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
@@ -207,6 +209,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
       Object.values(subAgentCards ?? {}).filter(
         (card) => card.status === 'running' || card.status === 'spawning',
       ).length,
+    [subAgentCards],
+  );
+  const hasSubAgentActivity = React.useMemo(
+    () => Object.keys(subAgentCards ?? {}).length > 0,
     [subAgentCards],
   );
   const latestAssistantText = React.useMemo(() => {
@@ -474,14 +480,18 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     latestAssistantText={latestAssistantText}
                   />
                 </div>
-                <SubAgentActivityDock
-                  sessionId={inferredSessionId ?? selectedSessionId}
-                  subAgentCards={subAgentCards}
-                  inspectorOpen={subAgentInspectorOpen}
-                  onInspectorOpenChange={setSubAgentInspectorOpen}
-                  selectedRunId={selectedSubAgentRunId}
-                  onSelectedRunIdChange={setSelectedSubAgentRunId}
-                />
+                {(hasSubAgentActivity || subAgentInspectorOpen) && (
+                  <React.Suspense fallback={null}>
+                    <SubAgentActivityDock
+                      sessionId={inferredSessionId ?? selectedSessionId}
+                      subAgentCards={subAgentCards}
+                      inspectorOpen={subAgentInspectorOpen}
+                      onInspectorOpenChange={setSubAgentInspectorOpen}
+                      selectedRunId={selectedSubAgentRunId}
+                      onSelectedRunIdChange={setSelectedSubAgentRunId}
+                    />
+                  </React.Suspense>
+                )}
               </div>
             </div>
 

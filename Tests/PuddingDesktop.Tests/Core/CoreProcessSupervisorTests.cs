@@ -142,7 +142,7 @@ public class CoreProcessSupervisorTests
         {
             ExecutablePath = executablePath,
             DataRoot = "D:\\data",
-            Port = 0,
+            Port = 8080,
             ParentProcessId = 1234,
             ControlToken = "test-token",
         };
@@ -154,6 +154,27 @@ public class CoreProcessSupervisorTests
         Assert.Equal(Path.GetDirectoryName(executablePath), startInfo.WorkingDirectory);
         Assert.False(startInfo.UseShellExecute);
         Assert.Contains("--desktop-child", startInfo.ArgumentList);
+        var urlsIndex = startInfo.ArgumentList.IndexOf("--urls");
+        Assert.True(urlsIndex >= 0);
+        Assert.Equal("http://0.0.0.0:8080", startInfo.ArgumentList[urlsIndex + 1]);
+    }
+
+    [Theory]
+    [InlineData(80, "http://0.0.0.0:80")]
+    [InlineData(8080, "http://0.0.0.0:8080")]
+    [InlineData(65535, "http://0.0.0.0:65535")]
+    public void CreateListenUrl_UsesFixedIpv4WildcardPort(int port, string expected)
+    {
+        Assert.Equal(expected, CoreProcessSupervisor.CreateListenUrl(port));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(65536)]
+    public void CreateListenUrl_RejectsDynamicOrOutOfRangePort(int port)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CoreProcessSupervisor.CreateListenUrl(port));
     }
 
     [Fact]

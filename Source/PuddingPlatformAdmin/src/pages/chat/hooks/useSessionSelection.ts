@@ -6,7 +6,7 @@ import {
   listSessionMessages,
   type MessageListResponse,
 } from '@/services/platform/api';
-import { recordPerfStep } from '@/utils/debug';
+import { recordPerfStep } from '@/utils/perfEventRuntime';
 import type { ChatTurn, SessionListItem } from '../types';
 import type { ChatRouteSelection } from '../types/chatStateTypes';
 import { MESSAGE_PAGE_SIZE } from '../types/chatStateTypes';

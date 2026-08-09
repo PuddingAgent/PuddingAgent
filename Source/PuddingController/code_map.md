@@ -35,7 +35,7 @@
 | `InMemoryRouteDecisionStore.cs` | 路由决策存储 |
 | `AuthorizationService.cs` | 授权服务 |
 | `AgentTemplateRegistry.cs` | 模板注册 |
-| `ControllerLlmProxyService.cs` | LLM 代理服务 |
+| `ControllerLlmProxyService.cs` | LLM 代理服务；严格按 `LlmConfig` 中的模型协议路由 Chat Completions/Responses/Anthropic Messages |
 | `GatewayEgressService.cs` | 网关出口 |
 | `KnowledgeBaseService.cs` | 知识库服务 |
 | `KnowledgeGraphService.cs` | 知识图谱服务 |

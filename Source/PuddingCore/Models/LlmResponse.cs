@@ -5,4 +5,5 @@ public sealed record LlmResponse(
     string? Content,
     IReadOnlyList<ToolCall>? ToolCalls,
     string? ReasoningContent = null,
-    TokenUsageDto? Usage = null);
+    TokenUsageDto? Usage = null,
+    LlmContinuationState? ContinuationState = null);

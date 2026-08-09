@@ -33,6 +33,9 @@ public sealed record StreamDelta
     /// <summary>Token usage payload, usually emitted by the final streaming chunk.</summary>
     public TokenUsageDto? Usage { get; init; }
 
+    /// <summary>Opaque output items that the next provider turn must replay.</summary>
+    public LlmContinuationState? ContinuationState { get; init; }
+
     /// <summary>Provider SSE data chunk index observed by the gateway.</summary>
     public long? ProviderChunkIndex { get; init; }
 

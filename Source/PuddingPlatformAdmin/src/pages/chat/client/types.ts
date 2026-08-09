@@ -52,6 +52,7 @@ export interface MessageProcessDetailsView {
 export interface AgentOutputSnapshot {
   markdown: string;
   processItems: ProcessSummaryItem[];
+  processSummary?: ConversationProcessSummary | null;
 }
 
 export interface AgentRunView {

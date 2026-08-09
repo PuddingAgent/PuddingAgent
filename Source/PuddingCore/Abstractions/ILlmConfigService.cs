@@ -69,7 +69,6 @@ public sealed record LlmProviderInfo
 {
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
-    public string Protocol { get; init; } = "openai";
     public string BaseUrl { get; init; } = "";
     public bool IsEnabled { get; init; }
     public bool HasApiKey { get; init; }
@@ -81,6 +80,7 @@ public sealed record LlmModelInfo
     public string ModelId { get; init; } = "";
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
+    public string Protocol { get; init; } = "";
     public int MaxContextTokens { get; init; }
     public int? MaxInputTokens { get; init; }
     public int MaxOutputTokens { get; init; }

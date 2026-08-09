@@ -11,7 +11,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { DARK_NAV_THEME } from '../../../config/defaultSettings';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts';
-import { registerDebugApi } from '../../utils/debug';
+import { registerDebugApi } from '../../utils/perfEventRuntime';
 import { getPuddingPopupContainer } from '../../utils/popupContainer';
 
 export const THEME_MODE_STORAGE_KEY = 'pudding_admin_theme_mode';

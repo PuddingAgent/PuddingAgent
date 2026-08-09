@@ -2,7 +2,6 @@
 
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
-import defaultSettings from './defaultSettings';
 import proxy from './proxy';
 
 import routes from './routes';
@@ -81,15 +80,7 @@ export default defineConfig({
    * @doc https://umijs.org/docs/max/data-flow#%E5%85%A8%E5%B1%80%E5%88%9D%E5%A7%8B%E7%8A%B6%E6%80%81
    */
   initialState: {},
-  /**
-   * @name layout 插件
-   * @doc https://umijs.org/docs/max/layout-menu
-   */
   title: 'Pudding',
-  layout: {
-    locale: true,
-    ...defaultSettings,
-  },
   /**
    * @name moment2dayjs 插件
    * @description 将项目中的 moment 替换为 dayjs

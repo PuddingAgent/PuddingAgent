@@ -1,7 +1,7 @@
 # 69 PuddingDesktop 浏览器工作区、运行中心与存储管理实施规格
 
-> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 2A-1/2 accepted；Phase 2A-3 automated accepted（真实 DeepSeek smoke pending，2026-08-02）**
-> - 日期：2026-08-02
+> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Desktop 固定端口与 IPv4 全网卡监听已完成（2026-08-09）；Phase 2A-1/2 accepted；Phase 2A-3 automated accepted（真实 DeepSeek smoke pending）**
+> - 日期：2026-08-09
 > - 前置文档：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)、[WebView2 实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
 > - 本文用途：作为 Phase 1B/1C/2 的 UI、进程管理、IPC、类拆分和验收输入
@@ -76,7 +76,7 @@ V1 的写操作严格限定为：删除 `<DataRoot>/logs` 下最后修改时间�
 4. `存储空间`：DataRoot/磁盘统计与旧日志清理；
 5. `系统设置`：DataRoot、端口、启动策略、关闭行为和主题。
 
-底部紧凑状态栏保留 Core 状态和实际 Loopback 地址。启动、停止、重启按钮可以继续保留，运行中心提供完整信息和高级操作。
+底部紧凑状态栏保留 Core 状态和实际监听端点 `0.0.0.0:<port>`。运行中心同时保留 `127.0.0.1:<port>` 本机控制地址提示；启动、停止、重启按钮可以继续保留，运行中心提供完整信息和高级操作。
 
 `MainWindow` 只负责页面导航和窗口生命周期，不能继续吸收 Browser、Storage 或进程编排逻辑。新增逻辑必须由 Controller/ViewModel/Service 承担。
 
@@ -183,7 +183,7 @@ Agent Browser 与 Workbench 一样使用 `WebView2CompositionControl`。现有 `
 
 ### 4.1 通信方向
 
-采用 **Desktop 主动连接 Core 的认证 WebSocket 全双工通道**。端点位于现有 ASP.NET Core 动态 Loopback HTTP 端口的 `/desktop/browser-bridge`；Desktop 是客户端，因此 Desktop 不监听第二个端口，也不引用 `PuddingHost`。
+采用 **Desktop 主动连接 Core 的认证 WebSocket 全双工通道**。端点位于 ASP.NET Core 配置的固定 HTTP 端口 `/desktop/browser-bridge`；Kestrel 对外绑定 `0.0.0.0:<port>`，Desktop 始终通过派生的 `127.0.0.1:<port>` 本机控制地址连接。Desktop 是客户端，因此不监听第二个端口，也不引用 `PuddingHost`。
 
 这里明确修正早期“同一明文 HTTP 端口承载双向原生 gRPC”的设计：ASP.NET Core 原生 gRPC 要求 HTTP/2；微软文档明确说明，没有 TLS 时 `Http1AndHttp2` 无法协商并会回落 HTTP/1.1，而 gRPC-Web 在 HTTP/1.1 上又不支持客户端流和双向流。Pudding V1 不为本机 Bridge 引入证书、第二端口或 gRPC-Web 降级，因此同端口 WebSocket 是更简单、可测试且保留全双工语义的实现。参考：[ASP.NET Core gRPC protocol negotiation](https://learn.microsoft.com/en-us/aspnet/core/grpc/aspnetcore?view=aspnetcore-10.0)、[gRPC-Web streaming limitations](https://learn.microsoft.com/en-us/aspnet/core/grpc/grpcweb?view=aspnetcore-10.0)。
 
@@ -291,7 +291,7 @@ public interface IBrowserWorkspaceController : IAsyncDisposable
 运行中心必须显示：
 
 - Core 状态、PID、启动时间、运行时长和退出码；
-- 实际 Loopback 地址和 `/health/ready`；
+- 实际 `0.0.0.0:<port>` 监听端点、Loopback 控制地址和 `/health/ready`；
 - Core 可执行文件、DataRoot、工作空间和环境；
 - 启动、停止、重启；
 - 自动启动、异常退出自动恢复；
@@ -338,6 +338,8 @@ public enum DesktopCloseBehavior
 
 Desktop 必须是单实例。第二个进程只激活现有窗口；不得同时启动第二个 Core 或同时占用同一 WebView2 UDF。
 
+`<DataRoot>/config/system.json` 的 `desktop.core.port` 是 DesktopChild 唯一端口来源，默认 `8080`，只接受 `1–65535`。`CoreProcessSupervisor` 必须传递 `--urls http://0.0.0.0:<port>`；`PUDDING_DESKTOP_READY` 仍只报告 `127.0.0.1:<port>`，供健康检查、优雅关闭、Workbench 与 Browser Bridge 使用。端口占用属于可见启动失败，不得回退到随机端口。
+
 ### 5.3 `dev-up.py` 与 Desktop 的职责矩阵
 
 | 能力 | `dev-up.py` 源码开发环境 | 最终交付 Desktop |
@@ -353,7 +355,7 @@ Desktop 必须是单实例。第二个进程只激活现有窗口；不得同时
 | Workbench Bootstrap | 通过开发 Web 入口 | 内嵌 Workbench |
 | DataRoot 存储统计和旧日志清理 | 否 | 是 |
 
-两者可以提供相似的启停按钮或命令，但进程所有权严格隔离。Desktop 不读取 `tmp/dev/*.pid`，`dev-up.py` 也不查找或终止 Desktop 的动态端口子进程。最终发布 smoke 必须在没有 Python、Node 和源码仓库的干净环境运行。
+两者可以提供相似的启停按钮或命令，但进程所有权严格隔离。Desktop 不读取 `tmp/dev/*.pid`，`dev-up.py` 也不查找或终止 Desktop 的固定端口子进程。最终发布 smoke 必须在没有 Python、Node 和源码仓库的干净环境运行。
 
 ## 6. 存储空间页面
 
@@ -561,7 +563,7 @@ PuddingDesktop/Views/StorageView.xaml.cs
 交付证据：
 
 - `CoreProcessSupervisor` 保持单进程启动/停止职责，`DesktopRuntimeOrchestrator` 独立承载异常恢复、2s/4s/8s 退避、60 秒 3 次窗口和熔断；
-- 主导航中的旧 `CoreStatusView` 已由 Windows 11 卡片式 Runtime Center 替代，展示当前/最近 PID、启动时间、运行时长、健康、动态 Loopback、最近退出码、恢复状态、环境和最近 500 行输出；
+- 主导航中的旧 `CoreStatusView` 已由 Windows 11 卡片式 Runtime Center 替代，展示当前/最近 PID、启动时间、运行时长、健康、固定全网卡监听端点、本机控制地址、最近退出码、恢复状态、环境和最近 500 行输出；
 - Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前用户可访问的 Named Pipe 激活主窗口；默认关闭行为为隐藏到系统托盘，托盘提供打开、启动、停止、重启和明确退出；
 - 登录后启动只在用户保存设置时修改 HKCU Run；Desktop 启动失败、DataRoot 缺失或 Core 失败都不阻塞设置与运行中心；
 - 诊断包只在用户点击后生成，包含脱敏运行快照、最近日志和配置键名，不复制 Token、Cookie、Authorization 或配置值；
@@ -599,7 +601,7 @@ PuddingDesktop/Views/StorageView.xaml.cs
 
 ## 9. 测试要求
 
-### 9.1 Desktop 单元测试
+### 9.1 Desktop/Host 单元测试
 
 - `CoreRestartAttemptWindowTests`；
 - `DesktopRuntimeOrchestratorTests`；
@@ -610,7 +612,10 @@ PuddingDesktop/Views/StorageView.xaml.cs
 - `LogRetentionServicePreviewTests`；
 - `LogRetentionServiceExecutionTests`；
 - `BrowserWorkspaceControllerTests`；
-- `BrowserBridgeCommandDispatcherTests`。
+- `BrowserBridgeCommandDispatcherTests`；
+- `CoreProcessSupervisorTests`（固定端口与 `0.0.0.0` 启动参数）；
+- `PuddingHostOptionsFactoryTests`（DesktopChild 地址/端口约束）；
+- `PuddingServerAddressAccessorTests`（全网卡监听到 Loopback 控制地址投影）。
 
 ### 9.2 Bridge 集成测试
 

@@ -14,7 +14,7 @@ import {
   listTeams,
   listWorkspaces,
 } from '@/services/platform/api';
-import { recordPerfStep } from '@/utils/debug';
+import { recordPerfStep } from '@/utils/perfEventRuntime';
 import {
   buildChatPath,
   buildChatPathWithQuery,

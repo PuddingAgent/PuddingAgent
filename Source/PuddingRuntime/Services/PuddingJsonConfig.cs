@@ -68,9 +68,6 @@ public sealed class JsonProvider
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
 
-    [JsonPropertyName("protocol")]
-    public string Protocol { get; set; } = "openai";
-
     [JsonPropertyName("baseUrl")]
     public string BaseUrl { get; set; } = "";
 
@@ -94,6 +91,9 @@ public sealed class JsonProviderModel
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
+
+    [JsonPropertyName("protocol")]
+    public string Protocol { get; set; } = "";
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }

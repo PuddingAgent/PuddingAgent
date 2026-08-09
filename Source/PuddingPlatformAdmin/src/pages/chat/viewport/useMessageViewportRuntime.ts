@@ -21,6 +21,8 @@ const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 80;
 const MESSAGE_VIEWPORT_RICH_VIRTUALIZATION_MIN_ITEMS = 200;
 const MESSAGE_VIEWPORT_WEIGHTED_MIN_ITEMS = 24;
 const MESSAGE_VIEWPORT_CONTENT_WEIGHT_THRESHOLD = 16_000;
+const INITIAL_BOTTOM_SETTLE_STABLE_TICKS = 3;
+const INITIAL_BOTTOM_SETTLE_MIN_MS = 500;
 type MessageVirtualItem = Extract<VirtualMessageItem, { kind: 'message' }>;
 
 interface PendingViewportAnchor {
@@ -178,7 +180,10 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     () => getVirtualMessageContentFingerprint(options.items),
     [options.items],
   );
-  const virtualizationEnabled = shouldVirtualizeMessageViewport(options.items);
+  const virtualizationEnabled = useMemo(
+    () => shouldVirtualizeMessageViewport(options.items),
+    [options.items],
+  );
 
     const virtualizer = useVirtualizer({
     count: options.items.length,
@@ -306,7 +311,13 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     options.onRequestLoadBefore({
       anchor: { itemId: anchor.itemId, offset: anchor.offset },
     });
-  }, [options, readVisibleAnchor]);
+  }, [
+    options.hasMoreBefore,
+    options.items,
+    options.loadingBefore,
+    options.onRequestLoadBefore,
+    readVisibleAnchor,
+  ]);
 
   const writeBottomPosition = useCallback(
     (behavior: ScrollBehavior) => {
@@ -377,11 +388,11 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       }
       initialBottomSettleLastHeightRef.current = scrollHeight;
       if (
-        initialBottomSettleStableTicksRef.current >= 20 &&
-        Date.now() - initialBottomSettleStartedAtRef.current >= 10_000
+        initialBottomSettleStableTicksRef.current >= INITIAL_BOTTOM_SETTLE_STABLE_TICKS &&
+        Date.now() - initialBottomSettleStartedAtRef.current >= INITIAL_BOTTOM_SETTLE_MIN_MS
       ) {
         // Keep the observer-owned flag active for genuinely late images, but
-        // stop polling after two stable seconds.
+        // stop the 100ms polling loop once layout has stayed stable briefly.
         return;
       }
       initialBottomSettleTimerRef.current = window.setTimeout(settle, 100);
@@ -396,6 +407,13 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       if (current.followMode === 'pinned') {
         if (!next.atBottom) scheduleBottomSettlement();
         followModeRef.current = 'pinned';
+        if (
+          current.atBottom &&
+          !current.nearTop &&
+          !current.showBottomButton
+        ) {
+          return current;
+        }
         return {
           ...current,
           atBottom: true,
@@ -410,6 +428,14 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
             ? 'auto'
             : current.followMode;
       followModeRef.current = followMode;
+      if (
+        current.atBottom === next.atBottom &&
+        current.nearTop === next.nearTop &&
+        current.showBottomButton === !next.atBottom &&
+        current.followMode === followMode
+      ) {
+        return current;
+      }
       return {
         ...current,
         atBottom: next.atBottom,

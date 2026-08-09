@@ -1,5 +1,5 @@
 ﻿import { request } from '@umijs/max';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 
 // ─── 类型定义（与 C# 模型对齐）───────────────────────────────────
 
@@ -330,7 +330,6 @@ export interface LlmProviderDto {
   id: number;
   providerId: string;
   name: string;
-  protocol: string;
   baseUrl: string;
   hasApiKey: boolean;
   description?: string;
@@ -363,6 +362,7 @@ export interface LlmModelDto {
   providerId: number;
   modelId: string;
   name: string;
+  protocol: string;
   description?: string;
   maxContextTokens: number;
   maxInputTokens?: number;
@@ -383,7 +383,6 @@ export interface LlmModelDto {
 export interface UpsertLlmProviderRequest {
   providerId: string;
   name: string;
-  protocol: string;
   baseUrl: string;
   apiKey?: string;
   description?: string;
@@ -396,6 +395,7 @@ export interface UpsertLlmProviderRequest {
 export interface UpsertLlmModelRequest {
   modelId: string;
   name: string;
+  protocol: string;
   description?: string;
   maxContextTokens: number;
   maxInputTokens?: number;

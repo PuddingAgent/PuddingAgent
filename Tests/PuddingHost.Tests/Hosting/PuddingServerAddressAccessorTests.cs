@@ -5,12 +5,26 @@ namespace PuddingHost.Tests.Hosting;
 public class PuddingServerAddressAccessorTests
 {
     [Fact]
-    public void SetBoundAddresses_RejectsNonLoopbackAddress()
+    public void SetBoundAddresses_RejectsConcreteNonLoopbackAddress()
     {
         var accessor = new PuddingServerAddressAccessor();
         accessor.SetBoundAddresses(new[] { "http://192.168.1.1:8080" });
 
         Assert.Null(accessor.BaseAddress);
+    }
+
+    [Theory]
+    [InlineData("http://0.0.0.0:8080", "http://127.0.0.1:8080/")]
+    [InlineData("http://[::]:8081", "http://127.0.0.1:8081/")]
+    public void SetBoundAddresses_ProjectsWildcardToLoopbackControlAddress(
+        string listenAddress,
+        string expectedControlAddress)
+    {
+        var accessor = new PuddingServerAddressAccessor();
+
+        accessor.SetBoundAddresses([listenAddress]);
+
+        Assert.Equal(expectedControlAddress, accessor.BaseAddress?.ToString());
     }
 
     [Fact]

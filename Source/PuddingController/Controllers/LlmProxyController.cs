@@ -52,6 +52,7 @@ public sealed class LlmProxyController(
                 ToolCalls = result.ToolCalls,
                 ReasoningContent = result.ReasoningContent,
                 Usage = result.Usage,
+                ContinuationState = result.ContinuationState,
             });
         }
         catch (InvalidOperationException ex)
@@ -107,7 +108,8 @@ public sealed class LlmProxyController(
                 // 文本增量 / 工具调用增量
                 if (delta.ContentDelta is not null
                     || delta.ToolCallIndex is not null
-                    || delta.FinishReason is not null)
+                    || delta.FinishReason is not null
+                    || delta.ContinuationState is not null)
                 {
                     await WriteSseAsync(Response, SseEventTypes.Delta, delta, ct);
                 }

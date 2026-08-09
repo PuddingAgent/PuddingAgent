@@ -61,7 +61,12 @@ public sealed class ControllerRoutedLlmClient(
             "[LlmBridge] OK ws={Ws} session={Session} contentLen={Len} elapsed={Elapsed}ms",
             workspaceId, sessionId, payload.Content?.Length ?? 0, sw.ElapsedMilliseconds);
 
-        return new LlmResponse(payload.Content, payload.ToolCalls, payload.ReasoningContent, payload.Usage);
+        return new LlmResponse(
+            payload.Content,
+            payload.ToolCalls,
+            payload.ReasoningContent,
+            payload.Usage,
+            payload.ContinuationState);
     }
 
     public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(

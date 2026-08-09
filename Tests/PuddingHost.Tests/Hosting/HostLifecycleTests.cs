@@ -15,6 +15,7 @@ public class HostLifecycleTests
         // Arrange: build a minimal WebApplication with loopback binding
         var builder = WebApplication.CreateBuilder([]);
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton<IPuddingServerAddressAccessor, PuddingServerAddressAccessor>();
         var app = builder.Build();
         app.MapGet("/health", () => "ok");
 
@@ -36,6 +37,7 @@ public class HostLifecycleTests
     {
         var builder = WebApplication.CreateBuilder([]);
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddSingleton<IPuddingServerAddressAccessor, PuddingServerAddressAccessor>();
         var app = builder.Build();
         app.MapGet("/health", () => "ok");
 
@@ -45,18 +47,21 @@ public class HostLifecycleTests
     }
 
     [Fact]
-    public void CaptureBoundAddresses_NonLoopback_Throws()
+    public void CaptureBoundAddresses_Wildcard_ReturnsLoopbackControlAddress()
     {
         var builder = WebApplication.CreateBuilder([]);
         builder.WebHost.UseUrls("http://0.0.0.0:0");
+        builder.Services.AddSingleton<IPuddingServerAddressAccessor, PuddingServerAddressAccessor>();
         var app = builder.Build();
         app.MapGet("/health", () => "ok");
 
         app.StartAsync().GetAwaiter().GetResult();
 
-        // 0.0.0.0 is not a loopback address
-        Assert.Throws<InvalidOperationException>(() =>
-            PuddingApplicationHost.CaptureBoundAddresses(app));
+        var baseAddress = PuddingApplicationHost.CaptureBoundAddresses(app);
+
+        Assert.True(baseAddress.IsLoopback);
+        Assert.Equal("127.0.0.1", baseAddress.Host);
+        Assert.NotEqual(0, baseAddress.Port);
 
         app.StopAsync().GetAwaiter().GetResult();
     }

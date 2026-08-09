@@ -71,7 +71,7 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - 数据存储: `D:\data` 开发环境数据存储的目录（见PathHelper，dev-up指定的环境变量或启动参数确定）
 - 工作空间: `D:\data\workspaces\default`
 - 编译入口: `dotnet build PuddingRuntime`
-- 代码地图: `Source\code_map.md`  这是项目的代码快速索引，要求必须在开始前阅读，并在任务结束后维护。
+- 代码地图: `code_map.md`  这是项目根目录下的代码快速索引，要求必须在开始前阅读，并在任务结束后维护。
 - 文档: `Docs`  这是项目的架构文档目录，要求必须在开始前阅读，并在任务结束后维护。
 
 

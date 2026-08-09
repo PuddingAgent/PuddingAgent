@@ -41,7 +41,6 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             {
                 ProviderId = p.ProviderId,
                 Name = p.Name,
-                Protocol = p.Protocol,
                 BaseUrl = p.BaseUrl,
                 IsEnabled = p.IsEnabled,
                 HasApiKey = !string.IsNullOrWhiteSpace(p.ApiKey)
@@ -59,6 +58,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
                 ModelId = m.ModelId,
                 ProviderId = p.ProviderId,
                 Name = m.Name,
+                Protocol = m.Protocol,
                 MaxContextTokens = m.MaxContextTokens ?? 0,
                 MaxInputTokens = m.MaxInputTokens,
                 MaxOutputTokens = m.MaxOutputTokens ?? 0,
@@ -159,6 +159,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             ApiKey = provider.ApiKey,
             KeyVaultId = NormalizeKeyVaultId(provider.ApiKeyRef),
             ModelId = model.ModelId,
+            Protocol = model.Protocol,
             MaxContextTokens = model.MaxContextTokens,
             MaxInputTokens = model.MaxInputTokens,
             MaxOutputTokens = model.MaxOutputTokens,
@@ -303,6 +304,7 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
             ApiKey = provider.ApiKey,
             KeyVaultId = NormalizeKeyVaultId(provider.ApiKeyRef),
             ModelId = model.ModelId,
+            Protocol = model.Protocol,
             MaxContextTokens = model.MaxContextTokens,
             MaxInputTokens = model.MaxInputTokens,
             MaxOutputTokens = model.MaxOutputTokens,

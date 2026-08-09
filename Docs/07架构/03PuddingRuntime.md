@@ -42,6 +42,20 @@ User Input
 - "思考→行动→观察→思考"的循环由 Runtime 驱动
 - 停止信号（用户取消/Token 超限/错误）由 Controller 模块下发
 
+### LLM Provider 协议路由
+
+- 协议只属于模型，Provider 不保存协议字段，也不存在 Provider 协议回退。同一 Provider 可同时包含不同协议的模型。
+- `model.protocol=openai` 使用 Chat Completions 网关。
+- `model.protocol=responses` 使用 Responses API 网关，并固定发送 `store=false`。
+- `model.protocol=anthropic` 使用 Anthropic Messages 网关，发送 `x-api-key`、`anthropic-version: 2023-06-01`，并把 system、tool_use/tool_result 和流式 content blocks 转换为内部统一契约。
+- `model.protocol` 是必填枚举，只允许 `openai`、`responses` 或 `anthropic`；配置加载和 Admin 写入都会拒绝缺失或未知值。
+- `LlmInvocationService` 根据 `providerId/modelId` 解析模型配置，Direct 与 Controller 路径都使用解析后的模型协议选择网关，请求级协议不能覆盖模型协议。
+
+OpenCode Go 是混合协议 Provider 的基准样例：Luna 使用 Responses，Grok/GLM/Kimi 使用 Chat Completions，Qwen3.8 Max 使用 Anthropic Messages。模型元数据必须各自声明协议，不能通过 Provider URL 或模型名前缀推断。
+- Responses 工具定义是 flat function shape；工具结果使用 `function_call_output`，通过 `call_id` 关联。
+- Runtime 将 Responses 的完整 output items 作为 opaque continuation 保存到 Assistant 工具轮次，并在下一轮原样回放，避免推理 item 或 function call 丢失。
+- 流式工具调用通过 provider `item_id`/`output_index` 关联，再映射为 Runtime 连续的 `ToolCallIndex`；`error`、`response.failed`、`response.incomplete` 都作为失败终态处理。
+
 ## 核心能力
 
 - LLM 对话循环（多轮会话、工具调用）

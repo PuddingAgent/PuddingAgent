@@ -22,6 +22,7 @@ describe('LlmResourcePoolPage pricing units', () => {
       providerId: 1,
       modelId: 'deepseek-chat',
       name: 'deepseek-chat',
+      protocol: 'openai',
       description: '',
       maxContextTokens: 8192,
       maxOutputTokens: 2048,
@@ -30,6 +31,7 @@ describe('LlmResourcePoolPage pricing units', () => {
       cacheHitPricePer1MTokens: 1,
       capabilityTags: ['text'],
       isDefault: false,
+      isEmbedding: false,
       isDeprecated: false,
       sortOrder: 100,
       createdAt: '2026-06-03T00:00:00Z',
@@ -55,6 +57,38 @@ describe('LlmResourcePoolPage pricing units', () => {
 });
 
 describe('LlmResourcePoolPage provider templates', () => {
+  it('builds one OpenCode Go provider with per-model wire protocols', () => {
+    const template = LLM_PROVIDER_TEMPLATES.find((item) => item.value === 'opencode-go');
+    expect(template).toBeDefined();
+
+    expect(getProviderTemplateProviderValues(template!)).toEqual({
+      providerId: 'opencode',
+      name: 'OpenCode Go',
+      baseUrl: 'https://opencode.ai/zen/go/v1',
+      description: 'OpenCode Go 订阅服务；不同模型分别使用 Chat Completions、Responses 或 Anthropic Messages。',
+      isEnabled: true,
+      maxConcurrentRequests: 300,
+    });
+
+    const models = getProviderTemplateModelValues(template!);
+    expect(models).toHaveLength(5);
+    expect(models.map((model) => [model.modelId, model.protocol])).toEqual([
+      ['gpt-5.6-luna', 'responses'],
+      ['grok-4.5', 'openai'],
+      ['glm-5.2', 'openai'],
+      ['kimi-k3', 'openai'],
+      ['qwen3.8-max', 'anthropic'],
+    ]);
+    expect(models.find((model) => model.modelId === 'qwen3.8-max')).toMatchObject({
+      maxContextTokens: 1000000,
+      maxOutputTokens: 131072,
+      inputPricePer1MTokens: 0,
+      outputPricePer1MTokens: 0,
+      cacheHitPricePer1MTokens: 0,
+      capabilityTags: expect.arrayContaining(['text', 'vision', 'function-calling', 'reasoning']),
+    });
+  });
+
   it('builds DeepSeek V4 provider and model values without embedding an API key', () => {
     const template = LLM_PROVIDER_TEMPLATES.find((item) => item.value === 'deepseek');
     expect(template).toBeDefined();
@@ -63,7 +97,6 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(providerValues).toEqual({
       providerId: 'deepseek',
       name: 'DeepSeek',
-      protocol: 'openai',
       baseUrl: 'https://api.deepseek.com',
       description: 'DeepSeek API（OpenAI 兼容；Anthropic 格式地址为 https://api.deepseek.com/anthropic）',
       isEnabled: true,
@@ -76,6 +109,7 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(modelValues[0]).toMatchObject({
       modelId: 'deepseek-v4-flash',
       name: 'DeepSeek-V4-Flash',
+      protocol: 'openai',
       maxContextTokens: 1000000,
       maxOutputTokens: 384000,
       inputPricePer1MTokens: 1,
@@ -87,6 +121,7 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(modelValues[1]).toMatchObject({
       modelId: 'deepseek-v4-pro',
       name: 'DeepSeek-V4-Pro',
+      protocol: 'openai',
       maxContextTokens: 1000000,
       maxOutputTokens: 384000,
       inputPricePer1MTokens: 3,
@@ -104,7 +139,6 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(getProviderTemplateProviderValues(template!)).toEqual({
       providerId: 'xiaomimimo-tokenplan',
       name: 'xiaomimimo-tokenplan',
-      protocol: 'openai',
       baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
       description: '小米 MiMo Token Plan（预付 token 计划，模板内模型费用按 0 处理）',
       isEnabled: true,
@@ -115,6 +149,7 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(modelValues).toHaveLength(3);
     for (const model of modelValues) {
       expect(model).toMatchObject({
+        protocol: 'openai',
         maxContextTokens: 1000000,
         maxOutputTokens: 128000,
         inputPricePer1MTokens: 0,
@@ -147,7 +182,6 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(getProviderTemplateProviderValues(template!)).toEqual({
       providerId: 'moonshot',
       name: 'Moonshot（Kimi，按量付费）',
-      protocol: 'openai',
       baseUrl: 'https://api.moonshot.cn/v1',
       description: 'Moonshot Kimi K3 按量付费；额度：并发 50、TPM 2,000,000、RPM 200。',
       isEnabled: true,
@@ -161,6 +195,7 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(modelValues[0]).toMatchObject({
       modelId: 'kimi-k3',
       name: 'Kimi K3',
+      protocol: 'openai',
       maxContextTokens: 1048576,
       maxOutputTokens: 131072,
       inputPricePer1MTokens: 20,
@@ -187,7 +222,6 @@ describe('LlmResourcePoolPage provider templates', () => {
     expect(getProviderTemplateProviderValues(template!)).toEqual({
       providerId: 'xiaomimimo-payg',
       name: 'xiaomimimo-按量付费',
-      protocol: 'openai',
       baseUrl: 'https://api.xiaomimimo.com/v1',
       description: '小米 MiMo 按量付费',
       isEnabled: true,

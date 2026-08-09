@@ -14,6 +14,35 @@ namespace PuddingRuntimeTests.Services;
 public sealed class LlmStreamObservabilityTests
 {
     [TestMethod]
+    public async Task ChatAsync_WhenModelProtocolIsResponses_RoutesToResponsesGateway()
+    {
+        var handler = new CapturingResponsesHandler();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(protocol: "responses"),
+            NullLogger<DirectLlmClient>.Instance);
+
+        var response = await client.ChatAsync(
+            "default",
+            "session-responses",
+            "template-1",
+            [new ChatMessage(ChatRole.User, "hello")],
+            llmConfig: new LlmConfig
+            {
+                Endpoint = "https://provider.test/v1",
+                ApiKey = "test-key",
+                ModelId = "test-model",
+            });
+
+        Assert.AreEqual("ok", response.Content);
+        Assert.AreEqual("/v1/responses", handler.RequestUri!.AbsolutePath);
+        using var requestJson = JsonDocument.Parse(handler.RequestBody!);
+        Assert.IsFalse(requestJson.RootElement.GetProperty("store").GetBoolean());
+        Assert.IsTrue(requestJson.RootElement.TryGetProperty("input", out _));
+        Assert.IsFalse(requestJson.RootElement.TryGetProperty("messages", out _));
+    }
+
+    [TestMethod]
     public async Task ChatStreamAsync_WhenTransportEndsBeforeFirstDelta_RetriesAndCompletes()
     {
         var telemetry = new RecordingTelemetrySink();
@@ -393,6 +422,27 @@ public sealed class LlmStreamObservabilityTests
         }
     }
 
+    private sealed class CapturingResponsesHandler : HttpMessageHandler
+    {
+        public Uri? RequestUri { get; private set; }
+        public string? RequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestUri = request.RequestUri;
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        }
+    }
+
     private sealed class FixedVisualArtifactResolver : IVisualArtifactResolver
     {
         public int ResolveCount { get; private set; }
@@ -651,7 +701,8 @@ public sealed class LlmStreamObservabilityTests
         int maxRetries = 2,
         int retryDelaySeconds = 1,
         bool supportsVision = false,
-        bool supportsAudio = false) : ILlmConfigService
+        bool supportsAudio = false,
+        string protocol = "openai") : ILlmConfigService
     {
         public IReadOnlyList<LlmProviderInfo> GetEnabledProviders() =>
         [
@@ -671,6 +722,7 @@ public sealed class LlmStreamObservabilityTests
             {
                 ProviderId = "provider-a",
                 ModelId = "test-model",
+                Protocol = protocol,
                 CapabilityTags = new[] {
                     "text",
                     supportsVision ? "vision" : null,

@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useRef } from 'react';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import type { ChatTurn } from '../types';
 import { applyBufferedDeltaToTurn, createId } from '../utils/chatStateUtils';
 

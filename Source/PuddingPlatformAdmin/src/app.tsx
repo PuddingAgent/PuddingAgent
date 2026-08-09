@@ -1,21 +1,13 @@
 import '@ant-design/v5-patch-for-react-19';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
-import { SettingDrawer } from '@ant-design/pro-components';
-import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
+import type { RequestConfig } from '@umijs/max';
 import { history } from '@umijs/max';
 import React from 'react';
-import {
-  AvatarDropdown,
-  AvatarName,
-} from '@/components';
-import { PuddingGlobalActions } from '@/components/GlobalActions';
-import { ThemeProviderContainer, getInitialSettings } from '@/components/ThemeMode';
+import { getInitialSettings, ThemeProviderContainer } from '@/components/ThemeMode';
 import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/api';
 import { errorConfig } from './requestErrorConfig';
 import './global.style';
 
-const isDev = process.env.NODE_ENV === 'development';
-const showDevTools = isDev && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
 const loginPath = '/user/login';
 const bootstrapPath = '/bootstrap';
 
@@ -101,69 +93,6 @@ export async function getInitialState(): Promise<{
     };
   }
 }
-
-// ProLayout 支持的api https://procomponents.ant.design/components/layout
-export const layout: RunTimeLayoutConfig = ({
-  initialState,
-  setInitialState,
-}) => {
-  return {
-    actionsRender: () => [
-      <PuddingGlobalActions
-        key="global-actions"
-        variant="pro-layout"
-        setInitialState={setInitialState}
-      />,
-    ],
-    avatarProps: {
-      src: initialState?.currentUser?.avatar,
-      title: <AvatarName />,
-      render: (_, avatarChildren) => {
-        return <AvatarDropdown dropdownTrigger={['click']}>{avatarChildren}</AvatarDropdown>;
-      },
-    },
-    footerRender: false,
-    onPageChange: () => {
-      const { location } = history;
-      // 如果没有登录且不在登录页或初始化页，重定向到登录页
-      if (
-        !initialState?.currentUser &&
-        location.pathname !== loginPath &&
-        location.pathname !== bootstrapPath
-      ) {
-        history.push(loginPath);
-      }
-    },
-    bgLayoutImgList: [],
-    links: [],
-    menuHeaderRender: undefined,
-    // 自定义 403 页面
-    // unAccessible: <div>unAccessible</div>,
-    // 增加一个 loading 的状态
-    childrenRender: (children) => {
-      // if (initialState?.loading) return <PageLoading />;
-      return (
-        <>
-          {children}
-          {showDevTools && (
-            <SettingDrawer
-              disableUrlParams
-              enableDarkTheme
-              settings={initialState?.settings}
-              onSettingChange={(settings) => {
-                setInitialState((preInitialState) => ({
-                  ...preInitialState,
-                  settings,
-                }));
-              }}
-            />
-          )}
-        </>
-      );
-    },
-    ...initialState?.settings,
-  };
-};
 
 /**
  * @name request 配置，可以配置错误处理

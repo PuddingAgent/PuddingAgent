@@ -9,7 +9,7 @@ namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
 /// LlmResourcePoolTool — 返回系统支持的 LLM 服务商和对应模型的信息。
-/// 包含：服务商名称、协议、BaseUrl、模型名称、上下文窗口大小、能力标签、价格等。
+/// 包含：服务商名称、BaseUrl，以及每个模型的协议、上下文窗口大小、能力标签、价格等。
 /// 不包含：API 密钥等敏感信息。
 ///
 /// 使用场景：
@@ -92,6 +92,7 @@ public sealed class LlmResourcePoolTool : PuddingToolBase<LlmResourcePoolArgs>
             {
                 ModelId = m.ModelId,
                 Name = m.Name,
+                Protocol = m.Protocol,
                 MaxContextTokens = m.MaxContextTokens ?? 0,
                 MaxInputTokens = m.MaxInputTokens,
                 MaxOutputTokens = m.MaxOutputTokens ?? 0,
@@ -118,7 +119,6 @@ public sealed class LlmResourcePoolTool : PuddingToolBase<LlmResourcePoolArgs>
         {
             ProviderId = provider.ProviderId,
             Name = provider.Name,
-            Protocol = provider.Protocol,
             BaseUrl = provider.BaseUrl,
             IsEnabled = provider.IsEnabled,
             Models = models,
@@ -163,7 +163,6 @@ public sealed record LlmProviderSummary
 {
     public string ProviderId { get; init; } = "";
     public string Name { get; init; } = "";
-    public string Protocol { get; init; } = "openai";
     public string BaseUrl { get; init; } = "";
     public bool IsEnabled { get; init; }
     public List<LlmModelSummary> Models { get; init; } = [];
@@ -174,6 +173,7 @@ public sealed record LlmModelSummary
 {
     public string ModelId { get; init; } = "";
     public string Name { get; init; } = "";
+    public string Protocol { get; init; } = "";
     public int MaxContextTokens { get; init; }
     public int? MaxInputTokens { get; init; }
     public int MaxOutputTokens { get; init; }

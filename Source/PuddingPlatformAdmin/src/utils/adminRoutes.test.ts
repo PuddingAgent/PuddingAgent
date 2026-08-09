@@ -1,26 +1,46 @@
-import routes from '../../config/routes';
+import routes, { adminRoutes, standaloneRoutes } from '../../config/routes';
 import zhCNMenu from '../locales/zh-CN/menu';
 
 function findRoute(path: string, list: any[] = routes): any | undefined {
   for (const route of list) {
-    if (route.path === path) return route;
     const child = route.routes ? findRoute(path, route.routes) : undefined;
     if (child) return child;
+    if (route.path === path) return route;
   }
   return undefined;
 }
 
 function findTopLevelRoute(path: string): any | undefined {
-  return routes.find((route: any) => route.path === path);
+  return adminRoutes.find((route: any) => route.path === path);
 }
 
 function visibleTopLevelPaths(): string[] {
-  return routes
-    .filter((route: any) => !route.hideInMenu && route.layout !== false && route.path !== '*')
+  return adminRoutes
+    .filter((route: any) => !route.hideInMenu)
     .map((route: any) => route.path);
 }
 
 describe('admin workspace menu routing', () => {
+  it('loads standalone experiences outside the admin layout route', () => {
+    expect(standaloneRoutes.map((route) => route.path)).toEqual(expect.arrayContaining([
+      '/user',
+      '/welcome',
+      '/chat',
+      '/pudding/workspaces',
+      '/pudding/workspaces/:workspaceId',
+      '/pudding/workspaces/:workspaceId/:agentId',
+      '/workspace-studio',
+    ]));
+    expect(adminRoutes.map((route) => route.path)).not.toContain('/chat');
+    expect(routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: '/',
+        component: '@/layouts/AdminLayout',
+        routes: adminRoutes,
+      }),
+    ]));
+  });
+
   it('keeps admin routes separate from user-facing workspace routes', () => {
     expect(findRoute('/')).toEqual(expect.objectContaining({
       path: '/',

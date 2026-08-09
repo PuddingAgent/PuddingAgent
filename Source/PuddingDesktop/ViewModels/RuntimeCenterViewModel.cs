@@ -33,7 +33,14 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
     public DesktopRuntimeSnapshot Runtime => _runtime;
     public string DataRoot => _coordinator.DataRoot ?? "未配置";
     public string CoreExecutablePath => _coordinator.CoreExecutablePath ?? "尚未解析";
-    public string BoundAddress => _coordinator.CoreAddress?.Authority ?? "未绑定";
+    public string BoundAddress => _runtime.Session?.ListenAddress is { } listenAddress
+        ? FormatEndpoint(listenAddress)
+        : _coordinator.CoreAddress is { } controlAddress
+            ? FormatEndpoint(controlAddress)
+            : "未绑定";
+    public string LocalControlAddress => _coordinator.CoreAddress is { } address
+        ? $"Desktop 本机控制地址：{FormatEndpoint(address)}"
+        : "Desktop 本机控制地址：未绑定";
     public string ProcessIdLabel => IsCoreRunning ? "进程 PID" : "最近 PID";
     public string ProcessIdText => _runtime.Session?.ProcessId.ToString() ?? _runtime.LastProcessId?.ToString() ?? "—";
     public string StartedAtText => _runtime.Session is { HasExited: false } session
@@ -179,7 +186,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
         foreach (var property in new[]
         {
             nameof(State), nameof(Runtime), nameof(StatusText), nameof(StatusDescription),
-            nameof(DataRoot), nameof(CoreExecutablePath), nameof(BoundAddress), nameof(ProcessIdLabel), nameof(ProcessIdText),
+            nameof(DataRoot), nameof(CoreExecutablePath), nameof(BoundAddress), nameof(LocalControlAddress), nameof(ProcessIdLabel), nameof(ProcessIdText),
             nameof(StartedAtText), nameof(UptimeText), nameof(LastExitCodeText), nameof(HealthText),
             nameof(AutoRestartEnabled), nameof(RestartAttempts), nameof(RestartStatusText),
             nameof(IsCoreRunning), nameof(CanStart), nameof(CanStop), nameof(CanRestart),
@@ -198,6 +205,8 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
             ? $"{(int)duration.TotalDays} 天 {duration:hh\\:mm\\:ss}"
             : duration.ToString("hh\\:mm\\:ss");
     }
+
+    private static string FormatEndpoint(Uri address) => $"{address.Host}:{address.Port}";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

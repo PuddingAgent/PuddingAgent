@@ -5,7 +5,7 @@ import {
   listSessionMessages,
   type MessageListResponse,
 } from '@/services/platform/api';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import type { ChatTurn, TimelineItem } from '../types';
 import { MESSAGE_PAGE_SIZE } from '../types/chatStateTypes';
 import {

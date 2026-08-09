@@ -1,17 +1,27 @@
-export type PuddingDebugApi = {
-  getSessionState(sessionId: string): any | null;
-  getLastTraceId(): string | null;
-  getLastSessionId(): string | null;
-  getLastMessageId(): string | null;
-  exportTimeline(): any | null;
-  clearDebugEvents(): void;
-};
+import {
+  clearPerfEventStore,
+  getPerfEventBuffer,
+  isPerfDiagnosticsEnabled,
+  markPerf,
+  measurePerf,
+  recordPerfEvent,
+} from './perfEventRuntime';
+import type { PuddingPerfEvent } from './perfEventRuntime';
 
-export type PuddingPerfEvent = {
-  name: string;
-  at: number;
-  payload?: Record<string, unknown>;
-};
+export {
+  getPerfEvents,
+  isDebugMode,
+  isPerfDiagnosticsEnabled,
+  markPerf,
+  measurePerf,
+  recordPerfEvent,
+  recordPerfStep,
+  registerDebugApi,
+  setPerfDiagnosticsEnabled,
+  writeDebugSessionState,
+  writeDebugTrace,
+} from './perfEventRuntime';
+export type { PuddingDebugApi, PuddingPerfEvent } from './perfEventRuntime';
 
 export type PuddingPerfApi = {
   enabled: boolean;
@@ -154,41 +164,7 @@ export type PuddingPerfDiagnosticSnapshot = {
   };
 };
 
-/** 判断 debug mode 是否启用（通过 URL 参数 ?debug=1） */
-export function isDebugMode(): boolean {
-  const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get('debug') === '1';
-}
-
-const PERF_DIAGNOSTICS_STORAGE_KEY = 'pudding_perf';
-
-/** 判断聊天性能诊断是否启用：?perf=1 / ?debug=1 / localStorage.pudding_perf=1 */
-export function isPerfDiagnosticsEnabled(): boolean {
-  try {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('perf') === '1'
-      || urlParams.get('debug') === '1'
-      || localStorage.getItem(PERF_DIAGNOSTICS_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function setPerfDiagnosticsEnabled(enabled: boolean): void {
-  try {
-    if (enabled) {
-      localStorage.setItem(PERF_DIAGNOSTICS_STORAGE_KEY, '1');
-    } else {
-      localStorage.removeItem(PERF_DIAGNOSTICS_STORAGE_KEY);
-    }
-  } catch {
-    // Storage can be unavailable in restricted browser contexts.
-  }
-}
-
-const perfEvents: PuddingPerfEvent[] = [];
-const perfThrottle = new Map<string, number>();
-const MAX_PERF_EVENTS = 5000;
+const perfEvents = getPerfEventBuffer();
 const DEFAULT_PERF_SNAPSHOT_EVENT_LIMIT = 5000;
 const DEFAULT_RAW_CHAT_EVENT_LIMIT = 2000;
 let longTaskObserverInstalled = false;
@@ -198,17 +174,8 @@ let browserEventListenersInstalled = false;
 const recordedResourceNames = new Set<string>();
 const PUDDING_FETCH_WRAPPED = '__puddingPerfFetchWrapped';
 
-function trimPerfEvents() {
-  if (perfEvents.length > MAX_PERF_EVENTS) perfEvents.splice(0, perfEvents.length - MAX_PERF_EVENTS);
-}
-
-export function getPerfEvents(): PuddingPerfEvent[] {
-  return [...perfEvents];
-}
-
 export function clearPerfEvents(): void {
-  perfEvents.length = 0;
-  perfThrottle.clear();
+  clearPerfEventStore();
   recordedResourceNames.clear();
 }
 
@@ -920,74 +887,6 @@ export function buildPerfDiagnosticSnapshot(options: {
   };
 }
 
-export function recordPerfEvent(
-  name: string,
-  payload?: Record<string, unknown>,
-  options?: { throttleMs?: number },
-): void {
-  if (!isPerfDiagnosticsEnabled()) return;
-  const now = performance.now();
-  const throttleMs = options?.throttleMs ?? 0;
-  if (throttleMs > 0) {
-    const last = perfThrottle.get(name) ?? 0;
-    if (now - last < throttleMs) return;
-    perfThrottle.set(name, now);
-  }
-
-  const event: PuddingPerfEvent = { name, at: Math.round(now), payload };
-  perfEvents.push(event);
-  trimPerfEvents();
-  if (localStorage.getItem('pudding_perf_console') === '1') {
-    console.debug('[Pudding Perf]', name, payload ?? {});
-  }
-}
-
-export function recordPerfStep(
-  workflow: string,
-  step: string,
-  startedAt: number,
-  payload: Record<string, unknown> = {},
-): void {
-  if (!isPerfDiagnosticsEnabled()) return;
-  const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
-  const status = typeof payload.status === 'string' ? payload.status : 'ok';
-  recordPerfEvent('chat.workflow.step', {
-    ...payload,
-    workflow,
-    step,
-    status,
-    durationMs,
-  });
-}
-
-export function markPerf(name: string): void {
-  if (!isPerfDiagnosticsEnabled()) return;
-  try {
-    performance.mark(`pudding:${name}`);
-  } catch {
-    // performance.mark can fail in constrained test/browser contexts.
-  }
-}
-
-export function measurePerf(name: string, startMark: string, endMark?: string): number | null {
-  if (!isPerfDiagnosticsEnabled()) return null;
-  try {
-    const fullStart = `pudding:${startMark}`;
-    const fullEnd = endMark ? `pudding:${endMark}` : undefined;
-    const entryName = `pudding:${name}`;
-    performance.measure(entryName, fullStart, fullEnd);
-    const entries = performance.getEntriesByName(entryName, 'measure');
-    const duration = entries.length > 0 ? entries[entries.length - 1].duration : null;
-    if (duration != null) {
-      recordPerfEvent(name, { durationMs: Math.round(duration) });
-      return duration;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
 function describeLayoutShiftSource(source: unknown): string {
   const node = (source as { node?: unknown } | null | undefined)?.node;
   if (!(node instanceof Element)) return 'unknown';
@@ -1200,27 +1099,4 @@ export function installPerfDiagnostics(): void {
   installBrowserEventDiagnostics();
   installFetchDiagnostics();
   recordPerfEvent('diagnostics.enabled', { mode: 'chat' });
-}
-
-/** 写入 last session/message（仅 debug mode 下启用） */
-export function writeDebugSessionState(sessionId: string, messageId: string): void {
-  if (!isDebugMode()) return;
-  sessionStorage.setItem('pudding_last_session_id', sessionId);
-  sessionStorage.setItem('pudding_last_message_id', messageId);
-  console.log('[Pudding Debug] Wrote session', sessionId, 'message', messageId);
-}
-
-/** 写入 last trace（仅 debug mode 下启用） */
-export function writeDebugTrace(traceId: string): void {
-  if (!isDebugMode()) return;
-  sessionStorage.setItem('pudding_last_trace_id', traceId);
-  console.log('[Pudding Debug] Wrote trace', traceId);
-}
-
-/** 注册 debug API 到 window.__PUDDING_DEBUG__ */
-export function registerDebugApi(api: PuddingDebugApi): void {
-  if (isDebugMode()) {
-    (window as any).__PUDDING_DEBUG__ = api;
-    console.log('[Pudding Debug] Debug mode enabled');
-  }
 }

@@ -49,6 +49,15 @@ const MIMO_V25_CAPABILITIES = [
   'reasoning',
 ];
 
+const OPENCODE_GO_CAPABILITIES = [
+  'text',
+  'function-calling',
+  'streaming',
+  'long-context',
+  'code',
+  'reasoning',
+];
+
 const createMimoModels = (
   ultraSpeedPrices: Pick<
     LlmProviderTemplateModel,
@@ -66,6 +75,7 @@ const createMimoModels = (
   {
     modelId: 'mimo-v2.5-pro-ultraspeed',
     name: 'MiMo-V2.5-Pro-UltraSpeed',
+    protocol: 'openai',
     description: '小米 MiMo V2.5 Pro UltraSpeed，1M 上下文窗口，最大输出 128K tokens，输出 TPS 约 500-1000。',
     maxContextTokens: 1000000,
     maxOutputTokens: 128000,
@@ -78,6 +88,7 @@ const createMimoModels = (
   {
     modelId: 'mimo-v2.5-pro',
     name: 'MiMo-V2.5-Pro',
+    protocol: 'openai',
     description: '小米 MiMo V2.5 Pro，1M 上下文窗口，最大输出 128K tokens。',
     maxContextTokens: 1000000,
     maxOutputTokens: 128000,
@@ -90,6 +101,7 @@ const createMimoModels = (
   {
     modelId: 'mimo-v2.5',
     name: 'MiMo-V2.5',
+    protocol: 'openai',
     description: '小米 MiMo V2.5，1M 上下文窗口，最大输出 128K tokens。',
     maxContextTokens: 1000000,
     maxOutputTokens: 128000,
@@ -103,12 +115,101 @@ const createMimoModels = (
 
 export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   {
+    value: 'opencode-go',
+    label: 'OpenCode Go',
+    provider: {
+      providerId: 'opencode',
+      name: 'OpenCode Go',
+      baseUrl: 'https://opencode.ai/zen/go/v1',
+      description: 'OpenCode Go 订阅服务；不同模型分别使用 Chat Completions、Responses 或 Anthropic Messages。',
+      isEnabled: true,
+      maxConcurrentRequests: 300,
+    },
+    models: [
+      {
+        modelId: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        protocol: 'responses',
+        description: 'OpenCode Go GPT-5.6 Luna，Responses API，1.05M 上下文窗口。',
+        maxContextTokens: 1050000,
+        maxInputTokens: 922000,
+        maxOutputTokens: 128000,
+        inputPricePer1MTokensRmb: 0,
+        outputPricePer1MTokensRmb: 0,
+        cacheHitPricePer1MTokensRmb: 0,
+        capabilityTags: [...OPENCODE_GO_CAPABILITIES, 'vision'],
+        isDeprecated: false,
+        isDefault: false,
+        sortOrder: 0,
+      },
+      {
+        modelId: 'grok-4.5',
+        name: 'Grok 4.5',
+        protocol: 'openai',
+        description: 'OpenCode Go Grok 4.5，Chat Completions，500K 上下文窗口。',
+        maxContextTokens: 500000,
+        maxOutputTokens: 500000,
+        inputPricePer1MTokensRmb: 0,
+        outputPricePer1MTokensRmb: 0,
+        cacheHitPricePer1MTokensRmb: 0,
+        capabilityTags: [...OPENCODE_GO_CAPABILITIES, 'vision'],
+        isDeprecated: false,
+        isDefault: false,
+        sortOrder: 1,
+      },
+      {
+        modelId: 'glm-5.2',
+        name: 'GLM-5.2',
+        protocol: 'openai',
+        description: 'OpenCode Go GLM-5.2，Chat Completions，1M 上下文窗口。',
+        maxContextTokens: 1000000,
+        maxOutputTokens: 131072,
+        inputPricePer1MTokensRmb: 0,
+        outputPricePer1MTokensRmb: 0,
+        cacheHitPricePer1MTokensRmb: 0,
+        capabilityTags: OPENCODE_GO_CAPABILITIES,
+        isDeprecated: false,
+        isDefault: false,
+        sortOrder: 2,
+      },
+      {
+        modelId: 'kimi-k3',
+        name: 'Kimi K3',
+        protocol: 'openai',
+        description: 'OpenCode Go Kimi K3，Chat Completions，1,048,576 tokens 上下文窗口。',
+        maxContextTokens: 1048576,
+        maxOutputTokens: 131072,
+        inputPricePer1MTokensRmb: 0,
+        outputPricePer1MTokensRmb: 0,
+        cacheHitPricePer1MTokensRmb: 0,
+        capabilityTags: [...OPENCODE_GO_CAPABILITIES, 'vision'],
+        isDeprecated: false,
+        isDefault: false,
+        sortOrder: 3,
+      },
+      {
+        modelId: 'qwen3.8-max',
+        name: 'Qwen3.8 Max',
+        protocol: 'anthropic',
+        description: 'OpenCode Go Qwen3.8 Max，Anthropic Messages，1M 上下文窗口。',
+        maxContextTokens: 1000000,
+        maxOutputTokens: 131072,
+        inputPricePer1MTokensRmb: 0,
+        outputPricePer1MTokensRmb: 0,
+        cacheHitPricePer1MTokensRmb: 0,
+        capabilityTags: [...OPENCODE_GO_CAPABILITIES, 'vision'],
+        isDeprecated: false,
+        isDefault: false,
+        sortOrder: 4,
+      },
+    ],
+  },
+  {
     value: 'deepseek',
     label: 'DeepSeek',
     provider: {
       providerId: 'deepseek',
       name: 'DeepSeek',
-      protocol: 'openai',
       baseUrl: 'https://api.deepseek.com',
       description: 'DeepSeek API（OpenAI 兼容；Anthropic 格式地址为 https://api.deepseek.com/anthropic）',
       isEnabled: true,
@@ -118,6 +219,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'deepseek-v4-flash',
         name: 'DeepSeek-V4-Flash',
+        protocol: 'openai',
         description: 'DeepSeek V4 Flash，支持非思考与思考模式、Json Output、Tool Calls、对话前缀续写和非思考模式 FIM。',
         maxContextTokens: 1000000,
         maxOutputTokens: 384000,
@@ -132,6 +234,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'deepseek-v4-pro',
         name: 'DeepSeek-V4-Pro',
+        protocol: 'openai',
         description: 'DeepSeek V4 Pro，支持非思考与思考模式、Json Output、Tool Calls、对话前缀续写和非思考模式 FIM。',
         maxContextTokens: 1000000,
         maxOutputTokens: 384000,
@@ -151,7 +254,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'moonshot',
       name: 'Moonshot（Kimi，按量付费）',
-      protocol: 'openai',
       baseUrl: 'https://api.moonshot.cn/v1',
       description: 'Moonshot Kimi K3 按量付费；额度：并发 50、TPM 2,000,000、RPM 200。',
       isEnabled: true,
@@ -163,6 +265,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'kimi-k3',
         name: 'Kimi K3',
+        protocol: 'openai',
         description: 'Moonshot Kimi K3，1,048,576 tokens 上下文窗口，最大输出 131,072 tokens。',
         maxContextTokens: 1048576,
         maxOutputTokens: 131072,
@@ -183,7 +286,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'xiaomimimo-tokenplan',
       name: 'xiaomimimo-tokenplan',
-      protocol: 'openai',
       baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
       description: '小米 MiMo Token Plan（预付 token 计划，模板内模型费用按 0 处理）',
       isEnabled: true,
@@ -213,7 +315,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'xiaomimimo-payg',
       name: 'xiaomimimo-按量付费',
-      protocol: 'openai',
       baseUrl: 'https://api.xiaomimimo.com/v1',
       description: '小米 MiMo 按量付费',
       isEnabled: true,
@@ -243,7 +344,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'dashscope',
       name: '阿里云百炼',
-      protocol: 'openai',
       baseUrl: 'https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
       description: '阿里云百炼平台，OpenAI 兼容协议。支持 Qwen 系列对话模型和 text-embedding-v4。',
       isEnabled: true,
@@ -253,6 +353,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'qwen-turbo',
         name: 'Qwen Turbo',
+        protocol: 'openai',
         description: 'Qwen Turbo，轻量高性能对话模型。',
         maxContextTokens: 131072,
         maxOutputTokens: 8192,
@@ -267,6 +368,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'text-embedding-v4',
         name: 'Qwen3 Embedding V4',
+        protocol: 'openai',
         description: '阿里云 text-embedding-v4，1024 维向量，中文 CMTEB 70.14。',
         maxContextTokens: 8192,
         maxOutputTokens: 1,
@@ -287,7 +389,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'openai',
       name: 'OpenAI',
-      protocol: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       description: 'OpenAI API，支持 GPT 系列对话模型和 text-embedding-3-small。',
       isEnabled: true,
@@ -297,6 +398,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'text-embedding-3-small',
         name: 'Embedding 3 Small',
+        protocol: 'openai',
         description: 'OpenAI text-embedding-3-small，1536 维向量。',
         maxContextTokens: 8191,
         maxOutputTokens: 1,
@@ -317,7 +419,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'bigmodel',
       name: '智谱 BigModel',
-      protocol: 'openai',
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
       description: '智谱 BigModel，支持 GLM 系列对话模型。',
       isEnabled: true,
@@ -327,6 +428,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'glm-5.2',
         name: 'GLM 5.2',
+        protocol: 'openai',
         description: '最新一代 GLM 模型，1M 上下文窗口。',
         maxContextTokens: 1048576,
         maxOutputTokens: 131072,
@@ -346,7 +448,6 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
     provider: {
       providerId: 'bigmodel-embeddings',
       name: '智谱 Embedding',
-      protocol: 'openai',
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
       description: '智谱 BigModel Embedding API，支持 1024/2048 维向量。',
       isEnabled: true,
@@ -356,6 +457,7 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
       {
         modelId: 'embedding-3',
         name: 'Embedding 3',
+        protocol: 'openai',
         description: '智谱 embedding-3，支持自定义维度（512/1024/2048），默认 1024。',
         maxContextTokens: 8192,
         maxOutputTokens: 1,
@@ -384,6 +486,7 @@ export const getProviderTemplateModelValues = (
   template.models.map((model) => ({
     modelId: model.modelId,
     name: model.name,
+    protocol: model.protocol,
     description: model.description,
     maxContextTokens: model.maxContextTokens,
     maxInputTokens: model.maxInputTokens,

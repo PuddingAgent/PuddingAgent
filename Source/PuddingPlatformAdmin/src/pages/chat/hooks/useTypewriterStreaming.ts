@@ -2,7 +2,7 @@
 // 职责：将完整累积文本分为「稳定 Markdown 块」和「正在键入的尾段」，
 //       并按视觉节奏逐 chunk 显示 liveText。
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { recordPerfEvent } from '@/utils/debug';
+import { recordPerfEvent } from '@/utils/perfEventRuntime';
 
 export interface TypewriterStreamingState {
   /** 可安全交给 ReactMarkdown 的稳定部分 */

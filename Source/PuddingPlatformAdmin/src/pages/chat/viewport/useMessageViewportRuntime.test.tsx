@@ -174,6 +174,98 @@ describe('useMessageViewportRuntime', () => {
     expect(result.current.state.showBottomButton).toBe(false);
   });
 
+  it('does not re-render for scroll frames whose viewport state is unchanged', () => {
+    const originalRaf = window.requestAnimationFrame;
+    let scrollFrame: FrameRequestCallback | undefined;
+    window.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      scrollFrame = callback;
+      return 1;
+    });
+    let renderCount = 0;
+    const items = [makeItem('m1', 1)];
+    const { result } = renderHook(() => {
+      renderCount += 1;
+      return useMessageViewportRuntime({
+        items,
+        hasMoreBefore: false,
+        loadingBefore: false,
+        onRequestLoadBefore: jest.fn(),
+      });
+    });
+    const node = document.createElement('div');
+    Object.defineProperty(node, 'scrollTop', { value: 800, writable: true });
+    Object.defineProperty(node, 'clientHeight', { value: 400 });
+    Object.defineProperty(node, 'scrollHeight', { value: 1200 });
+    result.current.parentRef.current = node;
+
+    try {
+      act(() => {
+        result.current.onScroll();
+        scrollFrame?.(performance.now());
+      });
+      const rendersAfterStateTransition = renderCount;
+
+      act(() => {
+        result.current.onScroll();
+        scrollFrame?.(performance.now());
+      });
+
+      expect(renderCount).toBe(rendersAfterStateTransition);
+    } finally {
+      window.requestAnimationFrame = originalRaf;
+    }
+  });
+
+  it('stops initial bottom polling shortly after the layout becomes stable', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-09T00:00:00.000Z'));
+    const items = [makeItem('m1', 1)];
+    const { result, unmount } = renderHook(() =>
+      useMessageViewportRuntime({
+        items,
+        hasMoreBefore: false,
+        loadingBefore: false,
+        onRequestLoadBefore: jest.fn(),
+      }),
+    );
+    const node = document.createElement('div');
+    let scrollTop = 0;
+    let scrollWrites = 0;
+    Object.defineProperty(node, 'scrollTop', {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+        scrollWrites += 1;
+      },
+    });
+    Object.defineProperty(node, 'clientHeight', { value: 400 });
+    Object.defineProperty(node, 'scrollHeight', { value: 1200 });
+    result.current.parentRef.current = node;
+
+    try {
+      act(() => {
+        result.current.scrollToBottom({
+          behavior: 'auto',
+          reason: 'initial-session-load',
+        });
+      });
+      act(() => {
+        jest.advanceTimersByTime(800);
+      });
+      const stableWriteCount = scrollWrites;
+
+      act(() => {
+        jest.advanceTimersByTime(2_000);
+      });
+
+      expect(scrollWrites).toBe(stableWriteCount);
+      expect(scrollTop).toBe(800);
+    } finally {
+      unmount();
+      jest.useRealTimers();
+    }
+  });
+
   it('pinned bottom remains enabled until explicitly disabled', () => {
     const items = [makeItem('m1', 1)];
     const { result } = renderHook(() =>

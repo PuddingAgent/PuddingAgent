@@ -184,3 +184,17 @@ IDLE
 - 初期会引入新的 viewport runtime 抽象。
 - 需要补充 JSDOM 单测和 Playwright 视图验收。
 - 第一阶段必须保持现有视觉行为，避免架构迁移和 UI 重设计混在一起。
+
+## 2026-08-09 性能收敛补充
+
+- `processScroll` 在 `atBottom`、`nearTop`、`followMode` 均未变化时复用原 state，避免每个 scroll animation frame 都触发 React commit。
+- 首屏贴底的 100ms 轮询在布局稳定 3 次且经过 500ms 后停止；`ResizeObserver` 继续处理真正迟到的图片或 Markdown 高度变化。
+- 折叠的过程摘要不构建 rounds、display items 或 trace chips；用户展开后才计算。
+- active run 明细固定返回最近 64 条可见思考/工具事件，同时返回基于全量无 payload 元数据计算的 `processSummary`，避免长任务把整个事件 payload 注入首屏。
+- bootstrap 子代理事件是有界快照（最近 500 条），前端仍通过终态状态对账修正截断边界。
+- Agent conversation 首屏窗口与现有历史分页统一为最近 20 条；分页后的本地历史只在和投影窗口存在重叠时向前合并，避免旧快照覆盖权威投影。
+- Markdown/KaTeX/HTML parser/Prism 从 Chat 首始 chunk 拆出；`MessageItem` 先显示保留换行的纯文本，再异步升级为完整 Markdown，ResizeObserver 负责增强后的高度收敛。
+- 仅开发调试使用的 Pro Components `SettingDrawer` 采用动态加载，生产主包不再静态包含其依赖树。
+- 子代理运行检查器只在当前会话存在子代理卡片或用户显式打开时加载；摄像头输入和会话基准诊断 Drawer 也采用首次使用加载，关闭状态不预挂载到每个消息节点。
+- 高频埋点、mark/measure 和事件缓冲收敛到轻量 `perfEventRuntime`；完整浏览器观察器、诊断快照和建议生成保留在异步 `debug` chunk，普通 Chat 首屏不执行也不解析。
+- bundle 评估以 HTML 的全部同步 script 与当前路由首始 chunk 合计为准；仅把 React framework 从 `umi.js` 移到同步 `framework.js` 不算首载优化。
