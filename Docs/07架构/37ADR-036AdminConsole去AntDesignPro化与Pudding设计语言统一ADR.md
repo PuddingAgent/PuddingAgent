@@ -261,3 +261,18 @@ PuddingAdminShell
 采纳 **方案 C：保留 Ant Design 能力，建立 Pudding Admin Shell 和 Wrapper**。
 
 Admin Console 的目标不是“换主题色的 Ant Design Pro”，而是 Pudding 主体验旁边的低频、安静、可信、可施工的管理工具箱。`/admin/workspace` 是第一批样板页，必须先完成去模板化和 token 化，再推广到其他管理页。
+
+---
+
+## 11. 2026-08-09 路由级加载隔离补充
+
+为避免 Chat 主体验继续承担管理框架成本，实施顺序增加一个可量化的过渡阶段：
+
+1. Umi 全局 `layout` 插件关闭；`src/app.tsx` 只保留认证、初始状态、主题和 request 等所有路由共享能力。
+2. `config/routes.ts` 明确拆分 `standaloneRoutes` 与 `adminRoutes`；`/chat`、登录和 Workspace Studio 不经过管理壳，管理页统一挂到异步 `src/layouts/AdminLayout` 父路由。
+3. `AdminLayout` 现阶段仍使用 ProLayout 维持管理菜单和页面兼容，但该依赖只在进入管理路由后加载。这是 ADR-036-C 自有壳替换前的隔离层，不改变最终去 ProLayout 的方向。
+4. Chat 内的历史搜索、诊断面板、子代理检查器等懒加载能力必须同时满足“异步声明”和“关闭时不挂载”；仅使用 `React.lazy` 但始终渲染组件并不能推迟网络请求。
+
+生产构建证据：主包从 `1,867,778` bytes 降至 `1,373,107` bytes，Chat 路由首始 chunk 为 `303,537` bytes；两者合计从 `2,171,299` bytes 降至 `1,676,644` bytes，减少 `494,655` bytes（22.78%）。Chat HTML 没有新增同步 framework script，生成路由也不再包含全局 `plugin-layout`。
+
+后续去 Pro 化应在 `AdminLayout` 边界内替换侧栏和顶栏，再逐页减少 PageContainer/ProTable；不得把管理壳重新迁回 `app.tsx`，也不得用牺牲 Chat 首载的方式换取管理端实现便利。

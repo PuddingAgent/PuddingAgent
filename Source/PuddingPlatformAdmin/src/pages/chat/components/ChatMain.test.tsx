@@ -14,6 +14,7 @@ jest.mock('@/components', () => ({
   WorkspaceNavigationHeader: ({ crumbs, controls, extraActions }: any) => (
     <header>
       <nav aria-label="工作台路径">
+        <button type="button">Pudding</button>
         {crumbs?.map((crumb: any) => (
           <span key={crumb.label}>{crumb.label}</span>
         ))}
@@ -68,24 +69,32 @@ jest.mock('./MessageList', () => (props: any) => {
     />
   );
 });
-jest.mock('./DevPanel', () => (props: any) => (
-  <div data-testid="dev-panel">
-    <button
-      type="button"
-      onClick={() =>
-        props.onRunBenchmarkPrompt?.(
-          '请创建一个 Markdown 摘要脚本并运行验证。',
-          {
-            source: 'benchmark_launcher',
-            benchmarkCaseId: 'case-1',
-          },
-        )
-      }
-    >
-      运行试题
-    </button>
-  </div>
-));
+jest.mock('./DevPanel', () => ({
+  __esModule: true,
+  default: (props: any) => (
+    <div data-testid="dev-panel">
+      <button
+        type="button"
+        onClick={() =>
+          props.onRunBenchmarkPrompt?.(
+            '请创建一个 Markdown 摘要脚本并运行验证。',
+            {
+              source: 'benchmark_launcher',
+              benchmarkCaseId: 'case-1',
+            },
+          )
+        }
+      >
+        运行试题
+      </button>
+    </div>
+  ),
+}));
+jest.mock('./HistorySearchModal', () => ({
+  __esModule: true,
+  default: (props: any) =>
+    props.open ? <div data-testid="history-search-modal" /> : null,
+}));
 
 const workspace = {
   workspaceId: 'default',
@@ -202,7 +211,7 @@ describe('ChatMain workbench header', () => {
 
     expect(screen.getByRole('navigation', { name: '工作台路径' })).toBeTruthy();
     expect(screen.getAllByText('默认工作空间').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: '工作空间视图' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pudding' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '切换助手' })).toBeNull();
     expect(screen.queryByRole('menu', { name: '助手列表' })).toBeNull();
     expect(screen.queryByText('默认助手')).toBeNull();
@@ -373,6 +382,14 @@ describe('ChatMain workbench header', () => {
     expect(screen.queryByTestId('subagent-anchor')).toBeNull();
   });
 
+  it('mounts history search only after the user opens it', () => {
+    renderChatMain();
+
+    expect(screen.queryByTestId('history-search-modal')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '搜索历史消息' }));
+    expect(screen.getByTestId('history-search-modal')).toBeTruthy();
+  });
+
   it('keeps voice interaction inside the main input surface without a side rail', () => {
     const { rerender } = renderChatMain({
       chatInteractionRuntimeEvents: [
@@ -437,7 +454,7 @@ describe('ChatMain workbench header', () => {
 
     renderChatMain({ onInputChange, onSendWithMetadata });
 
-    fireEvent.click(screen.getByRole('button', { name: '运行试题' }));
+    fireEvent.click(await screen.findByRole('button', { name: '运行试题' }));
 
     await waitFor(() => {
       expect(onSendWithMetadata).toHaveBeenCalledWith(

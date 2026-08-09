@@ -42,6 +42,15 @@
 | `src/pages/llm-resource-pool/providerTemplates.ts` | Provider 模板及模型级协议默认值；OpenCode Go 模板含同一 Provider 下三种协议的五个模型 |
 | `src/services/platform/api.ts` | Provider DTO 不含协议；Model DTO/Upsert 必须携带协议 |
 
+## 路由与壳层加载边界
+
+| 文件 | 职责与加载边界 |
+|------|----------------|
+| `config/config.ts` | Umi 基础配置；不得重新启用全局 `layout` 插件，否则 Chat 会重新承担管理壳运行时 |
+| `config/routes.ts` | 将 `/chat`、登录、Bootstrap/Studio 等独立体验与 `adminRoutes` 分组；管理路由统一挂到异步 `AdminLayout` 父路由 |
+| `src/app.tsx` | 全应用认证、初始状态、主题和 request；不得静态导入管理壳的 ProLayout、头像区或 SettingDrawer |
+| `src/layouts/AdminLayout/index.tsx` | 仅管理路由加载的过渡壳；当前保留 ProLayout 菜单能力，后续可在不影响 Chat 首载的前提下替换为 PuddingAdminShell |
+
 ## Chat 性能热路径
 
 | 文件 | 职责与性能边界 |
@@ -52,6 +61,7 @@
 | `src/pages/chat/components/MessageItem.tsx` | 消息文本轻量壳；立即显示纯文本 fallback，并异步加载 Markdown 增强器 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | ReactMarkdown、KaTeX、HTML parser 和 Prism 的独立按需 chunk |
 | `src/pages/chat/components/ChatMain.tsx` | Chat 主壳；子代理运行检查器仅在存在运行卡片或显式打开时加载 |
+| `src/pages/chat/components/HistorySearchModal.tsx` | 历史搜索弹窗；只有 `historyModalOpen` 时才挂载并触发异步 chunk |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；每条消息不得预挂载关闭状态的会话诊断 Drawer |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer；摄像头弹窗只在用户打开视觉输入时加载和挂载 |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 虚拟列表、锚点与贴底；scroll 状态未变化时不得触发 React commit，首屏稳定轮询应尽快结束 |
@@ -60,7 +70,7 @@
 
 后端对应入口：`PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs` 首屏只返回最近 20 条消息；active run 返回最近 64 条可见过程明细，同时用 `processSummary` 保留全量计数。`PuddingPlatform/Controllers/Api/SessionEventsController.cs` 的 bootstrap 子代理事件快照上限为 500 条。
 
-全局壳：`src/app.tsx` 的开发态 `SettingDrawer` 必须异步加载，不能把仅供 `?debug` 使用的 Pro Components 依赖放进生产主包。不要仅为减小 `umi.js` 启用 `granularChunks`；必须合计 HTML 同步引用的 framework chunk，确认真实首载字节和请求顺序确有改善。
+全局壳：`src/app.tsx` 只保留所有路由真正共享的认证、主题和 request；管理端 ProLayout、全局操作和开发态 `SettingDrawer` 必须留在异步 `AdminLayout`。不要仅为减小 `umi.js` 启用 `granularChunks`；必须合计 HTML 同步引用的 framework chunk 与 Chat 路由首始 chunk，确认真实首载字节和请求顺序确有改善。
 
 ## 测试
 

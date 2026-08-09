@@ -3,21 +3,16 @@ import {
   BugOutlined,
   HistoryOutlined,
   MenuUnfoldOutlined,
-  
   SoundOutlined,
 } from '@ant-design/icons';
-import { history } from '@umijs/max';
-import { Alert, Button, Divider, Select, Switch, Tooltip } from 'antd';
+import { Alert, Button, Divider, Select, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
 import type {
   WorkspaceAgentDto,
   WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import {
-  
-  rememberWorkspaceVisit,
-} from '@/utils/workspaceNavigation';
+import { rememberWorkspaceVisit } from '@/utils/workspaceNavigation';
 import type { AgentConversationView } from '../client/types';
 import { useAutoTts } from '../hooks/useAutoTts';
 import type {
@@ -30,8 +25,14 @@ import type { ChatTurn, SubAgentCardMap } from '../types';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 
-const DevPanel = React.lazy(() => import('./DevPanel'));
-const HistorySearchModal = React.lazy(() => import('./HistorySearchModal'));
+const DevPanel =
+  process.env.NODE_ENV === 'test'
+    ? (require('./DevPanel').default as typeof import('./DevPanel').default)
+    : React.lazy(() => import('./DevPanel'));
+const HistorySearchModal =
+  process.env.NODE_ENV === 'test'
+    ? (require('./HistorySearchModal').default as typeof import('./HistorySearchModal').default)
+    : React.lazy(() => import('./HistorySearchModal'));
 const SubAgentActivityDock =
   process.env.NODE_ENV === 'test'
     ? (require('./SubAgentActivityDock').default as typeof import('./SubAgentActivityDock').default)
@@ -194,7 +195,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
     (quoteText: string) => {
       // 将引用文本追加到当前输入框内容末尾
       const current = (document.querySelector('textarea') as HTMLTextAreaElement)?.value ?? '';
-      onInputChange(current ? current + '\n' + quoteText : quoteText);
+      onInputChange(current ? `${current}\n${quoteText}` : quoteText);
     },
     [onInputChange],
   );
@@ -234,7 +235,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
       })),
     [turns],
   );
-  const { playing: ttsPlaying, loading: ttsLoading } = useAutoTts(
+  useAutoTts(
     autoTtsMessages,
     autoTtsEnabled,
   );
@@ -359,22 +360,19 @@ const ChatMain: React.FC<ChatMainProps> = ({
           }
           crumbs={[]}
           controls={
-            <>
-              <Select
-                className={`${styles.headerSelect} ${styles.headerSwitchSelect}`}
-                size="small"
-                variant="borderless"
-                value={workspaceId}
-                loading={workspaceLoading}
-                options={wsOpts}
-                onChange={onWorkspaceChange}
-                placeholder="工作空间"
-                popupMatchSelectWidth={false}
-                popupRender={dropdownRender}
-                classNames={{ popup: { root: styles.headerSelectPopup } }}
-              />
-              
-            </>
+            <Select
+              className={`${styles.headerSelect} ${styles.headerSwitchSelect}`}
+              size="small"
+              variant="borderless"
+              value={workspaceId}
+              loading={workspaceLoading}
+              options={wsOpts}
+              onChange={onWorkspaceChange}
+              placeholder="工作空间"
+              popupMatchSelectWidth={false}
+              popupRender={dropdownRender}
+              classNames={{ popup: { root: styles.headerSelectPopup } }}
+            />
           }
           extraActions={
             <>
@@ -513,14 +511,16 @@ const ChatMain: React.FC<ChatMainProps> = ({
           </div>
         </div>
       </div>
-      <React.Suspense fallback={null}>
-      <HistorySearchModal
-        open={historyModalOpen}
-        workspaceId={workspaceId ?? ''}
-        onClose={() => setHistoryModalOpen(false)}
-        onQuote={handleHistoryQuote}
-      />
-      </React.Suspense>
+      {historyModalOpen && (
+        <React.Suspense fallback={null}>
+          <HistorySearchModal
+            open
+            workspaceId={workspaceId ?? ''}
+            onClose={() => setHistoryModalOpen(false)}
+            onQuote={handleHistoryQuote}
+          />
+        </React.Suspense>
+      )}
     </main>
   );
 };

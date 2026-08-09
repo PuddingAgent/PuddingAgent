@@ -2573,6 +2573,10 @@ platform.db 的 append-only 诊断表（session_event_log / telemetry_metric_eve
 
 第三批基准：主包 `1,867,778` bytes，Chat 首始 chunk `303,521` bytes，二者名义合计 `2,171,299` bytes；相对第二批的 `2,221,844` bytes 再减少约 2.3%。子代理检查器 `20,374` bytes、摄像头输入 `8,909` bytes、会话诊断 Drawer `8,845` bytes 均为首次使用加载；完整性能诊断另在 async chunk。曾试验 Umi `granularChunks`，虽然 `umi.js` 降到约 1.67MB，但 HTML 新增同步 `framework.js` 约 220KB，合计没有下降且多一个阻塞请求，因此已撤销。后续比较必须读取 `dist/chat/index.html` 的全部同步 script，不能只看构建日志里的 `umi.js` 单文件大小。
 
+第四批基准（管理壳路由隔离）：关闭 Umi 全局 `layout`，把管理页挂到异步 `src/layouts/AdminLayout` 父路由，并从 `src/app.tsx` 移出 ProLayout、管理端头像/操作区和 SettingDrawer。生产主包为 `1,373,107` bytes，Chat 首始 chunk 为 `303,537` bytes，名义合计 `1,676,644` bytes；相对第三批减少 `494,655` bytes（22.78%）。`dist/chat/index.html` 仍只有一个业务同步脚本 `umi.fbc8a3fa.js`，生成路由中不再出现 `plugin-layout` / `ant-design-pro-layout`；`AdminLayout` 自身入口 chunk 为 `4,949` bytes，其 Pro 依赖只在管理路由加载。历史搜索 Modal 还必须以 `historyModalOpen` 作为挂载条件，否则虽然声明为 `React.lazy`，仍会在 Chat 首载立即请求其 chunk。
+
+浏览器 smoke：源码开发栈下 `/admin/chat` 可加载长会话，滚轮离开底部会出现“回到底部”且点击后恢复贴底；`/admin/llm-resource-pool` 与 `/admin/voice-models` 均能加载管理侧栏、顶栏和数据页并完成 SPA 路由切换。验证结束后执行 `python dev-up.py --down`，避免开发 Core 与 Desktop 争用同一个 DataRoot。
+
 ## 11.20 LLM 模型走错 Chat Completions / Responses / Anthropic Messages 协议
 
 如果 Responses 模型返回 403，且响应体出现 `object: "chat.completion"`，说明请求实际到达了旧的 `/chat/completions` 路径。不要只检查 Provider 的 BaseUrl；按同一个 `providerId/modelId` 对齐以下事实：

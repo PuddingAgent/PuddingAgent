@@ -45,7 +45,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
 | `Source/PuddingFullTextIndex/` | 全文索引引擎 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 20 工具（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
-| `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
+| `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 · 管理壳异步隔离 | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 
 ## 调用链路
 
