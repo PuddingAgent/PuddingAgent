@@ -165,7 +165,7 @@ public sealed class DesignCouncilPlanCompilerTests
         Assert.IsTrue(result.Issues.Any(issue => issue.Code == "group.independent_final_reviewer_missing"));
     }
 
-    private static DesignCouncilPlanCompileRequest CreateCompileRequest()
+    internal static DesignCouncilPlanCompileRequest CreateCompileRequest()
         => new()
         {
             PlanId = "moa-design-001",

@@ -1,4 +1,6 @@
+﻿using System.Net.Http;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -14,8 +16,8 @@ public sealed class AgentSkillToolsTests
     public async Task AgentSkillTool_Create_Initializes_Agent_Private_Skill_And_Returns_Physical_Path()
     {
         using var temp = new TempDataRoot();
-        var service = new AgentSkillFileService(temp.Paths);
-        var tool = new AgentSkillTool(service);
+                var service = new AgentSkillFileService(temp.Paths);
+        var tool = CreateTool(service);
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -67,7 +69,7 @@ public sealed class AgentSkillToolsTests
             Summary = "Agent B only.",
             SkillMarkdown = "agent-b-content",
         });
-        var tool = new AgentSkillTool(service);
+                var tool = CreateTool(service);
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -99,7 +101,7 @@ public sealed class AgentSkillToolsTests
             Summary = "Long summary.",
             SkillMarkdown = "0123456789abcdefghijklmnopqrstuvwxyz",
         });
-        var tool = new AgentSkillTool(service);
+                var tool = CreateTool(service);
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -133,7 +135,7 @@ public sealed class AgentSkillToolsTests
             Summary = "Old summary.",
             SkillMarkdown = "old",
         });
-        var tool = new AgentSkillTool(service);
+                var tool = CreateTool(service);
 
         var update = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -180,8 +182,8 @@ public sealed class AgentSkillToolsTests
     public async Task SkillTools_Reject_Missing_Required_Arguments_And_Path_Traversal()
     {
         using var temp = new TempDataRoot();
-        var service = new AgentSkillFileService(temp.Paths);
-        var tool = new AgentSkillTool(service);
+                var service = new AgentSkillFileService(temp.Paths);
+        var tool = CreateTool(service);
 
         var missingSkillId = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -217,7 +219,7 @@ public sealed class AgentSkillToolsTests
         using var temp = new TempDataRoot();
         var service = new AgentSkillFileService(temp.Paths);
 
-        var descriptor = new AgentSkillTool(service).Descriptor;
+        var descriptor = CreateTool(service).Descriptor;
         Assert.AreEqual("agent_skill", descriptor.ToolId);
         Assert.AreEqual(ToolCategory.FileSystem, descriptor.Category);
         Assert.AreEqual(ToolPermissionLevel.Low, descriptor.PermissionLevel);
@@ -233,12 +235,20 @@ public sealed class AgentSkillToolsTests
         StringAssert.Contains(decision.Reason, "agent-private SKILL");
     }
 
+    private static AgentSkillTool CreateTool(AgentSkillFileService service)
+        => new(service, new NullHttpClientFactory(), new ConfigurationBuilder().Build());
+
     private static ToolExecutionContext TestContext(string agentInstanceId) => new()
     {
         AgentInstanceId = agentInstanceId,
         WorkspaceId = "default",
         SessionId = "session-1",
     };
+
+    private sealed class NullHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
+    }
 
     private sealed class TempDataRoot : IDisposable
     {

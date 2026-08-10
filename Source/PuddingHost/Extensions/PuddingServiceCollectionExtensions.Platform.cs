@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -9,9 +9,11 @@ using PuddingCode.Core;
 using PuddingCode.Diagnostics;
 using PuddingCode.Models;
 using PuddingCode.Observability;
+using PuddingCode.Orchestration;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
+using PuddingCode.Storage;
 using PuddingCode.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
@@ -26,6 +28,7 @@ using PuddingCodeIntelligence.Storage;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Mcp;
+using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingController;
 using PuddingController.Data;
@@ -53,6 +56,7 @@ using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingAgent.Connectors;
 using PuddingAgent.Services.Events;
 using PuddingHost.Hosting;
+using PuddingHost.Storage;
 using System.Threading.Channels;
 
 namespace PuddingAgent.Services;
@@ -88,6 +92,22 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISessionProjectionStore, SessionProjectionStore>();
         builder.Services.AddSingleton<StreamMetrics>();
         builder.Services.AddSingleton<ICommittedEventSignal, CommittedEventSignal>();
+
+        // ── Agent Orchestration V2 contracts + persistence（ADR-070）──
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<IAgentOrchestrationComponentRegistry>(
+            AgentOrchestrationComponentRegistry.Default);
+        builder.Services.TryAddSingleton<AgentOrchestrationGraphCompiler>();
+        builder.Services.TryAddSingleton<AgentOrchestrationCommittedEventSignal>();
+        builder.Services.TryAddSingleton<IAgentOrchestrationCommittedEventSignal>(sp =>
+            sp.GetRequiredService<AgentOrchestrationCommittedEventSignal>());
+        builder.Services.TryAddSingleton<SqliteAgentOrchestrationStore>();
+        builder.Services.TryAddSingleton<IAgentOrchestrationStore>(sp =>
+            sp.GetRequiredService<SqliteAgentOrchestrationStore>());
+        builder.Services.TryAddSingleton<IAgentOrchestrationQueryStore>(sp =>
+            sp.GetRequiredService<SqliteAgentOrchestrationStore>());
+        builder.Services.TryAddSingleton<AgentOrchestrationEventFollower>();
+        builder.Services.TryAddSingleton<AgentOrchestrationAuthoringService>();
 
             // ── Execution Lease + Journal + Control（ADR-059）─────────
         builder.Services.AddSingleton<IExecutionLeaseStore, SqliteExecutionLeaseStore>();
@@ -138,6 +158,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.TryAddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();
         builder.Services.TryAddSingleton<IExecutionProgressRegistry, ExecutionProgressRegistry>();
         builder.Services.TryAddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
+        builder.Services.TryAddSingleton<DesignCouncilRunStateMachine>();
+        builder.Services.TryAddSingleton<ISubAgentOrchestrationRunStore, InMemorySubAgentOrchestrationRunStore>();
+        builder.Services.TryAddSingleton<IDesignCouncilRuntimeService, DesignCouncilRuntimeService>();
         builder.Services.AddSingleton<IRuntimeTraceAccessor, AmbientRuntimeTraceAccessor>();
         builder.Services.AddSingleton<RuntimeActivitySink>();
         builder.Services.AddSingleton<IRuntimeActivitySink>(sp => sp.GetRequiredService<RuntimeActivitySink>());
@@ -230,6 +253,11 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped(sp =>
             sp.GetRequiredService<IDbContextFactory<PlatformDbContext>>().CreateDbContext());
 
+        // Core-owned database/index analysis and explicit previewed cleanup API.
+        builder.Services.AddSingleton<StorageMaintenanceService>();
+        builder.Services.AddSingleton<IStorageMaintenanceService>(sp =>
+            sp.GetRequiredService<StorageMaintenanceService>());
+
         // ── 诊断表保留期裁剪（Diagnostics:Retention，默认关闭）──────────────
         builder.Services.Configure<DiagnosticRetentionOptions>(
             builder.Configuration.GetSection(DiagnosticRetentionOptions.SectionName));
@@ -318,6 +346,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TokenUsageNormalizer>();
         builder.Services.AddSingleton<TokenUsageRecorder>();
         builder.Services.AddSingleton<ITokenUsageRecorder>(sp => sp.GetRequiredService<TokenUsageRecorder>());
+        builder.Services.AddSingleton<LlmGatewayUsageRecorder>();
+        builder.Services.AddSingleton<ILlmGatewayUsageRecorder>(sp => sp.GetRequiredService<LlmGatewayUsageRecorder>());
         builder.Services.AddSingleton<TokenUsageRebuildService>();
         builder.Services.AddSingleton<SessionSteeringService>();
         builder.Services.AddSingleton<ISessionSteeringService>(sp => sp.GetRequiredService<SessionSteeringService>());
