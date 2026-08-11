@@ -14,7 +14,7 @@ import type {
   BrowserVoiceOutputAdapter,
   BrowserVoiceOutputHandle,
 } from '../hooks/browserVoiceOutput';
-import { useChatStyles } from '../styles';
+import { useChatMessageStyles } from '../styles/messageStyleContext';
 
 interface MessageActionsProps {
   content: string;
@@ -42,7 +42,7 @@ const MessageActions: React.FC<MessageActionsProps> = ({
   ttsPlaying,
   ttsLoading,
 }) => {
-  const { styles, cx } = useChatStyles();
+  const { styles, cx } = useChatMessageStyles();
   const [voicePlaying, setVoicePlaying] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState<string | undefined>();
   const voiceHandleRef = React.useRef<BrowserVoiceOutputHandle | null>(null);
@@ -82,6 +82,8 @@ const MessageActions: React.FC<MessageActionsProps> = ({
 
   React.useEffect(() => stopVoice, [stopVoice]);
 
+  if (!visible) return null;
+
   return (
     <div
       className={cx(
@@ -89,18 +91,17 @@ const MessageActions: React.FC<MessageActionsProps> = ({
         visible && styles.messageActionsVisible,
       )}
       onClick={(e) => e.stopPropagation()}
-      aria-hidden={!visible}
     >
-      {onCopy && (
+      {content.trim() && (
         <Tooltip title="复制">
           <button
+            type="button"
             className={styles.messageActionBtn}
             onClick={() => {
               navigator.clipboard.writeText(content).catch(() => {});
               onCopy?.();
             }}
             aria-label="复制"
-            tabIndex={visible ? 0 : -1}
           >
             <CopyOutlined />
           </button>
@@ -109,10 +110,10 @@ const MessageActions: React.FC<MessageActionsProps> = ({
       {onRerun && (
         <Tooltip title="重新生成">
           <button
+            type="button"
             className={styles.messageActionBtn}
             onClick={onRerun}
             aria-label="重新生成"
-            tabIndex={visible ? 0 : -1}
           >
             <ReloadOutlined />
           </button>
@@ -121,10 +122,10 @@ const MessageActions: React.FC<MessageActionsProps> = ({
       {onPin && (
         <Tooltip title="固定">
           <button
+            type="button"
             className={styles.messageActionBtn}
             onClick={onPin}
             aria-label="固定"
-            tabIndex={visible ? 0 : -1}
           >
             <PushpinOutlined />
           </button>
@@ -136,12 +137,12 @@ const MessageActions: React.FC<MessageActionsProps> = ({
           title={ttsLoading ? '合成中...' : ttsPlaying ? '停止朗读' : 'AI 朗读'}
         >
           <button
+            type="button"
             className={styles.messageActionBtn}
             onClick={ttsPlaying ? undefined : onTtsSpeak}
             aria-label={
               ttsLoading ? '合成中' : ttsPlaying ? '停止朗读' : 'AI 朗读'
             }
-            tabIndex={visible ? 0 : -1}
           >
             {ttsLoading ? (
               <LoadingOutlined spin />
@@ -164,6 +165,7 @@ const MessageActions: React.FC<MessageActionsProps> = ({
           }
         >
           <button
+            type="button"
             className={styles.messageActionBtn}
             onClick={voicePlaying ? stopVoice : startVoice}
             aria-label={
@@ -175,7 +177,6 @@ const MessageActions: React.FC<MessageActionsProps> = ({
             }
             disabled={!voiceSupported}
             title={voiceError}
-            tabIndex={visible ? 0 : -1}
           >
             {voicePlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
           </button>
@@ -184,10 +185,10 @@ const MessageActions: React.FC<MessageActionsProps> = ({
       {onDelete && (
         <Tooltip title="删除">
           <button
+            type="button"
             className={`${styles.messageActionBtn} ${styles.messageActionBtnDanger}`}
             onClick={onDelete}
             aria-label="删除"
-            tabIndex={visible ? 0 : -1}
           >
             <DeleteOutlined />
           </button>

@@ -48,12 +48,6 @@ export function buildWorkspaceSettingsPath(workspaceId: string, tab?: string): s
   return appendQuery(`/workspace/${encodeURIComponent(workspaceId)}`, params);
 }
 
-export function buildWorkspaceStudioPath(context: Pick<WorkspaceRouteContext, 'workspaceId' | 'agentId'> = {}): string {
-  if (!context.workspaceId) return buildWorkspacePath();
-  const workspacePath = `${PUDDING_WORKSPACES_PATH}/${encodeURIComponent(context.workspaceId)}`;
-  return context.agentId ? `${workspacePath}/${encodeURIComponent(context.agentId)}` : workspacePath;
-}
-
 export function buildChatPath(context: WorkspaceRouteContext = {}): string {
   const params = new URLSearchParams();
   if (context.workspaceId) params.set('workspaceId', context.workspaceId);
@@ -172,7 +166,7 @@ export function resolveWorkspaceEntryPath(
   if (recentVisit?.workspaceId) {
     const recent = workspaces.find((workspace) => workspace.workspaceId === recentVisit.workspaceId);
     if (recent && canUseWorkspace(recent)) {
-      return buildWorkspaceStudioPath({
+      return buildChatPath({
         workspaceId: recent.workspaceId,
         agentId: recentVisit.agentId,
       });
@@ -181,7 +175,7 @@ export function resolveWorkspaceEntryPath(
 
   const available = workspaces.filter(canUseWorkspace);
   if (available.length === 1) {
-    return buildWorkspaceStudioPath({ workspaceId: available[0].workspaceId });
+    return buildWorkspaceChatPath(available[0].workspaceId);
   }
 
   return buildWorkspacePath();

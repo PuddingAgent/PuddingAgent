@@ -809,7 +809,7 @@ export function buildPerfDiagnosticSnapshot(options: {
       severity: maxResourceBytes > 3 * 1024 * 1024 || maxResourceDuration > 1500 ? 'critical' : 'warn',
       title: '大资源或慢资源可能抢占加载和解码时间',
       evidence: `maxResourceBytes=${maxResourceBytes}, maxResourceDurationMs=${maxResourceDuration}`,
-      nextStep: '检查 Top resources，优先懒加载非 Chat 首屏资产，压缩大图/精灵图，隔离工作室相关依赖。',
+      nextStep: '检查 Top resources，优先懒加载非 Chat 首屏资产，压缩大图并隔离大型可视化依赖。',
     });
   }
   if (maxFetchDuration > 800 || failedFetches > 0) {
@@ -951,7 +951,7 @@ function isInterestingResource(entry: PerformanceEntry & Partial<PerformanceReso
   const name = entry.name || '';
   const size = Math.max(entry.decodedBodySize ?? 0, entry.transferSize ?? 0);
   if (size >= 32 * 1024 || entry.duration >= 250) return true;
-  return /(?:\/assets\/|umi|vendor|chat|spritesheet|sprite|swagger|katex|prism|phaser)/i.test(name);
+  return /(?:\/assets\/|umi|vendor|chat|spritesheet|sprite|swagger|katex|prism)/i.test(name);
 }
 
 function recordResourceEntry(entry: PerformanceEntry & Partial<PerformanceResourceTiming>): void {

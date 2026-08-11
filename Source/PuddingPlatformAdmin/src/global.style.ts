@@ -156,15 +156,6 @@ injectGlobal`
     }
   }
 
-  @keyframes workspaceStudioFrameLoop {
-    from {
-      transform: translate3d(0, calc(var(--workspace-studio-sprite-row) * var(--workspace-studio-sprite-frame-height, -57px)), 0);
-    }
-    to {
-      transform: translate3d(calc(var(--workspace-studio-frame-last) * var(--workspace-studio-sprite-frame-width, -52px)), calc(var(--workspace-studio-sprite-row) * var(--workspace-studio-sprite-frame-height, -57px)), 0);
-    }
-  }
-
   @keyframes thinkingPulse {
     0%, 100% {
       opacity: 0.6;
@@ -320,40 +311,6 @@ injectGlobal`
     .ant-table-thead > tr > th > span,
     .ant-table-tbody > tr > td > span {
       display: block;
-    }
-  }
-
-  @media (max-width: 1080px) {
-    .workspace-studio-layout {
-      height: auto !important;
-      min-height: auto !important;
-    }
-
-    .workspace-studio-side-rail {
-      position: static !important;
-      width: auto !important;
-      max-height: none !important;
-      overflow: visible !important;
-      display: grid !important;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      margin-top: 12px;
-    }
-
-  }
-
-  @media (max-width: 720px) {
-    .workspace-studio-page-body {
-      min-height: auto !important;
-      padding: 12px !important;
-      overflow: visible !important;
-    }
-
-    .workspace-studio-side-rail {
-      display: flex !important;
-    }
-
-    .workspace-studio-focus-actions .ant-btn {
-      width: 100%;
     }
   }
 

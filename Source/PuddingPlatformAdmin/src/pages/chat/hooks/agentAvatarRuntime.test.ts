@@ -11,7 +11,7 @@ describe('agentAvatarRuntime', () => {
       agentId: 'default-agent',
       avatarId: 'neutral',
       runtimeKind: 'sprite',
-      spriteSheetUrl: '/admin/assets/agent-sprites/neutral/spritesheet.png',
+      spriteSheetUrl: 'https://assets.example.test/agent-sprites/neutral/spritesheet.png',
       now: 100,
     });
 
@@ -184,7 +184,7 @@ describe('agentAvatarRuntime', () => {
       agentId: 'default-agent',
       avatarId: 'neutral',
       runtimeKind: 'sprite',
-      spriteSheetUrl: '/admin/assets/agent-sprites/neutral/spritesheet.png',
+      spriteSheetUrl: 'https://assets.example.test/agent-sprites/neutral/spritesheet.png',
       reducedMotion: true,
       now: 400,
     });
@@ -203,7 +203,7 @@ describe('agentAvatarRuntime', () => {
     expect(renderState).toMatchObject({
       runtimeKind: 'sprite',
       status: 'error',
-      spriteSheetUrl: '/admin/assets/agent-sprites/neutral/spritesheet.png',
+      spriteSheetUrl: 'https://assets.example.test/agent-sprites/neutral/spritesheet.png',
       spriteRow: 6,
       spriteFrameCount: 1,
       ariaLabel: 'Agent default-agent 状态：异常',
@@ -216,7 +216,7 @@ describe('agentAvatarRuntime', () => {
       agentId: 'default-agent',
       avatarId: 'sleepy',
       runtimeKind: 'sprite',
-      spriteSheetUrl: '/admin/assets/agent-sprites/sleepy/spritesheet.png',
+      spriteSheetUrl: 'https://assets.example.test/agent-sprites/sleepy/spritesheet.png',
       now: 500,
     });
     const hidden = reduceAgentAvatarRuntime(runtime, {
@@ -235,7 +235,7 @@ describe('agentAvatarRuntime', () => {
     expect(hidden.visible).toBe(false);
     expect(sleeping.status).toBe('sleeping');
     expect(sleeping.spriteSheetUrl).toBe(
-      '/admin/assets/agent-sprites/sleepy/spritesheet.png',
+      'https://assets.example.test/agent-sprites/sleepy/spritesheet.png',
     );
   });
 });

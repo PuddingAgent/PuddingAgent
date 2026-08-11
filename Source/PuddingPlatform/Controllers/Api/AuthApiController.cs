@@ -79,7 +79,7 @@ public class AuthApiController(IConfiguration config, IAppUserRepository appUser
             data    = new
             {
                 name      = name ?? userId,
-                avatar    = "https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png",
+                avatar    = "/admin/assets/images/me.png",
                 userid    = userId,
                 access    = authority ?? "user",
                 email     = email ?? $"{userId}@pudding.local",

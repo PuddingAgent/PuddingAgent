@@ -5,6 +5,7 @@ import { adminRoutes } from '../../../config/routes';
 import defaultSettings from '../../../config/defaultSettings';
 import { PuddingGlobalActions } from '@/components/GlobalActions';
 import { AvatarDropdown, AvatarName } from '@/components/RightContent/AvatarDropdown';
+import { resolveAdminMenuRoutes } from './menuIcons';
 
 const loginPath = '/user/login';
 const bootstrapPath = '/bootstrap';
@@ -17,6 +18,8 @@ const DevSettingDrawer = React.lazy(async () => {
   const module = await import('@ant-design/pro-components');
   return { default: module.SettingDrawer };
 });
+
+const adminMenuRoutes = resolveAdminMenuRoutes(adminRoutes);
 
 /**
  * 管理页专用壳层。
@@ -33,7 +36,7 @@ const AdminLayout: React.FC = () => {
     <ProLayout
       {...defaultSettings}
       {...initialState?.settings}
-      route={{ path: '/', routes: adminRoutes }}
+      route={{ path: '/', routes: adminMenuRoutes }}
       location={location}
       formatMessage={formatMessage}
       menu={{ locale: true }}

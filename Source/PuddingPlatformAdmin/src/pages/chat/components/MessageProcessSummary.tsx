@@ -2,7 +2,7 @@
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import React, { useState } from 'react';
 import type { ConversationProcessSummary } from '../client/types';
-import { useChatStyles } from '../styles';
+import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { TimelineItem } from '../types';
 import {
   buildProcessRounds,
@@ -168,8 +168,7 @@ const getHistoricalSummaryText = (
   else if (summary.thinkingSteps > 0)
     parts.push(`已思考 ${summary.thinkingSteps} 步`);
   if (summary.toolCalls > 0) parts.push(`调用 ${summary.toolCalls} 个工具`);
-  if (summary.failedTools > 0)
-    parts.push(`${summary.failedTools} 个失败`);
+  if (summary.failedTools > 0) parts.push(`${summary.failedTools} 个失败`);
   const duration = formatProcessDuration(summary.durationMs);
   if (duration) parts.push(`用时 ${duration}`);
   return parts.length > 0 ? parts.join(' · ') : '已完成';
@@ -183,7 +182,7 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   onRerun,
   onOpenDiagnostics,
 }) => {
-  const { styles: rawStyles, cx } = useChatStyles();
+  const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const [expanded, setExpanded] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
@@ -205,18 +204,26 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
     const traceChips = buildTraceChips(effectiveItems);
     const roundByItemId = new Map<string, number>();
     rounds.forEach((round) => {
-      round.items.forEach((item) => roundByItemId.set(item.id, round.index));
+      round.items.forEach((item) => {
+        roundByItemId.set(item.id, round.index);
+      });
     });
     return { displayItems, traceChips, roundByItemId };
   }, [effectiveItems, expanded]);
 
   const expandWithDetails = async () => {
     setExpanded(true);
-    if (!hasHistoricalDetails || loadedItems !== null || loadingDetails) return;
+    if (
+      !hasHistoricalDetails ||
+      !onLoadDetails ||
+      loadedItems !== null ||
+      loadingDetails
+    )
+      return;
     setLoadingDetails(true);
     setLoadError(null);
     try {
-      setLoadedItems(await onLoadDetails!());
+      setLoadedItems(await onLoadDetails());
     } catch (error) {
       setLoadError(
         error instanceof Error ? error.message : '过程明细加载失败，请重试',
@@ -226,7 +233,10 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
     }
   };
 
-  if ((!effectiveItems || effectiveItems.length === 0) && !hasHistoricalDetails) {
+  if (
+    (!effectiveItems || effectiveItems.length === 0) &&
+    !hasHistoricalDetails
+  ) {
     if (status === 'streaming') {
       return (
         <div className={styles.processSummaryRow}>
@@ -301,7 +311,8 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
 
   const displayItems = expandedModel?.displayItems ?? [];
   const traceChips = expandedModel?.traceChips ?? [];
-  const roundByItemId = expandedModel?.roundByItemId ?? new Map<string, number>();
+  const roundByItemId =
+    expandedModel?.roundByItemId ?? new Map<string, number>();
 
   return (
     <div style={{ marginTop: 4 }}>

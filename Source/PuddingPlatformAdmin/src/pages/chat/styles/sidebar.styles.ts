@@ -1,6 +1,6 @@
 ﻿// ── 侧边栏样式 ──────────────────────────────────────────────
 import { createStyles } from 'antd-style';
-import { SIDEBAR_WIDTH } from '../styles';
+import { SIDEBAR_WIDTH } from './constants';
 
 export const useSidebarStyles = createStyles(({ token }) => ({
   sidebar: {

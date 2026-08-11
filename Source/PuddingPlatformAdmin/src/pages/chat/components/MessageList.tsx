@@ -12,12 +12,14 @@ import React, {
   useState,
 } from 'react';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
+import { getPerfEvents } from '@/utils/perfEventRuntime';
 import type {
   AgentConversationView,
   ConversationMessageView,
   ProcessSummaryItem,
 } from '../client/types';
 import { useChatStyles } from '../styles';
+import { ChatMessageStyleProvider } from '../styles/messageStyleContext';
 import type {
   AssistantStatus,
   ChatQuotedMessage,
@@ -25,14 +27,13 @@ import type {
   MessageStatus,
   TimelineItem,
 } from '../types';
-import { buildVirtualMessageItems } from '../viewport/messageProjection';
-import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
-import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { inboundDebug } from '../utils/inboundDebug';
-import { getPerfEvents } from '@/utils/perfEventRuntime';
+import { buildVirtualMessageItems } from '../viewport/messageProjection';
+import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
+import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
-import MessageStream from './MessageStream';
+import MessageRow from './MessageRow';
 import PinnedMessageButton from './PinnedMessageButton';
 
 interface MessageListProps {
@@ -311,7 +312,7 @@ const createProjectedTurn = (
       processSummary:
         isUser || isInboundAgentMessage || isHeartbeat
           ? undefined
-          : message.processSummary ?? undefined,
+          : (message.processSummary ?? undefined),
       processMessageId:
         isUser || isInboundAgentMessage || isHeartbeat
           ? undefined
@@ -691,7 +692,7 @@ const mergeActiveRunIntoTurns = (
 };
 
 const MessageList: React.FC<MessageListProps> = ({
-    turns,
+  turns,
   sessionId,
   workspaceId,
   agentId,
@@ -715,22 +716,33 @@ const MessageList: React.FC<MessageListProps> = ({
   viewportScrollIntent,
   onViewportScrollIntentHandled,
 }) => {
-  const { styles } = useChatStyles();
+  const chatStyles = useChatStyles();
+  const { styles } = chatStyles;
   const [diagCopied, setDiagCopied] = useState(false);
   const activeRun = conversationView?.activeRun ?? null;
-  const activeRunMarkdownCacheRef = useRef<{ runId: string; markdown: string } | null>(null);
+  const activeRunMarkdownCacheRef = useRef<{
+    runId: string;
+    markdown: string;
+  } | null>(null);
   const activeRunMarkdown = useMemo(() => {
     if (!activeRun) return undefined;
     const incoming = activeRun.outputSnapshot.markdown ?? '';
     const cached = activeRunMarkdownCacheRef.current;
     // 同一次 run：保留较长版本（流式累积场景 incoming 单调增长）
     if (cached && cached.runId === activeRun.runId) {
-      const stable = incoming.length >= cached.markdown.length ? incoming : cached.markdown;
-      activeRunMarkdownCacheRef.current = { runId: activeRun.runId, markdown: stable };
+      const stable =
+        incoming.length >= cached.markdown.length ? incoming : cached.markdown;
+      activeRunMarkdownCacheRef.current = {
+        runId: activeRun.runId,
+        markdown: stable,
+      };
       return stable;
     }
     // 新 run：重置缓存
-    activeRunMarkdownCacheRef.current = { runId: activeRun.runId, markdown: incoming };
+    activeRunMarkdownCacheRef.current = {
+      runId: activeRun.runId,
+      markdown: incoming,
+    };
     return incoming;
   }, [activeRun]);
   const projectedTurns = useMemo(
@@ -775,7 +787,13 @@ const MessageList: React.FC<MessageListProps> = ({
         hasMoreBefore: hasMoreMessages,
         currentUser,
       }),
-    [visibleTurns, selectedAgent?.name, sessionId, hasMoreMessages, currentUser],
+    [
+      visibleTurns,
+      selectedAgent?.name,
+      sessionId,
+      hasMoreMessages,
+      currentUser,
+    ],
   );
 
   const viewport = useMessageViewportRuntime({
@@ -821,9 +839,7 @@ const MessageList: React.FC<MessageListProps> = ({
             cursor: loadingMore ? 'default' : 'pointer',
             color: 'var(--ant-color-primary)',
           }}
-          onClick={
-            loadingMore ? undefined : viewport.requestLoadBefore
-          }
+          onClick={loadingMore ? undefined : viewport.requestLoadBefore}
         >
           {loadingMore ? <Spin size="small" /> : '加载更多历史消息'}
         </div>
@@ -831,42 +847,11 @@ const MessageList: React.FC<MessageListProps> = ({
     }
 
     return (
-      <MessageStream
-        turns={[{
-          turnId: item.block.turnId,
-          source: item.block.role === 'agent' ? {
-            sourceId: item.block.agentId || 'agent',
-            sourceType: item.block.sourceType || 'agent',
-            displayName: item.block.agentName || selectedAgent?.name || 'Pudding',
-            avatarEmoji: item.block.agentAvatarEmoji || '🤖',
-            avatarColor: item.block.agentAvatarColor || '#7c3aed',
-            avatarUrl: item.block.agentAvatarUrl,
-          } : undefined,
-          userMessage: item.block.role === 'user' ? {
-            id: item.block.id,
-            text: item.block.content,
-            timestamp: item.block.createdAt,
-            status: item.block.status === 'sending' ? 'sending' : 'success',
-            metadata: item.block.metadata,
-          } : { id: '', text: '', timestamp: item.block.createdAt, status: 'success' },
-          assistant: item.block.role === 'agent' ? {
-            id: item.block.id,
-            status: item.block.status === 'streaming' ? 'streaming' : item.block.status === 'error' ? 'error' : item.block.status === 'cancelled' ? 'cancelled' : item.block.status === 'thinking' ? 'thinking' : 'success',
-            timelineItems: item.block.processItems ?? [],
-            processSummary: item.block.processSummary,
-            processMessageId: item.block.processMessageId,
-            answerMarkdown: item.block.content,
-            isStreaming: item.block.isStreaming ?? false,
-            renderMode: 'structured',
-            usage: item.block.usage,
-            quotedMessage: item.block.quotedMessage,
-          } : { id: '', status: 'success', timelineItems: [], answerMarkdown: '', isStreaming: false, renderMode: 'structured' },
-        }]}
+      <MessageRow
+        block={item.block}
         sessionId={sessionId}
         workspaceId={workspaceId}
-        agentName={selectedAgent?.name || 'Pudding'}
         defaultAvatarUrl={selectedAgent?.avatarUrl}
-        currentUser={currentUser}
         formatTime={formatTime}
         onContextMenu={onContextMenu}
         onRerunTurn={onRerunTurn}
@@ -877,176 +862,211 @@ const MessageList: React.FC<MessageListProps> = ({
   };
 
   return (
-    <div
-      className={styles.messageList}
-      ref={(node) => {
-        viewport.parentRef.current = node;
-        if (typeof messageListRef === 'object') {
-          (messageListRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-        }
-      }}
-      onScroll={viewport.onScroll}
-      data-testid="chat-message-list"
-    >
-      {(() => {
-        const emptyStateMode: ChatEmptyStateMode | null = (() => {
-          if (historyLoading || projection.items.length > 0 || activeRun)
-            return null;
-          if (error) return 'error';
-          if (!agentId) return 'no-agent';
-          return 'ready';
-        })();
-        return emptyStateMode ? (
-          <ChatEmptyState
-            mode={emptyStateMode}
-            errorText={error ?? undefined}
-            onRetry={onClearError}
-            onSuggestionClick={(text) => {
-              window.dispatchEvent(
-                new CustomEvent('pudding:chat:suggestion', { detail: text }),
-              );
-            }}
-          />
-        ) : null;
-      })()}
-      {historyLoading && turns.length === 0 && (
-        <div className={styles.historyLoading}>
-          <Skeleton active avatar paragraph={{ rows: 4 }} style={{ padding: 16 }} />
-        </div>
-      )}
-      {historyLoading && turns.length > 0 && (
-        <div className={styles.historyLoading}>
-          <Spin />
-        </div>
-      )}
-      {/* 虚拟滚动容器 */}
-      {projection.items.length > 0 && (
-        <div
-          ref={viewport.contentRef}
-          data-testid="chat-message-viewport-content"
-          data-virtualized={viewport.virtualizationEnabled ? 'true' : 'false'}
-          style={
-            viewport.virtualizationEnabled
-              ? {
-                  height: `${viewport.totalSize}px`,
-                  width: '100%',
-                  position: 'relative',
-                }
-              : { width: '100%', position: 'relative' }
+    <ChatMessageStyleProvider value={chatStyles}>
+      <div
+        className={styles.messageList}
+        ref={(node) => {
+          viewport.parentRef.current = node;
+          if (typeof messageListRef === 'object') {
+            (
+              messageListRef as React.MutableRefObject<HTMLDivElement | null>
+            ).current = node;
           }
-        >
-          {viewport.virtualizationEnabled
-            ? viewport.virtualRows.map((virtualRow) => {
-                const item = projection.items[virtualRow.index];
-                if (!item) return null;
-                return (
+        }}
+        onScroll={viewport.onScroll}
+        data-testid="chat-message-list"
+      >
+        {(() => {
+          const emptyStateMode: ChatEmptyStateMode | null = (() => {
+            if (historyLoading || projection.items.length > 0 || activeRun)
+              return null;
+            if (error) return 'error';
+            if (!agentId) return 'no-agent';
+            return 'ready';
+          })();
+          return emptyStateMode ? (
+            <ChatEmptyState
+              mode={emptyStateMode}
+              errorText={error ?? undefined}
+              onRetry={onClearError}
+              onSuggestionClick={(text) => {
+                window.dispatchEvent(
+                  new CustomEvent('pudding:chat:suggestion', { detail: text }),
+                );
+              }}
+            />
+          ) : null;
+        })()}
+        {historyLoading && turns.length === 0 && (
+          <div className={styles.historyLoading}>
+            <Skeleton
+              active
+              avatar
+              paragraph={{ rows: 4 }}
+              style={{ padding: 16 }}
+            />
+          </div>
+        )}
+        {historyLoading && turns.length > 0 && (
+          <div className={styles.historyLoading}>
+            <Spin />
+          </div>
+        )}
+        {/* 虚拟滚动容器 */}
+        {projection.items.length > 0 && (
+          <div
+            ref={viewport.contentRef}
+            data-testid="chat-message-viewport-content"
+            data-virtualized={viewport.virtualizationEnabled ? 'true' : 'false'}
+            style={
+              viewport.virtualizationEnabled
+                ? {
+                    height: `${viewport.totalSize}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }
+                : { width: '100%', position: 'relative' }
+            }
+          >
+            {viewport.virtualizationEnabled
+              ? viewport.virtualRows.map((virtualRow) => {
+                  const item = projection.items[virtualRow.index];
+                  if (!item) return null;
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      data-viewport-item-id={item.id}
+                      ref={viewport.virtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      {renderProjectionItem(item)}
+                    </div>
+                  );
+                })
+              : projection.items.map((item, index) => (
                   <div
-                    key={virtualRow.key}
-                    data-index={virtualRow.index}
+                    key={item.id}
+                    data-index={index}
                     data-viewport-item-id={item.id}
-                    ref={viewport.virtualizer.measureElement}
                     style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
                       width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
+                      position: 'relative',
+                      display: 'flow-root',
                     }}
                   >
                     {renderProjectionItem(item)}
                   </div>
-                );
-              })
-            : projection.items.map((item, index) => (
-                <div
-                  key={item.id}
-                  data-index={index}
-                  data-viewport-item-id={item.id}
-                  style={{ width: '100%', position: 'relative', display: 'flow-root' }}
-                >
-                  {renderProjectionItem(item)}
-                </div>
-              ))}
-        </div>
-      )}
-            {error && (
-        <Alert
-          type="error"
-          message={error}
-          closable
-          onClose={onClearError}
-          className={styles.errorAlert}
-          action={
-            <Button
-              size="small"
-              type="link"
-              onClick={() => {
-                const payload = {
-                  timestamp: new Date().toISOString(),
-                  userAgent: navigator.userAgent,
-                  url: window.location.href,
-                  sessionId: sessionId ?? null,
-                  agentId: agentId ?? null,
-                  turnsCount: turns.length,
-                  lastTurnStatus:
-                    turns.length > 0
-                      ? (turns[turns.length - 1] as { status?: string }).status ?? null
-                      : null,
-                  error,
-                  recentPerfEvents: getPerfEvents().slice(-5),
-                };
-                navigator.clipboard
-                  .writeText(JSON.stringify(payload, null, 2))
-                  .then(() => {
-                    setDiagCopied(true);
-                    setTimeout(() => setDiagCopied(false), 2000);
-                  });
-              }}
+                ))}
+          </div>
+        )}
+        {error && (
+          <Alert
+            type="error"
+            message={error}
+            closable
+            onClose={onClearError}
+            className={styles.errorAlert}
+            action={
+              <Button
+                size="small"
+                type="link"
+                onClick={() => {
+                  const payload = {
+                    timestamp: new Date().toISOString(),
+                    userAgent: navigator.userAgent,
+                    url: window.location.href,
+                    sessionId: sessionId ?? null,
+                    agentId: agentId ?? null,
+                    turnsCount: turns.length,
+                    lastTurnStatus:
+                      turns.length > 0
+                        ? ((turns[turns.length - 1] as { status?: string })
+                            .status ?? null)
+                        : null,
+                    error,
+                    recentPerfEvents: getPerfEvents().slice(-5),
+                  };
+                  navigator.clipboard
+                    .writeText(JSON.stringify(payload, null, 2))
+                    .then(() => {
+                      setDiagCopied(true);
+                      setTimeout(() => setDiagCopied(false), 2000);
+                    });
+                }}
+              >
+                {diagCopied ? '✓ 已复制' : '复制诊断信息'}
+              </Button>
+            }
+          />
+        )}
+        {/* 底部滚动控制 */}
+        {projection.items.length > 0 && (
+          <div
+            data-testid="chat-bottom-scroll-controls"
+            className={styles.messageViewportControls}
+            style={bottomScrollControlsStyle}
+          >
+            {onPinnedQuote && (
+              <PinnedMessageButton
+                onQuote={onPinnedQuote}
+                className={styles.messageViewportControlButton}
+              />
+            )}
+            <Tooltip
+              title={
+                viewport.state.followMode === 'pinned'
+                  ? '取消贴底跟随'
+                  : '开启贴底跟随'
+              }
             >
-              {diagCopied ? '✓ 已复制' : '复制诊断信息'}
-            </Button>
-          }
-        />
-      )}
-      {/* 底部滚动控制 */}
-      {projection.items.length > 0 && (
-        <div
-          data-testid="chat-bottom-scroll-controls"
-          className={styles.messageViewportControls}
-          style={bottomScrollControlsStyle}
-        >
-          {onPinnedQuote && (
-            <PinnedMessageButton
-              onQuote={onPinnedQuote}
-              className={styles.messageViewportControlButton}
-            />
-          )}
-          <Tooltip title={viewport.state.followMode === 'pinned' ? '取消贴底跟随' : '开启贴底跟随'}>
-            <Button
-              type={viewport.state.followMode === 'pinned' ? 'primary' : 'default'}
-              icon={<VerticalAlignBottomOutlined />}
-              onClick={() => viewport.setPinnedBottom(viewport.state.followMode !== 'pinned')}
-              aria-label={viewport.state.followMode === 'pinned' ? '取消贴底跟随' : '开启贴底跟随'}
-              className={styles.messageViewportControlButton}
-            />
-          </Tooltip>
-          {viewport.state.showBottomButton && (
-            <Tooltip title="回到底部">
-              <Badge dot offset={[-3, 3]}>
-                <Button
-                  type="default"
-                  icon={<ArrowDownOutlined />}
-                  onClick={() => viewport.scrollToBottom({ behavior: 'smooth', reason: 'manual-bottom' })}
-                  aria-label="回到底部"
-                  className={styles.messageViewportControlButton}
-                />
-              </Badge>
+              <Button
+                type={
+                  viewport.state.followMode === 'pinned' ? 'primary' : 'default'
+                }
+                icon={<VerticalAlignBottomOutlined />}
+                onClick={() =>
+                  viewport.setPinnedBottom(
+                    viewport.state.followMode !== 'pinned',
+                  )
+                }
+                aria-label={
+                  viewport.state.followMode === 'pinned'
+                    ? '取消贴底跟随'
+                    : '开启贴底跟随'
+                }
+                className={styles.messageViewportControlButton}
+              />
             </Tooltip>
-          )}
-        </div>
-      )}
-      <div ref={listEndRef} />
-    </div>
+            {viewport.state.showBottomButton && (
+              <Tooltip title="回到底部">
+                <Badge dot offset={[-3, 3]}>
+                  <Button
+                    type="default"
+                    icon={<ArrowDownOutlined />}
+                    onClick={() =>
+                      viewport.scrollToBottom({
+                        behavior: 'smooth',
+                        reason: 'manual-bottom',
+                      })
+                    }
+                    aria-label="回到底部"
+                    className={styles.messageViewportControlButton}
+                  />
+                </Badge>
+              </Tooltip>
+            )}
+          </div>
+        )}
+        <div ref={listEndRef} />
+      </div>
+    </ChatMessageStyleProvider>
   );
 };
 

@@ -54,24 +54,6 @@ const routeCatalog = [
     component: './workspace',
   },
   {
-    path: '/pudding/workspaces/:workspaceId',
-    layout: false,
-    hideInMenu: true,
-    component: './workspace-studio',
-  },
-  {
-    path: '/pudding/workspaces/:workspaceId/:agentId',
-    layout: false,
-    hideInMenu: true,
-    component: './workspace-studio',
-  },
-  {
-    path: '/workspace-studio',
-    layout: false,
-    hideInMenu: true,
-    component: './workspace-studio',
-  },
-  {
     path: '/workspace/:id/settings',
     component: './workspace-settings-redirect',
     hideInMenu: true,
@@ -155,6 +137,12 @@ const routeCatalog = [
     name: 'runtimeManagement',
     icon: 'cloudServer',
     component: './runtime-management',
+  },
+  {
+    path: '/orchestration',
+    name: 'orchestration',
+    icon: 'branches',
+    component: './orchestration',
   },
   {
     path: '/tool-approval',

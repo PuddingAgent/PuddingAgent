@@ -19,7 +19,6 @@ import {
 import {
   buildChatPath,
   buildWorkspacePath,
-  buildWorkspaceStudioPath,
   readRecentWorkspaceVisit,
   resolveDefaultWorkspace,
   resolveWorkspaceEntryPath,
@@ -263,11 +262,7 @@ const Home: React.FC = () => {
                   className={styles.workspaceRow}
                   key={workspace.workspaceId}
                   onClick={() =>
-                    history.push(
-                      buildWorkspaceStudioPath({
-                        workspaceId: workspace.workspaceId,
-                      }),
-                    )
+                    history.push(buildChatPath({ workspaceId: workspace.workspaceId }))
                   }
                 >
                   <span>

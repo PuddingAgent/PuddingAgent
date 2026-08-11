@@ -164,6 +164,55 @@ export interface OrchestrationExecutorBinding {
   toolId?: string;
 }
 
+/**
+ * One typed graph-level input (ADR-071 §7.4 `inputs`; doc 84 §4).
+ * Mirrors AgentOrchestrationGraphInput: inputId, contract, optional defaultValue,
+ * requiredAtActivation. The defaultValue envelope stays loosely typed (`unknown`)
+ * until the S7 stage introduces the OrchestrationValueEnvelope mirror.
+ */
+export interface OrchestrationGraphInput {
+  inputId: string;
+  contract: OrchestrationDataContract;
+  /** Server-side ValueEnvelope; typed as unknown until S7 lands the envelope mirror. */
+  defaultValue?: unknown;
+  /** Defaults to true on the server when omitted. */
+  requiredAtActivation?: boolean;
+}
+
+/**
+ * Maps a graph-level input to a typed component input port (ADR-071 §7.4
+ * `graphInputBindings`; doc 84 §4). Mirrors AgentOrchestrationGraphInputBinding.
+ */
+export interface OrchestrationGraphInputBinding {
+  inputId: string;
+  targetPortId: string;
+  targetKey?: string;
+}
+
+/** Versioned trigger reference frozen into a graph revision. */
+export interface OrchestrationTriggerReference {
+  triggerType: string;
+  version: string;
+  contractHash?: string;
+}
+
+/** Maps a trigger payload field into a named graph input. */
+export interface OrchestrationTriggerInputBinding {
+  /** Defaults to "$" on the server when omitted. */
+  sourcePath?: string;
+  targetInputId: string;
+}
+
+/** One configured graph trigger; a trigger starts a new run, it is not a DAG node. */
+export interface OrchestrationTriggerDefinition {
+  triggerId: string;
+  trigger: OrchestrationTriggerReference;
+  /** Defaults to true on the server when omitted. */
+  enabled?: boolean;
+  configuration?: Record<string, unknown>;
+  inputBindings?: OrchestrationTriggerInputBinding[];
+}
+
 export interface OrchestrationNodeDefinition {
   nodeId: string;
   kind: OrchestrationNodeKind;
@@ -171,6 +220,7 @@ export interface OrchestrationNodeDefinition {
   objective: string;
   component: OrchestrationComponentReference;
   executor?: OrchestrationExecutorBinding;
+  graphInputBindings?: OrchestrationGraphInputBinding[];
   expectedOutputContract: string;
   configuration: Record<string, unknown>;
   permissionMode: 'readOnly' | 'explicitWrite';
@@ -209,6 +259,8 @@ export interface OrchestrationGraphDefinition {
   objective: string;
   requiresExplicitActivation: boolean;
   maxConcurrency: number;
+  inputs?: OrchestrationGraphInput[];
+  triggers?: OrchestrationTriggerDefinition[];
   nodes: OrchestrationNodeDefinition[];
   edges: OrchestrationEdgeDefinition[];
   metadata: Record<string, string>;

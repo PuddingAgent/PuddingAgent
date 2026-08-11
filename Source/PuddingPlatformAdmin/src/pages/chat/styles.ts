@@ -1,27 +1,27 @@
 ﻿// ── 聊天页样式（antd-style createStyles — 组合模式）─────────────────────
 import { createStyles } from 'antd-style';
-import { useLayoutStyles } from './styles/layout.styles';
-import { useMessageStyles } from './styles/message.styles';
+import { useMemo } from 'react';
 import { useAgentStyles } from './styles/agent.styles';
-import { useUserStyles } from './styles/user.styles';
+import { useAnimationStyles } from './styles/animations.styles';
+import { useComposerStyles } from './styles/composer.styles';
+import { useDevpanelStyles } from './styles/devpanel.styles';
+import { useHeartbeatStyles } from './styles/heartbeat.styles';
+import { useLayoutStyles } from './styles/layout.styles';
+import { useMarkdownStyles } from './styles/markdown.styles';
+import { useMessageStyles } from './styles/message.styles';
+import { usePanelStyles } from './styles/panel.styles';
 import { useProcessStyles } from './styles/process.styles';
 import { useReasoningStyles } from './styles/reasoning.styles';
-import { useMarkdownStyles } from './styles/markdown.styles';
-import { useComposerStyles } from './styles/composer.styles';
-import { usePanelStyles } from './styles/panel.styles';
-import { useVoiceStyles } from './styles/voice.styles';
-import { useHeartbeatStyles } from './styles/heartbeat.styles';
-import { useStatusStyles } from './styles/status.styles';
-import { useDevpanelStyles } from './styles/devpanel.styles';
-import { useAnimationStyles } from './styles/animations.styles';
 import { useSidebarStyles } from './styles/sidebar.styles';
+import { useStatusStyles } from './styles/status.styles';
+import { useUserStyles } from './styles/user.styles';
+import { useVoiceStyles } from './styles/voice.styles';
 
-export const SIDEBAR_WIDTH = 260;
+export { SIDEBAR_WIDTH } from './styles/constants';
 
 // Residual styles kept inline (misc styles not yet split into modules;
 // heartbeat/status/devpanel/animations/sidebar live in ./styles/)
 const useResidualStyles = createStyles(({ token }) => ({
-  // (workspace-studio styles removed — ~105 keys, ~1600 lines. Scheduled for rebuild.)
   historyLoading: {
     display: 'flex',
     justifyContent: 'center',
@@ -250,7 +250,7 @@ const useResidualStyles = createStyles(({ token }) => ({
       color: 'var(--text-primary)',
     },
   },
-    errorAlert: { margin: '8px 0' },
+  errorAlert: { margin: '8px 0' },
   sidebarEmpty: {
     flex: 1,
     display: 'flex',
@@ -261,7 +261,7 @@ const useResidualStyles = createStyles(({ token }) => ({
     padding: '0 16px',
     textAlign: 'center' as const,
   },
-  
+
   stepCardCompleteIcon: {
     transition: 'color 300ms ease-in-out',
     color: 'var(--desaturated-green)',
@@ -332,7 +332,7 @@ const useResidualStyles = createStyles(({ token }) => ({
     '& .ant-timeline-item': { paddingBottom: 12 },
     '& .ant-timeline-item-content': { fontSize: 13 },
   },
-  
+
   tokenUsageLine: {
     fontSize: 10,
     color: 'var(--earth-brown)',
@@ -391,7 +391,7 @@ const useResidualStyles = createStyles(({ token }) => ({
   activeRunOutput: {
     margin: '0 0 4px 0',
   },
-  
+
   paperStreaming: {
     background: 'color-mix(in srgb, var(--soft-white) 92%, #fff7df)',
     borderColor: 'color-mix(in srgb, var(--earth-brown) 8%, transparent)',
@@ -414,7 +414,6 @@ const useResidualStyles = createStyles(({ token }) => ({
       'auto !important' as unknown as React.CSSProperties['pointerEvents'],
     transition: 'opacity 400ms ease-out, transform 400ms ease-out',
   },
-  
 }));
 
 export const useChatStyles = () => {
@@ -427,16 +426,16 @@ export const useChatStyles = () => {
   const { styles: markdown } = useMarkdownStyles();
   const { styles: composer } = useComposerStyles();
   const { styles: panel } = usePanelStyles();
-    const { styles: voice } = useVoiceStyles();
-    const { styles: heartbeat } = useHeartbeatStyles();
+  const { styles: voice } = useVoiceStyles();
+  const { styles: heartbeat } = useHeartbeatStyles();
   const { styles: status } = useStatusStyles();
   const { styles: devpanel } = useDevpanelStyles();
   const { styles: animation } = useAnimationStyles();
   const { styles: sidebar } = useSidebarStyles();
   const { styles: residual } = useResidualStyles();
 
-  return {
-    styles: {
+  const styles = useMemo(
+    () => ({
       ...residual,
       ...layout,
       ...message,
@@ -453,8 +452,26 @@ export const useChatStyles = () => {
       ...devpanel,
       ...animation,
       ...sidebar,
-    },
-    cx,
-    theme,
-  };
+    }),
+    [
+      residual,
+      layout,
+      message,
+      agent,
+      user,
+      process,
+      reasoning,
+      markdown,
+      composer,
+      panel,
+      voice,
+      heartbeat,
+      status,
+      devpanel,
+      animation,
+      sidebar,
+    ],
+  );
+
+  return useMemo(() => ({ styles, cx, theme }), [styles, cx, theme]);
 };

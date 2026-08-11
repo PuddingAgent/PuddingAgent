@@ -87,16 +87,11 @@ export const useMessageStyles = createStyles(({ token }) => ({
   systemRow: { justifyContent: 'center' },
 
   // ── 开发者模式面板 ───────────────────────────────────────────
-  messageStream: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 2,
-    padding: '8px 0',
-  },
   messageRow: {
     display: 'flex',
     width: '100%',
     marginBottom: 2,
+    padding: '8px 0',
     contain: 'layout paint style',
     contentVisibility: 'auto' as const,
     containIntrinsicSize: '120px',

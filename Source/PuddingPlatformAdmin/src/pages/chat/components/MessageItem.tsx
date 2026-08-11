@@ -4,7 +4,7 @@ import {
   isPerfDiagnosticsEnabled,
   recordPerfEvent,
 } from '@/utils/perfEventRuntime';
-import { useChatStyles } from '../styles';
+import { useChatMessageStyles } from '../styles/messageStyleContext';
 
 const MarkdownBlock =
   process.env.NODE_ENV === 'test'
@@ -47,7 +47,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
   visibleLiveText,
   visibleStartOffset: _visibleStartOffset,
 }) => {
-  const { styles: rawStyles } = useChatStyles();
+  const { styles: rawStyles } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const outputRef = useRef<HTMLDivElement | null>(null);
   const renderStart = performance.now();

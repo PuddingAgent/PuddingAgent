@@ -5,7 +5,6 @@ import {
   buildWorkspaceChatPath,
   buildWorkspacePath,
   buildWorkspaceSettingsPath,
-  buildWorkspaceStudioPath,
   clearRecentWorkspaceVisit,
   parseWorkspaceRouteContext,
   readRecentWorkspaceVisit,
@@ -22,9 +21,6 @@ describe('workspace navigation helpers', () => {
 
   it('builds user-facing workspace paths with stable query params', () => {
     expect(buildWorkspacePath()).toBe('/pudding/workspaces');
-    expect(buildWorkspaceStudioPath()).toBe('/pudding/workspaces');
-    expect(buildWorkspaceStudioPath({ workspaceId: 'default', agentId: 'agent/a' }))
-      .toBe('/pudding/workspaces/default/agent%2Fa');
     expect(buildWorkspaceSettingsPath('default')).toBe('/workspace/default');
     expect(buildWorkspaceSettingsPath('team/a', 'channels')).toBe('/workspace/team%2Fa?tab=channels');
     expect(buildChatPath({ workspaceId: 'default', agentId: 'agent-1', sessionId: 'session 1' }))
@@ -100,16 +96,16 @@ describe('workspace navigation helpers', () => {
     expect(readRecentWorkspaceVisit()).toBeUndefined();
   });
 
-  it('chooses workspace-first entry by recent visit, single workspace, then list page', () => {
+  it('chooses chat entry by recent visit or single workspace, then falls back to the list page', () => {
     expect(resolveWorkspaceEntryPath([
       { workspaceId: 'default', isEnabled: true, isFrozen: false },
       { workspaceId: 'team', isEnabled: true, isFrozen: false },
     ], { workspaceId: 'team', agentId: 'agent-1', visitedAt: 1 }))
-      .toBe('/pudding/workspaces/team/agent-1');
+      .toBe('/chat?workspaceId=team&agentId=agent-1');
 
     expect(resolveWorkspaceEntryPath([
       { workspaceId: 'default', isEnabled: true, isFrozen: false },
-    ])).toBe('/pudding/workspaces/default');
+    ])).toBe('/chat?workspaceId=default');
 
     expect(resolveWorkspaceEntryPath([
       { workspaceId: 'default', isEnabled: true, isFrozen: false },

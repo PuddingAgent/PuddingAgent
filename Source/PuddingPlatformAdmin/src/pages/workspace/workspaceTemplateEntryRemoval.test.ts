@@ -17,10 +17,4 @@ describe('workspace detail template entry removal', () => {
     expect(workspaceDetailSource).not.toContain('ChatTab');
     expect(workspaceDetailSource).not.toContain('sendAdminChatMessage');
   });
-
-  it('does not route studio actions to the deprecated workspace template page', () => {
-    const studioSource = fs.readFileSync(path.join(__dirname, '..', 'workspace-studio', 'index.tsx'), 'utf8');
-
-    expect(studioSource).not.toContain('/workspace-agent-template');
-  });
 });

@@ -7,8 +7,6 @@ const mockLogin = jest.fn();
 const mockCurrentUser = jest.fn();
 const mockListWorkspaces = jest.fn();
 
-jest.mock('../../chat/components/WorkspaceStudioGameCanvas', () => () => null);
-
 jest.mock('@/services/ant-design-pro/api', () => ({
   login: (...args: any[]) => mockLogin(...args),
   currentUser: (...args: any[]) => mockCurrentUser(...args),

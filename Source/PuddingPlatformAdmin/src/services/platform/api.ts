@@ -2829,6 +2829,7 @@ export interface MonthlyTokenStatsResponse {
   cacheHitRate: number;
   totalCost: number;
   totalRequests: number;
+  dataSource: 'local_gateway' | 'legacy_projection';
   byProvider: MonthlyProviderStats[];
 }
 

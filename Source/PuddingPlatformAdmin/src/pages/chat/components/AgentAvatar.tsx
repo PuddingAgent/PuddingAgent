@@ -1,6 +1,6 @@
 // ── AgentAvatar：Agent 头像组件 ─────────────────────────────
 import React from 'react';
-import { useChatStyles } from '../styles';
+import { useChatMessageStyles } from '../styles/messageStyleContext';
 
 interface AgentAvatarProps {
   name?: string;
@@ -16,7 +16,7 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({
   imageUrl,
   grouped,
 }) => {
-  const { styles } = useChatStyles();
+  const { styles } = useChatMessageStyles();
 
   if (grouped) {
     return <div className={styles.agentAvatarGrouped} />;

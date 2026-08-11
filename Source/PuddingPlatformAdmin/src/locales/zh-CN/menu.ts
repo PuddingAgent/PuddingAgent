@@ -22,6 +22,7 @@ export default {
   'menu.memoryLibrary': '记忆图书馆',
   'menu.tokenStats': 'Token 统计',
   'menu.runtimeManagement': 'Runtime 节点',
+  'menu.orchestration': 'Agent 编排',
   'menu.toolApproval': '安全审批',
   'menu.toolApproval.allowlist': '审批白名单',
   'menu.toolApproval.audit': '审批审计',

@@ -1,4 +1,4 @@
-﻿import { render, screen } from '@testing-library/react';
+﻿import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import AgentMessageBubble from './AgentMessageBubble';
 
@@ -123,6 +123,30 @@ describe('AgentMessageBubble streaming presentation', () => {
       isTyping: false,
       isSettling: false,
     });
+  });
+
+  it('does not instantiate message actions until the row is interacted with', () => {
+    const { container } = render(
+      <AgentMessageBubble
+        {...baseProps}
+        content="已经完成。"
+        isStreaming={false}
+        status="success"
+      />,
+    );
+
+    expect(mockMessageActions).not.toHaveBeenCalled();
+
+    const row = container.firstElementChild as HTMLElement;
+    fireEvent.mouseEnter(row);
+    expect(mockMessageActions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visible: true }),
+    );
+
+    fireEvent.mouseLeave(row);
+    expect(mockMessageActions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visible: false }),
+    );
   });
 
   it('shows a sanitized reasoning preview instead of the activity panel before the first answer token', () => {
@@ -648,7 +672,7 @@ describe('AgentMessageBubble streaming presentation', () => {
   });
 
   it('passes browser voice output to assistant message actions after answer content is available', () => {
-    render(
+    const { container } = render(
       <AgentMessageBubble
         {...baseProps}
         status="success"
@@ -656,6 +680,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         content="整理今天的会议记录。"
       />,
     );
+    fireEvent.mouseEnter(container.firstElementChild as HTMLElement);
 
     expect(mockMessageActions).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -70,6 +70,7 @@ export default {
   'menu.session': 'Session Records',
   'menu.tokenStats': 'Token Stats',
   'menu.runtimeManagement': 'Runtime Nodes',
+  'menu.orchestration': 'Agent Orchestration',
   'menu.toolApproval': 'Security Approval',
   'menu.toolApproval.allowlist': 'Approval Allowlist',
   'menu.toolApproval.audit': 'Approval Audit',

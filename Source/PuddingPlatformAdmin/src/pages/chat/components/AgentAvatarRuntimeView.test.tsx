@@ -9,7 +9,7 @@ const spriteRenderState: AgentAvatarRenderState = {
   expression: 'focused',
   motion: 'listen',
   visible: true,
-  spriteSheetUrl: '/admin/assets/agent-sprites/neutral/spritesheet.png',
+  spriteSheetUrl: 'https://assets.example.test/agent-sprites/neutral/spritesheet.png',
   spriteRow: 1,
   spriteFrameCount: 6,
   ariaLabel: 'Agent default-agent 状态：正在听',

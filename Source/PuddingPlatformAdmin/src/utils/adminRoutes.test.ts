@@ -1,4 +1,6 @@
+import React from 'react';
 import routes, { adminRoutes, standaloneRoutes } from '../../config/routes';
+import { resolveAdminMenuRoutes } from '../layouts/AdminLayout/menuIcons';
 import zhCNMenu from '../locales/zh-CN/menu';
 
 function findRoute(path: string, list: any[] = routes): any | undefined {
@@ -21,15 +23,23 @@ function visibleTopLevelPaths(): string[] {
 }
 
 describe('admin workspace menu routing', () => {
+  it('resolves every configured admin icon name to a React element', () => {
+    const resolvedRoutes = resolveAdminMenuRoutes(adminRoutes);
+    const flattenedRoutes = resolvedRoutes.flatMap((route) => [route, ...(route.routes ?? [])]);
+
+    for (const route of flattenedRoutes) {
+      if (!route.icon) continue;
+      expect(typeof route.icon).not.toBe('string');
+      expect(React.isValidElement(route.icon)).toBe(true);
+    }
+  });
+
   it('loads standalone experiences outside the admin layout route', () => {
     expect(standaloneRoutes.map((route) => route.path)).toEqual(expect.arrayContaining([
       '/user',
       '/welcome',
       '/chat',
       '/pudding/workspaces',
-      '/pudding/workspaces/:workspaceId',
-      '/pudding/workspaces/:workspaceId/:agentId',
-      '/workspace-studio',
     ]));
     expect(adminRoutes.map((route) => route.path)).not.toContain('/chat');
     expect(routes).toEqual(expect.arrayContaining([
@@ -63,19 +73,9 @@ describe('admin workspace menu routing', () => {
       component: './workspace',
     }));
 
-    expect(findRoute('/pudding/workspaces/:workspaceId')).toEqual(expect.objectContaining({
-      path: '/pudding/workspaces/:workspaceId',
-      layout: false,
-      hideInMenu: true,
-      component: './workspace-studio',
-    }));
-
-    expect(findRoute('/pudding/workspaces/:workspaceId/:agentId')).toEqual(expect.objectContaining({
-      path: '/pudding/workspaces/:workspaceId/:agentId',
-      layout: false,
-      hideInMenu: true,
-      component: './workspace-studio',
-    }));
+    expect(findRoute('/pudding/workspaces/:workspaceId')).toBeUndefined();
+    expect(findRoute('/pudding/workspaces/:workspaceId/:agentId')).toBeUndefined();
+    expect(findRoute('/workspace-studio')).toBeUndefined();
 
     expect(findRoute('/workspace/:id/settings')).toEqual(expect.objectContaining({
       path: '/workspace/:id/settings',
@@ -93,6 +93,16 @@ describe('admin workspace menu routing', () => {
   it('uses the management label expected by the admin sidebar', () => {
     expect(zhCNMenu['menu.workspace']).toBe('工作区管理');
     expect(zhCNMenu['menu.home']).toBe('首页');
+  });
+
+  it('exposes the read-only Agent orchestration viewer', () => {
+    expect(findTopLevelRoute('/orchestration')).toEqual(expect.objectContaining({
+      path: '/orchestration',
+      name: 'orchestration',
+      icon: 'branches',
+      component: './orchestration',
+    }));
+    expect(zhCNMenu['menu.orchestration']).toBe('Agent 编排');
   });
 
   it('groups system-level account and permission pages under system config', () => {

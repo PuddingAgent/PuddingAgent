@@ -46,8 +46,7 @@ export default {
       success: true,
       data: {
         name: 'Pudding Admin',
-        avatar:
-          'https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png',
+        avatar: '/admin/assets/images/me.png',
         userid: '00000001',
         email: 'admin@pudding.local',
         signature: '构建下一代智能体协作平台',

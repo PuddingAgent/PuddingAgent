@@ -11,7 +11,7 @@ import type {
 import { defaultBrowserVoiceOutputAdapter } from '../hooks/browserVoiceOutput';
 import { useTtsPlayer } from '../hooks/useTtsPlayer';
 import { useTypewriterStreaming } from '../hooks/useTypewriterStreaming';
-import { useChatStyles } from '../styles';
+import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { ChatQuotedMessage, TimelineItem } from '../types';
 import AgentAvatar from './AgentAvatar';
 import MessageActions from './MessageActions';
@@ -27,7 +27,8 @@ import { WaitingBubble } from './WaitingBubble';
 
 const SessionBenchmarkDrawer =
   process.env.NODE_ENV === 'test'
-    ? (require('./SessionBenchmarkDrawer').default as typeof import('./SessionBenchmarkDrawer').default)
+    ? (require('./SessionBenchmarkDrawer')
+        .default as typeof import('./SessionBenchmarkDrawer').default)
     : React.lazy(() => import('./SessionBenchmarkDrawer'));
 
 interface AgentMessageBubbleProps {
@@ -172,7 +173,7 @@ const CurrentActivityPanel: React.FC<{
   activity: CurrentRunActivity;
   now: number;
 }> = ({ activity, now }) => {
-  const { styles: rawStyles, cx } = useChatStyles();
+  const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const elapsed = formatElapsed(activity.startedAt, now);
   const shouldShowElapsed =
@@ -268,7 +269,7 @@ const CurrentActivityPanel: React.FC<{
 const QuotedMessageBlock: React.FC<{ quotedMessage: ChatQuotedMessage }> = ({
   quotedMessage,
 }) => {
-  const { styles } = useChatStyles();
+  const { styles } = useChatMessageStyles();
   const isAgentSource = quotedMessage.sourceKind === 'agent';
   const avatarColor =
     agentAvatarColors[
@@ -352,9 +353,10 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   turnId,
   sessionId,
 }) => {
-  const { styles: rawStyles, cx } = useChatStyles();
+  const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const [showActions, setShowActions] = React.useState(false);
+  const [actionsMounted, setActionsMounted] = React.useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   // 一旦过程摘要首次挂载，保持挂载避免 streaming 中 processItems 短暂清空导致 expanded 状态丢失
   const processSummaryEverMounted = React.useRef(false);
@@ -499,11 +501,20 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     }
   };
 
+  const revealActions = React.useCallback(() => {
+    setActionsMounted(true);
+    setShowActions(true);
+  }, []);
+
+  const hideActions = React.useCallback(() => {
+    setShowActions(false);
+  }, []);
+
   return (
     <div
       style={{ display: 'flex', alignItems: 'flex-start', width: '100%' }}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
+      onMouseEnter={revealActions}
+      onMouseLeave={hideActions}
     >
       {/* 仅入站引用消息：直接渲染卡片，不套气泡外壳 */}
       {hasQuotedOnly && quotedMessage ? (
@@ -673,20 +684,19 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             )}
 
             {/* 操作按钮 */}
-            <MessageActions
-              content={content}
-              visible={showActions}
-              onCopy={() =>
-                navigator.clipboard.writeText(content).catch(() => {})
-              }
-              onRerun={onRerun}
-              onPin={onPin}
-              onDelete={onDelete}
-              voiceOutputAdapter={defaultBrowserVoiceOutputAdapter}
-              onTtsSpeak={() => tts.speak(content)}
-              ttsPlaying={tts.playing}
-              ttsLoading={tts.loading}
-            />
+            {actionsMounted && (
+              <MessageActions
+                content={content}
+                visible={showActions}
+                onRerun={onRerun}
+                onPin={onPin}
+                onDelete={onDelete}
+                voiceOutputAdapter={defaultBrowserVoiceOutputAdapter}
+                onTtsSpeak={() => tts.speak(content)}
+                ttsPlaying={tts.playing}
+                ttsLoading={tts.loading}
+              />
+            )}
 
             {/* Token 用量 */}
             {usage?.totalTokens && (

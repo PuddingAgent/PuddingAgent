@@ -1,9 +1,5 @@
 ﻿// ── 聊天页共享类型 ─────────────────────────────────────────────
-import type {
-  TokenUsageDto,
-  WorkspaceAgentDto,
-  WorkspaceWithPermDto,
-} from '@/services/platform/api';
+import type { TokenUsageDto } from '@/services/platform/api';
 import type { ConversationProcessSummary } from './client/types';
 
 export type MessageStatus = 'sending' | 'success' | 'error';
@@ -85,7 +81,7 @@ export interface ChatQuotedMessage {
   createdAt: number;
 }
 
-// ── IM-style MessageStream ViewModel ─────────────────────────
+// ── Message viewport row ViewModel ───────────────────────────
 
 /**
  * ADR: Chat Message Interaction Redesign

@@ -3,7 +3,7 @@
 import { PictureOutlined, UserOutlined } from '@ant-design/icons';
 import { Avatar } from 'antd';
 import React from 'react';
-import { useChatStyles } from '../styles';
+import { useChatMessageStyles } from '../styles/messageStyleContext';
 
 interface UserMessageBubbleProps {
   content: string;
@@ -37,7 +37,7 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   formatTime,
   onContextMenu,
 }) => {
-  const { styles, cx } = useChatStyles();
+  const { styles, cx } = useChatMessageStyles();
   const [failedImageIds, setFailedImageIds] = React.useState<Set<string>>(
     () => new Set(),
   );

@@ -8,7 +8,6 @@
 import {
   DeleteOutlined,
   EnterOutlined,
-  HomeOutlined,
   PlusOutlined,
   SettingOutlined,
   AppstoreOutlined,
@@ -54,7 +53,6 @@ import type { PuddingStatusTone } from '@/components';
 import {
   buildChatPath,
   buildWorkspaceSettingsPath,
-  buildWorkspaceStudioPath,
   clearRecentWorkspaceVisit,
   readRecentWorkspaceVisit,
 } from '@/utils/workspaceNavigation';
@@ -184,7 +182,7 @@ const WorkspacePage: React.FC = () => {
       await createWorkspace(request);
       message.success(`工作空间 "${values.name}" 创建成功`);
       setCreateOpen(false);
-      history.push(buildWorkspaceStudioPath({ workspaceId: request.workspaceId }));
+      history.push(buildWorkspaceSettingsPath(request.workspaceId));
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'errorFields' in err) return;
       message.error('创建失败，请检查输入');
@@ -253,16 +251,9 @@ const WorkspacePage: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 176,
+      width: 144,
       render: (_, record) => (
         <Space size={4}>
-          <Tooltip title={`打开 ${record.name} 工作室`}>
-            <Button
-              aria-label={`打开 ${record.name} 工作室`}
-              icon={<HomeOutlined />}
-              onClick={() => history.push(buildWorkspaceStudioPath({ workspaceId: record.workspaceId }))}
-            />
-          </Tooltip>
           <Tooltip title={`进入 ${record.name} 对话`}>
             <Button
               aria-label={`进入 ${record.name} 对话`}
@@ -357,13 +348,6 @@ const WorkspacePage: React.FC = () => {
                     <>
                       <Button
                         type="primary"
-                        icon={<HomeOutlined />}
-                        block
-                        onClick={() => history.push(buildWorkspaceStudioPath({ workspaceId: ws.workspaceId }))}
-                      >
-                        进入工作室
-                      </Button>
-                      <Button
                         icon={<EnterOutlined />}
                         block
                         onClick={() => history.push(buildChatPath({ workspaceId: ws.workspaceId }))}
@@ -411,7 +395,7 @@ const WorkspacePage: React.FC = () => {
         <section style={styles.page}>
           <PuddingPageHeader
             title="工作空间"
-            description="选择一个工作场所，查看其中的 Agent 状态并进入工作室。"
+            description="选择一个工作场所，查看其中的 Agent 状态、开始对话或管理配置。"
             actions={
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                 新建工作空间
