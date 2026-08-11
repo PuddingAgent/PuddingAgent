@@ -33,6 +33,12 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
     private readonly IAgentSkillEvolutionStore _skillStore;
     private readonly SkillEvolutionDeduplicationService _skillDeduplication;
 
+    private SubconsciousSkillEvaluator? _skillEvaluator;
+    private SubconsciousSkillEvaluator SkillEvaluator => _skillEvaluator ??= new SubconsciousSkillEvaluator(_memoryLlmClient);
+
+    private SubconsciousLlmInvoker? _llmInvoker;
+    private SubconsciousLlmInvoker LlmInvoker => _llmInvoker ??= new SubconsciousLlmInvoker(_memoryLlmClient, _logger);
+
     public SubconsciousOrchestrator(
         IMemoryLibrary memoryLibrary,
         IMemoryEngine memoryEngine,
@@ -702,27 +708,10 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
 
     private static string? ExtractJson(string raw)
     {
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        var trimmed = raw.Trim();
-        if (trimmed.StartsWith("{") && trimmed.EndsWith("}"))
-            return trimmed;
-
-        // Try markdown code block first (LLM often wraps JSON in ```json ... ```)
-        var markdownJson = Regex.Match(trimmed, "```(?:json)?\\s*(\\{[\\s\\S]*\\})\\s*```", RegexOptions.IgnoreCase);
-        if (markdownJson.Success)
-            return markdownJson.Groups[1].Value;
-
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        if (start >= 0 && end > start)
-            return trimmed[start..(end + 1)];
-
-        return null;
+        return SubconsciousSkillEvaluator.ExtractJson(raw);
     }
 
-    private async Task<string?> ChatMemoryLlmWithTimeoutAsync(
+    private Task<string?> ChatMemoryLlmWithTimeoutAsync(
         string systemPrompt,
         string userPrompt,
         MemoryLlmConfig memoryLlmConfig,
@@ -730,26 +719,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         int? round,
         CancellationToken ct)
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
-
-        try
-        {
-            return await _memoryLlmClient.ChatWithConfigAsync(
-                systemPrompt,
-                userPrompt,
-                memoryLlmConfig,
-                tools: null,
-                ct: timeoutCts.Token);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            _logger.LogWarning(
-                "[Subconscious][RecallAugmented] LLM timeout stage={Stage} round={Round}",
-                stage,
-                round?.ToString() ?? "-");
-            return null;
-        }
+        return LlmInvoker.ChatWithTimeoutAsync(systemPrompt, userPrompt, memoryLlmConfig, stage, round, ct);
     }
 
     private static string NormalizeSnippet(string? snippet)
@@ -1627,42 +1597,12 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         };
     }
 
-    private async Task<SkillEvaluation?> EvaluateOneSkillAsync(
+    private Task<SkillEvaluation?> EvaluateOneSkillAsync(
         AgentSkillEvolutionDocument skill,
         MemoryLlmConfig? config,
         CancellationToken ct)
     {
-        var prompt = $@"Evaluate whether this complete Pudding SKILL needs a focused self-improvement.
-
-SKILL ID: {skill.SkillId}
-SKILL NAME: {skill.Name}
-VERSION: {skill.Version}
-
-CURRENT SKILL.md:
-{skill.Markdown}
-
-Check for internally inconsistent steps, missing verification, or clearly obsolete instructions. Do not change a valid skill merely to rephrase it.
-Output JSON only: {{""needs_update"":true/false,""reason"":""...""}}";
-
-        var raw = await _memoryLlmClient.ChatWithConfigAsync(
-            "You evaluate Pudding skills. Output JSON only.", prompt, config, tools: null, ct: ct);
-        var jsonText = ExtractJson(raw ?? "");
-        try
-        {
-            var json = JsonSerializer.Deserialize<JsonElement>(jsonText ?? "{}");
-            if (!json.TryGetProperty("needs_update", out var needsUpdate)
-                || needsUpdate.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-            {
-                return null;
-            }
-            return new SkillEvaluation
-            {
-                SkillId = skill.SkillId, SkillName = skill.Name, CurrentVersion = skill.Version,
-                NeedsUpdate = needsUpdate.GetBoolean(),
-                Reason = json.TryGetProperty("reason", out var r) ? r.GetString() : null
-            };
-        }
-        catch { return null; }
+        return SkillEvaluator.EvaluateOneSkillAsync(skill, config, ct);
     }
 
     private async Task<string?> GenerateImprovedSkillContentAsync(
