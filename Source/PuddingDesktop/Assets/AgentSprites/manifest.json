@@ -1,0 +1,51 @@
+{
+  "smile": {
+    "avatarId": "smile",
+    "pet": "smile/pet.json",
+    "spritesheet": "smile/spritesheet.png",
+    "spritesheetWebp": "smile/spritesheet.webp",
+    "contactSheet": "smile/contact-sheet.png"
+  },
+  "sleepy": {
+    "avatarId": "sleepy",
+    "pet": "sleepy/pet.json",
+    "spritesheet": "sleepy/spritesheet.png",
+    "spritesheetWebp": "sleepy/spritesheet.webp",
+    "contactSheet": "sleepy/contact-sheet.png"
+  },
+  "thinking": {
+    "avatarId": "thinking",
+    "pet": "thinking/pet.json",
+    "spritesheet": "thinking/spritesheet.png",
+    "spritesheetWebp": "thinking/spritesheet.webp",
+    "contactSheet": "thinking/contact-sheet.png"
+  },
+  "angry": {
+    "avatarId": "angry",
+    "pet": "angry/pet.json",
+    "spritesheet": "angry/spritesheet.png",
+    "spritesheetWebp": "angry/spritesheet.webp",
+    "contactSheet": "angry/contact-sheet.png"
+  },
+  "amber": {
+    "avatarId": "amber",
+    "pet": "amber/pet.json",
+    "spritesheet": "amber/spritesheet.png",
+    "spritesheetWebp": "amber/spritesheet.webp",
+    "contactSheet": "amber/contact-sheet.png"
+  },
+  "mint": {
+    "avatarId": "mint",
+    "pet": "mint/pet.json",
+    "spritesheet": "mint/spritesheet.png",
+    "spritesheetWebp": "mint/spritesheet.webp",
+    "contactSheet": "mint/contact-sheet.png"
+  },
+  "silver": {
+    "avatarId": "silver",
+    "pet": "silver/pet.json",
+    "spritesheet": "silver/spritesheet.png",
+    "spritesheetWebp": "silver/spritesheet.webp",
+    "contactSheet": "silver/contact-sheet.png"
+  }
+}

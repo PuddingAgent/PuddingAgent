@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -133,7 +134,12 @@ public static class PuddingApplicationHost
                     ClockSkew = TimeSpan.FromMinutes(1),
                 };
             });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(authorization =>
+        {
+            authorization.AddPolicy(
+                PuddingAuthorizationPolicies.StorageManagement,
+                policy => policy.AddRequirements(new StorageManagementRequirement()));
+        });
 
         // ── Host options ────────────────────────────────────
         builder.Services.AddSingleton(options);
@@ -143,6 +149,7 @@ public static class PuddingApplicationHost
 
         // ── DesktopChild services: token validator + parent monitor ──
         builder.Services.AddDesktopChildServices(options);
+        builder.Services.AddSingleton<IAuthorizationHandler, StorageManagementAuthorizationHandler>();
 
         // ── Connector lifecycle as IHostedService ───────────
         builder.Services.AddHostedService<ConnectorHostLifecycleService>();

@@ -159,7 +159,14 @@ public sealed class DesktopTrayIconService : IDisposable
     {
         var item = new MenuItem
         {
-            Header = header,
+            // A string header creates an implicit TextBlock whose application
+            // style overrides the inherited MenuItem foreground in dark mode.
+            // Use an explicit TextBlock so the light popup keeps dark text.
+            Header = new TextBlock
+            {
+                Text = header,
+                Foreground = TrayMenuForegroundBrush,
+            },
             Background = TrayMenuBackgroundBrush,
             Foreground = TrayMenuForegroundBrush,
         };

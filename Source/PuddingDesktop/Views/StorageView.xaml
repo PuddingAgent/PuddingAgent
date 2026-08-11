@@ -17,7 +17,7 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="存储空间" Style="{StaticResource PageTitleStyle}" />
-                    <TextBlock Text="查看 Pudding 数据与磁盘占用；当前版本只清理一天前的日志。"
+                    <TextBlock Text="查看 Pudding 数据与磁盘占用；数据库与索引由 Core 提供细粒度分析和安全清理。"
                                Style="{StaticResource CaptionTextStyle}"
                                Margin="0,6,0,0" />
                 </StackPanel>
@@ -135,6 +135,58 @@
                                Margin="0,0,10,0" />
                     <TextBlock Text="{Binding ErrorText}"
                                Foreground="{DynamicResource ErrorBrush}"
+                               FontSize="13"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="18"
+                    Background="{DynamicResource WarningFillBrush}"
+                    BorderBrush="{DynamicResource WarningBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Visibility="{Binding HasDatabaseCleanupPreview, Converter={StaticResource BooleanToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding DatabaseCleanupPreviewTitle}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                        <TextBlock Text="{Binding DatabaseCleanupPreviewDescription}"
+                                   Margin="0,5,0,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="18,0,0,0">
+                        <Button Content="取消"
+                                Style="{StaticResource DefaultButtonStyle}"
+                                Click="CancelDatabaseCleanup_Click" />
+                        <Button Content="确认并压缩"
+                                Margin="8,0,0,0"
+                                Style="{StaticResource AccentButtonStyle}"
+                                IsEnabled="{Binding CanManageDatabases}"
+                                Click="ConfirmDatabaseCleanup_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="14"
+                    Background="{DynamicResource SuccessFillBrush}"
+                    CornerRadius="8"
+                    Visibility="{Binding HasDatabaseCleanupResult, Converter={StaticResource BooleanToVisibility}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE73E;"
+                               Style="{StaticResource FluentIconTextStyle}"
+                               Foreground="{DynamicResource SuccessBrush}"
+                               Margin="0,0,10,0" />
+                    <TextBlock Text="{Binding DatabaseCleanupResultText}"
+                               Foreground="{DynamicResource SuccessBrush}"
                                FontSize="13"
                                TextWrapping="Wrap" />
                 </StackPanel>
@@ -260,7 +312,7 @@
                                                FontWeight="SemiBold" />
 
                                     <Grid Grid.Column="3" VerticalAlignment="Center">
-                                        <TextBlock Text="只读统计"
+                                        <TextBlock Text="{Binding StatusText}"
                                                    HorizontalAlignment="Center"
                                                    Foreground="{DynamicResource TextTertiaryBrush}"
                                                    FontSize="12">
@@ -297,7 +349,156 @@
                     </ItemsControl>
 
                     <Border Height="1" Margin="20,8,20,0" Background="{DynamicResource DividerBrush}" />
-                    <TextBlock Text="数据库、会话、记忆、Browser UDF、附件、备份和未知目录当前只统计，不会被一键删除。"
+                    <TextBlock Text="会话正文、Agent、记忆、Browser UDF、附件、备份和未知目录不会被一键删除；数据库清理由 Core 按语义白名单执行。"
+                               Margin="20,14,20,18"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               FontSize="11"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Padding="0"
+                    Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <Grid Margin="20,18,20,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="数据库与索引明细"
+                                       Style="{StaticResource SectionTitleStyle}" />
+                            <TextBlock Text="{Binding DatabaseStatusText}"
+                                       Margin="0,5,0,0"
+                                       Style="{StaticResource CaptionTextStyle}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="保留"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       FontSize="12" />
+                            <ComboBox Width="72"
+                                      Margin="8,0,10,0"
+                                      Foreground="{StaticResource NativeLightPopupTextBrush}"
+                                      ItemTemplate="{StaticResource NativeLightPopupItemTemplate}"
+                                      ItemsSource="{Binding RetentionDayOptions}"
+                                      SelectedItem="{Binding SelectedRetentionDays}" />
+                            <TextBlock Text="天"
+                                       Margin="-6,0,12,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                       FontSize="12" />
+                            <Button Content="刷新明细"
+                                    Style="{StaticResource DefaultButtonStyle}"
+                                    IsEnabled="{Binding CanManageDatabases}"
+                                    Click="RefreshDatabaseDetails_Click" />
+                        </StackPanel>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding DatabaseFiles}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="20,8,20,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding RelativePath}"
+                                                   Margin="0,3,0,0"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   FontSize="11" />
+                                        <TextBlock Text="{Binding DetailText}"
+                                                   Margin="0,3,0,0"
+                                                   Style="{StaticResource CaptionTextStyle}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SizeText}"
+                                               Margin="18,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontFamily="{StaticResource DisplayFont}"
+                                               FontWeight="SemiBold" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Height="1" Margin="20,10,20,4" Background="{DynamicResource DividerBrush}" />
+
+                    <ItemsControl ItemsSource="{Binding DatabaseItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="20,10,20,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="105" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Description}"
+                                                   Margin="0,4,0,0"
+                                                   Style="{StaticResource CaptionTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding ProtectionText}"
+                                                   Margin="0,3,0,0"
+                                                   Foreground="{DynamicResource WarningBrush}"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SizeText}"
+                                                   HorizontalAlignment="Right"
+                                                   FontFamily="{StaticResource DisplayFont}"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding RowCountText}"
+                                                   Margin="0,3,0,0"
+                                                   HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   FontSize="11" />
+                                    </StackPanel>
+                                    <Grid Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding ActionText}"
+                                                   HorizontalAlignment="Center"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   FontSize="12">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanClean}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Button Content="预览清理"
+                                                HorizontalAlignment="Center"
+                                                IsEnabled="{Binding DataContext.CanManageDatabases, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                Click="PreviewDatabaseCleanup_Click">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanClean}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Height="1" Margin="20,8,20,0" Background="{DynamicResource DividerBrush}" />
+                    <TextBlock Text="Core 只接受固定清理目标和十分钟内有效的预览令牌。session_event_log、conversation_events、聊天正文与记忆始终受保护。"
                                Margin="20,14,20,18"
                                Foreground="{DynamicResource TextTertiaryBrush}"
                                FontSize="11"

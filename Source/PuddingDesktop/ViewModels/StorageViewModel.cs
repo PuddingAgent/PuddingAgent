@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using PuddingCode.Storage;
 using PuddingDesktop.Storage;
 
 namespace PuddingDesktop.ViewModels;
@@ -9,6 +10,7 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IStorageAnalysisService _analysisService;
     private readonly ILogRetentionService _logRetentionService;
+    private readonly ICoreStorageManagementClient _coreStorageClient;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private CancellationTokenSource? _operationCts;
 
@@ -24,17 +26,25 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
     private double _puddingDrivePercent;
     private LogCleanupPreview? _cleanupPreview;
     private string? _cleanupResultText;
+    private string _databaseStatusText = "Core 就绪后可查看数据库与索引明细。";
+    private StorageCleanupPreview? _databaseCleanupPreview;
+    private string? _databaseCleanupResultText;
+    private int _selectedRetentionDays = 14;
     private int _disposeState;
 
     public StorageViewModel(
         IStorageAnalysisService analysisService,
-        ILogRetentionService logRetentionService)
+        ILogRetentionService logRetentionService,
+        ICoreStorageManagementClient coreStorageClient)
     {
         _analysisService = analysisService;
         _logRetentionService = logRetentionService;
+        _coreStorageClient = coreStorageClient;
     }
 
     public ObservableCollection<StorageCategoryItemViewModel> Categories { get; } = [];
+    public ObservableCollection<StorageDatabaseFileItemViewModel> DatabaseFiles { get; } = [];
+    public ObservableCollection<DatabaseStorageItemViewModel> DatabaseItems { get; } = [];
 
     public string DataRoot => string.IsNullOrWhiteSpace(_dataRoot) ? "未配置" : _dataRoot;
 
@@ -47,11 +57,13 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanRefresh));
             OnPropertyChanged(nameof(CanCleanLogs));
+            OnPropertyChanged(nameof(CanManageDatabases));
         }
     }
 
     public bool CanRefresh => !IsBusy && !string.IsNullOrWhiteSpace(_dataRoot);
     public bool CanCleanLogs => !IsBusy && !string.IsNullOrWhiteSpace(_dataRoot);
+    public bool CanManageDatabases => !IsBusy && _coreStorageClient.IsAvailable;
 
     public string StatusText
     {
@@ -151,6 +163,81 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasCleanupResult => !string.IsNullOrWhiteSpace(CleanupResultText);
 
+    public string DatabaseStatusText
+    {
+        get => _databaseStatusText;
+        private set { _databaseStatusText = value; OnPropertyChanged(); }
+    }
+
+    public bool HasDatabaseDetails => DatabaseFiles.Count > 0 || DatabaseItems.Count > 0;
+
+    public int SelectedRetentionDays
+    {
+        get => _selectedRetentionDays;
+        set
+        {
+            if (_selectedRetentionDays == value)
+                return;
+            _selectedRetentionDays = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public IReadOnlyList<int> RetentionDayOptions { get; } = [7, 14, 30, 90];
+
+    public StorageCleanupPreview? DatabaseCleanupPreview
+    {
+        get => _databaseCleanupPreview;
+        private set
+        {
+            _databaseCleanupPreview = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDatabaseCleanupPreview));
+            OnPropertyChanged(nameof(DatabaseCleanupPreviewTitle));
+            OnPropertyChanged(nameof(DatabaseCleanupPreviewDescription));
+        }
+    }
+
+    public bool HasDatabaseCleanupPreview => DatabaseCleanupPreview is not null;
+
+    public string DatabaseCleanupPreviewTitle => DatabaseCleanupPreview is null
+        ? string.Empty
+        : DatabaseCleanupPreview.EstimatedReclaimableBytes is { } bytes
+            ? $"预计可回收约 {StorageSizeFormatter.Format(bytes)}"
+            : $"可清理 {DatabaseCleanupPreview.CandidateRows:N0} 项数据库记录";
+
+    public string DatabaseCleanupPreviewDescription => DatabaseCleanupPreview is null
+        ? string.Empty
+        : $"{string.Join(" ", DatabaseCleanupPreview.Targets.Select(target => target.Summary))} " +
+          (DatabaseCleanupPreview.CompactAfterCleanup
+              ? "清理后将压缩数据库，期间可能短暂等待写入。"
+              : "清理后不压缩数据库文件。");
+
+    public string? DatabaseCleanupResultText
+    {
+        get => _databaseCleanupResultText;
+        private set
+        {
+            _databaseCleanupResultText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDatabaseCleanupResult));
+        }
+    }
+
+    public bool HasDatabaseCleanupResult =>
+        !string.IsNullOrWhiteSpace(DatabaseCleanupResultText);
+
+    public void ConfigureCore(
+        Uri? coreAddress,
+        Func<CancellationToken, Task<string>>? controlTokenProvider)
+    {
+        _coreStorageClient.Configure(coreAddress, controlTokenProvider);
+        DatabaseStatusText = _coreStorageClient.IsAvailable
+            ? "等待 Core 数据库分析"
+            : "Core 尚未就绪；当前只显示文件级数据库总量。";
+        OnPropertyChanged(nameof(CanManageDatabases));
+    }
+
     public void SetDataRoot(string? dataRoot)
     {
         var normalized = string.IsNullOrWhiteSpace(dataRoot) ? null : dataRoot.Trim();
@@ -160,8 +247,12 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
         CancelCurrentOperation();
         _dataRoot = normalized;
         Categories.Clear();
+        DatabaseFiles.Clear();
+        DatabaseItems.Clear();
         CleanupPreview = null;
+        DatabaseCleanupPreview = null;
         CleanupResultText = null;
+        DatabaseCleanupResultText = null;
         ErrorText = null;
         TotalSizeText = "—";
         DriveSummaryText = "尚未读取磁盘容量";
@@ -169,9 +260,12 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
         DriveUsedPercent = 0;
         PuddingDrivePercent = 0;
         StatusText = normalized is null ? "请先在系统设置中配置数据目录" : "等待扫描";
+        DatabaseStatusText = "Core 就绪后可查看数据库与索引明细。";
         OnPropertyChanged(nameof(DataRoot));
         OnPropertyChanged(nameof(CanRefresh));
         OnPropertyChanged(nameof(CanCleanLogs));
+        OnPropertyChanged(nameof(CanManageDatabases));
+        OnPropertyChanged(nameof(HasDatabaseDetails));
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
@@ -198,6 +292,7 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
             {
                 var snapshot = await _analysisService.AnalyzeAsync(_dataRoot, progress, ct);
                 ApplySnapshot(snapshot);
+                await RefreshDatabaseAnalysisCoreAsync(ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -308,6 +403,138 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
         }, cancellationToken);
     }
 
+    public async Task RefreshDatabaseDetailsAsync(CancellationToken cancellationToken)
+    {
+        await RunExclusiveAsync(async ct =>
+        {
+            IsBusy = true;
+            ErrorText = null;
+            try
+            {
+                await RefreshDatabaseAnalysisCoreAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                DatabaseStatusText = "数据库分析已取消";
+            }
+            catch (Exception ex)
+            {
+                DatabaseStatusText = "Core 数据库分析失败";
+                ErrorText = ex.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }, cancellationToken);
+    }
+
+    public async Task PreviewDatabaseCleanupAsync(
+        string targetId,
+        CancellationToken cancellationToken)
+    {
+        if (!_coreStorageClient.IsAvailable)
+        {
+            ErrorText = "Core 尚未就绪，无法清理数据库与索引。";
+            return;
+        }
+
+        await RunExclusiveAsync(async ct =>
+        {
+            IsBusy = true;
+            ErrorText = null;
+            DatabaseCleanupResultText = null;
+            DatabaseStatusText = "正在由 Core 计算数据库清理预览…";
+            try
+            {
+                var preview = await _coreStorageClient.PreviewCleanupAsync(
+                    new StorageCleanupPreviewRequest
+                    {
+                        TargetIds = [targetId],
+                        RetentionDays = SelectedRetentionDays,
+                        CompactAfterCleanup = true,
+                    },
+                    ct);
+                if (preview.CandidateRows == 0)
+                {
+                    DatabaseCleanupPreview = null;
+                    DatabaseCleanupResultText = "该项目当前没有可安全清理的数据。";
+                    DatabaseStatusText = "没有可清理项";
+                }
+                else
+                {
+                    DatabaseCleanupPreview = preview;
+                    DatabaseStatusText = "数据库清理预览已生成，请确认后继续";
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                DatabaseStatusText = "数据库清理预览已取消";
+            }
+            catch (Exception ex)
+            {
+                ErrorText = ex.Message;
+                DatabaseStatusText = "无法生成数据库清理预览";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }, cancellationToken);
+    }
+
+    public async Task ExecuteDatabaseCleanupAsync(CancellationToken cancellationToken)
+    {
+        var preview = DatabaseCleanupPreview;
+        if (preview is null)
+            return;
+
+        await RunExclusiveAsync(async ct =>
+        {
+            IsBusy = true;
+            ErrorText = null;
+            DatabaseStatusText = "Core 正在清理并压缩数据库；请勿退出 Pudding…";
+            try
+            {
+                var result = await _coreStorageClient.ExecuteCleanupAsync(preview.PreviewId, ct);
+                DatabaseCleanupPreview = null;
+                ApplyDatabaseAnalysis(result.Analysis);
+                DatabaseCleanupResultText =
+                    $"已删除 {result.DeletedRows:N0} 条派生/诊断记录，" +
+                    $"移除 {result.DroppedIndexes:N0} 个重复索引和 {result.RemovedCodeIndexScopes:N0} 个冗余作用域，" +
+                    $"磁盘释放 {StorageSizeFormatter.Format(result.ReleasedBytes)}。" +
+                    (result.Warnings.Count == 0
+                        ? string.Empty
+                        : $" {result.Warnings.Count:N0} 项需要注意。 ");
+                DatabaseStatusText = result.Warnings.Count == 0
+                    ? "数据库与索引清理完成"
+                    : "清理完成，部分压缩或项目已跳过";
+
+                var snapshot = await _analysisService.AnalyzeAsync(_dataRoot!, progress: null, ct);
+                ApplySnapshot(snapshot);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                DatabaseStatusText = "数据库清理已取消；请重新扫描确认结果";
+            }
+            catch (Exception ex)
+            {
+                ErrorText = ex.Message;
+                DatabaseStatusText = "数据库清理失败";
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }, cancellationToken);
+    }
+
+    public void CancelDatabaseCleanupPreview()
+    {
+        DatabaseCleanupPreview = null;
+        DatabaseStatusText = "已取消数据库清理";
+    }
+
     public void CancelCleanupPreview()
     {
         CleanupPreview = null;
@@ -343,6 +570,54 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
         StatusText = $"扫描完成 · {snapshot.Categories.Sum(item => item.FileCount):N0} 个文件";
     }
 
+    private async Task RefreshDatabaseAnalysisCoreAsync(CancellationToken ct)
+    {
+        if (!_coreStorageClient.IsAvailable)
+        {
+            DatabaseFiles.Clear();
+            DatabaseItems.Clear();
+            DatabaseStatusText = "Core 尚未就绪；当前只显示文件级数据库总量。";
+            OnPropertyChanged(nameof(HasDatabaseDetails));
+            return;
+        }
+
+        DatabaseStatusText = "Core 正在分析数据库页面、表和索引…";
+        try
+        {
+            var analysis = await _coreStorageClient.AnalyzeAsync(ct);
+            ApplyDatabaseAnalysis(analysis);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            DatabaseFiles.Clear();
+            DatabaseItems.Clear();
+            DatabaseStatusText = $"Core 数据库明细暂不可用：{ex.Message}";
+            OnPropertyChanged(nameof(HasDatabaseDetails));
+        }
+    }
+
+    private void ApplyDatabaseAnalysis(StorageDatabaseAnalysis analysis)
+    {
+        DatabaseFiles.Clear();
+        foreach (var database in analysis.Databases)
+            DatabaseFiles.Add(new StorageDatabaseFileItemViewModel(database));
+
+        DatabaseItems.Clear();
+        foreach (var item in analysis.Items)
+            DatabaseItems.Add(new DatabaseStorageItemViewModel(item));
+
+        DatabaseStatusText =
+            $"Core 分析完成 · {StorageSizeFormatter.Format(analysis.TotalBytes)}" +
+            (analysis.Warnings.Count == 0
+                ? string.Empty
+                : $" · {analysis.Warnings.Count:N0} 条提示");
+        OnPropertyChanged(nameof(HasDatabaseDetails));
+    }
+
     private async Task RunExclusiveAsync(
         Func<CancellationToken, Task> operation,
         CancellationToken cancellationToken)
@@ -374,6 +649,7 @@ public sealed class StorageViewModel : INotifyPropertyChanged, IDisposable
             return;
 
         CancelCurrentOperation();
+        _coreStorageClient.Dispose();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -393,6 +669,9 @@ public sealed class StorageCategoryItemViewModel
         CanClean = snapshot.Definition.CanClean;
         SizeText = StorageSizeFormatter.Format(snapshot.LogicalBytes);
         FileCountText = $"{snapshot.FileCount:N0} 个文件";
+        StatusText = Kind == StorageCategoryKind.DatabaseAndIndex
+            ? "下方管理"
+            : "只读统计";
     }
 
     public StorageCategoryKind Kind { get; }
@@ -402,4 +681,61 @@ public sealed class StorageCategoryItemViewModel
     public bool CanClean { get; }
     public string SizeText { get; }
     public string FileCountText { get; }
+    public string StatusText { get; }
+}
+
+public sealed class StorageDatabaseFileItemViewModel
+{
+    public StorageDatabaseFileItemViewModel(StorageDatabaseFileSnapshot snapshot)
+    {
+        DisplayName = snapshot.DisplayName;
+        RelativePath = snapshot.RelativePath;
+        SizeText = StorageSizeFormatter.Format(snapshot.TotalBytes);
+        DetailText = snapshot.DatabaseId == "fulltext-index"
+            ? $"派生索引文件 {StorageSizeFormatter.Format(snapshot.MainBytes)}"
+            : $"主文件 {StorageSizeFormatter.Format(snapshot.MainBytes)}" +
+              (snapshot.WalBytes > 0
+                  ? $" · WAL {StorageSizeFormatter.Format(snapshot.WalBytes)}"
+                  : string.Empty) +
+              (snapshot.ReclaimableFreeBytes > 0
+                  ? $" · 空闲页 {StorageSizeFormatter.Format(snapshot.ReclaimableFreeBytes)}"
+                  : string.Empty);
+    }
+
+    public string DisplayName { get; }
+    public string RelativePath { get; }
+    public string SizeText { get; }
+    public string DetailText { get; }
+}
+
+public sealed class DatabaseStorageItemViewModel
+{
+    public DatabaseStorageItemViewModel(StorageMaintenanceItemSnapshot snapshot)
+    {
+        ItemId = snapshot.ItemId;
+        DisplayName = snapshot.DisplayName;
+        Description = snapshot.Description;
+        CanClean = snapshot.CanClean;
+        IsProtected = snapshot.IsProtected;
+        SizeText = snapshot.AllocatedBytes is { } bytes
+            ? StorageSizeFormatter.Format(bytes)
+            : "大小由数据库文件统计";
+        RowCountText = snapshot.RowCountIsApproximate
+            ? $"约 {snapshot.RowCount:N0} 条"
+            : $"{snapshot.RowCount:N0} 条";
+        ActionText = snapshot.CanClean
+            ? "预览清理"
+            : snapshot.IsProtected ? "受保护" : "无需清理";
+        ProtectionText = snapshot.ProtectionReason ?? string.Empty;
+    }
+
+    public string ItemId { get; }
+    public string DisplayName { get; }
+    public string Description { get; }
+    public string SizeText { get; }
+    public string RowCountText { get; }
+    public string ActionText { get; }
+    public string ProtectionText { get; }
+    public bool CanClean { get; }
+    public bool IsProtected { get; }
 }

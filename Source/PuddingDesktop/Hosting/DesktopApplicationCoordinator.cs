@@ -47,6 +47,14 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     public BrowserBridgeCommandDispatcher BridgeDispatcher => _bridgeDispatcher;
     public IDesktopBrowserBridgeClient BridgeClient => _bridgeClient;
 
+    public Task<string> GetDesktopControlTokenAsync(CancellationToken cancellationToken)
+    {
+        var dataRoot = _bootstrapSettings?.DataRoot;
+        return string.IsNullOrWhiteSpace(dataRoot)
+            ? Task.FromException<string>(new InvalidOperationException("尚未配置数据目录。"))
+            : _tokenService.GetOrCreateAsync(dataRoot, cancellationToken);
+    }
+
     public event EventHandler<DesktopStateChangedEventArgs>? StateChanged;
     public event EventHandler<DesktopRuntimeChangedEventArgs>? RuntimeChanged;
 

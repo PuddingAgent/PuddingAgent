@@ -88,6 +88,14 @@ public sealed partial class MainWindow : Window
             {
                 ResetWebView2();
             }
+
+            if (StoragePage.Visibility == Visibility.Visible)
+            {
+                StoragePage.Configure(
+                    _coordinator.DataRoot,
+                    e.CoreAddress,
+                    _coordinator.GetDesktopControlTokenAsync);
+            }
         });
     }
 
@@ -307,7 +315,10 @@ public sealed partial class MainWindow : Window
             else if (btn == navStorage)
             {
                 StoragePage.Visibility = Visibility.Visible;
-                StoragePage.SetDataRoot(_coordinator.DataRoot);
+                StoragePage.Configure(
+                    _coordinator.DataRoot,
+                    _coordinator.CoreAddress,
+                    _coordinator.GetDesktopControlTokenAsync);
                 _ = StoragePage.RefreshAsync();
             }
             else if (btn == navSettings)

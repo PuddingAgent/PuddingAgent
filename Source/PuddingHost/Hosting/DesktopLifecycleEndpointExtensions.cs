@@ -58,11 +58,13 @@ public static class DesktopLifecycleEndpointExtensions
         this IServiceCollection services,
         PuddingHostOptions options)
     {
+        // The validator is registered for every host because the shared storage
+        // authorization policy also supports platform-admin JWTs. The handler
+        // only accepts this token in DesktopChild mode and over loopback.
+        services.AddSingleton(new DesktopControlTokenValidator(options.DataRoot));
+
         if (options.Mode != PuddingHostMode.DesktopChild)
             return services;
-
-        // Token validator (reads from system.json on each request)
-        services.AddSingleton(new DesktopControlTokenValidator(options.DataRoot));
 
         // Parent process monitor (stops Core when Desktop exits)
         if (options.DesktopParentPid is > 0)

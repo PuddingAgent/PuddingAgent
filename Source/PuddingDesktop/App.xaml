@@ -54,6 +54,15 @@
             <SolidColorBrush x:Key="WarningFillBrush" Color="{DynamicResource WarningFillColor}" />
             <SolidColorBrush x:Key="ErrorBrush" Color="{DynamicResource ErrorColor}" />
             <SolidColorBrush x:Key="ErrorFillBrush" Color="{DynamicResource ErrorFillColor}" />
+            <!-- Native WPF popup controls keep a light system surface even when
+                 the Desktop theme is dark. Their text must not inherit the
+                 global dark-theme TextBlock foreground. -->
+            <SolidColorBrush x:Key="NativeLightPopupTextBrush" Color="#FF1F1F1F" />
+
+            <DataTemplate x:Key="NativeLightPopupItemTemplate">
+                <TextBlock Text="{Binding}"
+                           Foreground="{StaticResource NativeLightPopupTextBrush}" />
+            </DataTemplate>
 
             <FontFamily x:Key="PrimaryFont">Segoe UI Variable Text, Segoe UI</FontFamily>
             <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
