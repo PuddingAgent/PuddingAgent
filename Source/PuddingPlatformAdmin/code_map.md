@@ -93,7 +93,7 @@
 | 文件 | 职责与性能边界 |
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
-| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；直接渲染 `MessageRow`，不再为每行重建单元素 `ChatTurn[]` |
+| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，不再为每行重建单元素 `ChatTurn[]` |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；投影重建等价对象时保持历史行不提交，正文或过程事件变化仍立即更新 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
@@ -103,6 +103,7 @@
 | `src/pages/chat/components/HistorySearchModal.tsx` | 历史搜索弹窗；只有 `historyModalOpen` 时才挂载并触发异步 chunk |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；每条消息不得预挂载关闭状态的会话诊断 Drawer 或操作栏，操作栏在首次 hover 后才实例化 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer；摄像头弹窗只在用户打开视觉输入时加载和挂载 |
+| `src/pages/chat/viewport/messageProjection.ts` | 将 MessageList 已组装的权威消息顺序转换为虚拟行；不得按 active run 的原始启动时间二次排序，避免长任务状态回跳到历史顶部 |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 虚拟列表、锚点与贴底；scroll 状态未变化时不得触发 React commit，首屏稳定轮询应尽快结束 |
 | `src/utils/perfEventRuntime.ts` | 首屏常驻的轻量性能事件缓冲；不得反向静态导入完整诊断模块 |
 | `src/utils/debug.ts` | 完整性能快照、观察器和诊断建议；仅由 perf/debug 模式或开发面板异步加载 |

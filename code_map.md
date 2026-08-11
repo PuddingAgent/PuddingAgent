@@ -137,7 +137,7 @@ DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
 
 Chat first paint → AgentConversationProjectionService
   → 最近 20 条消息 + active run 最近 64 条过程明细/全量摘要
-  → MessageList → MessageViewportRuntime（虚拟化、锚点、贴底）
+  → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
   → 展开过程摘要时才构建 rounds / trace chips

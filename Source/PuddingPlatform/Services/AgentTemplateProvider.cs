@@ -14,6 +14,8 @@ namespace PuddingPlatform.Services;
 /// 保留用于向后兼容旧 Agent（未迁移到新文件格式的实例）。
 /// 新代码应使用 WorkspaceAgentDto 上的嵌入字段。
 /// </remarks>
+// 保留原因：PuddingServiceCollectionExtensions.Platform.cs (L351-353) 在 DI 中注册此类型，
+// 且 ContextPipeline (L36,L89)、SystemPromptBuilder (L18,L36) 通过 IAgentTemplateProvider 接口消费。
 [Obsolete("Template config is now embedded in agent instance manifest. Use WorkspaceAgentDto fields directly.")]
 public sealed class AgentTemplateProvider(
     AgentProfileProvider profileProvider,

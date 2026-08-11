@@ -21,29 +21,11 @@ public interface ILLMConfigResolver
         CancellationToken ct = default);
 
     /// <summary>
-    /// [Obsolete] 解析显意识 LLM 配置。请改用 ResolveAsync(AgentLlmBinding)。
-    /// </summary>
-    [Obsolete("Use ResolveAsync(AgentLlmBinding) instead. Template-based resolution is deprecated.")]
-    Task<LlmRoutingConfig?> ResolveConsciousAsync(
-        string templateId,
-        string? workspaceId,
-        CancellationToken ct = default);
-
-    /// <summary>
     /// 从 Agent 实例的 LLM binding 解析路由：根据 providerId/modelId/profileId
     /// 从 llm.providers.json 补齐 endpoint/key。不再依赖模板文件。
     /// </summary>
     Task<LlmRoutingConfig?> ResolveAsync(
         AgentLlmBinding binding,
-        CancellationToken ct = default);
-
-    /// <summary>
-    /// [Obsolete] 解析潜意识 LLM 配置。请改用 ResolveMemoryAsync(AgentLlmBinding)。
-    /// </summary>
-    [Obsolete("Use ResolveMemoryAsync(AgentLlmBinding) instead.")]
-    Task<MemoryLlmRoutingConfig?> ResolveMemoryAsync(
-        string templateId,
-        string? workspaceId,
         CancellationToken ct = default);
 
     /// <summary>

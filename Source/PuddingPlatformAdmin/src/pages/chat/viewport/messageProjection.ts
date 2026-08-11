@@ -1,7 +1,7 @@
 import type { AgentConversationView } from '../client/types';
 import type { ChatTurn } from '../types';
 import { buildMessageBlocks } from '../types';
-import type { VirtualMessageItem, VirtualMessageHeightHint } from './types';
+import type { VirtualMessageHeightHint, VirtualMessageItem } from './types';
 
 export interface BuildVirtualMessageItemsInput {
   turns: ChatTurn[];
@@ -19,7 +19,10 @@ export interface BuildVirtualMessageItemsOutput {
   activeItemId?: string;
 }
 
-const getHeightHint = (content: string, streaming?: boolean): VirtualMessageHeightHint => {
+const getHeightHint = (
+  content: string,
+  streaming?: boolean,
+): VirtualMessageHeightHint => {
   if (streaming) return 'streaming';
   if (content.length > 1800 || content.includes('```')) return 'rich';
   if (content.length < 120) return 'compact';
@@ -41,7 +44,11 @@ export function buildVirtualMessageItems(
     });
   }
 
-  const blocks = buildMessageBlocks(input.turns, input.agentName, input.currentUser);
+  const blocks = buildMessageBlocks(
+    input.turns,
+    input.agentName,
+    input.currentUser,
+  );
   const messageItemsById = new Map<string, VirtualMessageItem>();
   for (const block of blocks) {
     const prefix = block.role === 'user' ? 'message:user' : 'message:agent';
@@ -59,23 +66,13 @@ export function buildVirtualMessageItems(
   }
   items.push(...messageItemsById.values());
 
-  const kindOrder = { loader: 0, message: 1 };
-  const roleOrder = { user: 0, agent: 1, system: 2, heartbeat: 3 };
-
-  items.sort((a, b) => {
-    const byTime = a.createdAt - b.createdAt;
-    if (byTime !== 0) return byTime;
-
-    const byKind = (kindOrder[a.kind] ?? 99) - (kindOrder[b.kind] ?? 99);
-    if (byKind !== 0) return byKind;
-
-    if (a.kind === 'message' && b.kind === 'message') {
-      const byRole = (roleOrder[a.block.role] ?? 99) - (roleOrder[b.block.role] ?? 99);
-      if (byRole !== 0) return byRole;
-    }
-
-    return a.id.localeCompare(b.id);
-  });
+  // `turns` is already the authoritative display sequence assembled by
+  // MessageList (older history, canonical projection, then an unmatched live
+  // run). Re-sorting the resulting blocks by their original timestamps moves
+  // a long-running active status back above newer messages and also invalidates
+  // the grouping metadata that buildMessageBlocks computed for this sequence.
+  // Keep the supplied order so live run state remains at the current edge of
+  // the conversation without changing its original timestamp/wait duration.
 
   const messageItems = items.filter((item) => item.kind === 'message');
   const active = messageItems.find(

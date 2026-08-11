@@ -1,7 +1,11 @@
-import { buildVirtualMessageItems } from './messageProjection';
 import type { ChatTurn } from '../types';
+import { buildVirtualMessageItems } from './messageProjection';
 
-const makeTurn = (turnId: string, timestamp: number, answer = 'answer'): ChatTurn => ({
+const makeTurn = (
+  turnId: string,
+  timestamp: number,
+  answer = 'answer',
+): ChatTurn => ({
   turnId,
   source: {
     sourceId: 'agent-1',
@@ -62,6 +66,28 @@ describe('buildVirtualMessageItems', () => {
     ]);
   });
 
+  it('keeps an appended long-running status at the current edge of the stream', () => {
+    const recent = makeTurn('recent', 2_000, 'recent answer');
+    const longRunning = makeTurn('long-running', 1_000, '');
+    longRunning.userMessage.text = '';
+    longRunning.assistant.status = 'thinking';
+    longRunning.assistant.isStreaming = true;
+
+    const result = buildVirtualMessageItems({
+      turns: [recent, longRunning],
+      agentName: 'Agent',
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      'message:user:user-recent:user',
+      'message:agent:assistant-recent:assistant:0',
+      'message:agent:assistant-long-running:assistant:0',
+    ]);
+    expect(result.lastMessageItemId).toBe(
+      'message:agent:assistant-long-running:assistant:0',
+    );
+  });
+
   it('preserves system-command source identity through message projection', () => {
     const turn = makeTurn('system-turn', 1000, 'Runtime mode is now Yolo');
     turn.source = {
@@ -105,5 +131,4 @@ describe('buildVirtualMessageItems', () => {
       direction: 'before',
     });
   });
-
 });

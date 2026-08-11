@@ -1,4 +1,4 @@
-using PuddingCode.Models;
+﻿using PuddingCode.Models;
 using PuddingCode.Runtime;
 
 namespace PuddingCode.Platform;
@@ -36,6 +36,8 @@ public sealed record LlmConfig
     /// <summary>
     /// 明文 API Key（仅为向后兼容保留，避免跨服务明文传输）。
     /// </summary>
+    // 保留原因：ControllerLlmProxyService.cs (L31,L85)、SubconsciousOrchestrator.cs (L464)、
+    // AgentExecutionService.Streaming.cs (L314) 共4处生产代码仍直接使用此字段。
     [Obsolete("请改用 KeyVaultId 在 Runtime 侧注入密钥；此字段仅为向后兼容保留。")]
     public string? ApiKey { get; init; }
     public string? ModelId { get; init; }

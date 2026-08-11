@@ -1943,13 +1943,13 @@ describe('MessageList scroll performance', () => {
 
     const rows = screen.getAllByTestId('message-row');
     expect(rows.map((row) => row.getAttribute('data-role'))).toEqual([
-      'agent',
       'user',
       'agent',
+      'agent',
     ]);
-    expect(rows[0].textContent).toContain('older run output');
-    expect(rows[1].textContent).toContain('new current question');
-    expect(rows[2].textContent).not.toContain('older run output');
+    expect(rows[0].textContent).toContain('new current question');
+    expect(rows[1].textContent).not.toContain('older run output');
+    expect(rows[2].textContent).toContain('older run output');
   });
 
   it('attaches active run output to the pending prompt with the same server message id', () => {

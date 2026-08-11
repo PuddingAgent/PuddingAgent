@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PuddingPlatform.Data.Entities;
@@ -24,6 +24,8 @@ public class ChatMessageEntity
 
     // ADR-058: 以下字段已迁移到 AgentTemplate (文件配置)，不再持久化。
     // 保留列但标记为已废弃，Worker 现在通过 IAgentRuntimeProfileResolver 解析。
+        // 保留原因：PlatformDbContext.cs (L349) 的 EF Core Fluent API 配置中引用此属性
+    // 进行数据库列映射（.HasMaxLength(128)），移除会导致迁移脚本断裂。
     [Obsolete("AgentTemplateId 已迁移到 AgentTemplate 文件配置。")]
     public string AgentTemplateId { get; set; } = string.Empty;
 

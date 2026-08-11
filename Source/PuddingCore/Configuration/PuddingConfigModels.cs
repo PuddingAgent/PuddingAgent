@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace PuddingCode.Configuration;
 
@@ -257,6 +257,8 @@ public sealed record PuddingLlmProfileConfig
 /// 中指定 preferredProviderId/preferredModelId，不再通过全局资源池的 profiles/roles 间接寻址。
 /// 保留该类型仅为兼容已有配置文件的反序列化，新配置应整体留空。
 /// </summary>
+// 保留原因：PuddingLlmProvidersConfig.Roles 属性（非[Obsolete]）仍使用此类型作为属性类型，
+// 且测试代码（LlmProfileResolverTests 等）通过此类型构造测试数据。
 [Obsolete("Agent should define preferredProviderId/preferredModelId directly in manifest.json. Global roles are no longer required.")]
 public sealed record PuddingLlmRoleConfig
 {
@@ -393,6 +395,8 @@ public sealed record AgentInstanceManifest
     /// One-time migration source for pre channel-catalog development data.
     /// New writes clear this value after moving the binding to data/channels.
     /// </summary>
+    // 保留原因：WorkspaceAgentFileService.cs:1041 在迁移过程中使用 #pragma warning disable CS0618
+    // 引用此属性进行一次性清理。
     [Obsolete("Use ChannelIds and ChannelInstanceManifest instead.")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AgentFeishuBotConfig? Feishu { get; init; }
