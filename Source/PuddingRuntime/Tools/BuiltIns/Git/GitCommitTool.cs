@@ -1,10 +1,58 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using LibGit2Sharp;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
 namespace PuddingRuntime.Services.Tools
 {
+    /// <summary>Converts a JSON string or an array of strings into a string[] tool parameter.</summary>
+    internal sealed class StringOrStringArrayConverter : JsonConverter<string[]>
+    {
+        public override string[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.Null:
+                    return null;
+                case JsonTokenType.String:
+                    return [reader.GetString()!];
+                case JsonTokenType.StartArray:
+                {
+                    var values = new List<string>();
+                    while (reader.Read())
+                    {
+                        if (reader.TokenType == JsonTokenType.EndArray)
+                            break;
+                        if (reader.TokenType != JsonTokenType.String)
+                            throw new JsonException(
+                                $"Expected a JSON string inside the 'files' array, got '{reader.TokenType}'.");
+                        values.Add(reader.GetString()!);
+                    }
+
+                    return values.ToArray();
+                }
+                default:
+                    throw new JsonException(
+                        $"Cannot convert JSON token '{reader.TokenType}' to a string array for 'files'.");
+            }
+        }
+
+        public override void Write(Utf8JsonWriter writer, string[]? value, JsonSerializerOptions options)
+        {
+            if (value is null)
+            {
+                writer.WriteNullValue();
+                return;
+            }
+
+            writer.WriteStartArray();
+            foreach (var item in value)
+                writer.WriteStringValue(item);
+            writer.WriteEndArray();
+        }
+    }
+
     public sealed record GitCommitArgs
     {
         [ToolParam("Git repository path (defaults to current working directory)")]
@@ -14,6 +62,7 @@ namespace PuddingRuntime.Services.Tools
         public required string Message { get; init; }
 
         [ToolParam("Optional file paths to stage before committing")]
+        [JsonConverter(typeof(StringOrStringArrayConverter))]
         public string[]? Files { get; init; }
 
         [ToolParam("Allow an empty commit when there are no staged changes (default false)")]
