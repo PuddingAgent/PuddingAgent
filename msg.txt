@@ -1,1 +1,1 @@
-refactor: extract SubconsciousSkillEvaluator + SubconsciousLlmInvoker from SubconsciousOrchestrator (P0 god-class #5) 
+﻿refactor: split ContextPipeline into partial classes (Layers+Orchestrator) — P0 god-class #9
