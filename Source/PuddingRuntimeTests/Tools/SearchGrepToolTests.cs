@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Tools;
@@ -397,6 +397,73 @@ public sealed class SearchGrepToolTests
             StringAssert.Contains(result.Output, "a.txt:2: NEEDLE here");
             Assert.IsFalse(result.Output.Contains("b.txt"));
             Assert.IsFalse(result.Output.Contains("[truncated"), "small lines must not be truncated");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_LargeExcludedDir_DoesNot_Starve_SourceFiles()
+    {
+        // 回归：bin/obj 等排除目录中的大量文件不得占用 MaxEnumeratedFiles(2000) 枚举名额，
+        // 否则真实源码目录会被跳过，产生假阴性。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var binDir = Path.Combine(tempDir, "bin");
+        Directory.CreateDirectory(binDir);
+        for (int i = 0; i < 2100; i++)
+            await File.WriteAllTextAsync(Path.Combine(binDir, $"asset{i:D4}.js"), "// build output\n");
+        var srcDir = Path.Combine(tempDir, "src");
+        Directory.CreateDirectory(srcDir);
+        await File.WriteAllTextAsync(Path.Combine(srcDir, "main.cs"), "NEEDLE\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            // 默认 pattern（*.*）：bin 目录 2100 个文件若占用枚举名额，src 将永远不被扫描
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "main.cs");
+            Assert.IsFalse(result.Output.Contains("asset"), "bin 必须在枚举阶段被剪枝");
+            Assert.IsFalse(result.Output.Contains("文件枚举已达上限"), "剪枝后不应触发枚举截断");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_EnumerationTruncation_Is_Declared()
+    {
+        // 回归：枚举达到 MaxEnumeratedFiles(2000) 上限时必须在输出中声明，避免静默截断。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        for (int i = 0; i < 2050; i++)
+            await File.WriteAllTextAsync(Path.Combine(tempDir, $"f{i:D4}.txt"), "NEEDLE\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["max_results"] = "50" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "文件枚举已达上限 2000 个");
         }
         finally
         {

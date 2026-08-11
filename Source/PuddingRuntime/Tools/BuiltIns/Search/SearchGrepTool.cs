@@ -31,6 +31,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const long DefaultMaxTotalBytes = 256 * 1024;
     private const string TruncatedMarker = "...[truncated, original={0} bytes]";
     private const string TotalCapMessage = "结果已截断，共命中 {0} 处，请缩小范围";
+    private const string EnumerationTruncatedMessage = "文件枚举已达上限 {0} 个，结果可能不完整（建议缩小 directory/pattern/file_ext 范围）";
+    private const string ScanBudgetMessage = "扫描已达预算上限（{0} 个文件 / {1} 字节），结果可能不完整";
 
     private static readonly TimeSpan ManagedSearchTimeout = TimeSpan.FromSeconds(10);
     private const int MaxEnumeratedFiles = 2000;
@@ -154,15 +156,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         long matchCount = 0;
         bool totalCapReached = false;
 
-        var filePattern = string.IsNullOrWhiteSpace(pattern) ? "*.*" : pattern;
+                var filePattern = string.IsNullOrWhiteSpace(pattern) ? "*.*" : pattern;
+        bool enumerationTruncated = false;
         try
         {
-            var enumeration = Directory.EnumerateFiles(cwd, filePattern, SearchOption.AllDirectories);
-            foreach (var file in enumeration)
-            {
-                if (files.Count >= MaxEnumeratedFiles) break;
-                files.Add(file);
-            }
+            // 枚举阶段即按目录名剪枝排除目录（bin/obj 等整棵子树不再进入枚举），
+            // 避免排除目录中的文件占用 MaxEnumeratedFiles 名额，导致真实源码目录被跳过（假阴性）。
+            files = EnumerateFilesPruningExcluded(cwd, filePattern, excludeDirs, MaxEnumeratedFiles, out enumerationTruncated);
         }
         catch (Exception ex)
         {
@@ -182,13 +182,16 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(ManagedSearchTimeout);
 
+                bool scanBudgetExceeded = false;
         foreach (var file in files)
         {
-            if (cts.IsCancellationRequested || totalCapReached
-                || scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes) break;
+            if (cts.IsCancellationRequested || totalCapReached || results.Count >= maxResults) break;
             if (errors >= MaxErrors) break;
-
-            if (IsPathInExcludedDir(file, cwd, excludeDirs)) continue;
+            if (scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes)
+            {
+                scanBudgetExceeded = true;
+                break;
+            }
 
             if (extFilter is { Length: > 0 })
             {
@@ -239,13 +242,78 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             catch { errors++; }
         }
 
-        if (results.Count == 0 && !totalCapReached)
-            return ToolExecutionResult.Ok(scannedFiles > 0 ? "(no matches)" : "(no files scanned)");
+        var notes = new List<string>();
+        if (enumerationTruncated)
+            notes.Add(string.Format(EnumerationTruncatedMessage, MaxEnumeratedFiles));
+        if (scanBudgetExceeded)
+            notes.Add(string.Format(ScanBudgetMessage, MaxScannedFiles, MaxScannedBytes));
+        if (totalCapReached)
+            notes.Add(string.Format(TotalCapMessage, matchCount));
+
+        if (results.Count == 0)
+        {
+            var emptyMsg = scannedFiles > 0 ? "(no matches)" : "(no files scanned)";
+            if (notes.Count > 0)
+                return ToolExecutionResult.Ok(emptyMsg + "\n" + string.Join("\n", notes));
+            return ToolExecutionResult.Ok(emptyMsg);
+        }
 
         var output = string.Join("\n", results);
-        if (totalCapReached)
-            output += "\n" + string.Format(TotalCapMessage, matchCount);
+        if (notes.Count > 0)
+            output += "\n" + string.Join("\n", notes);
         return ToolExecutionResult.Ok(output);
+    }
+
+        /// <summary>
+    /// 深度优先枚举文件：按目录名剪枝，排除目录（bin/obj 等）的整棵子树直接跳过。
+    /// 避免排除目录中的大量文件占用枚举名额，导致真实源码目录被跳过（假阴性），
+    /// 同时避免遍历 bin/obj 等大目录带来的无谓开销。
+    /// </summary>
+    private static List<string> EnumerateFilesPruningExcluded(
+        string root, string pattern, HashSet<string> excludeDirs, int maxFiles, out bool truncated)
+    {
+        var files = new List<string>(1024);
+        truncated = false;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var stack = new Stack<string>();
+        stack.Push(root);
+
+        while (stack.Count > 0)
+        {
+            var dir = stack.Pop();
+            if (!visited.Add(dir)) continue; // 防符号链接/联接导致的循环
+
+            string[] subDirs;
+            string[] dirFiles;
+            try
+            {
+                subDirs = Directory.GetDirectories(dir, "*", SearchOption.TopDirectoryOnly);
+                dirFiles = Directory.GetFiles(dir, pattern, SearchOption.TopDirectoryOnly);
+            }
+            catch (Exception) when (dir != root)
+            {
+                continue; // 子目录不可访问或枚举失败：跳过该目录
+            }
+            // 根目录枚举失败则向上抛出，由调用方转换为 Fail
+
+            foreach (var sub in subDirs)
+            {
+                if (excludeDirs.Contains(Path.GetFileName(sub))) continue;
+                stack.Push(sub);
+            }
+
+            foreach (var file in dirFiles)
+            {
+                if (files.Count >= maxFiles)
+                {
+                    truncated = true;
+                    return files;
+                }
+                files.Add(file);
+            }
+        }
+
+        return files;
     }
 
     private static bool LooksLikeRegex(string q) =>
