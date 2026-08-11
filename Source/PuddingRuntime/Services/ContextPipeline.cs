@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -12,7 +12,6 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingMemoryEngine.Services;
-using PuddingPlatform.Services;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
@@ -849,13 +848,7 @@ public sealed class ContextPipeline
 
         sb.AppendLine("Memory tool hint: use `search_memory` when you need to recall user facts from memory library; use `query_session_logs` for paged message transcripts by default, and raw event actions only for diagnostics.");
         if (ShouldShowSubAgentHint(request))
-        {
-            sb.AppendLine("Sub-agent (`spawn_sub_agent`) best practices:");
-            sb.AppendLine("- Delegate multi-step exploration/audit/search tasks to sub-agents to keep your context clean.");
-            sb.AppendLine("- Sub-agents work in parallel: launch 2-3 simultaneously for independent research paths.");
-            sb.AppendLine("- Define clear task scope: what to find, how to judge, output format.");
-            sb.AppendLine("- Do NOT delegate: 1-2 step operations, real-time user interaction, or decisions needing your judgment.");
-        }
+            AppendMandatoryDelegationPolicy(sb);
 
         return Task.FromResult(sb.ToString());
     }
@@ -899,13 +892,19 @@ public sealed class ContextPipeline
 
         sb.AppendLine("Memory tool hint: use `search_memory` when you need to recall user facts from memory library; use `query_session_logs` for paged message transcripts by default, and raw event actions only for diagnostics.");
         if (ShouldShowSubAgentHint(request))
-        {
-            sb.AppendLine("Sub-agent (`spawn_sub_agent`) best practices:");
-            sb.AppendLine("- Delegate multi-step exploration/audit/search tasks to sub-agents to keep your context clean.");
-            sb.AppendLine("- Sub-agents work in parallel: launch 2-3 simultaneously for independent research paths.");
-            sb.AppendLine("- Define clear task scope: what to find, how to judge, output format.");
-            sb.AppendLine("- Do NOT delegate: 1-2 step operations, real-time user interaction, or decisions needing your judgment.");
-        }
+            AppendMandatoryDelegationPolicy(sb);
+    }
+
+    private static void AppendMandatoryDelegationPolicy(StringBuilder sb)
+    {
+        sb.AppendLine("Mandatory delegation policy (`smart_*` / `spawn_sub_agent`):");
+        sb.AppendLine("- Before the first tool call, you MUST classify the request as `Direct` or `Delegated`. This is an execution requirement.");
+        sb.AppendLine("- You MUST choose `Delegated` when the work is expected to require more than 3 tool calls, spans multiple files or sources, contains independent workstreams, or the user explicitly requests delegation.");
+        sb.AppendLine("- In `Delegated` mode, you MUST call the matching visible `smart_explore`, `smart_research`, `smart_plan`, `smart_review`, `smart_develop`, `smart_test`, `smart_deploy`, or `spawn_sub_agent` within the first 3 tool calls.");
+        sb.AppendLine("- If no matching delegation tool is visible, you MUST report the capability blocker and MUST NOT silently perform the delegated workload with low-level tools.");
+        sb.AppendLine("- Every delegated task MUST be atomic and MUST define its scope, success criteria, and output contract. The parent Agent MUST retain planning, bounded verification, integration, and final judgment.");
+        sb.AppendLine("- After delegation, you MUST NOT repeat the same exploration, research, implementation, review, or testing with low-level tools. Bounded integration and verification are limited to at most 3 low-level tool calls.");
+        sb.AppendLine("- You MUST choose `Direct` only when no `Delegated` condition applies and the work can finish within 3 tool calls, requires real-time user interaction, or depends on the parent Agent's judgment.");
     }
 
     private static bool ShouldShowSubAgentHint(ContextRequest request)

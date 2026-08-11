@@ -10,7 +10,7 @@ namespace PuddingRuntime.Services.Tools;
     description: "智能代码实现。用自然语言描述开发任务，内部委托 Developer 子代理自动实现代码，" +
                  "包括文件编辑、构建验证。需要显式授权（High 权限）。" +
                  "参数：task（开发任务描述）、scope（可选，工作目录）、" +
-                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Developer_Model 决定。",
+                 "执行预算由 Pudding 系统配置。模型由 Agent 配置的 Developer_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.None,
@@ -27,7 +27,6 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
     }
 
     protected override string RoleName => "developer";
-    protected override int DefaultMaxRounds => 200;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
     protected override string AllowedTools => "file_read,file_search,list_dir,search_grep,code_outline,code_symbol_search,code_callers,code_callees,project_map,file_patch,file_write,terminal_start,terminal_wait,terminal_read,terminal_status,terminal_cancel";
@@ -40,7 +39,7 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
 
         _logger.LogInformation("[SmartDevelop] agent={Agent} task={Task}", context.AgentInstanceId, args.Task);
 
-        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
+        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct);
     }
 
     protected override string BuildTaskPrompt(SmartDevelopArgs args, ToolExecutionContext context)

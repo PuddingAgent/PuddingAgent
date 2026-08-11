@@ -31,6 +31,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IVisualArtifactResolver? _visualArtifactResolver;
     private readonly IAudioArtifactResolver? _audioArtifactResolver;
     private readonly IRuntimeExecutionConfigService? _executionConfig;
+    private readonly ILlmGatewayUsageRecorder? _gatewayUsageRecorder;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -43,7 +44,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     ProviderRateLimiter? rateLimiter = null,
     IVisualArtifactResolver? visualArtifactResolver = null,
     IRuntimeExecutionConfigService? executionConfig = null,
-    IAudioArtifactResolver? audioArtifactResolver = null)
+    IAudioArtifactResolver? audioArtifactResolver = null,
+    ILlmGatewayUsageRecorder? gatewayUsageRecorder = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -56,6 +58,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _visualArtifactResolver = visualArtifactResolver;
         _executionConfig = executionConfig;
         _audioArtifactResolver = audioArtifactResolver;
+        _gatewayUsageRecorder = gatewayUsageRecorder;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -72,6 +75,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var toolSpecs = ToToolSpecs(tools);
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
+        var usageActivityId = Guid.NewGuid().ToString("N");
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
 
@@ -187,7 +191,23 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     summary: "Direct LLM chat request completed.",
                     metadata: BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count, result.Usage),
                     error: null,
-                    CancellationToken.None);
+                    CancellationToken.None,
+                    activityId: usageActivityId);
+
+                if (result.Usage is not null && _gatewayUsageRecorder is not null)
+                {
+                    await _gatewayUsageRecorder.RecordRequiredAsync(
+                        result.Usage,
+                        $"runtime-activity:{usageActivityId}",
+                        "chat",
+                        workspaceId,
+                        sessionId,
+                        agentTemplateId,
+                        config.ProviderId,
+                        config.Model,
+                        startedAt,
+                        CancellationToken.None);
+                }
 
                 return result;
             }
@@ -302,6 +322,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var toolSpecs = ToToolSpecs(tools);
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
+        var usageActivityId = Guid.NewGuid().ToString("N");
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
 
@@ -586,7 +607,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             terminalRecorded = true;
             sw.Stop();
             var succeededMetadata = MergeMetadata(
-                BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                BuildMetadata(
+                    config,
+                    agentTemplateId,
+                    messages.Count,
+                    toolSpecs.Count,
+                    streamDiagnostics.Usage),
                 streamDiagnostics.ToMetadata());
             await RecordActivityAsync(
                 trace,
@@ -598,8 +624,23 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 summary: "Direct LLM streaming request completed.",
                 succeededMetadata,
                 error: null,
-                CancellationToken.None);
+                CancellationToken.None,
+                activityId: usageActivityId);
             await RecordLlmStreamDiagnosticsMetricsAsync(trace, streamDiagnostics, RuntimeActivityStatuses.Succeeded, CancellationToken.None);
+            if (streamDiagnostics.Usage is not null && _gatewayUsageRecorder is not null)
+            {
+                await _gatewayUsageRecorder.RecordRequiredAsync(
+                    streamDiagnostics.Usage,
+                    $"runtime-activity:{usageActivityId}",
+                    "chat_stream",
+                    workspaceId,
+                    sessionId,
+                    agentTemplateId,
+                    config.ProviderId,
+                    config.Model,
+                    startedAt,
+                    CancellationToken.None);
+            }
         }
         finally
         {
@@ -820,7 +861,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string summary,
         IReadOnlyDictionary<string, string> metadata,
         Exception? error,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? activityId = null)
     {
         if (_activitySink is null)
         {
@@ -832,6 +874,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         {
             await _activitySink.RecordAsync(new RuntimeActivity
             {
+                ActivityId = activityId ?? Guid.NewGuid().ToString("N"),
                 Trace = trace,
                 Component = RuntimeActivityComponents.LlmGateway,
                 Operation = operation,
@@ -1066,12 +1109,15 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         private long _contentChars;
         private long _reasoningChars;
         private long _toolDeltaCount;
-                private long _usageChunkCount;
+        private long _usageChunkCount;
+        private TokenUsageDto? _usage;
         private long _timeToFirstTokenMs;
 
         public long ChunkCount { get; private set; }
 
-                public long TimeToFirstTokenMs => _timeToFirstTokenMs;
+        public long TimeToFirstTokenMs => _timeToFirstTokenMs;
+
+        public TokenUsageDto? Usage => _usage;
 
         public void Observe(StreamDelta delta)
         {
@@ -1093,7 +1139,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             if (delta.ToolCallIndex.HasValue)
                 _toolDeltaCount++;
             if (delta.Usage is not null)
+            {
                 _usageChunkCount++;
+                _usage = delta.Usage;
+            }
         }
 
         public IReadOnlyDictionary<string, string> ToMetadata()
@@ -1114,7 +1163,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ["stream_content_chars"] = _contentChars.ToString(),
                 ["stream_reasoning_chars"] = _reasoningChars.ToString(),
                 ["stream_tool_delta_count"] = _toolDeltaCount.ToString(),
-                                ["stream_usage_chunk_count"] = _usageChunkCount.ToString(),
+                ["stream_usage_chunk_count"] = _usageChunkCount.ToString(),
                 ["stream_ttft_ms"] = _timeToFirstTokenMs.ToString(),
             };
         }

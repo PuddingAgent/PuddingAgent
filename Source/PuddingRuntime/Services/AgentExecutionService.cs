@@ -1423,8 +1423,11 @@ public sealed partial class AgentExecutionService
             profile_id = request.LlmProfile?.ProfileId,
             model_id = request.LlmProfile?.ModelId,
             max_rounds = request.MaxRounds,
+            budget_grace_rounds = request.BudgetGraceRounds,
             max_elapsed_seconds = request.MaxElapsedSeconds,
+            budget_grace_timeout_seconds = request.BudgetGraceTimeoutSeconds,
             max_tool_calls = request.MaxToolCallsTotal,
+            resumed = request.IsResumedSubAgentRun,
         }, CancellationToken.None);
 
         _logger.LogInformation(

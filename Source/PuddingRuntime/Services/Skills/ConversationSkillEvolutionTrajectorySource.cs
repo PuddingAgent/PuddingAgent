@@ -1,15 +1,13 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
-using PuddingPlatform.Data;
-using PuddingPlatform.Data.Entities;
 
 namespace PuddingRuntime.Services.Skills;
 
 /// <summary>Reads verified tool chains from the canonical conversation event store.</summary>
 public sealed class ConversationSkillEvolutionTrajectorySource(
-    IDbContextFactory<PlatformDbContext> dbFactory,
+    ISkillEvolutionDataAccess dataAccess,
     ILogger<ConversationSkillEvolutionTrajectorySource> logger)
     : ISkillEvolutionTrajectorySource
 {
@@ -24,20 +22,13 @@ public sealed class ConversationSkillEvolutionTrajectorySource(
         if (string.IsNullOrWhiteSpace(agentInstanceId))
             throw new ArgumentException("Agent instance id is required.", nameof(agentInstanceId));
 
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
         // Filter to usable trajectories after loading events. Looking at only the
         // latest N successful commands starves the pipeline whenever those turns
         // contain fewer than two tool calls, even if older verified chains exist.
         var scanLimit = Math.Clamp(limit * 20, 20, 200);
-        var commands = await db.ChatExecutionCommands
-            .AsNoTracking()
-            .Where(command => command.WorkspaceId == workspaceId
-                              && command.AgentInstanceId == agentInstanceId
-                              && command.Status == "succeeded")
-            .OrderByDescending(command => command.CompletedAt ?? command.CreatedAt)
-            .Take(scanLimit)
-            .ToListAsync(ct);
-        commands = commands
+        var commandRows = await dataAccess.GetRecentSuccessfulCommandsAsync(
+            workspaceId, agentInstanceId, scanLimit, ct);
+        var commands = commandRows
             .Where(command => !IsExcludedFromLearning(command.MetadataJson))
             .ToList();
 
@@ -46,19 +37,14 @@ public sealed class ConversationSkillEvolutionTrajectorySource(
 
         var commandIds = commands.Select(command => command.CommandId).ToArray();
         var userMessageIds = commands.Select(command => command.UserMessageId).ToArray();
-        var events = await db.ConversationEvents
-            .AsNoTracking()
-            .Where(evt => evt.CommandId != null
-                          && commandIds.Contains(evt.CommandId)
-                          && (evt.Type == ConversationEventTypes.ToolCallRequested
-                              || evt.Type == ConversationEventTypes.ToolCallCompleted
-                              || evt.Type == ConversationEventTypes.ToolCallFailed))
-            .OrderBy(evt => evt.Sequence)
-            .ToListAsync(ct);
-        var goals = await db.ChatMessages
-            .AsNoTracking()
-            .Where(message => userMessageIds.Contains(message.MessageId))
-            .ToDictionaryAsync(message => message.MessageId, message => message.Content, ct);
+        var eventTypes = new[]
+        {
+            ConversationEventTypes.ToolCallRequested,
+            ConversationEventTypes.ToolCallCompleted,
+            ConversationEventTypes.ToolCallFailed,
+        };
+        var events = await dataAccess.GetEventsByCommandIdsAsync(commandIds, eventTypes, ct);
+        var goals = await dataAccess.GetMessageContentsByIdsAsync(userMessageIds, ct);
 
         var eventsByCommand = events
             .Where(evt => evt.CommandId is not null)
@@ -98,7 +84,7 @@ public sealed class ConversationSkillEvolutionTrajectorySource(
     }
 
     private static IReadOnlyList<SkillEvolutionToolStep>? TryBuildSuccessfulSteps(
-        IReadOnlyList<ConversationEventEntity> events)
+        IReadOnlyList<ConversationEventRow> events)
     {
         var pending = new List<(string Name, string Arguments)>();
         var steps = new List<SkillEvolutionToolStep>();

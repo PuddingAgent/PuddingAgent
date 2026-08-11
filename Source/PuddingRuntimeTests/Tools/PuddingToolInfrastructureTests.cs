@@ -213,7 +213,7 @@ public sealed partial class PuddingToolInfrastructureTests
             ["query_sessions"] = ["action", "session_id", "before", "limit"],
             ["query_session_logs"] = ["action", "workspace_id", "agent_instance_id", "day", "from_day", "to_day", "session_id", "query", "regex", "diagnostic", "include_events", "after_sequence", "page", "window_size", "limit"],
             ["search_grep"] = ["query", "pattern", "case_sensitive", "max_results"],
-            ["spawn_sub_agent"] = ["task", "tasks", "question", "scope", "already_known", "effort", "stop_condition", "output", "agent_template", "sync", "model", "tools", "permission_mode", "timeout_seconds", "plan_id", "task_node_id", "parent_task_node_id", "depth", "max_depth", "role_in_plan"],
+            ["spawn_sub_agent"] = ["task", "tasks", "question", "scope", "already_known", "effort", "stop_condition", "output", "agent_template", "sync", "model", "resume_sub_agent_id", "tools", "permission_mode", "plan_id", "task_node_id", "parent_task_node_id", "depth", "max_depth", "role_in_plan"],
             ["manage_tasks"] = ["operation", "task_id", "title", "status"],
             ["send_message"] = ["to", "content", "audience", "visibility", "room_id", "priority", "reply_to_message_id"],
             ["receive_messages"] = ["endpoint_id", "endpoint_kind", "room_id", "limit", "include_delivered", "ack"],

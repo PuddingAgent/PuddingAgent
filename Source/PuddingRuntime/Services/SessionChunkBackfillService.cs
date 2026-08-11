@@ -4,9 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingMemoryEngine.Data;
-using PuddingPlatform.Data;
-using PuddingPlatform.Data.Entities;
 
 namespace PuddingRuntime.Services;
 
@@ -19,20 +18,20 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class SessionChunkBackfillService : BackgroundService
 {
-    private readonly IDbContextFactory<PlatformDbContext> _platformDbFactory;
+    private readonly IChatMessageBackfillSource _backfillSource;
     private readonly IDbContextFactory<MemoryLibraryDbContext> _memoryDbFactory;
     private readonly ISessionChunkIndexer _indexer;
     private readonly IOptions<SessionChunkBackfillOptions> _options;
     private readonly ILogger<SessionChunkBackfillService> _logger;
 
     public SessionChunkBackfillService(
-        IDbContextFactory<PlatformDbContext> platformDbFactory,
+        IChatMessageBackfillSource backfillSource,
         IDbContextFactory<MemoryLibraryDbContext> memoryDbFactory,
         ISessionChunkIndexer indexer,
         IOptions<SessionChunkBackfillOptions> options,
         ILogger<SessionChunkBackfillService> logger)
     {
-        _platformDbFactory = platformDbFactory;
+        _backfillSource = backfillSource;
         _memoryDbFactory = memoryDbFactory;
         _indexer = indexer;
         _options = options;
@@ -94,18 +93,8 @@ public sealed class SessionChunkBackfillService : BackgroundService
 
         while (!ct.IsCancellationRequested)
         {
-            // a) 键集分页：禁用 Skip/Take 偏移分页，43 万行避免 O(N²)。
-            List<ChatMessageEntity> batch;
-            await using (var platformDb = await _platformDbFactory.CreateDbContextAsync(ct))
-            {
-                batch = await platformDb.ChatMessages
-                    .AsNoTracking()
-                    .Where(m => m.Id > lastId)
-                    .OrderBy(m => m.Id)
-                    .Take(batchSize)
-                    .ToListAsync(ct);
-            }
-
+            // a) 键集分页：通过 IChatMessageBackfillSource 接口（避免直接依赖 PuddingPlatform）。
+            var batch = await _backfillSource.GetBatchAfterIdAsync(lastId, batchSize, ct);
             if (batch.Count == 0)
                 break;
 
@@ -154,7 +143,7 @@ public sealed class SessionChunkBackfillService : BackgroundService
     }
 
     private async Task<HashSet<string>> LoadExistingMessageIdsAsync(
-        IReadOnlyCollection<ChatMessageEntity> candidates,
+        IReadOnlyCollection<BackfillChatMessageRow> candidates,
         CancellationToken ct)
     {
         var ids = candidates

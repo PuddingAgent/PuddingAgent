@@ -8,7 +8,7 @@ namespace PuddingRuntime.Services;
 
 /// <summary>
 /// 文件化运行时执行配置服务。
-/// 子代理并发、超时和默认权限模式会影响调度安全边界，必须由统一配置文件承载；
+/// 子代理并发、轮次、工具调用、超时和默认权限模式会影响调度安全边界，必须由统一配置文件承载；
 /// 不能散落在工具实现、Controller 或测试辅助代码中，否则后续调度策略会再次腐烂。
 /// </summary>
 public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigService
@@ -93,10 +93,26 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
         var subAgents = options.SubAgents ?? new SubAgentExecutionOptions();
         var maxPerTemplate = Math.Max(1, subAgents.MaxConcurrentPerTemplate);
         var maxPerWorkspace = Math.Max(maxPerTemplate, subAgents.MaxConcurrentPerWorkspace);
-        var maxTimeout = Math.Max(1, subAgents.MaxTimeoutSeconds);
-        var defaultTimeout = subAgents.DefaultTimeoutSeconds <= 0
-            ? maxTimeout
-            : Math.Min(subAgents.DefaultTimeoutSeconds, maxTimeout);
+        // These are execution safety budgets, not task-planning hints. Keep a large system floor so an
+        // old runtime.execution.json cannot silently restore the former 200/400/3600 limits.
+        var maxRounds = Math.Max(SubAgentExecutionOptions.LargeTaskMaxRounds, subAgents.MaxRounds);
+        var maxToolCallsTotal = Math.Max(
+            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
+            subAgents.MaxToolCallsTotal);
+        var maxTimeout = Math.Max(
+            SubAgentExecutionOptions.LargeTaskMaxTimeoutSeconds,
+            subAgents.MaxTimeoutSeconds);
+        var budgetGraceRounds = Math.Clamp(
+            subAgents.BudgetGraceRounds,
+            10,
+            50);
+        var configuredGraceTimeout = subAgents.BudgetGraceTimeoutSeconds > 0
+            ? subAgents.BudgetGraceTimeoutSeconds
+            : SubAgentExecutionOptions.DefaultBudgetGraceTimeoutSeconds;
+        var budgetGraceTimeoutSeconds = Math.Clamp(
+            configuredGraceTimeout,
+            1,
+            Math.Max(1, maxTimeout - 1));
         var parentFinalizationReserve = Math.Max(0, subAgents.ParentFinalizationReserveSeconds);
         var permissionMode = string.Equals(subAgents.DefaultPermissionMode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase)
             ? SubAgentPermissionModes.Low
@@ -117,8 +133,11 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
             {
                 MaxConcurrentPerTemplate = maxPerTemplate,
                 MaxConcurrentPerWorkspace = maxPerWorkspace,
-                DefaultTimeoutSeconds = defaultTimeout,
+                MaxRounds = maxRounds,
+                MaxToolCallsTotal = maxToolCallsTotal,
                 MaxTimeoutSeconds = maxTimeout,
+                BudgetGraceRounds = budgetGraceRounds,
+                BudgetGraceTimeoutSeconds = budgetGraceTimeoutSeconds,
                 ParentFinalizationReserveSeconds = parentFinalizationReserve,
                 DefaultPermissionMode = permissionMode,
             },

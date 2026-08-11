@@ -4,10 +4,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntimeTests.Services;
@@ -212,7 +214,7 @@ public sealed class SessionChunkBackfillServiceTests
         bool enabled,
         int batchSize = 50)
         => new(
-            platformFactory,
+            new BackfillChatMessageSource(platformFactory),
             memoryFactory,
             indexer,
             Options.Create(new SessionChunkBackfillOptions

@@ -7,7 +7,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "smart_explore",
     name: "Smart Explore",
-    description: "智能探索工具（统一入口）。合并了原 smart_search（代码搜索）和 smart_query_session_log（会话日志查询）的功能。" +
+    description: "智能探索工具（统一入口）。统一替代已退役的 smart_search（代码搜索）和 smart_query_session_log（会话日志查询）。" +
                  "用自然语言描述探索目标，内部委托 Explorer 子代理自动执行多轮探索。" +
                  "支持三种场景：\n" +
                  "① 代码/文件探索 — file_search + search_grep + file_read + code_outline\n" +
@@ -15,7 +15,7 @@ namespace PuddingRuntime.Services.Tools;
                  "③ 通用文件系统浏览 — list_dir + file_search + project_map\n" +
                  "参数：task（探索任务，自然语言描述）、scope（可选，目录/会话范围）、" +
                  "session_id（可选，目标会话ID）、focus（可选，重点关注哪些方面）、" +
-                 "max_results（可选，默认 15）、timeout_seconds（可选，默认 1800s）。" +
+                 "max_results（可选，默认 15）。执行预算由 Pudding 系统配置。" +
                  "模型由 Agent 配置的 Explorer_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
@@ -33,8 +33,6 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
     }
 
     protected override string RoleName => "explorer";
-    protected override int DefaultTimeoutSeconds => 30 * 60;
-    protected override int DefaultMaxRounds => 32;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-flash" };
     protected override string? AllowedTools =>
@@ -51,7 +49,7 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
         _logger.LogInformation("[SmartExplore] agent={Agent} task={Task} scope={Scope}",
             context.AgentInstanceId, args.Task, args.Scope ?? "(root)");
 
-        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
+        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct);
     }
 
     protected override string BuildTaskPrompt(SmartExploreArgs args, ToolExecutionContext context)
@@ -86,7 +84,7 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
         sb.AppendLine("Only fall back to `file_read` + `search_grep` when the code index tools don't have what you need.");
         sb.AppendLine();
         sb.AppendLine("### ⚠️ RULES");
-        sb.AppendLine("- Allowed: list_dir, file_search, search_grep, file_read, code_outline, code_symbol_search, code_explore, project_map, query_session_logs (grep/messages/list_days/list_sessions), smart_query_session_log.");
+        sb.AppendLine("- Allowed: list_dir, file_search, search_grep, file_read, code_outline, code_symbol_search, code_explore, project_map, query_session_logs (grep/messages/list_days/list_sessions).");
         sb.AppendLine("- NEVER: file_write, file_patch, shell, spawn_sub_agent.");
         sb.AppendLine("- If a tool fails: try alternative tool, then report the gap.");
         sb.AppendLine("- For code/files, every reported path MUST be the normalized absolute path returned by file_search or resolved from the inspected artifact.");

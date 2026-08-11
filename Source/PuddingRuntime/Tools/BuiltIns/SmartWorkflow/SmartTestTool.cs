@@ -9,8 +9,8 @@ namespace PuddingRuntime.Services.Tools;
     name: "Smart Test",
     description: "智能测试执行。用自然语言描述测试需求，内部委托 Tester 子代理自动运行测试、" +
                  "分析失败原因、生成测试报告。需要显式授权（High 权限）。" +
-                 "参数：task（测试任务）、scope（可选，测试范围/项目）、" +
-                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Tester_Model 决定。",
+                 "参数：task（测试任务）、scope（可选，测试范围/项目）。执行预算由 Pudding 系统配置。" +
+                 "模型由 Agent 配置的 Tester_Model 决定。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.None,
@@ -27,7 +27,6 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
     }
 
     protected override string RoleName => "tester";
-    protected override int DefaultMaxRounds => 200;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
 
@@ -39,7 +38,7 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
 
         _logger.LogInformation("[SmartTest] agent={Agent} task={Task}", context.AgentInstanceId, args.Task);
 
-        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
+        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct);
     }
 
     protected override string BuildTaskPrompt(SmartTestArgs args, ToolExecutionContext context)

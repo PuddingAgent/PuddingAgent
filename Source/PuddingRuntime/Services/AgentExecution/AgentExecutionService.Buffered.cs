@@ -238,6 +238,28 @@ public sealed partial class AgentExecutionService
                 throw;
             }
             history.Add(new ChatMessage(ChatRole.System, systemPromptText));
+            if (request.IsResumedSubAgentRun)
+            {
+                // A resumed child normally still has its in-memory history because SessionId is stable.
+                // If process restart or history expiry cleared it, rehydrate the persisted conversation
+                // before adding the new continuation task. The freshly assembled system prompt remains first.
+                var persistedHistory = new List<ChatMessage>();
+                await _contextManager.TryHydrateStreamHistoryFromDbAsync(
+                    request.SessionId,
+                    persistedHistory,
+                    request.LlmConfig?.MaxInputTokens
+                        ?? template.Runtime?.MaxContextTokens
+                        ?? 8192,
+                    ct);
+                if (persistedHistory.Count > 0)
+                {
+                    history.AddRange(persistedHistory.Where(message => message.Role != ChatRole.System));
+                    _logger.LogInformation(
+                        "[AgentExec:SubAgent] Rehydrated {Count} persisted messages for resumed child session={Session}",
+                        persistedHistory.Count,
+                        request.SessionId);
+                }
+            }
         }
         else if (template.Memory?.EnableSessionMemory == true
               || template.Memory?.EnableWorkspaceMemory == true)
@@ -335,6 +357,26 @@ public sealed partial class AgentExecutionService
         var maxRounds = request.MaxRounds > 0
             ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
             : _guardrails.MaxRounds;
+        var isSubAgentExecution = request.ExecutionIdentity?.Kind == RuntimeExecutionKind.SubAgent;
+        var subAgentBudget = isSubAgentExecution
+            ? new SubAgentBudgetLifecycle(
+                maxRounds,
+                request.BudgetGraceRounds > 0
+                    ? request.BudgetGraceRounds
+                    : SubAgentExecutionOptions.DefaultBudgetGraceRounds,
+                maxElapsed,
+                request.BudgetGraceTimeoutSeconds > 0
+                    ? request.BudgetGraceTimeoutSeconds
+                    : SubAgentExecutionOptions.DefaultBudgetGraceTimeoutSeconds,
+                maxToolCallsTotal,
+                request.IsResumedSubAgentRun)
+            : null;
+        var hardLoopRounds = subAgentBudget is null
+            ? maxRounds
+            // The final iteration performs only the grace-exhaustion check. It does not
+            // start another LLM round, so the child still receives exactly GraceRounds
+            // cleanup rounds and reaches BudgetExhausted before terminal post-processing.
+            : checked(maxRounds + subAgentBudget.GraceRounds + 1);
 
         var loopCtx = new AgentLoopContext
         {
@@ -383,7 +425,7 @@ public sealed partial class AgentExecutionService
             _contextManager.MarkSessionExecuting(request.SessionId);
             await FireHooksAsync(h => h.OnLoopStartAsync(loopCtx, ct));
 
-            for (int round = 0; round < maxRounds; round++)
+            for (int round = 0; round < hardLoopRounds; round++)
             {
                 // ── 检查点 A：取消 / 冻结 ─────────────────────────────
                 if (ct.IsCancellationRequested || _controlRegistry.IsFrozen(request.SessionId))
@@ -391,25 +433,73 @@ public sealed partial class AgentExecutionService
                     var deadlineReached =
                         request.ExecutionDeadlineUtc is { } deadline &&
                         DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
-                    stopReason = deadlineReached
-                        ? AgentLoopStopReason.MaxElapsedReached
+                    // A child that reaches its absolute deadline is still a resumable budget
+                    // checkpoint even if one long provider/tool operation consumed the reserved
+                    // cleanup window before the next loop boundary could inject the grace notice.
+                    var subAgentDeadlineReached = deadlineReached && subAgentBudget is not null;
+                    stopReason = subAgentDeadlineReached
+                        ? AgentLoopStopReason.BudgetExhausted
+                        : deadlineReached
+                            ? AgentLoopStopReason.MaxElapsedReached
                         : AgentLoopStopReason.Cancelled;
-                    execState = deadlineReached
-                        ? AgentExecutionState.Failed
+                    execState = subAgentDeadlineReached
+                        ? AgentExecutionState.BudgetExhausted
+                        : deadlineReached
+                            ? AgentExecutionState.Failed
                         : AgentExecutionState.Cancelled;
-                    subAgentTerminalStatus = deadlineReached
-                        ? "timed_out"
+                    subAgentTerminalStatus = subAgentDeadlineReached
+                        ? "budget_exhausted"
+                        : deadlineReached
+                            ? "timed_out"
                         : "cancelled";
-                    executionError = deadlineReached
-                        ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
+                    executionError = subAgentDeadlineReached
+                        ? "Sub-agent cleanup grace reached the hard execution deadline; the preserved session can be resumed with a fresh system budget."
+                        : deadlineReached
+                            ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
                         : "Execution cancelled.";
-                    finalMessage = executionError;
+                    if (finalMessage == "(no response)")
+                        finalMessage = executionError;
                     await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
                     break;
                 }
 
                 // ── 检查点 B：最大总耗时 ──────────────────────────────
-                if (totalSw.Elapsed > maxElapsed)
+                if (subAgentBudget is not null)
+                {
+                    var budgetDecision = subAgentBudget.EvaluateBeforeRound(round, totalSw.Elapsed);
+                    foreach (var notice in budgetDecision.Notices)
+                    {
+                        history.Add(new ChatMessage(ChatRole.System, notice.Message));
+                        await TryAppendSubAgentEventAsync(
+                            subAgentRunId,
+                            ConversationEventTypes.SubAgentBudgetNotice,
+                            new
+                            {
+                                sub_agent_id = request.SessionId,
+                                kind = notice.Kind,
+                                round = round + 1,
+                                primary_max_rounds = subAgentBudget.PrimaryMaxRounds,
+                                grace_rounds = subAgentBudget.GraceRounds,
+                                remaining_grace_rounds = budgetDecision.RemainingGraceRounds,
+                                elapsed_ms = totalSw.ElapsedMilliseconds,
+                            });
+                    }
+
+                    if (budgetDecision.ShouldStop)
+                    {
+                        stopReason = AgentLoopStopReason.BudgetExhausted;
+                        execState = AgentExecutionState.BudgetExhausted;
+                        subAgentTerminalStatus = "budget_exhausted";
+                        executionError =
+                            $"Sub-agent exhausted its cleanup grace ({subAgentBudget.GraceRounds} rounds); " +
+                            "resume the preserved child session to continue with a fresh system budget.";
+                        if (finalMessage == "(no response)")
+                            finalMessage = executionError;
+                        await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, default));
+                        break;
+                    }
+                }
+                else if (totalSw.Elapsed > maxElapsed)
                 {
                     _logger.LogWarning(
                         "[AgentExec] MaxElapsed={Max} exceeded session={Session}",
@@ -431,6 +521,8 @@ public sealed partial class AgentExecutionService
                     sub_agent_id = request.SessionId,
                     round = round + 1,
                     max_rounds = maxRounds,
+                    grace_rounds = subAgentBudget?.GraceRounds ?? 0,
+                    in_grace = subAgentBudget?.IsInGrace == true,
                     tool_calls = totalToolCalls,
                 });
 
@@ -1561,7 +1653,7 @@ public sealed partial class AgentExecutionService
                 });
 
                 // 最后一轮 CONTINUE → MaxRoundsReached
-                if (round == maxRounds - 1)
+                if (subAgentBudget is null && round == maxRounds - 1)
                 {
                     _logger.LogWarning(
                         "[AgentExec] MaxRounds={Max} reached session={Session}",
@@ -1577,15 +1669,24 @@ public sealed partial class AgentExecutionService
             var deadlineReached =
                 request.ExecutionDeadlineUtc is { } deadline &&
                 DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
-            stopReason = deadlineReached
-                ? AgentLoopStopReason.MaxElapsedReached
+            var subAgentDeadlineReached = deadlineReached && subAgentBudget is not null;
+            stopReason = subAgentDeadlineReached
+                ? AgentLoopStopReason.BudgetExhausted
+                : deadlineReached
+                    ? AgentLoopStopReason.MaxElapsedReached
                 : AgentLoopStopReason.Cancelled;
-            execState = deadlineReached
-                ? AgentExecutionState.Failed
+            execState = subAgentDeadlineReached
+                ? AgentExecutionState.BudgetExhausted
+                : deadlineReached
+                    ? AgentExecutionState.Failed
                 : AgentExecutionState.Cancelled;
-            subAgentTerminalStatus = deadlineReached ? "timed_out" : "cancelled";
-            executionError = deadlineReached
-                ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
+            subAgentTerminalStatus = subAgentDeadlineReached
+                ? "budget_exhausted"
+                : deadlineReached ? "timed_out" : "cancelled";
+            executionError = subAgentDeadlineReached
+                ? "Sub-agent cleanup grace reached the hard execution deadline; the preserved session can be resumed with a fresh system budget."
+                : deadlineReached
+                    ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
                 : "Cancelled";
             _logger.LogInformation(
                 "[AgentExec] {Termination} session={Session}",
@@ -1641,7 +1742,7 @@ public sealed partial class AgentExecutionService
         }
 
         var terminatedByCancellationOrTimeout =
-            subAgentTerminalStatus is "cancelled" or "timed_out";
+            subAgentTerminalStatus is "cancelled" or "timed_out" or "budget_exhausted";
 
         // ── 记忆写回 ──────────────────────────────────────────────────
         // A cancelled/timed-out run must not start new post-loop work with an already cancelled token.
@@ -1681,10 +1782,22 @@ public sealed partial class AgentExecutionService
         // when the for-loop exhausts maxRounds.
         if (execState == AgentExecutionState.Running)
         {
-            execState = AgentExecutionState.Failed;
-            stopReason = AgentLoopStopReason.MaxRoundsReached;
-            executionError ??=
-                $"Maximum agent rounds reached ({maxRounds}) before a final response.";
+            if (subAgentBudget?.IsInGrace == true)
+            {
+                execState = AgentExecutionState.BudgetExhausted;
+                stopReason = AgentLoopStopReason.BudgetExhausted;
+                subAgentTerminalStatus = "budget_exhausted";
+                executionError ??=
+                    $"Sub-agent exhausted its cleanup grace ({subAgentBudget.GraceRounds} rounds); " +
+                    "resume the preserved child session to continue with a fresh system budget.";
+            }
+            else
+            {
+                execState = AgentExecutionState.Failed;
+                stopReason = AgentLoopStopReason.MaxRoundsReached;
+                executionError ??=
+                    $"Maximum agent rounds reached ({maxRounds}) before a final response.";
+            }
             await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
         }
 
@@ -1723,6 +1836,7 @@ public sealed partial class AgentExecutionService
         {
             AgentExecutionState.Completed => RuntimeActivityStatuses.Succeeded,
             AgentExecutionState.WaitingEvent => RuntimeActivityStatuses.Deferred,
+            AgentExecutionState.BudgetExhausted => RuntimeActivityStatuses.Deferred,
             AgentExecutionState.Cancelled => RuntimeActivityStatuses.Cancelled,
             _ => RuntimeActivityStatuses.Failed,
         };

@@ -10,8 +10,8 @@ namespace PuddingRuntime.Services.Tools;
     description: "智能深度研究。用自然语言描述研究课题，内部委托 Researcher 子代理自动执行" +
                  "anysearch_search + http_fetch + file_read 多源信息收集，返回综合分析报告。" +
                  "参数：task（研究任务）、scope（可选，研究边界）、" +
-                 "domain（可选，搜索领域如 code/academic/news）、" +
-                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Researcher_Model 决定。",
+                 "domain（可选，搜索领域如 code/academic/news）。执行预算由 Pudding 系统配置。" +
+                 "模型由 Agent 配置的 Researcher_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -28,7 +28,6 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
     }
 
         protected override string RoleName => "researcher";
-    protected override int DefaultMaxRounds => 200;
     protected override bool RequiresLocationContext => false; // research is domain-based
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
@@ -42,7 +41,7 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
         _logger.LogInformation("[SmartResearch] agent={Agent} task={Task}",
             context.AgentInstanceId, args.Task);
 
-        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
+        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct);
     }
 
     protected override string BuildTaskPrompt(SmartResearchArgs args, ToolExecutionContext context)

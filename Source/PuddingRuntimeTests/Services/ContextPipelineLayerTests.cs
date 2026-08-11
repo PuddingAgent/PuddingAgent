@@ -88,6 +88,48 @@ public sealed class ContextPipelineLayerTests
     }
 
     [TestMethod]
+    public async Task AssembleAsync_Injects_Mandatory_Delegation_Policy_For_Main_Agent()
+    {
+        var store = new ContextAssemblyStore();
+        var pipeline = CreatePipeline(store);
+
+        var result = await pipeline.AssembleAsync(CreateRequest(), CancellationToken.None);
+
+        StringAssert.Contains(result.SystemPrompt, "Mandatory delegation policy (`smart_*` / `spawn_sub_agent`):");
+        StringAssert.Contains(result.SystemPrompt, "you MUST classify the request as `Direct` or `Delegated`");
+        StringAssert.Contains(result.SystemPrompt, "You MUST choose `Delegated`");
+        StringAssert.Contains(result.SystemPrompt, "within the first 3 tool calls");
+        StringAssert.Contains(result.SystemPrompt, "you MUST NOT repeat the same exploration");
+        Assert.AreEqual(
+            1,
+            result.SystemPrompt.Split(
+                "Mandatory delegation policy (`smart_*` / `spawn_sub_agent`):",
+                StringSplitOptions.None).Length - 1,
+            "The mandatory delegation policy must appear exactly once.");
+        Assert.IsFalse(
+            result.SystemPrompt.Contains("Sub-agent (`spawn_sub_agent`) best practices:", StringComparison.Ordinal),
+            "The old advisory delegation wording must not reach the Agent.");
+    }
+
+    [TestMethod]
+    public async Task AssembleAsync_Hides_Delegation_Policy_When_SubDelegation_Is_Forbidden()
+    {
+        var store = new ContextAssemblyStore();
+        var pipeline = CreatePipeline(store);
+        var request = CreateRequest() with
+        {
+            SessionId = "session-sub-child",
+            AllowSubDelegation = false,
+        };
+
+        var result = await pipeline.AssembleAsync(request, CancellationToken.None);
+
+        Assert.IsFalse(
+            result.SystemPrompt.Contains("Mandatory delegation policy", StringComparison.Ordinal),
+            "A child that cannot delegate must not receive an impossible delegation requirement.");
+    }
+
+    [TestMethod]
     public async Task AssembleAsync_Includes_Canonical_Feishu_Voice_Protocol()
     {
         var store = new ContextAssemblyStore();

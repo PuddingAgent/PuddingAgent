@@ -20,17 +20,14 @@ namespace PuddingRuntime.Services.Tools;
 public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> where TArgs : class, new()
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
-    protected const int SmartWorkflowTimeoutSeconds = 60 * 60;
     protected const int DefaultParentFinalizationReserveSeconds = 2 * 60;
     protected abstract string RoleName { get; }
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
-    protected virtual int DefaultTimeoutSeconds => SmartWorkflowTimeoutSeconds;
-    protected virtual int DefaultMaxRounds => 15;
     /// <summary>子代理允许的工具列表，逗号分隔。null = 继承父代理全部工具。</summary>
     protected virtual string? AllowedTools => null;
     /// <summary>主模型失败时的降级模型 ID 列表（按优先级）。null = 不启用 fallback。</summary>
     protected virtual IReadOnlyList<string>? FallbackModelIds => null;
-        /// <summary>仅由明确设计为 DAG 父节点的 Smart 工具覆盖为 true。</summary>
+    /// <summary>仅由明确设计为 DAG 父节点的 Smart 工具覆盖为 true。</summary>
     protected virtual bool AllowNestedSmartDelegation => false;
     /// <summary>Whether this tool requires file/directory location context (WHERE).
     /// Conceptual tools (planning, research) can set this to false.</summary>
@@ -38,10 +35,51 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
     protected virtual int MaxDelegationDepth => 2;
 
     /// <summary>
+    /// Keeps <c>task</c> as the only public Smart-workflow instruction field while accepting the
+    /// legacy natural-language aliases already emitted by older prompts and model transcripts.
+    /// </summary>
+    protected override string? NormalizeArgumentsJson(string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return argumentsJson;
+
+        using var document = JsonDocument.Parse(argumentsJson);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            return argumentsJson;
+
+        var properties = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in document.RootElement.EnumerateObject())
+            properties[property.Name] = property.Value.Clone();
+
+        if (properties.TryGetValue("task", out var taskValue)
+            && taskValue.ValueKind is not JsonValueKind.Null
+            && (taskValue.ValueKind is not JsonValueKind.String
+                || !string.IsNullOrWhiteSpace(taskValue.GetString())))
+        {
+            return argumentsJson;
+        }
+
+        foreach (var alias in new[] { "question", "what", "query" })
+        {
+            if (!properties.TryGetValue(alias, out var aliasValue)
+                || aliasValue.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(aliasValue.GetString()))
+            {
+                continue;
+            }
+
+            properties["task"] = aliasValue;
+            return JsonSerializer.Serialize(properties);
+        }
+
+        return argumentsJson;
+    }
+
+    /// <summary>
     /// Appends the canonical report rules understood by <c>spawn_sub_agent</c>.
     /// Role prompts must add their role-specific fields under these five sections.
     /// </summary>
-        protected static void AppendCanonicalReportRules(StringBuilder sb)
+    protected static void AppendCanonicalReportRules(StringBuilder sb)
     {
         sb.AppendLine("### 🛑 STOP RULES (READ FIRST)");
         sb.AppendLine("- **After writing the report, STOP.** Do NOT run additional tools, verification, or edits.");
@@ -82,8 +120,7 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         ToolExecutionContext context,
         IServiceProvider services,
         ILogger logger,
-        CancellationToken ct,
-        int? timeoutSeconds = null)
+        CancellationToken ct)
     {
         var task = BuildTaskPrompt(args, context);
 
@@ -108,13 +145,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 
         var toolName = GetType().Name;
         var workingDirectory = ResolveWorkingDirectory(args);
-        var requestedTimeout = timeoutSeconds ?? DefaultTimeoutSeconds;
-        if (requestedTimeout <= 0)
-            return ToolExecutionResult.Fail($"{toolName} timeout_seconds must be greater than 0.");
-
-        // Smart 的角色预算是子任务上限，不是从调用时重新获得的独立父级预算。
-        // 父 Run deadline 是唯一上界，并预留两分钟让父 Agent 消化工具结果和提交终态。
-        var timeout = Math.Min(requestedTimeout, DefaultTimeoutSeconds);
+        // Smart 只负责角色和任务语义。轮次、工具调用与 hard timeout 统一由
+        // runtime.execution.json 管理，父 Agent 和 Smart 参数都不能覆盖。
         var parentFinalizationReserveSeconds =
             services.GetService<IRuntimeExecutionConfigService>()?
                 .GetOptions()
@@ -138,8 +170,6 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                     message = "The parent run has insufficient time remaining to start this Smart workflow.",
                 }));
             }
-
-            timeout = Math.Min(timeout, remainingSeconds);
         }
 
         // 从父 Agent manifest 解析角色对应的模型
@@ -158,8 +188,6 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                 sync = true,
                 model,
                 role_in_plan = RoleName,
-                timeout_seconds = timeout,
-                max_rounds = DefaultMaxRounds,
                 working_directory = workingDirectory,
                 allow_sub_delegation = AllowNestedSmartDelegation,
                 depth = context.DelegationDepth ?? 0,
@@ -175,8 +203,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             });
 
             logger.LogInformation(
-                "[{Tool}] agent={Agent} role={Role} spawning sub-agent timeout={Timeout}s",
-                toolName, configurationAgentId, RoleName, timeout);
+                "[{Tool}] agent={Agent} role={Role} spawning sub-agent with system-managed execution budget",
+                toolName, configurationAgentId, RoleName);
 
             var toolExec = services.GetRequiredService<IPuddingToolExecutionService>();
             var result = await toolExec.ExecuteAsync("spawn_sub_agent", spawnArgs, context, null, ct);
@@ -204,8 +232,6 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                         sync = true,
                         model = fallbackModel,
                         role_in_plan = RoleName,
-                        timeout_seconds = Math.Max(1, timeout / 2),
-                        max_rounds = Math.Max(1, DefaultMaxRounds / 2),
                         working_directory = workingDirectory,
                         allow_sub_delegation = AllowNestedSmartDelegation,
                         depth = context.DelegationDepth ?? 0,
@@ -266,7 +292,8 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         catch (TaskCanceledException)
         {
             sw.Stop();
-            var msg = $"{toolName} TIMED OUT after {sw.ElapsedMilliseconds}ms (limit={timeout}s, role={RoleName}).";
+            var msg = $"{toolName} TIMED OUT after {sw.ElapsedMilliseconds}ms " +
+                      $"within the Pudding-managed sub-agent budget (role={RoleName}).";
             logger.LogError("[{Tool}] TIMEOUT duration={Duration}ms", toolName, sw.ElapsedMilliseconds);
             return ToolExecutionResult.Fail(msg);
         }
@@ -608,9 +635,6 @@ public abstract class SmartWorkflowArgs
 {
     [ToolParam("要交给对应角色子代理完成的任务")]
     public string? Task { get; set; }
-
-    [ToolParam("子代理超时秒数；留空时使用角色默认值")]
-    public int? TimeoutSeconds { get; set; }
 
     [ToolParam("主模型发生瞬态失败时是否允许显式切换到该 Smart 角色的备用模型；默认 false")]
     public bool AllowFallback { get; set; }

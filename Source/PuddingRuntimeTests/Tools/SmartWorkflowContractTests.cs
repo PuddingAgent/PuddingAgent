@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Platform;
@@ -52,7 +53,82 @@ public sealed class SmartWorkflowContractTests
     }
 
     [TestMethod]
-    public async Task SmartPlanUsesRoleExecutionBudget()
+    [DataRow("question")]
+    [DataRow("what")]
+    [DataRow("query")]
+    public async Task SmartWorkflowAcceptsLegacyInstructionAliasesWithoutExposingThemInSchema(
+        string alias)
+    {
+        const string instruction = "Research the runtime delegation contract and report concrete evidence.";
+        var recorder = new RecordingToolExecutionService();
+        var services = new ServiceCollection()
+            .AddSingleton<IPuddingToolExecutionService>(recorder)
+            .BuildServiceProvider();
+        var tool = new SmartResearchTool(
+            services,
+            NullLogger<SmartResearchTool>.Instance);
+        var arguments = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            [alias] = instruction,
+            ["already_known"] = "The caller already found the context pipeline.",
+            ["effort"] = "medium",
+        });
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = $"smart-alias-{alias}",
+            ArgumentsJson = arguments,
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var delegatedArguments = JsonDocument.Parse(recorder.ArgumentsJson!);
+        StringAssert.Contains(
+            delegatedArguments.RootElement.GetProperty("task").GetString(),
+            instruction);
+
+        var publicParameterNames = tool.Descriptor.Parameters.Properties
+            .Select(parameter => parameter.Name)
+            .ToArray();
+        CollectionAssert.Contains(publicParameterNames, "task");
+        CollectionAssert.DoesNotContain(publicParameterNames, "question");
+        CollectionAssert.DoesNotContain(publicParameterNames, "what");
+        CollectionAssert.DoesNotContain(publicParameterNames, "query");
+    }
+
+    [TestMethod]
+    public void RuntimeAssemblyExposesOnlyCanonicalSmartWorkflowToolIds()
+    {
+        var smartToolIds = typeof(SmartExploreTool).Assembly.GetTypes()
+            .Select(type => type.GetCustomAttribute<ToolAttribute>())
+            .Where(attribute => attribute?.Id.StartsWith("smart_", StringComparison.Ordinal) == true)
+            .Select(attribute => attribute!.Id)
+            .OrderBy(toolId => toolId, StringComparer.Ordinal)
+            .ToArray();
+
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "smart_deploy",
+                "smart_develop",
+                "smart_explore",
+                "smart_plan",
+                "smart_research",
+                "smart_review",
+                "smart_test",
+            },
+            smartToolIds);
+        CollectionAssert.DoesNotContain(smartToolIds, "smart_search");
+        CollectionAssert.DoesNotContain(smartToolIds, "smart_query_session_log");
+    }
+
+    [TestMethod]
+    public async Task SmartPlanDoesNotExposeOrForwardExecutionBudget()
     {
         var recorder = new RecordingToolExecutionService();
         var services = new ServiceCollection()
@@ -77,8 +153,8 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        Assert.AreEqual(48, document.RootElement.GetProperty("max_rounds").GetInt32());
-        Assert.AreEqual(3600, document.RootElement.GetProperty("timeout_seconds").GetInt32());
+        Assert.IsFalse(document.RootElement.TryGetProperty("max_rounds", out _));
+        Assert.IsFalse(document.RootElement.TryGetProperty("timeout_seconds", out _));
         Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
         Assert.AreEqual(0, document.RootElement.GetProperty("depth").GetInt32());
         Assert.AreEqual(2, document.RootElement.GetProperty("max_depth").GetInt32());
@@ -242,8 +318,8 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        Assert.AreEqual(1800, document.RootElement.GetProperty("timeout_seconds").GetInt32());
-        Assert.AreEqual(32, document.RootElement.GetProperty("max_rounds").GetInt32());
+        Assert.IsFalse(document.RootElement.TryGetProperty("timeout_seconds", out _));
+        Assert.IsFalse(document.RootElement.TryGetProperty("max_rounds", out _));
         Assert.IsFalse(document.RootElement.GetProperty("allow_sub_delegation").GetBoolean());
         var exploreTools = document.RootElement.GetProperty("tools").GetString();
         StringAssert.Contains(exploreTools, "file_read");
@@ -317,15 +393,12 @@ public sealed class SmartWorkflowContractTests
             StringAssert.Contains(task, "RISKS:");
             StringAssert.Contains(task, "BLOCKERS:");
             StringAssert.Contains(task, testCase.RoleMarker);
-            Assert.IsLessThanOrEqualTo(
-                200,
-                document.RootElement.GetProperty("max_rounds").GetInt32(),
-                $"{testCase.Tool.Descriptor.ToolId} exceeds spawn_sub_agent's max_rounds contract.");
-            var timeoutSeconds = document.RootElement.GetProperty("timeout_seconds").GetInt32();
-            Assert.AreEqual(
-                3600,
-                timeoutSeconds,
-                $"{testCase.Tool.Descriptor.ToolId} must use the shared one-hour ceiling.");
+            Assert.IsFalse(
+                document.RootElement.TryGetProperty("max_rounds", out _),
+                $"{testCase.Tool.Descriptor.ToolId} must not select a child round budget.");
+            Assert.IsFalse(
+                document.RootElement.TryGetProperty("timeout_seconds", out _),
+                $"{testCase.Tool.Descriptor.ToolId} must not select a child timeout budget.");
         }
     }
 
@@ -453,7 +526,7 @@ public sealed class SmartWorkflowContractTests
     }
 
     [TestMethod]
-    public async Task SmartWorkflowClampsChildBudgetToParentDeadlineAndReservesFinalizationTime()
+    public async Task SmartWorkflowIgnoresLegacyBudgetFieldsAndPreservesParentDeadlineReserve()
     {
         var recorder = new RecordingToolExecutionService();
         var services = new ServiceCollection()
@@ -479,9 +552,8 @@ public sealed class SmartWorkflowContractTests
 
         Assert.IsTrue(result.Success, result.Error);
         using var document = JsonDocument.Parse(recorder.ArgumentsJson!);
-        var timeoutSeconds = document.RootElement.GetProperty("timeout_seconds").GetInt32();
-        Assert.IsGreaterThanOrEqualTo(475, timeoutSeconds);
-        Assert.IsLessThanOrEqualTo(480, timeoutSeconds);
+        Assert.IsFalse(document.RootElement.TryGetProperty("timeout_seconds", out _));
+        Assert.IsFalse(document.RootElement.TryGetProperty("max_rounds", out _));
     }
 
     [TestMethod]

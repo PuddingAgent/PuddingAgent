@@ -1,11 +1,11 @@
 ﻿using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingCode.SubAgents;
 
 namespace PuddingRuntime.Services.Tools;
@@ -419,7 +419,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
             // 优先从内存 ContextUsageSnapshotStore 获取
             using var scope = _scopeFactory.CreateScope();
-            var snapshotStore = scope.ServiceProvider.GetService<PuddingCode.Platform.ContextUsageSnapshotStore>();
+            var snapshotStore = scope.ServiceProvider.GetService<ContextUsageSnapshotStore>();
 
             if (snapshotStore is not null && !string.IsNullOrWhiteSpace(sessionId)
                 && snapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
@@ -440,24 +440,11 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 }, new JsonSerializerOptions { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             }
 
-            // 回退 DB 最新记录
-            var db = scope.ServiceProvider.GetRequiredService<PuddingPlatform.Data.PlatformDbContext>();
-            var latest = await db.TokenUsageEvents
-                .AsNoTracking()
-                .Where(e => e.SessionId == sessionId && (e.MessageTokens != null || e.ToolDefinitionTokens != null || e.SystemMessageTokens != null || e.HistoryMessageTokens != null))
-                .OrderByDescending(e => e.OccurredAtUtc)
-                .Select(e => new
-                {
-                    e.SessionId,
-                    e.OccurredAtUtc,
-                    e.MessageTokens,
-                    e.ToolDefinitionTokens,
-                    e.SystemMessageTokens,
-                    e.HistoryMessageTokens,
-                    e.PromptTokens,
-                    e.CompletionTokens,
-                })
-                .FirstOrDefaultAsync(ct);
+            // 回退到 Platform 通过 Core repository contract 暴露的最新持久化记录。
+            var usageRepository = scope.ServiceProvider.GetService<ITokenUsageEventRepository>();
+            var latest = usageRepository is null || string.IsNullOrWhiteSpace(sessionId)
+                ? null
+                : await usageRepository.GetLatestLayerDiagnosticsAsync(sessionId, ct);
 
             if (latest is not null)
             {
@@ -491,7 +478,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
             // 优先从内存 ContextUsageSnapshotStore 获取
             using var scope = _scopeFactory.CreateScope();
-            var snapshotStore = scope.ServiceProvider.GetService<PuddingCode.Platform.ContextUsageSnapshotStore>();
+            var snapshotStore = scope.ServiceProvider.GetService<ContextUsageSnapshotStore>();
 
             if (snapshotStore is not null && !string.IsNullOrWhiteSpace(sessionId)
                 && snapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
@@ -510,24 +497,11 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 }, new JsonSerializerOptions { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             }
 
-            // 回退 DB 最新记录
-            var db = scope.ServiceProvider.GetRequiredService<PuddingPlatform.Data.PlatformDbContext>();
-            var latest = await db.TokenUsageEvents
-                .AsNoTracking()
-                .Where(e => e.SessionId == sessionId
-                    && (e.SystemMessageEntropy != null || e.HistoryMessageEntropy != null || e.ToolDefinitionEntropy != null))
-                .OrderByDescending(e => e.OccurredAtUtc)
-                .Select(e => new
-                {
-                    e.SessionId,
-                    e.OccurredAtUtc,
-                    e.SystemMessageEntropy,
-                    e.HistoryMessageEntropy,
-                    e.ToolDefinitionEntropy,
-                    e.MessageTokens,
-                    e.ToolDefinitionTokens,
-                })
-                .FirstOrDefaultAsync(ct);
+            // 回退到 Platform 通过 Core repository contract 暴露的最新持久化记录。
+            var usageRepository = scope.ServiceProvider.GetService<ITokenUsageEventRepository>();
+            var latest = usageRepository is null || string.IsNullOrWhiteSpace(sessionId)
+                ? null
+                : await usageRepository.GetLatestEntropyDiagnosticsAsync(sessionId, ct);
 
             if (latest is not null)
             {

@@ -10,8 +10,8 @@ namespace PuddingRuntime.Services.Tools;
     description: "智能代码审查。用自然语言描述审查范围，内部委托 Reviewer 子代理自动审查代码" +
                  "质量、安全性、最佳实践，返回结构化的审查报告。" +
                  "参数：task（审查任务）、scope（文件/目录范围）、" +
-                 "aspects（可选，关注的安全/质量/性能方面）、" +
-                 "timeout_seconds（可选，默认 3600s）。模型由 Agent 配置的 Reviewer_Model 决定。",
+                 "aspects（可选，关注的安全/质量/性能方面）。执行预算由 Pudding 系统配置。" +
+                 "模型由 Agent 配置的 Reviewer_Model 决定。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -28,8 +28,6 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
     }
 
     protected override string RoleName => "reviewer";
-    // K3 Reviewer: bounded by the shared one-hour timeout, read-only tools only.
-    protected override int DefaultMaxRounds => 200;
     protected override IReadOnlyList<string>? FallbackModelIds =>
         new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
     protected override string? AllowedTools => "file_read,file_search,code_outline,search_grep,list_dir,project_map,code_explore,code_summary";
@@ -43,7 +41,7 @@ public sealed class SmartReviewTool : SmartWorkflowToolBase<SmartReviewArgs>
         _logger.LogInformation("[SmartReview] agent={Agent} task={Task} scope={Scope}",
             context.AgentInstanceId, args.Task, args.Scope);
 
-        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct, args.TimeoutSeconds);
+        return await RunSubAgentAsync(args, context, _serviceProvider, _logger, ct);
     }
 
     protected override string BuildTaskPrompt(SmartReviewArgs args, ToolExecutionContext context)

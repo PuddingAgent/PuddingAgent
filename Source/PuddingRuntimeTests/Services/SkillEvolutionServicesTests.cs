@@ -5,6 +5,7 @@ using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntimeTests.Services;
@@ -102,7 +103,7 @@ public sealed class SkillEvolutionServicesTests
         }
 
         var source = new ConversationSkillEvolutionTrajectorySource(
-            scope.Factory,
+            new SkillEvolutionDataAccess(scope.Factory),
             NullLogger<ConversationSkillEvolutionTrajectorySource>.Instance);
 
         var result = await source.GetRecentSuccessfulAsync("workspace-1", "agent-1", 5);
@@ -172,7 +173,7 @@ public sealed class SkillEvolutionServicesTests
         }
 
         var source = new ConversationSkillEvolutionTrajectorySource(
-            scope.Factory,
+            new SkillEvolutionDataAccess(scope.Factory),
             NullLogger<ConversationSkillEvolutionTrajectorySource>.Instance);
 
         var result = await source.GetRecentSuccessfulAsync("workspace-1", "agent-1", 1);
@@ -223,7 +224,7 @@ public sealed class SkillEvolutionServicesTests
         }
 
         var source = new ConversationSkillEvolutionTrajectorySource(
-            scope.Factory,
+            new SkillEvolutionDataAccess(scope.Factory),
             NullLogger<ConversationSkillEvolutionTrajectorySource>.Instance);
 
         var result = await source.GetRecentSuccessfulAsync("workspace-1", "agent-1", 5);

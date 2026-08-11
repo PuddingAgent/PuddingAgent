@@ -145,8 +145,6 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
         // HOSTED-DISABLED: builder.Services.AddHostedService<IndexPrebuildService>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();
-        builder.Services.AddPuddingAgentTool<SmartSearchTool>();
-        builder.Services.AddPuddingAgentTool<SmartQuerySessionLogsTool>();
 
         // ── Smart 工作流工具（角色化子代理）──
         builder.Services.AddPuddingAgentTool<SmartExploreTool>();
@@ -162,6 +160,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddPuddingAgentTool<TaskManagerTool>();
         builder.Services.AddPuddingTool<SubAgentTool>();
         builder.Services.AddSingleton<SubAgentPool>();
+        builder.Services.AddSingleton<ISubAgentPool>(
+            services => services.GetRequiredService<SubAgentPool>());
 
         builder.Services.AddSingleton<MemoryExplorerSubAgent>();
         builder.Services.AddPuddingTool<MemoryLibraryTool>();
