@@ -5,6 +5,7 @@
 // 原 MemoryTools.cs 已拆分为以下独立文件：
 //
 //   SaveMemoryTool.cs    → save_memory 工具（写入/更新记忆）
+//   SavePreferenceTool.cs → save_preference 工具（用户偏好专用存储，key/value upsert）
 //   GrepMemoryTool.cs    → grep_memory 工具（全文检索记忆）
 //   ManageMemoryTool.cs  → manage_memory 工具（编排器，委托给 Handlers）
 //

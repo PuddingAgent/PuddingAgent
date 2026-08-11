@@ -27,17 +27,17 @@ Pudding 应当实现前端蓝图编辑器，但它不是新的运行时，也不
 
 本文严格区分“仓库当前已经具备”和“本施工包要求新增”。
 
-| 能力 | 2026-08-10 当前事实 | 目标状态 |
+| 能力 | 2026-08-11 当前事实 | 目标状态 |
 |------|--------------------|----------|
 | 图契约 | V2 JSON、节点、control/data edge、组件引用、触发器、多模态端口已经定义 | 冻结 V2，新增只采用版本化组件，不在 V2 内塞任意代码 |
 | 编译 | 纯编译器已具备组件解析、端口兼容、DAG、route、权限与修订校验 | 提供 validate/diagnostics API，并把诊断精确映射到画布元素 |
-| 持久化 | Graph/Revision/Layout/Run/NodeRun/Event SQLite 事实表已具备 | 增加部署槽位、Run 输入、节点输出、人工输入请求、命令幂等和事件投影 |
-| Revision | Store 已支持 Graph Head CAS；Admin 仅支持创建 Revision 1 | Admin/Agent 均可在 expected head 上保存新 Revision，历史永不改写 |
+| 持久化 | Graph/Revision/Layout/Run/RunInput/NodeRun/Event SQLite 事实表已具备；Run 创建冻结 Graph Input 默认值/调用值 | 增加部署槽位、节点输出、人工输入请求、通用命令幂等和事件投影 |
+| Revision | Store 与 Admin 已支持 validate、expected-head CAS 和不可变新 Revision；历史切换/比较尚未完成 | Admin/Agent 均可在 expected head 上保存新 Revision，历史永不改写 |
 | Layout | 独立 Layout CAS、拖拽和 viewport 保存已具备 | 新 Revision 继承布局，节点增删后按 ID 合并并保持独立版本 |
-| Run 内核 | Create/Activate、root Ready、claim/renew/fence/start/terminal 已具备 | 实现后继 Ready/Skipped、run 终态、重试、取消、人工输入和 gate |
-| 执行器 | MOA 专用 runtime 可调用子代理；通用 executor 尚未接入 | 统一 subAgent/tool/gate/humanInput adapter，MOA 迁移到通用 runtime |
-| Control Plane | Graph/Run 查询、events/watch、layout、Graph 新建/受限删除已具备 | 补齐 revision、validate、deployment、run control、input/retry/cancel API |
-| Admin | Graph/Run 发现、只读预览、运行事件、节点检查器、布局编辑、新建/删除 Graph 已具备 | 完整节点/边/输入/触发器编辑、Revision 历史、部署、运行控制和多模态结果面板 |
+| Run 内核 | Create/Activate、root Ready、claim/renew/fence/start/terminal 已具备；无 predicate 的 `OnSuccess/OnCompletion/Always` 后继 Ready/Skipped 与 Run 终态已落地 | 补齐 predicate、重试、取消、人工输入和 gate |
+| 执行器 | 通用 worker 已接入只读 SubAgent、图片生成和图片展示 executor；真实四节点链已运行 | 补齐通用 tool/gate/humanInput adapter，MOA 迁移到通用 runtime |
+| Control Plane | Graph/Run 查询、events/watch、layout、Graph/Revision authoring 已具备；另有显式 Revision 的 Admin 调试 HTTP Hook | 补齐 deployment、通用 run control、human input/retry/cancel 与生产 Trigger adapter |
+| Admin | ComfyUI 式全宽画布、悬浮工作台、typed authoring 与 Revision/Layout CAS 已具备；组件 UI 注册表支持 SubAgent 文本和图片组件 Artifact 输出 | 补齐 Revision 历史、Deployment、运行控制、其他多模态结果与组件 Palette |
 | Agent 能力 | 尚无通用 `orchestration.*` 工具 | 与 Admin 共用 API/命令层，具备最小权限、幂等和可观察事件 |
 
 在任何后续验收中，“页面能打开”“代码能编译”或“MOA 专用状态机能运行”都不能被当作通用编排已经完成。
@@ -658,16 +658,41 @@ componentType componentVersion executorId workerId commandId
 | 阶段 | 交付 | 依赖 | 退出条件 |
 |------|------|------|----------|
 | S0 | 本文档包、契约冻结、缺口清单 | 当前基线 | 设计审阅通过 |
-| S1 | Node CRUD、Revision CAS、Revision 历史 | S0 | 可保存 r2/r3，冲突不覆盖 |
-| S2 | Port-aware edge editor、graph inputs、validate/diff | S1 | 非法连接前后端双拒绝 |
+| S1 | Node CRUD、Revision CAS、Revision 历史 | S0 | **部分完成**：CRUD/CAS/冲突不覆盖已交付；历史切换待完成 |
+| S2 | Port-aware edge editor、graph inputs、validate/diff | S1 | **部分完成**：端口拖线、Graph Input、前后端拒绝已交付；高级 binding/诊断定位待完成 |
 | S3 | 后继 Ready/Skipped 与 Run 终态 | S2 | 多前驱/失败/分支可恢复 |
-| S4 | subAgent/tool/gate/humanInput executor | S3 | 可运行真实只读 DAG |
-| S5 | Deployment、Trigger、Run 控制 | S4 | Head 与生产 Revision 隔离 |
+| S4 | subAgent/tool/gate/humanInput executor | S3 | **部分完成**：只读 SubAgent 与图片生成/展示 executor 已形成真实顺序 DAG；通用 tool/gate/humanInput 待完成 |
+| S5 | Deployment、Trigger、Run 控制 | S4 | Head 与生产 Revision 隔离；当前 Admin-only HTTP Hook 只是显式 Revision 调试切片，不代表 S5 完成 |
 | S6 | Agent 工具与 MOA 通用化迁移 | S5 | MOA 不再用专用 dispatcher |
 | S7 | 数据/网络/媒体/Artifact 组件包 | S4-S6 | 多模态 E2E 通过 |
 | S8 | 安全、性能、恢复与产品化 | 全部 | Desktop 重启恢复与长跑验收 |
 
 任何阶段不得因为后续功能尚未完成而在当前层引入临时第二事实源。
+
+### 17.1 2026-08-11 图片生成纵向切片
+
+已实现一个有意受限但真实可运行的两节点纵向切片：`image-generation` 模板创建
+`pudding.media.image-generate → pudding.media.image-preview`，data edge 把 `images` Artifact 输出送入展示组件。
+Admin 以显式不可变 Revision 和类型化 prompt 创建/激活 Run；Runtime 生成图片后原子释放展示节点，展示 executor
+读取并透传上游 ArtifactRef，两个组件各自在节点卡片/检查器呈现输出，最后一个节点与 Run 终态事件同事务提交。
+
+该切片只证明无 predicate 的顺序媒体链与最小后继推进，不表示 S3/S4/S7 完成。版本化 predicate、
+retry/cancel/human input、Deployment、通用 executor 包、媒体配额与完整安全策略仍按后续阶段施工。
+
+### 17.2 2026-08-11 SubAgent 到图片的四节点切片
+
+在两节点媒体链之上，当前实现已经把 node-run 输出升级为按端口持久化的
+`portId -> AgentOrchestrationValueEnvelope`，并实现 `Replace/Append` 输入合并的受限解析器。只读
+`pudding.agent.subagent` executor 复用 `ISubAgentInvocationService`、系统管理预算、精确
+`provider/model` 路由、SubSession 与 Run Archive，不另建 Agent 主循环。
+
+真实产品链为：`文案策划.result → 镜头文案.request → 生成图片.prompt → 展示图片.images`。
+两个 Agent 节点各自提交文本输出和真实 child run/sub-session 身份，图片生成节点提交 Artifact 列表，展示节点透传同一
+Artifact。审计主体 `manual:admin` 等值不再作为文件目录身份，而由 immutable workspace/graph 事实派生稳定、安全的
+orchestration execution owner。
+
+该切片仍不表示任意 JSONPath、`targetKey`、predicate、任意工具、写权限或分支 DAG 已完成；当前 resolver 对尚未实现的
+路径形状显式拒绝，不能静默降级。
 
 ## 18. 已决事项
 

@@ -273,6 +273,7 @@ public static class AgentOrchestrationEventTypes
     public const string NodeOutputAvailable = "orchestration.node.output.available";
     public const string NodeCompleted = "orchestration.node.completed";
     public const string NodeFailed = "orchestration.node.failed";
+    public const string NodeSkipped = "orchestration.node.skipped";
 }
 
 /// <summary>

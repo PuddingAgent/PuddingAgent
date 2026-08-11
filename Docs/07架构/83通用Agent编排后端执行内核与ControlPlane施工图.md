@@ -78,6 +78,7 @@ Source/PuddingRuntime/Services/Orchestration/
   AgentOrchestrationSchedulerService.cs
   AgentOrchestrationWorkerService.cs
   AgentOrchestrationExecutorRegistry.cs
+  AgentOrchestrationNodeInputResolver.cs
   SubAgentOrchestrationExecutor.cs
   ToolOrchestrationExecutor.cs
   GateOrchestrationExecutor.cs
@@ -266,6 +267,8 @@ CREATE TABLE orchestration_node_outputs (
 ```
 
 `orchestration_node_runs.output_summary/artifact_reference` 暂时保留为列表查询投影，不作为完整输出事实源。
+当前纵向切片已在同一 node-run 行加入 `outputs_json`，原子保存按端口的
+`AgentOrchestrationValueEnvelope`；后续若按本节拆为 `orchestration_node_outputs`，必须一次性升级并保持单一事实源，禁止长期双写。
 
 ### 6.5 `orchestration_input_requests`
 
@@ -421,6 +424,28 @@ Catalog API projection 在现有 `descriptor + contractHash` 外增加不参与 
 | GET | `/api/orchestrations/runs/{runId}/outputs` | 新增完整端口输出/ArtifactRef |
 
 Worker claim/start/terminal 接口不通过公开 HTTP 暴露；同进程使用窄 Store，未来跨进程 worker 再提供独立、机器鉴权的 internal plane。
+
+### 9.5 Admin HTTP Hook 调试入口（已实现的隔离切片）
+
+在 Deployment/生产 Trigger adapter 尚未施工前，Admin 可用以下接口对某个**已经保存的不可变 Revision**做 API Hook 调试：
+
+```http
+POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId={revisionId}
+Authorization: Bearer <ADMIN_TOKEN>
+Content-Type: application/json
+
+{
+  "sourceEventId": "debug-20260811-001",
+  "payload": { "message": "hello" }
+}
+```
+
+- 必须显式提供 `revisionId`；接口不得读取 Graph Head，也不得把 Head 当作部署槽位；
+- `triggerId` 必须属于该 Revision、类型为 `pudding.trigger.webhook` 且已启用；
+- payload 只支持 `$`、字段和数组索引组成的受限路径，映射结果按 Graph Input 契约校验并冻结到 `orchestration_run_inputs`；
+- `(graphId, revisionId, triggerId, sourceEventId)` 生成确定性 Run ID；同 payload 重试返回既有 Run，不同 payload 复用同一事件 ID 返回 409；
+- 请求体上限 1 MiB，当前入口仅限 Admin Bearer；201 表示新建并激活，200 表示幂等重放；
+- 当前入口不是公开匿名 webhook：Deployment 解析、secret/signature、rate limit、外部 source adapter 和生产审计仍属于 S5。
 
 ## 10. 统一错误响应
 
@@ -673,6 +698,8 @@ triggerId graphId slot sourceEventId occurredAt payload artifactRefs
 
 Schedule、Webhook、Connector 与 orchestration event 只实现 source adapter，不各自复制 Run 创建逻辑。
 
+当前 Admin 调试 HTTP Hook 特意跳过步骤 1，改为要求调用方显式传入不可变 `revisionId`。这是无 Deployment 时的开发入口，不得扩展为“自动使用 Head”；生产 adapter 仍必须完整遵循上述七步。
+
 ## 18. Event 与 Session 投影
 
 ### 18.1 事件补充
@@ -789,3 +816,28 @@ Source/PuddingRuntimeTests/Services/Orchestration/
 - Agent/Admin 无旁路写库；
 - 写副作用、网络、credential 与 Artifact 都受策略治理；
 - 真机 Desktop 部署后 hash、Ready、health 和业务 API 均验证为新构建。
+
+## 24. 2026-08-11 图片生成纵向切片
+
+当前已落地的最小执行闭环如下：
+
+1. `AgentOrchestrationManualRunService` 要求 caller 指定 `graphId + revisionId + requestId`，冻结类型化 Run Inputs 后幂等 Create/Activate，绝不解析 Graph Head；
+2. `AgentOrchestrationWorkerService` 领取已注册 executor 的 Ready 节点；当前产品组合根注册 `pudding.media.image-generate` 与 `pudding.media.image-preview`，均以 lease/fence 保护提交；
+3. `ImageGenerateOrchestrationNodeExecutor` 从冻结输入读取 prompt/参考图，复用 `IImageGenerationService`，paid-call key 固定为 `runId + nodeId + attempt`，输出只存 `ArtifactRef`；
+4. `ImagePreviewOrchestrationNodeExecutor` 按 data edge 的 `images` 输入读取上游主 ArtifactRef，透传同一引用，不复制图片 bytes；
+5. `SqliteAgentOrchestrationStore` 在 terminal commit 事务内，对无 predicate 的入边计算后继 Ready/Skipped；全部节点终态时同步提交 Run `Completed/Failed` 事件。
+
+当前只完成 Transition Planner 的最小无 predicate 分支，`OnSuccess/OnCompletion/Always` 可组合；按端口 output 集合和
+多值 Artifact 透传已经进入 node-run 持久事实，但 predicate evaluator、retry/cancel/human input 仍未落地，不能把顺序链成功描述为通用 DAG scheduler 已完成。
+
+成品组合根是 `PuddingHost` 的 `AddPlatformServices`，它不调用 `RuntimeServiceExtensions.AddPuddingRuntime`。executor/hosted worker 必须在真实 Host 组合根注册；只修改 Runtime 扩展会出现 API 已更新但节点永久停在 Ready 的假部署。
+
+## 25. 2026-08-11 四节点 SubAgent/图片执行切片
+
+1. `AgentOrchestrationNodeInputResolver` 从冻结 Graph Inputs 和已完成前驱的 `outputs[portId]` 解析节点输入；当前仅接受 `$` 且不接受 `targetKey`，支持确定性的 `Replace/Append`；
+2. `SubAgentOrchestrationNodeExecutor` 要求冻结 `role/template/provider/model`，复用现有 `ISubAgentInvocationService`，不下放数值预算、不允许子委派/建 Agent，当前能力策略为无工具、无网络、无文件写；
+3. child `RunId/SubSessionId` 与 `result` 文本在同一次 fenced terminal commit 中进入 node-run；worker 以 90 秒周期续租 5 分钟 claim，长 Agent 调用没有任意 240 秒默认截断；
+4. `outputs_json` 与 terminal/event/后继 Ready 在同一 SQLite 事务提交，`output_summary/artifact_reference` 只做小投影；
+5. 手动或 HTTP Hook 的 `RequestedByAgentId` 是审计主体，不能作为运行归档目录。SubAgent executor 从 workspace/graph 派生稳定的 filesystem-safe execution owner，避免 `manual:admin` 中的 `:` 污染 Windows 路径。
+
+首个产品链 `文案策划 → 镜头文案 → 生成图片 → 展示图片` 已证明三个 typed data edge 可以跨两个真实模型调用和一个媒体调用传递事实；它不替代多前驱、分支、恢复和副作用策略的后续验收。

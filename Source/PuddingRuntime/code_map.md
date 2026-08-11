@@ -66,6 +66,11 @@
 | `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算状态机：启动/80%/50% 通知、10-50 轮收尾宽限、可恢复终止判定 |
 | `Services/DesignCouncilRuntimeService.cs` | MOA 运行时适配器；精确 provider/model 路由、可见性裁剪、只读派发、结果回填与暂停输入 |
 | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 进程内 MOA run 快照 store；Version CAS 防止重复 claim，不支持跨重启恢复 |
+| `Services/Orchestration/AgentOrchestrationWorkerService.cs` | 通用编排 Runtime worker；领取已注册 executor 的 Ready 节点，90 秒续租 5 分钟 claim，以 fence 提交按端口输出/真实 child 身份并原子推进后继与 Run 终态 |
+| `Services/Orchestration/AgentOrchestrationNodeInputResolver.cs` | 从冻结 Graph Inputs 与上游 `outputs[sourcePortId]` 解析节点输入；当前显式支持 `$`、Replace/Append、inline text 与 Artifact 列表，拒绝未实现 sourcePath/targetKey |
+| `Services/Orchestration/SubAgentOrchestrationNodeExecutor.cs` | 只读 `pudding.agent.subagent` executor；冻结 role/template/provider/model，复用 `ISubAgentInvocationService` 与系统预算，提交 `result` 文本和 child Run/SubSession；用 workspace/graph 派生安全 archive owner，不把审计主体当目录 |
+| `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | `pudding.media.image-generate` executor；经共享 resolver 读取 prompt/参考图，复用 `IImageGenerationService`，使用稳定 paid-call idempotency key，并把 Artifact 列表写入 `outputs.images` |
+| `Services/Orchestration/ImagePreviewOrchestrationNodeExecutor.cs` | `pudding.media.image-preview` executor；经共享 resolver 读取上游 `images` Artifact 列表，并以同一引用写入自己的 `outputs.images`，不复制或内联图片 bytes |
 | `Services/SubconsciousRecallPipeline.cs` | 潜意识召回管道（25KB） |
 | `Services/SubconsciousPlanGenerationService.cs` | 计划生成 |
 | `Services/TaskPlanning/` | 任务规划 |
@@ -75,6 +80,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/MemoryWriteCoordinator.cs` | 记忆写入协调 |
+| `Services/UserPreferenceService.cs` | 用户偏好管理：Prefetch 会话启动注入 System Prompt + save_preference 工具 Sync 存储 |
 | `Services/KnowledgeAccessRuntime.cs` | 知识访问 |
 | `Services/AgentLogRecallService.cs` | 日志召回 |
 
@@ -100,4 +106,4 @@
 
 ## 测试
 
-对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider
+对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅

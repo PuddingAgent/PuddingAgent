@@ -22,7 +22,9 @@ import type {
   OrchestrationRegisteredComponent,
 } from './types';
 
-function savedRevision(overrides: Partial<OrchestrationGraphDefinition> = {}): OrchestrationGraphDefinition {
+function savedRevision(
+  overrides: Partial<OrchestrationGraphDefinition> = {},
+): OrchestrationGraphDefinition {
   return {
     schemaVersion: 'pudding.agent-orchestration/v2',
     graphId: 'graph-1',
@@ -40,7 +42,11 @@ function savedRevision(overrides: Partial<OrchestrationGraphDefinition> = {}): O
         kind: 'humanInput',
         title: 'Start',
         objective: 'Collect initial input.',
-        component: { componentType: 'pudding.agent.human-input', version: '1', contractHash: 'hash-human-1' },
+        component: {
+          componentType: 'pudding.agent.human-input',
+          version: '1',
+          contractHash: 'hash-human-1',
+        },
         expectedOutputContract: 'pudding.content',
         configuration: {},
         permissionMode: 'readOnly',
@@ -56,20 +62,32 @@ function savedRevision(overrides: Partial<OrchestrationGraphDefinition> = {}): O
   };
 }
 
-function nodeDraft(nodeId: string, kind: OrchestrationNodeDefinition['kind'], overrides: Partial<OrchestrationNodeDefinition> = {}): OrchestrationNodeDefinition {
+function nodeDraft(
+  nodeId: string,
+  kind: OrchestrationNodeDefinition['kind'],
+  overrides: Partial<OrchestrationNodeDefinition> = {},
+): OrchestrationNodeDefinition {
   return {
     nodeId,
     kind,
     title: kind === 'humanInput' ? 'Human Input' : 'Sub Agent',
     objective: `${nodeId} objective`,
     component: {
-      componentType: kind === 'humanInput' ? 'pudding.agent.human-input' : 'pudding.agent.subagent',
+      componentType:
+        kind === 'humanInput'
+          ? 'pudding.agent.human-input'
+          : 'pudding.agent.subagent',
       version: '1',
       contractHash: `hash-${kind}-${nodeId}`,
     },
     executor:
       kind === 'subAgent'
-        ? { kind: 'subAgent', role: 'reviewer', templateId: 'tpl-1', routeKey: 'route-1' }
+        ? {
+            kind: 'subAgent',
+            role: 'reviewer',
+            templateId: 'tpl-1',
+            routeKey: 'route-1',
+          }
         : undefined,
     expectedOutputContract: 'pudding.content',
     configuration: {},
@@ -81,7 +99,9 @@ function nodeDraft(nodeId: string, kind: OrchestrationNodeDefinition['kind'], ov
   };
 }
 
-function catalogComponent(kind: OrchestrationNodeDefinition['kind']): OrchestrationRegisteredComponent {
+function catalogComponent(
+  kind: OrchestrationNodeDefinition['kind'],
+): OrchestrationRegisteredComponent {
   return {
     descriptor: {
       componentType: `pudding.agent.${kind === 'humanInput' ? 'human-input' : kind}`,
@@ -96,7 +116,12 @@ function catalogComponent(kind: OrchestrationNodeDefinition['kind']): Orchestrat
         {
           portId: 'result',
           displayName: 'Result',
-          contract: { dataType: 'pudding.content', mediaTypes: ['text/plain'], cardinality: 'one', deliveries: ['inline'] },
+          contract: {
+            dataType: 'pudding.content',
+            mediaTypes: ['text/plain'],
+            cardinality: 'one',
+            deliveries: ['inline'],
+          },
           required: true,
         },
       ],
@@ -109,40 +134,144 @@ function catalogComponent(kind: OrchestrationNodeDefinition['kind']): Orchestrat
 describe('orchestration revision editor (S1)', () => {
   describe('catalog -> node draft', () => {
     it('maps a catalog component to the correct node kind/executor/gate and freezes the contract hash', () => {
-      const subAgent = createNodeDraftFromCatalog(catalogComponent('subAgent'), 'sub-1');
+      const subAgent = createNodeDraftFromCatalog(
+        catalogComponent('subAgent'),
+        'sub-1',
+      );
       expect(subAgent.kind).toBe('subAgent');
-      expect(subAgent.executor).toEqual({ kind: 'subAgent', role: '', templateId: '', routeKey: '' });
-      expect(subAgent.component).toEqual({ componentType: 'pudding.agent.subAgent', version: '1', contractHash: 'hash-subAgent-1' });
+      expect(subAgent.executor).toEqual({
+        kind: 'subAgent',
+        role: '',
+        templateId: '',
+        routeKey: '',
+      });
+      expect(subAgent.component).toEqual({
+        componentType: 'pudding.agent.subAgent',
+        version: '1',
+        contractHash: 'hash-subAgent-1',
+      });
 
-      const tool = createNodeDraftFromCatalog(catalogComponent('tool'), 'tool-1');
+      const tool = createNodeDraftFromCatalog(
+        catalogComponent('tool'),
+        'tool-1',
+      );
       expect(tool.kind).toBe('tool');
       expect(tool.executor).toEqual({ kind: 'tool', toolId: '' });
 
-      const gate = createNodeDraftFromCatalog(catalogComponent('gate'), 'gate-1');
+      const image = createNodeDraftFromCatalog(
+        {
+          ...catalogComponent('tool'),
+          descriptor: {
+            ...catalogComponent('tool').descriptor,
+            componentType: 'pudding.media.image-generate',
+            displayName: 'Image Generate',
+          },
+        },
+        'image-1',
+      );
+      expect(image.executor).toEqual({
+        kind: 'tool',
+        toolId: 'generate_image',
+      });
+      expect(image.configuration).toEqual({
+        mode: 'default',
+        size: '2K',
+        watermark: true,
+        outputFormat: 'png',
+      });
+
+      const preview = createNodeDraftFromCatalog(
+        {
+          ...catalogComponent('tool'),
+          descriptor: {
+            ...catalogComponent('tool').descriptor,
+            componentType: 'pudding.media.image-preview',
+            displayName: 'Image Preview',
+          },
+        },
+        'preview-1',
+      );
+      expect(preview.executor).toEqual({
+        kind: 'tool',
+        toolId: 'preview_image',
+      });
+
+      const gate = createNodeDraftFromCatalog(
+        catalogComponent('gate'),
+        'gate-1',
+      );
       expect(gate.kind).toBe('gate');
       expect(gate.executor).toBeUndefined();
+      expect(gate.gate).toEqual({
+        evaluatorId: 'executor.gate',
+        parameters: {},
+      });
+      expect(
+        validateNodeDraft({
+          ...gate,
+          objective: 'Evaluate upstream results.',
+        }),
+      ).toEqual([]);
 
-      const human = createNodeDraftFromCatalog(catalogComponent('humanInput'), 'human-1');
+      const human = createNodeDraftFromCatalog(
+        catalogComponent('humanInput'),
+        'human-1',
+      );
       expect(human.kind).toBe('humanInput');
       expect(human.executor).toBeUndefined();
     });
 
     it('allows a humanInput node without an executor', () => {
-      const human = createNodeDraftFromCatalog(catalogComponent('humanInput'), 'human-1');
-      expect(validateNodeDraft({ ...human, title: 'Start', objective: 'Ask for input.' })).toEqual([]);
+      const human = createNodeDraftFromCatalog(
+        catalogComponent('humanInput'),
+        'human-1',
+      );
+      expect(
+        validateNodeDraft({
+          ...human,
+          title: 'Start',
+          objective: 'Ask for input.',
+        }),
+      ).toEqual([]);
     });
 
     it('requires role/template/route on a subAgent node', () => {
-      const incomplete = createNodeDraftFromCatalog(catalogComponent('subAgent'), 'sub-1');
+      const incomplete = createNodeDraftFromCatalog(
+        catalogComponent('subAgent'),
+        'sub-1',
+      );
       incomplete.objective = 'Do the work.';
       const issues = validateNodeDraft(incomplete);
       const codes = issues.map((issue) => issue.code).sort();
       expect(codes).toEqual(
-        ['node.subagent_role_required', 'node.subagent_route_required', 'node.subagent_template_required'].sort(),
+        [
+          'node.subagent_role_required',
+          'node.subagent_route_required',
+          'node.subagent_template_required',
+        ].sort(),
       );
 
       const complete = nodeDraft('sub-1', 'subAgent');
       expect(validateNodeDraft(complete)).toEqual([]);
+    });
+
+    it('rejects a gate node without a catalog-derived evaluator', () => {
+      const gate = createNodeDraftFromCatalog(
+        {
+          ...catalogComponent('gate'),
+          descriptor: {
+            ...catalogComponent('gate').descriptor,
+            executorId: '',
+          },
+        },
+        'gate-1',
+      );
+      gate.objective = 'Evaluate upstream results.';
+
+      expect(validateNodeDraft(gate)).toContainEqual({
+        code: 'node.gate_evaluator_required',
+        message: 'Gate 节点必须指定 evaluatorId',
+      });
     });
   });
 
@@ -151,18 +280,46 @@ describe('orchestration revision editor (S1)', () => {
       const draft = createDraftFromSaved(savedRevision());
       const withEdges = {
         ...draft,
-        nodes: [...draft.nodes, nodeDraft('b', 'subAgent'), nodeDraft('c', 'subAgent')],
+        nodes: [
+          ...draft.nodes,
+          nodeDraft('b', 'subAgent'),
+          nodeDraft('c', 'subAgent'),
+        ],
         edges: [
-          { edgeId: 'e1', fromNodeId: 'start', toNodeId: 'b', kind: 'control' as const, condition: 'onSuccess' as const, bindings: [] },
-          { edgeId: 'e2', fromNodeId: 'b', toNodeId: 'c', kind: 'control' as const, condition: 'onSuccess' as const, bindings: [] },
-          { edgeId: 'e3', fromNodeId: 'start', toNodeId: 'c', kind: 'data' as const, condition: 'onSuccess' as const, bindings: [] },
+          {
+            edgeId: 'e1',
+            fromNodeId: 'start',
+            toNodeId: 'b',
+            kind: 'control' as const,
+            condition: 'onSuccess' as const,
+            bindings: [],
+          },
+          {
+            edgeId: 'e2',
+            fromNodeId: 'b',
+            toNodeId: 'c',
+            kind: 'control' as const,
+            condition: 'onSuccess' as const,
+            bindings: [],
+          },
+          {
+            edgeId: 'e3',
+            fromNodeId: 'start',
+            toNodeId: 'c',
+            kind: 'data' as const,
+            condition: 'onSuccess' as const,
+            bindings: [],
+          },
         ],
       };
 
       const result = removeNodeFromDraft(withEdges, 'b');
       expect(result.blocked).toBeUndefined();
       expect(result.removedEdgeIds.sort()).toEqual(['e1', 'e2']);
-      expect(result.draft.nodes.map((node) => node.nodeId)).toEqual(['start', 'c']);
+      expect(result.draft.nodes.map((node) => node.nodeId)).toEqual([
+        'start',
+        'c',
+      ]);
       expect(result.draft.edges.map((edge) => edge.edgeId)).toEqual(['e3']);
     });
 
@@ -177,11 +334,19 @@ describe('orchestration revision editor (S1)', () => {
     it('inserts and patches nodes without mutating the saved definition', () => {
       const saved = savedRevision();
       const draft = createDraftFromSaved(saved);
-      const inserted = insertNodeDraft(draft, nodeDraft('research', 'subAgent'));
-      expect(inserted.nodes.map((node) => node.nodeId)).toEqual(['start', 'research']);
+      const inserted = insertNodeDraft(
+        draft,
+        nodeDraft('research', 'subAgent'),
+      );
+      expect(inserted.nodes.map((node) => node.nodeId)).toEqual([
+        'start',
+        'research',
+      ]);
       expect(saved.nodes).toHaveLength(1);
 
-      const patched = patchNodeDraft(inserted, 'research', { objective: 'Research the topic.' });
+      const patched = patchNodeDraft(inserted, 'research', {
+        objective: 'Research the topic.',
+      });
       expect(patched.nodes[1].objective).toBe('Research the topic.');
       expect(inserted.nodes[1].objective).toBe('research objective');
     });
@@ -197,9 +362,45 @@ describe('orchestration revision editor (S1)', () => {
       expect(shouldPromptBeforeUnload(saved, identicalDraft)).toBe(true);
       expect(isContentDirty(saved, identicalDraft)).toBe(false);
 
-      const edited = insertNodeDraft(identicalDraft, nodeDraft('research', 'subAgent'));
+      const edited = insertNodeDraft(
+        identicalDraft,
+        nodeDraft('research', 'subAgent'),
+      );
       expect(isContentDirty(saved, edited)).toBe(true);
       expect(shouldPromptBeforeUnload(saved, edited)).toBe(true);
+    });
+
+    it('treats graph input and trigger edits as executable content changes', () => {
+      const saved = savedRevision();
+      const withInput: OrchestrationGraphDefinition = {
+        ...saved,
+        inputs: [
+          {
+            inputId: 'request',
+            contract: {
+              dataType: 'pudding.text',
+              mediaTypes: [],
+              cardinality: 'one',
+              deliveries: ['inline'],
+            },
+            requiredAtActivation: true,
+          },
+        ],
+      };
+      const withTrigger: OrchestrationGraphDefinition = {
+        ...saved,
+        triggers: [
+          {
+            triggerId: 'manual',
+            trigger: { triggerType: 'pudding.trigger.manual', version: '1' },
+            enabled: true,
+            configuration: {},
+            inputBindings: [],
+          },
+        ],
+      };
+      expect(isContentDirty(saved, withInput)).toBe(true);
+      expect(isContentDirty(saved, withTrigger)).toBe(true);
     });
 
     it('blocks layout writes to the old base revision while a draft exists', () => {
@@ -208,7 +409,10 @@ describe('orchestration revision editor (S1)', () => {
       expect(targetWithoutDraft.blocked).toBe(false);
       expect(targetWithoutDraft.baseRevisionId).toBe('graph-1/r001');
 
-      const targetWithDraft = getLayoutSaveTarget(saved, createDraftFromSaved(saved));
+      const targetWithDraft = getLayoutSaveTarget(
+        saved,
+        createDraftFromSaved(saved),
+      );
       expect(targetWithDraft.blocked).toBe(true);
       expect(targetWithDraft.baseRevisionId).toBe('graph-1/r001');
       expect(targetWithDraft.reason).toMatch(/旧 base Revision/);
@@ -233,7 +437,10 @@ describe('orchestration revision editor (S1)', () => {
   describe('save and conflict handling', () => {
     it('preserves the draft after a 409 conflict and only an explicit action reloads', () => {
       const saved = savedRevision();
-      const draft = insertNodeDraft(createDraftFromSaved(saved), nodeDraft('research', 'subAgent'));
+      const draft = insertNodeDraft(
+        createDraftFromSaved(saved),
+        nodeDraft('research', 'subAgent'),
+      );
 
       const conflict = getRevisionConflict({
         response: { status: 409 },
@@ -252,23 +459,38 @@ describe('orchestration revision editor (S1)', () => {
       });
 
       expect(conflict).toBeDefined();
-      const preserved = preserveDraftOnConflict(draft, conflict as NonNullable<typeof conflict>);
+      const preserved = preserveDraftOnConflict(
+        draft,
+        conflict as NonNullable<typeof conflict>,
+      );
       expect(preserved.draft).toBe(draft);
-      expect(preserved.draft.nodes.map((node) => node.nodeId)).toEqual(['start', 'research']);
+      expect(preserved.draft.nodes.map((node) => node.nodeId)).toEqual([
+        'start',
+        'research',
+      ]);
 
       // Reloading is a separate, explicit action that discards the local draft.
-      const latest = savedRevision({ revision: 2, revisionId: 'graph-1/r002', nodes: [nodeDraft('start', 'humanInput')] });
+      const latest = savedRevision({
+        revision: 2,
+        revisionId: 'graph-1/r002',
+        nodes: [nodeDraft('start', 'humanInput')],
+      });
       const reloaded = reloadLatestRevision(latest);
       expect(reloaded.saved).toBe(latest);
       expect(reloaded.draft).toBeUndefined();
 
       // Non-409 failures are not treated as conflicts.
-      expect(getRevisionConflict({ response: { status: 422 } })).toBeUndefined();
+      expect(
+        getRevisionConflict({ response: { status: 422 } }),
+      ).toBeUndefined();
     });
 
     it('switches the graph preview to the server revision after a successful save', () => {
       const saved = savedRevision();
-      const draft = insertNodeDraft(createDraftFromSaved(saved), nodeDraft('research', 'subAgent'));
+      const draft = insertNodeDraft(
+        createDraftFromSaved(saved),
+        nodeDraft('research', 'subAgent'),
+      );
       const serverRevision = buildNextRevisionPreview(draft, saved);
 
       const applied = applyServerRevision(saved, draft, serverRevision);
@@ -284,12 +506,35 @@ describe('orchestration revision editor (S1)', () => {
       const local = savedRevision({ objective: 'Local objective' });
       const latest = savedRevision({
         objective: 'Latest objective',
-        nodes: [nodeDraft('start', 'humanInput'), nodeDraft('other', 'humanInput')],
+        nodes: [
+          nodeDraft('start', 'humanInput'),
+          nodeDraft('other', 'humanInput'),
+        ],
+        inputs: [
+          {
+            inputId: 'request',
+            requiredAtActivation: true,
+            contract: {
+              dataType: 'pudding.content',
+              mediaTypes: ['text/plain'],
+              cardinality: 'one',
+              deliveries: ['inline'],
+            },
+          },
+        ],
+        triggers: [
+          {
+            triggerId: 'manual',
+            trigger: { triggerType: 'pudding.manual', version: '1' },
+          },
+        ],
       });
       const diff = summarizeDefinitionDiff(local, latest);
       expect(diff.objectiveChanged).toBe(true);
       expect(diff.nodesAdded).toEqual(['other']);
       expect(diff.nodesRemoved).toEqual([]);
+      expect(diff.inputsAdded).toEqual(['request']);
+      expect(diff.triggersAdded).toEqual(['manual']);
     });
   });
 });

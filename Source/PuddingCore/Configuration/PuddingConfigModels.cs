@@ -427,6 +427,12 @@ public sealed record AgentInstanceManifest
     public string? DeployerModel { get; init; }
     public string? TesterModel { get; init; }
 
+    /// <summary>
+    /// image_reader 专用模型路由，格式为 providerId/modelId。
+    /// 未配置时不从全局 vision 模型池隐式选择。
+    /// </summary>
+    public string? ImageReaderModel { get; init; }
+
     // ── Markdown 文件引用（相对于实例根目录的文件名，如 "SOUL.md"）──
     public string? SoulMdFile { get; init; }
     public string? AgentsMdFile { get; init; }

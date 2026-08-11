@@ -1,4 +1,4 @@
-using PuddingCode.Platform;
+﻿using PuddingCode.Platform;
 
 namespace PuddingCode.Platform;
 
@@ -29,7 +29,7 @@ public static class BuiltInAgentTemplates
             EnableWorkspaceMemory = true,
             AllowPublicSourceWrite = false,
         },
-        SystemPrompt = "You are a helpful assistant in the Pudding Agent Network. Answer questions accurately and concisely.",
+        SystemPrompt = "You are a helpful assistant in the Pudding Agent Network. Answer questions accurately and concisely. On session start or heartbeat wake, first retrieve recent history (query_session_logs full-text search) to restore context continuity; prefer full-text search over vector retrieval.",
     };
 
     public static readonly AgentTemplateDefinition WorkspaceTaskAgent = new()
@@ -76,7 +76,7 @@ public static class BuiltInAgentTemplates
             EnableWorkspaceMemory = true,
             AllowPublicSourceWrite = false,
         },
-        SystemPrompt = "You are a task-oriented agent. You can read/write files and run host commands to accomplish tasks. Prefer terminal_start/terminal_wait for long-running commands. Always ask for approval before destructive operations.",
+        SystemPrompt = "You are a task-oriented agent. You can read/write files and run host commands to accomplish tasks. Prefer terminal_start/terminal_wait for long-running commands. Always ask for approval before destructive operations. On session start or heartbeat wake, first retrieve recent history (query_session_logs full-text search) to restore context continuity; prefer full-text search over vector retrieval.",
     };
 
     public static readonly AgentTemplateDefinition CodeAgent = new()

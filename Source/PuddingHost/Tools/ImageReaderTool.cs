@@ -1,4 +1,5 @@
 ﻿using PuddingCode.Abstractions;
+using PuddingCode.Agents;
 using PuddingCode.Models;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
@@ -22,6 +23,7 @@ namespace PuddingAgent.Tools;
 public sealed class ImageReaderTool(
     VisionArtifactStorageService artifactStorage,
     IVisualArtifactLocalFileResolver localFileResolver,
+    AgentProfileProvider agentProfileProvider,
     ILlmResolver llmResolver,
     ILlmInvocationService invocationService,
     ILogger<ImageReaderTool> logger) : PuddingToolBase<ImageReaderArgs>
@@ -57,52 +59,140 @@ public sealed class ImageReaderTool(
         if (mimeType is null)
             return ToolExecutionResult.Fail("Unsupported image type. Use PNG, JPEG, or WebP.");
 
+        var configurationAgentId = context.ConfigurationAgentInstanceId
+            ?? context.AgentInstanceId;
+        AgentFileProfile agentProfile;
+        try
+        {
+            agentProfile = await agentProfileProvider.LoadAsync(configurationAgentId, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "[ImageReader] Failed to load Agent model route agent={AgentId}",
+                configurationAgentId);
+            return ToolExecutionResult.Fail(
+                $"Cannot load image_reader model configuration for Agent '{configurationAgentId}': {ex.Message}");
+        }
+
+        var imageReaderModel = agentProfile.Instance.ImageReaderModel?.Trim();
+        if (string.IsNullOrWhiteSpace(imageReaderModel))
+        {
+            return ToolExecutionResult.Fail(
+                $"Agent '{configurationAgentId}' has no imageReaderModel configured. " +
+                "Set it to 'providerId/modelId' in the Agent manifest.json.");
+        }
+
+        var modelRoutes = BuildModelRoutes(agentProfile.Instance, imageReaderModel);
         var artifactId = await ResolveOrImportArtifactAsync(
             context.WorkspaceId,
             fullPath,
             mimeType,
             ct);
-        var route = await llmResolver.ResolveRouteAsync(
-            requiredCapabilityTags: ["vision"],
-            ct: ct);
         var prompt = string.IsNullOrWhiteSpace(args.Prompt)
             ? "Describe the image accurately. Include visible text and important details. Do not infer anything that is not visible."
             : args.Prompt.Trim();
+        var failures = new List<string>(modelRoutes.Count);
 
-        logger.LogInformation(
-            "[ImageReader] Analyze file={FileName} provider={ProviderId} model={ModelId}",
-            Path.GetFileName(fullPath),
-            route.ProviderId,
-            route.ModelId);
-
-        var result = await invocationService.InvokeAsync(new LlmInvocationRequest
+        foreach (var modelRoute in modelRoutes)
         {
-            WorkspaceId = context.WorkspaceId,
-            SessionId = context.SessionId,
-            AgentInstanceId = context.AgentInstanceId,
-            AgentTemplateId = context.AgentTemplateId ?? "system:image-reader",
-            Profile = new LlmInvocationProfile
+            try
             {
-                ProviderId = route.ProviderId,
-                ProfileId = $"tool:image_reader:{route.ProviderId}/{route.ModelId}",
-                ModelId = route.ModelId,
-                Role = "conscious",
-            },
-            ConfigOverride = route.Config,
-            Messages =
-            [
-                new ChatMessage(
-                    ChatRole.User,
-                    prompt,
-                    VisualArtifactIds: [artifactId]),
-            ],
-            Trace = context.Trace,
-        }, ct);
+                var route = await llmResolver.ResolveRouteAsync(
+                    modelRoute: modelRoute,
+                    requiredCapabilityTags: ["vision"],
+                    ct: ct);
 
-        if (!result.Success || string.IsNullOrWhiteSpace(result.ReplyText))
-            return ToolExecutionResult.Fail(result.Error ?? "The vision model returned no description.");
+                logger.LogInformation(
+                    "[ImageReader] Analyze file={FileName} agent={AgentId} provider={ProviderId} model={ModelId}",
+                    Path.GetFileName(fullPath),
+                    configurationAgentId,
+                    route.ProviderId,
+                    route.ModelId);
 
-        return ToolExecutionResult.Ok(result.ReplyText.Trim());
+                var result = await invocationService.InvokeAsync(new LlmInvocationRequest
+                {
+                    WorkspaceId = context.WorkspaceId,
+                    SessionId = context.SessionId,
+                    AgentInstanceId = context.AgentInstanceId,
+                    AgentTemplateId = context.AgentTemplateId ?? "system:image-reader",
+                    Profile = new LlmInvocationProfile
+                    {
+                        ProviderId = route.ProviderId,
+                        ProfileId = $"tool:image_reader:{route.ProviderId}/{route.ModelId}",
+                        ModelId = route.ModelId,
+                        Role = "conscious",
+                    },
+                    ConfigOverride = route.Config,
+                    Messages =
+                    [
+                        new ChatMessage(
+                            ChatRole.User,
+                            prompt,
+                            VisualArtifactIds: [artifactId]),
+                    ],
+                    Trace = context.Trace,
+                }, ct);
+
+                if (result.Success && !string.IsNullOrWhiteSpace(result.ReplyText))
+                    return ToolExecutionResult.Ok(result.ReplyText.Trim());
+
+                var failure = result.Error ?? "The vision model returned no description.";
+                failures.Add($"{modelRoute}: {TruncateFailure(failure)}");
+                logger.LogWarning(
+                    "[ImageReader] Agent-configured model failed agent={AgentId} route={Route} error={Error}",
+                    configurationAgentId,
+                    modelRoute,
+                    failure);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{modelRoute}: {TruncateFailure(ex.Message)}");
+                logger.LogWarning(
+                    ex,
+                    "[ImageReader] Agent-configured route failed agent={AgentId} route={Route}",
+                    configurationAgentId,
+                    modelRoute);
+            }
+        }
+
+        return ToolExecutionResult.Fail(
+            $"All Agent-configured image_reader routes failed for Agent '{configurationAgentId}'. " +
+            $"Attempts: {string.Join(" | ", failures)}");
+    }
+
+    private static IReadOnlyList<string> BuildModelRoutes(
+        PuddingCode.Configuration.AgentInstanceManifest manifest,
+        string imageReaderModel)
+    {
+        var routes = new List<string> { imageReaderModel };
+        if (!string.IsNullOrWhiteSpace(manifest.PreferredProviderId)
+            && !string.IsNullOrWhiteSpace(manifest.PreferredModelId))
+        {
+            var mainModelRoute = $"{manifest.PreferredProviderId.Trim()}/{manifest.PreferredModelId.Trim()}";
+            if (!string.Equals(mainModelRoute, imageReaderModel, StringComparison.OrdinalIgnoreCase))
+                routes.Add(mainModelRoute);
+        }
+
+        return routes;
+    }
+
+    private static string TruncateFailure(string message)
+    {
+        const int maxLength = 300;
+        var normalized = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength] + "...";
     }
 
     private async Task<string> ResolveOrImportArtifactAsync(

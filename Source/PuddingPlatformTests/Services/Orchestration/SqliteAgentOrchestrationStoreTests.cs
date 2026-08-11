@@ -243,6 +243,137 @@ public sealed class SqliteAgentOrchestrationStoreTests
     }
 
     [TestMethod]
+    public async Task CommitLastNode_CompletesRunAndAppendsRunTerminalEventAtomically()
+    {
+        var definition = CreateDefinition() with
+        {
+            GraphId = "graph-single",
+            RevisionId = "graph-single/r001",
+            Objective = "Execute one node.",
+            Nodes = [CreateNode("only", maxAttempts: 1)],
+            Edges = []
+        };
+        var saved = await _store.SaveRevisionAsync(new AgentOrchestrationRevisionWriteRequest
+        {
+            Definition = definition,
+            ExpectedCurrentRevision = 0
+        });
+        Assert.IsTrue(saved.Success, saved.ErrorMessage);
+        var created = await _store.CreateRunAsync(new AgentOrchestrationRunCreateRequest
+        {
+            RunId = "run-single",
+            RevisionId = definition.RevisionId,
+            RequestedByAgentId = "main-agent"
+        });
+        await _store.ActivateRunAsync(new AgentOrchestrationRunActivationRequest
+        {
+            RunId = "run-single",
+            ExpectedVersion = created.Value!.Version
+        });
+        var claim = (await _store.TryClaimNextReadyNodeAsync(new AgentOrchestrationNodeClaimRequest
+        {
+            RunId = "run-single",
+            WorkerId = "worker-single",
+            LeaseDuration = TimeSpan.FromMinutes(2)
+        })).Value!;
+        await _store.MarkNodeRunningAsync(new AgentOrchestrationNodeStartRequest
+        {
+            RunId = claim.RunId,
+            NodeId = claim.NodeId,
+            ClaimId = claim.ClaimId,
+            WorkerId = claim.WorkerId,
+            FencingToken = claim.FencingToken,
+            ExecutionRunId = "execution-single"
+        });
+
+        var terminal = await _store.CommitNodeTerminalAsync(new AgentOrchestrationNodeTerminalRequest
+        {
+            RunId = claim.RunId,
+            NodeId = claim.NodeId,
+            ClaimId = claim.ClaimId,
+            WorkerId = claim.WorkerId,
+            FencingToken = claim.FencingToken,
+            Succeeded = true,
+            Summary = "done",
+            ArtifactReference = "vision-output",
+            Outputs = new Dictionary<string, AgentOrchestrationValueEnvelope>
+            {
+                ["result"] = new()
+                {
+                    DataType = AgentOrchestrationDataTypes.Content,
+                    ContentType = "text/plain",
+                    InlineValue = JsonSerializer.SerializeToElement("durable port output")
+                }
+            },
+            ExecutionRunId = "child-run-terminal",
+            SubSessionId = "child-session-terminal"
+        });
+
+        Assert.AreEqual(AgentOrchestrationRunStatus.Completed, terminal.Value!.Status);
+        Assert.IsNotNull(terminal.Value.CompletedAtUtc);
+        Assert.AreEqual(AgentOrchestrationNodeRunStatus.Completed, terminal.Value.Nodes.Single().Status);
+        Assert.AreEqual(
+            "durable port output",
+            terminal.Value.Nodes.Single().Outputs["result"].InlineValue?.GetString());
+        Assert.AreEqual("child-run-terminal", terminal.Value.Nodes.Single().ExecutionRunId);
+        Assert.AreEqual("child-session-terminal", terminal.Value.Nodes.Single().SubSessionId);
+        var events = await _store.GetEventsAfterAsync("run-single", 0, 100);
+        Assert.AreEqual(AgentOrchestrationEventTypes.RunCompleted, events[^1].EventType);
+        Assert.AreEqual(terminal.Value.HeadSequence, events[^1].Sequence);
+    }
+
+    [TestMethod]
+    public async Task CreateRun_PersistsResolvedInputs_AndRejectsIdempotencyPayloadConflict()
+    {
+        await SaveDefinitionAsync();
+        var firstValue = new AgentOrchestrationValueEnvelope
+        {
+            DataType = AgentOrchestrationDataTypes.Text,
+            ContentType = "text/plain",
+            InlineValue = JsonSerializer.SerializeToElement("first")
+        };
+        var created = await _store.CreateRunAsync(new AgentOrchestrationRunCreateRequest
+        {
+            RunId = "run-inputs",
+            RevisionId = "graph-001/r001",
+            RequestedByAgentId = "http-hook:test",
+            Inputs = new Dictionary<string, AgentOrchestrationValueEnvelope>
+            {
+                ["request"] = firstValue
+            }
+        });
+        var retry = await _store.CreateRunAsync(new AgentOrchestrationRunCreateRequest
+        {
+            RunId = "run-inputs",
+            RevisionId = "graph-001/r001",
+            RequestedByAgentId = "http-hook:test",
+            Inputs = new Dictionary<string, AgentOrchestrationValueEnvelope>
+            {
+                ["request"] = firstValue
+            }
+        });
+        var conflict = await _store.CreateRunAsync(new AgentOrchestrationRunCreateRequest
+        {
+            RunId = "run-inputs",
+            RevisionId = "graph-001/r001",
+            RequestedByAgentId = "http-hook:test",
+            Inputs = new Dictionary<string, AgentOrchestrationValueEnvelope>
+            {
+                ["request"] = firstValue with
+                {
+                    InlineValue = JsonSerializer.SerializeToElement("different")
+                }
+            }
+        });
+
+        Assert.AreEqual(AgentOrchestrationStoreStatus.Applied, created.Status);
+        Assert.AreEqual("first", created.Value!.Inputs["request"].InlineValue!.Value.GetString());
+        Assert.AreEqual(AgentOrchestrationStoreStatus.Unchanged, retry.Status);
+        Assert.AreEqual(AgentOrchestrationStoreStatus.Conflict, conflict.Status);
+        Assert.AreEqual("orchestration.run_input_conflict", conflict.ErrorCode);
+    }
+
+    [TestMethod]
     public async Task ClaimStartAndTerminalCommit_RejectsStaleFenceAndPreservesExecutionIdentity()
     {
         await CreateActiveRunAsync();
@@ -291,11 +422,55 @@ public sealed class SqliteAgentOrchestrationStoreTests
         Assert.AreEqual("child-run-001", node.ExecutionRunId);
         Assert.AreEqual("sub-session-001", node.SubSessionId);
         Assert.AreEqual("artifact://root-output", node.ArtifactReference);
+        Assert.AreEqual(AgentOrchestrationRunStatus.Active, completed.Value.Status);
+        Assert.AreEqual(
+            AgentOrchestrationNodeRunStatus.Ready,
+            completed.Value.Nodes.Single(item => item.NodeId == "child").Status);
 
         var events = await _store.GetEventsAfterAsync("run-001", 3, 100);
-        CollectionAssert.AreEqual(new long[] { 4, 5, 6 }, events.Select(item => item.Sequence).ToArray());
+        CollectionAssert.AreEqual(new long[] { 4, 5, 6, 7 }, events.Select(item => item.Sequence).ToArray());
         Assert.AreEqual("child-run-001", events.Single(item => item.EventType == AgentOrchestrationEventTypes.NodeStarted).ExecutionRunId);
         Assert.AreEqual("sub-session-001", events.Single(item => item.EventType == AgentOrchestrationEventTypes.NodeCompleted).SubSessionId);
+        Assert.AreEqual(
+            "child",
+            events.Single(item => item.EventType == AgentOrchestrationEventTypes.NodeReady).NodeId);
+    }
+
+    [TestMethod]
+    public async Task FailedPredecessor_SkipsOnSuccessSuccessorAndFailsRunAtomically()
+    {
+        await CreateActiveRunAsync();
+        var claim = (await _store.TryClaimNextReadyNodeAsync(new AgentOrchestrationNodeClaimRequest
+        {
+            RunId = "run-001",
+            WorkerId = "worker-failure",
+            LeaseDuration = TimeSpan.FromMinutes(2)
+        })).Value!;
+
+        var failed = await _store.CommitNodeTerminalAsync(new AgentOrchestrationNodeTerminalRequest
+        {
+            RunId = claim.RunId,
+            NodeId = claim.NodeId,
+            ClaimId = claim.ClaimId,
+            WorkerId = claim.WorkerId,
+            FencingToken = claim.FencingToken,
+            Succeeded = false,
+            ErrorMessage = "upstream failed"
+        });
+
+        Assert.AreEqual(AgentOrchestrationRunStatus.Failed, failed.Value!.Status);
+        Assert.AreEqual(
+            AgentOrchestrationNodeRunStatus.Failed,
+            failed.Value.Nodes.Single(item => item.NodeId == "root").Status);
+        Assert.AreEqual(
+            AgentOrchestrationNodeRunStatus.Skipped,
+            failed.Value.Nodes.Single(item => item.NodeId == "child").Status);
+        var events = await _store.GetEventsAfterAsync("run-001", 0, 100);
+        CollectionAssert.AreEqual(
+            Enumerable.Range(1, events.Count).Select(value => (long)value).ToArray(),
+            events.Select(item => item.Sequence).ToArray());
+        Assert.AreEqual("child", events.Single(item => item.EventType == AgentOrchestrationEventTypes.NodeSkipped).NodeId);
+        Assert.AreEqual(AgentOrchestrationEventTypes.RunFailed, events[^1].EventType);
     }
 
     [TestMethod]
@@ -853,6 +1028,44 @@ public sealed class SqliteAgentOrchestrationStoreTests
         var deletedResult = (JsonResult)deleted.Result!;
         Assert.AreEqual("admin-graph", ((AgentOrchestrationGraphDeleteReceipt)deletedResult.Value!).GraphId);
         Assert.IsNull(await _store.GetLatestRevisionAsync("admin-graph"));
+    }
+
+    [TestMethod]
+    public async Task ManagementApi_CreatesRunnableImageGenerationTemplate()
+    {
+        var controller = new AgentOrchestrationManagementApiController(_store)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var created = await controller.CreateGraph(new AgentOrchestrationGraphCreateRequest
+        {
+            GraphId = "admin-image-graph",
+            WorkspaceId = "default",
+            RootSessionId = "admin-image-editor",
+            Objective = "Generate one image",
+            MaxConcurrency = 1,
+            TemplateId = "image-generation"
+        });
+        var result = (JsonResult)created.Result!;
+        var definition = (AgentOrchestrationGraphDefinition)result.Value!;
+
+        Assert.AreEqual(StatusCodes.Status201Created, result.StatusCode);
+        Assert.AreEqual("prompt", definition.Inputs.Single().InputId);
+        Assert.AreEqual(2, definition.Nodes.Count);
+        var generate = definition.Nodes.Single(node => node.NodeId == "image-generate");
+        var preview = definition.Nodes.Single(node => node.NodeId == "image-preview");
+        Assert.AreEqual(AgentOrchestrationComponentTypes.ImageGenerate, generate.Component.ComponentType);
+        Assert.AreEqual("generate_image", generate.Executor!.ToolId);
+        Assert.AreEqual("prompt", generate.GraphInputBindings.Single().TargetPortId);
+        Assert.AreEqual(AgentOrchestrationComponentTypes.ImagePreview, preview.Component.ComponentType);
+        Assert.AreEqual("preview_image", preview.Executor!.ToolId);
+        var edge = definition.Edges.Single();
+        Assert.AreEqual(AgentOrchestrationEdgeKind.Data, edge.Kind);
+        Assert.AreEqual("images", edge.Bindings.Single().SourcePortId);
+        Assert.AreEqual("images", edge.Bindings.Single().TargetPortId);
+        StringAssert.StartsWith(generate.Component.ContractHash!, "sha256:");
+        StringAssert.StartsWith(preview.Component.ContractHash!, "sha256:");
     }
 
     private SqliteAgentOrchestrationStore CreateStore()

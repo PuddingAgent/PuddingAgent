@@ -12,6 +12,7 @@ describe('orchestration graph management', () => {
       rootSessionId: 'admin-orchestration-abc123',
       objective: '',
       maxConcurrency: 1,
+      templateId: 'image-generation',
     });
   });
 
@@ -23,6 +24,7 @@ describe('orchestration graph management', () => {
         rootSessionId: ' admin-editor ',
         objective: ' Review a design ',
         maxConcurrency: 3,
+        templateId: 'blank',
       }),
     ).toEqual({
       graphId: 'graph-1',
@@ -30,14 +32,17 @@ describe('orchestration graph management', () => {
       rootSessionId: 'admin-editor',
       objective: 'Review a design',
       maxConcurrency: 3,
+      templateId: 'blank',
     });
   });
 
   it('blocks destructive deletion whenever durable runs exist', () => {
     expect(getGraphDeletionBlocker(undefined)).toBe('请先选择 Graph');
+    expect(getGraphDeletionBlocker({ graphId: 'graph-1', runCount: 2 })).toBe(
+      '该 Graph 已有 2 个 Run，为保护运行历史不能删除',
+    );
     expect(
-      getGraphDeletionBlocker({ graphId: 'graph-1', runCount: 2 }),
-    ).toBe('该 Graph 已有 2 个 Run，为保护运行历史不能删除');
-    expect(getGraphDeletionBlocker({ graphId: 'graph-1', runCount: 0 })).toBeUndefined();
+      getGraphDeletionBlocker({ graphId: 'graph-1', runCount: 0 }),
+    ).toBeUndefined();
   });
 });

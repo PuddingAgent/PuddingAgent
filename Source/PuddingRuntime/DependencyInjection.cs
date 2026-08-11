@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +17,7 @@ using PuddingRuntime.Services.Background;
 using PuddingRuntime.Services.GoalMode;
 using PuddingRuntime.Services.Hooks;
 using PuddingRuntime.Services.Messaging;
+using PuddingRuntime.Services.Orchestration;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
@@ -125,6 +126,8 @@ public static class RuntimeServiceExtensions
                 services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
         services.AddSingleton<ProviderRateLimiter>();
 
+        services.AddSingleton<IUserPreferenceService, UserPreferenceService>();
+
         services.AddSingleton<SystemPromptBuilder>();
         services.TryAddSingleton<AgentSkillFileService>();
                 services.AddSingleton<SessionSummaryStore>();
@@ -156,6 +159,10 @@ public static class RuntimeServiceExtensions
         services.TryAddSingleton<DesignCouncilRunStateMachine>();
         services.TryAddSingleton<ISubAgentOrchestrationRunStore, InMemorySubAgentOrchestrationRunStore>();
         services.TryAddSingleton<IDesignCouncilRuntimeService, DesignCouncilRuntimeService>();
+        services.AddSingleton<IAgentOrchestrationNodeExecutor, SubAgentOrchestrationNodeExecutor>();
+        services.AddSingleton<IAgentOrchestrationNodeExecutor, ImageGenerateOrchestrationNodeExecutor>();
+        services.AddSingleton<IAgentOrchestrationNodeExecutor, ImagePreviewOrchestrationNodeExecutor>();
+        services.AddHostedService<AgentOrchestrationWorkerService>();
         services.AddSingleton<ContextWindowManager>();
         services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
 

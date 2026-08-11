@@ -1,5 +1,9 @@
 import { buildOrchestrationFlowModel } from './graphViewModel';
-import type { OrchestrationGraphDefinition, OrchestrationRunSnapshot } from './types';
+import type {
+  OrchestrationCatalog,
+  OrchestrationGraphDefinition,
+  OrchestrationRunSnapshot,
+} from './types';
 
 const definition = {
   schemaVersion: 'pudding.agent-orchestration/v2',
@@ -63,10 +67,27 @@ const run = {
   nodes: definition.nodes.map((node, index) => ({
     nodeId: node.nodeId,
     kind: node.kind,
-    status: index === 0 ? ('completed' as const) : index === 1 ? ('running' as const) : ('pending' as const),
+    status:
+      index === 0
+        ? ('completed' as const)
+        : index === 1
+          ? ('running' as const)
+          : ('pending' as const),
     attempt: index === 1 ? 1 : 0,
     maxAttempts: 1,
     fencingToken: 0,
+    outputSummary: index === 0 ? 'Generated image.' : undefined,
+    artifactReference: index === 0 ? 'vision-output-001' : undefined,
+    outputs:
+      index === 0
+        ? {
+            result: {
+              dataType: 'pudding.content',
+              contentType: 'text/markdown',
+              inlineValue: '策划结果',
+            },
+          }
+        : undefined,
     updatedAtUtc: '2026-08-09T00:01:00Z',
   })),
 } satisfies OrchestrationRunSnapshot;
@@ -76,12 +97,27 @@ describe('orchestration graph view model', () => {
     const model = buildOrchestrationFlowModel(definition, run);
     expect(model.nodes.map((node) => node.position.x)).toEqual([0, 310, 620]);
     expect(model.nodes[1].data.status).toBe('running');
-    expect(model.nodes[1].style).toEqual(expect.objectContaining({ border: expect.stringContaining('#13c2c2') }));
+    expect(model.nodes[1].style).toEqual(
+      expect.objectContaining({ border: expect.stringContaining('#13c2c2') }),
+    );
+    expect(model.nodes[0].data).toEqual(
+      expect.objectContaining({
+        componentType: 'pudding.agent.subagent',
+        workspaceId: 'default',
+        outputSummary: 'Generated image.',
+        artifactReference: 'vision-output-001',
+        outputs: expect.objectContaining({
+          result: expect.objectContaining({ inlineValue: '策划结果' }),
+        }),
+      }),
+    );
   });
 
   it('visually distinguishes data edges from control edges', () => {
     const model = buildOrchestrationFlowModel(definition, run);
-    expect(model.edges[0].style).toEqual(expect.objectContaining({ strokeDasharray: '6 4' }));
+    expect(model.edges[0].style).toEqual(
+      expect.objectContaining({ strokeDasharray: '6 4' }),
+    );
     expect(model.edges[1].style?.strokeDasharray).toBeUndefined();
   });
 
@@ -99,5 +135,85 @@ describe('orchestration graph view model', () => {
     expect(proposal?.position).toEqual({ x: 777, y: 333 });
     expect(proposal?.style?.width).toBe(280);
     expect(model.edges.map((edge) => edge.id)).toEqual(['e1', 'e2']);
+  });
+
+  it('projects catalog ports and typed React Flow handles', () => {
+    const catalog: OrchestrationCatalog = {
+      schemaVersion: '1',
+      triggers: [],
+      components: [
+        {
+          contractHash: 'hash-1',
+          descriptor: {
+            componentType: 'pudding.agent.subagent',
+            version: '1',
+            displayName: 'Sub Agent',
+            category: 'agent',
+            nodeKind: 'subAgent',
+            executorId: 'subagent',
+            sideEffect: 'none',
+            requiredCapabilities: [],
+            inputPorts: [
+              {
+                portId: 'request',
+                displayName: 'Request',
+                required: true,
+                contract: {
+                  dataType: 'pudding.text',
+                  mediaTypes: ['text/plain'],
+                  cardinality: 'one',
+                  deliveries: ['inline'],
+                },
+              },
+            ],
+            outputPorts: [
+              {
+                portId: 'result',
+                displayName: 'Result',
+                required: true,
+                contract: {
+                  dataType: 'pudding.text',
+                  mediaTypes: ['text/plain'],
+                  cardinality: 'one',
+                  deliveries: ['inline'],
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const dataDefinition = {
+      ...definition,
+      edges: [
+        {
+          ...definition.edges[0],
+          bindings: [
+            {
+              sourcePortId: 'result',
+              sourcePath: '$',
+              targetPortId: 'request',
+              aggregation: 'replace' as const,
+            },
+          ],
+        },
+      ],
+    };
+    const model = buildOrchestrationFlowModel(
+      dataDefinition,
+      run,
+      undefined,
+      catalog,
+    );
+    expect(model.nodes[0].type).toBe('orchestrationComponent');
+    expect(model.nodes[0].data.inputPorts.map((port) => port.portId)).toEqual([
+      'request',
+    ]);
+    expect(model.edges[0]).toEqual(
+      expect.objectContaining({
+        sourceHandle: 'data:out:result',
+        targetHandle: 'data:in:request',
+      }),
+    );
   });
 });

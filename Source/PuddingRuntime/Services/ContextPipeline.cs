@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -49,6 +49,7 @@ public sealed class ContextPipeline
     private readonly AgentMemorySummaryContextBuilder? _agentMemorySummaryContextBuilder;
     private readonly AgentLogRecallService? _agentLogRecallService;
     private readonly IImportantMemoryService? _importantMemory;
+    private readonly IUserPreferenceService? _userPreferenceService;
     private readonly PuddingDataPaths _dataPaths;
         private readonly CroppedLayersProvider? _croppedLayersProvider;
     private readonly SubconsciousRecallPipeline? _subconsciousRecallPipeline;
@@ -99,7 +100,8 @@ public sealed class ContextPipeline
         IImportantMemoryService? importantMemory = null,
         PuddingDataPaths? dataPaths = null,
                 CroppedLayersProvider? croppedLayersProvider = null,
-        SubconsciousRecallPipeline? subconsciousRecallPipeline = null)
+        SubconsciousRecallPipeline? subconsciousRecallPipeline = null,
+        IUserPreferenceService? userPreferenceService = null)
     {
         _memory = memory;
         _skillRuntime = skillRuntime;
@@ -124,6 +126,7 @@ public sealed class ContextPipeline
         _agentMemorySummaryContextBuilder = agentMemorySummaryContextBuilder;
         _agentLogRecallService = agentLogRecallService;
         _importantMemory = importantMemory;
+        _userPreferenceService = userPreferenceService;
         _croppedLayersProvider = croppedLayersProvider;
                 _subconsciousRecallPipeline = subconsciousRecallPipeline;
         _dataPaths = dataPaths ?? PuddingDataPaths.FromRoot(
@@ -266,6 +269,27 @@ public sealed class ContextPipeline
             TokenCount = userProfileTokens,
             ContentPreview = BuildPreview(userProfile),
         });
+
+        // ── L3-USER-PREFERENCES: 记忆库用户偏好预取（会话启动自动注入，Prefetch）──
+        if (_userPreferenceService is not null)
+        {
+            var prefsCtx = await GetOrBuildUserPreferencesAsync(request, ct);
+            if (!string.IsNullOrWhiteSpace(prefsCtx))
+            {
+                var prefsTokens = EstimateTokens(prefsCtx);
+                usedBudget += prefsTokens;
+                ctx.UsedBudget = usedBudget;
+                budget.UpdateAvailable(ctx);
+                AppendLayer(sb, prefsCtx);
+                layers.Add(new ContextLayerSnapshot("用户偏好记忆", prefsTokens, (double)prefsTokens / totalBudget * 100));
+                layerInfos.Add(new ContextLayerInfo
+                {
+                    LayerName = "L3-USER-PREFERENCES",
+                    TokenCount = prefsTokens,
+                    ContentPreview = BuildPreview(prefsCtx),
+                });
+            }
+        }
 
         // ── L4: 重要记忆（10%）──
         ctx.UsedBudget = usedBudget;
@@ -1048,6 +1072,46 @@ public sealed class ContextPipeline
         var content = result.ToString();
         _memCache.Set(cacheKey, content, MemCacheExpiration);
         return content;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // L3-USER-PREFERENCES: 用户偏好预取（Prefetch）
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 从记忆图书馆预取用户偏好并注入 System Prompt。
+    /// 按 workspace 缓存 30s；任何失败都降级为 null（不阻塞上下文组装）。
+    /// </summary>
+    private async Task<string?> GetOrBuildUserPreferencesAsync(ContextRequest request, CancellationToken ct)
+    {
+        if (_userPreferenceService is null || string.IsNullOrWhiteSpace(request.WorkspaceId))
+            return null;
+
+        var cacheKey = $"user_prefs:{request.WorkspaceId}";
+        if (_memCache.TryGetValue<string>(cacheKey, out var cached) && cached is not null)
+            return cached;
+
+        try
+        {
+            var prefs = await _userPreferenceService.LoadPreferencesAsync(
+                request.WorkspaceId,
+                maxItems: 20,
+                ct);
+            if (!string.IsNullOrWhiteSpace(prefs))
+                _memCache.Set(cacheKey, prefs, MemCacheExpiration);
+            return prefs;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[ContextPipeline] User preference prefetch failed workspace={Workspace}",
+                request.WorkspaceId);
+            return null;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

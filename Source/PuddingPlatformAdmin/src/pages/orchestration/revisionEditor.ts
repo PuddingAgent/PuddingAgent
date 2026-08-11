@@ -47,6 +47,8 @@ function contentSignature(definition: OrchestrationGraphDefinition): string {
     objective: definition.objective,
     requiresExplicitActivation: definition.requiresExplicitActivation,
     maxConcurrency: definition.maxConcurrency,
+    inputs: definition.inputs ?? [],
+    triggers: definition.triggers ?? [],
     nodes: definition.nodes,
     edges: definition.edges,
     metadata: definition.metadata,
@@ -82,8 +84,20 @@ export function createNodeDraftFromCatalog(
     descriptor.nodeKind === 'subAgent'
       ? { kind: 'subAgent', role: '', templateId: '', routeKey: '' }
       : descriptor.nodeKind === 'tool'
-        ? { kind: 'tool', toolId: '' }
+        ? {
+            kind: 'tool',
+            toolId:
+              descriptor.componentType === 'pudding.media.image-generate'
+                ? 'generate_image'
+                : descriptor.componentType === 'pudding.media.image-preview'
+                  ? 'preview_image'
+                  : '',
+          }
         : undefined;
+  const gate: OrchestrationNodeDefinition['gate'] =
+    descriptor.nodeKind === 'gate'
+      ? { evaluatorId: descriptor.executorId, parameters: {} }
+      : undefined;
   return {
     nodeId,
     kind: descriptor.nodeKind,
@@ -95,9 +109,18 @@ export function createNodeDraftFromCatalog(
       contractHash,
     },
     executor,
+    gate,
     expectedOutputContract:
       descriptor.outputPorts[0]?.contract.dataType ?? 'pudding.anything',
-    configuration: {},
+    configuration:
+      descriptor.componentType === 'pudding.media.image-generate'
+        ? {
+            mode: 'default',
+            size: '2K',
+            watermark: true,
+            outputFormat: 'png',
+          }
+        : {},
     permissionMode: 'readOnly',
     failureBehavior: 'failRun',
     maxAttempts: 1,
@@ -119,13 +142,18 @@ export interface OrchestrationNodeIssue {
  * must carry role/template/route; Tool nodes must carry toolId. The server compiler remains the
  * final authority before a save.
  */
-export function validateNodeDraft(node: OrchestrationNodeDefinition): OrchestrationNodeIssue[] {
+export function validateNodeDraft(
+  node: OrchestrationNodeDefinition,
+): OrchestrationNodeIssue[] {
   const issues: OrchestrationNodeIssue[] = [];
   if (!node.title.trim()) {
     issues.push({ code: 'node.title_required', message: '节点标题不能为空' });
   }
   if (!node.objective.trim()) {
-    issues.push({ code: 'node.objective_required', message: '节点目标不能为空' });
+    issues.push({
+      code: 'node.objective_required',
+      message: '节点目标不能为空',
+    });
   }
   switch (node.kind) {
     case 'subAgent':
@@ -136,7 +164,10 @@ export function validateNodeDraft(node: OrchestrationNodeDefinition): Orchestrat
         });
       } else {
         if (!node.executor.role?.trim()) {
-          issues.push({ code: 'node.subagent_role_required', message: 'SubAgent 必须指定 role' });
+          issues.push({
+            code: 'node.subagent_role_required',
+            message: 'SubAgent 必须指定 role',
+          });
         }
         if (!node.executor.templateId?.trim()) {
           issues.push({
@@ -145,18 +176,31 @@ export function validateNodeDraft(node: OrchestrationNodeDefinition): Orchestrat
           });
         }
         if (!node.executor.routeKey?.trim()) {
-          issues.push({ code: 'node.subagent_route_required', message: 'SubAgent 必须指定 route' });
+          issues.push({
+            code: 'node.subagent_route_required',
+            message: 'SubAgent 必须指定 route',
+          });
         }
       }
       break;
     case 'tool':
       if (node.executor?.kind !== 'tool' || !node.executor.toolId?.trim()) {
-        issues.push({ code: 'node.tool_id_required', message: 'Tool 节点必须指定 toolId' });
+        issues.push({
+          code: 'node.tool_id_required',
+          message: 'Tool 节点必须指定 toolId',
+        });
+      }
+      break;
+    case 'gate':
+      if (!node.gate?.evaluatorId.trim()) {
+        issues.push({
+          code: 'node.gate_evaluator_required',
+          message: 'Gate 节点必须指定 evaluatorId',
+        });
       }
       break;
     case 'humanInput':
-    case 'gate':
-      // HumanInput 可以没有 executor；gate 由配置驱动的 evaluator 解析（S1 不强制本地字段）。
+      // HumanInput 可以没有 executor。
       break;
   }
   return issues;
@@ -277,7 +321,12 @@ export function getRevisionConflict(
   if (candidate?.response?.status !== 409) return undefined;
 
   const data = (candidate.data ?? candidate.response.data) as
-    | { code?: unknown; message?: unknown; currentRevision?: unknown; currentRevisionId?: unknown }
+    | {
+        code?: unknown;
+        message?: unknown;
+        currentRevision?: unknown;
+        currentRevisionId?: unknown;
+      }
     | undefined;
   return {
     ...(typeof data?.code === 'string' ? { code: data.code } : {}),
@@ -301,14 +350,18 @@ export function getRevisionConflict(
 export function preserveDraftOnConflict(
   draft: OrchestrationGraphDefinition,
   conflict: OrchestrationRevisionConflict,
-): { draft: OrchestrationGraphDefinition; conflict: OrchestrationRevisionConflict } {
+): {
+  draft: OrchestrationGraphDefinition;
+  conflict: OrchestrationRevisionConflict;
+} {
   return { draft, conflict };
 }
 
 /** Explicit "重新加载最新 Revision" action: discards the local draft and adopts the latest server revision. */
-export function reloadLatestRevision(
-  latest: OrchestrationGraphDefinition,
-): { saved: OrchestrationGraphDefinition; draft: undefined } {
+export function reloadLatestRevision(latest: OrchestrationGraphDefinition): {
+  saved: OrchestrationGraphDefinition;
+  draft: undefined;
+} {
   return { saved: latest, draft: undefined };
 }
 
@@ -349,7 +402,8 @@ export function getLayoutSaveTarget(
     return {
       baseRevisionId: saved.revisionId,
       blocked: true,
-      reason: '内容草稿存在时不能把布局写入旧 base Revision；请先保存 Revision 再保存布局。',
+      reason:
+        '内容草稿存在时不能把布局写入旧 base Revision；请先保存 Revision 再保存布局。',
     };
   }
   return { baseRevisionId: saved.revisionId, blocked: false };
@@ -365,6 +419,10 @@ export interface OrchestrationDefinitionDiffSummary {
   nodesRemoved: string[];
   edgesAdded: string[];
   edgesRemoved: string[];
+  inputsAdded: string[];
+  inputsRemoved: string[];
+  triggersAdded: string[];
+  triggersRemoved: string[];
 }
 
 export function summarizeDefinitionDiff(
@@ -382,11 +440,43 @@ export function summarizeDefinitionDiff(
       .filter((node) => !latestNodes.has(node.nodeId))
       .map((node) => node.nodeId),
     edgesAdded: latest.edges
-      .filter((edge) => !local.edges.some((item) => item.edgeId === edge.edgeId))
+      .filter(
+        (edge) => !local.edges.some((item) => item.edgeId === edge.edgeId),
+      )
       .map((edge) => edge.edgeId),
     edgesRemoved: local.edges
-      .filter((edge) => !latest.edges.some((item) => item.edgeId === edge.edgeId))
+      .filter(
+        (edge) => !latest.edges.some((item) => item.edgeId === edge.edgeId),
+      )
       .map((edge) => edge.edgeId),
+    inputsAdded: (latest.inputs ?? [])
+      .filter(
+        (input) =>
+          !(local.inputs ?? []).some((item) => item.inputId === input.inputId),
+      )
+      .map((input) => input.inputId),
+    inputsRemoved: (local.inputs ?? [])
+      .filter(
+        (input) =>
+          !(latest.inputs ?? []).some((item) => item.inputId === input.inputId),
+      )
+      .map((input) => input.inputId),
+    triggersAdded: (latest.triggers ?? [])
+      .filter(
+        (trigger) =>
+          !(local.triggers ?? []).some(
+            (item) => item.triggerId === trigger.triggerId,
+          ),
+      )
+      .map((trigger) => trigger.triggerId),
+    triggersRemoved: (local.triggers ?? [])
+      .filter(
+        (trigger) =>
+          !(latest.triggers ?? []).some(
+            (item) => item.triggerId === trigger.triggerId,
+          ),
+      )
+      .map((trigger) => trigger.triggerId),
   };
 }
 

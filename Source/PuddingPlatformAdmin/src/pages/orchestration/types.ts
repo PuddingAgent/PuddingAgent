@@ -141,6 +141,7 @@ export interface OrchestrationGraphCreateRequest {
   rootSessionId: string;
   objective: string;
   maxConcurrency: number;
+  templateId?: 'blank' | 'image-generation';
 }
 
 export interface OrchestrationGraphDeleteReceipt {
@@ -164,6 +165,12 @@ export interface OrchestrationExecutorBinding {
   toolId?: string;
 }
 
+/** Runtime-owned gate evaluator frozen into a graph revision. */
+export interface OrchestrationGateDefinition {
+  evaluatorId: string;
+  parameters: Record<string, string>;
+}
+
 /**
  * One typed graph-level input (ADR-071 §7.4 `inputs`; doc 84 §4).
  * Mirrors AgentOrchestrationGraphInput: inputId, contract, optional defaultValue,
@@ -177,6 +184,20 @@ export interface OrchestrationGraphInput {
   defaultValue?: unknown;
   /** Defaults to true on the server when omitted. */
   requiredAtActivation?: boolean;
+}
+
+export interface OrchestrationValueEnvelope {
+  dataType: string;
+  contentType?: string;
+  inlineValue?: unknown;
+  artifacts?: Array<{
+    artifactId: string;
+    contentType: string;
+    fileName?: string;
+    sizeBytes?: number;
+    sha256?: string;
+    metadata?: Record<string, string>;
+  }>;
 }
 
 /**
@@ -220,6 +241,7 @@ export interface OrchestrationNodeDefinition {
   objective: string;
   component: OrchestrationComponentReference;
   executor?: OrchestrationExecutorBinding;
+  gate?: OrchestrationGateDefinition;
   graphInputBindings?: OrchestrationGraphInputBinding[];
   expectedOutputContract: string;
   configuration: Record<string, unknown>;
@@ -238,6 +260,15 @@ export interface OrchestrationDataBinding {
   aggregation: 'replace' | 'append';
 }
 
+export interface OrchestrationEdgePredicate {
+  evaluatorId: string;
+  version: string;
+  contractHash?: string;
+  sourcePortId: string;
+  sourcePath: string;
+  parameters: Record<string, unknown>;
+}
+
 export interface OrchestrationEdgeDefinition {
   edgeId: string;
   fromNodeId: string;
@@ -245,6 +276,7 @@ export interface OrchestrationEdgeDefinition {
   kind: OrchestrationEdgeKind;
   condition: 'onSuccess' | 'onCompletion' | 'always';
   bindings: OrchestrationDataBinding[];
+  predicate?: OrchestrationEdgePredicate;
 }
 
 export interface OrchestrationGraphDefinition {
@@ -281,6 +313,7 @@ export interface OrchestrationNodeRunSnapshot {
   subSessionId?: string;
   outputSummary?: string;
   artifactReference?: string;
+  outputs?: Record<string, OrchestrationValueEnvelope>;
   errorMessage?: string;
   startedAtUtc?: string;
   completedAtUtc?: string;
@@ -298,6 +331,7 @@ export interface OrchestrationRunSnapshot {
   version: number;
   headSequence: number;
   maxConcurrency: number;
+  inputs?: Record<string, OrchestrationValueEnvelope>;
   nodes: OrchestrationNodeRunSnapshot[];
   createdAtUtc: string;
   activatedAtUtc?: string;
@@ -316,6 +350,33 @@ export interface OrchestrationRunPage {
   count: number;
   hasMore: boolean;
   runs: OrchestrationRunSummary[];
+}
+
+export interface OrchestrationHttpHookInvokeRequest {
+  sourceEventId: string;
+  payload?: unknown;
+}
+
+export interface OrchestrationHttpHookInvokeReceipt {
+  triggerId: string;
+  sourceEventId: string;
+  run: OrchestrationRunSnapshot;
+  created: boolean;
+  activated: boolean;
+}
+
+export interface OrchestrationManualRunRequest {
+  graphId: string;
+  revisionId: string;
+  requestId: string;
+  inputs: Record<string, OrchestrationValueEnvelope>;
+}
+
+export interface OrchestrationManualRunReceipt {
+  requestId: string;
+  run: OrchestrationRunSnapshot;
+  created: boolean;
+  activated: boolean;
 }
 
 export interface OrchestrationGraphLayout {

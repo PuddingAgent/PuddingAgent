@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -656,6 +657,32 @@ public sealed class SqliteAgentOrchestrationStore(
                 var snapshot = await GetRunAsync(runId, ct);
                 if (IdEquals(existing.RevisionId, revisionId))
                 {
+                    var existingDefinition = await GetRevisionAsync(revisionId, ct);
+                    if (existingDefinition is null)
+                    {
+                        return NotFound<AgentOrchestrationRunSnapshot>(
+                            "orchestration.revision_not_found",
+                            $"Revision '{revisionId}' was not found.");
+                    }
+                    if (!TryResolveRunInputs(
+                            existingDefinition,
+                            request.Inputs,
+                            out var retryInputs,
+                            out var retryErrorCode,
+                            out var retryErrorMessage))
+                    {
+                        return Invalid<AgentOrchestrationRunSnapshot>(
+                            retryErrorCode!,
+                            retryErrorMessage!);
+                    }
+                    if (snapshot is null || !RunInputsEqual(snapshot.Inputs, retryInputs))
+                    {
+                        return Conflict<AgentOrchestrationRunSnapshot>(
+                            "orchestration.run_input_conflict",
+                            "RunId already exists with different graph inputs.",
+                            existing.Version);
+                    }
+
                     return new AgentOrchestrationStoreResult<AgentOrchestrationRunSnapshot>
                     {
                         Status = AgentOrchestrationStoreStatus.Unchanged,
@@ -677,6 +704,17 @@ public sealed class SqliteAgentOrchestrationStore(
                 return NotFound<AgentOrchestrationRunSnapshot>(
                     "orchestration.revision_not_found",
                     $"Revision '{revisionId}' was not found.");
+            }
+
+            if (!TryResolveRunInputs(
+                    definition,
+                    request.Inputs,
+                    out var resolvedInputs,
+                    out var inputErrorCode,
+                    out var inputErrorMessage))
+            {
+                await transaction.RollbackAsync(ct);
+                return Invalid<AgentOrchestrationRunSnapshot>(inputErrorCode!, inputErrorMessage!);
             }
 
             committedHead = 1;
@@ -704,6 +742,21 @@ public sealed class SqliteAgentOrchestrationStore(
                 ("@maxConcurrency", definition.MaxConcurrency),
                 ("@createdAt", nowMs),
                 ("@updatedAt", nowMs));
+
+            foreach (var input in resolvedInputs.OrderBy(item => item.Key, StringComparer.Ordinal))
+            {
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    """
+                    INSERT INTO orchestration_run_inputs (run_id, input_id, value_json)
+                    VALUES (@runId, @inputId, @valueJson)
+                    """,
+                    ct,
+                    ("@runId", runId),
+                    ("@inputId", input.Key),
+                    ("@valueJson", JsonSerializer.Serialize(input.Value, JsonOptions)));
+            }
 
             foreach (var node in definition.Nodes)
             {
@@ -755,7 +808,8 @@ public sealed class SqliteAgentOrchestrationStore(
                 artifactReference: null,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["requestedByAgentId"] = request.RequestedByAgentId.Trim()
+                    ["requestedByAgentId"] = request.RequestedByAgentId.Trim(),
+                    ["inputCount"] = resolvedInputs.Count.ToString(CultureInfo.InvariantCulture)
                 },
                 nowMs,
                 ct);
@@ -975,12 +1029,13 @@ public sealed class SqliteAgentOrchestrationStore(
         if (run is null)
             return null;
 
+        var inputs = await ReadRunInputsAsync(connection, null, run.RunId, ct);
         var nodes = new List<AgentOrchestrationNodeRunSnapshot>();
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT node_id, node_kind, status, attempt, max_attempts, claim_id,
                    lease_owner, lease_until, fencing_token, execution_run_id,
-                   sub_session_id, output_summary, artifact_reference, error_message,
+                   sub_session_id, output_summary, artifact_reference, outputs_json, error_message,
                    started_at, completed_at, updated_at
             FROM orchestration_node_runs
             WHERE run_id = @runId
@@ -1005,14 +1060,15 @@ public sealed class SqliteAgentOrchestrationStore(
                 SubSessionId = GetNullableString(reader, 10),
                 OutputSummary = GetNullableString(reader, 11),
                 ArtifactReference = GetNullableString(reader, 12),
-                ErrorMessage = GetNullableString(reader, 13),
-                StartedAtUtc = FromUnixMsNullable(GetNullableInt64(reader, 14)),
-                CompletedAtUtc = FromUnixMsNullable(GetNullableInt64(reader, 15)),
-                UpdatedAtUtc = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(16))
+                Outputs = DeserializeOutputs(reader.GetString(13)),
+                ErrorMessage = GetNullableString(reader, 14),
+                StartedAtUtc = FromUnixMsNullable(GetNullableInt64(reader, 15)),
+                CompletedAtUtc = FromUnixMsNullable(GetNullableInt64(reader, 16)),
+                UpdatedAtUtc = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(17))
             });
         }
 
-        return ToSnapshot(run, nodes.AsReadOnly());
+        return ToSnapshot(run, inputs, nodes.AsReadOnly());
     }
 
     public async Task<IReadOnlyList<AgentOrchestrationRunSummary>> ListRunsAsync(
@@ -1247,6 +1303,7 @@ public sealed class SqliteAgentOrchestrationStore(
                             sub_session_id = NULL,
                             output_summary = NULL,
                             artifact_reference = NULL,
+                            outputs_json = '{}',
                             error_message = NULL,
                             started_at = NULL,
                             completed_at = NULL,
@@ -1452,6 +1509,7 @@ public sealed class SqliteAgentOrchestrationStore(
             request.SubSessionId,
             summary: "Node execution started.",
             artifactReference: null,
+            outputs: null,
             errorMessage: null,
             succeeded: null,
             ct);
@@ -1471,10 +1529,11 @@ public sealed class SqliteAgentOrchestrationStore(
             request.Succeeded
                 ? AgentOrchestrationEventTypes.NodeCompleted
                 : AgentOrchestrationEventTypes.NodeFailed,
-            executionRunId: null,
-            subSessionId: null,
+            executionRunId: request.ExecutionRunId,
+            subSessionId: request.SubSessionId,
             request.Summary,
             request.ArtifactReference,
+            request.Outputs,
             request.ErrorMessage,
             request.Succeeded,
             ct);
@@ -1491,6 +1550,7 @@ public sealed class SqliteAgentOrchestrationStore(
         string? subSessionId,
         string? summary,
         string? artifactReference,
+        IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope>? outputs,
         string? errorMessage,
         bool? succeeded,
         CancellationToken ct)
@@ -1586,8 +1646,11 @@ public sealed class SqliteAgentOrchestrationStore(
                       UPDATE orchestration_node_runs
                       SET status = @status,
                           lease_until = NULL,
+                          execution_run_id = COALESCE(@executionRunId, execution_run_id),
+                          sub_session_id = COALESCE(@subSessionId, sub_session_id),
                           output_summary = @summary,
                           artifact_reference = @artifactReference,
+                          outputs_json = @outputsJson,
                           error_message = @errorMessage,
                           completed_at = @completedAt,
                           updated_at = @updatedAt
@@ -1614,6 +1677,9 @@ public sealed class SqliteAgentOrchestrationStore(
                 ("@status", targetStatus.ToString()),
                 ("@summary", summary),
                 ("@artifactReference", artifactReference),
+                ("@outputsJson", JsonSerializer.Serialize(
+                    outputs ?? new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal),
+                    JsonOptions)),
                 ("@errorMessage", errorMessage),
                 ("@completedAt", isTerminal ? nowMs : null),
                 ("@executionRunId", executionRunId),
@@ -1656,19 +1722,102 @@ public sealed class SqliteAgentOrchestrationStore(
                 nowMs,
                 ct);
 
+            var nextRunStatus = AgentOrchestrationRunStatus.Active;
+            string? terminalRunError = null;
+            if (isTerminal)
+            {
+                var definition = await ReadDefinitionByRevisionAsync(
+                    connection,
+                    transaction,
+                    run.RevisionId,
+                    ct)
+                    ?? throw new InvalidDataException(
+                        $"Revision '{run.RevisionId}' for run '{run.RunId}' could not be loaded.");
+                committedHead = await AdvancePendingNodesAsync(
+                    connection,
+                    transaction,
+                    run,
+                    definition,
+                    committedHead,
+                    nowMs,
+                    ct);
+
+                var nonTerminalCount = await ExecuteScalarInt64Async(
+                    connection,
+                    transaction,
+                    """
+                    SELECT COUNT(*)
+                    FROM orchestration_node_runs
+                    WHERE run_id = @runId
+                      AND status NOT IN (@completed, @failed, @skipped, @cancelled)
+                    """,
+                    ct,
+                    ("@runId", runId.Trim()),
+                    ("@completed", AgentOrchestrationNodeRunStatus.Completed.ToString()),
+                    ("@failed", AgentOrchestrationNodeRunStatus.Failed.ToString()),
+                    ("@skipped", AgentOrchestrationNodeRunStatus.Skipped.ToString()),
+                    ("@cancelled", AgentOrchestrationNodeRunStatus.Cancelled.ToString()));
+                if (nonTerminalCount == 0)
+                {
+                    var failedCount = await ExecuteScalarInt64Async(
+                        connection,
+                        transaction,
+                        """
+                        SELECT COUNT(*)
+                        FROM orchestration_node_runs
+                        WHERE run_id = @runId AND status = @failed
+                        """,
+                        ct,
+                        ("@runId", runId.Trim()),
+                        ("@failed", AgentOrchestrationNodeRunStatus.Failed.ToString()));
+                    nextRunStatus = failedCount > 0
+                        ? AgentOrchestrationRunStatus.Failed
+                        : AgentOrchestrationRunStatus.Completed;
+                    terminalRunError = nextRunStatus == AgentOrchestrationRunStatus.Failed
+                        ? errorMessage ?? "One or more orchestration nodes failed."
+                        : null;
+                    await AppendEventAsync(
+                        connection,
+                        transaction,
+                        run,
+                        ++committedHead,
+                        nextRunStatus == AgentOrchestrationRunStatus.Completed
+                            ? AgentOrchestrationEventTypes.RunCompleted
+                            : AgentOrchestrationEventTypes.RunFailed,
+                        null,
+                        null,
+                        null,
+                        nextRunStatus == AgentOrchestrationRunStatus.Completed
+                            ? "All orchestration nodes completed."
+                            : terminalRunError,
+                        null,
+                        EmptyAttributes(),
+                        nowMs,
+                        ct);
+                }
+            }
+
             var newVersion = run.Version + 1;
             var runUpdated = await ExecuteAsync(
                 connection,
                 transaction,
                 """
                 UPDATE orchestration_runs
-                SET version = @version, head_sequence = @headSequence, updated_at = @updatedAt
+                SET version = @version,
+                    head_sequence = @headSequence,
+                    status = @nextStatus,
+                    updated_at = @updatedAt,
+                    completed_at = @completedAt,
+                    error_message = @errorMessage
                 WHERE run_id = @runId AND version = @expectedVersion AND status = @active
                 """,
                 ct,
                 ("@version", newVersion),
                 ("@headSequence", committedHead),
+                ("@nextStatus", nextRunStatus.ToString()),
                 ("@updatedAt", nowMs),
+                ("@completedAt", nextRunStatus == AgentOrchestrationRunStatus.Active ? null : nowMs),
+                ("@errorMessage", terminalRunError),
                 ("@runId", runId.Trim()),
                 ("@expectedVersion", run.Version),
                 ("@active", AgentOrchestrationRunStatus.Active.ToString()));
@@ -1693,6 +1842,142 @@ public sealed class SqliteAgentOrchestrationStore(
             CurrentVersion = snapshot.Version
         };
     }
+
+    private static async Task<long> AdvancePendingNodesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        RunRow run,
+        AgentOrchestrationGraphDefinition definition,
+        long committedHead,
+        long nowMs,
+        CancellationToken ct)
+    {
+        var statuses = await ReadNodeStatusesAsync(connection, transaction, run.RunId, ct);
+        var incomingByNode = definition.Edges
+            .GroupBy(edge => edge.ToNodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var nodeId in definition.Nodes
+                         .Select(node => node.NodeId)
+                         .OrderBy(nodeId => nodeId, StringComparer.Ordinal))
+            {
+                if (!statuses.TryGetValue(nodeId, out var currentStatus) ||
+                    currentStatus != AgentOrchestrationNodeRunStatus.Pending ||
+                    !incomingByNode.TryGetValue(nodeId, out var incoming) ||
+                    incoming.Length == 0)
+                {
+                    continue;
+                }
+
+                // Predicate evaluators are deliberately not guessed by the store. Until the
+                // versioned evaluator registry lands, such nodes remain Pending instead of being
+                // scheduled with incorrect semantics.
+                if (incoming.Any(edge => edge.Predicate is not null))
+                    continue;
+
+                var predecessorStatuses = incoming
+                    .Select(edge => statuses.TryGetValue(edge.FromNodeId, out var status)
+                        ? status
+                        : AgentOrchestrationNodeRunStatus.Pending)
+                    .ToArray();
+                if (predecessorStatuses.Any(status => !IsTerminalNodeStatus(status)))
+                    continue;
+
+                var satisfied = incoming.All(edge =>
+                    IsEdgeConditionSatisfied(edge.Condition, statuses[edge.FromNodeId]));
+                var nextStatus = satisfied
+                    ? AgentOrchestrationNodeRunStatus.Ready
+                    : AgentOrchestrationNodeRunStatus.Skipped;
+                var updated = await ExecuteAsync(
+                    connection,
+                    transaction,
+                    nextStatus == AgentOrchestrationNodeRunStatus.Skipped
+                        ? """
+                          UPDATE orchestration_node_runs
+                          SET status = @status, completed_at = @completedAt, updated_at = @updatedAt
+                          WHERE run_id = @runId AND node_id = @nodeId AND status = @pending
+                          """
+                        : """
+                          UPDATE orchestration_node_runs
+                          SET status = @status, updated_at = @updatedAt
+                          WHERE run_id = @runId AND node_id = @nodeId AND status = @pending
+                          """,
+                    ct,
+                    ("@status", nextStatus.ToString()),
+                    ("@completedAt", nextStatus == AgentOrchestrationNodeRunStatus.Skipped ? nowMs : null),
+                    ("@updatedAt", nowMs),
+                    ("@runId", run.RunId),
+                    ("@nodeId", nodeId),
+                    ("@pending", AgentOrchestrationNodeRunStatus.Pending.ToString()));
+                if (updated != 1)
+                    throw new InvalidOperationException($"Node '{nodeId}' dependency transition affected {updated} rows.");
+
+                statuses[nodeId] = nextStatus;
+                changed = true;
+                await AppendEventAsync(
+                    connection,
+                    transaction,
+                    run,
+                    ++committedHead,
+                    nextStatus == AgentOrchestrationNodeRunStatus.Ready
+                        ? AgentOrchestrationEventTypes.NodeReady
+                        : AgentOrchestrationEventTypes.NodeSkipped,
+                    nodeId,
+                    null,
+                    null,
+                    nextStatus == AgentOrchestrationNodeRunStatus.Ready
+                        ? "All upstream dependencies are satisfied."
+                        : "Upstream terminal state did not satisfy the edge condition.",
+                    null,
+                    EmptyAttributes(),
+                    nowMs,
+                    ct);
+            }
+        }
+
+        return committedHead;
+    }
+
+    private static async Task<Dictionary<string, AgentOrchestrationNodeRunStatus>> ReadNodeStatusesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string runId,
+        CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT node_id, status FROM orchestration_node_runs WHERE run_id = @runId";
+        AddParameter(command, "@runId", runId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var statuses = new Dictionary<string, AgentOrchestrationNodeRunStatus>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct))
+            statuses[reader.GetString(0)] = ParseNodeRunStatus(reader.GetString(1));
+        return statuses;
+    }
+
+    private static bool IsTerminalNodeStatus(AgentOrchestrationNodeRunStatus status)
+        => status is AgentOrchestrationNodeRunStatus.Completed
+            or AgentOrchestrationNodeRunStatus.Failed
+            or AgentOrchestrationNodeRunStatus.Skipped
+            or AgentOrchestrationNodeRunStatus.Cancelled;
+
+    private static bool IsEdgeConditionSatisfied(
+        AgentOrchestrationEdgeCondition condition,
+        AgentOrchestrationNodeRunStatus predecessorStatus)
+        => condition switch
+        {
+            AgentOrchestrationEdgeCondition.OnSuccess =>
+                predecessorStatus == AgentOrchestrationNodeRunStatus.Completed,
+            AgentOrchestrationEdgeCondition.OnCompletion =>
+                predecessorStatus is AgentOrchestrationNodeRunStatus.Completed
+                    or AgentOrchestrationNodeRunStatus.Failed,
+            AgentOrchestrationEdgeCondition.Always => IsTerminalNodeStatus(predecessorStatus),
+            _ => false
+        };
 
     private async Task<int> ReclaimExpiredClaimsAsync(
         SqliteConnection connection,
@@ -2102,8 +2387,141 @@ public sealed class SqliteAgentOrchestrationStore(
             : null;
     }
 
+    private static async Task<IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope>> ReadRunInputsAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string runId,
+        CancellationToken ct)
+    {
+        var inputs = new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT input_id, value_json
+            FROM orchestration_run_inputs
+            WHERE run_id = @runId
+            ORDER BY input_id
+            """;
+        AddParameter(command, "@runId", runId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var value = JsonSerializer.Deserialize<AgentOrchestrationValueEnvelope>(
+                reader.GetString(1),
+                JsonOptions);
+            if (value is not null)
+                inputs[reader.GetString(0)] = value;
+        }
+
+        return inputs;
+    }
+
+    private static IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> DeserializeOutputs(
+        string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
+
+        var values = JsonSerializer.Deserialize<Dictionary<string, AgentOrchestrationValueEnvelope>>(
+            json,
+            JsonOptions);
+        return values is null
+            ? new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal)
+            : new Dictionary<string, AgentOrchestrationValueEnvelope>(values, StringComparer.Ordinal);
+    }
+
+    private static bool TryResolveRunInputs(
+        AgentOrchestrationGraphDefinition definition,
+        IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope>? requested,
+        out IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> resolved,
+        out string? errorCode,
+        out string? errorMessage)
+    {
+        var values = new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
+        var inputDefinitions = definition.Inputs
+            .ToDictionary(input => input.InputId, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in requested ?? new Dictionary<string, AgentOrchestrationValueEnvelope>())
+        {
+            if (!inputDefinitions.TryGetValue(item.Key, out var input))
+            {
+                resolved = values;
+                errorCode = "orchestration.run_input_unknown";
+                errorMessage = $"Graph input '{item.Key}' does not exist in revision '{definition.RevisionId}'.";
+                return false;
+            }
+
+            var value = item.Value;
+            if (!string.Equals(input.Contract.DataType, AgentOrchestrationDataTypes.Any, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(input.Contract.DataType, value.DataType, StringComparison.OrdinalIgnoreCase))
+            {
+                resolved = values;
+                errorCode = "orchestration.run_input_type_mismatch";
+                errorMessage = $"Graph input '{input.InputId}' requires '{input.Contract.DataType}', not '{value.DataType}'.";
+                return false;
+            }
+            if (value.InlineValue.HasValue &&
+                !input.Contract.Deliveries.Contains(AgentOrchestrationValueDelivery.Inline))
+            {
+                resolved = values;
+                errorCode = "orchestration.run_input_inline_not_allowed";
+                errorMessage = $"Graph input '{input.InputId}' does not allow inline values.";
+                return false;
+            }
+            if (value.Artifacts.Count > 0 &&
+                !input.Contract.Deliveries.Contains(AgentOrchestrationValueDelivery.Artifact))
+            {
+                resolved = values;
+                errorCode = "orchestration.run_input_artifact_not_allowed";
+                errorMessage = $"Graph input '{input.InputId}' does not allow artifact values.";
+                return false;
+            }
+
+            values[input.InputId] = value;
+        }
+
+        foreach (var input in definition.Inputs)
+        {
+            if (!values.ContainsKey(input.InputId) && input.DefaultValue is not null)
+                values[input.InputId] = input.DefaultValue;
+            if (input.RequiredAtActivation && !values.ContainsKey(input.InputId))
+            {
+                resolved = values;
+                errorCode = "orchestration.run_input_required";
+                errorMessage = $"Graph input '{input.InputId}' is required at activation.";
+                return false;
+            }
+        }
+
+        resolved = values;
+        errorCode = null;
+        errorMessage = null;
+        return true;
+    }
+
+    private static bool RunInputsEqual(
+        IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> left,
+        IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+        foreach (var item in left)
+        {
+            if (!right.TryGetValue(item.Key, out var other) ||
+                !string.Equals(
+                    JsonSerializer.Serialize(item.Value, JsonOptions),
+                    JsonSerializer.Serialize(other, JsonOptions),
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static AgentOrchestrationRunSnapshot ToSnapshot(
         RunRow run,
+        IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> inputs,
         IReadOnlyList<AgentOrchestrationNodeRunSnapshot> nodes)
         => new()
         {
@@ -2117,6 +2535,7 @@ public sealed class SqliteAgentOrchestrationStore(
             Version = run.Version,
             HeadSequence = run.HeadSequence,
             MaxConcurrency = run.MaxConcurrency,
+            Inputs = inputs,
             Nodes = nodes,
             CreatedAtUtc = DateTimeOffset.FromUnixTimeMilliseconds(run.CreatedAt),
             ActivatedAtUtc = FromUnixMsNullable(run.ActivatedAt),

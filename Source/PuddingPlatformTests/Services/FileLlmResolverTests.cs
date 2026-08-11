@@ -69,6 +69,21 @@ public sealed class FileLlmResolverTests
     }
 
     [TestMethod]
+    public async Task ResolveRouteAsync_ExplicitRoute_MustSatisfyRequiredCapability()
+    {
+        var resolver = CreateResolver(CreateConfig());
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync(
+                "provider-a/model-a",
+                requiredCapabilityTags: ["vision"]));
+
+        StringAssert.Contains(error.Message, "provider-a/model-a");
+        StringAssert.Contains(error.Message, "does not satisfy required capabilities");
+        StringAssert.Contains(error.Message, "vision");
+    }
+
+    [TestMethod]
     public async Task ResolveRouteAsync_RejectsConfigSnapshotWithDifferentModel()
     {
         var resolver = new FileLlmResolver(

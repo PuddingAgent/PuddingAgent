@@ -87,6 +87,7 @@ data/agent-templates/{templateId}/MEMORY.md
 | 能力授权 | `manifest.json.capabilities.allowedToolIds` |
 | Skill 包 | `manifest.json.skillPackageIds` 或独立 `skills.json`，首选 manifest |
 | 模型路由 | `manifest.json.preferredProviderId/preferredModelId/memoryLlmProviderId/memoryLlmModelId/defaultLlmProfiles` |
+| Agent 工具专用模型 | Agent 实例 `manifest.json.imageReaderModel` 等显式字段 |
 | 执行护栏 | `manifest.json.maxRounds/maxElapsedSeconds/maxToolCallsTotal/containerImage` |
 
 禁止新增“前端有字段、DTO 有字段、file service 不保存”的半链路字段。
@@ -134,6 +135,17 @@ Markdown，但必须满足：
 5. manifest 文件引用缺失时，更新操作将其修复为规范文件名；读取不会跟随异常引用。
 6. 不允许通过该工具修改 LLM 路由、能力授权、Skill、密钥、工作空间归属或其他 Agent。
 7. 更新从下一轮上下文组装开始生效；当前正在执行的不可变快照不被回写。
+
+### ADR-044-G：Image Reader 路由只来自 Agent 配置
+
+`image_reader` 以及文本主模型的附件预观察不得按 `llm.providers.json` 中的
+`vision` 模型排序隐式选择模型。
+Agent 实例通过 `manifest.json.imageReaderModel` 指定 `providerId/modelId` 格式的专用模型；
+专用模型解析或调用失败时，只允许降级到同一 manifest 已显式配置的
+`preferredProviderId/preferredModelId`，并且该主模型必须具有 `vision` 能力标签。
+两条显式路由均不可用时返回聚合错误；`imageReaderModel` 缺失时返回配置错误，
+不得恢复全局模型池兜底。子代理调用工具时读取 `ConfigurationAgentInstanceId`
+所指向的持久 Agent manifest，不能读取临时子会话目录作为配置事实源。
 
 ---
 

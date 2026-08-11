@@ -117,6 +117,9 @@ public sealed record AgentOrchestrationRunCreateRequest
     public required string RunId { get; init; }
     public required string RevisionId { get; init; }
     public required string RequestedByAgentId { get; init; }
+    /// <summary>Immutable graph inputs resolved before the run becomes visible.</summary>
+    public IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> Inputs { get; init; }
+        = new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
 }
 
 /// <summary>Optimistic-concurrency request to activate a draft run.</summary>
@@ -182,6 +185,16 @@ public sealed record AgentOrchestrationNodeTerminalRequest
     public bool Succeeded { get; init; }
     public string? Summary { get; init; }
     public string? ArtifactReference { get; init; }
+    /// <summary>
+    /// Typed values committed by output port. The summary and primary artifact fields remain small
+    /// projections for lists/events; downstream data edges must read this port-addressable fact.
+    /// </summary>
+    public IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> Outputs { get; init; }
+        = new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
+    /// <summary>Actual child execution identity, when the executor learns it after invocation.</summary>
+    public string? ExecutionRunId { get; init; }
+    /// <summary>Actual child sub-session identity, when the executor learns it after invocation.</summary>
+    public string? SubSessionId { get; init; }
     public string? ErrorMessage { get; init; }
 }
 
@@ -201,6 +214,9 @@ public sealed record AgentOrchestrationNodeRunSnapshot
     public string? SubSessionId { get; init; }
     public string? OutputSummary { get; init; }
     public string? ArtifactReference { get; init; }
+    /// <summary>Durable typed output values keyed by component output port id.</summary>
+    public IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> Outputs { get; init; }
+        = new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
     public string? ErrorMessage { get; init; }
     public DateTimeOffset? StartedAtUtc { get; init; }
     public DateTimeOffset? CompletedAtUtc { get; init; }
@@ -220,6 +236,8 @@ public sealed record AgentOrchestrationRunSnapshot
     public long Version { get; init; }
     public long HeadSequence { get; init; }
     public int MaxConcurrency { get; init; }
+    public IReadOnlyDictionary<string, AgentOrchestrationValueEnvelope> Inputs { get; init; }
+        = new Dictionary<string, AgentOrchestrationValueEnvelope>(StringComparer.Ordinal);
     public IReadOnlyList<AgentOrchestrationNodeRunSnapshot> Nodes { get; init; }
         = Array.Empty<AgentOrchestrationNodeRunSnapshot>();
     public DateTimeOffset CreatedAtUtc { get; init; }

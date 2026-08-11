@@ -135,6 +135,7 @@ public sealed class ExecutionRunCoordinator(
                             : profile.SourceTemplateId,
                         PrimaryProviderId = providerId,
                         PrimaryModelId = modelId,
+                        ImageReaderModel = profile.ImageReaderModel,
                         VisualArtifactIds = visualArtifactIds,
                     },
                     ctsRun.Token)

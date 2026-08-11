@@ -27,14 +27,15 @@
 
 ## 2. 现有基线
 
-2026-08-10 当前基线包括：
+2026-08-11 当前基线包括：
 
 - V2 graph/component/multimodal contract 与纯 compiler 测试；
 - SQLite Graph/Revision/Layout/Run/NodeRun/Event Store；
-- Create/Activate root Ready、claim/renew/fence/start/terminal 和过期恢复测试；
+- Create/Activate root Ready、claim/renew/fence/start/terminal、过期恢复，以及无 predicate 后继 Ready/失败 Skipped 测试；
 - Graph/Run 查询、event page 和 replay-to-live SSE；
 - Admin Graph/Run viewer、布局 CAS、Graph 新建和受约束删除；
-- 编排后端定向测试目前记录为 20 项，Admin 定向 Jest 为 5 suites / 20 tests。
+- Admin S1 Revision/Node CRUD，以及 S2 catalog 端口、control/data edge、Graph Input CRUD/绑定；
+- 当前定向结果：PuddingCoreTests 79/79、PuddingPlatformTests 58/58、Admin Jest 8 suites / 53 tests；Admin 生产构建成功并生成 `/orchestration/index.html`。新增覆盖冻结 Run Inputs、HTTP Hook payload mapping、确定性幂等/冲突和前端 Trigger authoring 纯函数。
 
 这些数字是文档建立时的快照。后续不得通过删除测试维持数字；代码地图应记录最新实际结果。
 
@@ -147,6 +148,8 @@ flowchart LR
 ### 6.3 E2E
 
 构建 text -> subAgent -> schema gate -> humanInput 的图；保存、刷新和 JSON round-trip 后，node/edge/binding/layout 均一致。
+
+2026-08-11 已完成 S2 运行态切片：在 Desktop 托管的新 Core/Admin bundle 中创建 Graph Input 并绑定 HumanInput 端口，Validate 后保存 r2；再由 Catalog 创建 Gate、拖拽 `response$ → results (append)` data edge，Validate 后保存 r3。测试 Graph 无 Run，验收后已通过 Admin 删除。完整四节点链与 Layout round-trip 仍按本节目标继续施工。
 
 ## 7. S3：Durable Transition Planner
 
@@ -267,6 +270,8 @@ flowchart LR
 - orchestration event recursion depth/correlation guard；
 - disabled trigger 不运行；
 - Trigger 不成为 node、不在 DAG 中制造环。
+
+当前 Admin-only 调试 HTTP Hook 已满足其中 `sourceEventId` 幂等、payload → Graph Input、required input、body limit、disabled trigger 和“Trigger 非节点”切片，并通过临时 SQLite 的真实 Store 测试。它要求显式 immutable Revision，因此也验证不会误用 Head。signature、rate limit、Deployment slot、外部匿名鉴权与其它 adapter 尚未完成，不能把该切片验收为 S5。
 
 ## 10. S6：Agent 工具与 MOA
 
@@ -648,3 +653,46 @@ Create Draft Run -> Activate
 - Product：Admin UI 可访问、可恢复、冲突不丢数据；
 - Operations：Desktop 新构建、hash、Ready、真实 API、重启恢复和清理证据齐全；
 - Docs：ADR、施工图、代码地图和调试文档与当前实现一致。
+
+## 24. 2026-08-11 图片生成切片验收边界
+
+- Core：内置图片组件的 typed content/artifact 契约与 catalog hash 测试；
+- Platform：显式 Revision 手动运行、requestId 幂等、两节点图片模板、后继 Ready/失败 Skipped 与 Run 原子终态测试；
+- Runtime：图片生成 prompt/config/reference/idempotency 与图片展示 data-edge Artifact 透传 executor 测试；
+- Admin：模板请求、图片组件 preset、组件 UI 注册表、节点 output 投影、类型化 Run Input 与 requestId 测试，并通过生产构建；
+- Product smoke：必须由 Desktop bootstrap 加载新 Core 后，新建独立图片模板 Graph，运行一条非敏感 prompt，记录 graph/revision/run 标识、Run 终态和 Artifact 可见性；不得输出 provider secret、ControlToken 或图片二进制。
+
+这个证据关闭“最小两节点图片生成/展示链”范围；predicate、retry/cancel、Deployment 和全部媒体组件仍保持未完成。按端口持久输出在后续四节点切片中验收。
+
+### 24.1 2026-08-11 实际产品证据
+
+- Desktop bootstrap：两次重建均 `buildExitCode=0`、`coreState=Ready`、`coreRestarted=true`；第二次用于修正真实 Host 组合根；
+- Graph/Revision：`image-smoke-20260811120634` / `image-smoke-20260811120634/r001`；
+- Run：`manual-ff9e41633ce312dad81aecad08d82b54`，重启前为 `Active/Ready`，补齐 Host worker 注册并重启后恢复为 `Completed`；
+- Event：连续 7 条，`RunCreated → RunActivated → NodeReady → NodeClaimed → NodeStarted → NodeCompleted → RunCompleted`；
+- Artifact：`vision-05a6ced050de4463d33dca9488b9e344`，GET 返回 200 `image/png`，3,042,960 bytes；
+- Admin：新 bundle `umi.a97319a3.js`；Run 视图显示 1/1 完成、事件 #7，节点检查器成功加载图片预览，浏览器 console error 为 0。
+
+首次部署暴露的组合根缺口是重要验收结论：DLL 内存在 worker 类型并不代表成品启动了 hosted service；只有真实 Run 从 Ready 被领取才能证明产品组合注册生效。
+
+### 24.2 2026-08-11 两节点组件链产品证据
+
+- Desktop bootstrap：`buildExitCode=0`、`coreState=Ready`、`coreRestarted=true`；
+- Graph/Revision：`image-chain-smoke-20260811133719` / `image-chain-smoke-20260811133719/r001`，2 节点、1 条 typed data edge；
+- Run：`manual-5e317683241b8c40ba7f5a591623bbb8`，生成与展示节点均 `Completed`，Run `Completed`，head sequence 11；
+- Event：连续 11 条，生成节点完成后出现第二个 `NodeReady → NodeClaimed → NodeStarted → NodeCompleted`，最后才 `RunCompleted`；
+- Artifact：两个节点均引用 `vision-c8d4687dff8b058c91c3bcdd5054953d`；鉴权 GET 返回 200 `image/png`，3,300,443 bytes；
+- Admin：新 bundle `umi.6128eed5.js`；Run 画布显示“生成图片 → 展示图片”数据边，两个组件卡片内均显示图片，节点 2/完成 2、事件 #11。
+
+### 24.3 2026-08-11 四节点 Agent/图片链产品证据
+
+- 定义：`agent-image-chain-smoke-20260811142836/r002`，4 节点、3 条 typed data edge，编译拓扑为 `copy-planner → storyboard-director → image-generate → image-preview`；
+- 首次运行：`manual-3451acb95e4ed5fc305989a7fd27f24e` 暴露审计身份 `manual:admin` 被误用为 Windows 目录段；修复为由 workspace/graph 派生的 execution owner，并补测试后经 Desktop bootstrap 重建/重启；
+- 成功 Run：`manual-81f6c9eb512603e16b58043a2eb9f17e`，4 节点全部 `Completed`，Run `Completed`，head sequence 19；
+- Agent：文案与镜头节点分别产生 child run `run_20260811_063506_98e80291775b`、`run_20260811_063525_cc65b9485885`，各自 `outputs.result` 为持久文本；
+- Artifact：生成与展示节点的 `outputs.images` 均引用 `vision-6e4392d8860daffe5e9e4fcaa996aa85`；鉴权 GET 为 200 `image/png`，5,508,388 bytes；
+- Event：1 Created + 1 Activated + 每节点 Ready/Claimed/Started/Completed 各 4 + 1 RunCompleted，共连续 19 条；
+- Admin：产品画布显示四张 completed 卡片和三条数据边；两张 Agent 卡片各自显示文本，生成与展示卡片各自显示同一图片；
+- Validation：Runtime 编排 executor/resolver 定向 4/4、Platform 编排 51/51、Admin 10 suites/57 tests、Admin production build、Host build 和 Desktop bootstrap 均成功；仅保留仓库既有 NuGet 漏洞/弃用警告。
+
+该证据关闭“顺序 SubAgent 文本输出 → SubAgent 文本输入 → 图片 prompt → Artifact 展示”的首个组合范围；不关闭 predicate、多前驱、retry/cancel/human input、写权限、任意工具或 Deployment。

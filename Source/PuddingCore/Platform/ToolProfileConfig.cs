@@ -13,7 +13,7 @@ public static class ToolProfileConfig
     {
         "goal_read", "goal_update", "sleep", "receive_messages", "send_message",
         "agent_diagnostics", "agent_status", "search_memory", "save_memory",
-        "query_session_logs", "manage_tasks", "file_read", "list_dir"
+        "save_preference", "query_session_logs", "manage_tasks", "file_read", "list_dir"
     };
 
     /// <summary>子代理的最小工具集</summary>

@@ -54,6 +54,7 @@ public sealed record AgentRuntimeProfile
     public string? ConsciousProfileId { get; init; }
     public string? PreferredProviderId { get; init; }
     public string? PreferredModelId { get; init; }
+    public string? ImageReaderModel { get; init; }
     public LlmConfig? LlmConfig { get; init; }
     public string? SystemPrompt { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }

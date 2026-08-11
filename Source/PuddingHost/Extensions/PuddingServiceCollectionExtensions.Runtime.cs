@@ -80,6 +80,7 @@ public static partial class PuddingServiceCollectionExtensions
                 sp.GetRequiredService<IMemoryLibrary>(),
                 sp.GetService<IMemoryLlmClient>(),
                 sp.GetService<ILLMConfigResolver>()));
+        builder.Services.AddSingleton<IUserPreferenceService, UserPreferenceService>();
         builder.Services.AddSingleton<MemoryQualityFilter>();
         builder.Services.AddSingleton<IMemoryLibrarian, MemoryLibrarian>();
         builder.Services.AddSingleton<FactMemoryService>();

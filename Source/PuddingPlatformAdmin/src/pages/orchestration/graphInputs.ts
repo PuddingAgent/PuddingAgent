@@ -37,9 +37,14 @@ function matchesId(candidate: string, inputId: string): boolean {
   return candidate.trim().toLowerCase() === inputId.trim().toLowerCase();
 }
 
-function findInputIndex(definition: OrchestrationGraphDefinition, inputId: string): number {
+function findInputIndex(
+  definition: OrchestrationGraphDefinition,
+  inputId: string,
+): number {
   const inputs = definition.inputs ?? [];
-  return inputs.findIndex((input) => input !== undefined && matchesId(input.inputId, inputId));
+  return inputs.findIndex(
+    (input) => input !== undefined && matchesId(input.inputId, inputId),
+  );
 }
 
 /**
@@ -60,7 +65,9 @@ export function addGraphInput(
   };
 }
 
-export type OrchestrationGraphInputPatch = Partial<Omit<OrchestrationGraphInput, 'inputId'>>;
+export type OrchestrationGraphInputPatch = Partial<
+  Omit<OrchestrationGraphInput, 'inputId'>
+>;
 
 /**
  * Replaces the input identified by inputId (trimmed, case-insensitive) with a patched copy.
@@ -107,7 +114,9 @@ export function removeGraphInput(
   const affectedBindings: OrchestrationAffectedNodeBinding[] = [];
   const nextNodes = (definition.nodes ?? []).map((node) => {
     const bindings = node.graphInputBindings ?? [];
-    const remaining = bindings.filter((binding) => !matchesId(binding.inputId, inputId));
+    const remaining = bindings.filter(
+      (binding) => !matchesId(binding.inputId, inputId),
+    );
     if (remaining.length === bindings.length) {
       return node;
     }
@@ -139,9 +148,52 @@ export function listInputReferences(
   for (const node of definition.nodes ?? []) {
     for (const binding of node.graphInputBindings ?? []) {
       if (matchesId(binding.inputId, inputId)) {
-        references.push({ nodeId: node.nodeId, targetPortId: binding.targetPortId, targetKey: binding.targetKey });
+        references.push({
+          nodeId: node.nodeId,
+          targetPortId: binding.targetPortId,
+          targetKey: binding.targetKey,
+        });
       }
     }
   }
   return references;
+}
+
+/**
+ * Replaces all graph-input bindings for one node input port. Ids are trimmed and deduplicated
+ * case-insensitively; an empty list clears the port. Port/cardinality compatibility remains a
+ * caller/compiler concern because this pure operation has no component catalog dependency.
+ */
+export function setNodeGraphInputBindings(
+  definition: OrchestrationGraphDefinition,
+  nodeId: string,
+  targetPortId: string,
+  inputIds: string[],
+): OrchestrationGraphDefinition {
+  const uniqueInputIds: string[] = [];
+  const seen = new Set<string>();
+  for (const inputId of inputIds) {
+    const normalized = inputId.trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    uniqueInputIds.push(normalized);
+  }
+
+  let found = false;
+  const nodes = definition.nodes.map((node) => {
+    if (!matchesId(node.nodeId, nodeId)) return node;
+    found = true;
+    const otherBindings = (node.graphInputBindings ?? []).filter(
+      (binding) => !matchesId(binding.targetPortId, targetPortId),
+    );
+    return {
+      ...node,
+      graphInputBindings: [
+        ...otherBindings,
+        ...uniqueInputIds.map((inputId) => ({ inputId, targetPortId })),
+      ],
+    };
+  });
+  return found ? { ...definition, nodes } : definition;
 }

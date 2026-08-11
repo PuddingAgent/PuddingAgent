@@ -41,6 +41,7 @@ using PuddingRuntime.Services.Events;
 using PuddingRuntime.Services.Hooks;
 using PuddingRuntime.Services.Messaging;
 using PuddingRuntime.Services.Observability;
+using PuddingRuntime.Services.Orchestration;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.SubAgents;
 using PuddingRuntime.Services.Tools;
@@ -108,6 +109,18 @@ public static partial class PuddingServiceCollectionExtensions
             sp.GetRequiredService<SqliteAgentOrchestrationStore>());
         builder.Services.TryAddSingleton<AgentOrchestrationEventFollower>();
         builder.Services.TryAddSingleton<AgentOrchestrationAuthoringService>();
+        builder.Services.TryAddSingleton<AgentOrchestrationHttpHookService>();
+        builder.Services.TryAddSingleton<AgentOrchestrationManualRunService>();
+        // PuddingHost owns the product composition root and does not call
+        // RuntimeServiceExtensions.AddPuddingRuntime. Register orchestration executors and the
+        // durable worker here as well, otherwise activated nodes remain Ready in the real product.
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAgentOrchestrationNodeExecutor, SubAgentOrchestrationNodeExecutor>());
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAgentOrchestrationNodeExecutor, ImageGenerateOrchestrationNodeExecutor>());
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAgentOrchestrationNodeExecutor, ImagePreviewOrchestrationNodeExecutor>());
+        builder.Services.AddHostedService<AgentOrchestrationWorkerService>();
 
             // ── Execution Lease + Journal + Control（ADR-059）─────────
         builder.Services.AddSingleton<IExecutionLeaseStore, SqliteExecutionLeaseStore>();

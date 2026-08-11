@@ -218,6 +218,48 @@ public sealed class AgentOrchestrationRevisionApiControllerTests
     }
 
     [TestMethod]
+    public async Task ValidateJson_WebEnumPayload_UsesOrchestrationSerializer()
+    {
+        var request = new AgentOrchestrationDraftValidateRequest
+        {
+            GraphId = "graph-001",
+            BaseRevisionId = "graph-001/r001",
+            Definition = CreateDefinition()
+        };
+        var body = JsonSerializer.SerializeToElement(
+            request,
+            AgentOrchestrationJson.CreateSerializerOptions());
+
+        var action = await _controller.ValidateDraftJson("graph-001", body, default);
+
+        var result = (JsonResult)action.Result!;
+        var dto = (AgentOrchestrationDraftValidationResultDto)result.Value!;
+        Assert.IsTrue(dto.IsValid);
+        Assert.AreEqual(AgentOrchestrationNodeKind.SubAgent, dto.NormalizedDefinition!.Nodes[0].Kind);
+    }
+
+    [TestMethod]
+    public async Task PutJson_WebEnumPayload_Returns201()
+    {
+        await SaveDefinitionAsync();
+        var request = new AgentOrchestrationRevisionWriteRequest
+        {
+            Definition = CreateDefinition() with { Objective = "JSON r2 objective" },
+            ExpectedCurrentRevision = 1
+        };
+        var body = JsonSerializer.SerializeToElement(
+            request,
+            AgentOrchestrationJson.CreateSerializerOptions());
+
+        var action = await _controller.PutRevisionJson("graph-001", body, default);
+
+        var result = (JsonResult)action.Result!;
+        var definition = (AgentOrchestrationGraphDefinition)result.Value!;
+        Assert.AreEqual(StatusCodes.Status201Created, result.StatusCode);
+        Assert.AreEqual("graph-001/r002", definition.RevisionId);
+    }
+
+    [TestMethod]
     public async Task Validate_EdgePortIncompatible_ProjectsElementTypeElementIdAndPortId()
     {
         var action = await _controller.ValidateDraft(

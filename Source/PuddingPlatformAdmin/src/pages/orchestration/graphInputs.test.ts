@@ -2,16 +2,19 @@
   addGraphInput,
   listInputReferences,
   removeGraphInput,
+  setNodeGraphInputBindings,
   updateGraphInput,
 } from './graphInputs';
 import type {
+  OrchestrationDataContract,
   OrchestrationGraphDefinition,
   OrchestrationGraphInput,
-  OrchestrationDataContract,
   OrchestrationNodeDefinition,
 } from './types';
 
-function definition(overrides: Partial<OrchestrationGraphDefinition> = {}): OrchestrationGraphDefinition {
+function definition(
+  overrides: Partial<OrchestrationGraphDefinition> = {},
+): OrchestrationGraphDefinition {
   return {
     schemaVersion: 'pudding.agent-orchestration/v2',
     graphId: 'graph-1',
@@ -31,7 +34,10 @@ function definition(overrides: Partial<OrchestrationGraphDefinition> = {}): Orch
   };
 }
 
-function node(nodeId: string, graphInputBindings: OrchestrationNodeDefinition['graphInputBindings'] = []): OrchestrationNodeDefinition {
+function node(
+  nodeId: string,
+  graphInputBindings: OrchestrationNodeDefinition['graphInputBindings'] = [],
+): OrchestrationNodeDefinition {
   return {
     nodeId,
     kind: 'subAgent',
@@ -55,7 +61,10 @@ const anyTextContract: OrchestrationDataContract = {
   deliveries: ['inline', 'artifact'],
 };
 
-function input(inputId: string, overrides: Partial<OrchestrationGraphInput> = {}): OrchestrationGraphInput {
+function input(
+  inputId: string,
+  overrides: Partial<OrchestrationGraphInput> = {},
+): OrchestrationGraphInput {
   return {
     inputId,
     contract: anyTextContract,
@@ -73,10 +82,15 @@ describe('orchestration graph inputs (pure layer)', () => {
   it('appends to existing inputs and leaves other sections untouched', () => {
     const base = definition({
       inputs: [input('context')],
-      nodes: [node('research', [{ inputId: 'context', targetPortId: 'context' }])],
+      nodes: [
+        node('research', [{ inputId: 'context', targetPortId: 'context' }]),
+      ],
     });
     const next = addGraphInput(base, input('request'));
-    expect(next.inputs?.map((item) => item.inputId)).toEqual(['context', 'request']);
+    expect(next.inputs?.map((item) => item.inputId)).toEqual([
+      'context',
+      'request',
+    ]);
     expect(next.nodes).toBe(base.nodes);
     expect(next.edges).toBe(base.edges);
   });
@@ -118,7 +132,9 @@ describe('orchestration graph inputs (pure layer)', () => {
 
   it('no-ops when updating an unknown input id', () => {
     const base = definition({ inputs: [input('request')] });
-    expect(updateGraphInput(base, 'missing', { requiredAtActivation: false })).toBe(base);
+    expect(
+      updateGraphInput(base, 'missing', { requiredAtActivation: false }),
+    ).toBe(base);
   });
 
   it('removes the input, cleans node bindings, and reports affected nodes and bindings', () => {
@@ -129,26 +145,44 @@ describe('orchestration graph inputs (pure layer)', () => {
           { inputId: 'request', targetPortId: 'request' },
           { inputId: 'context', targetPortId: 'context' },
         ]),
-        node('review', [{ inputId: 'request', targetPortId: 'request', targetKey: 'nested' }]),
+        node('review', [
+          { inputId: 'request', targetPortId: 'request', targetKey: 'nested' },
+        ]),
         node('confirm', []),
       ],
     });
     const result = removeGraphInput(base, 'request');
-    expect(result.definition.inputs?.map((item) => item.inputId)).toEqual(['context']);
-    expect(result.definition.nodes[0].graphInputBindings).toEqual([{ inputId: 'context', targetPortId: 'context' }]);
+    expect(result.definition.inputs?.map((item) => item.inputId)).toEqual([
+      'context',
+    ]);
+    expect(result.definition.nodes[0].graphInputBindings).toEqual([
+      { inputId: 'context', targetPortId: 'context' },
+    ]);
     expect(result.definition.nodes[1].graphInputBindings).toEqual([]);
     expect(result.definition.nodes[2].graphInputBindings).toEqual([]);
     expect(result.affectedNodeIds).toEqual(['research', 'review']);
     expect(result.affectedBindings).toEqual([
-      { nodeId: 'research', binding: { inputId: 'request', targetPortId: 'request' } },
-      { nodeId: 'review', binding: { inputId: 'request', targetPortId: 'request', targetKey: 'nested' } },
+      {
+        nodeId: 'research',
+        binding: { inputId: 'request', targetPortId: 'request' },
+      },
+      {
+        nodeId: 'review',
+        binding: {
+          inputId: 'request',
+          targetPortId: 'request',
+          targetKey: 'nested',
+        },
+      },
     ]);
   });
 
   it('no-ops when removing an unknown input id', () => {
     const base = definition({
       inputs: [input('request')],
-      nodes: [node('research', [{ inputId: 'request', targetPortId: 'request' }])],
+      nodes: [
+        node('research', [{ inputId: 'request', targetPortId: 'request' }]),
+      ],
     });
     const result = removeGraphInput(base, 'missing');
     expect(result.definition).toBe(base);
@@ -159,7 +193,9 @@ describe('orchestration graph inputs (pure layer)', () => {
   it('keeps the source definition immutable when removing', () => {
     const base = definition({
       inputs: [input('request')],
-      nodes: [node('research', [{ inputId: 'request', targetPortId: 'request' }])],
+      nodes: [
+        node('research', [{ inputId: 'request', targetPortId: 'request' }]),
+      ],
     });
     const originalNodes = base.nodes;
     removeGraphInput(base, 'request');
@@ -172,7 +208,9 @@ describe('orchestration graph inputs (pure layer)', () => {
     const base = definition({
       nodes: [
         node('research', [{ inputId: 'request', targetPortId: 'request' }]),
-        node('review', [{ inputId: 'request', targetPortId: 'context', targetKey: 'deep' }]),
+        node('review', [
+          { inputId: 'request', targetPortId: 'context', targetKey: 'deep' },
+        ]),
         node('other', [{ inputId: 'context', targetPortId: 'context' }]),
       ],
     });
@@ -184,11 +222,57 @@ describe('orchestration graph inputs (pure layer)', () => {
 
   it('lists references case-insensitively and returns [] for unknown ids', () => {
     const base = definition({
-      nodes: [node('research', [{ inputId: 'REQUEST', targetPortId: 'request' }])],
+      nodes: [
+        node('research', [{ inputId: 'REQUEST', targetPortId: 'request' }]),
+      ],
     });
     expect(listInputReferences(base, 'request')).toEqual([
       { nodeId: 'research', targetPortId: 'request', targetKey: undefined },
     ]);
     expect(listInputReferences(base, 'missing')).toEqual([]);
+  });
+
+  it('replaces one node port binding without touching bindings for other ports', () => {
+    const base = definition({
+      nodes: [
+        node('research', [
+          { inputId: 'old', targetPortId: 'request' },
+          { inputId: 'context', targetPortId: 'context' },
+        ]),
+      ],
+    });
+    const next = setNodeGraphInputBindings(base, 'research', 'request', [
+      'request',
+    ]);
+    expect(next.nodes[0].graphInputBindings).toEqual([
+      { inputId: 'context', targetPortId: 'context' },
+      { inputId: 'request', targetPortId: 'request' },
+    ]);
+    expect(base.nodes[0].graphInputBindings?.[0].inputId).toBe('old');
+  });
+
+  it('deduplicates graph input ids and clears a target port when [] is supplied', () => {
+    const base = definition({
+      nodes: [node('research', [{ inputId: 'old', targetPortId: 'request' }])],
+    });
+    const many = setNodeGraphInputBindings(base, 'research', 'context', [
+      'a',
+      'A',
+      ' b ',
+    ]);
+    expect(
+      many.nodes[0].graphInputBindings?.filter(
+        (binding) => binding.targetPortId === 'context',
+      ),
+    ).toEqual([
+      { inputId: 'a', targetPortId: 'context' },
+      { inputId: 'b', targetPortId: 'context' },
+    ]);
+    const cleared = setNodeGraphInputBindings(many, 'research', 'request', []);
+    expect(
+      cleared.nodes[0].graphInputBindings?.some(
+        (binding) => binding.targetPortId === 'request',
+      ),
+    ).toBe(false);
   });
 });

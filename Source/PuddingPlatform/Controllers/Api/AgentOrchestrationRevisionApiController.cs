@@ -34,9 +34,22 @@ public sealed class AgentOrchestrationRevisionApiController(
 
     /// <summary>Validates a draft without persisting anything.</summary>
     [HttpPost("graphs/{graphId}/validate")]
+    public async Task<ActionResult<AgentOrchestrationDraftValidationResultDto>> ValidateDraftJson(
+        string graphId,
+        [FromBody] JsonElement body,
+        CancellationToken ct = default)
+    {
+        if (!TryDeserializeBody(body, out AgentOrchestrationDraftValidateRequest? request))
+            return InvalidOrchestrationBody();
+
+        return await ValidateDraft(graphId, request!, ct);
+    }
+
+    /// <summary>Typed validation core kept separate from MVC body binding for deterministic tests.</summary>
+    [NonAction]
     public async Task<ActionResult<AgentOrchestrationDraftValidationResultDto>> ValidateDraft(
         string graphId,
-        [FromBody] AgentOrchestrationDraftValidateRequest request,
+        AgentOrchestrationDraftValidateRequest request,
         CancellationToken ct = default)
     {
         if (request is null || !IdEquals(graphId, request.GraphId))
@@ -65,9 +78,22 @@ public sealed class AgentOrchestrationRevisionApiController(
     /// </summary>
     [Authorize(Roles = "admin")]
     [HttpPut("graphs/{graphId}/revisions")]
+    public async Task<ActionResult<AgentOrchestrationGraphDefinition>> PutRevisionJson(
+        string graphId,
+        [FromBody] JsonElement body,
+        CancellationToken ct = default)
+    {
+        if (!TryDeserializeBody(body, out AgentOrchestrationRevisionWriteRequest? request))
+            return InvalidOrchestrationBody();
+
+        return await PutRevision(graphId, request!, ct);
+    }
+
+    /// <summary>Typed Revision command core; audit/CAS behavior is identical for HTTP and tests.</summary>
+    [NonAction]
     public async Task<ActionResult<AgentOrchestrationGraphDefinition>> PutRevision(
         string graphId,
-        [FromBody] AgentOrchestrationRevisionWriteRequest request,
+        AgentOrchestrationRevisionWriteRequest request,
         CancellationToken ct = default)
     {
         if (request?.Definition is null || !IdEquals(graphId, request.Definition.GraphId))
@@ -179,6 +205,35 @@ public sealed class AgentOrchestrationRevisionApiController(
         => !string.IsNullOrWhiteSpace(left) &&
            !string.IsNullOrWhiteSpace(right) &&
            string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryDeserializeBody<T>(JsonElement body, out T? request)
+        where T : class
+    {
+        request = null;
+        if (body.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            return false;
+
+        try
+        {
+            request = body.Deserialize<T>(JsonOptions);
+            return request is not null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private BadRequestObjectResult InvalidOrchestrationBody()
+        => BadRequest(new
+        {
+            code = "orchestration.request_json_invalid",
+            message = "Request body does not match the pudding.agent-orchestration/v2 JSON contract."
+        });
 }
 
 public sealed record AgentOrchestrationDraftValidationResultDto

@@ -26,6 +26,45 @@ public sealed class AgentOrchestrationComponentContractsTests
     }
 
     [TestMethod]
+    public void DefaultRegistry_ExposesTypedImageGenerationComponent()
+    {
+        Assert.IsTrue(AgentOrchestrationComponentRegistry.Default.TryResolveComponent(
+            AgentOrchestrationComponentTypes.ImageGenerate,
+            "1",
+            out var imageGenerate));
+
+        Assert.AreEqual(AgentOrchestrationNodeKind.Tool, imageGenerate.Descriptor.NodeKind);
+        Assert.AreEqual("pudding.runtime.image-generate/v1", imageGenerate.Descriptor.ExecutorId);
+        Assert.AreEqual("prompt", imageGenerate.Descriptor.InputPorts.Single(port => port.Required).PortId);
+        var output = imageGenerate.Descriptor.OutputPorts.Single();
+        Assert.AreEqual(AgentOrchestrationDataTypes.Artifact, output.Contract.DataType);
+        Assert.IsTrue(output.Contract.MediaTypes.Contains("image/*"));
+        Assert.IsTrue(output.Contract.Deliveries.Contains(AgentOrchestrationValueDelivery.Artifact));
+    }
+
+    [TestMethod]
+    public void DefaultRegistry_ExposesTypedImagePreviewComponent()
+    {
+        Assert.IsTrue(AgentOrchestrationComponentRegistry.Default.TryResolveComponent(
+            AgentOrchestrationComponentTypes.ImagePreview,
+            "1",
+            out var preview));
+
+        Assert.AreEqual(AgentOrchestrationNodeKind.Tool, preview.Descriptor.NodeKind);
+        Assert.AreEqual("pudding.runtime.image-preview/v1", preview.Descriptor.ExecutorId);
+        var input = preview.Descriptor.InputPorts.Single();
+        var output = preview.Descriptor.OutputPorts.Single();
+        Assert.AreEqual("images", input.PortId);
+        Assert.AreEqual(AgentOrchestrationPortCardinality.Many, input.Contract.Cardinality);
+        Assert.IsTrue(AgentOrchestrationPortCompatibility.IsCompatible(
+            AgentOrchestrationComponentRegistry.Default.Components
+                .Single(component => component.Descriptor.ComponentType == AgentOrchestrationComponentTypes.ImageGenerate)
+                .Descriptor.OutputPorts.Single(),
+            input));
+        Assert.AreEqual("images", output.PortId);
+    }
+
+    [TestMethod]
     public void Registry_RejectsDuplicatePortIdsBeforeTheyReachTheEditor()
     {
         var duplicatePort = Port(

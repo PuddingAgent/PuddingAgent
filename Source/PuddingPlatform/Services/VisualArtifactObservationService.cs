@@ -28,6 +28,7 @@ public sealed record VisualArtifactObservationRequest
     public required string AgentTemplateId { get; init; }
     public required string PrimaryProviderId { get; init; }
     public required string PrimaryModelId { get; init; }
+    public string? ImageReaderModel { get; init; }
     public required IReadOnlyList<string> VisualArtifactIds { get; init; }
 }
 
@@ -57,9 +58,33 @@ public sealed class VisualArtifactObservationService(
             return null;
         }
 
-        var route = await llmResolver.ResolveRouteAsync(
-            requiredCapabilityTags: ["vision"],
-            ct: ct);
+        var imageReaderModel = request.ImageReaderModel?.Trim();
+        if (string.IsNullOrWhiteSpace(imageReaderModel))
+        {
+            throw new InvalidOperationException(
+                $"Attached image recognition failed; Agent '{request.AgentInstanceId}' has no " +
+                "imageReaderModel configured, so the primary Agent was not invoked.");
+        }
+
+        ResolvedLlmRoute route;
+        try
+        {
+            route = await llmResolver.ResolveRouteAsync(
+                modelRoute: imageReaderModel,
+                requiredCapabilityTags: ["vision"],
+                ct: ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Attached image recognition failed; configured imageReaderModel " +
+                $"'{imageReaderModel}' is unavailable, so the primary Agent was not invoked: {ex.Message}",
+                ex);
+        }
         var invocationId = CreateInvocationId(request.RunId, request.VisualArtifactIds);
 
         logger.LogInformation(

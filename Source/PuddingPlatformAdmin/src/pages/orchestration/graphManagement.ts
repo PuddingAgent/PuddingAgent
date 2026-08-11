@@ -9,13 +9,18 @@ export interface OrchestrationGraphCreateFormValues {
   rootSessionId: string;
   objective: string;
   maxConcurrency: number;
+  templateId: 'blank' | 'image-generation';
 }
 
-type DeletableGraphSummary = Pick<OrchestrationGraphSummary, 'graphId' | 'runCount'>;
+type DeletableGraphSummary = Pick<
+  OrchestrationGraphSummary,
+  'graphId' | 'runCount'
+>;
 
 export function createSuggestedGraphValues(
   workspaceId: string,
-  createIdentity: () => string = () => crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+  createIdentity: () => string = () =>
+    crypto.randomUUID().replace(/-/g, '').slice(0, 12),
 ): OrchestrationGraphCreateFormValues {
   const identity = createIdentity();
   return {
@@ -24,6 +29,7 @@ export function createSuggestedGraphValues(
     rootSessionId: `admin-orchestration-${identity}`,
     objective: '',
     maxConcurrency: 1,
+    templateId: 'image-generation',
   };
 }
 
@@ -36,6 +42,7 @@ export function buildCreateGraphRequest(
     rootSessionId: values.rootSessionId.trim(),
     objective: values.objective.trim(),
     maxConcurrency: values.maxConcurrency,
+    templateId: values.templateId,
   };
 }
 

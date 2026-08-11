@@ -1,0 +1,13 @@
+﻿{
+  "id": "agent-recent-activity-check",
+  "name": "Agent 近期活动检查",
+  "version": "1.1.0",
+  "description": "会话启动/心跳时先检索历史活动再开展工作。v1.1 新增：启动时先检索历史会话，恢复上下文。",
+  "summary": "Agent 启动先检索历史（query_session_logs 全文检索），再检查近期活动与待办。",
+  "author": "pudding-workspace",
+  "created": "2026-08-11",
+  "tags": ["recent-activity", "启动检查", "历史检索", "会话恢复", "心跳"],
+  "keywords": ["近期活动", "启动检查", "历史检索", "会话恢复", "recent-activity", "待办", "心跳唤醒"],
+  "source_session": "acd7ee428f284f9a845663b1a4d971db",
+  "path": "skills/agent-recent-activity-check"
+}

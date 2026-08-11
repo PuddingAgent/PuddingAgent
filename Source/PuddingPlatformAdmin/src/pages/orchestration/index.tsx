@@ -1,15 +1,18 @@
 ﻿import '@xyflow/react/dist/style.css';
 
 import { PageContainer } from '@ant-design/pro-components';
+import { history } from '@umijs/max';
 import {
   applyNodeChanges,
   Background,
+  type Connection,
   Controls,
+  type Edge,
   MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
   type NodeChange,
+  ReactFlow,
   type ReactFlowInstance,
+  ReactFlowProvider,
 } from '@xyflow/react';
 import {
   Alert,
@@ -21,44 +24,50 @@ import {
   Form,
   Input,
   InputNumber,
-  message,
   Modal,
+  message,
   Row,
   Select,
   Space,
   Spin,
-  Statistic,
   Tag,
-  theme,
   Timeline,
   Tooltip,
   Typography,
+  theme,
 } from 'antd';
 import dayjs from 'dayjs';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { history } from '@umijs/max';
-import {
-  getOrchestrationRevision,
-  getLatestOrchestrationRevision,
-  putOrchestrationRevision,
-  validateOrchestrationDraft,
-} from './api';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   createOrchestrationGraph,
   deleteOrchestrationGraph,
+  getLatestOrchestrationRevision,
   getOrchestrationCatalog,
   getOrchestrationEvents,
   getOrchestrationLayout,
+  getOrchestrationRevision,
   getOrchestrationRun,
   listOrchestrationGraphs,
   listOrchestrationRuns,
   putOrchestrationLayout,
+  putOrchestrationRevision,
+  startOrchestrationRun,
+  validateOrchestrationDraft,
   watchOrchestrationRun,
 } from './api';
 import {
-  buildOrchestrationFlowModel,
-  type OrchestrationFlowNode,
-} from './graphViewModel';
+  ComponentInspectorOutput,
+  ComponentInspectorSettings,
+} from './componentUiRegistry';
+import EdgeInspector from './EdgeInspector';
+import { buildEdgeFromConnection, insertEdgeDraft } from './edgeEditor';
+import GraphInputsPanel from './GraphInputsPanel';
 import {
   buildCreateGraphRequest,
   createSuggestedGraphValues,
@@ -66,10 +75,19 @@ import {
   type OrchestrationGraphCreateFormValues,
 } from './graphManagement';
 import {
+  buildOrchestrationFlowModel,
+  type OrchestrationFlowNode,
+} from './graphViewModel';
+import HttpHookPanel from './HttpHookPanel';
+import {
   buildOrchestrationLayoutWrite,
   getOrchestrationLayoutConflict,
   type OrchestrationLayoutConflict,
 } from './layoutEditor';
+import ManualRunModal from './ManualRunModal';
+import { createManualRunRequestId } from './manualRun';
+import NodeGraphInputBindings from './NodeGraphInputBindings';
+import OrchestrationComponentNode from './OrchestrationComponentNode';
 import {
   applyServerRevision,
   buildNextRevisionPreview,
@@ -80,12 +98,12 @@ import {
   getLayoutSaveTarget,
   getRevisionConflict,
   insertNodeDraft,
+  type OrchestrationDefinitionDiffSummary,
   patchNodeDraft,
   reloadLatestRevision,
   removeNodeFromDraft,
   summarizeDefinitionDiff,
   validateNodeDraft,
-  type OrchestrationDefinitionDiffSummary,
 } from './revisionEditor';
 import type {
   OrchestrationCatalog,
@@ -100,11 +118,21 @@ import type {
   OrchestrationRunSnapshot,
   OrchestrationRunStatus,
   OrchestrationRunSummary,
+  OrchestrationValueEnvelope,
 } from './types';
 
 const { Paragraph, Text } = Typography;
 
-const runStatusMeta: Record<OrchestrationRunStatus, { color: string; label: string }> = {
+const orchestrationNodeTypes = {
+  orchestrationComponent: OrchestrationComponentNode,
+};
+
+type WorkbenchPanel = 'inspector' | 'inputs' | 'httpHooks' | 'events';
+
+const runStatusMeta: Record<
+  OrchestrationRunStatus,
+  { color: string; label: string }
+> = {
   draft: { color: 'default', label: '草稿' },
   active: { color: 'processing', label: '运行中' },
   awaitingInput: { color: 'warning', label: '等待输入' },
@@ -113,7 +141,10 @@ const runStatusMeta: Record<OrchestrationRunStatus, { color: string; label: stri
   cancelled: { color: 'default', label: '已取消' },
 };
 
-const nodeStatusMeta: Record<OrchestrationNodeRunStatus, { color: string; label: string }> = {
+const nodeStatusMeta: Record<
+  OrchestrationNodeRunStatus,
+  { color: string; label: string }
+> = {
   pending: { color: 'default', label: '等待' },
   ready: { color: 'blue', label: '就绪' },
   claimed: { color: 'purple', label: '已认领' },
@@ -126,7 +157,15 @@ const nodeStatusMeta: Record<OrchestrationNodeRunStatus, { color: string; label:
 };
 
 const getErrorMessage = (error: unknown): string => {
-  const apiMessage = (error as { data?: { message?: unknown } })?.data?.message;
+  const candidate = error as {
+    data?: { message?: unknown; title?: unknown };
+    response?: { data?: { message?: unknown; title?: unknown } };
+  };
+  const apiMessage =
+    candidate.data?.message ??
+    candidate.response?.data?.message ??
+    candidate.data?.title ??
+    candidate.response?.data?.title;
   if (typeof apiMessage === 'string') return apiMessage;
   return error instanceof Error ? error.message : String(error);
 };
@@ -180,7 +219,9 @@ const OrchestrationPage: React.FC = () => {
   const [watchError, setWatchError] = useState<string>();
   const [catalog, setCatalog] = useState<OrchestrationCatalog>();
   const [graphs, setGraphs] = useState<OrchestrationGraphSummary[]>([]);
-  const [runSummaries, setRunSummaries] = useState<OrchestrationRunSummary[]>([]);
+  const [runSummaries, setRunSummaries] = useState<OrchestrationRunSummary[]>(
+    [],
+  );
   const [selectedGraphId, setSelectedGraphId] = useState<string>();
   const [workspaceFilter, setWorkspaceFilter] = useState(
     () => new URLSearchParams(window.location.search).get('workspaceId') ?? '',
@@ -193,38 +234,56 @@ const OrchestrationPage: React.FC = () => {
   const [events, setEvents] = useState<OrchestrationRunEvent[]>([]);
   const [watchStartSequence, setWatchStartSequence] = useState<number>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
+  const [workbenchPanel, setWorkbenchPanel] = useState<WorkbenchPanel>();
+  const [editorToolbarExpanded, setEditorToolbarExpanded] = useState(false);
   const [editorNodes, setEditorNodes] = useState<OrchestrationFlowNode[]>([]);
   const [layoutDirty, setLayoutDirty] = useState(false);
   const [layoutSaving, setLayoutSaving] = useState(false);
   const [layoutSaveError, setLayoutSaveError] = useState<string>();
-  const [layoutConflict, setLayoutConflict] = useState<OrchestrationLayoutConflict>();
+  const [layoutConflict, setLayoutConflict] =
+    useState<OrchestrationLayoutConflict>();
   const [layoutResetNonce, setLayoutResetNonce] = useState(0);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [runIdModalOpen, setRunIdModalOpen] = useState(false);
+  const [manualRunModalOpen, setManualRunModalOpen] = useState(false);
+  const [runStarting, setRunStarting] = useState(false);
   const [managementLoading, setManagementLoading] = useState(false);
-  const [draftDefinition, setDraftDefinition] = useState<OrchestrationGraphDefinition>();
+  const [draftDefinition, setDraftDefinition] =
+    useState<OrchestrationGraphDefinition>();
   const [contentDirty, setContentDirty] = useState(false);
   const [revisionSaving, setRevisionSaving] = useState(false);
   const [revisionSaveError, setRevisionSaveError] = useState<string>();
-  const [revisionConflict, setRevisionConflict] = useState<OrchestrationRevisionConflict>();
-  const [draftValidation, setDraftValidation] = useState<OrchestrationDraftValidationResult>();
-  const [latestRevision, setLatestRevision] = useState<OrchestrationGraphDefinition>();
-  const [conflictDiff, setConflictDiff] = useState<OrchestrationDefinitionDiffSummary>();
+  const [revisionConflict, setRevisionConflict] =
+    useState<OrchestrationRevisionConflict>();
+  const [draftValidation, setDraftValidation] =
+    useState<OrchestrationDraftValidationResult>();
+  const [latestRevision, setLatestRevision] =
+    useState<OrchestrationGraphDefinition>();
+  const [conflictDiff, setConflictDiff] =
+    useState<OrchestrationDefinitionDiffSummary>();
   const [addNodeModalOpen, setAddNodeModalOpen] = useState(false);
   const [selectedComponentType, setSelectedComponentType] = useState<string>();
   const [nodeEditTitle, setNodeEditTitle] = useState('');
   const [nodeEditObjective, setNodeEditObjective] = useState('');
   const [conflictDiffModalOpen, setConflictDiffModalOpen] = useState(false);
-  const flowInstanceRef = useRef<ReactFlowInstance<OrchestrationFlowNode> | null>(null);
+  const flowInstanceRef =
+    useRef<ReactFlowInstance<OrchestrationFlowNode> | null>(null);
   const editorIdentityRef = useRef<string | undefined>(undefined);
 
   const loadRun = useCallback(
-    async (rawRunId: string, updateLocation = true): Promise<OrchestrationRunSnapshot | undefined> => {
+    async (
+      rawRunId: string,
+      updateLocation = true,
+    ): Promise<OrchestrationRunSnapshot | undefined> => {
       const runId = rawRunId.trim();
       if (!runId) return;
       setLoading(true);
       setError(undefined);
       setWatchError(undefined);
       setSelectedNodeId(undefined);
+      setSelectedEdgeId(undefined);
+      setWorkbenchPanel(undefined);
       try {
         const [nextRun, nextCatalog] = await Promise.all([
           getOrchestrationRun(runId),
@@ -234,7 +293,10 @@ const OrchestrationPage: React.FC = () => {
           getOrchestrationRevision(nextRun.revisionId),
           loadCommittedEvents(runId),
         ]);
-        const nextLayout = await getOrchestrationLayout(nextRun.graphId, nextRun.revisionId);
+        const nextLayout = await getOrchestrationLayout(
+          nextRun.graphId,
+          nextRun.revisionId,
+        );
         setRun(nextRun);
         setCatalog(nextCatalog);
         setDefinition(nextDefinition);
@@ -280,12 +342,17 @@ const OrchestrationPage: React.FC = () => {
       setError(undefined);
       setWatchError(undefined);
       setSelectedNodeId(undefined);
+      setSelectedEdgeId(undefined);
+      setWorkbenchPanel(undefined);
       try {
         const [nextDefinition, nextCatalog] = await Promise.all([
           getLatestOrchestrationRevision(graphId),
           getOrchestrationCatalog(),
         ]);
-        const nextLayout = await getOrchestrationLayout(graphId, nextDefinition.revisionId);
+        const nextLayout = await getOrchestrationLayout(
+          graphId,
+          nextDefinition.revisionId,
+        );
         setRun(createDefinitionPreviewRun(nextDefinition));
         setCatalog(nextCatalog);
         setDefinition(nextDefinition);
@@ -322,7 +389,11 @@ const OrchestrationPage: React.FC = () => {
       setDiscoveryLoading(true);
       setSelectedGraphId(graphId);
       try {
-        const page = await listOrchestrationRuns({ graphId, limit: 100, offset: 0 });
+        const page = await listOrchestrationRuns({
+          graphId,
+          limit: 100,
+          offset: 0,
+        });
         setRunSummaries(page.runs);
         if (page.runs.length > 0) {
           await loadRun(page.runs[0].runId, updateLocation);
@@ -339,7 +410,11 @@ const OrchestrationPage: React.FC = () => {
   );
 
   const loadDiscovery = useCallback(
-    async (workspaceId: string, preferredGraphId?: string, preferGraphPreview = false) => {
+    async (
+      workspaceId: string,
+      preferredGraphId?: string,
+      preferGraphPreview = false,
+    ) => {
       setDiscoveryLoading(true);
       setError(undefined);
       try {
@@ -350,10 +425,14 @@ const OrchestrationPage: React.FC = () => {
         });
         setGraphs(page.graphs);
         const selected =
-          page.graphs.find((graph) => graph.graphId === preferredGraphId) ?? page.graphs[0];
+          page.graphs.find((graph) => graph.graphId === preferredGraphId) ??
+          page.graphs[0];
         if (selected) {
           if (preferGraphPreview) {
-            const runPage = await listOrchestrationRuns({ graphId: selected.graphId, limit: 100 });
+            const runPage = await listOrchestrationRuns({
+              graphId: selected.graphId,
+              limit: 100,
+            });
             setRunSummaries(runPage.runs);
             await loadGraphPreview(selected.graphId);
           } else {
@@ -385,7 +464,9 @@ const OrchestrationPage: React.FC = () => {
       setManagementLoading(true);
       setError(undefined);
       try {
-        const created = await createOrchestrationGraph(buildCreateGraphRequest(values));
+        const created = await createOrchestrationGraph(
+          buildCreateGraphRequest(values),
+        );
         setCreateModalOpen(false);
         setWorkspaceFilter(created.workspaceId);
         message.success(`Graph ${created.graphId} 已创建`);
@@ -443,7 +524,10 @@ const OrchestrationPage: React.FC = () => {
       if (!loadedRun) return;
       try {
         const [graphPage, runPage] = await Promise.all([
-          listOrchestrationGraphs({ workspaceId: loadedRun.workspaceId, limit: 100 }),
+          listOrchestrationGraphs({
+            workspaceId: loadedRun.workspaceId,
+            limit: 100,
+          }),
           listOrchestrationRuns({ graphId: loadedRun.graphId, limit: 100 }),
         ]);
         setGraphs(graphPage.graphs);
@@ -456,7 +540,8 @@ const OrchestrationPage: React.FC = () => {
   }, [loadDiscovery, loadRun]);
 
   useEffect(() => {
-    if (viewMode !== 'run' || !run?.runId || watchStartSequence === undefined) return undefined;
+    if (viewMode !== 'run' || !run?.runId || watchStartSequence === undefined)
+      return undefined;
     const controller = new AbortController();
     void watchOrchestrationRun({
       runId: run.runId,
@@ -465,20 +550,26 @@ const OrchestrationPage: React.FC = () => {
       onEvent: (event) => {
         setWatchError(undefined);
         setEvents((current) => {
-          if (current.some((item) => item.sequence === event.sequence)) return current;
-          return [...current, event].sort((left, right) => left.sequence - right.sequence).slice(-300);
+          if (current.some((item) => item.sequence === event.sequence))
+            return current;
+          return [...current, event]
+            .sort((left, right) => left.sequence - right.sequence)
+            .slice(-300);
         });
         void getOrchestrationRun(run.runId)
           .then((nextRun) => {
             setRun((current) =>
-              !current || nextRun.version >= current.version ? nextRun : current,
+              !current || nextRun.version >= current.version
+                ? nextRun
+                : current,
             );
           })
           .catch(() => undefined);
       },
       onError: (watchFailure) => setWatchError(watchFailure.message),
     }).catch((watchFailure) => {
-      if (!controller.signal.aborted) setWatchError(getErrorMessage(watchFailure));
+      if (!controller.signal.aborted)
+        setWatchError(getErrorMessage(watchFailure));
     });
     return () => controller.abort();
   }, [run?.runId, viewMode, watchStartSequence]);
@@ -494,9 +585,14 @@ const OrchestrationPage: React.FC = () => {
   const flowModel = useMemo(
     () =>
       effectiveDefinition && displayRun
-        ? buildOrchestrationFlowModel(effectiveDefinition, displayRun, layout)
+        ? buildOrchestrationFlowModel(
+            effectiveDefinition,
+            displayRun,
+            layout,
+            catalog,
+          )
         : undefined,
-    [effectiveDefinition, displayRun, layout],
+    [catalog, effectiveDefinition, displayRun, layout],
   );
   const themedFlowNodes = useMemo(
     () =>
@@ -509,6 +605,14 @@ const OrchestrationPage: React.FC = () => {
         },
       })) ?? [],
     [flowModel, token.colorBgContainer, token.colorText],
+  );
+  const editorEdges = useMemo<Edge[]>(
+    () =>
+      flowModel?.edges.map((edge) => ({
+        ...edge,
+        selected: edge.id === selectedEdgeId,
+      })) ?? [],
+    [flowModel, selectedEdgeId],
   );
   const editorIdentity = `${definition?.revisionId ?? 'none'}:${draftDefinition ? 'draft' : 'saved'}:${layout?.layoutRevision ?? 'auto'}:${layoutResetNonce}`;
 
@@ -557,7 +661,8 @@ const OrchestrationPage: React.FC = () => {
     (changes: NodeChange<OrchestrationFlowNode>[]) => {
       if (
         changes.some(
-          (change) => change.type === 'position' && change.position !== undefined,
+          (change) =>
+            change.type === 'position' && change.position !== undefined,
         )
       ) {
         markLayoutDirty();
@@ -571,7 +676,9 @@ const OrchestrationPage: React.FC = () => {
     const instance = flowInstanceRef.current;
     if (!definition || !instance) return;
     if (getLayoutSaveTarget(definition, draftDefinition).blocked) {
-      message.warning('内容草稿存在时不能把布局写入旧 base Revision；请先保存 Revision 再保存布局。');
+      message.warning(
+        '内容草稿存在时不能把布局写入旧 base Revision；请先保存 Revision 再保存布局。',
+      );
       return;
     }
 
@@ -586,7 +693,10 @@ const OrchestrationPage: React.FC = () => {
         viewport: instance.getViewport(),
         nodes: editorNodes,
       });
-      const savedLayout = await putOrchestrationLayout(definition.graphId, write);
+      const savedLayout = await putOrchestrationLayout(
+        definition.graphId,
+        write,
+      );
       setLayout(savedLayout);
       setLayoutDirty(false);
       message.success(`布局 L${savedLayout.layoutRevision} 已保存`);
@@ -621,14 +731,19 @@ const OrchestrationPage: React.FC = () => {
   }, [definition]);
 
   // ---- S1 Revision Editor: draft, node CRUD, save & conflict handling ----
-  const generateNodeId = useCallback((prefix: string) => {
-    const existing = new Set(effectiveDefinition?.nodes.map((node) => node.nodeId) ?? []);
-    let candidate = `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
-    while (existing.has(candidate)) {
-      candidate = `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
-    }
-    return candidate;
-  }, [effectiveDefinition]);
+  const generateNodeId = useCallback(
+    (prefix: string) => {
+      const existing = new Set(
+        effectiveDefinition?.nodes.map((node) => node.nodeId) ?? [],
+      );
+      let candidate = `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
+      while (existing.has(candidate)) {
+        candidate = `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
+      }
+      return candidate;
+    },
+    [effectiveDefinition],
+  );
 
   const beginDraft = useCallback(() => {
     if (!definition) return undefined;
@@ -641,19 +756,102 @@ const OrchestrationPage: React.FC = () => {
     return draft;
   }, [definition, draftDefinition]);
 
-  const handleAddNode = useCallback((component: OrchestrationRegisteredComponent) => {
-    const draft = beginDraft();
-    if (!draft) return;
-    const node = createNodeDraftFromCatalog(component, generateNodeId(component.descriptor.nodeKind));
-    node.objective = `使用 ${component.descriptor.displayName} 完成目标`;
-    const nextDraft = insertNodeDraft(draft, node);
-    setDraftDefinition(nextDraft);
-    setContentDirty(true);
-    setSelectedNodeId(node.nodeId);
-    setAddNodeModalOpen(false);
-    setSelectedComponentType(undefined);
-    message.success(`已添加节点 ${node.nodeId}`);
-  }, [beginDraft, generateNodeId]);
+  const applyDraftDefinition = useCallback(
+    (nextDraft: OrchestrationGraphDefinition) => {
+      setDraftDefinition(nextDraft);
+      setContentDirty(true);
+      setRevisionSaveError(undefined);
+      setRevisionConflict(undefined);
+      setDraftValidation(undefined);
+      setConflictDiff(undefined);
+      setLatestRevision(undefined);
+    },
+    [],
+  );
+
+  const generateEdgeId = useCallback(() => {
+    const existing = new Set(
+      effectiveDefinition?.edges.map((edge) => edge.edgeId) ?? [],
+    );
+    let candidate = `edge-${Math.random().toString(16).slice(2, 10)}`;
+    while (existing.has(candidate))
+      candidate = `edge-${Math.random().toString(16).slice(2, 10)}`;
+    return candidate;
+  }, [effectiveDefinition]);
+
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      if (viewMode !== 'graph' || !catalog || !effectiveDefinition) return;
+      const result = buildEdgeFromConnection(
+        effectiveDefinition,
+        catalog,
+        connection,
+        generateEdgeId(),
+      );
+      if (!result.edge) {
+        message.warning(result.error?.message ?? '无法创建连线');
+        return;
+      }
+      applyDraftDefinition(insertEdgeDraft(effectiveDefinition, result.edge));
+      setSelectedNodeId(undefined);
+      setSelectedEdgeId(result.edge.edgeId);
+      message.success(
+        result.edge.kind === 'data'
+          ? '已添加类型化 data edge'
+          : '已添加 control edge',
+      );
+    },
+    [
+      applyDraftDefinition,
+      catalog,
+      effectiveDefinition,
+      generateEdgeId,
+      viewMode,
+    ],
+  );
+
+  const handleAddNode = useCallback(
+    (component: OrchestrationRegisteredComponent) => {
+      const draft = beginDraft();
+      if (!draft) return;
+      const node = createNodeDraftFromCatalog(
+        component,
+        generateNodeId(component.descriptor.nodeKind),
+      );
+      node.objective = `使用 ${component.descriptor.displayName} 完成目标`;
+      const nextDraft = insertNodeDraft(draft, node);
+      applyDraftDefinition(nextDraft);
+      setSelectedNodeId(node.nodeId);
+      setSelectedEdgeId(undefined);
+      setAddNodeModalOpen(false);
+      setSelectedComponentType(undefined);
+      message.success(`已添加节点 ${node.nodeId}`);
+    },
+    [applyDraftDefinition, beginDraft, generateNodeId],
+  );
+
+  const handleStartManualRun = useCallback(
+    async (inputs: Record<string, OrchestrationValueEnvelope>) => {
+      if (!definition || contentDirty) return;
+      setRunStarting(true);
+      try {
+        const receipt = await startOrchestrationRun({
+          graphId: definition.graphId,
+          revisionId: definition.revisionId,
+          requestId: createManualRunRequestId(),
+          inputs,
+        });
+        setManualRunModalOpen(false);
+        message.success(`已启动 Run ${receipt.run.runId}`);
+        await loadRun(receipt.run.runId);
+      } catch (runError) {
+        message.error(getErrorMessage(runError));
+      } finally {
+        setRunStarting(false);
+      }
+    },
+    [contentDirty, definition, loadRun],
+  );
 
   const handleApplyNodeEdit = useCallback(() => {
     if (!selectedNodeId) return;
@@ -663,11 +861,14 @@ const OrchestrationPage: React.FC = () => {
       title: nodeEditTitle.trim(),
       objective: nodeEditObjective.trim(),
     });
-    setDraftDefinition(nextDraft);
-    setContentDirty(true);
-    setRevisionSaveError(undefined);
-    setRevisionConflict(undefined);
-  }, [beginDraft, nodeEditObjective, nodeEditTitle, selectedNodeId]);
+    applyDraftDefinition(nextDraft);
+  }, [
+    applyDraftDefinition,
+    beginDraft,
+    nodeEditObjective,
+    nodeEditTitle,
+    selectedNodeId,
+  ]);
 
   const handleDeleteSelectedNode = useCallback(() => {
     if (!selectedNodeId) return;
@@ -678,17 +879,14 @@ const OrchestrationPage: React.FC = () => {
       message.warning(result.blocked);
       return;
     }
-    setDraftDefinition(result.draft);
-    setContentDirty(true);
+    applyDraftDefinition(result.draft);
     setSelectedNodeId(undefined);
-    setRevisionSaveError(undefined);
-    setRevisionConflict(undefined);
     message.success(
       result.removedEdgeIds.length > 0
         ? `节点已删除，并同步移除 ${result.removedEdgeIds.length} 条关联边`
         : '节点已删除',
     );
-  }, [beginDraft, selectedNodeId]);
+  }, [applyDraftDefinition, beginDraft, selectedNodeId]);
 
   const handleDiscardDraft = useCallback(() => {
     setDraftDefinition(undefined);
@@ -699,7 +897,35 @@ const OrchestrationPage: React.FC = () => {
     setConflictDiff(undefined);
     setLatestRevision(undefined);
     setSelectedNodeId(undefined);
+    setSelectedEdgeId(undefined);
   }, []);
+
+  const handleValidateDraft = useCallback(async () => {
+    if (!definition || !effectiveDefinition) return;
+    setRevisionSaving(true);
+    setRevisionSaveError(undefined);
+    setDraftValidation(undefined);
+    try {
+      const candidate = draftDefinition
+        ? buildNextRevisionPreview(draftDefinition, definition)
+        : effectiveDefinition;
+      const validation = await validateOrchestrationDraft(definition.graphId, {
+        graphId: definition.graphId,
+        baseRevisionId: definition.revisionId,
+        definition: candidate,
+      });
+      setDraftValidation(validation);
+      if (validation.isValid) message.success('草稿校验通过');
+      else
+        setRevisionSaveError(
+          `校验失败：${formatValidationIssues(validation.issues).join('；') || '存在阻塞诊断'}`,
+        );
+    } catch (validationError) {
+      setRevisionSaveError(getErrorMessage(validationError));
+    } finally {
+      setRevisionSaving(false);
+    }
+  }, [definition, draftDefinition, effectiveDefinition]);
 
   const handleSaveRevision = useCallback(async () => {
     if (!definition || !draftDefinition) return;
@@ -721,11 +947,18 @@ const OrchestrationPage: React.FC = () => {
         );
         return;
       }
-      const serverRevision = await putOrchestrationRevision(definition.graphId, {
-        definition: preview,
-        expectedCurrentRevision: definition.revision,
-      });
-      const applied = applyServerRevision(definition, draftDefinition, serverRevision);
+      const serverRevision = await putOrchestrationRevision(
+        definition.graphId,
+        {
+          definition: preview,
+          expectedCurrentRevision: definition.revision,
+        },
+      );
+      const applied = applyServerRevision(
+        definition,
+        draftDefinition,
+        serverRevision,
+      );
       setDefinition(applied.saved);
       setDraftDefinition(undefined);
       setContentDirty(false);
@@ -753,7 +986,9 @@ const OrchestrationPage: React.FC = () => {
       if (conflict) {
         setRevisionConflict(conflict);
         try {
-          const latest = await getLatestOrchestrationRevision(definition.graphId);
+          const latest = await getLatestOrchestrationRevision(
+            definition.graphId,
+          );
           setLatestRevision(latest);
           setConflictDiff(summarizeDefinitionDiff(draftDefinition, latest));
         } catch {
@@ -772,7 +1007,8 @@ const OrchestrationPage: React.FC = () => {
     setRevisionSaving(true);
     try {
       const latest =
-        latestRevision ?? (await getLatestOrchestrationRevision(definition.graphId));
+        latestRevision ??
+        (await getLatestOrchestrationRevision(definition.graphId));
       const applied = reloadLatestRevision(latest);
       setDefinition(applied.saved);
       setDraftDefinition(undefined);
@@ -782,8 +1018,12 @@ const OrchestrationPage: React.FC = () => {
       setLatestRevision(undefined);
       setDraftValidation(undefined);
       setSelectedNodeId(undefined);
+      setSelectedEdgeId(undefined);
       setLayout(undefined);
-      const nextLayout = await getOrchestrationLayout(latest.graphId, latest.revisionId);
+      const nextLayout = await getOrchestrationLayout(
+        latest.graphId,
+        latest.revisionId,
+      );
       setLayout(nextLayout);
       setLayoutResetNonce((current) => current + 1);
       message.success(`已重新加载最新 Revision ${latest.revisionId}`);
@@ -795,7 +1035,9 @@ const OrchestrationPage: React.FC = () => {
   }, [definition, latestRevision]);
 
   useEffect(() => {
-    const selected = effectiveDefinition?.nodes.find((node) => node.nodeId === selectedNodeId);
+    const selected = effectiveDefinition?.nodes.find(
+      (node) => node.nodeId === selectedNodeId,
+    );
     setNodeEditTitle(selected?.title ?? '');
     setNodeEditObjective(selected?.objective ?? '');
   }, [effectiveDefinition, selectedNodeId]);
@@ -803,11 +1045,18 @@ const OrchestrationPage: React.FC = () => {
   const selectedNodeDefinition = effectiveDefinition?.nodes.find(
     (node) => node.nodeId === selectedNodeId,
   );
-  const selectedRun = displayRun?.nodes.find((node) => node.nodeId === selectedNodeId);
+  const selectedRun = displayRun?.nodes.find(
+    (node) => node.nodeId === selectedNodeId,
+  );
+  const selectedEdgeDefinition = effectiveDefinition?.edges.find(
+    (edge) => edge.edgeId === selectedEdgeId,
+  );
   const selectedComponent = catalog?.components.find(
     (component) =>
-      component.descriptor.componentType === selectedNodeDefinition?.component.componentType &&
-      component.descriptor.version === selectedNodeDefinition?.component.version,
+      component.descriptor.componentType ===
+        selectedNodeDefinition?.component.componentType &&
+      component.descriptor.version ===
+        selectedNodeDefinition?.component.version,
   );
   const layoutSaveTarget = definition
     ? getLayoutSaveTarget(definition, draftDefinition)
@@ -815,70 +1064,52 @@ const OrchestrationPage: React.FC = () => {
   const selectedNodeIssues = selectedNodeDefinition
     ? validateNodeDraft(selectedNodeDefinition)
     : [];
-  const selectedGraphSummary = graphs.find((graph) => graph.graphId === selectedGraphId);
+  const selectedGraphSummary = graphs.find(
+    (graph) => graph.graphId === selectedGraphId,
+  );
   const graphDeletionBlocker = getGraphDeletionBlocker(selectedGraphSummary);
-  const completedNodes = displayRun?.nodes.filter((node) => node.status === 'completed').length ?? 0;
-  const runningNodes = displayRun?.nodes.filter((node) => ['claimed', 'running'].includes(node.status)).length ?? 0;
-  const failedNodes = displayRun?.nodes.filter((node) => node.status === 'failed').length ?? 0;
+  const completedNodes =
+    displayRun?.nodes.filter((node) => node.status === 'completed').length ?? 0;
+  const runningNodes =
+    displayRun?.nodes.filter((node) =>
+      ['claimed', 'running'].includes(node.status),
+    ).length ?? 0;
+  const failedNodes =
+    displayRun?.nodes.filter((node) => node.status === 'failed').length ?? 0;
 
   return (
     <PageContainer
       header={{
         title: 'Agent 编排',
-        subTitle: 'Graph/Run 可发现 · executable revision、editor layout 与运行事实相互隔离',
-        tags: <Tag color="blue">Phase 4 / Layout Editor</Tag>,
+        subTitle: '可执行任务图、布局与运行事实相互隔离',
       }}
     >
       <Card
-        title="浏览编排"
         size="small"
-        style={{ marginBottom: 16 }}
-        extra={
-          <Space>
-            <Button type="primary" onClick={openCreateGraphModal}>
-              新建 Graph
-            </Button>
-            <Tooltip title={graphDeletionBlocker}>
-              <span>
-                <Button
-                  danger
-                  disabled={Boolean(graphDeletionBlocker)}
-                  loading={managementLoading}
-                  onClick={() => {
-                    if (!selectedGraphSummary || graphDeletionBlocker) return;
-                    Modal.confirm({
-                      title: `删除 Graph ${selectedGraphSummary.graphId}？`,
-                      content:
-                        '这会永久删除全部不可变 Revision 和编辑器布局；该 Graph 尚无 Run。此操作不可撤销。',
-                      okText: '确认删除',
-                      okButtonProps: { danger: true },
-                      cancelText: '取消',
-                      onOk: () => handleDeleteGraph(selectedGraphSummary),
-                    });
-                  }}
-                >
-                  删除 Graph
-                </Button>
-              </span>
-            </Tooltip>
-          </Space>
-        }
+        style={{ marginBottom: 12 }}
+        styles={{ body: { padding: 10 } }}
       >
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={5}>
+        <Row gutter={[8, 8]} align="middle" wrap>
+          <Col flex="160px">
             <Input
               allowClear
+              size="small"
               value={workspaceFilter}
               onChange={(event) => setWorkspaceFilter(event.target.value)}
               onPressEnter={() =>
-                void loadDiscovery(workspaceFilter, selectedGraphId, viewMode === 'graph')
+                void loadDiscovery(
+                  workspaceFilter,
+                  selectedGraphId,
+                  viewMode === 'graph',
+                )
               }
-              placeholder="工作区 ID（留空为全部）"
+              placeholder="工作区（全部）"
             />
           </Col>
-          <Col xs={24} md={8}>
+          <Col flex="minmax(260px, 1fr)">
             <Select
               showSearch
+              size="small"
               optionFilterProp="label"
               value={selectedGraphId}
               loading={discoveryLoading}
@@ -891,18 +1122,22 @@ const OrchestrationPage: React.FC = () => {
               }))}
             />
           </Col>
-          <Col xs={24} md={8}>
+          <Col flex="minmax(240px, 1fr)">
             <Select
               showSearch
               allowClear
+              size="small"
               optionFilterProp="label"
               value={viewMode === 'run' ? run?.runId : undefined}
               loading={discoveryLoading}
-              placeholder={selectedGraphId ? '选择 Run；清空则预览定义' : '先选择 Graph'}
+              placeholder={
+                selectedGraphId ? '选择 Run；清空则预览定义' : '先选择 Graph'
+              }
               style={{ width: '100%' }}
               onChange={(runId) => {
                 if (runId) void loadRun(runId);
-                else if (selectedGraphId) void loadGraphPreview(selectedGraphId);
+                else if (selectedGraphId)
+                  void loadGraphPreview(selectedGraphId);
               }}
               options={runSummaries.map((item) => ({
                 value: item.runId,
@@ -910,42 +1145,69 @@ const OrchestrationPage: React.FC = () => {
               }))}
             />
           </Col>
-          <Col xs={24} md={3}>
-            <Button
-              block
-              loading={discoveryLoading}
-              onClick={() =>
-                void loadDiscovery(workspaceFilter, selectedGraphId, viewMode === 'graph')
-              }
-            >
-              刷新
-            </Button>
+          <Col flex="none">
+            <Space size={6} wrap>
+              <Button
+                size="small"
+                loading={discoveryLoading}
+                onClick={() =>
+                  void loadDiscovery(
+                    workspaceFilter,
+                    selectedGraphId,
+                    viewMode === 'graph',
+                  )
+                }
+              >
+                刷新
+              </Button>
+              <Button size="small" onClick={() => setRunIdModalOpen(true)}>
+                Run ID
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                onClick={openCreateGraphModal}
+              >
+                新建
+              </Button>
+              <Tooltip title={graphDeletionBlocker}>
+                <span>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={Boolean(graphDeletionBlocker)}
+                    loading={managementLoading}
+                    onClick={() => {
+                      if (!selectedGraphSummary || graphDeletionBlocker) return;
+                      Modal.confirm({
+                        title: `删除 Graph ${selectedGraphSummary.graphId}？`,
+                        content:
+                          '这会永久删除全部不可变 Revision 和编辑器布局；该 Graph 尚无 Run。此操作不可撤销。',
+                        okText: '确认删除',
+                        okButtonProps: { danger: true },
+                        cancelText: '取消',
+                        onOk: () => handleDeleteGraph(selectedGraphSummary),
+                      });
+                    }}
+                  >
+                    删除
+                  </Button>
+                </span>
+              </Tooltip>
+            </Space>
           </Col>
         </Row>
-        <Form
-          form={form}
-          layout="inline"
-          onFinish={({ runId }) => void loadRun(runId)}
-          initialValues={{ runId: '' }}
-          style={{ marginTop: 12 }}
-        >
-          <Form.Item
-            name="runId"
-            label="直接打开 Run ID"
-            rules={[{ required: true, whitespace: true, message: '请输入编排 Run ID' }]}
-            style={{ flex: 1 }}
-          >
-            <Input allowClear placeholder="高级入口；通常直接使用上方 Graph/Run 浏览器" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading}>
-              打开运行图
-            </Button>
-          </Form.Item>
-        </Form>
       </Card>
 
-      {error ? <Alert type="error" showIcon message="运行图加载失败" description={error} style={{ marginBottom: 16 }} /> : null}
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="运行图加载失败"
+          description={error}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
       {watchError ? (
         <Alert
           type="warning"
@@ -974,7 +1236,11 @@ const OrchestrationPage: React.FC = () => {
             </Space>
           }
           action={
-            <Button size="small" loading={layoutSaving} onClick={() => void handleReloadLayout()}>
+            <Button
+              size="small"
+              loading={layoutSaving}
+              onClick={() => void handleReloadLayout()}
+            >
               放弃本地修改并重新加载
             </Button>
           }
@@ -1010,7 +1276,8 @@ const OrchestrationPage: React.FC = () => {
                 <Text type="secondary">
                   本地 {effectiveDefinition?.nodes.length ?? 0} 节点 vs 最新{' '}
                   {latestRevision?.nodes.length ?? 0} 节点；新增{' '}
-                  {conflictDiff.nodesAdded.length}、删除 {conflictDiff.nodesRemoved.length}。
+                  {conflictDiff.nodesAdded.length}、删除{' '}
+                  {conflictDiff.nodesRemoved.length}。
                 </Text>
               ) : null}
             </Space>
@@ -1058,10 +1325,15 @@ const OrchestrationPage: React.FC = () => {
               {draftValidation ? (
                 <ul style={{ margin: 0, paddingInlineStart: 20 }}>
                   {draftValidation.issues.map((issue) => (
-                    <li key={`${issue.code}-${issue.elementId ?? issue.path ?? 'root'}`}>
+                    <li
+                      key={`${issue.code}-${issue.elementId ?? issue.path ?? 'root'}`}
+                    >
                       <Text type="secondary">
                         [{issue.severity}] {issue.code}
-                        {issue.elementId ? ` · ${issue.elementType}:${issue.elementId}` : ''} · {issue.message}
+                        {issue.elementId
+                          ? ` · ${issue.elementType}:${issue.elementId}`
+                          : ''}{' '}
+                        · {issue.message}
                       </Text>
                     </li>
                   ))}
@@ -1080,56 +1352,193 @@ const OrchestrationPage: React.FC = () => {
             <Empty description="当前过滤范围没有编排图；可从上方新建 Graph" />
           </Card>
         ) : (
-          <>
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-              <Col xs={12} md={6}>
-                <Card size="small">
-                  <Statistic
-                    title={viewMode === 'run' ? '运行状态' : '当前视图'}
-                    valueRender={() => (
-                      viewMode === 'run' ? (
-                        <Tag color={runStatusMeta[displayRun.status].color}>{runStatusMeta[displayRun.status].label}</Tag>
-                      ) : (
-                        <Tag color="geekblue">定义预览</Tag>
-                      )
-                    )}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} md={6}>
-                <Card size="small"><Statistic title="节点" value={effectiveDefinition.nodes.length} suffix={`完成 ${completedNodes}`} /></Card>
-              </Col>
-              <Col xs={12} md={6}>
-                <Card size="small"><Statistic title="运行 / 失败" value={runningNodes} suffix={`/ ${failedNodes}`} /></Card>
-              </Col>
-              <Col xs={12} md={6}>
-                <Card size="small"><Statistic title="事件高水位" value={displayRun.headSequence} /></Card>
-              </Col>
-            </Row>
-
-            <Row gutter={[16, 16]}>
-              <Col xs={24} xl={17}>
-                <Card
-                  title={effectiveDefinition.objective}
-                  extra={
-                    <Space size="small" wrap>
-                      <Tag>{effectiveDefinition.graphId}</Tag>
-                      <Tag color="geekblue">Revision {effectiveDefinition.revision}</Tag>
+          <Row gutter={[16, 16]} style={{ position: 'relative' }}>
+            <Col span={24}>
+              <Card
+                title={
+                  <Space size={4} wrap>
+                    <Text strong>{effectiveDefinition.objective}</Text>
+                    <Tag>{effectiveDefinition.graphId}</Tag>
+                    <Tag color="geekblue">r{effectiveDefinition.revision}</Tag>
+                    <Tag
+                      color={
+                        viewMode === 'run'
+                          ? runStatusMeta[displayRun.status].color
+                          : 'geekblue'
+                      }
+                    >
+                      {viewMode === 'run'
+                        ? runStatusMeta[displayRun.status].label
+                        : '定义预览'}
+                    </Tag>
+                    <Tag>
+                      节点 {effectiveDefinition.nodes.length} · 完成{' '}
+                      {completedNodes}
+                    </Tag>
+                    <Tag color={failedNodes > 0 ? 'red' : 'default'}>
+                      运行 {runningNodes} · 失败 {failedNodes}
+                    </Tag>
+                    <Tag>事件 #{displayRun.headSequence}</Tag>
+                    {contentDirty ? (
+                      <Tag color="warning">内容未保存</Tag>
+                    ) : null}
+                    {layoutDirty ? <Tag color="warning">布局未保存</Tag> : null}
+                  </Space>
+                }
+                extra={
+                  <Space size={4} wrap>
+                    <Tooltip
+                      title={
+                        contentDirty
+                          ? '请先保存 Revision，再运行不可变定义'
+                          : undefined
+                      }
+                    >
+                      <span>
+                        <Button
+                          size="small"
+                          type="primary"
+                          disabled={!definition || contentDirty}
+                          loading={runStarting}
+                          onClick={() => setManualRunModalOpen(true)}
+                        >
+                          运行
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Button
+                      size="small"
+                      disabled={viewMode !== 'graph' || !definition}
+                      onClick={() => setAddNodeModalOpen(true)}
+                    >
+                      新增节点
+                    </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={revisionSaving}
+                      disabled={!contentDirty}
+                      onClick={() => void handleSaveRevision()}
+                    >
+                      保存
+                    </Button>
+                    <Tooltip
+                      title={
+                        layoutSaveTarget?.blocked
+                          ? layoutSaveTarget.reason
+                          : undefined
+                      }
+                    >
+                      <span>
+                        <Button
+                          size="small"
+                          type="primary"
+                          disabled={!layoutDirty || layoutSaveTarget?.blocked}
+                          loading={layoutSaving}
+                          onClick={() => void handleSaveLayout()}
+                        >
+                          布局
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Button
+                      size="small"
+                      type={
+                        workbenchPanel === 'inspector' ? 'primary' : 'default'
+                      }
+                      onClick={() =>
+                        setWorkbenchPanel((current) =>
+                          current === 'inspector' ? undefined : 'inspector',
+                        )
+                      }
+                    >
+                      检查器
+                    </Button>
+                    <Button
+                      size="small"
+                      type={workbenchPanel === 'inputs' ? 'primary' : 'default'}
+                      onClick={() =>
+                        setWorkbenchPanel((current) =>
+                          current === 'inputs' ? undefined : 'inputs',
+                        )
+                      }
+                    >
+                      Inputs
+                    </Button>
+                    <Button
+                      size="small"
+                      type={
+                        workbenchPanel === 'httpHooks' ? 'primary' : 'default'
+                      }
+                      onClick={() =>
+                        setWorkbenchPanel((current) =>
+                          current === 'httpHooks' ? undefined : 'httpHooks',
+                        )
+                      }
+                    >
+                      HTTP Hook
+                    </Button>
+                    <Button
+                      size="small"
+                      type={workbenchPanel === 'events' ? 'primary' : 'default'}
+                      onClick={() =>
+                        setWorkbenchPanel((current) =>
+                          current === 'events' ? undefined : 'events',
+                        )
+                      }
+                    >
+                      事件 {events.length}
+                    </Button>
+                    <Button
+                      size="small"
+                      type={editorToolbarExpanded ? 'primary' : 'default'}
+                      onClick={() =>
+                        setEditorToolbarExpanded((current) => !current)
+                      }
+                    >
+                      更多
+                    </Button>
+                  </Space>
+                }
+                styles={{ body: { padding: 0 } }}
+              >
+                {editorToolbarExpanded ? (
+                  <div
+                    style={{
+                      padding: '6px 12px',
+                      borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                      background: token.colorFillQuaternary,
+                    }}
+                  >
+                    <Space size={6} wrap>
                       {draftDefinition ? (
-                        <Tag color="orange">草稿 {formatRevisionId(effectiveDefinition.graphId, definition?.revision ? definition.revision + 1 : 0)}</Tag>
+                        <Tag color="orange">
+                          草稿{' '}
+                          {formatRevisionId(
+                            effectiveDefinition.graphId,
+                            definition?.revision ? definition.revision + 1 : 0,
+                          )}
+                        </Tag>
                       ) : null}
-                      {contentDirty ? <Tag color="warning">内容未保存</Tag> : null}
                       <Tag>并发 {effectiveDefinition.maxConcurrency}</Tag>
                       <Tag color={layout ? 'purple' : 'default'}>
                         {layout ? `布局 L${layout.layoutRevision}` : '自动布局'}
                       </Tag>
-                      {layoutDirty ? <Tag color="warning">布局未保存</Tag> : null}
                       <Button
                         size="small"
-                        disabled={viewMode !== 'graph' || !definition}
-                        onClick={() => setAddNodeModalOpen(true)}
+                        loading={revisionSaving}
+                        disabled={!effectiveDefinition}
+                        onClick={() => void handleValidateDraft()}
                       >
-                        新增节点
+                        校验草稿
+                      </Button>
+                      <Button
+                        size="small"
+                        disabled={!layout && !layoutDirty}
+                        loading={layoutSaving}
+                        onClick={() => void handleReloadLayout()}
+                      >
+                        重新加载布局
                       </Button>
                       <Button
                         size="small"
@@ -1148,193 +1557,396 @@ const OrchestrationPage: React.FC = () => {
                       >
                         放弃草稿
                       </Button>
-                      <Button
-                        size="small"
-                        type="primary"
-                        loading={revisionSaving}
-                        disabled={!contentDirty}
-                        onClick={() => void handleSaveRevision()}
-                      >
-                        保存 Revision
-                      </Button>
-                      <Button
-                        size="small"
-                        disabled={!layout && !layoutDirty}
-                        loading={layoutSaving}
-                        onClick={() => void handleReloadLayout()}
-                      >
-                        重新加载布局
-                      </Button>
-                      <Tooltip title={layoutSaveTarget?.blocked ? layoutSaveTarget.reason : undefined}>
-                        <span>
-                          <Button
-                            size="small"
-                            type="primary"
-                            disabled={!layoutDirty || layoutSaveTarget?.blocked}
-                            loading={layoutSaving}
-                            onClick={() => void handleSaveLayout()}
-                          >
-                            保存布局
-                          </Button>
-                        </span>
-                      </Tooltip>
                     </Space>
-                  }
-                  styles={{ body: { padding: 0 } }}
-                >
-                  <div style={{ width: '100%', height: 620, background: token.colorFillAlter }}>
-                    <ReactFlowProvider>
-                      <ReactFlow
-                        key={editorIdentity}
-                        nodes={editorNodes}
-                        edges={flowModel.edges}
-                        fitView={!layout}
-                        fitViewOptions={{ padding: 0.2 }}
-                        defaultViewport={layout?.viewport}
-                        nodesDraggable
-                        nodesConnectable={false}
-                        deleteKeyCode={null}
-                        onInit={(instance) => {
-                          flowInstanceRef.current = instance;
-                        }}
-                        onNodesChange={handleNodesChange}
-                        onMoveEnd={(event) => {
-                          if (event) markLayoutDirty();
-                        }}
-                        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-                        proOptions={{ hideAttribution: true }}
-                      >
-                        <Background />
-                        <MiniMap pannable zoomable />
-                        <Controls showInteractive={false} />
-                      </ReactFlow>
-                    </ReactFlowProvider>
                   </div>
-                </Card>
-              </Col>
+                ) : null}
+                <div
+                  style={{
+                    width: '100%',
+                    height: 620,
+                    background: token.colorFillAlter,
+                  }}
+                >
+                  <ReactFlowProvider>
+                    <ReactFlow
+                      key={editorIdentity}
+                      nodes={editorNodes}
+                      edges={editorEdges}
+                      nodeTypes={orchestrationNodeTypes}
+                      fitView={!layout}
+                      fitViewOptions={{ padding: 0.2 }}
+                      defaultViewport={layout?.viewport}
+                      nodesDraggable
+                      nodesConnectable={viewMode === 'graph'}
+                      deleteKeyCode={null}
+                      onInit={(instance) => {
+                        flowInstanceRef.current = instance;
+                      }}
+                      onNodesChange={handleNodesChange}
+                      onConnect={handleConnect}
+                      onMoveEnd={(event) => {
+                        if (event) markLayoutDirty();
+                      }}
+                      onNodeClick={(_, node) => {
+                        setSelectedNodeId(node.id);
+                        setSelectedEdgeId(undefined);
+                        setWorkbenchPanel('inspector');
+                      }}
+                      onEdgeClick={(_, edge) => {
+                        setSelectedEdgeId(edge.id);
+                        setSelectedNodeId(undefined);
+                        setWorkbenchPanel('inspector');
+                      }}
+                      onPaneClick={() => {
+                        setSelectedNodeId(undefined);
+                        setSelectedEdgeId(undefined);
+                        if (workbenchPanel === 'inspector') {
+                          setWorkbenchPanel(undefined);
+                        }
+                      }}
+                      proOptions={{ hideAttribution: true }}
+                    >
+                      <Background />
+                      <MiniMap pannable zoomable />
+                      <Controls showInteractive={false} />
+                    </ReactFlow>
+                  </ReactFlowProvider>
+                </div>
+              </Card>
+            </Col>
 
-              <Col xs={24} xl={7}>
-                <Card title="节点检查器" style={{ marginBottom: 16 }}>
-                  {!selectedNodeDefinition || !selectedRun ? (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择画布中的节点" />
-                  ) : (
-                    <>
-                      <Space wrap style={{ marginBottom: 12 }}>
-                        <Tag color={nodeStatusMeta[selectedRun.status].color}>
-                          {nodeStatusMeta[selectedRun.status].label}
-                        </Tag>
-                        <Tag>{selectedNodeDefinition.kind}</Tag>
-                        <Tag>{selectedComponent?.descriptor.displayName ?? selectedNodeDefinition.component.componentType}</Tag>
-                        {draftDefinition ? <Tag color="orange">草稿</Tag> : null}
-                      </Space>
-                      <Descriptions size="small" column={1} bordered>
-                        <Descriptions.Item label="节点">{selectedNodeDefinition.title}</Descriptions.Item>
-                        <Descriptions.Item label="目标">{selectedNodeDefinition.objective}</Descriptions.Item>
-                        <Descriptions.Item label="尝试">{selectedRun.attempt} / {selectedRun.maxAttempts}</Descriptions.Item>
-                        <Descriptions.Item label="精确路由">{selectedNodeDefinition.executor?.routeKey ?? '—'}</Descriptions.Item>
-                        <Descriptions.Item label="Execution Run">{selectedRun.executionRunId ?? '—'}</Descriptions.Item>
-                        <Descriptions.Item label="Sub-session">{selectedRun.subSessionId ?? '—'}</Descriptions.Item>
-                        <Descriptions.Item label="更新时间">{dayjs(selectedRun.updatedAtUtc).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
-                      </Descriptions>
-                      {selectedNodeIssues.length > 0 ? (
-                        <Alert
-                          type="warning"
-                          showIcon
-                          message="本地结构校验未通过"
-                          description={
-                            <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-                              {selectedNodeIssues.map((issue) => (
-                                <li key={issue.code}>
-                                  <Text type="secondary">{issue.code} · {issue.message}</Text>
-                                </li>
-                              ))}
-                            </ul>
-                          }
-                          style={{ marginTop: 12 }}
-                        />
-                      ) : null}
-                      <Form layout="vertical" style={{ marginTop: 16 }}>
-                        <Form.Item label="标题" style={{ marginBottom: 8 }}>
-                          <Input
-                            value={nodeEditTitle}
-                            onChange={(event) => setNodeEditTitle(event.target.value)}
-                            disabled={viewMode !== 'graph'}
-                          />
-                        </Form.Item>
-                        <Form.Item label="目标" style={{ marginBottom: 8 }}>
-                          <Input.TextArea
-                            rows={3}
-                            value={nodeEditObjective}
-                            onChange={(event) => setNodeEditObjective(event.target.value)}
-                            disabled={viewMode !== 'graph'}
-                          />
-                        </Form.Item>
-                        <Space wrap>
-                          <Button
-                            type="primary"
-                            size="small"
-                            disabled={viewMode !== 'graph'}
-                            onClick={handleApplyNodeEdit}
-                          >
-                            应用修改
-                          </Button>
-                          <Button
-                            danger
-                            size="small"
-                            disabled={viewMode !== 'graph'}
-                            onClick={() => {
-                              Modal.confirm({
-                                title: `删除节点 ${selectedNodeDefinition.nodeId}？`,
-                                content:
-                                  '会同步删除该节点的所有入边/出边；保存 Revision 前可放弃草稿恢复。',
-                                okText: '确认删除',
-                                okButtonProps: { danger: true },
-                                cancelText: '取消',
-                                onOk: () => handleDeleteSelectedNode(),
-                              });
-                            }}
-                          >
-                            删除节点
-                          </Button>
+            {workbenchPanel ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  zIndex: 8,
+                  top: editorToolbarExpanded ? 98 : 58,
+                  right: 16,
+                  width: 'min(400px, calc(100% - 32px))',
+                  maxHeight: 590,
+                  overflowY: 'auto',
+                  filter: 'drop-shadow(0 12px 28px rgba(0, 0, 0, 0.18))',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    marginBottom: 6,
+                  }}
+                >
+                  <Button
+                    size="small"
+                    onClick={() => setWorkbenchPanel(undefined)}
+                  >
+                    收起面板
+                  </Button>
+                </div>
+                {workbenchPanel === 'inspector' ? (
+                  <Card
+                    title={selectedEdgeDefinition ? '连线检查器' : '节点检查器'}
+                    style={{ marginBottom: 16 }}
+                  >
+                    {selectedEdgeDefinition ? (
+                      <EdgeInspector
+                        definition={effectiveDefinition}
+                        edgeId={selectedEdgeDefinition.edgeId}
+                        disabled={viewMode !== 'graph'}
+                        onDefinitionChange={applyDraftDefinition}
+                        onDeleted={() => setSelectedEdgeId(undefined)}
+                      />
+                    ) : !selectedNodeDefinition || !selectedRun ? (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="选择画布中的节点或连线"
+                      />
+                    ) : (
+                      <>
+                        <Space wrap style={{ marginBottom: 12 }}>
+                          <Tag color={nodeStatusMeta[selectedRun.status].color}>
+                            {nodeStatusMeta[selectedRun.status].label}
+                          </Tag>
+                          <Tag>{selectedNodeDefinition.kind}</Tag>
+                          <Tag>
+                            {selectedComponent?.descriptor.displayName ??
+                              selectedNodeDefinition.component.componentType}
+                          </Tag>
+                          {draftDefinition ? (
+                            <Tag color="orange">草稿</Tag>
+                          ) : null}
                         </Space>
-                      </Form>
-                      {selectedRun.outputSummary ? <Paragraph style={{ marginTop: 12 }}>{selectedRun.outputSummary}</Paragraph> : null}
-                      {selectedRun.artifactReference ? <Text code copyable>{selectedRun.artifactReference}</Text> : null}
-                      {selectedRun.errorMessage ? <Alert type="error" showIcon message={selectedRun.errorMessage} style={{ marginTop: 12 }} /> : null}
-                    </>
-                  )}
-                </Card>
-
-                <Card title={`运行事件（最近 ${events.length} 条）`}>
-                  {events.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description={viewMode === 'graph' ? '定义预览不产生运行事件' : '尚无已提交事件'}
-                    />
-                  ) : (
-                    <Timeline
-                      items={[...events].reverse().slice(0, 80).map((event) => ({
-                        color: event.eventType.endsWith('.failed') ? 'red' : event.eventType.endsWith('.completed') ? 'green' : 'blue',
-                        children: (
-                          <div>
-                            <Space size={4} wrap>
-                              <Text strong>#{event.sequence}</Text>
-                              <Text>{event.eventType}</Text>
-                              {event.nodeId ? <Tag>{event.nodeId}</Tag> : null}
-                            </Space>
-                            {event.summary ? <Paragraph ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>{event.summary}</Paragraph> : null}
-                            <Text type="secondary">{dayjs(event.recordedAtUtc).format('MM-DD HH:mm:ss')}</Text>
+                        <Descriptions size="small" column={1} bordered>
+                          <Descriptions.Item label="节点">
+                            {selectedNodeDefinition.title}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="目标">
+                            {selectedNodeDefinition.objective}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="尝试">
+                            {selectedRun.attempt} / {selectedRun.maxAttempts}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="精确路由">
+                            {selectedNodeDefinition.executor?.routeKey ?? '—'}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Execution Run">
+                            {selectedRun.executionRunId ?? '—'}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Sub-session">
+                            {selectedRun.subSessionId ?? '—'}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="更新时间">
+                            {dayjs(selectedRun.updatedAtUtc).format(
+                              'YYYY-MM-DD HH:mm:ss',
+                            )}
+                          </Descriptions.Item>
+                        </Descriptions>
+                        {selectedNodeIssues.length > 0 ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="本地结构校验未通过"
+                            description={
+                              <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                                {selectedNodeIssues.map((issue) => (
+                                  <li key={issue.code}>
+                                    <Text type="secondary">
+                                      {issue.code} · {issue.message}
+                                    </Text>
+                                  </li>
+                                ))}
+                              </ul>
+                            }
+                            style={{ marginTop: 12 }}
+                          />
+                        ) : null}
+                        <Form layout="vertical" style={{ marginTop: 16 }}>
+                          <Form.Item label="标题" style={{ marginBottom: 8 }}>
+                            <Input
+                              value={nodeEditTitle}
+                              onChange={(event) =>
+                                setNodeEditTitle(event.target.value)
+                              }
+                              disabled={viewMode !== 'graph'}
+                            />
+                          </Form.Item>
+                          <Form.Item label="目标" style={{ marginBottom: 8 }}>
+                            <Input.TextArea
+                              rows={3}
+                              value={nodeEditObjective}
+                              onChange={(event) =>
+                                setNodeEditObjective(event.target.value)
+                              }
+                              disabled={viewMode !== 'graph'}
+                            />
+                          </Form.Item>
+                          <Space wrap>
+                            <Button
+                              type="primary"
+                              size="small"
+                              disabled={viewMode !== 'graph'}
+                              onClick={handleApplyNodeEdit}
+                            >
+                              应用修改
+                            </Button>
+                            <Button
+                              danger
+                              size="small"
+                              disabled={viewMode !== 'graph'}
+                              onClick={() => {
+                                Modal.confirm({
+                                  title: `删除节点 ${selectedNodeDefinition.nodeId}？`,
+                                  content:
+                                    '会同步删除该节点的所有入边/出边；保存 Revision 前可放弃草稿恢复。',
+                                  okText: '确认删除',
+                                  okButtonProps: { danger: true },
+                                  cancelText: '取消',
+                                  onOk: () => handleDeleteSelectedNode(),
+                                });
+                              }}
+                            >
+                              删除节点
+                            </Button>
+                          </Space>
+                        </Form>
+                        <ComponentInspectorSettings
+                          node={selectedNodeDefinition}
+                          workspaceId={effectiveDefinition.workspaceId}
+                          disabled={viewMode !== 'graph'}
+                          onConfigurationChange={(configuration) => {
+                            const draft = beginDraft();
+                            if (!draft) return;
+                            applyDraftDefinition(
+                              patchNodeDraft(
+                                draft,
+                                selectedNodeDefinition.nodeId,
+                                { configuration },
+                              ),
+                            );
+                          }}
+                          onExecutorChange={(executor) => {
+                            const draft = beginDraft();
+                            if (!draft) return;
+                            applyDraftDefinition(
+                              patchNodeDraft(
+                                draft,
+                                selectedNodeDefinition.nodeId,
+                                { executor },
+                              ),
+                            );
+                          }}
+                        />
+                        <div style={{ marginTop: 14 }}>
+                          <Text strong>Graph Input → 节点端口</Text>
+                          <div style={{ marginTop: 8 }}>
+                            <NodeGraphInputBindings
+                              definition={effectiveDefinition}
+                              node={selectedNodeDefinition}
+                              component={selectedComponent}
+                              disabled={viewMode !== 'graph'}
+                              onDefinitionChange={applyDraftDefinition}
+                            />
                           </div>
-                        ),
-                      }))}
-                    />
-                  )}
-                </Card>
-              </Col>
-            </Row>
-          </>
-          )}
+                        </div>
+                        <ComponentInspectorOutput
+                          componentType={
+                            selectedNodeDefinition.component.componentType
+                          }
+                          workspaceId={displayRun.workspaceId}
+                          run={selectedRun}
+                        />
+                        {selectedRun.errorMessage ? (
+                          <Alert
+                            type="error"
+                            showIcon
+                            message={selectedRun.errorMessage}
+                            style={{ marginTop: 12 }}
+                          />
+                        ) : null}
+                      </>
+                    )}
+                  </Card>
+                ) : null}
+
+                {workbenchPanel === 'inputs' ? (
+                  <GraphInputsPanel
+                    definition={effectiveDefinition}
+                    disabled={viewMode !== 'graph'}
+                    onDefinitionChange={applyDraftDefinition}
+                  />
+                ) : null}
+
+                {workbenchPanel === 'httpHooks' ? (
+                  <HttpHookPanel
+                    definition={effectiveDefinition}
+                    savedDefinition={definition}
+                    catalog={catalog}
+                    disabled={viewMode !== 'graph'}
+                    onDefinitionChange={applyDraftDefinition}
+                  />
+                ) : null}
+
+                {workbenchPanel === 'events' ? (
+                  <Card title={`运行事件（最近 ${events.length} 条）`}>
+                    {events.length === 0 ? (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={
+                          viewMode === 'graph'
+                            ? '定义预览不产生运行事件'
+                            : '尚无已提交事件'
+                        }
+                      />
+                    ) : (
+                      <Timeline
+                        items={[...events]
+                          .reverse()
+                          .slice(0, 80)
+                          .map((event) => ({
+                            color: event.eventType.endsWith('.failed')
+                              ? 'red'
+                              : event.eventType.endsWith('.completed')
+                                ? 'green'
+                                : 'blue',
+                            children: (
+                              <div>
+                                <Space size={4} wrap>
+                                  <Text strong>#{event.sequence}</Text>
+                                  <Text>{event.eventType}</Text>
+                                  {event.nodeId ? (
+                                    <Tag>{event.nodeId}</Tag>
+                                  ) : null}
+                                </Space>
+                                {event.summary ? (
+                                  <Paragraph
+                                    ellipsis={{ rows: 3 }}
+                                    style={{ marginBottom: 0 }}
+                                  >
+                                    {event.summary}
+                                  </Paragraph>
+                                ) : null}
+                                <Text type="secondary">
+                                  {dayjs(event.recordedAtUtc).format(
+                                    'MM-DD HH:mm:ss',
+                                  )}
+                                </Text>
+                              </div>
+                            ),
+                          }))}
+                      />
+                    )}
+                  </Card>
+                ) : null}
+              </div>
+            ) : null}
+          </Row>
+        )}
       </Spin>
+
+      <ManualRunModal
+        open={manualRunModalOpen}
+        definition={definition}
+        loading={runStarting}
+        onCancel={() => setManualRunModalOpen(false)}
+        onSubmit={handleStartManualRun}
+      />
+
+      <Modal
+        title="按 Run ID 打开运行图"
+        open={runIdModalOpen}
+        okText="打开"
+        cancelText="取消"
+        confirmLoading={loading}
+        onOk={() => form.submit()}
+        onCancel={() => setRunIdModalOpen(false)}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ runId: '' }}
+          onFinish={({ runId }) => {
+            setRunIdModalOpen(false);
+            void loadRun(runId);
+          }}
+        >
+          <Form.Item
+            name="runId"
+            label="Run ID"
+            rules={[
+              {
+                required: true,
+                whitespace: true,
+                message: '请输入编排 Run ID',
+              },
+            ]}
+          >
+            <Input
+              allowClear
+              autoFocus
+              placeholder="高级入口；通常直接使用 Graph/Run 选择器"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="新建 Graph"
@@ -1349,8 +1961,8 @@ const OrchestrationPage: React.FC = () => {
         <Alert
           type="info"
           showIcon
-          message="新 Graph 会包含一个 humanInput 占位节点"
-          description="它是可校验的 Revision 1；后续组件编辑器可替换或扩展该节点。创建不会自动激活或运行。"
+          message="可直接从图片生成模板开始"
+          description="图片模板会创建 Prompt 输入以及“生成图片 → 展示图片”数据链；创建后点击画布上方“运行”即可输入文案并执行。"
           style={{ marginBottom: 16 }}
         />
         <Form
@@ -1358,6 +1970,21 @@ const OrchestrationPage: React.FC = () => {
           layout="vertical"
           onFinish={(values) => void handleCreateGraph(values)}
         >
+          <Form.Item
+            name="templateId"
+            label="模板"
+            rules={[{ required: true, message: '请选择模板' }]}
+          >
+            <Select
+              options={[
+                {
+                  value: 'image-generation',
+                  label: '图片生成（Prompt → 生成图片 → 展示图片）',
+                },
+                { value: 'blank', label: '空白（Human Input 占位）' },
+              ]}
+            />
+          </Form.Item>
           <Form.Item
             name="graphId"
             label="Graph ID"
@@ -1376,7 +2003,13 @@ const OrchestrationPage: React.FC = () => {
               <Form.Item
                 name="workspaceId"
                 label="工作区 ID"
-                rules={[{ required: true, whitespace: true, message: '请输入工作区 ID' }]}
+                rules={[
+                  {
+                    required: true,
+                    whitespace: true,
+                    message: '请输入工作区 ID',
+                  },
+                ]}
               >
                 <Input />
               </Form.Item>
@@ -1385,7 +2018,13 @@ const OrchestrationPage: React.FC = () => {
               <Form.Item
                 name="rootSessionId"
                 label="Root Session ID"
-                rules={[{ required: true, whitespace: true, message: '请输入 Root Session ID' }]}
+                rules={[
+                  {
+                    required: true,
+                    whitespace: true,
+                    message: '请输入 Root Session ID',
+                  },
+                ]}
               >
                 <Input />
               </Form.Item>
@@ -1394,7 +2033,13 @@ const OrchestrationPage: React.FC = () => {
           <Form.Item
             name="objective"
             label="目标"
-            rules={[{ required: true, whitespace: true, message: '请输入 Graph 目标' }]}
+            rules={[
+              {
+                required: true,
+                whitespace: true,
+                message: '请输入 Graph 目标',
+              },
+            ]}
           >
             <Input.TextArea rows={3} placeholder="描述这个编排要完成的目标" />
           </Form.Item>
@@ -1403,7 +2048,12 @@ const OrchestrationPage: React.FC = () => {
             label="最大并发"
             rules={[{ required: true, message: '请输入最大并发' }]}
           >
-            <InputNumber min={1} max={64} precision={0} style={{ width: '100%' }} />
+            <InputNumber
+              min={1}
+              max={64}
+              precision={0}
+              style={{ width: '100%' }}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -1416,7 +2066,8 @@ const OrchestrationPage: React.FC = () => {
         onOk={() => {
           const component = catalog?.components.find(
             (item) =>
-              `${item.descriptor.componentType}@${item.descriptor.version}` === selectedComponentType,
+              `${item.descriptor.componentType}@${item.descriptor.version}` ===
+              selectedComponentType,
           );
           if (!component) {
             message.warning('请先选择要添加的组件');
@@ -1451,18 +2102,36 @@ const OrchestrationPage: React.FC = () => {
         {(() => {
           const selected = catalog?.components.find(
             (item) =>
-              `${item.descriptor.componentType}@${item.descriptor.version}` === selectedComponentType,
+              `${item.descriptor.componentType}@${item.descriptor.version}` ===
+              selectedComponentType,
           );
           if (!selected) return null;
           return (
-            <Descriptions size="small" column={1} bordered style={{ marginTop: 16 }}>
-              <Descriptions.Item label="类型">{selected.descriptor.componentType}</Descriptions.Item>
-              <Descriptions.Item label="版本">{selected.descriptor.version}</Descriptions.Item>
-              <Descriptions.Item label="分类">{selected.descriptor.category}</Descriptions.Item>
-              <Descriptions.Item label="Node Kind">{selected.descriptor.nodeKind}</Descriptions.Item>
-              <Descriptions.Item label="副作用">{selected.descriptor.sideEffect}</Descriptions.Item>
+            <Descriptions
+              size="small"
+              column={1}
+              bordered
+              style={{ marginTop: 16 }}
+            >
+              <Descriptions.Item label="类型">
+                {selected.descriptor.componentType}
+              </Descriptions.Item>
+              <Descriptions.Item label="版本">
+                {selected.descriptor.version}
+              </Descriptions.Item>
+              <Descriptions.Item label="分类">
+                {selected.descriptor.category}
+              </Descriptions.Item>
+              <Descriptions.Item label="Node Kind">
+                {selected.descriptor.nodeKind}
+              </Descriptions.Item>
+              <Descriptions.Item label="副作用">
+                {selected.descriptor.sideEffect}
+              </Descriptions.Item>
               <Descriptions.Item label="Contract Hash">
-                <Text code copyable>{selected.contractHash}</Text>
+                <Text code copyable>
+                  {selected.contractHash}
+                </Text>
               </Descriptions.Item>
             </Descriptions>
           );
@@ -1473,7 +2142,10 @@ const OrchestrationPage: React.FC = () => {
         title="保留草稿并查看差异"
         open={conflictDiffModalOpen}
         footer={
-          <Button type="primary" onClick={() => setConflictDiffModalOpen(false)}>
+          <Button
+            type="primary"
+            onClick={() => setConflictDiffModalOpen(false)}
+          >
             关闭
           </Button>
         }
@@ -1488,11 +2160,49 @@ const OrchestrationPage: React.FC = () => {
               description="以下为只读摘要；差异解决不会自动合并，保存前仍以服务端校验为准。"
             />
             <Descriptions size="small" column={1} bordered>
-              <Descriptions.Item label="目标变化">{conflictDiff.objectiveChanged ? '是' : '否'}</Descriptions.Item>
-              <Descriptions.Item label="新增节点">{conflictDiff.nodesAdded.length > 0 ? conflictDiff.nodesAdded.join('、') : '—'}</Descriptions.Item>
-              <Descriptions.Item label="删除节点">{conflictDiff.nodesRemoved.length > 0 ? conflictDiff.nodesRemoved.join('、') : '—'}</Descriptions.Item>
-              <Descriptions.Item label="新增边">{conflictDiff.edgesAdded.length > 0 ? conflictDiff.edgesAdded.join('、') : '—'}</Descriptions.Item>
-              <Descriptions.Item label="删除边">{conflictDiff.edgesRemoved.length > 0 ? conflictDiff.edgesRemoved.join('、') : '—'}</Descriptions.Item>
+              <Descriptions.Item label="目标变化">
+                {conflictDiff.objectiveChanged ? '是' : '否'}
+              </Descriptions.Item>
+              <Descriptions.Item label="新增节点">
+                {conflictDiff.nodesAdded.length > 0
+                  ? conflictDiff.nodesAdded.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="删除节点">
+                {conflictDiff.nodesRemoved.length > 0
+                  ? conflictDiff.nodesRemoved.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="新增边">
+                {conflictDiff.edgesAdded.length > 0
+                  ? conflictDiff.edgesAdded.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="删除边">
+                {conflictDiff.edgesRemoved.length > 0
+                  ? conflictDiff.edgesRemoved.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="新增 Graph Input">
+                {conflictDiff.inputsAdded.length > 0
+                  ? conflictDiff.inputsAdded.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="删除 Graph Input">
+                {conflictDiff.inputsRemoved.length > 0
+                  ? conflictDiff.inputsRemoved.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="新增 Trigger">
+                {conflictDiff.triggersAdded.length > 0
+                  ? conflictDiff.triggersAdded.join('、')
+                  : '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="删除 Trigger">
+                {conflictDiff.triggersRemoved.length > 0
+                  ? conflictDiff.triggersRemoved.join('、')
+                  : '—'}
+              </Descriptions.Item>
             </Descriptions>
           </Space>
         ) : (

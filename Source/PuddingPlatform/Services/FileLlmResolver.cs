@@ -33,6 +33,11 @@ public sealed class FileLlmResolver : ILlmResolver
         var models = _llmConfigService.GetAllModels()
             .Where(model => !model.IsDeprecated && enabledProviderIds.Contains(model.ProviderId))
             .ToList();
+        var requiredTags = requiredCapabilityTags?
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Select(tag => tag.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
 
         if (!string.IsNullOrWhiteSpace(modelRoute) && modelRoute.Contains('/'))
         {
@@ -45,7 +50,7 @@ public sealed class FileLlmResolver : ILlmResolver
                     $"Invalid model route '{modelRoute}'. Expected 'providerId/modelId'.");
             }
 
-            return Task.FromResult(ResolveRequired(parts[0], parts[1]));
+            return Task.FromResult(ResolveRequired(parts[0], parts[1], requiredTags));
         }
 
         if (!string.IsNullOrWhiteSpace(modelRoute))
@@ -63,17 +68,16 @@ public sealed class FileLlmResolver : ILlmResolver
                     "Specify the route as 'providerId/modelId'.");
             }
             if (matches.Count == 1)
-                return Task.FromResult(ResolveRequired(matches[0].ProviderId, matches[0].ModelId));
+                return Task.FromResult(ResolveRequired(
+                    matches[0].ProviderId,
+                    matches[0].ModelId,
+                    requiredTags));
 
             throw new InvalidOperationException(
                 $"Model '{modelRoute}' not found in any enabled provider. " +
                 "Specify a configured route as 'providerId/modelId'.");
         }
 
-        var requiredTags = requiredCapabilityTags?
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
-            .Select(tag => tag.Trim())
-            .ToArray() ?? [];
         if (requiredTags.Length > 0)
         {
             var selected = models
@@ -90,7 +94,10 @@ public sealed class FileLlmResolver : ILlmResolver
                     string.Join(",", requiredTags),
                     selected.ProviderId,
                     selected.ModelId);
-                return Task.FromResult(ResolveRequired(selected.ProviderId, selected.ModelId));
+                return Task.FromResult(ResolveRequired(
+                    selected.ProviderId,
+                    selected.ModelId,
+                    requiredTags));
             }
 
             _logger.LogWarning(
@@ -105,11 +112,33 @@ public sealed class FileLlmResolver : ILlmResolver
             "An explicit LLM route is required. Configure providerId/modelId on the Agent manifest " +
             "or pass modelRoute as 'providerId/modelId'; the LLM resource pool does not select defaults.");
 
-        ResolvedLlmRoute ResolveRequired(string providerId, string modelId)
+        ResolvedLlmRoute ResolveRequired(
+            string providerId,
+            string modelId,
+            IReadOnlyCollection<string> capabilityTags)
         {
             var config = _llmConfigService.Resolve(providerId, modelId)
                 ?? throw new InvalidOperationException(
                     $"LLM route '{providerId}/{modelId}' is not configured or is disabled.");
+
+            if (capabilityTags.Count > 0)
+            {
+                var model = models.FirstOrDefault(candidate =>
+                    string.Equals(candidate.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(candidate.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
+                var missingTags = capabilityTags
+                    .Where(tag => model is null || !model.CapabilityTags.Contains(
+                        tag,
+                        StringComparer.OrdinalIgnoreCase))
+                    .ToArray();
+                if (missingTags.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"LLM route '{providerId}/{modelId}' does not satisfy required capabilities: " +
+                        $"{string.Join(", ", missingTags)}.");
+                }
+            }
+
             return CreateRoute(providerId, modelId, config);
         }
     }

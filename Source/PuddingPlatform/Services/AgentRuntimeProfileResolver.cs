@@ -67,6 +67,7 @@ public sealed class AgentRuntimeProfileResolver(
             ConsciousProfileId = llm.ProfileId,
             PreferredProviderId = llm.ProviderId,
             PreferredModelId = llm.ModelId,
+            ImageReaderModel = definition.Instance.ImageReaderModel,
             LlmConfig = llm.Config,
             CapabilityPolicy = capabilities.Policy,
             ToolDefinitions = capabilities.ToolDefinitions,

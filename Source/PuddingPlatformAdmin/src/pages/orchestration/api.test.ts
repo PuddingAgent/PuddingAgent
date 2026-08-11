@@ -7,7 +7,10 @@ describe('orchestration SSE client', () => {
   });
 
   it('parses split canonical frames and ignores heartbeat comments', () => {
-    const first = parseSseChunk('', ': heartbeat\n\nid: 7\nevent: orchestration.node.');
+    const first = parseSseChunk(
+      '',
+      ': heartbeat\n\nid: 7\nevent: orchestration.node.',
+    );
     expect(first.frames).toEqual([]);
 
     const second = parseSseChunk(
@@ -30,9 +33,10 @@ describe('orchestration SSE client', () => {
       'event: bad\ndata: {nope}\n\nid: 8\nevent: good\ndata: {"sequence":8}\n\n',
     );
     expect(parsed.frames).toHaveLength(1);
-    expect(parsed.frames[0]).toEqual(expect.objectContaining({ id: '8', event: 'good' }));
+    expect(parsed.frames[0]).toEqual(
+      expect.objectContaining({ id: '8', event: 'good' }),
+    );
   });
-
 });
 
 describe('orchestration definition JSON round-trip (graph inputs mirror)', () => {
@@ -101,7 +105,9 @@ describe('orchestration definition JSON round-trip (graph inputs mirror)', () =>
   } satisfies OrchestrationGraphDefinition;
 
   it('round-trips a revision JSON with inputs, triggers and graphInputBindings without losing fields', () => {
-    const roundTripped: OrchestrationGraphDefinition = JSON.parse(JSON.stringify(sample));
+    const roundTripped: OrchestrationGraphDefinition = JSON.parse(
+      JSON.stringify(sample),
+    );
 
     expect(roundTripped).toEqual(sample);
     expect(roundTripped.inputs).toHaveLength(1);
@@ -114,7 +120,9 @@ describe('orchestration definition JSON round-trip (graph inputs mirror)', () =>
           cardinality: 'one',
           deliveries: ['inline', 'artifact'],
         },
-        defaultValue: expect.objectContaining({ inlineValue: 'default request' }),
+        defaultValue: expect.objectContaining({
+          inlineValue: 'default request',
+        }),
         requiredAtActivation: true,
       }),
     );
@@ -153,7 +161,10 @@ describe('orchestration definition JSON round-trip (graph inputs mirror)', () =>
           kind: 'humanInput',
           title: 'Start',
           objective: 'Collect input.',
-          component: { componentType: 'pudding.control.human-input', version: '1' },
+          component: {
+            componentType: 'pudding.control.human-input',
+            version: '1',
+          },
           expectedOutputContract: 'pudding.content',
           configuration: {},
           permissionMode: 'readOnly',
@@ -167,7 +178,9 @@ describe('orchestration definition JSON round-trip (graph inputs mirror)', () =>
       createdAtUtc: '2026-08-09T00:00:00Z',
     } satisfies OrchestrationGraphDefinition;
 
-    const roundTripped: OrchestrationGraphDefinition = JSON.parse(JSON.stringify(legacy));
+    const roundTripped: OrchestrationGraphDefinition = JSON.parse(
+      JSON.stringify(legacy),
+    );
     expect(roundTripped).toEqual(legacy);
     expect('inputs' in roundTripped).toBe(false);
     expect('triggers' in roundTripped).toBe(false);

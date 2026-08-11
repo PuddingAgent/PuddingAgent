@@ -656,6 +656,7 @@ PuddingDesktop/Views/StorageView.xaml.cs
 - `BrowserWorkspaceControllerTests`；
 - `BrowserBridgeCommandDispatcherTests`；
 - `CoreProcessSupervisorTests`（固定端口与 `0.0.0.0` 启动参数）；
+- `PuddingApplicationHostCompositionTests`（DesktopChild 产品组合根必须通过 `ValidateOnBuild`，并能解析 assembly scan 自动发现工具的全部构造依赖）；
 - `PuddingHostOptionsFactoryTests`（DesktopChild 地址/端口约束）；
 - `PuddingServerAddressAccessorTests`（全网卡监听到 Loopback 控制地址投影）。
 

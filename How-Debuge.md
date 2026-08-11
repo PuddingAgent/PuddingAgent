@@ -2684,3 +2684,85 @@ workspace、session、provider、model、startedAt 和 token 数的完整身份�
 4. 完成后依次构建 `PuddingRuntime`、`PuddingPlatform`、`PuddingHost`、`PuddingAgent`，并运行涉及迁移接口的 Runtime/Platform 定向测试。构建输出放在 `.tmp-build`，测试结果放在 `.tmp-test-out`。
 
 本次边界实例：`SubAgentTool → ISubAgentPool → SubAgentPool`、`AgentDiagnosticsTool → ITokenUsageEventRepository → TokenUsageEventRepository`；`FileChunkService` 归属 Runtime。若 Runtime 源码仍出现 `using PuddingPlatform` 或 `PuddingPlatform.*`，视为分层回归。
+
+## 11.25 编排 Revision GET 正常，但 Validate / PUT 返回枚举 JSON 400
+
+当 `GET /api/orchestrations/{graphId}/revisions/{revisionId}` 返回的定义可以正常显示，而把同一份定义提交给 Validate 或 Revision PUT 后返回 400，并在 ProblemDetails 中看到 `$.definition.nodes[0].kind` 等枚举转换失败时，优先检查请求绑定是否绕过了编排专用 JSON 契约：
+
+1. 编排 Web 契约使用 `AgentOrchestrationJson.CreateSerializerOptions()`，枚举在线上 JSON 中是 `humanInput`、`agent` 等字符串；不能让 ASP.NET 默认 `[FromBody]` 选项在进入 Controller 前按数字枚举绑定。
+2. 路由 Action 应先接收 `JsonElement`，再使用同一套编排序列化选项反序列化；解析失败返回 `orchestration.request_json_invalid`，不要静默改成数字枚举或放宽为任意字符串。
+3. 仅直接调用 Controller typed method 的测试无法覆盖 MVC 输入格式化器。必须增加原始 Web JSON 回归测试，并至少通过真实 HTTP 或浏览器完成一次 `GET Revision → 修改 → Validate → PUT Revision` 往返。
+4. 前端错误提示应优先读取 `error.response.data` 中的 ProblemDetails，避免只显示通用的 `Request failed with status code 400` 而丢失 JSON path。
+
+2026-08-11 的实际故障是 Graph Input 绑定后点击“校验草稿”返回 400；原始响应明确指向 `node.kind`。统一 Validate/PUT 的请求反序列化后，Platform 编排定向测试为 55/55；浏览器已完成 Graph Input 绑定、Validate、Revision 保存和类型化 data edge 往返。
+
+如果部署后校验仍表现为旧逻辑，不能只看磁盘文件哈希：同时读取页面实际加载的 `script[src]`，与当前 `dist/orchestration/index.html` 比较。2026-08-11 曾出现磁盘与 HTTP 已是 `umi.700beebe.js`，原标签页却仍加载 `umi.b2db8db9.js`；带版本参数重新导航到同一路由后才加载新 bundle。这个检查可以区分浏览器缓存与 Desktop/Core 发布失败。
+
+## 11.26 编排 Admin HTTP Hook 调试
+
+HTTP Hook 调试入口只接受 Admin Bearer，并且必须固定到已经保存的不可变 Revision：
+
+```http
+POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId={revisionId}
+Content-Type: application/json
+
+{
+  "sourceEventId": "debug-001",
+  "payload": { "message": "hello" }
+}
+```
+
+排查顺序：
+
+1. 401/403：检查 Admin JWT；不要改用 Desktop `ControlToken`，也不要在命令、日志或截图中输出凭据。
+2. `orchestration.http_hook_revision_required`：缺少 `revisionId`。该接口故意不解析 Graph Head，先保存 Revision 再调用。
+3. 404：依次确认 Revision 属于 route graph、`triggerId` 存在、类型为 `pudding.trigger.webhook`；未保存的前端草稿不会出现在 API 中。
+4. 400：检查 trigger enabled、`sourcePath` 是否为 `$`/字段/数组索引的受限形式、目标 Graph Input 是否存在及值类型/cardinality/delivery 是否兼容。HTTP JSON 当前只能生成 inline value。
+5. 409 且 code 为 `orchestration.run_input_conflict`：同一 `sourceEventId` 已用不同 payload 调用。调试新事件应更换事件 ID；完全相同的重试应返回同一 Run（200），首次创建返回 201。
+6. 请求过大返回 413；当前硬上限为 1 MiB。不要通过扩大上限绕过 ArtifactRef/上传通道设计。
+
+数据库只检查标识与状态，不输出 payload：`orchestration_runs.run_id/revision_id/status`、`orchestration_run_inputs.run_id/input_id` 和 `orchestration_run_events.event_type`。服务日志搜索 `[AgentOrchestrationHttpHook]`，它只应记录 graph/revision/trigger/sourceEvent/run/status，不得记录 body、Authorization 或 Graph Input 值。
+
+## 11.27 图片生成编排的运行与诊断
+
+Admin 顶部“运行”调用 `POST /api/orchestrations/runs`，请求必须固定已保存的 `revisionId`；页面有内容草稿时先保存 Revision。`image-generation` 模板是“生成图片 → 展示图片”两节点链，正常事件会在生成节点 `NodeCompleted` 后追加展示节点的 `NodeReady → NodeClaimed → NodeStarted → NodeCompleted`，最后才 `RunCompleted`。两个节点都把图片列表写入各自 `outputs.images`，同时保留一个主 `ArtifactRef` 小投影；图片 bytes 不进事件或 Graph JSON。
+
+若 Run 长时间停在 Active/Ready：
+
+1. 搜索 `[AgentOrchestrationWorker]`，确认新 Runtime worker 已由 Desktop 加载；
+2. 检查 Revision 的组件类型必须是 `pudding.media.image-generate`，而不是只改了节点显示名；
+3. 检查 Run Input 中存在 `prompt` 标识即可，不要输出值；
+4. 检查 provider/model 的图片能力配置与 `IImageGenerationService` 日志；
+5. 若生成节点已 Completed、展示节点仍 Pending，检查 edge 必须是 `image-generate.images → image-preview.images`，且 condition 无受治理 predicate；当前只实现无 predicate 的 `OnSuccess/OnCompletion/Always` 推进。
+6. 若展示节点 Failed 且提示没有 artifact，确认上游 node-run 的 `outputs_json.images.artifacts` 已提交；`artifact_reference` 只是主图片投影。展示 executor 从 data edge 的 source port 读取 Artifact 列表，不会从日志或本地路径猜测图片。
+
+若 DLL 已包含 `AgentOrchestrationWorkerService`、API 也是新版本，但日志完全没有 worker 领取或异常，检查成品 `PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs`。PuddingHost 手工维护产品组合根，并不调用 `RuntimeServiceExtensions.AddPuddingRuntime`；worker/executor 只注册在后者时，真实产品不会启动它。
+
+日志只允许记录 graph/revision/run/node/attempt/provider/model/Artifact ID 和错误摘要；不得记录 prompt 全文、参考图内容、provider secret 或 Desktop ControlToken。paid-call 幂等键由 `runId + nodeId + attempt` 稳定生成，重试同一 attempt 不应再次付费调用。
+
+前端排查时不要只看右侧检查器：组件卡片由 `componentUiRegistry.tsx` 按 `componentType` 渲染自己的输入/输出。
+Run 已完成但卡片没有图片时，先确认页面实际加载的新 bundle，再检查 `graphViewModel` 是否投影了 workspaceId 与完整
+`outputs`；组件注册表应优先读取端口输出，`artifactReference/outputSummary` 只用于旧的小投影和未知组件降级。
+
+四节点 `SubAgent → SubAgent → image-generate → image-preview` 排查时，先读取 Run snapshot：两个 Agent 节点应分别有
+`outputs.result`、`executionRunId` 和 `subSessionId`，图片节点应分别有 `outputs.images`。若子代理一开始就报
+`目录名称无效 ... agents\\manual:admin\\runs`，说明把 `RequestedByAgentId` 审计主体误当成了文件系统 Agent 实例；
+SubAgent executor 必须使用由 immutable workspace/graph 派生的 filesystem-safe execution owner，不能简单删除冒号或把用户身份规范化后继续充当配置 Agent。若第一 Agent Completed、第二节点未 Ready，检查 edge 必须是
+`source.result → target.request`；第二 Agent Completed、图片节点未 Ready，则检查 `result → prompt`，并确认 resolver 对
+`sourcePath/targetKey` 的当前受限形状没有显式拒绝。
+
+这个端点是无 Deployment 阶段的受控调试入口，不是生产匿名 webhook。若需求是公网 API Hook，必须继续实现 Deployment slot、secret/signature、rate limit、source adapter 审计与外部暴露策略，不能让生产请求隐式跟随 Head。
+
+## 11.28 Desktop 重编译成功后 Core 约 3 秒退出并触发恢复熔断
+
+运行中心显示“Core 在 60 秒内连续失败，自动恢复已熔断”，而 Bootstrap 状态同时满足
+`buildExitCode=0`、`coreRestarted=false` 时，不要把它判断为编译或端口问题。按以下顺序诊断：
+
+1. 先读 `GET http://127.0.0.1:8199/desktop/bootstrap/status`，确认本次结果而不是旧的 `lastResult`；不得输出 ControlToken。
+2. Core 在几秒内退出通常发生于 `PuddingApplicationHost.Build()` 的 DI `ValidateOnBuild`。使用运行中心的最近 Core 输出，或用 `CoreProcessSupervisor` 的同参数在无 Core 进程时复现，保留最内层 `Unable to resolve service for type ... while attempting to activate ...`。
+3. PuddingHost 是成品组合根，不调用 `RuntimeServiceExtensions.AddPuddingRuntime`。Runtime 新增服务、hosted worker 或被 assembly scan 自动发现的 `IPuddingTool` 时，必须同步检查 `Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.*.cs`；只在 Runtime 扩展注册不能证明 DesktopChild 可启动。
+4. 用 `PuddingApplicationHostCompositionTests` 构造真实 DesktopChild Host 并通过 `ValidateOnBuild`；再让 Desktop Bootstrap 构建实际 `Source/PuddingAgent/bin` 入口，原子启动 Core，最后以新 PID、`Ready`、`/health/ready` 200 和超过旧失败窗口仍存活验收。
+
+2026-08-11 的实际故障是 `SavePreferenceTool` 已被 Runtime 程序集扫描注册，但 PuddingHost 遗漏
+`IUserPreferenceService → UserPreferenceService`，Core 以 CLR 未处理异常退出。补齐产品组合根注册后，
+DesktopChild 组合根测试和实际 Core Ready 共同作为修复证据。

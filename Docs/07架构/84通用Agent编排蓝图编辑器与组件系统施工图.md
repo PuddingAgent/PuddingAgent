@@ -6,6 +6,8 @@
 > 后端配套：[执行内核与 Control Plane 施工图](83通用Agent编排后端执行内核与ControlPlane施工图.md)  
 > 验收配套：[测试交付与运维验收图册](85通用Agent编排交付测试与运维验收图册.md)
 
+> 2026-08-11 施工快照：UI-S1/UI-S2 基础 authoring 已完成；组件 UI 注册表已让 SubAgent 负责模型/模板/角色设置及文本输出、图片生成/展示组件负责自己的 Artifact 输出。四节点“文案 → 镜头 → 生成 → 展示”已在产品画布运行。完整多 binding/sourcePath 编辑、server diagnostic 点击定位、其他媒体组件及 catalog 请求竞态保护仍待完成。
+
 ## 1. 是否需要实现前端编辑器
 
 需要。理由不是“低代码看起来直观”，而是编排图存在普通表单难以可靠表达的关系：
@@ -48,24 +50,20 @@ Run 模式固定其 `revisionId`，不能因为 Graph Head 更新而切换定义
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ Graph ▾  Revision r3 ▾  Draft ●  Validate  Save Revision  Deploy  Run     │
-├────────────────┬───────────────────────────────────────┬────────────────────┤
-│ Component      │                                       │ Inspector          │
-│ Palette        │           Blueprint Canvas            │                    │
-│                │                                       │ Node / Edge /      │
-│ Search         │       cards + typed port handles      │ Graph / Diagnostic │
-│ Agent          │                                       │ / Run              │
-│ Control        │                                       │                    │
-│ Data           │                                       │ Properties         │
-│ Network        │                                       │ Inputs/Outputs      │
-│ Media          │                                       │ Permissions        │
-│ Trigger        │                                       │ Raw JSON read-only │
-├────────────────┴───────────────────────────────────────┴────────────────────┤
-│ Diagnostics · Run Events · Outputs · Cost                                  │
+│ Workspace ▾  Graph ▾  Run ▾   Refresh  New   Status chips                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Graph/r3 · Draft ●  Add  Save  Layout  Inspector  Inputs  Hook  Events  … │
+│                                                                             │
+│                         Blueprint Canvas                                    │
+│                   cards + typed port handles             ┌───────────────┐ │
+│                                                         │ floating      │ │
+│             full width; pan/zoom state remains          │ workbench     │ │
+│                                                         │ on demand     │ │
+│                                                         └───────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-窄窗口时 Palette 和 Inspector 变为 Drawer；画布不得因为 Inspector 打开而重新丢失 viewport。
+采用 ComfyUI 的“画布优先”原则而不是复制其视觉皮肤：Graph/Run 浏览器压缩为单条控制栏，Run ID 移入高级弹窗，节点/运行指标显示为轻量状态标签。Inspector、Graph Inputs、HTTP Hook 和 Events 默认收起，以互斥悬浮工作台覆盖画布；打开或关闭不得改变画布宽度、重建 React Flow 或丢失 viewport。低频/危险命令进入“更多”，避免工具条多行长期占用纵向空间。窄窗口时悬浮工作台宽度限制为 viewport 内部，不另设永久侧栏。
 
 ## 3. 前端事实模型
 
@@ -323,6 +321,8 @@ Trigger 是 Graph 外部入口，单独放在顶部 `Triggers` 页签，不渲�
 Schedule 使用结构化 cron/timezone 编辑器；Webhook 显示生成的 endpoint 和 secret reference 状态，不回显 secret；Connector Event 从连接器目录选择；Orchestration Event 要求 source graph/event filter 和递归保护提示。
 
 保存 Revision 不自动注册/启用 Trigger。只有部署 Revision 后，Trigger adapter 才按部署槽位生效。
+
+当前 Admin 已提供 `HTTP Hook` 悬浮工作台作为 authoring/debug 切片：用户可新增、启停、删除 `pudding.trigger.webhook`，选择 payload sourcePath 与目标 Graph Input；保存 Revision 后显示带显式 `revisionId` 的 Admin API endpoint、示例 body 和 cURL。它不会自动部署、不会隐式使用 Head，也不把 Trigger 渲染成 DAG 节点。公开 webhook 的签名、限流和 Deployment slot 状态仍按本章完整目标施工。
 
 ## 11. Revision 工作流
 
@@ -662,22 +662,22 @@ Source/PuddingPlatformAdmin/src/pages/orchestration/
 
 ### UI-S1：Node CRUD + Revision
 
-- 补全 types；
-- catalog 驱动新增节点；
-- 修改/删除选中节点；
-- 删除关联 edge；
-- 放弃草稿；
-- validate + PUT Revision CAS；
-- 冲突保留草稿；
-- Layout 在 draft 存在时不误写旧 Revision。
+- ✅ 补全 types；
+- ✅ catalog 驱动新增节点；
+- ✅ 修改/删除选中节点；
+- ✅ 删除关联 edge；
+- ✅ 放弃草稿；
+- ✅ validate + PUT Revision CAS；
+- ✅ 冲突保留草稿；
+- ✅ Layout 在 draft 存在时不误写旧 Revision。
 
 ### UI-S2：Port-aware Edge
 
-- 自定义 node/port；
-- control/data 连线；
-- binding editor；
-- local + server diagnostics；
-- graph input 面板。
+- ✅ 自定义 node/port；
+- ✅ control/data 连线、本地 DAG 与端口契约预检；
+- 🟡 binding editor：已按 handle 生成单 binding，并支持边条件/删除；多 binding、sourcePath/targetKey 编辑待完成；
+- 🟡 local + server diagnostics：本地拒绝与服务端保存前校验已接入；画布点击定位 server diagnostic 待完成；
+- ✅ graph input 增删改、引用清理与兼容节点端口绑定面板。
 
 ### UI-S3：Revision/Deployment
 
@@ -687,10 +687,10 @@ Source/PuddingPlatformAdmin/src/pages/orchestration/
 
 ### UI-S4：Run Control
 
-- create/activate/preview run；
+- 🟡 create/activate/preview run：顶部“运行”已按显式不可变 Revision + 类型化 Graph Inputs 创建并切换到 Run 投影；未保存内容草稿会阻止运行；
 - awaiting input；
 - retry/cancel；
-- output/artifact viewer；
+- 🟡 output/artifact viewer：组件 UI 注册表已支持 SubAgent `result` 文本和图片生成/展示卡片内 `ArtifactRef` 懒加载预览，其他媒体/下载/配额提示待完成；
 - cost/usage 摘要。
 
 ### UI-S5：Productization
@@ -700,6 +700,22 @@ Source/PuddingPlatformAdmin/src/pages/orchestration/
 - accessibility；
 - reusable templates；
 - mobile/narrow fallback 只读体验。
+
+### UI-S5A：首个图片生成模板
+
+新建 Graph 默认可选择 `image-generation`：服务端生成必填 text prompt Graph Input，以及由 typed `images` data edge
+连接的“生成图片 → 展示图片”两个组件。图片生成组件负责 provider/model/mode/size/watermark 输入配置，两个组件都通过
+组件 UI 注册表呈现各自输出；展示组件接收上游 Artifact 后在卡片内显示。模板不把媒体 bytes 写入图 JSON，也不暴露 provider secret。
+
+### UI-S5B：首个多组件 Agent/图片链
+
+`SubAgentNodeSettings.tsx` 从启用的 LLM 资源池和 Agent 模板目录提供角色、模板与精确模型路由选择，结果仍写回节点 executor
+而不是前端私有字段。`componentUiRegistry.tsx` 按组件类型渲染输出：每个 SubAgent 卡片只展示自己的 `result`，生成图片卡片展示
+自己的 `images`，展示图片卡片接收并展示上游透传的同一 Artifact。`graphViewModel` 投影整个 `outputs` 字典，不能再从一条
+全局 summary 猜测组件产出。
+
+首个产品图使用四张独立卡片和三条 typed data edge。长文本会显著增加卡片高度；后续应增加折叠/展开和详情抽屉，但不得为了
+紧凑而丢掉端口归属或把多个组件的输入输出合并成全局面板。
 
 ## 25. 前端完成定义
 

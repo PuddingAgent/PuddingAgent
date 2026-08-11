@@ -18,7 +18,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/75–76*.md` | Phase 2A-3 Snapshot/Locator/Interact/Wait（✅） |
 | `Docs/07架构/77–79*.md` | Phase 2A-3B/C DeepSeek 验收与闭环 |
 | `Docs/07架构/80ADR-069*.md` | MOA 子代理设计委员会编排核心；Phase 1–3 计划编译、纯状态机与运行时适配 |
-| `Docs/07架构/81ADR-070*.md` | 通用 Agent 编排图；V2 组件/多模态端口、SQLite 事实、Graph/Run 发现、独立布局 CAS、replay-to-live SSE 与 React Flow Layout Editor |
+| `Docs/07架构/81ADR-070*.md` | 通用 Agent 编排图；V2 组件/多模态端口、SQLite 事实、Graph/Run 发现、Revision/Layout 双 CAS、replay-to-live SSE，以及 React Flow 节点/端口/Edge/Graph Input 编辑器 |
 | `Docs/07架构/82ADR-071*.md` | 通用 Agent 编排平台完整目标设计；JSON 图、Revision/Layout/Deployment/Run 事实边界、组件、多模态、Agent 工具与 MOA 统一 |
 | `Docs/07架构/83*.md` | 后端执行内核与 Control Plane 施工图；契约、SQLite、API、状态转换、Executor、Scheduler、Trigger 与权限 |
 | `Docs/07架构/84*.md` | Admin 蓝图编辑器和组件系统施工图；Node/Edge/Input/Trigger、Revision/Deployment/Run、多模态 UX 与文件级拆分 |
@@ -89,6 +89,17 @@ Runtime 跨层服务 → Core contracts → Platform implementations
   → AgentDiagnosticsTool → ITokenUsageEventRepository → TokenUsageEventRepository
   → FileReadTool/FilePatchTool → Runtime-owned FileChunkService
 
+PuddingHost 产品组合根 → Runtime tool assembly scan
+  → 每个自动发现的 IPuddingTool 都参与 ValidateOnBuild
+  → 新工具的构造依赖必须同步注册到 PuddingHost 的 Runtime 扩展
+  → PuddingApplicationHostCompositionTests 用 DesktopChild 入口防止“构建成功、Core 启动即退出”
+
+Agent 实例 `manifest.json.imageReaderModel` → ImageReaderTool
+  → ILlmResolver 显式 `provider/model` + `vision` 能力校验
+  → 专用模型失败时仅尝试同一 manifest 的 Agent 主模型（也必须具备 `vision`）
+  → 配置缺失或两条显式路由均失败时返回错误，不按全局 vision 模型排序兜底
+  → 文本主模型附件的 VisualArtifactObservationService 也使用同一显式字段
+
 Desktop Storage → CoreStorageManagementClient
   → GET/POST /api/admin/storage/databases（Admin JWT 或 Loopback ControlToken）
   → StorageMaintenanceService
@@ -113,8 +124,16 @@ DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
        （GraphLayout read + Admin CAS write；不可变 Revision/Node 先只读校验，与 executable revision/run facts 隔离）
      → AgentOrchestrationManagementApiController
        （Admin Graph create + Head-CAS delete；任意 Run 历史都会阻止删除）
+     → AgentOrchestrationHttpHookApiController
+       （Admin debug POST + 显式 immutable revision；从不解析 Graph Head）
+       → AgentOrchestrationHttpHookService
+         （sourceEventId 幂等 + payload binding → durable Run Inputs → Create/Activate）
+     → AgentOrchestrationRunCommandApiController
+       （Admin 顶部“运行” + 显式 immutable revision + typed inputs → ManualRunService → Create/Activate）
+     → AgentOrchestrationWorkerService
+       （SubAgent → SubAgent → image-generate → image-preview；按端口 outputs_json 传递文本/Artifact、lease 续租、后继 Ready/Skipped 与 Run 终态同事务推进）
      → Admin /orchestration
-       （Graph create/delete → Graph/Run browser → definition/run viewer → draggable layout + viewport CAS → committed event timeline）
+       （紧凑 Graph/Run 控制条 + 顶部运行 → 全宽画布 → 悬浮工作台 → SubAgent 模型/模板/角色设置与文本输出 → 图片生成/展示组件自有预览 → Revision/Layout CAS）
 
 Chat first paint → AgentConversationProjectionService
   → 最近 20 条消息 + active run 最近 64 条过程明细/全量摘要

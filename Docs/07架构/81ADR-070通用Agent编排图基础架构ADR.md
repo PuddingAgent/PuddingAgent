@@ -41,8 +41,10 @@ MOA 不再拥有第二套长期编排内核。`DesignCouncilPlanCompiler` 仍负
 - Admin 布局保存提交完整节点坐标与 viewport，新建布局从 L1 开始，更新严格递增；运行状态刷新不覆盖未保存坐标，409 冲突保留本地编辑并要求显式重新加载。
 - Admin 可新建 Graph：服务端生成经编译器校验的 Revision 1 和 `humanInput` 占位节点，不自动激活或运行；Graph ID 使用稳定的 URL-safe 约束。
 - Admin 可删除尚无 Run 的 Graph：删除使用 Graph Head Revision CAS，并清理它的 Revision/Layout；只要存在任意 durable Run 就拒绝删除，运行历史不级联清理。
+- Admin 已支持 executable Revision 草稿：catalog 驱动节点 CRUD、服务端 validate、Graph Head CAS 保存、409 保留草稿与显式 reload/diff；内容草稿存在时不允许把 Layout 写回旧 base Revision。
+- Admin 已支持 S2 的端口感知创作切片：catalog 输入/输出 handle、control/data 拖线、DAG/类型/MIME/基数/delivery 本地预检、边条件/删除，以及 Graph Input 增删改和兼容端口绑定；后端 compiler 仍是最终权威。
 
-后继 Ready 计算、gate/human-input、通用组件执行适配器、Agent 工具、Admin 连线/修订编辑和运行控制命令尚未接入。
+后继 Ready 计算、gate/human-input、通用组件执行适配器、Agent 工具、Revision 历史/Deployment/Trigger 编辑、完整多 binding 映射器和运行控制命令尚未接入。
 
 ## 2. 为什么不复用现有 TaskPlan 或 manage_tasks
 
@@ -233,7 +235,9 @@ MOA 原有纯状态机和运行时适配暂时保留，作为行为基线和迁�
 - `Source/PuddingPlatform/Controllers/Api/AgentOrchestrationLayoutApiController.cs`
 - `Source/PuddingPlatformAdmin/src/pages/orchestration/`
 
-Phase 2A 是持久化事实层，不声称已形成完整调度器。节点 terminal commit 目前不会自行释放后继节点，也不会自动决定整个 run 的终态。
+Phase 2A 的持久化事实层已增加一个有意受限的调度切片：节点 terminal commit 会在同一 SQLite 事务内，
+对无 predicate 的 `OnSuccess/OnCompletion/Always` 入边计算后继 `Ready/Skipped`，并在全部节点终态时提交 Run
+`Completed/Failed`。这仍不等于完整调度器：版本化 predicate、gate/human-input、retry/cancel 和逐端口输出事实尚未完成。
 
 ### Phase 2B：调度与执行内核
 
@@ -259,7 +263,9 @@ Phase 2A 是持久化事实层，不声称已形成完整调度器。节点 term
 - ✅ Viewer 读取保存布局并对缺失节点回退自动 DAG 布局；
 - ✅ 节点拖拽、viewport 保存、未保存提示、独立 layout revision CAS 与 409 冲突重载；
 - ✅ Graph 新建、无 Run Graph 的 CAS 删除、删除确认与历史保护；
-- 待增加 revision 历史切换、连线和 executable revision 编辑；
+- ✅ catalog 节点 CRUD、validate + Revision Head CAS、409 草稿保留与显式 reload/diff；
+- ✅ 端口感知的 control/data 连线、边条件/删除、Graph Input CRUD 与节点端口绑定；
+- 待增加 revision 历史切换、Deployment/Trigger、完整 data binding/predicate inspector 与诊断定位；
 - 失败/等待输入/重试状态的运行控制；
 - 用户可审批修订、激活、提供输入、取消和重试；
 - UI 只通过 API/事件操作，不成为状态权威。

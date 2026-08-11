@@ -1,0 +1,13 @@
+﻿{
+  "id": "agent-status-health-check",
+  "name": "Agent 状态健康检查",
+  "version": "1.1.0",
+  "description": "Agent 状态与系统健康检查清单。v1.1 新增：上下文恢复检查项（启动时检索历史）。",
+  "summary": "Agent 状态健康检查：新增上下文恢复检查项，验证启动时历史检索已执行、上下文连续性正常。",
+  "author": "pudding-workspace",
+  "created": "2026-08-11",
+  "tags": ["status-check", "health-check", "上下文恢复", "心跳", "系统健康"],
+  "keywords": ["状态检查", "健康检查", "上下文恢复", "status-health", "heartbeat", "心跳", "缓存命中率"],
+  "source_session": "acd7ee428f284f9a845663b1a4d971db",
+  "path": "skills/agent-status-health-check"
+}

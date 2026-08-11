@@ -1,0 +1,13 @@
+﻿{
+  "id": "session-context-recovery",
+  "name": "会话上下文恢复协议",
+  "version": "1.1.0",
+  "description": "会话启动/心跳唤醒时先检索历史会话，恢复上下文连续性。全文检索优先于向量检索，不依赖向量模型。",
+  "summary": "会话启动上下文恢复标准流程：派子代理用 query_session_logs 全文检索历史关键信息，带回当前会话。",
+  "author": "pudding-workspace",
+  "created": "2026-08-11",
+  "tags": ["query_session_logs", "上下文恢复", "会话", "跨会话", "心跳唤醒", "记忆连续性"],
+  "keywords": ["会话启动", "上下文恢复", "历史检索", "心跳唤醒", "记忆连续性", "query_session_logs", "全文检索", "跨会话", "恢复上下文"],
+  "source_session": "acd7ee428f284f9a845663b1a4d971db",
+  "path": "skills/session-context-recovery"
+}

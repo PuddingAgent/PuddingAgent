@@ -124,6 +124,8 @@ public static class AgentOrchestrationComponentTypes
 {
     public const string SubAgent = "pudding.agent.subagent";
     public const string ToolInvoke = "pudding.tool.invoke";
+    public const string ImageGenerate = "pudding.media.image-generate";
+    public const string ImagePreview = "pudding.media.image-preview";
     public const string Gate = "pudding.control.gate";
     public const string HumanInput = "pudding.control.human-input";
 }
@@ -468,6 +470,61 @@ public sealed class AgentOrchestrationComponentRegistry : IAgentOrchestrationCom
             },
             new AgentOrchestrationComponentDescriptor
             {
+                ComponentType = AgentOrchestrationComponentTypes.ImageGenerate,
+                Version = "1",
+                DisplayName = "Image Generate",
+                Category = "media",
+                NodeKind = AgentOrchestrationNodeKind.Tool,
+                ExecutorId = "pudding.runtime.image-generate/v1",
+                ConfigSchemaReference = "pudding.schema.image-generate/v1",
+                // Writing a run-owned output artifact is an execution result, not an external
+                // user-data mutation that requires ExplicitWrite approval.
+                SideEffect = AgentOrchestrationSideEffect.Read,
+                InputPorts =
+                [
+                    Port("prompt", "Prompt", AgentOrchestrationDataTypes.Content, true,
+                        AgentOrchestrationPortCardinality.One,
+                        AgentOrchestrationValueDelivery.Inline),
+                    MediaPort("references", "Reference Images", AgentOrchestrationDataTypes.Artifact, false,
+                        AgentOrchestrationPortCardinality.Many,
+                        ["image/*"],
+                        AgentOrchestrationValueDelivery.Artifact)
+                ],
+                OutputPorts =
+                [
+                    MediaPort("images", "Images", AgentOrchestrationDataTypes.Artifact, true,
+                        AgentOrchestrationPortCardinality.One,
+                        ["image/*"],
+                        AgentOrchestrationValueDelivery.Artifact)
+                ],
+                RequiredCapabilities = ["image.generate"]
+            },
+            new AgentOrchestrationComponentDescriptor
+            {
+                ComponentType = AgentOrchestrationComponentTypes.ImagePreview,
+                Version = "1",
+                DisplayName = "Image Preview",
+                Category = "media",
+                NodeKind = AgentOrchestrationNodeKind.Tool,
+                ExecutorId = "pudding.runtime.image-preview/v1",
+                SideEffect = AgentOrchestrationSideEffect.None,
+                InputPorts =
+                [
+                    MediaPort("images", "Images", AgentOrchestrationDataTypes.Artifact, true,
+                        AgentOrchestrationPortCardinality.Many,
+                        ["image/*"],
+                        AgentOrchestrationValueDelivery.Artifact)
+                ],
+                OutputPorts =
+                [
+                    MediaPort("images", "Images", AgentOrchestrationDataTypes.Artifact, true,
+                        AgentOrchestrationPortCardinality.Many,
+                        ["image/*"],
+                        AgentOrchestrationValueDelivery.Artifact)
+                ]
+            },
+            new AgentOrchestrationComponentDescriptor
+            {
                 ComponentType = AgentOrchestrationComponentTypes.Gate,
                 Version = "1",
                 DisplayName = "Gate",
@@ -539,6 +596,28 @@ public sealed class AgentOrchestrationComponentRegistry : IAgentOrchestrationCom
             Contract = new AgentOrchestrationDataContract
             {
                 DataType = dataType,
+                Cardinality = cardinality,
+                Deliveries = Array.AsReadOnly(deliveries)
+            }
+        };
+
+    private static AgentOrchestrationPortDefinition MediaPort(
+        string id,
+        string displayName,
+        string dataType,
+        bool required,
+        AgentOrchestrationPortCardinality cardinality,
+        IReadOnlyList<string> mediaTypes,
+        params AgentOrchestrationValueDelivery[] deliveries)
+        => new()
+        {
+            PortId = id,
+            DisplayName = displayName,
+            Required = required,
+            Contract = new AgentOrchestrationDataContract
+            {
+                DataType = dataType,
+                MediaTypes = mediaTypes,
                 Cardinality = cardinality,
                 Deliveries = Array.AsReadOnly(deliveries)
             }

@@ -25,6 +25,7 @@ public sealed class SystemPromptBuilder
     private readonly AgentPersonaFileProvider? _personaFileProvider;
     private readonly ILogger<SystemPromptBuilder> _logger;
     private readonly StartupEnvironmentInfo _env;
+    private readonly IUserPreferenceService? _userPreferenceService;
 
     public SystemPromptBuilder(
         IMemoryEngine memory,
@@ -36,7 +37,8 @@ public sealed class SystemPromptBuilder
         IWorkspaceProfileProvider? workspaceProfileProvider = null,
         AgentPersonaFileProvider? personaFileProvider = null,
         IMemoryLibraryConvenience? libraryConvenience = null,
-        IPuddingToolRegistry? toolRegistry = null)
+        IPuddingToolRegistry? toolRegistry = null,
+        IUserPreferenceService? userPreferenceService = null)
     {
         _memory = memory;
         _skillRuntime = skillRuntime;
@@ -46,8 +48,9 @@ public sealed class SystemPromptBuilder
         _env = env;
         _templateProvider = templateProvider;
         _workspaceProfileProvider = workspaceProfileProvider;
-        _personaFileProvider = personaFileProvider;
+                _personaFileProvider = personaFileProvider;
         _libraryConvenience = libraryConvenience;
+        _userPreferenceService = userPreferenceService;
     }
 
     /// <summary>
@@ -234,6 +237,28 @@ public sealed class SystemPromptBuilder
                 ct);
             if (!string.IsNullOrWhiteSpace(memCtx))
                 sb.AppendLine(memCtx);
+        }
+
+        // ── 用户偏好预取（Prefetch）：会话启动时从记忆库注入用户偏好 ──
+        if (_userPreferenceService is not null && !string.IsNullOrWhiteSpace(workspaceId))
+        {
+            try
+            {
+                var prefs = await _userPreferenceService.LoadPreferencesAsync(
+                    workspaceId, maxItems: 20, ct);
+                if (!string.IsNullOrWhiteSpace(prefs))
+                    sb.AppendLine(prefs);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[AgentExec] User preference prefetch failed workspace={Workspace}",
+                    workspaceId);
+            }
         }
 
         // ── 7. RUNTIME 层 ──

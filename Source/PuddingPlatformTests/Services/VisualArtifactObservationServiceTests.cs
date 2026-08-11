@@ -74,6 +74,25 @@ public sealed class VisualArtifactObservationServiceTests
     }
 
     [TestMethod]
+    public async Task ObserveForTextOnlyModelAsync_MissingImageReaderModel_DoesNotSelectGlobalVisionModel()
+    {
+        var invocation = new RecordingInvocationService(new LlmInvocationResult
+        {
+            Success = true,
+            ReplyText = "unused",
+        });
+        var service = CreateService(invocation);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => service.ObserveForTextOnlyModelAsync(
+                CreateRequest() with { ImageReaderModel = null }));
+
+        StringAssert.Contains(error.Message, "imageReaderModel");
+        StringAssert.Contains(error.Message, "primary Agent was not invoked");
+        Assert.IsNull(invocation.Request);
+    }
+
+    [TestMethod]
     public async Task BuildMessageTextAsync_InjectsGroundedObservationAndMediaSafetyBoundary()
     {
         var text = await ExecutionRunCoordinator.BuildMessageTextAsync(
@@ -157,6 +176,7 @@ public sealed class VisualArtifactObservationServiceTests
         AgentTemplateId = "template-1",
         PrimaryProviderId = "text-provider",
         PrimaryModelId = "text-model",
+        ImageReaderModel = "vision-provider/vision-model",
         VisualArtifactIds = ["vision-artifact-1"],
     };
 

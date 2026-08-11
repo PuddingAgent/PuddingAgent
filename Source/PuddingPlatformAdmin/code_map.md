@@ -63,17 +63,30 @@
 
 | 文件 | 职责与边界 |
 |------|------------|
-| `src/pages/orchestration/index.tsx` | `/orchestration` 入口；发现、新建和受约束删除 Graph，预览 Revision，提供 DAG、节点检查器、事件时间线及节点拖拽/viewport 保存；S1 增加节点 CRUD、保存 Revision（validate + PUT CAS）、409 冲突保留草稿与显式 reload/diff；不提交运行命令 |
-| `src/pages/orchestration/api.ts` | 登录态 Graph create/delete、Graph/Run/catalog/revision/layout GET/PUT/events 客户端；S1 增加 validateOrchestrationDraft 与 putOrchestrationRevision；按路径段转义 revisionId，并以 `afterSequence` + `Last-Event-ID` 消费可恢复 SSE |
-| `src/pages/orchestration/graphViewModel.ts` | 无副作用的 DAG 分层布局；优先使用已保存节点坐标，对缺失节点自动布局，并区分 control/data edge |
-| `src/pages/orchestration/graphManagement.ts` | 新建表单默认值/请求规范化与删除门禁；任何存在 durable Run 的 Graph 在前端即禁止删除，后端仍重复校验 |
+| `src/pages/orchestration/index.tsx` | `/orchestration` 入口；ComfyUI 式画布优先布局：Graph/Run 紧凑控制条、顶部“运行”与悬浮工作台；发现/模板新建/受约束删除 Graph、节点/边/Input/Hook authoring，并把组件设置/输出委托给组件 UI 注册表；运行始终固定已保存 Revision |
+| `src/pages/orchestration/ManualRunModal.tsx` | 按当前 Revision Graph Inputs 生成类型化运行表单；展示固定 revisionId，提交后切入 Run 投影，内容草稿未保存时禁止运行 |
+| `src/pages/orchestration/manualRun.ts` | 手动运行 requestId 与 content/json/number/boolean `OrchestrationValueEnvelope` 构造纯函数 |
+| `src/pages/orchestration/ImageGenerateNodeSettings.tsx` | 图片生成节点的 mode/size/provider/model/watermark 配置检查器；不持有 provider secret |
+| `src/pages/orchestration/SubAgentNodeSettings.tsx` | SubAgent 节点的角色、Agent 模板和精确 provider/model 路由设置；目录加载失败时仍允许编辑现有值，不持有 secret |
+| `src/pages/orchestration/componentUiRegistry.tsx` | 组件自有输入/输出 UI 注册表；SubAgent 负责 `result` 文本，图片生成/展示组件负责各自 `images` Artifact 渲染，未知组件保持通用摘要/引用降级 |
+| `src/pages/orchestration/HttpHookPanel.tsx` | HTTP Hook 编辑与调试说明；冻结 catalog descriptor，配置 payload path → Graph Input，并为已保存 Revision 生成 Admin Bearer endpoint/body/cURL，不回显 token |
+| `src/pages/orchestration/httpHookTriggers.ts` | Webhook trigger 草稿增删/启停、descriptor version/hash 冻结及显式 Revision endpoint 编译纯函数 |
+| `src/pages/orchestration/api.ts` | 登录态 Graph create/delete、显式 Revision manual Run、Graph/Run/catalog/revision/layout GET/PUT/events 与 image Artifact 客户端；S1 增加 validateOrchestrationDraft 与 putOrchestrationRevision；按路径段转义 revisionId，并以 `afterSequence` + `Last-Event-ID` 消费可恢复 SSE |
+| `src/pages/orchestration/graphViewModel.ts` | 无副作用的 DAG 分层布局；投影 catalog 强类型端口、组件类型/workspace 与完整节点 outputs，把 control/data edge 映射到对应 React Flow handle |
+| `src/pages/orchestration/OrchestrationComponentNode.tsx` | React Flow 自定义节点；显示运行状态、control/data 端口，并调用组件 UI 注册表渲染该组件自己的运行输出，不拥有 executable schema |
+| `src/pages/orchestration/edgeEditor.ts` | S2 纯边编辑层；解析 handle，镜像后端 dataType/MIME/cardinality/delivery 兼容性，拒绝自环/环/重复/单值端口多来源，并构造/修改/删除 control/data edge |
+| `src/pages/orchestration/EdgeInspector.tsx` | 选中边的只读端点/映射、受限 condition 修改和删除；注册表谓词只读，不接受任意脚本或字符串表达式 |
+| `src/pages/orchestration/graphInputs.ts` | Graph Input 增删改、引用清单、删除时清理节点引用与节点端口 binding 的不可变纯函数 |
+| `src/pages/orchestration/GraphInputsPanel.tsx` | Graph Input 契约面板；编辑 dataType/MIME/cardinality/delivery/激活必填，并在删除前显示受影响节点引用 |
+| `src/pages/orchestration/NodeGraphInputBindings.tsx` | 按 catalog 输入端口过滤兼容 Graph Input，写入 `graphInputBindings`；单值端口已有 data edge 时阻止第二来源 |
+| `src/pages/orchestration/graphManagement.ts` | 新建表单默认值/模板请求规范化与删除门禁；默认选择最小 image-generation 模板，任何存在 durable Run 的 Graph 在前端即禁止删除，后端仍重复校验 |
 | `src/pages/orchestration/layoutEditor.ts` | 把受控画布节点与 viewport 编译为布局 CAS 请求；新建从 L1 开始，更新严格递增，并保留本切片不编辑的尺寸/父组/折叠元数据；识别 409 冲突 |
-| `src/pages/orchestration/revisionEditor.ts` | S1 Revision 草稿/构建/删除纯函数：catalog→节点（kind/executor/hash 冻结）、本地节点校验（HumanInput 可无 executor；SubAgent 必须 role/template/route）、删节点同步删边与最后节点门禁、下一 Revision 预览（revision/parent/id）、409 冲突提取与草稿保留、保存成功后切换到服务端 Revision、草稿存在时阻止布局写入旧 base Revision、只读冲突 diff 摘要 |
-| `src/pages/orchestration/types.ts` | 与 `pudding.agent-orchestration/v2` Web JSON 对齐的前端契约；S1 增加 validation issue/result、validate 与 revision write DTO、revision conflict 事实 |
-| `src/pages/orchestration/*.test.ts` | SSE 分块/坏帧隔离、Revision 路径、DAG 布局/边语义、布局 CAS、Graph 新建请求和删除门禁，以及 §5.2 十项 Revision Editor 行为测试 |
+| `src/pages/orchestration/revisionEditor.ts` | S1 Revision 草稿/构建/删除纯函数：catalog→节点（含 Gate evaluator 形状）、节点校验、删节点同步删边、下一 Revision 预览、409 草稿保留/服务端切换、Layout 防误写；inputs/triggers 参与 dirty 与冲突 diff |
+| `src/pages/orchestration/types.ts` | 与 `pudding.agent-orchestration/v2` Web JSON 对齐的前端契约；包含 validation/revision CAS、Graph Input/Trigger、data binding 与受治理 edge predicate |
+| `src/pages/orchestration/*.test.ts` | SSE、API 路径、DAG/强类型 handle、布局/Revision CAS、Graph 生命周期、edge 构造/兼容/环拒绝、Graph Input 引用清理与 dirty/diff 行为测试 |
 | `config/routes.ts` | 注册管理菜单 `/orchestration`；继续保持 system config 为最后一个可见顶级菜单 |
 
-画布采用 `@xyflow/react`，固定高度容器内开放平移、缩放、节点选择和节点拖拽；保持 `nodesConnectable=false`，并以 `deleteKeyCode={null}` 关闭画布删除键（节点删除必须走检查器，保证与定义/边同步）。运行状态刷新只更新节点外观，不覆盖未保存坐标。保存提交全部节点坐标与当前 viewport，并以 `expectedCurrentLayoutRevision` 做 CAS；409 时保留本地状态，只有用户明确确认才重新加载。Executable definition、GraphLayout 与 Run 投影保持三层独立。
+画布采用 `@xyflow/react`，固定高度容器内开放平移、缩放、选择、节点拖拽和 graph 模式的 catalog 端口连线；页面默认把完整宽高交给画布，Inspector、Graph Inputs、HTTP Hook、Events 按需以悬浮层覆盖，打开/收起都不重建画布或丢失 viewport。`deleteKeyCode={null}` 关闭画布裸删除键，节点/边删除必须走检查器以同步定义与引用。运行状态刷新只更新节点外观，不覆盖未保存坐标。保存提交全部节点坐标与当前 viewport，并以 `expectedCurrentLayoutRevision` 做 CAS；409 时保留本地状态，只有用户明确确认才重新加载。Executable definition、GraphLayout 与 Run 投影保持三层独立。
 
 ## Chat 性能热路径
 
@@ -108,4 +121,4 @@
 
 ## 测试
 
-编排 Layout Editor 与 S1 Revision Editor 定向 Jest：`src/pages/orchestration` 5 suites / 24 tests（基线 12 + §5.2 十项 S1 行为 12）；生产构建必须生成 `/orchestration/index.html`。
+编排 Layout/Revision/Typed Edge/Graph Input/HTTP Hook/Manual Run/组件 UI 定向 Jest：`src/pages/orchestration` 10 suites / 57 tests；生产构建必须生成 `/orchestration/index.html`。仓库全量 `tsc --noEmit` 有既有非编排基线错误时，必须另行确认输出中 `src/pages/orchestration` 命中为 0，不能把全量失败描述为通过。

@@ -46,8 +46,12 @@ export function buildOrchestrationLayoutWrite({
           nodeId: node.id,
           x: node.position.x,
           y: node.position.y,
-          ...(storedNode?.width !== undefined ? { width: storedNode.width } : {}),
-          ...(storedNode?.height !== undefined ? { height: storedNode.height } : {}),
+          ...(storedNode?.width !== undefined
+            ? { width: storedNode.width }
+            : {}),
+          ...(storedNode?.height !== undefined
+            ? { height: storedNode.height }
+            : {}),
           ...(storedNode?.parentNodeId
             ? { parentNodeId: storedNode.parentNodeId }
             : {}),

@@ -4,12 +4,16 @@ import type {
   OrchestrationDraftValidateRequest,
   OrchestrationDraftValidationResult,
   OrchestrationEventPage,
-  OrchestrationGraphDefinition,
   OrchestrationGraphCreateRequest,
+  OrchestrationGraphDefinition,
   OrchestrationGraphDeleteReceipt,
   OrchestrationGraphLayout,
-  OrchestrationLayoutWriteRequest,
   OrchestrationGraphPage,
+  OrchestrationHttpHookInvokeReceipt,
+  OrchestrationHttpHookInvokeRequest,
+  OrchestrationLayoutWriteRequest,
+  OrchestrationManualRunReceipt,
+  OrchestrationManualRunRequest,
   OrchestrationRevisionWriteRequest,
   OrchestrationRunEvent,
   OrchestrationRunPage,
@@ -44,7 +48,8 @@ export function parseSseChunk(
     for (const line of block.split('\n')) {
       if (line.startsWith('id:')) id = line.slice(3).trimStart();
       else if (line.startsWith('event:')) event = line.slice(6).trimStart();
-      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+      else if (line.startsWith('data:'))
+        dataLines.push(line.slice(5).trimStart());
     }
     if (dataLines.length === 0) continue;
     try {
@@ -61,12 +66,12 @@ export async function getOrchestrationCatalog() {
   return request<OrchestrationCatalog>('/api/orchestrations/catalog');
 }
 
-export async function listOrchestrationGraphs(params: {
-  workspaceId?: string;
-  limit?: number;
-  offset?: number;
-} = {}) {
-  return request<OrchestrationGraphPage>('/api/orchestrations/graphs', { params });
+export async function listOrchestrationGraphs(
+  params: { workspaceId?: string; limit?: number; offset?: number } = {},
+) {
+  return request<OrchestrationGraphPage>('/api/orchestrations/graphs', {
+    params,
+  });
 }
 
 export async function createOrchestrationGraph(
@@ -91,13 +96,15 @@ export async function deleteOrchestrationGraph(
   );
 }
 
-export async function listOrchestrationRuns(params: {
-  workspaceId?: string;
-  graphId?: string;
-  status?: OrchestrationRunStatus;
-  limit?: number;
-  offset?: number;
-} = {}) {
+export async function listOrchestrationRuns(
+  params: {
+    workspaceId?: string;
+    graphId?: string;
+    status?: OrchestrationRunStatus;
+    limit?: number;
+    offset?: number;
+  } = {},
+) {
   return request<OrchestrationRunPage>('/api/orchestrations/runs', { params });
 }
 
@@ -111,6 +118,22 @@ export async function getOrchestrationRun(runId: string) {
   return request<OrchestrationRunSnapshot>(
     `/api/orchestrations/runs/${encodeURIComponent(runId)}`,
   );
+}
+
+export async function startOrchestrationRun(
+  command: OrchestrationManualRunRequest,
+) {
+  return request<OrchestrationManualRunReceipt>('/api/orchestrations/runs', {
+    method: 'POST',
+    data: command,
+  });
+}
+
+export function getVisionArtifactUrl(
+  workspaceId: string,
+  artifactId: string,
+): string {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/vision-artifacts/${encodeURIComponent(artifactId)}`;
 }
 
 export async function getOrchestrationRevision(revisionId: string) {
@@ -132,7 +155,8 @@ export async function getOrchestrationLayout(
       },
     );
   } catch (error) {
-    const status = (error as { response?: { status?: number } })?.response?.status;
+    const status = (error as { response?: { status?: number } })?.response
+      ?.status;
     if (status === 404) return undefined;
     throw error;
   }
@@ -177,6 +201,22 @@ export async function putOrchestrationRevision(
   return request<OrchestrationGraphDefinition>(
     `/api/orchestrations/graphs/${encodeURIComponent(graphId)}/revisions`,
     { method: 'PUT', data: write },
+  );
+}
+
+export async function invokeOrchestrationHttpHook(
+  graphId: string,
+  revisionId: string,
+  triggerId: string,
+  body: OrchestrationHttpHookInvokeRequest,
+) {
+  return request<OrchestrationHttpHookInvokeReceipt>(
+    `/api/orchestrations/hooks/${encodeURIComponent(graphId)}/${encodeURIComponent(triggerId)}`,
+    {
+      method: 'POST',
+      params: { revisionId },
+      data: body,
+    },
   );
 }
 
@@ -255,18 +295,29 @@ export async function watchOrchestrationRun(options: {
       let receivedEvent = false;
       while (!options.signal.aborted) {
         const { done, value } = await reader.read();
-        const decoded = value ? decoder.decode(value, { stream: !done }) : decoder.decode();
+        const decoded = value
+          ? decoder.decode(value, { stream: !done })
+          : decoder.decode();
         const parsed = parseSseChunk(remainder, decoded);
         remainder = parsed.remainder;
         for (const frame of parsed.frames) {
           if (frame.event === 'orchestration.stream.error') {
             const payload = frame.data as { message?: string };
-            throw new Error(payload.message || '编排事件流报告了持久化序列缺口');
+            throw new Error(
+              payload.message || '编排事件流报告了持久化序列缺口',
+            );
           }
           const event = frame.data as Partial<OrchestrationRunEvent>;
-          if (!event.runId || !event.eventType || !Number.isFinite(event.sequence)) continue;
+          if (
+            !event.runId ||
+            !event.eventType ||
+            !Number.isFinite(event.sequence)
+          )
+            continue;
           if (frame.id && Number(frame.id) !== event.sequence) {
-            throw new Error(`编排事件序列不一致：SSE ${frame.id} / payload ${event.sequence}`);
+            throw new Error(
+              `编排事件序列不一致：SSE ${frame.id} / payload ${event.sequence}`,
+            );
           }
           if ((event.sequence as number) <= cursor) continue;
           cursor = event.sequence as number;
@@ -278,7 +329,8 @@ export async function watchOrchestrationRun(options: {
       reconnectAttempt = receivedEvent ? 0 : reconnectAttempt + 1;
     } catch (error) {
       if (options.signal.aborted) return;
-      const normalized = error instanceof Error ? error : new Error(String(error));
+      const normalized =
+        error instanceof Error ? error : new Error(String(error));
       options.onError?.(normalized);
       if (
         normalized instanceof OrchestrationWatchHttpError &&

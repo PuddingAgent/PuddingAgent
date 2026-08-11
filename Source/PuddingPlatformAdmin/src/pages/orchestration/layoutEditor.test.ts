@@ -75,6 +75,8 @@ describe('orchestration layout editor', () => {
         },
       }),
     ).toEqual({ message: 'layout changed', currentLayoutRevision: 9 });
-    expect(getOrchestrationLayoutConflict({ response: { status: 500 } })).toBeUndefined();
+    expect(
+      getOrchestrationLayoutConflict({ response: { status: 500 } }),
+    ).toBeUndefined();
   });
 });
