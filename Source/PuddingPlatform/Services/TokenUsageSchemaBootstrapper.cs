@@ -12,6 +12,7 @@ namespace PuddingPlatform.Services;
 public static class TokenUsageSchemaBootstrapper
 {
     private const string TableName = "TokenUsageEvents";
+    private const string GatewayTableName = "llm_gateway_usage_events";
 
     /// <summary>
     /// Nullable columns that exist on <see cref="Data.Entities.TokenUsageEventEntity"/> but
@@ -69,6 +70,42 @@ public static class TokenUsageSchemaBootstrapper
             """
             CREATE INDEX IF NOT EXISTS "IX_TokenUsageEvents_ParentSessionId"
             ON "TokenUsageEvents" ("ParentSessionId");
+            """,
+            ct);
+
+        await db.Database.ExecuteSqlRawAsync(
+            $$"""
+            CREATE TABLE IF NOT EXISTS "{{GatewayTableName}}" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_{{GatewayTableName}}" PRIMARY KEY AUTOINCREMENT,
+                "source_id" TEXT NOT NULL,
+                "operation" TEXT NOT NULL,
+                "workspace_id" TEXT NULL,
+                "session_id" TEXT NULL,
+                "agent_template_id" TEXT NULL,
+                "provider_id" TEXT NOT NULL,
+                "model_id" TEXT NOT NULL,
+                "occurred_at_utc" TEXT NOT NULL,
+                "year_month" TEXT NOT NULL,
+                "prompt_tokens" INTEGER NOT NULL,
+                "completion_tokens" INTEGER NOT NULL,
+                "total_tokens" INTEGER NOT NULL,
+                "cache_hit_tokens" INTEGER NOT NULL,
+                "cache_miss_tokens" INTEGER NOT NULL,
+                "input_cost" decimal(18,10) NOT NULL,
+                "output_cost" decimal(18,10) NOT NULL,
+                "cache_hit_cost" decimal(18,10) NOT NULL,
+                "total_cost" decimal(18,10) NOT NULL,
+                "raw_usage_json" TEXT NULL,
+                "created_at_utc" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_llm_gateway_usage_events_source_id"
+                ON "{{GatewayTableName}}" ("source_id");
+            CREATE INDEX IF NOT EXISTS "IX_llm_gateway_usage_events_year_month"
+                ON "{{GatewayTableName}}" ("year_month");
+            CREATE INDEX IF NOT EXISTS "IX_llm_gateway_usage_events_occurred_at_utc"
+                ON "{{GatewayTableName}}" ("occurred_at_utc");
+            CREATE INDEX IF NOT EXISTS "IX_llm_gateway_usage_events_provider_model"
+                ON "{{GatewayTableName}}" ("provider_id", "model_id");
             """,
             ct);
     }

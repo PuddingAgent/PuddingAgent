@@ -28,6 +28,8 @@ public sealed class TokenUsageSchemaBootstrapperTests
                 $"Expected column '{column}' to be added.");
 
         Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_TokenUsageEvents_ParentSessionId"));
+        Assert.IsTrue(await TableExistsAsync(scope.Db, "llm_gateway_usage_events"));
+        Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_llm_gateway_usage_events_source_id"));
     }
 
     [TestMethod]
@@ -43,6 +45,8 @@ public sealed class TokenUsageSchemaBootstrapperTests
                 $"Expected column '{column}' to survive a second run.");
 
         Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_TokenUsageEvents_ParentSessionId"));
+        Assert.IsTrue(await TableExistsAsync(scope.Db, "llm_gateway_usage_events"));
+        Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_llm_gateway_usage_events_year_month"));
     }
 
     [TestMethod]
@@ -111,6 +115,20 @@ public sealed class TokenUsageSchemaBootstrapperTests
         var parameter = command.CreateParameter();
         parameter.ParameterName = "$name";
         parameter.Value = indexName;
+        command.Parameters.Add(parameter);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task<bool> TableExistsAsync(DbContext db, string tableName)
+    {
+        var connection = db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$name";
+        parameter.Value = tableName;
         command.Parameters.Add(parameter);
 
         return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;

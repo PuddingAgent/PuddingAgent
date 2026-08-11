@@ -15,6 +15,76 @@ namespace PuddingPlatformTests.Controllers;
 public sealed class StatsApiControllerTests
 {
     [TestMethod]
+    public async Task TokenStats_PrefersGatewayLedgerWithoutDoubleCountingConversationProjection()
+    {
+        await using var scope = await CreateScopeAsync();
+        await using (var db = await scope.Factory.CreateDbContextAsync())
+        {
+            db.TokenUsageStats.Add(new TokenUsageStatsEntity
+            {
+                YearMonth = "2026-06",
+                ProviderId = "deepseek",
+                ModelId = "shared-model",
+                PromptTokens = 30,
+                CompletionTokens = 10,
+                CacheHitTokens = 20,
+                CacheMissTokens = 10,
+                RequestCount = 1,
+            });
+            db.TokenUsageEvents.Add(new TokenUsageEventEntity
+            {
+                SourceType = "agent_llm",
+                SourceId = "conversation-projection",
+                ProviderId = "deepseek",
+                ModelId = "shared-model",
+                OccurredAtUtc = DateTimeOffset.Parse("2026-06-02T00:00:00Z"),
+                YearMonth = "2026-06",
+                PromptTokens = 30,
+                CompletionTokens = 10,
+                TotalTokens = 40,
+                CacheHitTokens = 20,
+                CacheMissTokens = 10,
+                InputCost = 0.03m,
+                OutputCost = 0.02m,
+                CacheHitCost = 0.002m,
+                TotalCost = 0.052m,
+            });
+            db.LlmGatewayUsageEvents.AddRange(
+                CreateGatewayUsage("gateway-1", "2026-06-02T01:00:00Z", 100, 20),
+                CreateGatewayUsage("gateway-2", "2026-06-02T02:00:00Z", 200, 40));
+            await db.SaveChangesAsync();
+        }
+
+        await using var controllerDb = await scope.Factory.CreateDbContextAsync();
+        var controller = CreateController(scope, controllerDb, CreateScopedPriceConfig());
+
+        var monthlyResponse = await controller.GetMonthlyTokenStats(
+            "2026-06", "deepseek", "shared-model", CancellationToken.None);
+        var monthlyOk = monthlyResponse as OkObjectResult;
+        Assert.IsNotNull(monthlyOk);
+        using var monthlyJson = JsonDocument.Parse(JsonSerializer.Serialize(
+            monthlyOk.Value,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Assert.AreEqual("local_gateway", monthlyJson.RootElement.GetProperty("dataSource").GetString());
+        Assert.AreEqual(300, monthlyJson.RootElement.GetProperty("totalPromptTokens").GetInt64());
+        Assert.AreEqual(60, monthlyJson.RootElement.GetProperty("totalCompletionTokens").GetInt64());
+        Assert.AreEqual(2, monthlyJson.RootElement.GetProperty("totalRequests").GetInt64());
+
+        var seriesResponse = await controller.GetTokenStatsSeries(
+            "2026-06", "deepseek", "shared-model", CancellationToken.None);
+        var seriesOk = seriesResponse as OkObjectResult;
+        Assert.IsNotNull(seriesOk);
+        using var seriesJson = JsonDocument.Parse(JsonSerializer.Serialize(
+            seriesOk.Value,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var juneSecond = seriesJson.RootElement.GetProperty("daily")[1];
+        Assert.AreEqual(150, juneSecond.GetProperty("cacheMissTokens").GetInt64());
+        Assert.AreEqual(150, juneSecond.GetProperty("cacheHitTokens").GetInt64());
+        Assert.AreEqual(60, juneSecond.GetProperty("completionTokens").GetInt64());
+        Assert.AreEqual(2, juneSecond.GetProperty("requestCount").GetInt64());
+    }
+
+    [TestMethod]
     public async Task GetMonthlyTokenStats_UsesRecordedEventCostBreakdown()
     {
         await using var scope = await CreateScopeAsync();
@@ -426,6 +496,37 @@ public sealed class StatsApiControllerTests
             },
         ],
     };
+
+    private static LlmGatewayUsageEventEntity CreateGatewayUsage(
+        string sourceId,
+        string occurredAt,
+        long promptTokens,
+        long completionTokens)
+    {
+        var occurredAtUtc = DateTimeOffset.Parse(occurredAt);
+        return new LlmGatewayUsageEventEntity
+        {
+            SourceId = sourceId,
+            Operation = "chat_stream",
+            WorkspaceId = "w1",
+            SessionId = "s1",
+            AgentTemplateId = "agent-1",
+            ProviderId = "deepseek",
+            ModelId = "shared-model",
+            OccurredAtUtc = occurredAtUtc,
+            YearMonth = occurredAtUtc.ToString("yyyy-MM"),
+            PromptTokens = promptTokens,
+            CompletionTokens = completionTokens,
+            TotalTokens = promptTokens + completionTokens,
+            CacheHitTokens = promptTokens / 2,
+            CacheMissTokens = promptTokens - (promptTokens / 2),
+            InputCost = promptTokens / 1_000_000m,
+            OutputCost = completionTokens * 2m / 1_000_000m,
+            CacheHitCost = (promptTokens / 2) * 0.1m / 1_000_000m,
+            TotalCost = 1m,
+            CreatedAtUtc = occurredAtUtc,
+        };
+    }
 
     private static ContextLayerMetricEventEntity CreateLayer(
         string sourceId,

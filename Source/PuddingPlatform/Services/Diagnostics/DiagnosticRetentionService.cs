@@ -17,12 +17,8 @@ namespace PuddingPlatform.Services.Diagnostics;
 ///    循环到 affected&lt;batch，批间限速，尊重 CancellationToken，用 ExecuteSqlRaw 不加载实体。
 /// 3) 时间戳列名来自实体映射（见 TableSpecs），不假设 CreatedAt；
 ///    服务运行前 CREATE INDEX IF NOT EXISTS 时间戳索引并记日志。
-/// 4) 安全红线：session_event_log 是 ADR-056 权威事实源（投影尾部读取）。
-///    删除前必须存在投影水位机制（session_projection_cursors 有写入方且投影到
-///    会话事件序列），可删范围=比 min(保留期截止线, 最老未消费水位) 更旧的行。
-///    当前代码库中 SetProjectedCursorAsync 无任何调用方（遗留死表），
-///    因此 session_event_log 默认不删，除非水位表存在且有数据。
-/// 5) ChatMessages 绝不参与裁剪。
+/// 4) 安全红线：session_event_log 与 conversation_events 是权威执行事实源，
+///    不在后台保留期白名单内。ChatMessages 也绝不参与裁剪。
 /// </summary>
 public sealed class DiagnosticRetentionService : BackgroundService
 {
@@ -35,16 +31,14 @@ public sealed class DiagnosticRetentionService : BackgroundService
     /// 时间戳列名已按实体映射核实：
     ///   telemetry_metric_events.OccurredAtUtc → occurred_at_utc
     ///   runtime_activity.StartedAtUtc → started_at_utc
-    ///   conversation_events.CommittedAt → committed_at
-    ///   session_event_log.RecordedAt → recorded_at（受水位保护）
+    ///   context_layer_metric_events.OccurredAtUtc → occurred_at_utc
     /// </summary>
     private static readonly IReadOnlyDictionary<string, RetentionTableSpec> TableSpecs =
         new Dictionary<string, RetentionTableSpec>(StringComparer.Ordinal)
         {
             ["telemetry_metric_events"] = new("telemetry_metric_events", "occurred_at_utc", RequiresWatermark: false),
+            ["context_layer_metric_events"] = new("context_layer_metric_events", "occurred_at_utc", RequiresWatermark: false),
             ["runtime_activity"] = new("runtime_activity", "started_at_utc", RequiresWatermark: false),
-            ["conversation_events"] = new("conversation_events", "committed_at", RequiresWatermark: false),
-            ["session_event_log"] = new("session_event_log", "recorded_at", RequiresWatermark: true),
         };
 
     public DiagnosticRetentionService(

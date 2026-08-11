@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as React from 'react';
+import dayjs from 'dayjs';
 import TokenStatsPage from './index';
 import { getContextLayerTokenStats, getMonthlyTokenStats, getTokenStatsSeries } from '@/services/platform/api';
 
@@ -9,6 +10,8 @@ jest.mock('@/services/platform/api', () => ({
   getTokenStatsSeries: jest.fn(),
   rebuildTokenEvents: jest.fn(),
 }));
+
+const initialYearMonth = dayjs().format('YYYY-MM');
 
 describe('TokenStatsPage', () => {
   beforeEach(() => {
@@ -24,6 +27,7 @@ describe('TokenStatsPage', () => {
       outputCost: 2.5,
       totalCost: 5,
       totalRequests: 2,
+      dataSource: 'local_gateway',
       byProvider: [
         {
           providerId: 'deepseek',
@@ -174,7 +178,7 @@ describe('TokenStatsPage', () => {
     render(<TokenStatsPage />);
 
     await waitFor(() => {
-      expect(getTokenStatsSeries).toHaveBeenCalledWith('2026-06', undefined, undefined);
+      expect(getTokenStatsSeries).toHaveBeenCalledWith(initialYearMonth, undefined, undefined);
     });
 
     expect(screen.getByText('按月趋势')).toBeTruthy();
@@ -183,6 +187,33 @@ describe('TokenStatsPage', () => {
     expect(screen.getAllByText('输入（命中缓存）').length).toBeGreaterThan(0);
     expect(screen.getAllByText('输出').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('[data-testid="token-series-chart"]')).toHaveLength(2);
+  });
+
+  it('keeps a controlled tooltip active across the full period hit area', async () => {
+    render(<TokenStatsPage />);
+
+    await waitFor(() => {
+      expect(getTokenStatsSeries).toHaveBeenCalledWith(initialYearMonth, undefined, undefined);
+    });
+
+    const juneHitArea = document.querySelector(
+      '[data-testid="token-series-hit-area"][data-period="2026-06"]',
+    );
+    expect(juneHitArea).toBeTruthy();
+    expect(document.querySelector('svg title')).toBeNull();
+
+    fireEvent.pointerEnter(juneHitArea!);
+    fireEvent.pointerMove(juneHitArea!);
+
+    const tooltip = screen.getByRole('tooltip');
+    expect(within(tooltip).getByText('2026-06')).toBeTruthy();
+    expect(tooltip.textContent).toContain('700 tokens');
+    expect(tooltip.textContent).toContain('300 tokens');
+    expect(tooltip.textContent).toContain('500 tokens');
+    expect(tooltip.textContent).toContain('缓存命中率');
+    expect(tooltip.textContent).toContain('30.0%');
+    expect(tooltip.textContent).toContain('请求次数');
+    expect(tooltip.textContent).toContain('2');
   });
 
   it('renders context layer cache and volatility stats', async () => {
@@ -209,7 +240,7 @@ describe('TokenStatsPage', () => {
     render(<TokenStatsPage />);
 
     await waitFor(() => {
-      expect(getMonthlyTokenStats).toHaveBeenCalledWith('2026-06', undefined, undefined);
+      expect(getMonthlyTokenStats).toHaveBeenCalledWith(initialYearMonth, undefined, undefined);
     });
 
     expect(screen.getByText('全部 Provider')).toBeTruthy();

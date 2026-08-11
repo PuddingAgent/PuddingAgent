@@ -38,6 +38,60 @@ public sealed class TokenUsageEventRepository : ITokenUsageEventRepository
         };
     }
 
+    public async Task<SessionTokenDiagnostics?> GetLatestLayerDiagnosticsAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.TokenUsageEvents
+            .AsNoTracking()
+            .Where(e => e.SessionId == sessionId
+                && (e.MessageTokens != null
+                    || e.ToolDefinitionTokens != null
+                    || e.SystemMessageTokens != null
+                    || e.HistoryMessageTokens != null))
+            .OrderByDescending(e => e.OccurredAtUtc)
+            .ThenByDescending(e => e.Id)
+            .Select(e => new SessionTokenDiagnostics
+            {
+                SessionId = e.SessionId,
+                OccurredAtUtc = e.OccurredAtUtc,
+                MessageTokens = e.MessageTokens,
+                ToolDefinitionTokens = e.ToolDefinitionTokens,
+                SystemMessageTokens = e.SystemMessageTokens,
+                HistoryMessageTokens = e.HistoryMessageTokens,
+                PromptTokens = e.PromptTokens,
+                CompletionTokens = e.CompletionTokens,
+            })
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<SessionTokenDiagnostics?> GetLatestEntropyDiagnosticsAsync(
+        string sessionId,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.TokenUsageEvents
+            .AsNoTracking()
+            .Where(e => e.SessionId == sessionId
+                && (e.SystemMessageEntropy != null
+                    || e.HistoryMessageEntropy != null
+                    || e.ToolDefinitionEntropy != null))
+            .OrderByDescending(e => e.OccurredAtUtc)
+            .ThenByDescending(e => e.Id)
+            .Select(e => new SessionTokenDiagnostics
+            {
+                SessionId = e.SessionId,
+                OccurredAtUtc = e.OccurredAtUtc,
+                MessageTokens = e.MessageTokens,
+                ToolDefinitionTokens = e.ToolDefinitionTokens,
+                SystemMessageEntropy = e.SystemMessageEntropy,
+                HistoryMessageEntropy = e.HistoryMessageEntropy,
+                ToolDefinitionEntropy = e.ToolDefinitionEntropy,
+            })
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<TokenUsageEventPage> GetFilteredAsync(
         string? workspaceId = null,
         string? sessionId = null,

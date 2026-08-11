@@ -34,19 +34,52 @@ public class StatsApiController(
     {
         yearMonth ??= DateTimeOffset.UtcNow.ToString("yyyy-MM");
 
-        var query = db.TokenUsageStats.AsNoTracking()
-            .Where(s => s.YearMonth == yearMonth);
+        var hasGatewayFacts = await db.LlmGatewayUsageEvents
+            .AsNoTracking()
+            .AnyAsync(e => e.YearMonth == yearMonth, ct);
 
-        if (!string.IsNullOrWhiteSpace(providerId))
-            query = query.Where(s => s.ProviderId == providerId);
+        List<TokenUsageStatsEntity> stats;
+        if (hasGatewayFacts)
+        {
+            var gatewayQuery = ApplyGatewayUsageFilters(
+                    db.LlmGatewayUsageEvents.AsNoTracking(),
+                    providerId,
+                    modelId)
+                .Where(e => e.YearMonth == yearMonth);
+            stats = await gatewayQuery
+                .GroupBy(e => new { e.ProviderId, e.ModelId })
+                .Select(group => new TokenUsageStatsEntity
+                {
+                    ProviderId = group.Key.ProviderId,
+                    ModelId = group.Key.ModelId,
+                    YearMonth = yearMonth,
+                    PromptTokens = group.Sum(e => e.PromptTokens),
+                    CompletionTokens = group.Sum(e => e.CompletionTokens),
+                    CacheHitTokens = group.Sum(e => e.CacheHitTokens),
+                    CacheMissTokens = group.Sum(e => e.CacheMissTokens),
+                    RequestCount = group.LongCount(),
+                    TotalCost = group.Sum(e => e.TotalCost),
+                })
+                .OrderBy(s => s.ProviderId)
+                .ThenBy(s => s.ModelId)
+                .ToListAsync(ct);
+        }
+        else
+        {
+            var query = db.TokenUsageStats.AsNoTracking()
+                .Where(s => s.YearMonth == yearMonth);
 
-        if (!string.IsNullOrWhiteSpace(modelId))
-            query = query.Where(s => s.ModelId == modelId);
+            if (!string.IsNullOrWhiteSpace(providerId))
+                query = query.Where(s => s.ProviderId == providerId);
 
-        var stats = await query
-            .OrderBy(s => s.ProviderId)
-            .ThenBy(s => s.ModelId)
-            .ToListAsync(ct);
+            if (!string.IsNullOrWhiteSpace(modelId))
+                query = query.Where(s => s.ModelId == modelId);
+
+            stats = await query
+                .OrderBy(s => s.ProviderId)
+                .ThenBy(s => s.ModelId)
+                .ToListAsync(ct);
+        }
 
         if (stats.Count == 0)
         {
@@ -63,6 +96,7 @@ public class StatsApiController(
                 outputCost = 0m,
                 totalCost = 0m,
                 totalRequests = 0L,
+                dataSource = hasGatewayFacts ? "local_gateway" : "legacy_projection",
                 byProvider = Array.Empty<object>(),
             });
         }
@@ -89,23 +123,43 @@ public class StatsApiController(
                     g.First().OutputPricePer1MTokens,
                     g.First().CacheHitPricePer1MTokens));
 
-        var eventCostRows = await ApplyTokenEventFilters(
-                db.TokenUsageEvents.AsNoTracking(),
-                providerId,
-                modelId)
-            .Where(e => e.YearMonth == yearMonth)
-            .GroupBy(e => new
-            {
-                ProviderId = e.ProviderId ?? "unknown",
-                ModelId = e.ModelId ?? "unknown",
-            })
-            .Select(g => new TokenCostRow(
-                g.Key.ProviderId,
-                g.Key.ModelId,
-                Math.Round(g.Sum(e => e.InputCost), 6),
-                Math.Round(g.Sum(e => e.CacheHitCost), 6),
-                Math.Round(g.Sum(e => e.OutputCost), 6)))
-            .ToListAsync(ct);
+        List<TokenCostRow> eventCostRows;
+        if (hasGatewayFacts)
+        {
+            eventCostRows = await ApplyGatewayUsageFilters(
+                    db.LlmGatewayUsageEvents.AsNoTracking(),
+                    providerId,
+                    modelId)
+                .Where(e => e.YearMonth == yearMonth)
+                .GroupBy(e => new { e.ProviderId, e.ModelId })
+                .Select(g => new TokenCostRow(
+                    g.Key.ProviderId,
+                    g.Key.ModelId,
+                    Math.Round(g.Sum(e => e.InputCost), 6),
+                    Math.Round(g.Sum(e => e.CacheHitCost), 6),
+                    Math.Round(g.Sum(e => e.OutputCost), 6)))
+                .ToListAsync(ct);
+        }
+        else
+        {
+            eventCostRows = await ApplyTokenEventFilters(
+                    db.TokenUsageEvents.AsNoTracking(),
+                    providerId,
+                    modelId)
+                .Where(e => e.YearMonth == yearMonth)
+                .GroupBy(e => new
+                {
+                    ProviderId = e.ProviderId ?? "unknown",
+                    ModelId = e.ModelId ?? "unknown",
+                })
+                .Select(g => new TokenCostRow(
+                    g.Key.ProviderId,
+                    g.Key.ModelId,
+                    Math.Round(g.Sum(e => e.InputCost), 6),
+                    Math.Round(g.Sum(e => e.CacheHitCost), 6),
+                    Math.Round(g.Sum(e => e.OutputCost), 6)))
+                .ToListAsync(ct);
+        }
 
         var eventCostMap = eventCostRows.ToDictionary(
             r => (r.ProviderId, r.ModelId),
@@ -217,6 +271,7 @@ public class StatsApiController(
             outputCost = Math.Round(providerGroups.Sum(p => (decimal?)p.outputCost) ?? 0m, 6),
             totalCost = Math.Round(providerGroups.Sum(p => (decimal?)p.totalCost) ?? 0m, 6),
             totalRequests = stats.Sum(s => s.RequestCount),
+            dataSource = hasGatewayFacts ? "local_gateway" : "legacy_projection",
             byProvider = providerGroups,
         });
     }
@@ -241,30 +296,13 @@ public class StatsApiController(
         var year = monthStart.Year;
         var daysInMonth = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
 
-        var eventsQuery = ApplyTokenEventFilters(
-            db.TokenUsageEvents.AsNoTracking(),
-            providerId,
-            modelId);
-
-        var monthlyEvents = await eventsQuery
+        var gatewayEvents = await ApplyGatewayUsageFilters(
+                db.LlmGatewayUsageEvents.AsNoTracking(),
+                providerId,
+                modelId)
             .Where(e => e.YearMonth.StartsWith($"{year}-"))
-            .Select(e => new
-            {
+            .Select(e => new TokenSeriesRaw(
                 e.YearMonth,
-                e.CacheMissTokens,
-                e.CacheHitTokens,
-                e.CompletionTokens,
-                e.InputCost,
-                e.CacheHitCost,
-                e.OutputCost,
-                e.TotalCost,
-            })
-            .ToListAsync(ct);
-
-        var dailyEvents = await eventsQuery
-            .Where(e => e.YearMonth == yearMonth)
-            .Select(e => new
-            {
                 e.OccurredAtUtc,
                 e.CacheMissTokens,
                 e.CacheHitTokens,
@@ -272,9 +310,34 @@ public class StatsApiController(
                 e.InputCost,
                 e.CacheHitCost,
                 e.OutputCost,
-                e.TotalCost,
-            })
+                e.TotalCost))
             .ToListAsync(ct);
+        var gatewayMonths = gatewayEvents
+            .Select(e => e.YearMonth)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var legacyEvents = await ApplyTokenEventFilters(
+                db.TokenUsageEvents.AsNoTracking(),
+                providerId,
+                modelId)
+            .Where(e => e.YearMonth.StartsWith($"{year}-"))
+            .Select(e => new TokenSeriesRaw(
+                e.YearMonth,
+                e.OccurredAtUtc,
+                e.CacheMissTokens,
+                e.CacheHitTokens,
+                e.CompletionTokens,
+                e.InputCost,
+                e.CacheHitCost,
+                e.OutputCost,
+                e.TotalCost))
+            .ToListAsync(ct);
+        var monthlyEvents = gatewayEvents
+            .Concat(legacyEvents.Where(e => !gatewayMonths.Contains(e.YearMonth)))
+            .ToList();
+        var dailyEvents = monthlyEvents
+            .Where(e => e.YearMonth == yearMonth)
+            .ToList();
 
         var monthlyLookup = monthlyEvents
             .GroupBy(e => e.YearMonth)
@@ -551,6 +614,18 @@ public class StatsApiController(
         return query;
     }
 
+    private static IQueryable<LlmGatewayUsageEventEntity> ApplyGatewayUsageFilters(
+        IQueryable<LlmGatewayUsageEventEntity> query,
+        string? providerId,
+        string? modelId)
+    {
+        if (!string.IsNullOrWhiteSpace(providerId))
+            query = query.Where(e => e.ProviderId == providerId);
+        if (!string.IsNullOrWhiteSpace(modelId))
+            query = query.Where(e => e.ModelId == modelId);
+        return query;
+    }
+
     private static double Median(IEnumerable<double> values)
     {
         var sorted = values.OrderBy(v => v).ToArray();
@@ -618,6 +693,17 @@ public class StatsApiController(
     {
         public static TokenSeriesPoint Empty(string period) => new(period, 0, 0, 0, 0, 0m, 0m, 0m, 0m);
     }
+
+    private sealed record TokenSeriesRaw(
+        string YearMonth,
+        DateTimeOffset OccurredAtUtc,
+        long CacheMissTokens,
+        long CacheHitTokens,
+        long CompletionTokens,
+        decimal InputCost,
+        decimal CacheHitCost,
+        decimal OutputCost,
+        decimal TotalCost);
 
     private sealed record TokenPrice(
         decimal InputPricePer1MTokens,

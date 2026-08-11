@@ -121,6 +121,78 @@ public sealed class TokenUsageRebuildServiceTests
         Assert.AreEqual(1, await verifyDb.TokenUsageStats.CountAsync());
     }
 
+    [TestMethod]
+    public async Task RebuildAsync_ReconstructsOneGatewayFactPerSuccessfulProviderRequest()
+    {
+        await using var scope = await CreateScopeAsync();
+        await using (var db = await scope.Factory.CreateDbContextAsync())
+        {
+            db.RuntimeActivities.AddRange(
+                CreateGatewayActivity(
+                    activityId: "chat-1",
+                    operation: "chat",
+                    modelId: "deepseek-v4-flash",
+                    metadataSuffix: """
+                        ,"prompt_tokens":"100","completion_tokens":"20","total_tokens":"120","prompt_cache_hit_tokens":"60","prompt_cache_miss_tokens":"40"
+                        """),
+                CreateGatewayActivity(
+                    activityId: "stream-1",
+                    operation: "chat_stream",
+                    modelId: "deepseek-v4-pro"));
+            db.SessionEventLogs.Add(new SessionEventLogEntity
+            {
+                SessionId = "session-1",
+                WorkspaceId = "workspace-1",
+                SequenceNum = 1,
+                EventType = "usage",
+                Data = """
+                    {"promptTokens":1000,"completionTokens":200,"totalTokens":1200,"promptCacheHitTokens":600,"promptCacheMissTokens":400}
+                    """,
+                RecordedAt = "2026-06-03T08:00:01+00:00",
+            });
+            db.LlmGatewayUsageEvents.Add(new LlmGatewayUsageEventEntity
+            {
+                SourceId = "llm:direct-chat-1",
+                Operation = "chat",
+                WorkspaceId = "workspace-1",
+                SessionId = "session-1",
+                AgentTemplateId = "agent-1",
+                ProviderId = "deepseek",
+                ModelId = "deepseek-v4-flash",
+                OccurredAtUtc = DateTimeOffset.Parse("2026-06-03T08:00:00+00:00"),
+                YearMonth = "2026-06",
+                PromptTokens = 100,
+                CompletionTokens = 20,
+                TotalTokens = 120,
+                CacheHitTokens = 60,
+                CacheMissTokens = 40,
+                CreatedAtUtc = DateTimeOffset.Parse("2026-06-03T08:00:01+00:00"),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(scope);
+        var first = await service.RebuildAsync("2026-06");
+        var second = await service.RebuildAsync("2026-06");
+
+        await using var verifyDb = await scope.Factory.CreateDbContextAsync();
+        var events = await verifyDb.LlmGatewayUsageEvents
+            .OrderBy(e => e.Operation)
+            .ToListAsync();
+
+        Assert.AreEqual(2, first.GatewayActivitiesScanned);
+        Assert.AreEqual(1, first.GatewayEventsCreated);
+        Assert.AreEqual(0, first.GatewayFactsSkipped);
+        Assert.AreEqual(1, second.GatewayEventsDeleted);
+        Assert.AreEqual(1, second.GatewayEventsCreated);
+        Assert.AreEqual(2, events.Count);
+        Assert.AreEqual(1320, events.Sum(e => e.TotalTokens));
+        Assert.AreEqual(1, events.Count(e => e.Operation == "chat"));
+        Assert.AreEqual(1, events.Count(e => e.Operation == "chat_stream"));
+        Assert.AreEqual(1, events.Count(e => e.SourceId == "llm:direct-chat-1"));
+        Assert.AreEqual(1, events.Count(e => e.SourceId.StartsWith("runtime-activity:", StringComparison.Ordinal)));
+    }
+
     private static TokenUsageRebuildService CreateService(TestScope scope)
         => new(
             scope.Factory,
@@ -176,6 +248,28 @@ public sealed class TokenUsageRebuildServiceTests
             CacheHitCost = 0.0003m,
             TotalCost = 0.0006m,
             CreatedAtUtc = DateTimeOffset.Parse("2026-06-03T08:00:00Z"),
+        };
+
+    private static RuntimeActivityEntity CreateGatewayActivity(
+        string activityId,
+        string operation,
+        string modelId,
+        string metadataSuffix = "")
+        => new()
+        {
+            ActivityId = activityId,
+            TraceId = $"trace-{activityId}",
+            CorrelationId = $"correlation-{activityId}",
+            SessionId = "session-1",
+            WorkspaceId = "workspace-1",
+            Component = PuddingCode.Observability.RuntimeActivityComponents.LlmGateway,
+            Operation = operation,
+            Status = PuddingCode.Observability.RuntimeActivityStatuses.Succeeded,
+            StartedAtUtc = "2026-06-03T08:00:00+00:00",
+            EndedAtUtc = "2026-06-03T08:00:01+00:00",
+            MetadataJson = $$"""
+                {"provider_id":"deepseek","model":"{{modelId}}","agent_template_id":"agent-1"{{metadataSuffix}}}
+                """,
         };
 
     private static async Task<TestScope> CreateScopeAsync()

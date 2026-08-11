@@ -272,6 +272,7 @@ const TokenSeriesChart: React.FC<{
   data: TokenSeriesPoint[];
   labelFormat: (period: string, index: number) => string;
 }> = ({ title, data, labelFormat }) => {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const maxValue = Math.max(...data.map(sumSeriesPoint), 1);
   const width = 720;
   const height = 230;
@@ -280,6 +281,15 @@ const TokenSeriesChart: React.FC<{
   const plotHeight = height - padding.top - padding.bottom;
   const slotWidth = plotWidth / Math.max(data.length, 1);
   const barWidth = Math.max(4, Math.min(18, slotWidth * 0.54));
+  const hoveredPoint = hoveredIndex === null ? null : data[hoveredIndex] ?? null;
+  const hoveredCacheEligibleTokens = hoveredPoint
+    ? hoveredPoint.cacheHitTokens + hoveredPoint.cacheMissTokens
+    : 0;
+  const hoveredCacheHitRate =
+    hoveredPoint && hoveredCacheEligibleTokens > 0
+      ? hoveredPoint.cacheHitTokens / hoveredCacheEligibleTokens
+      : null;
+  const placeTooltipOnRight = hoveredIndex !== null && hoveredIndex < data.length / 2;
 
   return (
     <Card
@@ -307,12 +317,17 @@ const TokenSeriesChart: React.FC<{
         </Space>
       }
     >
-      <svg
-        role="img"
-        aria-label={`${title} Token 图表`}
-        viewBox={`0 0 ${width} ${height}`}
-        style={{ width: '100%', height: 260, display: 'block' }}
+      <div
+        data-testid="token-series-plot"
+        style={{ position: 'relative' }}
+        onPointerLeave={() => setHoveredIndex(null)}
       >
+        <svg
+          role="img"
+          aria-label={`${title} Token 图表`}
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ width: '100%', height: 260, display: 'block' }}
+        >
         {[0, 0.5, 1].map((ratio) => {
           const y = padding.top + plotHeight - plotHeight * ratio;
           return (
@@ -349,13 +364,6 @@ const TokenSeriesChart: React.FC<{
 
           return (
             <g key={point.period}>
-              <title>
-                {`${point.period}
-输入（未命中缓存）：${point.cacheMissTokens.toLocaleString()} tokens
-输入（命中缓存）：${point.cacheHitTokens.toLocaleString()} tokens
-输出：${point.completionTokens.toLocaleString()} tokens
-请求次数：${point.requestCount.toLocaleString()}`}
-              </title>
               {segments.map((segment) => (
                 <rect
                   key={segment.key}
@@ -381,7 +389,83 @@ const TokenSeriesChart: React.FC<{
             </g>
           );
         })}
-      </svg>
+
+        {hoveredIndex !== null && (
+          <rect
+            x={padding.left + slotWidth * hoveredIndex}
+            y={padding.top}
+            width={slotWidth}
+            height={plotHeight}
+            rx={4}
+            fill="rgba(22, 119, 255, 0.08)"
+            pointerEvents="none"
+          />
+        )}
+
+        {data.map((point, index) => (
+          <rect
+            key={`hit-${point.period}`}
+            data-testid="token-series-hit-area"
+            data-period={point.period}
+            x={padding.left + slotWidth * index}
+            y={padding.top}
+            width={slotWidth}
+            height={plotHeight}
+            fill="transparent"
+            tabIndex={0}
+            aria-label={`${point.period} Token 详情`}
+            style={{ cursor: 'crosshair' }}
+            onPointerEnter={() => setHoveredIndex(index)}
+            onPointerMove={() => setHoveredIndex(index)}
+            onFocus={() => setHoveredIndex(index)}
+            onBlur={() => setHoveredIndex(null)}
+          />
+        ))}
+        </svg>
+
+        {hoveredPoint && (
+          <div
+            role="tooltip"
+            data-testid="token-series-tooltip"
+            style={{
+              position: 'absolute',
+              top: 12,
+              ...(placeTooltipOnRight ? { right: 12 } : { left: 64 }),
+              minWidth: 248,
+              padding: '10px 12px',
+              borderRadius: 8,
+              color: '#fff',
+              background: 'rgba(24, 24, 24, 0.94)',
+              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.24)',
+              pointerEvents: 'none',
+              zIndex: 2,
+              fontSize: 13,
+              lineHeight: 1.55,
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+              {hoveredPoint.period}
+            </div>
+            {SERIES_SEGMENTS.map((segment) => (
+              <div
+                key={segment.key}
+                style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}
+              >
+                <span>{segment.label}</span>
+                <span>{hoveredPoint[segment.key].toLocaleString()} tokens</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+              <span>缓存命中率</span>
+              <span>{hoveredCacheHitRate === null ? '—' : fmtRate(hoveredCacheHitRate)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+              <span>请求次数</span>
+              <span>{hoveredPoint.requestCount.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+      </div>
     </Card>
   );
 };
@@ -733,6 +817,11 @@ const TokenStatsPage: React.FC = () => {
         </Space>,
       ]}
     >
+      <div style={{ marginBottom: 12 }}>
+        <Tag color={data?.dataSource === 'local_gateway' ? 'green' : 'orange'}>
+          {data?.dataSource === 'local_gateway' ? '本地网关逐请求账本' : '旧版会话投影口径'}
+        </Tag>
+      </div>
       {/* 汇总卡片 */}
       <Row gutter={[16, 16]} align="stretch" style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
@@ -774,7 +863,7 @@ const TokenStatsPage: React.FC = () => {
         <Col xs={24} sm={12} md={6} style={{ display: 'flex' }}>
           <Card loading={loading} style={SUMMARY_CARD_STYLE} styles={{ body: SUMMARY_CARD_BODY_STYLE }}>
             <Statistic
-              title="请求次数"
+              title="已计量请求"
               value={data?.totalRequests ?? 0}
               prefix={<ApiOutlined />}
               valueStyle={SUMMARY_VALUE_STYLE}

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -26,6 +27,10 @@ public sealed class TokenUsageRebuildService(
 
     public sealed class RebuildResult
     {
+        public int GatewayEventsCreated { get; set; }
+        public int GatewayEventsDeleted { get; set; }
+        public int GatewayActivitiesScanned { get; set; }
+        public int GatewayFactsSkipped { get; set; }
         public int EventsCreated { get; set; }
         public int EventsDeleted { get; set; }
         public int UsageEventsScanned { get; set; }
@@ -43,6 +48,8 @@ public sealed class TokenUsageRebuildService(
         var result = new RebuildResult();
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        await RebuildGatewayUsageAsync(db, result, yearMonth, ct);
 
         var persistedEvents = await db.ConversationEvents
             .AsNoTracking()
@@ -181,6 +188,315 @@ public sealed class TokenUsageRebuildService(
             result.Errors);
 
         return result;
+    }
+
+    private async Task RebuildGatewayUsageAsync(
+        PlatformDbContext db,
+        RebuildResult result,
+        string? yearMonth,
+        CancellationToken ct)
+    {
+        var activities = await db.RuntimeActivities
+            .AsNoTracking()
+            .Where(activity =>
+                activity.Component == RuntimeActivityComponents.LlmGateway
+                && activity.Status == RuntimeActivityStatuses.Succeeded
+                && (activity.Operation == "chat" || activity.Operation == "chat_stream"))
+            .OrderBy(activity => activity.StartedAtUtc)
+            .ThenBy(activity => activity.Id)
+            .ToListAsync(ct);
+        activities = activities
+            .Where(activity => MatchesYearMonth(activity.StartedAtUtc, yearMonth))
+            .ToList();
+        result.GatewayActivitiesScanned = activities.Count;
+
+        if (activities.Count == 0)
+            return;
+
+        // Rows written directly at the gateway are already authoritative. The
+        // first rollout used a legacy "llm:" source id that cannot be joined to
+        // RuntimeActivity by id, so retain and de-duplicate those rows by their
+        // exact request identity instead of manufacturing a second fact.
+        var directEventsQuery = db.LlmGatewayUsageEvents
+            .AsNoTracking()
+            .Where(existing => !existing.SourceId.StartsWith("runtime-activity:"));
+        if (!string.IsNullOrWhiteSpace(yearMonth))
+            directEventsQuery = directEventsQuery.Where(existing => existing.YearMonth == yearMonth);
+        var directEventKeys = (await directEventsQuery.ToListAsync(ct))
+            .Select(GatewayDedupKey.FromEvent)
+            .ToHashSet();
+
+        var prices = BuildPriceMap(llmConfigService?.GetAllModels() ?? []);
+        var rebuilt = new List<LlmGatewayUsageEventEntity>();
+
+        foreach (var activity in activities.Where(a => a.Operation == "chat"))
+        {
+            if (TryMapGatewayActivity(activity, out var mapped)
+                && mapped.Usage is not null)
+            {
+                AddUnlessDirectlyRecorded(
+                    rebuilt,
+                    directEventKeys,
+                    CreateGatewayEvent(activity, mapped, prices));
+            }
+            else
+            {
+                result.GatewayFactsSkipped++;
+            }
+        }
+
+        var streamActivities = activities
+            .Where(activity => activity.Operation == "chat_stream")
+            .ToList();
+        var workspaces = streamActivities
+            .Select(activity => activity.WorkspaceId)
+            .Where(workspace => !string.IsNullOrWhiteSpace(workspace))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var usageFrames = new List<SessionEventLogEntity>();
+        foreach (var workspace in workspaces)
+        {
+            var workspaceFrames = await db.SessionEventLogs
+                .AsNoTracking()
+                .Where(frame => frame.WorkspaceId == workspace && frame.EventType == "usage")
+                .OrderBy(frame => frame.RecordedAt)
+                .ThenBy(frame => frame.Id)
+                .ToListAsync(ct);
+            usageFrames.AddRange(workspaceFrames.Where(frame => MatchesYearMonth(frame.RecordedAt, yearMonth)));
+        }
+
+        var framesBySession = usageFrames
+            .GroupBy(frame => (frame.WorkspaceId, frame.SessionId))
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(frame => frame.RecordedAt).ThenBy(frame => frame.Id).ToList());
+
+        foreach (var group in streamActivities.GroupBy(
+                     activity => (activity.WorkspaceId ?? string.Empty, activity.SessionId ?? string.Empty)))
+        {
+            var orderedActivities = group
+                .OrderBy(activity => activity.StartedAtUtc)
+                .ThenBy(activity => activity.Id)
+                .ToList();
+            framesBySession.TryGetValue(group.Key, out var orderedFrames);
+            orderedFrames ??= [];
+
+            if (orderedActivities.Count == orderedFrames.Count)
+            {
+                for (var index = 0; index < orderedActivities.Count; index++)
+                {
+                    var activity = orderedActivities[index];
+                    if (!TryMapGatewayActivity(activity, out var mapped)
+                        || !TryParseUsage(orderedFrames[index].Data, out var usage))
+                    {
+                        result.GatewayFactsSkipped++;
+                        continue;
+                    }
+
+                    AddUnlessDirectlyRecorded(
+                        rebuilt,
+                        directEventKeys,
+                        CreateGatewayEvent(
+                            activity,
+                            mapped with { Usage = usage },
+                            prices));
+                }
+                continue;
+            }
+
+            logger.LogWarning(
+                "[TokenUsageRebuild] Stream usage pairing mismatch workspace={Workspace} session={Session} activities={Activities} frames={Frames}; only self-contained activity facts will be rebuilt",
+                group.Key.Item1,
+                group.Key.Item2,
+                orderedActivities.Count,
+                orderedFrames.Count);
+            foreach (var activity in orderedActivities)
+            {
+                if (TryMapGatewayActivity(activity, out var mapped)
+                    && mapped.Usage is not null)
+                {
+                    AddUnlessDirectlyRecorded(
+                        rebuilt,
+                        directEventKeys,
+                        CreateGatewayEvent(activity, mapped, prices));
+                }
+                else
+                {
+                    result.GatewayFactsSkipped++;
+                }
+            }
+        }
+
+        // Replace only facts we actually reconstructed. Direct gateway facts
+        // and rows whose diagnostic activity has expired or failed to persist
+        // must survive a rebuild.
+        var rebuiltSourceIds = rebuilt
+            .Select(rebuiltEvent => rebuiltEvent.SourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var existingQuery = db.LlmGatewayUsageEvents
+            .Where(existing => existing.SourceId.StartsWith("runtime-activity:"));
+        if (!string.IsNullOrWhiteSpace(yearMonth))
+            existingQuery = existingQuery.Where(existing => existing.YearMonth == yearMonth);
+        var existing = (await existingQuery.ToListAsync(ct))
+            .Where(existingEvent => rebuiltSourceIds.Contains(existingEvent.SourceId))
+            .ToList();
+        if (existing.Count > 0)
+        {
+            db.LlmGatewayUsageEvents.RemoveRange(existing);
+            result.GatewayEventsDeleted = existing.Count;
+        }
+
+        if (rebuilt.Count > 0)
+        {
+            db.LlmGatewayUsageEvents.AddRange(rebuilt);
+            result.GatewayEventsCreated = rebuilt.Count;
+        }
+
+        if (existing.Count > 0 || rebuilt.Count > 0)
+            await db.SaveChangesAsync(ct);
+    }
+
+    private static void AddUnlessDirectlyRecorded(
+        ICollection<LlmGatewayUsageEventEntity> rebuilt,
+        IReadOnlySet<GatewayDedupKey> directEventKeys,
+        LlmGatewayUsageEventEntity candidate)
+    {
+        if (!directEventKeys.Contains(GatewayDedupKey.FromEvent(candidate)))
+            rebuilt.Add(candidate);
+    }
+
+    private static bool MatchesYearMonth(string timestamp, string? yearMonth)
+        => string.IsNullOrWhiteSpace(yearMonth)
+           || DateTimeOffset.TryParse(timestamp, out var parsed)
+           && parsed.ToString("yyyy-MM") == yearMonth;
+
+    private static bool TryMapGatewayActivity(
+        RuntimeActivityEntity activity,
+        out GatewayActivityFact fact)
+    {
+        fact = default!;
+        if (!DateTimeOffset.TryParse(activity.StartedAtUtc, out var occurredAt)
+            || string.IsNullOrWhiteSpace(activity.MetadataJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                activity.MetadataJson,
+                JsonOpts);
+            if (metadata is null
+                || !metadata.TryGetValue("provider_id", out var providerId)
+                || !metadata.TryGetValue("model", out var modelId)
+                || string.IsNullOrWhiteSpace(providerId)
+                || string.IsNullOrWhiteSpace(modelId))
+            {
+                return false;
+            }
+
+            metadata.TryGetValue("agent_template_id", out var agentTemplateId);
+            fact = new GatewayActivityFact(
+                providerId,
+                modelId,
+                agentTemplateId,
+                occurredAt,
+                TryParseUsage(metadata, out var usage) ? usage : null);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryParseUsage(
+        IReadOnlyDictionary<string, string> metadata,
+        out TokenUsageDto usage)
+    {
+        usage = default!;
+        if (!TryReadInt(metadata, "prompt_tokens", out var prompt)
+            || !TryReadInt(metadata, "completion_tokens", out var completion))
+        {
+            return false;
+        }
+
+        TryReadInt(metadata, "total_tokens", out var total);
+        TryReadInt(metadata, "prompt_cache_hit_tokens", out var hit);
+        TryReadInt(metadata, "prompt_cache_miss_tokens", out var miss);
+        usage = new TokenUsageDto
+        {
+            PromptTokens = prompt,
+            CompletionTokens = completion,
+            TotalTokens = total > 0 ? total : prompt + completion,
+            PromptCacheHitTokens = hit,
+            PromptCacheMissTokens = miss,
+        };
+        return true;
+    }
+
+    private static bool TryParseUsage(string json, out TokenUsageDto usage)
+    {
+        try
+        {
+            usage = JsonSerializer.Deserialize<TokenUsageDto>(json, JsonOpts)!;
+            return usage is not null;
+        }
+        catch (JsonException)
+        {
+            usage = default!;
+            return false;
+        }
+    }
+
+    private static bool TryReadInt(
+        IReadOnlyDictionary<string, string> metadata,
+        string key,
+        out int value)
+    {
+        value = 0;
+        return metadata.TryGetValue(key, out var raw) && int.TryParse(raw, out value);
+    }
+
+    private LlmGatewayUsageEventEntity CreateGatewayEvent(
+        RuntimeActivityEntity activity,
+        GatewayActivityFact fact,
+        IReadOnlyDictionary<string, TokenPrice> prices)
+    {
+        var price = prices.TryGetValue(PriceKey(fact.ProviderId, fact.ModelId), out var configured)
+            ? configured
+            : TokenPrice.Zero;
+        var cacheHitPrice = price.CacheHitPricePer1MTokens > 0
+            ? price.CacheHitPricePer1MTokens
+            : price.InputPricePer1MTokens;
+        var normalized = normalizer.Normalize(
+            fact.Usage!,
+            price.InputPricePer1MTokens,
+            price.OutputPricePer1MTokens,
+            cacheHitPrice);
+        return new LlmGatewayUsageEventEntity
+        {
+            SourceId = $"runtime-activity:{activity.ActivityId}",
+            Operation = activity.Operation,
+            WorkspaceId = activity.WorkspaceId,
+            SessionId = activity.SessionId,
+            AgentTemplateId = fact.AgentTemplateId,
+            ProviderId = fact.ProviderId,
+            ModelId = fact.ModelId,
+            OccurredAtUtc = fact.OccurredAtUtc,
+            YearMonth = fact.OccurredAtUtc.ToString("yyyy-MM"),
+            PromptTokens = normalized.PromptTokens,
+            CompletionTokens = normalized.CompletionTokens,
+            TotalTokens = normalized.TotalTokens,
+            CacheHitTokens = normalized.CacheHitTokens,
+            CacheMissTokens = normalized.CacheMissTokens,
+            InputCost = normalized.InputCost,
+            OutputCost = normalized.OutputCost,
+            CacheHitCost = normalized.CacheHitCost,
+            TotalCost = normalized.TotalCost,
+            RawUsageJson = JsonSerializer.Serialize(fact.Usage, JsonOpts),
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
     }
 
     private static PersistedUsageEvent? TryMapUsageEvent(ConversationEventEntity entity)
@@ -327,6 +643,37 @@ public sealed class TokenUsageRebuildService(
         string ProviderId,
         string ModelId,
         TokenUsageDto Usage);
+
+    private sealed record GatewayActivityFact(
+        string ProviderId,
+        string ModelId,
+        string? AgentTemplateId,
+        DateTimeOffset OccurredAtUtc,
+        TokenUsageDto? Usage);
+
+    private sealed record GatewayDedupKey(
+        string Operation,
+        string WorkspaceId,
+        string SessionId,
+        string ProviderId,
+        string ModelId,
+        long OccurredAtUtcTicks,
+        long PromptTokens,
+        long CompletionTokens,
+        long TotalTokens)
+    {
+        public static GatewayDedupKey FromEvent(LlmGatewayUsageEventEntity usageEvent)
+            => new(
+                usageEvent.Operation,
+                usageEvent.WorkspaceId ?? string.Empty,
+                usageEvent.SessionId ?? string.Empty,
+                usageEvent.ProviderId,
+                usageEvent.ModelId,
+                usageEvent.OccurredAtUtc.UtcTicks,
+                usageEvent.PromptTokens,
+                usageEvent.CompletionTokens,
+                usageEvent.TotalTokens);
+    }
 
     private sealed record TokenPrice(
         decimal InputPricePer1MTokens,

@@ -50,6 +50,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Token 使用事件明细账本（ADR-043 缓存统计闭环）
     public DbSet<TokenUsageEventEntity> TokenUsageEvents => Set<TokenUsageEventEntity>();
 
+    // LLM 网关逐请求计费事实（与会话归因投影解耦）
+    public DbSet<LlmGatewayUsageEventEntity> LlmGatewayUsageEvents => Set<LlmGatewayUsageEventEntity>();
+
     // Context layer 长期统计事实（上下文缓存可观测性）
     public DbSet<ContextLayerMetricEventEntity> ContextLayerMetricEvents => Set<ContextLayerMetricEventEntity>();
 
@@ -258,6 +261,17 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.Property(ev => ev.OutputCost).HasColumnType("decimal(18,10)");
             e.Property(ev => ev.CacheHitCost).HasColumnType("decimal(18,10)");
             e.Property(ev => ev.TotalCost).HasColumnType("decimal(18,10)");
+            e.Property(ev => ev.RawUsageJson).HasColumnType("TEXT");
+        });
+
+        // ── LlmGatewayUsageEvents (gateway billing ledger) ─────
+        modelBuilder.Entity<LlmGatewayUsageEventEntity>(e =>
+        {
+            e.ToTable("llm_gateway_usage_events");
+            e.HasIndex(ev => ev.SourceId).IsUnique();
+            e.HasIndex(ev => ev.YearMonth);
+            e.HasIndex(ev => ev.OccurredAtUtc);
+            e.HasIndex(ev => new { ev.ProviderId, ev.ModelId });
             e.Property(ev => ev.RawUsageJson).HasColumnType("TEXT");
         });
 

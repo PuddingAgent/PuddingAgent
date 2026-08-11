@@ -5,9 +5,9 @@
 /// 配置节：Diagnostics:Retention。
 ///
 /// 目标表（platform.db 的 append-only 诊断表）：
-///   telemetry_metric_events / runtime_activity / conversation_events（按时间戳直接裁剪）
-///   session_event_log（ADR-056 权威事实源——需要投影水位保护，见服务内
-///   HasSessionEventWatermarkAsync；当前代码库无可用水位写入方，默认不删）
+///   telemetry_metric_events / context_layer_metric_events / runtime_activity
+///   （按时间戳直接裁剪）
+/// conversation_events 与 session_event_log 是权威执行事实源，不参与此后台裁剪。
 /// ChatMessages 绝不参与裁剪。
 /// </summary>
 public sealed class DiagnosticRetentionOptions
@@ -39,7 +39,7 @@ public sealed class DiagnosticRetentionOptions
 /// <summary>单表保留策略。</summary>
 public sealed class DiagnosticRetentionTableOptions
 {
-    /// <summary>是否裁剪该表。默认 true；session_event_log 因无水位机制默认由服务跳过。</summary>
+    /// <summary>是否裁剪该表。默认 true。</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>保留天数（&lt;=0 视为不裁剪）。</summary>
