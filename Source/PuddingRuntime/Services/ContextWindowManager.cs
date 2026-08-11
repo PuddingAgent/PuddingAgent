@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class ContextWindowManager
 {
-    private static readonly TimeSpan DefaultSessionTimeout = TimeSpan.FromHours(1);
+
 
     private readonly AgentSessionManager _sessionManager;
     private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;
@@ -38,9 +38,10 @@ public sealed class ContextWindowManager
     private readonly ISessionCompactionEventEmitter? _compactionEventEmitter;
     private readonly ITelemetryMetricSink? _telemetrySink;
 
-    // 工作总结重试跟踪：每个 session 注入提示词的次数和首次注入时间
+        // 工作总结重试跟踪：每个 session 注入提示词的次数和首次注入时间
     private readonly ConcurrentDictionary<string, int> _workSummaryRetryCount = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _workSummaryFirstInjectedAt = new();
+    private readonly ContextCompactionStrategy _strategy;
 
     // Per-session dedup of inbound message IDs to prevent duplicate LLM history entries
     // when Ack loss triggers retry dispatch of the same message.
@@ -77,7 +78,9 @@ public sealed class ContextWindowManager
         _compactionOptions = compactionOptions;
         _compactionEventEmitter = compactionEventEmitter;
         _telemetrySink = telemetrySink;
-        _defaultToolCount = defaultToolCount;
+                _defaultToolCount = defaultToolCount;
+
+        _strategy = new ContextCompactionStrategy(_logger, _workSummaryRetryCount, _workSummaryFirstInjectedAt);
 
         _histories = new ConcurrentDictionary<string, List<ChatMessage>>();
         _historyLastAccessedAt = new ConcurrentDictionary<string, DateTimeOffset>();
@@ -229,13 +232,13 @@ public sealed class ContextWindowManager
     /// </summary>
     public async Task<List<ChatMessage>> BuildContextFromDbAsync(
         string sessionId,
-        int maxTokenBudget = 8000,
+                int maxTokenBudget = ContextWindowConstants.DefaultMaxTokenBudget,
         CancellationToken ct = default)
         => (await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct)).Messages;
 
     private async Task<HydratedHistorySnapshot> BuildContextFromDbSnapshotAsync(
         string sessionId,
-        int maxTokenBudget = 8000,
+        int maxTokenBudget = ContextWindowConstants.DefaultMaxTokenBudget,
         CancellationToken ct = default)
     {
         if (_memoryDbFactory is null)
@@ -246,7 +249,7 @@ public sealed class ContextWindowManager
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId && m.CompactedBy == null)
             .OrderByDescending(m => m.CreatedAt)
-            .Take(100)
+            .Take(ContextWindowConstants.MaxDbFetchMessages)
             .ToListAsync(ct);
 
         var messages = new List<ChatMessage>(entities.Count);
@@ -259,14 +262,14 @@ public sealed class ContextWindowManager
             var content = entity.Content ?? string.Empty;
 
             // 简化估算：约 1 token ≈ 3 字符（中英混排折中），最少按 1 token 计。
-            var tokenEstimate = Math.Max(1, content.Length / 3);
-            if (estimatedTokens + tokenEstimate > maxTokenBudget && messages.Count > 2)
+                        var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
+            if (estimatedTokens + tokenEstimate > maxTokenBudget && messages.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
                 break;
 
             estimatedTokens += tokenEstimate;
             lastCreatedAt = Math.Max(lastCreatedAt, entity.CreatedAt);
-            var role = string.Equals(entity.ContentType, "compact_summary", StringComparison.OrdinalIgnoreCase)
-                ? ChatRole.Assistant
+            var role =         string.Equals(entity.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase)
+                                ? ChatRole.Assistant
                 : ParseChatRole(entity.Role);
             messages.Add(new ChatMessage(
                 role,
@@ -339,7 +342,7 @@ public sealed class ContextWindowManager
             {
                 var maxPruned = _compactionOptions.HistoryPruningMaxMessages > 0
                     ? _compactionOptions.HistoryPruningMaxMessages
-                    : 100;
+                    : ContextWindowConstants.DefaultHistoryPruningMaxMessages;
                 var originalCount = hydratedContext.Count;
                 var prunedMessages = ContextPipeline.PruneSessionMessages(hydratedContext, maxPruned);
                 hydratedContext = prunedMessages.Select(pm => new ChatMessage(
@@ -401,8 +404,8 @@ public sealed class ContextWindowManager
         {
             var entry = entries[i];
             var content = entry.Content ?? string.Empty;
-            var tokenEstimate = Math.Max(1, content.Length / 3);
-            if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > 2)
+                        var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
+            if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
                 break;
 
             estimatedTokens += tokenEstimate;
@@ -552,76 +555,35 @@ public sealed class ContextWindowManager
                 "[ContextWindow:AutoCompact] triggering session={Session} state={State} ratio={Ratio:F2} budget={TokenBudget}",
                 sessionId, health.State, health.UsageRatio, maxTokenBudget);
 
-            // 检查历史中是否有 Agent 的工作总结
+            // 检查历史中是否有 Agent 的工作总结，由策略决定下一步动作
             var agentWorkSummary = ExtractAgentWorkSummaryFromHistory(sessionId);
-            if (!string.IsNullOrWhiteSpace(agentWorkSummary))
+            var decision = _strategy.Decide(
+                sessionId, health, agentWorkSummary, _compactionOptions,
+                hasCompactionNotifier: _compactionNotifier is not null);
+
+            if (decision == CompactionDecision.WaitForSummary)
             {
-                _logger.LogInformation(
-                    "[ContextWindow:AutoCompact] found agent work summary in history session={Session} len={Len} preview={Preview}",
-                    sessionId, agentWorkSummary.Length, TruncateForLog(agentWorkSummary, 120));
+                InjectAgentWorkSummaryPrompt(sessionId);
 
-                // 工作总结已生成，重置重试计数
-                _workSummaryRetryCount.TryRemove(sessionId, out _);
-                _workSummaryFirstInjectedAt.TryRemove(sessionId, out _);
-            }
-            else
-            {
-                // 工作总结尚未生成——检查是否超出最大等待限制
-                var maxRetries = _compactionOptions?.MaxWorkSummaryRetries ?? 3;
-                var maxWaitSeconds = _compactionOptions?.MaxWaitForWorkSummarySeconds ?? 180;
-                var currentRetry = _workSummaryRetryCount.GetValueOrDefault(sessionId);
-                var firstInjected = _workSummaryFirstInjectedAt.GetValueOrDefault(sessionId);
-                var elapsed = firstInjected == default ? TimeSpan.Zero : DateTimeOffset.UtcNow - firstInjected;
-
-                if (_compactionNotifier is not null && currentRetry < maxRetries && elapsed.TotalSeconds < maxWaitSeconds)
-                {
-                    // 注入提示词并 return false 等待 Agent 响应
-                    InjectAgentWorkSummaryPrompt(sessionId);
-                    _workSummaryFirstInjectedAt.GetOrAdd(sessionId, _ => DateTimeOffset.UtcNow);
-                    _workSummaryRetryCount.AddOrUpdate(sessionId, 1, (_, c) => c + 1);
-
-                    _logger.LogInformation(
-                        "[ContextWindow:AutoCompact] waiting for agent work summary session={Session} retry={Retry}/{MaxRetries} elapsed={Elapsed:F0}s/{MaxWait}s reason={Reason}",
-                        sessionId, currentRetry + 1, maxRetries, elapsed.TotalSeconds, maxWaitSeconds,
-                        currentRetry == 0 ? "first_injection" : "retry");
-
-                    await RecordAutoCompactionMetricAsync(
-                        sessionId,
-                        workspaceId,
-                        agentId,
-                        TelemetryMetricStatuses.Recorded,
-                        "context.auto_compaction.waiting_summary",
-                        countValue: currentRetry + 1,
-                        numericValue: elapsed.TotalSeconds,
-                        dimensions: new Dictionary<string, string>
-                        {
-                            ["reason"] = currentRetry == 0 ? "first_injection" : "retry",
-                            ["max_retries"] = maxRetries.ToString(CultureInfo.InvariantCulture),
-                            ["max_wait_seconds"] = maxWaitSeconds.ToString(CultureInfo.InvariantCulture),
-                            ["health_state"] = health.State.ToString(),
-                            ["usage_ratio"] = health.UsageRatio.ToString("F4", CultureInfo.InvariantCulture),
-                        },
-                        ct: ct);
-
-                    return false;
-                }
-                else
-                {
-                    // 超出等待限制或无通知器，直接压缩
-                    if (_compactionNotifier is not null)
+                await RecordAutoCompactionMetricAsync(
+                    sessionId,
+                    workspaceId,
+                    agentId,
+                    TelemetryMetricStatuses.Recorded,
+                    "context.auto_compaction.waiting_summary",
+                    countValue: _strategy.GetRetryCount(sessionId),
+                    numericValue: _strategy.GetElapsedTime(sessionId).TotalSeconds,
+                    dimensions: new Dictionary<string, string>
                     {
-                        var reason = elapsed.TotalSeconds >= maxWaitSeconds ? "timeout" : "retries_exhausted";
-                        _logger.LogWarning(
-                            "[ContextWindow:AutoCompact] forcing compact without work summary session={Session} retries={Retries}/{MaxRetries} elapsed={Elapsed:F0}s/{MaxWait}s reason={Reason}",
-                            sessionId, currentRetry, maxRetries, elapsed.TotalSeconds, maxWaitSeconds, reason);
-                    }
-                    else
-                    {
-                        _logger.LogInformation(
-                            "[ContextWindow:AutoCompact] no AgentCompactionNotifier, proceeding without work summary session={Session}",
-                            sessionId);
-                    }
-                }
+                        ["reason"] = _strategy.GetRetryCount(sessionId) <= 1 ? "first_injection" : "retry",
+                        ["max_retries"] = (_compactionOptions?.MaxWorkSummaryRetries ?? ContextWindowConstants.DefaultMaxWorkSummaryRetries).ToString(CultureInfo.InvariantCulture),
+                        ["max_wait_seconds"] = (_compactionOptions?.MaxWaitForWorkSummarySeconds ?? ContextWindowConstants.DefaultMaxWaitForWorkSummarySeconds).ToString(CultureInfo.InvariantCulture),
+                        ["health_state"] = health.State.ToString(),
+                        ["usage_ratio"] = health.UsageRatio.ToString("F4", CultureInfo.InvariantCulture),
+                    },
+                    ct: ct);
+
+                return false;
             }
 
             var compactionId = Guid.NewGuid().ToString("N");
@@ -636,7 +598,7 @@ public sealed class ContextWindowManager
                     sessionId,
                     mode = "Auto",
                     level = "Full",
-                    reason = "context_window_auto_compaction",
+                                        reason = ContextWindowConstants.AutoCompactionReason,
                     state = health.State.ToString(),
                     usageRatio = health.UsageRatio,
                     usedTokens = health.UsedTokens,
@@ -673,9 +635,9 @@ public sealed class ContextWindowManager
                     workspaceId,
                     sessionId,
                     agentId,
-                    ContextCompactionMode.Auto,
+                                        ContextCompactionMode.Auto,
                     ContextCompactionLevel.Full,
-                    "context_window_auto_compaction",
+                    ContextWindowConstants.AutoCompactionReason,
                     AgentWorkSummary: agentWorkSummary,
                     CompactionId: compactionId,
                     AgentTemplateId: agentTemplateId,
@@ -705,7 +667,7 @@ public sealed class ContextWindowManager
                 _logger.LogInformation(
                     "[ContextWindow:AutoCompact] quality session={Session} summaryPreview={Preview} hasAgentWorkSummary={HasSummary}",
                     sessionId,
-                    TruncateForLog(result.SummaryPreview, 200),
+                    TruncateForLog(result.SummaryPreview, ContextWindowConstants.CompactionSummaryLogPreviewLength),
                     !string.IsNullOrWhiteSpace(agentWorkSummary));
             }
 
@@ -730,8 +692,8 @@ public sealed class ContextWindowManager
                     compactionId,
                     sessionId,
                     mode = "Auto",
-                    level = "Full",
-                    reason = "context_window_auto_compaction",
+                                        level = "Full",
+                    reason = ContextWindowConstants.AutoCompactionReason,
                     compaction = result,
                     diagnostics = result.Diagnostics,
                     compactedCount = result.CompactedMessageCount,
@@ -745,9 +707,8 @@ public sealed class ContextWindowManager
                 },
                 ct);
 
-            // 清理重试状态
-            _workSummaryRetryCount.TryRemove(sessionId, out _);
-            _workSummaryFirstInjectedAt.TryRemove(sessionId, out _);
+                        // 清理重试状态
+            _strategy.ClearRetryState(sessionId);
 
             return result.CompactedMessageCount > 0;
         }
@@ -780,8 +741,8 @@ public sealed class ContextWindowManager
                 {
                     sessionId,
                     mode = "Auto",
-                    level = "Full",
-                    reason = "context_window_auto_compaction",
+                                        level = "Full",
+                    reason = ContextWindowConstants.AutoCompactionReason,
                     error = ex.Message,
                     errorType = ex.GetType().Name,
                 },
@@ -944,7 +905,7 @@ public sealed class ContextWindowManager
     {
         // Proportional to token budget (~2500 tokens/msg), floor at 40.
         // A 1M window → 400 messages; a 128k window → 51 messages.
-        int maxMessages = Math.Max(40, Math.Max(1, maxTokenBudget) / 2500);
+        int maxMessages = Math.Max(ContextWindowConstants.MinMaxMessagesFloor, Math.Max(1, maxTokenBudget) / ContextWindowConstants.TokenToMessageRatio);
         if (history.Count <= maxMessages + 1) return;
 
         var system = history.FirstOrDefault(m => m.Role == ChatRole.System);
@@ -999,7 +960,7 @@ public sealed class ContextWindowManager
         // 从后往前检查最近的 5 条 Assistant 消息
         var recentAssistantMessages = history
             .Where(m => m.Role == ChatRole.Assistant)
-            .TakeLast(5)
+            .TakeLast(ContextWindowConstants.WorkSummarySearchWindow)
             .Reverse()
             .ToList();
 
@@ -1032,7 +993,7 @@ public sealed class ContextWindowManager
         var alreadyInjected = history.Any(m =>
             m.Role == ChatRole.System &&
             m.Content != null &&
-            m.Content.Contains("会话压缩即将触发"));
+            m.Content.Contains(ContextWindowConstants.WorkSummaryPromptMarker));
 
         if (alreadyInjected)
             return;
@@ -1092,8 +1053,8 @@ public sealed class ContextWindowManager
                 workspaceId,
                 sessionId,
                 agentId,
-                messages,
-                "context_window_auto_compaction")
+                                messages,
+                ContextWindowConstants.AutoCompactionReason)
             {
                 AgentTemplateId = agentTemplateId,
                 AgentWorkSummary = agentWorkSummary,
@@ -1156,7 +1117,7 @@ public sealed class ContextWindowManager
     }
 
         private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
-        timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;
+        timeout > TimeSpan.Zero ? timeout : ContextWindowConstants.DefaultSessionTimeout;
 
     private static string TruncateForLog(string text, int maxLength)
     {
