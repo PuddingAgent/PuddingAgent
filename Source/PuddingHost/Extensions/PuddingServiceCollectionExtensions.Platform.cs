@@ -282,6 +282,11 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddHostedService<DiagnosticRetentionService>();
         }
 
+        // ── platform.db 数据保留期裁剪（Retention，覆盖 session_event_log /
+        //    telemetry_metric_events / runtime_activity / conversation_events；
+        //    ChatMessages 永不裁剪）──────────────────────────────
+        builder.Services.AddHostedService<RetentionPruningService>();
+
         // ── 双向消息系统（事件系统之上的聊天室/Agent 消息抽象）──────────
         builder.Services.AddScoped<IMessageRouter, MessageRouter>();
         builder.Services.AddScoped<MessageFabricStore>();
