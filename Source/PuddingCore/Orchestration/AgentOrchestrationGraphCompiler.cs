@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Text.Json;
 
 namespace PuddingCode.Orchestration;
@@ -194,6 +194,7 @@ public sealed class AgentOrchestrationGraphCompiler
             }
 
             ValidateBindings(edge, path, nodes, issues);
+            ValidateEdgePredicate(edge, path, nodes, issues);
         }
 
         ValidateRequiredAndSingleInputs(nodes, edges, issues);
@@ -332,7 +333,10 @@ public sealed class AgentOrchestrationGraphCompiler
                 issues.Add(new(
                     "graph.node_input_target_port_unknown",
                     $"Component has no input port '{binding.TargetPortId}'.",
-                    $"{bindingPath}.targetPortId"));
+                    $"{bindingPath}.targetPortId",
+                    ElementType: "node",
+                    ElementId: node.NodeId,
+                    PortId: binding.TargetPortId));
                 continue;
             }
 
@@ -347,7 +351,10 @@ public sealed class AgentOrchestrationGraphCompiler
                 issues.Add(new(
                     "graph.node_input_port_incompatible",
                     $"Graph input '{graphInput.InputId}' is incompatible with port '{binding.TargetPortId}'.",
-                    bindingPath));
+                    bindingPath,
+                    ElementType: "node",
+                    ElementId: node.NodeId,
+                    PortId: binding.TargetPortId));
             }
         }
 
@@ -477,6 +484,17 @@ public sealed class AgentOrchestrationGraphCompiler
             RequireText(binding.TargetPortId, "graph.data_target_port_required", "TargetPortId is required.", $"{bindingPath}.targetPortId", issues);
             if (!Enum.IsDefined(binding.Aggregation))
                 issues.Add(new("graph.data_aggregation_unsupported", $"Unsupported data aggregation '{binding.Aggregation}'.", $"{bindingPath}.aggregation"));
+            if (!string.IsNullOrWhiteSpace(binding.SourcePath) &&
+                !IsValidSourcePath(binding.SourcePath))
+            {
+                issues.Add(new(
+                    "graph.data_source_path_invalid",
+                    "SourcePath must be a valid JSONPath-like expression ($, field, array index). Functions, scripts, and recursive expressions are not allowed.",
+                    $"{bindingPath}.sourcePath",
+                    ElementType: "edge",
+                    ElementId: edge.EdgeId,
+                    PortId: binding.SourcePortId));
+            }
 
             if (sourceComponent is null || targetComponent is null ||
                 string.IsNullOrWhiteSpace(binding.SourcePortId) || string.IsNullOrWhiteSpace(binding.TargetPortId))
@@ -490,7 +508,10 @@ public sealed class AgentOrchestrationGraphCompiler
                 issues.Add(new(
                     "graph.data_source_port_unknown",
                     $"Source component has no output port '{binding.SourcePortId}'.",
-                    $"{bindingPath}.sourcePortId"));
+                    $"{bindingPath}.sourcePortId",
+                    ElementType: "edge",
+                    ElementId: edge.EdgeId,
+                    PortId: binding.SourcePortId));
                 continue;
             }
 
@@ -500,7 +521,10 @@ public sealed class AgentOrchestrationGraphCompiler
                 issues.Add(new(
                     "graph.data_target_port_unknown",
                     $"Target component has no input port '{binding.TargetPortId}'.",
-                    $"{bindingPath}.targetPortId"));
+                    $"{bindingPath}.targetPortId",
+                    ElementType: "edge",
+                    ElementId: edge.EdgeId,
+                    PortId: binding.TargetPortId));
                 continue;
             }
 
@@ -509,7 +533,10 @@ public sealed class AgentOrchestrationGraphCompiler
                 issues.Add(new(
                     "graph.data_ports_incompatible",
                     $"Output '{binding.SourcePortId}' is incompatible with input '{binding.TargetPortId}'.",
-                    bindingPath));
+                    bindingPath,
+                    ElementType: "edge",
+                    ElementId: edge.EdgeId,
+                    PortId: binding.TargetPortId));
             }
 
             if (targetPort.Contract.Cardinality == AgentOrchestrationPortCardinality.One &&
@@ -518,7 +545,67 @@ public sealed class AgentOrchestrationGraphCompiler
                 issues.Add(new(
                     "graph.data_single_port_requires_replace",
                     "A single-value target port requires replace aggregation.",
-                    $"{bindingPath}.aggregation"));
+                    $"{bindingPath}.aggregation",
+                    ElementType: "edge",
+                    ElementId: edge.EdgeId,
+                    PortId: binding.TargetPortId));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates an optional edge predicate (doc 83 §12.3). Predicates are only allowed on control
+    /// edges. The compiler checks required fields, source port existence, and source path syntax.
+    /// </summary>
+    private void ValidateEdgePredicate(
+        AgentOrchestrationEdgeDefinition edge,
+        string path,
+        IReadOnlyList<AgentOrchestrationNodeDefinition> nodes,
+        ICollection<AgentOrchestrationValidationIssue> issues)
+    {
+        if (edge.Predicate is null)
+            return;
+
+        var predicatePath = $"{path}.predicate";
+
+        if (edge.Kind != AgentOrchestrationEdgeKind.Control)
+        {
+            issues.Add(new(
+                "graph.edge_predicate_control_only",
+                "Edge predicates are only allowed on control edges.",
+                predicatePath));
+        }
+
+        RequireText(edge.Predicate.EvaluatorId, "graph.edge_predicate_evaluator_required", "EvaluatorId is required.", $"{predicatePath}.evaluatorId", issues);
+        RequireText(edge.Predicate.Version, "graph.edge_predicate_version_required", "Version is required.", $"{predicatePath}.version", issues);
+        RequireText(edge.Predicate.SourcePortId, "graph.edge_predicate_source_port_required", "SourcePortId is required.", $"{predicatePath}.sourcePortId", issues);
+
+        if (!string.IsNullOrWhiteSpace(edge.Predicate.SourcePath) &&
+            !IsValidSourcePath(edge.Predicate.SourcePath))
+        {
+            issues.Add(new(
+                "graph.edge_predicate_source_path_invalid",
+                "SourcePath must be a valid JSONPath-like expression ($, field, array index). Functions, scripts, and recursive expressions are not allowed.",
+                $"{predicatePath}.sourcePath",
+                ElementType: "edge",
+                ElementId: edge.EdgeId,
+                PortId: edge.Predicate.SourcePortId));
+        }
+
+        var sourceNode = nodes.FirstOrDefault(node => node is not null && IdEquals(node.NodeId, edge.FromNodeId));
+        var sourceComponent = ResolveComponent(sourceNode);
+        if (sourceComponent is not null && !string.IsNullOrWhiteSpace(edge.Predicate.SourcePortId))
+        {
+            var sourcePort = FindPort(sourceComponent.Descriptor.OutputPorts, edge.Predicate.SourcePortId);
+            if (sourcePort is null)
+            {
+                issues.Add(new(
+                    "graph.edge_predicate_source_port_unknown",
+                    $"Source component has no output port '{edge.Predicate.SourcePortId}'.",
+                    $"{predicatePath}.sourcePortId",
+                    ElementType: "edge",
+                    ElementId: edge.EdgeId,
+                    PortId: edge.Predicate.SourcePortId));
             }
         }
     }
@@ -639,14 +726,20 @@ public sealed class AgentOrchestrationGraphCompiler
                     issues.Add(new(
                         "graph.node_required_input_unbound",
                         $"Required input port '{port.PortId}' is not bound.",
-                        $"nodes[{node.NodeId}].inputs.{port.PortId}"));
+                        $"nodes[{node.NodeId}].inputs.{port.PortId}",
+                        ElementType: "node",
+                        ElementId: node.NodeId,
+                        PortId: port.PortId));
                 }
                 if (port.Contract.Cardinality == AgentOrchestrationPortCardinality.One && count > 1)
                 {
                     issues.Add(new(
                         "graph.node_single_input_multiple_bindings",
                         $"Single-value input port '{port.PortId}' has multiple bindings.",
-                        $"nodes[{node.NodeId}].inputs.{port.PortId}"));
+                        $"nodes[{node.NodeId}].inputs.{port.PortId}",
+                        ElementType: "node",
+                        ElementId: node.NodeId,
+                        PortId: port.PortId));
                 }
             }
         }
@@ -844,7 +937,18 @@ public sealed class AgentOrchestrationGraphCompiler
                     TargetPortId = binding.TargetPortId.Trim(),
                     TargetKey = TrimOrNull(binding.TargetKey)
                 })
-                .ToArray())
+                .ToArray()),
+            Predicate = edge.Predicate is null
+                ? null
+                : edge.Predicate with
+                {
+                    EvaluatorId = edge.Predicate.EvaluatorId.Trim(),
+                    Version = edge.Predicate.Version.Trim(),
+                    ContractHash = TrimOrNull(edge.Predicate.ContractHash),
+                    SourcePortId = edge.Predicate.SourcePortId.Trim(),
+                    SourcePath = edge.Predicate.SourcePath?.Trim() ?? "$",
+                    Parameters = SnapshotJsonDictionary(edge.Predicate.Parameters)
+                }
         };
 
     private AgentOrchestrationTriggerDefinition SnapshotTrigger(AgentOrchestrationTriggerDefinition trigger)
@@ -1005,6 +1109,85 @@ public sealed class AgentOrchestrationGraphCompiler
     {
         var separator = value.Trim().IndexOf('/');
         return separator > 0 && separator < value.Trim().Length - 1;
+    }
+
+    /// <summary>
+    /// Validates a JSONPath-like source path (doc 85 §6.1 sourcePath dimension).
+    /// Accepts: <c>$</c>, <c>$.field</c>, <c>$.field.subfield</c>, <c>$.field[0]</c>, <c>$.field[0].nested</c>.
+    /// Rejects: functions (<c>$eval(...)</c>), scripts, recursive descent (<c>$..</c>), or any
+    /// expression that is not a simple root-anchored path.
+    /// </summary>
+    private static bool IsValidSourcePath(string value)
+    {
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith('$'))
+            return false;
+        if (trimmed.Length == 1)
+            return true;
+
+        // Reject recursive descent (..) and function calls (().
+        if (trimmed.Contains("..", StringComparison.Ordinal))
+            return false;
+        if (trimmed.Contains('(', StringComparison.Ordinal) || trimmed.Contains(')', StringComparison.Ordinal))
+            return false;
+
+        // Check each segment after the root '$'.
+        var remaining = trimmed[1..]; // everything after '$'
+        var segmentStart = 0;
+        for (var i = 0; i <= remaining.Length; i++)
+        {
+            if (i == remaining.Length || remaining[i] == '.')
+            {
+                if (i > segmentStart)
+                {
+                    var segment = remaining[segmentStart..i];
+                    if (!IsValidPathSegment(segment))
+                        return false;
+                }
+                segmentStart = i + 1;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsValidPathSegment(string segment)
+    {
+        // A segment is one of:
+        //  - a simple field name (alphanumeric, underscore, hyphen),
+        //  - an array index [n] (or chained indices [n][m]...),
+        //  - a field name followed by one or more array indices: field[0], field[0][1].
+        // We already stripped the leading '.', so a bracket like '[0]' starts the segment.
+        if (string.IsNullOrEmpty(segment))
+            return false;
+
+        var pos = 0;
+
+        // Optional field name prefix (skipped when segment starts with '[' for an index-only segment).
+        if (segment[pos] != '[')
+        {
+            var fieldStart = pos;
+            while (pos < segment.Length && (char.IsLetterOrDigit(segment[pos]) || segment[pos] == '_' || segment[pos] == '-'))
+                pos++;
+            if (pos == fieldStart)
+                return false; // not a field name and does not start with an index
+        }
+
+        // Zero or more array index groups [n] (chains like [0][1] are allowed).
+        while (pos < segment.Length)
+        {
+            if (segment[pos] != '[')
+                return false; // unexpected character after field name / indices
+            var close = segment.IndexOf(']', pos + 1);
+            if (close <= pos + 1)
+                return false; // missing ']' or empty brackets
+            var inner = segment[(pos + 1)..close];
+            if (inner.Length == 0 || !inner.All(char.IsAsciiDigit))
+                return false; // index must be digits only
+            pos = close + 1;
+        }
+
+        return true;
     }
 
     private static bool IdEquals(string? left, string? right)

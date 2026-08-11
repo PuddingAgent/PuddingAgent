@@ -198,10 +198,16 @@ public sealed record RuntimeDispatchRequest
     public IReadOnlyList<string>? VisualArtifactIds { get; init; }
     /// <summary>音频附件 ID 列表；仅声明 audio capability 的模型会收到原生音频内容。</summary>
     public IReadOnlyList<string>? AudioArtifactIds { get; init; }
-    /// <summary>Agent Loop 最大轮数。与 AgentExecutionGuardrails.MaxRounds(默认200) 保持一致。0 或负数表示使用护栏默认值。</summary>
+    /// <summary>Agent Loop 最大轮数。子代理请求由 runtime.execution.json 冻结；0 或负数表示使用护栏默认值。</summary>
     public int MaxRounds { get; init; }
     /// <summary>Agent Loop 最大总耗时秒数。0 或负数表示使用平台护栏默认值。</summary>
     public int MaxElapsedSeconds { get; init; }
+    /// <summary>子代理正常预算耗尽后的系统收尾轮次；仅 Runtime/Platform 可设置。</summary>
+    public int BudgetGraceRounds { get; init; }
+    /// <summary>从硬超时中预留给子代理收尾的秒数，不延长绝对截止时间。</summary>
+    public int BudgetGraceTimeoutSeconds { get; init; }
+    /// <summary>本次运行是否复用已有子代理会话；用于预算通知，不改变会话身份。</summary>
+    public bool IsResumedSubAgentRun { get; init; }
     /// <summary>
     /// 本次执行的绝对截止时间。子代理调度器必须在创建运行时一次性确定，
     /// Runtime 据此区分用户取消与超时取消，禁止从异常文本推断。
@@ -233,6 +239,8 @@ public enum AgentExecutionState
     WaitingEvent,
     WaitingApproval,
     Completed,
+    /// <summary>正常预算和收尾宽限均已用完；结果可通过同一子代理会话续跑。</summary>
+    BudgetExhausted,
     Cancelled,
     Failed,
     Frozen,

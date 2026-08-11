@@ -919,7 +919,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             return;
         }
 
-        if (entity.Status is "completed" or "failed" or "cancelled" or "timed_out")
+        if (entity.Status is "completed" or "budget_exhausted" or "failed" or "cancelled" or "timed_out")
         {
             _logger.LogInformation(
                 "[SSM] Ignoring duplicate terminal sub-agent state sub={Sub} status={Status}",
@@ -928,7 +928,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             return;
         }
 
-        entity.Status = result.Success ? "completed" : "failed";
+        entity.Status = NormalizeSubAgentTerminalStatus(result.Status, result.Success);
         entity.CompletedAt = result.CompletedAt.ToString("O");
         entity.Success = result.Success;
         var resultSummary = result.Reply
@@ -958,6 +958,8 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
                 Data = new
                 {
                     subSessionId,
+                    status = entity.Status,
+                    resumable = entity.Status == "budget_exhausted",
                     success = result.Success,
                     summary = entity.ReplySummary,
                     toolFailureCount = result.ToolFailureCount,
@@ -978,6 +980,18 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         {
             await MarkSessionClosedAsync(entity.ParentSessionId, ct);
         }
+    }
+
+    private static string NormalizeSubAgentTerminalStatus(string? requestedStatus, bool success)
+    {
+        if (requestedStatus is not null)
+        {
+            var normalized = requestedStatus.Trim().ToLowerInvariant();
+            if (normalized is "completed" or "budget_exhausted" or "failed" or "cancelled" or "timed_out")
+                return normalized;
+        }
+
+        return success ? "completed" : "failed";
     }
 
     public async Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(

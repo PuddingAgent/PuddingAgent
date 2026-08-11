@@ -7,46 +7,6 @@ using PuddingCode.Platform;
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// 池化子代理的状态枚举。
-/// </summary>
-public enum PooledSubAgentStatus
-{
-    /// <summary>已创建，尚未执行。</summary>
-    Idle,
-    /// <summary>正在执行任务。</summary>
-    Busy,
-    /// <summary>执行完毕，空闲等待复用。</summary>
-    Sleeping,
-    /// <summary>已销毁，不可复用。</summary>
-    Dead,
-}
-
-/// <summary>
-/// 池化子代理的信息快照（只读视图）。
-/// </summary>
-public sealed record PooledSubAgent
-{
-    /// <summary>池内唯一名称。</summary>
-    public required string Name { get; init; }
-    /// <summary>子代理会话 ID（复用同一 ID 以保持上下文/KV-cache）。</summary>
-    public required string SubSessionId { get; init; }
-    /// <summary>代理模板 ID。</summary>
-    public required string TemplateId { get; init; }
-    /// <summary>角色描述（可选）。</summary>
-    public string? Role { get; init; }
-    /// <summary>创建时间。</summary>
-    public required DateTimeOffset CreatedAt { get; init; }
-    /// <summary>最后使用时间。</summary>
-    public required DateTimeOffset LastUsedAt { get; init; }
-    /// <summary>当前状态。</summary>
-    public required PooledSubAgentStatus Status { get; init; }
-    /// <summary>已执行任务数。</summary>
-    public required int TaskCount { get; init; }
-    /// <summary>最后一次执行是否成功。</summary>
-    public bool? LastSuccess { get; init; }
-}
-
-/// <summary>
 /// 子代理池 — 池化复用子代理以最大化 KV-cache 命中率。
 ///
 /// 生命周期：
@@ -55,7 +15,7 @@ public sealed record PooledSubAgent
 /// 线程安全：使用 ConcurrentDictionary + SemaphoreSlim 保护状态变更。
 /// 向后兼容：不修改现有 spawn_sub_agent 行为，作为可选新增功能。
 /// </summary>
-public sealed class SubAgentPool
+public sealed class SubAgentPool : ISubAgentPool
 {
     private readonly ISubAgentManager _subAgentManager;
     private readonly ILogger<SubAgentPool> _logger;

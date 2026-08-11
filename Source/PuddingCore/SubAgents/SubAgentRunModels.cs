@@ -25,7 +25,7 @@ public sealed record SubAgentRunManifest
     public required string AgentInstanceId { get; init; }
     public required string TemplateId { get; init; }
     public required string Task { get; init; }
-    public required string Status { get; init; }  // running, completed, failed, cancelled
+    public required string Status { get; init; }  // running, completed, budget_exhausted, failed, cancelled
     public required DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public Dictionary<string, string> LlmProfiles { get; init; } = new();
@@ -81,7 +81,7 @@ public sealed record SubAgentRunCreateRequest
 // 完成信息
 public sealed record SubAgentRunCompletion
 {
-    public required string Status { get; init; }  // completed, failed, cancelled, timed_out, interrupted
+    public required string Status { get; init; }  // completed, budget_exhausted, failed, cancelled, timed_out, interrupted
     public string? Output { get; init; }
     public string? ErrorMessage { get; init; }
     public int TotalRounds { get; init; }

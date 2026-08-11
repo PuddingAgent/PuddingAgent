@@ -122,6 +122,14 @@ public interface ITokenUsageEventRepository
         CancellationToken ct = default);
 
     Task<SessionTokenStats?> GetLatestStatsAsync(string sessionId, CancellationToken ct = default);
+
+    Task<SessionTokenDiagnostics?> GetLatestLayerDiagnosticsAsync(
+        string sessionId,
+        CancellationToken ct = default);
+
+    Task<SessionTokenDiagnostics?> GetLatestEntropyDiagnosticsAsync(
+        string sessionId,
+        CancellationToken ct = default);
 }
 
 /// <summary>
@@ -134,6 +142,22 @@ public sealed class SessionTokenStats
     public long TotalTokens { get; init; }
     public DateTimeOffset OccurredAtUtc { get; init; }
     public long? MostRecentEventId { get; init; }
+}
+
+/// <summary>Latest persisted context-layer diagnostics for one session.</summary>
+public sealed record SessionTokenDiagnostics
+{
+    public string? SessionId { get; init; }
+    public DateTimeOffset OccurredAtUtc { get; init; }
+    public int? MessageTokens { get; init; }
+    public int? ToolDefinitionTokens { get; init; }
+    public int? SystemMessageTokens { get; init; }
+    public int? HistoryMessageTokens { get; init; }
+    public long PromptTokens { get; init; }
+    public long CompletionTokens { get; init; }
+    public double? SystemMessageEntropy { get; init; }
+    public double? HistoryMessageEntropy { get; init; }
+    public double? ToolDefinitionEntropy { get; init; }
 }
 
 /// <summary>

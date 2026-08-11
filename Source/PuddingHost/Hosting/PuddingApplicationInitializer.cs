@@ -11,6 +11,7 @@ using PuddingMemoryEngine.Data;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.MessageFabric;
+using PuddingPlatform.Services.Orchestration;
 
 namespace PuddingHost.Hosting;
 
@@ -37,6 +38,7 @@ public static class PuddingApplicationInitializer
             await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
 
             Console.WriteLine("[Startup] Platform DB tables and schema upgrades ensured");
 

@@ -32,6 +32,8 @@ public enum AgentLoopStopReason
     Failed,
     /// <summary>总执行时间超过 MaxElapsed 限制。</summary>
     MaxElapsedReached,
+    /// <summary>子代理正常预算和收尾宽限均已耗尽，已保存阶段性结果并可续跑。</summary>
+    BudgetExhausted,
 }
 
 // ── Hook 接口 ─────────────────────────────────────────────────────────────

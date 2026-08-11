@@ -218,6 +218,52 @@ public sealed class AgentOrchestrationRevisionApiControllerTests
     }
 
     [TestMethod]
+    public async Task Validate_EdgePortIncompatible_ProjectsElementTypeElementIdAndPortId()
+    {
+        var action = await _controller.ValidateDraft(
+            "graph-001",
+            new AgentOrchestrationDraftValidateRequest
+            {
+                GraphId = "graph-001",
+                Definition = CreateIncompatibleEdgeDefinition()
+            },
+            default);
+
+        var result = (JsonResult)action.Result!;
+        var dto = (AgentOrchestrationDraftValidationResultDto)result.Value!;
+        Assert.IsFalse(dto.IsValid);
+        var issue = dto.Issues.First(item => item.Code == "graph.data_ports_incompatible");
+        Assert.AreEqual("error", issue.Severity);
+        Assert.AreEqual("edge", issue.ElementType);
+        Assert.AreEqual("gate-to-ask", issue.ElementId);
+        Assert.AreEqual("prompt", issue.PortId);
+        Assert.IsNull(await _store.GetRevisionAsync("graph-001/r002"));
+    }
+
+    [TestMethod]
+    public async Task Validate_GraphInputIncompatible_ProjectsNodeElementAndPortId()
+    {
+        var action = await _controller.ValidateDraft(
+            "graph-001",
+            new AgentOrchestrationDraftValidateRequest
+            {
+                GraphId = "graph-001",
+                Definition = CreateIncompatibleGraphInputDefinition()
+            },
+            default);
+
+        var result = (JsonResult)action.Result!;
+        var dto = (AgentOrchestrationDraftValidationResultDto)result.Value!;
+        Assert.IsFalse(dto.IsValid);
+        var issue = dto.Issues.First(item => item.Code == "graph.node_input_port_incompatible");
+        Assert.AreEqual("error", issue.Severity);
+        Assert.AreEqual("node", issue.ElementType);
+        Assert.AreEqual("worker", issue.ElementId);
+        Assert.AreEqual("context", issue.PortId);
+        Assert.IsNull(await _store.GetRevisionAsync("graph-001/r002"));
+    }
+
+    [TestMethod]
     public async Task Validate_RouteMismatch_Returns400()
     {
         var action = await _controller.ValidateDraft(
@@ -361,6 +407,118 @@ public sealed class AgentOrchestrationRevisionApiControllerTests
             ],
             ExpectedOutputContract = "result",
             MaxAttempts = maxAttempts
+        };
+
+    /// <summary>
+    /// Gate decision (JSON) wired into a human-input prompt (content) must be rejected as a
+    /// port-incompatible data edge (doc 85 §6.1 dataType dimension).
+    /// </summary>
+    private static AgentOrchestrationGraphDefinition CreateIncompatibleEdgeDefinition()
+        => new()
+        {
+            GraphId = "graph-001",
+            RevisionId = "graph-001/r001",
+            WorkspaceId = "default",
+            RootSessionId = "session-001",
+            CreatedByAgentId = "main-agent",
+            Objective = "Edge port incompatibility projection.",
+            MaxConcurrency = 1,
+            Nodes =
+            [
+                new AgentOrchestrationNodeDefinition
+                {
+                    NodeId = "gate",
+                    Kind = AgentOrchestrationNodeKind.Gate,
+                    Title = "Gate",
+                    Objective = "Evaluate the outcome.",
+                    Component = new AgentOrchestrationComponentReference
+                    {
+                        ComponentType = AgentOrchestrationComponentTypes.Gate,
+                        Version = "1"
+                    },
+                    Gate = new AgentOrchestrationGateDefinition { EvaluatorId = "pudding.gate.approval/v1" },
+                    ExpectedOutputContract = AgentOrchestrationDataTypes.Json
+                },
+                new AgentOrchestrationNodeDefinition
+                {
+                    NodeId = "ask",
+                    Kind = AgentOrchestrationNodeKind.HumanInput,
+                    Title = "Ask",
+                    Objective = "Ask the user.",
+                    Component = new AgentOrchestrationComponentReference
+                    {
+                        ComponentType = AgentOrchestrationComponentTypes.HumanInput,
+                        Version = "1"
+                    },
+                    ExpectedOutputContract = AgentOrchestrationDataTypes.Content
+                }
+            ],
+            Edges =
+            [
+                new AgentOrchestrationEdgeDefinition
+                {
+                    EdgeId = "gate-to-ask",
+                    FromNodeId = "gate",
+                    ToNodeId = "ask",
+                    Kind = AgentOrchestrationEdgeKind.Data,
+                    Bindings =
+                    [
+                        new AgentOrchestrationDataBinding
+                        {
+                            SourcePortId = "decision",
+                            TargetPortId = "prompt"
+                        }
+                    ]
+                }
+            ]
+        };
+
+    /// <summary>
+    /// A JSON graph input bound to the sub-agent's content context port must be rejected as
+    /// incompatible while the Any-typed request port stays bound (doc 85 §6.1 graph input).
+    /// </summary>
+    private static AgentOrchestrationGraphDefinition CreateIncompatibleGraphInputDefinition()
+        => new()
+        {
+            GraphId = "graph-001",
+            RevisionId = "graph-001/r001",
+            WorkspaceId = "default",
+            RootSessionId = "session-001",
+            CreatedByAgentId = "main-agent",
+            Objective = "Graph input incompatibility projection.",
+            MaxConcurrency = 1,
+            Inputs =
+            [
+                new AgentOrchestrationGraphInput
+                {
+                    InputId = "gi",
+                    Contract = new AgentOrchestrationDataContract
+                    {
+                        DataType = AgentOrchestrationDataTypes.Json,
+                        MediaTypes = ["application/json"],
+                        Deliveries = [AgentOrchestrationValueDelivery.Inline]
+                    }
+                }
+            ],
+            Nodes =
+            [
+                CreateNode("worker", maxAttempts: 1) with
+                {
+                    GraphInputBindings =
+                    [
+                        new AgentOrchestrationGraphInputBinding
+                        {
+                            InputId = "gi",
+                            TargetPortId = "request"
+                        },
+                        new AgentOrchestrationGraphInputBinding
+                        {
+                            InputId = "gi",
+                            TargetPortId = "context"
+                        }
+                    ]
+                }
+            ]
         };
 
     private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider

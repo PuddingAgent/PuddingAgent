@@ -72,6 +72,50 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("subagent.conscious", dispatcher.LastRequest.LlmProfile?.ProfileId);
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmProfile?.ModelId);
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmConfig?.ModelId);
+        Assert.AreEqual(SubAgentExecutionOptions.LargeTaskMaxRounds, dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
+            dispatcher.LastRequest.MaxToolCallsTotal);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.LargeTaskMaxTimeoutSeconds,
+            dispatcher.LastRequest.MaxElapsedSeconds);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.DefaultBudgetGraceRounds,
+            dispatcher.LastRequest.BudgetGraceRounds);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.DefaultBudgetGraceTimeoutSeconds,
+            dispatcher.LastRequest.BudgetGraceTimeoutSeconds);
+        Assert.IsFalse(dispatcher.LastRequest.IsResumedSubAgentRun);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_ReusedSessionPreservesIdentityAndStartsFreshBudgetWindow()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Continue from the saved checkpoint.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            ReuseSubSessionId = "sub-parent-session-resume",
+        });
+
+        Assert.AreEqual("sub-parent-session-resume", result.SubSessionId);
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual("sub-parent-session-resume", dispatcher.LastRequest!.SessionId);
+        Assert.IsTrue(dispatcher.LastRequest.IsResumedSubAgentRun);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.LargeTaskMaxRounds,
+            dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.DefaultBudgetGraceTimeoutSeconds,
+            dispatcher.LastRequest.BudgetGraceTimeoutSeconds);
     }
 
     [TestMethod]

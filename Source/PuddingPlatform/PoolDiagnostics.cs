@@ -1,5 +1,7 @@
 ﻿namespace PuddingPlatform.Services;
 
+using PuddingCode.Abstractions;
+
 public static class PoolDiagnostics
 {
     public static string FormatPoolSummary(SubAgentPool pool)

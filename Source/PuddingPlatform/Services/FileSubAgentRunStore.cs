@@ -762,12 +762,13 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     }
 
     private static bool IsTerminalStatus(string status) =>
-        status is "completed" or "failed" or "cancelled" or "timed_out" or "interrupted";
+        status is "completed" or "budget_exhausted" or "failed" or "cancelled" or "timed_out" or "interrupted";
 
     private static string ToTerminalEventType(string status) =>
         status switch
         {
             "completed" => ConversationEventTypes.SubAgentRunCompleted,
+            "budget_exhausted" => ConversationEventTypes.SubAgentRunBudgetExhausted,
             "failed" => ConversationEventTypes.SubAgentRunFailed,
             "cancelled" => ConversationEventTypes.SubAgentRunCancelled,
             "timed_out" => ConversationEventTypes.SubAgentRunTimedOut,

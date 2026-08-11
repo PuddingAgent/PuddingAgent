@@ -120,6 +120,8 @@ public sealed class AgentOrchestrationRevisionApiController(
     /// <summary>
     /// Projects a core issue onto the stable API contract. The compiler keeps Code/Message/Path;
     /// the API adds severity/elementType/elementId/portId so the editor can locate the canvas element.
+    /// Values carried by the core issue win; path-derived element facts are the fallback so older
+    /// issue producers (e.g. graph.cycle_detected on "edges") still project something useful.
     /// </summary>
     private static AgentOrchestrationValidationIssueDto ProjectIssue(AgentOrchestrationValidationIssue issue)
     {
@@ -129,9 +131,10 @@ public sealed class AgentOrchestrationRevisionApiController(
             Code = issue.Code,
             Message = issue.Message,
             Path = issue.Path,
-            ElementType = elementType,
-            ElementId = elementId,
-            PortId = portId
+            Severity = issue.Severity,
+            ElementType = issue.ElementType ?? elementType,
+            ElementId = issue.ElementId ?? elementId,
+            PortId = issue.PortId ?? portId
         };
     }
 

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -9,7 +9,6 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
-using PuddingPlatform.Services;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -57,8 +56,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
     private const string DelegationProtocolVersion = "SUBAGENTS.md/v1";
     private const string DefaultSubAgentOutputContract = "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS";
-    private const int DefaultSubAgentMaxRounds = 500;
-    private const int MaximumSubAgentMaxRounds = 500; // B 方案：上限对齐 DefaultSubAgentMaxRounds(500)，消除默认值必被拒的矛盾（2026-08-07 用户拍板）
     private static readonly string[] ResultSectionNames = ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
 
     public SubAgentTool(
@@ -90,13 +87,22 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         if (delegation.HasAnyField)
             task = RenderDelegationTask(task, delegation);
         var batchTasksResult = TryReadBatchTasks(json);
+        var resumeSubAgentId = GetStringProp(json, "resume_sub_agent_id")
+                            ?? GetStringProp(json, "resumeSubAgentId")
+                            ?? args.ResumeSubAgentId;
 
+        var hasBatchTasksArgument = json.TryGetPropertyValue("tasks", out var tasksNode)
+                                    && tasksNode is not null;
+        if (!string.IsNullOrWhiteSpace(resumeSubAgentId) && hasBatchTasksArgument)
+            return Fail("resume_sub_agent_id can only be used with a single task, not tasks batch mode.");
         if (!string.IsNullOrWhiteSpace(task) && batchTasksResult.Tasks is not null)
             return Fail("���� 'task' �� 'tasks' �����ѡһ������ͬʱ���롣");
         if (string.IsNullOrWhiteSpace(task) && batchTasksResult.Tasks is null)
             return Fail("���� 'task' �� 'tasks' �Ǳ���ġ�����ģʽ���봫�� JSON array��");
         if (batchTasksResult.Error is not null)
             return Fail(batchTasksResult.Error);
+        if (!string.IsNullOrWhiteSpace(resumeSubAgentId) && !string.IsNullOrWhiteSpace(args.PoolName))
+            return Fail("resume_sub_agent_id cannot be combined with pool_name; pooled agents already own a reusable session identity.");
 
         var templateId = GetStringProp(json, "agent_template")
                       ?? GetStringProp(json, "template")
@@ -119,19 +125,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var originToolId = GetStringProp(json, "origin_tool_id")
                         ?? GetStringProp(json, "originToolId")
                         ?? "spawn_sub_agent";
-        var timeoutSeconds = GetIntArg(json, request, "timeout_seconds", "timeoutSeconds");
         var workingDirectory = GetStringArg(
             json,
             request,
             "working_directory",
             "workingDirectory");
-        var maxRounds = GetIntArg(json, request, "max_rounds", "maxRounds")
-                     ?? DefaultSubAgentMaxRounds;
-        if (maxRounds is < 1 or > MaximumSubAgentMaxRounds)
-        {
-            return Fail(
-                $"max_rounds must be between 1 and {MaximumSubAgentMaxRounds}. Received: {maxRounds}.");
-        }
                 var capabilityRequirements = GetStringProp(json, "capability_requirements")
                                  ?? GetStringProp(json, "capabilityRequirements")
                                  ?? request.Parameters.GetValueOrDefault("capability_requirements");
@@ -198,7 +196,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         // �� pool_name �ǿ�ʱ���߳ػ�����·����������ԭ��һ�����Ӵ����߼���
         if (!string.IsNullOrWhiteSpace(args.PoolName))
         {
-            var pool = _services.GetService<SubAgentPool>();
+            var pool = _services.GetService<ISubAgentPool>();
             if (pool == null)
                 return ToolExecutionResult.Fail(
                     "? SubAgentPool ����δע�ᡣ���� DI ���á�");
@@ -219,8 +217,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var spawnRequest = BuildSpawnRequest(
                             args, request, context, json, task!,
                             template, childLlmRoute, childCapability,
-                            taskPlanning, permissionMode, timeoutSeconds,
-                            maxRounds, workingDirectory, originToolId,
+                            taskPlanning, permissionMode,
+                            workingDirectory, originToolId,
                             parentContextSnapshot, delegation);
                         var createResult = await pool.CreateAsync(
                             args.PoolName, spawnRequest, ct);
@@ -330,8 +328,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var execSpawnRequest = BuildSpawnRequest(
                             args, request, context, json, task!,
                             template, childLlmRoute, childCapability,
-                            taskPlanning, permissionMode, timeoutSeconds,
-                            maxRounds, workingDirectory, originToolId,
+                            taskPlanning, permissionMode,
+                            workingDirectory, originToolId,
                             parentContextSnapshot, delegation);
                         var result = await pool.ExecuteAsync(
                             args.PoolName, execSpawnRequest, ct);
@@ -386,7 +384,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     LlmConfig = childLlmRoute.Config,
                                     LlmProfile = childLlmRoute.Profile,
                 ParentContextSnapshot = parentContextSnapshot,
-                MaxRounds = maxRounds,
                 CapabilityPolicy = childCapability,
                 ParentTaskId = GetStringProp(json, "parent_task_id") ?? GetStringProp(json, "parentTaskId"),
                     TaskPlanId = taskPlanning.TaskPlanId,
@@ -397,7 +394,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     AllowSubDelegation = childAllowSubDelegation,
                     AllowAgentCreation = taskPlanning.AllowAgentCreation,
                     PermissionMode = permissionMode,
-                    TimeoutSeconds = timeoutSeconds,
                     ParentExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
                     BatchId = GetStringProp(json, "batch_id")
                            ?? GetStringProp(json, "batchId"),
@@ -407,10 +403,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
                 return new ToolExecutionResult
                 {
-                    Success = batch.Status is "completed" or "running",
+                    Success = batch.Status is "completed" or "running" or "budget_exhausted" or "partial_budget_exhausted",
                     Output = BuildBatchToolOutput(batch),
                     Error = batch.Error,
-                    ExitCode = batch.Status is "completed" or "running" ? 0 : 1,
+                    ExitCode = batch.Status is "completed" or "running" or "budget_exhausted" or "partial_budget_exhausted" ? 0 : 1,
                 };
             }
             catch (InvalidOperationException ex)
@@ -431,6 +427,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 WorkingDirectory = workingDirectory,
                 TemplateId = template.TemplateId,
                 Task = task!,
+                ResumeSubSessionId = resumeSubAgentId,
                 DelegationProtocol = DelegationProtocolVersion,
                 Question = delegation.Question,
                 Scope = delegation.Scope,
@@ -442,7 +439,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 LlmConfig = childLlmRoute.Config,
                                 LlmProfile = childLlmRoute.Profile,
                 ParentContextSnapshot = parentContextSnapshot,
-                MaxRounds = maxRounds,
                 CapabilityPolicy = childCapability,
                 TaskPlanId = taskPlanning.TaskPlanId,
                 TaskNodeId = taskPlanning.TaskNodeId,
@@ -455,7 +451,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 AssignedObjective = taskPlanning.AssignedObjective,
                 ExpectedOutputContract = taskPlanning.ExpectedOutputContract,
                 PermissionMode = permissionMode,
-                TimeoutSeconds = timeoutSeconds,
                 ParentExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
                 InvocationId = GetStringProp(json, "invocation_id")
                             ?? GetStringProp(json, "invocationId"),
@@ -465,12 +460,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
             if (isSync)
             {
+                var handled = invocationResult.Status is "completed" or "budget_exhausted";
                 return new ToolExecutionResult
                 {
-                    Success = invocationResult.Status == "completed",
+                    Success = handled,
                     Output = BuildSingleToolOutput(invocationResult),
-                    Error = invocationResult.Status == "completed" ? null : invocationResult.Error,
-                    ExitCode = invocationResult.Status == "completed" ? 0 : 1,
+                    Error = handled ? null : invocationResult.Error,
+                    ExitCode = handled ? 0 : 1,
                 };
             }
 
@@ -683,6 +679,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             runId = result.RunId,
             taskId = result.TaskId,
             status = result.Status,
+            resumable = result.Status == "budget_exhausted",
+            resumeSubAgentId = result.Status == "budget_exhausted" ? result.SubSessionId : null,
             summary = GetSectionOrFallback(sections, "SUMMARY", result.Reply),
             changes = SplitSectionList(sections.GetValueOrDefault("CHANGES")),
             evidence = SplitSectionList(sections.GetValueOrDefault("EVIDENCE")),
@@ -883,8 +881,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         CapabilityPolicy capability,
         TaskPlanningSpawnContext taskPlanning,
         string permissionMode,
-        int? timeoutSeconds,
-        int maxRounds,
         string? workingDirectory,
         string originToolId,
         string? parentContextSnapshot,
@@ -902,7 +898,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             LlmConfig = llmRoute.Config,
             LlmProfile = llmRoute.Profile,
             ParentContextSnapshot = parentContextSnapshot,
-            MaxRounds = maxRounds,
             CapabilityPolicy = capability,
             TaskPlanId = taskPlanning.TaskPlanId,
             TaskNodeId = taskPlanning.TaskNodeId,
@@ -914,7 +909,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             AllowAgentCreation = taskPlanning.AllowAgentCreation,
             AssignedObjective = taskPlanning.AssignedObjective,
             ExpectedOutputContract = taskPlanning.ExpectedOutputContract,
-            TimeoutSeconds = timeoutSeconds,
             ParentExecutionDeadlineUtc = context.ExecutionDeadlineUtc,
             InvocationId = GetStringProp(json, "invocation_id")
                         ?? GetStringProp(json, "invocationId"),
@@ -1091,10 +1085,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["sync"] = args.Sync,
                 ["model"] = args.Model,
                 ["reuse_parent_context"] = args.ReuseParentContext,
+                ["resume_sub_agent_id"] = args.ResumeSubAgentId,
                 ["tools"] = args.Tools,
                 ["permission_mode"] = args.PermissionMode,
-                ["timeout_seconds"] = args.TimeoutSeconds,
-                ["max_rounds"] = args.MaxRounds,
                 ["working_directory"] = args.WorkingDirectory,
                 ["parent_task_id"] = args.ParentTaskId,
                 ["plan_id"] = args.PlanId,
@@ -1300,23 +1293,20 @@ public sealed record SubAgentToolArgs
     [ToolParam("true to wait for completion, false to run asynchronously.")]
     public bool? Sync { get; init; }
 
-        [ToolParam("Optional model id or provider/model id.")]
+    [ToolParam("Optional model id or provider/model id.")]
     public string? Model { get; init; }
 
     [ToolParam("���ø���������װ�������ģ�Fork + ��֦��ע���Ӵ�������Ĭ�� false��")]
     public bool? ReuseParentContext { get; init; }
+
+    [ToolParam("Existing sub-agent id to resume with preserved context and a fresh Pudding-managed budget. Do not combine with tasks or pool_name.")]
+    public string? ResumeSubAgentId { get; init; }
 
     [ToolParam("Optional comma-separated allowed tool id subset for the child agent.")]
     public string? Tools { get; init; }
 
     [ToolParam("Permission inheritance mode: inherit or low.")]
     public string? PermissionMode { get; init; }
-
-    [ToolParam("Optional sub-agent timeout. Must not exceed runtime.execution.json maxTimeoutSeconds.")]
-    public int? TimeoutSeconds { get; init; }
-
-    [ToolParam("Maximum child Agent Loop rounds, 1-500. Default: 500.")]
-    public int? MaxRounds { get; init; }
 
     [ToolParam("Optional child file-tool root directory. WorkspaceId remains a business identity and is not converted to a path.")]
     public string? WorkingDirectory { get; init; }

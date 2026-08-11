@@ -118,7 +118,7 @@ public sealed class SubAgentToolTaskPlanningTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_PropagatesExplicitMaxRounds()
+    public async Task ExecuteAsync_ParentSuppliedExecutionBudgetsAreIgnored()
     {
         var invocation = new RecordingSubAgentInvocationService
         {
@@ -131,11 +131,58 @@ public sealed class SubAgentToolTaskPlanningTests
         var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
 
         var result = await tool.ExecuteAsync(CreateRequest(
-            """{"task":"Inspect the runtime","sync":true,"max_rounds":15}"""));
+            """{"task":"Inspect the runtime","sync":true,"max_rounds":15,"timeout_seconds":30}"""));
 
         Assert.IsTrue(result.Success, result.Error);
         Assert.IsNotNull(invocation.LastRequest);
-        Assert.AreEqual(15, invocation.LastRequest!.MaxRounds);
+        Assert.IsNull(invocation.LastRequest!.MaxRounds);
+        Assert.IsNull(invocation.LastRequest.TimeoutSeconds);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_BudgetExhaustedResultIsHandledAndExposesResumeIdentity()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "budget_exhausted",
+            NextReply = "SUMMARY: checkpoint saved\nBLOCKERS: normal budget exhausted",
+        };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Continue implementation","sync":true,"resume_sub_agent_id":"session_parent-sub-child"}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("session_parent-sub-child", invocation.LastRequest?.ResumeSubSessionId);
+        StringAssert.Contains(result.Output, "\"status\": \"budget_exhausted\"");
+        StringAssert.Contains(result.Output, "\"resumable\": true");
+        StringAssert.Contains(result.Output, "\"resumeSubAgentId\": \"session_parent-sub-child\"");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ResumeIdentityRejectsBatchMode()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest("""
+        {
+          "tasks": [{"task_id":"one","task":"Continue"}],
+          "resume_sub_agent_id":"session_parent-sub-child"
+        }
+        """));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "single task");
+        Assert.IsNull(invocation.LastRequest);
     }
 
     [TestMethod]
@@ -245,24 +292,6 @@ public sealed class SubAgentToolTaskPlanningTests
         Assert.IsNotNull(invocation.LastRequest);
         Assert.AreEqual("persistent-root-agent", invocation.LastRequest!.ParentAgentInstanceId);
         Assert.AreEqual("ephemeral-planner-session", invocation.LastRequest.ParentAgentId);
-    }
-
-    [TestMethod]
-    public async Task ExecuteAsync_RejectsOutOfRangeMaxRounds()
-    {
-        var invocation = new RecordingSubAgentInvocationService();
-        var services = CreateServices(
-            invocation,
-            new AllowingDelegationPolicy(),
-            CreateStore(depth: 0, maxDepth: 2));
-        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
-
-        var result = await tool.ExecuteAsync(CreateRequest(
-            """{"task":"Inspect the runtime","sync":true,"max_rounds":501}"""));
-
-        Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "max_rounds must be between 1 and 500");
-        Assert.IsNull(invocation.LastRequest);
     }
 
     [TestMethod]

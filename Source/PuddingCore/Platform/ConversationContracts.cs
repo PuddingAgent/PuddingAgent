@@ -112,6 +112,7 @@ public static class ConversationEventTypes
 
     public const string SubAgentRunCreated = "subagent.run.created";
     public const string SubAgentRunStarted = "subagent.run.started";
+    public const string SubAgentBudgetNotice = "subagent.budget.notice";
     public const string SubAgentRunContextAssembled = "subagent.run.context_assembled";
     public const string SubAgentRoundStarted = "subagent.round.started";
     public const string SubAgentRoundCompleted = "subagent.round.completed";
@@ -122,6 +123,7 @@ public static class ConversationEventTypes
     public const string SubAgentToolCompleted = "subagent.tool.completed";
     public const string SubAgentToolFailed = "subagent.tool.failed";
     public const string SubAgentRunCompleted = "subagent.run.completed";
+    public const string SubAgentRunBudgetExhausted = "subagent.run.budget_exhausted";
     public const string SubAgentRunFailed = "subagent.run.failed";
     public const string SubAgentRunCancelled = "subagent.run.cancelled";
     public const string SubAgentRunTimedOut = "subagent.run.timed_out";

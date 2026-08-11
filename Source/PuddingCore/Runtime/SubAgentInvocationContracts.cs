@@ -40,6 +40,11 @@ public sealed record SubAgentInvocationRequest
     public string? ParentAgentId { get; init; }
     public required string TemplateId { get; init; }
     public required string Task { get; init; }
+    /// <summary>
+    /// Resume an existing child session with a fresh system-managed budget window.
+    /// The parent selects only the session identity; Pudding owns all numeric budgets.
+    /// </summary>
+    public string? ResumeSubSessionId { get; init; }
     public string? DelegationProtocol { get; init; }
     public string? Question { get; init; }
     public string? Scope { get; init; }
@@ -143,10 +148,29 @@ public sealed record SubAgentBatchInvocationResult
 /// </summary>
 public sealed record SubAgentExecutionOptions
 {
+    public const int LargeTaskMaxRounds = 600;
+    public const int LargeTaskMaxToolCallsTotal = 2400;
+    public const int LargeTaskMaxTimeoutSeconds = 24 * 60 * 60;
+    public const int DefaultBudgetGraceRounds = 20;
+    public const int DefaultBudgetGraceTimeoutSeconds = 30 * 60;
+
     public int MaxConcurrentPerTemplate { get; init; } = 3;
     public int MaxConcurrentPerWorkspace { get; init; } = 6;
-    public int DefaultTimeoutSeconds { get; init; } = 3600;
-    public int MaxTimeoutSeconds { get; init; } = 3600;
+    /// <summary>System-managed child Agent Loop budget. Parent agents cannot override it.</summary>
+    public int MaxRounds { get; init; } = LargeTaskMaxRounds;
+    /// <summary>System-managed total child tool-call budget. Parent agents cannot override it.</summary>
+    public int MaxToolCallsTotal { get; init; } = LargeTaskMaxToolCallsTotal;
+    /// <summary>System-managed child hard timeout. Parent agents cannot override it.</summary>
+    public int MaxTimeoutSeconds { get; init; } = LargeTaskMaxTimeoutSeconds;
+    /// <summary>
+    /// Cleanup rounds granted after the normal round or time budget is exhausted.
+    /// Runtime clamps this system setting to 10-50 rounds.
+    /// </summary>
+    public int BudgetGraceRounds { get; init; } = DefaultBudgetGraceRounds;
+    /// <summary>
+    /// Portion of the hard timeout reserved for cleanup. It never extends the hard deadline.
+    /// </summary>
+    public int BudgetGraceTimeoutSeconds { get; init; } = DefaultBudgetGraceTimeoutSeconds;
     /// <summary>
     /// 同步子代理必须在父 Turn 截止时间前释放的收尾窗口。
     /// 用于让父 Agent 消化结果、生成最终回复并提交唯一终态。

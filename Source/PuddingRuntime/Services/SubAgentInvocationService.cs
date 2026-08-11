@@ -44,7 +44,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         var options = _config.GetOptions().SubAgents;
         ValidatePermissionMode(request.PermissionMode);
         var timeoutSeconds = ResolveTimeoutSeconds(request.TimeoutSeconds, options);
-        var spawnRequest = BuildSpawnRequest(request, timeoutSeconds);
+        var maxRounds = ResolveMaxRounds(request.MaxRounds, options);
+        var spawnRequest = BuildSpawnRequest(request, timeoutSeconds, maxRounds);
 
         if (request.IsAsync)
         {
@@ -65,6 +66,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         ValidateBatchTasks(request.Tasks, options);
 
         var timeoutSeconds = ResolveTimeoutSeconds(request.TimeoutSeconds, options);
+        var maxRounds = ResolveMaxRounds(request.MaxRounds, options);
         var batchId = !string.IsNullOrWhiteSpace(request.BatchId)
             ? request.BatchId.Trim()
             : string.IsNullOrWhiteSpace(request.ParentTaskId)
@@ -72,7 +74,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
                 : request.ParentTaskId.Trim();
 
         var childRequests = request.Tasks
-            .Select(task => BuildSpawnRequest(request, task, batchId, timeoutSeconds))
+            .Select(task => BuildSpawnRequest(request, task, batchId, timeoutSeconds, maxRounds))
             .ToArray();
 
         if (request.IsAsync)
@@ -191,7 +193,10 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         }
     }
 
-    private static SubAgentSpawnRequest BuildSpawnRequest(SubAgentInvocationRequest request, int timeoutSeconds) => new()
+    private static SubAgentSpawnRequest BuildSpawnRequest(
+        SubAgentInvocationRequest request,
+        int timeoutSeconds,
+        int maxRounds) => new()
     {
         ParentSessionId = request.ParentSessionId,
         ParentAgentId = request.ParentAgentId,
@@ -203,7 +208,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         LlmConfig = request.LlmConfig,
                 LlmProfile = request.LlmProfile,
         ParentContextSnapshot = request.ParentContextSnapshot,
-        MaxRounds = request.MaxRounds ?? 200, // align with AgentExecutionGuardrails.MaxRounds ceiling (default 10 was too low, sub-agents repeatedly hit the cap)
+        ReuseSubSessionId = request.ResumeSubSessionId,
+        MaxRounds = maxRounds,
         CapabilityPolicy = request.CapabilityPolicy,
         TaskPlanId = request.TaskPlanId,
         TaskNodeId = request.TaskNodeId,
@@ -226,7 +232,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         SubAgentBatchInvocationRequest request,
         SubAgentBatchTask task,
         string batchId,
-        int timeoutSeconds) => new()
+        int timeoutSeconds,
+        int maxRounds) => new()
     {
         ParentSessionId = request.ParentSessionId,
         ParentAgentId = request.ParentAgentId,
@@ -238,7 +245,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         LlmConfig = request.LlmConfig,
                 LlmProfile = request.LlmProfile,
         ParentContextSnapshot = request.ParentContextSnapshot,
-        MaxRounds = request.MaxRounds ?? 200, // align with AgentExecutionGuardrails.MaxRounds ceiling (default 10 was too low, sub-agents repeatedly hit the cap)
+        MaxRounds = maxRounds,
         CapabilityPolicy = request.CapabilityPolicy,
         TaskPlanId = request.TaskPlanId,
         TaskNodeId = task.TaskId,
@@ -260,13 +267,27 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
 
     private static int ResolveTimeoutSeconds(int? requested, SubAgentExecutionOptions options)
     {
-        var value = requested ?? options.DefaultTimeoutSeconds;
+        var value = requested ?? options.MaxTimeoutSeconds;
         if (value <= 0)
             throw new InvalidOperationException("Sub-agent timeout_seconds must be greater than 0.");
         if (value > options.MaxTimeoutSeconds)
         {
             throw new InvalidOperationException(
                 $"Sub-agent timeout_seconds={value} exceeds configured maxTimeoutSeconds={options.MaxTimeoutSeconds}.");
+        }
+
+        return value;
+    }
+
+    private static int ResolveMaxRounds(int? requested, SubAgentExecutionOptions options)
+    {
+        var value = requested ?? options.MaxRounds;
+        if (value <= 0)
+            throw new InvalidOperationException("Sub-agent max rounds must be greater than 0.");
+        if (value > options.MaxRounds)
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent max rounds={value} exceeds configured maxRounds={options.MaxRounds}.");
         }
 
         return value;
@@ -318,6 +339,12 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
             return "completed";
         if (results.Any(r => r.Status == "failed"))
             return "partial_failed";
+        if (results.Any(r => r.Status == "budget_exhausted"))
+        {
+            return results.All(r => r.Status is "completed" or "budget_exhausted")
+                ? "budget_exhausted"
+                : "partial_budget_exhausted";
+        }
         return "running";
     }
 
@@ -325,8 +352,10 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
     {
         var completed = results.Count(r => r.Status == "completed");
         var running = results.Count(r => r.Status == "running");
+        var budgetExhausted = results.Count(r => r.Status == "budget_exhausted");
         var failed = results.Count(r => r.Status == "failed");
         var timedOut = results.Count(r => r.Status == "timed_out");
-        return $"{results.Count} sub-agents: {completed} completed, {running} running, {failed} failed, {timedOut} timed out.";
+        return $"{results.Count} sub-agents: {completed} completed, {budgetExhausted} budget exhausted/resumable, " +
+               $"{running} running, {failed} failed, {timedOut} timed out.";
     }
 }

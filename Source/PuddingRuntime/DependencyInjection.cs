@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
+using PuddingCode.Orchestration;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingMemoryEngine;
@@ -152,6 +153,9 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();
         services.AddSingleton<IExecutionProgressRegistry, ExecutionProgressRegistry>();
         services.AddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
+        services.TryAddSingleton<DesignCouncilRunStateMachine>();
+        services.TryAddSingleton<ISubAgentOrchestrationRunStore, InMemorySubAgentOrchestrationRunStore>();
+        services.TryAddSingleton<IDesignCouncilRuntimeService, DesignCouncilRuntimeService>();
         services.AddSingleton<ContextWindowManager>();
         services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
 

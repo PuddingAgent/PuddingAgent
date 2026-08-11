@@ -289,6 +289,11 @@ public sealed record SubAgentSpawnInfo
 public sealed record SubAgentResult
 {
     public required bool Success { get; init; }
+    /// <summary>
+    /// Canonical terminal status. Null preserves the legacy completed/failed mapping.
+    /// Includes the resumable budget_exhausted state.
+    /// </summary>
+    public string? Status { get; init; }
     public string? Reply { get; init; }
     public string? Error { get; init; }
     public TokenUsageDto? Usage { get; init; }

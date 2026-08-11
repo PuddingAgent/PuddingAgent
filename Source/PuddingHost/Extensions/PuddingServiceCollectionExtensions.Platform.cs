@@ -143,6 +143,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IChatMessageRepository>(sp => sp.GetRequiredService<ChatMessageRepository>());
         builder.Services.AddSingleton<ICompactionChatMessageStore>(sp => sp.GetRequiredService<ChatMessageRepository>());
         builder.Services.AddSingleton<ITokenUsageEventRepository, TokenUsageEventRepository>();
+        builder.Services.AddSingleton<IChatMessageBackfillSource, BackfillChatMessageSource>();
+        builder.Services.AddSingleton<ISkillEvolutionDataAccess, SkillEvolutionDataAccess>();
 
         // ── User/Team/Workspace member repositories ──
         builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();

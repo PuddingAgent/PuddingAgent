@@ -124,7 +124,11 @@ public sealed record SubAgentSpawnRequest
     /// <summary>复用已有子代理会话 ID。非空时跳过新 ID 生成，直接使用此 ID。
     /// 用于子代理池复用场景，保持会话连续以利用 KV-cache。</summary>
     public string? ReuseSubSessionId { get; init; }
-    public int MaxRounds { get; init; } = 200; // align with AgentExecutionGuardrails.MaxRounds ceiling (default 10 was too low)
+    /// <summary>
+    /// Internal Pudding budget override for role-specific workflows. Null uses runtime.execution.json.
+    /// This is not exposed by spawn_sub_agent to the parent model.
+    /// </summary>
+    public int? MaxRounds { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public string? TaskPlanId { get; init; }
     public string? TaskNodeId { get; init; }
@@ -136,6 +140,10 @@ public sealed record SubAgentSpawnRequest
     public bool? AllowAgentCreation { get; init; }
     public string? AssignedObjective { get; init; }
     public string? ExpectedOutputContract { get; init; }
+    /// <summary>
+    /// Internal Pudding budget override for role-specific workflows. Null uses runtime.execution.json.
+    /// This is not exposed by spawn_sub_agent to the parent model.
+    /// </summary>
     public int? TimeoutSeconds { get; init; }
     /// <summary>父执行冻结的绝对截止时间；子代理 deadline 不得晚于它。</summary>
     public DateTimeOffset? ParentExecutionDeadlineUtc { get; init; }
@@ -162,7 +170,7 @@ public sealed record SubAgentExecuteResult
     public required string SubSessionId { get; init; }
     public string? RunId { get; init; }
     public bool Success { get; init; }
-    /// <summary>Canonical terminal state: completed, failed, timed_out or cancelled.</summary>
+    /// <summary>Canonical terminal state: completed, budget_exhausted, failed, timed_out or cancelled.</summary>
     public string? Status { get; init; }
     public string? Reply { get; init; }
     public string? Error { get; init; }

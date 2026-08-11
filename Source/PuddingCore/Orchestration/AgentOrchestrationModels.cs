@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace PuddingCode.Orchestration;
@@ -161,6 +161,24 @@ public sealed record AgentOrchestrationNodeDefinition
         = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
+/// <summary>
+/// Versioned, pure-function predicate carried by an optional control edge (doc 83 §12.3).
+/// The <see cref="AgentOrchestrationEdgeCondition"/> first checks whether the upstream node reached
+/// a terminal state; the predicate then evaluates the committed output. No predicate means ordinary
+/// dependency. Evaluators are version- and contract-hash-managed; arbitrary string expressions are
+/// forbidden.
+/// </summary>
+public sealed record AgentOrchestrationEdgePredicate
+{
+    public required string EvaluatorId { get; init; }
+    public required string Version { get; init; }
+    public string? ContractHash { get; init; }
+    public required string SourcePortId { get; init; }
+    public string SourcePath { get; init; } = "$";
+    public IReadOnlyDictionary<string, JsonElement> Parameters { get; init; }
+        = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+}
+
 /// <summary>One dependency or output-visibility edge in the graph.</summary>
 public sealed record AgentOrchestrationEdgeDefinition
 {
@@ -172,6 +190,7 @@ public sealed record AgentOrchestrationEdgeDefinition
         = AgentOrchestrationEdgeCondition.OnSuccess;
     public IReadOnlyList<AgentOrchestrationDataBinding> Bindings { get; init; }
         = Array.Empty<AgentOrchestrationDataBinding>();
+    public AgentOrchestrationEdgePredicate? Predicate { get; init; }
 }
 
 /// <summary>
@@ -214,11 +233,20 @@ public sealed record AgentOrchestrationValidationOptions
     public bool AllowExplicitWriteNodes { get; init; }
 }
 
-/// <summary>Stable, machine-readable graph validation issue.</summary>
+/// <summary>
+/// Stable, machine-readable graph validation issue (doc 83 §8). Code/Message/Path are the
+/// canonical compiler fields. Severity/ElementType/ElementId/PortId are optional projection
+/// fields consumed by the validate API so the editor can locate the offending canvas element;
+/// they stay out of the pure compile semantics when absent.
+/// </summary>
 public sealed record AgentOrchestrationValidationIssue(
     string Code,
     string Message,
-    string? Path = null);
+    string? Path = null,
+    string Severity = "error",
+    string? ElementType = null,
+    string? ElementId = null,
+    string? PortId = null);
 
 /// <summary>Result of normalization and DAG validation.</summary>
 public sealed record AgentOrchestrationCompilationResult

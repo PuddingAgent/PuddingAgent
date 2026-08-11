@@ -302,7 +302,7 @@ public abstract class PuddingToolBase<TArgs> : IPuddingTool
         using var scope = BeginExecutionScope(request);
         try
         {
-            var args = DeserializeArgs(request.ArgumentsJson);
+            var args = DeserializeArgs(NormalizeArgumentsJson(request.ArgumentsJson));
             return await ExecuteCoreAsync(args, request.Context, ct);
         }
         catch (JsonException ex)
@@ -323,6 +323,14 @@ public abstract class PuddingToolBase<TArgs> : IPuddingTool
         TArgs args,
         ToolExecutionContext context,
         CancellationToken ct);
+
+    /// <summary>
+    /// Normalizes a tool-specific compatibility payload before the shared typed deserializer runs.
+    /// Implementations must keep the descriptor schema canonical and use this hook only at the
+    /// execution boundary.
+    /// </summary>
+    protected virtual string? NormalizeArgumentsJson(string? argumentsJson)
+        => argumentsJson;
 
     private static TArgs DeserializeArgs(string? argumentsJson)
     {

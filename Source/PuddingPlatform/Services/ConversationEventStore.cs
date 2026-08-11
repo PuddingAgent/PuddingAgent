@@ -420,11 +420,11 @@ public sealed class ConversationEventStore(
             )", ct);
 
         await db.Database.ExecuteSqlRawAsync(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ce_seq ON conversation_events(conversation_id, sequence)", ct);
+            "CREATE UNIQUE INDEX IF NOT EXISTS IX_conversation_events_conversation_id_sequence ON conversation_events(conversation_id, sequence)", ct);
         await db.Database.ExecuteSqlRawAsync(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ce_eid ON conversation_events(event_id)", ct);
+            "CREATE UNIQUE INDEX IF NOT EXISTS IX_conversation_events_event_id ON conversation_events(event_id)", ct);
         await db.Database.ExecuteSqlRawAsync(
-            "CREATE INDEX IF NOT EXISTS ix_ce_turn ON conversation_events(turn_id, type)", ct);
+            "CREATE INDEX IF NOT EXISTS IX_conversation_events_turn_id_type ON conversation_events(turn_id, type)", ct);
 
         await db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS conversation_projection_checkpoints (
