@@ -254,14 +254,25 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
             {
                 if (!TryValidateDetailedReport(result.Output, out var validationError, out var rawReport))
                 {
-                    logger.LogError(
-                        "[{Tool}] agent={Agent} INVALID_REPORT reason={Reason} output={OutputLen} chars",
+                    logger.LogWarning(
+                        "[{Tool}] agent={Agent} PARTIAL_REPORT reason={Reason} output={OutputLen} chars",
                         toolName, context.AgentInstanceId, validationError, rawReport?.Length ?? 0);
-                    return BuildInvalidReportFailure(
-                        result.Output,
-                        rawReport,
-                        validationError,
-                        toolName);
+
+                    // Partial-salvage: return what the sub-agent actually produced
+                    // with a warning header. The parent agent can still use the
+                    // information even when the report format is imperfect.
+                    if (!string.IsNullOrWhiteSpace(rawReport))
+                    {
+                        var salvaged = $"⚠ [Validation note: {validationError}]\n\n{rawReport}";
+                        return new ToolExecutionResult
+                        {
+                            Success = true,
+                            Output = salvaged,
+                        };
+                    }
+
+                    // Nothing to salvage — fall back to structured error.
+                    return BuildInvalidReportFailure(result.Output, rawReport, validationError, toolName);
                 }
 
                 logger.LogInformation(
