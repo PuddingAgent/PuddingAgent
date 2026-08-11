@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -85,6 +85,16 @@ public sealed partial class AgentExecutionService
     private readonly SkillEnforcerService? _skillEnforcer;
     private readonly ISessionExecutionGate _sessionExecutionGate;
     private readonly IExecutionProgressRegistry? _executionProgress;
+
+    // LLM 调用提取（审计 P0 #1）
+    private AgentExecutionLlmInvoker? _llmInvoker;
+    private AgentExecutionLlmInvoker LlmInvoker => _llmInvoker ??= new AgentExecutionLlmInvoker(
+        _llmClient, _llmInvocationService, _keyVaultService, _logger, _contextUsageSnapshotStore);
+
+    // 响应处理提取（审计 P0 #1）
+    private AgentExecutionResponseHandler? _responseHandler;
+    private AgentExecutionResponseHandler ResponseHandler => _responseHandler ??= new AgentExecutionResponseHandler(
+        _completionPolicy, _journal, _logger);
 
     public AgentExecutionService(
         AgentSessionManager sessionManager,
@@ -868,7 +878,7 @@ public sealed partial class AgentExecutionService
         return config with { ApiKey = apiKey };
     }
 
-    private static LlmInvocationProfile RequireInvocationProfile(RuntimeDispatchRequest request)
+    internal static LlmInvocationProfile RequireInvocationProfile(RuntimeDispatchRequest request)
         => request.LlmProfile
             ?? throw new InvalidOperationException(
                 $"Runtime dispatch for agent '{request.AgentInstanceId ?? "(unknown)"}' is missing LlmProfile. " +
@@ -1561,15 +1571,12 @@ public sealed partial class AgentExecutionService
             : endpoint;
     }
 
-    private void RecordProviderContextUsageSnapshot(string sessionId, TokenUsageDto usage)
+    internal static void RecordProviderContextUsageSnapshot(string sessionId, TokenUsageDto usage, ContextUsageSnapshotStore? store)
     {
-        if (_contextUsageSnapshotStore is null)
-            return;
-
-        _contextUsageSnapshotStore.RecordProviderUsage(sessionId, usage);
+        store?.RecordProviderUsage(sessionId, usage);
     }
 
-    private static TokenUsageDto ApplyResolvedModelCapacity(TokenUsageDto usage, LlmConfig? llmConfig)
+    internal static TokenUsageDto ApplyResolvedModelCapacity(TokenUsageDto usage, LlmConfig? llmConfig)
     {
         // Token usage is an observation of a concrete LLM call. The capacity
         // attached to it must therefore come from the resolved model config

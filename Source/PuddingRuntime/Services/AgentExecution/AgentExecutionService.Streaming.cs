@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -868,7 +868,7 @@ public sealed partial class AgentExecutionService
                         if (delta.Usage is not null)
                         {
                             usage = ApplyResolvedModelCapacity(delta.Usage, effectiveLlmConfig);
-                            RecordProviderContextUsageSnapshot(request.SessionId, usage);
+                            RecordProviderContextUsageSnapshot(request.SessionId, usage, _contextUsageSnapshotStore);
                         }
 
                         if (delta.ContinuationState is not null)

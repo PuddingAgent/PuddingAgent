@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -633,108 +633,28 @@ public sealed partial class AgentExecutionService
                     tool_count = llmTools.Count,
                     estimated_context_tokens = contextUsageSnapshot?.UsedTokens,
                 });
-                LlmResponse llmResp;
-                try
+                                var llmResult = await LlmInvoker.InvokeAsync(
+                    request,
+                    instance.AgentInstanceId,
+                    injectedHistory,
+                    llmTools,
+                    effectiveLlmConfig,
+                    prefixSnapshot,
+                    providerInputRecoveryAttempted,
+                    round,
+                    ct);
+
+                if (llmResult.ShouldRetryRound)
                 {
-                    if (_llmInvocationService is not null)
-                    {
-                        var facadeResult = await _llmInvocationService.InvokeAsync(new PuddingCode.Runtime.LlmInvocationRequest
-                        {
-                            WorkspaceId = request.WorkspaceId,
-                            SessionId = request.SessionId,
-                            AgentInstanceId = instance.AgentInstanceId,
-                            AgentTemplateId = request.AgentTemplateId,
-                            Profile = RequireInvocationProfile(request),
-                            Messages = injectedHistory,
-                            Tools = llmTools,
-                            PrefixSnapshot = prefixSnapshot,
-                            ConfigOverride = effectiveLlmConfig,
-                        }, ct);
-
-                        if (!facadeResult.Success)
-                        {
-                            if (!providerInputRecoveryAttempted
-                                && LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(
-                                    facadeResult.Error,
-                                    out var providerMaxInputTokens))
-                            {
-                                providerInputRecoveryAttempted = true;
-                                _contextUsageSnapshotStore?.RecordProviderInputLimitFailure(
-                                    request.SessionId,
-                                    providerMaxInputTokens);
-                                _logger.LogWarning(
-                                    "[AgentExec:ContextBudget] Provider rejected input length; recalibrating and retrying once session={Session} round={Round} providerMaxInput={ProviderMaxInput}",
-                                    request.SessionId,
-                                    round + 1,
-                                    providerMaxInputTokens);
-                                round--;
-                                continue;
-                            }
-
-                            _logger.LogError(
-                                "[AgentExec] LLM facade error round={Round} session={Session} error={Error}",
-                                round + 1, request.SessionId, facadeResult.Error);
-                            executionError = $"LLM API call failed: {facadeResult.Error}";
-                            finalMessage = executionError;
-                            stopReason = AgentLoopStopReason.Failed;
-                            execState = AgentExecutionState.Failed;
-                            _journal.Record(request.SessionId, new TurnRecord
-                            {
-                                Round = round,
-                                StartedAt = turnStart,
-                                CompletedAt = DateTimeOffset.UtcNow,
-                                Status = "FAILED",
-                                MessageSummary = Truncate(executionError, 512),
-                                ToolError = executionError,
-                            });
-                            await FireHooksAsync(h => h.OnFailedAsync(loopCtx, executionError, null, ct));
-                            await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.failed", new
-                            {
-                                sub_agent_id = request.SessionId,
-                                round = round + 1,
-                                duration_ms = llmSw.ElapsedMilliseconds,
-                                error = Truncate(facadeResult.Error ?? "LLM invocation failed.", 500),
-                            });
-                            break;
-                        }
-
-                        llmResp = new LlmResponse(
-                            facadeResult.ReplyText,
-                            facadeResult.ToolCalls,
-                            facadeResult.ReasoningContent,
-                            facadeResult.Usage,
-                            facadeResult.ContinuationState);
-                    }
-                    else
-                    {
-                        // ADR-027 legacy fallback for tests only (LLM client)
-                        llmResp = await _llmClient.ChatAsync(
-                            request.WorkspaceId, request.SessionId,
-                            request.AgentTemplateId, injectedHistory, llmTools, effectiveLlmConfig, ct);
-                    }
+                    providerInputRecoveryAttempted = true;
+                    round--;
+                    continue;
                 }
-                catch (Exception ex)
-                {
-                    if (!providerInputRecoveryAttempted
-                        && LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(ex, out var providerMaxInputTokens))
-                    {
-                        providerInputRecoveryAttempted = true;
-                        _contextUsageSnapshotStore?.RecordProviderInputLimitFailure(
-                            request.SessionId,
-                            providerMaxInputTokens);
-                        _logger.LogWarning(
-                            ex,
-                            "[AgentExec:ContextBudget] Provider rejected input length; recalibrating and retrying once session={Session} round={Round} providerMaxInput={ProviderMaxInput}",
-                            request.SessionId,
-                            round + 1,
-                            providerMaxInputTokens);
-                        round--;
-                        continue;
-                    }
 
-                    _logger.LogError(ex, "[AgentExec] LLM API error round={Round} session={Session}", round + 1, request.SessionId);
-                    executionError = $"LLM API call failed: {ex.Message}";
-                    finalMessage = executionError;
+                if (!llmResult.Success)
+                {
+                    executionError = llmResult.ExecutionError!;
+                    finalMessage = llmResult.FinalMessage!;
                     stopReason = AgentLoopStopReason.Failed;
                     execState = AgentExecutionState.Failed;
                     _journal.Record(request.SessionId, new TurnRecord
@@ -746,21 +666,22 @@ public sealed partial class AgentExecutionService
                         MessageSummary = Truncate(executionError, 512),
                         ToolError = executionError,
                     });
-                    await FireHooksAsync(h => h.OnFailedAsync(loopCtx, executionError, ex, ct));
+                    await FireHooksAsync(h => h.OnFailedAsync(loopCtx, executionError, null, ct));
                     await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.failed", new
                     {
                         sub_agent_id = request.SessionId,
                         round = round + 1,
                         duration_ms = llmSw.ElapsedMilliseconds,
-                        error = Truncate(ex.Message, 500),
+                        error = Truncate(llmResult.ExecutionError ?? "LLM invocation failed.", 500),
                     });
                     break;
                 }
-                if (llmResp.Usage is not null)
-                {
-                    usage = ApplyResolvedModelCapacity(llmResp.Usage, effectiveLlmConfig);
-                    RecordProviderContextUsageSnapshot(request.SessionId, usage);
-                }
+
+                var llmResp = llmResult.Response!;
+                usage = llmResult.Usage;
+
+                // Note: the LLM call (facade / legacy) and error handling
+                // are now delegated to AgentExecutionLlmInvoker.
                 llmSw.Stop();
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
                 ReportMeaningfulProgress(
