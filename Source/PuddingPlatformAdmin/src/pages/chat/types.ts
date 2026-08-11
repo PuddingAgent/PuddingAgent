@@ -332,19 +332,20 @@ export type SubAgentCardStatus =
   | 'spawning'
   | 'running'
   | 'completed'
+  | 'budget_exhausted'
   | 'failed'
   | 'cancelled'
   | 'timed_out'
   | 'interrupted';
 
 export interface SubAgentActivityDetail {
-  kind: 'model_message' | 'reasoning_notice' | 'tool_input' | 'tool_output';
+  kind: 'model_message' | 'reasoning' | 'tool_input' | 'tool_output';
   label: string;
   content: string;
   truncated?: boolean;
 }
 
-/** canonical 子代理事件的安全、有界 UI 投影；不包含隐藏原始思维链。 */
+/** canonical 子代理事件的有界 UI 投影，包含模型实际返回且已脱敏的推理预览。 */
 export interface SubAgentActivity {
   eventId?: string;
   type: string;
@@ -406,3 +407,14 @@ export interface SubAgentCard {
 
 /** 子代理卡片注册表：turnId → SubAgentCard */
 export type SubAgentCardMap = Record<string, SubAgentCard>;
+
+/**
+ * 主代理消息中的委派摘要。子代理的任务、工具与输出详情只由托盘坞展示，
+ * 主消息仅消费这份有界聚合状态。
+ */
+export interface ParentDelegationActivity {
+  activeCount: number;
+  label?: string;
+  startedAt: number;
+  updatedAt: number;
+}

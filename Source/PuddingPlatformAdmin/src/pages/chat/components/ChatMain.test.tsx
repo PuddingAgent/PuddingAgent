@@ -361,6 +361,7 @@ describe('ChatMain workbench header', () => {
           turnId: 'sa-running',
           subSessionId: 'session-1-sub-running',
           status: 'running',
+          originToolId: 'spawn_sub_agent',
           taskSummary: 'running task',
           spawnedAt: 1_000,
         },
@@ -378,6 +379,12 @@ describe('ChatMain workbench header', () => {
 
     expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(1);
     expect(_mockLatestMessageListProps.subAgentCards).toBeUndefined();
+    expect(_mockLatestMessageListProps.parentDelegationActivity).toEqual({
+      activeCount: 1,
+      label: undefined,
+      startedAt: 1_000,
+      updatedAt: 1_000,
+    });
     expect(screen.getByTestId('subagent-activity-dock')).toBeTruthy();
     expect(screen.queryByTestId('subagent-anchor')).toBeNull();
   });

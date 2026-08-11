@@ -32,6 +32,28 @@ public sealed class ToolProfileConfigTests
     }
 
     [TestMethod]
+    public void HeartbeatProfile_IncludesAutonomousProgressTools()
+    {
+        string[] requiredTools =
+        [
+            "query_session_logs",
+            "query_sub_agents",
+            "spawn_sub_agent",
+            "smart_develop",
+            "file_patch",
+            "terminal_start",
+            "shell",
+        ];
+
+        foreach (var toolId in requiredTools)
+        {
+            Assert.IsTrue(
+                ToolProfileConfig.ShouldInclude(ToolProfileConfig.HeartbeatProfileName, toolId),
+                $"Heartbeat profile must permit already-authorized autonomous tool '{toolId}'.");
+        }
+    }
+
+    [TestMethod]
     public void ResolveProfile_SubAgentWithExplicitToolSelection_DoesNotApplyFallbackProfile()
     {
         var request = CreateRequest(

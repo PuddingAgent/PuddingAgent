@@ -268,6 +268,22 @@ public sealed record TurnStepDto
     public long? DurationMs { get; init; }
 }
 
+/// <summary>Runtime 调度链路的稳定标记。幂等命中是传输事实，不是可展示的 Agent 回复。</summary>
+public static class RuntimeDispatchMarkers
+{
+    public const string DuplicateMessageStopReason = "DuplicateMessage";
+    public const string DuplicateMessagePlaceholder = "(duplicate message — already processed)";
+    public const string DuplicateMessagePlaceholderLegacyHyphen = "(duplicate message - already processed)";
+
+    public static bool IsDuplicateMessage(string? stopReason, string? replyText)
+        => string.Equals(stopReason, DuplicateMessageStopReason, StringComparison.OrdinalIgnoreCase)
+           || IsDuplicateMessagePlaceholder(replyText);
+
+    public static bool IsDuplicateMessagePlaceholder(string? content)
+        => string.Equals(content?.Trim(), DuplicateMessagePlaceholder, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(content?.Trim(), DuplicateMessagePlaceholderLegacyHyphen, StringComparison.OrdinalIgnoreCase);
+}
+
 /// <summary>Runtime 执行结果——Runtime 回传 Controller。</summary>
 public sealed record RuntimeDispatchResult
 {

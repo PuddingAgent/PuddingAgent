@@ -8,6 +8,7 @@ using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Messaging;
@@ -512,6 +513,85 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.AreEqual("owner", inboundEnvelope.From.Id);
         Assert.AreEqual("agent", transcript[1].Role);
         Assert.AreEqual("reply from target", transcript[1].Content);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_DuplicateRuntimeResult_DoesNotPersistOrSendPlaceholderReply()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimFrom = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Agent,
+                Id = "agent-a",
+                DisplayName = "Agent A",
+            },
+            ClaimContent = "already delivered",
+        };
+        var messageSystem = new RecordingMessageSystem();
+        var services = new ServiceCollection();
+        services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
+        services.AddSingleton(inbox);
+        services.AddSingleton(new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames =
+            [
+                ServerSentEventFrame.Json("done", new
+                {
+                    reply = RuntimeDispatchMarkers.DuplicateMessagePlaceholder,
+                    duplicateMessage = true,
+                    stopReason = RuntimeDispatchMarkers.DuplicateMessageStopReason,
+                }),
+            ],
+        });
+        services.AddSingleton<IMessageSystem>(messageSystem);
+        services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<RecordingMessageInbox>());
+        services.AddScoped<IRuntimeAgentDispatcher>(sp => sp.GetRequiredService<RecordingRuntimeAgentDispatcher>());
+        services.AddScoped<IWorkspaceAgentCatalog>(_ => new RecordingWorkspaceAgentCatalog(
+            Agent("agent-b", mainSessionId: "agent-b-main-session")));
+        services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(
+            [Agent("agent-b", mainSessionId: "agent-b-main-session")]));
+        services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
+        services.AddSingleton<IChatTranscriptWriter, ChatTranscriptWriter>();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = "m1",
+                SessionId = "agent-b-main-session",
+                Role = "user",
+                Content = "already persisted inbound",
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var dispatcher = new MessageDeliveryDispatcher(
+            new RecordingInternalEventBus(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            NullLogger<MessageDeliveryDispatcher>.Instance);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        await using var assertScope = provider.CreateAsyncScope();
+        var assertDb = assertScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var transcript = await assertDb.ChatMessages
+            .Where(message => message.SessionId == "agent-b-main-session")
+            .ToListAsync();
+        Assert.HasCount(1, transcript);
+        Assert.IsFalse(transcript.Any(message =>
+            RuntimeDispatchMarkers.IsDuplicateMessagePlaceholder(message.Content)));
+        Assert.IsEmpty(messageSystem.Sent);
+        Assert.HasCount(1, inbox.Acked);
     }
 
     [TestMethod]

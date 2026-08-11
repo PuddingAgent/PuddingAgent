@@ -436,16 +436,19 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
                     if (!string.IsNullOrWhiteSpace(raw))
                     {
                         var loopResponse = AgentLoopResponse.Parse(raw);
-                        return string.IsNullOrWhiteSpace(loopResponse.Message)
-                            ? raw
-                            : loopResponse.Message;
+                        if (!string.IsNullOrWhiteSpace(loopResponse.Message))
+                            return loopResponse.Message;
+                        // Message is empty (e.g., agent returned only {"status":"DONE"}).
+                        // Don't return the useless raw JSON (~20 chars); fall through to
+                        // check the summary field in the spawn_sub_agent envelope.
                     }
                 }
 
                 // Alternative tool implementations may expose the complete report
                 // directly in summary and omit rawOutput.
                 if (document.RootElement.TryGetProperty("summary", out var summary)
-                    && summary.ValueKind == JsonValueKind.String)
+                    && summary.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(summary.GetString()))
                     return summary.GetString();
             }
         }

@@ -123,10 +123,10 @@ public sealed partial class AgentExecutionService
             {
                 SessionId = request.SessionId,
                 AgentInstanceId = instance.AgentInstanceId,
-                ReplyText = AgentExecutionConstants.DuplicateMessagePlaceholder,
+                ReplyText = null,
                 IsSuccess = true,
                 ExecutionState = AgentExecutionState.Completed,
-                StopReason = "DuplicateMessage",
+                StopReason = RuntimeDispatchMarkers.DuplicateMessageStopReason,
             };
         }
         if (history.Count == 0)
@@ -684,6 +684,10 @@ public sealed partial class AgentExecutionService
                 // are now delegated to AgentExecutionLlmInvoker.
                 llmSw.Stop();
                 var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
+                // The sub-agent inspector is an explicit execution-audit surface. Preserve the
+                // provider's reasoning payload verbatim so operators can inspect what the model
+                // actually returned; only bound the event size below.
+                var rawReasoning = llmResp.ReasoningContent ?? "";
                 ReportMeaningfulProgress(
                     request,
                     "llm.completed",
@@ -691,6 +695,7 @@ public sealed partial class AgentExecutionService
                         "\u001e",
                         llmResp.ToolCalls?.Select(call => $"{call.Name}:{call.ArgumentsJson}") ?? []));
                 const int subAgentMessagePreviewLimit = 2048;
+                const int subAgentReasoningPreviewLimit = 4096;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.completed", new
                 {
                     sub_agent_id = request.SessionId,
@@ -704,8 +709,10 @@ public sealed partial class AgentExecutionService
                     tool_call_count = llmResp.ToolCalls?.Count ?? 0,
                     message_preview = Truncate(rawText, subAgentMessagePreviewLimit),
                     message_truncated = rawText.Length > subAgentMessagePreviewLimit,
-                    reasoning_available = !string.IsNullOrWhiteSpace(llmResp.ReasoningContent),
-                    reasoning_chars = llmResp.ReasoningContent?.Length ?? 0,
+                    reasoning_available = !string.IsNullOrWhiteSpace(rawReasoning),
+                    reasoning_chars = rawReasoning.Length,
+                    reasoning_preview = Truncate(rawReasoning, subAgentReasoningPreviewLimit),
+                    reasoning_truncated = rawReasoning.Length > subAgentReasoningPreviewLimit,
                 });
 
                 _logger.LogInformation(

@@ -136,10 +136,15 @@ DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
        （紧凑 Graph/Run 控制条 + 顶部运行 → 全宽画布 → 悬浮工作台 → SubAgent 模型/模板/角色设置与文本输出 → 图片生成/展示组件自有预览 → Revision/Layout CAS）
 
 Chat first paint → AgentConversationProjectionService
-  → 最近 20 条消息 + active run 最近 64 条过程明细/全量摘要
+  → 过滤 transport duplicate 占位、按 pudding-message envelope message_id 折叠历史重复入站
+  → system/heartbeat envelope 正文投影为 context.text，不把协议 JSON 显示在聊天气泡
+  → 最近 20 条可见消息 + active run 最近 64 条过程明细/全量摘要
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
+  → 主消息运行监视区（主代理当前阶段 + 最近推理摘要 + 有界子代理委派状态；不展开子代理内部过程）
+  → subAgentReducer（事件/快照统一投影；budget_exhausted 终态单调；原样展示有界的实际 reasoning_preview）
+  → SubAgentActivityDock（子代理任务/工具/轮次/输出详情；Agent-first 路由回退 mainSessionId 保证图标可见；预算耗尽显示为可恢复终态）
   → 展开过程摘要时才构建 rounds / trace chips
   → MessageItem 先渲染纯文本，异步加载 Markdown/KaTeX 增强块
   → 子代理检查器、会话诊断 Drawer、摄像头输入仅在首次打开时加载

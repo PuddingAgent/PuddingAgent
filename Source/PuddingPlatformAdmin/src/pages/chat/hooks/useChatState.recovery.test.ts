@@ -17,7 +17,10 @@ import {
   getTrackedActiveMessageIds,
   hasBlockingActiveTurn,
   hasTrackedActiveSessionMessages,
+  isChatStreamErrorEvent,
   isSubAgentConversationEvent,
+  looksLikePersistedErrorDiagnostic,
+  mergeHistoryWithLifecycleTurns,
   parseSessionEventTimestampMs,
   removeInjectedSteeringQueueItem,
   resolveActiveSessionReplayFromSequence,
@@ -25,14 +28,12 @@ import {
   resolveInitialWorkspaceId,
   resolveSessionReplayCursorSequence,
   resolveSessionReplayPollInterval,
+  resolveSubAgentDockSessionId,
   resolveSubAgentTaskSummary,
   resolveSubAgentTerminalOutput,
   resolveTerminalAssistantMarkdown,
   resolveTurnIdForEvent,
   shouldAdvanceSequenceForSessionEvent,
-  isChatStreamErrorEvent,
-  looksLikePersistedErrorDiagnostic,
-  mergeHistoryWithLifecycleTurns,
   shouldHydrateSessionEventReplay,
   shouldReplayEventsAfterHistory,
   shouldResetSequenceForSessionChange,
@@ -364,7 +365,7 @@ describe('chat session recovery decisions', () => {
   it('keeps accumulated streaming text when done reply only contains the post-tool tail', () => {
     const beforeTool = '# 商用密码技术\n\n这里是前半段完整说明。';
     const afterTool = '**当前工作目录下没有找到任何 PDF 文件**。';
-    const accumulated = beforeTool + '\n\n' + afterTool;
+    const accumulated = `${beforeTool}\n\n${afterTool}`;
 
     expect(resolveTerminalAssistantMarkdown(accumulated, afterTool)).toBe(
       accumulated,
@@ -641,6 +642,31 @@ describe('chat session recovery decisions', () => {
     );
 
     expect(Object.keys(cards)).toEqual(['sa-session-b-sub-22222222']);
+  });
+
+  it('falls back to the resolved main session for sub-agent dock cards on agent-first routes', () => {
+    const resolved = resolveSubAgentDockSessionId(null, 'session-main');
+
+    expect(resolved).toBe('session-main');
+    expect(
+      Object.keys(
+        filterSubAgentCardsForSession(
+          {
+            child: {
+              turnId: 'child',
+              subSessionId: 'session-main-sub-child',
+              taskSummary: 'agent-first child',
+              status: 'running',
+              spawnedAt: 1,
+            },
+          },
+          resolved,
+        ),
+      ),
+    ).toEqual(['child']);
+    expect(
+      resolveSubAgentDockSessionId('session-selected', 'session-main'),
+    ).toBe('session-selected');
   });
 
   it('reads sub-agent card text from backend event fields', () => {
@@ -988,7 +1014,10 @@ describe('compact result messages', () => {
           newSessionTitle: '压缩 - session-before',
         },
       } as any,
-      { newSessionId: 'session-after', newSessionTitle: '压缩 - session-before' },
+      {
+        newSessionId: 'session-after',
+        newSessionTitle: '压缩 - session-before',
+      },
     );
 
     expect(text).toContain('压缩诊断');
@@ -997,7 +1026,9 @@ describe('compact result messages', () => {
     expect(text).toContain('最后消息：`msg-last`');
     expect(text).toContain('旧 Session 大小：120 tokens / 12 messages');
     expect(text).toContain('摘要大小：88 chars / 22 tokens');
-    expect(text).toContain('摘要生成器：`CompositeContextCompactionSummaryGenerator`');
+    expect(text).toContain(
+      '摘要生成器：`CompositeContextCompactionSummaryGenerator`',
+    );
     expect(text).toContain('新 Session：`session-after`');
     expect(text).toContain('完成时间：`2026-06-28T09:10:11.0000000Z`');
   });

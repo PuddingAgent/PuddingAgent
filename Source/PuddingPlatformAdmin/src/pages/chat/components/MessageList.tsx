@@ -25,6 +25,7 @@ import type {
   ChatQuotedMessage,
   ChatTurn,
   MessageStatus,
+  ParentDelegationActivity,
   TimelineItem,
 } from '../types';
 import { inboundDebug } from '../utils/inboundDebug';
@@ -67,6 +68,8 @@ interface MessageListProps {
   currentUser?: { name?: string; avatar?: string };
   viewportScrollIntent?: ScrollIntent;
   onViewportScrollIntentHandled?: () => void;
+  /** 主代理对当前委派的有界摘要；子代理内部过程仍只在托盘坞展示。 */
+  parentDelegationActivity?: ParentDelegationActivity;
 }
 
 const toTimestamp = (value: string) => {
@@ -715,6 +718,7 @@ const MessageList: React.FC<MessageListProps> = ({
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
+  parentDelegationActivity,
 }) => {
   const chatStyles = useChatStyles();
   const { styles } = chatStyles;
@@ -795,6 +799,14 @@ const MessageList: React.FC<MessageListProps> = ({
       currentUser,
     ],
   );
+  const delegationTargetId = useMemo(() => {
+    if (!parentDelegationActivity) return undefined;
+    if (projection.activeItemId) return projection.activeItemId;
+    return [...projection.items]
+      .reverse()
+      .find((item) => item.kind === 'message' && item.block.role === 'agent')
+      ?.id;
+  }, [parentDelegationActivity, projection.activeItemId, projection.items]);
 
   const viewport = useMessageViewportRuntime({
     items: projection.items,
@@ -849,6 +861,9 @@ const MessageList: React.FC<MessageListProps> = ({
     return (
       <MessageRow
         block={item.block}
+        parentDelegationActivity={
+          item.id === delegationTargetId ? parentDelegationActivity : undefined
+        }
         sessionId={sessionId}
         workspaceId={workspaceId}
         defaultAvatarUrl={selectedAgent?.avatarUrl}

@@ -21,7 +21,11 @@ import type {
 } from '../hooks/useChatState';
 import { useNotificationSound } from '../hooks/useNotificationSound';
 import { useChatStyles } from '../styles';
-import type { ChatTurn, SubAgentCardMap } from '../types';
+import type {
+  ChatTurn,
+  ParentDelegationActivity,
+  SubAgentCardMap,
+} from '../types';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 
@@ -31,12 +35,15 @@ const DevPanel =
     : React.lazy(() => import('./DevPanel'));
 const HistorySearchModal =
   process.env.NODE_ENV === 'test'
-    ? (require('./HistorySearchModal').default as typeof import('./HistorySearchModal').default)
+    ? (require('./HistorySearchModal')
+        .default as typeof import('./HistorySearchModal').default)
     : React.lazy(() => import('./HistorySearchModal'));
 const SubAgentActivityDock =
   process.env.NODE_ENV === 'test'
-    ? (require('./SubAgentActivityDock').default as typeof import('./SubAgentActivityDock').default)
+    ? (require('./SubAgentActivityDock')
+        .default as typeof import('./SubAgentActivityDock').default)
     : React.lazy(() => import('./SubAgentActivityDock'));
+
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
@@ -194,7 +201,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const handleHistoryQuote = useCallback(
     (quoteText: string) => {
       // 将引用文本追加到当前输入框内容末尾
-      const current = (document.querySelector('textarea') as HTMLTextAreaElement)?.value ?? '';
+      const current =
+        (document.querySelector('textarea') as HTMLTextAreaElement)?.value ??
+        '';
       onInputChange(current ? `${current}\n${quoteText}` : quoteText);
     },
     [onInputChange],
@@ -205,13 +214,39 @@ const ChatMain: React.FC<ChatMainProps> = ({
     },
     [inputValue, onInputChange],
   );
-  const subAgentCount = React.useMemo(
+  const activeSubAgentCards = React.useMemo(
     () =>
       Object.values(subAgentCards ?? {}).filter(
         (card) => card.status === 'running' || card.status === 'spawning',
-      ).length,
+      ),
     [subAgentCards],
   );
+  const subAgentCount = activeSubAgentCards.length;
+  const parentDelegationActivity = React.useMemo<
+    ParentDelegationActivity | undefined
+  >(() => {
+    if (activeSubAgentCards.length === 0) return undefined;
+    const latest = [...activeSubAgentCards].sort(
+      (left, right) =>
+        (right.lastActivityAt ?? right.spawnedAt) -
+        (left.lastActivityAt ?? left.spawnedAt),
+    )[0];
+    const label =
+      latest.role ||
+      (latest.originToolId && latest.originToolId !== 'spawn_sub_agent'
+        ? latest.originToolId
+        : undefined);
+    return {
+      activeCount: activeSubAgentCards.length,
+      label,
+      startedAt: Math.min(...activeSubAgentCards.map((card) => card.spawnedAt)),
+      updatedAt: Math.max(
+        ...activeSubAgentCards.map(
+          (card) => card.lastActivityAt ?? card.spawnedAt,
+        ),
+      ),
+    };
+  }, [activeSubAgentCards]);
   const hasSubAgentActivity = React.useMemo(
     () => Object.keys(subAgentCards ?? {}).length > 0,
     [subAgentCards],
@@ -235,10 +270,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
       })),
     [turns],
   );
-  useAutoTts(
-    autoTtsMessages,
-    autoTtsEnabled,
-  );
+  useAutoTts(autoTtsMessages, autoTtsEnabled);
   useNotificationSound(turns, true);
 
   /** 根据当前 turns 和 loading 推导 Agent Console 状态文案 */
@@ -321,7 +353,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
       }
     };
 
-        void loadSession();
+    void loadSession();
     return () => {
       alive = false;
     };
@@ -331,7 +363,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const [reconnectCount, setReconnectCount] = React.useState(0);
   React.useEffect(() => {
     if (!reconnectCountRef) return;
-    const timer = setInterval(() => setReconnectCount(reconnectCountRef.current), 500);
+    const timer = setInterval(
+      () => setReconnectCount(reconnectCountRef.current),
+      500,
+    );
     return () => clearInterval(timer);
   }, [reconnectCountRef]);
 
@@ -342,9 +377,13 @@ const ChatMain: React.FC<ChatMainProps> = ({
     >
       <div className={styles.workbenchCenter}>
         {reconnectCount > 0 && (
-          <Alert type="warning" banner showIcon={false}
+          <Alert
+            type="warning"
+            banner
+            showIcon={false}
             message={`连接中断，正在重连（第 ${reconnectCount} 次）...`}
-            style={{ marginBottom: 0, borderRadius: 0 }} />
+            style={{ marginBottom: 0, borderRadius: 0 }}
+          />
         )}
         <WorkspaceNavigationHeader
           leading={
@@ -420,7 +459,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     className={styles.timelineRegion}
                     aria-label="会话时间线"
                   >
-                                        <MessageList
+                    <MessageList
                       turns={turns}
                       conversationView={conversationView}
                       sessionId={selectedSessionId}
@@ -443,7 +482,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       listEndRef={listEndRef}
                       currentUser={currentUser}
                       viewportScrollIntent={viewportScrollIntent}
-                      onViewportScrollIntentHandled={onViewportScrollIntentHandled}
+                      onViewportScrollIntentHandled={
+                        onViewportScrollIntentHandled
+                      }
+                      parentDelegationActivity={parentDelegationActivity}
                     />
                   </section>
                   <IntentConsole
@@ -495,17 +537,17 @@ const ChatMain: React.FC<ChatMainProps> = ({
 
             {devMode && (
               <React.Suspense fallback={null}>
-              <DevPanel
-                workspaceId={workspaceId}
-                sessionId={inferredSessionId}
-                rawEvents={rawEvents}
-                onRunBenchmarkPrompt={async (prompt, metadata) => {
-                  onInputChange(prompt);
-                  if (onSendWithMetadata) {
-                    await onSendWithMetadata(prompt, metadata);
-                  }
-                }}
-              />
+                <DevPanel
+                  workspaceId={workspaceId}
+                  sessionId={inferredSessionId}
+                  rawEvents={rawEvents}
+                  onRunBenchmarkPrompt={async (prompt, metadata) => {
+                    onInputChange(prompt);
+                    if (onSendWithMetadata) {
+                      await onSendWithMetadata(prompt, metadata);
+                    }
+                  }}
+                />
               </React.Suspense>
             )}
           </div>

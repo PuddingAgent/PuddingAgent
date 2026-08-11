@@ -240,8 +240,7 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 request.AgentId,
                 queuedSeconds);
 
-            var promptContent = heartbeatContent;
-            var heartbeatContentWithPrefix = $"── 系统心跳 ──\n\n{promptContent}";
+            var heartbeatContentWithPrefix = $"── 系统心跳 ──\n\n{heartbeatContent}";
 
             var envelope = new MessageEnvelope
             {
@@ -317,21 +316,23 @@ public sealed class HeartbeatOrchestrator : IHostedService
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            return $"当前时间 (UTC): {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}\n"
+            var fallbackPrompt = $"当前时间 (UTC): {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}\n"
                 + $"空闲时长: {queuedSeconds} 秒\n"
                 + $"Agent ID: {agentId}\n\n"
                 + "请检查是否有待处理的任务或需要主动执行的操作。";
+            return HeartbeatPromptComposer.AppendAutonomousExecutionContract(fallbackPrompt);
         }
 
         try
         {
-            return string.Format(prompt, agentId, queuedSeconds);
+            return HeartbeatPromptComposer.AppendAutonomousExecutionContract(
+                string.Format(prompt, agentId, queuedSeconds));
         }
         catch (FormatException)
         {
             // R6: Log format errors instead of silently swallowing them
             _logger.LogWarning("[HeartbeatOrchestrator] Invalid format in heartbeat prompt for agent={Agent}: {Prompt}", agentId, prompt);
-            return prompt;
+            return HeartbeatPromptComposer.AppendAutonomousExecutionContract(prompt);
         }
     }
 
@@ -435,5 +436,21 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 "[Heartbeat] Failed to restore config for {Agent}, using default", _currentAgentId);
         }
     }
+}
+
+internal static class HeartbeatPromptComposer
+{
+    internal const string AutonomousExecutionContract = """
+## 系统级自主执行契约（优先于上方实例提示词）
+
+- 心跳是自主执行轮次，不是咨询轮次。不得询问用户“要做什么”“是否继续”或让用户选择下一步。
+- 先调用 `goal_read`，再用 `query_session_logs(exclude_heartbeat=true)` 恢复最近未完成、且已由用户授权的工作；不要因为 goal.md 为空就忽略最近对话中的未完成任务。
+- 找到可执行工作后，本轮必须立即完成一个具体、安全、可回滚的推进步骤。需要并行或编码时可调用 `spawn_sub_agent`/Smart 工作流，并在后续心跳用 `query_sub_agents` 继续验收。
+- 不得扩大用户授权范围。若某一步需要额外审批、破坏性操作或外部协调，记录阻塞并改做另一个安全步骤；只有确实无路可走时才汇报阻塞。
+- 只有在已完成一个推进步骤，或有证据确认不存在可推进事项后，才调用 `sleep`。不要以问题结束心跳回复。
+""";
+
+    internal static string AppendAutonomousExecutionContract(string prompt)
+        => $"{prompt.Trim()}\n\n{AutonomousExecutionContract}";
 }
 

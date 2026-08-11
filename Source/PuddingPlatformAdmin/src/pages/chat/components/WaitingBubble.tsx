@@ -6,10 +6,12 @@ import { ParticleDots } from './ParticleDots';
 
 export interface WaitingBubbleProps {
   waitSeconds: number;
+  agentName?: string;
 }
 
 export const WaitingBubble: React.FC<WaitingBubbleProps> = ({
   waitSeconds,
+  agentName = '主代理',
 }) => {
   const { styles } = useAgentStyles();
 
@@ -17,13 +19,17 @@ export const WaitingBubble: React.FC<WaitingBubbleProps> = ({
   const isVerySlow = waitSeconds >= 10;
   const isExtreme = waitSeconds >= 30;
 
-  const msg = isExtreme
-    ? `模型正在进行复杂推理（${waitSeconds}s），请稍候...`
+  const phase = isExtreme
+    ? '模型正在进行复杂推理'
     : isVerySlow
-      ? `深入分析中（${waitSeconds}s），请耐心等待...`
+      ? '模型正在深入分析'
       : isSlow
-        ? `模型响应较慢（${waitSeconds}s）...`
-        : '正在思考...';
+        ? '等待模型响应'
+        : '正在请求模型';
+  const elapsed =
+    waitSeconds < 60
+      ? `${waitSeconds} 秒`
+      : `${Math.floor(waitSeconds / 60)} 分 ${waitSeconds % 60} 秒`;
 
   return (
     <div
@@ -35,30 +41,42 @@ export const WaitingBubble: React.FC<WaitingBubbleProps> = ({
         styles.agentWaitingBubble,
         isVerySlow && styles.agentBubbleWarning,
       )}
+      data-testid="agent-waiting-monitor"
+      aria-live="polite"
     >
       {!isExtreme && <ParticleDots />}
-      <div className={styles.waitingDots}>
-        <span
-          className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)}
-          style={{ animationDelay: '0s' }}
-        />
-        <span
-          className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)}
-          style={{ animationDelay: '0.2s' }}
-        />
-        <span
-          className={cx(styles.waitingDot, isVerySlow && styles.waitingDotSlow)}
-          style={{ animationDelay: '0.4s' }}
-        />
+      <div className={styles.waitingHeader}>
+        <div className={styles.waitingDots}>
+          {[0, 0.2, 0.4].map((delay) => (
+            <span
+              key={delay}
+              className={cx(
+                styles.waitingDot,
+                isVerySlow && styles.waitingDotSlow,
+              )}
+              style={{ animationDelay: `${delay}s` }}
+            />
+          ))}
+        </div>
+        <span className={styles.waitingTitle}>{agentName} 正在运行</span>
+        <span className={styles.waitingElapsed}>已等待 {elapsed}</span>
       </div>
-      <span
+      <div
         className={cx(
           styles.waitingLabel,
           isVerySlow && styles.waitingLabelWarning,
         )}
       >
-        {msg}
-      </span>
+        {phase}
+      </div>
+      <div className={styles.waitingTrack}>
+        <span className={styles.waitingTrackDone}>已接收任务</span>
+        <span className={styles.waitingTrackArrow}>→</span>
+        <span className={styles.waitingTrackCurrent}>等待首个可见事件</span>
+      </div>
+      <div className={styles.waitingHint}>
+        尚未收到可展示的推理摘要或工具事件；收到后会在这里实时更新。
+      </div>
     </div>
   );
 };

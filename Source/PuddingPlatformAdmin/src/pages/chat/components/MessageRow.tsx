@@ -2,7 +2,7 @@
 import { HeartOutlined } from '@ant-design/icons';
 import React from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
-import type { ChatMessageBlock } from '../types';
+import type { ChatMessageBlock, ParentDelegationActivity } from '../types';
 import AgentMessageBubble from './AgentMessageBubble';
 import MessageItem from './MessageItem';
 import UserMessageBubble from './UserMessageBubble';
@@ -23,6 +23,7 @@ interface MessageRowProps {
   onRerunTurn?: (turnId: string) => void;
   onPinTurn?: (turnId: string) => void;
   onDeleteTurn?: (turnId: string) => void;
+  parentDelegationActivity?: ParentDelegationActivity;
 }
 
 const optionalRecordEquals = (
@@ -126,7 +127,11 @@ export const areMessageRowPropsEqual = (
   previous.onContextMenu === next.onContextMenu &&
   previous.onRerunTurn === next.onRerunTurn &&
   previous.onPinTurn === next.onPinTurn &&
-  previous.onDeleteTurn === next.onDeleteTurn;
+  previous.onDeleteTurn === next.onDeleteTurn &&
+  optionalRecordEquals(
+    previous.parentDelegationActivity,
+    next.parentDelegationActivity,
+  );
 
 const MessageRow: React.FC<MessageRowProps> = ({
   block,
@@ -138,6 +143,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
   onRerunTurn,
   onPinTurn,
   onDeleteTurn,
+  parentDelegationActivity,
 }) => {
   const { styles, cx } = useChatMessageStyles();
 
@@ -199,6 +205,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
           onRerun={onRerunTurn ? () => onRerunTurn(block.turnId) : undefined}
           onPin={onPinTurn ? () => onPinTurn(block.turnId) : undefined}
           onDelete={onDeleteTurn ? () => onDeleteTurn(block.turnId) : undefined}
+          parentDelegationActivity={parentDelegationActivity}
         />
       </div>
     );

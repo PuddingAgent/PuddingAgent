@@ -76,4 +76,17 @@ describe('MessageRow memo boundary', () => {
       }),
     ).toBe(false);
   });
+
+  it('rerenders only the active row when parent delegation activity changes', () => {
+    expect(
+      areMessageRowPropsEqual(props, {
+        ...props,
+        parentDelegationActivity: {
+          activeCount: 1,
+          startedAt: 100,
+          updatedAt: 200,
+        },
+      }),
+    ).toBe(false);
+  });
 });

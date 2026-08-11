@@ -8,6 +8,7 @@ export type SubAgentRunStatus =
   | 'created'
   | 'running'
   | 'completed'
+  | 'budget_exhausted'
   | 'failed'
   | 'cancelled'
   | 'timed_out'
@@ -91,6 +92,7 @@ export interface SubAgentConversationEvent {
 
 const terminalSnapshotStatuses = new Set<SubAgentRunStatus>([
   'completed',
+  'budget_exhausted',
   'failed',
   'cancelled',
   'timed_out',
@@ -216,6 +218,7 @@ const isCanonicalSubAgentEvent = (type: string): boolean =>
 
 const isTerminalType = (type: string): boolean =>
   type === 'subagent.run.completed' ||
+  type === 'subagent.run.budget_exhausted' ||
   type === 'subagent.run.failed' ||
   type === 'subagent.run.cancelled' ||
   type === 'subagent.run.timed_out' ||
@@ -252,6 +255,8 @@ const activityLabel = (
       return `${toolName} 执行失败`;
     case 'subagent.run.completed':
       return '子代理执行完成';
+    case 'subagent.run.budget_exhausted':
+      return '子代理预算已用尽，可继续运行';
     case 'subagent.run.cancelled':
       return '子代理已取消';
     case 'subagent.run.timed_out':
@@ -279,13 +284,13 @@ const projectActivity = (
     });
   }
 
-  if (boolean(event, 'reasoning_available', 'reasoningAvailable')) {
-    const reasoningChars =
-      number(event, 'reasoning_chars', 'reasoningChars') ?? 0;
+  const reasoningPreview = text(event, 'reasoning_preview', 'reasoningPreview');
+  if (reasoningPreview) {
     details.push({
-      kind: 'reasoning_notice',
-      label: '内部推理',
-      content: `模型产生了内部推理${reasoningChars ? `（${reasoningChars} 字符）` : ''}。为避免泄露隐藏思维链，仅展示可审计的模型消息与执行事实。`,
+      kind: 'reasoning',
+      label: '模型推理',
+      content: reasoningPreview,
+      truncated: boolean(event, 'reasoning_truncated', 'reasoningTruncated'),
     });
   }
 
@@ -330,6 +335,8 @@ const terminalStatus = (
   switch (event.type) {
     case 'subagent.run.completed':
       return 'completed';
+    case 'subagent.run.budget_exhausted':
+      return 'budget_exhausted';
     case 'subagent.run.cancelled':
       return 'cancelled';
     case 'subagent.run.timed_out':
@@ -437,6 +444,13 @@ export function reduceSubAgentRunEvent(
   const runId = explicitRunId;
   const current = state[runId] ?? existingEntry?.[1];
   if (eventId && current?.appliedEventIds.includes(eventId)) return state;
+  if (
+    current &&
+    terminalSnapshotStatuses.has(current.status) &&
+    !isTerminalType(event.type)
+  ) {
+    return state;
+  }
 
   const at = timestamp(event);
   let next = mergeIdentity(current ?? createRun(event, runId, at), event);

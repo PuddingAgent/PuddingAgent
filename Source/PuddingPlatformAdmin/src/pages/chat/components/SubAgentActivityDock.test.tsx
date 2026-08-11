@@ -60,6 +60,19 @@ describe('SubAgentActivityDock', () => {
             lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
             activities: [
               {
+                eventId: 'event-llm',
+                type: 'subagent.llm.completed',
+                label: '模型返回 · 128 tokens',
+                occurredAt: Date.parse('2026-07-19T00:00:08.000Z'),
+                details: [
+                  {
+                    kind: 'reasoning',
+                    label: '模型推理',
+                    content: '先检查入口，再核对数据投影。',
+                  },
+                ],
+              },
+              {
                 eventId: 'event-tool',
                 type: 'subagent.tool.started',
                 label: '开始执行 file_read',
@@ -80,6 +93,7 @@ describe('SubAgentActivityDock', () => {
       />,
     );
 
+    expect(screen.getByTestId('subagent-dock-item-run-active')).toBeTruthy();
     expect(screen.getByText('plan the architecture')).toBeTruthy();
     expect(screen.getByText('正在执行 file_read')).toBeTruthy();
     expect(screen.getByText('开始执行 file_read')).toBeTruthy();
@@ -87,11 +101,49 @@ describe('SubAgentActivityDock', () => {
     expect(screen.getByText('session-sub-active')).toBeTruthy();
     expect(screen.getByText('run-active')).toBeTruthy();
     expect(screen.getByText('Call ID: call-file-read')).toBeTruthy();
+    expect(screen.getByText('模型推理')).toBeTruthy();
+    expect(screen.getByText('先检查入口，再核对数据投影。')).toBeTruthy();
     expect(screen.getByText('工具输入')).toBeTruthy();
     expect(screen.getByText('{"path":"Source/code_map.md"}')).toBeTruthy();
 
     fireEvent.click(screen.getByText('返回运行列表'));
     expect(onSelectedRunIdChange).toHaveBeenCalledWith(null);
+  });
+
+  it('renders budget exhaustion as terminal attention instead of running', async () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-budget"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          budget: {
+            turnId: 'budget',
+            runId: 'run-budget',
+            subSessionId: 'session-sub-budget',
+            parentSessionId: 'session',
+            status: 'budget_exhausted',
+            taskSummary: 'bounded task',
+            currentRound: 620,
+            maxRounds: 600,
+            spawnedAt: Date.parse('2026-08-11T08:55:49Z'),
+            completedAt: Date.parse('2026-08-11T10:43:39Z'),
+            lastActivityAt: Date.parse('2026-08-11T10:43:39Z'),
+            error: 'resume the preserved child session',
+          },
+        }}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getAllByText('预算已用尽').length).toBeGreaterThan(0);
+    expect(screen.queryByText('运行中')).toBeNull();
+    expect(screen.getByText('resume the preserved child session')).toBeTruthy();
   });
 
   it('automatically removes a successful completion after the linger window', () => {

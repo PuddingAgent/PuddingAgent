@@ -804,6 +804,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         int doneToolOutputTruncatedCount = 0;
         long doneToolOutputChars = 0;
         string? doneToolFailureSummary = null;
+        string? doneStopReason = null;
         var inboundPersisted = false;
 
         if (transcriptWriter is not null && inboundTranscript is not null)
@@ -823,6 +824,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 workspaceId: request.WorkspaceId,
                 agentInstanceId: agentId,
                 agentTemplateId: request.AgentTemplateId,
+                messageId: inboundTranscript.MessageId,
                 ct: ct);
             inboundPersisted = true;
         }
@@ -840,6 +842,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 doneToolOutputTruncatedCount = TryReadIntProperty(frame.Data, "toolOutputTruncatedCount") ?? doneToolOutputTruncatedCount;
                 doneToolOutputChars = TryReadLongProperty(frame.Data, "toolOutputChars") ?? doneToolOutputChars;
                 doneToolFailureSummary = TryReadStringProperty(frame.Data, "toolFailureSummary") ?? doneToolFailureSummary;
+                doneStopReason = TryReadStringProperty(frame.Data, "stopReason") ?? doneStopReason;
             }
             else if (string.Equals(frame.Event, "error", StringComparison.OrdinalIgnoreCase))
             {
@@ -886,11 +889,15 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         var assistantReply = !string.IsNullOrWhiteSpace(doneReply)
             ? doneReply
             : replyBuilder.ToString();
+        var duplicateMessage = RuntimeDispatchMarkers.IsDuplicateMessage(doneStopReason, assistantReply);
         var success = seenDone
             && !seenError
             && !seenCancelled
             && !(doneToolFailureCount > 0 && LooksLikeFailureReply(assistantReply));
-        if (success && transcriptWriter is not null)
+        if (success
+            && !duplicateMessage
+            && transcriptWriter is not null
+            && !string.IsNullOrWhiteSpace(assistantReply))
         {
             var assistantContent = assistantReply;
             var thinkingJson = thinkingChunks.Count > 0
@@ -915,7 +922,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             SessionId = request.SessionId,
             AgentInstanceId = agentId,
             IsSuccess = success,
-            ReplyText = success ? assistantReply : null,
+            ReplyText = success && !duplicateMessage ? assistantReply : null,
             ErrorMessage = success
                 ? null
                 : errorMessage
@@ -924,6 +931,9 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             ExecutionState = success
                 ? AgentExecutionState.Completed
                 : seenCancelled ? AgentExecutionState.Cancelled : AgentExecutionState.Failed,
+            StopReason = duplicateMessage
+                ? RuntimeDispatchMarkers.DuplicateMessageStopReason
+                : doneStopReason,
             ToolFailureCount = doneToolFailureCount,
             ToolOutputTruncatedCount = doneToolOutputTruncatedCount,
             ToolOutputChars = doneToolOutputChars,
@@ -1397,6 +1407,9 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             return false;
 
         if (string.IsNullOrWhiteSpace(result.ReplyText))
+            return false;
+
+        if (RuntimeDispatchMarkers.IsDuplicateMessage(result.StopReason, result.ReplyText))
             return false;
 
         var intent = GetMetadataValue(metadata, "intent", "Intent");

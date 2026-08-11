@@ -149,7 +149,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
   });
 
-  it('shows a sanitized reasoning preview instead of the activity panel before the first answer token', () => {
+  it('shows a sanitized reasoning summary alongside the main-agent activity before the first answer token', () => {
     const { container } = render(
       <AgentMessageBubble
         {...baseProps}
@@ -167,11 +167,10 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    // 思维链预览接管“模型过程”面板，内容经清洗后展示
-    expect(screen.getByText('思考中')).toBeTruthy();
+    expect(screen.getByText('模型过程')).toBeTruthy();
+    expect(screen.getByText('推理摘要')).toBeTruthy();
     expect(screen.getByText('用户问的是商用密码应用安全性评估。')).toBeTruthy();
     expect(screen.queryByText(/undefined/)).toBeNull();
-    expect(screen.queryByText('模型过程')).toBeNull();
     expect(container.querySelector('.reasoningContainer')).toBeTruthy();
   });
 
@@ -217,10 +216,10 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.getByText('思维链第二行')).toBeTruthy();
     expect(screen.getByText('思维链第三行')).toBeTruthy();
     expect(screen.getByText('思维链第四行')).toBeTruthy();
-    expect(screen.getByText('持续思考中...')).toBeTruthy();
+    expect(screen.getByText('持续推理中...')).toBeTruthy();
   });
 
-  it('yields the reasoning preview to the activity panel once a tool call starts', () => {
+  it('keeps the latest reasoning summary visible when a tool call starts', () => {
     render(
       <AgentMessageBubble
         {...baseProps}
@@ -248,8 +247,10 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.queryByText('思考中')).toBeNull();
     expect(screen.getByText('正在调用工具：list_dir')).toBeTruthy();
+    expect(screen.getByText('最近推理摘要')).toBeTruthy();
+    expect(screen.getByText('需要先查看项目结构。')).toBeTruthy();
+    expect(screen.getByText('当前：正在调用工具：list_dir')).toBeTruthy();
   });
 
   it('keeps the reasoning preview when older tool activity predates the latest thinking', () => {
@@ -280,7 +281,8 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('思考中')).toBeTruthy();
+    expect(screen.getByText('模型过程')).toBeTruthy();
+    expect(screen.getByText('推理摘要')).toBeTruthy();
     expect(screen.getByText('目录结构已明确，开始分析。')).toBeTruthy();
     expect(screen.queryByText('正在调用工具：list_dir')).toBeNull();
   });
@@ -296,7 +298,10 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    expect(screen.getByText('正在思考...')).toBeTruthy();
+    expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
+    expect(screen.getByText('正在请求模型')).toBeTruthy();
+    expect(screen.getByText('等待首个可见事件')).toBeTruthy();
+    expect(screen.getByTestId('agent-waiting-monitor')).toBeTruthy();
     expect(
       container.querySelector(
         '.agentBubbleNew.agentBubbleStreaming.agentWaitingBubble',
@@ -319,9 +324,8 @@ describe('AgentMessageBubble streaming presentation', () => {
         />,
       );
 
-      expect(
-        screen.getByText('模型正在进行复杂推理（600s），请稍候...'),
-      ).toBeTruthy();
+      expect(screen.getByText('模型正在进行复杂推理')).toBeTruthy();
+      expect(screen.getByText('已等待 10 分 0 秒')).toBeTruthy();
     } finally {
       jest.useRealTimers();
     }
@@ -357,6 +361,40 @@ describe('AgentMessageBubble streaming presentation', () => {
       ),
     ).toBeTruthy();
     expect(container.querySelector('.agentActiveOutputSurface')).toBeTruthy();
+  });
+
+  it('shows a bounded parent delegation summary without duplicating child internals', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="executing"
+        isStreaming={false}
+        content=""
+        parentDelegationActivity={{
+          activeCount: 2,
+          label: 'reviewer',
+          startedAt: Date.now() - 2_000,
+          updatedAt: Date.now() - 200,
+        }}
+        processItems={[
+          {
+            id: 'thinking-after-delegation',
+            type: 'thinking',
+            text: '主代理继续整理已返回的信息。',
+            timestamp: Date.now() - 100,
+            collapsed: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('正在调用 2 个子代理')).toBeTruthy();
+    expect(screen.getByText('模型过程')).toBeTruthy();
+    expect(screen.getByText('主代理继续整理已返回的信息。')).toBeTruthy();
+    expect(
+      screen.getByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toContain('子代理任务详情');
   });
 
   it('summarizes JSON tool arguments instead of showing raw JSON in the default activity panel', () => {

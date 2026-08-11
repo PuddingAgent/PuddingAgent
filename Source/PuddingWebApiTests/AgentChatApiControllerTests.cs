@@ -469,6 +469,92 @@ public sealed class AgentChatApiControllerTests
     }
 
     [TestMethod]
+    public async Task AgentConversationEndpoint_HidesDuplicateTransportArtifacts()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-conversation-dedup",
+            agentTemplateId = "global:general-assistant",
+            title = "Conversation Dedup Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        const string heartbeatEnvelope = """
+            {
+              "schema": "pudding-message",
+              "version": 1,
+              "message_id": "heartbeat-stable-id",
+              "message_type": "agent_message",
+              "content_type": "text/markdown",
+              "created_at": 1,
+              "workspace_id": "default",
+              "from": { "kind": "system", "id": "heartbeat" },
+              "to": [{ "kind": "agent", "id": "global:general-assistant" }],
+              "constraints": [],
+              "context": { "format": "text/markdown", "text": "heartbeat" },
+              "metadata": {}
+            }
+            """;
+        var createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.AddRange(
+                new ChatMessageEntity
+                {
+                    MessageId = "conversation-dedup-normal",
+                    SessionId = session!.SessionId,
+                    Role = "agent",
+                    Content = "visible reply",
+                    CreatedAt = createdAt,
+                },
+                new ChatMessageEntity
+                {
+                    MessageId = "conversation-dedup-envelope-a",
+                    SessionId = session.SessionId,
+                    Role = "user",
+                    Content = heartbeatEnvelope,
+                    CreatedAt = createdAt + 1,
+                },
+                new ChatMessageEntity
+                {
+                    MessageId = "conversation-dedup-envelope-b",
+                    SessionId = session.SessionId,
+                    Role = "user",
+                    Content = heartbeatEnvelope,
+                    CreatedAt = createdAt + 2,
+                },
+                new ChatMessageEntity
+                {
+                    MessageId = "conversation-dedup-placeholder",
+                    SessionId = session.SessionId,
+                    Role = "agent",
+                    Content = RuntimeDispatchMarkers.DuplicateMessagePlaceholder,
+                    CreatedAt = createdAt + 3,
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync("/api/workspaces/default/agents/agent-conversation-dedup/conversation");
+        response.EnsureSuccessStatusCode();
+
+        var view = await response.Content.ReadFromJsonAsync<AgentConversationViewDto>(JsonOpts);
+        Assert.IsNotNull(view);
+        Assert.HasCount(2, view!.Messages);
+        Assert.AreEqual("visible reply", view.Messages[0].Content);
+        Assert.AreEqual("heartbeat", view.Messages[1].Content);
+        Assert.AreEqual("system", view.Messages[1].Role);
+        Assert.AreEqual("system", view.Messages[1].SourceKind);
+        Assert.AreEqual("heartbeat", view.Messages[1].SourceId);
+        Assert.IsFalse(view.Messages.Any(message =>
+            RuntimeDispatchMarkers.IsDuplicateMessagePlaceholder(message.Content)));
+    }
+
+    [TestMethod]
     public async Task AgentConversationEndpoint_ProjectsHistoricalThinkingItems()
     {
         var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
@@ -1121,5 +1207,7 @@ public sealed class AgentChatApiControllerTests
         string Content,
         string Status,
         List<ProcessSummaryItemDto> ProcessItems,
-        ConversationProcessSummaryDto? ProcessSummary = null);
+        ConversationProcessSummaryDto? ProcessSummary = null,
+        string? SourceKind = null,
+        string? MessageType = null);
 }

@@ -74,6 +74,7 @@ import {
   resolveInitialWorkspaceId,
   resolveSessionReplayCursorSequence,
   resolveSessionReplayPollInterval,
+  resolveSubAgentDockSessionId,
   resolveSubAgentTaskSummary,
   resolveSubAgentTerminalOutput,
   resolveTerminalAssistantMarkdown,
@@ -150,6 +151,7 @@ export {
   resolveInitialWorkspaceId,
   resolveSessionReplayCursorSequence,
   resolveSessionReplayPollInterval,
+  resolveSubAgentDockSessionId,
   resolveSubAgentTaskSummary,
   resolveSubAgentTerminalOutput,
   resolveTerminalAssistantMarkdown,
@@ -1251,9 +1253,13 @@ export function useChatState(
     cacheTotalTokens > 0
       ? Math.round((sessionCacheHitTokens / cacheTotalTokens) * 100)
       : undefined;
+  const subAgentDockSessionId = resolveSubAgentDockSessionId(
+    selectedSessionId,
+    mainSessionId,
+  );
   const visibleSubAgentCards = useMemo(
-    () => filterSubAgentCardsForSession(subAgentCards, selectedSessionId),
-    [subAgentCards, selectedSessionId],
+    () => filterSubAgentCardsForSession(subAgentCards, subAgentDockSessionId),
+    [subAgentCards, subAgentDockSessionId],
   );
   const visibleTurns = useMemo(
     () => mergeCompactionLifecycleTurns(turns),

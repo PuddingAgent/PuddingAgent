@@ -16,8 +16,9 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告 |
-| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） |
-| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial） |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；子代理 LLM 完成事件携带已脱敏的消息预览与不脱敏但有界的实际推理预览；重复消息只返回结构化 stop reason |
+| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；重复 message_id 的 done 帧标记 `DuplicateMessage` 且不产生可展示 reply |
+| `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；入站转录沿用稳定 messageId，重复命中不得持久化或回发占位回复 |
 | `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON → 参数转换 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | 子代理五段报告解析/校验 |
 | `Services/GoalMode/` | 🆕 Goal 模式 v2 执行器 |

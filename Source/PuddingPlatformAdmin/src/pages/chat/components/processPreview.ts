@@ -123,7 +123,7 @@ const buildTailPreview = (
 
 const tryParseObject = (text?: string): Record<string, unknown> | null => {
   const safe = sanitizeProcessText(text, { compact: false });
-  if (!safe || !safe.startsWith('{')) return null;
+  if (!safe?.startsWith('{')) return null;
   try {
     const parsed = JSON.parse(safe);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
@@ -561,6 +561,11 @@ export const getCurrentRunActivity = (
     latestActiveToolCall?.timestamp ?? 0,
     latestToolResult?.timestamp ?? 0,
   );
+  const latestToolItem =
+    latestToolResult &&
+    latestToolResult.timestamp >= (latestActiveToolCall?.timestamp ?? 0)
+      ? latestToolResult
+      : latestActiveToolCall;
   const candidates = [
     latestSubAgent
       ? {
@@ -569,13 +574,9 @@ export const getCurrentRunActivity = (
           timestamp: latestSubAgent.timestamp,
         }
       : null,
-    latestToolAt > 0
+    latestToolItem
       ? {
-          item:
-            latestToolResult &&
-            latestToolResult.timestamp >= (latestActiveToolCall?.timestamp ?? 0)
-              ? latestToolResult
-              : latestActiveToolCall!,
+          item: latestToolItem,
           group: 'tool' as const,
           timestamp: latestToolAt,
         }
@@ -659,8 +660,6 @@ export const getCurrentRunActivity = (
           ? 'completed'
           : 'processing_result'
       : 'running';
-    const taskFull = sanitizeProcessText(item.arguments, { compact: false });
-    const output = buildTailPreview(item.output);
     return {
       kind: 'subagent',
       title:
@@ -669,18 +668,12 @@ export const getCurrentRunActivity = (
           : activityStatus === 'completed'
             ? `子代理已完成：${name}`
             : completed
-              ? `正在处理子代理结果：${name}`
-              : `子代理运行中：${name}`,
-      subject: taskFull
-        ? `任务：${compactSingleLine(taskFull, 160)}`
-        : undefined,
-      subjectFull: taskFull,
+              ? '正在处理子代理结果'
+              : `正在调用子代理：${name}`,
+      subject: '子代理内部进度请查看右侧托盘坞',
       status: activityStatus,
       startedAt: item.timestamp,
       updatedAt: item.timestamp,
-      outputPreview: output.preview,
-      outputFull: output.full,
-      outputTruncated: output.truncated,
     };
   }
 

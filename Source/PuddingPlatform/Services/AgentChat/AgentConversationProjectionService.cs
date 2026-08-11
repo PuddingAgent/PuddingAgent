@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
@@ -34,6 +35,7 @@ public sealed class AgentConversationProjectionService(
 {
     private const string DefaultOwnerUserId = "single-user";
     private const int ConversationMessageLimit = 20;
+    private const int ConversationMessageCandidateLimit = ConversationMessageLimit * 3;
     private const int ActiveRunProcessItemLimit = 64;
     private static readonly TimeSpan ActiveRunStaleAfter = TimeSpan.FromMinutes(5);
     private static readonly string[] ActiveRunVisibleProcessEventTypes =
@@ -97,9 +99,11 @@ public sealed class AgentConversationProjectionService(
         var messageRows = await db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == main.SessionId)
+            .Where(m => m.Content != RuntimeDispatchMarkers.DuplicateMessagePlaceholder)
+            .Where(m => m.Content != RuntimeDispatchMarkers.DuplicateMessagePlaceholderLegacyHyphen)
             .OrderByDescending(m => m.CreatedAt)
             .ThenByDescending(m => m.Id)
-            .Take(ConversationMessageLimit)
+            .Take(ConversationMessageCandidateLimit)
             .Select(m => new ConversationMessageRow(
                 m.Id,
                 m.MessageId,
@@ -110,6 +114,9 @@ public sealed class AgentConversationProjectionService(
                 m.CreatedAt))
             .ToListAsync(ct);
         messageRows.Reverse();
+        messageRows = DeduplicateCanonicalMessageRows(messageRows)
+            .TakeLast(ConversationMessageLimit)
+            .ToList();
 
         var messageIds = messageRows
             .Select(m => m.MessageId)
@@ -476,6 +483,26 @@ public sealed class AgentConversationProjectionService(
             false);
     }
 
+    private static IEnumerable<ConversationMessageRow> DeduplicateCanonicalMessageRows(
+        IReadOnlyList<ConversationMessageRow> messages)
+    {
+        var envelopeMessageIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var message in messages)
+        {
+            if (RuntimeDispatchMarkers.IsDuplicateMessagePlaceholder(message.Content))
+                continue;
+
+            var envelopeMessageId = AgentContextEnvelopeRenderer.TryParse(message.Content)?.MessageId;
+            if (!string.IsNullOrWhiteSpace(envelopeMessageId)
+                && !envelopeMessageIds.Add(envelopeMessageId))
+            {
+                continue;
+            }
+
+            yield return message;
+        }
+    }
+
     private static ConversationMessageView BuildConversationMessageView(
         ConversationMessageRow message,
         string ownerUserId,
@@ -484,7 +511,8 @@ public sealed class AgentConversationProjectionService(
         string? turnId,
         IReadOnlyDictionary<string, CompletedMessageProcess> completedProcessByMessageId)
     {
-        var metadata = ParsePuddingMessageMetadata(message.Content);
+        var envelope = AgentContextEnvelopeRenderer.TryParse(message.Content);
+        var metadata = ParsePuddingMessageMetadata(envelope);
         var sourceKind = metadata?.SourceKind
             ?? (string.Equals(message.Role, "agent", StringComparison.OrdinalIgnoreCase) ? "agent" : "user");
         var sourceId = metadata?.SourceId
@@ -498,6 +526,11 @@ public sealed class AgentConversationProjectionService(
             : string.Equals(sourceKind, "system", StringComparison.OrdinalIgnoreCase)
                 ? "system"
                 : "user";
+        var displayContent = string.Equals(sourceKind, "system", StringComparison.OrdinalIgnoreCase)
+                             && string.Equals(sourceId, "heartbeat", StringComparison.OrdinalIgnoreCase)
+                             && !string.IsNullOrWhiteSpace(envelope?.Context.Text)
+            ? envelope.Context.Text
+            : message.Content;
         completedProcessByMessageId.TryGetValue(message.MessageId, out var completedProcess);
 
         return new ConversationMessageView(
@@ -507,7 +540,7 @@ public sealed class AgentConversationProjectionService(
             sourceId,
             sourceName,
             DateTimeOffset.FromUnixTimeMilliseconds(message.CreatedAt),
-            message.Content,
+            displayContent,
             "succeeded",
             [])
         {
@@ -520,9 +553,8 @@ public sealed class AgentConversationProjectionService(
         };
     }
 
-    private static PuddingMessageMetadata? ParsePuddingMessageMetadata(string content)
+    private static PuddingMessageMetadata? ParsePuddingMessageMetadata(AgentContextEnvelope? envelope)
     {
-        var envelope = AgentContextEnvelopeRenderer.TryParse(content);
         if (envelope is null)
             return null;
 

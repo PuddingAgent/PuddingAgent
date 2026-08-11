@@ -121,10 +121,12 @@ public sealed partial class AgentExecutionService
             _controlRegistry.Remove(request.SessionId);
             yield return ServerSentEventFrame.Json(SseEventTypes.Done, new
             {
-                reply = AgentExecutionConstants.DuplicateMessagePlaceholder,
+                reply = (string?)null,
                 sessionId = request.SessionId,
                 messageId = request.MessageId,
                 isError = false,
+                duplicateMessage = true,
+                stopReason = RuntimeDispatchMarkers.DuplicateMessageStopReason,
                 toolFailureCount = 0,
                 toolOutputTruncatedCount = 0,
                 toolOutputChars = 0L,

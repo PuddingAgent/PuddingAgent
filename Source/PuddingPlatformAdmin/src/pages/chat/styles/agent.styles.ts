@@ -188,13 +188,34 @@ export const useAgentStyles = createStyles(({ token }) => ({
   },
   agentWaitingBubble: {
     display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    width: 'fit-content',
-    minHeight: 44,
-    minWidth: 176,
-    padding: '11px 16px',
+    flexDirection: 'column' as const,
+    alignItems: 'stretch',
+    gap: 7,
+    width: '100%',
+    maxWidth: 'min(720px, 100%)',
+    minHeight: 96,
+    padding: '12px 16px',
     contain: 'layout style',
+  },
+  waitingHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap' as const,
+    position: 'relative' as const,
+    zIndex: 2,
+  },
+  waitingTitle: {
+    color: 'var(--pudding-chat-text)',
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: '20px',
+  },
+  waitingElapsed: {
+    marginLeft: 'auto',
+    color: 'var(--pudding-chat-text-muted)',
+    fontSize: 11,
+    fontVariantNumeric: 'tabular-nums' as const,
   },
   waitingDots: {
     display: 'flex',
@@ -224,13 +245,38 @@ export const useAgentStyles = createStyles(({ token }) => ({
     fontSize: 13,
     color:
       'color-mix(in srgb, var(--accent-purple) 68%, var(--text-secondary))',
-    fontStyle: 'italic',
+    fontWeight: 500,
     lineHeight: '20px',
     position: 'relative' as const,
     zIndex: 2,
   },
   waitingLabelWarning: {
     color: 'color-mix(in srgb, #d97706 65%, var(--text-secondary))',
+  },
+  waitingTrack: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    color: 'var(--pudding-chat-text-muted)',
+    fontSize: 11,
+    position: 'relative' as const,
+    zIndex: 2,
+  },
+  waitingTrackDone: {
+    color: 'color-mix(in srgb, #6f8f72 72%, var(--pudding-chat-text))',
+  },
+  waitingTrackArrow: { opacity: 0.45 },
+  waitingTrackCurrent: {
+    color:
+      'color-mix(in srgb, var(--accent-purple) 68%, var(--pudding-chat-text-muted))',
+  },
+  waitingHint: {
+    color: 'var(--pudding-chat-text-muted)',
+    fontSize: 11,
+    lineHeight: 1.5,
+    opacity: 0.78,
+    position: 'relative' as const,
+    zIndex: 2,
   },
   /* ── P2: 等待粒子 (Waiting Particles) ── */
   particleContainer: {

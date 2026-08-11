@@ -78,6 +78,13 @@ export const usePanelStyles = createStyles(() => ({
     background: 'rgba(249,115,22,0.1)',
     borderRadius: 6,
   },
+  agentRunMonitor: {
+    width: '100%',
+    maxWidth: 'min(720px, 100%)',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+  },
   currentActivityPanel: {
     position: 'relative' as const,
     isolation: 'isolate' as const,

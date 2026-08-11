@@ -530,7 +530,7 @@ public sealed class ContextCompactionServiceTests
             new("m1", 1, "user", "请把上下文压缩管线修好，项目在 E:\\repo\\app。"),
             new("m2", 2, "agent", "Runtime mode is now Yolo mode; 这是一条系统噪声。"),
             new("m3", 3, "user", "/yolo"),
-            new("m4", 4, "agent", $"{AgentExecutionConstants.DuplicateMessagePlaceholder} 不要重复这条。"),
+            new("m4", 4, "agent", $"{RuntimeDispatchMarkers.DuplicateMessagePlaceholder} 不要重复这条。"),
             new("m5", 5, "agent", "已完成 ContextCompactionService.cs:120 的重构。"),
         };
 

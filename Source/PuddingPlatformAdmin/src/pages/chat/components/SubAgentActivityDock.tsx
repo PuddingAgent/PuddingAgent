@@ -63,6 +63,7 @@ const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 const activeStatuses = new Set<SubAgentCardStatus>(['spawning', 'running']);
 const errorStatuses = new Set<SubAgentCardStatus>([
+  'budget_exhausted',
   'failed',
   'cancelled',
   'timed_out',
@@ -91,6 +92,11 @@ const statusConfig: Record<
     color: '#4f7f62',
     label: '已完成',
     icon: <CheckCircleOutlined />,
+  },
+  budget_exhausted: {
+    color: '#c47f31',
+    label: '预算已用尽',
+    icon: <ClockCircleOutlined />,
   },
   failed: { color: '#c64f52', label: '失败', icon: <CloseCircleOutlined /> },
   cancelled: {
@@ -753,7 +759,11 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
           <div className={styles.detailHero}>
             <Space size={6} wrap>
               <Tag color={cfg.color}>{cfg.label}</Tag>
-              <Tag>{phaseLabel[run.phase ?? ''] ?? run.phase ?? '运行中'}</Tag>
+              <Tag>
+                {phaseLabel[run.phase ?? ''] ??
+                  run.phase ??
+                  (terminalStatuses.has(run.status) ? '运行结束' : '运行中')}
+              </Tag>
               {run.originToolId && (
                 <Tag color="geekblue">{run.originToolId}</Tag>
               )}

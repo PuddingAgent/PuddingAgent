@@ -49,7 +49,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/HeartbeatService.cs` | 心跳编排（19KB） |
+| `Services/HeartbeatService.cs` | 心跳编排；实例提示词后追加高优先级自主执行契约，恢复最近非心跳上下文并推进一个安全步骤 |
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |
 | `Services/IndexPrebuildService.cs` | 索引预构建 |

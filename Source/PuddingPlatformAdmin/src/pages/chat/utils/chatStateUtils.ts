@@ -884,6 +884,14 @@ export function filterSubAgentCardsForSession(
   );
 }
 
+/** Agent-first 路由尚未选中侧栏会话时，托盘坞仍应绑定已解析出的主会话。 */
+export function resolveSubAgentDockSessionId(
+  selectedSessionId?: string | null,
+  mainSessionId?: string | null,
+): string | null {
+  return selectedSessionId ?? mainSessionId ?? null;
+}
+
 export function mergeHistoryWithLifecycleTurns(
   historyTurns: ChatTurn[],
   currentTurns: ChatTurn[],

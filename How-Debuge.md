@@ -568,8 +568,9 @@ gap replay 和 live SSE 到达，以及 `subAgentReducer` 是否已记录并拒�
    `message_preview/reasoning_available`；`subagent.tool.started` 应包含
    `arguments_preview`；`subagent.tool.completed/failed` 应包含
    `output_preview` 和截断标记。
-3. 预览字段必须经过 KeyVault 脱敏且有长度上限。原始隐藏思维链、完整 Prompt、
-   密钥和完整工具输出不应进入事件文件。
+3. `message_preview`、工具参数和工具输出仍须经过 KeyVault 脱敏并限制长度；
+   `reasoning_preview` 是运维人员明确要求的模型原始返回值，不做脱敏，但最多写入
+   4096 字符并用 `reasoning_truncated` 标记截断。完整 Prompt 和完整工具输出不应进入事件文件。
 4. 如果 archive 有字段而页面没有，依次检查 Conversation Event 投影、
    bootstrap 的 `subAgentEvents`、gap replay、live SSE 和 `subAgentReducer`。
 5. 不要为详情检查器新增轮询或第二条实时通道；历史恢复与实时追加必须共享同一
@@ -1147,7 +1148,7 @@ canonical 快照且不显示等待占位”；还要覆盖“本地已有 reason
 ### 11.7 子代理早已结束，但运行坞仍显示 Running
 
 **症状**：右侧运行坞或输入框状态条长期显示一个或多个子代理运行中；运行归档和
-`sub_agent_runs` 已有 `completed/failed` 终态。
+`session_sub_agents` 已有 `completed/failed/budget_exhausted` 终态。
 
 先比对三份事实：
 
@@ -1157,8 +1158,18 @@ canonical 快照且不显示等待占位”；还要覆盖“本地已有 reason
 
 长会话的 bootstrap 只携带最近 5000 条 `subagent.*` 事件，窗口可能从历史 run 中间开始，
 也可能完全排除旧 run 的终态。前端应只对本地 active run 使用会话状态快照做终态校正，不能
-让快照把已经终态的卡片重新降级为 running。成功终态在运行坞停留 12 秒，异常终态停留
-30 秒；历史与完整 `output.md` 仍可在检查器中查看。
+让快照把已经终态的卡片重新降级为 running。成功终态在运行坞停留 12 秒，异常终态（包括
+可恢复的 `budget_exhausted`）停留 30 秒；历史与完整 `output.md` 仍可在检查器中查看。
+
+若 `run.json`、`session_sub_agents` 和 Conversation Event Store 都已记录
+`budget_exhausted`，但界面仍显示 Running，依次检查前端状态联合类型、
+`terminalSnapshotStatuses`、`isTerminalType` 和运行坞状态配置。终态投影必须保持单调：同一
+run 进入任何终态后，迟到或重放的 round/LLM/tool 非终态事件不得将其复活为 running。
+
+若时间线只显示“模型产生了内部推理（N 字符）”而没有实际内容，检查
+`subagent.llm.completed` 是否同时包含 `reasoning_preview/reasoning_truncated`。Runtime 原样写入
+最多 4096 字符的模型推理返回值，不经过 KeyVault 脱敏；前端只在预览真实存在时展示“模型推理”，
+不能用字符数占位替代原文。旧事件只有 `reasoning_chars` 时无法还原已经丢弃的推理内容。
 
 回归测试至少覆盖：事件快照只有 `run.started`、状态 API 已 `completed`；校正后卡片立即终态，
 且成功/异常均在各自停留窗口后从运行坞隐藏。
@@ -1198,6 +1209,10 @@ bootstrap、gap replay 与 live SSE 都折叠到同一个 run。
   canonical `turnId`。用户消息通常没有 execution `runId`，投影层必须用 `ChatMessages.turn_id`，或用
   `chat_execution_commands.user_message_id/message_id` 反查 Turn；前端合并必须比较 `turnId`，不能再比较
   `runId`。否则同一逻辑轮会被拆成“本地运行壳 + 最终消息”两轮，React 的重复 key 复用会让气泡闪烁或消失。
+- 如果页面出现 `(duplicate message — already processed)`，这是同一 `message_id` 重投后的传输幂等
+  事实，不是 Agent 回复。`MessageDeliveryDispatcher` 写入入站转录时必须传递原始稳定 `messageId`；
+  duplicate done 只能返回 `stopReason=DuplicateMessage`，不得落 Agent 转录或回发。Conversation
+  投影还应按 envelope `message_id` 折叠历史重复入站，并过滤已经落库的旧占位回执。
 
 服务端 forward/backward event page 应读取 `limit + 1` 条，再以 `count > limit` 计算 `hasMore`；
 恰好装满最后一页时返回 `hasMore=true` 会制造无意义的额外回放请求并干扰诊断。
@@ -1722,7 +1737,9 @@ rg -n "\[AgentExec:ToolProfile\]|\[AgentExec:Tools\]|Trimmed L6-" `
   .\tmp\dev\backend.out.log .\tmp\dev\backend.err.log
 ```
 
-- 心跳最小工具集只允许 `MessageOrigin.FromKind=system` 且 `FromId=heartbeat` 的消息触发；不要根据消息正文中的心跳标记判断。
+- 心跳自主执行工具集只允许 `MessageOrigin.FromKind=system` 且 `FromId=heartbeat` 的消息触发；不要根据消息正文中的心跳标记判断。该集合只对 Agent 已授权工具做二次筛选，必须包含上下文恢复、子代理/Smart 工作流、代码检索、编辑和验证工具，不能把心跳降级成只能诊断后等待用户。
+- 若心跳回复以“是否继续/要做什么”结束，依次检查：实例 `heartbeatPrompt.md`、最终消息中是否追加“系统级自主执行契约”、`[AgentExec:ToolProfile]` 的 after/removed 数量、以及 `goal_read`/`query_session_logs(exclude_heartbeat=true)`/`spawn_sub_agent` 是否实际暴露。
+- 聊天页出现完整 `pudding-message` JSON 时，检查 Agent Conversation View 是否已把 `sourceKind=system, sourceId=heartbeat` 的 `content` 投影为 envelope 的 `context.text`；协议 envelope 只供 Runtime 审计，不应作为正文显示。
 - 子代理若有 capability 或 template 显式工具列表，日志中不应再出现静态 `sub_agent` 配置删除这些工具。
 - L6 被裁剪时会记录 `rawTokens`、`retainedTokens` 和 `limit=5000`；`retainedTokens` 必须不大于 5000，且预算只计 retained 值。
 - `context_layer_metric_events` 的 `LayoutVersion` 应为 `layer-v2`；同一 source 的层顺序应是全部 `L0-*`、`L1-TOOL-DEFINITIONS`、后续动态层，token offset 必须连续。

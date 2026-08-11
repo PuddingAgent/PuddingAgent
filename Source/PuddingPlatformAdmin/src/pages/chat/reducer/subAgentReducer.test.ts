@@ -45,6 +45,8 @@ describe('subAgentReducer', () => {
         message_truncated: false,
         reasoning_available: true,
         reasoning_chars: 2048,
+        reasoning_preview: '先读取代码地图，再核对当前实现。',
+        reasoning_truncated: false,
       },
       {
         eventId: 'event-tool-started-1',
@@ -117,10 +119,10 @@ describe('subAgentReducer', () => {
         truncated: false,
       },
       {
-        kind: 'reasoning_notice',
-        label: '内部推理',
-        content:
-          '模型产生了内部推理（2048 字符）。为避免泄露隐藏思维链，仅展示可审计的模型消息与执行事实。',
+        kind: 'reasoning',
+        label: '模型推理',
+        content: '先读取代码地图，再核对当前实现。',
+        truncated: false,
       },
     ]);
     expect(card.activities?.[3].details?.[0]).toMatchObject({
@@ -178,6 +180,78 @@ describe('subAgentReducer', () => {
       phase: 'completed',
       completedAt: Date.parse('2026-07-19T00:01:00Z'),
       output: 'canonical result',
+    });
+  });
+
+  it('projects budget exhaustion as a resumable terminal state', () => {
+    const running = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-started',
+        type: 'subagent.run.started',
+        occurredAt: '2026-08-11T08:55:49Z',
+        run_id: 'run-budget',
+        sub_agent_id: 'session-sub-budget',
+        origin_tool_id: 'spawn_sub_agent',
+        max_rounds: 600,
+      },
+    );
+    const exhausted = reduceSubAgentRunEvent(running, {
+      eventId: 'event-budget-exhausted',
+      type: 'subagent.run.budget_exhausted',
+      occurredAt: '2026-08-11T10:43:39Z',
+      run_id: 'run-budget',
+      sub_agent_id: 'session-sub-budget',
+      total_rounds: 620,
+      error: 'cleanup grace exhausted',
+    });
+
+    expect(exhausted['run-budget']).toMatchObject({
+      status: 'budget_exhausted',
+      phase: 'completed',
+      currentRound: 620,
+      completedAt: Date.parse('2026-08-11T10:43:39Z'),
+      error: 'cleanup grace exhausted',
+    });
+    expect(projectSubAgentRunsToCards(exhausted)['sa-run-budget'].status).toBe(
+      'budget_exhausted',
+    );
+
+    const staleRound = reduceSubAgentRunEvent(exhausted, {
+      eventId: 'event-stale-round',
+      type: 'subagent.round.started',
+      occurredAt: '2026-08-11T10:43:34Z',
+      run_id: 'run-budget',
+      sub_agent_id: 'session-sub-budget',
+      round: 620,
+    });
+    expect(staleRound).toBe(exhausted);
+  });
+
+  it('reconciles a budget-exhausted canonical snapshot as terminal', () => {
+    const running = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-started',
+        type: 'subagent.run.started',
+        run_id: 'run-budget-snapshot',
+        sub_agent_id: 'session-sub-budget-snapshot',
+      },
+    );
+
+    const reconciled = reconcileSubAgentRunStatuses(running, [
+      {
+        subSessionId: 'session-sub-budget-snapshot',
+        status: 'budget_exhausted',
+        completedAt: '2026-08-11T10:43:39Z',
+        resultSummary: 'resume the preserved child session',
+      },
+    ]);
+
+    expect(reconciled['run-budget-snapshot']).toMatchObject({
+      status: 'budget_exhausted',
+      phase: 'completed',
+      error: 'resume the preserved child session',
     });
   });
 });

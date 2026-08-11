@@ -12,7 +12,11 @@ import { defaultBrowserVoiceOutputAdapter } from '../hooks/browserVoiceOutput';
 import { useTtsPlayer } from '../hooks/useTtsPlayer';
 import { useTypewriterStreaming } from '../hooks/useTypewriterStreaming';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
-import type { ChatQuotedMessage, TimelineItem } from '../types';
+import type {
+  ChatQuotedMessage,
+  ParentDelegationActivity,
+  TimelineItem,
+} from '../types';
 import AgentAvatar from './AgentAvatar';
 import MessageActions from './MessageActions';
 import MessageItem from './MessageItem';
@@ -61,6 +65,7 @@ interface AgentMessageBubbleProps {
   onDelete?: () => void;
   turnId?: string;
   sessionId?: string | null;
+  parentDelegationActivity?: ParentDelegationActivity;
 }
 
 const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
@@ -172,7 +177,8 @@ const isRawStructuredParameterText = (text?: string): boolean => {
 const CurrentActivityPanel: React.FC<{
   activity: CurrentRunActivity;
   now: number;
-}> = ({ activity, now }) => {
+  hidePreview?: boolean;
+}> = ({ activity, now, hidePreview = false }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const elapsed = formatElapsed(activity.startedAt, now);
@@ -252,7 +258,7 @@ const CurrentActivityPanel: React.FC<{
             {activity.subject}
           </div>
         ))}
-      {preview && (
+      {preview && !hidePreview && (
         <Tooltip
           title={previewFull}
           overlayStyle={tooltipOverlayStyle}
@@ -352,6 +358,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   onDelete,
   turnId,
   sessionId,
+  parentDelegationActivity,
 }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
@@ -421,11 +428,40 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     isRunActive || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
   const isBeforeFirstToken = isRunActive && !hasAnswerContent;
   const shouldRenderAnswerBubble = hasAnswerContent || hasQuotedOnly;
-  const currentActivity = React.useMemo(
+  const processActivity = React.useMemo(
     () => getCurrentRunActivity(processItems, status),
     [processItems, status],
   );
-  const shouldShowCurrentActivity = Boolean(isRunActive && currentActivity);
+  const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
+    if (!parentDelegationActivity?.activeCount) return null;
+    const { activeCount, label, startedAt, updatedAt } =
+      parentDelegationActivity;
+    return {
+      kind: 'subagent',
+      title:
+        activeCount === 1
+          ? label
+            ? `正在调用子代理：${label}`
+            : '正在调用子代理'
+          : `正在调用 ${activeCount} 个子代理`,
+      subject: '主代理正在等待子代理返回；内部进度请查看右侧托盘坞',
+      status: 'running',
+      startedAt,
+      updatedAt,
+    };
+  }, [parentDelegationActivity]);
+  const currentActivity = React.useMemo(() => {
+    if (!delegationActivity) return processActivity;
+    if (!processActivity) return delegationActivity;
+    return (delegationActivity.updatedAt ?? 0) >=
+      (processActivity.updatedAt ?? 0)
+      ? delegationActivity
+      : processActivity;
+  }, [delegationActivity, processActivity]);
+  const shouldShowProcessActivity = Boolean(isRunActive && processActivity);
+  const shouldShowDelegationActivity = Boolean(
+    isRunActive && delegationActivity && processActivity?.kind !== 'subagent',
+  );
   const shouldShowPreAnswerWaiting = isBeforeFirstToken && !currentActivity;
   // 思维链预览：从 timeline 提取已清洗的 thinking 文本；有内容时等待气泡升级为思维链预览
   const reasoningLines = React.useMemo(() => {
@@ -436,15 +472,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       .filter((line) => line.text.length > 0);
   }, [processItems]);
   const hasReasoningContent = reasoningLines.length > 0;
-  // 阶段2：思维链预览 — 最新运行事件为 thinking 且尚未输出正式回复时展示；
-  // 一旦出现工具/子代理活动，预览让位于 CurrentActivityPanel（实时活动优先）。
-  const showReasoningPreview =
-    hasReasoningContent &&
-    isBeforeFirstToken &&
-    (!currentActivity || currentActivity.kind === 'thinking');
-  // 等待计时器：两种“首 token 前等待态”（纯等待 / 思维链预览）任一存在时都应计时
-  const shouldShowWaitingIndicator =
-    shouldShowPreAnswerWaiting || showReasoningPreview;
+  // 推理摘要与当前工具/委派活动并列展示，避免阶段切换时丢失主代理上下文。
+  const showReasoningPreview = hasReasoningContent && isBeforeFirstToken;
+  const reasoningIsCurrent =
+    !currentActivity || currentActivity.kind === 'thinking';
+  const shouldTrackPreAnswerElapsed = isBeforeFirstToken;
+  const shouldShowRunMonitor =
+    shouldShowProcessActivity ||
+    shouldShowDelegationActivity ||
+    showReasoningPreview ||
+    (!hasReasoningContent && shouldShowPreAnswerWaiting);
   const [activityNow, setActivityNow] = React.useState(() => Date.now());
   const getCanonicalWaitSeconds = React.useCallback(
     () =>
@@ -456,15 +493,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const [waitSeconds, setWaitSeconds] = React.useState(getCanonicalWaitSeconds);
 
   React.useEffect(() => {
-    if (!shouldShowCurrentActivity) return undefined;
+    if (!shouldShowProcessActivity && !shouldShowDelegationActivity)
+      return undefined;
     const timer = window.setInterval(() => setActivityNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [shouldShowCurrentActivity]);
+  }, [shouldShowDelegationActivity, shouldShowProcessActivity]);
 
   // B1: TTFB 计时 — 使用 Turn 的服务端时间锚点，避免刷新或虚拟列表
   // 重挂载时从 0 重新计时。
   React.useEffect(() => {
-    if (shouldShowWaitingIndicator) {
+    if (shouldTrackPreAnswerElapsed) {
       setWaitSeconds(getCanonicalWaitSeconds());
       const timer = window.setInterval(() => {
         setWaitSeconds(getCanonicalWaitSeconds());
@@ -473,7 +511,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     }
     // not waiting: do nothing (keep stale value hidden)
     return undefined;
-  }, [getCanonicalWaitSeconds, shouldShowWaitingIndicator]);
+  }, [getCanonicalWaitSeconds, shouldTrackPreAnswerElapsed]);
 
   // E2: 流式停滞检测 — 15s 无内容增量触发琥珀色警告
   const lastDeltaRef = React.useRef(Date.now());
@@ -539,27 +577,50 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               </div>
             )}
 
-            {/* 当前活动区只展示真实运行事件；思维链预览激活时抑制同源的“模型过程”面板，避免思维内容重复展示。 */}
-            {shouldShowCurrentActivity &&
-              currentActivity &&
-              !showReasoningPreview && (
-                <CurrentActivityPanel
-                  activity={currentActivity}
-                  now={activityNow}
-                />
-              )}
+            {shouldShowRunMonitor && (
+              <div
+                className={styles.agentRunMonitor}
+                data-testid="agent-run-monitor"
+              >
+                {/* 当前活动区仅展示主代理真实阶段或有界委派摘要。 */}
+                {shouldShowProcessActivity && processActivity && (
+                  <CurrentActivityPanel
+                    activity={processActivity}
+                    now={activityNow}
+                    hidePreview={
+                      showReasoningPreview &&
+                      processActivity.kind === 'thinking'
+                    }
+                  />
+                )}
 
-            {/* 阶段2: 思维链预览 — 有 reasoning 内容且最新活动为 thinking，尚未输出正式回复 */}
-            {showReasoningPreview && (
-              <ReasoningPreview
-                lines={reasoningLines}
-                waitSeconds={waitSeconds}
-              />
-            )}
+                {shouldShowDelegationActivity && delegationActivity && (
+                  <CurrentActivityPanel
+                    activity={delegationActivity}
+                    now={activityNow}
+                  />
+                )}
 
-            {/* 阶段1: 纯等待 — 无 reasoning 内容且暂无运行事件 */}
-            {!hasReasoningContent && shouldShowPreAnswerWaiting && (
-              <WaitingBubble waitSeconds={waitSeconds} />
+                {/* 推理摘要与工具/子代理当前活动并列，保留主代理过程连续性。 */}
+                {showReasoningPreview && (
+                  <ReasoningPreview
+                    lines={reasoningLines}
+                    waitSeconds={waitSeconds}
+                    isCurrent={reasoningIsCurrent}
+                    currentActivityTitle={
+                      reasoningIsCurrent ? undefined : currentActivity?.title
+                    }
+                  />
+                )}
+
+                {/* 尚无可见事件时，明确展示主代理的真实等待阶段。 */}
+                {!hasReasoningContent && shouldShowPreAnswerWaiting && (
+                  <WaitingBubble
+                    waitSeconds={waitSeconds}
+                    agentName={agentName}
+                  />
+                )}
+              </div>
             )}
 
             {/* 消息气泡 */}

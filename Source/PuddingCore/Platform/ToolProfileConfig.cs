@@ -8,12 +8,25 @@ public static class ToolProfileConfig
     public const string HeartbeatProfileName = "heartbeat";
     public const string SubAgentProfileName = "sub_agent";
 
-    /// <summary>心跳/维护场景的最小工具集</summary>
+    /// <summary>
+    /// 心跳自主执行工具集。这里只是对 Agent 已授权工具的二次筛选，不会绕过
+    /// capability/approval；因此心跳可以推进工作，而不是只能诊断后等待用户。
+    /// </summary>
     public static readonly HashSet<string> Heartbeat = new(StringComparer.OrdinalIgnoreCase)
     {
+        "search_tools",
         "goal_read", "goal_update", "sleep", "receive_messages", "send_message",
         "agent_diagnostics", "agent_status", "search_memory", "save_memory",
-        "save_preference", "query_session_logs", "manage_tasks", "file_read", "list_dir"
+        "save_preference", "query_sessions", "query_session_logs", "manage_tasks",
+        "event_subscribe", "list_agents", "query_sub_agents", "spawn_sub_agent",
+        "file_read", "list_dir", "file_search", "search_grep", "code_outline",
+        "code_symbol_search", "code_summary", "project_map",
+        "smart_explore", "smart_search", "smart_research", "smart_plan",
+        "smart_develop", "smart_review", "smart_test", "smart_deploy",
+        "file_write", "file_patch", "apply_patch", "shell",
+        "terminal_start", "terminal_wait", "terminal_read", "terminal_status",
+        "terminal_cancel", "terminal_input",
+        "git_status", "git_diff", "git_log", "git_show", "git_commit", "git_push"
     };
 
     /// <summary>子代理的最小工具集</summary>
