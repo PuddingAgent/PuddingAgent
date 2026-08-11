@@ -9,6 +9,9 @@
 | `Abstractions/` | 核心接口定义 |
 | `Core/` | 核心实现 |
 | `Platform/` | 平台抽象 |
+| `Abstractions/ILlmGatewayUsageRecorder.cs` | 一次 Provider usage 对应一条本地计费事实的必达写入契约 |
+| `Abstractions/ISubAgentPool.cs` | Runtime 调用子代理池所需的最小契约、池状态与池快照模型；实现留在 Platform |
+| `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约；包含 Agent Token/熵诊断的 Core DTO 查询边界 |
 
 ## 模型（Models/）
 
@@ -51,19 +54,35 @@
 |------|------|
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；大型任务基线 600 轮/2400 工具调用/24h + 20 轮/30 分钟收尾宽限，父 Agent 只可指定 `resume_sub_agent_id`，不可传数值预算 |
 
 ## 子代理编排（Orchestration/）
 
 | 文件 | 用途 |
 |------|------|
+| `AgentOrchestrationModels.cs` | `pudding.agent-orchestration/v2` 通用图、修订、typed node/control-data edge、权限策略与 append-only run event 契约 |
+| `AgentOrchestrationComponentContracts.cs` | 组件/触发器注册表、contract hash、类型/MIME/基数/delivery 端口、多模态 Artifact 值与独立 GraphLayout 契约 |
+| `AgentOrchestrationGraphCompiler.cs` | 纯图编译器；规范化、组件冻结、端口兼容、引用/精确路由/写权限校验和确定性 DAG 拓扑排序，不执行节点 |
+| `AgentOrchestrationPersistenceContracts.cs` | 通用图/run 发现摘要、revision/run/node 快照、独立 GraphLayout CAS、无 Run Graph 的 Head-CAS 删除收据、只读 QueryStore、可写 Store、claim 请求与 committed-event signal 契约 |
+| `DesignCouncilOrchestrationGraphAdapter.cs` | 将 MOA stage/work item 和上下文可见性映射为通用 gate/subAgent 节点及 control/data edge |
 | `SubAgentOrchestrationModels.cs` | MOA 设计请求、专家成员、阶段门禁、只读 work item 与 Draft 计划契约 |
 | `DesignCouncilPlanCompiler.cs` | 纯计划编译器；校验精确模型路由/多样性/独立终审并生成六阶段 DAG，不启动子代理 |
+| `SubAgentOrchestrationRuntimeModels.cs` | MOA run/stage/work item 快照、claim、完成结果和用户上下文补充契约 |
+| `SubAgentOrchestrationRuntimeContracts.cs` | MOA 乐观并发 run store、运行时命令/派发结果与 `IDesignCouncilRuntimeService` 契约 |
+| `DesignCouncilRunStateMachine.cs` | 纯状态机；显式激活、并发领取、claim 校验、暂停恢复、法定人数、取消和终态 |
 
 ## 工具契约
 
 | 文件 | 用途 |
 |------|------|
 | `Tools/` | 工具接口与基类 |
+| `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类；提供不污染公开 schema 的参数归一化边界 |
+
+## 存储管理契约（Storage/）
+
+| 文件 | 用途 |
+|------|------|
+| `StorageMaintenanceContracts.cs` | Core 数据库/索引明细、语义清理目标、十分钟预览令牌、执行结果与 `IStorageMaintenanceService` 契约；Desktop 只通过 HTTP 使用 |
 
 ## 配置 & 序列化
 

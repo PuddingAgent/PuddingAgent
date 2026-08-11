@@ -3,7 +3,7 @@
 > 状态：**accepted / implemented**
 > 作者：@architect
 > 日期：2026-05-23
-> 最后修订：2026-07-18
+> 最后修订：2026-08-10
 > 触发条件：A(新架构模式/抽象层) — ADR-018 统计口径不一、缺失明细账本、fire-and-forget 不可靠
 > 关联：[18上下文缓存可观测性ADR](./18上下文缓存可观测性ADR.md)、[05PuddingPlatform](./05PuddingPlatform.md)
 
@@ -101,6 +101,25 @@ cost = cacheHitTokens / 1_000_000 * cacheHitPrice
 - 由 TokenUsageRecorder 增量更新
 - 可从 TokenUsageEventEntity 重建
 - 查询走聚合表（性能优先）
+
+### ADR-043-F：计费统计与会话归因分离
+
+**决策**：`TokenUsageEvents` 继续承担会话、角色和上下文层归因；新增
+`llm_gateway_usage_events`，以“一次 Provider 返回的 usage = 一条事实”作为
+请求数、Token 和费用的本地计费口径。
+
+- `DirectLlmClient` 在 Chat 与 ChatStream 的 Provider 成功边界等待
+  `ILlmGatewayUsageRecorder.RecordRequiredAsync` 完成，再向调用方报告成功。
+- 成功 `runtime_activity` 与网关账本共享请求 ActivityId；账本 `source_id` 为
+  `runtime-activity:{activityId}`，避免重建与实时写入产生双份事实。
+- 历史重建读取成功的 `llm_gateway` 活动：非流式 usage 取活动 metadata，流式
+  usage 按 workspace/session/时间顺序与 `session_event_log(event_type=usage)` 配对。
+- 重建只替换已经成功重构的 sourceId；活动缺失、诊断保留期已过或实时账本仍在的
+  行必须保留。早期 `llm:` sourceId 通过完整请求身份去重，不得二次计量。
+- `StatsApiController` 对已有网关事实的月份优先查询网关账本；没有网关事实的历史
+  月份才回退 `TokenUsageStats` / `TokenUsageEvents` 会话投影。
+- 本地账本只覆盖 Pudding 实际收到 usage 的调用。同一 API Key 被其他进程共享、
+  请求取消/失败且 Provider 未返回 usage 时，DeepSeek 官网 Usage 月度导出仍是最终账单。
 
 ## 3. 数据模型
 
@@ -289,6 +308,9 @@ POST /api/stats/tokens/rebuild                                          ← 触�
 - 保留现有月度总览卡片和 ProTable 明细
 - 增加 Provider / Model 筛选（已有 API 参数支持）
 - 表格列不变，确保口径一致性
+- 按月/按日趋势使用覆盖完整时段槽位的连续命中区和页面受控 tooltip；禁止使用
+  SVG 原生 `<title>` 承担交互详情，避免在堆叠段与空白之间移动时提示框抖动；
+  tooltip 的缓存命中率统一按 `命中输入 / (命中输入 + 未命中输入)` 计算
 - 后续可加趋势图（P3）
 
 ## 6. 影响面
@@ -301,6 +323,8 @@ POST /api/stats/tokens/rebuild                                          ← 触�
 | PuddingRuntime | TurnExecutorAdapter 生成带不可变 LLM 路由身份的 usage v2 事件 | 中 |
 | Conversation Projection | ConversationProjector 以必达语义投影 Token 明细 | 中 |
 | PuddingPlatformAdmin | 新增 API 调用、会话统计面板 | 低 |
+| PuddingCore / PuddingRuntime | 新增网关计费记录契约；Provider 成功边界必达写入 | 中 |
+| PuddingPlatform.Data | 新增 `llm_gateway_usage_events` 与启动幂等建表 | 低 — 新表 |
 
 ## 7. 实施优先级
 
@@ -338,3 +362,5 @@ POST /api/stats/tokens/rebuild                                          ← 触�
 | 6 | Chat 会话面板数据正确 | 目视检查 |
 | 7 | 非 Conversation 调用等待 required usage 写入，稳定 InvocationId 可幂等 | `MemoryLlmInvocationClientUsageTests` |
 | 8 | 无归因旧事件不会删除现有明细；重建替换保持事务原子性 | `TokenUsageRebuildServiceTests` |
+| 9 | 网关重建每个成功请求只生成一条事实，实时旧行不丢失/不重复 | `TokenUsageRebuildServiceTests` |
+| 10 | 月度与趋势接口存在网关事实时不再叠加会话投影 | `StatsApiControllerTests` |

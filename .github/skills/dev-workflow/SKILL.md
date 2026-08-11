@@ -1,14 +1,13 @@
 ---
 name: dev-workflow
-description: Use when implementing any feature, bugfix, or code change in the  project — before writing ANY code. Covers the full development lifecycle. Triggers: new feature, bug fix, refactoring, code review, architectural change.
-argument-hint: "描述开发任务，例如 '实现密码模块导出功能' 或 '修复 ZeroMQ 连接断开'"
+description: Use when implementing, debugging, reviewing, or refactoring PuddingAgent. Covers repository discovery, design, testing, Desktop-supervised ASP.NET Core deployment, runtime verification, documentation, and delivery.
 ---
 
-#  研发工作流
+# PuddingAgent 研发工作流
 
 ## 概述
 
-本技能定义  项目中从**设计 → 探索 → 方案 → 实施 → QA → 归档**的完整研发方法论。
+本技能定义 PuddingAgent 从**设计 → 探索 → 方案 → 实施 → QA → 归档**的完整研发方法论。
 融合 TDD、系统化调试、子Agent协作和结构化收尾。
 
 **核心原则：设计先行，测试驱动，系统化而非随意。**
@@ -141,6 +140,22 @@ python todo-api/todo_api.py update <id> stage=ready \
 ---
 
 ## 阶段 3: 实施 (Implementation)
+
+### Desktop 托管 Core 的部署闭环
+
+修改 ASP.NET Core/Core 代码并需要让 Desktop 加载新产物时，优先使用 Desktop 的 Loopback Bootstrap API，不要默认让用户手工退出托盘进程，也不要用 `dev-up.py` 接管同一个 DataRoot。
+
+1. 先调用 `GET http://127.0.0.1:8199/desktop/bootstrap/status`，确认 Desktop 控制面在线并记录旧 `coreState`、Core PID 和健康状态。
+2. 从当前 `<DataRoot>/config/system.json` 读取 `desktop.core.controlToken`，仅放入 `X-Control-Token` Header。禁止把 Token 写入命令文本、日志、异常、聊天回复或诊断包。
+3. 按目标选择操作：
+   - Core 源码变更：`POST /desktop/bootstrap/start`，执行 `stop → dotnet build Source/PuddingAgent/PuddingAgent.csproj → start`，返回 `202` 后轮询 status。
+   - 仅重启已构建 Core：依次 `POST /desktop/bootstrap/core/stop`、`POST /desktop/bootstrap/core/start`。
+   - 仅构建：先确保 Core 已停止，再调用 `POST /desktop/bootstrap/build`；Core 运行时会返回 `409 core_running`。
+4. 轮询 status，直到 `busy=false`；完整重载还必须验证 `lastResult.success=true`、`buildExitCode=0`、`coreRestarted=true`。
+5. 最终同时验证 `coreState=Ready`、新的 Core PID/产物时间和 `http://127.0.0.1:<corePort>/health = healthy`；还要调用本次修改新增或改变的业务路由。只看到 HTTP 202、build exit code、自动恢复或 SPA fallback 的 200，不算加载新代码成功。
+6. 若项目子输出中的 DLL 已更新，但最终 `Source/PuddingAgent/bin/<Configuration>/<TFM>` 中同名传递依赖仍是旧哈希，说明增量构建没有刷新入口目录。此时用 Bootstrap API 原子停止 Core，执行 `dotnet build Source/PuddingAgent/PuddingAgent.csproj --no-restore --no-incremental --nologo`，核对入口 DLL 哈希后再用 Bootstrap API 启动 Core；不得用“构建成功”掩盖旧路由仍返回空 404。
+
+触发完整重载前先保存可恢复的验证清单，因为承载当前 Agent 的 Core 会短暂离线。Desktop Bootstrap 只重建/重启 Core，不更新 Desktop 自身，也不是 .NET Hot Reload。详细契约见 `Docs/07架构/69ADR-068桌面引导式自举闭环ADR.md` 与 `How-Debuge.md`。
 
 ### 开工门禁（使用 git-workflow）
 
@@ -436,11 +451,11 @@ python todo-api/todo_api.py finish <id> --agent-id <agent> --summary "完成" --
 ### 必读文档
 
 开工前必读：
-1. `Doc/Index.md` — 项目概览
-2. `Doc/CLAUDE.md` — 流程规范权威源
-3. `Doc/Context.md` — 当前上下文
-4. `Doc/Map.yaml` — 架构地图
-5. `Doc/Memory/Self-reflection.md` — 避免历史错误
+1. `Agents.md` — 仓库分层、产品边界和验证约束
+2. 根目录 `code_map.md` — 项目快速索引
+3. 与任务相关的 `Source/*/code_map.md` — 模块入口
+4. `Docs/` 下相关 ADR/规格 — 架构权威说明
+5. `How-Debuge.md` — 运行态日志与诊断路径
 
 ### 关键约束
 

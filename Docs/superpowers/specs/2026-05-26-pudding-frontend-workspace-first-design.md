@@ -1,5 +1,11 @@
 # Pudding 前端 Workspace First 改造设计
 
+> 状态：**Retired（2026-08-09）**
+> Workspace 列表仍保留在 `/pudding/workspaces`，但像素风 Workspace Studio、
+> `/pudding/workspaces/{workspaceId}[/{agentId}]` 深链和 `/workspace-studio` 旧入口已经移除。
+> 工作空间选择、最近访问和唯一工作空间入口现在直接进入带 Workspace/Agent 上下文的 `/chat`。
+> 下文保留为历史设计记录，不再代表当前实现。
+
 ## 背景
 
 当前前端的实际入口仍以 Chat 为中心：`/` 和 `/welcome` 最终进入 `/chat`，用户会直接面对单个 Agent 的对话界面。新的产品模型已经发生变化：Workspace 是用户的工作场所，Workspace 内包含多个 Agent；Chat 只是用户选中某个 Agent 后的对话详情页。

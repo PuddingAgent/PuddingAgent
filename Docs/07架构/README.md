@@ -56,6 +56,12 @@
 50. [77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令](77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md)
 51. [78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令](78Phase2A-3B外部验收控制器与脱敏BrowserActivity证据开发工作指令.md)
 52. [79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令](79Phase2A-3C真实Agent会话WebView2控制闭环开发工作指令.md)
+53. [80ADR-069MOA子代理设计委员会编排核心ADR](80ADR-069MOA子代理设计委员会编排核心ADR.md)
+54. [81ADR-070通用Agent编排图基础架构ADR](81ADR-070通用Agent编排图基础架构ADR.md)
+55. [82ADR-071通用Agent编排平台完整设计方案ADR](82ADR-071通用Agent编排平台完整设计方案ADR.md)
+56. [83通用Agent编排后端执行内核与ControlPlane施工图](83通用Agent编排后端执行内核与ControlPlane施工图.md)
+57. [84通用Agent编排蓝图编辑器与组件系统施工图](84通用Agent编排蓝图编辑器与组件系统施工图.md)
+58. [85通用Agent编排交付测试与运维验收图册](85通用Agent编排交付测试与运维验收图册.md)
 
 文档分工：
 
@@ -68,6 +74,7 @@
 - 万物皆事件，但事件域、可见性、订阅权限与执行后果必须受治理约束。
 - Gateway 负责把外部协议世界转换为平台事件世界，Runtime 负责把订阅命中变成实际唤醒与执行。
 - Workflow / TaskMap 是复杂任务的一等表达，前端可借鉴 FlowGram 风格画布，但运行时语义仍以 Pudding 自身架构为准。
+- Agent 生成的可执行任务图使用 `pudding.agent-orchestration/v2` 声明式契约，包含版本化组件/触发器、强类型多模态端口和独立画布布局；MOA 是模板实例。当前定义、修订、运行、事件边界和 replay-to-live 基础见 [ADR-070](81ADR-070通用Agent编排图基础架构ADR.md)，完整目标及逐层施工/验收见 [ADR-071 文档包](82ADR-071通用Agent编排平台完整设计方案ADR.md)。
 - 若需要继续细化事件命名、Envelope、重放与死信策略，应优先阅读 [10事件系统与事件总线](10事件系统与事件总线.md)。
 - 若需要研究 token 成本、前缀缓存命中、工具输出/日志/RAG 进入 LLM 前压缩和 Headroom 参考路线，应优先阅读 [18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[43ADR-042上下文自动压缩与主动Compact命令ADR](43ADR-042上下文自动压缩与主动Compact命令ADR.md) 与 [44ADR-043缓存统计闭环ADR](44ADR-043缓存统计闭环ADR.md)。
 - 若需要讨论 Hermes 型系统的 1~7 开发方向、优先级和待细化问题，应优先阅读 [49ADR-048Hermes型系统开发方向参考ADR](49ADR-048Hermes型系统开发方向参考ADR.md)。

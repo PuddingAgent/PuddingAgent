@@ -139,7 +139,7 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 
 ### 3.7 前端
 
-- Chat 页面和 Workspace Studio 都使用 canonical Turn API。
+- Chat 页面使用 canonical Turn API；原 Workspace Studio 页面已移除，不再维护第二套发送入口。
 - 创建或解析真实 Conversation ID 后，才能发送并订阅该 Conversation 的 SSE。
 - `clientRequestId` 与 `clientMessageId` 在前端生成，并在重试时保持不变。
 - Outbox 保存完整的 canonical 重放信息：

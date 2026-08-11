@@ -9,7 +9,7 @@
 | `DependencyInjection.cs` | Runtime 服务注册入口 |
 | `Services/PuddingConfigLoader.cs` | JSON 配置加载 |
 | `Services/PuddingJsonConfig.cs` | 配置模型定义 |
-| `Services/RuntimeExecutionConfigService.cs` | 执行配置：24h 硬上限、子代理并发与 timeout |
+| `Services/RuntimeExecutionConfigService.cs` | 执行配置：系统统一分配 600 轮、2400 工具调用、24h，以及 20 轮/30 分钟收尾宽限；父 Agent 不可覆盖 |
 
 ## Agent Loop
 
@@ -27,7 +27,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/ContextPipeline.cs` | 🔑 上下文组装管线（85KB，核心） |
+| `Services/ContextPipeline.cs` | 🔑 上下文组装管线；Tool 层强制 Direct/Delegated 判定与前三次调用委派合同 |
 | `Services/ContextWindowManager.cs` | Token 窗口管理（48KB） |
 | `Services/ContextAssemblyService.cs` | 上下文装配 |
 | `Services/ContextBudgetAllocator.cs` | 预算分配 |
@@ -39,7 +39,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型的 protocol 路由 Chat Completions/Responses/Anthropic Messages |
+| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本 |
 | `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径 |
 | `Services/LlmProfileResolver.cs` | Profile 解析 |
 | `Services/LlmRequestBudgetGuard.cs` | 预算守卫 |
@@ -50,6 +50,9 @@
 | 文件 | 用途 |
 |------|------|
 | `Tools/BuiltIns/` | 内置工具（Git 20 工具在此） |
+| `Tools/BuiltIns/Files/FileChunkService.cs` | Runtime 文件工具的大文件分块/流式读取服务；不再反向依赖 Platform |
+| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 上下文/Token 诊断；通过 Core 仓储契约读取持久化诊断 |
+| `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验 |
 | `Tools/Platform/` | 平台工具实现 |
 | `Services/Tools/` | 工具运行时服务 |
 | `Services/TerminalProcessManager.cs` | 终端进程管理 |
@@ -59,7 +62,10 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/SubAgentInvocationService.cs` | 子代理调用 |
+| `Services/SubAgentInvocationService.cs` | 子代理调用；固化统一系统预算，并把公开 `resume_sub_agent_id` 映射为稳定 SubSessionId 续跑 |
+| `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算状态机：启动/80%/50% 通知、10-50 轮收尾宽限、可恢复终止判定 |
+| `Services/DesignCouncilRuntimeService.cs` | MOA 运行时适配器；精确 provider/model 路由、可见性裁剪、只读派发、结果回填与暂停输入 |
+| `Services/InMemorySubAgentOrchestrationRunStore.cs` | 进程内 MOA run 快照 store；Version CAS 防止重复 claim，不支持跨重启恢复 |
 | `Services/SubconsciousRecallPipeline.cs` | 潜意识召回管道（25KB） |
 | `Services/SubconsciousPlanGenerationService.cs` | 计划生成 |
 | `Services/TaskPlanning/` | 任务规划 |

@@ -44,14 +44,20 @@
 | `Services/AgentRuntimeProfileResolver.cs` | Runtime Profile 解析（16KB） |
 | `Services/AgentConversationLogService.cs` | 对话日志 |
 
+## 认证与当前用户
+
+| 文件 | 用途 |
+|------|------|
+| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；默认头像使用 Web 自有 `/admin/assets/images/me.png`，不得回退到框架示例或第三方远程资源 |
+
 ## 子代理 & 诊断
 
 | 文件 | 用途 |
 |------|------|
-| `Services/SubAgentManager.cs` | 子代理管理（55KB） |
-| `Services/SubAgentPool.cs` | 子代理池 |
+| `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；以同一 SubSessionId + 新 runId 透明续跑并重置计数器 |
+| `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储（40KB） |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；支持可恢复终态 `budget_exhausted` 与预算通知投影 |
 
 ## 持久化
 
@@ -60,6 +66,14 @@
 | `Data/` | EF Core DbContext、实体、迁移 |
 | `Migrations/` | EF Core 迁移 |
 | `DesignTimeDbContextFactory.cs` | 设计时工厂 |
+| `Services/Orchestration/AgentOrchestrationSchemaBootstrapper.cs` | 通用编排 graph/revision/layout/run/node-run/event SQLite 表与索引幂等初始化 |
+| `Services/Orchestration/SqliteAgentOrchestrationStore.cs` | Graph/Run 分页发现、修订与独立布局 CAS（不可变 Revision/Node 先只读校验，再进入短写事务）、无 Run Graph 的 Head-CAS 删除、持久化运行快照、原子 claim/fence、lease 恢复和 afterSequence 事件读取 |
+| `Services/Orchestration/AgentOrchestrationCommittedEventSignal.cs` | committed-after-transaction 进程内唤醒；业务数据仍从 SQLite 读取 |
+| `Services/Orchestration/AgentOrchestrationEventFollower.cs` | 持久化高水位 replay → retained signal → live 的连续事件读取，检测 sequence gap |
+| `Controllers/Api/AgentOrchestrationApiController.cs` | 登录态只读 Graph/Run 发现、catalog/revision/run/event API 与 `Last-Event-ID` SSE Watch |
+| `Controllers/Api/AgentOrchestrationLayoutApiController.cs` | 布局读取与 Admin-only CAS 写入；不持有运行写命令端点 |
+| `Controllers/Api/AgentOrchestrationManagementApiController.cs` | Admin-only Graph 新建/删除；新建由服务端生成可编译的 humanInput 占位 Revision，删除拒绝清理任何有 Run 历史的 Graph |
+| `Services/Diagnostics/DiagnosticRetentionService.cs` | 后台诊断保留期裁剪；仅遥测、上下文指标与运行活动，权威 session/conversation 事实源不在白名单 |
 
 ## 多媒体
 
@@ -85,9 +99,14 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/TokenUsageRecorder.cs` | Token 用量记录（26KB） |
-| `Services/TokenUsageRebuildService.cs` | 重建服务 |
+| `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
+| `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |
+| `Data/Entities/LlmGatewayUsageEventEntity.cs` | `llm_gateway_usage_events` 本地计费事实；sourceId 唯一 |
+| `Services/TokenUsageSchemaBootstrapper.cs` | 旧 SQLite 的 Token 字段/索引与网关账本幂等建表 |
+| `Services/TokenUsageRebuildService.cs` | 从成功网关活动 + session usage 帧重建计费事实，并保留无法覆盖的实时行 |
+| `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影 |
 | `Services/TokenCostService.cs` | 成本计算 |
 
 ## 测试
 
-`../PuddingPlatformTests/` — 渠道配置、Artifact 存储、视觉观察、图片生成/投递（11/11 ✅）
+`../PuddingPlatformTests/` — 渠道配置、Artifact、消息与通用编排；Orchestration 定向测试 20/20 ✅，覆盖 Graph/Run 发现、布局 CAS、Graph 新建/受约束删除与无关 SQLite writer 下的快速非法请求拒绝

@@ -8,6 +8,11 @@
 |------|------|
 | `BuiltInAgentTemplates.cs` | 内置 Agent 模板注册 |
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | Platform/Runtime 组合注册；包含 MOA、V2 component registry/compiler、SQLite store/signal 与 replay-to-live follower |
+| `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含通用编排 SQLite schema bootstrap |
+| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
+| `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
+| `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
 
 ## Browser Bridge（Phase 2A）
 
@@ -55,4 +60,4 @@
 
 ## 测试
 
-`../Tests/PuddingHost.Tests/` — Browser Bridge Endpoint、Remote proxy 测试（56/56 ✅）
+`../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy 与 Storage 管理；Storage 定向测试 4/4 ✅

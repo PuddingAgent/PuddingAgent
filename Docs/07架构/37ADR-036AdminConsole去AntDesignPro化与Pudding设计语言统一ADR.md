@@ -269,10 +269,21 @@ Admin Console 的目标不是“换主题色的 Ant Design Pro”，而是 Puddi
 为避免 Chat 主体验继续承担管理框架成本，实施顺序增加一个可量化的过渡阶段：
 
 1. Umi 全局 `layout` 插件关闭；`src/app.tsx` 只保留认证、初始状态、主题和 request 等所有路由共享能力。
-2. `config/routes.ts` 明确拆分 `standaloneRoutes` 与 `adminRoutes`；`/chat`、登录和 Workspace Studio 不经过管理壳，管理页统一挂到异步 `src/layouts/AdminLayout` 父路由。
+2. `config/routes.ts` 明确拆分 `standaloneRoutes` 与 `adminRoutes`；`/chat`、登录和工作空间列表不经过管理壳，管理页统一挂到异步 `src/layouts/AdminLayout` 父路由。
 3. `AdminLayout` 现阶段仍使用 ProLayout 维持管理菜单和页面兼容，但该依赖只在进入管理路由后加载。这是 ADR-036-C 自有壳替换前的隔离层，不改变最终去 ProLayout 的方向。
 4. Chat 内的历史搜索、诊断面板、子代理检查器等懒加载能力必须同时满足“异步声明”和“关闭时不挂载”；仅使用 `React.lazy` 但始终渲染组件并不能推迟网络请求。
+5. 关闭 Umi Layout 插件后，`routes.ts` 的 `icon: 'home'` 等语义名不会自动转换；必须在异步 `AdminLayout/menuIcons.ts` 内显式映射为 React 图标组件。不得在全局 `app.tsx` 恢复图标注册，也不得把字符串直接交给 ProLayout，否则侧栏会显示 `home/appstore` 等文本。
 
 生产构建证据：主包从 `1,867,778` bytes 降至 `1,373,107` bytes，Chat 路由首始 chunk 为 `303,537` bytes；两者合计从 `2,171,299` bytes 降至 `1,676,644` bytes，减少 `494,655` bytes（22.78%）。Chat HTML 没有新增同步 framework script，生成路由也不再包含全局 `plugin-layout`。
 
 后续去 Pro 化应在 `AdminLayout` 边界内替换侧栏和顶栏，再逐页减少 PageContainer/ProTable；不得把管理壳重新迁回 `app.tsx`，也不得用牺牲 Chat 首载的方式换取管理端实现便利。
+
+## 12. 2026-08-09 Workspace Studio 退役补充
+
+为继续缩减 Web 分发体积并移除不再需要的游戏运行时，像素风 Workspace Studio、Phaser 2D Canvas、场景模型、Studio 深链和旧入口全部移除。`/pudding/workspaces` 继续作为工作空间列表；列表、最近访问和唯一工作空间入口直接进入携带 `workspaceId` / `agentId` 的 Chat，新建工作空间后进入管理设置。
+
+角色精灵素材不再由 Web `public/assets` 发布，迁移到 `Source/PuddingDesktop/Assets/AgentSprites/` 作为未启用的客户端源素材；当前 Desktop 项目不把它们复制到发布包。Studio 专属的两张场景贴图删除。
+
+删除前后使用同一生产构建命令测量：JavaScript 总量从 `6,226,888` bytes 降至 `4,959,485` bytes，减少 `1,267,403` bytes（20.35%）；包含 source map 和静态资源的 `dist` 总量从 `71,755,862` bytes 降至 `29,001,583` bytes，减少 `42,754,279` bytes（59.58%），文件数从 167 降至 129。原 Phaser chunk `1,201,323` bytes 和 Studio 页面 chunk `60,429` bytes 均消失，产物中不再生成 `workspace-studio/index.html`、Studio/Phaser source map 或 `assets/agent-sprites`。
+
+由于 Studio 在上一阶段已经是异步独立路由，Chat 首载只从 `1,676,644` bytes 小幅降至 `1,673,805` bytes（减少 `2,839` bytes）。本次收益主要属于完整安装包、缓存占用和依赖维护面，而不是再次显著缩小 Chat 首屏。

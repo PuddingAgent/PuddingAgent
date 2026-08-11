@@ -198,3 +198,12 @@ IDLE
 - 子代理运行检查器只在当前会话存在子代理卡片或用户显式打开时加载；摄像头输入和会话基准诊断 Drawer 也采用首次使用加载，关闭状态不预挂载到每个消息节点。
 - 高频埋点、mark/measure 和事件缓冲收敛到轻量 `perfEventRuntime`；完整浏览器观察器、诊断快照和建议生成保留在异步 `debug` chunk，普通 Chat 首屏不执行也不解析。
 - bundle 评估以 HTML 的全部同步 script 与当前路由首始 chunk 合计为准；仅把 React framework 从 `umi.js` 移到同步 `framework.js` 不算首载优化。
+
+## 2026-08-10 消息行热路径收敛补充
+
+- `MessageList` 是消息树聚合样式的唯一注册边界；它通过 `ChatMessageStyleProvider` 向消息行共享样式结果。`AgentMessageBubble`、`MessageItem`、`MessageActions`、`MessageProcessSummary`、头像和用户气泡等叶子组件不得再次调用会同时订阅全部样式域的 `useChatStyles`。
+- `useChatStyles` 必须稳定复用合并后的 styles/value；样式域没有变化时不能因为父组件普通重渲染而发布新的 Context value，避免所有可见消息越过 memo 边界。
+- 虚拟投影已经生成 `ChatMessageBlock`，`MessageList` 必须直接交给 `MessageRow`。不得把单个 block 重新包装为一元素 `ChatTurn[]` 再执行一次 `buildMessageBlocks`；旧 `MessageStream` 和 `MessageGroup` 兼容层已删除。
+- `MessageRow` 的 memo 比较覆盖正文、状态、视觉制品、Agent 信息、过程事件、过程摘要、usage 和引用消息。等价的服务端投影对象重建不得提交历史行；活动行正文或正文前的 thinking/tool 变化必须触发更新。
+- 每条 Agent 消息的完整操作栏在首次 hover 前不实例化；不可见时不保留 button/Tooltip DOM。首次激活后允许保留组件状态，以免朗读状态因指针离开被强制销毁。
+- 构建门禁除聚焦 Jest 外，还必须执行生产 `max build`，并阻断 Chat 样式模块的循环依赖警告。

@@ -1,6 +1,6 @@
 # 69 PuddingDesktop 浏览器工作区、运行中心与存储管理实施规格
 
-> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Desktop 固定端口与 IPv4 全网卡监听已完成（2026-08-09）；Phase 2A-1/2 accepted；Phase 2A-3 automated accepted（真实 DeepSeek smoke pending）**
+> - 状态：**Phase 1B-R / Phase 1B-S 已完成；Phase 1B-S2 Core 数据库与索引管理 API 已完成自动验收（外部部署后 UI smoke pending）；Desktop 固定端口与 IPv4 全网卡监听已完成（2026-08-09）；Phase 2A-1/2 accepted；Phase 2A-3 automated accepted（真实 DeepSeek smoke pending）**
 > - 日期：2026-08-09
 > - 前置文档：[ADR-066](67ADR-066抖音个人开发者评论接入与浏览器自动化ADR.md)、[WebView2 实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
@@ -461,6 +461,48 @@ public interface ILogRetentionService
 12. 不执行 SQLite checkpoint/VACUUM，不清理 Browser UDF，不调用递归通用删除命令。
 
 该实现等价迁移 `D:\data\clear.py` 已验证的安全策略，但产品运行不依赖 Python 或 `uv`。
+
+### 6.5 Core 数据库与索引管理 API（Phase 1B-S2）
+
+数据库与索引的语义统计、删除、WAL checkpoint 和 SQLite 压缩属于 ASP.NET Core Service Plane，Desktop 不得直接打开或写入 SQLite。Desktop 仍可做整个 DataRoot 的文件级扫描和日志清理，但数据库明细必须调用以下 Core API：
+
+```text
+GET  /api/admin/storage/databases
+POST /api/admin/storage/databases/cleanup/preview
+POST /api/admin/storage/databases/cleanup/execute
+```
+
+认证支持两条等价管理路径：
+
+- Admin SPA/外部管理客户端使用已认证的 `admin` JWT；
+- 产品 Desktop 只允许在 `DesktopChild` 模式从 Loopback 发起，并携带 `X-Pudding-Desktop-Token`。Token 每次请求从 `system.json` 重新验证，不缓存、不显示。
+
+清理 API 不接受任意数据库路径、表名或 SQL，只接受 Core 定义的语义目标 ID。首批目标如下：
+
+| 目标 ID | 内容 | 清理规则 |
+|---|---|---|
+| `diagnostics.telemetry` | `telemetry_metric_events`、`context_layer_metric_events` | 7/14/30/90 天保留期；按时间索引批量删除 |
+| `diagnostics.runtime-activity` | `runtime_activity` | 7/14/30/90 天保留期；按时间索引批量删除 |
+| `platform.duplicate-indexes` | `conversation_events` 上与 EF Core 完全等价的旧 `ix_ce_*`，以及只服务于已禁用权威事件裁剪的 retention 索引 | 同时核对唯一性和列顺序后才删除；运行时建表改用 EF canonical 名称，权威事件 retention 索引不再创建 |
+| `code-index.obsolete-scopes` | Covered/Removed 作用域，或失效超过 24 小时且当前未索引的旧作用域 | 只删除派生的文件/符号/关系/引用/运行记录和作用域登记，不删除源代码 |
+
+以下数据始终显示为受保护且不进入清理目标：
+
+- `session_event_log`：SSE 断线恢复与会话执行事实源；
+- `conversation_events`：Conversation replay 与投影事实源；
+- `ChatMessages`、Token 汇总、Agent、记忆、配置和用户文件。
+
+执行协议采用服务端 Preview：
+
+1. `preview` 固化目标、截止时间、候选行/索引/作用域和是否压缩，返回十分钟有效的 `PreviewId`；
+2. `execute` 只接受 `PreviewId`，再次检查重复索引定义、代码作用域状态和索引任务是否正在运行；
+3. 诊断行以 5,000 行一批删除，避免一个超长事务；
+4. 用户选择压缩时先检查可用磁盘空间，再执行 `wal_checkpoint(TRUNCATE)` 和 `VACUUM`；压缩失败不回滚已经安全完成的行清理，但必须返回 Warning；
+5. 执行完成后返回清理前后字节数和新 `StorageDatabaseAnalysis`，Desktop 随后再跑一次 DataRoot 扫描。
+
+交互式分析禁止无条件执行全库 `dbstat`。平台库只对受控的小范围可清理对象尝试定向 `dbstat`；代码索引使用准确的数据库文件/页面统计和近似行数，避免刷新页面时遍历数 GB B-tree。SQLite 不支持 `dbstat` 时，表级大小显示为不可用，但数据库文件、WAL、页面数、freelist 和行数仍正常返回。
+
+Desktop Storage 页面新增平台库、代码索引库、记忆库、控制面库和全文检索索引的文件级明细，并显示 SQLite 主文件/WAL/空闲页、受保护事实、可清理诊断项、重复/失效索引和冗余代码索引作用域。清理按钮必须走 Core Preview → 明确确认 → Execute；Core 未启动时只显示现有文件级总量，不降级为 Desktop 直写数据库。
 
 ## 7. 文件与类拆分
 

@@ -106,8 +106,11 @@ Current defaults:
   "subAgents": {
     "maxConcurrentPerTemplate": 3,
     "maxConcurrentPerWorkspace": 6,
-    "defaultTimeoutSeconds": 3600,
-    "maxTimeoutSeconds": 3600,
+    "maxRounds": 600,
+    "maxToolCallsTotal": 2400,
+    "maxTimeoutSeconds": 86400,
+    "budgetGraceRounds": 20,
+    "budgetGraceTimeoutSeconds": 1800,
     "parentFinalizationReserveSeconds": 120,
     "defaultPermissionMode": "inherit"
   }
@@ -119,11 +122,29 @@ Permission mode:
 - `inherit`: default. The child inherits the parent agent capability policy.
 - `low`: the child can only use low-risk tools exposed by the current registry.
 
-Timeout:
+Execution budgets:
 
-- `timeout_seconds` may be passed per call.
-- It must not exceed `maxTimeoutSeconds`.
-- If omitted, `defaultTimeoutSeconds` is used.
+- Parent agents do not receive `max_rounds`, `max_tool_calls_total`, or `timeout_seconds` fields on
+  `spawn_sub_agent`. These ceilings are system policy, not delegation hints.
+- A normal `spawn_sub_agent` run receives the configured `maxRounds`, `maxToolCallsTotal`, and
+  `maxTimeoutSeconds` budgets: currently 600 rounds, 2400 tool calls, and 24 hours.
+- Before the first child LLM call, Runtime injects the current run budget. When the remaining normal
+  round budget falls below 80% and 50%, it injects one notice for each threshold with the exact
+  remaining round count.
+- The hard timeout includes a reserved cleanup window. Reaching the normal round or time budget does
+  not fail the child immediately: Runtime injects a cleanup instruction and grants 20 additional
+  rounds, while reserving up to 30 minutes inside the same hard deadline. When a parent deadline
+  shortens the run, the time reserve is additionally capped at 25% of that effective hard window, so
+  at least 75% remains available for normal work. The configured grace round count is clamped to 10-50.
+- If the child still has not finished after cleanup, the canonical terminal status is
+  `budget_exhausted`, not `failed`. Its staged report and run archive remain available, and the parent
+  receives `resumable=true` plus the stable child session id.
+- A parent may continue that child with `resume_sub_agent_id`. Pudding reuses the same `SubSessionId`
+  and preserved conversation, creates a fresh immutable `runId`, and resets the new run's round,
+  tool-call, elapsed-time, and deadline counters from system configuration. The parent cannot grant or
+  override numeric budgets. Batch and pool calls cannot combine with `resume_sub_agent_id`.
+- Unknown legacy budget fields in a parent tool call are ignored and are not copied into the invocation.
+- Smart workflows use the same system-managed child budget; their public schemas do not expose budget fields.
 - A conversation Turn freezes one absolute execution deadline. Tool and sub-agent boundaries propagate
   that timestamp; no child may replace it with a later `now + timeout`.
 - The absolute deadline is a 24-hour final safety ceiling. Normal stall detection uses the one-hour
@@ -136,10 +157,8 @@ Timeout:
 - Every synchronous sub-agent invocation reserves `parentFinalizationReserveSeconds` at the end of the
   parent Turn for result consumption, final response generation, and terminal commit. Asynchronous
   children are still bounded by the parent deadline but do not consume this synchronous reserve.
-- Smart workflows additionally have a 3600-second child-task ceiling; `smart_plan` is capped at
-  3600 seconds / 48 rounds and `smart_explore` at 1800 seconds / 32 rounds. The effective synchronous child
-  timeout is the minimum of the requested timeout, the Smart ceiling when applicable, and the remaining
-  parent budget after the reserve.
+- The effective synchronous child timeout is the minimum of the system ceiling and the remaining parent
+  budget after the reserve.
 - Waiting for workspace/template concurrency gates consumes the same deadline budget.
 - If the reserve cannot be satisfied, scheduling returns `insufficient_execution_budget` before creating
   a child run. This also prevents a retry from consuming the parent's final two minutes.

@@ -362,7 +362,7 @@ dotnet test .\Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj `
 先取得 `runId`，不要只用 `subSessionId` 猜测执行状态。标准链路：
 
 ```text
-SmartWorkflowToolBase(originToolId/model/limits)
+SmartWorkflowToolBase(originToolId/model)
   -> SubAgentTool
   -> SubAgentInvocationService(invocationId/batchId)
   -> SubAgentManager(runId + deadline)
@@ -373,6 +373,25 @@ SmartWorkflowToolBase(originToolId/model/limits)
   -> Session SSE
   -> subAgentReducer
 ```
+
+如果终态是 `budget_exhausted`、`Maximum agent rounds reached` 或工具调用上限，按事实链检查预算，不要从父
+Agent 的自然语言推断：
+
+1. 查看 `<DataRoot>/config/runtime.execution.json` 的 `subAgents.maxRounds`、
+   `maxToolCallsTotal`、`maxTimeoutSeconds`、`budgetGraceRounds`、
+   `budgetGraceTimeoutSeconds`；它们是普通 `spawn_sub_agent` 的唯一预算来源。
+2. 查看 `runs/{runId}/input.json` 的 `limits` 与 `run.json`，确认固化值；父工具参数不应再出现
+   `max_rounds`、`max_tool_calls_total` 或 `timeout_seconds`。
+3. 查看 `events.jsonl` 的 `subagent.run.started`，核对
+   `max_rounds/budget_grace_rounds/max_tool_calls/max_elapsed_seconds/budget_grace_timeout_seconds`
+   与系统配置一致；再检查 `subagent.budget.notice` 是否依次出现 `start`、`remaining_80`、
+   `remaining_50`、`grace_started`，最后按终态的实际计数判断撞到哪条护栏。
+4. 大型任务基线是 600 轮、2400 次工具调用、24 小时；正常轮次或时间预算用尽后默认还有
+   20 个收尾轮次，且硬时限内预留最多 30 分钟；若父 deadline 压缩了运行窗口，收尾时间最多
+   占有效硬时限的 25%。`budget_exhausted` 应保留 `output.md`，父 Agent 可用
+   `resume_sub_agent_id=<subSessionId>` 续跑；新 runId 的计数应从零重新开始。
+5. 若仍提前结束，继续区分父 Turn deadline、
+   一小时无进展看门狗、Provider 首包/流空闲超时和用户取消。
 
 检查运行归档：
 
@@ -413,7 +432,7 @@ Smart 工作流是同步工具调用，父 Agent 会等待子 run 返回。诊�
 
 - 同一 `runId` 长时间停在 `llm.started/tool.started`：检查 Provider、工具或取消传播；
 - 连续出现多个不同 `runId`，且每个都正常 completed：父模型在重复调用 Smart 工具，
-  不是单个工具死锁；应检查 Prompt 是否要求自包含结果，以及角色的 round/timeout 上限；
+  不是单个工具死锁；应检查 Prompt 是否要求自包含结果，以及系统子代理预算；
 - 标记为 `ReadOnly` 的 Smart 工具仍拿到 `file_write/shell/spawn_sub_agent`：描述符与
   capability 白名单不一致，会放大耗时和副作用，必须改为显式只读白名单。
 - 后续原子 Smart 调用的 prompt token 持续增长：检查请求是否意外携带
@@ -704,7 +723,7 @@ Provider 主动取消，而是调用方 deadline 取消在 LLM 边界被转换�
 
 Smart 嵌套调用还要检查：
 
-- 默认单次预算应为 3600 秒，`smart_explore` 为 1800 秒；
+- Smart 不应携带 round/timeout 参数，预算必须来自 `runtime.execution.json`；
 - 只有 Planner 执行快照设置 `AllowSubDelegation=true`；
 - Planner capability whitelist 只包含 `smart_explore`；
 - Explorer 的下一层委派开关必须为 false；
@@ -722,7 +741,7 @@ terminal count    => 1
 
 ### 7.7 主 Agent 显示“异常”，子代理预算却还没有结束
 
-典型症状：Smart 工具声明 1800 秒，但主 Agent 在约 1200 秒先进入“异常”；子代理
+典型症状：Smart 工具仍在运行，但主 Agent 先进入“异常”；子代理
 检查器仍显示 Running，或者子代理刚完成而父 Turn 已写
 `runtime_execution_failed / 执行超时 (1200s)`。
 
@@ -740,7 +759,7 @@ terminal count    => 1
 
 1. 查 `execution_commands / execution_runs / execution_journal`，先确认父 Turn 的
    `terminal_code` 和实际耗时；`执行超时 (1200s)` 表示父级预算先耗尽。
-2. 查活动 Agent 的 `manifest.json.maxElapsedSeconds`，不要只看 Smart 工具常量。
+2. 查活动 Agent 的 `manifest.json.maxElapsedSeconds` 与 `runtime.execution.json`，Smart 工具已无预算常量。
 3. 查子 run 的 `run.json.deadlineUtc`，验证它是否晚于父 Turn deadline。晚于即是
    deadline 传播断裂。
 4. 沿以下字段逐层检查，任一层为 null 都会导致下游重新计时：
@@ -770,9 +789,8 @@ terminal count    => 1
 parent deadline = Turn 启动时冻结一次
 parent hard cap = 86400s（最终安全上限）
 progress window = 3600s（只由 meaningful progress 续期）
-shared ceiling  = 3600s
-smart_plan cap  = 3600s / 48 rounds / read-only
-smart_explore   = 1800s / 32 rounds / read-only
+subagent max    = 86400s / 600 rounds / 2400 tool calls
+smart_* budget  = 同一系统子代理预算；公开参数不可覆盖
 parent reserve  = 120s
 child deadline <= parent deadline - reserve
 sync retry      = 剩余不足 reserve 时拒绝创建 run
@@ -2317,7 +2335,7 @@ Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Wind
 <DesktopHome>/desktop.instance.<instance-key>
 ```
 
-默认关闭按钮只隐藏主窗口，Core 和外部 HTTP API 会继续运行；这不是退出失败。使用托盘菜单“退出 Pudding”才会执行明确退出并停止 Core/WebView2。托盘图标在 Explorer 重启后由 `TaskbarCreated` 消息重建。若托盘初始化失败，检查 `%LOCALAPPDATA%\Pudding\logs\desktop.log` 中的 `[Desktop] Tray initialization failed`，窗口仍应保持可用。若菜单文字在浅色弹出层上不可见，检查 `DesktopTrayIconService` 的独立 `Background` / `Foreground`；不要让它继承 Desktop 深色主题的文字色。若标题栏最小化、最大化、关闭图标过小或不可见，检查 `TitleBarButtonStyle` 的 Fluent 图标字号，以及其 `ContentPresenter` 是否显式传递 `Foreground`、`FontFamily` 与 `FontSize`。
+默认关闭按钮只隐藏主窗口，Core 和外部 HTTP API 会继续运行；这不是退出失败。使用托盘菜单“退出 Pudding”才会执行明确退出并停止 Core/WebView2。托盘图标在 Explorer 重启后由 `TaskbarCreated` 消息重建。若托盘初始化失败，检查 `%LOCALAPPDATA%\Pudding\logs\desktop.log` 中的 `[Desktop] Tray initialization failed`，窗口仍应保持可用。若菜单文字在浅色弹出层上不可见，检查 `DesktopTrayIconService` 的独立 `Background` / `Foreground`，并确认 `MenuItem.Header` 使用显式前景色的 `TextBlock`：字符串 Header 会创建隐式 `TextBlock`，其全局深色主题样式会覆盖 MenuItem 继承色，造成白底白字。原生 `ComboBox` 也应通过显式 `ItemTemplate` 使用 `NativeLightPopupTextBrush`。若标题栏最小化、最大化、关闭图标过小或不可见，检查 `TitleBarButtonStyle` 的 Fluent 图标字号，以及其 `ContentPresenter` 是否显式传递 `Foreground`、`FontFamily` 与 `FontSize`。
 
 从 Visual Studio 启动 Desktop 后，若 Core 在 Ready 前连续退出并报告 `DirectoryNotFoundException: Source\PuddingAgent\wwwroot`，说明 WPF 启动环境错误地把 ASP.NET Core 的 Development 静态资源清单行为传给了子进程。`CoreProcessSupervisor` 必须对 DesktopChild 显式设置 `ASPNETCORE_ENVIRONMENT=Production` 和 `DOTNET_ENVIRONMENT=Production`，并把工作目录设为 Core 可执行文件目录；Workbench 由输出或发布目录中的物理 `wwwroot` 提供。`PuddingDesktop/Properties/launchSettings.json` 不应包含 ASP.NET Core URL 或环境变量。
 
@@ -2547,15 +2565,15 @@ python .\dev-up.py --restart
 
 ## 11.18 诊断表保留期裁剪（Diagnostics:Retention）
 
-platform.db 的 append-only 诊断表（session_event_log / telemetry_metric_events / runtime_activity / conversation_events）此前零裁剪机制，库无限增长（2026-08-06 实测 2.48 GiB）。
+platform.db 的 append-only 诊断明细此前零裁剪机制，库会持续增长（2026-08-06 实测 2.48 GiB）。当前后台白名单只包含 `telemetry_metric_events`、`context_layer_metric_events` 和 `runtime_activity`。
 
 - 服务：`PuddingPlatform/Services/Diagnostics/DiagnosticRetentionService.cs`（BackgroundService，Task.Yield 起步不阻塞宿主）。
 - 配置节 `Diagnostics:Retention`：`Enabled` / `RunIntervalHours`(24) / `StartupDelaySeconds`(60) / `BatchSize`(5000) / `BatchDelayMs`(100) / `Tables:{表名:{Enabled,RetentionDays}}` / `Vacuum:{Enabled}`。
-- 已批准保留期（2026-08-06）：telemetry_metric_events 14 天、runtime_activity 14 天、conversation_events 30 天、session_event_log 14 天（受水位保护）。
-- 安全红线：session_event_log 是 ADR-056 权威事实源，仅当 `session_projection_cursors` 表存在且有 >0 水位时才按 min(保留期截止线, 水位) 裁剪；否则整表跳过。
+- 建议保留期：telemetry_metric_events、context_layer_metric_events 和 runtime_activity 默认 14 天；也可由 Storage 页按 7/14/30/90 天显式预览清理。
+- 安全红线：`session_event_log` 与 `conversation_events` 都是权威执行事实源，不在后台或手动清理白名单；不能把“已有投影”误当成“可以删除 replay 事实”。
 - SQLite 无 DELETE...LIMIT：用 rowid 子查询分批删，批间限速；时间戳为 "O" 格式字符串，字典序比较安全。
 - VACUUM 默认关闭：约 2.5 GiB 库 VACUUM 需要等量临时空间与较长锁，建议借 bootstrap 的 Core 停止窗口手动执行。
-- 验证：`PuddingPlatformTests/Services/DiagnosticRetentionServiceTests.cs`（4 用例：过期裁剪/禁用跳过/水位保护/白名单防注入）。
+- 验证：`PuddingPlatformTests/Services/DiagnosticRetentionServiceTests.cs`（4 用例：过期裁剪/禁用跳过/权威表跳过/白名单防注入）。
 
 ## 11.19 Chat 首屏、渐进消息与滚动性能
 
@@ -2575,6 +2593,12 @@ platform.db 的 append-only 诊断表（session_event_log / telemetry_metric_eve
 
 第四批基准（管理壳路由隔离）：关闭 Umi 全局 `layout`，把管理页挂到异步 `src/layouts/AdminLayout` 父路由，并从 `src/app.tsx` 移出 ProLayout、管理端头像/操作区和 SettingDrawer。生产主包为 `1,373,107` bytes，Chat 首始 chunk 为 `303,537` bytes，名义合计 `1,676,644` bytes；相对第三批减少 `494,655` bytes（22.78%）。`dist/chat/index.html` 仍只有一个业务同步脚本 `umi.fbc8a3fa.js`，生成路由中不再出现 `plugin-layout` / `ant-design-pro-layout`；`AdminLayout` 自身入口 chunk 为 `4,949` bytes，其 Pro 依赖只在管理路由加载。历史搜索 Modal 还必须以 `historyModalOpen` 作为挂载条件，否则虽然声明为 `React.lazy`，仍会在 Chat 首载立即请求其 chunk。
 
+第五批基准（Workspace Studio 退役）：删除 Phaser、2D Canvas、Studio 页面/路由/场景模型和 Web 静态场景资源后，生产 JS 总量从 `6,226,888` bytes 降到 `4,959,485` bytes（减少 20.35%），完整 `dist` 从 `71,755,862` bytes 降到 `29,001,583` bytes（减少 59.58%）。删除前 `vendors_1-async.9781b13d.js` 中 Phaser 占 `1,201,323` bytes，Studio 页面 chunk 占 `60,429` bytes；删除后两者、`workspace-studio/index.html` 和 Web `assets/agent-sprites` 均不存在。角色精灵素材迁移到 `Source/PuddingDesktop/Assets/AgentSprites/`，且未配置为 Desktop 发布内容。因为此前 Studio 已是独立异步路由，Chat 首载仅减少 `2,839` bytes；排查此类功能时要同时比较全量 JS、完整 dist、静态资源和首屏同步脚本，不能把安装包瘦身误报为首屏收益。
+
+管理侧栏如果把 `home`、`appstore`、`thunderbolt` 等英文名称直接显示在菜单文字前，而不是显示图标，说明 Umi 全局 Layout 关闭后路由图标转换链丢失。检查 `src/layouts/AdminLayout/menuIcons.ts` 是否覆盖 `config/routes.ts` 的全部 `icon` 名称，并运行 `src/utils/adminRoutes.test.ts`；修复必须留在异步 AdminLayout 边界，不能为恢复图标重新启用全局 Layout 插件。生产构建中 AdminLayout 入口增加到约 `7.23 KB`，仍只在管理路由加载。
+
+管理顶栏出现 Ant Design Pro 示例头像时，先检查 `/api/currentUser` 的 `data.avatar`，而不是在 ProLayout 上叠加 CSS。默认值应由 `PuddingPlatform/Controllers/Api/AuthApiController.cs` 返回 `/admin/assets/images/me.png`，开发 Mock 也必须同步；该文件位于 Web `public/assets/images/`，生产构建后应能在 `dist/assets/images/me.png` 找到，避免运行时依赖第三方示例资源。
+
 浏览器 smoke：源码开发栈下 `/admin/chat` 可加载长会话，滚轮离开底部会出现“回到底部”且点击后恢复贴底；`/admin/llm-resource-pool` 与 `/admin/voice-models` 均能加载管理侧栏、顶栏和数据页并完成 SPA 路由切换。验证结束后执行 `python dev-up.py --down`，避免开发 Core 与 Desktop 争用同一个 DataRoot。
 
 ## 11.20 LLM 模型走错 Chat Completions / Responses / Anthropic Messages 协议
@@ -2588,3 +2612,75 @@ platform.db 的 append-only 诊断表（session_event_log / telemetry_metric_eve
 5. 若配置正确但日志仍显示 `protocol=openai`，核对运行中的 `PuddingAgent.exe` 是否加载了新构建；Desktop 托盘旧实例或未完成的 Core 重启会继续运行旧路由代码。
 
 协议的唯一事实源是模型配置。请求覆盖、Provider 字段和 Provider 默认协议都不能参与路由；混合 Provider 应使用不同模型定向证明 `openai → /chat/completions`、`responses → /responses`、`anthropic → /messages`。OpenCode Go 的 Qwen 若误走 Chat Completions 会返回 format 不兼容；若 `/messages` 返回 missing API key，检查是否误用了 Bearer 而非 `x-api-key`。
+
+## 11.21 Storage 数据库与索引管理 API
+
+Storage 页面数据库明细必须来自 Core，Desktop 只做 HTTP 投影。排查“只显示数据库总量、没有明细或清理按钮不可用”时：
+
+1. 确认 Desktop 的 Core 状态为 Ready，且当前实例已外部重启到包含 `StorageManagementController` 的新构建；旧托盘实例不会热加载本次改动。
+2. 用 Admin JWT，或在 DesktopChild 的 Loopback 请求中携带 `X-Pudding-Desktop-Token`，调用 `GET /api/admin/storage/databases`。非 Loopback ControlToken 和非 admin JWT 都应被拒绝。
+3. 日志筛选 `[Pipeline] GET/POST /api/admin/storage/databases` 与 `[StorageMaintenance]`。执行日志包含 `previewId`、deletedRows、droppedIndexes、removedScopes、bytesBefore/bytesAfter 和 compacted，不记录 Token、SQL payload 或用户内容。
+4. 如果数据库总量准确但表级大小显示不可用，检查响应 Warning 是否说明 SQLite 无 `dbstat`；这不影响数据库文件/WAL/页面/freelist 和行数统计。不要为页面刷新运行全库 `dbstat`，数 GB B-tree 可能超过 120 秒。
+5. Preview 只接受 `diagnostics.telemetry`、`diagnostics.runtime-activity`、`platform.duplicate-indexes`、`code-index.obsolete-scopes`，有效期十分钟。传入表名、路径或 `session_event_log` 必须返回 400。
+6. 清理后行数下降但文件大小未下降时，检查执行结果 Warning：空间不足、活动写事务或锁竞争会让 checkpoint/VACUUM 失败。安全删除不会回滚；释放到操作系统的字节数以 `bytesBefore/bytesAfter` 为准，不能用 deletedRows 推断。
+7. `session_event_log`、`conversation_events`、ChatMessages 和记忆始终应显示受保护。若它们出现可清理按钮，视为阻断性回归。
+
+测试使用系统 Temp 的隔离 DataRoot：`StorageMaintenanceServiceTests` 验证白名单、权威表保护、重复索引和失效代码作用域；`StorageManagementAuthorizationTests` 验证两条授权路径；`CoreStorageManagementClientTests` 验证 Desktop 路由与 Token Header。禁止用自动测试直接清理 `D:\data`。
+
+## 11.22 Desktop 构建成功但新路由仍是空 404 / Layout PUT 被 SQLite writer 阻塞
+
+`POST /desktop/bootstrap/start` 返回构建成功和 Core Ready 后，仍必须调用本次变更的业务路由。若旧路由可用，而新增路由返回无 JSON body 的空 404，按最终入口产物诊断：
+
+1. 比较 `Source/PuddingPlatform/bin/<Configuration>/<TFM>/PuddingPlatform.dll` 与 `Source/PuddingAgent/bin/<Configuration>/<TFM>/PuddingPlatform.dll` 的时间、长度和 SHA-256；运行进程的 Module Path 也必须落到后者。
+2. 项目输出已更新但入口副本仍旧时，说明增量构建没有刷新传递依赖。通过 Desktop Bootstrap API 原子停止 Core，执行 `dotnet build Source/PuddingAgent/PuddingAgent.csproj --no-restore --no-incremental --nologo`，确认两份 DLL 哈希一致，再通过 API 启动 Core。
+3. 最终以新增业务路由的 JSON 状态码验收；`/admin/orchestration` 的 200 可能只是 SPA fallback，不能证明 Controller 已加载。ControlToken 只放 `X-Control-Token`，不得输出到日志或回复。
+
+Layout PUT 若在非法 `baseRevisionId` 上仍等待到客户端超时，检查 `SqliteAgentOrchestrationStore.SaveLayoutAsync` 是否在读取不可变 Revision 之前就开启了 serializable transaction。SQLite 会把它视为潜在写事务并等待无关 writer，导致本应立即返回的 4xx 被锁竞争拖住。正确边界是：
+
+- 先用只读连接校验 immutable base Revision、GraphId、nodeId 和 parentNodeId；
+- 再用短 serializable transaction 读取当前 layout revision，并执行 CAS INSERT/UPDATE；
+- 用一个持有未提交写事务的测试证明缺失 Revision 仍能在两秒内返回 NotFound。
+
+2026-08-10 运行态基准：修复前缺失 Revision 的 PUT 超过 15 秒超时；修复并由 Desktop 加载新入口产物后，同一路由 31 ms 返回 `404 orchestration.layout_base_revision_not_found`。定向 Orchestration 测试为 18/18。
+
+## 11.23 Token 月度统计明显小于 Provider 官网 Usage
+
+先确认比较口径：页面默认“全部 Provider”，官网若按 DeepSeek API Key 筛选，页面也必须选择
+`providerId=deepseek` 和相同月份。DeepSeek 官网 Usage 月度导出是共享 API Key 的最终账单；
+Pudding 本地只能统计实际收到 usage 的调用。
+
+如果页面远小于官网，不要先改价格或人工补总数，按三层事实对账：
+
+1. `TokenUsageEvents` / `TokenUsageStats` 是会话、角色、上下文归因投影，不能当作 Provider
+   请求计费账本。统计它们的 `source_type/provider_id/model_id`，确认是否只覆盖了主 Agent
+   `usage.recorded` 或少量 subagent run 汇总。
+2. `runtime_activity(component=llm_gateway,status=succeeded)` 是成功网关请求索引。非流式活动的
+   metadata 应含 prompt/completion/cache usage；流式请求必须与同 workspace/session 下按时间排序的
+   `session_event_log(event_type=usage)` 一一配对。数量不等时不得按最近时间猜配。
+3. `llm_gateway_usage_events` 才是 Admin 月度/趋势的本地计费事实：同一 `source_id` 唯一，
+   一次 Provider usage 一行。页面应显示 `dataSource=local_gateway`；旧月份无该表事实时才显示
+   `legacy_projection`。
+
+通过 `POST /api/stats/tokens/rebuild?yearMonth=yyyy-MM` 重建时关注
+`gatewayActivitiesScanned/gatewayEventsCreated/gatewayFactsSkipped/errors`。重建只替换能成功覆盖的
+`runtime-activity:*` sourceId，不能删除活动缺失的实时事实；早期 `llm:*` 行用 operation、
+workspace、session、provider、model、startedAt 和 token 数的完整身份去重。
+
+2026-08-09 运行态证据：旧投影是 4,567 次、651.3M Tokens、¥93.4425；重建 8 月
+15,817 个成功网关活动、`gatewayFactsSkipped=0/errors=0` 后，DeepSeek 为 12,073 次、
+1,360,951,650 Tokens、¥377.508061。同期官网按该 API Key 为 12,171 次、
+1,365,533,317 Tokens、¥381.22。剩余 98 次/4,581,667 Tokens 来自本地没有 usage 的取消、
+失败或同 Key 外部调用，不能伪造为本地明细；需要完全一致时导入官网月度 CSV 再做独立对账。
+
+## 11.24 Runtime 移除 Platform 引用后的跨层编译错误
+
+当 `PuddingRuntime` 出现 `CS0246`，缺少 `PlatformDbContext`、Platform Entity 或具体 Platform Service 时，先检查 `PuddingRuntime.csproj` 的依赖方向。不要为了消除错误重新添加 `PuddingPlatform` 项目引用，否则会恢复 Runtime → Platform 的反向耦合。
+
+按依赖性质处理：
+
+1. Runtime 自有能力（例如文件工具的大文件分块读取）直接移动到 Runtime，并同步测试命名空间。
+2. Runtime 只需要调用行为时，把最小接口和跨层 DTO 放入 `PuddingCore`，由 Platform 实现并在 Host/Agent 组合根注册接口别名；不要把 EF Entity 暴露给 Runtime。
+3. Runtime 需要诊断数据时，在 Core 仓储契约增加投影查询，由 Platform 仓储完成 EF 查询；Runtime 不直接解析 `PlatformDbContext`。
+4. 完成后依次构建 `PuddingRuntime`、`PuddingPlatform`、`PuddingHost`、`PuddingAgent`，并运行涉及迁移接口的 Runtime/Platform 定向测试。构建输出放在 `.tmp-build`，测试结果放在 `.tmp-test-out`。
+
+本次边界实例：`SubAgentTool → ISubAgentPool → SubAgentPool`、`AgentDiagnosticsTool → ITokenUsageEventRepository → TokenUsageEventRepository`；`FileChunkService` 归属 Runtime。若 Runtime 源码仍出现 `using PuddingPlatform` 或 `PuddingPlatform.*`，视为分层回归。

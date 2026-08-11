@@ -124,6 +124,26 @@ RuntimeDispatchRequest
 
 Smart workflow tools only promote `scope` to `WorkingDirectory` when it resolves to an existing file or directory. Semantic scope text remains prompt-only. Relative file operations are resolved under this root, and directory/write operations cannot escape it unless the existing explicit YOLO boundary allows the operation.
 
+## Mandatory Delegation Contract
+
+`ContextPipeline` injects one mandatory delegation policy into the Tool layer for every main Agent
+and for child Agents that still have an allowed delegation depth. A child with
+`AllowSubDelegation=false`, or with no remaining depth, must not receive an impossible delegation
+requirement.
+
+The Agent must classify the request as `Direct` or `Delegated` before its first tool call. It must
+select `Delegated` when the work is expected to exceed three tool calls, spans multiple files or
+sources, contains independent workstreams, or the user explicitly requires delegation. A delegated
+turn must invoke the matching `smart_*` role tool or `spawn_sub_agent` within the first three tool
+calls. The parent remains responsible for planning, bounded verification, integration, and final
+judgment, and it must not repeat the delegated workload with low-level tools.
+
+All role-based Smart tools expose `task` as their only primary instruction parameter. The execution
+boundary accepts historical `question`, `what`, and `query` payloads and normalizes them to `task`
+without publishing those aliases in the tool schema. `smart_explore` is the only exploration entry;
+the duplicate `smart_search` and `smart_query_session_log` tools are retired from source discovery
+and composition-root registration.
+
 ## Smart Workflow Result Contract
 
 `smart_explore`, `smart_research`, `smart_plan`, `smart_review`, `smart_develop`,

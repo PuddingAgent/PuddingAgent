@@ -1,6 +1,6 @@
 # ADR-069 MOA 子代理设计委员会编排核心
 
-> 状态：**phase-1-implemented**  
+> 状态：**phase-3-implemented; generic-graph-adapter-implemented**
 > 日期：2026-08-09  
 > 范围：设计请求、专家组、模型多样性、阶段门禁、独立提案、交叉批判、综合与终审  
 > 前置：[11 工作流与任务图](11工作流与任务图.md)、[21 子代理工作空间与运行归档](21子代理工作空间与运行归档ADR.md)、[24 核心架构组件边界与执行引擎拆分](24核心架构组件边界与执行引擎拆分ADR.md)
@@ -19,7 +19,7 @@ Pudding 已有 `spawn_sub_agent`、批量子代理调用、任务规划上下文
 - 主席综合和独立终审由不同成员完成；
 - 编译计划不会被误认为已经授权执行。
 
-因此引入 MOA（Mixture of Agents）设计委员会核心。Phase 1 只编译计划，不启动子代理。
+因此引入 MOA（Mixture of Agents）设计委员会核心。Phase 1 编译计划，Phase 2 用纯状态机执行门禁，Phase 3 通过运行时适配器复用现有子代理执行链路。后续通用化决策见 [ADR-070](81ADR-070通用Agent编排图基础架构ADR.md)：MOA 保留专业规则，但不长期维护第二套调度内核。
 
 ## 2. 决策
 
@@ -109,34 +109,78 @@ Pudding 已有 `spawn_sub_agent`、批量子代理调用、任务规划上下文
 - 只读 work item 和显式激活门禁；
 - 稳定、可检查的 stage/work item ID。
 
-## 4. 后续阶段
+## 4. 运行时阶段
 
-### Phase 2：执行状态机
+### Phase 2：执行状态机（已完成）
 
-- 增加 plan activation、stage transition、pause/resume、cancel；
-- 提交上下文审计结果时识别 critical gap，进入 `AwaitingUserInput`；
-- 按 `MaxConcurrency` 派发 ready work item；
-- 成员失败时重新计算法定人数，不做模型替换；
-- 只有满足阶段门禁时才开放下一阶段。
+实现位置：
 
-### Phase 3：运行时适配
+- `Source/PuddingCore/Orchestration/SubAgentOrchestrationRuntimeModels.cs`
+- `Source/PuddingCore/Orchestration/DesignCouncilRunStateMachine.cs`
+- `Source/PuddingCoreTests/Orchestration/DesignCouncilRunStateMachineTests.cs`
 
-- 将 work item 映射到 `ISubAgentInvocationService`；
-- 复用现有 sub-agent run archive、deadline、权限和父会话投影；
-- 为所有调用写入 plan/stage/work item/member/route 关联；
-- 不新增第二套子代理执行引擎。
+已实现：
+
+- `Draft` 计划只能通过显式 `Activate` 开始；
+- 只有当前阶段的 ready work item 可以领取；
+- `MaxConcurrency` 是整个 MOA run 的硬上限；
+- 每次领取产生 claim ID，完成结果必须匹配当前 claim，拒绝迟到或外部结果；
+- 关键上下文缺口进入 `AwaitingUserInput`，暂停新领取，但仍接受已经运行成员的回报；
+- 用户回答以 `ContextResolution` 进入运行快照，`Resume` 后重新计算当前门禁；
+- 成员失败后计算剩余成功数和不同模型路由数，法定人数不可达时立即失败；
+- 达到提案法定人数时，失败提案对应的批判任务自动 `Skipped`；
+- 每个成功提案仍必须达到批判覆盖数；
+- 支持成功完成和显式取消终态；
+- 运行快照带单调递增 `Version`，为后续持久化乐观并发提供基础。
+
+状态机保持纯函数边界：不访问数据库、不调用模型、不生成子代理 run，也不静默替换失败成员。
+
+### Phase 3：运行时适配（已完成）
+
+实现位置：
+
+- `Source/PuddingCore/Orchestration/SubAgentOrchestrationRuntimeContracts.cs`
+- `Source/PuddingRuntime/Services/InMemorySubAgentOrchestrationRunStore.cs`
+- `Source/PuddingRuntime/Services/DesignCouncilRuntimeService.cs`
+- `Source/PuddingRuntimeTests/Services/DesignCouncilRuntimeServiceTests.cs`
+
+运行时遵循以下边界：
+
+- `IDesignCouncilRuntimeService` 负责 create、activate、dispatch、resume 和 cancel；
+- `ISubAgentOrchestrationRunStore` 使用快照 `Version` 做乐观并发，claim 必须先成功持久化，才能启动子代理；
+- 当前 `InMemorySubAgentOrchestrationRunStore` 只保证单进程并发一致性，不声称支持 Core 重启恢复；
+- `DesignCouncilRuntimeService` 从 work item 的 `RouteKey` 拆出精确 `provider/model`，直接通过 `ILlmConfigService.Resolve(provider, model)` 获取模型配置，不经过 profile 默认值、能力选模或 fallback；
+- 实际执行只调用现有 `ISubAgentInvocationService`，继续复用 sub-session、run archive、deadline、调度额度和父会话投影；
+- child 的 `runId`、`subSessionId`、完整输出和归档引用回填到 MOA run 快照；
+- 每个成员使用同步调用返回结果，但同一批 claim 并行等待；整体并发仍受计划 `MaxConcurrency` 和现有子代理调度额度双重约束；
+- 独立提案只注入规范化请求和调研输出；批判只注入调研证据及指定目标提案；主席和终审只读取前序成功输出；
+- 设计成员获得显式只读工具 allowlist，不包含 shell、文件写入和再次派生子代理；
+- 结构化 `pudding-moa-member-result` 结果可报告 `contextGaps`、`requiresUserInput` 和 `blockingQuestions`，并驱动既有暂停/恢复状态机；
+- 未配置的精确路由、调用失败、超时或无输出都记录为该成员失败，不静默换模型。
+
+组合根在 `PuddingRuntime/DependencyInjection.cs` 和 `PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs` 注册同一套运行时服务，不新增平行执行引擎。
+
+### Phase 3B：通用编排图适配（已完成）
+
+实现位置：
+
+- `Source/PuddingCore/Orchestration/AgentOrchestrationModels.cs`
+- `Source/PuddingCore/Orchestration/AgentOrchestrationGraphCompiler.cs`
+- `Source/PuddingCore/Orchestration/DesignCouncilOrchestrationGraphAdapter.cs`
+
+MOA 的 stage 被映射为通用 gate 节点，work item 被映射为冻结精确路由的只读 subAgent 节点；控制依赖和输出可见性分别使用 control/data edge 表达。提案之间没有 data edge，批判只连接研究输出和目标提案。当前 MOA 专用状态机仍作为行为基线，待通用持久化运行内核具备同等语义后迁移。
 
 ### Phase 4：持久化、工具与 UI
 
 - 文件作为专家组配置权威；
 - SQLite/运行归档作为运行索引与审计事实；
-- 新增 `smart_design_council` 工具；
+- 复用通用 `orchestration.*` 工具，MOA 只提供设计请求到图的模板编译入口；
 - Admin 展示设计请求、阶段、成员、提案、批判、综合和终审；
 - Skill 只负责识别使用时机和构造请求，不再硬编码模型或直接编排 spawn。
 
 ## 5. 非目标
 
-Phase 1 不包含：
+Phase 1–3 不包含：
 
 - 新增前端或后端专家配置页面；
 - 修改 Agent manifest；
@@ -144,6 +188,8 @@ Phase 1 不包含：
 - 自动搜索互联网；
 - 自动修改代码；
 - 数据库迁移；
+- Core 重启后的 MOA run 恢复；
+- 自动回收进程崩溃前遗留的 Running claim；
 - 新增外部工作流引擎。
 
 ## 6. 验收基线
@@ -156,3 +202,14 @@ Phase 1 不包含：
 - 主席不参与预批判；
 - 终审模型独立于主席且不是提案作者；
 - fallback、多样性不足和终审不独立时编译失败且不产生半成品计划。
+- 未激活的 run 不可领取任务；
+- 暂停状态不可领取新任务，用户补充上下文后可恢复；
+- claim 不匹配的完成结果不会改变快照；
+- 并发任务数不超过计划上限；
+- 提案法定人数或不同模型路由数不可达时进入 `Failed`；
+- 所有阶段通过后进入 `Completed`。
+- claim 快照写入冲突时不启动子代理；
+- 相同 ready work item 面对并发 dispatcher 只会被调用一次；
+- work item 的精确 `provider/model` 配置不存在时直接失败，不允许 fallback；
+- child `runId`、`subSessionId` 和完整输出可从运行快照追溯；
+- 结构化关键上下文缺口会进入 `AwaitingUserInput`，补充信息持久化后继续下一门禁。
