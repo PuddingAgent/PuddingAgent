@@ -1,5 +1,5 @@
 // ── AgentAvatar：Agent 头像组件 ─────────────────────────────
-import React from 'react';
+import React, { useState } from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 
 interface AgentAvatarProps {
@@ -11,21 +11,29 @@ interface AgentAvatarProps {
 }
 
 const AgentAvatar: React.FC<AgentAvatarProps> = ({
+  name,
   emoji,
   color,
   imageUrl,
   grouped,
 }) => {
   const { styles } = useChatMessageStyles();
+  const [imgFailed, setImgFailed] = useState(false);
 
   if (grouped) {
     return <div className={styles.agentAvatarGrouped} />;
   }
 
-  if (imageUrl) {
+  // 图片加载失败时回退到 emoji / 色块首字母，避免显示裂图
+  if (imageUrl && !imgFailed) {
     return (
       <div className={styles.agentAvatarWrapper}>
-        <img src={imageUrl} alt="" className={styles.agentAvatarImg} />
+        <img
+          src={imageUrl}
+          alt=""
+          className={styles.agentAvatarImg}
+          onError={() => setImgFailed(true)}
+        />
       </div>
     );
   }
@@ -39,7 +47,7 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({
           : undefined,
       }}
     >
-      {emoji || '🤖'}
+      {emoji || (name ? name.trim().charAt(0).toUpperCase() : '🤖')}
     </div>
   );
 };

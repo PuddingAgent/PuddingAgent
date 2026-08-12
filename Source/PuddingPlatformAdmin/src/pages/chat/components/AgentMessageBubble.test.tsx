@@ -314,6 +314,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
     expect(screen.getByText('正在请求模型')).toBeTruthy();
     expect(screen.getByText('等待首个可见事件')).toBeTruthy();
+    expect(screen.getByText(/这是主代理的等待占位/)).toBeTruthy();
     expect(screen.getByTestId('agent-waiting-monitor')).toBeTruthy();
     expect(
       container.querySelector(

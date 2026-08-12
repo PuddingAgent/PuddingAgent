@@ -75,7 +75,7 @@ export const WaitingBubble: React.FC<WaitingBubbleProps> = ({
         <span className={styles.waitingTrackCurrent}>等待首个可见事件</span>
       </div>
       <div className={styles.waitingHint}>
-        尚未收到可展示的推理摘要或工具事件；收到后会在这里实时更新。
+        这是主代理的等待占位：尚未收到主代理可展示的推理摘要或工具事件。子代理活动会显示在右侧托盘坞和运行检查器中。
       </div>
     </div>
   );

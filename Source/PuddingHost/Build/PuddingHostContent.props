@@ -5,7 +5,18 @@
   -->
   <ItemGroup>
     <!-- default-data tree -->
-    <Content Include="$(MSBuildThisFileDirectory)..\default-data\**\*" Link="default-data\%(RecursiveDir)%(Filename)%(Extension)">
+    <Content Include="$(MSBuildThisFileDirectory)..\default-data\**\*"
+             Exclude="$(MSBuildThisFileDirectory)..\default-data\assets\agent-avatars\**\*.png"
+             Link="default-data\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+
+    <!-- Agent avatar PNGs → output wwwroot/assets/agent-avatars (served at /assets/agent-avatars/*.png).
+         Physical wwwroot is the runtime source of truth (see PuddingWebApplicationExtensions.cs);
+         static-web-assets manifest endpoints are NOT used. -->
+    <Content Include="$(MSBuildThisFileDirectory)..\default-data\assets\agent-avatars\**\*.png"
+             Link="wwwroot\assets\agent-avatars\%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
