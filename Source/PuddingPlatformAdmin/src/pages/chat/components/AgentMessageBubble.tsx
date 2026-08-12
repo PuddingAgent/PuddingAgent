@@ -27,6 +27,7 @@ import {
   sanitizeProcessText,
 } from './processPreview';
 import { ReasoningPreview } from './ReasoningPreview';
+import type { TranscriptMode } from './TranscriptModeSwitch';
 import { WaitingBubble } from './WaitingBubble';
 
 const SessionBenchmarkDrawer =
@@ -66,6 +67,9 @@ interface AgentMessageBubbleProps {
   turnId?: string;
   sessionId?: string | null;
   parentDelegationActivity?: ParentDelegationActivity;
+  /** P0#2：转录视图分级 */
+  transcriptMode?: TranscriptMode;
+  onTranscriptModeChange?: (mode: TranscriptMode) => void;
 }
 
 const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
@@ -359,6 +363,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   turnId,
   sessionId,
   parentDelegationActivity,
+  transcriptMode,
+  onTranscriptModeChange,
 }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
@@ -715,6 +721,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   onOpenDiagnostics={
                     sessionId ? () => setDiagnosticsOpen(true) : undefined
                   }
+                  transcriptMode={transcriptMode}
+                  onTranscriptModeChange={onTranscriptModeChange}
                 />
               );
             })()}

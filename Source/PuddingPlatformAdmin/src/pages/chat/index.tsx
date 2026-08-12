@@ -657,6 +657,7 @@ const ChatPageContent: React.FC = () => {
         cacheHitTokens={chat.sessionCacheHitTokens}
         cacheMissTokens={chat.sessionCacheMissTokens}
         cacheHitRate={chat.cacheHitRate}
+        compactionStatus={chat.compactionStatus}
         formatTime={chat.formatTime}
         onDeleteTurn={chat.onDeleteTurn}
         onContextMenu={handleContextMenu}

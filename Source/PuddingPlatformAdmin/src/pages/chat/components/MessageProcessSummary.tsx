@@ -13,6 +13,9 @@ import {
   getToolStatusTone,
   sanitizeProcessText,
 } from './processPreview';
+import TranscriptModeSwitch, {
+  type TranscriptMode,
+} from './TranscriptModeSwitch';
 
 interface MessageProcessSummaryProps {
   items: TimelineItem[];
@@ -21,6 +24,9 @@ interface MessageProcessSummaryProps {
   onLoadDetails?: () => Promise<TimelineItem[]>;
   onRerun?: () => void;
   onOpenDiagnostics?: () => void;
+  /** 转录视图分级：normal（默认）| verbose（全展开）| summary（一行摘要） */
+  transcriptMode?: TranscriptMode;
+  onTranscriptModeChange?: (mode: TranscriptMode) => void;
 }
 
 type ProcessDisplayItem =
@@ -181,6 +187,8 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   onLoadDetails,
   onRerun,
   onOpenDiagnostics,
+  transcriptMode = 'normal',
+  onTranscriptModeChange,
 }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
@@ -193,12 +201,20 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   const hasHistoricalDetails = Boolean(
     historicalSummary?.hasDetails && onLoadDetails,
   );
+  const forceVerbose = transcriptMode === 'verbose';
   const summaryText =
     loadedItems !== null || !historicalSummary
       ? getProcessSummaryText(effectiveItems)
       : getHistoricalSummaryText(historicalSummary);
+  /** Verbose 模式下强制展开；Normal 模式沿用本地 expanded 状态 */
+  const effectiveExpanded = forceVerbose ? true : expanded;
+  /** Verbose 模式下所有条目视为展开，工具详情块全显示 */
+  const effectiveExpandedItems = React.useMemo(() => {
+    if (!forceVerbose) return expandedItems;
+    return new Set(effectiveItems.map((item) => item.id));
+  }, [effectiveItems, expandedItems, forceVerbose]);
   const expandedModel = React.useMemo(() => {
-    if (!expanded) return null;
+    if (!effectiveExpanded) return null;
     const rounds = buildProcessRounds(effectiveItems);
     const displayItems = buildDisplayItems(effectiveItems);
     const traceChips = buildTraceChips(effectiveItems);
@@ -209,7 +225,7 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
       });
     });
     return { displayItems, traceChips, roundByItemId };
-  }, [effectiveItems, expanded]);
+  }, [effectiveItems, effectiveExpanded]);
 
   const expandWithDetails = async () => {
     setExpanded(true);
@@ -232,6 +248,13 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
       setLoadingDetails(false);
     }
   };
+  const expandWithDetailsRef = React.useRef(expandWithDetails);
+  expandWithDetailsRef.current = expandWithDetails;
+  // Verbose 模式自动展开并加载历史明细
+  React.useEffect(() => {
+    if (transcriptMode !== 'verbose') return;
+    expandWithDetailsRef.current();
+  }, [transcriptMode]);
 
   if (
     (!effectiveItems || effectiveItems.length === 0) &&
@@ -264,6 +287,7 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
   }
 
   const toggleExpandedItem = (id: string, shouldExpand: boolean) => {
+    if (forceVerbose) return;
     const next = new Set(expandedItems);
     if (shouldExpand) {
       next.add(id);
@@ -273,39 +297,73 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
     setExpandedItems(next);
   };
 
-  if (!expanded) {
+  const renderModeHeader = () => (
+    <div className={styles.processSummaryHeader}>
+      <span className={styles.processSummaryHeaderLabel}>过程摘要</span>
+      <TranscriptModeSwitch
+        value={transcriptMode}
+        onChange={(next) => onTranscriptModeChange?.(next)}
+      />
+    </div>
+  );
+
+  // Summary 模式：仅渲染一行摘要文本（buildTraceChips 输出），无任何展开内容
+  if (transcriptMode === 'summary') {
+    const chips = buildTraceChips(effectiveItems);
+    const summaryLine =
+      effectiveItems.length > 0
+        ? chips.map((chip) => `${chip.label} ${chip.value}`).join(' · ')
+        : (summaryText ?? '已完成');
     return (
-      <div className={styles.processSummaryRow}>
-        <button
-          type="button"
-          onClick={() => void expandWithDetails()}
-          style={{
-            all: 'unset',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            cursor: 'pointer',
-          }}
+      <>
+        {renderModeHeader()}
+        <div
+          className={styles.processSummaryRow}
+          data-testid="process-summary-line"
         >
           <span className={styles.processSummaryDot} />
-          {summaryText && (
-            <span className={styles.processSummaryText}>{summaryText}</span>
-          )}
-          <span className={styles.processSummaryLink}>查看过程</span>
-        </button>
-        {onOpenDiagnostics && (
+          <span className={styles.processSummaryText}>{summaryLine}</span>
+        </div>
+      </>
+    );
+  }
+
+  if (!effectiveExpanded) {
+    return (
+      <>
+        {renderModeHeader()}
+        <div className={styles.processSummaryRow}>
           <button
             type="button"
-            className={styles.processSummaryLink}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenDiagnostics();
+            onClick={() => void expandWithDetails()}
+            style={{
+              all: 'unset',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
             }}
           >
-            诊断报告
+            <span className={styles.processSummaryDot} />
+            {summaryText && (
+              <span className={styles.processSummaryText}>{summaryText}</span>
+            )}
+            <span className={styles.processSummaryLink}>查看过程</span>
           </button>
-        )}
-      </div>
+          {onOpenDiagnostics && (
+            <button
+              type="button"
+              className={styles.processSummaryLink}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDiagnostics();
+              }}
+            >
+              诊断报告
+            </button>
+          )}
+        </div>
+      </>
     );
   }
 
@@ -315,245 +373,262 @@ const MessageProcessSummary: React.FC<MessageProcessSummaryProps> = ({
     expandedModel?.roundByItemId ?? new Map<string, number>();
 
   return (
-    <div style={{ marginTop: 4 }}>
-      <button
-        type="button"
-        className={styles.processCollapseLink}
-        onClick={() => setExpanded(false)}
-        style={{ all: 'unset', cursor: 'pointer' }}
-      >
-        <UpOutlined /> 收起过程
-      </button>
-      <div className={styles.processExpandedArea}>
-        {loadingDetails && (
-          <div className={styles.processThinkingLabel}>正在加载过程明细...</div>
+    <>
+      {renderModeHeader()}
+      <div style={{ marginTop: 4 }}>
+        {!forceVerbose && (
+          <button
+            type="button"
+            className={styles.processCollapseLink}
+            onClick={() => setExpanded(false)}
+            style={{ all: 'unset', cursor: 'pointer' }}
+          >
+            <UpOutlined /> 收起过程
+          </button>
         )}
-        {loadError && (
-          <div className={styles.processItemStatusError}>
-            {loadError}{' '}
+        <div className={styles.processExpandedArea}>
+          {loadingDetails && (
+            <div className={styles.processThinkingLabel}>
+              正在加载过程明细...
+            </div>
+          )}
+          {loadError && (
+            <div className={styles.processItemStatusError}>
+              {loadError}{' '}
+              <button
+                type="button"
+                className={styles.processSummaryLink}
+                onClick={() => void expandWithDetails()}
+              >
+                重试
+              </button>
+            </div>
+          )}
+          {!loadingDetails &&
+            !loadError &&
+            loadedItems !== null &&
+            loadedItems.length === 0 && (
+              <div className={styles.processThinkingLabel}>暂无过程明细</div>
+            )}
+          <div className={styles.processTraceSummary}>
+            {traceChips.map((chip) => (
+              <span key={chip.label} className={styles.processTraceChip}>
+                <span className={styles.processTraceChipLabel}>
+                  {chip.label}
+                </span>
+                <span className={styles.processTraceChipValue}>
+                  {chip.value}
+                </span>
+              </span>
+            ))}
+          </div>
+          {displayItems.map((displayItem, index) => {
+            if (displayItem.type === 'thinking') {
+              const first = displayItem.sourceItems[0];
+              return (
+                <section key={displayItem.id} className={styles.processRound}>
+                  <div className={styles.processRoundHeader}>
+                    <div className={styles.processRoundTitle}>
+                      思维消息 {index + 1}
+                    </div>
+                    <div className={styles.processRoundMeta}>
+                      第 {roundByItemId.get(first.id) ?? 1} 轮 ·{' '}
+                      {displayItem.sourceItems.length} 段
+                    </div>
+                  </div>
+                  <div className={styles.processThinkingRaw}>
+                    {displayItem.text}
+                  </div>
+                </section>
+              );
+            }
+
+            const item = displayItem.item;
+            if (item.type === 'tool_call' || item.type === 'tool_result') {
+              const tone = getToolStatusTone(item);
+              const isExpanded = effectiveExpandedItems.has(item.id);
+              const toolName = getToolDisplayName(item);
+              const statusClass =
+                tone === 'running'
+                  ? styles.processItemStatusRunning
+                  : tone === 'error'
+                    ? styles.processItemStatusError
+                    : styles.processItemStatusSuccess;
+              const statusLabel =
+                tone === 'running'
+                  ? '执行中'
+                  : tone === 'error'
+                    ? '失败'
+                    : '完成';
+              const detailBlocks = buildToolDetailBlocks(item);
+              const detail = detailBlocks
+                .map((block) => block.value)
+                .join('\n\n');
+              const compactDetail = getToolCompactDetail(item);
+
+              return (
+                <section key={item.id} className={styles.processRound}>
+                  <div className={styles.processRoundHeader}>
+                    <div className={styles.processRoundTitle}>
+                      {item.type === 'tool_call' ? '工具调用' : '工具结果'}{' '}
+                      {index + 1}
+                    </div>
+                    <div className={styles.processRoundMeta}>
+                      第 {roundByItemId.get(item.id) ?? 1} 轮
+                    </div>
+                  </div>
+                  <div
+                    className={cx(styles.processItem, styles.processToolItem)}
+                  >
+                    <div className={styles.processItemHeader}>
+                      <span className={styles.processItemName}>{toolName}</span>
+                      <span
+                        className={`${styles.processItemStatus} ${statusClass}`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                    {detailBlocks.length > 0 &&
+                      (isExpanded ? (
+                        <>
+                          {!forceVerbose && (
+                            <button
+                              type="button"
+                              className={styles.processItemToggleButton}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpandedItem(item.id, false);
+                              }}
+                            >
+                              <UpOutlined /> 收起工具详情
+                            </button>
+                          )}
+                          <div className={styles.processToolDetailBlocks}>
+                            {detailBlocks.map((block) => (
+                              <div
+                                key={block.key}
+                                className={styles.processToolDetailBlock}
+                              >
+                                <div className={styles.processToolDetailLabel}>
+                                  {block.label}
+                                </div>
+                                <pre className={styles.processToolDetailPre}>
+                                  {block.value}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {compactDetail && (
+                            <div className={styles.processItemDetail}>
+                              {compactDetail}
+                            </div>
+                          )}
+                          {(detail.length > compactDetail.length ||
+                            detailBlocks.length > 1) && (
+                            <button
+                              type="button"
+                              className={styles.processItemToggleButton}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpandedItem(item.id, true);
+                              }}
+                            >
+                              <DownOutlined /> 查看工具详情
+                            </button>
+                          )}
+                        </>
+                      ))}
+                  </div>
+                </section>
+              );
+            }
+
+            if (
+              item.type === 'subagent_spawned' ||
+              item.type === 'subagent_progress' ||
+              item.type === 'subagent_completed'
+            ) {
+              const tone = getToolStatusTone(item);
+              const statusClass =
+                tone === 'running'
+                  ? styles.processItemStatusRunning
+                  : tone === 'error'
+                    ? styles.processItemStatusError
+                    : styles.processItemStatusSuccess;
+              const statusLabel =
+                tone === 'running'
+                  ? '运行中'
+                  : tone === 'error'
+                    ? '失败'
+                    : '完成';
+              const title =
+                item.type === 'subagent_spawned'
+                  ? '子代理调用'
+                  : item.type === 'subagent_progress'
+                    ? '子代理进展'
+                    : '子代理结果';
+              const detailBlocks = buildToolDetailBlocks(item);
+              return (
+                <section key={item.id} className={styles.processRound}>
+                  <div className={styles.processRoundHeader}>
+                    <div className={styles.processRoundTitle}>
+                      {title} {index + 1}
+                    </div>
+                    <div className={styles.processRoundMeta}>
+                      第 {roundByItemId.get(item.id) ?? 1} 轮
+                    </div>
+                  </div>
+                  <div
+                    className={cx(styles.processItem, styles.processToolItem)}
+                  >
+                    <div className={styles.processItemHeader}>
+                      <span className={styles.processItemName}>
+                        {getToolDisplayName(item)}
+                      </span>
+                      <span
+                        className={`${styles.processItemStatus} ${statusClass}`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                    {detailBlocks.map((block) => (
+                      <div key={block.key} className={styles.processItemDetail}>
+                        {block.label}：{block.value}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            }
+
+            const detail = sanitizeProcessText(item.message || item.text, {
+              compact: false,
+            });
+            if (!detail) return null;
+            return (
+              <section key={item.id} className={styles.processRound}>
+                <div className={styles.processItem}>
+                  <span className={styles.processItemName}>过程</span>
+                  <div className={styles.processItemDetail}>{detail}</div>
+                </div>
+              </section>
+            );
+          })}
+          {status === 'error' && onRerun && (
             <button
               type="button"
-              className={styles.processSummaryLink}
-              onClick={() => void expandWithDetails()}
+              className={styles.processRetryBtn}
+              onClick={onRerun}
             >
               重试
             </button>
-          </div>
-        )}
-        {!loadingDetails &&
-          !loadError &&
-          loadedItems !== null &&
-          loadedItems.length === 0 && (
-            <div className={styles.processThinkingLabel}>暂无过程明细</div>
           )}
-        <div className={styles.processTraceSummary}>
-          {traceChips.map((chip) => (
-            <span key={chip.label} className={styles.processTraceChip}>
-              <span className={styles.processTraceChipLabel}>{chip.label}</span>
-              <span className={styles.processTraceChipValue}>{chip.value}</span>
-            </span>
-          ))}
         </div>
-        {displayItems.map((displayItem, index) => {
-          if (displayItem.type === 'thinking') {
-            const first = displayItem.sourceItems[0];
-            return (
-              <section key={displayItem.id} className={styles.processRound}>
-                <div className={styles.processRoundHeader}>
-                  <div className={styles.processRoundTitle}>
-                    思维消息 {index + 1}
-                  </div>
-                  <div className={styles.processRoundMeta}>
-                    第 {roundByItemId.get(first.id) ?? 1} 轮 ·{' '}
-                    {displayItem.sourceItems.length} 段
-                  </div>
-                </div>
-                <div className={styles.processThinkingRaw}>
-                  {displayItem.text}
-                </div>
-              </section>
-            );
-          }
-
-          const item = displayItem.item;
-          if (item.type === 'tool_call' || item.type === 'tool_result') {
-            const tone = getToolStatusTone(item);
-            const isExpanded = expandedItems.has(item.id);
-            const toolName = getToolDisplayName(item);
-            const statusClass =
-              tone === 'running'
-                ? styles.processItemStatusRunning
-                : tone === 'error'
-                  ? styles.processItemStatusError
-                  : styles.processItemStatusSuccess;
-            const statusLabel =
-              tone === 'running'
-                ? '执行中'
-                : tone === 'error'
-                  ? '失败'
-                  : '完成';
-            const detailBlocks = buildToolDetailBlocks(item);
-            const detail = detailBlocks
-              .map((block) => block.value)
-              .join('\n\n');
-            const compactDetail = getToolCompactDetail(item);
-
-            return (
-              <section key={item.id} className={styles.processRound}>
-                <div className={styles.processRoundHeader}>
-                  <div className={styles.processRoundTitle}>
-                    {item.type === 'tool_call' ? '工具调用' : '工具结果'}{' '}
-                    {index + 1}
-                  </div>
-                  <div className={styles.processRoundMeta}>
-                    第 {roundByItemId.get(item.id) ?? 1} 轮
-                  </div>
-                </div>
-                <div className={cx(styles.processItem, styles.processToolItem)}>
-                  <div className={styles.processItemHeader}>
-                    <span className={styles.processItemName}>{toolName}</span>
-                    <span
-                      className={`${styles.processItemStatus} ${statusClass}`}
-                    >
-                      {statusLabel}
-                    </span>
-                  </div>
-                  {detailBlocks.length > 0 &&
-                    (isExpanded ? (
-                      <>
-                        <button
-                          type="button"
-                          className={styles.processItemToggleButton}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleExpandedItem(item.id, false);
-                          }}
-                        >
-                          <UpOutlined /> 收起工具详情
-                        </button>
-                        <div className={styles.processToolDetailBlocks}>
-                          {detailBlocks.map((block) => (
-                            <div
-                              key={block.key}
-                              className={styles.processToolDetailBlock}
-                            >
-                              <div className={styles.processToolDetailLabel}>
-                                {block.label}
-                              </div>
-                              <pre className={styles.processToolDetailPre}>
-                                {block.value}
-                              </pre>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {compactDetail && (
-                          <div className={styles.processItemDetail}>
-                            {compactDetail}
-                          </div>
-                        )}
-                        {(detail.length > compactDetail.length ||
-                          detailBlocks.length > 1) && (
-                          <button
-                            type="button"
-                            className={styles.processItemToggleButton}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleExpandedItem(item.id, true);
-                            }}
-                          >
-                            <DownOutlined /> 查看工具详情
-                          </button>
-                        )}
-                      </>
-                    ))}
-                </div>
-              </section>
-            );
-          }
-
-          if (
-            item.type === 'subagent_spawned' ||
-            item.type === 'subagent_progress' ||
-            item.type === 'subagent_completed'
-          ) {
-            const tone = getToolStatusTone(item);
-            const statusClass =
-              tone === 'running'
-                ? styles.processItemStatusRunning
-                : tone === 'error'
-                  ? styles.processItemStatusError
-                  : styles.processItemStatusSuccess;
-            const statusLabel =
-              tone === 'running'
-                ? '运行中'
-                : tone === 'error'
-                  ? '失败'
-                  : '完成';
-            const title =
-              item.type === 'subagent_spawned'
-                ? '子代理调用'
-                : item.type === 'subagent_progress'
-                  ? '子代理进展'
-                  : '子代理结果';
-            const detailBlocks = buildToolDetailBlocks(item);
-            return (
-              <section key={item.id} className={styles.processRound}>
-                <div className={styles.processRoundHeader}>
-                  <div className={styles.processRoundTitle}>
-                    {title} {index + 1}
-                  </div>
-                  <div className={styles.processRoundMeta}>
-                    第 {roundByItemId.get(item.id) ?? 1} 轮
-                  </div>
-                </div>
-                <div className={cx(styles.processItem, styles.processToolItem)}>
-                  <div className={styles.processItemHeader}>
-                    <span className={styles.processItemName}>
-                      {getToolDisplayName(item)}
-                    </span>
-                    <span
-                      className={`${styles.processItemStatus} ${statusClass}`}
-                    >
-                      {statusLabel}
-                    </span>
-                  </div>
-                  {detailBlocks.map((block) => (
-                    <div key={block.key} className={styles.processItemDetail}>
-                      {block.label}：{block.value}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            );
-          }
-
-          const detail = sanitizeProcessText(item.message || item.text, {
-            compact: false,
-          });
-          if (!detail) return null;
-          return (
-            <section key={item.id} className={styles.processRound}>
-              <div className={styles.processItem}>
-                <span className={styles.processItemName}>过程</span>
-                <div className={styles.processItemDetail}>{detail}</div>
-              </div>
-            </section>
-          );
-        })}
-        {status === 'error' && onRerun && (
-          <button
-            type="button"
-            className={styles.processRetryBtn}
-            onClick={onRerun}
-          >
-            重试
-          </button>
-        )}
       </div>
-    </div>
+    </>
   );
 };
 

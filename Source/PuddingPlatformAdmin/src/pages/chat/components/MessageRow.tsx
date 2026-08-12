@@ -5,6 +5,7 @@ import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { ChatMessageBlock, ParentDelegationActivity } from '../types';
 import AgentMessageBubble from './AgentMessageBubble';
 import MessageItem from './MessageItem';
+import type { TranscriptMode } from './TranscriptModeSwitch';
 import UserMessageBubble from './UserMessageBubble';
 
 interface MessageRowProps {
@@ -24,6 +25,9 @@ interface MessageRowProps {
   onPinTurn?: (turnId: string) => void;
   onDeleteTurn?: (turnId: string) => void;
   parentDelegationActivity?: ParentDelegationActivity;
+  /** P0#2：转录视图分级 */
+  transcriptMode?: TranscriptMode;
+  onTranscriptModeChange?: (mode: TranscriptMode) => void;
 }
 
 const optionalRecordEquals = (
@@ -113,7 +117,8 @@ const messageBlockEquals = (
     processItemsEqual(previous.processItems, next.processItems) &&
     optionalRecordEquals(previous.processSummary, next.processSummary) &&
     optionalRecordEquals(previous.usage, next.usage) &&
-    optionalRecordEquals(previous.quotedMessage, next.quotedMessage));
+    optionalRecordEquals(previous.quotedMessage, next.quotedMessage) &&
+    optionalRecordEquals(previous.approvalCard, next.approvalCard));
 
 export const areMessageRowPropsEqual = (
   previous: MessageRowProps,
@@ -128,6 +133,8 @@ export const areMessageRowPropsEqual = (
   previous.onRerunTurn === next.onRerunTurn &&
   previous.onPinTurn === next.onPinTurn &&
   previous.onDeleteTurn === next.onDeleteTurn &&
+  previous.transcriptMode === next.transcriptMode &&
+  previous.onTranscriptModeChange === next.onTranscriptModeChange &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
     next.parentDelegationActivity,
@@ -144,6 +151,8 @@ const MessageRow: React.FC<MessageRowProps> = ({
   onPinTurn,
   onDeleteTurn,
   parentDelegationActivity,
+  transcriptMode,
+  onTranscriptModeChange,
 }) => {
   const { styles, cx } = useChatMessageStyles();
 
@@ -206,6 +215,8 @@ const MessageRow: React.FC<MessageRowProps> = ({
           onPin={onPinTurn ? () => onPinTurn(block.turnId) : undefined}
           onDelete={onDeleteTurn ? () => onDeleteTurn(block.turnId) : undefined}
           parentDelegationActivity={parentDelegationActivity}
+          transcriptMode={transcriptMode}
+          onTranscriptModeChange={onTranscriptModeChange}
         />
       </div>
     );

@@ -1,4 +1,4 @@
-export type AgentRunStatus =
+﻿export type AgentRunStatus =
   | 'queued'
   | 'running'
   | 'waiting'
@@ -98,8 +98,24 @@ export interface ConversationMessageView {
     | 'succeeded'
     | 'failed'
     | 'cancelled';
-  processItems: ProcessSummaryItem[];
+    processItems: ProcessSummaryItem[];
   processSummary?: ConversationProcessSummary | null;
+  /** 工具审批卡片（P0#1）。由 approval.requested / approval.resolved 事件投影。 */
+  approvalCard?: ApprovalCardData | null;
+}
+
+/** 工具审批请求的 UI 投影（P0#1 审批卡片）。 */
+export interface ApprovalCardData {
+  approvalId: string;
+  toolName: string;
+  description: string;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  arguments?: Record<string, unknown>;
+  status: 'pending' | 'approved' | 'denied';
+  decision?: 'allow_once' | 'always_allow' | 'deny';
+  reason?: string;
+  requestedAt: string;
+  expiresAt?: string;
 }
 
 export interface AgentConversationView {

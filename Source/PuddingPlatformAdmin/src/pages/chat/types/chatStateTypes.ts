@@ -139,6 +139,8 @@ export interface UseChatStateReturn {
   sessionCacheHitTokens: number;
   sessionCacheMissTokens: number;
   cacheHitRate?: number;
+  /** 来自 useCompaction 的压缩状态文案（如 "上次压缩: 2分钟前"） */
+  compactionStatus: string | null;
   handleSetMainSession: (sessionId: string) => void;
   createSceneOpen: boolean;
   setCreateSceneOpen: (value: boolean) => void;

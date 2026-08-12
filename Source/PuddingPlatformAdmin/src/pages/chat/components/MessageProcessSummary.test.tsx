@@ -410,9 +410,118 @@ describe('MessageProcessSummary', () => {
     expect(diagnosticsButton.className).toBe(processLink.className);
     expect(diagnosticsButton.querySelector('svg')).toBeNull();
 
-    fireEvent.click(diagnosticsButton);
+        fireEvent.click(diagnosticsButton);
 
     expect(onOpenDiagnostics).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Hidden reasoning')).toBeNull();
+  });
+
+  it('summary mode renders a single chips line without expansion controls', () => {
+    render(
+      <MessageProcessSummary
+        status="success"
+        transcriptMode="summary"
+        items={[
+          {
+            id: 'thinking-1',
+            type: 'thinking',
+            text: '先理解问题。',
+            timestamp: 1000,
+            collapsed: true,
+          },
+          {
+            id: 'tool-1',
+            type: 'tool_call',
+            name: 'web_search',
+            status: 'tool_call',
+            message: '调用工具: web_search',
+            timestamp: 1500,
+            collapsed: true,
+          },
+          {
+            id: 'tool-2',
+            type: 'tool_result',
+            name: 'web_search',
+            status: 'success',
+            exitCode: 0,
+            output: 'ok',
+            timestamp: 2600,
+            collapsed: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('process-summary-line')).toBeTruthy();
+    expect(screen.getByText(/事件 3/)).toBeTruthy();
+    expect(screen.getByText(/思维 1/)).toBeTruthy();
+    expect(screen.getByText(/工具 1\/1/)).toBeTruthy();
+    expect(screen.queryByText('查看过程')).toBeNull();
+    expect(screen.queryByText('思维消息 1')).toBeNull();
+    expect(screen.queryByText('收起过程')).toBeNull();
+  });
+
+  it('verbose mode expands every tool detail block without toggle controls', () => {
+    render(
+      <MessageProcessSummary
+        status="success"
+        transcriptMode="verbose"
+        items={[
+          {
+            id: 'tool-1',
+            type: 'tool_call',
+            name: 'file_search',
+            status: 'tool_call',
+            arguments: '{"pattern":"*.md"}',
+            message: '调用工具: file_search',
+            timestamp: 1000,
+            collapsed: true,
+          },
+          {
+            id: 'tool-2',
+            type: 'tool_result',
+            name: 'file_search',
+            status: 'success',
+            exitCode: 0,
+            output: 'README.md',
+            timestamp: 2000,
+            collapsed: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('工具调用 1')).toBeTruthy();
+    expect(screen.getByText('工具结果 2')).toBeTruthy();
+    expect(screen.getByText('参数')).toBeTruthy();
+    expect(screen.getByText('输出')).toBeTruthy();
+    expect(document.body.textContent).toContain('{"pattern":"*.md"}');
+    expect(document.body.textContent).toContain('README.md');
+    expect(screen.queryByText('查看工具详情')).toBeNull();
+    expect(screen.queryByText('收起工具详情')).toBeNull();
+    expect(screen.queryByText('收起过程')).toBeNull();
+  });
+
+  it('emits transcript mode changes from the header switch', () => {
+    const onTranscriptModeChange = jest.fn();
+    render(
+      <MessageProcessSummary
+        status="success"
+        transcriptMode="normal"
+        onTranscriptModeChange={onTranscriptModeChange}
+        items={[
+          {
+            id: 'thinking-1',
+            type: 'thinking',
+            text: '简单思考',
+            timestamp: 1,
+            collapsed: true,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('摘要'));
+    expect(onTranscriptModeChange).toHaveBeenCalledWith('summary');
   });
 });

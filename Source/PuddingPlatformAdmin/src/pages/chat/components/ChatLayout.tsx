@@ -78,6 +78,8 @@ interface ChatLayoutProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 来自 useCompaction hook 的压缩状态文案 */
+  compactionStatus?: string | null;
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
   onContextMenu: (
@@ -167,6 +169,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         cacheHitTokens={props.cacheHitTokens}
         cacheMissTokens={props.cacheMissTokens}
         cacheHitRate={props.cacheHitRate}
+        compactionStatus={props.compactionStatus}
         formatTime={props.formatTime}
         onDeleteTurn={props.onDeleteTurn}
         onContextMenu={props.onContextMenu}

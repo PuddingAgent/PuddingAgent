@@ -19,6 +19,19 @@ const mockMessageItem = jest.fn((props: Record<string, unknown>) => (
 jest.mock('antd', () => {
   return {
     unstableSetRender: jest.fn(),
+    Segmented: ({ options, value, onChange }: any) => (
+      <div data-testid="antd-segmented" data-value={String(value)}>
+        {(options ?? []).map((option: any) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange?.(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    ),
     Tooltip: ({ children, title, ...props }: any) => (
       <span
         data-testid="antd-tooltip"

@@ -10,7 +10,7 @@ import {
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Popover, Tooltip, message } from 'antd';
+import { Button, Input, message, Popover, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
@@ -36,6 +36,7 @@ import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 import { useChatStyles } from '../styles';
 import CommandPalette, { type Command, filterCommands } from './CommandPalette';
 import ComposerActionMenu from './ComposerActionMenu';
+import ComposerContextBar from './ComposerContextBar';
 import ComposerFeedbackStrip, {
   type FeedbackState,
 } from './ComposerFeedbackStrip';
@@ -46,7 +47,8 @@ import { normalizeVisionArtifactFile } from './visionArtifactImage';
 
 const CameraInputModal =
   process.env.NODE_ENV === 'test'
-    ? (require('./CameraInputModal').default as typeof import('./CameraInputModal').default)
+    ? (require('./CameraInputModal')
+        .default as typeof import('./CameraInputModal').default)
     : React.lazy(() => import('./CameraInputModal'));
 
 /** Composer 的聊天状态 */
@@ -144,6 +146,8 @@ interface IntentConsoleProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 来自 useCompaction hook 的压缩状态文案（如 "上次压缩: 2分钟前"） */
+  compactionStatus?: string | null;
   /** 当前会话可见的子任务数 */
   subAgentsRunning?: number;
   /** 打开 ChatMain 持有的固定子代理运行检查器。 */
@@ -192,6 +196,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   cacheHitTokens,
   cacheMissTokens,
   cacheHitRate,
+  compactionStatus,
   subAgentsRunning = 0,
   onOpenSubAgentInspector,
   voiceInputAdapter = createDashScopeVoiceInputAdapter(),
@@ -237,7 +242,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [draftValue, setDraftValue] = useState(inputValue);
   const isTextComposingRef = useRef(false);
   /** 容器是否处于 active（focus 或 非空输入 或 正在录音） */
-    const [recording, setRecording] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const voiceHandleRef = useRef<BrowserVoiceInputHandle | null>(null);
   /** 图片上传隐藏文件选择器 */
@@ -245,7 +250,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   /** 图片上传进行中 */
   const [imageUploading, setImageUploading] = useState(false);
   /** 等待用户确认发送的本地图片；选择、粘贴、拖拽都只进入这里。 */
-  const [pendingImages, setPendingImages] = useState<PendingComposerImage[]>([]);
+  const [pendingImages, setPendingImages] = useState<PendingComposerImage[]>(
+    [],
+  );
   const pendingImagesRef = useRef<PendingComposerImage[]>([]);
   /** 拖拽悬停高亮 */
   const [imageDragActive, setImageDragActive] = useState(false);
@@ -297,7 +304,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     pendingImages.length > 0 ||
     recording;
   const cameraSupported = cameraInputAdapter.isSupported();
-    const cameraEnabled = Boolean(
+  const cameraEnabled = Boolean(
     cameraSupported &&
       workspaceId &&
       onSendWithMetadata &&
@@ -510,7 +517,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     requestAnimationFrame(() => textAreaRef.current?.focus());
   }, [onInputChange]);
 
-    const handleCameraSend = useCallback(
+  const handleCameraSend = useCallback(
     async (content: string, metadata: Record<string, string>) => {
       if (!onSendWithMetadata) return;
       await onSendWithMetadata(content, metadata);
@@ -523,8 +530,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   // ── 图片暂存与发送（菜单选择 / 粘贴 / 拖拽共用）──
   const stageImageFiles = useCallback((files: File[]) => {
     const images = files.filter((file) => file.type.startsWith('image/'));
-    if (images.length !== files.length)
-      message.warning('已忽略非图片文件');
+    if (images.length !== files.length) message.warning('已忽略非图片文件');
     if (images.length === 0) return;
 
     setPendingImages((current) => {
@@ -568,15 +574,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         pendingImages.map(async (item) => {
           const dimensions = await readImageDimensions(item.file);
           const uploadFile = await normalizeVisionArtifactFile(item.file);
-          const artifact = await uploadVisionArtifact(
-            workspaceId,
-            uploadFile,
-            {
-              width: dimensions?.width,
-              height: dimensions?.height,
-              capturedAt: Date.now(),
-            },
-          );
+          const artifact = await uploadVisionArtifact(workspaceId, uploadFile, {
+            width: dimensions?.width,
+            height: dimensions?.height,
+            capturedAt: Date.now(),
+          });
           return {
             artifactId: artifact.artifactId,
             fileName: item.file.name,
@@ -757,8 +759,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         status === 'streaming',
       contextUsagePercentage: effectiveContextUsagePercentage,
       contextLimitTokens:
-        contextHealth?.contextWindowTokens ??
-        (tLimit > 0 ? tLimit : undefined),
+        contextHealth?.contextWindowTokens ?? (tLimit > 0 ? tLimit : undefined),
       contextRemainingTokens:
         contextHealth?.remainingTokens ??
         (tLimit > 0 ? Math.max(tLimit - tUsed, 0) : undefined),
@@ -886,7 +887,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     [formatQueueLatency],
   );
 
-    return (
+  return (
     <div
       className={`${styles.composerSurface} ${recording ? styles.composerRecording : ''}`}
       data-active={composerActive && !loading ? 'true' : undefined}
@@ -1053,7 +1054,16 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       )}
 
       <div className={styles.composerCapsuleBody}>
-                <Input.TextArea
+        <ComposerContextBar
+          tLimit={contextHealth?.contextWindowTokens ?? tLimit}
+          tUsed={contextHealth?.usedTokens ?? tUsed}
+          tPct={effectiveContextUsagePercentage ?? 0}
+          cacheHitTokens={cacheHitTokens}
+          cacheMissTokens={cacheMissTokens}
+          cacheHitRate={cacheHitRate}
+          compactionStatus={compactionStatus}
+        />
+        <Input.TextArea
           ref={textAreaRef as any}
           value={draftValue}
           onChange={handleInputChange}
@@ -1074,7 +1084,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           <div className={styles.composerToolbarLeft}>
             <Popover
               content={
-                                <ComposerActionMenu
+                <ComposerActionMenu
                   onExport={onExport}
                   onOpenCamera={() => setShowCameraInput(true)}
                   cameraEnabled={cameraEnabled}
@@ -1186,7 +1196,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <DownOutlined />
               </button>
             </Popover>
-                        <Tooltip
+            <Tooltip
               title={
                 recording ? '停止录音' : recognizing ? '识别中...' : '语音输入'
               }
@@ -1212,7 +1222,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 )}
               </button>
             </Tooltip>
-            <Tooltip title={loading ? '停止生成' : imageUploading ? '图片上传中…' : '发送'}>
+            <Tooltip
+              title={
+                loading ? '停止生成' : imageUploading ? '图片上传中…' : '发送'
+              }
+            >
               <button
                 type="button"
                 className={styles.composerSendButton}

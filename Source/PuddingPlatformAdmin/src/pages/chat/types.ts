@@ -1,6 +1,9 @@
 ﻿// ── 聊天页共享类型 ─────────────────────────────────────────────
 import type { TokenUsageDto } from '@/services/platform/api';
-import type { ConversationProcessSummary } from './client/types';
+import type {
+  ApprovalCardData,
+  ConversationProcessSummary,
+} from './client/types';
 
 export type MessageStatus = 'sending' | 'success' | 'error';
 export type AssistantStatus =
@@ -69,6 +72,8 @@ export interface ChatTurn {
     quotedMessage?: ChatQuotedMessage;
     /** Agent 主动 TTS 标记：{ enabled: true, tts_text?: string } */
     voice?: { enabled?: boolean; tts_text?: string };
+    /** 工具审批卡片（P0#1）。由 approval.requested / approval.resolved 事件投影。 */
+    approvalCard?: ApprovalCardData;
   };
 }
 
@@ -127,6 +132,8 @@ export interface ChatMessageBlock {
 
   /** 流式渲染标记 */
   isStreaming?: boolean;
+  /** 工具审批卡片（P0#1）。非空时在消息下方渲染 <ApprovalCard>。 */
+  approvalCard?: ApprovalCardData;
 }
 
 function isAssistantInProgress(status: AssistantStatus): boolean {
@@ -243,6 +250,7 @@ export function buildMessageBlocks(
         isStreaming:
           turn.assistant.isStreaming || turn.assistant.status === 'streaming',
         quotedMessage: turn.assistant.quotedMessage,
+        approvalCard: turn.assistant.approvalCard,
       };
 
       // ADR: Agent 消息分组不得跨用户消息

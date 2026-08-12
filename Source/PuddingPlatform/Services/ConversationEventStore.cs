@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -29,6 +29,11 @@ public sealed class ConversationEventStore(
     {
         if (events.Count == 0)
             return new AppendResult(0, 0, 0);
+
+        // Chat UI P0#1: approval.requested / approval.resolved 是受支持的事件类型。
+        // 写入前对这两个类型做轻量 payload schema 校验，保证审批卡片投影可解析。
+        foreach (var evt in events)
+            ValidateEventSchema(evt);
 
         await EnsureTableAsync(ct);
         using var scope = scopeFactory.CreateScope();
@@ -437,6 +442,42 @@ public sealed class ConversationEventStore(
         logger.LogInformation("[ConversationEventStore] Tables ensured");
     }
 
+    // ── Schema validation ──────────────────────────────────
+
+    /// <summary>
+    /// 对受支持事件的 payload 做轻量 schema 校验。
+    /// 未知类型不校验（向后兼容），仅校验 Chat UI P0#1 的审批事件。
+    /// </summary>
+    private static void ValidateEventSchema(NewConversationEvent evt)
+    {
+        switch (evt.Type)
+        {
+            case ApprovalEventTypes.ApprovalRequested:
+                RequirePayloadString(evt, "approvalId");
+                RequirePayloadString(evt, "toolName");
+                break;
+
+            case ApprovalEventTypes.ApprovalResolved:
+                RequirePayloadString(evt, "approvalId");
+                RequirePayloadString(evt, "decision");
+                break;
+        }
+    }
+
+    private static void RequirePayloadString(NewConversationEvent evt, string propertyName)
+    {
+        var payload = evt.Payload;
+        if (payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(property.GetString()))
+        {
+            throw new ArgumentException(
+                $"Event type '{evt.Type}' requires payload field '{propertyName}' (non-empty string).",
+                nameof(evt));
+        }
+    }
+
     // ── Mapping ────────────────────────────────────────────
 
     private static ConversationEvent MapFromReader(System.Data.Common.DbDataReader reader)
@@ -463,4 +504,20 @@ public sealed class ConversationEventStore(
             Payload = JsonDocument.Parse(reader.GetString(Ord("payload"))).RootElement,
         };
     }
+}
+
+/// <summary>
+/// Chat UI P0#1: 审批事件类型常量（与 Chat UI 前端契约一致）。
+/// <para>
+/// 这两个类型直接写入 conversation_events.type（payload 为 JSON 字符串），
+/// 通过既有 ADR-057 SSE 流原样透传，不修改任何表结构。
+/// </para>
+/// </summary>
+public static class ApprovalEventTypes
+{
+    public const string ApprovalRequested = "approval.requested";
+    public const string ApprovalResolved = "approval.resolved";
+
+    /// <summary>全部审批事件类型（白名单/注册点）。</summary>
+    public static readonly string[] All = [ApprovalRequested, ApprovalResolved];
 }

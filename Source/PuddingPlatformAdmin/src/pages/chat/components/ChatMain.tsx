@@ -28,6 +28,7 @@ import type {
 } from '../types';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
+import type { TranscriptMode } from './TranscriptModeSwitch';
 
 const DevPanel =
   process.env.NODE_ENV === 'test'
@@ -104,6 +105,8 @@ interface ChatMainProps {
   cacheHitTokens?: number;
   cacheMissTokens?: number;
   cacheHitRate?: number;
+  /** 来自 useCompaction hook 的压缩状态文案 */
+  compactionStatus?: string | null;
   // message rendering
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
@@ -166,6 +169,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   cacheHitTokens,
   cacheMissTokens,
   cacheHitRate,
+  compactionStatus,
   formatTime,
   onDeleteTurn,
   onContextMenu,
@@ -182,6 +186,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const [devMode, setDevMode] = useState<boolean>(
     () => localStorage.getItem(DEV_MODE_KEY) === '1',
   );
+  /** P0#2：转录视图分级（normal | verbose | summary） */
+  const [transcriptMode, setTranscriptMode] =
+    useState<TranscriptMode>('normal');
   const rawEvents = useDevRuntimeEvents(devMode, turns);
   const [inferredSessionId, setInferredSessionId] = useState<string | null>(
     null,
@@ -486,6 +493,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                         onViewportScrollIntentHandled
                       }
                       parentDelegationActivity={parentDelegationActivity}
+                      transcriptMode={transcriptMode}
+                      onTranscriptModeChange={setTranscriptMode}
                     />
                   </section>
                   <IntentConsole
@@ -513,6 +522,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     cacheHitTokens={cacheHitTokens}
                     cacheMissTokens={cacheMissTokens}
                     cacheHitRate={cacheHitRate}
+                    compactionStatus={compactionStatus}
                     subAgentsRunning={subAgentCount}
                     onOpenSubAgentInspector={() =>
                       handleOpenSubAgentInspector()

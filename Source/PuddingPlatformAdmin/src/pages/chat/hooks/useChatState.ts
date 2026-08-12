@@ -312,6 +312,7 @@ export function useChatState(
     mergeCompactionLifecycleTurns,
     bindCompactedSessionSwitch,
     markManualSessionSwitch,
+    compactionStatus,
   } = useCompaction({
     identity: {
       workspaceId,
@@ -1303,6 +1304,7 @@ export function useChatState(
     sessionCacheHitTokens,
     sessionCacheMissTokens,
     cacheHitRate,
+    compactionStatus,
     handleSetMainSession,
     subAgentCards: visibleSubAgentCards,
     sessionUnreadCounts,

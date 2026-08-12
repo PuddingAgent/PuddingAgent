@@ -1,0 +1,16 @@
+﻿feat: Chat UI P0 — 审批卡片 + 转录视图分级 + 上下文指示器下沉
+
+P0#1 审批卡片：
+- 后端: ApprovalController (POST /api/sessions/{id}/decide) + SSE 透传 + 事件白名单
+- 前端: ApprovalCard 组件 (四色风险 + 三按钮 + allow_once/always_allow/deny)
+- 类型: ApprovalCardData + 投影 + API 客户端 + MessageRow memo
+
+P0#2 转录视图分级：
+- TranscriptModeSwitch (antd Segmented: 普通/详细/摘要)
+- MessageProcessSummary 三模式分支 (Normal/Verbose/Summary)
+- ChatMain -> MessageList -> MessageRow -> AgentMessageBubble 全链路
+
+P0#3 上下文指示器下沉：
+- ComposerContextBar (进度条 + 百分比 + compaction 状态 + Popover 明细)
+- IntentConsole composerCapsuleBody 内 TextArea 上方渲染
+- compactionStatus 全链路: useCompaction -> useChatState -> ChatLayout -> ChatMain

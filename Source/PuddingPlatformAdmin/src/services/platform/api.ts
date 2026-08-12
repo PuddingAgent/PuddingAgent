@@ -2517,7 +2517,10 @@ export type AdminChatStreamEvent =
   | { type: 'subagent.thinking'; sub_agent_id?: string; delta?: string; [key: string]: unknown }
   | { type: 'subagent.tool_call'; sub_agent_id?: string; name?: string; arguments?: string; [key: string]: unknown }
   | { type: 'subagent.tool_result'; sub_agent_id?: string; name?: string; exitCode?: number; output?: string; error?: string; [key: string]: unknown }
-  | { type: 'subagent.completed'; sub_agent_id: string; success?: boolean; reply?: string; error?: string; result_summary?: string; [key: string]: unknown }
+    | { type: 'subagent.completed'; sub_agent_id: string; success?: boolean; reply?: string; error?: string; result_summary?: string; [key: string]: unknown }
+  // P0#1: 工具审批事件（后端原始类型，经 normalizeConversationEventType 原样透传）
+  | { type: 'approval.requested'; approvalId?: string; toolName?: string; tool_name?: string; riskLevel?: string; description?: string; arguments?: Record<string, unknown>; requestedAt?: string; expiresAt?: string; [key: string]: unknown }
+  | { type: 'approval.resolved'; approvalId?: string; status?: string; decision?: 'allow_once' | 'always_allow' | 'deny'; reason?: string; [key: string]: unknown }
   // T-102: 会话关闭事件（ADR-016）
   | { type: 'session.closed'; sessionId: string };
 
@@ -3297,6 +3300,33 @@ export async function listToolApprovalAuditEvents(params?: {
 
 export async function getToolApprovalStats(): Promise<ToolApprovalStatsDto> {
   return request('/api/tool-approval/stats', { method: 'GET' });
+}
+
+// ─── Session Tool Approval Decision API (P0#1 审批卡片) ──────────
+
+export type SessionApprovalDecision = 'allow_once' | 'always_allow' | 'deny';
+
+export interface SessionApprovalDecisionRequest {
+  approvalId: string;
+  decision: SessionApprovalDecision;
+  reason?: string;
+}
+
+export interface SessionApprovalDecisionResult {
+  approvalId: string;
+  status: 'approved' | 'denied';
+  decision: SessionApprovalDecision;
+}
+
+/** 提交工具审批决策（允许一次 / 始终允许 / 拒绝）。 */
+export async function decideSessionApproval(
+  sessionId: string,
+  req: SessionApprovalDecisionRequest,
+): Promise<SessionApprovalDecisionResult> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/decide`, {
+    method: 'POST',
+    data: req,
+  });
 }
 
 export interface SessionBenchmarkReportDto {

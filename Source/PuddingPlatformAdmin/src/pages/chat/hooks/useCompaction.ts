@@ -1,6 +1,6 @@
 ﻿import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   type AdminChatStreamEvent,
   type ContextCompactionResult,
@@ -46,6 +46,20 @@ type CompactedSessionSwitch = (
   title?: string | null,
 ) => void;
 
+/** 相对时间文案，供 ComposerContextBar 的压缩状态展示 */
+const formatCompactionAgo = (timestamp: number): string => {
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 10) return '刚刚';
+  if (seconds < 60) return `${seconds} 秒前`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
+};
+
+export const COMPACTION_RUNNING_LABEL = '正在压缩上下文…';
+
 export interface CompactionLifecycleOptions {
   allowSessionSwitch?: boolean;
   notify?: boolean;
@@ -72,6 +86,8 @@ export function useCompaction({
   const activeCompactionTurnIdRef = useRef<string | null>(null);
   const compactedSessionSwitchRef = useRef<CompactedSessionSwitch>(() => {});
   const lastManualSwitchAtRef = useRef<number>(0);
+  /** P0#3：供 ComposerContextBar 展示的压缩状态文案 */
+  const [compactionStatus, setCompactionStatus] = useState<string | null>(null);
 
   /** Called by handleSelectSession to prevent compaction from overriding manual selection (RC-6). */
   const markManualSessionSwitch = useCallback(() => {
@@ -246,6 +262,7 @@ export function useCompaction({
 
       if (event.type === 'context.compaction.started') {
         setLoading(true);
+        setCompactionStatus(COMPACTION_RUNNING_LABEL);
         updateCompactTurn(compactTurnId, 'executing', '正在压缩上下文…');
         if (options?.notify !== false) {
           messageApi.loading({
@@ -262,6 +279,7 @@ export function useCompaction({
       if (event.type === 'context.compaction.failed') {
         const errorMessage = String(raw.error || '上下文压缩失败');
         updateCompactTurn(compactTurnId, 'error', errorMessage);
+        setCompactionStatus(`压缩失败：${errorMessage}`);
         activeCompactionTurnIdRef.current = null;
         if (options?.notify !== false) messageApi.error(errorMessage, 4);
         return;
@@ -272,6 +290,7 @@ export function useCompaction({
           ? (raw.compaction as ContextCompactionResult)
           : undefined;
       updateCompactTurn(compactTurnId, 'success', '上下文压缩完成', compacted);
+      setCompactionStatus(`上次压缩：${formatCompactionAgo(Date.now())}`);
       activeCompactionTurnIdRef.current = null;
 
       const newSessionId =
@@ -286,14 +305,18 @@ export function useCompaction({
         sessionIdRef.current !== newSessionId
       ) {
         // RC-6: Don't override a recent manual session switch
-        const msSinceManualSwitch = performance.now() - lastManualSwitchAtRef.current;
+        const msSinceManualSwitch =
+          performance.now() - lastManualSwitchAtRef.current;
         if (msSinceManualSwitch < 2000) {
           messageApi.info(
             `上下文压缩完成，新会话「${newSessionTitle}」已就绪（未自动切换）`,
             4,
           );
         } else {
-          messageApi.success(`上下文压缩完成，已切换到「${newSessionTitle}」`, 4);
+          messageApi.success(
+            `上下文压缩完成，已切换到「${newSessionTitle}」`,
+            4,
+          );
           compactedSessionSwitchRef.current(newSessionId, newSessionTitle);
         }
       }
@@ -321,6 +344,7 @@ export function useCompaction({
 
     setError(null);
     setLoading(true);
+    setCompactionStatus(COMPACTION_RUNNING_LABEL);
     const compactionId = createId();
     const compactTurnId = appendCompactTurn(
       '正在压缩上下文…',
@@ -349,6 +373,7 @@ export function useCompaction({
         '上下文压缩完成',
         response.compaction,
       );
+      setCompactionStatus(`上次压缩：${formatCompactionAgo(Date.now())}`);
       activeCompactionTurnIdRef.current = null;
 
       if (
@@ -364,6 +389,7 @@ export function useCompaction({
       setLoading(false);
       const message = error instanceof Error ? error.message : '上下文压缩失败';
       setError(message);
+      setCompactionStatus(`压缩失败：${message}`);
       updateCompactTurn(compactTurnId, 'error', message);
       activeCompactionTurnIdRef.current = null;
       messageApi.error(message);
@@ -386,6 +412,7 @@ export function useCompaction({
     compactionTurnIdsRef.current.clear();
     compactionLifecycleTurnsRef.current.clear();
     activeCompactionTurnIdRef.current = null;
+    setCompactionStatus(null);
   }, []);
 
   const mergeCompactionLifecycleTurns = useCallback(
@@ -411,5 +438,6 @@ export function useCompaction({
     mergeCompactionLifecycleTurns,
     bindCompactedSessionSwitch,
     markManualSessionSwitch,
+    compactionStatus,
   };
 }

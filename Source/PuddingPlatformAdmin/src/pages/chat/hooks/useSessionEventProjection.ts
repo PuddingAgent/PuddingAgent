@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type {
   AdminChatStreamEvent,
@@ -15,6 +15,7 @@ import {
   reduceSubAgentRunEvent,
   type SubAgentRunMap,
 } from '../reducer/subAgentReducer';
+import type { ApprovalCardData } from '../client/types';
 import type { ChatSource, ChatTurn } from '../types';
 import type { ChatInteractionRuntimeEvent } from '../types/chatStateTypes';
 import {
@@ -354,6 +355,46 @@ export function useSessionEventProjection({
               ...turn,
               source: source || turn.source,
               userMessage: { ...turn.userMessage, status: 'success' as const },
+            };
+          }
+          if (ev.type === 'approval.requested') {
+            const raw = ev as unknown as Record<string, unknown>;
+            const approvalId =
+              typeof raw.approvalId === 'string' ? raw.approvalId : '';
+            if (!approvalId) return turn;
+            const riskLevel = ['low', 'medium', 'high', 'critical'].includes(
+              String(raw.riskLevel),
+            )
+              ? (String(raw.riskLevel) as ApprovalCardData['riskLevel'])
+              : 'medium';
+            const approvalCard: ApprovalCardData = {
+              approvalId,
+              toolName: String(raw.toolName ?? raw.tool_name ?? ''),
+              description: String(raw.description ?? ''),
+              riskLevel,
+              arguments:
+                raw.arguments &&
+                typeof raw.arguments === 'object' &&
+                !Array.isArray(raw.arguments)
+                  ? (raw.arguments as Record<string, unknown>)
+                  : undefined,
+              status: 'pending',
+              requestedAt:
+                typeof raw.requestedAt === 'string'
+                  ? raw.requestedAt
+                  : new Date().toISOString(),
+              expiresAt:
+                typeof raw.expiresAt === 'string'
+                  ? raw.expiresAt
+                  : undefined,
+            };
+            return {
+              ...turn,
+              assistant: {
+                ...turn.assistant,
+                approvalCard,
+                renderMode: 'structured' as const,
+              },
             };
           }
           if (ev.type === 'delta') {
@@ -1028,6 +1069,49 @@ export function useSessionEventProjection({
         return;
       }
       if (eventType === 'steering.created') {
+        updateLastSequence(ev);
+        return;
+      }
+      // P0#1: 审批决议是会话级事实，可能不与卡片所在 Turn 绑定。
+      // 全局扫描所有 Turn，按 approvalId 匹配并更新审批卡片。
+      if (eventType === 'approval.resolved') {
+        const approvalId =
+          typeof anyEv.approvalId === 'string' ? anyEv.approvalId : '';
+        if (approvalId) {
+          const updateApprovalCards = (current: ChatTurn[]): ChatTurn[] =>
+            current.map((turn) => {
+              const card = turn.assistant.approvalCard;
+              if (!card || card.approvalId !== approvalId) return turn;
+              const resolvedStatus: ApprovalCardData['status'] =
+                String(anyEv.status) === 'denied' ||
+                String(anyEv.decision) === 'deny'
+                  ? 'denied'
+                  : 'approved';
+              const resolvedDecision =
+                anyEv.decision === 'allow_once' ||
+                anyEv.decision === 'always_allow' ||
+                anyEv.decision === 'deny'
+                  ? (anyEv.decision as ApprovalCardData['decision'])
+                  : card.decision;
+              return {
+                ...turn,
+                assistant: {
+                  ...turn.assistant,
+                  approvalCard: {
+                    ...card,
+                    status: resolvedStatus,
+                    decision: resolvedDecision,
+                    reason:
+                      typeof anyEv.reason === 'string'
+                        ? anyEv.reason
+                        : card.reason,
+                  },
+                },
+              };
+            });
+          turnsRef.current = updateApprovalCards(turnsRef.current);
+          setTurns(updateApprovalCards);
+        }
         updateLastSequence(ev);
         return;
       }

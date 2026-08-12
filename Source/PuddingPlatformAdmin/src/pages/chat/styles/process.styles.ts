@@ -27,6 +27,39 @@ export const useProcessStyles = createStyles(({ token }) => ({
       opacity: 0.8,
     },
   },
+  processSummaryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: '2px 4px 0',
+    minHeight: 24,
+  },
+  processSummaryHeaderLabel: {
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.55,
+    lineHeight: '20px',
+    whiteSpace: 'nowrap' as const,
+    userSelect: 'none' as const,
+  },
+  transcriptModeSwitch: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    '& .ant-segmented': {
+      background: 'transparent',
+    },
+    '& .ant-segmented-item': {
+      minHeight: 20,
+      fontSize: 11,
+      lineHeight: '20px',
+    },
+    '& .ant-segmented-item-label': {
+      minHeight: 20,
+      lineHeight: '20px',
+      padding: '0 8px',
+    },
+  },
   processSummaryDot: {
     width: 4,
     height: 4,

@@ -12,6 +12,10 @@ import React, {
   useState,
 } from 'react';
 import type { WorkspaceAgentDto } from '@/services/platform/api';
+import {
+  decideSessionApproval,
+  type SessionApprovalDecision,
+} from '@/services/platform/api';
 import { getPerfEvents } from '@/utils/perfEventRuntime';
 import type {
   AgentConversationView,
@@ -32,10 +36,12 @@ import { inboundDebug } from '../utils/inboundDebug';
 import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
+import ApprovalCard from './ApprovalCard';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
 import MessageRow from './MessageRow';
 import PinnedMessageButton from './PinnedMessageButton';
+import type { TranscriptMode } from './TranscriptModeSwitch';
 
 interface MessageListProps {
   turns: ChatTurn[];
@@ -70,6 +76,9 @@ interface MessageListProps {
   onViewportScrollIntentHandled?: () => void;
   /** 主代理对当前委派的有界摘要；子代理内部过程仍只在托盘坞展示。 */
   parentDelegationActivity?: ParentDelegationActivity;
+  /** P0#2：转录视图分级（normal | verbose | summary） */
+  transcriptMode?: TranscriptMode;
+  onTranscriptModeChange?: (mode: TranscriptMode) => void;
 }
 
 const toTimestamp = (value: string) => {
@@ -335,6 +344,7 @@ const createProjectedTurn = (
           ? ('inbound' as const)
           : 'structured',
       quotedMessage,
+      approvalCard: message.approvalCard ?? undefined,
     },
   };
 };
@@ -719,6 +729,8 @@ const MessageList: React.FC<MessageListProps> = ({
   viewportScrollIntent,
   onViewportScrollIntentHandled,
   parentDelegationActivity,
+  transcriptMode = 'normal',
+  onTranscriptModeChange,
 }) => {
   const chatStyles = useChatStyles();
   const { styles } = chatStyles;
@@ -841,6 +853,31 @@ const MessageList: React.FC<MessageListProps> = ({
     }
   }, [viewport, viewportScrollIntent, onViewportScrollIntentHandled]);
 
+  // P0#1: 审批决策 → POST /api/sessions/{sessionId}/decide
+  const handleDecideApproval = React.useCallback(
+    async (
+      approvalId: string,
+      decision: SessionApprovalDecision,
+      reason?: string,
+    ) => {
+      if (!sessionId) return;
+      try {
+        await decideSessionApproval(sessionId, {
+          approvalId,
+          decision,
+          reason,
+        });
+      } catch (error) {
+        console.error('[Pudding Chat] approval decision failed', {
+          approvalId,
+          decision,
+          error,
+        });
+      }
+    },
+    [sessionId],
+  );
+
   const renderProjectionItem = (item: VirtualMessageItem) => {
     if (item.kind === 'loader') {
       return (
@@ -858,7 +895,9 @@ const MessageList: React.FC<MessageListProps> = ({
       );
     }
 
-    return (
+    const approvalCardData =
+      item.kind === 'message' ? item.block.approvalCard : undefined;
+    const messageRow = (
       <MessageRow
         block={item.block}
         parentDelegationActivity={
@@ -872,7 +911,32 @@ const MessageList: React.FC<MessageListProps> = ({
         onRerunTurn={onRerunTurn}
         onPinTurn={onPinTurn}
         onDeleteTurn={onDeleteTurn}
+        transcriptMode={transcriptMode}
+        onTranscriptModeChange={onTranscriptModeChange}
       />
+    );
+
+    if (!approvalCardData) return messageRow;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+        {messageRow}
+        <ApprovalCard
+          approvalId={approvalCardData.approvalId}
+          toolName={approvalCardData.toolName}
+          description={approvalCardData.description}
+          riskLevel={approvalCardData.riskLevel}
+          arguments={approvalCardData.arguments}
+          status={approvalCardData.status}
+          decision={approvalCardData.decision}
+          reason={approvalCardData.reason}
+          requestedAt={approvalCardData.requestedAt}
+          expiresAt={approvalCardData.expiresAt}
+          onDecide={(decision, reason) =>
+            handleDecideApproval(approvalCardData.approvalId, decision, reason)
+          }
+        />
+      </div>
     );
   };
 
