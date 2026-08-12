@@ -1,0 +1,13 @@
+﻿{
+  "id": "aggregate-search",
+  "name": "多引擎迭代聚合搜索",
+  "version": "1.0.0",
+  "description": "多引擎迭代聚合搜索：轮询全部搜索引擎，聚合去重，评估质量，必要时迭代优化（最多5轮）",
+  "summary": "派 deepseek-v4-flash 子代理并行查询全部搜索引擎（doubao/anysearch/zhihu×2/github），聚合去重并评估质量。质量达标返回报告；不达标则优化查询进入下一轮，最多5轮。",
+  "author": "pudding-workspace",
+  "created": "2026-08-12",
+  "tags": ["search", "aggregation", "research", "multi-engine"],
+  "keywords": ["搜索", "调研", "聚合", "多引擎", "research", "aggregate search"],
+  "model": "deepseek/deepseek-v4-flash",
+  "path": "skills/aggregate-search"
+}
