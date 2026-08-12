@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace PuddingPlatform.Data.Entities;
 
@@ -30,12 +30,16 @@ public class AppUserEntity
     public string Email { get; set; } = string.Empty;
 
     /// <summary>PBKDF2-SHA256 密码哈希，格式：base64(salt):base64(hash)</summary>
-    [Required, MaxLength(512)]
+        [Required, MaxLength(512)]
     public string PasswordHash { get; set; } = string.Empty;
 
     /// <summary>显示名称（可选）</summary>
     [MaxLength(128)]
     public string? DisplayName { get; set; }
+
+    /// <summary>用户头像 URL/路径，如 "/user-avatars/alice-3f9c.png"。由 UserAvatarApi 上传时写入。</summary>
+    [MaxLength(512)]
+    public string? Avatar { get; set; }
 
     /// <summary>用户类型</summary>
     public UserType UserType { get; set; } = UserType.SimpleUser;

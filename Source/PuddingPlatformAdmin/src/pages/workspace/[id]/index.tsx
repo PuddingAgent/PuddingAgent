@@ -111,6 +111,7 @@ import { buildWorkspacePath } from '@/utils/workspaceNavigation';
 import WorkspaceAgentSettingsDrawer, {
   type WorkspaceAgentFormValues,
 } from './WorkspaceAgentSettingsDrawer';
+import UserAvatarUpload from '@/components/UserAvatarUpload';
 
 const { Text } = Typography;
 
@@ -1485,7 +1486,31 @@ const WorkspaceDetailPage: React.FC = () => {
             key: 'overview',
             label: '概览',
             children: (
-              <Descriptions bordered column={2} style={{ background: token.colorBgContainer, padding: 16 }}>
+              <>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    background: token.colorBgContainer,
+                    padding: '12px 16px',
+                    borderRadius: token.borderRadiusLG,
+                    marginBottom: 16,
+                  }}
+                >
+                  <div>
+                    <Text strong>我的头像</Text>
+                    <div style={{ marginTop: 4 }}>
+                      <Text type="secondary">
+                        头像会显示在顶栏与聊天消息中，支持裁剪预览。
+                      </Text>
+                    </div>
+                  </div>
+                  <UserAvatarUpload size={64} />
+                </div>
+                <Descriptions bordered column={2} style={{ background: token.colorBgContainer, padding: 16 }}>
                 <Descriptions.Item label="场景 ID">{workspace.workspaceId}</Descriptions.Item>
                 <Descriptions.Item label="状态">{statusBadge}</Descriptions.Item>
                 <Descriptions.Item label="名称">{workspace.name}</Descriptions.Item>
@@ -1493,10 +1518,11 @@ const WorkspaceDetailPage: React.FC = () => {
                 <Descriptions.Item label="描述" span={2}>
                   {workspace.description ?? <Text type="secondary">暂无描述</Text>}
                 </Descriptions.Item>
-                <Descriptions.Item label="创建时间">
+                                <Descriptions.Item label="创建时间">
                   {new Date(workspace.createdAt).toLocaleString('zh-CN')}
                 </Descriptions.Item>
               </Descriptions>
+              </>
             ),
           },
           {

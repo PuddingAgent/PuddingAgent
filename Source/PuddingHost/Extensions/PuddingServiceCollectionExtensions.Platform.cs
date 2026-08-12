@@ -197,6 +197,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<VisionArtifactStorageService>();
         builder.Services.AddSingleton<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
         builder.Services.AddSingleton<IVisualArtifactLocalFileResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
+        // 用户头像上传落盘到 wwwroot/user-avatars/，由静态文件中间件对外提供服务。
+        builder.Services.AddSingleton<UserAvatarStorageService>();
         builder.Services.AddHttpClient(
                 RemoteImageArtifactImportService.HttpClientName,
                 client => client.Timeout = TimeSpan.FromSeconds(60))

@@ -1404,6 +1404,28 @@ export async function deleteUser(userId: string): Promise<void> {
   return request(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 }
 
+export interface UpdateCurrentUserAvatarResult {
+  avatarUrl?: string;
+  avatar?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * 上传当前用户头像（multipart/form-data）。
+ * 契约地址：POST /api/users/me/avatar，字段名 avatar，返回 { avatarUrl }；
+ * 也兼容并行开发的 UserAvatarApi（/api/user-avatar，字段名 file，返回 { avatar }）。
+ */
+export async function updateCurrentUserAvatar(
+  formData: FormData,
+  url = '/api/users/me/avatar',
+): Promise<UpdateCurrentUserAvatarResult> {
+  return request(url, {
+    method: 'POST',
+    data: formData,
+    requestType: 'form',
+  });
+}
+
 // ─── Role API ─────────────────────────────────────────────────────
 
 export async function listRoles(): Promise<AppRoleDto[]> {
