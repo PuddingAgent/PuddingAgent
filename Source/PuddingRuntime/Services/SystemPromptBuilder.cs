@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Tools;
@@ -23,6 +24,7 @@ public sealed class SystemPromptBuilder
     private readonly IPuddingToolRegistry? _toolRegistry;
     private readonly AgentSkillPackageRegistry _skillPackageRegistry;
     private readonly AgentPersonaFileProvider? _personaFileProvider;
+    private readonly PuddingDataPaths? _dataPaths;
     private readonly ILogger<SystemPromptBuilder> _logger;
     private readonly StartupEnvironmentInfo _env;
     private readonly IUserPreferenceService? _userPreferenceService;
@@ -36,6 +38,7 @@ public sealed class SystemPromptBuilder
         IAgentTemplateProvider? templateProvider = null,
         IWorkspaceProfileProvider? workspaceProfileProvider = null,
         AgentPersonaFileProvider? personaFileProvider = null,
+        PuddingDataPaths? dataPaths = null,
         IMemoryLibraryConvenience? libraryConvenience = null,
         IPuddingToolRegistry? toolRegistry = null,
         IUserPreferenceService? userPreferenceService = null)
@@ -49,6 +52,7 @@ public sealed class SystemPromptBuilder
         _templateProvider = templateProvider;
         _workspaceProfileProvider = workspaceProfileProvider;
                 _personaFileProvider = personaFileProvider;
+        _dataPaths = dataPaths;
         _libraryConvenience = libraryConvenience;
         _userPreferenceService = userPreferenceService;
     }
@@ -75,8 +79,11 @@ public sealed class SystemPromptBuilder
         AgentPersonaFiles? personaFiles = null;
         if (!string.IsNullOrWhiteSpace(agentTemplateId) && _personaFileProvider is not null)
         {
-            personaFiles = _personaFileProvider.Load(agentTemplateId);
+            personaFiles = _personaFileProvider.Load(agentTemplateId, agentInstanceId);
         }
+
+        // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
+        var instancePersona = LoadInstancePersonaFiles(agentInstanceId);
 
         // Step 2: 从 DB 读取 Persona 字段（作为文件缺失时的 fallback）
         string? dbPersonaPrompt = null;
@@ -108,9 +115,9 @@ public sealed class SystemPromptBuilder
         }
 
         // Step 3: 合并优先级：文件 &gt; DB &gt; 内置模板
-        var personaPrompt    = personaFiles?.Soul      ?? dbPersonaPrompt;
-        var toolsDescription = personaFiles?.Tools     ?? dbToolsDescription;
-        var bootstrapTemplate = personaFiles?.Bootstrap ?? dbBootstrapTemplate;
+        var personaPrompt    = instancePersona?.Soul ?? personaFiles?.Soul      ?? dbPersonaPrompt;
+        var toolsDescription = instancePersona?.Tools ?? personaFiles?.Tools     ?? dbToolsDescription;
+        var bootstrapTemplate = instancePersona?.Bootstrap ?? personaFiles?.Bootstrap ?? dbBootstrapTemplate;
         var avatarEmoji      = dbAvatarEmoji; // Avatar 是短字符串，保留 DB 管理
         var displayNameOverride = dbDisplayNameOverride;
 
@@ -136,7 +143,9 @@ public sealed class SystemPromptBuilder
         if (!string.IsNullOrWhiteSpace(effectiveAvatar))
             sb.AppendLine($"Avatar: {effectiveAvatar}");
         // IDENTITY.md 文件内容（补充身份描述）
-        if (!string.IsNullOrWhiteSpace(personaFiles?.Identity))
+        if (!string.IsNullOrWhiteSpace(instancePersona?.Identity))
+            sb.AppendLine(instancePersona.Identity);
+        else if (!string.IsNullOrWhiteSpace(personaFiles?.Identity))
             sb.AppendLine(personaFiles.Identity);
 
         // ADR-042: 明确的身份自述 —— 帮助 Agent 在冷启动时确定自己的身份
@@ -159,7 +168,9 @@ public sealed class SystemPromptBuilder
         // ── 3. AGENTS 层 ──
         sb.AppendLine("--- LAYER: AGENTS ---");
         // AGENTS.md 如果存在，覆盖 SystemPrompt
-        if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
+        if (!string.IsNullOrWhiteSpace(instancePersona?.Agents))
+            sb.AppendLine(instancePersona.Agents);
+        else if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
             sb.AppendLine(personaFiles.Agents);
         else
             sb.AppendLine(template.SystemPrompt ?? "You are a helpful assistant.");
@@ -179,7 +190,9 @@ public sealed class SystemPromptBuilder
         // ── 4. TOOLS 层 ──
         sb.AppendLine("--- LAYER: TOOLS ---");
         // TOOLS.md 如果存在，覆盖 DB ToolsDescription
-        if (!string.IsNullOrWhiteSpace(personaFiles?.Tools))
+        if (!string.IsNullOrWhiteSpace(instancePersona?.Tools))
+            sb.AppendLine(instancePersona.Tools);
+        else if (!string.IsNullOrWhiteSpace(personaFiles?.Tools))
             sb.AppendLine(personaFiles.Tools);
         else if (!string.IsNullOrWhiteSpace(toolsDescription))
             sb.AppendLine(toolsDescription);
@@ -206,7 +219,9 @@ public sealed class SystemPromptBuilder
         // ── 5. USER 层 ──
         sb.AppendLine("--- LAYER: USER ---");
         // USER.md 文件优先
-        if (!string.IsNullOrWhiteSpace(personaFiles?.User))
+        if (!string.IsNullOrWhiteSpace(instancePersona?.User))
+            sb.AppendLine(instancePersona.User);
+        else if (!string.IsNullOrWhiteSpace(personaFiles?.User))
             sb.AppendLine(personaFiles.User);
         else
         {
@@ -470,6 +485,33 @@ public sealed class SystemPromptBuilder
                 agentInstanceId,
                 forStreaming: false,
                 CancellationToken.None)).GetAwaiter().GetResult();
+    }
+
+    private AgentPersonaFiles? LoadInstancePersonaFiles(string? agentInstanceId)
+    {
+        if (string.IsNullOrWhiteSpace(agentInstanceId) || _dataPaths is null)
+            return null;
+
+        var dir = _dataPaths.AgentInstanceRoot(agentInstanceId);
+        if (!Directory.Exists(dir))
+            return null;
+
+        return new AgentPersonaFiles
+        {
+            Soul = ReadPersonaFile(dir, "SOUL.md"),
+            Agents = ReadPersonaFile(dir, "AGENTS.md"),
+            Tools = ReadPersonaFile(dir, "TOOLS.md"),
+            Bootstrap = ReadPersonaFile(dir, "BOOTSTRAP.md"),
+            Identity = ReadPersonaFile(dir, "IDENTITY.md"),
+            User = ReadPersonaFile(dir, "USER.md"),
+            Memory = ReadPersonaFile(dir, "MEMORY.md"),
+        };
+    }
+
+    private static string? ReadPersonaFile(string dir, string fileName)
+    {
+        var path = Path.Combine(dir, fileName);
+        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
     public async Task<string?> LoadWorkspaceUserProfileAsync(string? workspaceId, CancellationToken ct)

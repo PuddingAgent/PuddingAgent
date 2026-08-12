@@ -45,10 +45,13 @@ public sealed partial class ContextPipeline
         var sb = new StringBuilder();
         var template = request.Template;
 
-        // Persona 优先级：MD 文件 > DB > 内置模板
+        // Persona 优先级：实例 MD 文件 > 模板 MD 文件 > DB > 内置模板
         AgentPersonaFiles? personaFiles = null;
         if (!string.IsNullOrWhiteSpace(request.AgentTemplateId) && _personaFileProvider is not null)
             personaFiles = _personaFileProvider.Load(request.AgentTemplateId, request.AgentInstanceId);
+
+        // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
+        var instancePersona = LoadInstancePersonaFiles(request.AgentInstanceId);
 
         string? dbPersonaPrompt = null;
         string? dbToolsDescription = null;
@@ -78,9 +81,9 @@ public sealed partial class ContextPipeline
             }
         }
 
-        var personaPrompt = personaFiles?.Soul ?? dbPersonaPrompt;
-        var toolsDescription = personaFiles?.Tools ?? dbToolsDescription;
-        var bootstrapTemplate = personaFiles?.Bootstrap ?? dbBootstrapTemplate;
+        var personaPrompt = instancePersona?.Soul ?? personaFiles?.Soul ?? dbPersonaPrompt;
+        var toolsDescription = instancePersona?.Tools ?? personaFiles?.Tools ?? dbToolsDescription;
+        var bootstrapTemplate = instancePersona?.Bootstrap ?? personaFiles?.Bootstrap ?? dbBootstrapTemplate;
 
         // L0: IDENTITY
         sb.AppendLine("--- LAYER: IDENTITY ---");
@@ -110,7 +113,9 @@ public sealed partial class ContextPipeline
         var effectiveAvatar = string.IsNullOrWhiteSpace(dbAvatarEmoji) ? template.AvatarEmoji : dbAvatarEmoji;
         if (!string.IsNullOrWhiteSpace(effectiveAvatar))
             sb.AppendLine($"Avatar: {effectiveAvatar}");
-        if (!string.IsNullOrWhiteSpace(personaFiles?.Identity))
+        if (!string.IsNullOrWhiteSpace(instancePersona?.Identity))
+            sb.AppendLine(instancePersona.Identity);
+        else if (!string.IsNullOrWhiteSpace(personaFiles?.Identity))
             sb.AppendLine(personaFiles.Identity);
 
         // L0: SOUL
@@ -121,7 +126,9 @@ public sealed partial class ContextPipeline
 
         // L0: AGENTS
         sb.AppendLine("--- LAYER: AGENTS ---");
-        if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
+        if (!string.IsNullOrWhiteSpace(instancePersona?.Agents))
+            sb.AppendLine(instancePersona.Agents);
+        else if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
             sb.AppendLine(personaFiles.Agents);
         else
             sb.AppendLine(template.SystemPrompt ?? "You are a helpful assistant.");
@@ -142,6 +149,36 @@ public sealed partial class ContextPipeline
         sb.AppendLine("5. If fuse triggers, the user can send /resume to recover the session.");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 读取实例级 persona 文件（Admin 写入 AgentInstanceRoot/{agentId}/ 的 SOUL/AGENTS/TOOLS/BOOTSTRAP/IDENTITY/MEMORY.md）。
+    /// 实例级自定义的权威来源，优先级高于模板级 persona 与 DB 字段。
+    /// </summary>
+    private AgentPersonaFiles? LoadInstancePersonaFiles(string? agentInstanceId)
+    {
+        if (string.IsNullOrWhiteSpace(agentInstanceId))
+            return null;
+
+        var dir = _dataPaths.AgentInstanceRoot(agentInstanceId);
+        if (!Directory.Exists(dir))
+            return null;
+
+        return new AgentPersonaFiles
+        {
+            Soul = ReadPersonaFile(dir, "SOUL.md"),
+            Agents = ReadPersonaFile(dir, "AGENTS.md"),
+            Tools = ReadPersonaFile(dir, "TOOLS.md"),
+            Bootstrap = ReadPersonaFile(dir, "BOOTSTRAP.md"),
+            Identity = ReadPersonaFile(dir, "IDENTITY.md"),
+            Memory = ReadPersonaFile(dir, "MEMORY.md"),
+        };
+    }
+
+    private static string? ReadPersonaFile(string dir, string fileName)
+    {
+        var path = Path.Combine(dir, fileName);
+        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
     // ═══════════════════════════════════════════════════════════════
