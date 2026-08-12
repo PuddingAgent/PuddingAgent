@@ -1,10 +1,15 @@
 ﻿// ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
 import { HeartOutlined } from '@ant-design/icons';
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { ChatMessageBlock, ParentDelegationActivity } from '../types';
 import AgentMessageBubble from './AgentMessageBubble';
+import FocusViewRow, { type FocusViewRowTone } from './FocusViewRow';
 import MessageItem from './MessageItem';
+import {
+  getCurrentRunActivity,
+  sanitizeProcessText,
+} from './processPreview';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 import UserMessageBubble from './UserMessageBubble';
 
@@ -28,6 +33,8 @@ interface MessageRowProps {
   /** P0#2：转录视图分级 */
   transcriptMode?: TranscriptMode;
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
+  /** P2#8：Focus view 单行折叠模式 */
+  focusView?: boolean;
 }
 
 const optionalRecordEquals = (
@@ -118,7 +125,8 @@ const messageBlockEquals = (
     optionalRecordEquals(previous.processSummary, next.processSummary) &&
     optionalRecordEquals(previous.usage, next.usage) &&
     optionalRecordEquals(previous.quotedMessage, next.quotedMessage) &&
-    optionalRecordEquals(previous.approvalCard, next.approvalCard));
+    optionalRecordEquals(previous.approvalCard, next.approvalCard) &&
+    optionalRecordEquals(previous.planCard, next.planCard));
 
 export const areMessageRowPropsEqual = (
   previous: MessageRowProps,
@@ -135,10 +143,79 @@ export const areMessageRowPropsEqual = (
   previous.onDeleteTurn === next.onDeleteTurn &&
   previous.transcriptMode === next.transcriptMode &&
   previous.onTranscriptModeChange === next.onTranscriptModeChange &&
+  (previous.focusView ?? false) === (next.focusView ?? false) &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
     next.parentDelegationActivity,
   );
+
+// ── P2#8 Focus view 单行摘要 ─────────────────────────────────
+const FOCUS_SUMMARY_MAX_LENGTH = 120;
+
+const getFocusViewTone = (block: ChatMessageBlock): FocusViewRowTone => {
+  if (block.status === 'error' || block.status === 'cancelled') return 'error';
+  if (
+    block.isStreaming ||
+    block.status === 'thinking' ||
+    block.status === 'streaming'
+  ) {
+    return 'running';
+  }
+  return 'done';
+};
+
+const getFocusViewSummary = (block: ChatMessageBlock): string => {
+  if (block.role === 'user') {
+    if (block.modality === 'voice') return '语音消息';
+    if (block.modality === 'camera' || block.modality === 'image') {
+      return '图片消息';
+    }
+    return (
+      sanitizeProcessText(block.content, {
+        maxLength: FOCUS_SUMMARY_MAX_LENGTH,
+      }) || '（空消息）'
+    );
+  }
+
+  const isRunning =
+    block.isStreaming ||
+    block.status === 'thinking' ||
+    block.status === 'streaming';
+  if (isRunning) {
+    // 运行中优先显示当前真实活动（工具调用 / 子代理 / 工具结果处理）
+    const activity = getCurrentRunActivity(block.processItems, block.status);
+    if (activity && activity.kind !== 'thinking' && activity.title) {
+      return activity.title;
+    }
+    if (block.isStreaming && block.content.trim()) {
+      return `${sanitizeProcessText(block.content, {
+        maxLength: FOCUS_SUMMARY_MAX_LENGTH,
+      })}…`;
+    }
+    return '正在处理…';
+  }
+
+  if (block.status === 'error' || block.status === 'cancelled') {
+    return (
+      sanitizeProcessText(block.content, {
+        maxLength: FOCUS_SUMMARY_MAX_LENGTH,
+      }) || '任务失败'
+    );
+  }
+
+  if (block.quotedMessage) {
+    return `引用 ${block.quotedMessage.sourceName}：${sanitizeProcessText(
+      block.quotedMessage.content,
+      { maxLength: 60 },
+    )}`;
+  }
+
+  return (
+    sanitizeProcessText(block.content, {
+      maxLength: FOCUS_SUMMARY_MAX_LENGTH,
+    }) || '（无文本回复）'
+  );
+};
 
 const MessageRow: React.FC<MessageRowProps> = ({
   block,
@@ -153,71 +230,127 @@ const MessageRow: React.FC<MessageRowProps> = ({
   parentDelegationActivity,
   transcriptMode,
   onTranscriptModeChange,
+  focusView = false,
 }) => {
   const { styles, cx } = useChatMessageStyles();
+  // P2#8：Focus view 单行展开状态（折叠/展开同一行内切换，保持完整内容在同一
+  // 虚拟行内渲染，避免折叠展开引发整列重渲染）。
+  const [focusExpanded, setFocusExpanded] = useState(false);
+  const focusSummary = useMemo(() => getFocusViewSummary(block), [block]);
+  const focusTone = useMemo(() => getFocusViewTone(block), [block]);
+
+  const renderUserBubble = () => (
+    <UserMessageBubble
+      content={block.content}
+      createdAt={block.createdAt}
+      status={block.status}
+      modality={block.modality}
+      visionArtifactId={block.visionArtifactId}
+      visionArtifactIds={block.visionArtifactIds}
+      workspaceId={workspaceId}
+      userName={block.userName}
+      userAvatarUrl={block.userAvatarUrl}
+      formatTime={formatTime}
+      onContextMenu={(e) =>
+        onContextMenu?.(e, block.turnId, 'user', block.content)
+      }
+    />
+  );
+
+  const renderAgentBubble = () => (
+    <AgentMessageBubble
+      id={block.id}
+      content={block.content}
+      status={block.status}
+      createdAt={block.createdAt}
+      agentName={block.agentName || 'Pudding'}
+      agentAvatarEmoji={block.agentAvatarEmoji}
+      agentAvatarColor={block.agentAvatarColor}
+      agentAvatarUrl={block.agentAvatarUrl || defaultAvatarUrl}
+      processItems={block.processItems}
+      processSummary={block.processSummary}
+      processMessageId={block.processMessageId}
+      workspaceId={workspaceId}
+      agentId={block.agentId}
+      usage={block.usage}
+      quotedMessage={block.quotedMessage}
+      groupedWithPrevious={block.groupedWithPrevious}
+      isStreaming={block.isStreaming}
+      formatTime={formatTime}
+      turnId={block.turnId}
+      sessionId={sessionId}
+      onContextMenu={onContextMenu}
+      onRerun={onRerunTurn ? () => onRerunTurn(block.turnId) : undefined}
+      onPin={onPinTurn ? () => onPinTurn(block.turnId) : undefined}
+      onDelete={onDeleteTurn ? () => onDeleteTurn(block.turnId) : undefined}
+      parentDelegationActivity={parentDelegationActivity}
+      transcriptMode={transcriptMode}
+      onTranscriptModeChange={onTranscriptModeChange}
+    />
+  );
 
   if (block.role === 'user') {
+    if (focusView) {
+      return (
+        <div className={cx(styles.messageRow, styles.messageRowUser)}>
+          <FocusViewRow
+            role="user"
+            name={block.userName || '我'}
+            timeText={formatTime(block.createdAt)}
+            summary={focusSummary}
+            tone={focusTone}
+            expanded={focusExpanded}
+            onToggle={() => setFocusExpanded((value) => !value)}
+          >
+            {renderUserBubble()}
+          </FocusViewRow>
+        </div>
+      );
+    }
     return (
       <div className={cx(styles.messageRow, styles.messageRowUser)}>
-        <UserMessageBubble
-          content={block.content}
-          createdAt={block.createdAt}
-          status={block.status}
-          modality={block.modality}
-          visionArtifactId={block.visionArtifactId}
-          visionArtifactIds={block.visionArtifactIds}
-          workspaceId={workspaceId}
-          userName={block.userName}
-          userAvatarUrl={block.userAvatarUrl}
-          formatTime={formatTime}
-          onContextMenu={(e) =>
-            onContextMenu?.(e, block.turnId, 'user', block.content)
-          }
-        />
+        {renderUserBubble()}
       </div>
     );
   }
 
   if (block.role === 'agent') {
+    const rowClassName = cx(
+      styles.messageRow,
+      styles.messageRowAgent,
+      block.groupedWithPrevious && styles.messageRowGrouped,
+    );
+    if (focusView) {
+      return (
+        <div
+          className={rowClassName}
+          data-agent={block.agentName}
+          data-streaming={block.isStreaming ? 'true' : undefined}
+        >
+          <FocusViewRow
+            role="agent"
+            name={block.agentName || 'Pudding'}
+            avatarEmoji={block.agentAvatarEmoji}
+            avatarColor={block.agentAvatarColor}
+            avatarUrl={block.agentAvatarUrl || defaultAvatarUrl}
+            timeText={formatTime(block.createdAt)}
+            summary={focusSummary}
+            tone={focusTone}
+            expanded={focusExpanded}
+            onToggle={() => setFocusExpanded((value) => !value)}
+          >
+            {renderAgentBubble()}
+          </FocusViewRow>
+        </div>
+      );
+    }
     return (
       <div
-        className={cx(
-          styles.messageRow,
-          styles.messageRowAgent,
-          block.groupedWithPrevious && styles.messageRowGrouped,
-        )}
+        className={rowClassName}
         data-agent={block.agentName}
         data-streaming={block.isStreaming ? 'true' : undefined}
       >
-        <AgentMessageBubble
-          id={block.id}
-          content={block.content}
-          status={block.status}
-          createdAt={block.createdAt}
-          agentName={block.agentName || 'Pudding'}
-          agentAvatarEmoji={block.agentAvatarEmoji}
-          agentAvatarColor={block.agentAvatarColor}
-          agentAvatarUrl={block.agentAvatarUrl || defaultAvatarUrl}
-          processItems={block.processItems}
-          processSummary={block.processSummary}
-          processMessageId={block.processMessageId}
-          workspaceId={workspaceId}
-          agentId={block.agentId}
-          usage={block.usage}
-          quotedMessage={block.quotedMessage}
-          groupedWithPrevious={block.groupedWithPrevious}
-          isStreaming={block.isStreaming}
-          formatTime={formatTime}
-          turnId={block.turnId}
-          sessionId={sessionId}
-          onContextMenu={onContextMenu}
-          onRerun={onRerunTurn ? () => onRerunTurn(block.turnId) : undefined}
-          onPin={onPinTurn ? () => onPinTurn(block.turnId) : undefined}
-          onDelete={onDeleteTurn ? () => onDeleteTurn(block.turnId) : undefined}
-          parentDelegationActivity={parentDelegationActivity}
-          transcriptMode={transcriptMode}
-          onTranscriptModeChange={onTranscriptModeChange}
-        />
+        {renderAgentBubble()}
       </div>
     );
   }

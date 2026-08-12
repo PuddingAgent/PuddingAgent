@@ -1,4 +1,4 @@
-import { buildMessageBlocks, type ChatTurn } from './types';
+﻿import { buildMessageBlocks, type ChatTurn } from './types';
 
 describe('buildMessageBlocks', () => {
   it('creates an agent block for a thinking assistant before the first answer token', () => {
@@ -84,5 +84,49 @@ describe('buildMessageBlocks', () => {
     expect(agentBlock?.processItems).toEqual([
       expect.objectContaining({ id: 'thinking-1', type: 'thinking' }),
     ]);
+  });
+
+  it('carries planCard (P1#5) onto the agent message block', () => {
+    const turns: ChatTurn[] = [
+      {
+        turnId: 'turn-plan',
+        userMessage: {
+          id: 'user-1',
+          text: '规划一下这个功能',
+          timestamp: 1,
+          status: 'success',
+        },
+        assistant: {
+          id: 'assistant-1',
+          status: 'success',
+          timelineItems: [],
+          answerMarkdown: '计划如下',
+          isStreaming: false,
+          renderMode: 'structured',
+          planCard: {
+            planId: 'plan-1',
+            summary: '为 Chat UI 实现 Plan 模式',
+            steps: [
+              { id: 's1', title: '调研 SSE 事件流' },
+              { id: 's2', title: '实现投影', description: '前端' },
+            ],
+            status: 'pending',
+            requestedAt: '2026-08-12T00:00:00.000Z',
+          },
+        },
+      },
+    ];
+
+    const blocks = buildMessageBlocks(turns, 'Pudding');
+    const agentBlock = blocks.find((block) => block.role === 'agent');
+
+    expect(agentBlock?.planCard).toMatchObject({
+      planId: 'plan-1',
+      status: 'pending',
+      steps: [
+        { id: 's1', title: '调研 SSE 事件流' },
+        { id: 's2', title: '实现投影', description: '前端' },
+      ],
+    });
   });
 });

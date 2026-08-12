@@ -641,11 +641,13 @@ const ChatPageContent: React.FC = () => {
         agentStatuses={projectedAgentStatuses}
         conversationView={projectedConversation}
         workingAgentIds={chat.workingAgentIds}
-        interactionQueue={chat.interactionQueue}
+                interactionQueue={chat.interactionQueue}
         onUpdateQueuedInteraction={chat.updateQueuedInteraction}
         onDeleteQueuedInteraction={chat.deleteQueuedInteraction}
         onSendQueuedInteractionNow={chat.sendQueuedInteractionNow}
         onSteerQueuedInteraction={chat.steerQueuedInteraction}
+        onReorderQueuedInteraction={chat.reorderQueuedInteraction}
+        onStopAll={chat.stopQueue}
         onSend={handleSend}
         onSendWithMetadata={handleSendWithMetadata}
         onStop={handleStop}
@@ -672,6 +674,19 @@ const ChatPageContent: React.FC = () => {
         onViewportScrollIntentHandled={chat.clearViewportScrollIntent}
         permissionMode={chat.permissionMode}
         onPermissionModeChange={chat.setPermissionMode}
+        checkpoints={chat.checkpoints}
+        checkpointTimelineOpen={chat.checkpointTimelineOpen}
+        onToggleCheckpointTimeline={() =>
+          chat.setCheckpointTimelineOpen(!chat.checkpointTimelineOpen)
+        }
+        onRestoreCheckpoint={chat.restoreCheckpoint}
+        onForkCheckpoint={async (checkpointId) => {
+          await chat.forkCheckpoint(checkpointId);
+        }}
+        onDeleteCheckpoint={chat.deleteCheckpoint}
+        onClearAllCheckpoints={chat.clearAllCheckpoints}
+        restoredCheckpointId={chat.restoredCheckpointId}
+        clearRestoredMarker={chat.clearRestoredMarker}
       />
 
       <Modal

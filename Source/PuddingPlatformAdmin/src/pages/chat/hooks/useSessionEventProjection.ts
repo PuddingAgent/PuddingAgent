@@ -15,7 +15,11 @@ import {
   reduceSubAgentRunEvent,
   type SubAgentRunMap,
 } from '../reducer/subAgentReducer';
-import type { ApprovalCardData } from '../client/types';
+import type {
+  ApprovalCardData,
+  PlanCardData,
+  PlanStepData,
+} from '../client/types';
 import type { ChatSource, ChatTurn } from '../types';
 import type { ChatInteractionRuntimeEvent } from '../types/chatStateTypes';
 import {
@@ -393,6 +397,54 @@ export function useSessionEventProjection({
               assistant: {
                 ...turn.assistant,
                 approvalCard,
+                renderMode: 'structured' as const,
+              },
+            };
+          }
+          if (ev.type === 'plan.proposal') {
+            const raw = ev as unknown as Record<string, unknown>;
+            const planId = typeof raw.planId === 'string' ? raw.planId : '';
+            if (!planId) return turn;
+            const rawSteps = Array.isArray(raw.steps) ? raw.steps : [];
+            const steps: PlanStepData[] = rawSteps
+              .map((step, index): PlanStepData | null => {
+                if (!step || typeof step !== 'object') return null;
+                const record = step as Record<string, unknown>;
+                const stepId =
+                  typeof record.id === 'string' && record.id.trim()
+                    ? record.id.trim()
+                    : `step-${index + 1}`;
+                const title =
+                  typeof record.title === 'string' && record.title.trim()
+                    ? record.title.trim()
+                    : typeof record.summary === 'string' && record.summary.trim()
+                      ? record.summary.trim()
+                      : `步骤 ${index + 1}`;
+                const description =
+                  typeof record.description === 'string'
+                    ? record.description
+                    : '';
+                return { id: stepId, title, description };
+              })
+              .filter(
+                (step): step is PlanStepData => step !== null,
+              );
+            const planCard: PlanCardData = {
+              planId,
+              summary:
+                typeof raw.summary === 'string' ? raw.summary : undefined,
+              steps,
+              status: 'pending',
+              requestedAt:
+                typeof raw.requestedAt === 'string'
+                  ? raw.requestedAt
+                  : new Date().toISOString(),
+            };
+            return {
+              ...turn,
+              assistant: {
+                ...turn.assistant,
+                planCard,
                 renderMode: 'structured' as const,
               },
             };
@@ -1111,6 +1163,74 @@ export function useSessionEventProjection({
             });
           turnsRef.current = updateApprovalCards(turnsRef.current);
           setTurns(updateApprovalCards);
+        }
+        updateLastSequence(ev);
+        return;
+      }
+      // P1#5: 计划决议同样是会话级事实（approve_and_build / manual / keep_planning），
+      // 全局扫描所有 Turn，按 planId 匹配并更新计划卡片为终态。
+      if (eventType === 'plan.finalized') {
+        const planId = typeof anyEv.planId === 'string' ? anyEv.planId : '';
+        if (planId) {
+          const updatePlanCards = (current: ChatTurn[]): ChatTurn[] =>
+            current.map((turn) => {
+              const card = turn.assistant.planCard;
+              if (!card || card.planId !== planId) return turn;
+              const finalizedDecision: PlanCardData['decision'] =
+                anyEv.decision === 'approve_and_build' ||
+                anyEv.decision === 'manual' ||
+                anyEv.decision === 'keep_planning'
+                  ? (anyEv.decision as PlanCardData['decision'])
+                  : card.decision;
+              const finalizedSteps: PlanStepData[] =
+                Array.isArray(anyEv.steps) && anyEv.steps.length > 0
+                  ? (anyEv.steps as PlanStepData[])
+                      .map((step, index) => {
+                        if (!step || typeof step !== 'object') return null;
+                        const record = step as unknown as Record<
+                          string,
+                          unknown
+                        >;
+                        const stepId =
+                          typeof record.id === 'string' && record.id.trim()
+                            ? record.id.trim()
+                            : `step-${index + 1}`;
+                        return {
+                          id: stepId,
+                          title:
+                            typeof record.title === 'string'
+                              ? record.title
+                              : '',
+                          description:
+                            typeof record.description === 'string'
+                              ? record.description
+                              : undefined,
+                        } as PlanStepData;
+                      })
+                      .filter(
+                        (step): step is PlanStepData =>
+                          step !== null && step.title.trim().length > 0,
+                      )
+                  : card.steps;
+              return {
+                ...turn,
+                assistant: {
+                  ...turn.assistant,
+                  planCard: {
+                    ...card,
+                    status: 'finalized',
+                    decision: finalizedDecision,
+                    steps: finalizedSteps,
+                    decidedAt:
+                      typeof anyEv.decidedAt === 'string'
+                        ? anyEv.decidedAt
+                        : card.decidedAt,
+                  },
+                },
+              };
+            });
+          turnsRef.current = updatePlanCards(turnsRef.current);
+          setTurns(updatePlanCards);
         }
         updateLastSequence(ev);
         return;

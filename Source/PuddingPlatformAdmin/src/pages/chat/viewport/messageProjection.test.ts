@@ -1,5 +1,6 @@
-import type { ChatTurn } from '../types';
+﻿import type { ChatTurn } from '../types';
 import { buildVirtualMessageItems } from './messageProjection';
+import type { VirtualMessageItem } from './types';
 
 const makeTurn = (
   turnId: string,
@@ -130,5 +131,39 @@ describe('buildVirtualMessageItems', () => {
       id: 'loader:before:session-1',
       direction: 'before',
     });
+  });
+
+  it('uses compact height hints for every message row when focus view is enabled', () => {
+    const result = buildVirtualMessageItems({
+      turns: [
+        makeTurn('t1', 1000),
+        makeTurn('t2', 2000, `rich answer ${'markdown '.repeat(200)}`),
+      ],
+      agentName: 'Agent',
+      focusView: true,
+    });
+    const messageItems = result.items.filter(
+      (item): item is Extract<VirtualMessageItem, { kind: 'message' }> =>
+        item.kind === 'message',
+    );
+    expect(messageItems.length).toBeGreaterThan(0);
+    for (const item of messageItems) {
+      expect(item.heightHint).toBe('compact');
+    }
+  });
+
+  it('keeps rich height hints when focus view is off', () => {
+    const result = buildVirtualMessageItems({
+      turns: [makeTurn('t1', 1000, `rich answer ${'markdown '.repeat(200)}`)],
+      agentName: 'Agent',
+      focusView: false,
+    });
+    const messageItems = result.items.filter(
+      (item): item is Extract<VirtualMessageItem, { kind: 'message' }> =>
+        item.kind === 'message',
+    );
+    expect(
+      messageItems.some((item) => item.heightHint === 'rich'),
+    ).toBe(true);
   });
 });

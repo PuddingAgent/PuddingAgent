@@ -14,12 +14,16 @@ import React, {
 import type { WorkspaceAgentDto } from '@/services/platform/api';
 import {
   decideSessionApproval,
+  decideSessionPlan,
   type SessionApprovalDecision,
+  type SessionPlanDecision,
 } from '@/services/platform/api';
 import { getPerfEvents } from '@/utils/perfEventRuntime';
 import type {
   AgentConversationView,
+  ApprovalCardData,
   ConversationMessageView,
+  PlanStepData,
   ProcessSummaryItem,
 } from '../client/types';
 import { useChatStyles } from '../styles';
@@ -37,8 +41,10 @@ import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
 import ApprovalCard from './ApprovalCard';
+import EditablePlanCard from './EditablePlanCard';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
+import FocusViewToggle from './FocusViewToggle';
 import MessageRow from './MessageRow';
 import PinnedMessageButton from './PinnedMessageButton';
 import type { TranscriptMode } from './TranscriptModeSwitch';
@@ -76,9 +82,14 @@ interface MessageListProps {
   onViewportScrollIntentHandled?: () => void;
   /** 主代理对当前委派的有界摘要；子代理内部过程仍只在托盘坞展示。 */
   parentDelegationActivity?: ParentDelegationActivity;
-  /** P0#2：转录视图分级（normal | verbose | summary） */
+    /** P0#2：转录视图分级（normal | verbose | summary） */
   transcriptMode?: TranscriptMode;
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
+  /** P2#9：用户在审批卡点击「拒绝」时通知（进入 Recently denied 面板）。 */
+  onApprovalDenied?: (card: ApprovalCardData) => void;
+  /** P2#8：Focus view 单行折叠模式 */
+  focusView?: boolean;
+  onFocusViewChange?: (value: boolean) => void;
 }
 
 const toTimestamp = (value: string) => {
@@ -345,6 +356,7 @@ const createProjectedTurn = (
           : 'structured',
       quotedMessage,
       approvalCard: message.approvalCard ?? undefined,
+      planCard: message.planCard ?? undefined,
     },
   };
 };
@@ -731,6 +743,9 @@ const MessageList: React.FC<MessageListProps> = ({
   parentDelegationActivity,
   transcriptMode = 'normal',
   onTranscriptModeChange,
+  focusView = false,
+  onFocusViewChange,
+  onApprovalDenied,
 }) => {
   const chatStyles = useChatStyles();
   const { styles } = chatStyles;
@@ -802,6 +817,7 @@ const MessageList: React.FC<MessageListProps> = ({
         sessionId,
         hasMoreBefore: hasMoreMessages,
         currentUser,
+        focusView,
       }),
     [
       visibleTurns,
@@ -809,6 +825,7 @@ const MessageList: React.FC<MessageListProps> = ({
       sessionId,
       hasMoreMessages,
       currentUser,
+      focusView,
     ],
   );
   const delegationTargetId = useMemo(() => {
@@ -878,6 +895,35 @@ const MessageList: React.FC<MessageListProps> = ({
     [sessionId],
   );
 
+  // P1#5: 计划决定 → POST /api/sessions/{sessionId}/plan-decide
+  const handleDecidePlan = React.useCallback(
+    async (
+      planId: string,
+      decision: SessionPlanDecision,
+      steps: PlanStepData[],
+    ) => {
+      if (!sessionId) return;
+      try {
+        await decideSessionPlan(sessionId, {
+          planId,
+          decision,
+          steps: steps.map((step) => ({
+            id: step.id,
+            title: step.title,
+            description: step.description,
+          })),
+        });
+      } catch (error) {
+        console.error('[Pudding Chat] plan decision failed', {
+          planId,
+          decision,
+          error,
+        });
+      }
+    },
+    [sessionId],
+  );
+
   const renderProjectionItem = (item: VirtualMessageItem) => {
     if (item.kind === 'loader') {
       return (
@@ -897,6 +943,8 @@ const MessageList: React.FC<MessageListProps> = ({
 
     const approvalCardData =
       item.kind === 'message' ? item.block.approvalCard : undefined;
+    const planCardData =
+      item.kind === 'message' ? item.block.planCard : undefined;
     const messageRow = (
       <MessageRow
         block={item.block}
@@ -913,48 +961,81 @@ const MessageList: React.FC<MessageListProps> = ({
         onDeleteTurn={onDeleteTurn}
         transcriptMode={transcriptMode}
         onTranscriptModeChange={onTranscriptModeChange}
+        focusView={focusView}
       />
     );
 
-    if (!approvalCardData) return messageRow;
+    if (!approvalCardData && !planCardData) return messageRow;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
         {messageRow}
-        <ApprovalCard
-          approvalId={approvalCardData.approvalId}
-          toolName={approvalCardData.toolName}
-          description={approvalCardData.description}
-          riskLevel={approvalCardData.riskLevel}
-          arguments={approvalCardData.arguments}
-          status={approvalCardData.status}
-          decision={approvalCardData.decision}
-          reason={approvalCardData.reason}
-          requestedAt={approvalCardData.requestedAt}
-          expiresAt={approvalCardData.expiresAt}
-          onDecide={(decision, reason) =>
-            handleDecideApproval(approvalCardData.approvalId, decision, reason)
-          }
-        />
+                  {approvalCardData && (
+            <ApprovalCard
+              approvalId={approvalCardData.approvalId}
+              toolName={approvalCardData.toolName}
+              description={approvalCardData.description}
+              riskLevel={approvalCardData.riskLevel}
+              arguments={approvalCardData.arguments}
+              status={approvalCardData.status}
+              decision={approvalCardData.decision}
+              reason={approvalCardData.reason}
+              requestedAt={approvalCardData.requestedAt}
+              expiresAt={approvalCardData.expiresAt}
+              onDecide={(decision, reason) => {
+                if (decision === 'deny') {
+                  onApprovalDenied?.(approvalCardData);
+                }
+                handleDecideApproval(
+                  approvalCardData.approvalId,
+                  decision,
+                  reason,
+                );
+              }}
+            />
+          )}
+        {planCardData && (
+          <EditablePlanCard
+            planId={planCardData.planId}
+            summary={planCardData.summary}
+            steps={planCardData.steps}
+            status={planCardData.status}
+            decision={planCardData.decision}
+            decidedAt={planCardData.decidedAt}
+            requestedAt={planCardData.requestedAt}
+            onDecide={(decision, steps) =>
+              handleDecidePlan(planCardData.planId, decision, steps)
+            }
+          />
+        )}
       </div>
     );
   };
 
   return (
     <ChatMessageStyleProvider value={chatStyles}>
-      <div
-        className={styles.messageList}
-        ref={(node) => {
-          viewport.parentRef.current = node;
-          if (typeof messageListRef === 'object') {
-            (
-              messageListRef as React.MutableRefObject<HTMLDivElement | null>
-            ).current = node;
-          }
-        }}
-        onScroll={viewport.onScroll}
-        data-testid="chat-message-list"
-      >
+      <div className={styles.messageListShell}>
+        {projection.items.length > 0 && (
+          <div className={styles.focusViewToolbar} data-testid="focus-view-toolbar">
+            <FocusViewToggle
+              value={Boolean(focusView)}
+              onChange={onFocusViewChange ?? (() => undefined)}
+            />
+          </div>
+        )}
+        <div
+          className={styles.messageList}
+          ref={(node) => {
+            viewport.parentRef.current = node;
+            if (typeof messageListRef === 'object') {
+              (
+                messageListRef as React.MutableRefObject<HTMLDivElement | null>
+              ).current = node;
+            }
+          }}
+          onScroll={viewport.onScroll}
+          data-testid="chat-message-list"
+        >
         {(() => {
           const emptyStateMode: ChatEmptyStateMode | null = (() => {
             if (historyLoading || projection.items.length > 0 || activeRun)
@@ -1143,7 +1224,8 @@ const MessageList: React.FC<MessageListProps> = ({
             )}
           </div>
         )}
-        <div ref={listEndRef} />
+          <div ref={listEndRef} />
+        </div>
       </div>
     </ChatMessageStyleProvider>
   );

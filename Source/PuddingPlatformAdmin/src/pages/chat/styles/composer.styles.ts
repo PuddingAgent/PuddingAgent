@@ -113,11 +113,20 @@ export const useComposerStyles = createStyles(({ token }) => ({
       background:
         'color-mix(in srgb, #edf8f0 62%, var(--pudding-chat-surface))',
     },
-    '&[data-status="steering_failed"]': {
+        '&[data-status="steering_failed"]': {
       borderColor:
         'color-mix(in srgb, #b85656 52%, var(--pudding-chat-border))',
       background:
         'color-mix(in srgb, #fff1f1 58%, var(--pudding-chat-surface))',
+    },
+    '&[data-dragging="true"]': {
+      opacity: 0.55,
+      borderStyle: 'dashed' as const,
+    },
+    '&[data-drop-target="true"]': {
+      borderColor: 'color-mix(in srgb, var(--pudding-chat-accent) 55%, transparent)',
+      boxShadow:
+        'inset 0 0 0 1px color-mix(in srgb, var(--pudding-chat-accent) 35%, transparent)',
     },
   },
   composerQueueInput: {
@@ -177,10 +186,131 @@ export const useComposerStyles = createStyles(({ token }) => ({
     lineHeight: 1.35,
     color: 'var(--pudding-chat-text-muted)',
   },
-  composerQueueError: {
+    composerQueueError: {
     gridColumn: '1 / -1',
     fontSize: 11,
     color: '#a64242',
+  },
+  // ── P1#6 三态消息队列 Dropdown ──
+  messageQueueDropdown: {
+    margin: '4px 0 8px',
+    borderRadius: 9,
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-chat-border) 76%, transparent)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-surface-muted) 62%, transparent)',
+    overflow: 'hidden' as const,
+  },
+  messageQueueTrigger: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    width: '100%',
+    minHeight: 30,
+    padding: '5px 10px',
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--pudding-chat-text)',
+    fontSize: 12,
+    cursor: 'pointer' as const,
+    textAlign: 'left' as const,
+    transition: 'background 140ms ease',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    },
+    '&:focus-visible': {
+      outline:
+        '2px solid color-mix(in srgb, var(--pudding-chat-accent) 50%, transparent)',
+      outlineOffset: -1,
+    },
+  },
+  messageQueueTriggerIcon: {
+    fontSize: 13,
+    color: 'var(--pudding-chat-text-muted)',
+    flexShrink: 0,
+  },
+  messageQueueTriggerTitle: {
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  messageQueueCount: {
+    minWidth: 18,
+    height: 16,
+    padding: '0 5px',
+    borderRadius: 9,
+    background: 'color-mix(in srgb, var(--pudding-chat-accent) 16%, transparent)',
+    color: 'var(--pudding-chat-accent)',
+    fontSize: 10,
+    lineHeight: '16px',
+    fontWeight: 700,
+    textAlign: 'center' as const,
+    fontVariantNumeric: 'tabular-nums' as const,
+    flexShrink: 0,
+  },
+  messageQueuePhaseSummary: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap' as const,
+    textOverflow: 'ellipsis',
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+  },
+  messageQueueChevron: {
+    fontSize: 10,
+    color: 'var(--pudding-chat-text-muted)',
+    flexShrink: 0,
+    transition: 'transform 160ms ease',
+  },
+  messageQueuePanel: {
+    display: 'none',
+    padding: '0 6px 6px',
+    borderTop:
+      '1px solid color-mix(in srgb, var(--pudding-chat-border) 62%, transparent)',
+    '&[data-open="true"]': {
+      display: 'block',
+    },
+  },
+  messageQueuePanelHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    minHeight: 28,
+    padding: '2px 4px 4px',
+  },
+  messageQueuePanelHint: {
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.75,
+  },
+  messageQueueFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap' as const,
+    gap: 6,
+    minHeight: 22,
+    padding: '2px 4px 4px',
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.72,
+  },
+  messageQueueFooterMuted: {
+    opacity: 0.62,
+  },
+  messageQueueDragHandle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 18,
+    height: 26,
+    color: 'var(--pudding-chat-text-subtle)',
+    cursor: 'grab' as const,
+    flexShrink: 0,
+    userSelect: 'none' as const,
+    '&:active': {
+      cursor: 'grabbing' as const,
+    },
   },
   composerImagePreviewList: {
     display: 'flex',

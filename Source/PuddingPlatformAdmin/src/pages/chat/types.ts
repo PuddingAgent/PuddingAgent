@@ -3,6 +3,7 @@ import type { TokenUsageDto } from '@/services/platform/api';
 import type {
   ApprovalCardData,
   ConversationProcessSummary,
+  PlanCardData,
 } from './client/types';
 
 export type MessageStatus = 'sending' | 'success' | 'error';
@@ -74,6 +75,8 @@ export interface ChatTurn {
     voice?: { enabled?: boolean; tts_text?: string };
     /** 工具审批卡片（P0#1）。由 approval.requested / approval.resolved 事件投影。 */
     approvalCard?: ApprovalCardData;
+    /** 计划卡片（P1#5 Plan 模式）。由 plan.proposal / plan.finalized 事件投影。 */
+    planCard?: PlanCardData;
   };
 }
 
@@ -134,6 +137,8 @@ export interface ChatMessageBlock {
   isStreaming?: boolean;
   /** 工具审批卡片（P0#1）。非空时在消息下方渲染 <ApprovalCard>。 */
   approvalCard?: ApprovalCardData;
+  /** 计划卡片（P1#5 Plan 模式）。非空时在消息下方渲染 <EditablePlanCard>。 */
+  planCard?: PlanCardData;
 }
 
 function isAssistantInProgress(status: AssistantStatus): boolean {
@@ -251,6 +256,7 @@ export function buildMessageBlocks(
           turn.assistant.isStreaming || turn.assistant.status === 'streaming',
         quotedMessage: turn.assistant.quotedMessage,
         approvalCard: turn.assistant.approvalCard,
+        planCard: turn.assistant.planCard,
       };
 
       // ADR: Agent 消息分组不得跨用户消息

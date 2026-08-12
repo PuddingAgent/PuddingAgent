@@ -10,6 +10,7 @@
 import { App } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { loadPermissionMode, savePermissionMode } from '../client/agentChatApi';
 import {
   createSession,
   ensureMainSession,
@@ -25,6 +26,11 @@ import {
   sanitizeProcessText,
 } from '../components/processPreview';
 import { flushOutbox } from '../outbox/commandOutbox';
+import {
+  checkpointSnapshotToTurns,
+  type ChatCheckpoint,
+} from '../client/checkpointStore';
+import { useCheckpointTimeline } from './useCheckpointTimeline';
 import { createSessionTerminalEvent } from '../runtime/sessionLifecycleStore';
 import type { ChatTurn } from '../types';
 import { assistantStatusLabel } from '../types';
@@ -35,9 +41,15 @@ import type {
   ChatInteractionRuntimeType,
   ChatRouteSelection,
   ChatSendOptions,
+  PermissionMode,
   UseChatStateReturn,
 } from '../types/chatStateTypes';
-import { STEERING_INJECTED_QUEUE_RETENTION_MS } from '../types/chatStateTypes';
+import {
+  PERMISSION_MODE_LABELS,
+  PERMISSION_MODES,
+  PERMISSION_MODE_STORAGE_KEY,
+  STEERING_INJECTED_QUEUE_RETENTION_MS,
+} from '../types/chatStateTypes';
 import {
   formatChatErrorDiagnostic,
   isChatStreamErrorEvent,
@@ -118,7 +130,13 @@ export type {
   ChatInteractionRuntimeType,
   ChatRouteSelection,
   ChatSendOptions,
+  PermissionMode,
   UseChatStateReturn,
+};
+export {
+  PERMISSION_MODES,
+  PERMISSION_MODE_LABELS,
+  PERMISSION_MODE_STORAGE_KEY,
 };
 export {
   applyBufferedDeltaToTurn,
@@ -247,7 +265,52 @@ export function useChatState(
     appendChatInteractionRuntimeEvent,
     clearChatInteractionRuntimeEvents,
   } = useChatRuntimeEvents();
-  const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
+  /** P1#4：权限模式 — 全局持有，经 ChatLayout → ChatMain → Composer 下传 */
+  const [permissionMode, setPermissionModeRaw] = useState<PermissionMode>(() => {
+    if (typeof window === 'undefined') return 'auto';
+    try {
+      const saved = window.localStorage.getItem(PERMISSION_MODE_STORAGE_KEY);
+      return PERMISSION_MODES.includes(saved as PermissionMode)
+        ? (saved as PermissionMode)
+        : 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+  /** 用户主动切换过模式（区别于 workspace 恢复/初始值），避免 REST 回写覆盖新 workspace 的已存值 */
+  const permissionModeDirtyRef = useRef(false);
+  /** P1#4：权限模式变更回调 — 更新 chatState + 标记 dirty 以触发 REST 写回 */
+  const setPermissionMode = useCallback((mode: PermissionMode) => {
+    permissionModeDirtyRef.current = true;
+    setPermissionModeRaw(mode);
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PERMISSION_MODE_STORAGE_KEY, permissionMode);
+    } catch {
+      // 忽略持久化失败（隐私模式等）
+    }
+    // REST 写回：仅用户主动切换时（dirty）写回当前工作空间；幂等且失败静默
+    if (permissionModeDirtyRef.current && workspaceId) {
+      permissionModeDirtyRef.current = false;
+      void savePermissionMode(workspaceId, permissionMode);
+    }
+  }, [permissionMode, workspaceId]);
+  // P1#4：切换工作空间时从后端恢复该 workspace 保存的权限模式（用户本地未覆盖时生效）
+  useEffect(() => {
+    if (!workspaceId) return;
+    permissionModeDirtyRef.current = false;
+    let alive = true;
+    void loadPermissionMode(workspaceId).then((saved) => {
+      if (alive && saved && !permissionModeDirtyRef.current) {
+        setPermissionModeRaw(saved);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [workspaceId]);
   const messageListRef = useRef<HTMLDivElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
   const completedTurnsRef = useRef<Set<string>>(new Set());
@@ -340,11 +403,14 @@ export function useChatState(
     submitInteraction,
     updateQueuedInteraction,
     deleteQueuedInteraction,
-    sendQueuedInteractionNow,
+        sendQueuedInteractionNow,
     steerQueuedInteraction,
+    reorderQueuedInteraction,
+    stopQueue,
     handleKeyDown,
     markSteeringInjected,
     bindSendMessage,
+    bindCancelAll,
   } = useMessageInteractionQueue({
     identity: {
       workspaceId,
@@ -1109,6 +1175,84 @@ export function useChatState(
   // ── handleRenameStart ──────────────────────────────────────
   const handleRenameStart = openRenameModal;
 
+  // ── P2#7 Checkpoint：Fork — 从快照分支一个新会话并切换过去 ──
+  const forkCheckpointToNewSession = useCallback(
+    async (checkpoint: ChatCheckpoint) => {
+      if (!workspaceId || !agentId || creatingSession) return undefined;
+      setCreatingSession(true);
+      try {
+        const targetAgent = agents.find((item) => item.agentId === agentId);
+        const templateId =
+          targetAgent?.sourceTemplateId || `global:${agentId}`;
+        const agName = targetAgent ? getAgentName(targetAgent) : agentId;
+        const title = `分支 · ${checkpoint.label || '快照'}`;
+        const session = await createSession(
+          workspaceId,
+          templateId,
+          title,
+          agName,
+        );
+        const forkedSessionId = session.sessionId;
+        const seededTurns = checkpointSnapshotToTurns(checkpoint.turns);
+        sessionIdRef.current = forkedSessionId;
+        selectedSessionIdRef.current = forkedSessionId;
+        forceNewSessionRef.current = false;
+        lastSequenceNumRef.current = 0;
+        latestTurnIdRef.current = null;
+        messageIdToTurnIdRef.current.clear();
+        activeMessageIdsRef.current.clear();
+        completedTurnsRef.current.clear();
+        turnsRef.current = seededTurns;
+        setTurns(seededTurns);
+        setSelectedSessionId(forkedSessionId);
+        setSessions((prev) => [
+          toSessionListItem(session, title),
+          ...prev,
+        ]);
+        startSessionEventStream(forkedSessionId);
+        refreshSessions({ preserveSessionId: forkedSessionId });
+        logChatDiag('checkpoint.fork.created', {
+          checkpointId: checkpoint.checkpointId,
+          sourceSessionId: checkpoint.sessionId,
+          forkedSessionId,
+          turnCount: seededTurns.length,
+        });
+        return forkedSessionId;
+      } catch (error) {
+        logChatDiag('checkpoint.fork.error', {
+          checkpointId: checkpoint.checkpointId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        messageApi.error('创建分支会话失败');
+        return undefined;
+      } finally {
+        setCreatingSession(false);
+      }
+    },
+    [
+      agentId,
+      agents,
+      creatingSession,
+      messageApi,
+      refreshSessions,
+      setCreatingSession,
+      setSelectedSessionId,
+      setSessions,
+      setTurns,
+      startSessionEventStream,
+      workspaceId,
+    ],
+  );
+
+  const checkpointTimeline = useCheckpointTimeline({
+    sessionId: selectedSessionId,
+    workspaceId,
+    agentId,
+    turnsRef,
+    setTurns,
+    onForkCheckpoint: forkCheckpointToNewSession,
+  });
+
   const { abortRef, sendMessage } = useMessageSend({
     identity: {
       workspaceId,
@@ -1158,9 +1302,17 @@ export function useChatState(
       sessionIdToAgentIdsRef,
     },
     feedback: { setError, messageApi, handleCompactCommand },
+    checkpoint: {
+      captureBeforeTurn: checkpointTimeline.captureBeforeTurn,
+    },
   });
 
   bindSendMessage(sendMessage);
+  // P1#6：取消全部 → 中止在途 HTTP 请求（SSE 事件仍会补偿收尾）
+  bindCancelAll(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  });
 
   // ── handleExport ───────────────────────────────────────────
   const handleExport = useCallback(() => {
@@ -1304,7 +1456,18 @@ export function useChatState(
     sessionCacheHitTokens,
     sessionCacheMissTokens,
     cacheHitRate,
-    compactionStatus,
+        compactionStatus,
+    permissionMode,
+    setPermissionMode,
+    checkpoints: checkpointTimeline.checkpoints,
+    checkpointTimelineOpen: checkpointTimeline.timelineOpen,
+    setCheckpointTimelineOpen: checkpointTimeline.setTimelineOpen,
+    restoreCheckpoint: checkpointTimeline.restoreCheckpoint,
+    forkCheckpoint: checkpointTimeline.forkCheckpoint,
+    deleteCheckpoint: checkpointTimeline.deleteCheckpoint,
+    clearAllCheckpoints: checkpointTimeline.clearAllCheckpoints,
+    restoredCheckpointId: checkpointTimeline.restoredCheckpointId,
+    clearRestoredMarker: checkpointTimeline.clearRestoredMarker,
     handleSetMainSession,
     subAgentCards: visibleSubAgentCards,
     sessionUnreadCounts,
@@ -1333,8 +1496,10 @@ export function useChatState(
     enqueueInteraction,
     updateQueuedInteraction,
     deleteQueuedInteraction,
-    sendQueuedInteractionNow,
+        sendQueuedInteractionNow,
     steerQueuedInteraction,
+    reorderQueuedInteraction,
+    stopQueue,
     handleKeyDown,
     loadMoreMessages,
     resetConversation,

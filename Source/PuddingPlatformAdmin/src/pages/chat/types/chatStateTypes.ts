@@ -13,6 +13,7 @@ import type {
   SessionListItem,
   SubAgentCardMap,
 } from '../types';
+import type { ChatCheckpoint } from '../client/checkpointStore';
 import type { ScrollIntent } from '../viewport/types';
 
 export const MESSAGE_PAGE_SIZE = 20;
@@ -168,6 +169,22 @@ export interface UseChatStateReturn {
   /** P1#4：权限模式（manual / acceptEdits / plan / auto），全局持有 */
   permissionMode: PermissionMode;
   setPermissionMode: (value: PermissionMode) => void;
+  /** P2#7：当前会话的 Checkpoint 时间线快照（最新在前） */
+  checkpoints: ChatCheckpoint[];
+  /** P2#7：时间线面板开关 */
+  checkpointTimelineOpen: boolean;
+  setCheckpointTimelineOpen: (open: boolean) => void;
+  /** P2#7：Restore — 将视图 turns 还原到指定快照 */
+  restoreCheckpoint: (checkpointId: string) => void;
+  /** P2#7：Fork — 从指定快照分支一个新会话并切换过去 */
+  forkCheckpoint: (checkpointId: string) => Promise<string | undefined>;
+  /** P2#7：删除单个快照 */
+  deleteCheckpoint: (checkpointId: string) => void;
+  /** P2#7：清空当前会话全部快照 */
+  clearAllCheckpoints: () => void;
+  /** P2#7：当前处于「已还原到快照」状态（顶部提示条用） */
+  restoredCheckpointId: string | null;
+  clearRestoredMarker: () => void;
   handleSetMainSession: (sessionId: string) => void;
   createSceneOpen: boolean;
   setCreateSceneOpen: (value: boolean) => void;

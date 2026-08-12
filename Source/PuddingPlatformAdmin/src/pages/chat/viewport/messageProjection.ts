@@ -1,4 +1,4 @@
-import type { AgentConversationView } from '../client/types';
+﻿import type { AgentConversationView } from '../client/types';
 import type { ChatTurn } from '../types';
 import { buildMessageBlocks } from '../types';
 import type { VirtualMessageHeightHint, VirtualMessageItem } from './types';
@@ -10,6 +10,8 @@ export interface BuildVirtualMessageItemsInput {
   sessionId?: string | null;
   hasMoreBefore?: boolean;
   currentUser?: { name?: string; avatar?: string };
+  /** P2#8：Focus view 开启时每 turn 折叠为一行，高度估计统一按紧凑行处理 */
+  focusView?: boolean;
 }
 
 export interface BuildVirtualMessageItemsOutput {
@@ -22,7 +24,9 @@ export interface BuildVirtualMessageItemsOutput {
 const getHeightHint = (
   content: string,
   streaming?: boolean,
+  focusView?: boolean,
 ): VirtualMessageHeightHint => {
+  if (focusView) return 'compact';
   if (streaming) return 'streaming';
   if (content.length > 1800 || content.includes('```')) return 'rich';
   if (content.length < 120) return 'compact';
@@ -61,7 +65,11 @@ export function buildVirtualMessageItems(
       id,
       createdAt: block.createdAt,
       block,
-      heightHint: getHeightHint(block.content, block.isStreaming),
+      heightHint: getHeightHint(
+        block.content,
+        block.isStreaming,
+        input.focusView,
+      ),
     });
   }
   items.push(...messageItemsById.values());

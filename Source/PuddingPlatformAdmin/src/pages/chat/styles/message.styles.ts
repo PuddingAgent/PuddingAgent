@@ -1,4 +1,4 @@
-// ── message styles ─────────────────────────────────
+﻿// ── message styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useMessageStyles = createStyles(({ token }) => ({
@@ -310,5 +310,136 @@ export const useMessageStyles = createStyles(({ token }) => ({
     scrollbarGutter: 'stable' as const,
     overscrollBehavior: 'contain' as const,
     scrollbarWidth: 'thin' as const,
+  },
+}));
+
+// ── P2#8 Focus view（单行折叠模式）──────────────────────────
+// Focus view 把每个 turn 折叠成一行（隐藏工具调用 / thinking），点击展开查看完整内容。
+// 对齐 Claude VS Code Focus view：运行中显示当前工具/活动。
+export const useFocusViewStyles = createStyles(() => ({
+  focusViewToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+    padding: '2px 16px 4px',
+  },
+  focusViewToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 22,
+    padding: '2px 8px',
+    borderRadius: 999,
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-chat-border) 70%, transparent)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-surface-muted) 22%, transparent)',
+  },
+  focusViewToggleLabel: {
+    fontSize: 11,
+    lineHeight: '18px',
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.8,
+    whiteSpace: 'nowrap' as const,
+    userSelect: 'none' as const,
+  },
+  focusViewRow: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+  },
+  focusViewRowHeader: {
+    appearance: 'none' as const,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    minHeight: 28,
+    padding: '2px 8px',
+    border: '1px solid transparent',
+    borderRadius: 8,
+    background: 'transparent',
+    cursor: 'pointer' as const,
+    textAlign: 'left' as const,
+    fontFamily: 'inherit',
+    transition: 'background 150ms ease, border-color 150ms ease',
+    '&:hover': {
+      background:
+        'color-mix(in srgb, var(--pudding-chat-surface-muted) 42%, transparent)',
+      borderColor:
+        'color-mix(in srgb, var(--pudding-chat-accent) 12%, transparent)',
+    },
+    '&:focus-visible': {
+      outline:
+        '2px solid color-mix(in srgb, var(--accent-purple) 40%, transparent)',
+      outlineOffset: 1,
+    },
+  },
+  focusViewRowHeaderRunning: {
+    background: 'color-mix(in srgb, var(--accent-purple) 5%, transparent)',
+  },
+  focusViewRowHeaderError: {
+    background: 'color-mix(in srgb, #ef4444 5%, transparent)',
+  },
+  focusViewRowUserAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    background: 'var(--sky-soft)',
+    color: 'var(--earth-brown)',
+    fontSize: 10,
+    fontWeight: 500,
+  },
+  focusViewRowName: {
+    fontSize: 12,
+    color: 'var(--pudding-chat-text)',
+    fontWeight: 500,
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+  },
+  focusViewRowSummary: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    lineHeight: '18px',
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.78,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  focusViewRowSummaryRunning: {
+    color: 'var(--accent-purple)',
+    opacity: 0.92,
+  },
+  focusViewRowSummaryError: {
+    color: '#ef4444',
+    opacity: 0.92,
+  },
+  focusViewRowTime: {
+    fontSize: 11,
+    lineHeight: '18px',
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.55,
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+  },
+  focusViewRowCaret: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    fontSize: 10,
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.5,
+    flexShrink: 0,
+  },
+  focusViewRowContent: {
+    width: '100%',
+    padding: '2px 0 4px 8px',
   },
 }));

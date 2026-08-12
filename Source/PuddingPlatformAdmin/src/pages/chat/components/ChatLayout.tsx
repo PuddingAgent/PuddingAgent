@@ -60,11 +60,15 @@ interface ChatLayoutProps {
   loading: boolean;
   workingAgentIds: string[];
   agentStatuses?: Record<string, AgentStatusChipProjection>;
-  interactionQueue?: ChatInteractionQueueItem[];
+    interactionQueue?: ChatInteractionQueueItem[];
   onUpdateQueuedInteraction?: (id: string, text: string) => void;
   onDeleteQueuedInteraction?: (id: string) => void;
   onSendQueuedInteractionNow?: (id: string) => Promise<void>;
   onSteerQueuedInteraction?: (id: string) => Promise<void>;
+  /** P1#6：本地待发队列拖拽重排 */
+  onReorderQueuedInteraction?: (fromId: string, toId: string) => void;
+  /** P1#6：取消全部（中止当前请求 + 清空待发队列） */
+  onStopAll?: () => void;
   onSend: () => void;
   onSendWithMetadata?: (
     content: string,
@@ -101,6 +105,17 @@ interface ChatLayoutProps {
   permissionMode?: PermissionMode;
   /** P1#4：权限模式变更回调 */
   onPermissionModeChange?: (mode: PermissionMode) => void;
+  /** P2#7：Checkpoint 时间线 — 当前会话快照列表 */
+  checkpoints?: import('../client/checkpointStore').ChatCheckpoint[];
+  /** P2#7：Checkpoint 时间线面板开关 */
+  checkpointTimelineOpen?: boolean;
+  onToggleCheckpointTimeline?: () => void;
+  onRestoreCheckpoint?: (checkpointId: string) => void;
+  onForkCheckpoint?: (checkpointId: string) => void;
+  onDeleteCheckpoint?: (checkpointId: string) => void;
+  onClearAllCheckpoints?: () => void;
+  restoredCheckpointId?: string | null;
+  clearRestoredMarker?: () => void;
 }
 
 const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
@@ -158,11 +173,13 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onInputChange={props.onInputChange}
         onKeyDown={props.onKeyDown}
         loading={props.loading}
-        interactionQueue={props.interactionQueue}
+                interactionQueue={props.interactionQueue}
         onUpdateQueuedInteraction={props.onUpdateQueuedInteraction}
         onDeleteQueuedInteraction={props.onDeleteQueuedInteraction}
         onSendQueuedInteractionNow={props.onSendQueuedInteractionNow}
         onSteerQueuedInteraction={props.onSteerQueuedInteraction}
+        onReorderQueuedInteraction={props.onReorderQueuedInteraction}
+        onStopAll={props.onStopAll}
         onSend={props.onSend}
         onSendWithMetadata={props.onSendWithMetadata}
         onStop={props.onStop}
@@ -188,6 +205,15 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onViewportScrollIntentHandled={props.onViewportScrollIntentHandled}
         permissionMode={props.permissionMode}
         onPermissionModeChange={props.onPermissionModeChange}
+        checkpoints={props.checkpoints}
+        checkpointTimelineOpen={props.checkpointTimelineOpen}
+        onToggleCheckpointTimeline={props.onToggleCheckpointTimeline}
+        onRestoreCheckpoint={props.onRestoreCheckpoint}
+        onForkCheckpoint={props.onForkCheckpoint}
+        onDeleteCheckpoint={props.onDeleteCheckpoint}
+        onClearAllCheckpoints={props.onClearAllCheckpoints}
+        restoredCheckpointId={props.restoredCheckpointId}
+        clearRestoredMarker={props.clearRestoredMarker}
       />
     </div>
   );

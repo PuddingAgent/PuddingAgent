@@ -1,4 +1,4 @@
-import type { ChatMessageBlock } from '../types';
+﻿import type { ChatMessageBlock } from '../types';
 import { areMessageRowPropsEqual } from './MessageRow';
 
 const formatTime = (timestamp: number) => String(timestamp);
@@ -88,5 +88,31 @@ describe('MessageRow memo boundary', () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it('rerenders every row when the focus view mode flips', () => {
+    // P2#8：Focus view 切换是全局视图模式，任何一行都必须重新渲染
+    expect(
+      areMessageRowPropsEqual(props, { ...props, focusView: true }),
+    ).toBe(false);
+    expect(
+      areMessageRowPropsEqual(props, { ...props, focusView: false }),
+    ).toBe(true);
+  });
+
+  it('keeps a row stable when equivalent data is recreated under focus view', () => {
+    expect(
+      areMessageRowPropsEqual(
+        { ...props, focusView: true },
+        {
+          ...props,
+          focusView: true,
+          block: {
+            ...block,
+            processItems: block.processItems?.map((item) => ({ ...item })),
+          },
+        },
+      ),
+    ).toBe(true);
   });
 });

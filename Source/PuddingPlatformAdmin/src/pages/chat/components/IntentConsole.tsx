@@ -8,9 +8,8 @@ import {
   PlusOutlined,
   SendOutlined,
   StopOutlined,
-  ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Button, Input, message, Popover, Tooltip } from 'antd';
+import { Input, message, Popover, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
@@ -33,7 +32,12 @@ import {
 } from '../hooks/browserVoiceOutput';
 import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
+import type { AutoReviewClassifierState } from '../classifier/autoReviewClassifier';
+import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
+import type { SandboxBoundaryInfo, SandboxNetworkMode } from '../sandbox/sandboxBoundary';
 import { useChatStyles } from '../styles';
+import type { PermissionMode } from '../types/chatStateTypes';
+import AutoReviewIndicator from './AutoReviewIndicator';
 import CommandPalette, { type Command, filterCommands } from './CommandPalette';
 import ComposerActionMenu from './ComposerActionMenu';
 import ComposerContextBar from './ComposerContextBar';
@@ -43,6 +47,9 @@ import ComposerFeedbackStrip, {
 import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
+import PermissionModeSelector from './PermissionModeSelector';
+import MessageQueueDropdown from './MessageQueueDropdown';
+import SandboxBoundaryIndicator from './SandboxBoundaryIndicator';
 import { normalizeVisionArtifactFile } from './visionArtifactImage';
 
 const CameraInputModal =
@@ -126,8 +133,12 @@ interface IntentConsoleProps {
   interactionQueue?: ChatInteractionQueueItem[];
   onUpdateQueuedInteraction?: (id: string, text: string) => void;
   onDeleteQueuedInteraction?: (id: string) => void;
-  onSendQueuedInteractionNow?: (id: string) => Promise<void>;
+    onSendQueuedInteractionNow?: (id: string) => Promise<void>;
   onSteerQueuedInteraction?: (id: string) => Promise<void>;
+  /** P1#6：本地待发队列拖拽重排 */
+  onReorderQueuedInteraction?: (fromId: string, toId: string) => void;
+  /** P1#6：取消全部（中止当前请求 + 清空待发队列） */
+  onStopAll?: () => void;
   onSend: () => void;
   onSendWithMetadata?: (
     content: string,
@@ -170,6 +181,26 @@ interface IntentConsoleProps {
   ) => void;
   /** 浏览器摄像头输入适配器；测试与后续视频流 Provider 接入可替换该适配器 */
   cameraInputAdapter?: BrowserCameraInputAdapter;
+    /** P1#4：权限模式（全局状态，经 ChatLayout → ChatMain 下传） */
+  permissionMode?: PermissionMode;
+  /** P1#4：权限模式变更回调 */
+  onPermissionModeChange?: (mode: PermissionMode) => void;
+  /** P2#9：Auto-review classifier 状态（回退手动审批指示器） */
+  autoReviewState?: AutoReviewClassifierState;
+  /** P2#9：Recently denied 面板条目 */
+  recentlyDenied?: RecentlyDeniedItem[];
+  /** P2#9：恢复自动模式（重置 blocked 计数） */
+  onAutoReviewRestore?: () => void;
+  /** P2#9：重试 Recently denied 条目 */
+  onRetryDenied?: (item: RecentlyDeniedItem) => void;
+  /** P2#9：移除 Recently denied 条目 */
+  onRemoveDenied?: (id: string) => void;
+  /** P2#9：清空 Recently denied */
+  onClearDenied?: () => void;
+  /** P2#10：Sandbox 边界信息 */
+  sandboxBoundary?: SandboxBoundaryInfo | null;
+  /** P2#10：网络模式变更回调 */
+  onSandboxNetworkModeChange?: (mode: SandboxNetworkMode) => void;
 }
 
 const IntentConsole: React.FC<IntentConsoleProps> = ({
@@ -180,8 +211,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   interactionQueue = [],
   onUpdateQueuedInteraction,
   onDeleteQueuedInteraction,
-  onSendQueuedInteractionNow,
+    onSendQueuedInteractionNow,
   onSteerQueuedInteraction,
+  onReorderQueuedInteraction,
+  onStopAll,
   onSend,
   onSendWithMetadata,
   onStop,
@@ -205,7 +238,17 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   onVoiceCaptureStatus,
   onVoicePlaybackStatus,
   cameraInputAdapter = defaultBrowserCameraInputAdapter,
-  workspaceId,
+    workspaceId,
+  permissionMode = 'auto',
+  onPermissionModeChange = () => undefined,
+  autoReviewState,
+  recentlyDenied = [],
+  onAutoReviewRestore,
+  onRetryDenied,
+  onRemoveDenied,
+  onClearDenied,
+  sandboxBoundary,
+  onSandboxNetworkModeChange,
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -846,46 +889,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       cacheHitRate,
       subAgentsRunning,
     ],
-  );
-
-  const getQueueStatusLabel = useCallback((item: ChatInteractionQueueItem) => {
-    if (item.status === 'steering_pending') return '引导待注入';
-    if (item.status === 'steering_injected')
-      return item.injectedRound
-        ? `已注入 · 第 ${item.injectedRound} 轮`
-        : '已注入';
-    if (item.status === 'steering_failed') return '引导失败';
-    if (item.status === 'delivering') return '投递中';
-    if (item.status === 'retrying') return '重试中';
-    if (item.status === 'dead_letter') return '死信';
-    if (item.status === 'failed') return '失败';
-    if (item.status === 'cancelled') return '已取消';
-    if (item.status === 'expired') return '已过期';
-    return '排队中';
-  }, []);
-
-  const formatQueueLatency = useCallback((ms?: number) => {
-    if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
-    if (ms < 1000) return `${Math.round(ms)}ms`;
-    return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
-  }, []);
-
-  const getQueueMetaText = useCallback(
-    (item: ChatInteractionQueueItem) => {
-      if (item.status === 'steering_injected') {
-        const latency = formatQueueLatency(item.injectionLatencyMs);
-        return latency
-          ? `提交后 ${latency} 注入，稍后自动收起`
-          : '运行时已消费并注入上下文，稍后自动收起';
-      }
-      if (item.status === 'steering_pending') return '等待下一次模型请求前注入';
-      if (item.status === 'steering_failed') return item.error ?? '提交失败';
-      if (item.source === 'backend_message_queue')
-        return '后端消息队列快照，调度由 Agent 服务管理';
-      return '后端队列状态';
-    },
-    [formatQueueLatency],
-  );
+    );
 
   return (
     <div
@@ -917,110 +921,18 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         onSelectIndex={setSelectedIdx}
         onSelect={handleCommandSelect}
         onClose={handleClosePalette}
-      />
+            />
 
-      {interactionQueue.length > 0 && (
-        <div className={styles.composerQueue} data-testid="interaction-queue">
-          <div className={styles.composerQueueHeader}>
-            <span>交互队列</span>
-            <span>{interactionQueue.length}</span>
-          </div>
-          <div className={styles.composerQueueList}>
-            {interactionQueue.map((item) => {
-              const isBackendQueueItem =
-                item.source === 'backend_message_queue';
-              const isEditable =
-                item.status === 'queued' && !isBackendQueueItem;
-              const canDelete = item.source === 'steering';
-              const canSteer =
-                item.status === 'queued' && isBackendQueueItem && loading;
-              return (
-                <div
-                  key={item.id}
-                  className={styles.composerQueueItem}
-                  data-status={item.status}
-                >
-                  {isEditable ? (
-                    <Input.TextArea
-                      value={item.text}
-                      autoSize={{ minRows: 1, maxRows: 2 }}
-                      className={styles.composerQueueInput}
-                      onChange={(event) => {
-                        onUpdateQueuedInteraction?.(
-                          item.id,
-                          event.target.value,
-                        );
-                      }}
-                      aria-label="队列消息"
-                    />
-                  ) : (
-                    <div
-                      className={styles.composerQueuePreview}
-                      role="textbox"
-                      aria-label="队列消息"
-                      aria-readonly="true"
-                      title={item.text}
-                    >
-                      {item.text}
-                    </div>
-                  )}
-                  <div className={styles.composerQueueActions}>
-                    <span
-                      className={styles.composerQueueStatus}
-                      data-status={item.status}
-                      title={getQueueMetaText(item)}
-                    >
-                      {getQueueStatusLabel(item)}
-                    </span>
-                    <Tooltip title="由后端队列调度">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<SendOutlined />}
-                        disabled
-                        onClick={() => {
-                          void onSendQueuedInteractionNow?.(item.id);
-                        }}
-                        aria-label="发送队列消息"
-                      />
-                    </Tooltip>
-                    <Tooltip title="注入下一次上下文">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<ThunderboltOutlined />}
-                        disabled={!canSteer}
-                        onClick={() => {
-                          void onSteerQueuedInteraction?.(item.id);
-                        }}
-                        aria-label="引导 Agent"
-                      />
-                    </Tooltip>
-                    <Tooltip title="删除">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        disabled={!canDelete}
-                        onClick={() => onDeleteQueuedInteraction?.(item.id)}
-                        aria-label="删除队列消息"
-                      />
-                    </Tooltip>
-                  </div>
-                  <div className={styles.composerQueueMeta}>
-                    {getQueueMetaText(item)}
-                  </div>
-                  {item.error && item.status !== 'steering_failed' && (
-                    <div className={styles.composerQueueError}>
-                      {item.error}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <MessageQueueDropdown
+        interactionQueue={interactionQueue}
+        loading={loading}
+        onUpdateQueuedInteraction={onUpdateQueuedInteraction}
+        onDeleteQueuedInteraction={onDeleteQueuedInteraction}
+        onSendQueuedInteractionNow={onSendQueuedInteractionNow}
+        onSteerQueuedInteraction={onSteerQueuedInteraction}
+        onReorderQueuedInteraction={onReorderQueuedInteraction}
+        onStopAll={onStopAll}
+      />
 
       {pendingImages.length > 0 && (
         <div
@@ -1196,6 +1108,35 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <DownOutlined />
               </button>
             </Popover>
+                        <PermissionModeSelector
+              value={permissionMode}
+              onChange={onPermissionModeChange}
+              disabled={disabled || loading}
+            />
+            <SandboxBoundaryIndicator
+              boundary={sandboxBoundary ?? null}
+              disabled={disabled || !sandboxBoundary}
+              onNetworkModeChange={onSandboxNetworkModeChange}
+            />
+            <AutoReviewIndicator
+              state={
+                autoReviewState ?? {
+                  enabled: permissionMode === 'auto',
+                  consecutiveBlocks: 0,
+                  totalBlocks: 0,
+                  fallbackTriggered: false,
+                  fallbackReason: null,
+                  lastBlockedAt: null,
+                  lastBlockRule: null,
+                }
+              }
+              recentlyDenied={recentlyDenied}
+              disabled={disabled || loading}
+              onRestoreAuto={onAutoReviewRestore}
+              onRetryDenied={onRetryDenied}
+              onRemoveDenied={onRemoveDenied}
+              onClearDenied={onClearDenied}
+            />
             <Tooltip
               title={
                 recording ? '停止录音' : recognizing ? '识别中...' : '语音输入'

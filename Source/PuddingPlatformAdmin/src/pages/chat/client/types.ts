@@ -102,6 +102,8 @@ export interface ConversationMessageView {
   processSummary?: ConversationProcessSummary | null;
   /** 工具审批卡片（P0#1）。由 approval.requested / approval.resolved 事件投影。 */
   approvalCard?: ApprovalCardData | null;
+  /** 计划卡片（P1#5 Plan 模式）。由 plan.proposal / plan.finalized 事件投影。 */
+  planCard?: PlanCardData | null;
 }
 
 /** 工具审批请求的 UI 投影（P0#1 审批卡片）。 */
@@ -116,6 +118,30 @@ export interface ApprovalCardData {
   reason?: string;
   requestedAt: string;
   expiresAt?: string;
+}
+
+/** 计划步骤（P1#5）。每步可编辑/删除/拖拽排序。 */
+export interface PlanStepData {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+/** Plan 模式用户决定（EditablePlanCard 三按钮契约）。 */
+export type PlanDecision =
+  | 'approve_and_build'
+  | 'manual'
+  | 'keep_planning';
+
+/** 计划卡片的 UI 投影（P1#5 Plan 模式）。 */
+export interface PlanCardData {
+  planId: string;
+  summary?: string;
+  steps: PlanStepData[];
+  status: 'pending' | 'finalized';
+  decision?: PlanDecision;
+  decidedAt?: string;
+  requestedAt: string;
 }
 
 export interface AgentConversationView {

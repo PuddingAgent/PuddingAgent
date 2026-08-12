@@ -106,6 +106,11 @@ interface MessageSendFeedbackPort {
   handleCompactCommand: () => Promise<void>;
 }
 
+/** P2#7：Checkpoint 快照端口 — 每次 turn 提交前保存会话快照。 */
+interface MessageSendCheckpointPort {
+  captureBeforeTurn?: (sessionId: string, label: string) => void;
+}
+
 interface UseMessageSendOptions {
   identity: MessageSendIdentityPort;
   turns: MessageSendTurnPort;
@@ -113,6 +118,7 @@ interface UseMessageSendOptions {
   stream: MessageSendStreamPort;
   activity: MessageSendAgentActivityPort;
   feedback: MessageSendFeedbackPort;
+  checkpoint?: MessageSendCheckpointPort;
 }
 
 /** Owns the send transaction from optimistic Turn creation through durable acceptance. */
@@ -123,6 +129,7 @@ export function useMessageSend({
   stream,
   activity,
   feedback,
+  checkpoint,
 }: UseMessageSendOptions) {
   const {
     workspaceId,
@@ -366,6 +373,8 @@ export function useMessageSend({
         },
         assistant: createAssistant(createId(), 'structured', 'thinking', true),
       };
+      // P2#7：turn 提交前保存会话快照（Checkpoint 时间线）
+      checkpoint?.captureBeforeTurn?.(sendConversationId, route.originalText || routedText);
       turnsRef.current = [...turnsRef.current, optimisticTurn];
       setTurns((p) => [...p, optimisticTurn]);
       setViewportScrollIntent({

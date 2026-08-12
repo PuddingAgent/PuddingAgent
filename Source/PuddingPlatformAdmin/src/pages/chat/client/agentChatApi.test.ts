@@ -1,7 +1,9 @@
-import {
+﻿import {
   getAgentConversation,
   getAgentMessageProcessItems,
   listAgentStatuses,
+  loadPermissionMode,
+  savePermissionMode,
 } from './agentChatApi';
 
 const mockRequest = jest.fn();
@@ -59,5 +61,46 @@ describe('agentChatApi', () => {
       '/api/workspaces/workspace%2Fa/agents/agent%2Fa/conversation/messages/message%2Fa/process-items',
       { method: 'GET' },
     );
+  });
+
+  it('persists the permission mode via REST (P1#4)', async () => {
+    mockRequest.mockResolvedValueOnce(undefined);
+
+    await savePermissionMode('ws/default', 'acceptEdits');
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/ws%2Fdefault/user-preferences/permission-mode',
+      {
+        method: 'PUT',
+        data: { mode: 'acceptEdits' },
+        skipErrorHandler: true,
+      },
+    );
+  });
+
+  it('swallows REST persistence failures so chat flow is never interrupted', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('network down'));
+
+    await expect(
+      savePermissionMode('ws/default', 'plan'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('restores a valid permission mode from the backend', async () => {
+    mockRequest.mockResolvedValueOnce({ mode: 'manual' });
+
+    await expect(loadPermissionMode('ws/default')).resolves.toBe('manual');
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/ws%2Fdefault/user-preferences/permission-mode',
+      { method: 'GET', skipErrorHandler: true },
+    );
+  });
+
+  it('rejects unknown permission modes and backend errors on restore', async () => {
+    mockRequest.mockResolvedValueOnce({ mode: 'rogue-mode' });
+    await expect(loadPermissionMode('ws/default')).resolves.toBeNull();
+
+    mockRequest.mockRejectedValueOnce(new Error('404'));
+    await expect(loadPermissionMode('ws/default')).resolves.toBeNull();
   });
 });

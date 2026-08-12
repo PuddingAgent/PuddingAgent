@@ -1,6 +1,7 @@
 ﻿// ── ChatMain：右侧主聊天区（Header + MessageList + InputArea）─
 import {
   BugOutlined,
+  FieldTimeOutlined,
   HistoryOutlined,
   MenuUnfoldOutlined,
   SoundOutlined,
@@ -27,6 +28,11 @@ import type {
   SubAgentCardMap,
 } from '../types';
 import type { PermissionMode } from '../types/chatStateTypes';
+import { useAutoReviewClassifier } from '../hooks/useAutoReviewClassifier';
+import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
+import { createDefaultSandboxBoundary } from '../sandbox/sandboxBoundary';
+import type { SandboxBoundaryInfo, SandboxNetworkMode } from '../sandbox/sandboxBoundary';
+import CheckpointTimelinePanel from './CheckpointTimelinePanel';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 import type { TranscriptMode } from './TranscriptModeSwitch';
@@ -85,11 +91,15 @@ interface ChatMainProps {
   onInputChange: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   loading: boolean;
-  interactionQueue?: ChatInteractionQueueItem[];
+    interactionQueue?: ChatInteractionQueueItem[];
   onUpdateQueuedInteraction?: (id: string, text: string) => void;
   onDeleteQueuedInteraction?: (id: string) => void;
   onSendQueuedInteractionNow?: (id: string) => Promise<void>;
   onSteerQueuedInteraction?: (id: string) => Promise<void>;
+  /** P1#6：本地待发队列拖拽重排 */
+  onReorderQueuedInteraction?: (fromId: string, toId: string) => void;
+  /** P1#6：取消全部（中止当前请求 + 清空待发队列） */
+  onStopAll?: () => void;
   onSend: () => void;
   onSendWithMetadata?: (
     content: string,
@@ -130,6 +140,19 @@ interface ChatMainProps {
   permissionMode?: PermissionMode;
   /** P1#4：权限模式变更回调 */
   onPermissionModeChange?: (mode: PermissionMode) => void;
+  /** P2#7：Checkpoint 时间线 — 当前会话快照列表 */
+  checkpoints?: import('../client/checkpointStore').ChatCheckpoint[];
+  /** P2#7：Checkpoint 时间线面板开关 */
+  checkpointTimelineOpen?: boolean;
+  onToggleCheckpointTimeline?: () => void;
+  /** P2#7：Restore / Fork / Delete / ClearAll 回调 */
+  onRestoreCheckpoint?: (checkpointId: string) => void;
+  onForkCheckpoint?: (checkpointId: string) => void;
+  onDeleteCheckpoint?: (checkpointId: string) => void;
+  onClearAllCheckpoints?: () => void;
+  /** P2#7：当前还原中的快照 id（顶部提示条用） */
+  restoredCheckpointId?: string | null;
+  clearRestoredMarker?: () => void;
 }
 
 const DEV_MODE_KEY = 'pudding-dev-mode';
@@ -163,11 +186,13 @@ const ChatMain: React.FC<ChatMainProps> = ({
   onStop,
   onExport,
   disabled,
-  interactionQueue = [],
+    interactionQueue = [],
   onUpdateQueuedInteraction,
   onDeleteQueuedInteraction,
   onSendQueuedInteractionNow,
   onSteerQueuedInteraction,
+  onReorderQueuedInteraction,
+  onStopAll,
   tLimit,
   tUsed,
   tPct,
@@ -186,16 +211,50 @@ const ChatMain: React.FC<ChatMainProps> = ({
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
-  permissionMode = 'auto',
+    permissionMode = 'auto',
   onPermissionModeChange = () => undefined,
+  checkpoints = [],
+  checkpointTimelineOpen = false,
+  onToggleCheckpointTimeline,
+  onRestoreCheckpoint,
+  onForkCheckpoint,
+  onDeleteCheckpoint,
+  onClearAllCheckpoints,
+  restoredCheckpointId = null,
+  clearRestoredMarker,
 }) => {
   const { styles } = useChatStyles();
+  // ── P2#9：Auto-review classifier 状态机（回退自动切手动）──
+  const autoReview = useAutoReviewClassifier({
+    enabled: permissionMode === 'auto',
+    onFallbackToManual: () => {
+      // 连续 block 3 次或累计 20 次 → 自动切回手动审批
+      onPermissionModeChange('manual');
+    },
+  });
+  // 权限模式变化时同步 classifier 启用状态（setEnabled 为稳定引用）
+  React.useEffect(() => {
+    autoReview.setEnabled(permissionMode === 'auto');
+  }, [permissionMode, autoReview.setEnabled]);
+  // ── P2#10：Sandbox 边界可视化（当前为前端推导，后端就绪后可替换）──
+  const [sandboxNetworkMode, setSandboxNetworkMode] =
+    React.useState<SandboxNetworkMode>('allowlist');
+  const sandboxBoundary: SandboxBoundaryInfo = React.useMemo(
+    () => createDefaultSandboxBoundary(workspaceId, sandboxNetworkMode),
+    [workspaceId, sandboxNetworkMode],
+  );
+  const handleRestoreAuto = React.useCallback(() => {
+    autoReview.resetToAuto();
+    onPermissionModeChange('auto');
+  }, [autoReview, onPermissionModeChange]);
   const [devMode, setDevMode] = useState<boolean>(
     () => localStorage.getItem(DEV_MODE_KEY) === '1',
   );
   /** P0#2：转录视图分级（normal | verbose | summary） */
   const [transcriptMode, setTranscriptMode] =
     useState<TranscriptMode>('normal');
+  /** P2#8：Focus view 单行折叠模式 */
+  const [focusView, setFocusView] = useState(false);
   const rawEvents = useDevRuntimeEvents(devMode, turns);
   const [inferredSessionId, setInferredSessionId] = useState<string | null>(
     null,
@@ -438,6 +497,16 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   onClick={() => setHistoryModalOpen(true)}
                 />
               </Tooltip>
+              <Tooltip title="Checkpoint 时间线">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<FieldTimeOutlined />}
+                  aria-label="Checkpoint 时间线"
+                  onClick={onToggleCheckpointTimeline}
+                  className={checkpointTimelineOpen ? styles.devModeActive : ''}
+                />
+              </Tooltip>
               <Tooltip title={autoTtsEnabled ? '关闭自动朗读' : '开启自动朗读'}>
                 <Button
                   type="text"
@@ -500,8 +569,13 @@ const ChatMain: React.FC<ChatMainProps> = ({
                         onViewportScrollIntentHandled
                       }
                       parentDelegationActivity={parentDelegationActivity}
-                      transcriptMode={transcriptMode}
+                                            transcriptMode={transcriptMode}
                       onTranscriptModeChange={setTranscriptMode}
+                      focusView={focusView}
+                      onFocusViewChange={setFocusView}
+                      onApprovalDenied={(card) =>
+                        autoReview.denyFromApproval(card)
+                      }
                     />
                   </section>
                   <IntentConsole
@@ -509,11 +583,13 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onInputChange={onInputChange}
                     onKeyDown={onKeyDown}
                     loading={loading}
-                    interactionQueue={interactionQueue}
+                                        interactionQueue={interactionQueue}
                     onUpdateQueuedInteraction={onUpdateQueuedInteraction}
                     onDeleteQueuedInteraction={onDeleteQueuedInteraction}
                     onSendQueuedInteractionNow={onSendQueuedInteractionNow}
                     onSteerQueuedInteraction={onSteerQueuedInteraction}
+                    onReorderQueuedInteraction={onReorderQueuedInteraction}
+                    onStopAll={onStopAll}
                     onSend={onSend}
                     onSendWithMetadata={onSendWithMetadata}
                     onStop={onStop}
@@ -534,9 +610,19 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onOpenSubAgentInspector={() =>
                       handleOpenSubAgentInspector()
                     }
-                    latestAssistantText={latestAssistantText}
+                                        latestAssistantText={latestAssistantText}
                     permissionMode={permissionMode}
                     onPermissionModeChange={onPermissionModeChange}
+                    autoReviewState={autoReview.state}
+                    recentlyDenied={autoReview.recentlyDenied}
+                    onAutoReviewRestore={handleRestoreAuto}
+                    onRetryDenied={(item: RecentlyDeniedItem) =>
+                      autoReview.retryDenied(item.id)
+                    }
+                    onRemoveDenied={autoReview.removeDenied}
+                    onClearDenied={autoReview.clearDenied}
+                    sandboxBoundary={sandboxBoundary}
+                    onSandboxNetworkModeChange={setSandboxNetworkMode}
                   />
                 </div>
                 {(hasSubAgentActivity || subAgentInspectorOpen) && (
@@ -581,6 +667,23 @@ const ChatMain: React.FC<ChatMainProps> = ({
             onQuote={handleHistoryQuote}
           />
         </React.Suspense>
+      )}
+
+      {checkpointTimelineOpen && (
+        <div className={styles.checkpointPanelHost}>
+          <CheckpointTimelinePanel
+            open
+            sessionId={selectedSessionId}
+            checkpoints={checkpoints}
+            restoredCheckpointId={restoredCheckpointId}
+            formatTime={formatTime}
+            onRestore={(checkpointId) => onRestoreCheckpoint?.(checkpointId)}
+            onFork={(checkpointId) => onForkCheckpoint?.(checkpointId)}
+            onDelete={(checkpointId) => onDeleteCheckpoint?.(checkpointId)}
+            onClearAll={() => onClearAllCheckpoints?.()}
+            onClose={() => onToggleCheckpointTimeline?.()}
+          />
+        </div>
       )}
     </main>
   );

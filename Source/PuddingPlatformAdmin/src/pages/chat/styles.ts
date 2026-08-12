@@ -11,6 +11,7 @@ import { useMarkdownStyles } from './styles/markdown.styles';
 import { useMessageStyles } from './styles/message.styles';
 import { usePanelStyles } from './styles/panel.styles';
 import { useProcessStyles } from './styles/process.styles';
+import { useFocusViewStyles } from './styles/message.styles';
 import { useReasoningStyles } from './styles/reasoning.styles';
 import { useSidebarStyles } from './styles/sidebar.styles';
 import { useStatusStyles } from './styles/status.styles';
@@ -414,6 +415,92 @@ const useResidualStyles = createStyles(({ token }) => ({
       'auto !important' as unknown as React.CSSProperties['pointerEvents'],
     transition: 'opacity 400ms ease-out, transform 400ms ease-out',
   },
+
+  /* P2#7：Checkpoint 时间线面板 */
+  checkpointPanelHost: {
+    position: 'fixed' as const,
+    top: 60,
+    right: 16,
+    zIndex: 90,
+  },
+  checkpointPanel: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    width: 320,
+    maxHeight: '70vh',
+    overflow: 'auto',
+    padding: 12,
+    gap: 8,
+    background: 'var(--pudding-chat-surface)',
+    border: '1px solid var(--pudding-chat-border)',
+    borderRadius: 10,
+    boxShadow: 'var(--pudding-chat-shadow)',
+  },
+  checkpointPanelHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 8,
+    borderBottom: '1px solid var(--pudding-chat-border)',
+    '& > *:first-child': { flex: 1 },
+  },
+  checkpointList: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+  },
+  checkpointItem: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+    padding: '8px 10px',
+    borderRadius: 8,
+    border: '1px solid var(--pudding-chat-border)',
+    background: 'color-mix(in srgb, var(--soft-white) 60%, transparent)',
+    transition: 'border-color 160ms ease',
+  },
+  checkpointItemRestored: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+    padding: '8px 10px',
+    borderRadius: 8,
+    border: '1px solid color-mix(in srgb, var(--earth-brown) 45%, transparent)',
+    background: 'color-mix(in srgb, #f6e3c1 35%, transparent)',
+    transition: 'border-color 160ms ease',
+  },
+  checkpointItemHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  checkpointItemTime: {
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+  },
+  checkpointItemCount: {
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+    fontVariantNumeric: 'tabular-nums' as const,
+  },
+  checkpointItemLabel: {
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: 'var(--pudding-chat-text)',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+  },
+  checkpointItemActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+  },
 }));
 
 export const useChatStyles = () => {
@@ -422,6 +509,7 @@ export const useChatStyles = () => {
   const { styles: agent } = useAgentStyles();
   const { styles: user } = useUserStyles();
   const { styles: process } = useProcessStyles();
+  const { styles: focusView } = useFocusViewStyles();
   const { styles: reasoning } = useReasoningStyles();
   const { styles: markdown } = useMarkdownStyles();
   const { styles: composer } = useComposerStyles();
@@ -442,6 +530,7 @@ export const useChatStyles = () => {
       ...agent,
       ...user,
       ...process,
+      ...focusView,
       ...reasoning,
       ...markdown,
       ...composer,
@@ -460,6 +549,7 @@ export const useChatStyles = () => {
       agent,
       user,
       process,
+      focusView,
       reasoning,
       markdown,
       composer,

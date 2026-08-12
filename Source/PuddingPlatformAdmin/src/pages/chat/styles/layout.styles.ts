@@ -1,4 +1,4 @@
-// ── layout styles ─────────────────────────────────
+﻿// ── layout styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useLayoutStyles = createStyles(({ token }) => ({
@@ -147,5 +147,14 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 12,
+  },
+  /** P2#8：消息列表外壳 — 顶部承载 Focus view 工具栏，滚动区域占满剩余高度 */
+  messageListShell: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
   },
 }));
