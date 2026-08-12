@@ -1,4 +1,4 @@
-namespace PuddingCode.Platform;
+﻿namespace PuddingCode.Platform;
 
 /// <summary>
 /// Connector 入站进入 Pudding canonical Conversation 的唯一网关入口。
@@ -43,4 +43,8 @@ public static class MessageGatewayMetadata
         "gateway_voice_tool_suppress_final_text";
     public const string ImageToolSuppressDirective =
         "gateway_image_tool_suppress_directive";
+    /// <summary>
+    /// 标记投递来自工具/投影主动投递（如 send_message 飞书回信），而非终态答复投影。
+    /// </summary>
+    public const string IsProjection = "gateway_is_projection";
 }

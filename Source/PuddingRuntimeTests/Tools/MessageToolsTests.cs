@@ -1,7 +1,9 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Tools;
 
@@ -18,7 +20,7 @@ public sealed class MessageToolsTests
 
         var result = await ExecuteAsync(tool, new Dictionary<string, string>
         {
-            ["to"] = "user:owner",
+            ["to"] = "agent:agent-b",
             ["content"] = "你好",
             ["priority"] = "5",
             ["room_id"] = "room-default",
@@ -37,8 +39,8 @@ public sealed class MessageToolsTests
         Assert.AreEqual("你好", envelope.Content);
         Assert.AreEqual(5, envelope.Priority);
         Assert.AreEqual("inform", envelope.Metadata["intent"]);
-        Assert.AreEqual(MessageEndpointKinds.User, envelope.To[0].Kind);
-        Assert.AreEqual("owner", envelope.To[0].Id);
+        Assert.AreEqual(MessageEndpointKinds.Agent, envelope.To[0].Kind);
+        Assert.AreEqual("agent-b", envelope.To[0].Id);
         StringAssert.Contains(result.Output, "m-recorded");
     }
 
@@ -57,6 +59,137 @@ public sealed class MessageToolsTests
 
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual(MessageVisibilities.Private, fabric.Sent[0].Visibility);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Routes_User_Target_To_Feishu_When_GatewayRouteExists()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        var result = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "user:owner",
+                ["content"] = "飞书回信",
+            },
+            withIdentity: true);
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(1, fabric.Sent.Count);
+        var envelope = fabric.Sent[0];
+        Assert.AreEqual(MessageEndpointKinds.Connector, envelope.To[0].Kind);
+        Assert.AreEqual("feishu-main", envelope.To[0].Id);
+        Assert.AreEqual(MessageContentTypes.Text, envelope.ContentType);
+        Assert.AreEqual("飞书回信", envelope.Content);
+        Assert.AreEqual("om_1", envelope.ReplyToMessageId);
+        Assert.AreEqual("session-1", envelope.ConversationId);
+        Assert.AreEqual("oc_conv_1", envelope.Metadata[MessageGatewayMetadata.ExternalConversationId]);
+        Assert.AreEqual("om_1", envelope.Metadata[MessageGatewayMetadata.ExternalMessageId]);
+        Assert.AreEqual("true", envelope.Metadata[MessageGatewayMetadata.IsProjection]);
+        StringAssert.Contains(result.Output, "feishu");
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Routes_Connector_Target_To_Feishu_When_GatewayRouteExists()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        var result = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "connector:feishu-main",
+                ["content"] = "connector 回信",
+            },
+            withIdentity: true);
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(1, fabric.Sent.Count);
+        Assert.AreEqual(MessageEndpointKinds.Connector, fabric.Sent[0].To[0].Kind);
+        Assert.AreEqual("feishu-main", fabric.Sent[0].To[0].Id);
+        StringAssert.Contains(result.Output, "connector:feishu-main");
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Rejects_Mismatched_Connector_Target()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        var result = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "connector:other-connector",
+                ["content"] = "错误连接器",
+            },
+            withIdentity: true);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "受信任飞书连接器");
+        Assert.AreEqual(0, fabric.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Returns_Error_When_Feishu_Command_Context_Missing()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        // 无 ExecutionIdentity / CommandId（如心跳轮次）→ 明确错误，不静默悬空。
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "user:owner",
+            ["content"] = "hello",
+        });
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "无飞书会话上下文");
+        Assert.AreEqual(0, fabric.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Rejects_Broadcast_Target()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        var result = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "@all",
+                ["content"] = "broadcast",
+            },
+            withIdentity: true);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "广播目标暂不支持");
+        Assert.AreEqual(0, fabric.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Returns_Error_When_Route_Reader_Not_Configured()
+    {
+        var fabric = new RecordingMessageSystem();
+        // 作用域中没有 IGatewayCommandRouteReader（例如 Runtime 单测容器）。
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var result = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "user:owner",
+                ["content"] = "hello",
+            },
+            withIdentity: true);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "无飞书会话上下文");
+        Assert.AreEqual(0, fabric.Sent.Count);
     }
 
     [TestMethod]
@@ -169,21 +302,27 @@ public sealed class MessageToolsTests
         }
     }
 
-    private static IServiceScopeFactory CreateScopeFactory(IMessageSystem messageSystem)
+    private static IServiceScopeFactory CreateScopeFactory(
+        IMessageSystem messageSystem,
+        IGatewayCommandRouteReader? routeReader = null)
     {
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         services.AddSingleton(messageSystem);
+        if (routeReader is not null)
+            services.AddSingleton(routeReader);
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private static Task<ToolExecutionResult> ExecuteAsync(
         IPuddingTool tool,
-        IReadOnlyDictionary<string, string> parameters) =>
-        ExecuteAsync(tool, parameters.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value));
+        IReadOnlyDictionary<string, string> parameters,
+        bool withIdentity = false) =>
+        ExecuteAsync(tool, parameters.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value), withIdentity);
 
     private static Task<ToolExecutionResult> ExecuteAsync(
         IPuddingTool tool,
-        IReadOnlyDictionary<string, object?> parameters) =>
+        IReadOnlyDictionary<string, object?> parameters,
+        bool withIdentity = false) =>
         tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "call-1",
@@ -193,6 +332,40 @@ public sealed class MessageToolsTests
                 AgentInstanceId = "agent-a",
                 WorkspaceId = "default",
                 SessionId = "session-1",
+                ExecutionIdentity = withIdentity
+                    ? new RuntimeExecutionIdentity
+                    {
+                        Kind = RuntimeExecutionKind.ConversationTurn,
+                        ConversationId = "session-1",
+                        TurnId = "turn-1",
+                        CommandId = "cmd-1",
+                        RunId = "run-1",
+                        ToolCallId = "call-1",
+                    }
+                    : null,
+            },
+        });
+
+    private static IGatewayCommandRouteReader FeishuRouteReader()
+        => new RecordingGatewayRouteReader(new GatewayCommandRoute
+        {
+            CommandId = "cmd-1",
+            WorkspaceId = "default",
+            ConversationId = "session-1",
+            AgentInstanceId = "agent-a",
+            TurnId = "turn-1",
+            IsGatewayIngress = true,
+            ChannelType = "feishu",
+            ConnectorId = "feishu-main",
+            ExternalConversationId = "oc_conv_1",
+            ExternalMessageId = "om_1",
+            Metadata = new Dictionary<string, string>
+            {
+                [MessageGatewayMetadata.IsGatewayIngress] = "true",
+                [MessageGatewayMetadata.ChannelType] = "feishu",
+                [MessageGatewayMetadata.ConnectorId] = "feishu-main",
+                [MessageGatewayMetadata.ExternalConversationId] = "oc_conv_1",
+                [MessageGatewayMetadata.ExternalMessageId] = "om_1",
             },
         });
 
@@ -245,6 +418,20 @@ public sealed class MessageToolsTests
 
         public Task DeadLetterAsync(string deliveryId, string executionId, string error, CancellationToken ct = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class RecordingGatewayRouteReader(
+        GatewayCommandRoute? route) : IGatewayCommandRouteReader
+    {
+        public string? LastCommandId { get; private set; }
+
+        public Task<GatewayCommandRoute?> GetAsync(
+            string commandId,
+            CancellationToken ct = default)
+        {
+            LastCommandId = commandId;
+            return Task.FromResult(route);
+        }
     }
 
     private sealed class RecordingAgentRosterProvider(IReadOnlyList<AgentRosterItem> items) : IAgentRosterProvider
