@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Models;
@@ -81,11 +81,12 @@ public static class PrefixCacheSnapshotBuilder
         }).ToArray();
 
         var toolSpecHash = HashCanonical(canonicalTools);
-        var systemPromptHash = HashText(systemPrompt);
+        var stableSystemPrompt = ExtractStableSystemPrompt(systemPrompt);
+        var systemPromptHash = HashText(stableSystemPrompt);
         var prefixHash = HashCanonical(new
         {
             Version,
-            SystemPrompt = systemPrompt,
+            SystemPrompt = stableSystemPrompt,
             Tools = canonicalTools,
         });
 
@@ -99,6 +100,30 @@ public static class PrefixCacheSnapshotBuilder
             MessageCount = messages.Count,
             ToolCount = tools.Count,
         };
+    }
+
+    /// <summary>
+    /// 从完整系统提示词中截取稳定层（L0-Static 到 L4-Pinned），
+    /// 排除动态层（L6-CONTEXT-AUGMENT/RECALLED 和 L9-CURRENT）。
+    /// 遇到 "--- LAYER: " 开头且包含 RECALLED/CONTEXT-AUGMENT/CURRENT 的行时截断。
+    /// </summary>
+    internal static string ExtractStableSystemPrompt(string fullSystemPrompt)
+    {
+        if (string.IsNullOrEmpty(fullSystemPrompt))
+            return string.Empty;
+
+        var lines = fullSystemPrompt.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (trimmed.StartsWith("--- LAYER:") is false)
+                continue;
+            if (trimmed.Contains("RECALLED") || trimmed.Contains("CONTEXT-AUGMENT") || trimmed.Contains("CURRENT"))
+                return string.Join('\n', lines, 0, i).TrimEnd();
+        }
+
+        // 没有找到动态层标记 → 整个 prompt 都是稳定的
+        return fullSystemPrompt;
     }
 
     private static string? NormalizeReason(string? reason) =>
