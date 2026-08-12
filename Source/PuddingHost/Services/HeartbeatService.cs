@@ -448,6 +448,7 @@ internal static class HeartbeatPromptComposer
 - 找到可执行工作后，本轮必须立即完成一个具体、安全、可回滚的推进步骤。需要并行或编码时可调用 `spawn_sub_agent`/Smart 工作流，并在后续心跳用 `query_sub_agents` 继续验收。
 - 不得扩大用户授权范围。若某一步需要额外审批、破坏性操作或外部协调，记录阻塞并改做另一个安全步骤；只有确实无路可走时才汇报阻塞。
 - 只有在已完成一个推进步骤，或有证据确认不存在可推进事项后，才调用 `sleep`。不要以问题结束心跳回复。
+- 心跳结束之后，通过调用 `send_message` 汇报进展到飞书（模板：本周期摘要/目标进展/健康指标/下一步），失败时写入 work_summary 下轮补报，不阻塞 sleep。
 """;
 
     internal static string AppendAutonomousExecutionContract(string prompt)

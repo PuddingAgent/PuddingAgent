@@ -1193,6 +1193,21 @@ run 进入任何终态后，迟到或重放的 round/LLM/tool 非终态事件不
 正确结果是：主消息流中没有“子代理运行中/失败”气泡；活动和终态只显示在独立运行坞，并且
 bootstrap、gap replay 与 live SSE 都折叠到同一个 run。
 
+若主消息已经明确写出正在调用子代理，但托盘坞没有图标、检查器同时显示“运行中 0”，不要只查
+SSE。先请求 `GET /api/sessions/{sessionId}/sub-agents`：
+
+1. 若接口有 `running`，但页面本地没有任何 run，说明页面可能在 `subagent.run.created/started`
+   之后才连接或启动事件漏收。状态同步必须在进入会话后立即启动，不能以“本地已经存在 active run”
+   作为轮询前提。
+2. 状态项必须同时返回 `parentSessionId`、`subSessionId` 和最新 canonical `runId`。前端用 `runId`
+   重建缺失运行，后续 bootstrap/gap replay/live SSE 再向同一项补齐轮次、模型推理和工具活动；不能用
+   可复用的 `subSessionId` 冒充运行身份。
+3. 无 reasoning/tool 事件时显示的“模型正在进行复杂推理”卡片只是主代理首个可见事件前的等待占位，
+   不是子代理状态。主消息只展示委派摘要，子代理详情仍只进入右侧托盘坞和运行检查器。
+
+回归至少覆盖：本地 run map 为空、状态 API 返回 running 时能够创建卡片；刷新后无需等待新的子代理
+事件，托盘图标和检查器 running 计数即可恢复。
+
 ### 11.8 新消息已受理但长期无回复，浏览器重复拉取同一事件页
 
 先同时看三处证据：浏览器 `[Pudding ChatDiag] events.replay.complete`、

@@ -99,10 +99,11 @@
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
 | `src/pages/chat/components/MessageItem.tsx` | 消息文本轻量壳；立即显示纯文本 fallback，并异步加载 Markdown 增强器 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | ReactMarkdown、KaTeX、HTML parser 和 Prism 的独立按需 chunk |
-| `src/pages/chat/reducer/subAgentReducer.ts` | 子代理事件与状态快照的统一投影；`budget_exhausted` 是可恢复终态，任何终态进入后不得被迟到事件降级；`subagent.llm.completed.reasoning_preview` 作为实际“模型推理”展示，旧字符数占位不再生成 |
+| `src/pages/chat/reducer/subAgentReducer.ts` | 子代理事件与状态快照的统一投影；即使页面漏收 `created/started`，也会按状态接口的 canonical `runId` 重建缺失运行；`budget_exhausted` 是可恢复终态，任何终态进入后不得被迟到事件降级；`subagent.llm.completed.reasoning_preview` 作为实际“模型推理”展示，旧字符数占位不再生成 |
 | `src/pages/chat/components/ChatMain.tsx` | Chat 主壳；完整子代理卡片只进入托盘坞，主消息仅接收 active count/时间锚点等父级委派摘要；运行检查器仅在存在卡片或显式打开时加载 |
 | `src/pages/chat/components/HistorySearchModal.tsx` | 历史搜索弹窗；只有 `historyModalOpen` 时才挂载并触发异步 chunk |
-| `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；首 Token 前并列展示主代理当前活动与最近推理摘要，无事件时展示真实等待阶段；子代理内部过程不得进入主消息；操作栏在首次 hover 后才实例化 |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；首 Token 前并列展示主代理当前活动与最近推理摘要，无事件时明确标注“主代理等待占位”；子代理内部过程不得进入主消息；操作栏在首次 hover 后才实例化 |
+| `src/pages/chat/hooks/useSessionEventReplay.ts` | 会话 bootstrap/gap replay 与子代理状态校正；进入会话后始终立即并低频读取状态接口，不能以本地已有 active run 为轮询前提 |
 | `src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理任务、工具、轮次和输出详情的唯一运行时入口；Agent-first 路由由 `useChatState` 回退到已解析 `mainSessionId` 绑定卡片；预算耗尽以“运行结束/预算已用尽”异常终态展示 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer；摄像头弹窗只在用户打开视觉输入时加载和挂载 |
 | `src/pages/chat/viewport/messageProjection.ts` | 将 MessageList 已组装的权威消息顺序转换为虚拟行；不得按 active run 的原始启动时间二次排序，避免长任务状态回跳到历史顶部 |

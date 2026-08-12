@@ -58,6 +58,7 @@
 | `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；支持可恢复终态 `budget_exhausted` 与预算通知投影 |
+| `Services/SessionStateManager.cs` | 会话/子代理持久状态查询；子代理状态 DTO 按可复用 SubSessionId 关联最新 canonical runId，供托盘坞和检查器在漏收事件后恢复运行 |
 
 ## 持久化
 

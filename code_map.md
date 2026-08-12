@@ -143,7 +143,7 @@ Chat first paint → AgentConversationProjectionService
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
   → 主消息运行监视区（主代理当前阶段 + 最近推理摘要 + 有界子代理委派状态；不展开子代理内部过程）
-  → subAgentReducer（事件/快照统一投影；budget_exhausted 终态单调；原样展示有界的实际 reasoning_preview）
+  → subAgentReducer（事件/快照统一投影；状态接口携带 canonical runId 并可重建漏收 created/started 的运行；budget_exhausted 终态单调；原样展示有界的实际 reasoning_preview）
   → SubAgentActivityDock（子代理任务/工具/轮次/输出详情；Agent-first 路由回退 mainSessionId 保证图标可见；预算耗尽显示为可恢复终态）
   → 展开过程摘要时才构建 rounds / trace chips
   → MessageItem 先渲染纯文本，异步加载 Markdown/KaTeX 增强块
