@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -15,7 +16,8 @@ public sealed class BenchmarkCasesController(
     BenchmarkCaseCatalogService catalog,
     BenchmarkWorkspaceSeedService seedService,
     BenchmarkRunService runService,
-    BenchmarkEvaluationService evaluationService) : ControllerBase
+    BenchmarkEvaluationService evaluationService,
+    ILogger<BenchmarkCasesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<BenchmarkCaseSummaryDto>>> List(CancellationToken ct)
@@ -66,7 +68,8 @@ public sealed class BenchmarkCasesController(
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning(ex, "[BenchmarkApi] Evaluate rejected run={RunId}", runId);
+            return BadRequest(new { message = "评测请求无效或评测尚未完成。" });
         }
     }
 

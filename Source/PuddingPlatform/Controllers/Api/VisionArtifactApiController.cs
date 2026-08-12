@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
@@ -13,7 +14,8 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/workspaces/{workspaceId}/vision-artifacts")]
 public sealed class VisionArtifactApiController(
     PlatformDbContext db,
-    VisionArtifactStorageService storage) : ControllerBase
+    VisionArtifactStorageService storage,
+    ILogger<VisionArtifactApiController> logger) : ControllerBase
 {
     [HttpPost]
     [RequestSizeLimit(2_000_000)]
@@ -54,11 +56,12 @@ public sealed class VisionArtifactApiController(
         }
         catch (UnsupportedVisionArtifactMediaTypeException ex)
         {
+            logger.LogWarning(ex, "[VisionArtifactApi] Unsupported media type workspace={WorkspaceId} mime={Mime}", workspaceId, ex.MimeType);
             return StatusCode(
                 StatusCodes.Status415UnsupportedMediaType,
                 new
                 {
-                    message = ex.Message,
+                    message = "不支持的媒体类型。",
                     receivedMimeType = ex.MimeType,
                     supportedMimeTypes = new[]
                     {

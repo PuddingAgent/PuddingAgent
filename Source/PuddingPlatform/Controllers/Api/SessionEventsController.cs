@@ -784,7 +784,7 @@ public class SessionEventsController : ControllerBase
             return BadRequest(new
             {
                 errorCode = ex.ErrorCode,
-                message = ex.Message,
+                message = "Agent 配置无效，请检查模板配置后重试。",
                 agentId = ex.AgentId,
             });
         }
@@ -793,7 +793,7 @@ public class SessionEventsController : ControllerBase
             _logger.LogWarning(ex,
                 "[SessionEvents] Context compact failed session={Session}",
                 sessionId);
-            return Problem(title: "Context compaction failed", detail: ex.Message);
+            return Problem(title: "Context compaction failed", detail: "上下文压缩失败，请稍后重试。");
         }
     }
 
@@ -878,7 +878,7 @@ public class SessionEventsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[SessionEvents] Diagnostics failed session={Session}", sessionId);
-            return Ok(new { sessionId, error = ex.Message });
+            return Ok(new { sessionId, error = "诊断日志读取失败。" });
         }
     }
 

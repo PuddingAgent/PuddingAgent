@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
@@ -49,12 +49,12 @@ public sealed class SystemCommandsController : ControllerBase
                 ct);
             return Ok(result);
         }
-        catch (NotSupportedException ex)
+        catch (NotSupportedException)
         {
             return Problem(
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 title: "Unsupported system command",
-                detail: ex.Message);
+                detail: "不支持的系统命令。");
         }
     }
 

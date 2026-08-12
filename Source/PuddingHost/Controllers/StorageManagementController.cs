@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Storage;
 using PuddingHost.Hosting;
@@ -14,7 +14,8 @@ namespace PuddingHost.Controllers;
 [Route("api/admin/storage/databases")]
 [Authorize(Policy = PuddingAuthorizationPolicies.StorageManagement)]
 public sealed class StorageManagementController(
-    IStorageMaintenanceService maintenanceService) : ControllerBase
+    IStorageMaintenanceService maintenanceService,
+    ILogger<StorageManagementController> logger) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<StorageDatabaseAnalysis>(StatusCodes.Status200OK)]
@@ -35,7 +36,8 @@ public sealed class StorageManagementController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning(ex, "[StorageApi] PreviewCleanup rejected request={PreviewId}", request.PreviewId);
+            return BadRequest(new { message = "清理预览请求无效。" });
         }
     }
 
@@ -54,11 +56,13 @@ public sealed class StorageManagementController(
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { message = ex.Message });
+            logger.LogWarning(ex, "[StorageApi] ExecuteCleanup conflict preview={PreviewId}", request.PreviewId);
+            return Conflict(new { message = "清理预览已过期或状态冲突，请重新预览。" });
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning(ex, "[StorageApi] ExecuteCleanup rejected preview={PreviewId}", request.PreviewId);
+            return BadRequest(new { message = "清理执行请求无效。" });
         }
     }
 }

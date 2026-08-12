@@ -1,4 +1,5 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Plugins;
@@ -14,18 +15,21 @@ namespace PuddingRuntime.Controllers;
 [Route("api/plugins")]
 public sealed class PluginCatalogController : ControllerBase
 {
-    private readonly PluginManifestCatalog _catalog;
+        private readonly PluginManifestCatalog _catalog;
     private readonly PluginPackageInstaller _installer;
     private readonly PluginDiagnosticsReader _diagnostics;
+    private readonly ILogger<PluginCatalogController> _logger;
 
     public PluginCatalogController(
         PluginManifestCatalog catalog,
         PluginPackageInstaller installer,
-        PluginDiagnosticsReader diagnostics)
+        PluginDiagnosticsReader diagnostics,
+        ILogger<PluginCatalogController> logger)
     {
         _catalog = catalog;
         _installer = installer;
         _diagnostics = diagnostics;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -101,7 +105,8 @@ public sealed class PluginCatalogController : ControllerBase
         }
         catch (PluginPackageValidationException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            _logger.LogWarning(ex, "[PluginCatalog] Upload rejected file={FileName}", file.FileName);
+            return BadRequest(new { error = "插件包校验失败，请检查包格式。" });
         }
     }
 

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Services;
 
@@ -15,10 +16,14 @@ namespace PuddingPlatform.Controllers.Api;
 public sealed class MemoryLibraryAdminController : ControllerBase
 {
     private readonly IMemoryLibraryAdminService _admin;
+    private readonly ILogger<MemoryLibraryAdminController> _logger;
 
-    public MemoryLibraryAdminController(IMemoryLibraryAdminService admin)
+    public MemoryLibraryAdminController(
+        IMemoryLibraryAdminService admin,
+        ILogger<MemoryLibraryAdminController> logger)
     {
         _admin = admin;
+        _logger = logger;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -80,7 +85,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -103,11 +109,13 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
         {
-            return NotFound(new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Resource not found");
+            return NotFound(new { error = "未找到指定的记忆资源。" });
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -156,7 +164,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -177,7 +186,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -199,7 +209,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -220,7 +231,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -242,7 +254,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -261,7 +274,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -280,7 +294,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -304,7 +319,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 
@@ -327,7 +343,8 @@ public sealed class MemoryLibraryAdminController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { error = ex.Message });
+            _logger.LogWarning(ex, "[MemoryLibraryAdmin] Access denied");
+            return StatusCode(403, new { error = "无权访问该记忆图书馆资源。" });
         }
     }
 }

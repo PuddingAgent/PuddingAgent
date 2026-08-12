@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
 using PuddingController.Services;
@@ -193,7 +193,7 @@ public class RuntimeRegistryController : ControllerBase
                 WorkspaceId = request.WorkspaceId,
                 Detail = $"Node={nodeId} cap={request.CapabilityId} error={ex.Message}",
             }, ct);
-            return StatusCode(502, new NativeCapabilityInvokeResult { IsSuccess = false, ErrorMessage = $"转发失败：{ex.Message}" });
+            return StatusCode(502, new NativeCapabilityInvokeResult { IsSuccess = false, ErrorMessage = "转发到 Runtime 节点失败，请稍后重试。" });
         }
     }
 }

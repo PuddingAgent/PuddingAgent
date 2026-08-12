@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data.Dtos;
@@ -39,7 +39,7 @@ public class KeyVaultController(
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "[KeyVaultApi] 创建密钥失败，name={Name}", request.Name);
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "密钥创建失败，请检查名称与配置。" });
         }
     }
 
@@ -73,7 +73,7 @@ public class KeyVaultController(
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "[KeyVaultApi] 读取明文失败，keyVaultId={KeyVaultId}", id);
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "无法读取该密钥。" });
         }
     }
 
@@ -100,7 +100,7 @@ public class KeyVaultController(
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "[KeyVaultApi] 更新密钥失败，keyVaultId={KeyVaultId}", id);
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "密钥更新失败。" });
         }
     }
 

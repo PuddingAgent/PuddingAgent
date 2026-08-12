@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -11,7 +12,9 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Route("api/voice-providers")]
-public class VoiceProvidersController(VoiceProviderFileService service) : ControllerBase
+public class VoiceProvidersController(
+    VoiceProviderFileService service,
+    ILogger<VoiceProvidersController> logger) : ControllerBase
 {
     // ── Provider CRUD ──────────────────────────────────────────
 
@@ -37,7 +40,8 @@ public class VoiceProvidersController(VoiceProviderFileService service) : Contro
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[VoiceProviderApi] Create rejected");
+            return Conflict(new { error = "服务商创建冲突，请检查 providerId 是否已存在。" });
         }
     }
 
@@ -83,7 +87,8 @@ public class VoiceProvidersController(VoiceProviderFileService service) : Contro
         catch (KeyNotFoundException) { return NotFound(); }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[VoiceProviderApi] CreateTtsModel rejected provider={ProviderId}", providerId);
+            return Conflict(new { error = "TTS 模型创建冲突，请检查模型 ID 是否已存在。" });
         }
     }
 
@@ -130,7 +135,8 @@ public class VoiceProvidersController(VoiceProviderFileService service) : Contro
         catch (KeyNotFoundException) { return NotFound(); }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[VoiceProviderApi] CreateAsrModel rejected provider={ProviderId}", providerId);
+            return Conflict(new { error = "ASR 模型创建冲突，请检查模型 ID 是否已存在。" });
         }
     }
 

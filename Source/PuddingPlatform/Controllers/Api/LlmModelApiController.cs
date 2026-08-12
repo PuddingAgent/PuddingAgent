@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -10,7 +11,9 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Route("api/llm/providers/{providerId}/models")]
-public class LlmModelApiController(LlmProviderFileService service) : ControllerBase
+public class LlmModelApiController(
+    LlmProviderFileService service,
+    ILogger<LlmModelApiController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<LlmModelDto>>> List(string providerId, CancellationToken ct)
@@ -35,7 +38,8 @@ public class LlmModelApiController(LlmProviderFileService service) : ControllerB
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[LlmModelApi] Create rejected provider={ProviderId}", providerId);
+            return Conflict(new { error = "模型创建冲突，请检查模型 ID 是否已存在。" });
         }
         catch (KeyNotFoundException) { return NotFound(); }
     }

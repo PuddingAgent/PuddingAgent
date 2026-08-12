@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -10,7 +11,9 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Route("api/llm/providers")]
-public class LlmProviderApiController(LlmProviderFileService service) : ControllerBase
+public class LlmProviderApiController(
+    LlmProviderFileService service,
+    ILogger<LlmProviderApiController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<LlmProviderDto>>> List(CancellationToken ct)
@@ -34,7 +37,8 @@ public class LlmProviderApiController(LlmProviderFileService service) : Controll
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[LlmProviderApi] Create rejected");
+            return Conflict(new { error = "服务商创建冲突，请检查 providerId 是否已存在。" });
         }
     }
 

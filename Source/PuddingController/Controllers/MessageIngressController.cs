@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
 using PuddingController.Services;
 
@@ -105,7 +105,7 @@ public class MessageIngressController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "[Ingress] STREAM failed correlationId={CorrId}", correlationId);
-            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+            await WriteSseAsync(Response, "error", new { message = "消息处理失败，请稍后重试。" }, CancellationToken.None);
         }
     }
 

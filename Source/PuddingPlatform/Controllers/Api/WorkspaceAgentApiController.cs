@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -12,7 +13,8 @@ namespace PuddingPlatform.Controllers.Api;
 [ApiController]
 [Route("api/workspaces/{workspaceId}/agents")]
 public class WorkspaceAgentApiController(
-    WorkspaceAgentFileService fileService) : ControllerBase
+    WorkspaceAgentFileService fileService,
+    ILogger<WorkspaceAgentApiController> logger) : ControllerBase
 {
     // GET /api/workspaces/{workspaceId}/agents
     [HttpGet]
@@ -44,9 +46,10 @@ public class WorkspaceAgentApiController(
         }
         catch (WorkspaceAuditAgentConflictException ex)
         {
+            logger.LogWarning(ex, "[WorkspaceAgentApi] Create conflict workspace={WorkspaceId}", workspaceId);
             return Conflict(new
             {
-                message = ex.Message,
+                message = "Agent ID 已存在，请更换后重试。",
                 workspaceId = ex.WorkspaceId,
                 existingAgentId = ex.ExistingAgentId,
             });
@@ -66,9 +69,10 @@ public class WorkspaceAgentApiController(
         }
         catch (WorkspaceAuditAgentConflictException ex)
         {
+            logger.LogWarning(ex, "[WorkspaceAgentApi] Update conflict workspace={WorkspaceId} agent={AgentId}", workspaceId, agentId);
             return Conflict(new
             {
-                message = ex.Message,
+                message = "Agent ID 已存在，请更换后重试。",
                 workspaceId = ex.WorkspaceId,
                 existingAgentId = ex.ExistingAgentId,
             });
@@ -79,7 +83,7 @@ public class WorkspaceAgentApiController(
         }
     }
 
-        // POST /api/workspaces/{workspaceId}/agents/{agentId}/freeze
+    // POST /api/workspaces/{workspaceId}/agents/{agentId}/freeze
     [HttpPost("{agentId}/freeze")]
     public async Task<IActionResult> Freeze(string workspaceId, string agentId, CancellationToken ct)
     {

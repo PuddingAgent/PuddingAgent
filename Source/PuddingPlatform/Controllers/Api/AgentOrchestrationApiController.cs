@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -281,12 +281,12 @@ public sealed class AgentOrchestrationApiController(
                 await WriteJsonErrorAsync(
                     StatusCodes.Status409Conflict,
                     "orchestration.event_gap",
-                    ex.Message,
+                    "编排事件序列存在缺口，请重新连接。",
                     ct);
             }
             else
             {
-                await WriteStreamErrorAsSseAsync(Response, "orchestration.event_gap", ex.Message, ct);
+                await WriteStreamErrorAsSseAsync(Response, "orchestration.event_gap", "编排事件序列存在缺口，请重新连接。", ct);
             }
         }
     }

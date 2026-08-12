@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using PuddingCode.Platform;
 using PuddingController.Services;
@@ -61,7 +61,7 @@ public sealed class LlmProxyController(
             logger.LogError(
                 "[LlmProxy] ERROR (config) ws={Ws} session={Session} elapsed={Elapsed}ms msg={Msg}",
                 request.WorkspaceId, request.SessionId, sw.ElapsedMilliseconds, ex.Message);
-            return StatusCode(502, new { error = ex.Message });
+            return StatusCode(502, new { error = "上游 LLM 服务暂不可用，请稍后重试。" });
         }
         catch (HttpRequestException ex)
         {
@@ -69,7 +69,7 @@ public sealed class LlmProxyController(
             logger.LogError(
                 "[LlmProxy] ERROR (http) ws={Ws} session={Session} elapsed={Elapsed}ms msg={Msg}",
                 request.WorkspaceId, request.SessionId, sw.ElapsedMilliseconds, ex.Message);
-            return StatusCode(502, new { error = ex.Message });
+            return StatusCode(502, new { error = "上游 LLM 服务暂不可用，请稍后重试。" });
         }
     }
 
@@ -127,7 +127,7 @@ public sealed class LlmProxyController(
                 ex,
                 "[LlmProxy] STREAM error ws={Ws} session={Session}",
                 request.WorkspaceId, request.SessionId);
-            await WriteSseAsync(Response, SseEventTypes.Error, new { message = ex.Message }, CancellationToken.None);
+            await WriteSseAsync(Response, SseEventTypes.Error, new { message = "流式处理失败，请稍后重试。" }, CancellationToken.None);
         }
     }
 

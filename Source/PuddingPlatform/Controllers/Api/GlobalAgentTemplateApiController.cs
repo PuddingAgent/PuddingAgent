@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -9,7 +10,9 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Route("api/global-agent-templates")]
-public class GlobalAgentTemplateApiController(AgentTemplateFileService templates) : ControllerBase
+public class GlobalAgentTemplateApiController(
+    AgentTemplateFileService templates,
+    ILogger<GlobalAgentTemplateApiController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<GlobalAgentTemplateDto>>> List(
@@ -40,7 +43,8 @@ public class GlobalAgentTemplateApiController(AgentTemplateFileService templates
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[GlobalTemplateApi] ImportPreset rejected template={TemplateId}", templateId);
+            return Conflict(new { error = "模板导入冲突，请检查模板状态后重试。" });
         }
     }
 
@@ -62,7 +66,8 @@ public class GlobalAgentTemplateApiController(AgentTemplateFileService templates
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            logger.LogWarning(ex, "[GlobalTemplateApi] Create rejected");
+            return Conflict(new { error = "模板创建冲突，请检查模板 ID 是否已存在。" });
         }
     }
 
@@ -94,7 +99,8 @@ public class GlobalAgentTemplateApiController(AgentTemplateFileService templates
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            logger.LogWarning(ex, "[GlobalTemplateApi] Delete rejected template={TemplateId}", templateId);
+            return BadRequest(new { error = "模板删除失败。" });
         }
     }
 }

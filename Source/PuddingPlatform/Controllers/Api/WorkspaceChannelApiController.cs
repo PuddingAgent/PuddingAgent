@@ -1,7 +1,8 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -10,7 +11,8 @@ namespace PuddingPlatform.Controllers.Api;
 [ApiController]
 [Route("api/workspaces/{workspaceId}/channels")]
 public sealed class WorkspaceChannelApiController(
-    ChannelConfigurationFileService channels) : ControllerBase
+    ChannelConfigurationFileService channels,
+    ILogger<WorkspaceChannelApiController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WorkspaceChannelDto>>> List(
@@ -44,7 +46,8 @@ public sealed class WorkspaceChannelApiController(
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException or KeyNotFoundException)
         {
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning(ex, "[WorkspaceChannelApi] Create rejected workspace={WorkspaceId}", workspaceId);
+            return BadRequest(new { message = "渠道创建失败，请检查渠道配置。" });
         }
     }
 
@@ -69,7 +72,8 @@ public sealed class WorkspaceChannelApiController(
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
         {
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning(ex, "[WorkspaceChannelApi] Update rejected workspace={WorkspaceId} channel={ChannelId}", workspaceId, channelId);
+            return BadRequest(new { message = "渠道更新失败，请检查渠道配置。" });
         }
     }
 

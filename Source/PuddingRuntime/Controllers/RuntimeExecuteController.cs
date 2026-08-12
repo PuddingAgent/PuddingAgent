@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingRuntime.Services;
@@ -93,7 +93,7 @@ public class RuntimeExecuteController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "[RuntimeAPI] Stream failed session={SessionId}", request.SessionId);
-            await WriteSseAsync(Response, "error", new { message = ex.Message }, CancellationToken.None);
+            await WriteSseAsync(Response, "error", new { message = "流式执行失败，请稍后重试。" }, CancellationToken.None);
         }
     }
 

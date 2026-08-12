@@ -225,7 +225,7 @@ public static class PuddingWebApplicationExtensions
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "[HealthCheck] Subconscious status query failed");
-                return Results.Ok(new { status = "unavailable", error = ex.Message });
+                return Results.Ok(new { status = "unavailable", error = "服务状态暂不可用。" });
             }
         });
 

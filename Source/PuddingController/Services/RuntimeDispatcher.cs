@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using PuddingCode.Platform;
@@ -61,13 +61,13 @@ public sealed class RuntimeDispatcher
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[RuntimeDispatch] Failed to dispatch to {Endpoint}", endpoint);
+                        _logger.LogError(ex, "[RuntimeDispatch] Failed to dispatch to {Endpoint}", endpoint);
             return new RuntimeDispatchResult
             {
                 SessionId = request.SessionId,
                 AgentInstanceId = "",
                 IsSuccess = false,
-                ErrorMessage = $"Runtime dispatch failed: {ex.Message}"
+                ErrorMessage = "Runtime 调度失败，请稍后重试。"
             };
         }
     }

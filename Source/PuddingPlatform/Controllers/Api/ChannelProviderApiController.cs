@@ -1,7 +1,8 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using Microsoft.Extensions.Logging;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -9,7 +10,8 @@ namespace PuddingPlatform.Controllers.Api;
 [ApiController]
 [Route("api/channel-providers")]
 public sealed class ChannelProviderApiController(
-    ChannelConfigurationFileService channels) : ControllerBase
+    ChannelConfigurationFileService channels,
+    ILogger<ChannelProviderApiController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ChannelProviderDto>>> List(
@@ -32,7 +34,8 @@ public sealed class ChannelProviderApiController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            logger.LogWarning(ex, "[ChannelProviderApi] Update rejected provider={ProviderId}", providerId);
+            return BadRequest(new { message = "服务商配置无效。" });
         }
     }
 }

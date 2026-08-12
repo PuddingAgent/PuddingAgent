@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
 using PuddingController.Services;
 
@@ -10,10 +10,14 @@ namespace PuddingController.Controllers;
 public class SessionController : ControllerBase
 {
     private readonly InMemorySessionRepository _sessions;
+    private readonly ILogger<SessionController> _logger;
 
-    public SessionController(InMemorySessionRepository sessions)
+    public SessionController(
+        InMemorySessionRepository sessions,
+        ILogger<SessionController> logger)
     {
         _sessions = sessions;
+        _logger = logger;
     }
 
     [HttpGet("{sessionId}")]
@@ -139,7 +143,9 @@ public class SessionController : ControllerBase
         }
         catch (KeyNotFoundException ex)
         {
-            return NotFound(new { message = ex.Message });
+            _logger.LogWarning(ex, "[SessionApi] RebindMain failed workspace={Workspace} principalKind={Kind} principal={Principal}",
+                req.WorkspaceId, principalKind, req.PrincipalId);
+            return NotFound(new { message = "未找到指定的会话或主线。" });
         }
     }
 
