@@ -1,4 +1,4 @@
-using PuddingCode.Platform;
+﻿using PuddingCode.Platform;
 
 namespace PuddingRuntime.Services;
 
@@ -75,8 +75,8 @@ public sealed class NativeCapabilityExecutor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[NativeExec] Capability={Cap} threw exception", request.CapabilityId);
-            return new NativeCapabilityInvokeResult { IsSuccess = false, ErrorMessage = ex.Message };
+                        _logger.LogError(ex, "[NativeExec] Capability={Cap} threw exception", request.CapabilityId);
+            return new NativeCapabilityInvokeResult { IsSuccess = false, ErrorMessage = "原生能力调用失败，请稍后重试。" };
         }
     }
 

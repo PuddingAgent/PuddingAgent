@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -204,8 +204,8 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                         ["requested_scope"] = request.RequestedScope.ToString(),
                         ["tool_stage"] = "review",
                     },
-                    errorCode: ex.GetType().Name,
-                    errorMessage: ex.Message,
+                                        errorCode: ex.GetType().Name,
+                    errorMessage: "工具审批提交失败，请查看日志获取详情。",
                     ct: CancellationToken.None);
                 throw;
             }

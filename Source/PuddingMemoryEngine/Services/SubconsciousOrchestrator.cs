@@ -368,9 +368,9 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
 
             try
             {
-                await using var failedDb = await _memoryDbContextFactory.CreateDbContextAsync(CancellationToken.None);
+                                await using var failedDb = await _memoryDbContextFactory.CreateDbContextAsync(CancellationToken.None);
                 log.Status = "failed";
-                log.ErrorMessage = ex.Message;
+                log.ErrorMessage = "潜意识任务执行失败，请查看日志获取详情。";
                 log.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 log.ElapsedMs = (int)Math.Min(int.MaxValue, sw.ElapsedMilliseconds);
                 failedDb.SubconsciousJobLogs.Add(log);

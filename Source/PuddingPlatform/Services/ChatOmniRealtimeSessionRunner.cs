@@ -1,4 +1,4 @@
-using PuddingCode.Abstractions;
+﻿using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -212,15 +212,15 @@ public sealed class ChatOmniRealtimeSessionRunner(
                 Reply = answer,
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await WriteFailureAsync(chatSessionId, request.WorkspaceId, messageId, omniSessionId, ex.Message, trace, CancellationToken.None);
+            await WriteFailureAsync(chatSessionId, request.WorkspaceId, messageId, omniSessionId, "实时会话失败，请稍后重试。", trace, CancellationToken.None);
             return new ChatOmniRealtimeSessionRunResult
             {
                 SessionId = chatSessionId,
                 MessageId = messageId,
                 Success = false,
-                ErrorMessage = ex.Message,
+                ErrorMessage = "实时会话失败，请稍后重试。",
             };
         }
     }

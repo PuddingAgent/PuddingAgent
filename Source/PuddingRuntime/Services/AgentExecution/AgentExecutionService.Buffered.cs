@@ -1641,7 +1641,7 @@ public sealed partial class AgentExecutionService
                 request.ExecutionIdentity,
                 CancellationToken.None);
 
-            return new RuntimeDispatchResult
+                        return new RuntimeDispatchResult
             {
                 SessionId       = request.SessionId,
                 AgentInstanceId = instance.AgentInstanceId,
@@ -1649,7 +1649,7 @@ public sealed partial class AgentExecutionService
                 IsSuccess       = false,
                 ExecutionState  = AgentExecutionState.Failed,
                 StopReason      = AgentLoopStopReason.Failed.ToString(),
-                ErrorMessage    = ex.Message,
+                ErrorMessage    = "Agent 执行失败，请稍后重试。",
                 Usage           = usage,
                 PrefixSnapshot  = lastPrefixSnapshot,
                 TurnSteps       = CollectNewTurnSteps(request.SessionId, journalStartCount),

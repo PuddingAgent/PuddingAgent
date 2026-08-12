@@ -36,7 +36,7 @@ public sealed class StorageManagementController(
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "[StorageApi] PreviewCleanup rejected request={PreviewId}", request.PreviewId);
+            logger.LogWarning(ex, "[StorageApi] PreviewCleanup rejected");
             return BadRequest(new { message = "清理预览请求无效。" });
         }
     }

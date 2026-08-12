@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Orchestration;
 
@@ -164,7 +164,7 @@ public sealed class AgentOrchestrationWorkerService(
                 outputs: null,
                 executionRunId: null,
                 subSessionId: null,
-                errorMessage: ex.Message,
+                errorMessage: "编排节点执行失败，请查看日志获取详情。",
                 ct);
             logger.LogWarning(
                 ex,

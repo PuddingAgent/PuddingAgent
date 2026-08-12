@@ -313,10 +313,10 @@ public sealed class SubAgentManager : ISubAgentManager
                 // 异常路径也完成运行归档（幂等保护）
                 if (_runIdMap.TryRemove(subSessionId, out var failedRunId))
                 {
-                    var writeResult = await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
+                                        var writeResult = await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
                     {
                         Status = "failed",
-                        ErrorMessage = ex.Message,
+                        ErrorMessage = "子代理执行失败，请查看日志获取详情。",
                     }, CancellationToken.None);
                     if (writeResult != SubAgentRunTerminalWriteResult.Applied)
                         _logger.LogWarning("[SubAgentMgr] CompleteRunAsync(exception) returned {Result} for runId={RunId}", writeResult, failedRunId);
@@ -332,7 +332,7 @@ public sealed class SubAgentManager : ISubAgentManager
                     WorkspaceId = request.WorkspaceId,
                     SessionId = request.ParentSessionId,
                     AgentId = request.ParentAgentId,
-                    Payload = new { sub_agent_id = subSessionId, error = ex.Message },
+                    Payload = new { sub_agent_id = subSessionId, error = "子代理执行失败，请查看日志获取详情。" },
                     Metadata = new Dictionary<string, string>
                     {
                         ["parent_session"] = request.ParentSessionId,
@@ -358,14 +358,14 @@ public sealed class SubAgentManager : ISubAgentManager
                     toolFailureSummary: null,
                     ct: CancellationToken.None);
 
-                _ = _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
-                { Success = false, Error = ex.Message, CompletedAt = DateTimeOffset.UtcNow }, CancellationToken.None);
+                                _ = _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
+                { Success = false, Error = "子代理执行失败，请查看日志获取详情。", CompletedAt = DateTimeOffset.UtcNow }, CancellationToken.None);
                 _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
                     ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new
                     {
                         sub_agent_id = subSessionId,
                         success = false,
-                        error = ex.Message,
+                        error = "子代理执行失败，请查看日志获取详情。",
                         tool_failure_count = 0,
                         tool_output_truncated_count = 0,
                         tool_output_chars = 0,
@@ -433,12 +433,12 @@ public sealed class SubAgentManager : ISubAgentManager
                 : ex is OperationCanceledException
                     ? "cancelled"
                     : "failed";
-            await _runStore.CompleteRunAsync(
+                        await _runStore.CompleteRunAsync(
                 runHandle.RunId,
                 new SubAgentRunCompletion
                 {
                     Status = status,
-                    ErrorMessage = ex.Message,
+                    ErrorMessage = "子代理执行失败，请查看日志获取详情。",
                 },
                 CancellationToken.None);
             await _ssm.TrackSubAgentCompleteAsync(
@@ -1097,7 +1097,7 @@ public sealed class SubAgentManager : ISubAgentManager
                     new SubAgentRunCompletion
                     {
                         Status = status,
-                        ErrorMessage = $"Failed to project sub-agent start state: {ex.Message}",
+                        ErrorMessage = "子代理启动状态投影失败，请查看日志获取详情。",
                     },
                     CancellationToken.None);
             }
