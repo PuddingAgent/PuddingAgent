@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-10 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+> 顶层快速索引 | 2026-08-12 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
 ## 项目定位
 
@@ -33,7 +33,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 
 | 项目 | 说明 | 详细索引 |
 |------|------|----------|
-| `Source/PuddingAgent/` | 🔑 入口 (Program.cs) | — |
+| `Source/PuddingAgent/` | 🔑 入口 (Program.cs · Console/DesktopChild 薄壳) | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingRuntime/` | 🔑 Agent Loop · LLM · 工具 · 上下文管线 | [code_map](Source/PuddingRuntime/code_map.md) |
 | `Source/PuddingDesktop/` | 🔑 WPF Launcher · 固定端口 Core 子进程 · Browser 工作区 · 客户端精灵源素材 | [code_map](Source/PuddingDesktop/code_map.md) |
 | `Source/PuddingHost/` | 🔑 组合根 · 全网卡 HTTP/本机控制地址 · Browser Bridge · 飞书连接器 | [code_map](Source/PuddingHost/code_map.md) |

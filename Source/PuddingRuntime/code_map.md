@@ -28,7 +28,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/ContextPipeline.cs` | 🔑 上下文组装管线；Tool 层强制 Direct/Delegated 判定与前三次调用委派合同 |
+| `Services/ContextPipeline.cs` | 🔑 上下文组装管线；Tool 层强制 Direct/Delegated 判定与前三次调用委派合同；已拆为 `ContextPipelineLayers.cs`（层装配）与 `ContextPipelineOrchestrator.cs`（编排执行）两个 partial |
 | `Services/ContextWindowManager.cs` | Token 窗口管理（48KB） |
 | `Services/ContextAssemblyService.cs` | 上下文装配 |
 | `Services/ContextBudgetAllocator.cs` | 预算分配 |
@@ -51,9 +51,11 @@
 | 文件 | 用途 |
 |------|------|
 | `Tools/BuiltIns/` | 内置工具（Git 20 工具在此） |
+| `Tools/BuiltIns/Search/SearchGrepTool.cs` | 代码文本搜索；排除目录在枚举前裁剪（修复 false-negative）；默认排除 `$outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp`，`max_line_bytes` 单行截断 |
+| `Tools/BuiltIns/Git/GitCommitTool.cs` | git_commit 提交工具；files 数组反序列化兼容 `string` 与 `string[]`（`StringOrStringArrayConverter`） |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | Runtime 文件工具的大文件分块/流式读取服务；不再反向依赖 Platform |
 | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 上下文/Token 诊断；通过 Core 仓储契约读取持久化诊断 |
-| `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验 |
+| `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验；`SmartWorkflowToolBase.cs` 校验失败时 partial-salvage：附验证说明后原样返回子代理实际产出，父 Agent 仍可用 |
 | `Tools/Platform/` | 平台工具实现 |
 | `Services/Tools/` | 工具运行时服务 |
 | `Services/TerminalProcessManager.cs` | 终端进程管理 |

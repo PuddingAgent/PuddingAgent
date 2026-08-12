@@ -80,6 +80,7 @@
 | `Controllers/Api/AgentOrchestrationRunCommandApiController.cs` | `POST /api/orchestrations/runs`；Admin-only、1 MiB 请求上限、显式 Revision/type-safe inputs、201/200 幂等回执与稳定 400/404/409 错误 |
 | `Controllers/Api/AgentOrchestrationHttpHookApiController.cs` | `POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId=...`；Admin-only、1 MiB 请求上限、201/200 幂等回执与稳定 400/404/409 错误 |
 | `Services/Diagnostics/DiagnosticRetentionService.cs` | 后台诊断保留期裁剪；仅遥测、上下文指标与运行活动，权威 session/conversation 事实源不在白名单 |
+| `Services/RetentionPruningService.cs` | 🆕 platform.db 数据保留期裁剪 BackgroundService；补齐 session_event_log/telemetry_metric_events/runtime_activity/conversation_events 四张表保留期清理，表名/列名白名单防注入、分批删除+批间限速+VACUUM；ChatMessages 永不裁剪 |
 
 ## 多媒体
 
