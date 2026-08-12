@@ -1,0 +1,13 @@
+﻿{
+  "id": "heartbeat-feishu-report",
+  "name": "心跳飞书汇报",
+  "version": "1.0.0",
+  "description": "Agent 心跳结束时的标准化飞书汇报模板与流程指南。包含触发条件、≤500 字汇报模板、send_message 投递方式、失败降级策略。",
+  "summary": "心跳飞书汇报标准流程：心跳周期结束时按模板生成简报，通过 send_message 投递到飞书，失败时三级降级（重试→本地存档→告警）。",
+  "author": "pudding-workspace",
+  "created": "2026-08-12",
+  "tags": ["心跳", "飞书", "汇报", "send_message", "heartbeat", "状态汇报"],
+  "keywords": ["心跳汇报", "飞书", "send_message", "heartbeat", "状态简报", "心跳通知", "降级策略", "goal.md"],
+  "source_session": "acd7ee428f284f9a845663b1a4d971db",
+  "path": "skills/heartbeat-feishu-report"
+}
