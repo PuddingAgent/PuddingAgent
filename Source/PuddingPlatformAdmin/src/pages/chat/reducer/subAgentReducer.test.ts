@@ -168,8 +168,12 @@ describe('subAgentReducer', () => {
 
     const reconciled = reconcileSubAgentRunStatuses(running, [
       {
+        runId: 'run-stale',
+        parentSessionId: 'parent-session',
         subSessionId: 'session-sub-stale',
         status: 'completed',
+        taskSummary: 'stale run',
+        spawnedAt: '2026-07-19T00:00:00Z',
         completedAt: '2026-07-19T00:01:00Z',
         resultSummary: 'canonical result',
       },
@@ -181,6 +185,37 @@ describe('subAgentReducer', () => {
       completedAt: Date.parse('2026-07-19T00:01:00Z'),
       output: 'canonical result',
     });
+  });
+
+  it('creates a missing active run from the durable session snapshot', () => {
+    const reconciled = reconcileSubAgentRunStatuses({}, [
+      {
+        runId: 'run-live',
+        parentSessionId: 'parent-session',
+        subSessionId: 'parent-session-sub-live',
+        status: 'running',
+        templateId: 'workspace-task-agent',
+        modelId: 'deepseek-v4-flash',
+        taskSummary: 'inspect the heartbeat loop',
+        spawnedAt: '2026-08-12T05:23:30Z',
+      },
+    ]);
+
+    expect(reconciled['run-live']).toMatchObject({
+      runId: 'run-live',
+      parentSessionId: 'parent-session',
+      subSessionId: 'parent-session-sub-live',
+      status: 'running',
+      phase: 'starting',
+      modelId: 'deepseek-v4-flash',
+      taskSummary: 'inspect the heartbeat loop',
+    });
+    expect(projectSubAgentRunsToCards(reconciled)['sa-run-live']).toMatchObject(
+      {
+        status: 'running',
+        runId: 'run-live',
+      },
+    );
   });
 
   it('projects budget exhaustion as a resumable terminal state', () => {
@@ -241,8 +276,12 @@ describe('subAgentReducer', () => {
 
     const reconciled = reconcileSubAgentRunStatuses(running, [
       {
+        runId: 'run-budget-snapshot',
+        parentSessionId: 'parent-session',
         subSessionId: 'session-sub-budget-snapshot',
         status: 'budget_exhausted',
+        taskSummary: 'resume task',
+        spawnedAt: '2026-08-11T08:55:49Z',
         completedAt: '2026-08-11T10:43:39Z',
         resultSummary: 'resume the preserved child session',
       },

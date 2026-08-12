@@ -1924,6 +1924,8 @@ export async function updateChannelProvider(
 // ─── Sub-Agent API (ADR-016) ──────────────────────────────────────
 
 export interface SubAgentStatusDto {
+  runId: string;
+  parentSessionId: string;
   subSessionId: string;
   status: string;       // 'running' | 'completed' | 'failed'
   templateId?: string;
@@ -2521,6 +2523,9 @@ export type AdminChatStreamEvent =
   // P0#1: 工具审批事件（后端原始类型，经 normalizeConversationEventType 原样透传）
   | { type: 'approval.requested'; approvalId?: string; toolName?: string; tool_name?: string; riskLevel?: string; description?: string; arguments?: Record<string, unknown>; requestedAt?: string; expiresAt?: string; [key: string]: unknown }
   | { type: 'approval.resolved'; approvalId?: string; status?: string; decision?: 'allow_once' | 'always_allow' | 'deny'; reason?: string; [key: string]: unknown }
+  // P1#5: Plan 模式事件（EditablePlanCard）。payload 经 projectConversationEventEnvelope 展开
+  | { type: 'plan.proposal'; planId?: string; summary?: string; steps?: Array<{ id?: string; title?: string; description?: string; [key: string]: unknown }>; requestedAt?: string; [key: string]: unknown }
+  | { type: 'plan.finalized'; planId?: string; decision?: 'approve_and_build' | 'manual' | 'keep_planning'; steps?: Array<{ id?: string; title?: string; description?: string; [key: string]: unknown }>; decidedBy?: string; decidedAt?: string; [key: string]: unknown }
   // T-102: 会话关闭事件（ADR-016）
   | { type: 'session.closed'; sessionId: string };
 
@@ -3324,6 +3329,43 @@ export async function decideSessionApproval(
   req: SessionApprovalDecisionRequest,
 ): Promise<SessionApprovalDecisionResult> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/decide`, {
+    method: 'POST',
+    data: req,
+  });
+}
+
+// ─── Session Plan Decision API (P1#5 Plan 模式卡片) ─────────────
+
+export type SessionPlanDecision =
+  | 'approve_and_build'
+  | 'manual'
+  | 'keep_planning';
+
+export interface SessionPlanStepRequest {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface SessionPlanDecisionRequest {
+  planId: string;
+  decision: SessionPlanDecision;
+  /** 用户编辑/排序后的最终步骤（可选）。 */
+  steps?: SessionPlanStepRequest[];
+}
+
+export interface SessionPlanDecisionResult {
+  planId: string;
+  status: 'finalized';
+  decision: SessionPlanDecision;
+}
+
+/** 提交计划决定（批准并构建 / 逐步执行 / 继续完善计划）。 */
+export async function decideSessionPlan(
+  sessionId: string,
+  req: SessionPlanDecisionRequest,
+): Promise<SessionPlanDecisionResult> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/plan-decide`, {
     method: 'POST',
     data: req,
   });

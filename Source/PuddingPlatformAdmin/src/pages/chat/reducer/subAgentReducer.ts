@@ -75,8 +75,14 @@ export interface SubAgentRunView {
 export type SubAgentRunMap = Record<string, SubAgentRunView>;
 
 export interface SubAgentStatusSnapshot {
+  runId: string;
+  parentSessionId: string;
   subSessionId: string;
   status: string;
+  templateId?: string;
+  modelId?: string;
+  taskSummary: string;
+  spawnedAt: string;
   completedAt?: string;
   resultSummary?: string;
 }
@@ -113,6 +119,55 @@ export function reconcileSubAgentRunStatuses(
   );
   let changed = false;
   const next = { ...runs };
+
+  // A page can connect after subagent.run.created/started was committed. In
+  // that case the event-derived map is empty and the old reconciler had
+  // nothing to correct, leaving both dock and inspector at zero forever.
+  // Materialize the durable session snapshot first; later bootstrap/SSE events
+  // enrich the same canonical runId with rounds, reasoning and tool activity.
+  for (const snapshot of snapshots) {
+    if (!snapshot.runId || next[snapshot.runId]) continue;
+    const spawnedAt = Date.parse(snapshot.spawnedAt);
+    const startedAt = Number.isFinite(spawnedAt) ? spawnedAt : Date.now();
+    const status = snapshot.status as SubAgentRunStatus;
+    const isTerminal = terminalSnapshotStatuses.has(status);
+    const parsedCompletedAt = snapshot.completedAt
+      ? Date.parse(snapshot.completedAt)
+      : Number.NaN;
+    const completedAt = Number.isFinite(parsedCompletedAt)
+      ? parsedCompletedAt
+      : undefined;
+    next[snapshot.runId] = {
+      runId: snapshot.runId,
+      subSessionId: snapshot.subSessionId,
+      parentSessionId: snapshot.parentSessionId,
+      templateId: snapshot.templateId,
+      modelId: snapshot.modelId,
+      taskSummary: snapshot.taskSummary || '子代理任务',
+      status,
+      phase: isTerminal ? 'completed' : 'starting',
+      currentRound: 0,
+      startedAt,
+      completedAt,
+      lastActivityAt: completedAt ?? startedAt,
+      llmDurationMs: 0,
+      toolDurationMs: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
+      tools: [],
+      activities: [],
+      appliedEventIds: [],
+      output: status === 'completed' ? snapshot.resultSummary : undefined,
+      error:
+        isTerminal && status !== 'completed'
+          ? snapshot.resultSummary
+          : undefined,
+    };
+    changed = true;
+  }
 
   for (const [runId, run] of Object.entries(runs)) {
     if (run.status !== 'created' && run.status !== 'running') continue;

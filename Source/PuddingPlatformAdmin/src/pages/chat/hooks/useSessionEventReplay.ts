@@ -87,7 +87,6 @@ export function useSessionEventReplay({
     applySessionEvent,
     handleCompactionLifecycleEvent,
     setSubAgentRuns,
-    subAgentRuns,
     pruneTrackedActiveMessages,
   } = projection;
 
@@ -96,12 +95,8 @@ export function useSessionEventReplay({
 
   const selectedSessionId =
     selectedSessionIdRef.current ?? sessionIdRef.current ?? null;
-  const hasActiveSubAgentRuns = Object.values(subAgentRuns).some(
-    (run) => run.status === 'created' || run.status === 'running',
-  );
-
   useEffect(() => {
-    if (!selectedSessionId || !hasActiveSubAgentRuns) return undefined;
+    if (!selectedSessionId) return undefined;
 
     let disposed = false;
     let timer: number | undefined;
@@ -134,7 +129,7 @@ export function useSessionEventReplay({
       disposed = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [hasActiveSubAgentRuns, selectedSessionId, setSubAgentRuns]);
+  }, [selectedSessionId, setSubAgentRuns]);
 
   const syncCompletedHistoryEventCursor = useCallback(
     async (
