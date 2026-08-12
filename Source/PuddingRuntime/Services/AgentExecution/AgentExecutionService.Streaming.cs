@@ -1028,6 +1028,32 @@ public sealed partial class AgentExecutionService
                     yield return usageFrame;
                 }
 
+                // ADR-043 Prefix Hash 数据流修复：LLM 流式调用完成后将本轮 prefix snapshot
+                // 与 usage 一起写入 TokenUsageEvents，供 agent_diagnostics cache_health
+                // 统计 distinct_prefix_hashes（此前快照只写入活动/遥测日志，从未落库）。
+                if (usage is not null && _tokenUsageRecorder is not null)
+                {
+                    try
+                    {
+                        await _tokenUsageRecorder.RecordRequiredAsync(
+                            usage,
+                            sourceType: "agent_llm",
+                            sourceId: $"{request.SessionId}:{streamTrace.TraceId}:{round + 1}",
+                            workspaceId: request.WorkspaceId,
+                            sessionId: request.SessionId,
+                            providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
+                            modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
+                            prefixSnapshot: prefixSnapshot,
+                            occurredAtUtc: DateTimeOffset.UtcNow);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "[AgentExec:Stream] Token usage recording deferred session={Session} round={Round}",
+                            request.SessionId, round + 1);
+                    }
+                }
+
                 // 无工具调用 → 终止循环，replyBuf 即为最终回复
                 if (!hasToolCalls)
                 {

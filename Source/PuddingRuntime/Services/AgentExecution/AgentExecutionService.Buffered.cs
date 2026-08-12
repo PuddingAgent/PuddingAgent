@@ -680,6 +680,32 @@ public sealed partial class AgentExecutionService
                 var llmResp = llmResult.Response!;
                 usage = llmResult.Usage;
 
+                // ADR-043 Prefix Hash 数据流修复：LLM 调用成功后将本轮 prefix snapshot
+                // 与 usage 一起写入 TokenUsageEvents，供 agent_diagnostics cache_health
+                // 统计 distinct_prefix_hashes（此前快照只写入活动/遥测日志，从未落库）。
+                if (usage is not null && _tokenUsageRecorder is not null)
+                {
+                    try
+                    {
+                        await _tokenUsageRecorder.RecordRequiredAsync(
+                            usage,
+                            sourceType: "agent_llm",
+                            sourceId: $"{request.SessionId}:{execTrace.TraceId}:{round + 1}",
+                            workspaceId: request.WorkspaceId,
+                            sessionId: request.SessionId,
+                            providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
+                            modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
+                            prefixSnapshot: prefixSnapshot,
+                            occurredAtUtc: DateTimeOffset.UtcNow);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "[AgentExec] Token usage recording deferred session={Session} round={Round}",
+                            request.SessionId, round + 1);
+                    }
+                }
+
                 // Note: the LLM call (facade / legacy) and error handling
                 // are now delegated to AgentExecutionLlmInvoker.
                 llmSw.Stop();
