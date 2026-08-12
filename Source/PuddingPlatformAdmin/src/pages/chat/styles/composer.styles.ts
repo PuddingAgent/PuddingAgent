@@ -1,4 +1,4 @@
-// ── composer styles ─────────────────────────────────
+﻿// ── composer styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useComposerStyles = createStyles(({ token }) => ({
@@ -504,6 +504,85 @@ export const useComposerStyles = createStyles(({ token }) => ({
       color: 'var(--pudding-chat-accent)',
       fontWeight: 600,
     },
+  },
+  /* P1#4：权限模式选择器 */
+  composerPermissionModeButton: {
+    minWidth: 72,
+    height: 34,
+    padding: '0 9px',
+    border: 'none',
+    borderRadius: 17,
+    background: 'transparent',
+    color: 'var(--pudding-chat-text-muted)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    fontSize: 12,
+    whiteSpace: 'nowrap' as const,
+    cursor: 'pointer' as const,
+    transition: 'background 140ms ease, color 140ms ease, opacity 140ms ease',
+    '&:hover:not(:disabled)': {
+      color: 'var(--pudding-chat-text)',
+      background: 'color-mix(in srgb, var(--earth-brown) 7%, transparent)',
+    },
+    '&:disabled': {
+      cursor: 'not-allowed' as const,
+      opacity: 0.38,
+    },
+  },
+  composerPermissionModeMenu: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+    minWidth: 188,
+    padding: 4,
+  },
+  composerPermissionModeItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    height: 42,
+    padding: '0 10px',
+    border: 'none',
+    borderRadius: 7,
+    background: 'transparent',
+    color: 'var(--pudding-chat-text)',
+    fontSize: 13,
+    textAlign: 'left' as const,
+    cursor: 'pointer' as const,
+    transition: 'background 140ms ease, color 140ms ease',
+    '&:hover': {
+      background: 'color-mix(in srgb, var(--earth-brown) 7%, transparent)',
+    },
+    '&[data-active="true"]': {
+      background:
+        'color-mix(in srgb, var(--pudding-chat-accent) 12%, transparent)',
+      color: 'var(--pudding-chat-accent)',
+    },
+  },
+  composerPermissionModeItemIcon: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 16,
+    flexShrink: 0,
+    opacity: 0.72,
+  },
+  composerPermissionModeItemText: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 1,
+    minWidth: 0,
+  },
+  composerPermissionModeItemLabel: {
+    fontWeight: 600,
+    lineHeight: '18px',
+  },
+  composerPermissionModeItemDesc: {
+    fontSize: 11,
+    lineHeight: '15px',
+    opacity: 0.62,
   },
   composerSendButton: {
     width: 34,

@@ -1,4 +1,4 @@
-// ── ChatLayout：整体布局（Sidebar + Main）───────────────────
+﻿// ── ChatLayout：整体布局（Sidebar + Main）───────────────────
 import React from 'react';
 import type {
   WorkspaceAgentDto,
@@ -11,6 +11,7 @@ import type {
 } from '../hooks/useChatState';
 import { useChatStyles } from '../styles';
 import type { ChatTurn, SessionGroup, SubAgentCardMap } from '../types';
+import type { PermissionMode } from '../types/chatStateTypes';
 import ChatMain from './ChatMain';
 import SessionSidebar, {
   type AgentStatusChipProjection,
@@ -96,6 +97,10 @@ interface ChatLayoutProps {
   currentUser?: { name?: string; avatar?: string };
   viewportScrollIntent?: import('../viewport/types').ScrollIntent;
   onViewportScrollIntentHandled?: () => void;
+  /** P1#4：权限模式（全局状态，经 useChatState 下传） */
+  permissionMode?: PermissionMode;
+  /** P1#4：权限模式变更回调 */
+  onPermissionModeChange?: (mode: PermissionMode) => void;
 }
 
 const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
@@ -181,6 +186,8 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         currentUser={props.currentUser}
         viewportScrollIntent={props.viewportScrollIntent}
         onViewportScrollIntentHandled={props.onViewportScrollIntentHandled}
+        permissionMode={props.permissionMode}
+        onPermissionModeChange={props.onPermissionModeChange}
       />
     </div>
   );

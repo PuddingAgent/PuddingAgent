@@ -26,6 +26,7 @@ import type {
   ParentDelegationActivity,
   SubAgentCardMap,
 } from '../types';
+import type { PermissionMode } from '../types/chatStateTypes';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 import type { TranscriptMode } from './TranscriptModeSwitch';
@@ -125,6 +126,10 @@ interface ChatMainProps {
   currentUser?: { name?: string; avatar?: string };
   viewportScrollIntent?: import('../viewport/types').ScrollIntent;
   onViewportScrollIntentHandled?: () => void;
+  /** P1#4：权限模式（全局状态，经 ChatLayout 下传） */
+  permissionMode?: PermissionMode;
+  /** P1#4：权限模式变更回调 */
+  onPermissionModeChange?: (mode: PermissionMode) => void;
 }
 
 const DEV_MODE_KEY = 'pudding-dev-mode';
@@ -181,6 +186,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
+  permissionMode = 'auto',
+  onPermissionModeChange = () => undefined,
 }) => {
   const { styles } = useChatStyles();
   const [devMode, setDevMode] = useState<boolean>(
@@ -528,6 +535,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       handleOpenSubAgentInspector()
                     }
                     latestAssistantText={latestAssistantText}
+                    permissionMode={permissionMode}
+                    onPermissionModeChange={onPermissionModeChange}
                   />
                 </div>
                 {(hasSubAgentActivity || subAgentInspectorOpen) && (

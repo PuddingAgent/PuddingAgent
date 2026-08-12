@@ -670,6 +670,8 @@ const ChatPageContent: React.FC = () => {
         currentUser={currentUser}
         viewportScrollIntent={chat.viewportScrollIntent}
         onViewportScrollIntentHandled={chat.clearViewportScrollIntent}
+        permissionMode={chat.permissionMode}
+        onPermissionModeChange={chat.setPermissionMode}
       />
 
       <Modal

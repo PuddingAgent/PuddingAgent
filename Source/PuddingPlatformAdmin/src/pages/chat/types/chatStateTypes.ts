@@ -1,4 +1,4 @@
-import type { FormInstance } from 'antd';
+﻿import type { FormInstance } from 'antd';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 import type {
   TokenUsageDto,
@@ -24,6 +24,30 @@ export const MAX_CHAT_INTERACTION_RUNTIME_EVENTS = 16;
 export const STEERING_INJECTED_QUEUE_RETENTION_MS = 8000;
 export const CHAT_DIAG_STORAGE_KEY = 'pudding_chat_diag_events';
 export const CHAT_DIAG_MAX_EVENTS = 200;
+
+/** P1#4：权限模式 — 控制 Agent 执行工具/编辑/计划时的审批粒度 */
+export type PermissionMode =
+  | 'manual' // 每步需批：所有工具调用都需人工确认
+  | 'acceptEdits' // 只批编辑：仅文件编辑类操作需确认
+  | 'plan' // 先计划后执行：先展示执行计划，确认后执行
+  | 'auto'; // 自动执行：不打断，自动执行
+
+export const PERMISSION_MODES: PermissionMode[] = [
+  'manual',
+  'acceptEdits',
+  'plan',
+  'auto',
+];
+
+export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
+  manual: '每步需批',
+  acceptEdits: '只批编辑',
+  plan: '先计划后执行',
+  auto: '自动执行',
+};
+
+/** 权限模式的 localStorage 持久化键 */
+export const PERMISSION_MODE_STORAGE_KEY = 'pudding-chat-permission-mode';
 
 export interface SessionEventPageResponse {
   events?: unknown[];
@@ -64,7 +88,7 @@ export interface ChatInteractionQueueItem {
   text: string;
   createdAt: number;
   status: ChatInteractionQueueStatus | string;
-  source?: 'backend_message_queue' | 'steering';
+  source?: 'backend_message_queue' | 'steering' | 'local_pending';
   metadata?: Record<string, string>;
   steeringId?: string;
   submittedAt?: number;
@@ -141,6 +165,9 @@ export interface UseChatStateReturn {
   cacheHitRate?: number;
   /** 来自 useCompaction 的压缩状态文案（如 "上次压缩: 2分钟前"） */
   compactionStatus: string | null;
+  /** P1#4：权限模式（manual / acceptEdits / plan / auto），全局持有 */
+  permissionMode: PermissionMode;
+  setPermissionMode: (value: PermissionMode) => void;
   handleSetMainSession: (sessionId: string) => void;
   createSceneOpen: boolean;
   setCreateSceneOpen: (value: boolean) => void;
@@ -174,6 +201,10 @@ export interface UseChatStateReturn {
   deleteQueuedInteraction: (id: string) => void;
   sendQueuedInteractionNow: (id: string) => Promise<void>;
   steerQueuedInteraction: (id: string) => Promise<void>;
+  /** P1#6：本地待发队列内重排（拖拽） */
+  reorderQueuedInteraction: (fromId: string, toId: string) => void;
+  /** P1#6：取消全部 — 中止当前请求并清空本地待发队列 */
+  stopQueue: () => void;
   handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   loadMoreMessages: () => Promise<void>;
   resetConversation: (

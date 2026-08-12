@@ -30,8 +30,8 @@ public sealed class ConversationEventStore(
         if (events.Count == 0)
             return new AppendResult(0, 0, 0);
 
-        // Chat UI P0#1: approval.requested / approval.resolved 是受支持的事件类型。
-        // 写入前对这两个类型做轻量 payload schema 校验，保证审批卡片投影可解析。
+        // Chat UI P0#1/P1#5: approval.* 与 plan.* 是受支持的事件类型。
+        // 写入前对受支持类型做轻量 payload schema 校验，保证审批/计划卡片投影可解析。
         foreach (var evt in events)
             ValidateEventSchema(evt);
 
@@ -446,7 +446,7 @@ public sealed class ConversationEventStore(
 
     /// <summary>
     /// 对受支持事件的 payload 做轻量 schema 校验。
-    /// 未知类型不校验（向后兼容），仅校验 Chat UI P0#1 的审批事件。
+    /// 未知类型不校验（向后兼容），仅校验 Chat UI P0#1 审批事件与 P1#5 计划事件。
     /// </summary>
     private static void ValidateEventSchema(NewConversationEvent evt)
     {
@@ -459,6 +459,16 @@ public sealed class ConversationEventStore(
 
             case ApprovalEventTypes.ApprovalResolved:
                 RequirePayloadString(evt, "approvalId");
+                RequirePayloadString(evt, "decision");
+                break;
+
+            case PlanEventTypes.PlanProposal:
+                RequirePayloadString(evt, "planId");
+                RequirePayloadSteps(evt, "steps");
+                break;
+
+            case PlanEventTypes.PlanFinalized:
+                RequirePayloadString(evt, "planId");
                 RequirePayloadString(evt, "decision");
                 break;
         }
@@ -475,6 +485,40 @@ public sealed class ConversationEventStore(
             throw new ArgumentException(
                 $"Event type '{evt.Type}' requires payload field '{propertyName}' (non-empty string).",
                 nameof(evt));
+        }
+    }
+
+    /// <summary>
+    /// 校验 plan.proposal 的 steps 字段：必须是非空对象数组，
+    /// 每项必须含非空字符串 id 与 title（前端 EditablePlanCard 的依赖契约）。
+    /// </summary>
+    private static void RequirePayloadSteps(NewConversationEvent evt, string propertyName)
+    {
+        var payload = evt.Payload;
+        if (payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.Array
+            || property.GetArrayLength() == 0)
+        {
+            throw new ArgumentException(
+                $"Event type '{evt.Type}' requires payload field '{propertyName}' (non-empty array).",
+                nameof(evt));
+        }
+
+        foreach (var step in property.EnumerateArray())
+        {
+            if (step.ValueKind != JsonValueKind.Object
+                || !step.TryGetProperty("id", out var id)
+                || id.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(id.GetString())
+                || !step.TryGetProperty("title", out var title)
+                || title.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(title.GetString()))
+            {
+                throw new ArgumentException(
+                    $"Event type '{evt.Type}' payload field '{propertyName}' requires items with non-empty 'id' and 'title' strings.",
+                    nameof(evt));
+            }
         }
     }
 
@@ -520,4 +564,34 @@ public static class ApprovalEventTypes
 
     /// <summary>全部审批事件类型（白名单/注册点）。</summary>
     public static readonly string[] All = [ApprovalRequested, ApprovalResolved];
+}
+
+/// <summary>
+/// Chat UI P1#5: Plan 模式事件类型常量（与 Chat UI 前端契约一致）。
+/// <para>
+/// plan.proposal —— Agent 提出可编辑计划（步骤列表），前端渲染 <c>EditablePlanCard</c>；
+/// plan.finalized —— 用户对计划做出决定（approve_and_build / manual / keep_planning），
+/// 由 PlanController 写入。两个类型直接写入 conversation_events.type，
+/// 通过既有 ADR-057 SSE 流原样透传，不修改任何表结构。
+/// </para>
+/// </summary>
+public static class PlanEventTypes
+{
+    public const string PlanProposal = "plan.proposal";
+    public const string PlanFinalized = "plan.finalized";
+
+    /// <summary>全部计划事件类型（白名单/注册点）。</summary>
+    public static readonly string[] All = [PlanProposal, PlanFinalized];
+}
+
+/// <summary>
+/// Plan 模式用户决定值（与 Chat UI EditablePlanCard 三按钮契约一致）。
+/// </summary>
+public static class PlanDecisions
+{
+    public const string ApproveAndBuild = "approve_and_build";
+    public const string Manual = "manual";
+    public const string KeepPlanning = "keep_planning";
+
+    public static readonly string[] All = [ApproveAndBuild, Manual, KeepPlanning];
 }

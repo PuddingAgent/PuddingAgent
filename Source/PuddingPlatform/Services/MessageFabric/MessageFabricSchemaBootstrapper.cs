@@ -102,14 +102,15 @@ public static class MessageFabricSchemaBootstrapper
     ];
 
     /// <summary>
-    /// Chat UI P0#1: conversation 事件类型白名单（审批卡片事件）。
+    /// Chat UI P0#1/P1#5: conversation 事件类型白名单（审批卡片 + Plan 模式事件）。
     /// <para>
     /// Message Fabric / SSE 管道对事件类型是透传的（type 为不透明字符串），
-    /// 这里显式注册审批事件类型作为唯一入口，供 schema bootstrap、诊断与
+    /// 这里显式注册审批与计划事件类型作为唯一入口，供 schema bootstrap、诊断与
     /// 未来校验共用，避免魔术字符串散落。
     /// </para>
     /// </summary>
-    public static readonly string[] ConversationEventTypeAllowlist = ApprovalEventTypes.All;
+    public static readonly string[] ConversationEventTypeAllowlist =
+        [.. ApprovalEventTypes.All, .. PlanEventTypes.All];
 
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
