@@ -169,6 +169,13 @@ public sealed class SystemPromptBuilder
             sb.AppendLine(bootstrapTemplate);
         }
 
+        // ADR-xxx: 子代理委托硬编码协议 — 防止子代理伪阴性失败
+        sb.AppendLine();
+        sb.AppendLine("## 子代理委托硬编码协议");
+        sb.AppendLine("- 子代理不得自行运行编译验证（dotnet build / tsc / jest / shell 等）。编译验证由父 Agent 统一执行。");
+        sb.AppendLine("- 子代理的职责是完成代码改动（file_write / file_patch / apply_patch），完成后直接输出 SUMMARY 交付。");
+        sb.AppendLine("- 若子代理违反上述规则自行运行 shell 编译验证导致 exit code 1，父 Agent 应判定为伪阴性，验收代码改动后由父 Agent 自行编译。");
+
         // ── 4. TOOLS 层 ──
         sb.AppendLine("--- LAYER: TOOLS ---");
         // TOOLS.md 如果存在，覆盖 DB ToolsDescription
