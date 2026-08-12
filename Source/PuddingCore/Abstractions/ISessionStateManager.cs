@@ -330,6 +330,10 @@ public sealed record SessionReplayResult
 /// <summary>子代理当前状态（查询用）。</summary>
 public sealed record SubAgentStatus
 {
+    /// <summary>本次 canonical 子代理运行 ID；用于前端将状态快照与运行事件合并。</summary>
+    public required string RunId { get; init; }
+    /// <summary>父会话 ID；用于会话级托盘坞和检查器隔离。</summary>
+    public required string ParentSessionId { get; init; }
     public required string SubSessionId { get; init; }
     public required string Status { get; init; }
     public string? TemplateId { get; init; }

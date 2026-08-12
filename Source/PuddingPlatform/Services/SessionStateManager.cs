@@ -677,8 +677,24 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             .OrderBy(e => e.SpawnedAt)
             .ToListAsync(ct);
 
+        var replaySubSessionIds = subAgentEntities.Select(e => e.SubSessionId).ToList();
+        var replayLatestRunIds = replaySubSessionIds.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : (await db.SubAgentRuns
+                .AsNoTracking()
+                .Where(r => replaySubSessionIds.Contains(r.SubSessionId))
+                .OrderByDescending(r => r.StartedAt)
+                .Select(r => new { r.SubSessionId, r.RunId })
+                .ToListAsync(ct))
+                .GroupBy(r => r.SubSessionId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First().RunId, StringComparer.Ordinal);
+
         var subAgents = subAgentEntities.Select(e => new SubAgentStatus
         {
+            RunId = replayLatestRunIds.TryGetValue(e.SubSessionId, out var runId)
+                ? runId
+                : e.SubSessionId,
+            ParentSessionId = e.ParentSessionId,
             SubSessionId = e.SubSessionId,
             Status = e.Status,
             TemplateId = e.TemplateId,
@@ -1001,16 +1017,30 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
 
         await ReconcileSubAgentTerminalStatesAsync(db, sessionId, ct);
 
-                var entities = await db.SessionSubAgents
+        var entities = await db.SessionSubAgents
             .AsNoTracking()
             .Where(e => e.ParentSessionId == sessionId)
             .OrderByDescending(e => e.SpawnedAt)
             .ToListAsync(ct);
 
+        // SessionSubAgents 是可复用子会话的当前状态投影；UI 运行检查器还需要
+        // canonical runId 才能与 Conversation Event/运行归档稳定合并。按每个
+        // SubSessionId 选择最新一次运行，避免只靠 subSessionId 猜测运行身份。
+        var subSessionIds = entities.Select(e => e.SubSessionId).ToList();
+        var latestRunIds = subSessionIds.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : (await db.SubAgentRuns
+                .AsNoTracking()
+                .Where(r => subSessionIds.Contains(r.SubSessionId))
+                .OrderByDescending(r => r.StartedAt)
+                .Select(r => new { r.SubSessionId, r.RunId })
+                .ToListAsync(ct))
+                .GroupBy(r => r.SubSessionId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First().RunId, StringComparer.Ordinal);
+
         // Batch lookup token summaries — query by ParentSessionId (covers
         // records where ConversationProjector attributed parent session),
         // falling back to SessionId (sub-agent session id direct match).
-        var subSessionIds = entities.Select(e => e.SubSessionId).ToList();
         Dictionary<string, SubAgentTokenSummary>? tokenDict = null;
         if (subSessionIds.Count > 0)
         {
@@ -1044,6 +1074,10 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
 
         return entities.Select(e => new SubAgentStatus
         {
+            RunId = latestRunIds.TryGetValue(e.SubSessionId, out var runId)
+                ? runId
+                : e.SubSessionId,
+            ParentSessionId = e.ParentSessionId,
             SubSessionId = e.SubSessionId,
             Status = e.Status,
             TemplateId = e.TemplateId,

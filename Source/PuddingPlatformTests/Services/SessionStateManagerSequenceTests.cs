@@ -649,6 +649,8 @@ public sealed class SessionStateManagerSequenceTests
             var agents = await ssm.GetSubAgentsAsync(parentSessionId);
             var status = agents.Single();
 
+            Assert.AreEqual("run-stale", status.RunId);
+            Assert.AreEqual(parentSessionId, status.ParentSessionId);
             Assert.AreEqual("failed", status.Status);
             Assert.AreEqual(false, status.Success);
             Assert.AreEqual(DateTimeOffset.Parse(failedAt), status.CompletedAt);
