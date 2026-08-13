@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Platform;
+namespace PuddingCode.Platform;
 
 /// <summary>
 /// 飞书回信路由解析端口。
@@ -14,6 +14,17 @@ public interface IGatewayCommandRouteReader
     /// </summary>
     Task<GatewayCommandRoute?> GetAsync(
         string commandId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// 主动发送场景（无 CommandId，如心跳/网页端）：按 Agent + 工作区查找最近一条
+    /// 飞书网关入口命令（IsGatewayIngress=true 且 ChannelType=feishu）的稳定回信路由，
+    /// 用于把主动消息投递到用户最近一次与该 Agent 对话的飞书单聊会话。
+    /// 找不到（该 Agent 从未收到过飞书消息）返回 null。
+    /// </summary>
+    Task<GatewayCommandRoute?> FindRecentFeishuRouteAsync(
+        string agentInstanceId,
+        string workspaceId,
         CancellationToken ct = default);
 }
 
