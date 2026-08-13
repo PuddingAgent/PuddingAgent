@@ -122,59 +122,44 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
         var identity = context.ExecutionIdentity;
         var commandId = identity?.CommandId;
 
-        GatewayCommandRoute route;
+        // 优先解析当前回合的飞书回信路由：仅当 CommandId 指向飞书 ingress 命令
+        //（用户在飞书发消息）时才作为「被动回信」路由；网页端/心跳等非飞书回合
+        // 的 CommandId（如 Web 网关入口命令）不满足该条件，会落入下方主动发送分支。
+        GatewayCommandRoute? route = null;
         if (!string.IsNullOrWhiteSpace(commandId))
         {
-            // 飞书 ingress 回合：按 CommandId 解析受信任回信路由。
-            // 主会话 Turn 与子代理执行均可解析到飞书命令路由：
-            // 子代理身份由编排层继承父 CommandId，命令行仍指向网关入口命令。
             var isMainTurn = identity!.Kind == RuntimeExecutionKind.ConversationTurn;
             var isDelegatedSubAgent = identity.Kind == RuntimeExecutionKind.SubAgent
                 && identity.ParentRunId is { Length: > 0 };
-            if (!isMainTurn && !isDelegatedSubAgent)
-            {
-                return ToolExecutionResult.Fail(
-                    "send_message 飞书回信仅在主会话 Turn 或委派子代理执行中可用。");
-            }
 
-            var resolved = await routeReader.GetAsync(commandId, ct);
-            if (resolved is null)
+            if (isMainTurn || isDelegatedSubAgent)
             {
-                return ToolExecutionResult.Fail(
-                    $"无飞书会话上下文，无法投递：CommandId={commandId} 对应的执行命令不存在。");
-            }
-            route = resolved;
-
-            // 归属校验：与 SendImageTool 一致，防止跨工作区/跨会话/跨 Agent 误投。
-            if (!string.Equals(route.WorkspaceId, context.WorkspaceId, StringComparison.Ordinal)
-                || !string.Equals(route.ConversationId, identity.ConversationId, StringComparison.Ordinal)
-                || !MatchesExecutionAgent(route, context, isMainTurn))
-            {
-                return ToolExecutionResult.Fail(
-                    "飞书回信路由校验失败：执行命令不属于当前工作区/会话/Agent。");
-            }
-
-            if (!route.IsGatewayIngress
-                || !string.Equals(route.ChannelType, "feishu", StringComparison.OrdinalIgnoreCase))
-            {
-                return ToolExecutionResult.Fail(
-                    "send_message 飞书回信仅支持飞书来源回合（IsGatewayIngress=true 且 ChannelType=feishu）。");
+                var resolved = await routeReader.GetAsync(commandId, ct);
+                if (resolved is not null
+                    && string.Equals(resolved.WorkspaceId, context.WorkspaceId, StringComparison.Ordinal)
+                    && string.Equals(resolved.ConversationId, identity.ConversationId, StringComparison.Ordinal)
+                    && MatchesExecutionAgent(resolved, context, isMainTurn)
+                    && resolved.IsGatewayIngress
+                    && string.Equals(resolved.ChannelType, "feishu", StringComparison.OrdinalIgnoreCase))
+                {
+                    route = resolved; // 飞书 ingress 回合 → 被动回信。
+                }
             }
         }
-        else
+
+        // 非飞书 ingress 回合（网页端 / 心跳 / commandId 为空）：主动投递到该 Agent
+        // 最近一次飞书单聊会话，打通「主动推送」链路。
+        if (route is null)
         {
-            // 主动发送场景（无 CommandId，如心跳/网页端）：回退到该 Agent 最近一次
-            // 飞书会话的受信任连接器路由，投递到用户最近对话的单聊 chat_id。
-            var resolved = await routeReader.FindRecentFeishuRouteAsync(
+            route = await routeReader.FindRecentFeishuRouteAsync(
                 context.AgentInstanceId,
                 context.WorkspaceId,
                 ct);
-            if (resolved is null)
+            if (route is null)
             {
                 return ToolExecutionResult.Fail(
                     "无最近飞书会话，无法主动投递：请先在飞书向该 Agent 发过消息，之后才能从心跳/网页端主动推送。");
             }
-            route = resolved;
         }
 
         var connectorId = route.ConnectorId;
