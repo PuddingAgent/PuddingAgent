@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.RegularExpressions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
@@ -81,7 +81,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private static string ResolveManagedSearchDirectory(string? directory, ToolExecutionContext context)
     {
         if (string.IsNullOrWhiteSpace(directory))
-            return HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
+            return Directory.GetCurrentDirectory();
         if (Path.IsPathRooted(directory))
             return directory;
         return Path.GetFullPath(Path.Combine(

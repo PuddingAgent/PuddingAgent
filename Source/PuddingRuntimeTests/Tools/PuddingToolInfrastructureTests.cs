@@ -1,4 +1,4 @@
-﻿using PuddingCode.Models;
+using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -60,8 +60,8 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.IsFalse(add.Safety.HasFlag(ToolSafetyFlags.Destructive));
         Assert.IsFalse(remove.Safety.HasFlag(ToolSafetyFlags.RequiresFileWrite));
         Assert.IsFalse(remove.Safety.HasFlag(ToolSafetyFlags.Destructive));
-        StringAssert.Contains(add.Description, "Low-risk index-state change");
-        StringAssert.Contains(remove.Description, "Low-risk index-state change");
+        StringAssert.Contains(add.Description, "低风险索引状态变更");
+        StringAssert.Contains(remove.Description, "低风险索引状态变更");
     }
 
     [TestMethod]

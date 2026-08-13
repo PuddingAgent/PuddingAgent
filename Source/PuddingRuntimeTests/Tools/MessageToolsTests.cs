@@ -134,12 +134,30 @@ public sealed class MessageToolsTests
     }
 
     [TestMethod]
-    public async Task SendMessageTool_Returns_Error_When_Feishu_Command_Context_Missing()
+    public async Task SendMessageTool_Proactively_Delivers_To_Recent_Feishu_Route_When_Command_Context_Missing()
     {
         var fabric = new RecordingMessageSystem();
         var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
 
-        // 无 ExecutionIdentity / CommandId（如心跳轮次）→ 明确错误，不静默悬空。
+        // 无 ExecutionIdentity / CommandId（如心跳/网页端）→ 主动投递到最近飞书单聊会话。
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "user:owner",
+            ["content"] = "hello",
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(1, fabric.Sent.Count);
+        Assert.AreEqual(MessageEndpointKinds.Connector, fabric.Sent[0].To[0].Kind);
+        Assert.AreEqual("feishu-main", fabric.Sent[0].To[0].Id);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Returns_Error_When_No_Recent_Feishu_Route()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, new RecordingGatewayRouteReader(null)));
+
         var result = await ExecuteAsync(tool, new Dictionary<string, string>
         {
             ["to"] = "user:owner",
@@ -147,7 +165,7 @@ public sealed class MessageToolsTests
         });
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "无飞书会话上下文");
+        StringAssert.Contains(result.Error, "无最近飞书会话");
         Assert.AreEqual(0, fabric.Sent.Count);
     }
 
