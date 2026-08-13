@@ -8,6 +8,7 @@ import {
 import type {
   OrchestrationCatalog,
   OrchestrationGraphDefinition,
+  OrchestrationGraphInput,
   OrchestrationGraphLayout,
   OrchestrationNodeRunSnapshot,
   OrchestrationNodeRunStatus,
@@ -30,12 +31,27 @@ export interface OrchestrationFlowNodeData extends Record<string, unknown> {
   outputs?: Record<string, OrchestrationValueEnvelope>;
   inputPorts: OrchestrationPortDefinition[];
   outputPorts: OrchestrationPortDefinition[];
+  /** Present only on the virtual `graphInputs` node: the current graph-level inputs. */
+  inputs?: OrchestrationGraphInput[];
 }
 
 export type OrchestrationFlowNode = Node<
   OrchestrationFlowNodeData,
-  'orchestrationComponent'
+  'orchestrationComponent' | 'graphInputs'
 >;
+
+/** Independent nodeType for the read-only virtual Graph Inputs node (doc 84 §9). */
+export const GRAPH_INPUTS_NODE_TYPE = 'graphInputs' as const;
+
+/** Stable canvas id for the virtual node; never written into definition.nodes[] or NodeLayout. */
+export const GRAPH_INPUTS_VIRTUAL_NODE_ID = '__graph_inputs__' as const;
+
+/** True for the read-only virtual Graph Inputs node; it never participates in edges. */
+export function isGraphInputsVirtualNode(
+  node?: { type?: string } | null,
+): boolean {
+  return node?.type === GRAPH_INPUTS_NODE_TYPE;
+}
 
 const statusBorder: Record<OrchestrationNodeRunStatus, string> = {
   pending: '#94a3b8',
@@ -144,6 +160,40 @@ export function buildOrchestrationFlowModel(
       },
     };
   });
+
+  // Virtual Graph Inputs node (doc 84 §9): rendered when the definition declares
+  // graph-level inputs. It is read-only (no handles, draggable=false) so it can never
+  // participate in ordinary edge wiring; graphInputBindings remain the real wiring
+  // mechanism. It stays out of definition.nodes[] and out of saved NodeLayout.
+  if (definition.inputs !== undefined) {
+    const inputs = definition.inputs ?? [];
+    nodes.push({
+      id: GRAPH_INPUTS_VIRTUAL_NODE_ID,
+      type: GRAPH_INPUTS_NODE_TYPE,
+      draggable: false,
+      position: { x: -320, y: 0 },
+      data: {
+        label: `Graph Inputs · ${inputs.length}`,
+        title: 'Graph Inputs',
+        kind: GRAPH_INPUTS_NODE_TYPE,
+        componentType: 'pudding.graph-inputs',
+        workspaceId: run.workspaceId,
+        status: 'pending',
+        attempt: 0,
+        maxAttempts: 1,
+        inputPorts: [],
+        outputPorts: [],
+        inputs,
+      },
+      style: {
+        width: 230,
+        minHeight: 76,
+        border: '2px solid #722ed1',
+        borderRadius: 10,
+        whiteSpace: 'normal',
+      },
+    });
+  }
 
   const edges: Edge[] = definition.edges.map((edge) => {
     const isData = edge.kind === 'data';

@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   OrchestrationGraphDefinition,
   OrchestrationGraphInput,
   OrchestrationGraphInputBinding,
@@ -17,6 +17,50 @@ export interface OrchestrationInputReference {
   nodeId: string;
   targetPortId: string;
   targetKey?: string;
+}
+
+/** Result of parsing the defaultValue editor text into a ValueEnvelope-shaped value. */
+export interface OrchestrationGraphInputDefaultValueParse {
+  /** Parsed value; undefined means "no default" (empty input). */
+  value?: unknown;
+  /** Set when the text is not valid JSON. */
+  error?: string;
+}
+
+/**
+ * Serializes an input's defaultValue for the panel editor. Empty string means no default;
+ * the value is kept loosely typed because defaultValue mirrors the server-side
+ * ValueEnvelope and stays `unknown` until S7 lands the envelope mirror.
+ */
+export function formatGraphInputDefaultValue(
+  input: OrchestrationGraphInput,
+): string {
+  if (input.defaultValue === undefined || input.defaultValue === null) {
+    return '';
+  }
+  return JSON.stringify(input.defaultValue, null, 2);
+}
+
+/**
+ * Parses the defaultValue editor text. Empty/whitespace text yields `{ value: undefined }`
+ * (no default); anything else must be valid JSON or an error is returned. The parsed value
+ * is passed through unchanged; the server-side compiler validates it against the contract.
+ */
+export function parseGraphInputDefaultValue(
+  text: string,
+): OrchestrationGraphInputDefaultValueParse {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { value: undefined };
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return { value: parsed };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 /** One node binding that a removal cleans up, kept for the caller to surface in the UI. */

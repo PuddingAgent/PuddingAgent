@@ -15,7 +15,9 @@ import {
 import React, { useState } from 'react';
 import {
   addGraphInput,
+  formatGraphInputDefaultValue,
   listInputReferences,
+  parseGraphInputDefaultValue,
   removeGraphInput,
   updateGraphInput,
 } from './graphInputs';
@@ -34,6 +36,8 @@ interface GraphInputFormValues {
   cardinality: OrchestrationDataContract['cardinality'];
   deliveries: OrchestrationDataContract['deliveries'];
   requiredAtActivation: boolean;
+  /** ValueEnvelope JSON text; empty string means no default. */
+  defaultValue: string;
 }
 
 interface GraphInputsPanelProps {
@@ -51,6 +55,7 @@ function toFormValues(input?: OrchestrationGraphInput): GraphInputFormValues {
         cardinality: input.contract.cardinality,
         deliveries: input.contract.deliveries,
         requiredAtActivation: input.requiredAtActivation !== false,
+        defaultValue: formatGraphInputDefaultValue(input),
       }
     : {
         inputId: '',
@@ -59,12 +64,17 @@ function toFormValues(input?: OrchestrationGraphInput): GraphInputFormValues {
         cardinality: 'one',
         deliveries: ['inline', 'artifact'],
         requiredAtActivation: true,
+        defaultValue: '',
       };
 }
 
 function toGraphInput(values: GraphInputFormValues): OrchestrationGraphInput {
+  const parsedDefault = parseGraphInputDefaultValue(values.defaultValue);
   return {
     inputId: values.inputId.trim(),
+    // The form validator guarantees parseGraphInputDefaultValue succeeds; the
+    // error branch is defensive and never yields a definition payload.
+    ...(parsedDefault.error ? {} : { defaultValue: parsedDefault.value }),
     requiredAtActivation: values.requiredAtActivation,
     contract: {
       dataType: values.dataType.trim(),
@@ -100,6 +110,9 @@ const GraphInputsPanel: React.FC<GraphInputsPanelProps> = ({
       ? updateGraphInput(definition, editingInputId, {
           contract: input.contract,
           requiredAtActivation: input.requiredAtActivation,
+          ...(input.defaultValue !== undefined
+            ? { defaultValue: input.defaultValue }
+            : { defaultValue: undefined }),
         })
       : addGraphInput(definition, input);
     if (next === definition) {
@@ -175,6 +188,10 @@ const GraphInputsPanel: React.FC<GraphInputsPanelProps> = ({
                     </Tag>
                     {input.requiredAtActivation !== false ? (
                       <Tag color="blue">激活必填</Tag>
+                    ) : null}
+                    {input.defaultValue !== undefined &&
+                    input.defaultValue !== null ? (
+                      <Tag color="green">默认值</Tag>
                     ) : null}
                   </Space>
                   <div>
@@ -272,6 +289,26 @@ const GraphInputsPanel: React.FC<GraphInputsPanelProps> = ({
           </Space>
           <Form.Item name="requiredAtActivation" valuePropName="checked">
             <Checkbox>激活 Run 时必须提供</Checkbox>
+          </Form.Item>
+          <Form.Item
+            name="defaultValue"
+            label="Default Value（ValueEnvelope JSON，可选）"
+            tooltip="留空表示无默认值；填写的 JSON 将作为 defaultValue 保存，服务端编译器会按 Contract 校验（dataType / mediaTypes / cardinality / delivery）。"
+            rules={[
+              {
+                validator: async (_, value: string | undefined) => {
+                  const parsed = parseGraphInputDefaultValue(value ?? '');
+                  if (parsed.error) {
+                    throw new Error(`不是合法 JSON：${parsed.error}`);
+                  }
+                },
+              },
+            ]}
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder={'{\n  "dataType": "pudding.content",\n  "contentType": "text/plain",\n  "inlineValue": "..."\n}'}
+            />
           </Form.Item>
         </Form>
       </Modal>

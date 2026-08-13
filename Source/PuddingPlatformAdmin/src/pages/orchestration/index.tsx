@@ -1,4 +1,5 @@
-﻿import '@xyflow/react/dist/style.css';
+import '@xyflow/react/dist/style.css';
+import './orchestrationCanvas.less';
 
 import { PageContainer } from '@ant-design/pro-components';
 import { history } from '@umijs/max';
@@ -66,7 +67,15 @@ import {
   ComponentInspectorSettings,
 } from './componentUiRegistry';
 import EdgeInspector from './EdgeInspector';
-import { buildEdgeFromConnection, insertEdgeDraft } from './edgeEditor';
+import {
+  buildEdgeFromConnection,
+  buildFailedEdgeClass,
+  buildFailedEdgeStroke,
+  buildHandleCompatibilityMap,
+  collectEdgeValidationFailures,
+  insertEdgeDraft,
+  isConnectionValid,
+} from './edgeEditor';
 import GraphInputsPanel from './GraphInputsPanel';
 import {
   buildCreateGraphRequest,
@@ -76,9 +85,15 @@ import {
 } from './graphManagement';
 import {
   buildOrchestrationFlowModel,
+  isGraphInputsVirtualNode,
   type OrchestrationFlowNode,
 } from './graphViewModel';
+import { beginConnectionDrag, endConnectionDrag } from './connectionDrag';
 import HttpHookPanel from './HttpHookPanel';
+import {
+  buildIssueFocusPlan,
+  type NodeCanvasPosition,
+} from './issueLocator';
 import {
   buildOrchestrationLayoutWrite,
   getOrchestrationLayoutConflict,
@@ -87,6 +102,7 @@ import {
 import ManualRunModal from './ManualRunModal';
 import { createManualRunRequestId } from './manualRun';
 import NodeGraphInputBindings from './NodeGraphInputBindings';
+import GraphInputsNode from './GraphInputsNode';
 import OrchestrationComponentNode from './OrchestrationComponentNode';
 import {
   applyServerRevision,
@@ -95,6 +111,7 @@ import {
   createNodeDraftFromCatalog,
   formatRevisionId,
   formatValidationIssues,
+  formatValidationIssuesStructured,
   getLayoutSaveTarget,
   getRevisionConflict,
   insertNodeDraft,
@@ -105,6 +122,10 @@ import {
   summarizeDefinitionDiff,
   validateNodeDraft,
 } from './revisionEditor';
+import {
+  createRequestSequenceGuard,
+  type RequestSequenceGuard,
+} from './requestSequenceGuard';
 import type {
   OrchestrationCatalog,
   OrchestrationDraftValidationResult,
@@ -118,6 +139,8 @@ import type {
   OrchestrationRunSnapshot,
   OrchestrationRunStatus,
   OrchestrationRunSummary,
+  OrchestrationValidationIssue,
+  OrchestrationValidationSeverity,
   OrchestrationValueEnvelope,
 } from './types';
 
@@ -125,6 +148,7 @@ const { Paragraph, Text } = Typography;
 
 const orchestrationNodeTypes = {
   orchestrationComponent: OrchestrationComponentNode,
+  graphInputs: GraphInputsNode,
 };
 
 type WorkbenchPanel = 'inspector' | 'inputs' | 'httpHooks' | 'events';
@@ -154,6 +178,15 @@ const nodeStatusMeta: Record<
   failed: { color: 'red', label: '失败' },
   skipped: { color: 'default', label: '跳过' },
   cancelled: { color: 'default', label: '取消' },
+};
+
+// S2-B5-3a: severity visual levels for structured validation issues
+// (doc 85 §6.2:145). Rows keep their severity tag so errors stay red,
+// warnings orange and info blue.
+const issueSeverityTagColor: Record<OrchestrationValidationSeverity, string> = {
+  error: 'red',
+  warning: 'orange',
+  info: 'blue',
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -270,6 +303,10 @@ const OrchestrationPage: React.FC = () => {
   const flowInstanceRef =
     useRef<ReactFlowInstance<OrchestrationFlowNode> | null>(null);
   const editorIdentityRef = useRef<string | undefined>(undefined);
+  const loadGuardRef = useRef<RequestSequenceGuard | undefined>(undefined);
+  if (!loadGuardRef.current) {
+    loadGuardRef.current = createRequestSequenceGuard();
+  }
 
   const loadRun = useCallback(
     async (
@@ -278,6 +315,9 @@ const OrchestrationPage: React.FC = () => {
     ): Promise<OrchestrationRunSnapshot | undefined> => {
       const runId = rawRunId.trim();
       if (!runId) return;
+      const loadGuard = loadGuardRef.current;
+      if (!loadGuard) return undefined;
+      const requestToken = loadGuard.next();
       setLoading(true);
       setError(undefined);
       setWatchError(undefined);
@@ -297,6 +337,8 @@ const OrchestrationPage: React.FC = () => {
           nextRun.graphId,
           nextRun.revisionId,
         );
+        // S2-B6' (85 §6.2:146): drop a late response from a superseded load.
+        if (!loadGuard.isCurrent(requestToken)) return undefined;
         setRun(nextRun);
         setCatalog(nextCatalog);
         setDefinition(nextDefinition);
@@ -322,6 +364,7 @@ const OrchestrationPage: React.FC = () => {
         }
         return nextRun;
       } catch (loadError) {
+        if (!loadGuard.isCurrent(requestToken)) return undefined;
         setRun(undefined);
         setDefinition(undefined);
         setLayout(undefined);
@@ -330,7 +373,7 @@ const OrchestrationPage: React.FC = () => {
         setError(getErrorMessage(loadError));
         return undefined;
       } finally {
-        setLoading(false);
+        if (loadGuard.isCurrent(requestToken)) setLoading(false);
       }
     },
     [form],
@@ -338,6 +381,9 @@ const OrchestrationPage: React.FC = () => {
 
   const loadGraphPreview = useCallback(
     async (graphId: string, updateLocation = true) => {
+      const loadGuard = loadGuardRef.current;
+      if (!loadGuard) return;
+      const requestToken = loadGuard.next();
       setLoading(true);
       setError(undefined);
       setWatchError(undefined);
@@ -353,6 +399,8 @@ const OrchestrationPage: React.FC = () => {
           graphId,
           nextDefinition.revisionId,
         );
+        // S2-B6' (85 §6.2:146): drop a late response from a superseded load.
+        if (!loadGuard.isCurrent(requestToken)) return;
         setRun(createDefinitionPreviewRun(nextDefinition));
         setCatalog(nextCatalog);
         setDefinition(nextDefinition);
@@ -376,9 +424,10 @@ const OrchestrationPage: React.FC = () => {
           );
         }
       } catch (loadError) {
+        if (!loadGuard.isCurrent(requestToken)) return;
         setError(getErrorMessage(loadError));
       } finally {
-        setLoading(false);
+        if (loadGuard.isCurrent(requestToken)) setLoading(false);
       }
     },
     [form],
@@ -606,15 +655,28 @@ const OrchestrationPage: React.FC = () => {
       })) ?? [],
     [flowModel, token.colorBgContainer, token.colorText],
   );
-  const editorEdges = useMemo<Edge[]>(
-    () =>
-      flowModel?.edges.map((edge) => ({
-        ...edge,
-        selected: edge.id === selectedEdgeId,
-      })) ?? [],
-    [flowModel, selectedEdgeId],
-  );
+  const editorEdges = useMemo<Edge[]>(() => {
+    const failedEdgeIds = collectEdgeValidationFailures(draftValidation?.issues);
+    return (
+      flowModel?.edges.map((edge) => {
+        const failedStroke = buildFailedEdgeStroke(edge.id, failedEdgeIds);
+        const failedClass = buildFailedEdgeClass(edge.id, failedEdgeIds);
+        return {
+          ...edge,
+          selected: edge.id === selectedEdgeId,
+          className: failedClass ?? edge.className,
+          style: failedStroke ? { ...edge.style, ...failedStroke } : edge.style,
+        };
+      }) ?? []
+    );
+  }, [draftValidation, flowModel, selectedEdgeId]);
   const editorIdentity = `${definition?.revisionId ?? 'none'}:${draftDefinition ? 'draft' : 'saved'}:${layout?.layoutRevision ?? 'auto'}:${layoutResetNonce}`;
+
+  // S2-B5-2: clear any stale connection-drag highlight when the canvas identity
+  // changes (graph switch / layout reload), in case onConnectEnd never fired.
+  useEffect(() => {
+    endConnectionDrag();
+  }, [editorIdentity]);
 
   useEffect(() => {
     if (editorIdentityRef.current !== editorIdentity) {
@@ -691,7 +753,9 @@ const OrchestrationPage: React.FC = () => {
         baseRevisionId: definition.revisionId,
         currentLayout: layout,
         viewport: instance.getViewport(),
-        nodes: editorNodes,
+        // The read-only virtual Graph Inputs node is a canvas affordance only; doc 84 §9
+        // requires it to never be persisted as NodeLayout, so it is filtered out here.
+        nodes: editorNodes.filter((node) => !isGraphInputsVirtualNode(node)),
       });
       const savedLayout = await putOrchestrationLayout(
         definition.graphId,
@@ -808,6 +872,103 @@ const OrchestrationPage: React.FC = () => {
       generateEdgeId,
       viewMode,
     ],
+  );
+
+  // ---- S2-B5-2: Port-aware connection UX (doc 84 §8.2:249-261) ----
+  // First line of defence: ReactFlow isValidConnection blocks the drop for
+  // incompatible port pairs in real time; handleConnect's message.warning
+  // remains as the deep-defence fallback below.
+  const isValidFlowConnection = useCallback(
+    (connection: Connection | Edge) =>
+      viewMode === 'graph' &&
+      isConnectionValid(effectiveDefinition, catalog, connection),
+    [catalog, effectiveDefinition, viewMode],
+  );
+
+  // Track the dragged handle so custom nodes can highlight compatible and
+  // incompatible target ports while the connection is in progress.
+  const handleConnectStart = useCallback(
+    (
+      _event: MouseEvent | TouchEvent,
+      params: {
+        nodeId: string | null;
+        handleId: string | null;
+        handleType: 'source' | 'target' | null;
+      },
+    ) => {
+      if (viewMode !== 'graph' || !catalog || !effectiveDefinition) {
+        endConnectionDrag();
+        return;
+      }
+      if (!params.nodeId || !params.handleId) {
+        endConnectionDrag();
+        return;
+      }
+      beginConnectionDrag(
+        params.nodeId,
+        params.handleId,
+        buildHandleCompatibilityMap(
+          effectiveDefinition,
+          catalog,
+          params.nodeId,
+          params.handleId,
+        ),
+      );
+    },
+    [catalog, effectiveDefinition, viewMode],
+  );
+
+  const handleConnectEnd = useCallback(() => {
+    endConnectionDrag();
+  }, []);
+
+  // ---- S2-B5-3a: click-to-locate validation issues (doc 85 §6.2:145) ----
+  // Pure resolution lives in issueLocator.ts; this handler only wires the
+  // ReactFlow instance (setCenter) and the inspector selection state.
+  const buildNodePositionMap = useCallback((): Record<
+    string,
+    NodeCanvasPosition
+  > => {
+    const positions: Record<string, NodeCanvasPosition> = {};
+    for (const node of editorNodes) {
+      const styleWidth = node.style?.width;
+      const styleHeight = node.style?.minHeight;
+      positions[node.id] = {
+        x: node.position.x,
+        y: node.position.y,
+        width:
+          node.measured?.width ??
+          (typeof styleWidth === 'number' ? styleWidth : undefined),
+        height:
+          node.measured?.height ??
+          (typeof styleHeight === 'number' ? styleHeight : undefined),
+      };
+    }
+    return positions;
+  }, [editorNodes]);
+
+  const handleIssueClick = useCallback(
+    (issue: OrchestrationValidationIssue) => {
+      const plan = buildIssueFocusPlan(
+        issue,
+        effectiveDefinition,
+        buildNodePositionMap(),
+      );
+      if (!plan) return;
+      if (plan.target.kind === 'edge') {
+        setSelectedEdgeId(plan.target.edgeId);
+        setSelectedNodeId(undefined);
+      } else {
+        setSelectedNodeId(plan.target.nodeId);
+        setSelectedEdgeId(undefined);
+      }
+      setWorkbenchPanel('inspector');
+      flowInstanceRef.current?.setCenter(plan.center.x, plan.center.y, {
+        zoom: 1.15,
+        duration: 400,
+      });
+    },
+    [buildNodePositionMap, effectiveDefinition],
   );
 
   const handleAddNode = useCallback(
@@ -1323,20 +1484,54 @@ const OrchestrationPage: React.FC = () => {
             <Space direction="vertical" size={4}>
               <Text>{revisionSaveError}</Text>
               {draftValidation ? (
-                <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-                  {draftValidation.issues.map((issue) => (
-                    <li
-                      key={`${issue.code}-${issue.elementId ?? issue.path ?? 'root'}`}
-                    >
-                      <Text type="secondary">
-                        [{issue.severity}] {issue.code}
-                        {issue.elementId
-                          ? ` · ${issue.elementType}:${issue.elementId}`
-                          : ''}{' '}
-                        · {issue.message}
-                      </Text>
-                    </li>
-                  ))}
+                <ul
+                  style={{
+                    margin: 0,
+                    paddingInlineStart: 0,
+                    listStyle: 'none',
+                  }}
+                >
+                  {formatValidationIssuesStructured(draftValidation.issues).map(
+                    (row) => (
+                      <li key={row.key}>
+                        <button
+                          type="button"
+                          className="orchestration-issue-row"
+                          onClick={() => handleIssueClick(row)}
+                          title={
+                            row.elementId
+                              ? `点击定位到 ${row.elementType}:${row.elementId}${row.portId ? `#${row.portId}` : ''}`
+                              : '点击定位'
+                          }
+                        >
+                          <Tag
+                            className="orchestration-issue-severity"
+                            color={issueSeverityTagColor[row.severity]}
+                          >
+                            {row.severity}
+                          </Tag>
+                          {row.elementId ? (
+                            <Text
+                              className="orchestration-issue-locator"
+                              code
+                            >
+                              {row.elementType}:{row.elementId}
+                              {row.portId ? `#${row.portId}` : ''}
+                            </Text>
+                          ) : null}
+                          <Text
+                            className="orchestration-issue-code"
+                            type="secondary"
+                          >
+                            {row.code}
+                          </Text>
+                          <Text className="orchestration-issue-message">
+                            {row.message}
+                          </Text>
+                        </button>
+                      </li>
+                    ),
+                  )}
                 </ul>
               ) : null}
             </Space>
@@ -1584,10 +1779,19 @@ const OrchestrationPage: React.FC = () => {
                       }}
                       onNodesChange={handleNodesChange}
                       onConnect={handleConnect}
+                      isValidConnection={isValidFlowConnection}
+                      onConnectStart={handleConnectStart}
+                      onConnectEnd={handleConnectEnd}
                       onMoveEnd={(event) => {
                         if (event) markLayoutDirty();
                       }}
                       onNodeClick={(_, node) => {
+                        if (isGraphInputsVirtualNode(node)) {
+                          setSelectedNodeId(undefined);
+                          setSelectedEdgeId(undefined);
+                          setWorkbenchPanel('inputs');
+                          return;
+                        }
                         setSelectedNodeId(node.id);
                         setSelectedEdgeId(undefined);
                         setWorkbenchPanel('inspector');
@@ -1652,6 +1856,7 @@ const OrchestrationPage: React.FC = () => {
                         definition={effectiveDefinition}
                         edgeId={selectedEdgeDefinition.edgeId}
                         disabled={viewMode !== 'graph'}
+                        catalog={catalog}
                         onDefinitionChange={applyDraftDefinition}
                         onDeleted={() => setSelectedEdgeId(undefined)}
                       />

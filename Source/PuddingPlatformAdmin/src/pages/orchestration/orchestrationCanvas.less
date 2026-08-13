@@ -1,0 +1,74 @@
+// S2-B5-2: Port-aware canvas connection UX (doc 84 §8.2:249-261).
+// Append-only additions for the orchestration canvas; keep this file focused
+// on connection feedback so later stages can extend it without touching
+// existing rules.
+
+// ③ Backend-validate-failed edges are marked red. The deterministic stroke
+// override is applied inline by buildFailedEdgeStroke (edgeEditor.ts); this
+// rule is a CSS backstop for environments without inline style support.
+.react-flow__edge.orchestration-edge-failed .react-flow__edge-path {
+  stroke: #ff4d4f !important;
+}
+
+// ② Drag-time port feedback: compatible endpoints glow green, incompatible
+// endpoints turn red, so the user can see drop targets before releasing.
+// Classes are applied by buildHandleClassName (connectionDrag.ts) reading the
+// compatibility map computed by buildHandleCompatibilityMap (edgeEditor.ts).
+.react-flow__handle.orchestration-handle-compatible {
+  background: #52c41a !important;
+  box-shadow: 0 0 0 5px rgba(82, 196, 26, 0.35) !important;
+  transform: scale(1.4);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.react-flow__handle.orchestration-handle-incompatible {
+  background: #ff4d4f !important;
+  box-shadow: 0 0 0 5px rgba(255, 77, 79, 0.35) !important;
+  transform: scale(1.2);
+}
+
+// S2-B5-3a: structured, clickable validation issues (doc 85 §6.2:145).
+// Severity levels keep their color tag; the whole row is a button that
+// locates the referenced edge/node/port on the canvas.
+.orchestration-issue-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  margin: 2px 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(22, 119, 255, 0.08);
+  }
+
+  .orchestration-issue-severity {
+    flex: 0 0 auto;
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  .orchestration-issue-locator {
+    flex: 0 0 auto;
+    font-size: 12px;
+  }
+
+  .orchestration-issue-code {
+    flex: 0 0 auto;
+    font-family: Consolas, Menlo, monospace;
+    font-size: 12px;
+  }
+
+  .orchestration-issue-message {
+    flex: 1 1 auto;
+    font-size: 12px;
+  }
+}

@@ -75,7 +75,7 @@
 | `src/pages/orchestration/graphViewModel.ts` | 无副作用的 DAG 分层布局；投影 catalog 强类型端口、组件类型/workspace 与完整节点 outputs，把 control/data edge 映射到对应 React Flow handle |
 | `src/pages/orchestration/OrchestrationComponentNode.tsx` | React Flow 自定义节点；显示运行状态、control/data 端口，并调用组件 UI 注册表渲染该组件自己的运行输出，不拥有 executable schema |
 | `src/pages/orchestration/edgeEditor.ts` | S2 纯边编辑层；解析 handle，镜像后端 dataType/MIME/cardinality/delivery 兼容性，拒绝自环/环/重复/单值端口多来源，并构造/修改/删除 control/data edge |
-| `src/pages/orchestration/EdgeInspector.tsx` | 选中边的只读端点/映射、受限 condition 修改和删除；注册表谓词只读，不接受任意脚本或字符串表达式 |
+| `src/pages/orchestration/EdgeInspector.tsx` | 选中边的端点/映射展示、受限 condition 修改与删除、data binding 可编辑且稳定 round-trip；谓词为字段级可编辑（PredicatePicker，B5-3a），仍不接受任意脚本或字符串表达式 |
 | `src/pages/orchestration/graphInputs.ts` | Graph Input 增删改、引用清单、删除时清理节点引用与节点端口 binding 的不可变纯函数 |
 | `src/pages/orchestration/GraphInputsPanel.tsx` | Graph Input 契约面板；编辑 dataType/MIME/cardinality/delivery/激活必填，并在删除前显示受影响节点引用 |
 | `src/pages/orchestration/NodeGraphInputBindings.tsx` | 按 catalog 输入端口过滤兼容 Graph Input，写入 `graphInputBindings`；单值端口已有 data edge 时阻止第二来源 |

@@ -1,9 +1,11 @@
-﻿import {
+import {
   applyServerRevision,
   buildNextRevisionPreview,
   createDraftFromSaved,
   createNodeDraftFromCatalog,
   formatRevisionId,
+  formatValidationIssues,
+  formatValidationIssuesStructured,
   getLayoutSaveTarget,
   getRevisionConflict,
   insertNodeDraft,
@@ -20,6 +22,7 @@ import type {
   OrchestrationGraphDefinition,
   OrchestrationNodeDefinition,
   OrchestrationRegisteredComponent,
+  OrchestrationValidationIssue,
 } from './types';
 
 function savedRevision(
@@ -535,6 +538,66 @@ describe('orchestration revision editor (S1)', () => {
       expect(diff.nodesRemoved).toEqual([]);
       expect(diff.inputsAdded).toEqual(['request']);
       expect(diff.triggersAdded).toEqual(['manual']);
+    });
+  });
+
+  describe('validation issue rendering (S2-B5-3a)', () => {
+    it('keeps formatValidationIssues as the flattened string version', () => {
+      expect(
+        formatValidationIssues([
+          {
+            code: 'graph.edge_condition_missing',
+            message: 'Missing condition',
+            severity: 'error',
+          },
+        ]),
+      ).toEqual(['graph.edge_condition_missing: Missing condition']);
+    });
+
+    it('renders structured rows that preserve elementId/portId and severity', () => {
+      const rows = formatValidationIssuesStructured([
+        {
+          code: 'graph.data_source_port_unknown',
+          message: 'Source port missing.',
+          severity: 'error',
+          elementType: 'edge',
+          elementId: 'edge-9',
+          portId: 'out',
+        },
+        {
+          code: 'graph.node_input_port_incompatible',
+          message: 'Incompatible port.',
+          severity: 'warning',
+          elementType: 'node',
+          elementId: 'node-2',
+          portId: 'request',
+        },
+      ]);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({
+        severity: 'error',
+        code: 'graph.data_source_port_unknown',
+        elementType: 'edge',
+        elementId: 'edge-9',
+        portId: 'out',
+      });
+      expect(rows[0].key).toContain('edge-9');
+      expect(rows[0].key).toContain('out');
+      expect(rows[1].portId).toBe('request');
+    });
+
+    it('keeps rows assignable to OrchestrationValidationIssue for click handlers', () => {
+      const [row] = formatValidationIssuesStructured([
+        {
+          code: 'graph.cycle',
+          message: 'Cycle detected.',
+          severity: 'error',
+          elementType: 'node',
+          elementId: 'n1',
+        },
+      ]);
+      const clickable: OrchestrationValidationIssue = row;
+      expect(clickable.elementId).toBe('n1');
     });
   });
 });

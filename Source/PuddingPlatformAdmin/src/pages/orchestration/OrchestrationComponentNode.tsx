@@ -3,6 +3,10 @@ import { Tag, Typography } from 'antd';
 import React from 'react';
 import { ComponentNodeOutput } from './componentUiRegistry';
 import {
+  buildHandleClassName,
+  useConnectionDragState,
+} from './connectionDrag';
+import {
   CONTROL_INPUT_HANDLE,
   CONTROL_OUTPUT_HANDLE,
   dataInputHandle,
@@ -33,20 +37,24 @@ function PortLabel({
 
 const OrchestrationComponentNode: React.FC<
   NodeProps<OrchestrationFlowNode>
-> = ({ data }) => (
-  <div style={{ padding: '9px 12px 10px', minWidth: 206 }}>
-    <Handle
-      id={CONTROL_INPUT_HANDLE}
-      type="target"
-      position={Position.Left}
-      style={{ top: 18, width: 9, height: 9, background: '#1677ff' }}
-    />
-    <Handle
-      id={CONTROL_OUTPUT_HANDLE}
-      type="source"
-      position={Position.Right}
-      style={{ top: 18, width: 9, height: 9, background: '#1677ff' }}
-    />
+> = ({ data, id }) => {
+  const drag = useConnectionDragState();
+  return (
+    <div style={{ padding: '9px 12px 10px', minWidth: 206 }}>
+      <Handle
+        id={CONTROL_INPUT_HANDLE}
+        type="target"
+        position={Position.Left}
+        className={buildHandleClassName(id, CONTROL_INPUT_HANDLE, drag)}
+        style={{ top: 18, width: 9, height: 9, background: '#1677ff' }}
+      />
+      <Handle
+        id={CONTROL_OUTPUT_HANDLE}
+        type="source"
+        position={Position.Right}
+        className={buildHandleClassName(id, CONTROL_OUTPUT_HANDLE, drag)}
+        style={{ top: 18, width: 9, height: 9, background: '#1677ff' }}
+      />
     <div
       style={{
         display: 'flex',
@@ -83,6 +91,11 @@ const OrchestrationComponentNode: React.FC<
                 id={dataInputHandle(port.portId)}
                 type="target"
                 position={Position.Left}
+                className={buildHandleClassName(
+                  id,
+                  dataInputHandle(port.portId),
+                  drag,
+                )}
                 style={{
                   top: 14,
                   left: -12,
@@ -102,6 +115,11 @@ const OrchestrationComponentNode: React.FC<
                 id={dataOutputHandle(port.portId)}
                 type="source"
                 position={Position.Right}
+                className={buildHandleClassName(
+                  id,
+                  dataOutputHandle(port.portId),
+                  drag,
+                )}
                 style={{
                   top: 14,
                   right: -12,
@@ -117,7 +135,8 @@ const OrchestrationComponentNode: React.FC<
       </div>
     ) : null}
     <ComponentNodeOutput data={data} />
-  </div>
-);
+    </div>
+  );
+};
 
 export default React.memo(OrchestrationComponentNode);

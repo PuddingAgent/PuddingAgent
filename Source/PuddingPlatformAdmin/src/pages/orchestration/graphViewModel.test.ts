@@ -1,4 +1,4 @@
-import { buildOrchestrationFlowModel } from './graphViewModel';
+import { buildOrchestrationFlowModel, GRAPH_INPUTS_NODE_TYPE, GRAPH_INPUTS_VIRTUAL_NODE_ID, isGraphInputsVirtualNode } from './graphViewModel';
 import type {
   OrchestrationCatalog,
   OrchestrationGraphDefinition,
@@ -135,6 +135,94 @@ describe('orchestration graph view model', () => {
     expect(proposal?.position).toEqual({ x: 777, y: 333 });
     expect(proposal?.style?.width).toBe(280);
     expect(model.edges.map((edge) => edge.id)).toEqual(['e1', 'e2']);
+  });
+
+  it('renders a read-only virtual Graph Inputs node when inputs are declared', () => {
+    const model = buildOrchestrationFlowModel(
+      {
+        ...definition,
+        inputs: [
+          {
+            inputId: 'request',
+            contract: {
+              dataType: 'pudding.content',
+              mediaTypes: ['text/plain'],
+              cardinality: 'one',
+              deliveries: ['inline'],
+            },
+            defaultValue: {
+              dataType: 'pudding.content',
+              contentType: 'text/plain',
+              inlineValue: 'default prompt',
+            },
+            requiredAtActivation: true,
+          },
+        ],
+      },
+      run,
+    );
+    const virtual = model.nodes.find(
+      (node) => node.id === GRAPH_INPUTS_VIRTUAL_NODE_ID,
+    );
+    expect(virtual).toBeDefined();
+    expect(virtual?.type).toBe(GRAPH_INPUTS_NODE_TYPE);
+    expect(virtual?.draggable).toBe(false);
+    expect(virtual?.data.inputs).toHaveLength(1);
+    expect(virtual?.data.inputs?.[0].inputId).toBe('request');
+    expect(virtual?.data.inputs?.[0].defaultValue).toEqual({
+      dataType: 'pudding.content',
+      contentType: 'text/plain',
+      inlineValue: 'default prompt',
+    });
+    expect(virtual?.data.inputPorts).toEqual([]);
+    expect(virtual?.data.outputPorts).toEqual([]);
+    expect(virtual?.position.x).toBeLessThan(0);
+    expect(model.edges).toHaveLength(2);
+    expect(isGraphInputsVirtualNode(virtual)).toBe(true);
+  });
+
+  it('does not render the virtual node when the definition declares no inputs', () => {
+    const model = buildOrchestrationFlowModel(definition, run);
+    expect(
+      model.nodes.some((node) => node.id === GRAPH_INPUTS_VIRTUAL_NODE_ID),
+    ).toBe(false);
+    expect(model.nodes.map((node) => node.type)).toEqual([
+      'orchestrationComponent',
+      'orchestrationComponent',
+      'orchestrationComponent',
+    ]);
+  });
+
+  it('keeps virtual Graph Inputs out of the executable node count and layout save set', () => {
+    const model = buildOrchestrationFlowModel(
+      {
+        ...definition,
+        inputs: [
+          {
+            inputId: 'request',
+            contract: {
+              dataType: 'pudding.content',
+              mediaTypes: ['text/plain'],
+              cardinality: 'one',
+              deliveries: ['inline'],
+            },
+            requiredAtActivation: true,
+          },
+        ],
+      },
+      run,
+    );
+    const layoutNodes = model.nodes.filter(
+      (node) => !isGraphInputsVirtualNode(node),
+    );
+    expect(layoutNodes.map((node) => node.id)).toEqual([
+      'research',
+      'proposal',
+      'review',
+    ]);
+    const model2 = buildOrchestrationFlowModel(definition, run);
+    expect(model2.nodes).toHaveLength(3);
+    expect(model.nodes).toHaveLength(4);
   });
 
   it('projects catalog ports and typed React Flow handles', () => {

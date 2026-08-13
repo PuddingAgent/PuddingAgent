@@ -1,6 +1,8 @@
-﻿import {
+import {
   addGraphInput,
+  formatGraphInputDefaultValue,
   listInputReferences,
+  parseGraphInputDefaultValue,
   removeGraphInput,
   setNodeGraphInputBindings,
   updateGraphInput,
@@ -274,5 +276,62 @@ describe('orchestration graph inputs (pure layer)', () => {
         (binding) => binding.targetPortId === 'request',
       ),
     ).toBe(false);
+  });
+
+  it('serializes and parses defaultValue as ValueEnvelope JSON', () => {
+    expect(formatGraphInputDefaultValue(input('plain'))).toBe('');
+    const withDefault = input('with-default', {
+      defaultValue: {
+        dataType: 'pudding.content',
+        contentType: 'text/plain',
+        inlineValue: 'hello',
+      },
+    });
+    expect(formatGraphInputDefaultValue(withDefault)).toBe(
+      JSON.stringify(
+        {
+          dataType: 'pudding.content',
+          contentType: 'text/plain',
+          inlineValue: 'hello',
+        },
+        null,
+        2,
+      ),
+    );
+    expect(parseGraphInputDefaultValue('')).toEqual({ value: undefined });
+    expect(parseGraphInputDefaultValue('   ')).toEqual({ value: undefined });
+    expect(parseGraphInputDefaultValue('{"inlineValue":1}')).toEqual({
+      value: { inlineValue: 1 },
+    });
+    expect(parseGraphInputDefaultValue('not json').error).toBeDefined();
+  });
+
+  it('persists defaultValue through update and add without inventing fields', () => {
+    const base = definition({ inputs: [input('request')] });
+    const next = updateGraphInput(base, 'request', {
+      defaultValue: {
+        dataType: 'pudding.content',
+        contentType: 'text/plain',
+        inlineValue: 'default prompt',
+      },
+    });
+    expect(next.inputs?.[0].defaultValue).toEqual({
+      dataType: 'pudding.content',
+      contentType: 'text/plain',
+      inlineValue: 'default prompt',
+    });
+    expect(next.inputs?.[0].requiredAtActivation).toBe(true);
+    expect(base.inputs?.[0].defaultValue).toBeUndefined();
+
+    const added = addGraphInput(
+      definition(),
+      input('request', {
+        defaultValue: { dataType: 'pudding.any', inlineValue: 7 },
+      }),
+    );
+    expect(added.inputs?.[0].defaultValue).toEqual({
+      dataType: 'pudding.any',
+      inlineValue: 7,
+    });
   });
 });

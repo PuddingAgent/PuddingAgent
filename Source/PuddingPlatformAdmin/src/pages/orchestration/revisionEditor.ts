@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   OrchestrationGraphDefinition,
   OrchestrationNodeDefinition,
   OrchestrationRegisteredComponent,
@@ -485,4 +485,42 @@ export function formatValidationIssues(
   issues: OrchestrationValidationIssue[],
 ): string[] {
   return issues.map((issue) => `${issue.code}: ${issue.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// S2-B5-3a: structured validation issue rows (doc 85 §6.2:145).
+// The string version above stays for existing callers (validate summary
+// messages); this branch preserves elementId/portId so the UI can render
+// severity levels and click-to-locate, instead of flattening them away.
+// ---------------------------------------------------------------------------
+
+/** One display row for the structured issues list; keeps every locator field. */
+export interface ValidationIssueRow {
+  key: string;
+  severity: OrchestrationValidationIssue['severity'];
+  code: string;
+  message: string;
+  elementType?: string;
+  elementId?: string;
+  portId?: string;
+}
+
+/**
+ * Maps validation issues to stable structured rows without losing
+ * elementId/portId. The key is content-based so React can diff rows across
+ * consecutive validate calls; the row is assignable to OrchestrationValidationIssue
+ * so the same object can be handed to the issue click handler.
+ */
+export function formatValidationIssuesStructured(
+  issues: OrchestrationValidationIssue[],
+): ValidationIssueRow[] {
+  return issues.map((issue) => ({
+    key: `${issue.code}:${issue.elementId ?? issue.path ?? 'root'}:${issue.portId ?? ''}:${issue.message}`,
+    severity: issue.severity,
+    code: issue.code,
+    message: issue.message,
+    ...(issue.elementType ? { elementType: issue.elementType } : {}),
+    ...(issue.elementId ? { elementId: issue.elementId } : {}),
+    ...(issue.portId ? { portId: issue.portId } : {}),
+  }));
 }

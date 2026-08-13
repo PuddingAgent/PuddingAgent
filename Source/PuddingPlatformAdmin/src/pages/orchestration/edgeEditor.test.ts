@@ -1,4 +1,5 @@
 import {
+  areDataContractsCompatible,
   buildEdgeFromConnection,
   parseOrchestrationHandle,
   patchEdgeDraft,
@@ -334,5 +335,122 @@ describe('orchestration edge editor', () => {
     expect(patched.edges[0].condition).toBe('onCompletion');
     expect(base.edges[0].condition).toBe('onSuccess');
     expect(removeEdgeFromDraft(patched, 'edge-1').edges).toEqual([]);
+  });
+
+  // S2-B6' B5-1 gap closure: direct branch tests for MIME wildcard,
+  // delivery-mode rejection and duplicate connection rejection.
+  it('accepts MIME wildcard media types and rejects disjoint ones', () => {
+    // application/* accepts application/json (wildcard suffix match).
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['application/json'], ['artifact']),
+        contract('pudding.artifact', 'one', ['application/*'], ['artifact']),
+      ),
+    ).toBe(true);
+    // */* accepts any media type.
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact']),
+        contract('pudding.artifact', 'one', ['*/*'], ['artifact']),
+      ),
+    ).toBe(true);
+    // Exact match still holds.
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact']),
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact']),
+      ),
+    ).toBe(true);
+    // 85 §6.1 MIME reject row: audio/mpeg -> image/* must be rejected.
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['audio/mpeg'], ['artifact']),
+        contract('pudding.artifact', 'one', ['image/*'], ['artifact']),
+      ),
+    ).toBe(false);
+    // Wildcard must not bridge unrelated families: image/* vs audio/*.
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact']),
+        contract('pudding.artifact', 'one', ['audio/*'], ['artifact']),
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects delivery mode mismatch with no shared delivery', () => {
+    // 85 §6.1 delivery reject row: source artifact / target inline only.
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact']),
+        contract('pudding.artifact', 'one', ['image/png'], ['inline']),
+      ),
+    ).toBe(false);
+    // Shared artifact delivery (even with extra options) accepts.
+    expect(
+      areDataContractsCompatible(
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact']),
+        contract('pudding.artifact', 'one', ['image/png'], ['artifact', 'stream']),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects duplicate control and data edges between the same ports', () => {
+    const controlBase = definition({
+      edges: [
+        {
+          edgeId: 'edge-control-1',
+          fromNodeId: 'source',
+          toNodeId: 'target',
+          kind: 'control',
+          condition: 'onSuccess',
+          bindings: [],
+        },
+      ],
+    });
+    const dupControl = buildEdgeFromConnection(
+      controlBase,
+      catalog,
+      {
+        source: 'source',
+        sourceHandle: 'control:out',
+        target: 'target',
+        targetHandle: 'control:in',
+      },
+      'edge-control-2',
+    );
+    expect(dupControl.error?.code).toBe('edge.duplicate');
+
+    const dataBase = definition({
+      edges: [
+        {
+          edgeId: 'edge-data-1',
+          fromNodeId: 'source',
+          toNodeId: 'target',
+          kind: 'data',
+          condition: 'onSuccess',
+          bindings: [
+            {
+              sourcePortId: 'text',
+              sourcePath: '$',
+              targetPortId: 'request',
+              aggregation: 'replace',
+            },
+          ],
+        },
+      ],
+    });
+    const dupData = buildEdgeFromConnection(
+      dataBase,
+      catalog,
+      {
+        source: 'source',
+        sourceHandle: 'data:out:text',
+        target: 'target',
+        targetHandle: 'data:in:request',
+      },
+      'edge-data-2',
+    );
+    expect(dupData.error?.code).toBe('edge.duplicate');
+    expect(dupData.edge).toBeUndefined();
   });
 });
