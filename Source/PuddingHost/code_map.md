@@ -11,7 +11,7 @@
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、hosted worker 与 replay-to-live follower；不能只在未被产品入口调用的 Runtime 扩展里注册 worker |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`） |
 | `Tools/ImageReaderTool.cs` | Agent 图片复查工具；首选 manifest 的 `imageReaderModel`，失败时仅降级到具备 `vision` 的 Agent 主模型，不使用全局 vision 排序；文本模型附件预观察同样消费该字段 |
-| `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含通用编排 SQLite schema bootstrap |
+| `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含 AppUsers 头像字段及通用编排 SQLite schema bootstrap，已有数据库也必须幂等升级 |
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
 | `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
