@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "goal_read",
     name: "Goal read",
-    description: "读取当前 Agent 私有的 goal.md 文件内容。Read the current agent's private goal.md file content",
+    description: "读取当前 Agent 私有的 goal.md 文件内容。【何时用】每次心跳开始或目标不明确时读取自己的 goal.md，确认当前推进方向与最新目标后再规划工作；执行中可定期回读校准。【怎么用】无需参数，直接调用；优先读 {DataRoot}/agents/{agentInstanceId}/goal.md，未提供 agent_instance_id 时回退到工作区级 goal.md；返回 content 与 truncated 标记。【坑】只读无副作用；超过 16KB 只返回文件尾部并附告警，过长内容建议用 goal_update 整理/归档；未设置目标时返回 not_found。Read the current agent's private goal.md file content — call at heartbeat start (or when direction is unclear) to review the active goal before planning; no required args, reads the agent-private goal.md first and falls back to workspace-level goal.md; read-only; files over 16KB return only the tail with a warning (consolidate via goal_update), and not_found means no goal is set.",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]

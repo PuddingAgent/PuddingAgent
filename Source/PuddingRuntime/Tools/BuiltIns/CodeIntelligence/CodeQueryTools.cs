@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingCodeIntelligence.Contracts;
@@ -262,7 +262,7 @@ public sealed record CodeSymbolSearchArgs
 [Tool(
     id: "code_explore",
     name: "Explore code symbol",
-    description: "探索代码符号（如命名空间或类型）的子符号（contained symbols）。Explore the children (contained symbols) of a code symbol such as a namespace or type",
+    description: "探索代码符号（如命名空间或类型）的子符号（contained symbols）。【何时用】想查看某命名空间/类/接口下包含哪些成员（方法、属性、嵌套类型）、快速了解结构时使用；也是符号检索后的下钻步骤。【怎么用】项目必须先 code_index_register_project 登记且 code_index_status 为 Completed；传 symbol_id（必填，来自 code_symbol_search/code_explore 结果），可选 project_id 或 file_path/scope_path 自动探测项目。【坑】未登记/未索引完成会报 project_id is required 或结果为空；symbol_id 是索引内稳定标识，不能直接传符号名。Explore the children (contained symbols) of a code symbol such as a namespace or type — use to drill into a type's members after locating it; requires the project registered via code_index_register_project and indexed to Completed; pass symbol_id from search/explore results (not a raw symbol name) plus optional project_id/file_path/scope_path.",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

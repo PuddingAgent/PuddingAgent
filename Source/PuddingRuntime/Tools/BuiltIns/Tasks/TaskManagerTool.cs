@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PuddingCode.Models;
@@ -15,7 +15,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "manage_tasks",
     name: "任务管理",
-    description: "管理 Agent 的任务列表，支持创建、更新状态、列出、删除任务。",
+    description: "管理 Agent 的任务列表，支持创建、更新状态、列出、删除任务。【何时用】Agent 需要自我规划/跟踪多步任务（Todo 列表）时使用：任务拆解后逐条创建、推进时更新状态、阶段结束前清点遗留。【怎么用】operation=create + title 创建任务；update_status + task_id + status（pending/in-progress/completed）更新状态；list 列出全部（默认）；delete + task_id 删除。【坑】任务存储在进程内内存（单例），重启即丢失，重要任务应同步到 goal.md 或记忆库；update_status/delete 的 task_id 不存在会报错；status 只接受 pending/in-progress/completed。Manage an Agent's task list: create, update_status, list, delete — use to plan and track multi-step work as a Todo list; create needs title, update_status needs task_id+status (pending/in-progress/completed), list is the default, delete needs task_id; tasks are in-memory only and lost on restart, and invalid task_id/status is rejected.",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Medium)]
 public sealed class TaskManagerTool : PuddingToolBase<TaskManagerArgs>

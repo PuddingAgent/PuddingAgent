@@ -342,7 +342,7 @@ public sealed record FileReadArgs
 [Tool(
     id: "file_write",
     name: "Write file",
-    description: "在宿主工作区创建或覆盖 UTF-8 文本文件。Create or overwrite a UTF-8 text file in the host workspace.",
+    description: "在宿主工作区创建或覆盖 UTF-8 文本文件。【何时用】创建新文件或整体重写整个文件时使用；只改既有文件的局部内容时优先用 file_patch（增量修改，范围更小、不易误伤）。【怎么用】传 path（工作区内绝对/相对路径）+ content 即可；append=true 可追加到文件末尾而非覆盖；写入 Agent 私有目录必须提供 reason。【坑】是「覆盖」语义——覆盖已有文件前先用 file_read 确认当前内容；写入为无 BOM 的 UTF-8，不要期待文件头带 BOM；工作区外路径默认被拒（YOLO 模式除外）。Create or overwrite a UTF-8 text file in the host workspace — use for new files or full rewrites, prefer file_patch for incremental edits; pass path+content (append=true to append instead of overwrite, reason required for agent-private paths); overwrite is destructive so read the file first, output is UTF-8 without BOM, and paths outside the workspace are rejected unless YOLO mode.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,

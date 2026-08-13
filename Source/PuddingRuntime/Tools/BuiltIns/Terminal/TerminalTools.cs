@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -347,7 +347,7 @@ public sealed class TerminalStatusTool : PuddingToolBase<TerminalStatusArgs>
 [Tool(
     id: "terminal_cancel",
     name: "Terminal cancel",
-    description: "按 job_id 取消正在运行的后台终端任务。Cancel a running background terminal job by job_id",
+    description: "按 job_id 取消正在运行的后台终端任务。【何时用】terminal_start 启动的后台任务失控/卡死或确认不再需要运行时，真正终止它时使用；注意 terminal_wait 超时或取消只是「停止等待」，并不会杀掉任务。【怎么用】传 job_id（terminal_start 返回值或 terminal_status 查询结果）；取消后用 terminal_status 确认任务已退出。【坑】是强杀，未保存进度会丢失；job 必须属于当前会话，否则报 not found；先 terminal_status 确认 job_id 再取消，避免误杀。Cancel a running background terminal job by job_id — use to truly kill a runaway/hung job (terminal_wait cancellation only stops polling, it does NOT kill the job); pass job_id from terminal_start/terminal_status and confirm with terminal_status afterwards; kill is forceful (unsaved work lost) and job_ids outside the current session are rejected.",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell | ToolSafetyFlags.Destructive,
@@ -383,7 +383,7 @@ public sealed class TerminalCancelTool : PuddingToolBase<TerminalCancelArgs>
 [Tool(
     id: "terminal_input",
     name: "Terminal input",
-    description: "向运行中的后台终端任务发送一行标准输入（stdin）。Send one line of stdin to a running background terminal job by job_id",
+    description: "向运行中的后台终端任务发送一行标准输入（stdin）。【何时用】后台命令在等待交互输入（y/n 确认、提示符、脚本要求输入时）时，向其发送应答时使用。【怎么用】传 job_id（terminal_start 返回或 terminal_status 查询）+ input（要发送的一行文本）；发送后用 terminal_read/terminal_wait 看任务响应。【坑】只发送一行（自动带换行），不支持多行粘贴与方向键/Ctrl 序列等复杂交互；输入会进入进程 stdin 并可能被记录，不要发送密钥等敏感内容；任务已退出或 job 不属于当前会话会报 not found。Send one line of stdin to a running background terminal job by job_id — use to answer interactive prompts (y/n confirmations, scripted input) of a background job; pass job_id + input, then read terminal_read/terminal_wait for the response; a single newline-terminated line only (no multi-line paste, arrow keys, or Ctrl sequences), input may be logged so avoid secrets, and dead or other-session jobs are rejected.",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,

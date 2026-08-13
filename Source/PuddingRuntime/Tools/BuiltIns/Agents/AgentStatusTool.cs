@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "agent_status",
     name: "Agent status",
-    description: "查看工作区内 Agent 的运行时状态：心跳频率、目标状态、队列状态、近期活动等。View runtime status of agents in the workspace",
+    description: "查看工作区内 Agent 的运行时状态：心跳频率、目标状态、队列状态、近期活动等。【何时用】想了解工作区有哪些 Agent、各自休眠/空闲状态、心跳配置是否生效、目标是否活跃、距下次唤醒多久时使用；也是排查「某 Agent 为何未按预期唤醒」的入口。【怎么用】直接调用列出全部 Agent；传 agent_id 只看单个；返回文本报告 + JSON（status、heartbeat.min/max_idle_seconds、goal.has_goal/summary、last_activity_minutes_ago、estimated_wake_seconds）。【坑】只读无副作用；无心跳配置的 Agent 显示默认 3600s；无日志文件时 last_activity 为未知。View runtime status of agents in the workspace — use to see which agents exist, their sleeping/idle state, heartbeat config, goal activity, last activity, and estimated wake time, and to diagnose why an agent did not wake as expected; no required args (or agent_id for one); read-only; agents without heartbeat config show the 3600s default.",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]

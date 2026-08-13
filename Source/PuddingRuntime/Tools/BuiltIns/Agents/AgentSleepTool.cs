@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "sleep",
     name: "Agent sleep",
-    description: "设置 Agent 的心跳间隔与唤醒周期。Agent 控制自身心跳频率。Set the agent's heartbeat interval and wake cycle",
+    description: "设置 Agent 的心跳间隔与唤醒周期。Agent 控制自身心跳频率。【何时用】每次心跳工作完成、需要安排下次唤醒时调用：有任务推进期用短间隔（如 3600~7200 秒），无任务时恢复长间隔（如 12600~14400 秒）。【怎么用】传 min_idle_seconds（最短空闲秒数，60~86400，默认60）与可选 max_idle_seconds（最长空闲秒数，min~86400，默认=min）；work_summary 填本次工作摘要（会入日志）。【坑】是「尽力模式」不是精确闹钟——用户消息、忙碌 Agent 会插队或延后；min 被强制夹取在 60~86400 且必须 ≤ max，否则报错；间隔越短唤醒越频繁、消耗配额越多，无任务时别设 60 秒空转。Set the agent's heartbeat interval and wake cycle — call after each heartbeat work chunk to schedule the next wake (short interval 3600-7200s while tasks are active, longer 12600-14400s when idle); pass min_idle_seconds (60-86400, default 60) and optional max_idle_seconds (min..86400, default min) plus work_summary; best-effort not a precise alarm (user messages/other agents preempt), min<=max enforced, and tiny intervals burn quota.",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]
