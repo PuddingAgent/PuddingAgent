@@ -96,6 +96,10 @@ provider/model 引用解析容量，禁止在 Agent manifest、Agent DTO 或 LLM
 其中 `maxInputTokens` 用于表达 Provider 单次输入硬上限；有效输入预算统一取
 `min(maxInputTokens, maxContextTokens - maxOutputTokens - safetyBuffer)`。Agent manifest 的
 `maxReplyTokens` 只负责收紧本次执行的输出上限，并必须下传为 Provider 请求的 `max_tokens`。
+Responses 协议对应下传字段为 `max_output_tokens`；它包含模型的思考与可见输出，不只是最终答复文本。
+Provider 返回 `status=incomplete` 时是有 usage/output 的截断终态，不属于 HTTP/Provider 故障：网关必须保留
+可展示文本、思考内容、usage 和 opaque output items，并把 `max_output_tokens` 映射为 `finishReason=length`。
+长度截断时可能存在未闭合的 function call 参数；这类调用只能保留用于审计/回放，当前轮禁止执行。
 
 ## 内嵌 Web UI
 

@@ -1112,6 +1112,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         private long _usageChunkCount;
         private TokenUsageDto? _usage;
         private long _timeToFirstTokenMs;
+        private string? _finishReason;
 
         public long ChunkCount { get; private set; }
 
@@ -1143,6 +1144,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 _usageChunkCount++;
                 _usage = delta.Usage;
             }
+            if (!string.IsNullOrWhiteSpace(delta.FinishReason))
+                _finishReason = delta.FinishReason;
         }
 
         public IReadOnlyDictionary<string, string> ToMetadata()
@@ -1150,7 +1153,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             if (ChunkCount == 0)
                 return new Dictionary<string, string>();
 
-            return new Dictionary<string, string>
+            var metadata = new Dictionary<string, string>
             {
                 ["stream_chunk_count"] = ChunkCount.ToString(),
                 ["stream_provider_read_avg_ms"] = Average(_readTotalMs, ChunkCount).ToString("0.###"),
@@ -1166,6 +1169,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ["stream_usage_chunk_count"] = _usageChunkCount.ToString(),
                 ["stream_ttft_ms"] = _timeToFirstTokenMs.ToString(),
             };
+            if (!string.IsNullOrWhiteSpace(_finishReason))
+                metadata["stream_finish_reason"] = _finishReason;
+            return metadata;
         }
 
         public IEnumerable<TelemetryMetric> ToMetrics(RuntimeTraceContext trace, string status)

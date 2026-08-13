@@ -63,7 +63,7 @@ Agent Loop → search_tools → Browser Tools (PuddingBrowser.AgentTools)
 
 Agent Loop → LlmInvocationService → DirectLlmClient
   → model.protocol=openai → OpenAiLlmGateway (/chat/completions)
-  → model.protocol=responses → ResponsesLlmGateway (/responses)
+  → model.protocol=responses → ResponsesLlmGateway (/responses；DeepSeek reasoning_text + incomplete/length 终态兼容)
   → model.protocol=anthropic → AnthropicMessagesLlmGateway (/messages)
   → Provider 不保存协议；同一 Provider 的模型可分别选择三种协议
   → Provider usage → ILlmGatewayUsageRecorder → llm_gateway_usage_events

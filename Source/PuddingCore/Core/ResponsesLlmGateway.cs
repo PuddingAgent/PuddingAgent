@@ -386,6 +386,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var toolCalls = new List<ToolCall>();
         var continuationItems = new List<string>(output.Count);
         var seenCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var isIncomplete = ReadString(root, "status") == "incomplete";
 
         foreach (var sourceItem in output)
         {
@@ -399,16 +400,21 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                     AppendMessageContent(item["content"] as JsonArray, content);
                     break;
                 case "reasoning":
-                    AppendReasoningSummary(item["summary"] as JsonArray, reasoning);
+                    AppendReasoningContent(item, reasoning);
                     break;
                 case "function_call":
                 {
                     var callId = EnsureUniqueCallId(ReadString(item, "call_id"), seenCallIds);
                     item["call_id"] = callId;
-                    toolCalls.Add(new ToolCall(
-                        callId,
-                        ReadString(item, "name") ?? string.Empty,
-                        ReadString(item, "arguments") ?? string.Empty));
+                    // A length-truncated function call may contain incomplete JSON arguments.
+                    // Keep it replayable, but never expose it for execution in this turn.
+                    if (!isIncomplete)
+                    {
+                        toolCalls.Add(new ToolCall(
+                            callId,
+                            ReadString(item, "name") ?? string.Empty,
+                            ReadString(item, "arguments") ?? string.Empty));
+                    }
                     break;
                 }
             }
@@ -449,6 +455,22 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
     }
 
+    private static void AppendReasoningContent(JsonObject item, StringBuilder reasoning)
+    {
+        if (item["content"] is JsonArray content)
+        {
+            foreach (var part in content.OfType<JsonObject>())
+            {
+                if (ReadString(part, "type") is "reasoning_text")
+                    reasoning.Append(ReadString(part, "text"));
+            }
+        }
+
+        // OpenAI reasoning summaries and DeepSeek plaintext reasoning are different
+        // Responses API shapes. Preserve both when a provider returns them together.
+        AppendReasoningSummary(item["summary"] as JsonArray, reasoning);
+    }
+
     private static TokenUsageDto? ParseResponsesUsage(JsonNode? usageNode)
     {
         if (usageNode is not JsonObject usage)
@@ -478,12 +500,9 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                 $"Responses API failed: {ReadString(error, "message") ?? "unknown provider error"}");
         }
 
-        if (status == "incomplete")
-        {
-            var details = response["incomplete_details"] as JsonObject;
-            throw new HttpRequestException(
-                $"Responses API incomplete: {ReadString(details, "reason") ?? "unknown reason"}");
-        }
+        // `incomplete` is a successful HTTP terminal state with partial output, usage,
+        // and replayable output items. The caller must receive that data instead of a
+        // synthetic provider failure (most commonly the model reached max_output_tokens).
     }
 
     private static string EnsureUniqueCallId(string? providerCallId, HashSet<string> seenCallIds)
@@ -550,6 +569,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             {
                 "response.output_text.delta" => TextDelta(root, "delta"),
                 "response.refusal.delta" => TextDelta(root, "delta"),
+                "response.reasoning_text.delta" => ReasoningDelta(root),
                 "response.reasoning_summary_text.delta" => ReasoningDelta(root),
                 "response.output_item.added" => OutputItemAdded(root),
                 "response.output_item.done" => OutputItemDone(root),
@@ -557,7 +577,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                 "response.function_call_arguments.done" => FunctionArgumentsDone(root),
                 "response.completed" => ResponseCompleted(root),
                 "response.failed" => throw CreateTerminalException(root, "failed"),
-                "response.incomplete" => throw CreateTerminalException(root, "incomplete"),
+                "response.incomplete" => ResponseIncomplete(root),
                 "error" => throw CreateErrorEventException(root),
                 _ => [],
             };
@@ -682,6 +702,12 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
 
         private IReadOnlyList<StreamDelta> ResponseCompleted(JsonObject root)
+            => ResponseTerminal(root, incomplete: false);
+
+        private IReadOnlyList<StreamDelta> ResponseIncomplete(JsonObject root)
+            => ResponseTerminal(root, incomplete: true);
+
+        private IReadOnlyList<StreamDelta> ResponseTerminal(JsonObject root, bool incomplete)
         {
             var response = root["response"] as JsonObject ?? root;
             ThrowIfTerminalFailure(response);
@@ -696,9 +722,19 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                 {
                     Usage = ParseResponsesUsage(response["usage"]),
                     ContinuationState = continuation,
-                    FinishReason = hasToolCalls ? "tool_calls" : "stop",
+                    FinishReason = incomplete
+                        ? MapIncompleteReason(response)
+                        : hasToolCalls ? "tool_calls" : "stop",
                 },
             ];
+        }
+
+        private static string MapIncompleteReason(JsonObject response)
+        {
+            var details = response["incomplete_details"] as JsonObject;
+            return ReadString(details, "reason") == "max_output_tokens"
+                ? "length"
+                : "incomplete";
         }
 
         private LlmContinuationState? CreateContinuation(JsonArray? output)

@@ -290,19 +290,42 @@ public sealed class ResponsesLlmGatewayTests
     }
 
     [TestMethod]
-    [DataRow("failed", "provider exploded")]
-    [DataRow("incomplete", "max_output_tokens")]
-    public async Task ChatAsync_NonCompletedTerminalStatus_Throws(string status, string detail)
+    public async Task ChatAsync_FailedTerminalStatus_Throws()
     {
-        var json = status == "failed"
-            ? $$"""{"status":"failed","error":{"message":"{{detail}}"},"output":[]}"""
-            : $$"""{"status":"incomplete","incomplete_details":{"reason":"{{detail}}"},"output":[]}""";
+        const string detail = "provider exploded";
+        var json = $$"""{"status":"failed","error":{"message":"{{detail}}"},"output":[]}""";
         var gateway = CreateGateway(_ => JsonResponse(json));
 
         var exception = await ThrowsHttpRequestExceptionAsync(
             () => gateway.ChatAsync([new ChatMessage(ChatRole.User, "inspect")], []));
 
         StringAssert.Contains(exception.Message, detail);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_IncompleteResponse_ReturnsPartialOutputUsageAndContinuation()
+    {
+        const string responseJson = """
+            {
+              "status":"incomplete",
+              "incomplete_details":{"reason":"max_output_tokens"},
+              "output":[
+                {"type":"reasoning","id":"rs_1","content":[{"type":"reasoning_text","text":"working"}]},
+                {"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"partial answer"}]},
+                {"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"q\":"}
+              ],
+              "usage":{"input_tokens":100,"output_tokens":4096,"total_tokens":4196}
+            }
+            """;
+        var gateway = CreateGateway(_ => JsonResponse(responseJson));
+
+        var response = await gateway.ChatAsync([new ChatMessage(ChatRole.User, "inspect")], []);
+
+        Assert.AreEqual("partial answer", response.Content);
+        Assert.AreEqual("working", response.ReasoningContent);
+        Assert.IsNull(response.ToolCalls, "A truncated function call must not be executed.");
+        Assert.AreEqual(4196, response.Usage!.TotalTokens);
+        Assert.AreEqual(3, response.ContinuationState!.OutputItemsJson.Count);
     }
 
     [TestMethod]
@@ -408,14 +431,12 @@ public sealed class ResponsesLlmGatewayTests
     [TestMethod]
     [DataRow("error")]
     [DataRow("response.failed")]
-    [DataRow("response.incomplete")]
     public async Task ChatStreamAsync_TerminalErrorEvents_Throw(string eventType)
     {
         var payload = eventType switch
         {
             "error" => """{"type":"error","error":{"message":"rate limited"}}""",
-            "response.failed" => """{"type":"response.failed","response":{"status":"failed","error":{"message":"provider failed"}}}""",
-            _ => """{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}""",
+            _ => """{"type":"response.failed","response":{"status":"failed","error":{"message":"provider failed"}}}""",
         };
         var gateway = CreateGateway(_ => SseResponse($"data: {payload}\n\ndata: [DONE]\n\n"));
 
@@ -427,6 +448,34 @@ public sealed class ResponsesLlmGatewayTests
             {
             }
         });
+    }
+
+    [TestMethod]
+    public async Task ChatStreamAsync_DeepSeekReasoningAndIncomplete_EmitAuditableTerminalData()
+    {
+        const string sse = """
+            data:{"type":"response.reasoning_text.delta","delta":"working"}
+
+            data:{"type":"response.output_text.delta","delta":"partial answer"}
+
+            data:{"type":"response.output_item.added","output_index":2,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":""}}
+
+            data:{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":2,"delta":"{\"q\":"}
+
+            data:{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"reasoning","id":"rs_1","content":[{"type":"reasoning_text","text":"working"}]},{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"partial answer"}]},{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"q\":"}],"usage":{"input_tokens":100,"output_tokens":4096,"total_tokens":4196}}}
+
+            """;
+        var gateway = CreateGateway(_ => SseResponse(sse));
+
+        var deltas = await ReadStreamAsync(gateway);
+
+        Assert.AreEqual("working", deltas[0].ReasoningDelta);
+        Assert.AreEqual("partial answer", deltas[1].ContentDelta);
+        Assert.AreEqual("lookup", deltas[2].ToolCallNameDelta);
+        Assert.AreEqual("{\"q\":", deltas[3].ToolCallArgsDelta);
+        Assert.AreEqual("length", deltas[4].FinishReason);
+        Assert.AreEqual(4196, deltas[4].Usage!.TotalTokens);
+        Assert.AreEqual(3, deltas[4].ContinuationState!.OutputItemsJson.Count);
     }
 
     [TestMethod]

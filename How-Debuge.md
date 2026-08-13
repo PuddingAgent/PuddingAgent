@@ -325,6 +325,12 @@ Platform 的 `TokenUsageEvents` 增加字段时，不要只修改 Entity 和
 但已有 Platform SQLite 尚未升级。先确认启动日志包含
 `[ConversationCommandSchema] Added chat_execution_commands.metadata_json`，再用
 `PRAGMA table_info("chat_execution_commands")` 验证；不要把该错误归因到 LLM、SSE 或 Worker。
+
+`AppUsers` 也遵守同一规则。若 `POST /api/login/account` 返回 500，错误日志显示
+`SQLite Error 1: 'no such column: a.Avatar'`，说明用户头像实体字段已经进入 EF 查询，但现有
+Platform SQLite 尚未补列。`AppUserSchemaBootstrapper` 必须在 `EnsureCreatedAsync` 后执行，通过
+`PRAGMA table_info("AppUsers")` 幂等补齐 nullable `Avatar`；不能让登录 Controller 忽略字段，
+也不能清空用户表或重置密码。补丁后用真实登录请求确认 HTTP 200、`status=ok`。
 诊断顺序：
 
 1. 先检查 `backend.out.log` 是否存在编译错误；例如 `CS0103 platformDb` 是启动代码的
@@ -2644,6 +2650,14 @@ platform.db 的 append-only 诊断明细此前零裁剪机制，库会持续增�
 5. 若配置正确但日志仍显示 `protocol=openai`，核对运行中的 `PuddingAgent.exe` 是否加载了新构建；Desktop 托盘旧实例或未完成的 Core 重启会继续运行旧路由代码。
 
 协议的唯一事实源是模型配置。请求覆盖、Provider 字段和 Provider 默认协议都不能参与路由；混合 Provider 应使用不同模型定向证明 `openai → /chat/completions`、`responses → /responses`、`anthropic → /messages`。OpenCode Go 的 Qwen 若误走 Chat Completions 会返回 format 不兼容；若 `/messages` 返回 missing API key，检查是否误用了 Bearer 而非 `x-api-key`。
+
+DeepSeek Responses 返回 `response.incomplete` 且 `incomplete_details.reason=max_output_tokens` 时，先不要按网络故障排查。该终态表示模型达到本次 `max_output_tokens`，响应仍可能包含思考、可见文本、usage 与 output items。按以下顺序核对：
+
+1. `D:\data\config\llm.providers.json` 中 `deepseek-v4-flash` / `deepseek-v4-pro` 应为 `protocol: "responses"`、`maxContextTokens: 1000000`、`maxOutputTokens: 384000`。
+2. Agent 实际请求还会受 manifest `maxReplyTokens` 收紧；查看 LLM gateway activity 的 `max_output_tokens`，不要仅看 Provider 模型容量。Responses 的该预算同时覆盖思考与可见输出。
+3. 正常实现会把该终态记录成 `stream_finish_reason=length`，保留 usage 和 continuation，不再产生 `LLM 调用失败: Responses API incomplete`。
+4. 如果截断发生在 function call 参数中间，当前轮禁止执行该工具；output items 仅保留用于审计/后续回放。
+5. DeepSeek 的明文思考增量事件名为 `response.reasoning_text.delta`；若页面没有思考流，先在网关测试和 SSE 事件中核对该事件，而不是只查 OpenAI 的 `response.reasoning_summary_text.delta`。
 
 ## 11.21 Storage 数据库与索引管理 API
 

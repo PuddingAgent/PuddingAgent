@@ -660,6 +660,7 @@ public sealed partial class AgentExecutionService
                 var accumulatedToolCalls = new List<AccumulatedToolCall>();
                 var synthesizedToolCallIndexes = new HashSet<int>();
                 LlmContinuationState? continuationState = null;
+                string? llmFinishReason = null;
                 var replyBuf = new StringBuilder();
                 var reasoningBuf = new StringBuilder();
 
@@ -876,6 +877,9 @@ public sealed partial class AgentExecutionService
                         if (delta.ContinuationState is not null)
                             continuationState = delta.ContinuationState;
 
+                        if (!string.IsNullOrWhiteSpace(delta.FinishReason))
+                            llmFinishReason = delta.FinishReason;
+
                         if (string.IsNullOrEmpty(delta.ReasoningDelta)
                             && string.IsNullOrEmpty(delta.ContentDelta)
                             && delta.ToolCallIndex is null)
@@ -1013,6 +1017,22 @@ public sealed partial class AgentExecutionService
 
                 // LLM 调用成功 → 重置连续失败计数
                 consecutiveLlmFailures = 0;
+                if (llmFinishReason is "length" or "incomplete")
+                {
+                    // Responses may finish while a function_call's JSON arguments are still
+                    // incomplete. Preserve the provider output for audit/replay, but never run
+                    // a truncated call in the current agent round.
+                    hasToolCalls = false;
+                    accumulatedToolCalls.Clear();
+                    synthesizedToolCallIndexes.Clear();
+                    _logger.LogWarning(
+                        "[AgentExec:Stream] LLM response truncated finishReason={FinishReason} session={Session} round={Round} contentChars={ContentChars} reasoningChars={ReasoningChars}",
+                        llmFinishReason,
+                        request.SessionId,
+                        round + 1,
+                        replyBuf.Length,
+                        reasoningBuf.Length);
+                }
                 ReportMeaningfulProgress(
                     request,
                     "llm.completed",

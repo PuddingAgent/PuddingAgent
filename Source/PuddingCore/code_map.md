@@ -45,7 +45,7 @@
 | 文件 | 用途 |
 |------|------|
 | `OpenAiLlmGateway.cs` | OpenAI-compatible Chat Completions 网关 |
-| `ResponsesLlmGateway.cs` | OpenAI Responses API 网关；flat tools、SSE tool state、终态错误、output items 回放 |
+| `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放 |
 | `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
 
 ## Agent 定义
