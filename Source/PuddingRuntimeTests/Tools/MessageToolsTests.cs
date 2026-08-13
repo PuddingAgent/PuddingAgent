@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -424,12 +424,24 @@ public sealed class MessageToolsTests
         GatewayCommandRoute? route) : IGatewayCommandRouteReader
     {
         public string? LastCommandId { get; private set; }
+        public string? LastAgentInstanceId { get; private set; }
+        public string? LastWorkspaceId { get; private set; }
 
         public Task<GatewayCommandRoute?> GetAsync(
             string commandId,
             CancellationToken ct = default)
         {
             LastCommandId = commandId;
+            return Task.FromResult(route);
+        }
+
+        public Task<GatewayCommandRoute?> FindRecentFeishuRouteAsync(
+            string agentInstanceId,
+            string workspaceId,
+            CancellationToken ct = default)
+        {
+            LastAgentInstanceId = agentInstanceId;
+            LastWorkspaceId = workspaceId;
             return Task.FromResult(route);
         }
     }
