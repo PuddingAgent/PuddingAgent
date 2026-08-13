@@ -1,4 +1,4 @@
-﻿import { injectGlobal } from 'antd-style';
+import { injectGlobal } from 'antd-style';
 
 injectGlobal`
   :root {
@@ -52,6 +52,19 @@ injectGlobal`
     --pudding-chat-danger: #b42318;
     --pudding-chat-success: #4f7f58;
     --pudding-chat-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+
+    /* Pudding Chat Design Tokens — Light（P0-4 附加：仅新增变量，不改既有值） */
+    --pudding-chat-radius-sm: 6px;
+    --pudding-chat-radius-md: 10px;
+    --pudding-chat-radius-lg: 14px;
+    --pudding-chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --pudding-chat-shadow-md: 0 3px 12px rgba(63, 38, 95, 0.04);
+    --pudding-chat-shadow-hover: 0 6px 18px rgba(63, 38, 95, 0.065);
+    /* 状态色阶（§4.0 总表）：running=强调紫 / waiting=琥珀（与队列 #b36b1e 同族）/ success / error */
+    --pudding-status-running: var(--accent-purple);
+    --pudding-status-waiting: #d97706;
+    --pudding-status-success: #22c55e;
+    --pudding-status-error: #ef4444;
 
     /* Pudding Admin Tokens — Light */
     --pudding-admin-bg: #f5f0e8;
@@ -350,6 +363,19 @@ injectGlobal`
     --pudding-chat-danger: #fca5a5;
     --pudding-chat-success: #86efac;
     --pudding-chat-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+    /* Pudding Chat Design Tokens — Dark（P0-4 附加：与浅色段一一对应；半径主题无关，为保持深色段自包含重复声明） */
+    --pudding-chat-radius-sm: 6px;
+    --pudding-chat-radius-md: 10px;
+    --pudding-chat-radius-lg: 14px;
+    --pudding-chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+    --pudding-chat-shadow-md: 0 3px 12px rgba(0, 0, 0, 0.32);
+    --pudding-chat-shadow-hover: 0 6px 18px rgba(0, 0, 0, 0.38);
+    /* 状态色阶深色：running=浅紫（同 --pudding-chat-accent 深色）/ waiting=琥珀提亮档 / success=浅绿（同 --pudding-chat-success 深色）/ error=浅红（同 --pudding-chat-danger 深色） */
+    --pudding-status-running: #a78bfa;
+    --pudding-status-waiting: #f59e0b;
+    --pudding-status-success: #86efac;
+    --pudding-status-error: #fca5a5;
 
     /* Pudding Admin Tokens — Dark */
     --pudding-admin-bg: #0b1020;

@@ -1,7 +1,8 @@
-﻿// ── ApprovalCard：工具审批卡片（P0#1）───────────────────────────
+// ── ApprovalCard：工具审批卡片（P0#1）───────────────────────────
 import { Button, Input, Space, Tag, Typography } from 'antd';
 import React, { useMemo, useState } from 'react';
 import type { ApprovalCardData } from '../client/types';
+import { RISK_COLORS, useApprovalStyles } from '../styles/approval.styles';
 
 export type ApprovalDecision = NonNullable<ApprovalCardData['decision']>;
 
@@ -20,14 +21,15 @@ interface ApprovalCardProps {
   onDecide?: (decision: ApprovalDecision, reason?: string) => void | Promise<void>;
 }
 
+// 风险标签文案；颜色/背景集中在 approval.styles.ts 顶部 RISK_COLORS（语义=严重度，非状态色阶）
 const RISK_META: Record<
   ApprovalCardData['riskLevel'],
   { label: string; color: string; background: string }
 > = {
-  low: { label: '低风险', color: '#389e0d', background: '#f6ffed' },
-  medium: { label: '中风险', color: '#d48806', background: '#fffbe6' },
-  high: { label: '高风险', color: '#d46b08', background: '#fff7e6' },
-  critical: { label: '严重风险', color: '#cf1322', background: '#fff1f0' },
+  low: { label: '低风险', ...RISK_COLORS.low },
+  medium: { label: '中风险', ...RISK_COLORS.medium },
+  high: { label: '高风险', ...RISK_COLORS.high },
+  critical: { label: '严重风险', ...RISK_COLORS.critical },
 };
 
 const DECISION_LABEL: Record<ApprovalDecision, string> = {
@@ -42,64 +44,6 @@ const STATUS_LABEL: Record<ApprovalCardData['status'], string> = {
   denied: '已拒绝',
 };
 
-const cardContainerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 8,
-  width: '100%',
-  maxWidth: 'min(560px, 100%)',
-  padding: '12px 14px',
-  marginTop: 8,
-  borderRadius: 10,
-  border: '1px solid color-mix(in srgb, var(--pudding-chat-border) 80%, transparent)',
-  background: 'var(--pudding-chat-surface-muted)',
-  boxShadow: '0 2px 8px rgba(63, 38, 95, 0.05)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  lineHeight: '20px',
-  color: 'var(--pudding-chat-text)',
-  wordBreak: 'break-all',
-};
-
-const descriptionStyle: React.CSSProperties = {
-  margin: 0,
-  fontSize: 12,
-  lineHeight: 1.6,
-  color: 'var(--pudding-chat-text-muted)',
-  wordBreak: 'break-word',
-  whiteSpace: 'pre-wrap',
-};
-
-const argumentsPreStyle: React.CSSProperties = {
-  margin: 0,
-  maxHeight: 160,
-  overflowY: 'auto',
-  padding: '8px 10px',
-  borderRadius: 6,
-  background: 'color-mix(in srgb, var(--pudding-chat-border) 18%, transparent)',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-  fontSize: 11,
-  lineHeight: 1.55,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-};
-
-const reasonRowStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 6,
-};
-
 const ApprovalCard: React.FC<ApprovalCardProps> = ({
   approvalId,
   toolName,
@@ -112,6 +56,7 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
   expiresAt,
   onDecide,
 }) => {
+  const { styles } = useApprovalStyles();
   const [pendingReason, setPendingReason] = useState('');
   const [submitting, setSubmitting] = useState<ApprovalDecision | null>(null);
 
@@ -146,23 +91,21 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
 
   return (
     <div
-      className="approval-card"
+      className={`approval-card ${styles.cardContainer}`}
       data-testid="approval-card"
       data-approval-id={approvalId}
       data-status={status}
       data-risk={riskLevel}
-      style={{
-        ...cardContainerStyle,
-        borderLeft: `3px solid ${risk.color}`,
-      }}
+      style={{ borderLeft: `3px solid ${risk.color}` }}
     >
-      <div style={headerStyle} data-testid="approval-card-header">
-        <span style={titleStyle} data-testid="approval-card-tool">
+      <div className={styles.header} data-testid="approval-card-header">
+        <span className={styles.title} data-testid="approval-card-tool">
           🔧 {toolName || '工具调用'}
         </span>
         <Tag
           color={risk.color}
-          style={{ marginInlineEnd: 0, background: risk.background }}
+          className={styles.tag}
+          style={{ background: risk.background }}
           data-testid="approval-card-risk"
         >
           {risk.label}
@@ -170,7 +113,7 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
         {isResolved && (
           <Tag
             color={status === 'approved' ? 'success' : 'error'}
-            style={{ marginInlineEnd: 0 }}
+            className={styles.tag}
             data-testid="approval-card-status"
           >
             {STATUS_LABEL[status]}
@@ -179,13 +122,13 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
       </div>
 
       {description && (
-        <p style={descriptionStyle} data-testid="approval-card-description">
+        <p className={styles.description} data-testid="approval-card-description">
           {description}
         </p>
       )}
 
       {argumentsText && (
-        <pre style={argumentsPreStyle} data-testid="approval-card-arguments">
+        <pre className={styles.argumentsPre} data-testid="approval-card-arguments">
           {argumentsText}
         </pre>
       )}
@@ -193,7 +136,7 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
       {isExpired && (
         <Typography.Text
           type="secondary"
-          style={{ fontSize: 12 }}
+          className={styles.metaText}
           data-testid="approval-card-expired"
         >
           ⏰ 审批已过期
@@ -209,20 +152,20 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
                   ? 'error'
                   : 'success'
               }
-              style={{ marginInlineEnd: 0 }}
+              className={styles.tag}
               data-testid="approval-card-decision-tag"
             >
               {decision ? DECISION_LABEL[decision] : STATUS_LABEL[status]}
             </Tag>
             {decision === 'always_allow' && (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <Typography.Text type="secondary" className={styles.metaText}>
                 已加入允许清单
               </Typography.Text>
             )}
           </Space>
           {reason && (
             <div
-              style={{ marginTop: 6, fontSize: 12, color: 'var(--pudding-chat-text-muted)' }}
+              className={styles.decisionReason}
               data-testid="approval-card-decision-reason"
             >
               理由：{reason}
@@ -233,7 +176,7 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
 
       {isPending && (
         <div data-testid="approval-card-pending">
-          <div style={reasonRowStyle}>
+          <div className={styles.reasonRow}>
             <Input
               size="small"
               placeholder="可选：填写审批理由"
@@ -247,19 +190,10 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
           <Space
             size={8}
             wrap
-            style={{ marginTop: 8 }}
+            className={styles.actions}
             data-testid="approval-card-actions"
           >
-            <Button
-              size="small"
-              type="primary"
-              loading={submitting === 'allow_once'}
-              disabled={submitting !== null}
-              onClick={() => handleDecide('allow_once')}
-              data-testid="approval-card-allow-once"
-            >
-              允许一次
-            </Button>
+            {/* 飞书卡片规范：主操作「允许一次」最右、按钮 ≤3 个 */}
             <Button
               size="small"
               loading={submitting === 'always_allow'}
@@ -278,6 +212,16 @@ const ApprovalCard: React.FC<ApprovalCardProps> = ({
               data-testid="approval-card-deny"
             >
               拒绝
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              loading={submitting === 'allow_once'}
+              disabled={submitting !== null}
+              onClick={() => handleDecide('allow_once')}
+              data-testid="approval-card-allow-once"
+            >
+              允许一次
             </Button>
           </Space>
         </div>
