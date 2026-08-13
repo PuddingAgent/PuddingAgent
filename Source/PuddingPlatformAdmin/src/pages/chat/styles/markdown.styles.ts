@@ -52,12 +52,40 @@ export const useMarkdownStyles = createStyles(({ token }) => ({
       fontSize: 13,
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
     },
+    // P0-3: hover 代码块时显隐复制按钮（attribute 选择器，避免依赖 hashed class 名）
+    '&:hover [data-code-copy]': {
+      opacity: 1,
+    },
+  },
+  // P0-3: 左上角语言标签（11px、半透明、等宽）
+  codeLanguageLabel: {
+    position: 'absolute' as const,
+    top: 8,
+    left: 10,
+    zIndex: 1,
+    maxWidth: 'calc(100% - 96px)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    fontSize: 11,
+    lineHeight: '16px',
+    fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+    color: 'var(--earth-brown)',
+    opacity: 0.62,
+    userSelect: 'none' as const,
+    pointerEvents: 'none' as const,
   },
   codeCopyButton: {
     position: 'absolute' as const,
     top: 8,
     right: 8,
     zIndex: 1,
+    // P0-3: 默认隐藏，hover 代码块或键盘聚焦（focus-visible）时显示
+    opacity: 0,
+    transition: 'opacity 150ms ease',
+    '&:focus-visible': {
+      opacity: 1,
+    },
   },
   artifactImageWrap: {
     display: 'block',

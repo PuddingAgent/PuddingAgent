@@ -1,5 +1,6 @@
-﻿// ── UserMessageBubble：用户消息气泡（右对齐，带头像）────────
+// ── UserMessageBubble：用户消息气泡（右对齐，带头像）────────
 
+import dayjs from 'dayjs';
 import { PictureOutlined, UserOutlined } from '@ant-design/icons';
 import { Avatar } from 'antd';
 import React from 'react';
@@ -60,7 +61,12 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   return (
     <div className={styles.userMessageContainer}>
       <div className={styles.userMetaRow}>
-        <span className={styles.userTimeText}>{formatTime(createdAt)}</span>
+        <span
+          className={styles.userTimeText}
+          title={dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss')}
+        >
+          {formatTime(createdAt)}
+        </span>
         {modality === 'voice' ? (
           <span className={styles.messageModalityBadge}>Voice</span>
         ) : null}

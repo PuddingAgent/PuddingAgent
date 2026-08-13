@@ -1,5 +1,6 @@
-﻿// ── AgentMessageBubble：Agent 消息气泡（左对齐）─────────────
+// ── AgentMessageBubble：Agent 消息气泡（左对齐）─────────────
 
+import dayjs from 'dayjs';
 import { Tooltip } from 'antd';
 import React from 'react';
 import type { TokenUsageDto } from '@/services/platform/api';
@@ -577,7 +578,10 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             {!groupedWithPrevious && (
               <div className={styles.agentNameRow}>
                 <span className={styles.agentNameText}>{agentName}</span>
-                <span className={styles.agentTimeText}>
+                <span
+                  className={styles.agentTimeText}
+                  title={dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                >
                   {formatTime(createdAt)}
                 </span>
               </div>

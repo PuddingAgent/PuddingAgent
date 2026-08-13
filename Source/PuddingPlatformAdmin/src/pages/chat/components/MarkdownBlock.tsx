@@ -126,6 +126,11 @@ const preprocessMarkdown = (markdown: string): string => {
   return output.join('\n');
 };
 
+const extractCodeLanguage = (className?: string): string => {
+  const match = /\blanguage-([\w+-]+)/.exec(className ?? '');
+  return match ? match[1] : 'code';
+};
+
 const CodeBlock: React.FC<{
   code: string;
   styles: Record<string, string>;
@@ -143,10 +148,15 @@ const CodeBlock: React.FC<{
   }, [code, className, isStreaming]);
   return (
     <div className={styles.codeBlockWrap}>
+      {/* P0-3: 左上角语言标签（从 language-* 提取，无语言时显示「code」） */}
+      <span className={styles.codeLanguageLabel}>
+        {extractCodeLanguage(className)}
+      </span>
       <Button
         size="small"
         className={styles.codeCopyButton}
         icon={<CopyOutlined />}
+        data-code-copy
         onClick={() => navigator.clipboard.writeText(code)}
       >
         复制

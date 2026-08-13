@@ -1,4 +1,4 @@
-﻿// ── message styles ─────────────────────────────────
+// ── message styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useMessageStyles = createStyles(({ token }) => ({
@@ -117,6 +117,8 @@ export const useMessageStyles = createStyles(({ token }) => ({
     alignItems: 'flex-start',
     maxWidth: '82%',
     minWidth: 0,
+    // P0-2: 为气泡外绝对定位的操作按钮预留落点，长气泡/贴底场景防裁切
+    paddingBottom: 8,
   },
   userMessageContainer: {
     display: 'flex',
@@ -156,8 +158,14 @@ export const useMessageStyles = createStyles(({ token }) => ({
     transition: 'opacity 180ms ease',
   },
   messageActionsVisible: {
-    opacity: 0.6,
+    // P0-2: hover 中操作按钮全亮（原 0.6 半透明）
+    opacity: 1,
     pointerEvents: 'auto' as const,
+    // P0-2: 键盘 Tab 聚焦到任一按钮时保持整组可见（focus-within）
+    '&:focus-within': {
+      opacity: 1,
+      pointerEvents: 'auto' as const,
+    },
   },
   messageActionBtn: {
     width: 24,
@@ -170,12 +178,18 @@ export const useMessageStyles = createStyles(({ token }) => ({
     borderRadius: 4,
     cursor: 'pointer' as const,
     color: 'var(--earth-brown)',
-    opacity: 0.5,
+    opacity: 1,
     fontSize: 13,
     transition: 'opacity 120ms ease, background 120ms ease',
     '&:hover': {
       opacity: 1,
       background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    },
+    // P0-2: 键盘焦点显影（对齐 focusViewRowHeader 的 focus-visible 写法）
+    '&:focus-visible': {
+      outline:
+        '2px solid color-mix(in srgb, var(--accent-purple) 45%, transparent)',
+      outlineOffset: 1,
     },
   },
   messageActionBtnDanger: {
