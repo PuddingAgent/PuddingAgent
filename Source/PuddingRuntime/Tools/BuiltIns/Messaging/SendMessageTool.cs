@@ -147,6 +147,10 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
             }
         }
 
+        // 回信标志：当前回合解析出飞书 ingress 路由 → 被动回信（StableId 幂等）；
+        // 否则为主动投递（每次新 id、非回复）。
+        var isReply = route is not null;
+
         // 非飞书 ingress 回合（网页端 / 心跳 / commandId 为空）：主动投递到该 Agent
         // 最近一次飞书单聊会话，打通「主动推送」链路。
         if (route is null)
@@ -185,13 +189,23 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
                 $"无法投递到 connector:{explicitConnectorId}：当前回合的受信任飞书连接器是 connector:{connectorId}。");
         }
 
-        // ExternalMessageId 有则作为回复锚点，无则新发。
+        // ExternalMessageId：回信时为入站消息回复锚点；主动投递时无锚点（新消息）。
         var externalMessageId = route.ExternalMessageId;
-        var messageId = StableId(
-            "send-message",
-            commandId,
-            connectorId,
-            externalMessageId ?? externalConversationId);
+
+        // messageId：回信保持 StableId 幂等（防止同一 commandId 重复回信）；
+        // 主动投递每次生成新 id，避免 MessageFabric 按 MessageId 去重
+        // （PersistRouteAsync 命中重复 → DeliveryIds=[]）导致第二次及以后
+        // 的主动投递被跳过。
+        var messageId = isReply
+            ? StableId(
+                "send-message",
+                commandId,
+                connectorId,
+                externalMessageId ?? externalConversationId)
+            : Guid.NewGuid().ToString("N");
+
+        // ReplyToMessageId：仅回信时以入站 id 作为回复锚点；主动投递为新消息，非回复。
+        var replyToMessageId = isReply ? externalMessageId : null;
 
         var metadata = new Dictionary<string, string>(
             route.Metadata,
@@ -201,6 +215,14 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
             [MessageGatewayMetadata.IdempotencyKey] = messageId,
             [MessageGatewayMetadata.IsProjection] = "true",
         };
+
+        // 主动投递必须移除入站消息 id 元数据：ConnectorDeliveryDispatcher 会将其
+        // 复制为连接器消息的 message_id，FeishuConnector 据此走 ReplyTextAsync
+        // 回复旧消息而不是新发 —— 与新消息语义冲突。
+        if (!isReply)
+        {
+            metadata.Remove(MessageGatewayMetadata.ExternalMessageId);
+        }
 
         try
         {
@@ -226,7 +248,7 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
                     ],
                     RoomId = route.ConversationId,
                     ConversationId = route.ConversationId,
-                    ReplyToMessageId = externalMessageId,
+                    ReplyToMessageId = replyToMessageId,
                     CorrelationId = route.ConversationId,
                     CausationId = route.TurnId,
                     Audience = MessageAudiences.Direct,
@@ -241,10 +263,14 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
                 status = "ok",
                 route = "feishu",
                 target = $"connector:{connectorId}",
+                isReply,
                 result.MessageId,
                 result.RoomId,
                 result.DeliveryIds,
-                externalMessageId,
+                // 回信返回回复锚点；主动投递无回传（新消息 external id 由飞书侧
+                // 生成，MessageSendResult 无 ExternalMessageId 字段），返回 null
+                // 避免把入站 id 误当作新消息 id 误导调用方。
+                externalMessageId = isReply ? externalMessageId : null,
             }, JsonOptions));
         }
         catch (Exception ex)

@@ -153,6 +153,91 @@ public sealed class MessageToolsTests
     }
 
     [TestMethod]
+    public async Task SendMessageTool_Proactive_Delivery_Uses_Fresh_MessageId_And_No_ReplyAnchor()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        // 无 ExecutionIdentity（心跳/网页端）→ 主动投递；连续两次调用必须各自成新消息。
+        var first = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "user:owner",
+            ["content"] = "hello",
+        });
+        var second = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "user:owner",
+            ["content"] = "hello again",
+        });
+
+        Assert.IsTrue(first.Success, first.Error);
+        Assert.IsTrue(second.Success, second.Error);
+        Assert.AreEqual(2, fabric.Sent.Count);
+
+        // 主动投递：每次生成新 MessageId（不得被 MessageFabric 按 MessageId 去重跳过）。
+        var firstEnvelope = fabric.Sent[0];
+        var secondEnvelope = fabric.Sent[1];
+        Assert.AreNotEqual(firstEnvelope.MessageId, secondEnvelope.MessageId);
+        Assert.AreEqual(firstEnvelope.MessageId, firstEnvelope.Metadata[MessageGatewayMetadata.IdempotencyKey]);
+        Assert.AreEqual(secondEnvelope.MessageId, secondEnvelope.Metadata[MessageGatewayMetadata.IdempotencyKey]);
+
+        // 主动投递：非回复（无回复锚点），且移除入站消息 id 元数据，
+        // 避免 ConnectorDeliveryDispatcher 复制为 message_id 后走 ReplyTextAsync 回复旧消息。
+        Assert.IsNull(firstEnvelope.ReplyToMessageId);
+        Assert.IsNull(secondEnvelope.ReplyToMessageId);
+        Assert.IsFalse(firstEnvelope.Metadata.ContainsKey(MessageGatewayMetadata.ExternalMessageId));
+
+        // 返回 JSON：isReply=false，externalMessageId 不得再返回入站 id。
+        using var firstJson = JsonDocument.Parse(first.Output);
+        var firstRoot = firstJson.RootElement;
+        Assert.IsFalse(firstRoot.GetProperty("isReply").GetBoolean());
+        Assert.IsTrue(
+            !firstRoot.TryGetProperty("externalMessageId", out var externalMessageId)
+            || externalMessageId.ValueKind == JsonValueKind.Null);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Reply_Path_Keeps_Idempotent_MessageId_And_ReplyAnchor()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric, FeishuRouteReader()));
+
+        var first = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "user:owner",
+                ["content"] = "回信一",
+            },
+            withIdentity: true);
+        var second = await ExecuteAsync(
+            tool,
+            new Dictionary<string, string>
+            {
+                ["to"] = "user:owner",
+                ["content"] = "回信二",
+            },
+            withIdentity: true);
+
+        Assert.IsTrue(first.Success, first.Error);
+        Assert.IsTrue(second.Success, second.Error);
+        Assert.AreEqual(2, fabric.Sent.Count);
+
+        // 回信：同一 commandId → StableId 幂等（MessageId 相同，防止重复回信）。
+        Assert.AreEqual(fabric.Sent[0].MessageId, fabric.Sent[1].MessageId);
+        // 回信：入站 id 作为回复锚点，元数据保留 ExternalMessageId。
+        Assert.AreEqual("om_1", fabric.Sent[0].ReplyToMessageId);
+        Assert.AreEqual("om_1", fabric.Sent[1].ReplyToMessageId);
+        Assert.AreEqual("om_1", fabric.Sent[0].Metadata[MessageGatewayMetadata.ExternalMessageId]);
+
+        // 返回 JSON：isReply=true，externalMessageId 返回回复锚点。
+        using var firstJson = JsonDocument.Parse(first.Output);
+        var firstRoot = firstJson.RootElement;
+        Assert.IsTrue(firstRoot.GetProperty("isReply").GetBoolean());
+        Assert.AreEqual("om_1", firstRoot.GetProperty("externalMessageId").GetString());
+    }
+
+    [TestMethod]
     public async Task SendMessageTool_Returns_Error_When_No_Recent_Feishu_Route()
     {
         var fabric = new RecordingMessageSystem();
