@@ -84,6 +84,18 @@ jest.mock('../styles/agent.styles', () => {
   };
 });
 
+jest.mock('../styles/waiting.styles', () => {
+  const styles = new Proxy(
+    {},
+    {
+      get: (_target, prop) => String(prop),
+    },
+  );
+  return {
+    useWaitingStyles: () => ({ styles }),
+  };
+});
+
 jest.mock('../hooks/useTypewriterStreaming', () => ({
   useTypewriterStreaming: (...args: unknown[]) =>
     mockUseTypewriterStreaming(...args),
@@ -322,14 +334,14 @@ describe('AgentMessageBubble streaming presentation', () => {
 
     expect(screen.queryByTestId('message-item')).toBeNull();
     expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
-    expect(screen.getByText('正在请求模型')).toBeTruthy();
-    expect(screen.getByText('等待首个可见事件')).toBeTruthy();
-    expect(screen.getByText(/这是主代理的等待占位/)).toBeTruthy();
+    // P1-3 降噪：阶段文案折叠进 tooltip、轨道/开发者 hint 不再直出主行；
+    // 容器仍保留气泡壳类（agentBubbleNew.agentBubbleStreaming），单行布局走 waiting.styles。
+    expect(screen.queryByText('正在请求模型')).toBeNull();
+    expect(screen.queryByText('等待首个可见事件')).toBeNull();
+    expect(screen.queryByText(/这是主代理的等待占位/)).toBeNull();
     expect(screen.getByTestId('agent-waiting-monitor')).toBeTruthy();
     expect(
-      container.querySelector(
-        '.agentBubbleNew.agentBubbleStreaming.agentWaitingBubble',
-      ),
+      container.querySelector('.agentBubbleNew.agentBubbleStreaming'),
     ).toBeTruthy();
     expect(container.querySelector('.reasoningContainer')).toBeNull();
   });
@@ -348,8 +360,12 @@ describe('AgentMessageBubble streaming presentation', () => {
         />,
       );
 
-      expect(screen.getByText('模型正在进行复杂推理')).toBeTruthy();
-      expect(screen.getByText('已等待 10 分 0 秒')).toBeTruthy();
+      // P1-3：阶段文案进 tooltip（mock 透传 data-title）；主行只显示单行 + ≥15s 时钟（Xm 格式）。
+      expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
+      expect(screen.getByText('· 已等待 10m')).toBeTruthy();
+      expect(
+        screen.getByTestId('antd-tooltip').getAttribute('data-title'),
+      ).toContain('模型正在进行复杂推理');
     } finally {
       jest.useRealTimers();
     }
