@@ -1,8 +1,13 @@
 // ── UserMessageBubble：用户消息气泡（右对齐，带头像）────────
 
+import {
+  CheckOutlined,
+  CopyOutlined,
+  PictureOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
+import { Avatar, Tooltip } from 'antd';
 import dayjs from 'dayjs';
-import { PictureOutlined, UserOutlined } from '@ant-design/icons';
-import { Avatar } from 'antd';
 import React from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 
@@ -19,6 +24,8 @@ interface UserMessageBubbleProps {
   workspaceId?: string;
   userName?: string;
   userAvatarUrl?: string;
+  /** 消息元数据；失败态下取 metadata.error 作为 title 错误详情。 */
+  metadata?: Record<string, string>;
   formatTime: (ts: number) => string;
   onContextMenu?: (e: React.MouseEvent) => void;
 }
@@ -35,6 +42,7 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   workspaceId,
   userName,
   userAvatarUrl,
+  metadata,
   formatTime,
   onContextMenu,
 }) => {
@@ -42,7 +50,25 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   const [failedImageIds, setFailedImageIds] = React.useState<Set<string>>(
     () => new Set(),
   );
+  // P1-4: hover 展示操作按钮（首次 hover 后保持挂载，同 AgentMessageBubble）
+  const [showActions, setShowActions] = React.useState(false);
+  const [actionsMounted, setActionsMounted] = React.useState(false);
+  // P1-4: copy 成功 1s 反馈（ref 防重入 + 卸载保护，同 MessageActions 模式）
+  const [copyPending, setCopyPending] = React.useState(false);
+  const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   const isSending = status === 'sending';
+  const isError = status === 'error';
   const messageAgeMs = Math.max(0, Date.now() - createdAt);
   const shouldAnimateEntrance =
     isSending || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
@@ -58,8 +84,38 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
     return Array.from(new Set(ids.filter(Boolean)));
   }, [visionArtifactId, visionArtifactIds]);
 
+  // P1-4: 失败态 title 错误详情 —— 优先 metadata.error，缺省通用文案
+  const errorDetail = React.useMemo(() => {
+    const detail = metadata?.error;
+    return detail && detail.trim()
+      ? detail.trim()
+      : '消息发送失败，请稍后重试';
+  }, [metadata]);
+
+  const revealActions = React.useCallback(() => {
+    setActionsMounted(true);
+    setShowActions(true);
+  }, []);
+
+  const hideActions = React.useCallback(() => {
+    setShowActions(false);
+  }, []);
+
+  const handleCopy = React.useCallback(() => {
+    navigator.clipboard.writeText(content).catch(() => {});
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopyPending(true);
+    copyTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) setCopyPending(false);
+    }, 1000);
+  }, [content]);
+
   return (
-    <div className={styles.userMessageContainer}>
+    <div
+      className={styles.userMessageContainer}
+      onMouseEnter={revealActions}
+      onMouseLeave={hideActions}
+    >
       <div className={styles.userMetaRow}>
         <span
           className={styles.userTimeText}
@@ -79,7 +135,9 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
         <span className={styles.userNameText}>{displayName}</span>
       </div>
       <div className={styles.userBubbleRow}>
-        <div className={styles.userBubbleArea}>
+        <div
+          className={cx(styles.userBubbleArea, styles.userMessageActionsHost)}
+        >
           <div
             className={cx(
               styles.userBubbleNew,
@@ -135,6 +193,31 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
           </div>
           {isSending && (
             <span className={styles.userSendingIndicator}>发送中...</span>
+          )}
+          {isError && (
+            <span className={styles.userErrorText} title={errorDetail}>
+              发送失败
+            </span>
+          )}
+          {actionsMounted && content.trim() && (
+            <div
+              className={cx(
+                styles.userMessageActions,
+                showActions && styles.userMessageActionsVisible,
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Tooltip title="复制">
+                <button
+                  type="button"
+                  className={styles.messageActionBtn}
+                  onClick={handleCopy}
+                  aria-label={copyPending ? '已复制' : '复制'}
+                >
+                  {copyPending ? <CheckOutlined /> : <CopyOutlined />}
+                </button>
+              </Tooltip>
+            </div>
           )}
         </div>
         <div className={styles.userAvatarShell}>
