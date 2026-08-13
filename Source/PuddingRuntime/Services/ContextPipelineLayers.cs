@@ -316,25 +316,32 @@ public sealed partial class ContextPipeline
 
         if (visibleDescriptors.Count > 0)
         {
-            sb.AppendLine("Available tools (use via function calling):");
-            var lowTools = visibleDescriptors.Where(d => d.PermissionLevel == ToolPermissionLevel.Low).ToList();
-            var mediumTools = visibleDescriptors.Where(d => d.PermissionLevel == ToolPermissionLevel.Medium).ToList();
-            var highTools = visibleDescriptors.Where(d => d.PermissionLevel == ToolPermissionLevel.High).ToList();
-
-            if (lowTools.Count > 0)
+            sb.AppendLine("Available tools (grouped by category, use via function calling):");
+            var categoryOrder = new[]
             {
-                sb.Append("  [内置] ");
-                sb.AppendLine(string.Join(", ", lowTools.Select(t => $"`{t.ToolId}`")));
-            }
-            if (mediumTools.Count > 0)
+                ToolCategory.FileSystem,
+                ToolCategory.Query,
+                ToolCategory.Execute,
+                ToolCategory.Memory,
+                ToolCategory.Messaging,
+                ToolCategory.Orchestration,
+                ToolCategory.Network,
+                ToolCategory.Security,
+                ToolCategory.Shell,
+                ToolCategory.General,
+            };
+            foreach (var category in categoryOrder)
             {
-                sb.Append("  [默认授权] ");
-                sb.AppendLine(string.Join(", ", mediumTools.Select(t => $"`{t.ToolId}`")));
-            }
-            if (highTools.Count > 0)
-            {
-                sb.Append("  [需显式授权] ");
-                sb.AppendLine(string.Join(", ", highTools.Select(t => $"`{t.ToolId}`")));
+                var tools = visibleDescriptors
+                    .Where(d => d.Category == category)
+                    .OrderBy(d => d.ToolId, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (tools.Count == 0)
+                    continue;
+                sb.Append("  [");
+                sb.Append(category);
+                sb.Append("] ");
+                sb.AppendLine(string.Join(", ", tools.Select(t => $"`{t.ToolId}`")));
             }
             sb.AppendLine($"Total: {visibleDescriptors.Count} tools available.");
         }
