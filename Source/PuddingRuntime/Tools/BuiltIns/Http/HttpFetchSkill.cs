@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "http_fetch",
     name: "HTTP Fetch",
-    description: "Make an HTTP/HTTPS request and return raw, Markdown, plain text, or JSON-formatted response content.",
+    description: "发起 HTTP/HTTPS 请求并返回原始、Markdown、纯文本或 JSON 格式的响应内容。Make an HTTP/HTTPS request and return raw, Markdown, plain text, or JSON-formatted response content",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Medium,
     safety: ToolSafetyFlags.RequiresNetwork)]

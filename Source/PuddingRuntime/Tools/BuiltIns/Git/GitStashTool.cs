@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.StashId,
         name: "Git Stash",
-        description: "Stash the current working directory and index changes away for later reuse",
+        description: "将当前工作目录与索引的改动暂存（stash）起来，稍后可恢复复用。Stash the current working directory and index changes away for later reuse",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.None,

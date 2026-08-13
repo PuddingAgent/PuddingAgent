@@ -46,7 +46,7 @@ internal static class CodeQueryToolHelper
 [Tool(
     id: "code_index_status",
     name: "Code index status",
-    description: "Get the current indexing status for a registered code project.",
+    description: "获取已登记代码项目的当前索引状态（indexing status）。Get the current indexing status for a registered code project",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -124,7 +124,7 @@ public sealed record CodeIndexStatusArgs
 [Tool(
     id: "code_symbol_search",
     name: "Search code symbols",
-    description: "Search code symbols by name across registered projects. Results include symbol kind, file location, and signature.",
+    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。Search code symbols by name across registered projects",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -262,7 +262,7 @@ public sealed record CodeSymbolSearchArgs
 [Tool(
     id: "code_explore",
     name: "Explore code symbol",
-    description: "Explore the children (contained symbols) of a code symbol such as a namespace or type.",
+    description: "探索代码符号（如命名空间或类型）的子符号（contained symbols）。Explore the children (contained symbols) of a code symbol such as a namespace or type",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -358,7 +358,7 @@ public sealed record CodeExploreArgs
 [Tool(
     id: "code_callers",
     name: "Find callers",
-    description: "Find all symbols that call the specified symbol.",
+    description: "查找所有调用指定符号（symbol）的调用方（callers）。Find all symbols that call the specified symbol",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -451,7 +451,7 @@ public sealed record CodeCallersArgs
 [Tool(
     id: "code_callees",
     name: "Find callees",
-    description: "Find all symbols called by the specified symbol.",
+    description: "查找指定符号（symbol）调用的所有被调用方（callees）。Find all symbols called by the specified symbol",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -544,7 +544,7 @@ public sealed record CodeCalleesArgs
 [Tool(
     id: "code_impact",
     name: "Code impact analysis",
-    description: "Compute the downstream impact of a symbol by traversing callers recursively up to the specified depth.",
+    description: "通过递归遍历调用方，计算符号（symbol）的下游影响（impact），直到指定深度。Compute the downstream impact of a symbol by traversing callers recursively up to the specified depth",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

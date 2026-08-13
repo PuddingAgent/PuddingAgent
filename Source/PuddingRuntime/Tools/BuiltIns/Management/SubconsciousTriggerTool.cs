@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "subconscious_trigger",
     name: "Subconscious pipeline trigger",
-    description: "Manually trigger subconscious pipelines (Auto-Dream, Pattern Extraction, Skill Self-Improvement). Bypasses timer delays for debugging and verification.",
+    description: "手动触发潜意识管线（Auto-Dream、Pattern Extraction、Skill Self-Improvement），绕过定时器延迟，用于调试与验证。Manually trigger subconscious pipelines",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.Destructive)]

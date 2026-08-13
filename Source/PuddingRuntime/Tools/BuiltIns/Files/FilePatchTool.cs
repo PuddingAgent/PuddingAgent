@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_patch",
     name: "Patch file",
-    description: "Patch text files in the host workspace. Supports single/batch replacements, line-based operations (insert, delete, replace_lines), and regex replacements. Whitespace-insensitive matching by default. Operations example: operations=[{type='replace', old_text='old code', new_text='new code'}] (type 'replace' or 'regexReplace').",
+    description: "补丁宿主工作区文本文件。支持单个/批量替换、基于行的操作（insert/delete/replace_lines）与正则替换，默认忽略空白差异。Patch text files in the host workspace. Supports single/batch replacements, line-based operations (insert, delete, replace_lines), and regex replacements. Whitespace-insensitive matching by default. Operations example: operations=[{type='replace', old_text='old code', new_text='new code'}] (type 'replace' or 'regexReplace').",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,

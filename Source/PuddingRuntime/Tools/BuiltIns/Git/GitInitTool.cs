@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.InitId,
         name: "Git Init",
-        description: "Initialize a new Git repository in the specified directory",
+        description: "在指定目录初始化（init）新的 Git 仓库。Initialize a new Git repository in the specified directory",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive | ToolSafetyFlags.ConcurrencySafe,

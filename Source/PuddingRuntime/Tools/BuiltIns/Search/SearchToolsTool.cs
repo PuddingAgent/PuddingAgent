@@ -13,7 +13,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "search_tools",
     name: "search_tools",
-    description: "Search the available Pudding tool catalog before using a capability that is not currently exposed. Returns matching tool ids and short descriptions; those tool definitions become available on the next model round. Use concise domain/action keywords such as files, git, web search, database, memory, or terminal.",
+    description: "在可用 Pudding 工具目录中搜索（search tools）后再使用当前未暴露的能力。返回匹配的工具 id 与简短描述；这些工具定义将在下一轮模型回合可用。使用简洁的领域/动作关键词，如 files、git、web search、database、memory 或 terminal。Search the available Pudding tool catalog before using a capability that is not currently exposed",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

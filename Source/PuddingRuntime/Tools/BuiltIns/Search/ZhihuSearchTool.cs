@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "zhihu_search",
     name: "Zhihu Search",
-    description: "Search Zhihu site-internal content (questions, answers, articles). Returns titles, URLs, snippets, and metadata.",
+    description: "搜索知乎站内内容（问题、回答、文章，站内搜索）。返回标题、URL、摘要与元数据。Search Zhihu site-internal content (questions, answers, articles)",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

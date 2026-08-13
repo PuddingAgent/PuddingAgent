@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.DiffId,
         name: "Git Diff",
-        description: "Show changes between the working tree and the index or between the index and HEAD",
+        description: "显示工作区与索引之间、或索引与 HEAD 之间的变更（diff）。Show changes between the working tree and the index or between the index and HEAD",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

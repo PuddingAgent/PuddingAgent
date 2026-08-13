@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.CheckoutId,
         name: "Git Checkout",
-        description: "Check out a commit, branch or tag (detaches HEAD when checking out a non-branch)",
+        description: "检出（checkout）提交、分支或标签；检出非分支时会分离 HEAD。Check out a commit, branch or tag (detaches HEAD when checking out a non-branch)",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,

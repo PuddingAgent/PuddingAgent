@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "zhihu_global_search",
     name: "Zhihu Global Search",
-    description: "Search the entire web through Zhihu's global search API with advanced filtering by domain and publish time.",
+    description: "通过知乎全球搜索 API（Zhihu global search / 网页搜索）搜索全网，支持按领域与发布时间进行高级过滤。Search the entire web through Zhihu's global search API with advanced filtering by domain and publish time",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

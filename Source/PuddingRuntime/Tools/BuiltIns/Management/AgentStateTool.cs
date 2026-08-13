@@ -14,6 +14,8 @@ namespace PuddingRuntime.Services.Tools;
     id: "agent_state",
     name: "Agent state",
     description:
+        "检查、读取、诊断并更新当前 Agent 自身的配置文档。支持文档：soul、agents、tools、bootstrap、memory、heartbeat。" +
+        "工具始终限定在当前 Agent 实例，不能访问其他 Agent 或任意路径。" +
         "Inspect, read, diagnose, and update this Agent's own configuration documents. " +
         "Supported documents: soul, agents, tools, bootstrap, memory, heartbeat. " +
         "The tool is always scoped to the current Agent instance and cannot access another Agent or arbitrary paths.",

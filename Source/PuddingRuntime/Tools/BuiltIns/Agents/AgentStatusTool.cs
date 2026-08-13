@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "agent_status",
     name: "Agent status",
-    description: "View runtime status of agents in the workspace: heartbeat frequency, goal status, queue status, recent activity, and more.",
+    description: "查看工作区内 Agent 的运行时状态：心跳频率、目标状态、队列状态、近期活动等。View runtime status of agents in the workspace",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]

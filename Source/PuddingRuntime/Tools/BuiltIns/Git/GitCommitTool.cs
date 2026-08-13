@@ -72,7 +72,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.CommitId,
         name: "Git Commit",
-        description: "Create a commit with the given message, optionally staging files first",
+        description: "使用给定消息创建提交（commit），可先暂存文件。Create a commit with the given message, optionally staging files first",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,

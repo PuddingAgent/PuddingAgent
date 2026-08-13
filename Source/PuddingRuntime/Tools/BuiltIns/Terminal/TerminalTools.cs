@@ -106,7 +106,7 @@ internal static class TerminalToolJson
 [Tool(
     id: "terminal_start",
     name: "Terminal start",
-    description: "Start a shell command as a background terminal job and return immediately. Use this for build, test, search, server, and other commands that may take more than a few seconds. Poll with terminal_wait.",
+    description: "以后台终端任务方式启动 shell 命令并立即返回。适用于构建、测试、搜索、服务器等可能耗时数秒以上的命令，随后用 terminal_wait 轮询。Start a shell command as a background terminal job and return immediately",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -198,7 +198,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
 [Tool(
     id: "terminal_wait",
     name: "Terminal wait",
-    description: "Poll a background terminal job for incremental output. Canceling this wait does not kill the job. Use terminal_cancel to stop the job.",
+    description: "轮询后台终端任务的增量输出。取消等待不会杀死任务，请用 terminal_cancel 停止任务。Poll a background terminal job for incremental output",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -262,7 +262,7 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs>
 [Tool(
     id: "terminal_read",
     name: "Terminal read",
-    description: "Read a slice of buffered terminal output by job_id and from_offset. Use this when terminal_wait returns a truncated handle.",
+    description: "按 job_id 和 from_offset 读取缓冲的终端输出切片。当 terminal_wait 返回截断句柄时使用。Read a slice of buffered terminal output by job_id and from_offset",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -310,7 +310,7 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs>
 [Tool(
     id: "terminal_status",
     name: "Terminal status",
-    description: "List background terminal jobs for this session, or inspect one job by job_id.",
+    description: "列出当前会话的后台终端任务，或按 job_id 检查单个任务。List background terminal jobs for this session, or inspect one job by job_id",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -347,7 +347,7 @@ public sealed class TerminalStatusTool : PuddingToolBase<TerminalStatusArgs>
 [Tool(
     id: "terminal_cancel",
     name: "Terminal cancel",
-    description: "Cancel a running background terminal job by job_id.",
+    description: "按 job_id 取消正在运行的后台终端任务。Cancel a running background terminal job by job_id",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell | ToolSafetyFlags.Destructive,
@@ -383,7 +383,7 @@ public sealed class TerminalCancelTool : PuddingToolBase<TerminalCancelArgs>
 [Tool(
     id: "terminal_input",
     name: "Terminal input",
-    description: "Send one line of stdin to a running background terminal job by job_id.",
+    description: "向运行中的后台终端任务发送一行标准输入（stdin）。Send one line of stdin to a running background terminal job by job_id",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,

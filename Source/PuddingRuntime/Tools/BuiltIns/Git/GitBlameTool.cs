@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BlameId,
         name: "Git Blame",
-        description: "Show which commit and author last modified each line of a file",
+        description: "显示文件中每一行最后一次被哪个提交（commit）和作者（author）修改（blame）。Show which commit and author last modified each line of a file",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

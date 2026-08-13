@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "agent_skill",
     name: "Agent SKILL",
-    description: "Read and manage runtime-private SKILLs for the current Agent instance.",
+    description: "读取并管理当前 Agent 实例的运行时私有 SKILL（技能）。Read and manage runtime-private SKILLs for the current Agent instance",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe,

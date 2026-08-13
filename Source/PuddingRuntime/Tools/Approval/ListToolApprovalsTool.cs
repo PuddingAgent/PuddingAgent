@@ -8,7 +8,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "list_tool_approvals",
     name: "List tool approvals",
-    description: "List automatic approval tickets by status, tool, session, agent, user, or ticket id.",
+    description: "按状态、工具、会话、代理、用户或工单 id 列出自动审批（approval）工单。List automatic approval tickets by status, tool, session, agent, user, or ticket id",
     category: ToolCategory.Security,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

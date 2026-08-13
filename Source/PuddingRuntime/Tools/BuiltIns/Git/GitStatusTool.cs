@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.StatusId,
         name: "Git Status",
-        description: "Show the working tree status: modified, added, deleted, and untracked files",
+        description: "显示工作区状态（status）：已修改、已添加、已删除和未跟踪的文件。Show the working tree status: modified, added, deleted, and untracked files",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

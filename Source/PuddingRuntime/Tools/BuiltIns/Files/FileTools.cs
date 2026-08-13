@@ -164,7 +164,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "Read a UTF-8 text file from the host workspace. By default, files larger than 300 lines or 40KB trigger an automatic guardrail that returns only the first 200 lines plus a META header (total lines, bytes, truncation notice, and usage hints). Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, MaxChars for char-level truncation, or FullFile=true to bypass the guardrail and read the complete file. Pagination: HeadLines=read first N lines (highest priority); TailLines=read last N lines; OffsetLines=0-based line offset (use with LimitLines); LimitLines=max lines when paired with OffsetLines; MaxChars=max characters (default 100000). FullFile: set true to read the entire file regardless of size. Example: file_read(path=\"log.txt\", HeadLines=50) reads first 50 lines; file_read(path=\"log.txt\", FullFile=true) reads the complete file.",
+    description: "从宿主工作区读取 UTF-8 文本文件。默认情况下超过 300 行或 40KB 的文件会触发自动护栏，仅返回前 200 行并附加 META 头（总行数、字节数、截断提示与用法提示）。可使用 HeadLines/TailLines/OffsetLines/LimitLines 进行行级分页，MaxChars 进行字符级截断，或 FullFile=true 绕过护栏读取完整文件。Read a UTF-8 text file from the host workspace",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -342,7 +342,7 @@ public sealed record FileReadArgs
 [Tool(
     id: "file_write",
     name: "Write file",
-    description: "Create or overwrite a UTF-8 text file in the host workspace.",
+    description: "在宿主工作区创建或覆盖 UTF-8 文本文件。Create or overwrite a UTF-8 text file in the host workspace.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,
@@ -452,7 +452,7 @@ public sealed record FileWriteArgs
 [Tool(
     id: "list_dir",
     name: "List directory",
-    description: "Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
+    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -599,7 +599,7 @@ public sealed record ListDirectoryResult(
 [Tool(
     id: "apply_patch",
     name: "Apply patch",
-    description: "Apply a unified diff to one or more existing files in the host workspace. Use this for multi-hunk or multi-file edits.",
+    description: "对宿主工作区中的一个或多个现有文件应用统一差异补丁（unified diff），用于多区块或多文件编辑。Apply a unified diff to one or more existing files in the host workspace. Use this for multi-hunk or multi-file edits.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,

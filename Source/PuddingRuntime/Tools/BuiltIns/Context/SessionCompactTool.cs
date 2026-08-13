@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "compact_session",
     name: "Compact session context",
-    description: "Manually trigger context compaction for the current session: older messages are summarized into a compact summary while recent messages stay intact. Check context usage first with agent_diagnostics (compaction_stats or token_breakdown). Use when usage is high, before starting a large new task, or after a topic shift. Returns tokens before/after, compacted message count and a summary preview.",
+    description: "手动触发当前会话的上下文压缩（compaction）：旧消息被汇总为紧凑摘要，近期消息保持完整。先用 agent_diagnostics（compaction_stats 或 token_breakdown）检查上下文占用。在占用率高时、开始大型新任务前或主题切换后使用。返回压缩前后 token、被压缩消息数与摘要预览。Manually trigger context compaction for the current session",
     category: ToolCategory.General,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]

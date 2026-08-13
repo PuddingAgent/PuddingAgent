@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BranchListId,
         name: "Git Branch List",
-        description: "List all local branches with the current branch marked",
+        description: "列出所有本地分支（branch），并标记当前所在分支。List all local branches with the current branch marked",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "goal_read",
     name: "Goal read",
-    description: "Read the current agent's private goal.md file content.",
+    description: "读取当前 Agent 私有的 goal.md 文件内容。Read the current agent's private goal.md file content",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]

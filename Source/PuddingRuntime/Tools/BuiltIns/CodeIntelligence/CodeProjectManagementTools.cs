@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "code_index_register_project",
     name: "Register project for indexing",
-    description: "Register a local project directory in Pudding's code-index registry. Low-risk index-state change — does NOT modify or delete any source files. Index data can always be rebuilt. When index=true, triggers semantic indexing after registration.",
+    description: "在 Pudding 的代码索引注册表中登记本地项目目录（register project）。低风险索引状态变更——不修改或删除任何源文件。索引数据始终可重建。index=true 时在登记后触发语义索引。Register a local project directory in Pudding's code-index registry",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -118,7 +118,7 @@ public sealed record CodeProjectAddArgs
 [Tool(
     id: "code_index_unregister_project",
     name: "Unregister project from indexing",
-    description: "Remove a project from Pudding's code-index registry. Low-risk index-state change — does NOT delete source files or directories; only clears the index registry entry and associated index data.",
+    description: "从 Pudding 的代码索引注册表中移除项目（unregister project）。低风险索引状态变更——不删除源文件或目录，仅清除索引注册项与关联的索引数据。Remove a project from Pudding's code-index registry",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe,
@@ -188,7 +188,7 @@ public sealed record CodeProjectRemoveArgs
 [Tool(
     id: "code_index_list_projects",
     name: "List registered projects",
-    description: "List all projects registered in Pudding's code-index registry for the current workspace.",
+    description: "列出当前工作区中已登记到 Pudding 代码索引注册表的所有项目（list projects）。List all projects registered in Pudding's code-index registry for the current workspace",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

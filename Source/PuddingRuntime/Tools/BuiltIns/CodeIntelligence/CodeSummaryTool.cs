@@ -13,7 +13,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "code_summary",
     name: "Code symbol summary",
-    description: "Get a quick summary of a code symbol: purpose, location, signature, documentation, and key call relationships. Combines symbol search with doc extraction and call graph.",
+    description: "获取代码符号（symbol）的快速摘要（summary）：用途、位置、签名、文档与关键调用关系，结合符号搜索、文档提取与调用图。Get a quick summary of a code symbol: purpose, location, signature, documentation, and key call relationships",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

@@ -13,7 +13,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "doubao_search",
     name: "Doubao Search",
-    description: "Search the public web through Doubao Search Global. Returns ranked sources, text snippets, image URLs, and source metadata.",
+    description: "通过豆包全球搜索（Doubao Search Global / 网页搜索）搜索公开网页。返回排序来源、文本摘要、图片 URL 与来源元数据。Search the public web through Doubao Search Global",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

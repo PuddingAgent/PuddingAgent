@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.LogId,
         name: "Git Log",
-        description: "Show commit history with author, date, and message",
+        description: "显示提交历史/日志（git log），含作者、日期和消息。Show commit history with author, date, and message",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

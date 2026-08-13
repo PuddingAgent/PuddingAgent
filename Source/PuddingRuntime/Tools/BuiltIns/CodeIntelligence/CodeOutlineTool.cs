@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "code_outline",
     name: "File structure outline",
-    description: "Get a structured outline of all top-level types and members in a file. Returns a tree view with symbol kind, line range, signature, and modifiers — no pre-built index needed. Supports C# (.cs), C/C++ (.c/.h/.cc/.cpp/.cxx/.hpp/.hh/.hxx), Python (.py/.pyw/.pyi), TypeScript/JS (.ts/.tsx/.js/.jsx), Markdown (.md), JSON (.json), YAML (.yaml/.yml), PowerShell (.ps1/.psm1/.psd1), and Bicep (.bicep).",
+    description: "获取文件中所有顶层类型与成员的结构化大纲（outline），返回符号种类、行范围、签名与修饰符的树视图——无需预建索引。Get a structured outline of all top-level types and members in a file",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

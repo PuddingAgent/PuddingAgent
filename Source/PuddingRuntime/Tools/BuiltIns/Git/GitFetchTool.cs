@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.FetchId,
         name: "Git Fetch",
-        description: "Fetch updates from a remote repository without merging",
+        description: "从远程仓库获取（fetch）更新，不进行合并。Fetch updates from a remote repository without merging",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.ConcurrencySafe,

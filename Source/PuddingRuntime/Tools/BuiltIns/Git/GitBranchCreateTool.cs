@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BranchCreateId,
         name: "Git Branch Create",
-        description: "Create a new branch in the repository",
+        description: "在仓库中创建新分支（branch）。Create a new branch in the repository",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.None,

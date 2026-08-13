@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "project_map",
     name: "Project module overview",
-    description: "View a project's module overview: directory tree mapped to core types. Shows namespace → directory → key class relationships.",
+    description: "查看项目的模块总览（project map）：目录树映射到核心类型，展示命名空间→目录→关键类关系。View a project's module overview: directory tree mapped to core types",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "github_search",
     name: "GitHub Search",
-    description: "Search GitHub repositories, code, issues, and commits via GitHub REST API. Returns titles, URLs, and descriptions.",
+    description: "通过 GitHub REST API 搜索 GitHub 仓库、代码、issue 与提交（commit）。返回标题、URL 与描述。Search GitHub repositories, code, issues, and commits via GitHub REST API",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

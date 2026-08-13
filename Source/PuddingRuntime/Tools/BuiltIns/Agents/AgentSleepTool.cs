@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "sleep",
     name: "Agent sleep",
-    description: "Set the agent's heartbeat interval and wake cycle. The agent controls its own heartbeat frequency.",
+    description: "设置 Agent 的心跳间隔与唤醒周期。Agent 控制自身心跳频率。Set the agent's heartbeat interval and wake cycle",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]

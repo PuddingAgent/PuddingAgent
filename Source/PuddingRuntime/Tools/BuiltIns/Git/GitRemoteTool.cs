@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.RemoteId,
         name: "Git Remote",
-        description: "List all remotes configured for the repository",
+        description: "列出仓库配置的全部远程仓库（remote）。List all remotes configured for the repository",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.None,

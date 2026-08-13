@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.MergeId,
         name: "Git Merge",
-        description: "Merge the given branch into the current branch",
+        description: "将指定分支合并（merge）到当前分支。Merge the given branch into the current branch",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,

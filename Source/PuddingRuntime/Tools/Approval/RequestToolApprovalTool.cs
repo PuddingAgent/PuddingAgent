@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "request_tool_approval",
     name: "Request tool approval",
-    description: "Submit a structured safety checklist for automatic approval of a high-risk tool call.",
+    description: "提交结构化的安全检查清单，为高风险工具调用申请自动审批（approval）。Submit a structured safety checklist for automatic approval of a high-risk tool call",
     category: ToolCategory.Security,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe,

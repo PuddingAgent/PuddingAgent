@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.CloneId,
         name: "Git Clone",
-        description: "Clone a remote Git repository into a local directory",
+        description: "将远程 Git 仓库克隆（clone）到本地目录。Clone a remote Git repository into a local directory",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive | ToolSafetyFlags.ConcurrencySafe,

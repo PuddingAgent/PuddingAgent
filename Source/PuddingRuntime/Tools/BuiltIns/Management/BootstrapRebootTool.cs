@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "bootstrap_reboot",
     name: "Bootstrap reboot",
-    description: "Trigger a Desktop-guided rebuild-and-restart of the Core process (self-ignition). Use after committing code or configuration changes that require a restart to take effect. Desktop stops Core, runs an incremental dotnet build and restarts it; this process terminates within seconds of a successful trigger and the session resumes automatically after the restart. yolo.signal is written so YOLO mode survives the restart when it is currently active (override with keepYolo). WARNING: all running sub-agents are terminated by the restart.",
+    description: "触发 Desktop 引导的 Core 进程重建与重启（自举重启 self-ignition）。在提交需要重启生效的代码或配置改动后使用。Desktop 停止 Core、运行增量 dotnet build 并重启；触发成功后本进程在数秒内终止，会话在重启后自动恢复。会写入 yolo.signal 使 YOLO 模式在重启后存活（可用 keepYolo 覆盖）。警告：重启会终止所有运行中的子代理。Trigger a Desktop-guided rebuild-and-restart of the Core process",
     category: ToolCategory.General,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]

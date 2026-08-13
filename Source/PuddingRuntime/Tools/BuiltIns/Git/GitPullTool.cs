@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.PullId,
         name: "Git Pull",
-        description: "Fetch from a remote repository and merge the remote branch into the current branch",
+        description: "从远程仓库拉取（pull）并将远程分支合并到当前分支。Fetch from a remote repository and merge the remote branch into the current branch",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

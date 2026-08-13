@@ -30,15 +30,15 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "spawn_sub_agent",
     name: "spawn_sub_agent",
-    description: "�����Ӵ���ִ�ж��������Ӵ���ӵ�ж����������Ĵ��ڣ��������������ĶԻ���ʷ��" +
-                 "�Ƽ�ʹ�ýṹ��ί��Э�������question��scope��already_known��effort��stop_condition��output��" +
-                 "Ҳ����ʹ�þ� task����ʹ�� tasks JSON array �����������ṹ��������" +
-                 "������task��������������agent_template����ѡ��Ĭ�� workspace-task-agent����" +
-                 "model����ѡ���� mimo/mimo-v2.5-pro �� deepseek/deepseek-v3����ָ������ƽ̨Ĭ��ģ�ͣ���" +
-                 "sync����ѡ��true=ͬ�������ȴ���� / false=�첽�������أ�Ĭ�� true����" +
-                 "ͬ��ģʽ���ؽṹ�������ͬ��SUMMARY��CHANGES��EVIDENCE��RISKS��BLOCKERS��" +
-                 "�첽ģʽ���������� agentId���Ժ�ͨ�� agent.sub_completed �¼�֪ͨ�����" +
-                 "provider ��ʽΪ {providerId}/{modelId}��ƽ̨���� LLM ��Դ��ע��ģ�͡�",
+    description: "派生子代理执行独立任务。子代理拥有独立的上下文窗口，看不到主代理的对话历史。" +
+                 "推荐使用结构化委派协议参数：question、scope、already_known、effort、stop_condition、output；" +
+                 "也可以使用旧 task，或使用 tasks JSON array 批量发起多个结构化子任务。" +
+                 "参数：task（任务描述）、agent_template（可选，默认 workspace-task-agent）、" +
+                 "model（可选，如 mimo/mimo-v2.5-pro 或 deepseek/deepseek-v3，不指定则用平台默认模型）、" +
+                 "sync（可选，true=同步阻塞等待结果 / false=异步立即返回，默认 true）。" +
+                 "同步模式返回结构化结果合同：SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS。" +
+                 "异步模式下立即返回 agentId，稍后通过 agent.sub_completed 事件通知结果。" +
+                 "provider 格式为 {providerId}/{modelId}，平台已在 LLM 资源池注册模型。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]

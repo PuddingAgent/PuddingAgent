@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "anysearch_search",
     name: "AnySearch Search",
-    description: "Search web, documentation, news, and domain-specific sources through AnySearch. Returns titles, URLs, snippets, and cleaned content.",
+    description: "通过 AnySearch（网页搜索）搜索网页、文档、新闻及特定领域来源。返回标题、URL、摘要与清洗后的内容。Search web, documentation, news, and domain-specific sources through AnySearch",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.TagId,
         name: "Git Tag",
-        description: "Create a lightweight tag at HEAD, or list all tags in the repository",
+        description: "在 HEAD 创建轻量标签（tag），或列出仓库中的所有标签。Create a lightweight tag at HEAD, or list all tags in the repository",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.None,

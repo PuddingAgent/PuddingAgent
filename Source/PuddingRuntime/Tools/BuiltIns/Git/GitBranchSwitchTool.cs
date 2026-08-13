@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BranchSwitchId,
         name: "Git Branch Switch",
-        description: "Checkout and switch to an existing branch",
+        description: "检出并切换到已有分支（branch checkout/switch）。Checkout and switch to an existing branch",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.None,

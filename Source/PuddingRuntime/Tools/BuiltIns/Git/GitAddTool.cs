@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.AddId,
         name: "Git Add",
-        description: "Stage file paths into the Git index",
+        description: "将文件路径暂存（stage）到 Git 索引，用于提交前准备。Stage file paths into the Git index",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.None,

@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.PushId,
         name: "Git Push",
-        description: "Push commits from a local branch to a remote repository",
+        description: "将本地分支的提交推送（push）到远程仓库。Push commits from a local branch to a remote repository",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive | ToolSafetyFlags.ConcurrencySafe,

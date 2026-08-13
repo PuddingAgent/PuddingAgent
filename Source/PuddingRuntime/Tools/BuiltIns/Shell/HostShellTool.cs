@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "shell",
     name: "Shell 命令执行",
-    description: "Execute a command on the host using auto, WSL/Bash, CMD, or PowerShell mode. Provide 'reason' when running in agent private directories.",
+    description: "在宿主机上执行命令，支持 auto、WSL/Bash、CMD 或 PowerShell 模式。在 Agent 私有目录运行时需提供 reason。Execute a command on the host using auto, WSL/Bash, CMD, or PowerShell mode",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell)]

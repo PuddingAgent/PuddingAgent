@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.ResetId,
         name: "Git Reset",
-        description: "Reset the current branch HEAD to a specified commit (soft, mixed, or hard)",
+        description: "将当前分支 HEAD 重置（reset）到指定提交（soft/mixed/hard）。Reset the current branch HEAD to a specified commit (soft, mixed, or hard)",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,
