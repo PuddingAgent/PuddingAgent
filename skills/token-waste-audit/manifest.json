@@ -1,0 +1,13 @@
+{
+  "id": "token-waste-audit",
+  "name": "Token 浪费自检流程",
+  "version": "1.0.0",
+  "description": "系统化审计 PuddingAgent 的异常 Token 消耗：无效等待、Compaction 放大、巨型 Tool Output、无进展 Retry/Loop、后台模型使用、持久化巨大 Payload、Self-ingestion 及其他异常。产出带统计证据的分层报告与整改建议。",
+  "summary": "八类 Token 浪费自检：Waiting / Compaction-reread / Oversized Tool Output / Retry-Agent Loop / Background Usage / Persistent Payload / Self-ingestion / Other。",
+  "author": "pudding-workspace",
+  "created": "2026-08-13",
+  "tags": ["token-audit", "cost", "self-diagnosis", "compaction", "agent-loop", "自检", "成本审计"],
+  "keywords": ["token 浪费", "自检", "compaction", "agent loop", "巨型输出", "后台使用", "成本审计", "Token audit", "waste", "self-ingestion"],
+  "source_session": "acd7ee428f284f9a845663b1a4d971db",
+  "path": "skills/token-waste-audit"
+}
