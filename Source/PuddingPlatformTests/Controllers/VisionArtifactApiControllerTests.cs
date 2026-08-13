@@ -31,7 +31,7 @@ public sealed class VisionArtifactApiControllerTests
         var storage = new VisionArtifactStorageService(
             PuddingDataPaths.FromRoot(root),
             NullLogger<VisionArtifactStorageService>.Instance);
-        var controller = new VisionArtifactApiController(db, storage);
+        var controller = new VisionArtifactApiController(db, storage, NullLogger<VisionArtifactApiController>.Instance);
         await using var bytes = new MemoryStream([0x42, 0x4D, 0x00, 0x00]);
         var file = new FormFile(bytes, 0, bytes.Length, "file", "sample.bmp")
         {

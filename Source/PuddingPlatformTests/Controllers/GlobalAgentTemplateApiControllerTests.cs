@@ -20,7 +20,7 @@ public sealed class GlobalAgentTemplateApiControllerTests
         using var temp = TemporaryDirectory.Create();
         var options = await CreateDatabaseAsync(temp.Path);
         var service = CreateFileService(temp.Path, options);
-        var controller = new GlobalAgentTemplateApiController(service);
+        var controller = new GlobalAgentTemplateApiController(service, NullLogger<GlobalAgentTemplateApiController>.Instance);
 
         var request = CreateRequest(
             templateId: "api-template",
@@ -55,7 +55,7 @@ public sealed class GlobalAgentTemplateApiControllerTests
         using var temp = TemporaryDirectory.Create();
         var options = await CreateDatabaseAsync(temp.Path);
         var service = CreateFileService(temp.Path, options);
-        var controller = new GlobalAgentTemplateApiController(service);
+        var controller = new GlobalAgentTemplateApiController(service, NullLogger<GlobalAgentTemplateApiController>.Instance);
 
         await controller.Create(
             CreateRequest("api-template", "API Template", ["cap-http-fetch"], []),
@@ -85,7 +85,7 @@ public sealed class GlobalAgentTemplateApiControllerTests
         using var temp = TemporaryDirectory.Create();
         var options = await CreateDatabaseAsync(temp.Path);
         var service = CreateFileService(temp.Path, options);
-        var controller = new GlobalAgentTemplateApiController(service);
+        var controller = new GlobalAgentTemplateApiController(service, NullLogger<GlobalAgentTemplateApiController>.Instance);
 
         var request = CreateRequest(
             templateId: "api-template",
