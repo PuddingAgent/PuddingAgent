@@ -67,8 +67,14 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var excludeDirs = ParseExcludeDirs(args.ExcludeDirs);
         AppendExcludeDirs(excludeDirs, args.ExcludeDirsAppend);
 
+        // 默认搜索根优先使用执行快照冻结的 WorkingDirectory（与 file 工具同源），
+        // 而非进程 Environment.CurrentDirectory（运行时 bin 目录，会导致主/子代理搜索到错误路径）。
+        var effectiveDirectory = string.IsNullOrWhiteSpace(args.Directory)
+            ? context.WorkingDirectory
+            : args.Directory;
+
         return await SearchCoreAsync(
-            query, args.Pattern, args.FileExt, args.Directory,
+            query, args.Pattern, args.FileExt, effectiveDirectory,
             caseSensitive, maxResults, excludeDirs, maxLineBytes, maxTotalBytes, ct);
     }
 
@@ -142,10 +148,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         bool caseSensitive, int maxResults, string[]? extFilter,
         HashSet<string> excludeDirs, long maxLineBytes, long maxTotalBytes, CancellationToken ct)
     {
-        var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
+                var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
         if (!Directory.Exists(cwd))
             return ToolExecutionResult.Fail(
-                $"Directory '{cwd}' not found. Use 'directory' to specify an existing path, or omit it to search the current workspace root ({Environment.CurrentDirectory}).");
+                $"Directory '{cwd}' not found. Use 'directory' to specify an existing path, or omit it to search the workspace root ({cwd}).");
 
         var results = new List<string>();
         var files = new List<string>();
