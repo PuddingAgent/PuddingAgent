@@ -1296,7 +1296,7 @@ public sealed record SubAgentToolArgs
     [ToolParam("Optional model id or provider/model id.")]
     public string? Model { get; init; }
 
-    [ToolParam("���ø���������װ�������ģ�Fork + ��֦��ע���Ӵ�������Ĭ�� false��")]
+    [ToolParam("复用父代理的上下文环境（Fork + 分支 + 注入到子代理上下文），默认 false")]
     public bool? ReuseParentContext { get; init; }
 
     [ToolParam("Existing sub-agent id to resume with preserved context and a fresh Pudding-managed budget. Do not combine with tasks or pool_name.")]
@@ -1351,28 +1351,28 @@ public sealed record SubAgentToolArgs
     public string? OriginToolId { get; init; }
 
     /// <summary>
-    /// �ػ��Ӵ������ơ�ָ����ʹ�óػ����ã����ֻỰ���������� KV-cache����
-    /// ���򴴽�һ�����Ӵ�����ÿ���½��Ự����
+    /// 池化子代理名称。指定时使用池化配置，保持会话延续与 KV-cache 复用；
+    /// 否则创建一个新子代理（每次新建会话）
     /// </summary>
-    [ToolParam("�ػ��Ӵ������ơ�ָ����ʹ�óػ����ã����򴴽�һ�����Ӵ�����")]
+    [ToolParam("池化子代理名称。指定时使用池化配置，否则创建一个新子代理")]
     public string? PoolName { get; init; }
 
     /// <summary>
-    /// �ز���: create(��������ִ��), execute(ִ������,Ĭ��), destroy(�����Ӵ���), sleep(����), list(�г���״̬)
+    /// 池操作: create(创建并执行), execute(执行任务,默认), destroy(销毁子代理), sleep(休眠), list(列出池状态)
     /// </summary>
-    [ToolParam("�ز���: create, execute(Ĭ��), destroy, sleep, list, cleanup, cleanup-bulk")]
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk")]
     public string? PoolAction { get; init; }
 
     /// <summary>
-    /// �ػ��Ӵ�����ɫ��������ѡ������������;���� dev-agent, reviewer, explorer��
+    /// 池化子代理角色（可选），用于区分用途：如 dev-agent, reviewer, explorer
     /// </summary>
-    [ToolParam("�ػ��Ӵ�����ɫ��������ѡ������������;��")]
+    [ToolParam("池化子代理角色（可选），用于区分用途")]
     public string? PoolRole { get; init; }
 
-    [ToolParam("����ɸѡ״̬: failed, completed, all�������� cleanup/cleanup-bulk��")]
+    [ToolParam("清理筛选状态: failed, completed, all（用于 cleanup/cleanup-bulk）")]
     public string? CleanupStatus { get; init; }
 
-    [ToolParam("���������� N ����Ӵ����������� cleanup-bulk��")]
+    [ToolParam("清理超过 N 天的子代理（用于 cleanup-bulk）")]
     public int? CleanupOlderThanDays { get; init; }
 }
 
