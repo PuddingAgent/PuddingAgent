@@ -55,7 +55,7 @@ internal sealed class SubAgentBudgetLifecycle
     public TimeSpan HardMaxElapsed { get; }
     public bool IsInGrace => _graceStartedAtRound.HasValue;
 
-    public SubAgentBudgetDecision EvaluateBeforeRound(int roundIndex, TimeSpan elapsed)
+    public SubAgentBudgetDecision EvaluateBeforeRound(int roundIndex, TimeSpan elapsed, int toolCallsUsed = 0)
     {
         var notices = new List<SubAgentBudgetNotice>(2);
         if (!_startNoticeSent)
@@ -66,6 +66,7 @@ internal sealed class SubAgentBudgetLifecycle
                 BuildStartNotice()));
         }
 
+        var toolBudgetExhausted = toolCallsUsed >= MaxToolCallsTotal;
         if (!IsInGrace)
         {
             var remainingRounds = Math.Max(0, PrimaryMaxRounds - roundIndex);
@@ -86,10 +87,14 @@ internal sealed class SubAgentBudgetLifecycle
                     BuildRemainingNotice(remainingRounds, 50)));
             }
 
-            if (roundIndex >= PrimaryMaxRounds || elapsed >= PrimaryMaxElapsed)
+            // 工具调用硬上限与轮次/时间预算一样触发收尾宽限窗口（可续跑 BudgetExhausted），
+            // 而不是直接 Failed：子代理在收尾轮次内保存现场并产出阶段性报告。
+            if (roundIndex >= PrimaryMaxRounds || elapsed >= PrimaryMaxElapsed || toolBudgetExhausted)
             {
                 _graceStartedAtRound = roundIndex;
-                _graceCause = roundIndex >= PrimaryMaxRounds ? "rounds" : "time";
+                _graceCause = roundIndex >= PrimaryMaxRounds
+                    ? "rounds"
+                    : toolBudgetExhausted ? "tools" : "time";
                 notices.Add(new SubAgentBudgetNotice(
                     "grace_started",
                     BuildGraceNotice()));
@@ -120,7 +125,7 @@ internal sealed class SubAgentBudgetLifecycle
             $"{runKind}\n" +
             $"正常预算：{PrimaryMaxRounds} 轮、{FormatDuration(PrimaryMaxElapsed)}；" +
             $"工具调用硬上限：{MaxToolCallsTotal} 次。\n" +
-            $"达到正常轮次或时间预算后，系统将额外提供 {GraceRounds} 个收尾轮次（最多 {FormatDuration(GraceElapsed)}，且不超过本次硬截止时间）。\n" +
+            $"达到正常轮次、时间或工具调用预算后，系统将额外提供 {GraceRounds} 个收尾轮次（最多 {FormatDuration(GraceElapsed)}，且不超过本次硬截止时间）。\n" +
             "请在预算内持续保存可恢复现场，并以 SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS 结构交付结果。";
     }
 
@@ -133,7 +138,7 @@ internal sealed class SubAgentBudgetLifecycle
     private string BuildGraceNotice()
         =>
             "[SYSTEM: SUB-AGENT CLEANUP GRACE]\n" +
-            $"子代理已经超出了{(_graceCause == "time" ? "会话时间" : "轮数")}预算限制。" +
+            $"子代理已经超出了{(_graceCause switch { "time" => "会话时间", "tools" => "工具调用次数", _ => "轮数" })}预算限制。" +
             $"系统将在 {GraceRounds} 个收尾轮次后终止本次运行（同时受剩余 {FormatDuration(GraceElapsed)} 和硬截止时间约束）。\n" +
             "请立即停止扩展任务，保存可恢复现场，并产生阶段性任务报告。报告必须包含：" +
             "SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS，以及下一次续跑应从哪里继续。";

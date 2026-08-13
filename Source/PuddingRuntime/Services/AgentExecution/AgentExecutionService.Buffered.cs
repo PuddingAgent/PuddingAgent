@@ -466,7 +466,7 @@ public sealed partial class AgentExecutionService
                 // ── 检查点 B：最大总耗时 ──────────────────────────────
                 if (subAgentBudget is not null)
                 {
-                    var budgetDecision = subAgentBudget.EvaluateBeforeRound(round, totalSw.Elapsed);
+                    var budgetDecision = subAgentBudget.EvaluateBeforeRound(round, totalSw.Elapsed, totalToolCalls);
                     foreach (var notice in budgetDecision.Notices)
                     {
                         history.Add(new ChatMessage(ChatRole.System, notice.Message));
@@ -763,6 +763,23 @@ public sealed partial class AgentExecutionService
                     {
                         if (totalToolCalls >= maxToolCallsTotal)
                         {
+                            if (subAgentBudget is not null)
+                            {
+                                // 工具调用硬上限已用尽：与轮次/时间耗尽语义统一，进入收尾宽限窗口
+                                // （可续跑 BudgetExhausted），而不是直接 Failed。阻止本次及剩余工具执行；
+                                // 下一轮循环边界处 SubAgentBudgetLifecycle 会以 cause="tools" 注入收尾提示。
+                                _logger.LogWarning(
+                                    "[AgentExec] MaxToolCallsTotal={Max} reached session={Session} entering cleanup grace",
+                                    maxToolCallsTotal, request.SessionId);
+                                toolRoundMessages.Add(new ChatMessage(
+                                    ChatRole.Tool,
+                                    $"[SYSTEM] 工具调用预算已用尽（{maxToolCallsTotal} 次）。" +
+                                    "系统已进入收尾宽限窗口，本工具及后续工具调用将不再执行。" +
+                                    "请立即停止扩展任务、保存可恢复现场，并输出阶段性报告（SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS）。",
+                                    ToolCallId: call.Id));
+                                break;
+                            }
+
                             _logger.LogWarning(
                                 "[AgentExec] MaxToolCallsTotal={Max} reached session={Session}",
                                 maxToolCallsTotal, request.SessionId);
@@ -1292,6 +1309,28 @@ public sealed partial class AgentExecutionService
                     // 检查点 C：总工具调用次数上限
                     if (totalToolCalls >= maxToolCallsTotal)
                     {
+                        if (subAgentBudget is not null)
+                        {
+                            // 工具调用硬上限已用尽：与轮次/时间耗尽语义统一，进入收尾宽限窗口
+                            // （可续跑 BudgetExhausted），而不是直接 Failed。阻止本次工具执行；
+                            // 下一轮循环边界处 SubAgentBudgetLifecycle 会以 cause="tools" 注入收尾提示。
+                            _logger.LogWarning(
+                                "[AgentExec] MaxToolCallsTotal={Max} reached session={Session} entering cleanup grace",
+                                maxToolCallsTotal, request.SessionId);
+                            history.Add(new ChatMessage(ChatRole.User,
+                                $"[SYSTEM] 工具调用预算已用尽（{maxToolCallsTotal} 次）。" +
+                                "系统已进入收尾宽限窗口，后续工具调用将不再执行。" +
+                                "请立即停止扩展任务、保存可恢复现场，并输出阶段性报告（SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS）。"));
+                            _journal.Record(request.SessionId, new TurnRecord
+                            {
+                                Round = round, StartedAt = turnStart, CompletedAt = DateTimeOffset.UtcNow,
+                                Status = "CONTINUE", MessageSummary = Truncate(finalMessage, 512),
+                                ToolName = toolName, ToolArgs = toolArgs,
+                                ToolSuccess = false, ToolError = "MaxToolCallsTotal reached (cleanup grace)",
+                            });
+                            continue;
+                        }
+
                         _logger.LogWarning(
                             "[AgentExec] MaxToolCallsTotal={Max} reached session={Session}",
                             maxToolCallsTotal, request.SessionId);

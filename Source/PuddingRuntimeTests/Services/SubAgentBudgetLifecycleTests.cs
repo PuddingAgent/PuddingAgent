@@ -98,17 +98,69 @@ public sealed class SubAgentBudgetLifecycleTests
         StringAssert.Contains(decision.Notices[0].Message, "计数器已重置");
     }
 
+    [TestMethod]
+    public void EvaluateBeforeRound_ToolBudgetExhaustionEntersGraceWithToolsCause()
+    {
+        var lifecycle = Create(primaryRounds: 600, graceRounds: 20, maxToolCalls: 10);
+        _ = lifecycle.EvaluateBeforeRound(0, TimeSpan.Zero, toolCallsUsed: 0);
+
+        var before = lifecycle.EvaluateBeforeRound(1, TimeSpan.FromMinutes(1), toolCallsUsed: 9);
+        var atCap = lifecycle.EvaluateBeforeRound(2, TimeSpan.FromMinutes(2), toolCallsUsed: 10);
+
+        Assert.IsFalse(before.ShouldStop);
+        Assert.IsTrue(lifecycle.IsInGrace);
+        CollectionAssert.Contains(
+            atCap.Notices.Select(n => n.Kind).ToArray(),
+            "grace_started");
+        Assert.AreEqual("tools", atCap.GraceCause);
+        StringAssert.Contains(
+            atCap.Notices.Single(n => n.Kind == "grace_started").Message,
+            "工具调用次数");
+    }
+
+    [TestMethod]
+    public void EvaluateBeforeRound_ToolBudgetExhaustionStillGrantsCleanupRoundsThenStops()
+    {
+        var lifecycle = Create(primaryRounds: 600, graceRounds: 20, maxToolCalls: 10);
+        _ = lifecycle.EvaluateBeforeRound(0, TimeSpan.Zero, toolCallsUsed: 0);
+
+        var graceStart = lifecycle.EvaluateBeforeRound(2, TimeSpan.FromMinutes(1), toolCallsUsed: 10);
+        var lastAllowed = lifecycle.EvaluateBeforeRound(21, TimeSpan.FromMinutes(2), toolCallsUsed: 10);
+        var exhausted = lifecycle.EvaluateBeforeRound(22, TimeSpan.FromMinutes(2), toolCallsUsed: 10);
+
+        Assert.AreEqual("tools", graceStart.GraceCause);
+        Assert.IsFalse(lastAllowed.ShouldStop);
+        Assert.AreEqual(1, lastAllowed.RemainingGraceRounds);
+        Assert.IsTrue(exhausted.ShouldStop);
+        Assert.AreEqual(0, exhausted.RemainingGraceRounds);
+    }
+
+    [TestMethod]
+    public void EvaluateBeforeRound_RoundsTakePrecedenceOverToolCauseWhenBothExhausted()
+    {
+        var lifecycle = Create(primaryRounds: 10, graceRounds: 20, maxToolCalls: 5);
+        _ = lifecycle.EvaluateBeforeRound(0, TimeSpan.Zero, toolCallsUsed: 0);
+
+        var decision = lifecycle.EvaluateBeforeRound(10, TimeSpan.FromMinutes(1), toolCallsUsed: 5);
+
+        Assert.AreEqual("rounds", decision.GraceCause);
+        CollectionAssert.Contains(
+            decision.Notices.Select(n => n.Kind).ToArray(),
+            "grace_started");
+    }
+
     private static SubAgentBudgetLifecycle Create(
         int primaryRounds,
         int graceRounds = 20,
         TimeSpan? hardElapsed = null,
         int graceTimeoutSeconds = 30 * 60,
+        int maxToolCalls = 2400,
         bool resumed = false)
         => new(
             primaryRounds,
             graceRounds,
             hardElapsed ?? TimeSpan.FromHours(24),
             graceTimeoutSeconds,
-            maxToolCallsTotal: 2400,
+            maxToolCallsTotal: maxToolCalls,
             resumed);
 }
