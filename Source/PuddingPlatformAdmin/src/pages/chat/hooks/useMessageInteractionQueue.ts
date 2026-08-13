@@ -1,4 +1,4 @@
-﻿import type { MessageInstance } from 'antd/es/message/interface';
+import type { MessageInstance } from 'antd/es/message/interface';
 import type { KeyboardEvent, MutableRefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -74,6 +74,8 @@ export function useMessageInteractionQueue({
     ChatInteractionQueueItem[]
   >([]);
   const pendingSendQueueRef = useRef<ChatInteractionQueueItem[]>([]);
+  /** P0#9 后端队列快照指纹：相同快照短路，避免高频轮询触发无谓 React commit */
+  const serverQueueSnapshotKeyRef = useRef<string>('');
   const sendMessageRef = useRef<SendMessage>(async () => {});
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
@@ -289,7 +291,22 @@ export function useMessageInteractionQueue({
           includeTerminal: false,
         });
         const next = (snapshot.items ?? []).map(toChatInteractionQueueItem);
-        setServerInteractionQueue(next);
+        // 快照短路：仅比较对显示有影响的字段，相同则跳过 setState，
+        // 避免高频轮询期间对空/不变队列做无谓 React commit。
+        const snapshotKey = JSON.stringify(
+          next.map((item) => ({
+            id: item.id,
+            status: item.status,
+            text: item.text,
+            createdAt: item.createdAt,
+            error: item.error,
+          })),
+        );
+        const changed = snapshotKey !== serverQueueSnapshotKeyRef.current;
+        serverQueueSnapshotKeyRef.current = snapshotKey;
+        if (changed) {
+          setServerInteractionQueue(next);
+        }
         recordPerfEvent(
           'chat.queue.snapshot',
           {
@@ -297,6 +314,7 @@ export function useMessageInteractionQueue({
             workspaceId,
             agentId,
             itemCount: next.length,
+            changed,
             elapsedMs: Math.round(performance.now() - startedAt),
           },
           { throttleMs: 2_000 },
@@ -328,7 +346,7 @@ export function useMessageInteractionQueue({
       () => {
         void refreshAgentMessageQueue('poll');
       },
-      loading ? 1200 : 3500,
+      loading ? 3000 : 5000,
     );
     return () => window.clearInterval(timer);
   }, [agentId, loading, refreshAgentMessageQueue, workspaceId]);
