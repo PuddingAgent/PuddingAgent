@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_patch",
     name: "Patch file",
-    description: "Patch text files in the host workspace. Supports single/batch replacements, line-based operations (insert, delete, replace_lines), and regex replacements. Whitespace-insensitive matching by default.",
+    description: "Patch text files in the host workspace. Supports single/batch replacements, line-based operations (insert, delete, replace_lines), and regex replacements. Whitespace-insensitive matching by default. Operations example: operations=[{type='replace', old_text='old code', new_text='new code'}] (type 'replace' or 'regexReplace').",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,
@@ -196,7 +196,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 File.Copy(fullPath, backup, overwrite: false);
                 backups.Add((fullPath, backup));
 
-                File.WriteAllText(fullPath, current, Encoding.UTF8);
+                File.WriteAllText(fullPath, current, new UTF8Encoding(false));
 
                 var diff = GenerateSimpleDiff(original, current);
                 var successMsg = $"{relPath}: patched ({replacementCount} replacements)";
@@ -956,7 +956,7 @@ internal static class UnifiedDiffPatchRunner
                 var backup = file.FullPath + ".bak." + Guid.NewGuid().ToString("N")[..8];
                 var temp = file.FullPath + ".tmp." + Guid.NewGuid().ToString("N")[..8];
                 File.Copy(file.FullPath, backup, overwrite: false);
-                File.WriteAllText(temp, file.Current, Encoding.UTF8);
+                File.WriteAllText(temp, file.Current, new UTF8Encoding(false));
                 backups.Add((file.FullPath, backup, file.Zone, file.Patch.Path));
                 tempFiles.Add(temp);
             }

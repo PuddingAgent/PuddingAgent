@@ -4,6 +4,7 @@ using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingFullTextIndex.Contracts;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -67,19 +68,28 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var excludeDirs = ParseExcludeDirs(args.ExcludeDirs);
         AppendExcludeDirs(excludeDirs, args.ExcludeDirsAppend);
 
-        // 默认搜索根优先使用执行快照冻结的 WorkingDirectory（与 file 工具同源），
-        // 而非进程 Environment.CurrentDirectory（运行时 bin 目录，会导致主/子代理搜索到错误路径）。
-        var effectiveDirectory = string.IsNullOrWhiteSpace(args.Directory)
-            ? context.WorkingDirectory
-            : args.Directory;
+        // Lucene 分支保持原始 directory 语义（相对索引根）；托管 grep 分支使用
+        // 执行快照冻结的 WorkingDirectory 解析出的绝对路径（与 file 工具同源），
+        // 避免回落到进程 Environment.CurrentDirectory（运行时 bin 目录）。
+        var managedDirectory = ResolveManagedSearchDirectory(args.Directory, context);
 
         return await SearchCoreAsync(
-            query, args.Pattern, args.FileExt, effectiveDirectory,
+            query, args.Pattern, args.FileExt, args.Directory, managedDirectory,
             caseSensitive, maxResults, excludeDirs, maxLineBytes, maxTotalBytes, ct);
     }
 
+    private static string ResolveManagedSearchDirectory(string? directory, ToolExecutionContext context)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+            return HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
+        if (Path.IsPathRooted(directory))
+            return directory;
+        return Path.GetFullPath(Path.Combine(
+            HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory), directory));
+    }
+
     private async Task<ToolExecutionResult> SearchCoreAsync(
-        string query, string? pattern, string? fileExt, string? directory,
+        string query, string? pattern, string? fileExt, string? directory, string managedDirectory,
         bool caseSensitive, int maxResults, HashSet<string> excludeDirs,
         long maxLineBytes, long maxTotalBytes, CancellationToken ct)
     {
@@ -139,7 +149,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         }
 
         // 优先级2：托管 grep
-        return await ManagedGrepAsync(query, pattern, directory, caseSensitive, maxResults,
+        return await ManagedGrepAsync(query, pattern, managedDirectory, caseSensitive, maxResults,
             filter ?? patternFilter, excludeDirs, maxLineBytes, maxTotalBytes, ct);
     }
 

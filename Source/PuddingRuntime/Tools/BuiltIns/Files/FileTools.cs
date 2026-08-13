@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -408,11 +408,11 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
             if (args.Append == true && File.Exists(fullPath))
             {
                 var existing = File.ReadAllText(fullPath, Encoding.UTF8);
-                File.WriteAllText(tmpPath, existing + (args.Content ?? string.Empty), Encoding.UTF8);
+                File.WriteAllText(tmpPath, existing + (args.Content ?? string.Empty), new UTF8Encoding(false));
             }
             else
             {
-                File.WriteAllText(tmpPath, args.Content ?? string.Empty, Encoding.UTF8);
+                File.WriteAllText(tmpPath, args.Content ?? string.Empty, new UTF8Encoding(false));
             }
             File.Move(tmpPath, fullPath, overwrite: true);
 
