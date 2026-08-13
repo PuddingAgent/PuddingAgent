@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -164,7 +164,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "从宿主工作区读取 UTF-8 文本文件。默认情况下超过 300 行或 40KB 的文件会触发自动护栏，仅返回前 200 行并附加 META 头（总行数、字节数、截断提示与用法提示）。可使用 HeadLines/TailLines/OffsetLines/LimitLines 进行行级分页，MaxChars 进行字符级截断，或 FullFile=true 绕过护栏读取完整文件。Read a UTF-8 text file from the host workspace",
+    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 大文件/日志最佳实践：优先用 TailLines=N 读末尾最新 N 行，或用 OffsetLines+LimitLines 分段读取；避免对超大文件用 FullFile=true 以免塞满上下文。默认超过 300 行或 40KB 会触发护栏只返回前 200 行并附 META 头（总行数/字节数/截断提示）。参数：HeadLines/TailLines/OffsetLines/LimitLines 行级分页，MaxChars 字符级截断，FullFile=true 绕过护栏。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
