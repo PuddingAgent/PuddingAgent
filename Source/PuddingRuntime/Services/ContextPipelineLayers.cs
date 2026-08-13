@@ -1,4 +1,5 @@
-﻿using System.Text;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
@@ -52,6 +53,9 @@ public sealed partial class ContextPipeline
 
         // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
         var instancePersona = LoadInstancePersonaFiles(request.AgentInstanceId);
+
+        // 实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」框）— 实例级最高优先级指令。
+        var manifestSystemPrompt = LoadInstanceManifestSystemPrompt(request.AgentInstanceId);
 
         string? dbPersonaPrompt = null;
         string? dbToolsDescription = null;
@@ -126,6 +130,12 @@ public sealed partial class ContextPipeline
 
         // L0: AGENTS
         sb.AppendLine("--- LAYER: AGENTS ---");
+        if (!string.IsNullOrWhiteSpace(manifestSystemPrompt))
+        {
+            // Admin「系统提示词」框内容 — 最高优先级，追加在 AGENTS 层最前。
+            sb.AppendLine(manifestSystemPrompt);
+            sb.AppendLine();
+        }
         if (!string.IsNullOrWhiteSpace(instancePersona?.Agents))
             sb.AppendLine(instancePersona.Agents);
         else if (!string.IsNullOrWhiteSpace(personaFiles?.Agents))
@@ -173,6 +183,36 @@ public sealed partial class ContextPipeline
             Identity = ReadPersonaFile(dir, "IDENTITY.md"),
             Memory = ReadPersonaFile(dir, "MEMORY.md"),
         };
+    }
+
+    /// <summary>
+    /// 读取实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」文本框写入）。
+    /// 用 JsonDocument 直接解析，避免 PuddingRuntime 引用 PuddingHost 的 AgentInstanceManifest 类型。
+    /// </summary>
+    private string? LoadInstanceManifestSystemPrompt(string? agentInstanceId)
+    {
+        if (string.IsNullOrWhiteSpace(agentInstanceId))
+            return null;
+
+        var manifestPath = Path.Combine(_dataPaths.AgentInstanceRoot(agentInstanceId), "manifest.json");
+        if (!File.Exists(manifestPath))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            if (doc.RootElement.TryGetProperty("systemPrompt", out var el)
+                && el.ValueKind == JsonValueKind.String)
+            {
+                return el.GetString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[ContextPipeline] Load manifest systemPrompt failed agent={Agent}", agentInstanceId);
+        }
+        return null;
     }
 
     private static string? ReadPersonaFile(string dir, string fileName)

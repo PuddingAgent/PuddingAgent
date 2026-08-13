@@ -1,4 +1,5 @@
-﻿using System.Text;
+using System.Text;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
@@ -85,6 +86,9 @@ public sealed class SystemPromptBuilder
         // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
         var instancePersona = LoadInstancePersonaFiles(agentInstanceId);
 
+        // 实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」框）— 实例级最高优先级指令。
+        var manifestSystemPrompt = LoadInstanceManifestSystemPrompt(agentInstanceId);
+
         // Step 2: 从 DB 读取 Persona 字段（作为文件缺失时的 fallback）
         string? dbPersonaPrompt = null;
         string? dbToolsDescription = null;
@@ -165,8 +169,14 @@ public sealed class SystemPromptBuilder
         if (!string.IsNullOrWhiteSpace(effectivePersona))
             sb.AppendLine(effectivePersona);
 
-        // ── 3. AGENTS 层 ──
+                // ── 3. AGENTS 层 ──
         sb.AppendLine("--- LAYER: AGENTS ---");
+        if (!string.IsNullOrWhiteSpace(manifestSystemPrompt))
+        {
+            // Admin「系统提示词」框内容 — 最高优先级，追加在 AGENTS 层最前。
+            sb.AppendLine(manifestSystemPrompt);
+            sb.AppendLine();
+        }
         // AGENTS.md 如果存在，覆盖 SystemPrompt
         if (!string.IsNullOrWhiteSpace(instancePersona?.Agents))
             sb.AppendLine(instancePersona.Agents);
@@ -506,6 +516,36 @@ public sealed class SystemPromptBuilder
             User = ReadPersonaFile(dir, "USER.md"),
             Memory = ReadPersonaFile(dir, "MEMORY.md"),
         };
+    }
+
+    /// <summary>
+    /// 读取实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」文本框写入）。
+    /// 用 JsonDocument 直接解析，避免 PuddingRuntime 引用 PuddingHost 的 AgentInstanceManifest 类型。
+    /// </summary>
+    private string? LoadInstanceManifestSystemPrompt(string? agentInstanceId)
+    {
+        if (string.IsNullOrWhiteSpace(agentInstanceId) || _dataPaths is null)
+            return null;
+
+        var manifestPath = Path.Combine(_dataPaths.AgentInstanceRoot(agentInstanceId), "manifest.json");
+        if (!File.Exists(manifestPath))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            if (doc.RootElement.TryGetProperty("systemPrompt", out var el)
+                && el.ValueKind == JsonValueKind.String)
+            {
+                return el.GetString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[SystemPromptBuilder] Load manifest systemPrompt failed agent={Agent}", agentInstanceId);
+        }
+        return null;
     }
 
     private static string? ReadPersonaFile(string dir, string fileName)
