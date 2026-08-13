@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "http_fetch",
     name: "HTTP Fetch",
-    description: "发起 HTTP/HTTPS 请求并返回原始、Markdown、纯文本或 JSON 格式的响应内容。Make an HTTP/HTTPS request and return raw, Markdown, plain text, or JSON-formatted response content",
+    description: "发起 HTTP/HTTPS 请求并返回原始、Markdown、纯文本或 JSON 格式的响应内容。【何时用】搜索工具只给了摘要/链接时，用它抓取原文页面、API 返回或文档做深度核实；需要读取指定 URL 的实际内容时使用。【怎么用】传 url（仅支持 http/https）即可；method 默认 GET，可改为 POST 并配 headers/body/content_type；output_format 选 markdown/text/raw/json（默认 markdown）；max_response_chars 控制返回长度上限（默认 8192），include_headers 决定是否带响应头。【坑】仅允许 http/https 协议，SSRF 防护会拒绝内网/元数据地址；响应超长会被截断（返回 truncated 标记）；对 JS 渲染页面返回的是原始 HTML，正文提取效果取决于页面结构。Make an HTTP/HTTPS request and return raw, Markdown, plain text, or JSON-formatted response content — use to fetch full pages/APIs when search snippets are insufficient; pass url (+optional method/headers/body/content_type/output_format/max_response_chars); http/https only (SSRF guard); long responses are truncated; JS-rendered pages come back as raw HTML.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Medium,
     safety: ToolSafetyFlags.RequiresNetwork)]

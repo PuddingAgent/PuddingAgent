@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "project_map",
     name: "Project module overview",
-    description: "查看项目的模块总览（project map）：目录树映射到核心类型，展示命名空间→目录→关键类关系。View a project's module overview: directory tree mapped to core types",
+    description: "查看项目的模块总览（project map）：目录树映射到核心类型，展示命名空间→目录→关键类关系。【何时用】刚接触一个项目时快速建立目录→模块→核心类的整体认知，再决定深入哪里；也可用它发现项目目录，辅助决定 code_index_register_project 登记哪个路径。【怎么用】传 project_path（默认当前工作目录）；depth 控制目录树深度（默认2，范围1-3）。【坑】不依赖预构建索引，纯文件系统扫描，首次调用即可返回；只展示每个文件中的顶层类型，嵌套/私有类型不展开；超大目录有数量上限（每目录最多50文件、每文件最多3个顶层类型）。View a project's module overview: directory tree mapped to core types — use to orient in an unfamiliar codebase (dir → module → core classes) and to discover paths for code_index_register_project; pass project_path, depth 1-3 (default 2); works without a prebuilt index (filesystem scan); shows top-level types only, large dirs are capped (50 files/dir, 3 types/file).",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

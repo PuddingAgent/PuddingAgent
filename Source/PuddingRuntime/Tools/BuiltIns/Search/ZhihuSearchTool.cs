@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "zhihu_search",
     name: "Zhihu Search",
-    description: "搜索知乎站内内容（问题、回答、文章，站内搜索）。返回标题、URL、摘要与元数据。Search Zhihu site-internal content (questions, answers, articles)",
+    description: "搜索知乎站内内容（问题、回答、文章，站内搜索）。返回标题、URL、摘要与元数据。【何时用】需要知乎站内的问答、文章等社区内容（如产品评价、经验分享、观点讨论）时使用。【怎么用】传 query 即可；count（1-10，默认10）控制返回条数。【坑】仅搜索知乎站内内容，全网搜索请用 zhihu_global_search 或 doubao_search/anysearch_search；需配置 zhihu_search.apiKey；返回为摘要与元数据，重要观点请打开原文核实。Search Zhihu site-internal content (questions, answers, articles) — use for Zhihu Q&A/community opinions (product reviews, experience sharing); pass query, count 1-10; site-internal only — for web-wide results use zhihu_global_search; requires zhihu_search.apiKey.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

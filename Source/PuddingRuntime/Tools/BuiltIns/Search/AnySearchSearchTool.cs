@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "anysearch_search",
     name: "AnySearch Search",
-    description: "通过 AnySearch（网页搜索）搜索网页、文档、新闻及特定领域来源。返回标题、URL、摘要与清洗后的内容。Search web, documentation, news, and domain-specific sources through AnySearch",
+    description: "通过 AnySearch（网页搜索）搜索网页、文档、新闻及特定领域来源。返回标题、URL、摘要与清洗后的内容。【何时用】需要查证最新公开网页信息（文档、新闻、特定领域来源）且不限定站点时使用；与 doubao_search 同为通用网页搜索，可互相验证或互为备用。【怎么用】传 query 即可，可用 max_results（1-100，默认10）、domain、tag、zone、language 等参数缩小范围。【坑】需在 search.providers.json 配置 anysearch.apiKey，未配置或未启用会直接失败；返回的是摘要级内容，重要事实应再用 http_fetch 打开原文核实。Search web, documentation, news, and domain-specific sources through AnySearch — use for up-to-date public web info (docs/news/domain-specific), cross-check with doubao_search if needed; pass query with optional max_results/domain/tag/zone/language filters; requires anysearch.apiKey in search.providers.json; results are snippets, verify key facts via http_fetch.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

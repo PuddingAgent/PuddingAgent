@@ -13,7 +13,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "code_summary",
     name: "Code symbol summary",
-    description: "获取代码符号（symbol）的快速摘要（summary）：用途、位置、签名、文档与关键调用关系，结合符号搜索、文档提取与调用图。Get a quick summary of a code symbol: purpose, location, signature, documentation, and key call relationships",
+    description: "获取代码符号（symbol）的快速摘要（summary）：用途、位置、签名、文档与关键调用关系，结合符号搜索、文档提取与调用图。【何时用】想快速了解某个符号是干什么的、无需通读源码时使用；适合作为深入阅读代码前的第一跳。【怎么用】传 symbol_name（符号名）即可；可选 project_id 限定范围，避免跨项目歧义。【坑】依赖项目已登记且索引完成；按名称模糊匹配取第一个结果，重名符号可能命中错误目标，必要时先用 code_symbol_search 精确定位。Get a quick summary of a code symbol: purpose, location, signature, documentation, and key call relationships — use as a fast first hop before reading code in depth; pass symbol_name (+optional project_id); requires registered and indexed projects; matches by name and takes the first hit, disambiguate via code_symbol_search if ambiguous.",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

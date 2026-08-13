@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "zhihu_global_search",
     name: "Zhihu Global Search",
-    description: "通过知乎全球搜索 API（Zhihu global search / 网页搜索）搜索全网，支持按领域与发布时间进行高级过滤。Search the entire web through Zhihu's global search API with advanced filtering by domain and publish time",
+    description: "通过知乎全球搜索 API（Zhihu global search / 网页搜索）搜索全网，支持按领域与发布时间进行高级过滤。【何时用】需要全网搜索且要求按域名（host）或发布时间（publish_time）过滤时使用；追实时热点可指定 search_db=realtime。【怎么用】传 query；count（1-20，默认10）控制条数；filter 写过滤表达式（如 host==站点域名 AND publish_time>=时间戳，支持 AND/OR 与括号）；search_db 选 all/realtime/static（默认 all）。【坑】与 zhihu_search 共用 zhihu_search.apiKey，未配置即失败；filter 语法错误或引号配对不正确会请求失败，必要时去掉 filter 重试。Search the entire web through Zhihu's global search API with advanced filtering by domain and publish time — use for web-wide search with host==/publish_time>= filters or realtime hot topics (search_db=realtime); pass query, count 1-20, optional filter expression and search_db; shares zhihu_search.apiKey; malformed filter fails the request.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

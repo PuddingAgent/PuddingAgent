@@ -13,7 +13,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "doubao_search",
     name: "Doubao Search",
-    description: "通过豆包全球搜索（Doubao Search Global / 网页搜索）搜索公开网页。返回排序来源、文本摘要、图片 URL 与来源元数据。Search the public web through Doubao Search Global",
+    description: "通过豆包全球搜索（Doubao Search Global / 网页搜索）搜索公开网页。返回排序来源、文本摘要、图片 URL 与来源元数据。【何时用】需要通用网页搜索获取公开网页内容、图片与来源元数据时使用；与 anysearch_search 能力相近，可互相验证。【怎么用】传 query（≤100字符）即可，用 doc_count（1-20，默认10）控制返回条数，max_snippet_length 控制摘要长度，max_image_count_per_doc 控制图片数量。【坑】需在 search.providers.json 配置 doubao_search.apiKey 且 provider 未被禁用；query 超 100 字符或参数越界会被校验拒绝；仅返回摘要与元数据，关键信息请用 http_fetch 打开原文。Search the public web through Doubao Search Global — use for general web search with ranked sources and images; query ≤100 chars, tune doc_count (1-20) / max_snippet_length / max_image_count_per_doc; requires doubao_search.apiKey in search.providers.json; returns snippets and metadata, fetch original pages via http_fetch for key facts.",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,
