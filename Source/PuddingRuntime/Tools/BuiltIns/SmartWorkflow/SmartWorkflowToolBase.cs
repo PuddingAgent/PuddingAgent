@@ -21,6 +21,18 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 {
     protected const string SubAgentTemplateId = "workspace-task-agent";
     protected const int DefaultParentFinalizationReserveSeconds = 2 * 60;
+
+    /// <summary>
+    /// Minimum trimmed length a raw sub-agent report must have before
+    /// partial-salvage treats it as substantive. Terse status words
+    /// ("completed", "done", "ok") or one-line fragments do not carry enough
+    /// information for the parent agent to trust completion; such output must
+    /// be rejected as an invalid report instead of being salvaged as Success.
+    /// The threshold is intentionally far below the canonical-report minimum
+    /// (CanonicalWorkReport.MinimumDetailedReportLength = 80) so genuine but
+    /// imperfect five-section reports are still salvaged.
+    /// </summary>
+    private const int MinSubstantiveSalvageLength = 50;
     protected abstract string RoleName { get; }
     protected abstract string BuildTaskPrompt(TArgs args, ToolExecutionContext context);
     /// <summary>子代理允许的工具列表，逗号分隔。null = 继承父代理全部工具。</summary>
@@ -260,8 +272,12 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
 
                     // Partial-salvage: return what the sub-agent actually produced
                     // with a warning header. The parent agent can still use the
-                    // information even when the report format is imperfect.
-                    if (!string.IsNullOrWhiteSpace(rawReport))
+                    // information even when the report format is imperfect — but
+                    // only when the raw report carries substantive content. Terse
+                    // completions ("completed", "done") must be rejected so the
+                    // parent agent never mistakes a stub for a finished task.
+                    if (!string.IsNullOrWhiteSpace(rawReport)
+                        && HasSubstantiveReportContent(rawReport))
                     {
                         var salvaged = $"⚠ [Validation note: {validationError}]\n\n{rawReport}";
                         return new ToolExecutionResult
@@ -354,6 +370,15 @@ public abstract class SmartWorkflowToolBase<TArgs> : PuddingToolBase<TArgs> wher
         
         return false;
     }
+
+    /// <summary>
+    /// True when the raw report is long enough to contain real substance after
+    /// trimming. A short string cannot be a five-section work report; rejecting
+    /// it prevents the parent agent from mistaking a terse status word for task
+    /// completion.
+    /// </summary>
+    private static bool HasSubstantiveReportContent(string rawReport)
+        => rawReport.Trim().Length >= MinSubstantiveSalvageLength;
 
     private ToolExecutionResult BuildInvalidReportFailure(
         string? toolOutput,
