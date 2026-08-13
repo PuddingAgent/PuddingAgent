@@ -941,6 +941,19 @@ const MessageList: React.FC<MessageListProps> = ({
       );
     }
 
+    // P0-1：跨天日期分隔线（今天/昨天/MM-DD），居中渲染；复用 timeDivider 样式。
+    if (item.kind === 'divider') {
+      return (
+        <div
+          className={styles.timeDivider}
+          data-testid="chat-date-divider"
+          data-divider-date={item.id.replace(/^divider:/, '')}
+        >
+          {item.label}
+        </div>
+      );
+    }
+
     const approvalCardData =
       item.kind === 'message' ? item.block.approvalCard : undefined;
     const planCardData =

@@ -538,8 +538,11 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   // tree. This also protects programmatic history prepends and keeps the
   // invariant intact if a caller bypasses the visible loader button.
   React.useLayoutEffect(() => {
+    // 滚动锚定以首条消息项为准：loader/divider 等“镀铬”行不参与历史回填检测。
+    // （P0-1 分隔线在首条消息前插入 divider 后，首个非 loader 项可能仍是
+    //  稳定的 divider id，若以其为锚会漏判 prepend，破坏滚动位置保持。）
     const firstTimelineItemId =
-      options.items.find((item) => item.kind !== 'loader')?.id ?? null;
+      options.items.find((item) => item.kind === 'message')?.id ?? null;
     const previousFirstTimelineItemId = firstTimelineItemIdRef.current;
     const isPrepend =
       previousFirstTimelineItemId !== null &&

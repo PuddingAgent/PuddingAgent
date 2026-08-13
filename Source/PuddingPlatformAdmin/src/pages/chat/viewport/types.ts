@@ -16,6 +16,14 @@ export type VirtualMessageItem =
       createdAt: number;
       direction: 'before';
       heightHint: 'compact';
+    }
+  | {
+      kind: 'divider';
+      id: string;
+      createdAt: number;
+      /** 日期分隔线标签：今天 / 昨天 / MM-DD */
+      label: string;
+      heightHint: 'compact';
     };
 
 export type FollowMode = 'off' | 'auto' | 'pinned';

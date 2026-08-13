@@ -1,4 +1,5 @@
-﻿import type { ChatTurn } from '../types';
+﻿import dayjs from 'dayjs';
+import type { ChatTurn } from '../types';
 import { buildVirtualMessageItems } from './messageProjection';
 import type { VirtualMessageItem } from './types';
 
@@ -39,6 +40,7 @@ describe('buildVirtualMessageItems', () => {
     });
 
     expect(result.items.map((item) => item.id)).toEqual([
+      `divider:${dayjs(1000).format('YYYY-MM-DD')}`,
       'message:user:user-t1:user',
       'message:agent:assistant-t1:assistant:0',
     ]);
@@ -60,6 +62,7 @@ describe('buildVirtualMessageItems', () => {
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual([
+      `divider:${dayjs(1000).format('YYYY-MM-DD')}`,
       'message:user:user-first:user',
       'message:agent:assistant-first:assistant:0',
       'message:user:user-second:user',
@@ -80,6 +83,7 @@ describe('buildVirtualMessageItems', () => {
     });
 
     expect(result.items.map((item) => item.id)).toEqual([
+      `divider:${dayjs(2000).format('YYYY-MM-DD')}`,
       'message:user:user-recent:user',
       'message:agent:assistant-recent:assistant:0',
       'message:agent:assistant-long-running:assistant:0',
@@ -165,5 +169,146 @@ describe('buildVirtualMessageItems', () => {
     expect(
       messageItems.some((item) => item.heightHint === 'rich'),
     ).toBe(true);
+  });
+
+  it('inserts a date divider before the first message and on each local-day change', () => {
+    const threeDaysAgo = dayjs()
+      .startOf('day')
+      .subtract(3, 'day')
+      .add(10, 'hour')
+      .valueOf();
+    const yesterday = dayjs()
+      .startOf('day')
+      .subtract(1, 'day')
+      .add(10, 'hour')
+      .valueOf();
+    const today = dayjs().startOf('day').add(10, 'hour').valueOf();
+
+    const result = buildVirtualMessageItems({
+      turns: [
+        makeTurn('t-older', threeDaysAgo),
+        makeTurn('t-yesterday', yesterday),
+        makeTurn('t-today', today),
+      ],
+      agentName: 'Agent',
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      `divider:${dayjs(threeDaysAgo).format('YYYY-MM-DD')}`,
+      'message:user:user-t-older:user',
+      'message:agent:assistant-t-older:assistant:0',
+      `divider:${dayjs(yesterday).format('YYYY-MM-DD')}`,
+      'message:user:user-t-yesterday:user',
+      'message:agent:assistant-t-yesterday:assistant:0',
+      `divider:${dayjs(today).format('YYYY-MM-DD')}`,
+      'message:user:user-t-today:user',
+      'message:agent:assistant-t-today:assistant:0',
+    ]);
+  });
+
+  it('labels dividers as 今天 / 昨天 / MM-DD', () => {
+    const older = dayjs()
+      .startOf('day')
+      .subtract(3, 'day')
+      .add(10, 'hour')
+      .valueOf();
+    const yesterday = dayjs()
+      .startOf('day')
+      .subtract(1, 'day')
+      .add(10, 'hour')
+      .valueOf();
+    const today = dayjs().startOf('day').add(10, 'hour').valueOf();
+
+    const result = buildVirtualMessageItems({
+      turns: [
+        makeTurn('t-older', older),
+        makeTurn('t-yesterday', yesterday),
+        makeTurn('t-today', today),
+      ],
+      agentName: 'Agent',
+    });
+
+    const dividers = result.items.filter(
+      (item): item is Extract<VirtualMessageItem, { kind: 'divider' }> =>
+        item.kind === 'divider',
+    );
+    expect(dividers.map((divider) => divider.label)).toEqual([
+      dayjs(older).format('MM-DD'),
+      '昨天',
+      '今天',
+    ]);
+  });
+
+  it('does not insert a divider between messages on the same local day', () => {
+    const base = dayjs().startOf('day').add(10, 'hour');
+    const result = buildVirtualMessageItems({
+      turns: [
+        makeTurn('t1', base.valueOf()),
+        makeTurn('t2', base.add(5, 'minute').valueOf()),
+      ],
+      agentName: 'Agent',
+    });
+
+    const dividers = result.items.filter(
+      (item): item is Extract<VirtualMessageItem, { kind: 'divider' }> =>
+        item.kind === 'divider',
+    );
+    expect(dividers).toHaveLength(1);
+    expect(dividers[0]?.id).toBe(
+      `divider:${dayjs(base).format('YYYY-MM-DD')}`,
+    );
+  });
+
+  it('keeps the loader row before the first date divider when older history exists', () => {
+    const yesterday = dayjs()
+      .startOf('day')
+      .subtract(1, 'day')
+      .add(10, 'hour')
+      .valueOf();
+    const result = buildVirtualMessageItems({
+      turns: [makeTurn('t1', yesterday)],
+      agentName: 'Agent',
+      sessionId: 'session-1',
+      hasMoreBefore: true,
+    });
+
+    expect(result.items[0]).toMatchObject({
+      kind: 'loader',
+      id: 'loader:before:session-1',
+    });
+    expect(result.items[1]).toMatchObject({
+      kind: 'divider',
+      id: `divider:${dayjs(yesterday).format('YYYY-MM-DD')}`,
+      label: '昨天',
+      heightHint: 'compact',
+    });
+  });
+
+  it('keeps divider keys unique when the same date reappears in the sequence', () => {
+    const today = dayjs().startOf('day').add(10, 'hour').valueOf();
+    const yesterday = dayjs()
+      .startOf('day')
+      .subtract(1, 'day')
+      .add(10, 'hour')
+      .valueOf();
+    // 活跃态重排场景：较新的日期先出现，旧日期再次出现（不重排序、保持 supplied order）。
+    const result = buildVirtualMessageItems({
+      turns: [
+        makeTurn('t1', today),
+        makeTurn('t2', yesterday),
+        makeTurn('t3', today),
+      ],
+      agentName: 'Agent',
+    });
+
+    const dividerIds = result.items
+      .filter((item) => item.kind === 'divider')
+      .map((item) => item.id);
+    expect(dividerIds).toEqual([
+      `divider:${dayjs(today).format('YYYY-MM-DD')}`,
+      `divider:${dayjs(yesterday).format('YYYY-MM-DD')}`,
+      `divider:${dayjs(today).format('YYYY-MM-DD')}:2`,
+    ]);
+    expect(new Set(dividerIds).size).toBe(dividerIds.length);
   });
 });
