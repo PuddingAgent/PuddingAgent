@@ -157,6 +157,7 @@ public sealed class TaskDelegationPolicyTests
                 options.UseSqlite("Data Source=:memory:");
             })
             .AddPuddingRuntime()
+            .AddScoped<ITaskPlanStore>(_ => new FakeTaskPlanStore(Array.Empty<TaskNode>()))
             .BuildServiceProvider();
 
         using var scope = provider.CreateScope();
