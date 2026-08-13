@@ -232,8 +232,9 @@ public sealed class MessageDeliveryDispatcherTests
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
 
         Assert.IsEmpty(inbox.Acked);
-        Assert.HasCount(1, inbox.Retried);
-        Assert.AreEqual("d1", inbox.Retried[0].DeliveryId);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.HasCount(1, inbox.Deferred);
+        Assert.AreEqual("d1", inbox.Deferred[0].DeliveryId);
         Assert.IsEmpty(inbox.DeadLettered);
     }
 
@@ -261,11 +262,74 @@ public sealed class MessageDeliveryDispatcherTests
 
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
 
-        Assert.HasCount(1, inbox.Retried);
-        Assert.AreEqual("d1", inbox.Retried[0].DeliveryId);
+        Assert.HasCount(1, inbox.Deferred);
+        Assert.AreEqual("d1", inbox.Deferred[0].DeliveryId);
         Assert.IsTrue(
-            inbox.Retried[0].AvailableAt <= DateTimeOffset.UtcNow,
-            $"busy deferral must stay immediately claimable but AvailableAt was {inbox.Retried[0].AvailableAt:o}");
+            inbox.Deferred[0].AvailableAt <= DateTimeOffset.UtcNow,
+            $"busy deferral must stay immediately claimable but AvailableAt was {inbox.Deferred[0].AvailableAt:o}");
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_BusyDeferral_SkipsClaimWithinCooldownWindow()
+    {
+        // The in-memory busy cooldown must stop the recovery loop / follow-up events
+        // from re-claiming a busy target within the cooldown window: every claim
+        // increments AttemptCount, so without the cooldown a busy target would be
+        // hot-looped claim → dispatch → busy → defer and AttemptCount would inflate
+        // without any progress.
+        var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames =
+            [
+                ServerSentEventFrame.Json("error", new
+                {
+                    error = "Agent 'agent-b' is busy.",
+                    executionState = "Busy",
+                }),
+            ],
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+        var firstExecution = inbox.LastClaim!.ExecutionId;
+
+        // Second dispatch attempt inside the cooldown window must be skipped before
+        // claiming, so no new execution is created and no second defer happens.
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+
+        Assert.HasCount(1, inbox.Deferred);
+        Assert.AreEqual(firstExecution, inbox.LastClaim!.ExecutionId);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_IdleAvailability_ClearsBusyCooldownAndDrains()
+    {
+        var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames =
+            [
+                ServerSentEventFrame.Json("error", new
+                {
+                    error = "Agent 'agent-b' is busy.",
+                    executionState = "Busy",
+                }),
+            ],
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+        Assert.HasCount(1, inbox.Deferred);
+
+        // The agent frees up: the idle availability event must clear the cooldown and
+        // drain the deferred delivery immediately (no cooldown latency).
+        runtime.StreamFrames = null; // default frames → successful dispatch
+        await dispatcher.HandleAsync(CreateAvailabilityEvent("idle", "agent-b"), CancellationToken.None);
+
+        Assert.HasCount(1, inbox.Acked);
+        Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
+        Assert.HasCount(1, inbox.Deferred);
     }
 
     [TestMethod]
@@ -978,6 +1042,7 @@ public sealed class MessageDeliveryDispatcherTests
         public List<(string DeliveryId, string ExecutionId, TimeSpan LeaseDuration)> Renewed { get; } = [];
         public List<(string DeliveryId, string ExecutionId)> Acked { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error, DateTimeOffset AvailableAt)> Retried { get; } = [];
+        public List<(string DeliveryId, string ExecutionId, string Error, DateTimeOffset AvailableAt)> Deferred { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error)> DeadLettered { get; } = [];
 
         public Task<IReadOnlyList<MessageInboxItem>> ListAsync(MessageInboxQuery query, CancellationToken ct = default) =>
@@ -1045,9 +1110,15 @@ public sealed class MessageDeliveryDispatcherTests
             return Task.CompletedTask;
         }
 
-        public Task RetryAsync(string deliveryId, string executionId, string error, DateTimeOffset availableAt, CancellationToken ct = default)
+                public Task RetryAsync(string deliveryId, string executionId, string error, DateTimeOffset availableAt, CancellationToken ct = default)
         {
             Retried.Add((deliveryId, executionId, error, availableAt));
+            return Task.CompletedTask;
+        }
+
+        public Task DeferAsync(string deliveryId, string executionId, string error, CancellationToken ct = default)
+        {
+            Deferred.Add((deliveryId, executionId, error, DateTimeOffset.UtcNow));
             return Task.CompletedTask;
         }
 
@@ -1082,7 +1153,7 @@ public sealed class MessageDeliveryDispatcherTests
     {
         public List<RuntimeDispatchRequest> Requests { get; } = [];
         public List<RuntimeDispatchRequest> StreamRequests { get; } = [];
-        public IReadOnlyList<ServerSentEventFrame>? StreamFrames { get; init; }
+        public IReadOnlyList<ServerSentEventFrame>? StreamFrames { get; set; }
         public RuntimeDispatchResult Result { get; init; } = new()
         {
             SessionId = "session-1",

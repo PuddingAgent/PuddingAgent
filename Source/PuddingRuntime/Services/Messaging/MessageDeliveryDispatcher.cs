@@ -22,6 +22,16 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 {
     private static readonly TimeSpan DeliveryLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DeliveryLeaseRenewInterval = TimeSpan.FromMinutes(2);
+    // In-memory busy cooldown per target. While an agent reports Busy the 10s
+    // recovery loop must not re-claim its deliveries: every claim increments
+    // AttemptCount, so a busy target would otherwise be hot-looped
+    // claim → dispatch → busy → defer, inflating AttemptCount without progress.
+    // The marker is cleared by the agent.availability.changed(idle) drain (so the
+    // busy deferral stays immediately claimable — no added latency) and by any
+    // successful/non-busy outcome. The cooldown only delays re-dispatch attempts,
+    // never the idle-event drain; it is the backstop that bounds AttemptCount
+    // growth to once per cooldown window while the agent stays busy.
+    private static readonly TimeSpan BusyTargetCooldown = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -33,6 +43,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     private readonly ILogger<MessageDeliveryDispatcher> _logger;
     private readonly ConcurrentDictionary<string, AgentDeliveryTarget> _knownAgentTargets = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeHeartbeatExecutions = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _busyTargetCooldowns = new();
     private IEventSubscriptionHandle? _messageDeliverSubscription;
     private IEventSubscriptionHandle? _availabilitySubscription;
     private CancellationTokenSource? _recoveryCts;
@@ -176,6 +187,29 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             return;
         }
 
+        var targetKey = BuildTargetKey(payload.WorkspaceId, payload.RoomId, payload.AgentId);
+
+        // A Busy availability event is authoritative: record the cooldown so the
+        // recovery loop does not waste claims (and AttemptCount increments) on a
+        // target that the runtime already told us is executing.
+        if (string.Equals(payload.Status, "busy", StringComparison.OrdinalIgnoreCase))
+        {
+            MarkTargetBusy(targetKey);
+            LogDecision(
+                payload.WorkspaceId,
+                payload.RoomId,
+                messageId: null,
+                deliveryId: null,
+                MessageEndpointKinds.Agent,
+                payload.AgentId,
+                $"availability_{payload.Status}",
+                attemptCount: 0,
+                executionId: null,
+                correlationId: evt.CorrelationId,
+                causationId: evt.CausationId);
+            return;
+        }
+
         if (!string.Equals(payload.Status, "idle", StringComparison.OrdinalIgnoreCase))
         {
             LogDecision(
@@ -193,6 +227,9 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             return;
         }
 
+        // Idle → the drain must claim immediately, so clear any busy cooldown
+        // before dispatching. This keeps busy deferral latency-free.
+        ClearTargetBusy(targetKey);
         RememberTarget(payload.WorkspaceId, payload.RoomId, payload.AgentId);
         await TryClaimAndDispatchAsync(
             payload.WorkspaceId,
@@ -222,6 +259,28 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         CancellationToken ct,
         bool isHeartbeat = false)
     {
+        var targetKey = BuildTargetKey(workspaceId, roomId, agentId);
+        if (IsTargetBusy(targetKey))
+        {
+            LogDecision(
+                workspaceId,
+                roomId,
+                messageIdHint,
+                deliveryHint,
+                MessageEndpointKinds.Agent,
+                agentId,
+                "skipped_busy_cooldown",
+                attemptCount: 0,
+                executionId: null,
+                correlationId: correlationId,
+                causationId: causationId);
+            _logger.LogDebug(
+                "[MessageDeliveryDispatcher] Skipped busy target within cooldown window target={AgentId} event={EventId}",
+                agentId,
+                eventId);
+            return;
+        }
+
         var executionId = $"msg-{deliveryHint ?? agentId}-{Guid.NewGuid():N}";
         using var scope = _scopeFactory.CreateScope();
         var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
@@ -487,6 +546,9 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
             if (result.IsSuccess)
             {
+                // The target completed a turn — it is no longer busy, so drop the
+                // cooldown and let the recovery loop / drain pick up anything else.
+                ClearTargetBusy(targetKey);
                 foreach (var item in batch)
                 {
                     await inbox.AckAsync(item.DeliveryId, executionId, ct);
@@ -549,6 +611,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             var error = result.ErrorMessage ?? $"Runtime finished with state {result.ExecutionState}";
             if (claimedIsHeartbeat && result.ExecutionState == AgentExecutionState.Busy)
             {
+                MarkTargetBusy(targetKey);
                 await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
                 LogExecutionResult(
                     claimed,
@@ -568,15 +631,19 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 // Busy deferral is queueing, not failure backoff: keep the delivery
                 // immediately claimable so the agent.availability.changed(idle) drain
                 // delivers it the moment the agent frees up. A future AvailableAt is
-                // filtered out by ClaimNextAsync and re-introduces the 30s wake delay.
-                // The 10s recovery loop remains the backstop if the idle event is lost.
+                // filtered out by ClaimNextAsync and re-introduces the 30s wake delay,
+                // so DeferAsync keeps availableAt = now and the busy target cooldown
+                // below is what stops the 10s recovery loop from hot-looping
+                // claim → dispatch → busy → defer (which inflated AttemptCount without
+                // any progress). The cooldown is cleared by the idle drain and by any
+                // non-busy outcome, so it never delays a real delivery.
+                MarkTargetBusy(targetKey);
                 foreach (var item in batch)
                 {
-                    await inbox.RetryAsync(
+                    await inbox.DeferAsync(
                         item.DeliveryId,
                         executionId,
                         error,
-                        DateTimeOffset.UtcNow,
                         ct);
                     LogExecutionResult(
                         item,
@@ -621,6 +688,10 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                         result.ExecutionState);
                 }
             }
+
+            // A real (non-busy) failure means the target is not stuck in Busy — the
+            // failure retry rate-limits itself via AvailableAt, so clear the cooldown.
+            ClearTargetBusy(targetKey);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1267,8 +1338,45 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
     private void RememberTarget(string workspaceId, string? roomId, string agentId)
     {
-        var key = $"{workspaceId}\u001f{roomId}\u001f{agentId}";
-        _knownAgentTargets[key] = new AgentDeliveryTarget(workspaceId, roomId, agentId);
+        _knownAgentTargets[BuildTargetKey(workspaceId, roomId, agentId)] =
+            new AgentDeliveryTarget(workspaceId, roomId, agentId);
+    }
+
+    private static string BuildTargetKey(string workspaceId, string? roomId, string agentId)
+        => $"{workspaceId}\u001f{roomId}\u001f{agentId}";
+
+    /// <summary>True while the target is inside its busy cooldown window.</summary>
+    private bool IsTargetBusy(string targetKey)
+    {
+        if (_busyTargetCooldowns.TryGetValue(targetKey, out var until))
+        {
+            if (until > DateTimeOffset.UtcNow)
+                return true;
+
+            // Expired entry — prune it so the dictionary does not grow unbounded.
+            _busyTargetCooldowns.TryRemove(targetKey, out _);
+        }
+
+        return false;
+    }
+
+    private void MarkTargetBusy(string targetKey)
+    {
+        _busyTargetCooldowns[targetKey] = DateTimeOffset.UtcNow.Add(BusyTargetCooldown);
+        _logger.LogDebug(
+            "[MessageDeliveryDispatcher] Marked target busy cooldown={Seconds}s target={TargetKey}",
+            BusyTargetCooldown.TotalSeconds,
+            targetKey);
+    }
+
+    private void ClearTargetBusy(string targetKey)
+    {
+        if (_busyTargetCooldowns.TryRemove(targetKey, out _))
+        {
+            _logger.LogDebug(
+                "[MessageDeliveryDispatcher] Cleared busy cooldown target={TargetKey}",
+                targetKey);
+        }
     }
 
     private void LogDecision(

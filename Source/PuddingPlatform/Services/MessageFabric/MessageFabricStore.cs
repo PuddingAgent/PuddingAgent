@@ -359,6 +359,45 @@ public sealed class MessageFabricStore : IMessageInbox
         LogDeliveryTransition(delivery, executionId);
     }
 
+    /// <summary>
+    /// Busy deferral: the target agent is executing another turn, so this delivery
+    /// waits in the queue instead of counting as a failed retry. Behavior is the
+    /// same as <see cref="RetryAsync"/> with availableAt = now (status Retrying,
+    /// immediately claimable, lease/claim cleared, lastError recorded) and never
+    /// touches AttemptCount — the increment only happens at claim time. Keeping
+    /// availableAt = now means the agent.availability.changed(idle) drain can claim
+    /// it the moment the agent frees up; the dispatcher's in-memory busy cooldown
+    /// (not the database) is what stops the recovery loop from hot-looping on a
+    /// busy target and inflating AttemptCount.
+    /// </summary>
+    public async Task DeferAsync(
+        string deliveryId,
+        string executionId,
+        string error,
+        CancellationToken ct = default)
+    {
+        var delivery = await _db.MessageDeliveries
+            .FirstOrDefaultAsync(item => item.DeliveryId == deliveryId, ct);
+        if (delivery is null)
+            return;
+        if (!MatchesExecution(delivery, executionId))
+            return;
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        delivery.Status = MessageDeliveryStatuses.Retrying;
+        delivery.AvailableAt = now;
+        delivery.LeaseUntil = null;
+        delivery.ClaimedByExecutionId = null;
+        delivery.LastError = error;
+        delivery.UpdatedAt = now;
+        await _db.SaveChangesAsync(ct);
+        LogDeliveryTransition(delivery, executionId);
+        _logger.LogDebug(
+            "[MessageFabric] busy deferral delivery_id={DeliveryId} target_id={TargetId} (queueing, not failure retry)",
+            delivery.DeliveryId,
+            delivery.TargetId);
+    }
+
     public async Task DeadLetterAsync(
         string deliveryId,
         string executionId,

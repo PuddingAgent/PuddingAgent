@@ -46,5 +46,17 @@ public interface IMessageInbox
 
     Task RetryAsync(string deliveryId, string executionId, string error, DateTimeOffset availableAt, CancellationToken ct = default);
 
+    /// <summary>
+    /// Defers a delivery because its target agent is busy — queueing, not failure
+    /// backoff. Semantically identical to <see cref="RetryAsync"/> with
+    /// availableAt = now (sets Retrying, keeps the delivery immediately claimable,
+    /// clears the lease/claim, records lastError) and, like RetryAsync, never
+    /// increments AttemptCount (the increment only happens at claim time).
+    /// It is a separate method so busy deferral stays distinguishable from failure
+    /// retry at call sites and in logs, and so the UI can surface it as
+    /// "queued waiting for the agent to free up" instead of "retrying".
+    /// </summary>
+    Task DeferAsync(string deliveryId, string executionId, string error, CancellationToken ct = default);
+
     Task DeadLetterAsync(string deliveryId, string executionId, string error, CancellationToken ct = default);
 }

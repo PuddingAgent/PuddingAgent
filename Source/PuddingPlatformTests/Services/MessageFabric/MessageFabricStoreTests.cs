@@ -234,6 +234,63 @@ public sealed class MessageFabricStoreTests
     }
 
     [TestMethod]
+    public async Task DeferAsync_RequeuesAsRetrying_ImmediatelyClaimable_WithoutIncrementingAttempt()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+
+        var claimed = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-1",
+        }, CancellationToken.None);
+        Assert.IsNotNull(claimed);
+        Assert.AreEqual(1, claimed!.AttemptCount);
+
+        // Busy deferral is queueing, not failure retry: it must never touch
+        // AttemptCount (the increment only happens at claim time).
+        await store.DeferAsync(
+            claimed.DeliveryId,
+            "exec-1",
+            "Agent 'assistant' is busy.",
+            CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var pending = await store.ListAsync(new MessageInboxQuery
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            IncludeDelivered = true,
+        }, CancellationToken.None);
+
+        Assert.AreEqual(MessageDeliveryStatuses.Retrying, pending[0].Status);
+        Assert.AreEqual(1, pending[0].AttemptCount);
+        Assert.IsNull(pending[0].ClaimedByExecutionId);
+        Assert.IsNull(pending[0].LeaseUntil);
+        Assert.IsNotNull(pending[0].AvailableAt);
+        Assert.IsTrue(pending[0].AvailableAt <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        StringAssert.Contains(pending[0].LastError!, "busy");
+
+        // availableAt = now keeps it immediately claimable: the next claim succeeds
+        // (and then increments AttemptCount as usual).
+        var reclaimed = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-2",
+        }, CancellationToken.None);
+
+        Assert.IsNotNull(reclaimed);
+        Assert.AreEqual(2, reclaimed!.AttemptCount);
+    }
+
+    [TestMethod]
     public async Task AckAsync_ClearsPreviousLastError()
     {
         using var temp = TemporaryDirectory.Create();

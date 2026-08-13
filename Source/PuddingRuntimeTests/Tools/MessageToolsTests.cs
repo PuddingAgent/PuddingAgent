@@ -519,6 +519,9 @@ public sealed class MessageToolsTests
         public Task RetryAsync(string deliveryId, string executionId, string error, DateTimeOffset availableAt, CancellationToken ct = default) =>
             Task.CompletedTask;
 
+        public Task DeferAsync(string deliveryId, string executionId, string error, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
         public Task DeadLetterAsync(string deliveryId, string executionId, string error, CancellationToken ct = default) =>
             Task.CompletedTask;
     }
