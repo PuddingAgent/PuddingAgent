@@ -65,6 +65,8 @@ injectGlobal`
     --pudding-status-waiting: #d97706;
     --pudding-status-success: #22c55e;
     --pudding-status-error: #ef4444;
+    /* 代码块深底（P0-3：对齐 D4 对比度策略，浅色下代码表面独立加深一档） */
+    --pudding-chat-code-bg: #1e2430;
 
     /* Pudding Admin Tokens — Light */
     --pudding-admin-bg: #f5f0e8;
@@ -376,6 +378,8 @@ injectGlobal`
     --pudding-status-waiting: #f59e0b;
     --pudding-status-success: #86efac;
     --pudding-status-error: #fca5a5;
+    /* 代码块深底（P0-3：深色下与聊天表面拉开一档） */
+    --pudding-chat-code-bg: #0d1117;
 
     /* Pudding Admin Tokens — Dark */
     --pudding-admin-bg: #0b1020;

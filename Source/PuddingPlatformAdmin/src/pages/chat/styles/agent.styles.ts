@@ -238,8 +238,9 @@ export const useAgentStyles = createStyles(({ token }) => ({
     },
   },
   waitingDotSlow: {
-    background: '#d97706',
-    boxShadow: '0 0 6px rgba(217,119,6,.45)',
+    background: 'var(--pudding-status-warning)',
+    boxShadow:
+      '0 0 6px color-mix(in srgb, var(--pudding-status-warning) 45%, transparent)',
   },
   waitingLabel: {
     fontSize: 13,
@@ -251,7 +252,7 @@ export const useAgentStyles = createStyles(({ token }) => ({
     zIndex: 2,
   },
   waitingLabelWarning: {
-    color: 'color-mix(in srgb, #d97706 65%, var(--text-secondary))',
+    color: 'color-mix(in srgb, var(--pudding-status-warning) 65%, var(--text-secondary))',
   },
   waitingTrack: {
     display: 'flex',
@@ -325,17 +326,18 @@ export const useAgentStyles = createStyles(({ token }) => ({
   },
 
   agentBubbleError: {
-    borderColor: 'color-mix(in srgb, #ef4444 30%, transparent)',
-    background: 'color-mix(in srgb, #ef4444 4%, var(--soft-white))',
+    borderColor: 'color-mix(in srgb, var(--pudding-status-error) 30%, transparent)',
+    background: 'color-mix(in srgb, var(--pudding-status-error) 4%, var(--soft-white))',
   },
   // E2: 流式停滞警告（琥珀色慢脉冲边框）
   agentBubbleWarning: {
-    borderColor: 'color-mix(in srgb, #d97706 23%, transparent)',
+    borderColor: 'color-mix(in srgb, var(--pudding-status-warning) 23%, transparent)',
     animation: 'stallPulse 2s ease-in-out infinite',
   },
   pulseDotWarning: {
-    background: '#d97706',
-    boxShadow: '0 0 8px rgba(217,119,6,.5)',
+    background: 'var(--pudding-status-warning)',
+    boxShadow:
+      '0 0 8px color-mix(in srgb, var(--pudding-status-warning) 50%, transparent)',
   },
   agentQuotedMessage: {
     margin: '0 0 10px',
