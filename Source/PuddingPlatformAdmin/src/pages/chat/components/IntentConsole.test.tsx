@@ -230,7 +230,7 @@ describe('IntentConsole', () => {
     expect(screen.getByText('重试中 · 第 2 次')).toBeTruthy();
     expect(screen.getByText('执行超时，正在重试')).toBeTruthy();
     // busy-wait：等待标签，且不渲染任何错误
-    expect(screen.getByText('排队中·等待 Agent 空闲')).toBeTruthy();
+    expect(screen.getByText('排队中 · 等待 Agent 空闲')).toBeTruthy();
     expect(screen.queryByText('Agent 正在处理其他请求')).toBeNull();
     // 不再渲染红色原文 JSON
     expect(screen.queryByText(/executionState/)).toBeNull();
