@@ -28,8 +28,7 @@ namespace PuddingRuntime.Services.Tools
             GitInitArgs args, ToolExecutionContext context, CancellationToken ct)
         {
             var initPath = args.Path
-                ?? context.WorkingDirectory
-                ?? Directory.GetCurrentDirectory();
+                ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
             try
             {

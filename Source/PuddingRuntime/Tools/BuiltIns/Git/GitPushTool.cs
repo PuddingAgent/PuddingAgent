@@ -34,8 +34,7 @@ namespace PuddingRuntime.Services.Tools
             GitPushArgs args, ToolExecutionContext context, CancellationToken ct)
         {
             var repoPath = args.Path
-                ?? context.WorkingDirectory
-                ?? Directory.GetCurrentDirectory();
+                ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
             try
             {

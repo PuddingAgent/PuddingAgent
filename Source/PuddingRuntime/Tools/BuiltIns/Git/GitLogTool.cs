@@ -34,8 +34,7 @@ namespace PuddingRuntime.Services.Tools
             GitLogArgs args, ToolExecutionContext context, CancellationToken ct)
         {
             var repoPath = args.Path
-                ?? context.WorkingDirectory
-                ?? Directory.GetCurrentDirectory();
+                ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
             using var repo = new Repository(repoPath);
             var count = Math.Clamp(args.MaxCount, 1, 100);

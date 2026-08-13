@@ -25,8 +25,7 @@ namespace PuddingRuntime.Services.Tools
             GitStatusArgs args, ToolExecutionContext context, CancellationToken ct)
         {
             var repoPath = args.Path
-                ?? context.WorkingDirectory
-                ?? Directory.GetCurrentDirectory();
+                ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
             using var repo = new Repository(repoPath);
             var status = repo.RetrieveStatus();

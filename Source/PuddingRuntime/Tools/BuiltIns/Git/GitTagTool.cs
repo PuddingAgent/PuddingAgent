@@ -30,8 +30,7 @@ namespace PuddingRuntime.Services.Tools
             try
             {
                 var repoPath = args.Path
-                    ?? context.WorkingDirectory
-                    ?? Directory.GetCurrentDirectory();
+                    ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
                 using var repo = new Repository(repoPath);
 
