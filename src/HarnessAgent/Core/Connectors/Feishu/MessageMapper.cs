@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace HarnessAgent.Core.Connectors.Feishu;
 
@@ -82,6 +82,122 @@ public static class MessageMapper
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Extracts image_key values from a post (rich text) message's content_v2
+    /// (preferred) or content JSON, preserving element order. Returns an empty
+    /// list when the message is not a post/text message or contains no img
+    /// elements.
+    /// </summary>
+    public static List<string> ExtractPostImageKeys(this FeishuEvent evt)
+    {
+        var message = evt.Event?.Message;
+        if (message is null
+            || (!string.Equals(
+                    message.MessageType,
+                    "post",
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(
+                    message.MessageType,
+                    "text",
+                    StringComparison.OrdinalIgnoreCase))
+            || string.IsNullOrWhiteSpace(message.Content))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(message.Content);
+            var payload = FeishuPostContentConverter.SelectPayload(
+                document.RootElement);
+            var keys = new List<string>();
+            CollectPostImageKeys(payload, keys);
+            return keys;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static void CollectPostImageKeys(
+        JsonElement payload,
+        List<string> keys)
+    {
+        if (payload.ValueKind != JsonValueKind.Object)
+        {
+            CollectPostImageKeysRecursive(payload, keys);
+            return;
+        }
+
+        var collected = new List<string>();
+
+        // Prefer content_v2 (new format); fall back to content (legacy).
+        if (payload.TryGetProperty("content_v2", out var contentV2)
+            && contentV2.ValueKind == JsonValueKind.Array)
+        {
+            CollectPostImageKeysRecursive(contentV2, collected);
+            if (collected.Count > 0)
+            {
+                keys.AddRange(collected);
+                return;
+            }
+        }
+
+        if (payload.TryGetProperty("content", out var content))
+        {
+            CollectPostImageKeysRecursive(content, collected);
+            if (collected.Count > 0)
+            {
+                keys.AddRange(collected);
+                return;
+            }
+        }
+
+        // Fallback: scan the whole payload (localized/malformed shapes).
+        CollectPostImageKeysRecursive(payload, keys);
+    }
+
+    private static void CollectPostImageKeysRecursive(
+        JsonElement element,
+        List<string> keys)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                    CollectPostImageKeysRecursive(item, keys);
+                break;
+
+            case JsonValueKind.Object:
+                if (element.TryGetProperty("tag", out var tag)
+                    && tag.ValueKind == JsonValueKind.String
+                    && string.Equals(
+                        tag.GetString(),
+                        "img",
+                        StringComparison.OrdinalIgnoreCase)
+                    && element.TryGetProperty("image_key", out var imageKey)
+                    && imageKey.ValueKind == JsonValueKind.String)
+                {
+                    var key = imageKey.GetString();
+                    if (!string.IsNullOrWhiteSpace(key))
+                        keys.Add(key);
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Value.ValueKind is JsonValueKind.Array
+                        or JsonValueKind.Object)
+                    {
+                        CollectPostImageKeysRecursive(
+                            property.Value,
+                            keys);
+                    }
+                }
+                break;
         }
     }
 

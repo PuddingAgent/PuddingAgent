@@ -45,7 +45,7 @@ internal static class FeishuPostContentConverter
         }
     }
 
-    private static JsonElement SelectPayload(JsonElement root)
+    internal static JsonElement SelectPayload(JsonElement root)
     {
         if (HasPostShape(root))
             return root;

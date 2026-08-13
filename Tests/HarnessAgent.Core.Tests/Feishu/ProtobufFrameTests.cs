@@ -252,4 +252,120 @@ public sealed class ProtobufFrameTests
             text);
         Assert.AreNotEqual("[post]", text);
     }
+
+    [TestMethod]
+    public void FeishuPostEvent_MixedTextAndImages_ExtractsImageKeysInOrder()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "post",
+                    Content =
+                        """
+                        {
+                          "title": "",
+                          "content_v2": [
+                            [{"tag":"text","text":"第一段文字"}],
+                            [
+                              {"tag":"img","image_key":"img_v2_first","width":100,"height":100},
+                              {"tag":"text","text":"看图："}
+                            ],
+                            [
+                              {"tag":"text","text":"第二张："},
+                              {"tag":"img","image_key":"img_v2_second","width":200,"height":200}
+                            ]
+                          ]
+                        }
+                        """,
+                },
+            },
+        };
+
+        var keys = evt.ExtractPostImageKeys();
+
+        CollectionAssert.AreEqual(
+            new List<string> { "img_v2_first", "img_v2_second" },
+            keys);
+        // Text extraction must keep working (占位符可保留).
+        StringAssert.Contains(evt.ExtractText(), "第一段文字");
+        StringAssert.Contains(evt.ExtractText(), "[图片]");
+    }
+
+    [TestMethod]
+    public void FeishuPostEvent_LegacyContentArray_ExtractsImageKeysInOrder()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "post",
+                    Content =
+                        """
+                        {
+                          "title": "旧格式",
+                          "content": [
+                            [{"tag":"img","image_key":"img_legacy_1"}],
+                            [{"tag":"img","image_key":"img_legacy_2"}]
+                          ]
+                        }
+                        """,
+                },
+            },
+        };
+
+        var keys = evt.ExtractPostImageKeys();
+
+        CollectionAssert.AreEqual(
+            new List<string> { "img_legacy_1", "img_legacy_2" },
+            keys);
+    }
+
+    [TestMethod]
+    public void FeishuPostEvent_WithoutImages_ReturnsEmptyList()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "post",
+                    Content =
+                        """
+                        {
+                          "title": "",
+                          "content_v2": [
+                            [{"tag":"text","text":"只有文字"}]
+                          ]
+                        }
+                        """,
+                },
+            },
+        };
+
+        Assert.IsEmpty(evt.ExtractPostImageKeys());
+    }
+
+    [TestMethod]
+    public void FeishuImageEvent_ExtractPostImageKeys_ReturnsEmptyList()
+    {
+        var evt = new FeishuEvent
+        {
+            Event = new FeishuEventV2
+            {
+                Message = new FeishuMessageEvent
+                {
+                    MessageType = "image",
+                    Content = "{\"image_key\":\"img_v3_test\"}",
+                },
+            },
+        };
+
+        Assert.IsEmpty(evt.ExtractPostImageKeys());
+    }
 }

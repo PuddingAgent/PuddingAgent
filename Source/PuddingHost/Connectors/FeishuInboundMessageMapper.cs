@@ -63,33 +63,14 @@ public sealed class FeishuInboundMessageMapper(
                     "Feishu image message is missing image_key.");
             }
 
-            var artifactId = StableImageArtifactId(
+            var artifactId = await MaterializeImageAsync(
                 connectorId,
                 messageId,
-                imageKey);
-            var existing = await artifactStorage.ResolveLocalFileAsync(
+                imageKey,
                 binding.WorkspaceId,
-                artifactId,
+                ParseCreateTime(evt.Event?.Message?.CreateTime),
+                client,
                 ct);
-            if (existing is null)
-            {
-                var resource = await client.DownloadMessageResourceAsync(
-                    messageId,
-                    imageKey,
-                    "image",
-                    ct);
-                var mimeType = DetectProviderSafeImageMimeType(resource.Content);
-                await using var stream = new MemoryStream(
-                    resource.Content,
-                    writable: false);
-                await artifactStorage.SaveIdempotentAsync(
-                    binding.WorkspaceId,
-                    artifactId,
-                    stream,
-                    mimeType,
-                    capturedAt: ParseCreateTime(evt.Event?.Message?.CreateTime),
-                    ct: ct);
-            }
 
             metadata["inputMode"] = "image";
             metadata["visionArtifactId"] = artifactId;
@@ -155,6 +136,59 @@ public sealed class FeishuInboundMessageMapper(
                 messageId,
                 artifactId);
         }
+        else if (string.Equals(messageType, "post", StringComparison.Ordinal)
+            || string.Equals(messageType, "text", StringComparison.Ordinal))
+        {
+            var imageKeys = evt.ExtractPostImageKeys();
+            if (imageKeys.Count > 0)
+            {
+                var artifactIds = new List<string>(imageKeys.Count);
+                foreach (var imageKey in imageKeys)
+                {
+                    try
+                    {
+                        var artifactId = await MaterializeImageAsync(
+                            connectorId,
+                            messageId,
+                            imageKey,
+                            binding.WorkspaceId,
+                            ParseCreateTime(evt.Event?.Message?.CreateTime),
+                            client,
+                            ct);
+                        artifactIds.Add(artifactId);
+                        logger.LogInformation(
+                            "[Feishu] Post image materialized connector={ConnectorId} message={MessageId} artifact={ArtifactId}",
+                            connectorId,
+                            messageId,
+                            artifactId);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogWarning(
+                            ex,
+                            "[Feishu] Failed to materialize post image connector={ConnectorId} message={MessageId} key={ImageKey}; skipping image",
+                            connectorId,
+                            messageId,
+                            imageKey);
+                    }
+                }
+
+                if (artifactIds.Count > 0)
+                {
+                    var joined = string.Join(",", artifactIds);
+                    metadata["visionArtifactId"] = joined;
+                    metadata["visionArtifactIds"] = joined;
+                    logger.LogInformation(
+                        "[Feishu] Post images materialized connector={ConnectorId} message={MessageId} count={Count} ids={ArtifactIds}",
+                        connectorId,
+                        messageId,
+                        artifactIds.Count,
+                        joined);
+                }
+            }
+            // gatewayMessageType stays "chat"; text stays evt.ExtractText()
+            // markdown so the [图片] placeholder and message flow are unchanged.
+        }
 
         return new PuddingIngressEnvelope
         {
@@ -171,6 +205,51 @@ public sealed class FeishuInboundMessageMapper(
             CorrelationId = chatId,
             Metadata = metadata,
         };
+    }
+
+    /// <summary>
+    /// Downloads one Feishu image resource into the durable vision artifact
+    /// store (idempotent by connector+message+key) and returns its artifact id.
+    /// Shared by the image branch and the post/text mixed-message path.
+    /// </summary>
+    private async Task<string> MaterializeImageAsync(
+        string connectorId,
+        string messageId,
+        string imageKey,
+        string workspaceId,
+        long? capturedAt,
+        FeishuClient client,
+        CancellationToken ct)
+    {
+        var artifactId = StableImageArtifactId(
+            connectorId,
+            messageId,
+            imageKey);
+        var existing = await artifactStorage.ResolveLocalFileAsync(
+            workspaceId,
+            artifactId,
+            ct);
+        if (existing is null)
+        {
+            var resource = await client.DownloadMessageResourceAsync(
+                messageId,
+                imageKey,
+                "image",
+                ct);
+            var mimeType = DetectProviderSafeImageMimeType(resource.Content);
+            await using var stream = new MemoryStream(
+                resource.Content,
+                writable: false);
+            await artifactStorage.SaveIdempotentAsync(
+                workspaceId,
+                artifactId,
+                stream,
+                mimeType,
+                capturedAt: capturedAt,
+                ct: ct);
+        }
+
+        return artifactId;
     }
 
     private static string StableImageArtifactId(
