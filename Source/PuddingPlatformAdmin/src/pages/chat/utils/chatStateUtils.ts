@@ -317,17 +317,34 @@ export function toChatInteractionQueueItem(
     status: item.status,
     source: 'backend_message_queue',
     error: item.lastError,
-    // P1#10 过渡防御：status=retrying 且 lastError JSON 含 "executionState":"Busy" → busy-wait。
-    // 后端部署后此类项将直接以 queued 到达，届时可移除该派生逻辑。
-    waitReason: isBusyWaitRetry(item.status, item.lastError)
-      ? 'busy-wait'
-      : null,
+    // Phase 2：后端投影字段直接透传（substate/deferCount/executionState/position）。
+    substate: item.substate,
+    deferCount: item.deferCount,
+    executionState: item.executionState,
+    position: item.position,
+    // Phase 2：substate 优先驱动 waitReason —— waiting → 'busy-wait'，其他 → null；
+    // 旧后端（无 substate）回落 P1#10 isBusyWaitRetry 嗅探作过渡兜底。
+    waitReason:
+      item.substate != null
+        ? item.substate === 'waiting'
+          ? 'busy-wait'
+          : null
+        : isBusyWaitRetry(item.status, item.lastError)
+          ? 'busy-wait'
+          : null,
     metadata: {
       deliveryId: item.deliveryId,
       messageId: item.messageId,
       priority: String(item.priority),
       attemptCount: String(item.attemptCount),
       roomId: item.roomId ?? '',
+      ...(item.deferCount != null
+        ? { deferCount: String(item.deferCount) }
+        : {}),
+      ...(item.executionState != null
+        ? { executionState: item.executionState }
+        : {}),
+      ...(item.position != null ? { position: String(item.position) } : {}),
     },
   };
 }

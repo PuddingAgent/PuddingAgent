@@ -1,4 +1,4 @@
-﻿import { request } from '@umijs/max';
+import { request } from '@umijs/max';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
 
 // ─── 类型定义（与 C# 模型对齐）───────────────────────────────────
@@ -2360,8 +2360,13 @@ export interface AgentMessageQueueItem {
   leaseUntil?: number;
   readAt?: number;
   ackAt?: number;
-  claimedByExecutionId?: string;
+    claimedByExecutionId?: string;
   lastError?: string;
+  // ── Phase 2 投影字段（后端 commit 22f5b0bb，契约已锁定）──
+  substate?: 'fresh' | 'waiting' | 'retrying' | 'delivered' | 'dead_letter' | 'failed' | 'cancelled' | 'expired' | string;
+  deferCount?: number;
+  executionState?: string; // 结构化 executionState（Busy/Failed/…），从 lastErrorState 列派生
+  position?: number; // 队列序（0-based，priority desc + createdAt asc）
 }
 
 export interface AgentMessageQueueSnapshot {

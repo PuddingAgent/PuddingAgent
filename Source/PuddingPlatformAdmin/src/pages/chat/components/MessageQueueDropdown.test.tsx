@@ -85,7 +85,7 @@ describe('MessageQueueDropdown', () => {
     expect(screen.getAllByText('排队中 · 待发送')).toHaveLength(2);
   });
 
-  it('P1#10: retrying counts as queued — real retry shows warning, busy-wait shows waiting', () => {
+  it('Phase 2: retrying counts as queued — real retry shows warning, substate=waiting shows waiting', () => {
     render(
       <MessageQueueDropdown
         {...defaultProps}
@@ -95,38 +95,48 @@ describe('MessageQueueDropdown', () => {
           {
             ...backendItem('b3', '真实失败重试'),
             status: 'retrying',
+            substate: 'retrying',
             error: '{"message":"模型超时，即将重试","attempt":3}',
             metadata: { attemptCount: '3' },
           },
           {
             ...backendItem('b4', '忙等待'),
-            status: 'retrying',
+            status: 'queued',
+            substate: 'waiting',
+            deferCount: 2,
             error: '{"executionState":"Busy","message":"Agent 忙碌中"}',
             metadata: { attemptCount: '2' },
-            waitReason: 'busy-wait',
           },
-          { ...backendItem('b5', '已失败'), status: 'failed' },
+          {
+            ...backendItem('b5', '已失败'),
+            status: 'failed',
+            substate: 'failed',
+          },
         ]}
       />,
     );
 
-    // retrying ×2（真实失败 + busy-wait）归入排队：1 + 2 = 3；delivering=1；终态=1
+    // queued×1（b1）+ retrying×1（b3）+ queued×1（b4，substate=waiting）归入排队 = 3；
+    // delivering=1；终态=1（substate 不改变 phase 计数，phase 仍由 status 归类）
     expect(screen.getByText('排队 3 · 执行 1 · 终态 1')).toBeTruthy();
     // 真实失败重试：警示标签 + 尝试次数
     expect(screen.getByText('重试中 · 第 3 次')).toBeTruthy();
-    // busy-wait：按普通排队等待展示
-    expect(screen.getByText('排队等待中')).toBeTruthy();
+    // substate=waiting（busy 挂起）：等待 Agent 空闲
+    expect(screen.getByText('排队中 · 等待 Agent 空闲')).toBeTruthy();
   });
 
-  it('busy deferral by lastError: retrying + error containing "busy" shows 排队等待中 without waitReason', () => {
-    // 后端部署后不再派发 waitReason，busy deferral 由 lastError 原文含 "busy" 判定
+  it('Phase 2: substate=waiting hides retry/error even when lastError mentions busy', () => {
+    // Phase 2 后 busy deferral 由后端投影的 substate=waiting 权威驱动，
+    // 不再依赖组件内 /busy/i 原文嗅探。
     render(
       <MessageQueueDropdown
         {...defaultProps}
         interactionQueue={[
           {
-            ...backendItem('b1', '忙等待（后端信号）'),
-            status: 'retrying',
+            ...backendItem('b1', '忙等待（substate 权威信号）'),
+            status: 'queued',
+            substate: 'waiting',
+            deferCount: 8,
             error:
               '{"error":"Agent default.global_general-assistant.6a8 is busy.","executionState":"Busy"}',
             metadata: { attemptCount: '8' },
@@ -135,10 +145,31 @@ describe('MessageQueueDropdown', () => {
       />,
     );
 
-    expect(screen.getByText('排队等待中')).toBeTruthy();
-    // busy deferral 不渲染为失败重试、不显示错误原文
+    expect(screen.getByText('排队中 · 等待 Agent 空闲')).toBeTruthy();
+    // waiting 不渲染为失败重试、不显示错误原文
     expect(screen.queryByText(/重试中/)).toBeNull();
     expect(screen.queryByText(/is busy/)).toBeNull();
+  });
+
+  it('Phase 2 fallback: no substate + waitReason=busy-wait still shows waiting (old backend)', () => {
+    // 旧后端（无 substate）：由 chatStateUtils 的 isBusyWaitRetry 嗅探派生 waitReason 兜底
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[
+          {
+            ...backendItem('b1', '旧后端 busy 挂起'),
+            status: 'retrying',
+            waitReason: 'busy-wait',
+            error: '{"executionState":"Busy","message":"Agent 忙碌中"}',
+            metadata: { attemptCount: '1' },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('排队中 · 等待 Agent 空闲')).toBeTruthy();
+    expect(screen.queryByText(/重试中/)).toBeNull();
+    expect(screen.queryByText(/Agent 忙碌中/)).toBeNull();
   });
 
   it('P1#10: retrying errors are summarized with full-text tooltip; busy-wait hides errors', () => {
@@ -179,6 +210,96 @@ describe('MessageQueueDropdown', () => {
     expect(screen.queryByText(/"code":403/)).toBeNull();
     // busy-wait：不显示任何错误
     expect(screen.queryByText('Agent 忙碌中')).toBeNull();
+  });
+
+  it('Phase 2: substate drives labels for fresh/terminal states', () => {
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[
+          {
+            ...backendItem('q1', '普通排队'),
+            status: 'queued',
+            substate: 'fresh',
+          },
+          {
+            ...backendItem('c1', '取消的消息'),
+            status: 'cancelled',
+            substate: 'cancelled',
+          },
+          {
+            ...backendItem('e1', '过期的消息'),
+            status: 'expired',
+            substate: 'expired',
+          },
+        ]}
+      />,
+    );
+    // fresh → 普通「排队中」；cancelled/expired → 终态原值
+    expect(screen.getByText('排队中')).toBeTruthy();
+    expect(screen.getByText('已取消')).toBeTruthy();
+    expect(screen.getByText('已过期')).toBeTruthy();
+    // 头部计数：排队 1 · 执行 0 · 终态 2
+    expect(screen.getByText('排队 1 · 执行 0 · 终态 2')).toBeTruthy();
+  });
+
+  it('Phase 2: terminal items render placeholder action buttons (disabled until backend endpoints land)', () => {
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[
+          {
+            ...backendItem('d1', '已送达的消息'),
+            status: 'delivered',
+            substate: 'delivered',
+          },
+          {
+            ...backendItem('dl1', '死信的消息'),
+            status: 'dead_letter',
+            substate: 'dead_letter',
+          },
+          {
+            ...backendItem('f1', '失败的消息'),
+            status: 'failed',
+            substate: 'failed',
+          },
+        ]}
+      />,
+    );
+
+    // delivered：仅「查看」占位（可点击，onClick 暂为空）
+    const viewButton = screen.getByTestId(
+      'queue-action-delivered-view',
+    ) as HTMLButtonElement;
+    expect(viewButton).toBeTruthy();
+    expect(viewButton.disabled).toBe(false);
+
+    // dead_letter：重入队 + 丢弃（禁用占位，后端端点待实现）
+    const requeue = screen.getByTestId(
+      'queue-action-dead-letter-requeue',
+    ) as HTMLButtonElement;
+    const discard = screen.getByTestId(
+      'queue-action-dead-letter-discard',
+    ) as HTMLButtonElement;
+    expect(requeue.disabled).toBe(true);
+    expect(discard.disabled).toBe(true);
+
+    // failed：重试 + 查看错误（禁用占位，后端端点待实现）
+    const retry = screen.getByTestId(
+      'queue-action-failed-retry',
+    ) as HTMLButtonElement;
+    const viewError = screen.getByTestId(
+      'queue-action-failed-view-error',
+    ) as HTMLButtonElement;
+    expect(retry.disabled).toBe(true);
+    expect(viewError.disabled).toBe(true);
+
+    // 终态标签
+    expect(screen.getByText('已送达')).toBeTruthy();
+    expect(screen.getByText('死信')).toBeTruthy();
+    expect(screen.getByText('失败')).toBeTruthy();
+    // 头部计数：终态聚合显示
+    expect(screen.getByText('排队 0 · 执行 0 · 终态 3')).toBeTruthy();
   });
 
   it('P1#6: local pending items are draggable and reorder on drop', () => {

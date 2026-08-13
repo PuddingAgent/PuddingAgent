@@ -100,9 +100,17 @@ export interface ChatInteractionQueueItem {
   /**
    * P1#10 过渡防御：busy-wait 标记 —— status=retrying 且 lastError JSON 含
    * "executionState":"Busy" 时置为 'busy-wait'（计数归排队、不渲染错误）。
-   * 后端部署后此类项将直接以 queued 到达，此字段届时可移除。
+   * Phase 2 后由 substate 驱动（substate=waiting → 'busy-wait'），此字段可移除。
    */
   waitReason?: 'busy-wait' | null;
+  /** Phase 2：后端投影子状态 —— fresh/waiting/retrying/delivered/dead_letter/failed/cancelled/expired */
+  substate?: string;
+  /** Phase 2：busy 挂起次数（state=queued 时 deferCount>0 → substate=waiting） */
+  deferCount?: number;
+  /** Phase 2：结构化 executionState（Busy/Failed/…），从 lastErrorState 列派生 */
+  executionState?: string;
+  /** Phase 2：队列序（0-based，priority desc + createdAt asc） */
+  position?: number;
 }
 
 export type ChatInteractionRuntimeType =

@@ -288,15 +288,26 @@ export function useMessageInteractionQueue({
       try {
         const snapshot = await getAgentMessageQueue(workspaceId, agentId, {
           limit: 20,
-          includeTerminal: false,
+          includeTerminal: true,
         });
-        const next = (snapshot.items ?? []).map(toChatInteractionQueueItem);
+        const next = (snapshot.items ?? [])
+          .map(toChatInteractionQueueItem)
+          // Phase 2：按后端 position（0-based，priority desc + createdAt asc）升序；
+          // 旧后端无 position 时回落 createdAt 升序。
+          .sort((a, b) => {
+            if (a.position != null && b.position != null) {
+              return a.position - b.position;
+            }
+            return a.createdAt - b.createdAt;
+          });
         // 快照短路：仅比较对显示有影响的字段，相同则跳过 setState，
         // 避免高频轮询期间对空/不变队列做无谓 React commit。
+        // Phase 2：substate 参与指纹 —— fresh→waiting（status 不变）也需触发更新。
         const snapshotKey = JSON.stringify(
           next.map((item) => ({
             id: item.id,
             status: item.status,
+            substate: item.substate,
             text: item.text,
             createdAt: item.createdAt,
             error: item.error,

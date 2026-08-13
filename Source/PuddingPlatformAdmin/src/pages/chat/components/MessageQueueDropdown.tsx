@@ -49,27 +49,35 @@ const getQueuePhase = (item: ChatInteractionQueueItem): QueuePhase => {
 };
 
 /**
- * busy deferral 判定：status=retrying 且目标 Agent 忙 —— 本质是「排队等待 agent 空闲」，
- * 不是失败重试。两种信号任一命中即视为 busy deferral：
- * 1) P1#10 过渡规则派生的 waitReason='busy-wait'（由 lastError 含 executionState=Busy 推导）；
- * 2) 后端 lastError 原文包含 "busy"（忽略大小写）—— 后端部署后的权威信号。
+ * Phase 2：不再在组件内嗅探 busy —— busy deferral 由后端投影的 substate=waiting 权威驱动
+ * （chatStateUtils 已将其映射为 waitReason='busy-wait' 兼容旧消费方）。
+ * 旧后端（无 substate）由 chatStateUtils 的 isBusyWaitRetry 嗅探派生 waitReason 兜底。
  */
-const isBusyDeferred = (item: ChatInteractionQueueItem): boolean =>
-  item.status === 'retrying' &&
-  (item.waitReason === 'busy-wait' ||
-    (!!item.error && /busy/i.test(item.error)));
-
 const getQueueStatusLabel = (item: ChatInteractionQueueItem): string => {
+  // steering 状态不变
   if (item.status === 'steering_pending') return '引导待注入';
   if (item.status === 'steering_injected')
     return item.injectedRound
       ? `已注入 · 第 ${item.injectedRound} 轮`
       : '已注入';
   if (item.status === 'steering_failed') return '引导失败';
+
+  // Phase 2：substate 驱动（优先）
+  if (item.substate === 'waiting') return '排队中 · 等待 Agent 空闲';
+  if (item.substate === 'retrying') {
+    const attempt = item.metadata?.attemptCount;
+    return attempt ? `重试中 · 第 ${attempt} 次` : '重试中';
+  }
+  if (item.substate === 'delivered') return '已送达';
+  if (item.substate === 'dead_letter') return '死信';
+  if (item.substate === 'failed') return '失败';
+  if (item.substate === 'cancelled') return '已取消';
+  if (item.substate === 'expired') return '已过期';
+
+  // 兜底：无 substate 时回落 status 驱动（旧后端兼容）
   if (item.status === 'delivering') return '投递中';
   if (item.status === 'retrying') {
-    // busy deferral（Agent 忙 → 排队等待空闲）不渲染为失败重试
-    if (isBusyDeferred(item)) return '排队等待中';
+    if (item.waitReason === 'busy-wait') return '排队中 · 等待 Agent 空闲';
     const attempt = item.metadata?.attemptCount;
     return attempt ? `重试中 · 第 ${attempt} 次` : '重试中';
   }
@@ -118,10 +126,12 @@ const getQueueMetaText = (item: ChatInteractionQueueItem): string => {
   }
   if (item.status === 'steering_pending') return '等待下一次模型请求前注入';
   if (item.status === 'steering_failed') return item.error ?? '提交失败';
+  // Phase 2：substate 驱动 meta 文案（不嵌原文 JSON）
+  if (item.substate === 'waiting') return '等待当前回复完成后自动投递';
+  if (item.substate === 'retrying') return '投递失败，正在重试';
+  // 兜底：旧后端无 substate 时按 status + waitReason 判定
   if (item.status === 'retrying') {
-    // busy deferral：agent 正在执行当前回复，投递会等其空闲后自动完成
-    if (isBusyDeferred(item)) return '等待当前回复完成后自动投递';
-    // 真实失败重试：不把原文 JSON 嵌入 meta（错误摘要由下方摘要区展示，title 为全量 tooltip）
+    if (item.waitReason === 'busy-wait') return '等待当前回复完成后自动投递';
     return '投递失败，正在重试';
   }
   if (item.source === 'local_pending')
@@ -249,9 +259,17 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                 ).length > 1) ||
               (item.status === 'queued' && isBackendQueueItem && loading);
             const phase = getQueuePhase(item);
-            // busy deferral 不渲染错误、按普通排队展示；真实失败重试展示警示。
-            const isBusyWait = isBusyDeferred(item);
-            const isRealRetrying = item.status === 'retrying' && !isBusyWait;
+            // Phase 2：substate 驱动 —— waiting（busy 挂起）不渲染错误、按普通排队展示；
+            // retrying（真实失败重试）展示警示。旧后端（无 substate）回落 waitReason
+            // （由 chatStateUtils 的 isBusyWaitRetry 嗅探派生）判定。
+            const isWaiting =
+              item.substate === 'waiting' ||
+              (item.substate == null && item.waitReason === 'busy-wait');
+            const isRealRetrying =
+              item.substate === 'retrying' ||
+              (item.substate == null &&
+                item.status === 'retrying' &&
+                item.waitReason !== 'busy-wait');
 
             return (
               <div
@@ -383,10 +401,10 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                   {getQueueMetaText(item)}
                 </div>
                 {/* P1#10：不再渲染红色原文 JSON —— retrying 改为摘要式错误（≤80 字符或提取 message），
-                    title 保留全量原文；busy-wait 不显示错误；其余状态错误同样摘要化。 */}
+                    title 保留全量原文；waiting（busy 挂起）不显示错误；其余状态错误同样摘要化。 */}
                 {item.error &&
                   item.status !== 'steering_failed' &&
-                  !isBusyWait && (
+                  !isWaiting && (
                     <div
                       className={styles.composerQueueError}
                       style={
@@ -399,6 +417,77 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                       {summarizeQueueError(item.error)}
                     </div>
                   )}
+                {/* Phase 2：终态动作按钮占位 —— 后端端点（retry-now/discard/yield/cancel-all）
+                    未实现，dead_letter/failed 按钮暂禁用；delivered 仅查看占位。 */}
+                {(item.substate === 'delivered' ||
+                  item.substate === 'dead_letter' ||
+                  item.substate === 'failed') && (
+                  <div
+                    className={styles.composerQueueActions}
+                    style={{
+                      gridColumn: '1 / -1',
+                      justifyContent: 'flex-start',
+                      gap: 6,
+                      marginTop: 2,
+                    }}
+                  >
+                    {item.substate === 'delivered' && (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          // 占位：查看消息详情（后端端点待实现）
+                        }}
+                        data-testid="queue-action-delivered-view"
+                      >
+                        查看
+                      </Button>
+                    )}
+                    {item.substate === 'dead_letter' && (
+                      <>
+                        <Tooltip title="后端端点待实现">
+                          <Button
+                            size="small"
+                            disabled
+                            data-testid="queue-action-dead-letter-requeue"
+                          >
+                            重入队
+                          </Button>
+                        </Tooltip>
+                        <Tooltip title="后端端点待实现">
+                          <Button
+                            size="small"
+                            disabled
+                            data-testid="queue-action-dead-letter-discard"
+                          >
+                            丢弃
+                          </Button>
+                        </Tooltip>
+                      </>
+                    )}
+                    {item.substate === 'failed' && (
+                      <>
+                        <Tooltip title="后端端点待实现">
+                          <Button
+                            size="small"
+                            disabled
+                            data-testid="queue-action-failed-retry"
+                          >
+                            重试
+                          </Button>
+                        </Tooltip>
+                        <Tooltip title="后端端点待实现">
+                          <Button
+                            size="small"
+                            disabled
+                            data-testid="queue-action-failed-view-error"
+                          >
+                            查看错误
+                          </Button>
+                        </Tooltip>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
