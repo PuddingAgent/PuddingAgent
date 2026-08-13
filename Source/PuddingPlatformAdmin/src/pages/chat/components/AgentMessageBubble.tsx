@@ -22,6 +22,7 @@ import AgentAvatar from './AgentAvatar';
 import MessageActions from './MessageActions';
 import MessageItem from './MessageItem';
 import MessageProcessSummary from './MessageProcessSummary';
+import StateDot from './StateDot';
 import {
   type CurrentRunActivity,
   getCurrentRunActivity,
@@ -30,6 +31,7 @@ import {
 import { ReasoningPreview } from './ReasoningPreview';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 import { WaitingBubble } from './WaitingBubble';
+import { summarizeError } from '../utils/summarizeError';
 
 const SessionBenchmarkDrawer =
   process.env.NODE_ENV === 'test'
@@ -388,6 +390,31 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const hasAnswerContent = content.trim().length > 0;
   const isError = status === 'error' || status === 'cancelled';
 
+  // P0-1: 错误摘要行 — 优先取失败时间线条目（tool_result / subconscious_step）的
+  // message/output（error 事件会把错误写入该条目），无失败条目时回退到 content
+  // （error 事件同时会把诊断文本写入 answerMarkdown）。
+  const errorText = React.useMemo(() => {
+    const candidates: string[] = [];
+    if (processItems) {
+      for (const item of processItems) {
+        const failed =
+          item.status === 'error' ||
+          item.status === 'failed' ||
+          (typeof item.exitCode === 'number' && item.exitCode !== 0);
+        const text = failed ? item.message || item.output : '';
+        if (text && text.trim()) candidates.push(text);
+      }
+    }
+    for (const candidate of candidates) {
+      if (candidate.trim()) return candidate;
+    }
+    return content;
+  }, [processItems, content]);
+  const errorSummary = React.useMemo(
+    () => summarizeError(errorText),
+    [errorText],
+  );
+
   // P3: 完成粒子 — 回答落定时在气泡右下角播放一次粒子飞散动画
   const [showCompletionParticles, setShowCompletionParticles] =
     React.useState(false);
@@ -743,16 +770,44 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 </div>
               )}
 
-            {/* 错误时显示重试 */}
-            {isError && !processItems?.length && onRerun && (
-              <div className={styles.processSummaryRow}>
-                <button
-                  type="button"
-                  className={styles.processRetryBtn}
-                  onClick={onRerun}
+            {/* P0-1: 错误摘要行（StateDot + 标题 + 摘要，title 挂全量原文）；
+                重试按钮与摘要行同行（沿用 !processItems 条件，不破坏既有 onRerun 逻辑） */}
+            {isError && (
+              <div
+                className={styles.agentErrorSummaryRow}
+                data-testid="agent-error-summary-row"
+              >
+                <StateDot
+                  state={status === 'cancelled' ? 'warning' : 'error'}
+                  size={10}
+                />
+                <span
+                  className={cx(
+                    styles.agentErrorSummaryTitle,
+                    status === 'cancelled' &&
+                      styles.agentErrorSummaryTitleWarning,
+                  )}
                 >
-                  重试
-                </button>
+                  {status === 'cancelled' ? '已取消' : '本轮运行失败'}
+                </span>
+                {errorSummary.summary && (
+                  <span
+                    className={styles.agentErrorSummaryText}
+                    title={errorSummary.full}
+                    data-testid="agent-error-summary-text"
+                  >
+                    {errorSummary.summary}
+                  </span>
+                )}
+                {!processItems?.length && onRerun && (
+                  <button
+                    type="button"
+                    className={styles.processRetryBtn}
+                    onClick={onRerun}
+                  >
+                    重试
+                  </button>
+                )}
               </div>
             )}
 

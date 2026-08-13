@@ -1,4 +1,4 @@
-﻿import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import AgentMessageBubble from './AgentMessageBubble';
 
@@ -102,6 +102,16 @@ jest.mock('../client/agentChatApi', () => ({
 }));
 
 jest.mock('./AgentAvatar', () => () => <div data-testid="agent-avatar" />);
+jest.mock(
+  './StateDot',
+  () => (props: { state: string; size?: number }) => (
+    <span
+      data-testid="state-dot"
+      data-state={props.state}
+      aria-hidden="true"
+    />
+  ),
+);
 jest.mock(
   './MessageActions',
   () => (props: Record<string, unknown>) => mockMessageActions(props),
@@ -744,5 +754,107 @@ describe('AgentMessageBubble streaming presentation', () => {
       }),
     );
     expect(mockUseTypewriterStreaming).not.toHaveBeenCalled();
+  });
+});
+
+describe('AgentMessageBubble error summary row (P0-1)', () => {
+  it('renders StateDot(error) + title + summarized message for error status', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="error"
+        isStreaming={false}
+        content='{"message":"模型超时，已自动重试","code":429}'
+        onRerun={jest.fn()}
+      />,
+    );
+
+    const dot = screen.getByTestId('state-dot');
+    expect(dot.getAttribute('data-state')).toBe('error');
+    expect(screen.getByText('本轮运行失败')).toBeTruthy();
+    const summaryText = screen.getByTestId('agent-error-summary-text');
+    expect(summaryText.textContent).toBe('模型超时，已自动重试');
+    expect(summaryText.getAttribute('title')).toBe(
+      '{"message":"模型超时，已自动重试","code":429}',
+    );
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+  });
+
+  it('renders warning state + 已取消 title for cancelled status', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="cancelled"
+        isStreaming={false}
+        content="用户取消"
+        onRerun={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('state-dot').getAttribute('data-state')).toBe(
+      'warning',
+    );
+    expect(screen.getByText('已取消')).toBeTruthy();
+    expect(screen.getByTestId('agent-error-summary-text').textContent).toBe(
+      '用户取消',
+    );
+  });
+
+  it('prefers the failed timeline item message over answer content', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="error"
+        isStreaming={false}
+        content="部分输出"
+        processItems={[
+          {
+            id: 'tool-1',
+            type: 'tool_result',
+            status: 'error',
+            message: '命令执行失败：exit 1',
+            timestamp: 1,
+            collapsed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('agent-error-summary-text').textContent).toBe(
+      '命令执行失败：exit 1',
+    );
+  });
+
+  it('keeps dot + title when no error text is available', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="error"
+        isStreaming={false}
+        content=""
+      />,
+    );
+
+    expect(screen.getByTestId('state-dot').getAttribute('data-state')).toBe(
+      'error',
+    );
+    expect(screen.getByText('本轮运行失败')).toBeTruthy();
+    expect(screen.queryByTestId('agent-error-summary-text')).toBeNull();
+  });
+
+  it('truncates a long plain-text error to 80 chars with an ellipsis', () => {
+    const longError = 'e'.repeat(120);
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="error"
+        isStreaming={false}
+        content={longError}
+      />,
+    );
+
+    expect(screen.getByTestId('agent-error-summary-text').textContent).toBe(
+      `${'e'.repeat(80)}…`,
+    );
   });
 });
