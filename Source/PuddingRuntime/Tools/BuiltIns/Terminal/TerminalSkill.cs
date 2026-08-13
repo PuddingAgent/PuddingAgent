@@ -37,7 +37,7 @@ public sealed class TerminalSkill : PuddingToolBase<TerminalSkillArgs>
         if (string.IsNullOrWhiteSpace(command))
             return ToolExecutionResult.Fail("command 参数不能为空。");
 
-        var workingDir = args.Cwd ?? Directory.GetCurrentDirectory();
+        var workingDir = args.Cwd ?? context.WorkingDirectory ?? Directory.GetCurrentDirectory();
 
         try { _commandPolicy.EnsureAllowed(command, context.IsYoloMode); }
         catch (UnauthorizedAccessException ex)

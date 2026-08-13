@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.CodeAnalysis.CSharp;
 using PuddingCode.Models;
@@ -30,7 +30,7 @@ public sealed class ProjectMapTool : PuddingToolBase<ProjectMapArgs>
         ToolExecutionContext context,
         CancellationToken ct)
     {
-        var rootPath = ResolveRootPath(args.ProjectPath);
+        var rootPath = ResolveRootPath(args.ProjectPath, context.WorkingDirectory);
         var depth = Math.Clamp(args.Depth ?? 2, 1, 3);
 
         if (!Directory.Exists(rootPath))
@@ -249,9 +249,9 @@ public sealed class ProjectMapTool : PuddingToolBase<ProjectMapArgs>
     /// 将用户输入的路径解析为规范化绝对路径，并校验其在工作区范围内。
     /// 当前以工作目录为沙箱边界——解析后的路径必须在工作目录子树内。
     /// </summary>
-    private static string ResolveRootPath(string? projectPath)
+        private static string ResolveRootPath(string? projectPath, string? workingDirectory)
     {
-        var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
+        var cwd = Path.GetFullPath(workingDirectory ?? Directory.GetCurrentDirectory());
         string resolved;
 
         if (!string.IsNullOrWhiteSpace(projectPath))

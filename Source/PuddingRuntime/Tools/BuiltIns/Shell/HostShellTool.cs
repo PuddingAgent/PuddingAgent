@@ -61,7 +61,7 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
             {
                 Command = args.Command,
                 Shell = args.Shell,
-                WorkingDirectory = args.WorkingDirectory,
+                WorkingDirectory = args.WorkingDirectory ?? context.WorkingDirectory,
                 TimeoutSeconds = args.TimeoutSeconds,
             },
             _logger,

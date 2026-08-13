@@ -44,7 +44,7 @@ public sealed class CodeOutlineTool : PuddingToolBase<CodeOutlineArgs>
         var filePath = args.FilePath.Trim();
 
         // 解析为绝对路径
-        var fullPath = ResolveFullPath(filePath);
+        var fullPath = ResolveFullPath(filePath, context.WorkingDirectory);
 
         // 1. 文件存在性检查
         if (!File.Exists(fullPath))
@@ -173,9 +173,9 @@ public sealed class CodeOutlineTool : PuddingToolBase<CodeOutlineArgs>
     /// 将用户输入的路径解析为规范化绝对路径，并校验其在工作区范围内。
     /// 当前以工作目录为沙箱边界——解析后的路径必须在工作目录子树内。
     /// </summary>
-    private static string ResolveFullPath(string filePath)
+        private static string ResolveFullPath(string filePath, string? workingDirectory)
     {
-        var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
+        var cwd = Path.GetFullPath(workingDirectory ?? Directory.GetCurrentDirectory());
         string resolved;
 
         if (Path.IsPathRooted(filePath))

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -150,8 +150,8 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
             return ToolExecutionResult.Fail(ex.Message);
         }
 
-        var cwd = string.IsNullOrWhiteSpace(args.Cwd)
-            ? Directory.GetCurrentDirectory()
+                var cwd = string.IsNullOrWhiteSpace(args.Cwd)
+            ? (context.WorkingDirectory ?? Directory.GetCurrentDirectory())
             : args.Cwd.Trim();
 
         if (!Directory.Exists(cwd))
