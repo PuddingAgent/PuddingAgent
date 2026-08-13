@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using LibGit2Sharp;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.LogId,
         name: "Git Log",
-        description: "显示提交历史/日志（git log），含作者、日期和消息。Show commit history with author, date, and message",
+        description: "显示提交历史/日志（git log），含作者、日期和消息。何时用：了解最近的提交、定位某次变更的 SHA、按分支或文件过滤历史。怎么用/坑：MaxCount 默认 20、上限 100；Branch 缺省为当前分支；FilePath 可限定到单个文件；只读操作、并发安全。Show commit history with author, date, and message; use to review recent commits, find a SHA, or filter history by branch/file; MaxCount defaults to 20 (max 100); read-only",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

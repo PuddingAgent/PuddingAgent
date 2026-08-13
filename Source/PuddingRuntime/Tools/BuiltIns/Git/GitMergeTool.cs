@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using LibGit2Sharp;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.MergeId,
         name: "Git Merge",
-        description: "将指定分支合并（merge）到当前分支。Merge the given branch into the current branch",
+        description: "将指定分支合并（merge）到当前分支。何时用：把已完成的分支（如 feature）合入主干，或把他人改动并入当前分支。怎么用/坑：Branch 必填且须存在；合并前建议先 commit/stash 未提交改动，保证工作区干净；若产生冲突，结果 status 为 Conflicts，需手动解决后再次提交；快进场景不会产生 merge commit。Merge the given branch into the current branch; use to integrate a finished feature branch or sync others' work; Branch is required, keep the working tree clean first, and conflicts (status=Conflicts) must be resolved manually",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,

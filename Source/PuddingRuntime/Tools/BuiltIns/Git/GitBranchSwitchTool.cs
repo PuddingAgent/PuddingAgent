@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using LibGit2Sharp;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BranchSwitchId,
         name: "Git Branch Switch",
-        description: "检出并切换到已有分支（branch checkout/switch）。Checkout and switch to an existing branch",
+        description: "检出并切换到已有分支（branch checkout/switch）。何时用：在已存在的分支之间切换工作上下文。怎么用/坑：BranchName 必填且分支必须已存在（不存在先用 git_branch_create 创建）；工作区有未提交改动且与目标分支冲突时切换会失败，先 commit 或 stash；切换会直接改变工作区文件内容。Checkout and switch to an existing branch; use to change working context between branches; the branch must already exist (create it first) and uncommitted changes may block the switch — commit or stash them first",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.None,

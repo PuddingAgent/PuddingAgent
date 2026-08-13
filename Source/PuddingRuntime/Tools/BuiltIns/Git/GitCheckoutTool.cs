@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using LibGit2Sharp;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.CheckoutId,
         name: "Git Checkout",
-        description: "检出（checkout）提交、分支或标签；检出非分支时会分离 HEAD。Check out a commit, branch or tag (detaches HEAD when checking out a non-branch)",
+        description: "检出（checkout）提交、分支或标签；检出非分支时会分离 HEAD。何时用：查看历史提交或标签的快照、临时切到某次提交验证行为。怎么用/坑：Target 必填，可为分支、tag 或 commit SHA；检出 commit/tag 进入 detached HEAD，此时新提交不属于任何分支、容易丢失，若想基于旧提交继续工作应先建分支；工作区有未提交改动时可能被拒绝。Check out a commit, branch or tag (detaches HEAD for non-branch targets); use to inspect historical snapshots or verify behavior at a commit; in detached HEAD new commits belong to no branch — create a branch first if you plan to keep working",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,
