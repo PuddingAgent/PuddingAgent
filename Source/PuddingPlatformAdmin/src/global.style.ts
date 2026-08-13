@@ -63,6 +63,7 @@ injectGlobal`
     /* 状态色阶（§4.0 总表）：running=强调紫 / waiting=琥珀（与队列 #b36b1e 同族）/ success / error */
     --pudding-status-running: var(--accent-purple);
     --pudding-status-waiting: #d97706;
+    --pudding-status-warning: #d97706;
     --pudding-status-success: #22c55e;
     --pudding-status-error: #ef4444;
     /* 代码块深底（P0-3：对齐 D4 对比度策略，浅色下代码表面独立加深一档） */
@@ -376,6 +377,7 @@ injectGlobal`
     /* 状态色阶深色：running=浅紫（同 --pudding-chat-accent 深色）/ waiting=琥珀提亮档 / success=浅绿（同 --pudding-chat-success 深色）/ error=浅红（同 --pudding-chat-danger 深色） */
     --pudding-status-running: #a78bfa;
     --pudding-status-waiting: #f59e0b;
+    --pudding-status-warning: #f59e0b;
     --pudding-status-success: #86efac;
     --pudding-status-error: #fca5a5;
     /* 代码块深底（P0-3：深色下与聊天表面拉开一档） */
