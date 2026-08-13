@@ -72,7 +72,18 @@ public static class MessageFabricSchemaBootstrapper
         "ALTER TABLE message_deliveries ADD COLUMN available_at INTEGER;",
         "ALTER TABLE message_deliveries ADD COLUMN lease_until INTEGER;",
         "ALTER TABLE message_deliveries ADD COLUMN claimed_by_execution_id TEXT;",
+        "ALTER TABLE message_deliveries ADD COLUMN defer_count INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE message_deliveries ADD COLUMN execution_state TEXT;",
         "ALTER TABLE message_deliveries ADD COLUMN last_error TEXT;",
+        // Phase 2 projection contract: one-time dirty-data normalization (idempotent).
+        // attempt_count > 3 truncation: historical attempt counts up to 248 were
+        // inflated by the old busy spin-loop bug; the real retry cap is 3.
+        "UPDATE message_deliveries SET attempt_count = 3 WHERE attempt_count > 3;",
+        // retrying + attempt_count >= 3 + availableAt already expired -> dead_letter.
+        "UPDATE message_deliveries SET status = 'dead_letter' WHERE status = 'retrying' AND attempt_count >= 3 AND available_at IS NOT NULL AND available_at <= (strftime('%s','now') * 1000);",
+        // defer_count defaults to 0 for existing rows (no historical data, conservative).
+        // execution_state is parsed from last_error: contains "busy" (case-insensitive) -> 'Busy'.
+        "UPDATE message_deliveries SET execution_state = CASE WHEN instr(lower(coalesce(last_error,'')), 'busy') > 0 THEN 'Busy' ELSE NULL END;",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_message_deliveries_delivery_id ON message_deliveries(delivery_id);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_message_id ON message_deliveries(message_id);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_endpoint_status ON message_deliveries(workspace_id, target_kind, target_id, status);",

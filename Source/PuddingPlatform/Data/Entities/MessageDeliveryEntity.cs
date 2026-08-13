@@ -40,6 +40,23 @@ public sealed class MessageDeliveryEntity
     [Column("attempt_count")]
     public int AttemptCount { get; set; }
 
+    /// <summary>
+    /// Busy suspension count: incremented by <c>DeferAsync</c> (the target agent
+    /// was busy), never at claim time. Drives the projection substate
+    /// "waiting" (queued + deferCount &gt; 0) for the Phase 2 queue badges.
+    /// </summary>
+    [Column("defer_count")]
+    public int DeferCount { get; set; }
+
+    /// <summary>
+    /// Parsed execution signal derived from <see cref="LastError"/>:
+    /// "Busy" when lastError contains "busy" (case-insensitive), otherwise null.
+    /// Kept in sync on every lastError write so the projection can expose it
+    /// without re-parsing.
+    /// </summary>
+    [MaxLength(32), Column("execution_state")]
+    public string? ExecutionState { get; set; }
+
     [Column("available_at")]
     public long? AvailableAt { get; set; }
 

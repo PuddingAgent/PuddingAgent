@@ -191,6 +191,7 @@ public sealed class MessageFabricStore : IMessageInbox
         delivery.LeaseUntil = leaseUntil;
         delivery.ClaimedByExecutionId = request.ExecutionId;
         delivery.LastError = null;
+        delivery.ExecutionState = null;
         delivery.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
@@ -241,6 +242,7 @@ public sealed class MessageFabricStore : IMessageInbox
             delivery.LeaseUntil = leaseUntil;
             delivery.ClaimedByExecutionId = request.ExecutionId;
             delivery.LastError = null;
+            delivery.ExecutionState = null;
             delivery.UpdatedAt = now;
         }
 
@@ -329,6 +331,7 @@ public sealed class MessageFabricStore : IMessageInbox
         delivery.LeaseUntil = null;
         delivery.ClaimedByExecutionId = null;
         delivery.LastError = null;
+        delivery.ExecutionState = null;
         delivery.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
         LogDeliveryTransition(delivery, executionId);
@@ -354,6 +357,7 @@ public sealed class MessageFabricStore : IMessageInbox
         delivery.LeaseUntil = null;
         delivery.ClaimedByExecutionId = null;
         delivery.LastError = error;
+        delivery.ExecutionState = ResolveExecutionState(error);
         delivery.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
         LogDeliveryTransition(delivery, executionId);
@@ -361,14 +365,14 @@ public sealed class MessageFabricStore : IMessageInbox
 
     /// <summary>
     /// Busy deferral: the target agent is executing another turn, so this delivery
-    /// waits in the queue instead of counting as a failed retry. Behavior is the
-    /// same as <see cref="RetryAsync"/> with availableAt = now (status Retrying,
-    /// immediately claimable, lease/claim cleared, lastError recorded) and never
-    /// touches AttemptCount — the increment only happens at claim time. Keeping
-    /// availableAt = now means the agent.availability.changed(idle) drain can claim
+    /// waits in the queue instead of counting as a failed retry. The delivery stays
+    /// status Queued (the Phase 2 projection badge "waiting" = queued + deferCount&gt;0)
+    /// with availableAt = now so the agent.availability.changed(idle) drain can claim
     /// it the moment the agent frees up; the dispatcher's in-memory busy cooldown
     /// (not the database) is what stops the recovery loop from hot-looping on a
-    /// busy target and inflating AttemptCount.
+    /// busy target and inflating AttemptCount. AttemptCount is only incremented at
+    /// claim time; DeferCount tracks how many times the delivery was suspended for a
+    /// busy target.
     /// </summary>
     public async Task DeferAsync(
         string deliveryId,
@@ -384,16 +388,18 @@ public sealed class MessageFabricStore : IMessageInbox
             return;
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        delivery.Status = MessageDeliveryStatuses.Retrying;
+        delivery.Status = MessageDeliveryStatuses.Queued;
         delivery.AvailableAt = now;
         delivery.LeaseUntil = null;
         delivery.ClaimedByExecutionId = null;
         delivery.LastError = error;
+        delivery.DeferCount += 1;
+        delivery.ExecutionState = ResolveExecutionState(error);
         delivery.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
         LogDeliveryTransition(delivery, executionId);
         _logger.LogDebug(
-            "[MessageFabric] busy deferral delivery_id={DeliveryId} target_id={TargetId} (queueing, not failure retry)",
+            "[MessageFabric] busy deferral delivery_id={DeliveryId} target_id={TargetId} (queued, not failure retry)",
             delivery.DeliveryId,
             delivery.TargetId);
     }
@@ -416,6 +422,7 @@ public sealed class MessageFabricStore : IMessageInbox
         delivery.LeaseUntil = null;
         delivery.ClaimedByExecutionId = null;
         delivery.LastError = error;
+        delivery.ExecutionState = ResolveExecutionState(error);
         delivery.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
         LogDeliveryTransition(delivery, executionId);
@@ -497,6 +504,18 @@ public sealed class MessageFabricStore : IMessageInbox
     private static bool MatchesExecution(MessageDeliveryEntity delivery, string executionId)
         => string.IsNullOrWhiteSpace(executionId)
            || string.Equals(delivery.ClaimedByExecutionId, executionId, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Derives the persisted execution_state column from a lastError payload:
+    /// "Busy" when the text contains "busy" (case-insensitive), otherwise null.
+    /// Kept in sync wherever lastError is written so the projection can expose it
+    /// without re-parsing raw error text.
+    /// </summary>
+    private static string? ResolveExecutionState(string? lastError)
+        => !string.IsNullOrWhiteSpace(lastError)
+           && lastError.Contains("busy", StringComparison.OrdinalIgnoreCase)
+            ? "Busy"
+            : null;
 
     private void LogDeliveryTransition(MessageDeliveryEntity delivery, string? executionId) =>
         LogDeliveryTransition(

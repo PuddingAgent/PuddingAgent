@@ -647,7 +647,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                         ct);
                     LogExecutionResult(
                         item,
-                        MessageDeliveryStatuses.Retrying,
+                        MessageDeliveryStatuses.Queued,
                         executionId,
                         correlationId: correlationId,
                         causationId: causationId);

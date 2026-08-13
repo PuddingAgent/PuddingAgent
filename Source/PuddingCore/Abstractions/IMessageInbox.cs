@@ -48,10 +48,10 @@ public interface IMessageInbox
 
     /// <summary>
     /// Defers a delivery because its target agent is busy — queueing, not failure
-    /// backoff. Semantically identical to <see cref="RetryAsync"/> with
-    /// availableAt = now (sets Retrying, keeps the delivery immediately claimable,
-    /// clears the lease/claim, records lastError) and, like RetryAsync, never
-    /// increments AttemptCount (the increment only happens at claim time).
+    /// backoff. The delivery stays status Queued (the Phase 2 projection badge
+    /// "waiting" = queued + deferCount &gt; 0) with availableAt = now, clears the
+    /// lease/claim, records lastError, and increments DeferCount. Like RetryAsync it
+    /// never increments AttemptCount (the increment only happens at claim time).
     /// It is a separate method so busy deferral stays distinguishable from failure
     /// retry at call sites and in logs, and so the UI can surface it as
     /// "queued waiting for the agent to free up" instead of "retrying".

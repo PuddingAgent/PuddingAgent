@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services.MessageFabric;
@@ -234,7 +234,7 @@ public sealed class MessageFabricStoreTests
     }
 
     [TestMethod]
-    public async Task DeferAsync_RequeuesAsRetrying_ImmediatelyClaimable_WithoutIncrementingAttempt()
+    public async Task DeferAsync_RequeuesAsQueued_ImmediatelyClaimable_WithoutIncrementingAttempt_AndIncrementsDeferCount()
     {
         using var temp = TemporaryDirectory.Create();
         var options = CreateOptions(temp.Path);
@@ -254,7 +254,9 @@ public sealed class MessageFabricStoreTests
         Assert.AreEqual(1, claimed!.AttemptCount);
 
         // Busy deferral is queueing, not failure retry: it must never touch
-        // AttemptCount (the increment only happens at claim time).
+        // AttemptCount (the increment only happens at claim time); instead it
+        // increments DeferCount and stays status Queued so the Phase 2 projection
+        // substate is "waiting" (queued + deferCount > 0).
         await store.DeferAsync(
             claimed.DeliveryId,
             "exec-1",
@@ -269,7 +271,7 @@ public sealed class MessageFabricStoreTests
             IncludeDelivered = true,
         }, CancellationToken.None);
 
-        Assert.AreEqual(MessageDeliveryStatuses.Retrying, pending[0].Status);
+        Assert.AreEqual(MessageDeliveryStatuses.Queued, pending[0].Status);
         Assert.AreEqual(1, pending[0].AttemptCount);
         Assert.IsNull(pending[0].ClaimedByExecutionId);
         Assert.IsNull(pending[0].LeaseUntil);
@@ -277,8 +279,13 @@ public sealed class MessageFabricStoreTests
         Assert.IsTrue(pending[0].AvailableAt <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         StringAssert.Contains(pending[0].LastError!, "busy");
 
+        db.ChangeTracker.Clear();
+        var entity = await db.MessageDeliveries.SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.AreEqual(1, entity.DeferCount);
+        Assert.AreEqual("Busy", entity.ExecutionState);
+
         // availableAt = now keeps it immediately claimable: the next claim succeeds
-        // (and then increments AttemptCount as usual).
+        // (and then increments AttemptCount as usual, but never DeferCount).
         var reclaimed = await store.ClaimNextAsync(new MessageClaimRequest
         {
             Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
@@ -288,8 +295,102 @@ public sealed class MessageFabricStoreTests
 
         Assert.IsNotNull(reclaimed);
         Assert.AreEqual(2, reclaimed!.AttemptCount);
-    }
 
+        db.ChangeTracker.Clear();
+        var afterReclaim = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.AreEqual(1, afterReclaim.DeferCount);
+        Assert.IsNull(afterReclaim.ExecutionState);
+
+        // A second busy deferral accumulates DeferCount (busy 挂起次数).
+        await store.DeferAsync(
+            claimed.DeliveryId,
+            "exec-2",
+            "Agent 'assistant' is busy.",
+            CancellationToken.None);
+        db.ChangeTracker.Clear();
+        var afterSecondDefer = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.AreEqual(MessageDeliveryStatuses.Queued, afterSecondDefer.Status);
+        Assert.AreEqual(2, afterSecondDefer.DeferCount);
+        Assert.AreEqual("Busy", afterSecondDefer.ExecutionState);
+        Assert.AreEqual(2, afterSecondDefer.AttemptCount);
+    }
+    [TestMethod]
+    public async Task ExecutionState_IsParsedFromLastError_AndClearedOnAckAndClaim()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+
+        var claimed = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-1",
+        }, CancellationToken.None);
+        Assert.IsNotNull(claimed);
+
+        // Non-busy failure retry: lastError without "busy" -> ExecutionState null.
+        await store.RetryAsync(
+            claimed!.DeliveryId,
+            "exec-1",
+            "upstream 503",
+            DateTimeOffset.UtcNow.AddSeconds(-1),
+            CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var retrying = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.AreEqual(MessageDeliveryStatuses.Retrying, retrying.Status);
+        Assert.IsNull(retrying.ExecutionState);
+        Assert.AreEqual(0, retrying.DeferCount);
+
+        // Busy deferral: lastError contains "busy" (case-insensitive) -> "Busy".
+        var claimed2 = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-2",
+        }, CancellationToken.None);
+        Assert.IsNotNull(claimed2);
+
+        await store.DeferAsync(
+            claimed2!.DeliveryId,
+            "exec-2",
+            "{\"executionState\":\"Busy\",\"message\":\"Agent busy\"}",
+            CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var deferred = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.AreEqual(MessageDeliveryStatuses.Queued, deferred.Status);
+        Assert.AreEqual("Busy", deferred.ExecutionState);
+        Assert.AreEqual(1, deferred.DeferCount);
+
+        // Claim clears lastError -> ExecutionState null (re-parsed on next write).
+        var claimed3 = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            ExecutionId = "exec-3",
+        }, CancellationToken.None);
+        Assert.IsNotNull(claimed3);
+
+        // Ack clears lastError -> ExecutionState stays null on the terminal row.
+        await store.AckAsync(claimed3!.DeliveryId, "exec-3", CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var acked = await db.MessageDeliveries.AsNoTracking()
+            .SingleAsync(delivery => delivery.DeliveryId == claimed.DeliveryId);
+        Assert.AreEqual(MessageDeliveryStatuses.Delivered, acked.Status);
+        Assert.IsNull(acked.LastError);
+        Assert.IsNull(acked.ExecutionState);
+    }
     [TestMethod]
     public async Task AckAsync_ClearsPreviousLastError()
     {

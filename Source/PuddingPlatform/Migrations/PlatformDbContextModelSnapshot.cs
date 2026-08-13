@@ -1049,11 +1049,20 @@ namespace PuddingPlatform.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("created_at");
 
+                    b.Property<int>("DeferCount")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("defer_count");
+
                     b.Property<string>("DeliveryId")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("TEXT")
                         .HasColumnName("delivery_id");
+
+                    b.Property<string>("ExecutionState")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("execution_state");
 
                     b.Property<string>("LastError")
                         .HasMaxLength(1024)

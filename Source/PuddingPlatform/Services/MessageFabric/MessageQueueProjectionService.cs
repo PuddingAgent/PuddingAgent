@@ -54,11 +54,26 @@ public sealed class MessageQueueProjectionService
         if (!query.IncludeTerminal)
             deliveriesQuery = deliveriesQuery.Where(delivery => ActiveStatuses.Contains(delivery.Status));
 
-        var deliveries = await deliveriesQuery
+        // Fetch the full filtered candidate queue once, ordered by availableAt
+        // ascending (null = immediately available sorts first, SQLite semantics)
+        // so every returned item can carry its true queue position for the Phase 2
+        // "让位" (give-way) action. The display order (priority desc, created asc)
+        // is applied afterwards in memory.
+        var candidates = await deliveriesQuery
+            .OrderBy(delivery => delivery.AvailableAt)
+            .ThenBy(delivery => delivery.CreatedAt)
+            .ThenBy(delivery => delivery.DeliveryId)
+            .ToListAsync(ct);
+
+        var positionByDeliveryId = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < candidates.Count; i++)
+            positionByDeliveryId[candidates[i].DeliveryId] = i;
+
+        var deliveries = candidates
             .OrderByDescending(delivery => delivery.Priority)
             .ThenBy(delivery => delivery.CreatedAt)
             .Take(limit)
-            .ToListAsync(ct);
+            .ToList();
 
         var messageIds = deliveries
             .Select(delivery => delivery.MessageId)
@@ -76,7 +91,7 @@ public sealed class MessageQueueProjectionService
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
         var items = deliveries
-            .Select(delivery => Map(delivery, messages))
+            .Select(delivery => Map(delivery, messages, positionByDeliveryId))
             .ToList();
 
         return new MessageQueueSnapshot
@@ -90,7 +105,8 @@ public sealed class MessageQueueProjectionService
 
     private static MessageQueueItem Map(
         MessageDeliveryEntity delivery,
-        IReadOnlyDictionary<string, RoomMessageEntity> messages)
+        IReadOnlyDictionary<string, RoomMessageEntity> messages,
+        IReadOnlyDictionary<string, int> positionByDeliveryId)
     {
         messages.TryGetValue(delivery.MessageId, out var message);
         var envelope = message is null
@@ -123,8 +139,12 @@ public sealed class MessageQueueProjectionService
             MessageType = envelope?.MessageType,
             ContentType = envelope?.ContentType,
             Status = delivery.Status,
+            Substate = ResolveSubstate(delivery),
             Priority = delivery.Priority,
             AttemptCount = delivery.AttemptCount,
+            DeferCount = delivery.DeferCount,
+            ExecutionState = delivery.ExecutionState,
+            Position = positionByDeliveryId.TryGetValue(delivery.DeliveryId, out var position) ? position : -1,
             CreatedAt = delivery.CreatedAt,
             AvailableAt = delivery.AvailableAt,
             LeaseUntil = delivery.LeaseUntil,
@@ -134,6 +154,28 @@ public sealed class MessageQueueProjectionService
             LastError = delivery.LastError,
         };
     }
+
+    /// <summary>
+    /// Phase 2 projection contract — locked semantics, do not change:
+    /// <list type="bullet">
+    /// <item>queued + deferCount == 0 → "fresh"（普通排队）</item>
+    /// <item>queued + deferCount &gt; 0 → "waiting"（busy 挂起）</item>
+    /// <item>retrying → "retrying"（真实失败退避）</item>
+    /// <item>delivered / dead_letter / failed → identity（终态三子态）</item>
+    /// </list>
+    /// Statuses outside the locked mapping (delivering / cancelled / expired) fall
+    /// back to the status itself so no information is lost.
+    /// </summary>
+    private static string ResolveSubstate(MessageDeliveryEntity delivery)
+        => delivery.Status switch
+        {
+            MessageDeliveryStatuses.Queued => delivery.DeferCount > 0 ? "waiting" : "fresh",
+            MessageDeliveryStatuses.Retrying => "retrying",
+            MessageDeliveryStatuses.Delivered => "delivered",
+            MessageDeliveryStatuses.DeadLetter => "dead_letter",
+            MessageDeliveryStatuses.Failed => "failed",
+            _ => delivery.Status,
+        };
 }
 
 public sealed record MessageQueueProjectionQuery
@@ -168,8 +210,22 @@ public sealed record MessageQueueItem
     public string? MessageType { get; init; }
     public string? ContentType { get; init; }
     public required string Status { get; init; }
+    /// <summary>
+    /// Phase 2 projection substate（仅投影计算，不入库）:
+    /// fresh / waiting / retrying / delivered / dead_letter / failed（+ 身份回退）。
+    /// </summary>
+    public required string Substate { get; init; }
     public int Priority { get; init; }
     public int AttemptCount { get; init; }
+    /// <summary>Busy 挂起次数（持久化列 defer_count）。</summary>
+    public int DeferCount { get; init; }
+    /// <summary>从 lastError 解析的 execution_state（"Busy" 或 null）。</summary>
+    public string? ExecutionState { get; init; }
+    /// <summary>
+    /// 队列内序号：按 availableAt 升序排序后本消息的下标（0-based），
+    /// 支撑前端「让位」动作。
+    /// </summary>
+    public int Position { get; init; }
     public long CreatedAt { get; init; }
     public long? AvailableAt { get; init; }
     public long? LeaseUntil { get; init; }
