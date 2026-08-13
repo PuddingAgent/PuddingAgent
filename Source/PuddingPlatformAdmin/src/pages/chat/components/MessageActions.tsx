@@ -1,5 +1,6 @@
 // ── MessageActions：消息操作按钮组 ─────────────────────────
 import {
+  CheckOutlined,
   CopyOutlined,
   DeleteOutlined,
   LoadingOutlined,
@@ -46,6 +47,19 @@ const MessageActions: React.FC<MessageActionsProps> = ({
   const [voicePlaying, setVoicePlaying] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState<string | undefined>();
   const voiceHandleRef = React.useRef<BrowserVoiceOutputHandle | null>(null);
+  // P0-4: copy 成功 1s 反馈（ref 防重入 + 卸载保护）
+  const [copyPending, setCopyPending] = React.useState(false);
+  const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
   const canSpeak = Boolean(voiceOutputAdapter && content.trim());
   const voiceSupported = voiceOutputAdapter?.isSupported() ?? false;
 
@@ -100,10 +114,15 @@ const MessageActions: React.FC<MessageActionsProps> = ({
             onClick={() => {
               navigator.clipboard.writeText(content).catch(() => {});
               onCopy?.();
+              if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+              setCopyPending(true);
+              copyTimerRef.current = setTimeout(() => {
+                if (mountedRef.current) setCopyPending(false);
+              }, 1000);
             }}
-            aria-label="复制"
+            aria-label={copyPending ? '已复制' : '复制'}
           >
-            <CopyOutlined />
+            {copyPending ? <CheckOutlined /> : <CopyOutlined />}
           </button>
         </Tooltip>
       )}

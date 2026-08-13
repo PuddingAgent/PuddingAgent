@@ -1,4 +1,4 @@
-import { CopyOutlined } from '@ant-design/icons';
+import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import Prism from 'prismjs';
 import React, { useEffect, useRef } from 'react';
@@ -139,6 +139,18 @@ const CodeBlock: React.FC<{
 }> = ({ code, styles, className, isStreaming }) => {
   const ref = useRef<HTMLElement>(null);
   const lastHighlightRef = useRef(0);
+  // P0-3: 复制成功 1s 反馈（setTimeout + 卸载保护 ref）
+  const [copied, setCopied] = React.useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     if (!ref.current || isStreaming) return;
     const now = performance.now();
@@ -146,21 +158,33 @@ const CodeBlock: React.FC<{
     lastHighlightRef.current = now;
     Prism.highlightElement(ref.current);
   }, [code, className, isStreaming]);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).catch(() => {});
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopied(true);
+    copyTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) setCopied(false);
+    }, 1000);
+  };
+
   return (
     <div className={styles.codeBlockWrap}>
-      {/* P0-3: 左上角语言标签（从 language-* 提取，无语言时显示「code」） */}
-      <span className={styles.codeLanguageLabel}>
-        {extractCodeLanguage(className)}
-      </span>
-      <Button
-        size="small"
-        className={styles.codeCopyButton}
-        icon={<CopyOutlined />}
-        data-code-copy
-        onClick={() => navigator.clipboard.writeText(code)}
-      >
-        复制
-      </Button>
+      {/* P0-3: sticky banner（语言标签 + 复制按钮行，同深底） */}
+      <div className={styles.codeBlockBanner}>
+        <span className={styles.codeLanguageLabel}>
+          {extractCodeLanguage(className)}
+        </span>
+        <Button
+          size="small"
+          className={styles.codeCopyButton}
+          icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+          data-code-copy
+          onClick={handleCopy}
+        >
+          {copied ? '复制成功' : '复制'}
+        </Button>
+      </div>
       <pre>
         <code ref={ref} className={className}>
           {code}

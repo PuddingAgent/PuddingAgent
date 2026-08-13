@@ -87,8 +87,81 @@ describe('MessageActions voice output', () => {
       />,
     );
 
-    const button = screen.getByRole('button', { name: '浏览器不支持语音朗读' });
+        const button = screen.getByRole('button', { name: '浏览器不支持语音朗读' });
 
     expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('MessageActions copy feedback (P0-4)', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: jest.fn().mockResolvedValue(undefined) },
+    });
+  });
+
+  it('switches the copy icon to a check for 1s then restores', () => {
+    jest.useFakeTimers();
+    try {
+      const onCopy = jest.fn();
+      render(
+        <MessageActions content="整理今天的会议记录。" visible onCopy={onCopy} />,
+      );
+
+      const copyButton = screen.getByRole('button', { name: '复制' });
+      fireEvent.click(copyButton);
+
+      expect(onCopy).toHaveBeenCalledTimes(1);
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        '整理今天的会议记录。',
+      );
+      expect(screen.getByRole('button', { name: '已复制' })).toBeTruthy();
+
+      React.act(() => {
+        jest.advanceTimersByTime(1_000);
+      });
+      expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '已复制' })).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('resets the pending state when clicked again before the timer fires', () => {
+    jest.useFakeTimers();
+    try {
+      render(<MessageActions content="文本" visible />);
+
+      fireEvent.click(screen.getByRole('button', { name: '复制' }));
+      fireEvent.click(screen.getByRole('button', { name: '已复制' }));
+
+      // 防重入：第二次点击重置定时器，仍处于已复制态
+      expect(screen.getByRole('button', { name: '已复制' })).toBeTruthy();
+
+      React.act(() => {
+        jest.advanceTimersByTime(1_000);
+      });
+      expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not set state after unmount while the feedback timer is pending', () => {
+    jest.useFakeTimers();
+    try {
+      const { unmount } = render(<MessageActions content="文本" visible />);
+      fireEvent.click(screen.getByRole('button', { name: '复制' }));
+      expect(screen.getByRole('button', { name: '已复制' })).toBeTruthy();
+
+      unmount();
+      React.act(() => {
+        jest.advanceTimersByTime(1_000);
+      });
+      // 卸载保护生效：无 act 警告/错误即通过
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
