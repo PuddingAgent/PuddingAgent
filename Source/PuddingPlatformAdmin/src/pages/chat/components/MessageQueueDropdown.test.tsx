@@ -1,4 +1,4 @@
-﻿import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import MessageQueueDropdown from './MessageQueueDropdown';
 
@@ -83,6 +83,102 @@ describe('MessageQueueDropdown', () => {
     expect(screen.getByText('排队 3 · 执行 2 · 终态 1')).toBeTruthy();
     // 本地待发项标注"排队中 · 待发送"
     expect(screen.getAllByText('排队中 · 待发送')).toHaveLength(2);
+  });
+
+  it('P1#10: retrying counts as queued — real retry shows warning, busy-wait shows waiting', () => {
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[
+          backendItem('b1', '后端一'),
+          { ...backendItem('b2', '投递中'), status: 'delivering' },
+          {
+            ...backendItem('b3', '真实失败重试'),
+            status: 'retrying',
+            error: '{"message":"模型超时，即将重试","attempt":3}',
+            metadata: { attemptCount: '3' },
+          },
+          {
+            ...backendItem('b4', '忙等待'),
+            status: 'retrying',
+            error: '{"executionState":"Busy","message":"Agent 忙碌中"}',
+            metadata: { attemptCount: '2' },
+            waitReason: 'busy-wait',
+          },
+          { ...backendItem('b5', '已失败'), status: 'failed' },
+        ]}
+      />,
+    );
+
+    // retrying ×2（真实失败 + busy-wait）归入排队：1 + 2 = 3；delivering=1；终态=1
+    expect(screen.getByText('排队 3 · 执行 1 · 终态 1')).toBeTruthy();
+    // 真实失败重试：警示标签 + 尝试次数
+    expect(screen.getByText('重试中 · 第 3 次')).toBeTruthy();
+    // busy-wait：按普通排队等待展示
+    expect(screen.getByText('排队等待中')).toBeTruthy();
+  });
+
+  it('busy deferral by lastError: retrying + error containing "busy" shows 排队等待中 without waitReason', () => {
+    // 后端部署后不再派发 waitReason，busy deferral 由 lastError 原文含 "busy" 判定
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[
+          {
+            ...backendItem('b1', '忙等待（后端信号）'),
+            status: 'retrying',
+            error:
+              '{"error":"Agent default.global_general-assistant.6a8 is busy.","executionState":"Busy"}',
+            metadata: { attemptCount: '8' },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('排队等待中')).toBeTruthy();
+    // busy deferral 不渲染为失败重试、不显示错误原文
+    expect(screen.queryByText(/重试中/)).toBeNull();
+    expect(screen.queryByText(/is busy/)).toBeNull();
+  });
+
+  it('P1#10: retrying errors are summarized with full-text tooltip; busy-wait hides errors', () => {
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[
+          {
+            ...backendItem('b1', '真实失败重试'),
+            status: 'retrying',
+            error: '{"message":"模型超时，即将重试","attempt":3}',
+            metadata: { attemptCount: '3' },
+          },
+          {
+            ...backendItem('b2', '忙等待'),
+            status: 'retrying',
+            error: '{"executionState":"Busy","message":"Agent 忙碌中"}',
+            metadata: { attemptCount: '1' },
+            waitReason: 'busy-wait',
+          },
+          {
+            ...backendItem('b3', '终态失败'),
+            status: 'failed',
+            error: '{"message":"请求被拒","code":403}',
+          },
+        ]}
+      />,
+    );
+
+    // 真实失败重试：摘要（提取 message），title 保留全量原文
+    const retryError = screen.getByText('模型超时，即将重试');
+    expect(retryError.getAttribute('title')).toBe(
+      '{"message":"模型超时，即将重试","attempt":3}',
+    );
+    // 终态失败：同样摘要化，不再渲染原文 JSON
+    expect(screen.getByText('请求被拒')).toBeTruthy();
+    expect(screen.queryByText(/executionState/)).toBeNull();
+    expect(screen.queryByText(/"code":403/)).toBeNull();
+    // busy-wait：不显示任何错误
+    expect(screen.queryByText('Agent 忙碌中')).toBeNull();
   });
 
   it('P1#6: local pending items are draggable and reorder on drop', () => {

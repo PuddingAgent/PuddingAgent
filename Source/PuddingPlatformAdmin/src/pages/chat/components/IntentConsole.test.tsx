@@ -193,6 +193,49 @@ describe('IntentConsole', () => {
     });
   });
 
+  it('P1#10: renders retrying via queue dropdown — real retry warning + summary, busy-wait waiting without error', () => {
+    render(
+      <IntentConsole
+        {...baseProps}
+        loading
+        status="streaming"
+        interactionQueue={[
+          {
+            id: 'retry-1',
+            text: '请重试该任务',
+            createdAt: Date.now(),
+            status: 'retrying',
+            source: 'backend_message_queue',
+            error: '{"message":"执行超时，正在重试"}',
+            metadata: { attemptCount: '2' },
+          },
+          {
+            id: 'busy-1',
+            text: '等 Agent 空闲',
+            createdAt: Date.now(),
+            status: 'retrying',
+            source: 'backend_message_queue',
+            error:
+              '{"executionState":"Busy","message":"Agent 正在处理其他请求"}',
+            metadata: { attemptCount: '1' },
+            waitReason: 'busy-wait',
+          },
+        ]}
+      />,
+    );
+
+    // retrying ×2 归入排队：排队 2 · 执行 0 · 终态 0
+    expect(screen.getByText('排队 2 · 执行 0 · 终态 0')).toBeTruthy();
+    // 真实失败重试：警示标签 + 尝试次数 + 摘要错误
+    expect(screen.getByText('重试中 · 第 2 次')).toBeTruthy();
+    expect(screen.getByText('执行超时，正在重试')).toBeTruthy();
+    // busy-wait：等待标签，且不渲染任何错误
+    expect(screen.getByText('排队中·等待 Agent 空闲')).toBeTruthy();
+    expect(screen.queryByText('Agent 正在处理其他请求')).toBeNull();
+    // 不再渲染红色原文 JSON
+    expect(screen.queryByText(/executionState/)).toBeNull();
+  });
+
   it('renders injected steering state with round and latency diagnostics', () => {
     render(
       <IntentConsole

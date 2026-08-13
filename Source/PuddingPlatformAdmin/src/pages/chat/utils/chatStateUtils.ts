@@ -1,4 +1,4 @@
-﻿// ── 聊天状态纯函数 ──────────────────────────────────────
+// ── 聊天状态纯函数 ──────────────────────────────────────
 // 从 useChatState.ts 提取的模块级纯函数、常量和类型。
 // 这些函数不依赖 React hooks，仅依赖参数和 import。
 // ADR-062 P0-1
@@ -317,6 +317,11 @@ export function toChatInteractionQueueItem(
     status: item.status,
     source: 'backend_message_queue',
     error: item.lastError,
+    // P1#10 过渡防御：status=retrying 且 lastError JSON 含 "executionState":"Busy" → busy-wait。
+    // 后端部署后此类项将直接以 queued 到达，届时可移除该派生逻辑。
+    waitReason: isBusyWaitRetry(item.status, item.lastError)
+      ? 'busy-wait'
+      : null,
     metadata: {
       deliveryId: item.deliveryId,
       messageId: item.messageId,
@@ -325,6 +330,29 @@ export function toChatInteractionQueueItem(
       roomId: item.roomId ?? '',
     },
   };
+}
+
+/**
+ * P1#10 过渡防御：识别 busy-wait 假 retrying —— status=retrying 且 lastError
+ * JSON 含 "executionState":"Busy" 时视为 busy-wait（计数归排队、不渲染错误）。
+ * try/catch 解析 lastError，解析失败（纯文本错误）不抛，回落子串匹配。
+ * 后端部署后此类项将直接以 queued 到达，此函数可移除。
+ */
+function isBusyWaitRetry(status: string, lastError?: string): boolean {
+  if (status !== 'retrying' || !lastError) return false;
+  try {
+    const parsed = JSON.parse(lastError) as { executionState?: unknown };
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.executionState === 'Busy'
+    ) {
+      return true;
+    }
+  } catch {
+    // lastError 非 JSON（纯文本）→ 回落子串匹配，仍不抛
+  }
+  return lastError.includes('"executionState":"Busy"');
 }
 
 export function resolveSubAgentTerminalOutput(

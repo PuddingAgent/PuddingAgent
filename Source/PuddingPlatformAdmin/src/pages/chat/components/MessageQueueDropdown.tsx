@@ -1,4 +1,4 @@
-﻿// ── P1#6 MessageQueueDropdown：三态消息队列（排队 / 让位 / 取消）──
+// ── P1#6 MessageQueueDropdown：三态消息队列（排队 / 让位 / 取消）──
 // 对齐 Copilot Send 三态（Add to Queue / Steer with Message / Stop and Send）：
 // - 排队（queue）：busy 期间输入的多条消息由 useMessageInteractionQueue 自动进入本地待发队列；
 // - 让位（steer）：本地待发项与下一条交换（最后一条轮转到队首）；后端排队项则注入下一次上下文；
@@ -34,9 +34,12 @@ interface MessageQueueDropdownProps {
 /** 三态归类：排队中 / 投递中（含引导注入）/ 终态（完成、失败、取消、过期） */
 const getQueuePhase = (item: ChatInteractionQueueItem): QueuePhase => {
   if (item.status === 'queued') return 'queued';
+  // P1#10：retrying（含 busy-wait 假 retrying）归入排队计数 ——
+  // 真实失败重试仍在等待下一轮投递；busy-wait 本质是 Agent 忙导致的消息挂起，
+  // 后端部署后此类项将直接以 queued 到达（过渡规则见 toChatInteractionQueueItem）。
+  if (item.status === 'retrying') return 'queued';
   if (
     item.status === 'delivering' ||
-    item.status === 'retrying' ||
     item.status === 'steering_pending' ||
     item.status === 'steering_injected'
   ) {
@@ -44,6 +47,17 @@ const getQueuePhase = (item: ChatInteractionQueueItem): QueuePhase => {
   }
   return 'terminal';
 };
+
+/**
+ * busy deferral 判定：status=retrying 且目标 Agent 忙 —— 本质是「排队等待 agent 空闲」，
+ * 不是失败重试。两种信号任一命中即视为 busy deferral：
+ * 1) P1#10 过渡规则派生的 waitReason='busy-wait'（由 lastError 含 executionState=Busy 推导）；
+ * 2) 后端 lastError 原文包含 "busy"（忽略大小写）—— 后端部署后的权威信号。
+ */
+const isBusyDeferred = (item: ChatInteractionQueueItem): boolean =>
+  item.status === 'retrying' &&
+  (item.waitReason === 'busy-wait' ||
+    (!!item.error && /busy/i.test(item.error)));
 
 const getQueueStatusLabel = (item: ChatInteractionQueueItem): string => {
   if (item.status === 'steering_pending') return '引导待注入';
@@ -53,13 +67,40 @@ const getQueueStatusLabel = (item: ChatInteractionQueueItem): string => {
       : '已注入';
   if (item.status === 'steering_failed') return '引导失败';
   if (item.status === 'delivering') return '投递中';
-  if (item.status === 'retrying') return '重试中';
+  if (item.status === 'retrying') {
+    // busy deferral（Agent 忙 → 排队等待空闲）不渲染为失败重试
+    if (isBusyDeferred(item)) return '排队等待中';
+    const attempt = item.metadata?.attemptCount;
+    return attempt ? `重试中 · 第 ${attempt} 次` : '重试中';
+  }
   if (item.status === 'dead_letter') return '死信';
   if (item.status === 'failed') return '失败';
   if (item.status === 'cancelled') return '已取消';
   if (item.status === 'expired') return '已过期';
   if (item.source === 'local_pending') return '排队中 · 待发送';
   return '排队中';
+};
+
+/** P1#10：retrying 警示色（amber），区别于终态错误红 */
+const QUEUE_RETRY_WARNING_COLOR = '#b36b1e';
+
+/** P1#10：lastError 摘要 —— JSON 优先提取 message 字段，否则截断 ≤80 字符；title 保留全量原文。 */
+const summarizeQueueError = (error: string): string => {
+  try {
+    const parsed = JSON.parse(error) as { message?: unknown };
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed.message === 'string' &&
+      parsed.message.trim()
+    ) {
+      const msg = parsed.message.trim();
+      return msg.length > 80 ? `${msg.slice(0, 80)}…` : msg;
+    }
+  } catch {
+    // lastError 非 JSON：按纯文本截断处理
+  }
+  return error.length > 80 ? `${error.slice(0, 80)}…` : error;
 };
 
 const formatQueueLatency = (ms?: number): string | null => {
@@ -77,6 +118,12 @@ const getQueueMetaText = (item: ChatInteractionQueueItem): string => {
   }
   if (item.status === 'steering_pending') return '等待下一次模型请求前注入';
   if (item.status === 'steering_failed') return item.error ?? '提交失败';
+  if (item.status === 'retrying') {
+    // busy deferral：agent 正在执行当前回复，投递会等其空闲后自动完成
+    if (isBusyDeferred(item)) return '等待当前回复完成后自动投递';
+    // 真实失败重试：不把原文 JSON 嵌入 meta（错误摘要由下方摘要区展示，title 为全量 tooltip）
+    return '投递失败，正在重试';
+  }
   if (item.source === 'local_pending')
     return '等待当前回复完成后自动发送，可拖拽重排';
   if (item.source === 'backend_message_queue')
@@ -202,6 +249,9 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                 ).length > 1) ||
               (item.status === 'queued' && isBackendQueueItem && loading);
             const phase = getQueuePhase(item);
+            // busy deferral 不渲染错误、按普通排队展示；真实失败重试展示警示。
+            const isBusyWait = isBusyDeferred(item);
+            const isRealRetrying = item.status === 'retrying' && !isBusyWait;
 
             return (
               <div
@@ -267,6 +317,11 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                   <span
                     className={styles.composerQueueStatus}
                     data-status={item.status}
+                    style={
+                      isRealRetrying
+                        ? { color: QUEUE_RETRY_WARNING_COLOR }
+                        : undefined
+                    }
                     title={getQueueMetaText(item)}
                   >
                     {getQueueStatusLabel(item)}
@@ -327,9 +382,23 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                 <div className={styles.composerQueueMeta}>
                   {getQueueMetaText(item)}
                 </div>
-                {item.error && item.status !== 'steering_failed' && (
-                  <div className={styles.composerQueueError}>{item.error}</div>
-                )}
+                {/* P1#10：不再渲染红色原文 JSON —— retrying 改为摘要式错误（≤80 字符或提取 message），
+                    title 保留全量原文；busy-wait 不显示错误；其余状态错误同样摘要化。 */}
+                {item.error &&
+                  item.status !== 'steering_failed' &&
+                  !isBusyWait && (
+                    <div
+                      className={styles.composerQueueError}
+                      style={
+                        isRealRetrying
+                          ? { color: QUEUE_RETRY_WARNING_COLOR }
+                          : undefined
+                      }
+                      title={item.error}
+                    >
+                      {summarizeQueueError(item.error)}
+                    </div>
+                  )}
               </div>
             );
           })}

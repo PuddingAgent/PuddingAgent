@@ -1,4 +1,4 @@
-﻿import type { FormInstance } from 'antd';
+import type { FormInstance } from 'antd';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 import type {
   TokenUsageDto,
@@ -97,6 +97,12 @@ export interface ChatInteractionQueueItem {
   injectedRound?: number;
   injectionLatencyMs?: number;
   error?: string;
+  /**
+   * P1#10 过渡防御：busy-wait 标记 —— status=retrying 且 lastError JSON 含
+   * "executionState":"Busy" 时置为 'busy-wait'（计数归排队、不渲染错误）。
+   * 后端部署后此类项将直接以 queued 到达，此字段届时可移除。
+   */
+  waitReason?: 'busy-wait' | null;
 }
 
 export type ChatInteractionRuntimeType =
