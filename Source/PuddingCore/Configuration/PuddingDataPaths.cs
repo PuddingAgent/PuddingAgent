@@ -19,6 +19,7 @@ public sealed record PuddingDataPaths
     public string MemoryRoot => Path.Combine(DataRoot, "memory");
     public string DatabasesRoot => Path.Combine(DataRoot, "databases");
     public string BackupsRoot => Path.Combine(DataRoot, "backups");
+    public string RetentionArchiveRoot => Path.Combine(DataRoot, "retention-archive");
     public string TempRoot => Path.Combine(DataRoot, "tmp");
     public string PluginsRoot => Path.Combine(DataRoot, "plugins");
 
@@ -87,6 +88,13 @@ public sealed record PuddingDataPaths
 
     public string AgentInstanceRawLogJsonlFile(string agentInstanceId, string day, string sessionId) =>
         Path.Combine(AgentInstanceRawLogDayRoot(agentInstanceId, day), $"{sessionId}.jsonl");
+
+    /// <summary>
+    /// Platform 级 retention 裁剪归档 jsonl 文件（按天分片）。
+    /// 路径：retention-archive/{yyyy-MM-dd}/{tableName}.jsonl
+    /// </summary>
+    public string PlatformRetentionArchiveFile(string tableName, string day) =>
+        Path.Combine(RetentionArchiveRoot, day, $"{tableName}.jsonl");
 
     public string AgentInstanceMemoryRoot(string agentInstanceId) =>
         Path.Combine(AgentInstanceRoot(agentInstanceId), "memory");

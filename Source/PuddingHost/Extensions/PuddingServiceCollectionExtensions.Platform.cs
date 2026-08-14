@@ -288,6 +288,8 @@ public static partial class PuddingServiceCollectionExtensions
         // ── platform.db 数据保留期裁剪（Retention，覆盖 session_event_log /
         //    telemetry_metric_events / runtime_activity / conversation_events；
         //    ChatMessages 永不裁剪）──────────────────────────────
+        // 证据流表（session_event_log / conversation_events）DELETE 前先归档到 WORM jsonl。
+        builder.Services.AddSingleton<RetentionArchiveWriter>();
         builder.Services.AddHostedService<RetentionPruningService>();
 
         // ── 双向消息系统（事件系统之上的聊天室/Agent 消息抽象）──────────

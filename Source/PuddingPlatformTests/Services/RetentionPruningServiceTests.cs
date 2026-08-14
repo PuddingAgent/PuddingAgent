@@ -1,8 +1,10 @@
-﻿using Microsoft.Data.Sqlite;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using PuddingCode.Configuration;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
@@ -47,10 +49,23 @@ public sealed class RetentionPruningServiceTests
 
     private static RetentionPruningService CreateService(
         ServiceProvider provider, IConfiguration configuration)
+        => CreateService(provider, configuration, CreateArchiveWriter());
+
+    private static RetentionPruningService CreateService(
+        ServiceProvider provider, IConfiguration configuration, RetentionArchiveWriter archiveWriter)
         => new(
             configuration,
             provider.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<RetentionPruningService>.Instance);
+            NullLogger<RetentionPruningService>.Instance,
+            archiveWriter);
+
+    private static RetentionArchiveWriter CreateArchiveWriter()
+        => new(
+            PuddingDataPaths.FromRoot(CreateArchiveRoot()),
+            NullLogger<RetentionArchiveWriter>.Instance);
+
+    private static string CreateArchiveRoot()
+        => Path.Combine(Path.GetTempPath(), "pudding-retention-tests", Guid.NewGuid().ToString("N"));
 
     private static SessionEventLogEntity MakeSessionEvent(string sessionId, long sequence, DateTimeOffset recordedAt) => new()
     {
@@ -235,5 +250,156 @@ public sealed class RetentionPruningServiceTests
             var service = CreateService(provider, config);
             await service.RunOnceAsync(); // 不应抛异常
         }
+    }
+
+    [TestMethod]
+    public async Task Archives_SessionEventLog_Before_Delete()
+    {
+        var (provider, connection) = CreateProvider();
+        var archiveRoot = CreateArchiveRoot();
+        var archiveWriter = new RetentionArchiveWriter(
+            PuddingDataPaths.FromRoot(archiveRoot),
+            NullLogger<RetentionArchiveWriter>.Instance);
+
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<SessionEventLogEntity>().Add(
+                    MakeSessionEvent("old", 1, DateTimeOffset.UtcNow.AddDays(-20)));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:session_event_log:RetentionDays", "14"),
+                ("Retention:conversation_events:RetentionDays", "30"),
+                ("Retention:telemetry_metric_events:RetentionDays", "14"),
+                ("Retention:runtime_activity:RetentionDays", "14"),
+                ("Retention:Vacuum:Enabled", "false"));
+
+            var service = CreateService(provider, config, archiveWriter);
+            await service.RunOnceAsync();
+
+            // 已删除
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                Assert.AreEqual(0, await db.Set<SessionEventLogEntity>().CountAsync(e => e.SessionId == "old"));
+            }
+
+            // 已归档（当天分片，含完整字段与元数据）
+            var day = DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-dd");
+            var archiveFile = PuddingDataPaths.FromRoot(archiveRoot)
+                .PlatformRetentionArchiveFile("session_event_log", day);
+            Assert.IsTrue(File.Exists(archiveFile), $"archive file not found: {archiveFile}");
+
+            var lines = await File.ReadAllLinesAsync(archiveFile);
+            Assert.AreEqual(1, lines.Length);
+            using var doc = JsonDocument.Parse(lines[0]);
+            var root = doc.RootElement;
+            Assert.AreEqual("old", root.GetProperty("SessionId").GetString());
+            Assert.AreEqual("session_event_log", root.GetProperty("table_name").GetString());
+            Assert.IsTrue(root.TryGetProperty("archived_at", out _));
+            Assert.IsTrue(root.TryGetProperty("retention_cutoff", out _));
+        }
+    }
+
+    [TestMethod]
+    public async Task Archives_ConversationEvents_Before_Delete()
+    {
+        var (provider, connection) = CreateProvider();
+        var archiveRoot = CreateArchiveRoot();
+        var archiveWriter = new RetentionArchiveWriter(
+            PuddingDataPaths.FromRoot(archiveRoot),
+            NullLogger<RetentionArchiveWriter>.Instance);
+
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<ConversationEventEntity>().Add(
+                    MakeConversationEvent("old-c", DateTimeOffset.UtcNow.AddDays(-40)));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:session_event_log:RetentionDays", "14"),
+                ("Retention:conversation_events:RetentionDays", "30"),
+                ("Retention:telemetry_metric_events:RetentionDays", "14"),
+                ("Retention:runtime_activity:RetentionDays", "14"),
+                ("Retention:Vacuum:Enabled", "false"));
+
+            var service = CreateService(provider, config, archiveWriter);
+            await service.RunOnceAsync();
+
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                Assert.AreEqual(0, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "old-c"));
+            }
+
+            var day = DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-dd");
+            var archiveFile = PuddingDataPaths.FromRoot(archiveRoot)
+                .PlatformRetentionArchiveFile("conversation_events", day);
+            Assert.IsTrue(File.Exists(archiveFile), $"archive file not found: {archiveFile}");
+
+            var lines = await File.ReadAllLinesAsync(archiveFile);
+            Assert.AreEqual(1, lines.Length);
+            using var doc = JsonDocument.Parse(lines[0]);
+            var root = doc.RootElement;
+            Assert.AreEqual("old-c", root.GetProperty("ConversationId").GetString());
+            Assert.AreEqual("conversation_events", root.GetProperty("table_name").GetString());
+        }
+    }
+
+    [TestMethod]
+    public async Task Archive_Failure_Aborts_Delete()
+    {
+        var (provider, connection) = CreateProvider();
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<SessionEventLogEntity>().Add(
+                    MakeSessionEvent("old", 1, DateTimeOffset.UtcNow.AddDays(-20)));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:session_event_log:RetentionDays", "14"),
+                ("Retention:conversation_events:RetentionDays", "30"),
+                ("Retention:telemetry_metric_events:RetentionDays", "14"),
+                ("Retention:runtime_activity:RetentionDays", "14"),
+                ("Retention:Vacuum:Enabled", "false"));
+
+            var failingWriter = new FailingRetentionArchiveWriter(
+                PuddingDataPaths.FromRoot(CreateArchiveRoot()));
+            var service = CreateService(provider, config, failingWriter);
+
+            // 归档失败 → 直调 RunOnceAsync 抛异常（生产环境由 RunLoopAsync 捕获重试）
+            await Assert.ThrowsExactlyAsync<IOException>(() => service.RunOnceAsync());
+
+            // 行未被删除（绝不先删后归档）
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                Assert.AreEqual(1, await db.Set<SessionEventLogEntity>().CountAsync(e => e.SessionId == "old"));
+            }
+        }
+    }
+
+    private sealed class FailingRetentionArchiveWriter : RetentionArchiveWriter
+    {
+        public FailingRetentionArchiveWriter(PuddingDataPaths paths)
+            : base(paths, NullLogger<RetentionArchiveWriter>.Instance)
+        {
+        }
+
+        public override Task ArchiveBatchAsync<T>(
+            string tableName, IReadOnlyList<T> rows, DateTimeOffset cutoff, CancellationToken ct = default)
+            => throw new IOException("simulated archive failure");
     }
 }

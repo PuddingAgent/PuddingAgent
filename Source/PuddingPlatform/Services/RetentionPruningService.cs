@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -41,6 +41,7 @@ public sealed class RetentionPruningService : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<RetentionPruningService> _logger;
+    private readonly RetentionArchiveWriter _archiveWriter;
 
     /// <summary>
     /// 受支持表白名单：表名 → 时间戳列名（防注入；列名已按实体映射核实）。
@@ -55,14 +56,27 @@ public sealed class RetentionPruningService : BackgroundService
             ["conversation_events"] = "committed_at",
         };
 
+    /// <summary>
+    /// DELETE 前需要归档的证据事件流表（append-only 恢复）。
+    /// telemetry_metric_events / runtime_activity 是遥测非证据，本批保持现状（不归档、照旧 DELETE）。
+    /// </summary>
+    private static readonly IReadOnlySet<string> ArchiveTables =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "session_event_log",
+            "conversation_events",
+        };
+
     public RetentionPruningService(
         IConfiguration configuration,
         IServiceScopeFactory scopeFactory,
-        ILogger<RetentionPruningService> logger)
+        ILogger<RetentionPruningService> logger,
+        RetentionArchiveWriter archiveWriter)
     {
         _configuration = configuration;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _archiveWriter = archiveWriter;
     }
 
     /// <summary>
@@ -226,17 +240,30 @@ public sealed class RetentionPruningService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
+        var archivable = ArchiveTables.Contains(tableName);
+
         while (!ct.IsCancellationRequested)
         {
-            var sql = $$"""
-                DELETE FROM "{{tableName}}" WHERE rowid IN (
-                  SELECT rowid FROM "{{tableName}}" t
-                  WHERE t."{{timestampColumn}}" < {0}
-                  LIMIT {1}
-                )
-                """;
+            int affected;
 
-            var affected = await db.Database.ExecuteSqlRawAsync(sql, cutoffString, batchSize);
+            if (archivable)
+            {
+                // 证据流表：先 SELECT 完整字段 → 归档（失败抛异常中止本批）→ 再按 rowid 精确删除
+                affected = await ArchiveAndDeleteBatchAsync(db, tableName, cutoff, cutoffString, batchSize, ct);
+            }
+            else
+            {
+                var sql = $$"""
+                    DELETE FROM "{{tableName}}" WHERE rowid IN (
+                      SELECT rowid FROM "{{tableName}}" t
+                      WHERE t."{{timestampColumn}}" < {0}
+                      LIMIT {1}
+                    )
+                    """;
+
+                affected = await db.Database.ExecuteSqlRawAsync(sql, cutoffString, batchSize);
+            }
+
             totalDeleted += affected;
             batches++;
 
@@ -250,6 +277,67 @@ public sealed class RetentionPruningService : BackgroundService
         _logger.LogInformation(
             "[RetentionPruning] trimmed table={Table} cutoff={Cutoff:O} deleted={Deleted} batches={Batches}",
             tableName, cutoff, totalDeleted, batches);
+    }
+
+    /// <summary>
+    /// 对证据流表（session_event_log / conversation_events）按批执行：
+    /// SELECT 完整字段（时间戳早于 cutoff，ORDER BY rowid，LIMIT batch）→ 归档 → DELETE 该批精确 rowid。
+    /// 归档写文件失败会抛异常（由 RunLoopAsync 捕获），对应批次绝不先删后归档。
+    /// </summary>
+    private async Task<int> ArchiveAndDeleteBatchAsync(
+        PlatformDbContext db,
+        string tableName,
+        DateTimeOffset cutoff,
+        string cutoffString,
+        int batchSize,
+        CancellationToken ct)
+    {
+        switch (tableName)
+        {
+            case "session_event_log":
+            {
+                var rows = await db.SessionEventLogs
+                    .AsNoTracking()
+                    .Where(e => string.Compare(e.RecordedAt, cutoffString) < 0)
+                    .OrderBy(e => e.Id)
+                    .Take(batchSize)
+                    .ToListAsync(ct);
+
+                if (rows.Count == 0)
+                    return 0;
+
+                await _archiveWriter.ArchiveBatchAsync(tableName, rows, cutoff, ct);
+
+                var ids = rows.Select(r => r.Id).ToList();
+                return await db.SessionEventLogs
+                    .Where(e => ids.Contains(e.Id))
+                    .ExecuteDeleteAsync(ct);
+            }
+
+            case "conversation_events":
+            {
+                var rows = await db.ConversationEvents
+                    .AsNoTracking()
+                    .Where(e => string.Compare(e.CommittedAt, cutoffString) < 0)
+                    .OrderBy(e => e.Id)
+                    .Take(batchSize)
+                    .ToListAsync(ct);
+
+                if (rows.Count == 0)
+                    return 0;
+
+                await _archiveWriter.ArchiveBatchAsync(tableName, rows, cutoff, ct);
+
+                var ids = rows.Select(r => r.Id).ToList();
+                return await db.ConversationEvents
+                    .Where(e => ids.Contains(e.Id))
+                    .ExecuteDeleteAsync(ct);
+            }
+
+            default:
+                throw new InvalidOperationException(
+                    $"Table '{tableName}' is marked archivable but has no archive mapping.");
+        }
     }
 
     private async Task EnsureTimestampIndexAsync(string tableName, string timestampColumn, CancellationToken ct)
