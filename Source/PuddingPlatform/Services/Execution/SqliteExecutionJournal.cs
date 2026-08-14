@@ -17,6 +17,11 @@ public sealed class SqliteExecutionJournal(
     ICommittedEventSignal signal,
     ILogger<SqliteExecutionJournal> logger) : IExecutionJournal
 {
+    /// <summary>
+    /// P0-4f-1a 步骤5「Journal 守门人」：execution 域事实事件的固定 producer_component。
+    /// 用户拍板的三值之一：chat.acceptance / execution.journal / subagent.runtime。
+    /// </summary>
+    private const string JournalProducerComponent = "execution.journal";
     public async Task<AppendResult> StartRunAsync(
         ExecutionLease lease,
         string snapshotId,
@@ -513,11 +518,11 @@ public sealed class SqliteExecutionJournal(
                 (conversation_id, sequence, event_id, workspace_id, turn_id,
                  command_id, run_id, message_id, type, schema_version,
                  payload, occurred_at, committed_at, correlation_id, causation_id,
-                 producer_event_id, agent_id, source_kind)
+                 producer_event_id, agent_id, source_kind, trace_id, producer_component)
                 VALUES
                 (@cid, @seq, @eid, @wid, @tid,
                  @cmid, @rid, @mid, @type, @sv,
-                 @payload, @oat, @cat, @corr, @caus, @peid, @aid, @skind)";
+                 @payload, @oat, @cat, @corr, @caus, @peid, @aid, @skind, @traceid, @pcomp)";
             AddParam(insCmd, "@cid", lease.ConversationId);
             AddParam(insCmd, "@seq", currentHead);
             AddParam(insCmd, "@eid", evt.EventId);
@@ -536,6 +541,8 @@ public sealed class SqliteExecutionJournal(
             AddParam(insCmd, "@peid", evt.ProducerEventId ?? (object)DBNull.Value);
             AddParam(insCmd, "@aid", evt.AgentId ?? (object)DBNull.Value);
             AddParam(insCmd, "@skind", evt.SourceKind?.ToString().ToLowerInvariant() ?? (object)DBNull.Value);
+            AddParam(insCmd, "@traceid", string.IsNullOrWhiteSpace(lease.TraceId) ? (object)DBNull.Value : lease.TraceId);
+            AddParam(insCmd, "@pcomp", JournalProducerComponent);
             await insCmd.ExecuteNonQueryAsync(ct);
         }
 
