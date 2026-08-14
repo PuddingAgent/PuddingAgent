@@ -23,6 +23,7 @@ import MessageActions from './MessageActions';
 import MessageItem from './MessageItem';
 import MessageProcessSummary from './MessageProcessSummary';
 import StateDot from './StateDot';
+import ToolCallRowList from './ToolCallRow';
 import {
   type CurrentRunActivity,
   getCurrentRunActivity,
@@ -725,6 +726,11 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   </div>
                 );
               })()}
+
+            {/* P1-1: 工具调用行（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT，与过程时间线共存 */}
+            {processItems?.some((item) => item.type === 'tool_call') && (
+              <ToolCallRowList items={processItems} />
+            )}
 
             {/* 过程摘要：首 token 前显示预览气泡；正文输出后折叠为可展开时间线 */}
             {(() => {

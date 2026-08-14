@@ -96,6 +96,18 @@ jest.mock('../styles/waiting.styles', () => {
   };
 });
 
+jest.mock('../styles/toolcall.styles', () => {
+  const styles = new Proxy(
+    {},
+    {
+      get: (_target, prop) => String(prop),
+    },
+  );
+  return {
+    useToolCallStyles: () => ({ styles, cx: (...v: unknown[]) => v.filter(Boolean).join(' ') }),
+  };
+});
+
 jest.mock('../hooks/useTypewriterStreaming', () => ({
   useTypewriterStreaming: (...args: unknown[]) =>
     mockUseTypewriterStreaming(...args),
