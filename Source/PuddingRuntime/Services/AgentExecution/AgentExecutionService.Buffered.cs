@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -53,10 +53,20 @@ public sealed partial class AgentExecutionService
         var maxElapsed = ResolveMaxElapsed(request);
         var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal, _guardrails);
 
-        var execTrace = RuntimeTraceContext.CreateNew(
-            sessionId: request.SessionId,
-            workspaceId: request.WorkspaceId,
-            userId: request.UserId)
+        var execTraceId = request.ExecutionIdentity?.TraceId;
+        var execTrace = (string.IsNullOrWhiteSpace(execTraceId)
+            ? RuntimeTraceContext.CreateNew(
+                sessionId: request.SessionId,
+                workspaceId: request.WorkspaceId,
+                userId: request.UserId)
+            : new RuntimeTraceContext
+            {
+                TraceId = execTraceId,
+                CorrelationId = execTraceId,
+                SessionId = request.SessionId,
+                WorkspaceId = request.WorkspaceId,
+                UserId = request.UserId,
+            })
             .WithAgent(request.AgentInstanceId, request.AgentTemplateId);
         var execStartedAt = DateTimeOffset.UtcNow;
         var maxRoundsForActivity = request.MaxRounds > 0

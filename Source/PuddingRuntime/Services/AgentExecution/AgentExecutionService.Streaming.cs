@@ -75,10 +75,20 @@ public sealed partial class AgentExecutionService
             request.WorkspaceId, request.AgentTemplateId);
 
         // ── Streaming trace context ─────────────────────────────────
-        var streamTrace = RuntimeTraceContext.CreateNew(
-            sessionId: request.SessionId,
-            workspaceId: request.WorkspaceId,
-            userId: request.UserId)
+        var streamTraceId = request.ExecutionIdentity?.TraceId;
+        var streamTrace = (string.IsNullOrWhiteSpace(streamTraceId)
+            ? RuntimeTraceContext.CreateNew(
+                sessionId: request.SessionId,
+                workspaceId: request.WorkspaceId,
+                userId: request.UserId)
+            : new RuntimeTraceContext
+            {
+                TraceId = streamTraceId,
+                CorrelationId = streamTraceId,
+                SessionId = request.SessionId,
+                WorkspaceId = request.WorkspaceId,
+                UserId = request.UserId,
+            })
             .WithAgent(request.AgentInstanceId, request.AgentTemplateId);
 
         // ── 子代理运行归档（ADR-021）───────────────────────────────
