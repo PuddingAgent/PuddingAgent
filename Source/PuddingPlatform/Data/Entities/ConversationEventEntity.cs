@@ -59,4 +59,10 @@ public class ConversationEventEntity
 
     [MaxLength(64), Column("producer_event_id")]
     public string? ProducerEventId { get; set; }
+
+    [MaxLength(64), Column("agent_id")]
+    public string? AgentId { get; set; }
+
+    [MaxLength(32), Column("source_kind")]
+    public string? SourceKind { get; set; }
 }

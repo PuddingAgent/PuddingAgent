@@ -111,9 +111,11 @@ public sealed class ConversationEventStore(
                 insCmd.CommandText = @"
                     INSERT INTO conversation_events
                     (conversation_id, sequence, event_id, workspace_id, turn_id, command_id, run_id, message_id,
-                     type, schema_version, payload, occurred_at, committed_at, correlation_id, causation_id, producer_event_id)
+                     type, schema_version, payload, occurred_at, committed_at, correlation_id, causation_id, producer_event_id,
+                     agent_id, source_kind)
                     VALUES (@cid, @seq, @eid, @wsid, @tid, @cmdid, @rid, @mid,
-                            @type, @sv, @payload, @oat, @cat, @corr, @caus, @peid)";
+                            @type, @sv, @payload, @oat, @cat, @corr, @caus, @peid,
+                            @aid, @skind)";
                 AddParam(insCmd, "@cid", conversationId);
                 AddParam(insCmd, "@seq", seq);
                 AddParam(insCmd, "@eid", evt.EventId);
@@ -130,6 +132,8 @@ public sealed class ConversationEventStore(
                 AddParam(insCmd, "@corr", evt.CorrelationId ?? (object)DBNull.Value);
                 AddParam(insCmd, "@caus", evt.CausationId ?? (object)DBNull.Value);
                 AddParam(insCmd, "@peid", evt.ProducerEventId ?? (object)DBNull.Value);
+                AddParam(insCmd, "@aid", evt.AgentId ?? (object)DBNull.Value);
+                AddParam(insCmd, "@skind", evt.SourceKind?.ToString().ToLowerInvariant() ?? (object)DBNull.Value);
                 await insCmd.ExecuteNonQueryAsync(ct);
                 seq++;
             }
@@ -421,7 +425,9 @@ public sealed class ConversationEventStore(
                 committed_at TEXT NOT NULL,
                 correlation_id TEXT,
                 causation_id TEXT,
-                producer_event_id TEXT
+                producer_event_id TEXT,
+                agent_id TEXT,
+                source_kind TEXT
             )", ct);
 
         await db.Database.ExecuteSqlRawAsync(
@@ -438,8 +444,61 @@ public sealed class ConversationEventStore(
                 updated_at TEXT NOT NULL
             )", ct);
 
+        // 列迁移：已有 SQLite 库不会因 CREATE TABLE IF NOT EXISTS 自动加列，
+        // 通过 PRAGMA table_info 检查 + ALTER TABLE ADD COLUMN 补齐 agent_id / source_kind。
+        await EnsureColumnAsync(db, "conversation_events", "agent_id", "TEXT", ct);
+        await EnsureColumnAsync(db, "conversation_events", "source_kind", "TEXT", ct);
+
         _tableEnsured = true;
         logger.LogInformation("[ConversationEventStore] Tables ensured");
+    }
+
+    /// <summary>
+    /// 若指定列不存在则 ALTER TABLE ADD COLUMN（幂等）。
+    /// </summary>
+    private async ValueTask EnsureColumnAsync(
+        PlatformDbContext db,
+        string tableName,
+        string columnName,
+        string columnType,
+        CancellationToken ct)
+    {
+        var conn = db.Database.GetDbConnection();
+        var openedHere = conn.State != System.Data.ConnectionState.Open;
+        if (openedHere)
+            await conn.OpenAsync(ct);
+        try
+        {
+            var exists = false;
+            using (var checkCmd = conn.CreateCommand())
+            {
+                checkCmd.CommandText = $"PRAGMA table_info({tableName})";
+                using var reader = await checkCmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    if (!reader.IsDBNull(1)
+                        && string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!exists)
+            {
+                using var alterCmd = conn.CreateCommand();
+                alterCmd.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType}";
+                await alterCmd.ExecuteNonQueryAsync(ct);
+                logger.LogInformation(
+                    "[ConversationEventStore] Added column {Column} to {Table}", columnName, tableName);
+            }
+        }
+        finally
+        {
+            if (openedHere)
+                await conn.CloseAsync();
+        }
     }
 
     // ── Schema validation ──────────────────────────────────
@@ -545,8 +604,22 @@ public sealed class ConversationEventStore(
             CorrelationId = reader.IsDBNull(Ord("correlation_id")) ? null : reader.GetString(Ord("correlation_id")),
             CausationId = reader.IsDBNull(Ord("causation_id")) ? null : reader.GetString(Ord("causation_id")),
             ProducerEventId = reader.IsDBNull(Ord("producer_event_id")) ? null : reader.GetString(Ord("producer_event_id")),
+            AgentId = reader.IsDBNull(Ord("agent_id")) ? null : reader.GetString(Ord("agent_id")),
+            SourceKind = ParseSourceKind(reader, Ord("source_kind")),
             Payload = JsonDocument.Parse(reader.GetString(Ord("payload"))).RootElement,
         };
+    }
+
+    private static ConversationEventSourceKind? ParseSourceKind(System.Data.Common.DbDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+            return null;
+        var raw = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        return Enum.TryParse<ConversationEventSourceKind>(raw, ignoreCase: true, out var kind)
+            ? kind
+            : null;
     }
 }
 

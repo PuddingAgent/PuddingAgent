@@ -29,6 +29,31 @@ public sealed record ConversationEvent
     public string? ProducerEventId { get; init; }
 
     public required JsonElement Payload { get; init; }
+
+    /// <summary>
+    /// 事件来源 AgentId（可空）。作为「按来源查看」查询维度基座。
+    /// 未填时为 null（序列化不出现空字符串）。
+    /// </summary>
+    public string? AgentId { get; init; }
+
+    /// <summary>
+    /// 事件来源分类（可空）。存储/传输使用小写字符串。
+    /// </summary>
+    public ConversationEventSourceKind? SourceKind { get; init; }
+}
+
+/// <summary>
+/// ADR-057: Conversation 事件来源分类。
+/// 序列化为小写字符串：user / agent / system / subagent / steering / compaction。
+/// </summary>
+public enum ConversationEventSourceKind
+{
+    User,
+    Agent,
+    System,
+    SubAgent,
+    Steering,
+    Compaction,
 }
 
 /// <summary>
@@ -47,7 +72,9 @@ public sealed record NewConversationEvent(
     string? CorrelationId,
     string? CausationId,
     string? ProducerEventId,
-    JsonElement Payload
+    JsonElement Payload,
+    string? AgentId = null,
+    ConversationEventSourceKind? SourceKind = null
 );
 
 /// <summary>
