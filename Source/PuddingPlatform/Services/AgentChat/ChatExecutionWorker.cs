@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services.AgentChat;
@@ -102,6 +103,23 @@ public sealed class ChatExecutionWorker : BackgroundService
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var coordinator = scope.ServiceProvider
                     .GetRequiredService<IExecutionRunCoordinator>();
+
+                // RuntimeTraceContext scope — 使 coordinator 执行期间 RuntimeTraceContextAccessor.Current 可用。
+                // trace 稳定透传 lease.TraceId；历史命令（步骤1之前生成、无 trace_id）由 CreateNew 生成新 trace。
+                var trace = lease.TraceId is { Length: > 0 }
+                    ? new RuntimeTraceContext
+                    {
+                        TraceId = lease.TraceId,
+                        CorrelationId = lease.TraceId,
+                        SessionId = lease.ConversationId,
+                        WorkspaceId = lease.WorkspaceId,
+                        ExecutionId = lease.RunId,
+                    }
+                    : RuntimeTraceContext.CreateNew(
+                        sessionId: lease.ConversationId,
+                        workspaceId: lease.WorkspaceId,
+                        executionId: lease.RunId);
+                using var traceScope = RuntimeTraceContextAccessor.Scope(trace);
 
                 // Pass real Lease through — Coordinator must NOT recreate it
                 var outcome = await coordinator.ExecuteAsync(lease, stoppingToken);
