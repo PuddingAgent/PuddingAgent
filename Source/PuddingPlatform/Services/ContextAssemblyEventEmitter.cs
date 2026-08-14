@@ -11,6 +11,9 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public sealed class ContextAssemblyEventEmitter : IContextAssemblyEventEmitter
 {
+    /// <summary>P0-4f-1a step6: context.assembled 事件的固定 producer_component（runtime 域 context_assembly 子系统）。</summary>
+    private const string ContextAssemblyProducerComponent = "runtime.context_assembly";
+
     private readonly IConversationEventStore _eventStore;
     private readonly ILogger<ContextAssemblyEventEmitter> _logger;
 
@@ -27,6 +30,7 @@ public sealed class ContextAssemblyEventEmitter : IContextAssemblyEventEmitter
         string workspaceId,
         string? agentId,
         string? turnId,
+        string? traceId,
         IReadOnlyList<ContextAssemblyLayerEmission> layers,
         string assembledAtIso,
         CancellationToken ct = default)
@@ -69,7 +73,9 @@ public sealed class ContextAssemblyEventEmitter : IContextAssemblyEventEmitter
                         ProducerEventId: null,
                         Payload: element,
                         AgentId: agentId,
-                        SourceKind: ConversationEventSourceKind.Agent),
+                        SourceKind: ConversationEventSourceKind.Agent,
+                        TraceId: traceId,
+                        ProducerComponent: ContextAssemblyProducerComponent),
                 ],
                 EventWriteCondition.ForRun(
                     $"context-assembly:{sessionId}",

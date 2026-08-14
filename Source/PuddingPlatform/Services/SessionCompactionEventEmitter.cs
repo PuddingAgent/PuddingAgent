@@ -11,6 +11,9 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public sealed class SessionCompactionEventEmitter : ISessionCompactionEventEmitter
 {
+    /// <summary>P0-4f-1a step6: context.compaction.* 事件的固定 producer_component（runtime 域 compaction 子系统）。</summary>
+    private const string CompactionProducerComponent = "runtime.compaction";
+
     private readonly IConversationEventStore _eventStore;
     private readonly ILogger<SessionCompactionEventEmitter> _logger;
 
@@ -22,11 +25,12 @@ public sealed class SessionCompactionEventEmitter : ISessionCompactionEventEmitt
         _logger = logger;
     }
 
-    public async Task EmitAsync(
+        public async Task EmitAsync(
         string sessionId,
         string workspaceId,
         string eventType,
         object payload,
+        string? traceId,
         CancellationToken ct = default)
     {
         try
@@ -58,7 +62,9 @@ public sealed class SessionCompactionEventEmitter : ISessionCompactionEventEmitt
                         CorrelationId: compactionId,
                         CausationId: null,
                         ProducerEventId: null,
-                        Payload: element),
+                        Payload: element,
+                        TraceId: traceId,
+                        ProducerComponent: CompactionProducerComponent),
                 ],
                 EventWriteCondition.ForRun(
                     $"auto-compaction:{compactionId ?? sessionId}",

@@ -1425,7 +1425,8 @@ public sealed partial class AgentExecutionService
                     postLoopCt,
                     maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
                     maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
-                    agentTemplateId: request.AgentTemplateId);
+                    agentTemplateId: request.AgentTemplateId,
+                    traceId: request.ExecutionIdentity?.TraceId);
             }
             _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);

@@ -213,6 +213,56 @@ public sealed class FileSubAgentRunStoreTests
     }
 
     [TestMethod]
+    public async Task Projected_Run_Events_Carry_Parent_Trace_And_SubAgent_ProducerComponent()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var conversationEvents = new RecordingConversationEventStore();
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            conversationEvents);
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "researcher",
+            Task = "Trace projection",
+            ParentExecutionIdentity = new RuntimeExecutionIdentity
+            {
+                Kind = RuntimeExecutionKind.ConversationTurn,
+                ConversationId = "parent-session",
+                TurnId = "parent-turn",
+                RunId = "parent-run",
+                TraceId = "trace-123",
+                ToolCallId = "parent-tool-call",
+            },
+        });
+        await store.AppendEventAsync(handle.RunId, ConversationEventTypes.SubAgentRoundStarted, new
+        {
+            round = 1,
+        });
+
+        Assert.IsTrue(conversationEvents.Appended.Count > 0);
+        foreach (var item in conversationEvents.Appended)
+        {
+            Assert.AreEqual("trace-123", item.Event.TraceId);
+            Assert.AreEqual("subagent.runtime", item.Event.ProducerComponent);
+        }
+    }
+
+    [TestMethod]
     public async Task Recovery_Marks_Previous_Process_NonTerminal_Run_As_Interrupted()
     {
         using var temp = TemporaryDirectory.Create();

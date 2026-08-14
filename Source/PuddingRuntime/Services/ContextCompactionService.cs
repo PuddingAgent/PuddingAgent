@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
@@ -645,7 +645,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                     agentId = request.AgentId,
                     agentTemplateId = request.AgentTemplateId,
                     requestedAtUtc = DateTimeOffset.UtcNow,
-                });
+                },
+                request.TraceId);
         }
         catch (Exception ex)
         {

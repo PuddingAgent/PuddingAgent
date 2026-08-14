@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Models;
@@ -1128,21 +1128,22 @@ public sealed class ContextWindowManagerTests
             Task.FromResult(summary);
     }
 
-    private sealed class RecordingCompactionEventEmitter(bool yieldBeforeRecord = false) : ISessionCompactionEventEmitter
+        private sealed class RecordingCompactionEventEmitter(bool yieldBeforeRecord = false) : ISessionCompactionEventEmitter
     {
-        public List<(string SessionId, string WorkspaceId, string EventType)> Events { get; } = [];
+        public List<(string SessionId, string WorkspaceId, string EventType, string? TraceId)> Events { get; } = [];
 
         public async Task EmitAsync(
             string sessionId,
             string workspaceId,
             string eventType,
             object payload,
+            string? traceId,
             CancellationToken ct = default)
         {
             if (yieldBeforeRecord)
                 await Task.Yield();
 
-            Events.Add((sessionId, workspaceId, eventType));
+            Events.Add((sessionId, workspaceId, eventType, traceId));
         }
     }
 

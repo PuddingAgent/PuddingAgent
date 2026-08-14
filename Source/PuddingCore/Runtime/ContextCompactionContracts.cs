@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 using PuddingCode.Models;
 using PuddingCode.Platform;
@@ -87,7 +87,11 @@ public sealed record ContextCompactionRequest(
     CapabilityPolicy? CapabilityPolicy = null,
     IReadOnlyList<LlmToolDefinition>? ToolDefinitions = null,
     IReadOnlyList<SkillPackageInfo>? SkillPackages = null,
-    IReadOnlyList<string>? PreCompactionFacts = null);
+    IReadOnlyList<string>? PreCompactionFacts = null)
+{
+    /// <summary>P0-4f-1a step6: 本次压缩所属执行的 trace_id（可空；不可得时显式传 null，不 fallback 生成）。</summary>
+    public string? TraceId { get; init; }
+}
 
 public sealed record ContextCompactionDiagnostics(
     string CompactionId,
@@ -183,11 +187,12 @@ public interface IContextCompactionSummaryGenerator
 public interface ISessionCompactionEventEmitter
 {
     /// <summary>发送 compaction 生命周期 SSE 事件（started/completed/failed）。</summary>
-    Task EmitAsync(
+        Task EmitAsync(
         string sessionId,
         string workspaceId,
         string eventType,
         object payload,
+        string? traceId,
         CancellationToken ct = default);
 }
 

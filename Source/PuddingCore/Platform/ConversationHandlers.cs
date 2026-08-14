@@ -1,4 +1,4 @@
-﻿using PuddingCode.Runtime;
+using PuddingCode.Runtime;
 
 namespace PuddingCode.Platform;
 
@@ -71,7 +71,11 @@ public sealed record RequestCompactionCommand(
     ContextCompactionLevel Level,
     string Reason,
     string CompactionId,
-    string? UserId);
+    string? UserId)
+{
+    /// <summary>P0-4f-1a step6: 从发起压缩的上下文透传的 trace_id（可空；无 turn 的 HTTP/系统命令压缩为 null，不 fallback 生成）。</summary>
+    public string? TraceId { get; init; }
+}
 
 public sealed record CancelTurnResult(
     string ConversationId,

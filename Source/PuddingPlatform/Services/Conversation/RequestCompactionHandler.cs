@@ -21,6 +21,9 @@ public sealed class RequestCompactionHandler(
     IConversationEventStore eventStore,
     ILogger<RequestCompactionHandler> logger) : IRequestCompactionHandler
 {
+    /// <summary>P0-4f-1a step6: context.compaction.* 事件的固定 producer_component（runtime 域 compaction 子系统）。</summary>
+    private const string CompactionProducerComponent = "runtime.compaction";
+
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
@@ -55,6 +58,7 @@ public sealed class RequestCompactionHandler(
                     agentId = command.AgentId,
                 },
                 "started",
+                command.TraceId,
                 ct);
 
             var compactRequest = new ContextCompactionRequest(
@@ -70,7 +74,10 @@ public sealed class RequestCompactionHandler(
                 LlmConfig: profile.LlmConfig,
                 CapabilityPolicy: profile.CapabilityPolicy,
                 ToolDefinitions: profile.ToolDefinitions,
-                SkillPackages: profile.SkillPackages);
+                SkillPackages: profile.SkillPackages)
+            {
+                TraceId = command.TraceId,
+            };
 
             var compacted = await compactionService.CompactAsync(compactRequest, ct);
             var next = await successor.CreateAsync(
@@ -108,6 +115,7 @@ public sealed class RequestCompactionHandler(
                 ConversationEventTypes.ContextCompactionCompleted,
                 completedPayload,
                 "completed-source",
+                command.TraceId,
                 ct);
 
             // The successor conversation owns a durable origin fact. This lets
@@ -128,6 +136,7 @@ public sealed class RequestCompactionHandler(
                     compaction = completedCompaction,
                 },
                 "completed-successor",
+                command.TraceId,
                 ct);
 
             logger.LogInformation(
@@ -170,6 +179,7 @@ public sealed class RequestCompactionHandler(
                         errorType = ex.GetType().Name,
                     },
                     "failed",
+                    command.TraceId,
                     CancellationToken.None);
             }
             catch (Exception eventError)
@@ -191,6 +201,7 @@ public sealed class RequestCompactionHandler(
         string eventType,
         object payload,
         string phase,
+        string? traceId,
         CancellationToken ct)
     {
         var element = JsonSerializer.SerializeToElement(payload, JsonOptions);
@@ -206,7 +217,9 @@ public sealed class RequestCompactionHandler(
             CorrelationId: compactionId,
             CausationId: null,
             ProducerEventId: null,
-            Payload: element);
+            Payload: element,
+            TraceId: traceId,
+            ProducerComponent: CompactionProducerComponent);
 
         return eventStore.AppendAsync(
             conversationId,

@@ -128,6 +128,7 @@ public sealed class ContextAssemblyEventEmissionTests
             workspaceId: "workspace-1",
             agentId: "agent-1",
             turnId: null,
+            traceId: "trace-1",
             layers,
             assembledAtIso: "2026-08-14T00:00:00.000Z",
             CancellationToken.None);
@@ -146,6 +147,8 @@ public sealed class ContextAssemblyEventEmissionTests
         Assert.AreEqual("workspace-1", evt.WorkspaceId);
         Assert.AreEqual("agent-1", evt.AgentId);
         Assert.AreEqual(ConversationEventSourceKind.Agent, evt.SourceKind);
+        Assert.AreEqual("trace-1", evt.TraceId);
+        Assert.AreEqual("runtime.context_assembly", evt.ProducerComponent);
 
         var payload = evt.Payload;
         Assert.AreEqual(JsonValueKind.Object, payload.ValueKind);

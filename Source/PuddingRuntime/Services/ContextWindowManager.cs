@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
@@ -450,7 +450,8 @@ public sealed class ContextWindowManager
         List<ChatMessage> history,
         int maxTokenBudget,
         bool preferDbContextWindow,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? traceId = null)
         => await TrimHistoryAsync(
             sessionId,
             history,
@@ -458,7 +459,8 @@ public sealed class ContextWindowManager
             preferDbContextWindow,
             workspaceId: null,
             agentId: null,
-            ct);
+            ct,
+            traceId: traceId);
 
     public async Task TrimHistoryAsync(
         string sessionId,
@@ -470,7 +472,8 @@ public sealed class ContextWindowManager
         CancellationToken ct,
         int? maxOutputTokens = null,
         int? maxInputTokens = null,
-        string? agentTemplateId = null)
+        string? agentTemplateId = null,
+        string? traceId = null)
     {
         var autoCompacted = await TryAutoCompactAsync(
             sessionId,
@@ -480,6 +483,7 @@ public sealed class ContextWindowManager
             maxOutputTokens,
             maxInputTokens,
             agentTemplateId,
+            traceId,
             ct);
 
         if ((preferDbContextWindow || autoCompacted) && _memoryDbFactory is not null)
@@ -519,6 +523,7 @@ public sealed class ContextWindowManager
         int? maxOutputTokens,
         int? maxInputTokens,
         string? agentTemplateId,
+        string? traceId,
         CancellationToken ct)
     {
         if (_compactionService is null || string.IsNullOrWhiteSpace(workspaceId))
@@ -621,6 +626,7 @@ public sealed class ContextWindowManager
                     budget = maxTokenBudget,
                     agentId,
                 },
+                traceId,
                 ct);
 
             await RecordAutoCompactionMetricAsync(
@@ -655,7 +661,10 @@ public sealed class ContextWindowManager
                     AgentWorkSummary: agentWorkSummary,
                     CompactionId: compactionId,
                     AgentTemplateId: agentTemplateId,
-                    PreCompactionFacts: preCompactionFacts.Count > 0 ? preCompactionFacts : null),
+                    PreCompactionFacts: preCompactionFacts.Count > 0 ? preCompactionFacts : null)
+                {
+                    TraceId = traceId,
+                },
                 ct);
             var compactMs = (System.Diagnostics.Stopwatch.GetTimestamp() - compactStart) * 1000 / System.Diagnostics.Stopwatch.Frequency;
             compressionWatch.Stop();
@@ -719,6 +728,7 @@ public sealed class ContextWindowManager
                     summaryId = result.SummaryMessageId,
                     hasAgentWorkSummary = !string.IsNullOrWhiteSpace(agentWorkSummary),
                 },
+                traceId,
                 ct);
 
                         // 清理重试状态
@@ -760,6 +770,7 @@ public sealed class ContextWindowManager
                     error = ex.Message,
                     errorType = ex.GetType().Name,
                 },
+                traceId,
                 CancellationToken.None);
             return false;
         }
@@ -770,6 +781,7 @@ public sealed class ContextWindowManager
         string workspaceId,
         string eventType,
         object payload,
+        string? traceId,
         CancellationToken ct)
     {
         if (_compactionEventEmitter is null)
@@ -792,7 +804,7 @@ public sealed class ContextWindowManager
 
         try
         {
-            await _compactionEventEmitter.EmitAsync(sessionId, workspaceId, eventType, payload, ct);
+            await _compactionEventEmitter.EmitAsync(sessionId, workspaceId, eventType, payload, traceId, ct);
             _logger.LogInformation(
                 "[ContextWindow:AutoCompact] emitted lifecycle event session={Session} event={EventType}",
                 sessionId,

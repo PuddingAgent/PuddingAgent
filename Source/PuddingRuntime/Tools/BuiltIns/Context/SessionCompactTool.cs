@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Platform;
@@ -52,6 +52,7 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
     {
         var sessionId = context.SessionId;
         var workspaceId = context.WorkspaceId;
+        var traceId = context.ExecutionIdentity?.TraceId;
 
         if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(workspaceId))
         {
@@ -74,7 +75,7 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
             level = "Full",
             reason,
             agentId = context.AgentInstanceId,
-        }, ct);
+        }, traceId, ct);
 
         try
         {
@@ -131,7 +132,10 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
                     AgentWorkSummary: args.WorkSummary,
                     CompactionId: compactionId,
                     AgentTemplateId: context.AgentTemplateId,
-                    PreCompactionFacts: preCompactionFacts),
+                    PreCompactionFacts: preCompactionFacts)
+                {
+                    TraceId = traceId,
+                },
                 ct);
 
             await EmitAsync(sessionId, workspaceId, SseEventTypes.ContextCompactionCompleted, new
@@ -142,7 +146,7 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
                 beforeTokens = result.BeforeTokens,
                 afterTokens = result.AfterTokens,
                 compactedMessageCount = result.CompactedMessageCount,
-            }, ct);
+            }, traceId, ct);
 
             _logger.LogInformation(
                 "[SessionCompact] completed session={Session} before={Before} after={After} messages={Count} skipped={Skipped}",
@@ -177,7 +181,7 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
                 compactionId,
                 sessionId,
                 error = ex.Message,
-            }, ct);
+            }, traceId, ct);
 
             _logger.LogError(ex, "[SessionCompact] failed session={Session}", sessionId);
 
@@ -192,14 +196,14 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
     }
 
     private async Task EmitAsync(
-        string sessionId, string workspaceId, string eventType, object payload, CancellationToken ct)
+        string sessionId, string workspaceId, string eventType, object payload, string? traceId, CancellationToken ct)
     {
         if (_eventEmitter is null)
             return;
 
         try
         {
-            await _eventEmitter.EmitAsync(sessionId, workspaceId, eventType, payload, ct);
+            await _eventEmitter.EmitAsync(sessionId, workspaceId, eventType, payload, traceId, ct);
         }
         catch (Exception ex)
         {

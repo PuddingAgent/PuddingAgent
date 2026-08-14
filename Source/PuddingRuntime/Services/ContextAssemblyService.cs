@@ -135,6 +135,7 @@ public sealed class ContextAssemblyService : IContextAssemblyService
                 request.WorkspaceId,
                 request.AgentInstanceId,
                 turnId: null,
+                traceId: request.TraceId,
                 layers,
                 assembledAtIso,
                 CancellationToken.None);

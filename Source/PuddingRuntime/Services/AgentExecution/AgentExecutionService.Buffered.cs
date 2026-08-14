@@ -165,8 +165,9 @@ public sealed partial class AgentExecutionService
                         RoleInPlan = request.RoleInPlan,
                         AllowSubDelegation = request.AllowSubDelegation,
                         AllowAgentCreation = request.AllowAgentCreation,
-                        AssignedObjective = request.AssignedObjective,
+                                                AssignedObjective = request.AssignedObjective,
                         ExpectedOutputContract = request.ExpectedOutputContract,
+                        TraceId = request.ExecutionIdentity?.TraceId,
                     }, ct);
                     systemPromptText = facadeResult.Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? string.Empty;
                 }
@@ -1772,9 +1773,10 @@ public sealed partial class AgentExecutionService
                 request.WorkspaceId,
                 instance.AgentInstanceId,
                 ct,
-                maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
+                                maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
                 maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
-                agentTemplateId: request.AgentTemplateId);
+                agentTemplateId: request.AgentTemplateId,
+                traceId: request.ExecutionIdentity?.TraceId);
         }
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);

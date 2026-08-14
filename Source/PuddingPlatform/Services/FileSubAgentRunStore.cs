@@ -20,6 +20,9 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public class FileSubAgentRunStore : ISubAgentRunStore
 {
+    /// <summary>P0-4f-1a step6: subagent.run.* 事件的固定 producer_component（用户拍板三值之一：subagent.runtime）。</summary>
+    private const string SubAgentRuntimeProducerComponent = "subagent.runtime";
+
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<FileSubAgentRunStore> _logger;
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
@@ -703,7 +706,9 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                 CorrelationId: parent?.ConversationId,
                 CausationId: parent?.ToolCallId ?? parent?.RunId,
                 ProducerEventId: archivedEvent.EventId,
-                Payload: payload);
+                Payload: payload,
+                TraceId: parent?.TraceId,
+                ProducerComponent: SubAgentRuntimeProducerComponent);
 
             try
             {

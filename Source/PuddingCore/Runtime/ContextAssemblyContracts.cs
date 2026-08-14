@@ -30,6 +30,9 @@ public sealed record ContextAssemblyRequest
         public string? ExpectedOutputContract { get; init; }
     /// <summary>从父代理 Fork 并剪枝后的上下文快照。非空时 ContextPipeline 注入 INHERITED-CONTEXT 层。</summary>
     public string? ParentContextSnapshot { get; init; }
+
+    /// <summary>P0-4f-1a step6: 本次上下文合成所属执行的 trace_id（可空；不可得时显式传 null，不 fallback 生成）。</summary>
+    public string? TraceId { get; init; }
 }
 
 /// <summary>上下文合成结果，包含消息列表、token 估算、层级摘要。</summary>
@@ -79,6 +82,7 @@ public interface IContextAssemblyEventEmitter
         string workspaceId,
         string? agentId,
         string? turnId,
+        string? traceId,
         IReadOnlyList<ContextAssemblyLayerEmission> layers,
         string assembledAtIso,
         CancellationToken ct = default);
