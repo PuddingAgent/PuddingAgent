@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -80,6 +80,7 @@ public sealed partial class AgentExecutionService
     private readonly PuddingToolSchemaService? _toolSchemaService;
     private readonly IRuntimeControlService? _runtimeControl;
     private readonly ISessionSteeringService? _steeringService;
+    private readonly IConversationEventStore? _conversationEventStore; // P0-2：steering 正文 canonical 留痕
     private readonly IIdleDetector? _idleDetector;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
     private readonly SkillEnforcerService? _skillEnforcer;
@@ -141,7 +142,8 @@ public sealed partial class AgentExecutionService
         ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         SkillEnforcerService? skillEnforcer = null,
         IOptions<SubconsciousOptions>? subconsciousOptions = null,
-        IExecutionProgressRegistry? executionProgress = null)
+        IExecutionProgressRegistry? executionProgress = null,
+        IConversationEventStore? conversationEventStore = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -190,6 +192,7 @@ public sealed partial class AgentExecutionService
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
         _skillEnforcer             = skillEnforcer;
         _executionProgress         = executionProgress;
+        _conversationEventStore    = conversationEventStore;
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -391,12 +394,25 @@ public sealed partial class AgentExecutionService
                         agentId = steering.AgentId ?? agentInstanceId,
                         round = steering.Round,
                         messageChars = steering.MessageText.Length,
+                        content,
                         injectedAt = steering.ConsumedAtUtc.ToUnixTimeMilliseconds(),
                     }),
                     CancellationToken.None,
                     trace,
                     RuntimeActivityComponents.AgentExecution,
                     "steering.injected");
+            }
+
+            // P0-2：steering 正文写入 canonical conversation_events（合规审计留痕）。
+            // fire-and-forget：失败只记日志，绝不阻断 steering 注入与主执行链。
+            if (_conversationEventStore is not null)
+            {
+                _ = PersistSteeringInjectedEventAsync(
+                    steering,
+                    agentInstanceId,
+                    workspaceId,
+                    content,
+                    CancellationToken.None);
             }
 
             await RecordSteeringTelemetryAsync(
@@ -419,6 +435,69 @@ public sealed partial class AgentExecutionService
             _logger.LogWarning(ex,
                 "[AgentExec:Steering] Failed to inject steering session={Session}",
                 request.SessionId);
+        }
+    }
+
+    /// <summary>
+    /// P0-2: 将模型实际所见的 steering 正文（不脱敏）写入 canonical conversation_events。
+    /// 失败只记日志，不抛出（fire-and-forget 语义）。
+    /// </summary>
+    private async Task PersistSteeringInjectedEventAsync(
+        ConsumedSessionSteeringMessage steering,
+        string agentInstanceId,
+        string? workspaceId,
+        string content,
+        CancellationToken ct)
+    {
+        var store = _conversationEventStore;
+        if (store is null)
+            return;
+
+        try
+        {
+            var agentId = steering.AgentId ?? agentInstanceId;
+            var payload = new
+            {
+                steeringId = steering.SteeringId,
+                sessionId = steering.SessionId,
+                agentId,
+                round = steering.Round,
+                messageChars = steering.MessageText.Length,
+                content,
+                injectedAt = steering.ConsumedAtUtc.ToUnixTimeMilliseconds(),
+            };
+            var element = JsonSerializer.SerializeToElement(
+                payload,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+            await store.AppendAsync(
+                steering.SessionId,
+                expectedVersion: -1,
+                [
+                    new NewConversationEvent(
+                        $"steering:injected:{Guid.NewGuid():N}",
+                        ConversationEventTypes.SteeringInjected,
+                        SchemaVersion: 1,
+                        WorkspaceId: workspaceId,
+                        TurnId: null,
+                        CommandId: null,
+                        RunId: null,
+                        MessageId: null,
+                        CorrelationId: null,
+                        CausationId: null,
+                        ProducerEventId: null,
+                        Payload: element,
+                        AgentId: agentId,
+                        SourceKind: ConversationEventSourceKind.Steering),
+                ],
+                EventWriteCondition.ForRun($"steering:{steering.SessionId}", 0),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[AgentExec:Steering] Failed to persist steering.injected session={Session} steering={SteeringId}",
+                steering.SessionId, steering.SteeringId);
         }
     }
 
