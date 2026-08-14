@@ -1055,9 +1055,12 @@ public sealed partial class PuddingToolInfrastructureTests
     [TestMethod]
     public void ServiceCollectionExtension_Registers_Migrated_Runtime_Tools_As_Native_Tools()
     {
-        var services = new ServiceCollection();
+                var services = new ServiceCollection();
         services.AddLogging();
         services.AddHttpClient();
+        // TaskManagerTool 构造需要 PuddingDataPaths（per-agent 文件持久化）
+        services.AddSingleton(PuddingDataPaths.FromRoot(
+            Path.Combine(Path.GetTempPath(), "pudding-tool-infra-test-" + Guid.NewGuid().ToString("N")[..8])));
         services.AddPuddingAgentTool<HttpFetchSkill>();
         services.AddPuddingAgentTool<TaskManagerTool>();
         services.AddPuddingToolRegistry();
