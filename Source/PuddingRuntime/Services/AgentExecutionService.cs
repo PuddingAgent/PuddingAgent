@@ -412,6 +412,7 @@ public sealed partial class AgentExecutionService
                     agentInstanceId,
                     workspaceId,
                     content,
+                    trace,
                     CancellationToken.None);
             }
 
@@ -447,6 +448,7 @@ public sealed partial class AgentExecutionService
         string agentInstanceId,
         string? workspaceId,
         string content,
+        RuntimeTraceContext? trace,
         CancellationToken ct)
     {
         var store = _conversationEventStore;
@@ -488,7 +490,9 @@ public sealed partial class AgentExecutionService
                         ProducerEventId: null,
                         Payload: element,
                         AgentId: agentId,
-                        SourceKind: ConversationEventSourceKind.Steering),
+                        SourceKind: ConversationEventSourceKind.Steering,
+                        TraceId: trace?.TraceId,
+                        ProducerComponent: "steering"),
                 ],
                 EventWriteCondition.ForRun($"steering:{steering.SessionId}", 0),
                 ct);

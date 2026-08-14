@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -156,7 +156,9 @@ public sealed class ApprovalController(
             CorrelationId: approvalId,
             CausationId: pending.EventId,
             ProducerEventId: pending.EventId,
-            Payload: payload);
+            Payload: payload,
+            TraceId: pending.TraceId,
+            ProducerComponent: "chat.acceptance");
 
         try
         {
