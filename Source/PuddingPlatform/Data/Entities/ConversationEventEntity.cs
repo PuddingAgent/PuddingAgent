@@ -65,4 +65,10 @@ public class ConversationEventEntity
 
     [MaxLength(32), Column("source_kind")]
     public string? SourceKind { get; set; }
+
+    [MaxLength(64), Column("trace_id")]
+    public string? TraceId { get; set; }
+
+    [MaxLength(64), Column("producer_component")]
+    public string? ProducerComponent { get; set; }
 }

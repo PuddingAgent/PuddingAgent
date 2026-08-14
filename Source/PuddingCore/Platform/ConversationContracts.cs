@@ -116,6 +116,9 @@ public static class ConversationEventTypes
     /// <summary>P0-2: 模型实际所见的 steering 干预正文（不脱敏，合规审计）快照。</summary>
     public const string SteeringInjected = "steering.injected";
 
+    public const string ConversationOpened = "conversation.opened";
+    public const string ConversationParticipantBound = "conversation.participant.bound";
+
     public const string SubAgentRunCreated = "subagent.run.created";
     public const string SubAgentRunStarted = "subagent.run.started";
     public const string SubAgentBudgetNotice = "subagent.budget.notice";

@@ -40,6 +40,12 @@ public sealed record ConversationEvent
     /// 事件来源分类（可空）。存储/传输使用小写字符串。
     /// </summary>
     public ConversationEventSourceKind? SourceKind { get; init; }
+
+    /// <summary>一等 trace_id。禁止用 correlation_id 替代。旧数据允许 null，新运行事件必须非空。</summary>
+    public string? TraceId { get; init; }
+
+    /// <summary>独立 producer_component（如 chat.acceptance / execution.journal / subagent.runtime）。agent_id 与 source_kind 都不能充当 component。</summary>
+    public string? ProducerComponent { get; init; }
 }
 
 /// <summary>
@@ -74,7 +80,9 @@ public sealed record NewConversationEvent(
     string? ProducerEventId,
     JsonElement Payload,
     string? AgentId = null,
-    ConversationEventSourceKind? SourceKind = null
+    ConversationEventSourceKind? SourceKind = null,
+    string? TraceId = null,
+    string? ProducerComponent = null
 );
 
 /// <summary>

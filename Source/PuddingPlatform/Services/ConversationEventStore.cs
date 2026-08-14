@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -112,10 +112,10 @@ public sealed class ConversationEventStore(
                     INSERT INTO conversation_events
                     (conversation_id, sequence, event_id, workspace_id, turn_id, command_id, run_id, message_id,
                      type, schema_version, payload, occurred_at, committed_at, correlation_id, causation_id, producer_event_id,
-                     agent_id, source_kind)
+                     agent_id, source_kind, trace_id, producer_component)
                     VALUES (@cid, @seq, @eid, @wsid, @tid, @cmdid, @rid, @mid,
                             @type, @sv, @payload, @oat, @cat, @corr, @caus, @peid,
-                            @aid, @skind)";
+                            @aid, @skind, @traceid, @pcomp)";
                 AddParam(insCmd, "@cid", conversationId);
                 AddParam(insCmd, "@seq", seq);
                 AddParam(insCmd, "@eid", evt.EventId);
@@ -134,6 +134,8 @@ public sealed class ConversationEventStore(
                 AddParam(insCmd, "@peid", evt.ProducerEventId ?? (object)DBNull.Value);
                 AddParam(insCmd, "@aid", evt.AgentId ?? (object)DBNull.Value);
                 AddParam(insCmd, "@skind", evt.SourceKind?.ToString().ToLowerInvariant() ?? (object)DBNull.Value);
+                AddParam(insCmd, "@traceid", evt.TraceId ?? (object)DBNull.Value);
+                AddParam(insCmd, "@pcomp", evt.ProducerComponent ?? (object)DBNull.Value);
                 await insCmd.ExecuteNonQueryAsync(ct);
                 seq++;
             }
@@ -427,7 +429,9 @@ public sealed class ConversationEventStore(
                 causation_id TEXT,
                 producer_event_id TEXT,
                 agent_id TEXT,
-                source_kind TEXT
+                source_kind TEXT,
+                trace_id TEXT,
+                producer_component TEXT
             )", ct);
 
         await db.Database.ExecuteSqlRawAsync(
@@ -436,6 +440,8 @@ public sealed class ConversationEventStore(
             "CREATE UNIQUE INDEX IF NOT EXISTS IX_conversation_events_event_id ON conversation_events(event_id)", ct);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_conversation_events_turn_id_type ON conversation_events(turn_id, type)", ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_conversation_events_trace_id_seq ON conversation_events(trace_id, sequence)", ct);
 
         await db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS conversation_projection_checkpoints (
@@ -448,6 +454,8 @@ public sealed class ConversationEventStore(
         // 通过 PRAGMA table_info 检查 + ALTER TABLE ADD COLUMN 补齐 agent_id / source_kind。
         await EnsureColumnAsync(db, "conversation_events", "agent_id", "TEXT", ct);
         await EnsureColumnAsync(db, "conversation_events", "source_kind", "TEXT", ct);
+        await EnsureColumnAsync(db, "conversation_events", "trace_id", "TEXT", ct);
+        await EnsureColumnAsync(db, "conversation_events", "producer_component", "TEXT", ct);
 
         _tableEnsured = true;
         logger.LogInformation("[ConversationEventStore] Tables ensured");
@@ -606,6 +614,8 @@ public sealed class ConversationEventStore(
             ProducerEventId = reader.IsDBNull(Ord("producer_event_id")) ? null : reader.GetString(Ord("producer_event_id")),
             AgentId = reader.IsDBNull(Ord("agent_id")) ? null : reader.GetString(Ord("agent_id")),
             SourceKind = ParseSourceKind(reader, Ord("source_kind")),
+            TraceId = reader.IsDBNull(Ord("trace_id")) ? null : reader.GetString(Ord("trace_id")),
+            ProducerComponent = reader.IsDBNull(Ord("producer_component")) ? null : reader.GetString(Ord("producer_component")),
             Payload = JsonDocument.Parse(reader.GetString(Ord("payload"))).RootElement,
         };
     }
