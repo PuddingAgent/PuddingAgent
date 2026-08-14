@@ -66,6 +66,46 @@ public sealed class TurnOutputChunkerPayloadOwnershipTests
         Assert.AreEqual(2, events.Single().SchemaVersion);
     }
 
+    [TestMethod]
+    public void Feed_NonDeltaEvent_CarriesTraceIdAndProducerComponent()
+    {
+        using var document = JsonDocument.Parse("""{"value":"persisted"}""");
+
+        var events = new TurnOutputChunker().Feed(
+            RuntimeEvent(ConversationEventTypes.ToolCallCompleted, document.RootElement),
+            "conversation",
+            "workspace",
+            "turn",
+            "command",
+            "run",
+            null,
+            "trace-c1-0001");
+
+        var e = events.Single();
+        Assert.AreEqual("trace-c1-0001", e.TraceId);
+        Assert.AreEqual("execution.journal", e.ProducerComponent);
+    }
+
+    [TestMethod]
+    public void Feed_DeltaFlush_CarriesTraceIdAndProducerComponent()
+    {
+        using var document = JsonDocument.Parse("""{"delta":"OK"}""");
+
+        var events = new TurnOutputChunker(maxBatchBytes: 1).Feed(
+            RuntimeEvent(ConversationEventTypes.MessageContentAppended, document.RootElement),
+            "conversation",
+            "workspace",
+            "turn",
+            "command",
+            "run",
+            null,
+            "trace-c1-0002");
+
+        var e = events.Single();
+        Assert.AreEqual("trace-c1-0002", e.TraceId);
+        Assert.AreEqual("execution.journal", e.ProducerComponent);
+    }
+
     private static TurnExecutionEvent RuntimeEvent(
         string type,
         JsonElement payload,

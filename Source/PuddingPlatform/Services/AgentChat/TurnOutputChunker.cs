@@ -11,6 +11,12 @@ namespace PuddingPlatform.Services.AgentChat;
 /// </summary>
 public sealed class TurnOutputChunker
 {
+    /// <summary>
+    /// P0-4f-1a C1：turn 域事实事件的 producer_component，与 SqliteExecutionJournal「Journal 守门人」一致。
+    /// 用户拍板的三值之一：chat.acceptance / execution.journal / subagent.runtime。
+    /// </summary>
+    private const string ExecutionJournalProducerComponent = "execution.journal";
+
     private readonly int _maxBatchMs;
     private readonly int _maxBatchBytes;
     private readonly StringBuilder _contentBuffer = new();
@@ -30,7 +36,7 @@ public sealed class TurnOutputChunker
     /// Terminal events flush pending content but do NOT include the terminal in the returned batch.
     /// Terminal submission is the caller's responsibility via CommitTerminalAsync.
     /// </summary>
-    public IReadOnlyList<NewConversationEvent> Feed(TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
+    public IReadOnlyList<NewConversationEvent> Feed(TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId, string? traceId = null)
     {
         var now = Environment.TickCount64;
         var elapsed = now - _lastFlushTick;
@@ -39,7 +45,7 @@ public sealed class TurnOutputChunker
         // Terminal must be committed atomically via IExecutionJournal.CommitTerminalAsync.
         if (evt.IsTerminal)
         {
-            FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId);
+            FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId, traceId);
             var result = _batchedEvents.ToList();
             _batchedEvents.Clear();
             return result;
@@ -59,7 +65,7 @@ public sealed class TurnOutputChunker
         else
         {
             // Non-delta events pass through immediately.
-            _batchedEvents.Add(MapEvent(evt, conversationId, workspaceId, turnId, commandId, runId, messageId));
+            _batchedEvents.Add(MapEvent(evt, conversationId, workspaceId, turnId, commandId, runId, messageId, traceId));
             return Drain();
         }
 
@@ -67,7 +73,7 @@ public sealed class TurnOutputChunker
         var totalBytes = _contentBuffer.Length + _thinkingBuffer.Length;
         if (totalBytes >= _maxBatchBytes || elapsed >= _maxBatchMs)
         {
-            FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId);
+            FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId, traceId);
         }
 
         return Drain();
@@ -76,15 +82,15 @@ public sealed class TurnOutputChunker
     /// <summary>
     /// Force flush all pending content. Called before terminal write.
     /// </summary>
-    public IReadOnlyList<NewConversationEvent> Flush(string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
+    public IReadOnlyList<NewConversationEvent> Flush(string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId, string? traceId = null)
     {
-        FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId);
+        FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId, traceId);
         var result = _batchedEvents.ToList();
         _batchedEvents.Clear();
         return result;
     }
 
-    private void FlushPendingContent(string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
+    private void FlushPendingContent(string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId, string? traceId)
     {
         if (_thinkingBuffer.Length > 0)
         {
@@ -92,7 +98,7 @@ public sealed class TurnOutputChunker
                 $"{{\"delta\":{JsonSerializer.Serialize(_thinkingBuffer.ToString())}}}");
             _batchedEvents.Add(NewEvent(
                 ConversationEventTypes.MessageThinkingSummaryAppended,
-                conversationId, workspaceId, turnId, commandId, runId, messageId, doc.RootElement));
+                conversationId, workspaceId, turnId, commandId, runId, messageId, doc.RootElement, null, 1, traceId));
             _thinkingBuffer.Clear();
         }
         if (_contentBuffer.Length > 0)
@@ -101,7 +107,7 @@ public sealed class TurnOutputChunker
                 $"{{\"delta\":{JsonSerializer.Serialize(_contentBuffer.ToString())}}}");
             _batchedEvents.Add(NewEvent(
                 ConversationEventTypes.MessageContentAppended,
-                conversationId, workspaceId, turnId, commandId, runId, messageId, doc.RootElement));
+                conversationId, workspaceId, turnId, commandId, runId, messageId, doc.RootElement, null, 1, traceId));
             _contentBuffer.Clear();
         }
         _lastFlushTick = Environment.TickCount64;
@@ -116,7 +122,7 @@ public sealed class TurnOutputChunker
     }
 
     private static NewConversationEvent MapEvent(
-        TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
+        TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId, string? traceId)
         => NewEvent(
             evt.Type,
             conversationId,
@@ -127,10 +133,11 @@ public sealed class TurnOutputChunker
             messageId,
             evt.Payload,
             evt.ProducerEventId,
-            evt.SchemaVersion);
+            evt.SchemaVersion,
+            traceId);
 
     private static NewConversationEvent MapTerminal(
-        TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId)
+        TurnExecutionEvent evt, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId, string? traceId)
         => NewEvent(
             evt.Type,
             conversationId,
@@ -141,11 +148,12 @@ public sealed class TurnOutputChunker
             messageId,
             evt.Payload,
             evt.ProducerEventId,
-            evt.SchemaVersion);
+            evt.SchemaVersion,
+            traceId);
 
     private static NewConversationEvent NewEvent(
         string type, string conversationId, string workspaceId, string turnId, string commandId, string runId, string? messageId,
-        JsonElement payload, string? producerEventId = null, int schemaVersion = 1)
+        JsonElement payload, string? producerEventId = null, int schemaVersion = 1, string? traceId = null)
         => new(
             EventId: Guid.NewGuid().ToString("N"),
             Type: type,
@@ -158,6 +166,9 @@ public sealed class TurnOutputChunker
             CorrelationId: conversationId,
             CausationId: turnId,
             ProducerEventId: producerEventId,
+            // P0-4f-1a C1：turn 域事实事件携带稳定 trace_id（透传，非空时）与 producer_component。
+            TraceId: traceId,
+            ProducerComponent: ExecutionJournalProducerComponent,
             // NewConversationEvent may outlive the JsonDocument that produced the
             // runtime payload. Persist an owned value at this boundary.
             Payload: payload.Clone()

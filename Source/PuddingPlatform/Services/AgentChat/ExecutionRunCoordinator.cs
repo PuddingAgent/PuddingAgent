@@ -454,7 +454,7 @@ public sealed class ExecutionRunCoordinator(
         await foreach (var evt in turnExecutor.ExecuteAsync(context, runToken))
         {
             var batch = chunker.Feed(evt, lease.ConversationId, lease.WorkspaceId,
-                lease.TurnId, lease.CommandId, lease.RunId, assistantMessageId);
+                lease.TurnId, lease.CommandId, lease.RunId, assistantMessageId, lease.TraceId);
 
             if (evt.IsTerminal)
             {
@@ -477,7 +477,7 @@ public sealed class ExecutionRunCoordinator(
 
         // Flush any remaining buffer and combine with terminal batch
         var flush = chunker.Flush(lease.ConversationId, lease.WorkspaceId,
-            lease.TurnId, lease.CommandId, lease.RunId, assistantMessageId);
+            lease.TurnId, lease.CommandId, lease.RunId, assistantMessageId, lease.TraceId);
 
         var allPending = terminalPending.Concat(flush).ToList();
 
@@ -504,7 +504,8 @@ public sealed class ExecutionRunCoordinator(
             lease.TurnId,
             lease.CommandId,
             lease.RunId,
-            assistantMessageId);
+            assistantMessageId,
+            lease.TraceId);
 
         return terminalPending
             .Concat(uncommittedOutput)
