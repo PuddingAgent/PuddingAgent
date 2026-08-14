@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Abstractions;
@@ -70,6 +70,7 @@ public sealed partial class ContextPipeline
                 LayerName = "L0-TASK-PLANNING",
                 TokenCount = taskPlanningTokens,
                 ContentPreview = BuildPreview(taskPlanningCtx),
+                FullContent = taskPlanningCtx,
             });
         }
 
@@ -129,6 +130,7 @@ public sealed partial class ContextPipeline
                 LayerName = "HISTORICAL-CONTEXT",
                 TokenCount = memorySummaryTokens,
                 ContentPreview = BuildPreview(memorySummaryCtx),
+                FullContent = memorySummaryCtx,
             });
             _logger.LogInformation(
                 "[ContextPipeline:MemoryRecall] historicalContextInjected agent={AgentId} isFirst={IsFirst} tokens={Tokens}",
@@ -153,6 +155,7 @@ public sealed partial class ContextPipeline
             LayerName = "L3-USER",
             TokenCount = userProfileTokens,
             ContentPreview = BuildPreview(userProfile),
+            FullContent = userProfile,
         });
 
         // ── L3-USER-PREFERENCES: 记忆库用户偏好预取（会话启动自动注入，Prefetch）──
@@ -172,6 +175,7 @@ public sealed partial class ContextPipeline
                     LayerName = "L3-USER-PREFERENCES",
                     TokenCount = prefsTokens,
                     ContentPreview = BuildPreview(prefsCtx),
+                    FullContent = prefsCtx,
                 });
             }
         }
@@ -292,6 +296,7 @@ public sealed partial class ContextPipeline
                 LayerName = contextAugmentLayerName,
                 TokenCount = contextAugmentTokens,
                 ContentPreview = BuildPreview(contextAugmentStr),
+                FullContent = contextAugmentStr,
             });
         }
 
@@ -305,6 +310,7 @@ public sealed partial class ContextPipeline
             LayerName = "L8-RUNTIME",
             TokenCount = Math.Max(0, runtimeTokens),
             ContentPreview = BuildPreview(sb.ToString(runtimeLen, sb.Length - runtimeLen)),
+            FullContent = sb.ToString(runtimeLen, sb.Length - runtimeLen),
         });
 
         // ── INBOUND-MESSAGE-CONTEXT: agent-to-agent 消息上下文 ——
@@ -318,6 +324,7 @@ public sealed partial class ContextPipeline
                 LayerName = "L9-INBOUND",
                 TokenCount = inboundTokens,
                 ContentPreview = BuildPreview(inboundCtx),
+                FullContent = inboundCtx,
             });
         }
 
@@ -380,7 +387,7 @@ public sealed partial class ContextPipeline
             "[ContextPipeline] Assembled context session={Session} totalBudget={Total} usedEstimate={Used} level={Level} len={Len}",
             request.SessionId, totalBudget, usedBudget, compactionLevel, result.Length);
 
-        return new ContextAssemblyResult(result, totalBudget, usedBudget, layers.AsReadOnly());
+        return new ContextAssemblyResult(result, totalBudget, usedBudget, layers.AsReadOnly(), layerInfos.AsReadOnly());
         }
         catch (Exception ex)
         {
@@ -419,6 +426,7 @@ public sealed partial class ContextPipeline
             LayerName = layerName,
             TokenCount = tokens,
             ContentPreview = BuildPreview(content),
+            FullContent = content,
         });
     }
 

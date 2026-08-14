@@ -383,6 +383,7 @@ public static partial class PuddingServiceCollectionExtensions
             onHistoryInvalidated: sid => sp.GetRequiredService<ContextWindowManager>().InvalidateHistory(sid)));
         builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         builder.Services.AddSingleton<ISessionCompactionEventEmitter, PuddingPlatform.Services.SessionCompactionEventEmitter>();
+        builder.Services.AddSingleton<IContextAssemblyEventEmitter, PuddingPlatform.Services.ContextAssemblyEventEmitter>();
         builder.Services.AddSingleton<ContextWindowManager>();
         // 压缩前冲洗（Pre-Compaction Flush）：压缩前用 Flash LLM 提取关键事实。
         // 此前该组合根未注册此服务，ContextWindowManager 静默跳过冲洗，

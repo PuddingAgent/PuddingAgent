@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -455,7 +455,8 @@ public sealed record ContextAssemblyResult(
     string SystemPrompt,
     int TotalBudget,
     int UsedTokens,
-    IReadOnlyList<ContextLayerSnapshot> Layers);
+    IReadOnlyList<ContextLayerSnapshot> Layers,
+    IReadOnlyList<ContextLayerInfo>? LayerInfos = null);
 
 /// <summary>单层上下文 Token 快照。</summary>
 public sealed record ContextLayerSnapshot(

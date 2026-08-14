@@ -1,4 +1,4 @@
-﻿using PuddingCode.Models;
+using PuddingCode.Models;
 
 namespace PuddingCode.Runtime;
 
@@ -56,4 +56,30 @@ public sealed record ContextLayerSummary
 public interface IContextAssemblyService
 {
     Task<ContextAssemblyResult> AssembleAsync(ContextAssemblyRequest request, CancellationToken ct = default);
+}
+
+/// <summary>
+/// P0-1: context.assembled 事件的单层正文发射载荷。
+/// </summary>
+public sealed record ContextAssemblyLayerEmission(
+    string Name,
+    string ContentHash,
+    string Content,
+    bool Truncated);
+
+/// <summary>
+/// P0-1: context.assembled 事件发射器接口。
+/// 由 PuddingPlatform 实现，将模型实际所见的 context 各层正文（脱敏后）写入 canonical Conversation Event Store。
+/// 接口位于 PuddingCore（Runtime 契约），实现位于 PuddingPlatform，通过宿主 DI 绑定（参照 ISessionCompactionEventEmitter）。
+/// </summary>
+public interface IContextAssemblyEventEmitter
+{
+    Task EmitAsync(
+        string sessionId,
+        string workspaceId,
+        string? agentId,
+        string? turnId,
+        IReadOnlyList<ContextAssemblyLayerEmission> layers,
+        string assembledAtIso,
+        CancellationToken ct = default);
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -381,6 +381,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IContextCompactionSummaryGenerator, CompositeContextCompactionSummaryGenerator>();
         builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         builder.Services.AddSingleton<ISessionCompactionEventEmitter, PuddingPlatform.Services.SessionCompactionEventEmitter>();
+        builder.Services.AddSingleton<IContextAssemblyEventEmitter, PuddingPlatform.Services.ContextAssemblyEventEmitter>();
         builder.Services.AddSingleton<ContextWindowManager>();
         builder.Services.AddSingleton<ISessionExecutionGate, SessionExecutionGate>();
         // ── Agent Persona 文件读取器 ──

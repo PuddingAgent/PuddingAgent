@@ -110,6 +110,9 @@ public static class ConversationEventTypes
     public const string ContextCompactionCompleted = "context.compaction.completed";
     public const string ContextCompactionFailed = "context.compaction.failed";
 
+    /// <summary>P0-1: 模型实际所见的 context 各层正文（脱敏后）快照。</summary>
+    public const string ContextAssembled = "context.assembled";
+
     public const string SubAgentRunCreated = "subagent.run.created";
     public const string SubAgentRunStarted = "subagent.run.started";
     public const string SubAgentBudgetNotice = "subagent.budget.notice";
