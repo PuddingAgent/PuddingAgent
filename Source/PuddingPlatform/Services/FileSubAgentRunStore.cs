@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
@@ -118,6 +118,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         await AppendEventAsync(runId, ConversationEventTypes.SubAgentRunCreated, new
         {
             run_id = runId,
+            archive_path = archivePath,
             invocation_id = request.InvocationId,
             batch_id = request.BatchId,
             parent_session_id = request.ParentSessionId,
@@ -237,6 +238,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                     ?? manifest.ParentSessionId,
                 sub_agent_id = manifest.SubSessionId,
                 run_id = runId,
+                archive_path = runDir,
                 invocation_id = manifest.InvocationId,
                 batch_id = manifest.BatchId,
                 origin_tool_id = manifest.OriginToolId,
