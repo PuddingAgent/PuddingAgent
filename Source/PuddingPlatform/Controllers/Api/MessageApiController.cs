@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +20,6 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
 {
     private const int DefaultPageSize = 20;
     private const int MaxPageSize = 50;
-    private static readonly string[] TranscriptFallbackEventTypes = ["delta", "thinking", "usage", "done"];
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -251,7 +249,7 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         string? SourceName);
 
     /// <summary>
-    /// ADR-031 旧数据降级：ChatMessages 为空时，从 session_event_log 合成 assistant-only 转录。
+    /// ADR-031 旧数据降级：ChatMessages 为空时，从 conversation_events 折叠出 assistant-only 转录。
     /// 用户原文未持久化，不能伪造；前端会将 agent-only 消息渲染为 orphan turn。
     /// </summary>
     private async Task<MessageListResponse> BuildFallbackFromEventLogAsync(
@@ -260,102 +258,53 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         int limit,
         CancellationToken ct)
     {
-        var events = await db.SessionEventLogs
+        var entities = await db.ConversationEvents
             .AsNoTracking()
-            .Where(e => e.SessionId == sessionId && TranscriptFallbackEventTypes.Contains(e.EventType))
-            .OrderBy(e => e.SequenceNum)
-            .Select(e => new
-            {
-                e.SequenceNum,
-                e.EventType,
-                e.Data,
-                e.RecordedAt,
-            })
+            .Where(e => e.ConversationId == sessionId)
+            .OrderBy(e => e.Sequence)
             .ToListAsync(ct);
 
-        if (events.Count == 0)
+        if (entities.Count == 0)
             return new MessageListResponse([], false, null);
 
+        var events = entities.Select(MapToConversationEvent).ToList();
+        var transcript = ConversationTranscriptFold.Fold(events);
+
+        // turnId → 该 turn 首个事件（用于推导 CreatedAt 毫秒戳）。
+        var firstByTurn = events
+            .GroupBy(e => e.TurnId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(e => e.Sequence).First(),
+                StringComparer.Ordinal);
+
         var fallbackMessages = new List<ChatMessageDto>();
-        var replyBuilder = new StringBuilder();
-        var thinking = new List<ThinkingChunkDto>();
-        string? usageJson = null;
-        long? firstCreatedAt = null;
-        long lastSequence = 0;
-        long lastCreatedAt = 0;
-
-        foreach (var ev in events)
+        foreach (var turn in transcript.Turns)
         {
-            var createdAt = ParseRecordedAtMillis(ev.RecordedAt);
-            firstCreatedAt ??= createdAt;
-            lastSequence = ev.SequenceNum;
-            lastCreatedAt = createdAt;
-
-            if (ev.EventType == "delta")
-            {
-                var delta = TryReadStringProperty(ev.Data, "delta");
-                if (!string.IsNullOrEmpty(delta))
-                    replyBuilder.Append(delta);
+            if (!firstByTurn.TryGetValue(turn.TurnId, out var first))
                 continue;
-            }
 
-            if (ev.EventType == "thinking")
-            {
-                var delta = TryReadStringProperty(ev.Data, "delta");
-                if (!string.IsNullOrEmpty(delta))
-                    thinking.Add(new ThinkingChunkDto(delta, createdAt));
+            var content = !string.IsNullOrWhiteSpace(turn.Reply)
+                ? turn.Reply
+                : turn.AssistantText;
+            if (string.IsNullOrWhiteSpace(content))
                 continue;
-            }
 
-            if (ev.EventType == "usage")
-            {
-                usageJson = TryReadUsageJson(ev.Data) ?? usageJson;
-                continue;
-            }
+            var createdAt = ToUnixMillis(first.OccurredAt);
 
-            if (ev.EventType == "done")
-            {
-                var reply = TryReadStringProperty(ev.Data, "reply");
-                var content = !string.IsNullOrWhiteSpace(reply)
-                    ? reply
-                    : replyBuilder.ToString();
-                var doneUsageJson = TryReadUsageJson(ev.Data) ?? usageJson;
+            List<ThinkingChunkDto>? thinking = null;
+            if (!string.IsNullOrWhiteSpace(turn.ThinkingSummary))
+                thinking = [new ThinkingChunkDto(turn.ThinkingSummary, createdAt)];
 
-                if (!string.IsNullOrWhiteSpace(content))
-                {
-                    fallbackMessages.Add(new ChatMessageDto(
-                        -Math.Abs(ev.SequenceNum),
-                        "agent",
-                        content,
-                        thinking.Count > 0 ? [.. thinking] : null,
-                        DeserializeUsage(doneUsageJson),
-                        firstCreatedAt ?? createdAt,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null));
-                }
-
-                replyBuilder.Clear();
-                thinking.Clear();
-                usageJson = null;
-                firstCreatedAt = null;
-            }
-        }
-
-        if (replyBuilder.Length > 0)
-        {
             fallbackMessages.Add(new ChatMessageDto(
-                -Math.Abs(lastSequence == 0 ? 1 : lastSequence),
+                -Math.Abs(turn.FirstSequence),
                 "agent",
-                replyBuilder.ToString(),
-                thinking.Count > 0 ? thinking : null,
-                DeserializeUsage(usageJson),
-                firstCreatedAt ?? lastCreatedAt,
+                content,
+                thinking,
+                MapUsage(turn.Usage),
+                createdAt,
                 null,
-                null,
+                turn.TurnId,
                 null,
                 null,
                 null,
@@ -383,78 +332,78 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         return new MessageListResponse(ordered, hasMore, oldestCreatedAt);
     }
 
-    private static long ParseRecordedAtMillis(string recordedAt)
-    {
-        return DateTimeOffset.TryParse(recordedAt, out var parsed)
-            ? parsed.ToUnixTimeMilliseconds()
-            : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    }
+    // ── entity → ConversationEvent record 映射（供 ConversationTranscriptFold 使用）──
 
-    private static TokenUsageDto? DeserializeUsage(string? usageJson)
-    {
-        if (string.IsNullOrWhiteSpace(usageJson))
-            return null;
-
-        try
+    private static ConversationEvent MapToConversationEvent(ConversationEventEntity e)
+        => new()
         {
-            return JsonSerializer.Deserialize<TokenUsageDto>(usageJson, JsonOpts);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+            EventId = e.EventId,
+            ConversationId = e.ConversationId,
+            Sequence = e.Sequence,
+            WorkspaceId = e.WorkspaceId,
+            TurnId = e.TurnId,
+            CommandId = e.CommandId,
+            RunId = e.RunId,
+            MessageId = e.MessageId,
+            Type = e.Type,
+            SchemaVersion = e.SchemaVersion,
+            OccurredAt = ParseOccurredAt(e.OccurredAt),
+            CommittedAt = ParseOccurredAt(e.CommittedAt),
+            CorrelationId = e.CorrelationId,
+            CausationId = e.CausationId,
+            ProducerEventId = e.ProducerEventId,
+            AgentId = e.AgentId,
+            SourceKind = ParseSourceKind(e.SourceKind),
+            Payload = ParsePayload(e.Payload),
+        };
 
-    private static string? TryReadStringProperty(string json, string propertyName)
+    private static DateTimeOffset ParseOccurredAt(string value)
+        => DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;
+
+    private static JsonElement ParsePayload(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
-            return null;
+            return default;
 
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
+            return doc.RootElement.Clone();
         }
-        catch
+        catch (JsonException)
         {
-            return null;
+            return default;
         }
     }
 
-    private static string? TryReadUsageJson(string json)
+    private static ConversationEventSourceKind? ParseSourceKind(string? raw)
     {
-        if (string.IsNullOrWhiteSpace(json))
+        if (string.IsNullOrWhiteSpace(raw))
             return null;
 
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
-                return usage.GetRawText();
-
-            return LooksLikeUsagePayload(root)
-                ? root.GetRawText()
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
+        return Enum.TryParse<ConversationEventSourceKind>(raw, ignoreCase: true, out var kind)
+            ? kind
+            : null;
     }
 
-    private static bool LooksLikeUsagePayload(JsonElement root)
+    private static long ToUnixMillis(DateTimeOffset value)
+        => value == DateTimeOffset.MinValue
+            ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            : value.ToUnixTimeMilliseconds();
+
+    private static TokenUsageDto? MapUsage(ConversationUsageSummary? summary)
     {
-        if (root.ValueKind != JsonValueKind.Object)
-            return false;
+        if (summary is null)
+            return null;
 
-        return root.TryGetProperty("promptTokens", out _)
-            || root.TryGetProperty("PromptTokens", out _)
-            || root.TryGetProperty("completionTokens", out _)
-            || root.TryGetProperty("CompletionTokens", out _)
-            || root.TryGetProperty("totalTokens", out _)
-            || root.TryGetProperty("TotalTokens", out _);
+        return new TokenUsageDto
+        {
+            PromptTokens = ToInt(summary.PromptTokens),
+            CompletionTokens = ToInt(summary.CompletionTokens),
+            TotalTokens = ToInt(summary.TotalTokens),
+        };
     }
+
+    private static int? ToInt(long? value)
+        => value is null ? null : (int?)Math.Clamp(value.Value, (long)int.MinValue, (long)int.MaxValue);
 }
