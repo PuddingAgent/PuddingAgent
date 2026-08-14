@@ -512,11 +512,12 @@ public sealed class SqliteExecutionJournal(
                 INSERT INTO conversation_events
                 (conversation_id, sequence, event_id, workspace_id, turn_id,
                  command_id, run_id, message_id, type, schema_version,
-                 payload, occurred_at, committed_at, correlation_id, causation_id)
+                 payload, occurred_at, committed_at, correlation_id, causation_id,
+                 producer_event_id, agent_id, source_kind)
                 VALUES
                 (@cid, @seq, @eid, @wid, @tid,
                  @cmid, @rid, @mid, @type, @sv,
-                 @payload, @oat, @cat, @corr, @caus)";
+                 @payload, @oat, @cat, @corr, @caus, @peid, @aid, @skind)";
             AddParam(insCmd, "@cid", lease.ConversationId);
             AddParam(insCmd, "@seq", currentHead);
             AddParam(insCmd, "@eid", evt.EventId);
@@ -532,6 +533,9 @@ public sealed class SqliteExecutionJournal(
             AddParam(insCmd, "@cat", committedAt);
             AddParam(insCmd, "@corr", evt.CorrelationId ?? "");
             AddParam(insCmd, "@caus", evt.CausationId ?? "");
+            AddParam(insCmd, "@peid", evt.ProducerEventId ?? (object)DBNull.Value);
+            AddParam(insCmd, "@aid", evt.AgentId ?? (object)DBNull.Value);
+            AddParam(insCmd, "@skind", evt.SourceKind?.ToString().ToLowerInvariant() ?? (object)DBNull.Value);
             await insCmd.ExecuteNonQueryAsync(ct);
         }
 
