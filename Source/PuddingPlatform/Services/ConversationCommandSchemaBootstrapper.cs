@@ -14,6 +14,7 @@ public static class ConversationCommandSchemaBootstrapper
     private const string TableName = "chat_execution_commands";
     private const string MetadataJsonColumn = "metadata_json";
     private const string ReplyProjectedAtColumn = "reply_projected_at";
+    private const string TraceIdColumn = "trace_id";
 
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
@@ -51,6 +52,21 @@ public static class ConversationCommandSchemaBootstrapper
                 "[ConversationCommandSchema] Added {Table}.{Column}",
                 TableName,
                 ReplyProjectedAtColumn);
+        }
+
+        if (!await ColumnExistsAsync(db, TableName, TraceIdColumn, ct))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                ALTER TABLE "chat_execution_commands"
+                ADD COLUMN "trace_id" TEXT NULL;
+                """,
+                ct);
+
+            logger?.LogInformation(
+                "[ConversationCommandSchema] Added {Table}.{Column}",
+                TableName,
+                TraceIdColumn);
         }
     }
 

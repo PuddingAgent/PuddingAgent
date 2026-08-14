@@ -24,6 +24,10 @@ public class ChatExecutionCommandEntity
     [MaxLength(64), Column("client_request_id")]
     public string? ClientRequestId { get; set; }
 
+    /// <summary>P0-4f-1a: 稳定 trace_id — 受理时生成，重试/幂等重放继承原值，不得重新生成。</summary>
+    [MaxLength(64), Column("trace_id")]
+    public string? TraceId { get; set; }
+
     [Required, MaxLength(64), Column("workspace_id")]
     public string WorkspaceId { get; set; } = string.Empty;
 

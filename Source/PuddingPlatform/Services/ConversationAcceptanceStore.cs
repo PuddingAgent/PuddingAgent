@@ -101,6 +101,7 @@ public sealed class ConversationAcceptanceStore(
             {
                 var turnId = Guid.NewGuid().ToString("N");
                 var commandId = Guid.NewGuid().ToString("N");
+                var traceId = Guid.NewGuid().ToString("N");
                 commands.Add(new ChatExecutionCommandEntity
                 {
                     BatchId = batchId,
@@ -115,6 +116,7 @@ public sealed class ConversationAcceptanceStore(
                     UserId = userId,
                     ChannelId = GetMetadataValue(request.Metadata, MessageGatewayMetadata.ChannelId),
                     Status = "pending",
+                    TraceId = traceId,
                     CreatedAt = now,
                     MetadataJson = SerializeMetadata(request.Metadata),
                 });
@@ -156,6 +158,7 @@ public sealed class ConversationAcceptanceStore(
                     OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
                     CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
                     CorrelationId = conversationId,
+                    TraceId = cmd.TraceId,
                 });
             }
             db.ConversationEvents.AddRange(events);
