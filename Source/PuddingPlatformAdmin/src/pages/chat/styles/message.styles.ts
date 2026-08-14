@@ -228,13 +228,122 @@ export const useMessageStyles = createStyles(({ token }) => ({
     pointerEvents: 'auto' as const,
     transform: 'translateY(0)',
   },
-  userErrorText: {
+    userErrorText: {
     fontSize: 11,
     lineHeight: '16px',
     color: 'var(--pudding-status-error)',
     marginTop: 2,
     paddingRight: 4,
     opacity: 0.9,
+  },
+  // ── P1-5 用户附件图片：单图 240px 长边 / 多图 64px tile / 失败重试 ──
+  // 对齐 deepseek-harness D9 MessageImage：单图长边 240px（宽高比 clamp
+  // [0.25,4]，object-fit cover 锚点 top left，不放大超自然尺寸）；多图
+  // 64px 方块 tile 网格；加载 shimmer 占位（reduced-motion 降级静态）；
+  // 失败保留 tile/单图尺寸并支持点击重试（cache-bust）。
+  '@keyframes userVisionShimmer': {
+    '0%': { backgroundPosition: '-200% 0' },
+    '100%': { backgroundPosition: '200% 0' },
+  },
+  /** 单图展示盒：默认 240×240 占位；JS 依据自然尺寸注入 clamp 后的宽高 */
+  userVisionImageSingle: {
+    position: 'relative' as const,
+    display: 'grid',
+    placeItems: 'center',
+    flex: '0 0 auto',
+    width: 240,
+    height: 240,
+    maxWidth: 240,
+    maxHeight: 240,
+    borderRadius: 8,
+    overflow: 'hidden' as const,
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 22%, transparent)',
+    background:
+      'color-mix(in srgb, var(--accent-purple) 4%, var(--soft-white))',
+    contain: 'layout style',
+  },
+  /** 单图 img：填满 clamp 后的展示盒，cover 裁切锚定左上 */
+  userVisionImageSingleImg: {
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    maxWidth: 240,
+    maxHeight: 240,
+    objectFit: 'cover' as const,
+    objectPosition: 'top left' as const,
+    borderRadius: 8,
+  },
+  /** 多图（≥2）：64px 方块 tile 网格，gap 10 */
+  userVisionTileGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, 64px)',
+    gap: 10,
+    justifyContent: 'flex-start',
+    maxWidth: '100%',
+  },
+  userVisionTile: {
+    position: 'relative' as const,
+    display: 'grid',
+    placeItems: 'center',
+    width: 64,
+    height: 64,
+    minWidth: 64,
+    minHeight: 64,
+    borderRadius: 8,
+    overflow: 'hidden' as const,
+    border: '1px solid',
+    borderColor: 'color-mix(in srgb, var(--accent-purple) 22%, transparent)',
+    background:
+      'color-mix(in srgb, var(--accent-purple) 4%, var(--soft-white))',
+    contain: 'layout style',
+  },
+  userVisionTileImg: {
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover' as const,
+    borderRadius: 8,
+  },
+  /** 加载占位：浅色 shimmer；reduced-motion 降级为静态浅块 */
+  userVisionImageLoading: {
+    position: 'absolute' as const,
+    inset: 0,
+    background:
+      'linear-gradient(100deg, color-mix(in srgb, var(--accent-purple) 4%, transparent) 40%, color-mix(in srgb, var(--accent-purple) 14%, transparent) 50%, color-mix(in srgb, var(--accent-purple) 4%, transparent) 60%)',
+    backgroundSize: '200% 100%',
+    animation: 'userVisionShimmer 1.4s linear infinite',
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      background: 'color-mix(in srgb, var(--accent-purple) 8%, transparent)',
+    },
+  },
+  /** 失败占位内的重试按钮：占满 tile/单图块，不撑大布局 */
+  userVisionRetryBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '100%',
+    height: '100%',
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer' as const,
+    fontSize: 13,
+    color: 'var(--earth-brown)',
+    opacity: 0.8,
+    borderRadius: 8,
+    '&:hover': {
+      opacity: 1,
+      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+      color: 'var(--accent-purple)',
+    },
+    '&:focus-visible': {
+      outline:
+        '2px solid color-mix(in srgb, var(--accent-purple) 45%, transparent)',
+      outlineOffset: 1,
+    },
   },
   timeline: {
     display: 'flex',
