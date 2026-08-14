@@ -208,6 +208,15 @@ Admin Chat 的 Slash 命令面板新增：
 - 压缩质量必须接受 Pudding 自己的 benchmark、RAG 命中率和工具任务验收，而不能直接继承外部项目的节省率声明。
 - Headroom 默认/可选遥测、CCR TTL、多 worker 存储等运行参数需要明确配置后才可进入受控环境。
 
+### ADR-042-I：压缩锁顺序约束（防死锁）
+
+压缩由 `CompactionCoordinator` 提供 per-session 单飞锁（`SemaphoreSlim`），统一拦截工具触发、自动触发、API 触发三个来源，保证同一 session 的压缩互斥执行。为避免与执行路径构成锁环，必须遵守以下硬约束：
+
+1. **压缩锁内禁止获取执行锁**：`ChatExecutionWorker._sessionLocks` 是执行路径的会话锁，既有执行路径按「执行锁 → 压缩」方向加锁；若压缩持锁期间反向获取执行锁，将形成 AB-BA 死锁。因此压缩锁内不得再获取任何执行锁。
+2. **压缩锁内禁止等待消息 dispatch**：压缩只读写 DB 与内存历史，不参与消息投递（`SendMessageToSession` / dispatch 回执）；若持锁期间等待投递，而投递链路又反等待压缩锁，会死锁。
+
+对应代码约束见 `Source/PuddingRuntime/Services/CompactionCoordinator.cs` 类注释与 `ContextCompactionService.CompactAsync` 入口。
+
 ## 后果
 
 ### 正向影响
@@ -259,6 +268,7 @@ POST /api/sessions/{sessionId}/compact
 
 ```text
 context.health
+context.compaction.requested
 context.compaction.started
 context.compaction.completed
 context.compaction.failed

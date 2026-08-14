@@ -19,6 +19,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     private const int MaxActiveMessagesToLoad = 500;
     private const int MaxHealthEstimateSampleSize = 2000;
     private const int DefaultMaxVerbatimMessageBytes = 16 * 1024;
+    private const string CompactionRequestedEventType = "context.compaction.requested";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IDbContextFactory<MemoryDbContext> _dbFactory;
@@ -33,6 +34,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     private readonly IHookPublisher? _hookPublisher;
     private readonly PuddingDataPaths? _dataPaths;
     private readonly CompactionCoordinator _coordinator;
+    private readonly ISessionCompactionEventEmitter? _compactionEventEmitter;
 
     public ContextCompactionService(
         IDbContextFactory<MemoryDbContext> dbFactory,
@@ -46,7 +48,8 @@ public sealed class ContextCompactionService : IContextCompactionService
         ContextCompactionOptions? options = null,
         IHookPublisher? hookPublisher = null,
         PuddingDataPaths? dataPaths = null,
-        CompactionCoordinator? compactionCoordinator = null)
+        CompactionCoordinator? compactionCoordinator = null,
+        ISessionCompactionEventEmitter? compactionEventEmitter = null)
     {
         _dbFactory = dbFactory;
         _summaryGenerator = summaryGenerator;
@@ -60,6 +63,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         _hookPublisher = hookPublisher;
         _dataPaths = dataPaths;
         _coordinator = compactionCoordinator ?? new CompactionCoordinator();
+        _compactionEventEmitter = compactionEventEmitter;
     }
 
     public async Task<ContextHealthSnapshot> GetHealthAsync(
@@ -245,6 +249,15 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (request.Level != ContextCompactionLevel.Full)
             throw new NotSupportedException($"Context compaction level '{request.Level}' is not implemented yet.");
 
+        // compactionId 前置生成：供 requested 前置事件与后续阶段复用。
+        var compactionId = string.IsNullOrWhiteSpace(request.CompactionId)
+            ? Guid.NewGuid().ToString("N")
+            : request.CompactionId.Trim();
+
+        // 前置事件（仅可观测性）：在锁外、冷却检查前记录一次 compaction 请求进入，
+        // 使工具/自动/API 三触发源都能在压缩真正开始（started）前被观测到。fire-and-forget，不改变同步语义。
+        EmitCompactionRequestedEvent(request, compactionId);
+
         // per-session 单飞锁：一处拦截工具/自动/API 三触发源，保证同一 session 压缩互斥执行。
         // 锁内禁止获取执行锁（ChatExecutionWorker._sessionLocks）、禁止等待消息 dispatch（见 CompactionCoordinator 注释）。
         await using var lease = await _coordinator.AcquireAsync(request.SessionId, ct);
@@ -267,9 +280,6 @@ public sealed class ContextCompactionService : IContextCompactionService
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var compactionId = string.IsNullOrWhiteSpace(request.CompactionId)
-            ? Guid.NewGuid().ToString("N")
-            : request.CompactionId.Trim();
         var startedAtUtc = DateTimeOffset.UtcNow;
 
         _logger.LogInformation(
@@ -606,6 +616,44 @@ public sealed class ContextCompactionService : IContextCompactionService
                 await PublishSessionCompressedHookAsync(request, result, ct);
         await WriteCompactionLogAsync(request, result, ct);
         return result;
+    }
+
+    /// <summary>
+    /// 发布 context.compaction.requested 前置事件（仅可观测性）。
+    /// 在 CompactAsync 入口处 fire-and-forget 调用：不 await、不引入异步窗口、
+    /// 不改变压缩的同步语义；事件写入失败仅记录 debug 日志，不影响压缩执行。
+    /// </summary>
+    private void EmitCompactionRequestedEvent(ContextCompactionRequest request, string compactionId)
+    {
+        if (_compactionEventEmitter is null)
+            return;
+
+        try
+        {
+            _ = _compactionEventEmitter.EmitAsync(
+                request.SessionId,
+                request.WorkspaceId,
+                CompactionRequestedEventType,
+                new
+                {
+                    compactionId,
+                    sessionId = request.SessionId,
+                    workspaceId = request.WorkspaceId,
+                    mode = request.Mode.ToString(),
+                    level = request.Level.ToString(),
+                    reason = request.Reason,
+                    agentId = request.AgentId,
+                    agentTemplateId = request.AgentTemplateId,
+                    requestedAtUtc = DateTimeOffset.UtcNow,
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "[ContextCompaction] Failed to emit requested event session={SessionId}",
+                request.SessionId);
+        }
     }
 
     private async Task PublishSessionCompressedHookAsync(
