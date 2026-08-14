@@ -1704,7 +1704,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
 
     /// <summary>
     /// 推送工作区级别通知到对应 Channel。
-    /// 工作区 ID 从 session_event_log 中查询。
+    /// 工作区 ID 从 conversation_events 中查询。
     /// </summary>
     private async Task PushWorkspaceNotificationAsync(
         string sessionId, SessionNotification notification)
@@ -1713,9 +1713,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         {
             // 查找会话所属工作区
             using var scope = _scopeFactory.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            var workspaceId = await db.SessionEventLogs
-                .Where(e => e.SessionId == sessionId)
-                .Select(e => e.WorkspaceId)
+            var workspaceId = await db.ConversationEvents
+                .Where(c => c.ConversationId == sessionId)
+                .Select(c => c.WorkspaceId)
                 .FirstOrDefaultAsync();
 
             if (string.IsNullOrEmpty(workspaceId)) return;

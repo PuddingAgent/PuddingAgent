@@ -136,11 +136,11 @@ public class SessionEventsController : ControllerBase
         long messageId,
         CancellationToken ct = default)
     {
-        // 从 sessionId 推断 workspaceId：查 session_event_log
-        var workspaceId = await _db.SessionEventLogs
+        // 从 sessionId 推断 workspaceId：查 conversation_events
+        var workspaceId = await _db.ConversationEvents
             .AsNoTracking()
-            .Where(e => e.SessionId == sessionId)
-            .Select(e => e.WorkspaceId)
+            .Where(c => c.ConversationId == sessionId)
+            .Select(c => c.WorkspaceId)
             .FirstOrDefaultAsync(ct);
 
         if (string.IsNullOrWhiteSpace(workspaceId))
@@ -864,7 +864,7 @@ public class SessionEventsController : ControllerBase
 
     /// <summary>
     /// 验证 session 是否在系统中存在，并返回其状态。
-    /// 先查 Platform API（最快），失败后查本地 DB 中的历史证据（SessionEventLogs / ChatMessages / SessionSubAgents）。
+    /// 先查 Platform API（最快），失败后查本地 DB 中的历史证据（ConversationEvents / ChatMessages / SessionSubAgents）。
     /// 用于防止对已删除的幻影 session 进行 replay 或 SSE 订阅。
     /// 关联 ADR：Docs/07架构/54ADR-053前端会话引用生命周期与SSE清理边界ADR.md
     /// </summary>
@@ -876,7 +876,7 @@ public class SessionEventsController : ControllerBase
         if (session is not null) return session.Status;
 
         // 2. 本地 DB 历史证据检查（backfill session）
-        var hasEvents = await _db.SessionEventLogs.AnyAsync(e => e.SessionId == sessionId, ct);
+        var hasEvents = await _db.ConversationEvents.AnyAsync(c => c.ConversationId == sessionId, ct);
         if (hasEvents) return SessionStatus.Completed; // backfill session 默认视为已完成
 
         var hasMessages = await _db.ChatMessages.AnyAsync(m => m.SessionId == sessionId, ct);
