@@ -24,6 +24,7 @@ import MessageItem from './MessageItem';
 import MessageProcessSummary from './MessageProcessSummary';
 import StateDot from './StateDot';
 import ToolCallRowList from './ToolCallRow';
+import ModelRetryRow from './ModelRetryRow';
 import {
   type CurrentRunActivity,
   getCurrentRunActivity,
@@ -775,6 +776,10 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   </span>
                 </div>
               )}
+
+
+            {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
+            <ModelRetryRow items={processItems} />
 
             {/* P0-1: 错误摘要行（StateDot + 标题 + 摘要，title 挂全量原文）；
                 重试按钮与摘要行同行（沿用 !processItems 条件，不破坏既有 onRerun 逻辑） */}

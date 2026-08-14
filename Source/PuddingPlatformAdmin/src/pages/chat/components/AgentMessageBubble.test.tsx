@@ -15,6 +15,14 @@ const mockMessageItem = jest.fn((props: Record<string, unknown>) => (
     data-visible={String(props.visibleLiveText ?? '')}
   />
 ));
+const mockModelRetryRow = jest.fn((props: Record<string, unknown>) => (
+  <div
+    data-testid="model-retry-row"
+    data-has-items={String(
+      Boolean((props.items as Array<unknown> | undefined)?.length),
+    )}
+  />
+));
 
 jest.mock('antd', () => {
   return {
@@ -144,6 +152,12 @@ jest.mock(
   './MessageItem',
   () => (props: Record<string, unknown>) => mockMessageItem(props),
 );
+// P1-2: ModelRetryRow 使用真实 antd-style createStyles，依赖 antd theme context；
+// 本文件 mock 了 'antd'，因此需轻量 stub（真实条件渲染由 ModelRetryRow.test.tsx 覆盖）。
+jest.mock(
+  './ModelRetryRow',
+  () => (props: Record<string, unknown>) => mockModelRetryRow(props),
+);
 jest.mock('./SessionBenchmarkDrawer', () => () => (
   <div data-testid="session-benchmark-drawer" />
 ));
@@ -162,6 +176,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     mockUseTypewriterStreaming.mockReset();
     mockMessageItem.mockClear();
     mockMessageActions.mockClear();
+    mockModelRetryRow.mockClear();
     mockUseTypewriterStreaming.mockReturnValue({
       stableMarkdown: '',
       liveText: '',
@@ -884,5 +899,65 @@ describe('AgentMessageBubble error summary row (P0-1)', () => {
     expect(screen.getByTestId('agent-error-summary-text').textContent).toBe(
       `${'e'.repeat(80)}…`,
     );
+  });
+});
+
+describe('AgentMessageBubble model retry row hook (P1-2)', () => {
+  beforeEach(() => {
+    mockModelRetryRow.mockClear();
+  });
+
+  it('passes processItems to ModelRetryRow when the message carries retry entries', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="executing"
+        isStreaming={false}
+        content=""
+        processItems={[
+          {
+            id: 'retry-1',
+            type: 'subconscious_step',
+            text: 'LLM call retry 2/3.',
+            message: 'connection reset',
+            timestamp: 1,
+            collapsed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(mockModelRetryRow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: 'retry-1' }),
+        ]),
+      }),
+    );
+  });
+
+  it('renders the retry row area independent of the error summary row (no error status required)', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="success"
+        isStreaming={false}
+        content="已完成"
+        processItems={[
+          {
+            id: 'retry-1',
+            type: 'subconscious_step',
+            text: 'LLM stream retry before first delta 1/3.',
+            timestamp: 1,
+            collapsed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(mockModelRetryRow).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByTestId('agent-error-summary-row'),
+    ).toBeNull();
   });
 });
