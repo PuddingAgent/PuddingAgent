@@ -193,9 +193,7 @@ public static class HostShellExecutor
     }
 
     private static string ResolveWorkingDirectory(string? workingDirectory) =>
-        string.IsNullOrWhiteSpace(workingDirectory)
-            ? Directory.GetCurrentDirectory()
-            : Path.GetFullPath(workingDirectory);
+        HostFileToolPaths.ResolveWorkspaceRoot(workingDirectory);
 
     private static string? ResolvePowerShellExecutable()
     {
