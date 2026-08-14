@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -16,45 +17,45 @@ internal static class TerminalToolJson
 
     public static string Serialize(object value) => JsonSerializer.Serialize(value, Options);
 
-    public static object ToJobDto(TerminalProcessInfo info) => new
+    public static TerminalJobDto ToJobDto(TerminalProcessInfo info) => new()
     {
-        job_id = info.ProcessId,
-        process_id = info.ProcessId,
-        os_process_id = info.OsProcessId,
-        session_id = info.SessionId,
-        command = info.Command,
-        cwd = info.WorkingDir,
-        started_at = info.StartedAt,
-        status = info.Status.ToString(),
-        exit_code = info.ExitCode,
+        JobId = info.ProcessId,
+        ProcessId = info.ProcessId,
+        OsProcessId = info.OsProcessId,
+        SessionId = info.SessionId,
+        Command = info.Command,
+        Cwd = info.WorkingDir,
+        StartedAt = info.StartedAt,
+        Status = info.Status.ToString(),
+        ExitCode = info.ExitCode,
     };
 
-    public static object ToOutputDto(TerminalOutputSnapshot snapshot) => new
+    public static TerminalOutputDto ToOutputDto(TerminalOutputSnapshot snapshot) => new()
     {
-        job = ToJobDto(snapshot.Process),
-        offset = snapshot.Offset,
-        next_offset = snapshot.NextOffset,
-        total_lines = snapshot.TotalLines,
-        truncated = snapshot.Truncated,
-        command_failed = IsCommandFailed(snapshot.Process),
-        output = string.Join(Environment.NewLine, snapshot.Lines),
-        lines = snapshot.Lines,
-        handle = snapshot.Truncated ? ToOutputHandle(snapshot) : null,
-        recovery = ToRecoveryDto(snapshot.Process),
+        Job = ToJobDto(snapshot.Process),
+        Offset = snapshot.Offset,
+        NextOffset = snapshot.NextOffset,
+        TotalLines = snapshot.TotalLines,
+        Truncated = snapshot.Truncated,
+        CommandFailed = IsCommandFailed(snapshot.Process),
+        Output = string.Join(Environment.NewLine, snapshot.Lines),
+        Lines = snapshot.Lines,
+        Handle = snapshot.Truncated ? ToOutputHandle(snapshot) : null,
+        Recovery = ToRecoveryDto(snapshot.Process),
     };
 
-    public static object ToOutputHandle(TerminalOutputSnapshot snapshot) => new
+    public static TerminalOutputHandleDto ToOutputHandle(TerminalOutputSnapshot snapshot) => new()
     {
-        kind = "terminal_output",
-        job_id = snapshot.Process.ProcessId,
-        offset = snapshot.Offset,
-        next_offset = snapshot.NextOffset,
-        total_lines = snapshot.TotalLines,
-        read_tool = "terminal_read",
-        read_args = new
+        Kind = "terminal_output",
+        JobId = snapshot.Process.ProcessId,
+        Offset = snapshot.Offset,
+        NextOffset = snapshot.NextOffset,
+        TotalLines = snapshot.TotalLines,
+        ReadTool = "terminal_read",
+        ReadArgs = new TerminalReadArgsDto
         {
-            job_id = snapshot.Process.ProcessId,
-            from_offset = snapshot.NextOffset,
+            JobId = snapshot.Process.ProcessId,
+            FromOffset = snapshot.NextOffset,
         },
     };
 
@@ -87,17 +88,17 @@ internal static class TerminalToolJson
         => process.Status == TerminalProcessStatus.Failed
         || process.ExitCode is int exitCode && exitCode != 0;
 
-    private static object? ToRecoveryDto(TerminalProcessInfo process)
+    private static TerminalRecoveryDto? ToRecoveryDto(TerminalProcessInfo process)
     {
         if (!IsCommandFailed(process))
             return null;
 
-        return new
+        return new TerminalRecoveryDto
         {
-            blind_rerun_same_command = false,
-            repeat_same_command_requires_reason = true,
-            reason = "The terminal command failed. Repeating the identical command without new information is unlikely to make progress.",
-            instruction = "Explain the failure from the output. Retry the same command only when the task requires a restart/retry or state may have changed; otherwise correct the command or inputs, or stop with FAILED if blocked.",
+            BlindRerunSameCommand = false,
+            RepeatSameCommandRequiresReason = true,
+            Reason = "The terminal command failed. Repeating the identical command without new information is unlikely to make progress.",
+            Instruction = "Explain the failure from the output. Retry the same command only when the task requires a restart/retry or state may have changed; otherwise correct the command or inputs, or stop with FAILED if blocked.",
         };
     }
 }
@@ -111,7 +112,7 @@ internal static class TerminalToolJson
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
     SortOrder = 30)]
-public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
+public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, TerminalStartResult>
 {
     private readonly ITerminalProcessManager _processManager;
     private readonly ITerminalCommandPolicy _commandPolicy;
@@ -127,13 +128,13 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
         _logger = logger;
     }
 
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<TerminalStartResult> ExecuteCoreAsync(
         TerminalStartArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(args.Command))
-            return ToolExecutionResult.Fail("command is required.");
+            throw new InvalidOperationException("command is required.");
 
         try
         {
@@ -147,7 +148,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
                 context.IsYoloMode,
                 args.Command[..Math.Min(args.Command.Length, 100)],
                 ex.Message);
-            return ToolExecutionResult.Fail(ex.Message);
+            throw;
         }
 
                 var cwd = string.IsNullOrWhiteSpace(args.Cwd)
@@ -155,7 +156,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
             : args.Cwd.Trim();
 
         if (!Directory.Exists(cwd))
-            return ToolExecutionResult.Fail($"working directory does not exist: {cwd}");
+            throw new InvalidOperationException($"working directory does not exist: {cwd}");
 
         TerminalProcessInfo info;
         try
@@ -170,7 +171,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
                 context.SessionId,
                 cwd,
                 args.Command[..Math.Min(args.Command.Length, 100)]);
-            return ToolExecutionResult.Fail($"failed to start terminal job: {ex.Message}");
+            throw new InvalidOperationException($"failed to start terminal job: {ex.Message}");
         }
 
         var snapshot = await _processManager.ReadOutputAsync(
@@ -180,17 +181,17 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
             maxChars: args.MaxOutputChars ?? TerminalToolJson.DefaultPreviewChars,
             ct);
 
-        return ToolExecutionResult.Ok(TerminalToolJson.Serialize(new
+        return new TerminalStartResult
         {
-            job = TerminalToolJson.ToJobDto(info),
-            output = snapshot is null ? null : TerminalToolJson.ToOutputDto(snapshot),
-            next_action = snapshot is null
+            Job = TerminalToolJson.ToJobDto(info),
+            Output = snapshot is null ? null : TerminalToolJson.ToOutputDto(snapshot),
+            NextAction = snapshot is null
                 ? "Use terminal_wait with job_id to poll incremental output. Do not block the agent loop waiting for this process."
                 : TerminalToolJson.NextAction(
                     snapshot,
                     "Use terminal_wait with job_id to poll incremental output. Do not block the agent loop waiting for this process.",
                     "Job already completed. Use the exit_code and output to continue."),
-        }));
+        };
     }
 }
 
@@ -203,7 +204,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs>
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
     SortOrder = 31)]
-public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs>
+public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, TerminalWaitResult>
 {
     private readonly ITerminalProcessManager _processManager;
 
@@ -212,14 +213,14 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs>
         _processManager = processManager;
     }
 
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<TerminalWaitResult> ExecuteCoreAsync(
         TerminalWaitArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
     {
         var job = TerminalToolJson.FindJob(_processManager, context, args.JobId);
         if (job is null)
-            return ToolExecutionResult.Fail($"terminal job not found in this session: {args.JobId}");
+            throw new InvalidOperationException($"terminal job not found in this session: {args.JobId}");
 
         var fromOffset = Math.Max(0, args.FromOffset ?? 0);
         var waitSeconds = Math.Clamp(args.WaitSeconds ?? 1, 0, 30);
@@ -236,7 +237,7 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs>
                 ct);
 
             if (snapshot is null)
-                return ToolExecutionResult.Fail($"terminal job disappeared before output could be read: {args.JobId}");
+                throw new InvalidOperationException($"terminal job disappeared before output could be read: {args.JobId}");
 
             if (snapshot.NextOffset > fromOffset || snapshot.Process.Status != TerminalProcessStatus.Running)
                 break;
@@ -247,14 +248,14 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs>
             await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
         } while (true);
 
-        return ToolExecutionResult.Ok(TerminalToolJson.Serialize(new
+        return new TerminalWaitResult
         {
-            result = TerminalToolJson.ToOutputDto(snapshot),
-            next_action = TerminalToolJson.NextAction(
+            Result = TerminalToolJson.ToOutputDto(snapshot),
+            NextAction = TerminalToolJson.NextAction(
                 snapshot,
                 "Job is still running. Call terminal_wait again with from_offset set to next_offset for more output, or terminal_cancel to stop it.",
                 "Job is no longer running. Use the exit_code and output to continue."),
-        }));
+        };
     }
 }
 
@@ -267,7 +268,7 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs>
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
     SortOrder = 32)]
-public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs>
+public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs, TerminalWaitResult>
 {
     private readonly ITerminalProcessManager _processManager;
 
@@ -276,14 +277,14 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs>
         _processManager = processManager;
     }
 
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override async Task<TerminalWaitResult> ExecuteCoreAsync(
         TerminalReadArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
     {
         var job = TerminalToolJson.FindJob(_processManager, context, args.JobId);
         if (job is null)
-            return ToolExecutionResult.Fail($"terminal job not found in this session: {args.JobId}");
+            throw new InvalidOperationException($"terminal job not found in this session: {args.JobId}");
 
         var snapshot = await _processManager.ReadOutputAsync(
             job.ProcessId,
@@ -293,16 +294,16 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs>
             ct);
 
         if (snapshot is null)
-            return ToolExecutionResult.Fail($"terminal job disappeared before output could be read: {args.JobId}");
+            throw new InvalidOperationException($"terminal job disappeared before output could be read: {args.JobId}");
 
-        return ToolExecutionResult.Ok(TerminalToolJson.Serialize(new
+        return new TerminalWaitResult
         {
-            result = TerminalToolJson.ToOutputDto(snapshot),
-            next_action = TerminalToolJson.NextAction(
+            Result = TerminalToolJson.ToOutputDto(snapshot),
+            NextAction = TerminalToolJson.NextAction(
                 snapshot,
                 "Buffered output slice is complete for now. Use terminal_wait to wait for future output.",
                 "Buffered output slice is complete and the job is no longer running."),
-        }));
+        };
     }
 }
 
@@ -482,4 +483,136 @@ public sealed record TerminalInputArgs
 
     [ToolParam("One line of stdin to send to the running job.")]
     public string? Input { get; init; }
+}
+
+public sealed record TerminalJobDto
+{
+    [JsonPropertyName("job_id")]
+    public required string JobId { get; init; }
+
+    [JsonPropertyName("process_id")]
+    public required string ProcessId { get; init; }
+
+    [JsonPropertyName("os_process_id")]
+    public int? OsProcessId { get; init; }
+
+    [JsonPropertyName("session_id")]
+    public required string SessionId { get; init; }
+
+    [JsonPropertyName("command")]
+    public required string Command { get; init; }
+
+    [JsonPropertyName("cwd")]
+    public required string Cwd { get; init; }
+
+    [JsonPropertyName("started_at")]
+    public DateTimeOffset StartedAt { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("exit_code")]
+    public int? ExitCode { get; init; }
+}
+
+public sealed record TerminalOutputDto
+{
+    [JsonPropertyName("job")]
+    public required TerminalJobDto Job { get; init; }
+
+    [JsonPropertyName("offset")]
+    public int Offset { get; init; }
+
+    [JsonPropertyName("next_offset")]
+    public int NextOffset { get; init; }
+
+    [JsonPropertyName("total_lines")]
+    public int TotalLines { get; init; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; init; }
+
+    [JsonPropertyName("command_failed")]
+    public bool CommandFailed { get; init; }
+
+    [JsonPropertyName("output")]
+    public required string Output { get; init; }
+
+    [JsonPropertyName("lines")]
+    public required IReadOnlyList<string> Lines { get; init; }
+
+    [JsonPropertyName("handle")]
+    public TerminalOutputHandleDto? Handle { get; init; }
+
+    [JsonPropertyName("recovery")]
+    public TerminalRecoveryDto? Recovery { get; init; }
+}
+
+public sealed record TerminalOutputHandleDto
+{
+    [JsonPropertyName("kind")]
+    public required string Kind { get; init; }
+
+    [JsonPropertyName("job_id")]
+    public required string JobId { get; init; }
+
+    [JsonPropertyName("offset")]
+    public int Offset { get; init; }
+
+    [JsonPropertyName("next_offset")]
+    public int NextOffset { get; init; }
+
+    [JsonPropertyName("total_lines")]
+    public int TotalLines { get; init; }
+
+    [JsonPropertyName("read_tool")]
+    public required string ReadTool { get; init; }
+
+    [JsonPropertyName("read_args")]
+    public required TerminalReadArgsDto ReadArgs { get; init; }
+}
+
+public sealed record TerminalReadArgsDto
+{
+    [JsonPropertyName("job_id")]
+    public required string JobId { get; init; }
+
+    [JsonPropertyName("from_offset")]
+    public int FromOffset { get; init; }
+}
+
+public sealed record TerminalRecoveryDto
+{
+    [JsonPropertyName("blind_rerun_same_command")]
+    public bool BlindRerunSameCommand { get; init; }
+
+    [JsonPropertyName("repeat_same_command_requires_reason")]
+    public bool RepeatSameCommandRequiresReason { get; init; }
+
+    [JsonPropertyName("reason")]
+    public required string Reason { get; init; }
+
+    [JsonPropertyName("instruction")]
+    public required string Instruction { get; init; }
+}
+
+public sealed record TerminalStartResult
+{
+    [JsonPropertyName("job")]
+    public required TerminalJobDto Job { get; init; }
+
+    [JsonPropertyName("output")]
+    public TerminalOutputDto? Output { get; init; }
+
+    [JsonPropertyName("next_action")]
+    public required string NextAction { get; init; }
+}
+
+public sealed record TerminalWaitResult
+{
+    [JsonPropertyName("result")]
+    public required TerminalOutputDto Result { get; init; }
+
+    [JsonPropertyName("next_action")]
+    public required string NextAction { get; init; }
 }

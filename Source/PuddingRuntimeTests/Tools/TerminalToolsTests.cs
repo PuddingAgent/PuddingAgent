@@ -345,11 +345,10 @@ public sealed class TerminalToolsTests
         return new TerminalTestScope(root, manager);
     }
 
-    private static Task<ToolExecutionResult> ExecuteAsync<TArgs>(
-        PuddingToolBase<TArgs> tool,
+    private static Task<ToolExecutionResult> ExecuteAsync(
+        IPuddingTool tool,
         string argumentsJson,
         bool isYoloMode = false)
-        where TArgs : class
         => tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "call-1",

@@ -1,5 +1,5 @@
 using System.Text;
-using System.Text.Json;
+using System.Text.Json.Serialization;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools;
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
-public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs>
+public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs, GoalReadResult>
 {
     /// <summary>goal.md 读取上限字节数（16 KB）。超过此上限只返回尾部内容。</summary>
     public const int ReadLimitBytes = 16 * 1024;
@@ -37,23 +37,16 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs>
         _logger = logger;
     }
 
-    protected override Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override Task<GoalReadResult> ExecuteCoreAsync(
         GoalReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        try
-        {
-            var agentInstanceId = context.AgentInstanceId ?? "";
-            var workspaceId = context.WorkspaceId ?? "default";
-            var result = ReadGoalFile(agentInstanceId, workspaceId);
-            return Task.FromResult(ToolExecutionResult.Ok(result));
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ToolExecutionResult.Fail(ex.Message));
-        }
+        var agentInstanceId = context.AgentInstanceId ?? "";
+        var workspaceId = context.WorkspaceId ?? "default";
+        var result = ReadGoalFile(agentInstanceId, workspaceId);
+        return Task.FromResult(result);
     }
 
-    private string ReadGoalFile(string agentInstanceId, string workspaceId)
+    private GoalReadResult ReadGoalFile(string agentInstanceId, string workspaceId)
     {
         // 优先使用 Agent 私有路径
         if (!string.IsNullOrWhiteSpace(agentInstanceId))
@@ -66,24 +59,24 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs>
                     var (content, truncated) = ReadWithSizeLimit(agentGoalPath);
                     _logger.LogDebug("[GoalRead] Read agent goal.md agent={Agent} size={Size} truncated={Truncated}",
                         agentInstanceId, content.Length, truncated);
-                    return JsonSerializer.Serialize(new
+                    return new GoalReadResult
                     {
-                        status = "ok",
-                        agent_instance_id = agentInstanceId,
-                        path = "agents/" + agentInstanceId + "/goal.md",
-                        content,
-                        truncated,
-                    });
+                        Status = "ok",
+                        AgentInstanceId = agentInstanceId,
+                        Path = "agents/" + agentInstanceId + "/goal.md",
+                        Content = content,
+                        Truncated = truncated,
+                    };
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "[GoalRead] Failed to read agent goal.md agent={Agent}", agentInstanceId);
-                    return JsonSerializer.Serialize(new
+                    return new GoalReadResult
                     {
-                        status = "error",
-                        message = ex.Message,
-                        agent_instance_id = agentInstanceId,
-                    });
+                        Status = "error",
+                        Message = ex.Message,
+                        AgentInstanceId = agentInstanceId,
+                    };
                 }
             }
         }
@@ -92,14 +85,14 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs>
         var wsGoalPath = Path.Combine(_paths.WorkspacesRoot, workspaceId, "goal.md");
         if (!File.Exists(wsGoalPath))
         {
-            return JsonSerializer.Serialize(new
+            return new GoalReadResult
             {
-                status = "not_found",
-                message = "当前没有设置目标，请先设置一个目标。如果不需要目标，可以忽略此提醒。\n" +
+                Status = "not_found",
+                Message = "当前没有设置目标，请先设置一个目标。如果不需要目标，可以忽略此提醒。\n" +
                     $"目标文件路径: {_paths.AgentInstanceRoot(agentInstanceId)}\\goal.md",
-                agent_instance_id = agentInstanceId,
-                workspace_id = workspaceId,
-            });
+                AgentInstanceId = agentInstanceId,
+                WorkspaceId = workspaceId,
+            };
         }
 
         try
@@ -107,24 +100,24 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs>
             var (content, truncated) = ReadWithSizeLimit(wsGoalPath);
             _logger.LogDebug("[GoalRead] Read workspace goal.md workspace={Workspace} size={Size} truncated={Truncated}",
                 workspaceId, content.Length, truncated);
-            return JsonSerializer.Serialize(new
+            return new GoalReadResult
             {
-                status = "ok",
-                workspace_id = workspaceId,
-                path = "workspaces/" + workspaceId + "/goal.md",
-                content,
-                truncated,
-            });
+                Status = "ok",
+                WorkspaceId = workspaceId,
+                Path = "workspaces/" + workspaceId + "/goal.md",
+                Content = content,
+                Truncated = truncated,
+            };
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[GoalRead] Failed to read goal.md workspace={Workspace}", workspaceId);
-            return JsonSerializer.Serialize(new
+            return new GoalReadResult
             {
-                status = "error",
-                message = ex.Message,
-                workspace_id = workspaceId,
-            });
+                Status = "error",
+                Message = ex.Message,
+                WorkspaceId = workspaceId,
+            };
         }
     }
 
@@ -170,4 +163,34 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs>
 public sealed record GoalReadArgs
 {
     // goal_read 无参数——所有上下文从 ToolExecutionContext 获取
+}
+
+public sealed record GoalReadResult
+{
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("agent_instance_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AgentInstanceId { get; init; }
+
+    [JsonPropertyName("workspace_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WorkspaceId { get; init; }
+
+    [JsonPropertyName("path")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Path { get; init; }
+
+    [JsonPropertyName("content")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Content { get; init; }
+
+    [JsonPropertyName("truncated")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Truncated { get; init; }
+
+    [JsonPropertyName("message")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Message { get; init; }
 }

@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
@@ -18,13 +18,13 @@ namespace PuddingRuntime.Services.Tools;
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 0)]
-public sealed class SearchToolsTool(IServiceProvider services) : PuddingToolBase<SearchToolsArgs>
+public sealed class SearchToolsTool(IServiceProvider services) : PuddingToolBase<SearchToolsArgs, SearchToolsResult>
 {
     private static readonly Regex QueryTermRegex = new(
         @"[\p{L}\p{N}_-]+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    protected override Task<ToolExecutionResult> ExecuteCoreAsync(
+    protected override Task<SearchToolsResult> ExecuteCoreAsync(
         SearchToolsArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
@@ -32,7 +32,7 @@ public sealed class SearchToolsTool(IServiceProvider services) : PuddingToolBase
         ct.ThrowIfCancellationRequested();
         var query = args.Query?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(query))
-            return Task.FromResult(ToolExecutionResult.Fail("Query is required."));
+            throw new InvalidOperationException("Query is required.");
 
         // Resolve lazily: SearchToolsTool itself is part of the registry, so constructor injection
         // of IPuddingToolRegistry would create a singleton dependency cycle.
@@ -63,24 +63,24 @@ public sealed class SearchToolsTool(IServiceProvider services) : PuddingToolBase
             .ToList();
 
         var loadedToolIds = matches.Select(descriptor => descriptor.ToolId).ToArray();
-        var output = JsonSerializer.Serialize(new
+        var result = new SearchToolsResult
         {
-            query,
-            loaded_tool_ids = loadedToolIds,
-            matches = matches.Select(descriptor => new
+            Query = query,
+            LoadedToolIds = loadedToolIds,
+            Matches = matches.Select(descriptor => new SearchToolsMatch
             {
-                tool_id = descriptor.ToolId,
-                name = descriptor.Name,
-                description = descriptor.Description,
-                category = descriptor.Category.ToString(),
-                source = descriptor.SourceKind,
-            }),
-            message = loadedToolIds.Length == 0
+                ToolId = descriptor.ToolId,
+                Name = descriptor.Name,
+                Description = descriptor.Description,
+                Category = descriptor.Category.ToString(),
+                Source = descriptor.SourceKind,
+            }).ToArray(),
+            Message = loadedToolIds.Length == 0
                 ? "No matching tools were found. Try broader English domain/action keywords."
                 : "The matching tool definitions will be exposed on the next model round.",
-        });
+        };
 
-        return Task.FromResult(ToolExecutionResult.Ok(output));
+        return Task.FromResult(result);
     }
 
     private static int Score(ToolDescriptor descriptor, string query, IReadOnlyList<string> terms)
@@ -120,4 +120,37 @@ public sealed record SearchToolsArgs
 
     [ToolParam("Maximum number of candidate tools to load. Range 1-20; default 8.")]
     public int? MaxResults { get; init; }
+}
+
+public sealed record SearchToolsResult
+{
+    [JsonPropertyName("query")]
+    public required string Query { get; init; }
+
+    [JsonPropertyName("loaded_tool_ids")]
+    public required string[] LoadedToolIds { get; init; }
+
+    [JsonPropertyName("matches")]
+    public required SearchToolsMatch[] Matches { get; init; }
+
+    [JsonPropertyName("message")]
+    public required string Message { get; init; }
+}
+
+public sealed record SearchToolsMatch
+{
+    [JsonPropertyName("tool_id")]
+    public required string ToolId { get; init; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    [JsonPropertyName("description")]
+    public required string Description { get; init; }
+
+    [JsonPropertyName("category")]
+    public required string Category { get; init; }
+
+    [JsonPropertyName("source")]
+    public required string Source { get; init; }
 }
