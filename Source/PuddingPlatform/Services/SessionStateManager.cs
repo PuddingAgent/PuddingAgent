@@ -1,10 +1,11 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -47,8 +48,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     private readonly IRuntimeActivitySink _activitySink;
     private readonly IRuntimeTraceAccessor _traceAccessor;
     private readonly JsonlSessionWriter _jsonlWriter;
-        private readonly SessionStateStore _stateStore;
+    private readonly SessionStateStore _stateStore;
     private readonly AgentRawLogMirrorService? _rawLogMirror;
+    private readonly bool _eventLogDualWriteEnabled;
 
     // 会话实时订阅（sessionId → fan-out hub）。每个订阅者拥有独立 Channel，避免多连接竞争消费同一队列。
     private readonly ConcurrentDictionary<string, SessionChannelFanout> _sessionChannels = new();
@@ -83,7 +85,8 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         IRuntimeTraceAccessor traceAccessor,
         JsonlSessionWriter jsonlWriter,
         SessionStateStore stateStore,
-        AgentRawLogMirrorService? rawLogMirror = null)
+        AgentRawLogMirrorService? rawLogMirror = null,
+        IConfiguration? configuration = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -92,6 +95,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         _jsonlWriter = jsonlWriter;
         _stateStore = stateStore;
         _rawLogMirror = rawLogMirror;
+        // P0-4b: session_event_log 双写兼容期开关。默认 true=保守，保持现有双写行为；
+        // false 时跳过写 session_event_log（conversation_events 为 canonical 单一来源）。
+        _eventLogDualWriteEnabled = configuration?.GetValue<bool>("EventLogDualWriteEnabled", true) ?? true;
     }
 
     /// <summary>
@@ -385,11 +391,14 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             Operation = $"append:{draft.EventType}",
         };
 
-        using (var scope = _scopeFactory.CreateScope())
+        if (_eventLogDualWriteEnabled)
         {
-            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            db.SessionEventLogs.Add(entity);
-            await db.SaveChangesAsync(ct);
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.SessionEventLogs.Add(entity);
+                await db.SaveChangesAsync(ct);
+            }
         }
 
         // Notify subscribers
@@ -453,11 +462,13 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
                     Operation = $"append:{draft.EventType}",
                 };
 
-                db.SessionEventLogs.Add(entity);
+                if (_eventLogDualWriteEnabled)
+                    db.SessionEventLogs.Add(entity);
                 envelopes.Add(MapToEnvelope(entity));
             }
 
-            await db.SaveChangesAsync(ct);
+            if (_eventLogDualWriteEnabled)
+                await db.SaveChangesAsync(ct);
         }
 
         // Notify: publish max sequence in batch (same notification serves all)
@@ -1277,26 +1288,29 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
 
             var frameData = InjectSequenceNum(frame.Data, seq);
 
-            db.SessionEventLogs.Add(new SessionEventLogEntity
+            if (_eventLogDualWriteEnabled)
             {
-                SessionId = sessionId,
-                WorkspaceId = workspaceId,
-                AgentInstanceId = effectiveTrace.AgentInstanceId,
-                AgentTemplateId = effectiveTrace.AgentTemplateId,
-                SequenceNum = seq,
-                EventType = frame.Event,
-                Data = frameData,
-                RecordedAt = recordedAt,
-                TraceId = effectiveTrace.TraceId,
-                CorrelationId = effectiveTrace.CorrelationId,
-                ExecutionId = effectiveTrace.ExecutionId,
-                ParentExecutionId = effectiveTrace.ParentExecutionId,
-                SubAgentId = effectiveTrace.SubAgentId,
-                Component = effectiveComponent,
-                Operation = effectiveOperation,
-            });
+                db.SessionEventLogs.Add(new SessionEventLogEntity
+                {
+                    SessionId = sessionId,
+                    WorkspaceId = workspaceId,
+                    AgentInstanceId = effectiveTrace.AgentInstanceId,
+                    AgentTemplateId = effectiveTrace.AgentTemplateId,
+                    SequenceNum = seq,
+                    EventType = frame.Event,
+                    Data = frameData,
+                    RecordedAt = recordedAt,
+                    TraceId = effectiveTrace.TraceId,
+                    CorrelationId = effectiveTrace.CorrelationId,
+                    ExecutionId = effectiveTrace.ExecutionId,
+                    ParentExecutionId = effectiveTrace.ParentExecutionId,
+                    SubAgentId = effectiveTrace.SubAgentId,
+                    Component = effectiveComponent,
+                    Operation = effectiveOperation,
+                });
 
-            await db.SaveChangesAsync(ct);
+                await db.SaveChangesAsync(ct);
+            }
             return seq;
         }
         finally
@@ -1552,26 +1566,29 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         db.ChangeTracker.AutoDetectChangesEnabled = false;
 
-        db.SessionEventLogs.AddRange(batch.Select(item => new SessionEventLogEntity
+        if (_eventLogDualWriteEnabled)
         {
-            SessionId = item.SessionId,
-            WorkspaceId = item.WorkspaceId,
-            AgentInstanceId = item.Trace.AgentInstanceId,
-            AgentTemplateId = item.Trace.AgentTemplateId,
-            SequenceNum = item.SequenceNum,
-            EventType = item.Frame.Event,
-            Data = item.Frame.Data,
-            RecordedAt = item.RecordedAt,
-            TraceId = item.Trace.TraceId,
-            CorrelationId = item.Trace.CorrelationId,
-            ExecutionId = item.Trace.ExecutionId,
-            ParentExecutionId = item.Trace.ParentExecutionId,
-            SubAgentId = item.Trace.SubAgentId,
-            Component = item.Component,
-            Operation = item.Operation,
-        }));
+            db.SessionEventLogs.AddRange(batch.Select(item => new SessionEventLogEntity
+            {
+                SessionId = item.SessionId,
+                WorkspaceId = item.WorkspaceId,
+                AgentInstanceId = item.Trace.AgentInstanceId,
+                AgentTemplateId = item.Trace.AgentTemplateId,
+                SequenceNum = item.SequenceNum,
+                EventType = item.Frame.Event,
+                Data = item.Frame.Data,
+                RecordedAt = item.RecordedAt,
+                TraceId = item.Trace.TraceId,
+                CorrelationId = item.Trace.CorrelationId,
+                ExecutionId = item.Trace.ExecutionId,
+                ParentExecutionId = item.Trace.ParentExecutionId,
+                SubAgentId = item.Trace.SubAgentId,
+                Component = item.Component,
+                Operation = item.Operation,
+            }));
 
-        await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(ct);
+        }
 
         foreach (var item in batch)
         {
