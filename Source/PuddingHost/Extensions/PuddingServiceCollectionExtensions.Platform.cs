@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -363,6 +363,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ILLMConfigResolver>(sp => sp.GetRequiredService<AgentLLMConfigResolver>());
         builder.Services.AddScoped<AgentRuntimeProfileResolver>();
         builder.Services.AddScoped<IAgentRuntimeProfileResolver>(sp => sp.GetRequiredService<AgentRuntimeProfileResolver>());
+        builder.Services.AddScoped<IContextCapacityResolver, ContextCapacityResolver>();
         builder.Services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
 
         // ── ADR-043：Token 使用统计闭环 ────────────────────────────────

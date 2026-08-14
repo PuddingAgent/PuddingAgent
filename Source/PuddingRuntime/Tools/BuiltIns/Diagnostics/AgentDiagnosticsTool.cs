@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
 using PuddingCode.Observability;
@@ -6,6 +6,7 @@ using PuddingCode.Tools;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingCode.SubAgents;
 
 namespace PuddingRuntime.Services.Tools;
@@ -14,7 +15,7 @@ namespace PuddingRuntime.Services.Tools;
 /// Agent 自我诊断工具 — 让 Agent 读取自身的运行时指标，
 /// 实现自我观察 → 自我优化的反馈闭环。
 ///
-/// 支持七种诊断模式：
+/// 支持九种诊断模式：
 ///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）
 ///   - slowest_tools: 列出最慢的 N 个工具
 ///   - cache_health: 查询缓存命中率和 prefix churn 来源
@@ -23,6 +24,7 @@ namespace PuddingRuntime.Services.Tools;
 ///   - latency_breakdown: 查询延迟分解
 ///   - token_breakdown: 返回当前（或指定 session_id）最近一次请求的分层 token 分解（MessageTokens/ToolDefinitionTokens/SystemMessageTokens/HistoryMessageTokens）
 ///   - entropy_probe: 返回当前（或指定 session_id）最近一次请求各层的 gzip 压缩比（SystemMessage/HistoryMessage/ToolDefinition）
+///   - context_health: 返回当前会话的上下文健康状态（用量比例、状态、剩余 token 等，对齐 ContextHealthSnapshot）
 /// </summary>
 [Tool(
     id: "agent_diagnostics",
@@ -68,7 +70,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                         "latency_breakdown" => await GetLatencyBreakdownAsync(args, ct),
             "token_breakdown" => await GetTokenBreakdownAsync(args, context, ct),
             "entropy_probe" => await GetEntropyProbeAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe." })
+            "context_health" => await GetContextHealthAsync(args, context, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -526,6 +529,61 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         }
     }
 
+    private async Task<string> GetContextHealthAsync(AgentDiagnosticsArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        try
+        {
+            var sessionId = args.SessionId ?? context.SessionId;
+            var workspaceId = args.WorkspaceId ?? context.WorkspaceId;
+            var agentInstanceId = args.AgentInstanceId ?? context.AgentInstanceId;
+
+            if (string.IsNullOrWhiteSpace(sessionId)
+                || string.IsNullOrWhiteSpace(workspaceId)
+                || string.IsNullOrWhiteSpace(agentInstanceId))
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = "session_id, workspace_id, and agent_instance_id are required for the context_health action.",
+                    hint = "Use your current session id, workspace id, and agent instance id from the RUNTIME layer."
+                });
+            }
+
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var capacityResolver = scope.ServiceProvider.GetService<IContextCapacityResolver>();
+            var compactionService = scope.ServiceProvider.GetService<IContextCompactionService>();
+
+            if (capacityResolver is null || compactionService is null)
+                return JsonSerializer.Serialize(new { error = "Context capacity/compaction services are not available in this environment." });
+
+            var capacity = await capacityResolver.ResolveAsync(workspaceId, agentInstanceId, ct);
+            if (capacity is null)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = "Unable to resolve the context window capacity for this agent.",
+                    hint = "Check the agent template's LLM model configuration."
+                });
+            }
+
+            var health = await compactionService.GetHealthAsync(
+                sessionId,
+                ct,
+                contextWindowTokens: capacity.ContextWindowTokens,
+                maxOutputTokens: capacity.MaxOutputTokens,
+                maxInputTokens: capacity.MaxInputTokens);
+
+            return JsonSerializer.Serialize(health, new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = "Failed to compute context health.", detail = ex.Message });
+        }
+    }
+
     private static string TruncateError(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return "(empty)";
@@ -535,7 +593,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
 public sealed record AgentDiagnosticsArgs
 {
-    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, or token_breakdown")]
+    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, or context_health")]
     public string? Action { get; init; }
 
     [ToolParam("tool name to query (for tool_stats action)")]
@@ -544,13 +602,13 @@ public sealed record AgentDiagnosticsArgs
     [ToolParam("number of results (default: 20, max: 200)")]
     public int? Limit { get; init; }
 
-    [ToolParam("session id (for cache_health action; default: current session)")]
+    [ToolParam("session id (for cache_health and context_health actions; default: current session)")]
     public string? SessionId { get; init; }
 
-    [ToolParam("workspace id (for sub_agent_stats action; default: current workspace)")]
+    [ToolParam("workspace id (for sub_agent_stats and context_health actions; default: current workspace)")]
     public string? WorkspaceId { get; init; }
 
-    [ToolParam("agent instance id (for sub_agent_stats action; default: current agent)")]
+    [ToolParam("agent instance id (for sub_agent_stats and context_health actions; default: current agent)")]
     public string? AgentInstanceId { get; init; }
 
     [ToolParam("hours to look back (for sub_agent_stats action; default: 24)")]

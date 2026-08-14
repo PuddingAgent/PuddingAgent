@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
@@ -34,8 +34,7 @@ public class SessionEventsController : ControllerBase
     private readonly ISessionTimelineRecorder _timelineRecorder;
     private readonly PlatformApiClient _platformApi;
     private readonly PlatformDbContext _db;
-    private readonly IAgentRuntimeProfileResolver _agentRuntimeProfileResolver;
-    private readonly ILlmConfigService _llmConfigService;
+    private readonly IContextCapacityResolver _capacityResolver;
     private readonly IRawSessionLogService _rawLogs;
     private readonly TokenCostService _tokenCostService;
     private readonly IConversationEventStore _conversationEventStore;
@@ -51,8 +50,7 @@ public class SessionEventsController : ControllerBase
         ISessionTimelineRecorder timelineRecorder,
         PlatformApiClient platformApi,
         PlatformDbContext db,
-        IAgentRuntimeProfileResolver agentRuntimeProfileResolver,
-        ILlmConfigService llmConfigService,
+        IContextCapacityResolver contextCapacityResolver,
         IRawSessionLogService rawLogs,
         TokenCostService tokenCostService,
         IConversationEventStore conversationEventStore,
@@ -67,8 +65,7 @@ public class SessionEventsController : ControllerBase
         _timelineRecorder = timelineRecorder;
         _platformApi = platformApi;
         _db = db;
-        _agentRuntimeProfileResolver = agentRuntimeProfileResolver;
-        _llmConfigService = llmConfigService;
+        _capacityResolver = contextCapacityResolver;
         _rawLogs = rawLogs;
         _tokenCostService = tokenCostService;
         _conversationEventStore = conversationEventStore;
@@ -642,7 +639,10 @@ public class SessionEventsController : ControllerBase
         string sessionId,
         CancellationToken ct)
     {
-        var capacity = await ResolveContextCapacityAsync(sessionId, ct);
+        var binding = await ResolveSessionBindingAsync(sessionId, ct);
+        var capacity = binding is null
+            ? null
+            : await _capacityResolver.ResolveAsync(binding.Value.WorkspaceId, binding.Value.AgentId, ct);
         if (capacity is null)
         {
             _logger.LogWarning(
@@ -664,7 +664,7 @@ public class SessionEventsController : ControllerBase
         return Ok(health);
     }
 
-    private async Task<ResolvedContextCapacity?> ResolveContextCapacityAsync(
+    private async Task<(string WorkspaceId, string AgentId)?> ResolveSessionBindingAsync(
         string sessionId,
         CancellationToken ct)
     {
@@ -682,49 +682,7 @@ public class SessionEventsController : ControllerBase
         if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(agentId))
             return null;
 
-        AgentRuntimeProfile profile;
-        try
-        {
-            // Context health is a read-only status endpoint. It must reuse the
-            // runtime profile boundary first, then ask the LLM configuration
-            // service for the provider/model limits. Usage records are evidence
-            // of previous calls, not the source of model capacity.
-            profile = await _agentRuntimeProfileResolver.ResolveAsync(workspaceId, agentId, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "[SessionEvents] Context health failed: profile unresolved session={SessionId} workspace={WorkspaceId} agent={AgentId}",
-                sessionId,
-                workspaceId,
-                agentId);
-            return null;
-        }
-
-        var providerId = profile.PreferredProviderId;
-        var modelId = profile.PreferredModelId ?? profile.LlmConfig?.ModelId;
-        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
-            return null;
-
-        if (profile.LlmConfig?.MaxContextTokens is > 0)
-        {
-            return new ResolvedContextCapacity(
-                profile.LlmConfig.MaxContextTokens.Value,
-                profile.LlmConfig.MaxOutputTokens is > 0 ? profile.LlmConfig.MaxOutputTokens : null,
-                profile.LlmConfig.MaxInputTokens is > 0 ? profile.LlmConfig.MaxInputTokens : null);
-        }
-
-        var model = _llmConfigService.GetAllModels().FirstOrDefault(item =>
-            string.Equals(item.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
-
-        return model?.MaxContextTokens > 0
-            ? new ResolvedContextCapacity(
-                model.MaxContextTokens,
-                model.MaxOutputTokens > 0 ? model.MaxOutputTokens : null,
-                model.MaxInputTokens is > 0 ? model.MaxInputTokens : null)
-            : null;
+        return (workspaceId, agentId);
     }
 
     private static string? FirstNonBlank(params string?[] values)
@@ -1164,11 +1122,6 @@ public class SessionEventsController : ControllerBase
     private sealed record ContextAgentBindingRow(
         string WorkspaceId,
         string AgentInstanceId);
-
-    private sealed record ResolvedContextCapacity(
-        int ContextWindowTokens,
-        int? MaxOutputTokens,
-        int? MaxInputTokens);
 }
 
 public sealed record CompactSessionRequest(
