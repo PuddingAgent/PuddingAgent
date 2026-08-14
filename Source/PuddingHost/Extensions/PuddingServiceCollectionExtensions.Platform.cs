@@ -164,7 +164,6 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();
         builder.Services.AddScoped<ITeamRepository, TeamRepository>();
         builder.Services.AddScoped<IWorkspaceMemberRepository, WorkspaceMemberRepository>();
-        builder.Services.AddScoped<ISessionEventLogRepository, SessionEventLogRepository>();
         builder.Services.AddHostedService<ChatExecutionWorker>();
         builder.Services.AddSingleton<SubAgentManager>();
         builder.Services.AddSingleton<ISubAgentManager>(sp => sp.GetRequiredService<SubAgentManager>());
