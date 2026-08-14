@@ -1,7 +1,8 @@
 // ── ToolCallRow：工具调用行（P1-1，对齐 deepseek-harness D5 ToolRow）──────────
 // 单行 24px 摘要（StateDot + 工具名 + 2×2 分隔点 + summary FILL）+ 整行展开 IN/OUT 卡。
-// 数据源：processItems: TimelineItem[]（types.ts）。配对策略（当前数据无 toolCallId）：
-//   tool_call 按序与下一个未配对 tool_result 配对（同名优先），未配对 = running。
+// 数据源：processItems: TimelineItem[]（types.ts）。配对策略：
+//   call 与 result 均携带 toolCallId 时按 id 精确配对（乱序到达也正确）；
+//   任一缺失 toolCallId 回落按序+同名（同名优先，其次任意未配对）；未配对 = running。
 //   thinking / subagent_* 条目不进本组件（由 MessageProcessSummary 时间线呈现，共存）。
 // 简化（RISKS）：无 subCalls 递归、无 filePath 宿主链接、无 Inspect pill。
 import React, { useMemo, useState } from 'react';
@@ -173,7 +174,9 @@ const resolveStatus = (result: TimelineItem | undefined): ToolCallRowStatus => {
 
 /**
  * 配对 tool_call → tool_result 并生成行数据（纯函数，可单测）。
- * - tool_call 优先与下一个同名未配对 tool_result 配对，其次任意未配对结果；
+ * - call 与 result 均携带 toolCallId 时按 id 精确配对（乱序到达也正确）；
+ * - 任一缺失 toolCallId 回落现有策略：同名优先，其次任意未配对结果；
+ * - 带 toolCallId 的 call 不会吞并不同 toolCallId 的 result（防错配，孤儿 result 不进行）；
  * - 未配对 tool_call = running；孤儿 tool_result 不进行（时间线仍呈现）。
  */
 export const buildToolCallRows = (items: TimelineItem[]): ToolCallRowData[] => {
@@ -184,22 +187,33 @@ export const buildToolCallRows = (items: TimelineItem[]): ToolCallRowData[] => {
     else if (item.type === 'tool_result') results.push(item);
   }
   const used = new Set<string>();
+
+  /** 精确配对：双方均带 toolCallId 且相等。 */
+  const takeById = (call: TimelineItem): TimelineItem | undefined => {
+    if (!call.toolCallId) return undefined;
+    return results.find(
+      (result) =>
+        !used.has(result.id) && result.toolCallId === call.toolCallId,
+    );
+  };
+
+  /**
+   * 回落：call 无 id 时任意 result 可配；call 有 id 时仅接受无 id 的 result
+   * （不同 id 的 result 属其他调用，防错配）。同名优先，其次任意未配对。
+   */
+  const takeFallback = (call: TimelineItem): TimelineItem | undefined => {
+    const candidates = results.filter((result) => {
+      if (used.has(result.id)) return false;
+      if (call.toolCallId && result.toolCallId) return false;
+      return true;
+    });
+    return (
+      candidates.find((result) => result.name === call.name) ?? candidates[0]
+    );
+  };
+
   return calls.map((call) => {
-    let result: TimelineItem | undefined;
-    for (let i = 0; i < results.length; i++) {
-      if (used.has(results[i].id)) continue;
-      if (results[i].name === call.name) {
-        result = results[i];
-        break;
-      }
-    }
-    if (!result) {
-      for (let i = 0; i < results.length; i++) {
-        if (used.has(results[i].id)) continue;
-        result = results[i];
-        break;
-      }
-    }
+    const result = takeById(call) ?? takeFallback(call);
     if (result) used.add(result.id);
 
     const status: ToolCallRowStatus = resolveStatus(result);

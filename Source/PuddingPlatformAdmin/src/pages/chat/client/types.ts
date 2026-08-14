@@ -1,4 +1,4 @@
-﻿export type AgentRunStatus =
+export type AgentRunStatus =
   | 'queued'
   | 'running'
   | 'waiting'
@@ -21,6 +21,8 @@ export interface AgentStatusProjection {
 
 export interface ProcessSummaryItem {
   id: string;
+  /** 工具调用身份（后端 toolCallId；tool_call/tool_result 精确配对用） */
+  toolCallId?: string | null;
   kind: string;
   status: string;
   text: string;

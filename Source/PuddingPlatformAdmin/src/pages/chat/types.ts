@@ -1,4 +1,4 @@
-﻿// ── 聊天页共享类型 ─────────────────────────────────────────────
+// ── 聊天页共享类型 ─────────────────────────────────────────────
 import type { TokenUsageDto } from '@/services/platform/api';
 import type {
   ApprovalCardData,
@@ -25,6 +25,8 @@ export type ChatMessageStatus =
 /** 统一时间线条目：思考 / 工具调用 / 工具结果 / 潜意识步骤 / 子代理 */
 export interface TimelineItem {
   id: string;
+  /** 工具调用身份（后端 toolCallId；tool_call/tool_result 精确配对用） */
+  toolCallId?: string;
   type:
     | 'thinking'
     | 'tool_call'

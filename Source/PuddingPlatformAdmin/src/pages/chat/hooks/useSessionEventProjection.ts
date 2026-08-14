@@ -1,4 +1,4 @@
-﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type {
   AdminChatStreamEvent,
@@ -521,6 +521,7 @@ export function useSessionEventProjection({
                     id: createId(),
                     type: 'tool_call' as const,
                     status: 'tool_call',
+                    toolCallId: ev.toolCallId,
                     name: ev.name,
                     arguments: ev.arguments,
                     message: `🔧 调用工具: ${ev.name}\n参数: ${ev.arguments}`,
@@ -544,6 +545,7 @@ export function useSessionEventProjection({
                     id: createId(),
                     type: 'tool_result' as const,
                     status: ev.exitCode === 0 ? 'success' : 'error',
+                    toolCallId: ev.toolCallId,
                     name: ev.name,
                     output: ev.output,
                     exitCode: ev.exitCode,

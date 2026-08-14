@@ -1,4 +1,4 @@
-﻿// ── MessageList：消息列表容器（虚拟滚动）───────────────────────────────
+// ── MessageList：消息列表容器（虚拟滚动）───────────────────────────────
 import {
   ArrowDownOutlined,
   VerticalAlignBottomOutlined,
@@ -153,6 +153,7 @@ const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
     .filter((item) => !isSubAgentProcessItem(item.kind))
     .map((item) => ({
       id: item.id,
+      toolCallId: item.toolCallId ?? undefined,
       type:
         item.kind === 'tool_call' ||
         item.kind === 'tool_result' ||

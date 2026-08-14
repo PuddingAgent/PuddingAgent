@@ -238,6 +238,95 @@ describe('ToolCallRowList', () => {
     expect(rows[1].result).toBeUndefined();
   });
 
+  it('pairs out-of-order tool_result by toolCallId (old same-name strategy would mismatch)', () => {
+    // 旧策略：c1(shell) 会误配 r1(search)；按 toolCallId 应配 r2
+    const rows = buildToolCallRows([
+      makeToolCall('c1', 'shell', '{"command":"git status"}', {
+        toolCallId: 'call-1',
+      }),
+      makeToolCall('c2', 'search', '{"query":"retention"}', {
+        toolCallId: 'call-2',
+      }),
+      // 乱序：search 的结果先到
+      makeToolResult('r1', 'search', 'result for search', {
+        toolCallId: 'call-2',
+      }),
+      makeToolResult('r2', 'shell', 'result for shell', {
+        toolCallId: 'call-1',
+      }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].id).toBe('c1');
+    expect(rows[0].result?.id).toBe('r2');
+    expect(rows[0].status).toBe('done');
+    expect(rows[1].id).toBe('c2');
+    expect(rows[1].result?.id).toBe('r1');
+    expect(rows[1].status).toBe('done');
+  });
+
+  it('falls back to same-name+order when toolCallId is missing', () => {
+    // call 有 id、result 无 id → 回落同名
+    const rows = buildToolCallRows([
+      makeToolCall('c1', 'shell', '{"command":"git status"}', {
+        toolCallId: 'call-1',
+      }),
+      makeToolResult('r1', 'shell', 'On branch master'),
+    ]);
+    expect(rows[0].result?.id).toBe('r1');
+    expect(rows[0].status).toBe('done');
+
+    // call 无 id、result 有 id → 回落同名
+    const rows2 = buildToolCallRows([
+      makeToolCall('c2', 'shell', '{"command":"git log"}'),
+      makeToolResult('r2', 'shell', '* abc123', { toolCallId: 'call-2' }),
+    ]);
+    expect(rows2[0].result?.id).toBe('r2');
+    expect(rows2[0].status).toBe('done');
+  });
+
+  it('handles mixed id presence: id pairs by id, legacy pairs by same-name, no cross-id theft', () => {
+    const rows = buildToolCallRows([
+      makeToolCall('c1', 'shell', '{"command":"git status"}', {
+        toolCallId: 'call-1',
+      }),
+      makeToolCall('c2', 'shell', '{"command":"git log"}'),
+      makeToolCall('c3', 'search', '{"query":"retention"}', {
+        toolCallId: 'call-3',
+      }),
+      // c1 的结果先到，c3 的结果乱序先到
+      makeToolResult('r3', 'search', 'search result', {
+        toolCallId: 'call-3',
+      }),
+      makeToolResult('r1', 'shell', 'On branch master', {
+        toolCallId: 'call-1',
+      }),
+      makeToolResult('r2', 'shell', '* abc123'),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(rows[0].id).toBe('c1');
+    expect(rows[0].result?.id).toBe('r1');
+    expect(rows[1].id).toBe('c2');
+    expect(rows[1].result?.id).toBe('r2');
+    expect(rows[2].id).toBe('c3');
+    expect(rows[2].result?.id).toBe('r3');
+    expect(rows.every((row) => row.status === 'done')).toBe(true);
+  });
+
+  it('does not steal a result whose toolCallId belongs to another call (orphan result not consumed)', () => {
+    // call-2 的 result 存在，但 call-2 不在列表中 → r1 不应被 c1 吞掉
+    const rows = buildToolCallRows([
+      makeToolCall('c1', 'shell', '{"command":"git status"}', {
+        toolCallId: 'call-1',
+      }),
+      makeToolResult('r1', 'shell', 'belongs to call-2', {
+        toolCallId: 'call-2',
+      }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].result).toBeUndefined();
+    expect(rows[0].status).toBe('running');
+  });
+
   it('expands via keyboard Enter / Space and collapses again', () => {
     const { container } = render(
       <ToolCallRowList
