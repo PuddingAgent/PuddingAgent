@@ -20,8 +20,7 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// SessionStateManager — 会话事件系统的核心实现（Singleton）。
 /// 
-/// 实现接口：ISessionStateManager（兼容 Facade）、ISessionEventWriter、
-///           ISessionEventReader、ISessionHeadNotifier。
+/// 实现接口：ISessionStateManager（兼容 Facade）、ISessionEventWriter。
 /// 
 /// 三大职责：
 ///   1. 持久化事件日志 — session_event_log 表，append-only 不可变记录。
@@ -41,7 +40,7 @@ namespace PuddingPlatform.Services;
 /// 
 /// 关联 ADR：ADR-056（可靠事件流）、ADR-028（序号原子性）
 /// </summary>
-public sealed class SessionStateManager : ISessionStateManager, ISessionEventWriter, ISessionEventReader, ISessionHeadNotifier
+public sealed class SessionStateManager : ISessionStateManager, ISessionEventWriter
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SessionStateManager> _logger;
@@ -536,7 +535,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     // ════════════════════════════════════════════════════════
-    // ISessionEventReader
+    // 会话事件读取（读端口）
     // ════════════════════════════════════════════════════════
 
     public async Task<long> GetHeadAsync(string sessionId, CancellationToken ct)
@@ -816,7 +815,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     // ════════════════════════════════════════════════════════
-    // ISessionHeadNotifier
+    // Head 通知订阅
     // ════════════════════════════════════════════════════════
 
     public async IAsyncEnumerable<SessionHeadAdvanced> SubscribeAsync(
