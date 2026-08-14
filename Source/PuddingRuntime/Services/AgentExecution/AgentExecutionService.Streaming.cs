@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -495,6 +495,7 @@ public sealed partial class AgentExecutionService
 
                     if (_eventWriter is not null)
                     {
+                        var payload = JsonSerializer.Deserialize<JsonElement>(scopedFrame.Data);
                         var draft = new SessionEventDraft(
                             EventType: scopedFrame.Event,
                             SchemaVersion: 1,
@@ -502,8 +503,9 @@ public sealed partial class AgentExecutionService
                             TurnId: null,
                             MessageId: request.MessageId,
                             AgentId: null,
-                            Payload: JsonSerializer.Deserialize<JsonElement>(scopedFrame.Data),
-                            Trace: null);
+                            Payload: payload,
+                            Trace: null,
+                            ToolCallId: TryReadToolCallId(payload));
                         await _eventWriter.AppendAsync(
                             request.SessionId,
                             request.WorkspaceId ?? "",
@@ -536,6 +538,17 @@ public sealed partial class AgentExecutionService
                         scopedFrame.Data.Length);
                 }
                 catch (Exception ex) { _logger.LogWarning(ex, "[AgentExec:Append] AppendAsync failed session={Session}", request.SessionId); }
+            }
+
+            // T00/T05: 从 tool_call/tool_result 帧 payload 提取 toolCallId，回填统一事件信封。
+            static string? TryReadToolCallId(JsonElement payload)
+            {
+                if (payload.ValueKind != JsonValueKind.Object)
+                    return null;
+                if (payload.TryGetProperty("toolCallId", out var toolCallId)
+                    && toolCallId.ValueKind == JsonValueKind.String)
+                    return toolCallId.GetString();
+                return null;
             }
 
             async Task<string> StripWithDiagnosticsAsync(string value, string stage, CancellationToken token)
@@ -1164,7 +1177,7 @@ public sealed partial class AgentExecutionService
                     }
 
                     var toolCallFrame = ServerSentEventFrame.Json(SseEventTypes.ToolCall,
-                        new { name = tc.Name, arguments = tc.Arguments });
+                        new { name = tc.Name, arguments = tc.Arguments, toolCallId = tc.Id });
                     ReportLiveness(request, $"tool.started:{tc.Name}");
                     await Append(toolCallFrame);
                     yield return toolCallFrame;
@@ -1173,7 +1186,7 @@ public sealed partial class AgentExecutionService
                     _ = _eventBus?.EmitAsync(new StreamingEvent
                     {
                         Type = StreamingEventTypes.AgentToolCall,
-                        Data = new { name = tc.Name, arguments = tc.Arguments }
+                        Data = new { name = tc.Name, arguments = tc.Arguments, toolCallId = tc.Id }
                     }, ct);
 
                     var injectedArgsJson = await _keyVaultService.InjectAsync(tc.Arguments, ct);
@@ -1248,6 +1261,7 @@ public sealed partial class AgentExecutionService
                     var toolResultFrame = ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
                     {
                         name = tc.Name,
+                        toolCallId = tc.Id,
                         exitCode = result.ExitCode,
                         output = result.Output,
                         error = result.Error,
@@ -1258,7 +1272,7 @@ public sealed partial class AgentExecutionService
                     _ = _eventBus?.EmitAsync(new StreamingEvent
                     {
                         Type = StreamingEventTypes.AgentToolResult,
-                        Data = new { name = tc.Name, exitCode = result.ExitCode, output = result.Output, error = result.Error }
+                        Data = new { name = tc.Name, toolCallId = tc.Id, exitCode = result.ExitCode, output = result.Output, error = result.Error }
                     }, ct);
 
                     var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(

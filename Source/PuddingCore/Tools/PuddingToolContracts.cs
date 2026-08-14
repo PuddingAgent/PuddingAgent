@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -165,6 +165,11 @@ public sealed record ToolExecutionContext
     public string? WorkingDirectory { get; init; }
     public string? AgentTemplateId { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
+    /// <summary>
+    /// 当前 Tool 调用的身份 id。在 ToolInvocationService 进入工具前冻结，并透传到执行层；
+    /// 契约来源：tool-alignment B:227-254（一次调用只有一个外部 callId，跨层不得重新生成）。
+    /// </summary>
+    public string? ToolCallId { get; init; }
     /// <summary>
     /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
     /// </summary>

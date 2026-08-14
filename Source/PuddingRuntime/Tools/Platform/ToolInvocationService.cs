@@ -84,6 +84,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 WorkingDirectory = request.WorkingDirectory,
                 AgentTemplateId = request.AgentTemplateId,
                 Trace = request.Trace,
+                ToolCallId = request.ToolCallId,
                 ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
                 DelegationDepth = request.DelegationDepth,
                 MaxDelegationDepth = request.MaxDelegationDepth,

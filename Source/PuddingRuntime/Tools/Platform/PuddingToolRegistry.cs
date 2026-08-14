@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
@@ -664,7 +664,9 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         {
             var executionResult = await tool.ExecuteAsync(new ToolExecutionRequest
             {
-                ToolCallId = Guid.NewGuid().ToString("N"),
+                // B:87-93 身份断裂修复：callId 在调用创建处生成一次，经 ToolInvocation → ToolExecutionContext.ToolCallId
+                // 透传，结果侧不再 NewGuid 覆盖。仅当调用方既未传 ToolCallId 也未传 ExecutionIdentity 时才在此合成一次。
+                ToolCallId = context.ToolCallId ?? context.ExecutionIdentity?.ToolCallId ?? ToolCallId.NewToolCallId().ToString(),
                 ArgumentsJson = argumentsJson,
                 Context = context,
             }, ct);

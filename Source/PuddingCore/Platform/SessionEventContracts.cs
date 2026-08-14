@@ -24,7 +24,8 @@ public sealed record SessionEventEnvelope(
     string? AgentId,          // 产生此事件的 Agent
     DateTimeOffset OccurredAt,// 事件发生时间
     JsonElement Payload,      // 领域 Payload（JSON）
-    RuntimeTraceContext? Trace// 可选 trace 上下文
+    RuntimeTraceContext? Trace,// 可选 trace 上下文
+    string? ToolCallId = null // 关联的工具调用 id（T00 最小子集；canonical 类型为 Runtime.ToolCallId）
 );
 
 /// <summary>
@@ -40,7 +41,8 @@ public sealed record SessionEventDraft(
     JsonElement Payload,
     RuntimeTraceContext? Trace,
     string? EventId = null,       // 如果提供则用于追加重试幂等，不提供则自动生成
-    string? ConversationId = null // 对话 ID（当前 = sessionId）
+    string? ConversationId = null,// 对话 ID（当前 = sessionId）
+    string? ToolCallId = null     // 关联的工具调用 id（T00 最小子集；canonical 类型为 Runtime.ToolCallId）
 );
 
 /// <summary>
