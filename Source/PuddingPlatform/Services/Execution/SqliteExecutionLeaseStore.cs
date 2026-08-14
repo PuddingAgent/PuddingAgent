@@ -113,10 +113,10 @@ public sealed class SqliteExecutionLeaseStore(
             runCmd.CommandText = @"
                 INSERT INTO execution_runs
                 (run_id, command_id, conversation_id, turn_id, attempt,
-                 worker_id, status, lease_until, started_at)
+                 worker_id, status, lease_until, started_at, trace_id)
                 VALUES
                 (@runId, @commandId, @conversationId, @turnId, @attempt,
-                 @workerId, @status, @leaseUntil, @startedAt);
+                 @workerId, @status, @leaseUntil, @startedAt, @traceId);
                 SELECT last_insert_rowid()";
             AddParam(runCmd, "@runId", runId);
             AddParam(runCmd, "@commandId", commandId);
@@ -127,6 +127,7 @@ public sealed class SqliteExecutionLeaseStore(
             AddParam(runCmd, "@status", "leased");
             AddParam(runCmd, "@leaseUntil", untilMs);
             AddParam(runCmd, "@startedAt", nowMs);
+            AddParam(runCmd, "@traceId", traceId ?? (object)DBNull.Value);
 
             var fencingToken = (long)(await runCmd.ExecuteScalarAsync(ct))!;
 

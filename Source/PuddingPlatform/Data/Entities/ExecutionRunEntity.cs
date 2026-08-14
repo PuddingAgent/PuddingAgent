@@ -22,6 +22,10 @@ public class ExecutionRunEntity
     [Required, MaxLength(64), Column("command_id")]
     public string CommandId { get; set; } = string.Empty;
 
+    /// <summary>P0-4f-1a: 稳定 trace_id — 从 command 复制到每个 attempt，重试/幂等重放继承原值，不得重新生成。</summary>
+    [MaxLength(64), Column("trace_id")]
+    public string? TraceId { get; set; }
+
     [Required, MaxLength(64), Column("conversation_id")]
     public string ConversationId { get; set; } = string.Empty;
 

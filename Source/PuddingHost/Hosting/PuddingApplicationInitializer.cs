@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,6 +10,7 @@ using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.Orchestration;
 
@@ -37,6 +38,7 @@ public static class PuddingApplicationInitializer
             await AppUserSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ConversationCommandSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ConnectorStreamProjectionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
