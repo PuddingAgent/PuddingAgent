@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
@@ -14,8 +14,8 @@ public sealed class RawSessionLogServiceTests
     public async Task GrepAsync_ReturnsOnlyCurrentWorkspaceEvidence()
     {
         await using var scope = await CreateScopeAsync();
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.delta", "needle alpha", "2026-06-02T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-b", "session-b", 1, "message.delta", "needle beta", "2026-06-02T08:01:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.content.appended", "{\"delta\":\"needle alpha\"}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-b", "session-b", 1, "message.content.appended", "{\"delta\":\"needle beta\"}", "2026-06-02T08:01:00.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -32,17 +32,17 @@ public sealed class RawSessionLogServiceTests
         Assert.AreEqual("ws-a", result.Matches[0].WorkspaceId);
         Assert.AreEqual(1, result.Matches[0].SequenceNum);
         StringAssert.Contains(result.Matches[0].Snippet, "needle alpha");
-        StringAssert.StartsWith(result.Matches[0].EvidenceRef, "session-log:2026-06-02:session-a:1");
+        StringAssert.StartsWith(result.Matches[0].EvidenceRef, "conversation-log:2026-06-02:session-a:1");
     }
 
     [TestMethod]
     public async Task ListDaysAndSessionsAsync_GroupByDayWithinWorkspace()
     {
         await using var scope = await CreateScopeAsync();
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.delta", "day one", "2026-06-01T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "message.done", "day one done", "2026-06-01T08:01:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-b", 1, "message.delta", "day two", "2026-06-02T09:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-b", "session-c", 1, "message.delta", "other workspace", "2026-06-02T09:30:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.content.appended", "day one", "2026-06-01T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "turn.completed", "day one done", "2026-06-01T08:01:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-b", 1, "message.content.appended", "day two", "2026-06-02T09:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-b", "session-c", 1, "message.content.appended", "other workspace", "2026-06-02T09:30:00.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -62,9 +62,9 @@ public sealed class RawSessionLogServiceTests
     public async Task ReadSessionAsync_PaginatesBySequenceAndPreservesRawData()
     {
         await using var scope = await CreateScopeAsync();
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.delta", "{\"text\":\"first\"}", "2026-06-02T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "tool.result", "{\"text\":\"second\"}", "2026-06-02T08:01:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-b", "session-other", 1, "message.delta", "{\"text\":\"wrong workspace\"}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.content.appended", "{\"delta\":\"first\"}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "tool.call.completed", "{\"output\":\"second\"}", "2026-06-02T08:01:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-b", "session-other", 1, "message.content.appended", "{\"delta\":\"wrong workspace\"}", "2026-06-02T08:00:00.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -72,7 +72,7 @@ public sealed class RawSessionLogServiceTests
 
         Assert.AreEqual(1, page.Events.Count);
         Assert.AreEqual(2, page.Events[0].SequenceNum);
-        Assert.AreEqual("tool.result", page.Events[0].EventType);
+        Assert.AreEqual("tool.call.completed", page.Events[0].EventType);
         StringAssert.Contains(page.Events[0].Data, "second");
         Assert.IsFalse(page.HasMore);
     }
@@ -101,8 +101,8 @@ public sealed class RawSessionLogServiceTests
             });
         await scope.Db.SaveChangesAsync();
 
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "thinking", "{\"delta\":\"hidden chain\"}", "2026-06-02T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "tool_call", "{\"name\":\"shell\"}", "2026-06-02T08:00:01.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.thinking_summary.appended", "{\"delta\":\"hidden chain\"}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "tool.call.requested", "{\"name\":\"shell\"}", "2026-06-02T08:00:01.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -141,8 +141,8 @@ public sealed class RawSessionLogServiceTests
                 CreatedAt = 2000,
             });
         await scope.Db.SaveChangesAsync();
-        await SeedEventAsync(scope.Db, "ws-a", "agent-1", "session-a", 1, "done", "{}", "2026-06-02T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "agent-2", "session-a", 2, "done", "{}", "2026-06-02T08:01:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "agent-1", "session-a", 1, "turn.completed", "{}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "agent-2", "session-a", 2, "turn.completed", "{}", "2026-06-02T08:01:00.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -178,8 +178,8 @@ public sealed class RawSessionLogServiceTests
                 CreatedAt = DateTimeOffset.Parse("2026-06-02T08:01:00.0000000Z").ToUnixTimeMilliseconds(),
             });
         await scope.Db.SaveChangesAsync();
-        await SeedEventAsync(scope.Db, "ws-a", "agent-1", "session-a", 1, "done", "{}", "2026-06-02T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "agent-2", "session-b", 1, "done", "{}", "2026-06-02T08:01:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "agent-1", "session-a", 1, "turn.completed", "{}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "agent-2", "session-b", 1, "turn.completed", "{}", "2026-06-02T08:01:00.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -201,11 +201,11 @@ public sealed class RawSessionLogServiceTests
     public async Task ReadMessagesAsync_FallbackSynthesizesAssistantReplyAndSkipsThinkingAndTools()
     {
         await using var scope = await CreateScopeAsync();
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "thinking", "{\"delta\":\"private reasoning\"}", "2026-06-02T08:00:00.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "delta", "{\"delta\":\"hello \"}", "2026-06-02T08:00:01.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 3, "tool_call", "{\"name\":\"shell\"}", "2026-06-02T08:00:02.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 4, "delta", "{\"delta\":\"world\"}", "2026-06-02T08:00:03.0000000Z");
-        await SeedEventAsync(scope.Db, "ws-a", "session-a", 5, "done", "{}", "2026-06-02T08:00:04.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.thinking_summary.appended", "{\"delta\":\"private reasoning\"}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "message.content.appended", "{\"delta\":\"hello \"}", "2026-06-02T08:00:01.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 3, "tool.call.requested", "{\"name\":\"shell\"}", "2026-06-02T08:00:02.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 4, "message.content.appended", "{\"delta\":\"world\"}", "2026-06-02T08:00:03.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 5, "turn.completed", "{}", "2026-06-02T08:00:04.0000000Z");
 
         var service = new RawSessionLogService(scope.Factory);
 
@@ -217,6 +217,24 @@ public sealed class RawSessionLogServiceTests
         Assert.AreEqual("message", page.Messages[0].EventType);
         Assert.IsFalse(page.Messages[0].Content.Contains("private reasoning", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(page.Messages[0].Content.Contains("shell", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task ReadMessagesAsync_FallbackIncludesUserAndAssistantMessages()
+    {
+        await using var scope = await CreateScopeAsync();
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 1, "message.created", "{\"role\":\"user\",\"content\":\"hello bot\"}", "2026-06-02T08:00:00.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 2, "message.content.appended", "{\"delta\":\"hi there\"}", "2026-06-02T08:00:01.0000000Z");
+        await SeedEventAsync(scope.Db, "ws-a", "session-a", 3, "turn.completed", "{}", "2026-06-02T08:00:02.0000000Z");
+
+        var service = new RawSessionLogService(scope.Factory);
+
+        var page = await service.ReadMessagesAsync("ws-a", "session-a", limit: 10);
+
+        Assert.AreEqual(2, page.Messages.Count);
+        CollectionAssert.AreEqual(new[] { "user", "agent" }, page.Messages.Select(m => m.Role).ToArray());
+        Assert.AreEqual("hello bot", page.Messages[0].Content);
+        Assert.AreEqual("hi there", page.Messages[1].Content);
     }
 
     private static async Task<TestScope> CreateScopeAsync()
@@ -237,46 +255,51 @@ public sealed class RawSessionLogServiceTests
     private static async Task SeedEventAsync(
         PlatformDbContext db,
         string workspaceId,
-        string sessionId,
-        long sequenceNum,
-        string eventType,
-        string data,
-        string recordedAt)
+        string conversationId,
+        long sequence,
+        string type,
+        string payload,
+        string occurredAt)
     {
-        db.SessionEventLogs.Add(new SessionEventLogEntity
-        {
-            WorkspaceId = workspaceId,
-            SessionId = sessionId,
-            SequenceNum = sequenceNum,
-            EventType = eventType,
-            Data = data,
-            RecordedAt = recordedAt,
-        });
+        db.ConversationEvents.Add(BuildEvent(workspaceId, null, conversationId, sequence, type, payload, occurredAt));
         await db.SaveChangesAsync();
     }
 
     private static async Task SeedEventAsync(
         PlatformDbContext db,
         string workspaceId,
-        string agentInstanceId,
-        string sessionId,
-        long sequenceNum,
-        string eventType,
-        string data,
-        string recordedAt)
+        string agentId,
+        string conversationId,
+        long sequence,
+        string type,
+        string payload,
+        string occurredAt)
     {
-        db.SessionEventLogs.Add(new SessionEventLogEntity
-        {
-            WorkspaceId = workspaceId,
-            AgentInstanceId = agentInstanceId,
-            SessionId = sessionId,
-            SequenceNum = sequenceNum,
-            EventType = eventType,
-            Data = data,
-            RecordedAt = recordedAt,
-        });
+        db.ConversationEvents.Add(BuildEvent(workspaceId, agentId, conversationId, sequence, type, payload, occurredAt));
         await db.SaveChangesAsync();
     }
+
+    private static ConversationEventEntity BuildEvent(
+        string workspaceId,
+        string? agentId,
+        string conversationId,
+        long sequence,
+        string type,
+        string payload,
+        string occurredAt)
+        => new()
+        {
+            ConversationId = conversationId,
+            Sequence = sequence,
+            EventId = $"{conversationId}-evt-{sequence}",
+            WorkspaceId = workspaceId,
+            TurnId = "turn-1",
+            Type = type,
+            Payload = payload,
+            OccurredAt = occurredAt,
+            CommittedAt = occurredAt,
+            AgentId = agentId,
+        };
 
     private sealed record TestScope(
         SqliteConnection Connection,

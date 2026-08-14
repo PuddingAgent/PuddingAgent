@@ -1,9 +1,9 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingFullTextIndex.Contracts;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -11,10 +11,13 @@ using PuddingPlatform.Data.Entities;
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// 基于 <c>session_event_log</c> 的原始会话日志查询服务。
+/// 基于 <c>conversation_events</c> 的原始会话日志查询服务。
 /// <para>
-/// 这是证据层服务：返回完整事件坐标和原始 data，不做摘要、不做记忆提纯。
-/// 当前实现优先保证 workspace scope 和复用接口，后续可在该服务内部替换为 FTS 或文件索引。
+/// 这是证据层服务：返回完整事件坐标和原始 payload，不做摘要、不做记忆提纯。
+/// <c>conversation_events</c> 是唯一 canonical 事实源（ADR-057 方案2）；
+/// raw 读直接返回其结构化 <c>type</c>（如 <c>message.content.appended</c> /
+/// <c>turn.completed</c> / <c>usage.recorded</c> / <c>tool.call.requested</c>），
+/// 不再伪造旧的 delta/done/usage 传输帧。
 /// </para>
 /// </summary>
 public sealed class RawSessionLogService : IRawSessionLogService
@@ -23,7 +26,6 @@ public sealed class RawSessionLogService : IRawSessionLogService
     private const int MaxMessageLimit = 1_000;
     private const int MaxSearchLimit = 100;
     private const int MaxScanRows = 10_000;
-    private static readonly string[] TranscriptFallbackEventTypes = ["delta", "usage", "done"];
 
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
     private readonly IFullTextSearchEngine? _ftsEngine;
@@ -52,17 +54,17 @@ public sealed class RawSessionLogService : IRawSessionLogService
 
         var rows = await LoadWorkspaceRowsAsync(workspaceId, sessionId: null, agentInstanceId, ct);
         var filtered = rows
-            .Where(r => IsInDayRange(GetDay(r.RecordedAt), fromDay, toDay))
+            .Where(r => IsInDayRange(GetDay(r.OccurredAt), fromDay, toDay))
             .ToList();
 
         var days = filtered
-            .GroupBy(r => GetDay(r.RecordedAt))
+            .GroupBy(r => GetDay(r.OccurredAt))
             .Where(g => !string.IsNullOrWhiteSpace(g.Key))
             .OrderByDescending(g => g.Key)
             .Take(Clamp(limit, 1, MaxListLimit))
             .Select(g => new RawSessionLogDaySummary(
                 g.Key,
-                g.Select(x => x.SessionId).Distinct(StringComparer.Ordinal).Count(),
+                g.Select(x => x.ConversationId).Distinct(StringComparer.Ordinal).Count(),
                 g.Count()))
             .ToList();
 
@@ -81,22 +83,22 @@ public sealed class RawSessionLogService : IRawSessionLogService
 
         var rows = await LoadWorkspaceRowsAsync(workspaceId, sessionId: null, agentInstanceId, ct);
         var sessions = rows
-            .Where(r => string.Equals(GetDay(r.RecordedAt), day, StringComparison.Ordinal))
-            .GroupBy(r => r.SessionId)
-            .OrderByDescending(g => g.Max(x => x.RecordedAt))
+            .Where(r => string.Equals(GetDay(r.OccurredAt), day, StringComparison.Ordinal))
+            .GroupBy(r => r.ConversationId)
+            .OrderByDescending(g => g.Max(x => x.OccurredAt))
             .Take(Clamp(limit, 1, MaxListLimit))
             .Select(g =>
             {
-                var ordered = g.OrderBy(x => x.SequenceNum).ToList();
+                var ordered = g.OrderBy(x => x.Sequence).ToList();
                 return new RawSessionLogSessionSummary(
                     g.Key,
                     workspaceId,
                     day,
                     ordered.Count,
-                    ordered.First().SequenceNum,
-                    ordered.Last().SequenceNum,
-                    ordered.First().RecordedAt,
-                    ordered.Last().RecordedAt);
+                    ordered.First().Sequence,
+                    ordered.Last().Sequence,
+                    ordered.First().OccurredAt,
+                    ordered.Last().OccurredAt);
             })
             .ToList();
 
@@ -113,9 +115,9 @@ public sealed class RawSessionLogService : IRawSessionLogService
         var limit = Clamp(request.Limit, 1, MaxSearchLimit);
         var rows = await LoadWorkspaceRowsAsync(request.WorkspaceId, request.SessionId, request.AgentInstanceId, ct);
         var filtered = rows
-            .Where(r => IsInDayRange(GetDay(r.RecordedAt), request.Day ?? request.FromDay, request.Day ?? request.ToDay))
-            .OrderByDescending(r => r.RecordedAt)
-            .ThenByDescending(r => r.SequenceNum)
+            .Where(r => IsInDayRange(GetDay(r.OccurredAt), request.Day ?? request.FromDay, request.Day ?? request.ToDay))
+            .OrderByDescending(r => r.OccurredAt)
+            .ThenByDescending(r => r.Sequence)
             .ToList();
 
         var matches = request.Regex
@@ -195,18 +197,18 @@ public sealed class RawSessionLogService : IRawSessionLogService
 
         var pageSize = Clamp(limit, 1, MaxListLimit);
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var query = db.SessionEventLogs
+        var query = db.ConversationEvents
             .AsNoTracking()
-            .Where(e => e.WorkspaceId == workspaceId && e.SessionId == sessionId);
+            .Where(e => e.WorkspaceId == workspaceId && e.ConversationId == sessionId);
 
         if (!string.IsNullOrWhiteSpace(agentInstanceId))
-            query = query.Where(e => e.AgentInstanceId == agentInstanceId);
+            query = query.Where(e => e.AgentId == agentInstanceId);
 
         if (afterSequence is not null)
-            query = query.Where(e => e.SequenceNum > afterSequence.Value);
+            query = query.Where(e => e.Sequence > afterSequence.Value);
 
         var rows = await query
-            .OrderBy(e => e.SequenceNum)
+            .OrderBy(e => e.Sequence)
             .Take(pageSize + 1)
             .ToListAsync(ct);
 
@@ -286,6 +288,10 @@ public sealed class RawSessionLogService : IRawSessionLogService
         return await BuildFallbackMessagesFromEventLogAsync(db, workspaceId, sessionId, agentInstanceId, before, pageSize, ct);
     }
 
+    /// <summary>
+    /// 列出工作区内存在原始事件的会话（conversation）ID。
+    /// 会话 ID 即 conversation_events.conversation_id，与 ChatMessages.session_id 语义一致。
+    /// </summary>
     private static async Task<List<string>> GetWorkspaceSessionIdsAsync(
         PlatformDbContext db,
         string workspaceId,
@@ -293,23 +299,28 @@ public sealed class RawSessionLogService : IRawSessionLogService
         string? agentInstanceId,
         CancellationToken ct)
     {
-        var query = db.SessionEventLogs
+        var query = db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.WorkspaceId == workspaceId);
 
         if (!string.IsNullOrWhiteSpace(sessionId))
-            query = query.Where(e => e.SessionId == sessionId);
+            query = query.Where(e => e.ConversationId == sessionId);
 
         if (!string.IsNullOrWhiteSpace(agentInstanceId))
-            query = query.Where(e => e.AgentInstanceId == agentInstanceId);
+            query = query.Where(e => e.AgentId == agentInstanceId);
 
         return await query
-            .Select(e => e.SessionId)
+            .Select(e => e.ConversationId)
             .Distinct()
             .Take(MaxScanRows)
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// ChatMessages 投影表为空时的降级路径：用 ConversationTranscriptFold
+    /// 从 conversation_events 重建消息转录（用户消息 + 助手最终回复），
+    /// 不伪造旧 delta/done/usage 传输帧。
+    /// </summary>
     private static async Task<List<RawSessionLogMessage>> BuildFallbackMessagesFromEventLogAsync(
         PlatformDbContext db,
         string workspaceId,
@@ -319,75 +330,19 @@ public sealed class RawSessionLogService : IRawSessionLogService
         int limit,
         CancellationToken ct)
     {
-        var events = await db.SessionEventLogs
+        var entities = await db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.WorkspaceId == workspaceId
-                && e.SessionId == sessionId
-                && (string.IsNullOrWhiteSpace(agentInstanceId) || e.AgentInstanceId == agentInstanceId)
-                && TranscriptFallbackEventTypes.Contains(e.EventType))
-            .OrderBy(e => e.SequenceNum)
+                && e.ConversationId == sessionId
+                && (string.IsNullOrWhiteSpace(agentInstanceId) || e.AgentId == agentInstanceId))
+            .OrderBy(e => e.Sequence)
             .Take(MaxScanRows)
             .ToListAsync(ct);
 
-        var messages = new List<RawSessionLogMessage>();
-        var replyBuilder = new StringBuilder();
-        string? firstRecordedAt = null;
-        long firstSequence = 0;
-        long lastSequence = 0;
-        string? lastRecordedAt = null;
+        var events = entities.Select(ToConversationEvent).ToList();
+        var transcript = ConversationTranscriptFold.Fold(events);
 
-        foreach (var ev in events)
-        {
-            firstRecordedAt ??= ev.RecordedAt;
-            if (firstSequence == 0) firstSequence = ev.SequenceNum;
-            lastSequence = ev.SequenceNum;
-            lastRecordedAt = ev.RecordedAt;
-
-            if (ev.EventType == "delta")
-            {
-                var delta = TryReadStringProperty(ev.Data, "delta");
-                if (!string.IsNullOrEmpty(delta))
-                    replyBuilder.Append(delta);
-                continue;
-            }
-
-            if (ev.EventType != "done")
-                continue;
-
-            var reply = TryReadStringProperty(ev.Data, "reply");
-            var content = !string.IsNullOrWhiteSpace(reply)
-                ? reply
-                : replyBuilder.ToString();
-
-            if (!string.IsNullOrWhiteSpace(content))
-            {
-                messages.Add(new RawSessionLogMessage(
-                    $"fallback-{firstSequence}-{ev.SequenceNum}",
-                    sessionId,
-                    workspaceId,
-                    "agent",
-                    content,
-                    firstRecordedAt ?? ev.RecordedAt,
-                    $"session-message:{GetDay(firstRecordedAt ?? ev.RecordedAt)}:{sessionId}:fallback-{firstSequence}-{ev.SequenceNum}"));
-            }
-
-            replyBuilder.Clear();
-            firstRecordedAt = null;
-            firstSequence = 0;
-        }
-
-        if (replyBuilder.Length > 0)
-        {
-            var createdAt = firstRecordedAt ?? lastRecordedAt ?? string.Empty;
-            messages.Add(new RawSessionLogMessage(
-                $"fallback-{firstSequence}-{lastSequence}",
-                sessionId,
-                workspaceId,
-                "agent",
-                replyBuilder.ToString(),
-                createdAt,
-                $"session-message:{GetDay(createdAt)}:{sessionId}:fallback-{firstSequence}-{lastSequence}"));
-        }
+        var messages = MapTranscriptToMessages(sessionId, workspaceId, transcript, events);
 
         var filtered = before is null
             ? messages
@@ -399,31 +354,94 @@ public sealed class RawSessionLogService : IRawSessionLogService
             .ToList();
     }
 
-    private async Task<List<SessionEventLogEntity>> LoadWorkspaceRowsAsync(
+    /// <summary>
+    /// 把折叠后的 ConversationTranscript 映射为面向 Agent 的 RawSessionLogMessage 列表：
+    /// 每个 turn 的 UserMessageText → role="user"，AssistantText（或 Reply）→ role="assistant"，
+    /// 按 turn 首个事件 sequence 顺序排列；CreatedAt 取 turn 首个事件 OccurredAt。
+    /// </summary>
+    private static List<RawSessionLogMessage> MapTranscriptToMessages(
+        string conversationId,
+        string workspaceId,
+        ConversationTranscript transcript,
+        IReadOnlyList<ConversationEvent> events)
+    {
+        // turnId → 首个事件（用于 OccurredAt / WorkspaceId 定位）。
+        var firstByTurn = events
+            .GroupBy(e => e.TurnId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(e => e.Sequence).First(),
+                StringComparer.Ordinal);
+
+        var messages = new List<RawSessionLogMessage>();
+        foreach (var turn in transcript.Turns)
+        {
+            if (!firstByTurn.TryGetValue(turn.TurnId, out var first))
+                continue;
+
+            var occurredAt = OccurredAtString(first);
+            var day = GetDay(occurredAt);
+
+            if (!string.IsNullOrWhiteSpace(turn.UserMessageText))
+            {
+                var sequence = turn.UserMessageEvidence?.Sequence ?? turn.FirstSequence;
+                messages.Add(new RawSessionLogMessage(
+                    turn.UserMessageEvidence?.EventId ?? $"{turn.TurnId}-user",
+                    conversationId,
+                    workspaceId,
+                    "user",
+                    turn.UserMessageText,
+                    occurredAt,
+                    $"conversation-log:{day}:{conversationId}:{sequence}"));
+            }
+
+            var assistantText = !string.IsNullOrWhiteSpace(turn.AssistantText)
+                ? turn.AssistantText
+                : turn.Reply;
+            if (!string.IsNullOrWhiteSpace(assistantText))
+            {
+                var sequence = turn.AssistantTextEvidence?.Sequence ?? turn.FirstSequence;
+                messages.Add(new RawSessionLogMessage(
+                    turn.AssistantTextEvidence?.EventId
+                        ?? turn.TerminalEvidence?.EventId
+                        ?? $"{turn.TurnId}-agent",
+                    conversationId,
+                    workspaceId,
+                    "agent",
+                    assistantText,
+                    occurredAt,
+                    $"conversation-log:{day}:{conversationId}:{sequence}"));
+            }
+        }
+
+        return messages;
+    }
+
+    private async Task<List<ConversationEventEntity>> LoadWorkspaceRowsAsync(
         string workspaceId,
         string? sessionId,
         string? agentInstanceId,
         CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var query = db.SessionEventLogs
+        var query = db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.WorkspaceId == workspaceId);
 
         if (!string.IsNullOrWhiteSpace(sessionId))
-            query = query.Where(e => e.SessionId == sessionId);
+            query = query.Where(e => e.ConversationId == sessionId);
 
         if (!string.IsNullOrWhiteSpace(agentInstanceId))
-            query = query.Where(e => e.AgentInstanceId == agentInstanceId);
+            query = query.Where(e => e.AgentId == agentInstanceId);
 
         return await query
-            .OrderByDescending(e => e.RecordedAt)
+            .OrderByDescending(e => e.OccurredAt)
             .Take(MaxScanRows)
             .ToListAsync(ct);
     }
 
     private static List<RawSessionLogMatch> TextMatches(
-        IReadOnlyList<SessionEventLogEntity> rows,
+        IReadOnlyList<ConversationEventEntity> rows,
         string query,
         int limit)
     {
@@ -441,7 +459,7 @@ public sealed class RawSessionLogService : IRawSessionLogService
     }
 
     private static List<RawSessionLogMatch> RegexMatches(
-        IReadOnlyList<SessionEventLogEntity> rows,
+        IReadOnlyList<ConversationEventEntity> rows,
         string pattern,
         int limit)
     {
@@ -468,29 +486,29 @@ public sealed class RawSessionLogService : IRawSessionLogService
         return matches;
     }
 
-    private static string BuildSearchText(SessionEventLogEntity row)
-        => $"{row.EventType}\n{row.Data}";
+    private static string BuildSearchText(ConversationEventEntity row)
+        => $"{row.Type}\n{row.Payload}";
 
-    private static RawSessionLogMatch ToMatch(SessionEventLogEntity row, string snippet)
+    private static RawSessionLogMatch ToMatch(ConversationEventEntity row, string snippet)
         => new(
-            row.SessionId,
+            row.ConversationId,
             row.WorkspaceId,
-            GetDay(row.RecordedAt),
-            row.SequenceNum,
-            row.EventType,
-            row.RecordedAt,
+            GetDay(row.OccurredAt),
+            row.Sequence,
+            row.Type,
+            row.OccurredAt,
             snippet,
             BuildEvidenceRef(row));
 
-    private static RawSessionLogEvent ToEvent(SessionEventLogEntity row)
+    private static RawSessionLogEvent ToEvent(ConversationEventEntity row)
         => new(
-            row.SessionId,
+            row.ConversationId,
             row.WorkspaceId,
-            GetDay(row.RecordedAt),
-            row.SequenceNum,
-            row.EventType,
-            row.Data,
-            row.RecordedAt,
+            GetDay(row.OccurredAt),
+            row.Sequence,
+            row.Type,
+            row.Payload,
+            row.OccurredAt,
             BuildEvidenceRef(row));
 
     private static RawSessionLogMessage ToMessage(ChatMessageEntity row, string workspaceId)
@@ -503,8 +521,65 @@ public sealed class RawSessionLogService : IRawSessionLogService
             DateTimeOffset.FromUnixTimeMilliseconds(row.CreatedAt).UtcDateTime.ToString("O"),
             $"session-message:{GetDay(DateTimeOffset.FromUnixTimeMilliseconds(row.CreatedAt).UtcDateTime.ToString("O"))}:{row.SessionId}:{row.Id}");
 
-    private static string BuildEvidenceRef(SessionEventLogEntity row)
-        => $"session-log:{GetDay(row.RecordedAt)}:{row.SessionId}:{row.SequenceNum}";
+    private static string BuildEvidenceRef(ConversationEventEntity row)
+        => $"conversation-log:{GetDay(row.OccurredAt)}:{row.ConversationId}:{row.Sequence}";
+
+    // ── entity → ConversationEvent record 映射（供 ConversationTranscriptFold 使用）──
+
+    private static ConversationEvent ToConversationEvent(ConversationEventEntity e)
+        => new()
+        {
+            EventId = e.EventId,
+            ConversationId = e.ConversationId,
+            Sequence = e.Sequence,
+            WorkspaceId = e.WorkspaceId,
+            TurnId = e.TurnId,
+            CommandId = e.CommandId,
+            RunId = e.RunId,
+            MessageId = e.MessageId,
+            Type = e.Type,
+            SchemaVersion = e.SchemaVersion,
+            OccurredAt = ParseDateTimeOffset(e.OccurredAt),
+            CommittedAt = ParseDateTimeOffset(e.CommittedAt),
+            CorrelationId = e.CorrelationId,
+            CausationId = e.CausationId,
+            ProducerEventId = e.ProducerEventId,
+            AgentId = e.AgentId,
+            SourceKind = ParseSourceKind(e.SourceKind),
+            Payload = ParsePayload(e.Payload),
+        };
+
+    private static DateTimeOffset ParseDateTimeOffset(string value)
+        => DateTimeOffset.TryParse(value, out var parsed) ? parsed : DateTimeOffset.MinValue;
+
+    private static JsonElement ParsePayload(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return default;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static ConversationEventSourceKind? ParseSourceKind(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        return Enum.TryParse<ConversationEventSourceKind>(raw, ignoreCase: true, out var kind)
+            ? kind
+            : null;
+    }
+
+    private static string OccurredAtString(ConversationEvent e)
+        => e.OccurredAt == DateTimeOffset.MinValue ? string.Empty : e.OccurredAt.ToString("O");
 
     private static string GetDay(string recordedAt)
         => string.IsNullOrWhiteSpace(recordedAt)
