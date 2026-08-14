@@ -377,6 +377,10 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ExtractiveContextCompactionSummaryGenerator>();
         builder.Services.AddSingleton<FlashContextCompactionSummaryGenerator>();
         builder.Services.AddSingleton<IContextCompactionSummaryGenerator, CompositeContextCompactionSummaryGenerator>();
+        // 压缩协调器：per-session 单飞锁 + 冷却限流 + 历史失效回调。
+        // 回调延迟解析 ContextWindowManager，避免 ContextCompactionService → CompactionCoordinator → ContextWindowManager 的构造期循环依赖。
+        builder.Services.AddSingleton(sp => new CompactionCoordinator(
+            onHistoryInvalidated: sid => sp.GetRequiredService<ContextWindowManager>().InvalidateHistory(sid)));
         builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         builder.Services.AddSingleton<ISessionCompactionEventEmitter, PuddingPlatform.Services.SessionCompactionEventEmitter>();
         builder.Services.AddSingleton<ContextWindowManager>();

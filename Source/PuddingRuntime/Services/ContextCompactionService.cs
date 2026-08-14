@@ -32,6 +32,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     private readonly ContextCompactionOptions? _options;
     private readonly IHookPublisher? _hookPublisher;
     private readonly PuddingDataPaths? _dataPaths;
+    private readonly CompactionCoordinator _coordinator;
 
     public ContextCompactionService(
         IDbContextFactory<MemoryDbContext> dbFactory,
@@ -44,7 +45,8 @@ public sealed class ContextCompactionService : IContextCompactionService
         ContextUsageSnapshotStore? contextUsageSnapshotStore = null,
         ContextCompactionOptions? options = null,
         IHookPublisher? hookPublisher = null,
-        PuddingDataPaths? dataPaths = null)
+        PuddingDataPaths? dataPaths = null,
+        CompactionCoordinator? compactionCoordinator = null)
     {
         _dbFactory = dbFactory;
         _summaryGenerator = summaryGenerator;
@@ -57,6 +59,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         _options = options;
         _hookPublisher = hookPublisher;
         _dataPaths = dataPaths;
+        _coordinator = compactionCoordinator ?? new CompactionCoordinator();
     }
 
     public async Task<ContextHealthSnapshot> GetHealthAsync(
@@ -239,13 +242,35 @@ public sealed class ContextCompactionService : IContextCompactionService
         ContextCompactionRequest request,
         CancellationToken ct = default)
     {
+        if (request.Level != ContextCompactionLevel.Full)
+            throw new NotSupportedException($"Context compaction level '{request.Level}' is not implemented yet.");
+
+        // per-session 单飞锁：一处拦截工具/自动/API 三触发源，保证同一 session 压缩互斥执行。
+        // 锁内禁止获取执行锁（ChatExecutionWorker._sessionLocks）、禁止等待消息 dispatch（见 CompactionCoordinator 注释）。
+        await using var lease = await _coordinator.AcquireAsync(request.SessionId, ct);
+
+        // 冷却限流：同 session 冷却窗口内的重复压缩直接跳过（返回明确原因）。
+        if (_coordinator.TryGetCooldownSkipReason(request.SessionId, out var cooldownReason))
+        {
+            _logger.LogInformation("[ContextCompaction] {SkipReason}", cooldownReason);
+            return new ContextCompactionResult(
+                request.SessionId,
+                SummaryMessageId: string.Empty,
+                request.Mode,
+                request.Level,
+                BeforeTokens: 0,
+                AfterTokens: 0,
+                CompactedMessageCount: 0,
+                SummaryPreview: string.Empty,
+                SummaryMarkdown: string.Empty,
+                MemoryNotes: []);
+        }
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var compactionId = string.IsNullOrWhiteSpace(request.CompactionId)
             ? Guid.NewGuid().ToString("N")
             : request.CompactionId.Trim();
         var startedAtUtc = DateTimeOffset.UtcNow;
-        if (request.Level != ContextCompactionLevel.Full)
-            throw new NotSupportedException($"Context compaction level '{request.Level}' is not implemented yet.");
 
         _logger.LogInformation(
             "[ContextCompaction:Phase] start compactionId={CompactionId} session={SessionId} mode={Mode} reason={Reason}",
@@ -502,6 +527,11 @@ public sealed class ContextCompactionService : IContextCompactionService
             message.CompactedBy = summaryMessage.MessageId;
 
         await db.SaveChangesAsync(ct);
+
+        // 写库成功后立即失效内存历史 + 记录冷却时间（非工具回执后），
+        // 使下次访问从 DB 重建历史（已含压缩摘要与 CompactedBy 打标），解决 stale 缺口。
+        _coordinator.InvalidateHistory(request.SessionId);
+        _coordinator.RecordCompactionCompleted(request.SessionId);
 
         var afterMessages = await LoadActiveMessagesAsync(db, request.SessionId, ct);
         var afterTokens = EstimateMessages(afterMessages);

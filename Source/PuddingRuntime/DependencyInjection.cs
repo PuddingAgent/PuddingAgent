@@ -150,6 +150,10 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<ContextCompactionOptions>();
         services.AddSingleton<IPreCompactionFlushService, PreCompactionFlushService>();
         services.AddSingleton<IContextCompactionSummaryGenerator, CompositeContextCompactionSummaryGenerator>();
+        // 压缩协调器：per-session 单飞锁 + 冷却限流 + 历史失效回调。
+        // 回调延迟解析 ContextWindowManager，避免 ContextCompactionService → CompactionCoordinator → ContextWindowManager 的构造期循环依赖。
+        services.AddSingleton(sp => new CompactionCoordinator(
+            onHistoryInvalidated: sid => sp.GetRequiredService<ContextWindowManager>().InvalidateHistory(sid)));
         services.AddSingleton<IContextCompactionService, ContextCompactionService>();
         services.AddSingleton<IToolInvocationService, ToolInvocationService>();
         services.AddSingleton<FileMutationQueue>();

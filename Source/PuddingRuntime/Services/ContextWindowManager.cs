@@ -100,6 +100,20 @@ public sealed class ContextWindowManager
     }
 
     /// <summary>
+    /// 失效指定 session 的内存历史。压缩写库成功后调用：移除内存历史，
+    /// 使下次访问通过 TryHydrateStreamHistoryFromDbAsync 从 DB 重新水合
+    /// （此时已含压缩摘要与 CompactedBy 打标），解决压缩后内存历史 stale 的缺口。
+    /// 只清理历史相关状态（_histories/_historyLastAccessedAt/_historyTimeouts），
+    /// 不清除会话管理状态（_runtimeSessionStore/_controlRegistry/_journal/_dispatchedMessageIds）。
+    /// </summary>
+    public void InvalidateHistory(string sessionId)
+    {
+        _histories.TryRemove(sessionId, out _);
+        _historyLastAccessedAt.TryRemove(sessionId, out _);
+        _historyTimeouts.TryRemove(sessionId, out _);
+    }
+
+    /// <summary>
     /// 标记消息已成功 dispatch。首次调用返回 true，重复调用返回 false。
     /// 用于运行时层入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
     /// 不再重复进入 LLM 历史、不再重复执行。
