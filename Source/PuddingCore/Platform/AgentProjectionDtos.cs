@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Platform;
+namespace PuddingCode.Platform;
 
 /// <summary>Workspace contact-list projection for an Agent in the chat client.</summary>
 public sealed record AgentStatusProjection(
@@ -47,7 +47,8 @@ public sealed record ProcessSummaryItem(
     string? Arguments = null,
     string? Output = null,
     int? ExitCode = null,
-    string? Message = null);
+    string? Message = null,
+    string? ToolCallId = null);
 
 /// <summary>
 /// Payload-free statistics for a completed message process. Historical details are loaded on demand.

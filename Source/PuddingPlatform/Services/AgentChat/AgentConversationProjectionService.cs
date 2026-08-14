@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Services;
@@ -751,6 +751,7 @@ public sealed class AgentConversationProjectionService(
         var exitCode = ReadInt(evt.Payload, "exitCode") ?? ReadInt(evt.Payload, "exit_code");
         var message = ReadString(evt.Payload, "message")
             ?? BuildToolProcessMessage(kind, name, arguments, output, error, exitCode);
+        var toolCallId = ReadString(evt.Payload, "toolCallId");
         var text = ReadString(evt.Payload, "delta")
             ?? ReadString(evt.Payload, "text")
             ?? message
@@ -783,7 +784,8 @@ public sealed class AgentConversationProjectionService(
             arguments,
             output,
             exitCode,
-            message);
+            message,
+            toolCallId);
         return true;
     }
 
