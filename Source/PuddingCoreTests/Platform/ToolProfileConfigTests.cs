@@ -110,6 +110,7 @@ public sealed class ToolProfileConfigTests
                 Kind = executionKind,
                 ConversationId = "conversation-1",
                 RunId = "run-1",
+                TraceId = null,
             },
         };
 }

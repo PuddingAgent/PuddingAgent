@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -186,6 +186,7 @@ public sealed class ExecutionRunCoordinator(
                 ExecutionDeadlineUtc = executionDeadlineUtc,
                 InboundMessageId = command.UserMessageId,
                 Origin = messageOrigin,
+                TraceId = command.TraceId,
                 ExecutionIdentity = new RuntimeExecutionIdentity
                 {
                     Kind = RuntimeExecutionKind.ConversationTurn,
@@ -194,6 +195,7 @@ public sealed class ExecutionRunCoordinator(
                     CommandId = lease.CommandId,
                     RunId = lease.RunId,
                     MessageId = command.AssistantMessageId,
+                    TraceId = command.TraceId,
                 },
             };
 

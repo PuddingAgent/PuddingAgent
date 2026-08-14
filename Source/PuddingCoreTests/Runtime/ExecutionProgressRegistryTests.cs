@@ -90,6 +90,7 @@ public sealed class ExecutionProgressRegistryTests
                     : RuntimeExecutionKind.SubAgent,
                 ConversationId = "conversation-1",
                 RunId = runId,
+                TraceId = null,
                 ParentRunId = parentRunId,
             },
             Kind = kind,

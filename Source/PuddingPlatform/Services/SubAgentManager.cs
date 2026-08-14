@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -1161,6 +1161,7 @@ public sealed class SubAgentManager : ISubAgentManager
             TurnId = parent?.TurnId,
             CommandId = parent?.CommandId,
             RunId = runId,
+            TraceId = parent?.TraceId,
             MessageId = parent?.MessageId,
             ToolCallId = parent?.ToolCallId,
             ParentRunId = parent?.RunId,

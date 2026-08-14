@@ -23,6 +23,9 @@ public sealed record ExecutionLease(
     long FencingToken,
     DateTimeOffset ExpiresAt)
 {
+    /// <summary>P0-4f-2: 稳定 trace_id — 从 command 显式透传至 journal 的中间环（可空）。</summary>
+    public required string? TraceId { get; init; }
+
     public bool HasExpired(DateTimeOffset now) => now >= ExpiresAt;
 
     public bool IsOwnedBy(string workerId) =>

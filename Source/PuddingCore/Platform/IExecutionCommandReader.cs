@@ -24,6 +24,7 @@ public interface IExecutionCommandReader
 public sealed record ExecutionCommandRecord
 {
     public required string CommandId { get; init; }
+    public required string? TraceId { get; init; }
     public required string WorkspaceId { get; init; }
     public required string ConversationId { get; init; }
     public required string AssistantMessageId { get; init; }

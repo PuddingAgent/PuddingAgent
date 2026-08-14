@@ -117,6 +117,7 @@ public sealed class FileSubAgentRunStoreTests
                 ConversationId = "parent-session",
                 TurnId = "parent-turn",
                 RunId = "parent-run",
+                TraceId = null,
                 ToolCallId = "parent-tool-call",
             },
         });

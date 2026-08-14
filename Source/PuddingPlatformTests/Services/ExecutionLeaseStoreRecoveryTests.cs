@@ -161,6 +161,9 @@ public sealed class ExecutionLeaseStoreRecoveryTests
             turnId,
             runId,
             run.FencingToken,
-            leaseUntil);
+            leaseUntil)
+        {
+            TraceId = null,
+        };
     }
 }

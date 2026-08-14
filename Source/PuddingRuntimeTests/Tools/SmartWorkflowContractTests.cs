@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -413,6 +413,7 @@ public sealed class SmartWorkflowContractTests
             Kind = RuntimeExecutionKind.SubAgent,
             ConversationId = "conversation",
             RunId = "run",
+            TraceId = null,
         };
 
         string? Denial(bool allow, int depth, int maxDepth) =>

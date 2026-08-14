@@ -444,6 +444,7 @@ public sealed class MessageToolsTests
                         CommandId = "cmd-1",
                         RunId = "run-1",
                         ToolCallId = "call-1",
+                        TraceId = null,
                     }
                     : null,
             },

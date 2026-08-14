@@ -61,6 +61,7 @@ public sealed class TurnExecutorAdapterTests
         AudioArtifactIds: null)
     {
         InboundMessageId = "message-1",
+        TraceId = null,
     };
 
     private sealed class BusyThenSuccessRuntimeDispatcher : IRuntimeAgentDispatcher

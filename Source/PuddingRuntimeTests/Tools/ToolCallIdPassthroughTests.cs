@@ -49,6 +49,7 @@ public sealed class ToolCallIdPassthroughTests
                     ConversationId = "session-1",
                     RunId = "run-1",
                     ToolCallId = "call-identity",
+                    TraceId = null,
                 },
             },
             AllowPolicy());
@@ -75,6 +76,7 @@ public sealed class ToolCallIdPassthroughTests
                     ConversationId = "session-1",
                     RunId = "run-1",
                     ToolCallId = "call-identity",
+                    TraceId = null,
                 },
             },
             AllowPolicy());

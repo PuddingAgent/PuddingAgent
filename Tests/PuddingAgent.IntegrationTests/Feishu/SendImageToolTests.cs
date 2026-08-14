@@ -169,6 +169,7 @@ public sealed class SendImageToolTests
                 CommandId = "command-image",
                 RunId = "run-image",
                 ToolCallId = "tool-image-1",
+                TraceId = null,
             },
         };
 

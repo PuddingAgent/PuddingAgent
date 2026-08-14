@@ -1,4 +1,4 @@
-﻿
+
 using PuddingBrowser.Abstractions;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
@@ -39,7 +39,8 @@ public sealed class BrowserToolOriginTests
                     Kind = RuntimeExecutionKind.ConversationTurn,
                     ConversationId = "conv-1",
                     RunId = "run-1",
-                    ToolCallId = "call-1"
+                    ToolCallId = "call-1",
+                    TraceId = null
                 }
             }
         };
@@ -195,7 +196,8 @@ public sealed class BrowserToolOriginTests
                     Kind = RuntimeExecutionKind.ConversationTurn,
                     ConversationId = "conv-a",
                     RunId = "run-a",
-                    ToolCallId = "call-a"
+                    ToolCallId = "call-a",
+                    TraceId = null
                 }
             }
         };
@@ -214,7 +216,8 @@ public sealed class BrowserToolOriginTests
                     Kind = RuntimeExecutionKind.SubAgent,
                     ConversationId = "conv-b",
                     RunId = "run-b",
-                    ToolCallId = "call-b"
+                    ToolCallId = "call-b",
+                    TraceId = null
                 }
             }
         };
@@ -266,7 +269,8 @@ public sealed class BrowserToolOriginTests
                     Kind = RuntimeExecutionKind.ConversationTurn,
                     ConversationId = "conv-4",
                     RunId = "run-4",
-                    ToolCallId = "call-4"
+                    ToolCallId = "call-4",
+                    TraceId = null
                 }
             }
         });

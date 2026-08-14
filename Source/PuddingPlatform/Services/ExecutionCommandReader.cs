@@ -42,6 +42,7 @@ public sealed class ExecutionCommandReader(
     private static ExecutionCommandRecord Map(ChatExecutionCommandEntity entity) => new()
     {
         CommandId = entity.CommandId,
+        TraceId = entity.TraceId,
         WorkspaceId = entity.WorkspaceId,
         ConversationId = entity.SessionId,
         AssistantMessageId = entity.MessageId,

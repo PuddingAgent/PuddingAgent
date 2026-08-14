@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Net.WebSockets;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingBrowser.Abstractions;
@@ -73,6 +73,7 @@ public sealed class ConfiguredAgentBrowserSnapshotPolicyExecutionTests
                 ConversationId = conversationId,
                 RunId = runId,
                 ToolCallId = toolCallId,
+                TraceId = null,
             },
         };
 

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
@@ -47,6 +47,9 @@ public sealed record TurnExecutionContext(
     IReadOnlyList<string>? AudioArtifactIds
 )
 {
+    /// <summary>P0-4f-2: 稳定 trace_id — 从 command 显式透传至 journal（可空）。</summary>
+    public required string? TraceId { get; init; }
+
     /// <summary>由 Execution Kernel 创建的稳定身份。</summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
 

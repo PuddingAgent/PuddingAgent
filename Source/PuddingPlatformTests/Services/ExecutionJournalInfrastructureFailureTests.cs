@@ -184,7 +184,10 @@ public sealed class ExecutionJournalInfrastructureFailureTests
             turnId,
             runId,
             run.FencingToken,
-            now.AddMinutes(2));
+            now.AddMinutes(2))
+        {
+            TraceId = null,
+        };
     }
 
     private Task<PlatformDbContext> CreateDbAsync() =>

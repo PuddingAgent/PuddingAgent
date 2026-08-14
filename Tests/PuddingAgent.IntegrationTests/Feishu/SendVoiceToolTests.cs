@@ -154,6 +154,7 @@ public sealed class SendVoiceToolTests
                 CommandId = "command-tool",
                 RunId = "run-tool",
                 ToolCallId = "tool-call-1",
+                TraceId = null,
             },
         };
 

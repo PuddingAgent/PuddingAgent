@@ -21,6 +21,7 @@ public sealed record RuntimeExecutionIdentity
     public string? TurnId { get; init; }
     public string? CommandId { get; init; }
     public required string RunId { get; init; }
+    public required string? TraceId { get; init; }
     public string? MessageId { get; init; }
     public string? ToolCallId { get; init; }
     public string? ParentRunId { get; init; }

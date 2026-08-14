@@ -42,7 +42,7 @@ public sealed class SqliteExecutionLeaseStore(
                 SELECT c.command_id, c.workspace_id, c.session_id, c.turn_id,
                        c.user_message_id, c.agent_instance_id, c.user_id,
                        c.message_id, c.client_request_id, c.attempt_count,
-                       c.created_at
+                       c.created_at, c.trace_id
                 FROM chat_execution_commands c
                 WHERE c.status = 'pending'
                   AND NOT EXISTS (
@@ -73,6 +73,7 @@ public sealed class SqliteExecutionLeaseStore(
             var clientRequestId = reader.IsDBNull(8) ? null : reader.GetString(8);
             var attemptCount = reader.GetInt32(9);
             var createdAt = reader.GetInt64(10);
+            var traceId = reader.IsDBNull(11) ? null : reader.GetString(11);
 
             await reader.CloseAsync();
 
@@ -144,7 +145,10 @@ public sealed class SqliteExecutionLeaseStore(
                 TurnId: turnId,
                 RunId: runId,
                 FencingToken: fencingToken,
-                ExpiresAt: expiresAt);
+                ExpiresAt: expiresAt)
+            {
+                TraceId = traceId,
+            };
         }
         catch
         {
