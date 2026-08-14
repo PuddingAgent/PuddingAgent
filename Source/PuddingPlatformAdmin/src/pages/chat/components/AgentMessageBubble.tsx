@@ -142,6 +142,7 @@ const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
     )
     .map((item) => ({
       id: item.id,
+      toolCallId: item.toolCallId ?? undefined,
       type:
         item.kind === 'thinking' ||
         item.kind === 'tool_call' ||

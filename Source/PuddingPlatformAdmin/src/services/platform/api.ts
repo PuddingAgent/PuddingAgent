@@ -2528,8 +2528,8 @@ export type AdminChatStreamEvent =
   | { type: 'voice_playback_status'; messageId?: string; sessionId?: string; voiceSessionId?: string; status: string; audioBase64?: string; sampleRate?: number; error?: string; [key: string]: unknown }
   | { type: 'camera_capture_status'; sessionId?: string; status: string; artifactId?: string; error?: string; [key: string]: unknown }
   | { type: 'visual_reasoning_status'; sessionId?: string; status: string; artifactId?: string; error?: string; [key: string]: unknown }
-  | { type: 'tool_call'; name: string; arguments: string }
-  | { type: 'tool_result'; name: string; exitCode: number; output: string; error?: string }
+  | { type: 'tool_call'; name: string; arguments: string; toolCallId?: string }
+  | { type: 'tool_result'; name: string; exitCode: number; output: string; error?: string; toolCallId?: string }
   | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
   | { type: 'usage'; usage: TokenUsageDto }
   | { type: 'context.health'; state?: ContextHealthState; usedTokens?: number; effectiveWindowTokens?: number; usageRatio?: number; [key: string]: unknown }
