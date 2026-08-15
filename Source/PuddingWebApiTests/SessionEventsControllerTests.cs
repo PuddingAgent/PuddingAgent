@@ -15,7 +15,7 @@ namespace PuddingWebApiTests;
 
 /// <summary>
 /// SessionEventsController 集成测试。
-/// 覆盖：未知 replay 404、未知 stream 404、frozen stream 410。
+    /// 覆盖：未知 stream 404、frozen stream 410。
 /// 关联 ADR-053/ADR-054。
 /// </summary>
 [TestClass]
@@ -56,14 +56,7 @@ public sealed class SessionEventsControllerTests
         _client?.Dispose();
     }
 
-    // ── P1-1: unknown replay → 404 ─────────────────────
-    [TestMethod]
-    public async Task Replay_Returns404_WhenSessionNotFound()
-    {
-        var unknownId = $"ghost-session-{Guid.NewGuid():N}";
-        var response = await _client.GetAsync($"/api/sessions/{unknownId}/replay?from=0&limit=50");
-        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
-    }
+    
 
     // ── P1-2: unknown stream → 404 ─────────────────────
     [TestMethod]
@@ -97,14 +90,7 @@ public sealed class SessionEventsControllerTests
         Assert.AreEqual(HttpStatusCode.Gone, streamResp.StatusCode);
     }
 
-    // ── P1-4: unknown replay with limit boundary ───────
-    [TestMethod]
-    public async Task Replay_Returns404_RegardlessOfLimitBoundary()
-    {
-        var unknownId = $"ghost-session-{Guid.NewGuid():N}";
-        var response = await _client.GetAsync($"/api/sessions/{unknownId}/replay?from=99999&limit=500");
-        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
-    }
+    
 
     // ── P1-5: unknown stream does not return 500 ───────
     [TestMethod]

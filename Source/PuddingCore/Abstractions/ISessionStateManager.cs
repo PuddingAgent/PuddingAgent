@@ -128,21 +128,6 @@ public interface ISessionStateManager
     Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default);
 
     // ════════════════════════════════════════════════════════
-    // 会话重放（ARCH-SESSION-003）
-    // ════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// 从指定序列号开始重放会话事件，用于前端完整重建会话状态。
-    /// fromSequenceNum=null 表示从第一条事件开始。
-    /// 同时返回当前会话状态和子代理列表。
-    /// </summary>
-    Task<SessionReplayResult> ReplaySessionAsync(
-        string sessionId,
-        long? fromSequenceNum = null,
-        int limit = 200,
-        CancellationToken ct = default);
-
-    // ════════════════════════════════════════════════════════
     // 生命周期标记
     // ════════════════════════════════════════════════════════
 
@@ -311,20 +296,6 @@ public sealed record SubAgentResult
     /// <summary>首个工具失败摘要，供状态面板和父 Agent 通知展示。</summary>
     public string? ToolFailureSummary { get; init; }
     public required DateTimeOffset CompletedAt { get; init; }
-}
-
-/// <summary>
-/// 会话重放结果 — 包含从指定序列号开始的事件、当前会话状态和子代理列表。
-/// 用于前端从任意点完整重建会话状态（ARCH-SESSION-003）。
-/// </summary>
-public sealed record SessionReplayResult
-{
-    public required string SessionId { get; init; }
-    public required string CurrentState { get; init; }
-    public required IReadOnlyList<SessionEventEntry> Events { get; init; }
-    public long TotalEventCount { get; init; }
-    public bool HasMore { get; init; }
-    public required IReadOnlyList<SubAgentStatus> SubAgents { get; init; }
 }
 
 /// <summary>子代理当前状态（查询用）。</summary>

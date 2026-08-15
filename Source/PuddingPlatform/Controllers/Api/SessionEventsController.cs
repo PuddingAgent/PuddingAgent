@@ -162,40 +162,7 @@ public class SessionEventsController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// 重放会话事件 — 从指定序列号开始完整重建会话状态。
-    /// GET /api/sessions/{sessionId}/replay?from={seq}&limit={N}
-    /// 包含事件列表、当前会话状态和子代理列表。
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §5
-    /// </summary>
-    [HttpGet("{sessionId}/replay")]
-    public async Task<ActionResult<SessionReplayResult>> Replay(
-        string sessionId,
-        [FromQuery] long? from,
-        [FromQuery] int limit = 200,
-        CancellationToken ct = default)
-    {
-        if (limit < 1 || limit > 500)
-            return BadRequest(new { message = "limit 必须在 1-500 之间" });
-
-        // P0: 验证 session 存在性，防止对已删除的幻影 session 进行 replay
-        //    规则：Platform API 有记录，或本地 DB 有历史事件/消息/子代理证据
-        if (!await SessionExistsAsync(sessionId, ct))
-        {
-            _logger.LogWarning(
-                "[SessionEvents] Replay denied: session not found session={Session}",
-                sessionId);
-            return NotFound(new { message = "Session not found", sessionId });
-        }
-
-        var result = await _ssm.ReplaySessionAsync(sessionId, from, limit, ct);
-
-        _logger.LogDebug(
-            "[SessionEvents] GET replay session={Session} from={From} limit={Limit} events={EventCount} total={Total} hasMore={HasMore}",
-            sessionId, from, limit, result.Events.Count, result.TotalEventCount, result.HasMore);
-
-        return Ok(result);
-    }
+    
 
     /// <summary>
     /// 实时订阅会话事件（SSE）。
@@ -897,11 +864,7 @@ public class SessionEventsController : ControllerBase
         return hasSubAgents ? SessionStatus.Completed : null;
     }
 
-    /// <summary>
-    /// 验证 session 是否在系统中存在。
-    /// </summary>
-    private async Task<bool> SessionExistsAsync(string sessionId, CancellationToken ct)
-        => await GetSessionStatusAsync(sessionId, ct) is not null;
+    
 
     // ── SSE 工具方法 ───────────────────────────────────
 
