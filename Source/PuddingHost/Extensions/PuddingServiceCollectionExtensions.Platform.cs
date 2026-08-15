@@ -219,6 +219,12 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<TokenCostService>();
         builder.Services.AddScoped<IVisualReasoningService, DefaultVisualReasoningService>();
         builder.Services.AddHttpClient("DashScopeVisualReasoning");
+
+        // ── LLM Provider 余额查询 HTTP 客户端（DeepSeek /user/balance 等）──
+        // 30s 超时；由 LlmProviderFileService.GetBalanceAsync 创建。
+        builder.Services.AddHttpClient(
+            LlmProviderFileService.BalanceHttpClientName,
+            client => client.Timeout = TimeSpan.FromSeconds(30));
         builder.Services.AddScoped<IVisualReasoningProvider>(sp =>
         {
             var config = sp.GetRequiredService<IConfiguration>();

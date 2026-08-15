@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
 using Microsoft.Extensions.Logging;
@@ -75,4 +75,35 @@ public class LlmProviderApiController(
     [HttpPost("{providerId}/quota/reset-daily")]
     public IActionResult ResetDailyQuota(string providerId)
         => NoContent();
+
+    // ── 余额查询（DeepSeek get-user-balance 等 OpenAI 兼容 provider）──
+
+    /// <summary>
+    /// 查询 provider 账户余额。GET 到 {baseUrl}/user/balance，Bearer 鉴权。
+    /// apiKey 占位符、KeyVault、错误处理均在 LlmProviderFileService.GetBalanceAsync 实现。
+    /// </summary>
+    [HttpGet("{providerId}/balance")]
+    public async Task<ActionResult<LlmProviderBalanceDto>> GetBalance(
+        string providerId, CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await service.GetBalanceAsync(providerId, ct));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "[LlmProviderApi] Balance rejected for {Provider}", providerId);
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "[LlmProviderApi] Balance upstream error for {Provider}", providerId);
+            return StatusCode(StatusCodes.Status502BadGateway,
+                new { error = "余额查询上游错误，请稍后重试或检查服务商配置。" });
+        }
+    }
 }

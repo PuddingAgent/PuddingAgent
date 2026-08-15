@@ -1,4 +1,4 @@
-﻿namespace PuddingPlatform.Data.Dtos;
+namespace PuddingPlatform.Data.Dtos;
 
 // ════════════════════════════════════════════════════════════════
 // LLM / Voice Provider DTOs — AI 服务商配置、模型、配额。
@@ -82,6 +82,26 @@ public record LlmProviderQuotaDto(
 public record UpdateQuotaRequest(
     long? DailyTokenLimit,
     long? MonthlyTokenLimit
+);
+
+// ── LLM Provider Balance 余额查询 ─────────────────────────────
+
+/// <summary>单个币种余额项（来自 provider /user/balance 响应）。</summary>
+public record LlmBalanceInfoDto(
+    string Currency,
+    decimal TotalBalance,
+    decimal GrantedBalance,
+    decimal ToppedUpBalance
+);
+
+/// <summary>Provider 余额查询结果。Error非空时表示上游API返回了错误。</summary>
+public record LlmProviderBalanceDto(
+    string ProviderId,
+    string Endpoint,
+    bool IsAvailable,
+    List<LlmBalanceInfoDto> BalanceInfos,
+    string? Error,
+    DateTimeOffset QueriedAt
 );
 
 // ── LLM Model 模型 ─────────────────────────────────────────────
