@@ -261,31 +261,14 @@ public class AgentEventHandler : IEventHandler
             _logger.LogInformation("[AgentEventHandler] Starting stream notification session={Session} sub={Sub} textLen={Len}",
                 parentSessionId, subAgentId, notificationText.Length);
 
-            // 使用流式执行，逐帧写入 SessionStateManager → Channel → 前端 SSE
+            // 使用流式执行，仅消费帧用于判定与日志，避免双写（ExecuteStreamAsync 内部已负责写 SSM）
             int frameCount = 0;
             string lastEvent = "";
-            var ssmLocal = _services.GetService<ISessionStateManager>();
-            if (ssmLocal is null)
-            {
-                _logger.LogWarning("[AgentEventHandler] ISessionStateManager not available for streaming");
-            }
 
             await foreach (var frame in _executionService.ExecuteStreamAsync(request, CancellationToken.None))
             {
                 frameCount++;
                 lastEvent = frame.Event;
-                if (ssmLocal is not null)
-                {
-                    try
-                    {
-                        await ssmLocal.AppendAsync(parentSessionId, evt.WorkspaceId ?? "default", frame, CancellationToken.None);
-                    }
-                    catch (Exception innerEx)
-                    {
-                        _logger.LogWarning(innerEx, "[AgentEventHandler] SSM AppendAsync failed session={Session} frame={Count} type={Type}",
-                            parentSessionId, frameCount, frame.Event);
-                    }
-                }
                 if (frameCount <= 3 || frame.Event == "done" || frame.Event == "error")
                 {
                     _logger.LogDebug("[AgentEventHandler] Stream frame {Count}/{Type} session={Session}",
