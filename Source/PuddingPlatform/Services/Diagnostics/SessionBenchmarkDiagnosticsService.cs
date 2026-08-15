@@ -42,8 +42,7 @@ public sealed partial class SessionBenchmarkDiagnosticsService
         var state = new SessionBenchmarkState(sessionId, maxFindings);
 
         LoadSessionJsonl(state);
-        if (!state.HasJsonl)
-            await LoadSessionEventLogAsync(state, ct);
+        await LoadConversationEventsAsync(state, ct);
 
         LoadApprovalAudit(state);
         LoadTickets(state);
@@ -166,39 +165,39 @@ public sealed partial class SessionBenchmarkDiagnosticsService
         }
     }
 
-    private async Task LoadSessionEventLogAsync(SessionBenchmarkState state, CancellationToken ct)
+    private async Task LoadConversationEventsAsync(SessionBenchmarkState state, CancellationToken ct)
     {
         if (_db is null)
             return;
 
-        var events = await _db.SessionEventLogs
+        var events = await _db.ConversationEvents
             .AsNoTracking()
-            .Where(evt => evt.SessionId == state.SessionId)
-            .OrderBy(evt => evt.SequenceNum)
+            .Where(evt => evt.ConversationId == state.SessionId)
+            .OrderBy(evt => evt.Sequence)
             .ToListAsync(ct);
         if (events.Count == 0)
             return;
 
-        state.HasSessionEventLog = true;
+        state.HasConversationEvents = true;
         var pendingCalls = new Dictionary<string, Queue<SessionBenchmarkToolCallDto>>(StringComparer.Ordinal);
 
         foreach (var evt in events)
         {
             Increment(state.MessageCounts, "event");
-            Increment(state.EventCounts, evt.EventType);
+            Increment(state.EventCounts, evt.Type);
 
-            var eventData = TryParseJsonObject(evt.Data);
+            var eventData = TryParseJsonObject(evt.Payload);
             if (eventData is null)
                 continue;
 
-            if (string.Equals(evt.EventType, SessionEventTypes.Done, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(evt.Type, ConversationEventTypes.TurnCompleted, StringComparison.OrdinalIgnoreCase))
             {
                 if (TryGetProperty(eventData.Value, "usage", out var usage))
                     TryUpdateUsage(state, usage);
                 continue;
             }
 
-            if (string.Equals(evt.EventType, SessionEventTypes.Usage, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(evt.Type, ConversationEventTypes.UsageRecorded, StringComparison.OrdinalIgnoreCase))
             {
                 TryUpdateUsage(state, eventData.Value);
                 if (TryGetProperty(eventData.Value, "usage", out var usage))
@@ -206,16 +205,16 @@ public sealed partial class SessionBenchmarkDiagnosticsService
                 continue;
             }
 
-            if (string.Equals(evt.EventType, SessionEventTypes.ToolCall, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(evt.Type, ConversationEventTypes.ToolCallRequested, StringComparison.OrdinalIgnoreCase))
             {
                 var toolName = GetString(eventData.Value, "name") ?? "";
                 var arguments = ParseObjectFromString(GetString(eventData.Value, "arguments"));
                 var call = new SessionBenchmarkToolCallDto
                 {
-                    Seq = ToIntSequence(evt.SequenceNum),
+                    Seq = ToIntSequence(evt.Sequence),
                     Name = toolName,
                     Command = ExtractCommand(arguments),
-                    RecordedAt = evt.RecordedAt,
+                    RecordedAt = evt.OccurredAt,
                 };
                 state.ToolCalls.Add(call);
                 if (!pendingCalls.TryGetValue(toolName, out var queue))
@@ -228,15 +227,17 @@ public sealed partial class SessionBenchmarkDiagnosticsService
                 continue;
             }
 
-            if (!string.Equals(evt.EventType, SessionEventTypes.ToolResult, StringComparison.OrdinalIgnoreCase))
+            var isToolResult = string.Equals(evt.Type, ConversationEventTypes.ToolCallCompleted, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(evt.Type, ConversationEventTypes.ToolCallFailed, StringComparison.OrdinalIgnoreCase);
+            if (!isToolResult)
                 continue;
 
             var result = new SessionBenchmarkToolResultDto
             {
-                Seq = ToIntSequence(evt.SequenceNum),
+                Seq = ToIntSequence(evt.Sequence),
                 Name = GetString(eventData.Value, "name") ?? "",
                 ExitCode = GetInt(eventData.Value, "exitCode"),
-                RecordedAt = evt.RecordedAt,
+                RecordedAt = evt.OccurredAt,
             };
             var rawError = GetString(eventData.Value, "error") ?? "";
             var rawOutput = GetString(eventData.Value, "output") ?? "";
@@ -394,9 +395,9 @@ public sealed partial class SessionBenchmarkDiagnosticsService
         {
             SessionId = state.SessionId,
             HasJsonl = state.HasJsonl,
-            HasSessionEventLog = state.HasSessionEventLog,
+            HasConversationEvents = state.HasConversationEvents,
             HasEvidence = state.HasJsonl
-                || state.HasSessionEventLog
+                || state.HasConversationEvents
                 || state.TimelinePath is not null
                 || state.SessionLogPath is not null,
             Paths = new SessionBenchmarkPathsDto
@@ -1039,7 +1040,7 @@ public sealed partial class SessionBenchmarkDiagnosticsService
         public string SessionId { get; } = sessionId;
         public int MaxFindings { get; } = maxFindings;
         public bool HasJsonl { get; set; }
-        public bool HasSessionEventLog { get; set; }
+        public bool HasConversationEvents { get; set; }
         public string? JsonlPath { get; set; }
         public string? TimelinePath { get; set; }
         public string? SessionLogPath { get; set; }
@@ -1060,7 +1061,7 @@ public sealed record SessionBenchmarkReportDto
 {
     public required string SessionId { get; init; }
     public bool HasJsonl { get; init; }
-    public bool HasSessionEventLog { get; init; }
+    public bool HasConversationEvents { get; init; }
     public bool HasEvidence { get; init; }
     public required SessionBenchmarkPathsDto Paths { get; init; }
     public required SessionBenchmarkUsageDto Usage { get; init; }

@@ -66,7 +66,7 @@ public sealed class SessionBenchmarkDiagnosticsServiceTests
     }
 
     [TestMethod]
-    public async Task BuildAsync_UsesSessionEventLogWhenLegacyJsonlMissing()
+    public async Task BuildAsync_UsesConversationEventsWhenLegacyJsonlMissing()
     {
         var root = CreateTempRoot();
         var sessionId = "session-event-log-only";
@@ -79,48 +79,57 @@ public sealed class SessionBenchmarkDiagnosticsServiceTests
             .Options;
         await using var db = new PlatformDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        db.SessionEventLogs.AddRange(
-            new SessionEventLogEntity
+        db.ConversationEvents.AddRange(
+            new ConversationEventEntity
             {
-                SessionId = sessionId,
+                ConversationId = sessionId,
                 WorkspaceId = "default",
-                SequenceNum = 1,
-                EventType = SessionEventTypes.ToolCall,
-                Data = JsonSerializer.Serialize(new
+                EventId = "evt-1",
+                TurnId = "turn-1",
+                Sequence = 1,
+                Type = ConversationEventTypes.ToolCallRequested,
+                Payload = JsonSerializer.Serialize(new
                 {
                     name = "shell",
                     arguments = JsonSerializer.Serialize(new { command = "python app.py" }),
                 }),
-                RecordedAt = "2026-06-05T00:00:00+00:00",
+                OccurredAt = "2026-06-05T00:00:00+00:00",
+                CommittedAt = "2026-06-05T00:00:00+00:00",
             },
-            new SessionEventLogEntity
+            new ConversationEventEntity
             {
-                SessionId = sessionId,
+                ConversationId = sessionId,
                 WorkspaceId = "default",
-                SequenceNum = 2,
-                EventType = SessionEventTypes.ToolResult,
-                Data = JsonSerializer.Serialize(new
+                EventId = "evt-2",
+                TurnId = "turn-1",
+                Sequence = 2,
+                Type = ConversationEventTypes.ToolCallCompleted,
+                Payload = JsonSerializer.Serialize(new
                 {
                     name = "shell",
                     exitCode = 1,
                     error = "exit code 1",
                     output = "Traceback",
                 }),
-                RecordedAt = "2026-06-05T00:00:01+00:00",
+                OccurredAt = "2026-06-05T00:00:01+00:00",
+                CommittedAt = "2026-06-05T00:00:01+00:00",
             },
-            new SessionEventLogEntity
+            new ConversationEventEntity
             {
-                SessionId = sessionId,
+                ConversationId = sessionId,
                 WorkspaceId = "default",
-                SequenceNum = 3,
-                EventType = SessionEventTypes.Usage,
-                Data = JsonSerializer.Serialize(new
+                EventId = "evt-3",
+                TurnId = "turn-1",
+                Sequence = 3,
+                Type = ConversationEventTypes.UsageRecorded,
+                Payload = JsonSerializer.Serialize(new
                 {
                     PromptTokens = 10,
                     CompletionTokens = 2,
                     TotalTokens = 12,
                 }),
-                RecordedAt = "2026-06-05T00:00:02+00:00",
+                OccurredAt = "2026-06-05T00:00:02+00:00",
+                CommittedAt = "2026-06-05T00:00:02+00:00",
             });
         await db.SaveChangesAsync();
 
@@ -129,7 +138,7 @@ public sealed class SessionBenchmarkDiagnosticsServiceTests
         var report = await service.BuildAsync(sessionId);
 
         Assert.IsFalse(report.HasJsonl);
-        Assert.IsTrue(report.HasSessionEventLog);
+        Assert.IsTrue(report.HasConversationEvents);
         Assert.IsTrue(report.HasEvidence);
         Assert.AreEqual(1, report.Counts.ToolCalls["shell"]);
         Assert.AreEqual(1, report.Counts.ToolResults["shell"]);
@@ -138,6 +147,69 @@ public sealed class SessionBenchmarkDiagnosticsServiceTests
         Assert.AreEqual("runtime_failure", report.Failures.Single().Category);
         Assert.AreEqual(1000, report.Failures.Single().DurationMs);
         Assert.IsNotNull(report.Paths.Timeline);
+    }
+
+    [TestMethod]
+    public async Task BuildAsync_ClassifiesToolCallFailedAsRuntimeFailure()
+    {
+        var root = CreateTempRoot();
+        var sessionId = "session-tool-call-failed";
+        WriteTimeline(root, sessionId);
+
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.ConversationEvents.AddRange(
+            new ConversationEventEntity
+            {
+                ConversationId = sessionId,
+                WorkspaceId = "default",
+                EventId = "evt-1",
+                TurnId = "turn-1",
+                Sequence = 1,
+                Type = ConversationEventTypes.ToolCallRequested,
+                Payload = JsonSerializer.Serialize(new
+                {
+                    name = "shell",
+                    arguments = JsonSerializer.Serialize(new { command = "python app.py" }),
+                }),
+                OccurredAt = "2026-06-05T00:00:00+00:00",
+                CommittedAt = "2026-06-05T00:00:00+00:00",
+            },
+            new ConversationEventEntity
+            {
+                ConversationId = sessionId,
+                WorkspaceId = "default",
+                EventId = "evt-2",
+                TurnId = "turn-1",
+                Sequence = 2,
+                Type = ConversationEventTypes.ToolCallFailed,
+                Payload = JsonSerializer.Serialize(new
+                {
+                    name = "shell",
+                    exitCode = 1,
+                    error = "exit code 1",
+                    output = "",
+                }),
+                OccurredAt = "2026-06-05T00:00:01+00:00",
+                CommittedAt = "2026-06-05T00:00:01+00:00",
+            });
+        await db.SaveChangesAsync();
+
+        var service = new SessionBenchmarkDiagnosticsService(PuddingDataPaths.FromRoot(root), db);
+
+        var report = await service.BuildAsync(sessionId);
+
+        Assert.IsTrue(report.HasConversationEvents);
+        Assert.AreEqual(1, report.Counts.ToolCalls["shell"]);
+        Assert.AreEqual(1, report.Counts.ToolResults["shell"]);
+        Assert.AreEqual(1, report.Counts.FailedToolResults);
+        Assert.AreEqual("runtime_failure", report.Failures.Single().Category);
+        Assert.AreEqual(1000, report.Failures.Single().DurationMs);
     }
 
     [TestMethod]
