@@ -128,18 +128,6 @@ public sealed class SubAgentManager : ISubAgentManager
             $"Spawned sub-agent {subSessionId}",
             ct);
 
-        // 4. 推送 SubAgentSpawned 帧到父会话
-        _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
-            ServerSentEventFrame.Json(SessionEventTypes.SubAgentSpawned, new
-            {
-                sub_agent_id = subSessionId,
-                template = request.TemplateId,
-                model = request.LlmProfile.ModelId,
-                task_summary = request.TaskDescription.Length > 200
-                    ? request.TaskDescription[..200] + "..."
-                    : request.TaskDescription,
-            }), CancellationToken.None, trace, RuntimeActivityComponents.SubAgent, "sub_agent.spawned");
-
         // execution service resolved dynamically below
 
         // 3. Fire-and-forget 异步执行
@@ -215,22 +203,6 @@ public sealed class SubAgentManager : ISubAgentManager
                 {
                     _logger.LogWarning("[SubAgentMgr] No runId found for sub={Sub} during async completion cleanup", subSessionId);
                 }
-
-                // SSE 帧保持不变（前端 UI 仍用 subagent.completed）
-                _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
-                    ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new
-                    {
-                        sub_agent_id = subSessionId,
-                        status = terminalStatus,
-                        resumable = terminalStatus == "budget_exhausted",
-                        success,
-                        reply = replyText,
-                        error = errorMsg,
-                        tool_failure_count = toolFailureCount,
-                        tool_output_truncated_count = toolOutputTruncatedCount,
-                        tool_output_chars = toolOutputChars,
-                        tool_failure_summary = toolFailureSummary,
-                    }), CancellationToken.None);
 
                 // Publish the canonical terminal event, including resumable budget exhaustion.
                 var completedEventType = terminalStatus switch
@@ -360,17 +332,6 @@ public sealed class SubAgentManager : ISubAgentManager
 
                                 _ = _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
                 { Success = false, Error = "子代理执行失败，请查看日志获取详情。", CompletedAt = DateTimeOffset.UtcNow }, CancellationToken.None);
-                _ = _ssm.AppendAsync(request.ParentSessionId, request.WorkspaceId,
-                    ServerSentEventFrame.Json(SessionEventTypes.SubAgentCompleted, new
-                    {
-                        sub_agent_id = subSessionId,
-                        success = false,
-                        error = "子代理执行失败，请查看日志获取详情。",
-                        tool_failure_count = 0,
-                        tool_output_truncated_count = 0,
-                        tool_output_chars = 0,
-                    }),
-                    CancellationToken.None, trace, RuntimeActivityComponents.SubAgent, "sub_agent.failed");
                 await RecordActivityAsync(
                     trace,
                     "complete",
