@@ -1,13 +1,14 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Diagnostics;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services.Diagnostics;
 
 /// <summary>
-/// 运行时 Timeline 聚合查询服务 — 从 RuntimeActivity / EventQueue / SessionEventLog / SubAgentRun
+/// 运行时 Timeline 聚合查询服务 — 从 RuntimeActivity / EventQueue / ConversationEvent / SubAgentRun
 /// 四个数据源统一投影为 RuntimeTimelineItemDto，按 StartedAtUtc 降序排序并分页返回。
 /// 
 /// 注入 IDbContextFactory&lt;PlatformDbContext&gt; 以支持被 Singleton service 消费。
@@ -16,20 +17,24 @@ namespace PuddingPlatform.Services.Diagnostics;
 public class RuntimeTimelineQueryService
 {
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
+    private readonly IConversationDiagnosticEventProjector _projector;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
     };
 
-    public RuntimeTimelineQueryService(IDbContextFactory<PlatformDbContext> dbFactory)
+    public RuntimeTimelineQueryService(
+        IDbContextFactory<PlatformDbContext> dbFactory,
+        IConversationDiagnosticEventProjector projector)
     {
         _dbFactory = dbFactory;
+        _projector = projector;
     }
 
     /// <summary>
     /// 按查询条件聚合 Timeline 并分页返回。
-    /// 聚合顺序：RuntimeActivity → EventQueue → SessionEventLog → SubAgentRun
+    /// 聚合顺序：RuntimeActivity → EventQueue → ConversationEvent → SubAgentRun
     /// 统一投影后按 StartedAtUtc 降序排序。
     /// </summary>
     public async Task<PagedTimelineResultDto> QueryTimelineAsync(
@@ -53,11 +58,11 @@ public class RuntimeTimelineQueryService
             items.AddRange(events);
         }
 
-        // 3. 从 SessionEventLog 查询
+        // 3. 从 ConversationEvent 查询（canonical，替换旧 SessionEventLog）
         if (ShouldQueryKind(query, null))
         {
-            var sessionFrames = await QuerySessionEventsAsync(db, query, ct);
-            items.AddRange(sessionFrames);
+            var conversationEvents = await QueryConversationEventsAsync(db, query, ct);
+            items.AddRange(conversationEvents);
         }
 
         // 4. 从 SubAgentRuns 查询
@@ -118,12 +123,11 @@ public class RuntimeTimelineQueryService
             .ToListAsync(ct);
         items.AddRange(events);
 
-        // SessionEventLog
-        var sessionFrames = await db.SessionEventLogs
-            .Where(s => s.SessionId == sessionId)
-            .Select(s => MapSessionEventToDto(s))
+        // ConversationEvent（canonical，替换旧 SessionEventLog）
+        var conversationEvents = await db.ConversationEvents
+            .Where(c => c.ConversationId == sessionId)
             .ToListAsync(ct);
-        items.AddRange(sessionFrames);
+        items.AddRange(conversationEvents.Select(c => _projector.Project(MapConversationEventToContract(c))));
 
         // SubAgentRuns
         var subRuns = await db.SubAgentRuns
@@ -160,11 +164,10 @@ public class RuntimeTimelineQueryService
             .ToListAsync(ct);
         items.AddRange(events);
 
-        var sessionFrames = await db.SessionEventLogs
-            .Where(s => s.TraceId == traceId)
-            .Select(s => MapSessionEventToDto(s))
+        var conversationEvents = await db.ConversationEvents
+            .Where(c => c.TraceId == traceId)
             .ToListAsync(ct);
-        items.AddRange(sessionFrames);
+        items.AddRange(conversationEvents.Select(c => _projector.Project(MapConversationEventToContract(c))));
 
         var subRuns = await db.SubAgentRuns
             .Where(r => r.TraceId == traceId)
@@ -376,12 +379,13 @@ public class RuntimeTimelineQueryService
         return await q.Select(e => MapEventToDto(e)).ToListAsync(ct);
     }
 
-    private async Task<List<RuntimeTimelineItemDto>> QuerySessionEventsAsync(
+    private async Task<List<RuntimeTimelineItemDto>> QueryConversationEventsAsync(
         PlatformDbContext db, RuntimeTimelineQueryDto query, CancellationToken ct)
     {
-        IQueryable<SessionEventLogEntity> q = db.SessionEventLogs;
+        IQueryable<ConversationEventEntity> q = db.ConversationEvents;
         q = ApplyCommonFilters(q, query);
-        return await q.Select(s => MapSessionEventToDto(s)).ToListAsync(ct);
+        var entities = await q.ToListAsync(ct);
+        return entities.Select(c => _projector.Project(MapConversationEventToContract(c))).ToList();
     }
 
     private async Task<List<RuntimeTimelineItemDto>> QuerySubAgentRunsAsync(
@@ -426,15 +430,15 @@ public class RuntimeTimelineQueryService
         return q;
     }
 
-    private static IQueryable<SessionEventLogEntity> ApplyCommonFilters(
-        IQueryable<SessionEventLogEntity> q, RuntimeTimelineQueryDto query)
+    private static IQueryable<ConversationEventEntity> ApplyCommonFilters(
+        IQueryable<ConversationEventEntity> q, RuntimeTimelineQueryDto query)
     {
         if (!string.IsNullOrWhiteSpace(query.WorkspaceId))
-            q = q.Where(s => s.WorkspaceId == query.WorkspaceId);
+            q = q.Where(c => c.WorkspaceId == query.WorkspaceId);
         if (!string.IsNullOrWhiteSpace(query.SessionId))
-            q = q.Where(s => s.SessionId == query.SessionId);
+            q = q.Where(c => c.ConversationId == query.SessionId);
         if (!string.IsNullOrWhiteSpace(query.TraceId))
-            q = q.Where(s => s.TraceId == query.TraceId);
+            q = q.Where(c => c.TraceId == query.TraceId);
         return q;
     }
 
@@ -508,23 +512,28 @@ public class RuntimeTimelineQueryService
         Metadata = new Dictionary<string, string>(),
     };
 
-    private static RuntimeTimelineItemDto MapSessionEventToDto(SessionEventLogEntity s) => new()
+    private static ConversationEvent MapConversationEventToContract(ConversationEventEntity e) => new()
     {
-        Id = s.Id.ToString(),
-        Kind = "session_frame",
-        Component = s.Component ?? "session_state",
-        Operation = s.Operation ?? s.EventType,
-        Status = "recorded",
-        WorkspaceId = s.WorkspaceId,
-        SessionId = s.SessionId,
-        TraceId = s.TraceId,
-        CorrelationId = s.CorrelationId,
-        StartedAtUtc = ParseDateTimeOffset(s.RecordedAt),
-        CompletedAtUtc = null,
-        DurationMs = null,
-        Summary = s.EventType,
-        Error = null,
-        Metadata = new Dictionary<string, string>(),
+        EventId = e.EventId,
+        ConversationId = e.ConversationId,
+        Sequence = e.Sequence,
+        WorkspaceId = e.WorkspaceId,
+        TurnId = e.TurnId,
+        CommandId = e.CommandId,
+        RunId = e.RunId,
+        MessageId = e.MessageId,
+        Type = e.Type,
+        SchemaVersion = e.SchemaVersion,
+        OccurredAt = ParseDateTimeOffset(e.OccurredAt),
+        CommittedAt = ParseDateTimeOffset(e.CommittedAt),
+        CorrelationId = e.CorrelationId,
+        CausationId = e.CausationId,
+        ProducerEventId = e.ProducerEventId,
+        AgentId = e.AgentId,
+        SourceKind = ParseSourceKind(e.SourceKind),
+        TraceId = e.TraceId,
+        ProducerComponent = e.ProducerComponent,
+        Payload = ParsePayload(e.Payload),
     };
 
     private static RuntimeTimelineItemDto MapSubAgentRunToDto(SubAgentRunEntity r) => new()
@@ -675,6 +684,29 @@ public class RuntimeTimelineQueryService
         if (long.TryParse(value, out var ms) && ms > 0)
             return DateTimeOffset.FromUnixTimeMilliseconds(ms);
         return null;
+    }
+
+    private static JsonElement ParsePayload(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return default;
+        try
+        {
+            return JsonDocument.Parse(payload).RootElement;
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static ConversationEventSourceKind? ParseSourceKind(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        return Enum.TryParse<ConversationEventSourceKind>(raw, ignoreCase: true, out var kind)
+            ? kind
+            : null;
     }
 
     private static IReadOnlyDictionary<string, string> ParseMetadataJson(string? json)

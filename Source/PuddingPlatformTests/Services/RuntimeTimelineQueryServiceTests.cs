@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Diagnostics;
+using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.Diagnostics;
@@ -11,7 +12,7 @@ namespace PuddingPlatformTests.Services;
 public sealed class RuntimeTimelineQueryServiceTests
 {
     [TestMethod]
-    public async Task QueryTimelineAsync_UserDisplayMode_GroupsSessionFramesIntoMessageAndToolRows()
+    public async Task QueryTimelineAsync_UserDisplayMode_GroupsChatStreamFramesIntoMessageAndToolRows()
     {
         await using var scope = await CreateScopeAsync();
         await using (var db = await scope.Factory.CreateDbContextAsync())
@@ -21,16 +22,10 @@ public sealed class RuntimeTimelineQueryServiceTests
                 CreateActivity("activity-tool-call", "session_state", "chat.stream.tool_call", "succeeded", "Appended session event tool_call", "2026-06-03T22:42:34.002Z", 1),
                 CreateActivity("activity-tool-result", "session_state", "chat.stream.tool_result", "succeeded", "Appended session event tool_result", "2026-06-03T22:42:34.003Z", 1),
                 CreateActivity("activity-usage", "session_state", "chat.stream.usage", "succeeded", "Appended session event usage", "2026-06-03T22:42:34.004Z", 0));
-
-            db.SessionEventLogs.AddRange(
-                CreateSessionFrame(1, "delta", "chat.stream.delta", "2026-06-03T22:42:34.001Z"),
-                CreateSessionFrame(2, "tool_call", "chat.stream.tool_call", "2026-06-03T22:42:34.002Z"),
-                CreateSessionFrame(3, "tool_result", "chat.stream.tool_result", "2026-06-03T22:42:34.003Z"),
-                CreateSessionFrame(4, "usage", "chat.stream.usage", "2026-06-03T22:42:34.004Z"));
             await db.SaveChangesAsync();
         }
 
-        var service = new RuntimeTimelineQueryService(scope.Factory);
+        var service = new RuntimeTimelineQueryService(scope.Factory, new ConversationDiagnosticEventProjector());
 
         var result = await service.QueryTimelineAsync(new RuntimeTimelineQueryDto
         {
@@ -45,8 +40,41 @@ public sealed class RuntimeTimelineQueryServiceTests
             result.Items.Select(i => i.Kind).ToArray());
         Assert.AreEqual("chat.message.stream", result.Items[0].Operation);
         Assert.AreEqual("chat.tool_call", result.Items[1].Operation);
-        Assert.AreEqual("4", result.Items[1].Metadata["raw_count"]);
+        Assert.AreEqual("2", result.Items[1].Metadata["raw_count"]);
         Assert.AreEqual("tool_call, tool_result", result.Items[1].Metadata["event_types"]);
+    }
+
+    [TestMethod]
+    public async Task QueryTimelineAsync_ConversationEventSource_ProjectsThroughProjector()
+    {
+        await using var scope = await CreateScopeAsync();
+        await using (var db = await scope.Factory.CreateDbContextAsync())
+        {
+            db.ConversationEvents.Add(CreateConversationEvent(
+                "evt-1", "conv-1", 1, ConversationEventTypes.TurnCompleted,
+                "{\"reply\":\"hello\"}", "2026-06-03T22:42:34.000Z"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = new RuntimeTimelineQueryService(scope.Factory, new ConversationDiagnosticEventProjector());
+
+        var result = await service.QueryTimelineAsync(new RuntimeTimelineQueryDto
+        {
+            SessionId = "conv-1",
+            SortOrder = "asc",
+            DisplayMode = "raw",
+        });
+
+        Assert.AreEqual(1, result.Total);
+        var item = result.Items[0];
+        Assert.AreEqual("conversation_event", item.Kind);
+        Assert.AreEqual(ConversationEventTypes.TurnCompleted, item.Operation);
+        Assert.AreEqual("completed", item.Status);
+        Assert.AreEqual("evt-1", item.Id);
+        Assert.AreEqual("conv-1", item.SessionId);
+        Assert.AreEqual("trace-1", item.TraceId);
+        Assert.AreEqual("hello", item.Summary);
+        Assert.AreEqual("chat.acceptance", item.Component);
     }
 
     private static RuntimeActivityEntity CreateActivity(
@@ -75,23 +103,35 @@ public sealed class RuntimeTimelineQueryServiceTests
             MetadataJson = "{\"eventType\":\"" + operation.Replace("chat.stream.", "") + "\"}",
         };
 
-    private static SessionEventLogEntity CreateSessionFrame(
+    private static ConversationEventEntity CreateConversationEvent(
+        string eventId,
+        string conversationId,
         long sequence,
-        string eventType,
-        string operation,
-        string recordedAt)
+        string type,
+        string payload,
+        string occurredAt)
         => new()
         {
-            SessionId = "session_1",
+            EventId = eventId,
+            ConversationId = conversationId,
+            Sequence = sequence,
             WorkspaceId = "default",
-            SequenceNum = sequence,
-            EventType = eventType,
-            Data = "{}",
-            RecordedAt = recordedAt,
-            TraceId = "trace_1",
-            CorrelationId = "correlation_1",
-            Component = "agent_execution",
-            Operation = operation,
+            TurnId = "turn-1",
+            CommandId = "cmd-1",
+            RunId = "run-1",
+            MessageId = "msg-1",
+            Type = type,
+            SchemaVersion = 1,
+            Payload = payload,
+            OccurredAt = occurredAt,
+            CommittedAt = occurredAt,
+            CorrelationId = "corr-1",
+            CausationId = "caus-1",
+            ProducerEventId = null,
+            AgentId = "agent-1",
+            SourceKind = "agent",
+            TraceId = "trace-1",
+            ProducerComponent = "chat.acceptance",
         };
 
     private static async Task<TestScope> CreateScopeAsync()
