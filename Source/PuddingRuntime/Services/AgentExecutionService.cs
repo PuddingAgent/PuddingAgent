@@ -206,6 +206,10 @@ public sealed partial class AgentExecutionService
         string assistantReply,
         TokenUsageDto? usage)
     {
+        // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写 JSONL 旧流快照。
+        if (request.OutputOwnership == TurnOutputOwnership.CoordinatorCanonical)
+            return;
+
         if (_jsonlSessionWriter is null)
             return;
 
@@ -382,7 +386,11 @@ public sealed partial class AgentExecutionService
                 error: null,
                 ct: CancellationToken.None);
 
-            if (_ssm is not null)
+            // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写 session_event_log。
+            // 此处仅 gate SSM 旧流持久化；P0-2 canonical conversation_events 留痕
+            // （PersistSteeringInjectedEventAsync）在下文保留，不受此 gate 影响。
+            if (_ssm is not null
+                && request.OutputOwnership != TurnOutputOwnership.CoordinatorCanonical)
             {
                 await _ssm.AppendAsync(
                     request.SessionId,
