@@ -54,6 +54,7 @@ public sealed class FileChunkService
     public async Task<int> CountLinesAsync(string path, CancellationToken ct = default)
     {
         var newlines = 0;
+        var lastChar = '\0';
         using var reader = new StreamReader(path, Encoding.UTF8);
         var buffer = new char[8192];
         int read;
@@ -66,10 +67,13 @@ public sealed class FileChunkService
                     newlines++;
             }
 
+            lastChar = buffer[read - 1];
             ct.ThrowIfCancellationRequested();
         }
 
-        return newlines + 1;
+        // A trailing newline terminates the last line rather than opening a new one:
+        // "a\nb\nc\n" is 3 lines (newlines == 3), while "a\nb\nc" is 3 lines (newlines + 1).
+        return lastChar == '\n' ? newlines : newlines + 1;
     }
 
     /// <summary>Returns the character offset at which a one-based line starts.</summary>

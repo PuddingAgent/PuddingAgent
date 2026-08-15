@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Tools;
@@ -201,6 +201,97 @@ public sealed class FileReadToolTests
         Assert.IsFalse(result.Output.Contains("GUARDRAIL"));
         StringAssert.Contains(result.Output, "line 500");
         Assert.IsFalse(result.Output.Contains("line 489"));
+    }
+
+    // Test 9: Large file with trailing newline — TailLines returns the last N real lines
+    [TestMethod]
+    public async Task LargeFile_TrailingNewline_TailLines_ReturnsLastLines()
+    {
+        var lines = Enumerable.Range(1, 3000).Select(i => $"line {i:D5} " + new string('x', 40));
+        var content = string.Join("\n", lines) + "\n"; // trailing newline
+        var filePath = Path.Combine(_tempDir, "tail_trailing_large.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"File should exceed large-file byte threshold, got {fileInfo.Length}");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["TailLines"] = 3
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("GUARDRAIL"));
+        StringAssert.Contains(result.Output, "line 02998");
+        StringAssert.Contains(result.Output, "line 02999");
+        StringAssert.Contains(result.Output, "line 03000");
+        Assert.IsFalse(result.Output.Contains("line 02997"));
+    }
+
+    // Test 10: Small file with trailing newline — TailLines returns the last real line
+    [TestMethod]
+    public async Task SmallFile_TrailingNewline_TailLines_ReturnsLastLine()
+    {
+        var content = "alpha\nbeta\ngamma\n";
+        var filePath = Path.Combine(_tempDir, "tail_trailing_small.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["TailLines"] = 1
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("GUARDRAIL"));
+        StringAssert.Contains(result.Output, "gamma");
+        Assert.IsFalse(result.Output.Contains("beta"));
+        Assert.IsFalse(result.Output.Contains("alpha"));
+    }
+
+    // Test 11: OffsetLines out of range on a small file returns empty Ok (not Fail)
+    [TestMethod]
+    public async Task OffsetLines_OutOfRange_SmallFile_ReturnsEmptyOk()
+    {
+        var content = "alpha\nbeta\ngamma\n";
+        var filePath = Path.Combine(_tempDir, "offset_oob_small.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 100
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("alpha"));
+        Assert.IsFalse(result.Output.Contains("beta"));
+        Assert.IsFalse(result.Output.Contains("gamma"));
+    }
+
+    // Test 12: OffsetLines out of range on a large file returns empty Ok (consistent with small path)
+    [TestMethod]
+    public async Task OffsetLines_OutOfRange_LargeFile_ReturnsEmptyOk()
+    {
+        var lines = Enumerable.Range(1, 3000).Select(i => $"line {i:D5} " + new string('x', 40));
+        var content = string.Join("\n", lines);
+        var filePath = Path.Combine(_tempDir, "offset_oob_large.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"File should exceed large-file byte threshold, got {fileInfo.Length}");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 100000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("line 03000"));
     }
 
     private static Task<ToolExecutionResult> ExecuteAsync(

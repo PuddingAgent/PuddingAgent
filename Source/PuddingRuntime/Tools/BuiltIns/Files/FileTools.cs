@@ -164,7 +164,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 大文件/日志最佳实践：优先用 TailLines=N 读末尾最新 N 行，或用 OffsetLines+LimitLines 分段读取；避免对超大文件用 FullFile=true 以免塞满上下文。默认超过 300 行或 40KB 会触发护栏只返回前 200 行并附 META 头（总行数/字节数/截断提示）。参数：HeadLines/TailLines/OffsetLines/LimitLines 行级分页，MaxChars 字符级截断，FullFile=true 绕过护栏。",
+    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 大文件/日志最佳实践：优先用 TailLines=N 读末尾最新 N 行，或用 OffsetLines+LimitLines 分段读取；避免对超大文件用 FullFile=true 以免塞满上下文。默认超过 300 行或 40KB 会触发护栏只返回前 200 行并附 META 头（总行数/字节数/截断提示）。参数：HeadLines/TailLines/OffsetLines/LimitLines 行级分页，MaxChars 字符级截断，FullFile=true 绕过护栏。优先级：同时指定 MaxChars 与行级分页时，MaxChars 优先生效（先按字符截断）。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -215,15 +215,21 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 // Fast path: small file — full read then post-hoc pagination
                 var content = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
                 var totalChars = content.Length;
-                var totalLines = content.Count(c => c == '\n') + 1;
+                var newlineCount = content.Count(c => c == '\n');
+                var endsWithNewline = content.Length > 0 && content[^1] == '\n';
+                var totalLines = newlineCount + (endsWithNewline ? 0 : 1);
 
-                                var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
+                // Logical lines: strip the single trailing empty entry a trailing newline produces.
+                var lines = content.Split('\n');
+                if (endsWithNewline && lines.Length > 0)
+                    lines = lines[..^1];
+
+                var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
 
                 // Guardrail: auto-truncate large files when no explicit pagination or FullFile
                 var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
                 if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 40_000))
                 {
-                    var lines = content.Split('\n');
                     var preview = string.Join("\n", lines.Take(200));
                     return ToolExecutionResult.Ok(
                         $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 200 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, or FullFile=true to read the complete file.]");
@@ -238,25 +244,31 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 
                 if (args.HeadLines.HasValue)
                 {
-                    var lines = content.Split('\n');
                     content = string.Join("\n", lines.Take(args.HeadLines.Value));
                 }
                 else if (args.TailLines.HasValue)
                 {
-                    var lines = content.Split('\n');
                     content = string.Join("\n", lines.Skip(Math.Max(0, lines.Length - args.TailLines.Value)));
                 }
                 else if (args.OffsetLines.HasValue)
                 {
-                    var lines = content.Split('\n');
-                    var limit = args.LimitLines ?? (lines.Length - args.OffsetLines.Value);
-                    content = string.Join("\n", lines.Skip(args.OffsetLines.Value).Take(limit));
+                    var offset = Math.Max(0, args.OffsetLines.Value);
+                    if (offset >= lines.Length)
+                    {
+                        // Out-of-range offset: return empty (consistent with the large-file path).
+                        content = string.Empty;
+                    }
+                    else
+                    {
+                        var limit = args.LimitLines ?? (lines.Length - offset);
+                        content = string.Join("\n", lines.Skip(offset).Take(Math.Max(0, limit)));
+                    }
                 }
 
                 return ToolExecutionResult.Ok($"{meta}\n{content}");
             }
 
-                        // Large file path: use FileChunkService for streaming reads
+            // Large file path: use FileChunkService for streaming reads
             var totalLinesLarge = await _chunk.CountLinesAsync(fullPath, ct);
             var totalCharsLarge = (int)Math.Min(fileInfo.Length, int.MaxValue);
             var metaLarge = $"[META: size={totalCharsLarge} chars, lines={totalLinesLarge}, encoding=utf-8]";
