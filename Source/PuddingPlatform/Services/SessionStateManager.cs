@@ -98,9 +98,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         _stateStore = stateStore;
         _diagnosticProjector = diagnosticProjector;
         _rawLogMirror = rawLogMirror;
-        // P0-4b: session_event_log 双写兼容期开关。默认 true=保守，保持现有双写行为；
-        // false 时跳过写 session_event_log（conversation_events 为 canonical 单一来源）。
-        _eventLogDualWriteEnabled = configuration?.GetValue<bool>("EventLogDualWriteEnabled", true) ?? true;
+        // P0-4b: session_event_log 双写开关。默认 false=关闭旧流双写（conversation_events 为 canonical 单一来源）；
+        // true 时保留旧流双写（逃生口，可回滚）。P0-4f 第⑥步：旧流读者已清零，默认关双写。
+        _eventLogDualWriteEnabled = configuration?.GetValue<bool>("EventLogDualWriteEnabled", false) ?? false;
     }
 
     /// <summary>
