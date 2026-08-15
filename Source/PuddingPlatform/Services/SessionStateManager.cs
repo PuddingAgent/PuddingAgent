@@ -14,6 +14,7 @@ using PuddingCode.Platform;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.Diagnostics;
 
 namespace PuddingPlatform.Services;
 
@@ -50,6 +51,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     private readonly SessionStateStore _stateStore;
     private readonly AgentRawLogMirrorService? _rawLogMirror;
     private readonly bool _eventLogDualWriteEnabled;
+    private readonly IConversationDiagnosticEventProjector _diagnosticProjector;
 
     // 会话实时订阅（sessionId → fan-out hub）。每个订阅者拥有独立 Channel，避免多连接竞争消费同一队列。
     private readonly ConcurrentDictionary<string, SessionChannelFanout> _sessionChannels = new();
@@ -84,6 +86,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         IRuntimeTraceAccessor traceAccessor,
         JsonlSessionWriter jsonlWriter,
         SessionStateStore stateStore,
+        IConversationDiagnosticEventProjector diagnosticProjector,
         AgentRawLogMirrorService? rawLogMirror = null,
         IConfiguration? configuration = null)
     {
@@ -93,6 +96,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         _traceAccessor = traceAccessor;
         _jsonlWriter = jsonlWriter;
         _stateStore = stateStore;
+        _diagnosticProjector = diagnosticProjector;
         _rawLogMirror = rawLogMirror;
         // P0-4b: session_event_log 双写兼容期开关。默认 true=保守，保持现有双写行为；
         // false 时跳过写 session_event_log（conversation_events 为 canonical 单一来源）。
@@ -1728,7 +1732,8 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
 
     /// <summary>
     /// 获取会话级 Trace 聚合报告。
-    /// 从 session_event_log 查询该会话的所有事件，按 traceId、component 等维度聚合。
+    /// 从 canonical conversation_events 查询该会话的所有事件，按 traceId、component 等维度聚合。
+    /// Status / Summary / Error / usage / toolcall / subagent 解析一律走共享投影器，禁止自行解析 Payload。
     /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
     /// </summary>
     public async Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default)
@@ -1736,14 +1741,14 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
-        // 获取该会话所有事件（按序列号升序）
-        var events = await db.SessionEventLogs
+        // 获取该会话所有 canonical 事件（按序列号升序）
+        var eventEntities = await db.ConversationEvents
             .AsNoTracking()
-            .Where(e => e.SessionId == sessionId)
-            .OrderBy(e => e.SequenceNum)
+            .Where(e => e.ConversationId == sessionId)
+            .OrderBy(e => e.Sequence)
             .ToListAsync(ct);
 
-        if (events.Count == 0)
+        if (eventEntities.Count == 0)
         {
             return new SessionTraceReport
             {
@@ -1758,10 +1763,11 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             };
         }
 
-        // 解析时间戳
-        var firstTs = DateTimeOffset.Parse(events[0].RecordedAt);
-        var lastTs = DateTimeOffset.Parse(events[^1].RecordedAt);
-        var totalDurationMs = (long)(lastTs - firstTs).TotalMilliseconds;
+        // entity → 合同还原（21 字段，参考 RuntimeTimelineQueryService.MapConversationEventToContract）
+        var events = eventEntities.Select(MapConversationEventToContract).ToList();
+
+        // 总时长：首/末事件 OccurredAt
+        var totalDurationMs = (long)(events[^1].OccurredAt - events[0].OccurredAt).TotalMilliseconds;
 
         // 收集所有唯一 traceId
         var traceIds = events
@@ -1770,140 +1776,123 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             .Distinct()
             .ToList();
 
-        // 按组件聚合时序（component → [{operation, status, startedAt, durationMs}...]）
+        // 按组件聚合时序：逐事件走投影器（Status 由投影器 MapStatus 提供）
         var componentTimeline = events
-            .Where(e => e.Component != null)
-            .Select(e => new ComponentTimelineEntry
+            .Select(e =>
             {
-                Component = e.Component!,
-                Operation = e.Operation ?? "unknown",
-                Status = e.EventType switch
+                var item = _diagnosticProjector.Project(e);
+                return new ComponentTimelineEntry
                 {
-                    "error" => "failed",
-                    "cancelled" => "cancelled",
-                    "done" => "succeeded",
-                    _ => "started",
-                },
-                StartedAt = DateTimeOffset.Parse(e.RecordedAt),
-                DurationMs = null, // 单条事件无法确定 duration
+                    Component = item.Component,
+                    Operation = item.Operation,
+                    Status = item.Status,
+                    StartedAt = item.StartedAtUtc,
+                    DurationMs = item.DurationMs,
+                };
             })
             .ToList();
 
-        // LLM 调用：从 usage 事件解析 token 信息
-        // ARCH-HARDEN-006：usage 解析支持多种字段命名风格
+        // LLM 调用：usage.recorded 事件 → TryProjectUsage（不再自行解析 Payload）
         var llmCalls = new List<LlmCallEntry>();
-        foreach (var e in events.Where(ev => ev.EventType == "usage"))
+        foreach (var e in events.Where(ev => ev.Type == ConversationEventTypes.UsageRecorded))
         {
-            try
-            {
-                using var doc = JsonDocument.Parse(e.Data);
-                var root = doc.RootElement;
-                var (promptTokens, completionTokens, _) = ParseTokenUsage(root);
+            var usage = _diagnosticProjector.TryProjectUsage(e);
+            if (usage is null)
+                continue;
 
-                llmCalls.Add(new LlmCallEntry
-                {
-                    Model = root.TryGetProperty("model", out var m) ? m.GetString() : null,
-                    Endpoint = root.TryGetProperty("endpoint", out var ep) ? ep.GetString() : null,
-                    InputTokens = promptTokens > 0 ? promptTokens : null,
-                    OutputTokens = completionTokens > 0 ? completionTokens : null,
-                    DurationMs = root.TryGetProperty("durationMs", out var d) ? d.GetInt64() : null,
-                });
-            }
-            catch
+            llmCalls.Add(new LlmCallEntry
             {
-                // 跳过无法解析的 usage 数据
-            }
+                Model = usage.ModelId,
+                Endpoint = usage.Endpoint,
+                InputTokens = usage.InputTokens,
+                OutputTokens = usage.OutputTokens,
+                DurationMs = usage.DurationMs,
+            });
         }
 
         // Token 总量
         var totalTokens = llmCalls.Sum(c => (c.InputTokens ?? 0) + (c.OutputTokens ?? 0));
 
-        // 工具调用：配对 tool_call 和 tool_result
+        // 工具调用：配对 tool.call.requested + tool.call.completed/failed（turn_id + 名称 + sequence 相邻，canonical 无稳定 callId）
         var toolCalls = new List<ToolCallEntry>();
-        var toolCallEvents = events.Where(e => e.EventType == "tool_call").ToList();
-        var toolResultEvents = events.Where(e => e.EventType == "tool_result").ToList();
-
-        foreach (var tc in toolCallEvents)
+        for (var i = 0; i < events.Count; i++)
         {
-            string? toolName = null;
-            try
-            {
-                using var doc = JsonDocument.Parse(tc.Data);
-                toolName = doc.RootElement.TryGetProperty("name", out var n) ? n.GetString() : "unknown";
-            }
-            catch { toolName = "unknown"; }
+            var req = events[i];
+            if (req.Type != ConversationEventTypes.ToolCallRequested)
+                continue;
 
-            // 查找对应的 tool_result（简单按后续第一条 tool_result 匹配）
-            var tcIdx = events.IndexOf(tc);
-            var matchedResult = events.Skip(tcIdx + 1).FirstOrDefault(e => e.EventType == "tool_result");
-            var success = matchedResult != null; // 有 tool_result 即视为成功
-            long? durationMs = null;
-            if (matchedResult != null)
+            var toolName = _diagnosticProjector.TryProjectToolCall(req)?.ToolName ?? "unknown";
+
+            ConversationEvent? matched = null;
+            for (var j = i + 1; j < events.Count; j++)
             {
-                var tcTs = DateTimeOffset.Parse(tc.RecordedAt);
-                var trTs = DateTimeOffset.Parse(matchedResult.RecordedAt);
-                durationMs = (long)(trTs - tcTs).TotalMilliseconds;
+                var candidate = events[j];
+                if (candidate.Type is not (ConversationEventTypes.ToolCallCompleted or ConversationEventTypes.ToolCallFailed))
+                    continue;
+                if (candidate.TurnId != req.TurnId)
+                    continue;
+                if (_diagnosticProjector.TryProjectToolCall(candidate)?.ToolName != toolName)
+                    continue;
+                matched = candidate;
+                break;
             }
+
+            var matchedProj = matched is null ? null : _diagnosticProjector.TryProjectToolCall(matched);
+            var success = matched is not null
+                && matched.Type == ConversationEventTypes.ToolCallCompleted
+                && matchedProj?.Error is null
+                && (matchedProj?.ExitCode is null or 0);
+
+            long? durationMs = matched is null
+                ? null
+                : (long)(matched.OccurredAt - req.OccurredAt).TotalMilliseconds;
 
             toolCalls.Add(new ToolCallEntry
             {
-                ToolName = toolName!,
+                ToolName = toolName,
                 Success = success,
                 DurationMs = durationMs,
             });
         }
 
-        // 子代理调用树：subagent.spawned 和 subagent.completed
+        // 子代理调用树：配对 subagent.run.created + subagent.run.* 终态
         var subAgents = new List<SubAgentTraceEntry>();
-        foreach (var e in events.Where(ev => ev.EventType is "subagent.spawned" or "subagent.completed"))
+        for (var i = 0; i < events.Count; i++)
         {
-            string? subAgentId = e.SubAgentId;
+            var created = events[i];
+            if (created.Type != ConversationEventTypes.SubAgentRunCreated)
+                continue;
+
+            var subAgentId = _diagnosticProjector.ExtractSubAgentId(created);
             if (subAgentId == null)
+                continue;
+
+            ConversationEvent? terminal = null;
+            for (var j = i + 1; j < events.Count; j++)
             {
-                try
-                {
-                    using var doc = JsonDocument.Parse(e.Data);
-                    subAgentId = doc.RootElement.TryGetProperty("subAgentId", out var sai) ? sai.GetString() : null;
-                }
-                catch (JsonException)
-                {
-                    // malformed data JSON — skip this event for sub-agent lookup
+                var candidate = events[j];
+                if (!candidate.Type.StartsWith("subagent.run.", StringComparison.Ordinal))
                     continue;
-                }
+                if (!_diagnosticProjector.IsTerminalType(candidate.Type))
+                    continue;
+                if (_diagnosticProjector.ExtractSubAgentId(candidate) != subAgentId)
+                    continue;
+                terminal = candidate;
+                break;
             }
 
-            if (subAgentId == null) continue;
-
-            var existing = subAgents.FirstOrDefault(s => s.SubAgentId == subAgentId);
-            if (existing != null && e.EventType == "subagent.completed")
+            subAgents.Add(new SubAgentTraceEntry
             {
-                // 更新已存在的 spawned 条目：计算 duration
-                var spawnedTs = DateTimeOffset.Parse(events
-                    .First(ev => ev.EventType == "subagent.spawned" && (ev.SubAgentId == subAgentId || ev.Data.Contains(subAgentId)))
-                    .RecordedAt);
-                var completedTs = DateTimeOffset.Parse(e.RecordedAt);
-                subAgents.Remove(existing);
-                subAgents.Add(new SubAgentTraceEntry
-                {
-                    SubAgentId = subAgentId,
-                    Status = e.EventType == "subagent.completed" ? "completed" : "running",
-                    DurationMs = (long)(completedTs - spawnedTs).TotalMilliseconds,
-                    ParentExecutionId = e.ParentExecutionId,
-                });
-            }
-            else if (existing == null)
-            {
-                subAgents.Add(new SubAgentTraceEntry
-                {
-                    SubAgentId = subAgentId,
-                    Status = e.EventType == "subagent.completed" ? "completed" : "running",
-                    DurationMs = null,
-                    ParentExecutionId = e.ParentExecutionId,
-                });
-            }
+                SubAgentId = subAgentId,
+                Status = terminal is null ? "running" : _diagnosticProjector.MapStatus(terminal.Type),
+                DurationMs = terminal is null
+                    ? null
+                    : (long)(terminal.OccurredAt - created.OccurredAt).TotalMilliseconds,
+                ParentExecutionId = null,
+            });
         }
 
-                long subAgentTokens = 0;
+        long subAgentTokens = 0;
         if (includeSubAgents)
         {
             var subSessionIds = subAgents.Select(s => s.SubAgentId).ToList();
@@ -1934,57 +1923,66 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     /// <summary>
-    /// 兼容解析 token usage payload，支持多种字段命名风格：
-    ///   - promptTokens / completionTokens / totalTokens (camelCase)
-    ///   - PromptTokens / CompletionTokens / TotalTokens (PascalCase)
-    ///   - inputTokens / outputTokens / totalTokens (alternative)
-    /// 返回 (promptTokens, completionTokens, totalTokens)，解析失败返回 (0,0,0)。
-    /// ARCH-HARDEN-006：Trace Report Token Usage 兼容解析。
+    /// entity → 合同还原（21 字段）。与 RuntimeTimelineQueryService.MapConversationEventToContract 等价，
+    /// 不重复发明、不擅自下沉共享映射器（下沉属后续软阻塞项）。
     /// </summary>
-    private static (long prompt, long completion, long total) ParseTokenUsage(object? usagePayload)
+    private static ConversationEvent MapConversationEventToContract(ConversationEventEntity e) => new()
     {
-        if (usagePayload is null)
-            return (0, 0, 0);
+        EventId = e.EventId,
+        ConversationId = e.ConversationId,
+        Sequence = e.Sequence,
+        WorkspaceId = e.WorkspaceId,
+        TurnId = e.TurnId,
+        CommandId = e.CommandId,
+        RunId = e.RunId,
+        MessageId = e.MessageId,
+        Type = e.Type,
+        SchemaVersion = e.SchemaVersion,
+        OccurredAt = ParseDateTimeOffset(e.OccurredAt),
+        CommittedAt = ParseDateTimeOffset(e.CommittedAt),
+        CorrelationId = e.CorrelationId,
+        CausationId = e.CausationId,
+        ProducerEventId = e.ProducerEventId,
+        AgentId = e.AgentId,
+        SourceKind = ParseSourceKind(e.SourceKind),
+        TraceId = e.TraceId,
+        ProducerComponent = e.ProducerComponent,
+        Payload = ParsePayload(e.Payload),
+    };
 
-        if (usagePayload is not JsonElement root)
-            return (0, 0, 0);
-
-        // 尝试多种命名风格的 prompt/input tokens
-        long prompt = TryGetInt64(root, "promptTokens")
-            ?? TryGetInt64(root, "PromptTokens")
-            ?? TryGetInt64(root, "inputTokens")
-            ?? TryGetInt64(root, "InputTokens")
-            ?? 0;
-
-        // 尝试多种命名风格的 completion/output tokens
-        long completion = TryGetInt64(root, "completionTokens")
-            ?? TryGetInt64(root, "CompletionTokens")
-            ?? TryGetInt64(root, "outputTokens")
-            ?? TryGetInt64(root, "OutputTokens")
-            ?? 0;
-
-        // 尝试多种命名风格的 total tokens
-        long total = TryGetInt64(root, "totalTokens")
-            ?? TryGetInt64(root, "TotalTokens")
-            ?? TryGetInt64(root, "total_tokens")
-            ?? prompt + completion;
-
-        return (prompt, completion, total);
-    }
-
-    /// <summary>从 JsonElement 安全读取 Int64 属性，不存在或类型不匹配返回 null。</summary>
-    private static long? TryGetInt64(JsonElement element, string propertyName)
+    private static JsonElement ParsePayload(string payload)
     {
-        if (element.TryGetProperty(propertyName, out var prop))
+        if (string.IsNullOrWhiteSpace(payload))
+            return default;
+        try
         {
-            if (prop.ValueKind == JsonValueKind.Number)
-            {
-                try { return prop.GetInt64(); }
-                catch { return null; }
-            }
+            return JsonDocument.Parse(payload).RootElement;
         }
-        return null;
+        catch (JsonException)
+        {
+            return default;
+        }
     }
+
+    private static ConversationEventSourceKind? ParseSourceKind(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        return Enum.TryParse<ConversationEventSourceKind>(raw, ignoreCase: true, out var kind)
+            ? kind
+            : null;
+    }
+
+    private static DateTimeOffset ParseDateTimeOffset(string value)
+    {
+        if (DateTimeOffset.TryParse(value, out var result))
+            return result;
+        // fallback: 尝试 Unix 毫秒
+        if (long.TryParse(value, out var ms) && ms > 0)
+            return DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        return DateTimeOffset.MinValue;
+    }
+
 }
 
 /// <summary>

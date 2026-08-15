@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,6 +11,7 @@ using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Diagnostics;
 
 namespace PuddingPlatformTests.Services;
 
@@ -56,6 +57,7 @@ public sealed class SessionStateManagerSequenceTests
             new NoOpTraceAccessor(),
             new JsonlSessionWriter(tmpDir),
             new SessionStateStore(dataPaths, NullLogger<SessionStateStore>.Instance),
+            new ConversationDiagnosticEventProjector(),
             rawLogMirror);
     }
 
@@ -242,7 +244,7 @@ public sealed class SessionStateManagerSequenceTests
             while (await ssm.GetEventCountAfterAsync(sessionId, 0, cts.Token) == 0)
                 await Task.Delay(25, cts.Token);
 
-            var replay = await ssm.ReplaySessionAsync(sessionId, fromSequenceNum: 0, limit: 10);
+            var replay = await ssm.GetEventsAsync(sessionId, fromSequence: null, limit: 10);
             Assert.AreEqual(1, replay.Events.Count);
             Assert.AreEqual(1L, replay.Events[0].SequenceNum);
             Assert.AreEqual("delta", replay.Events[0].EventType);
@@ -293,7 +295,7 @@ public sealed class SessionStateManagerSequenceTests
             while (await ssm.GetEventCountAfterAsync(sessionId, 0, cts.Token) < 2)
                 await Task.Delay(25, cts.Token);
 
-            var replay = await ssm.ReplaySessionAsync(sessionId, fromSequenceNum: 0, limit: 10);
+            var replay = await ssm.GetEventsAsync(sessionId, fromSequence: null, limit: 10);
             Assert.AreEqual(2, replay.Events.Count);
             Assert.AreEqual("delta", replay.Events[0].EventType);
             Assert.AreEqual("done", replay.Events[1].EventType);
@@ -358,7 +360,7 @@ public sealed class SessionStateManagerSequenceTests
             bool donePersisted = false;
             while (!cts.IsCancellationRequested)
             {
-                var replay = await ssm.ReplaySessionAsync(sessionId, fromSequenceNum: 0, limit: 50);
+                var replay = await ssm.GetEventsAsync(sessionId, fromSequence: null, limit: 50);
                 donePersisted = replay.Events.Any(e => e.EventType == "done");
                 if (donePersisted) break;
                 await Task.Delay(50, cts.Token);
@@ -667,6 +669,116 @@ public sealed class SessionStateManagerSequenceTests
             if (File.Exists(dbPath)) File.Delete(dbPath);
         }
     }
+
+    /// <summary>
+    /// P0-4f B3：GetTraceReportAsync 读 canonical conversation_events + 共享投影器，
+    /// 验证 usage / tool / subagent / component 全部走投影器聚合，不再读 session_event_log。
+    /// </summary>
+    [TestMethod]
+    public async Task GetTraceReportAsync_ConversationEventSource_ProjectsThroughProjector()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            const string sessionId = "conv-1";
+            const string workspaceId = "default";
+
+            var ssm = CreateSsm(dbPath);
+
+            using (var scope = CreateScopeFactory(dbPath).CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Database.EnsureCreated();
+
+                db.ConversationEvents.AddRange(
+                    CreateConversationEvent(sessionId, workspaceId, 1, "turn-1", "run-1",
+                        ConversationEventTypes.TurnStarted, "{}", "2026-06-03T22:42:34.000Z", "trace-1"),
+                    CreateConversationEvent(sessionId, workspaceId, 2, "turn-1", "run-1",
+                        ConversationEventTypes.ToolCallRequested, "{\"name\":\"list_dir\"}", "2026-06-03T22:42:35.000Z", "trace-1"),
+                    CreateConversationEvent(sessionId, workspaceId, 3, "turn-1", "run-1",
+                        ConversationEventTypes.ToolCallCompleted, "{\"name\":\"list_dir\",\"exitCode\":0,\"output\":\"ok\"}", "2026-06-03T22:42:36.000Z", "trace-1"),
+                    CreateConversationEvent(sessionId, workspaceId, 4, "turn-1", "run-1",
+                        ConversationEventTypes.UsageRecorded, "{\"modelId\":\"deepseek\",\"endpoint\":\"e1\",\"inputTokens\":10,\"outputTokens\":5,\"durationMs\":100}", "2026-06-03T22:42:37.000Z", "trace-1"),
+                    CreateConversationEvent(sessionId, workspaceId, 5, "turn-1", "run-1",
+                        ConversationEventTypes.TurnCompleted, "{\"reply\":\"hello\"}", "2026-06-03T22:42:38.000Z", "trace-1"),
+                    CreateConversationEvent(sessionId, workspaceId, 6, "turn-2", "run-sub-1",
+                        ConversationEventTypes.SubAgentRunCreated, "{\"subAgentId\":\"sub-1\"}", "2026-06-03T22:42:39.000Z", "trace-1"),
+                    CreateConversationEvent(sessionId, workspaceId, 7, "turn-2", "run-sub-1",
+                        ConversationEventTypes.SubAgentRunCompleted, "{\"subAgentId\":\"sub-1\"}", "2026-06-03T22:42:41.000Z", "trace-1"));
+
+                await db.SaveChangesAsync();
+            }
+
+            var report = await ssm.GetTraceReportAsync(sessionId);
+
+            Assert.AreEqual(sessionId, report.SessionId);
+            Assert.AreEqual(1, report.TraceIds.Count);
+            Assert.AreEqual("trace-1", report.TraceIds[0]);
+
+            // 组件时序走投影器（turn.completed → completed）
+            var turnCompleted = report.ComponentTimeline.Single(c => c.Operation == ConversationEventTypes.TurnCompleted);
+            Assert.AreEqual("completed", turnCompleted.Status);
+            Assert.AreEqual("chat.acceptance", turnCompleted.Component);
+
+            // LLM 调用走 TryProjectUsage
+            Assert.AreEqual(1, report.LlmCalls.Count);
+            Assert.AreEqual("deepseek", report.LlmCalls[0].Model);
+            Assert.AreEqual(10, report.LlmCalls[0].InputTokens);
+            Assert.AreEqual(5, report.LlmCalls[0].OutputTokens);
+            Assert.AreEqual(15, report.TotalTokens);
+
+            // 工具调用走 TryProjectToolCall（配对 requested + completed）
+            Assert.AreEqual(1, report.ToolCalls.Count);
+            Assert.AreEqual("list_dir", report.ToolCalls[0].ToolName);
+            Assert.IsTrue(report.ToolCalls[0].Success);
+            Assert.AreEqual(1000, report.ToolCalls[0].DurationMs);
+
+            // 子代理走 ExtractSubAgentId（配对 created + completed）
+            Assert.AreEqual(1, report.SubAgents.Count);
+            Assert.AreEqual("sub-1", report.SubAgents[0].SubAgentId);
+            Assert.AreEqual("completed", report.SubAgents[0].Status);
+            Assert.AreEqual(2000, report.SubAgents[0].DurationMs);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    private static ConversationEventEntity CreateConversationEvent(
+        string conversationId,
+        string workspaceId,
+        long sequence,
+        string turnId,
+        string runId,
+        string type,
+        string payload,
+        string occurredAt,
+        string traceId)
+        => new()
+        {
+            ConversationId = conversationId,
+            WorkspaceId = workspaceId,
+            Sequence = sequence,
+            TurnId = turnId,
+            CommandId = "cmd-1",
+            RunId = runId,
+            MessageId = "msg-1",
+            EventId = $"evt-{sequence}",
+            Type = type,
+            SchemaVersion = 1,
+            Payload = payload,
+            OccurredAt = occurredAt,
+            CommittedAt = occurredAt,
+            CorrelationId = "corr-1",
+            CausationId = "caus-1",
+            ProducerEventId = null,
+            AgentId = "agent-1",
+            SourceKind = "agent",
+            TraceId = traceId,
+            ProducerComponent = "chat.acceptance",
+        };
 }
 
 /// <summary>
