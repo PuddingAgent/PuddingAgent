@@ -1188,9 +1188,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             }
             else
             {
-                var maxSeq = await db.SessionEventLogs
-                    .Where(e => e.SessionId == sessionId)
-                    .MaxAsync(e => (long?)e.SequenceNum, ct) ?? 0;
+                var maxSeq = await db.ConversationEvents
+                    .Where(e => e.ConversationId == sessionId)
+                    .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
 
                 seq = maxSeq + 1;
                 state.NextSequence = seq + 1;
@@ -1307,9 +1307,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             {
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                var maxSeq = await db.SessionEventLogs
-                    .Where(e => e.SessionId == sessionId)
-                    .MaxAsync(e => (long?)e.SequenceNum, ct) ?? 0;
+                var maxSeq = await db.ConversationEvents
+                    .Where(e => e.ConversationId == sessionId)
+                    .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
 
                 state.NextSequence = maxSeq + 1;
                 state.Initialized = true;
