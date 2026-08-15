@@ -35,13 +35,4 @@ public interface ISessionEventWriter
         SessionEventDraft draft,
         CancellationToken ct = default);
 
-    /// <summary>
-    /// 批量追加事件，在同一 SQLite 事务内提交。
-    /// 返回按写入顺序排列的已完成 Envelope 列表。
-    /// </summary>
-    ValueTask<IReadOnlyList<SessionEventEnvelope>> AppendBatchAsync(
-        string sessionId,
-        string workspaceId,
-        IReadOnlyList<SessionEventDraft> drafts,
-        CancellationToken ct = default);
 }
