@@ -732,21 +732,7 @@ public class SessionEventsController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// 获取 SQLite 与 JSONL 双写一致性检查报告。
-    /// GET /api/sessions/{sessionId}/consistency
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
-    /// </summary>
-    [HttpGet("{sessionId}/consistency")]
-    public async Task<ActionResult<SessionConsistencyReport>> GetConsistency(
-        string sessionId, CancellationToken ct)
-    {
-        var report = await _ssm.CheckConsistencyAsync(sessionId, ct);
-        _logger.LogDebug(
-            "[SessionEvents] GET consistency session={Session} consistent={Consistent} diff={Diff}",
-            sessionId, report.IsConsistent, report.Difference);
-        return Ok(report);
-    }
+    
 
     /// <summary>
     /// 获取会话级 Trace 聚合报告。

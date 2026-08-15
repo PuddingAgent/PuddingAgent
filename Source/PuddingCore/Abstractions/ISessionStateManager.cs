@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -143,15 +143,7 @@ public interface ISessionStateManager
     /// </summary>
     Task MarkSessionClosedAsync(string sessionId, CancellationToken ct = default);
 
-    // ════════════════════════════════════════════════════════
-    // 一致性检查（ARCH-SESSION-002）
-    // ════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// 检查 SQLite 事件日志与 JSONL 文件的一致性。
-    /// 比较 SQLite 中的事件计数与 JSONL 文件中的行数，返回差异报告。
-    /// </summary>
-    Task<SessionConsistencyReport> CheckConsistencyAsync(string sessionId, CancellationToken ct = default);
+    
 
     // ════════════════════════════════════════════════════════
     // Trace 聚合（ARCH-SESSION-004）
@@ -326,24 +318,6 @@ public sealed record SubAgentTokenSummary
     public long CacheMissTokens { get; init; }
     public decimal TotalCost { get; init; }
     public int RequestCount { get; init; }
-}
-
-// ════════════════════════════════════════════════════════════
-// ARCH-SESSION-002: 双写一致性
-// ════════════════════════════════════════════════════════════
-
-/// <summary>
-/// SQLite 与 JSONL 双写一致性检查报告。
-/// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
-/// </summary>
-public sealed record SessionConsistencyReport
-{
-    public required string SessionId { get; init; }
-    public long SqliteEventCount { get; init; }
-    public long JsonlLineCount { get; init; }
-    public bool IsConsistent { get; init; }
-    public long Difference { get; init; }
-    public string? Details { get; init; }
 }
 
 // ════════════════════════════════════════════════════════════

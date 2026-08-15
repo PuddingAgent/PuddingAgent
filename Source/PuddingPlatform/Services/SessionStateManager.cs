@@ -1685,48 +1685,6 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     // ════════════════════════════════════════════════════════
-    // 一致性检查（ARCH-SESSION-002）
-    // ════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// 检查 SQLite 事件日志与 JSONL 文件的一致性。
-    /// 比较 SQLite session_event_log 表的事件计数与 JSONL 文件行数。
-    /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
-    /// </summary>
-    public async Task<SessionConsistencyReport> CheckConsistencyAsync(string sessionId, CancellationToken ct = default)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-
-        var sqliteCount = await db.SessionEventLogs
-            .CountAsync(e => e.SessionId == sessionId, ct);
-
-        var jsonlCount = _jsonlWriter.GetLineCount(sessionId);
-
-        var diff = sqliteCount - jsonlCount;
-        string? details = null;
-
-        if (diff > 0)
-            details = $"SQLite 比 JSONL 多 {diff} 条事件（JSONL 写入可能丢失）";
-        else if (diff < 0)
-            details = $"JSONL 比 SQLite 多 {-diff} 行（JSONL 存在多余数据，不自动修正）";
-
-        _logger.LogDebug(
-            "[SSM] Consistency check session={Session} sqlite={Sqlite} jsonl={Jsonl} diff={Diff}",
-            sessionId, sqliteCount, jsonlCount, diff);
-
-        return new SessionConsistencyReport
-        {
-            SessionId = sessionId,
-            SqliteEventCount = sqliteCount,
-            JsonlLineCount = jsonlCount,
-            IsConsistent = diff == 0,
-            Difference = diff,
-            Details = details,
-        };
-    }
-
-    // ════════════════════════════════════════════════════════
     // Trace 聚合（ARCH-SESSION-004）
     // ════════════════════════════════════════════════════════
 

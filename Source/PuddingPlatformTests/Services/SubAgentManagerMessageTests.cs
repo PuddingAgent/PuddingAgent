@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
@@ -439,28 +439,10 @@ public sealed class SubAgentManagerMessageTests
             Task.FromResult<IReadOnlyList<SubAgentStatus>>([]);
         public Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default) =>
             Task.FromResult(0);
-        public Task<SessionReplayResult> ReplaySessionAsync(
-            string sessionId,
-            long? fromSequenceNum = null,
-            int limit = 200,
-            CancellationToken ct = default) =>
-            Task.FromResult(new SessionReplayResult
-            {
-                SessionId = sessionId,
-                CurrentState = "completed",
-                Events = [],
-                TotalEventCount = 0,
-                HasMore = false,
-                SubAgents = [],
-            });
+        
         public Task MarkStreamCompleteAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
         public Task MarkSessionClosedAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<SessionConsistencyReport> CheckConsistencyAsync(string sessionId, CancellationToken ct = default) =>
-            Task.FromResult(new SessionConsistencyReport
-            {
-                SessionId = sessionId,
-                IsConsistent = true,
-            });
+        
         public Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default) =>
             Task.FromResult(new SessionTraceReport
             {
