@@ -253,23 +253,37 @@ public sealed class TokenUsageRebuildService(
             .Where(workspace => !string.IsNullOrWhiteSpace(workspace))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var usageFrames = new List<SessionEventLogEntity>();
+        var usageFrames = new List<GatewayUsageFrame>();
         foreach (var workspace in workspaces)
         {
-            var workspaceFrames = await db.SessionEventLogs
+            var workspaceEvents = await db.ConversationEvents
                 .AsNoTracking()
-                .Where(frame => frame.WorkspaceId == workspace && frame.EventType == "usage")
-                .OrderBy(frame => frame.RecordedAt)
-                .ThenBy(frame => frame.Id)
+                .Where(evt => evt.WorkspaceId == workspace && evt.Type == ConversationEventTypes.UsageRecorded)
+                .OrderBy(evt => evt.Id)
                 .ToListAsync(ct);
-            usageFrames.AddRange(workspaceFrames.Where(frame => MatchesYearMonth(frame.RecordedAt, yearMonth)));
+            foreach (var usageEvent in workspaceEvents.Where(evt => MatchesYearMonth(evt.OccurredAt, yearMonth)))
+            {
+                if (TryMapGatewayUsageEvent(usageEvent, out var frame))
+                    usageFrames.Add(frame);
+            }
         }
 
+        // usage.recorded v2 payload carries invocationIndex (per-turn LLM invocation
+        // counter), which is a precise pairing key: an ordered chat_stream activity at
+        // position i maps to the usage event whose invocationIndex == i + 1. This
+        // replaces the legacy index-based pairing against session_event_log "usage"
+        // frames. Duplicate invocationIndex (multi-turn overlap) collapses to fewer
+        // entries than activities, which fails the count check below and safely falls
+        // back to self-contained facts instead of manufacturing a wrong pairing.
         var framesBySession = usageFrames
             .GroupBy(frame => (frame.WorkspaceId, frame.SessionId))
             .ToDictionary(
                 group => group.Key,
-                group => group.OrderBy(frame => frame.RecordedAt).ThenBy(frame => frame.Id).ToList());
+                group => group
+                    .GroupBy(frame => frame.InvocationIndex)
+                    .ToDictionary(
+                        indexGroup => indexGroup.Key,
+                        indexGroup => indexGroup.First().Usage));
 
         foreach (var group in streamActivities.GroupBy(
                      activity => (activity.WorkspaceId ?? string.Empty, activity.SessionId ?? string.Empty)))
@@ -278,16 +292,18 @@ public sealed class TokenUsageRebuildService(
                 .OrderBy(activity => activity.StartedAtUtc)
                 .ThenBy(activity => activity.Id)
                 .ToList();
-            framesBySession.TryGetValue(group.Key, out var orderedFrames);
-            orderedFrames ??= [];
+            framesBySession.TryGetValue(group.Key, out var framesByIndex);
 
-            if (orderedActivities.Count == orderedFrames.Count)
+            if (orderedActivities.Count > 0
+                && framesByIndex is not null
+                && orderedActivities.Count == framesByIndex.Count
+                && Enumerable.Range(1, orderedActivities.Count).All(framesByIndex.ContainsKey))
             {
                 for (var index = 0; index < orderedActivities.Count; index++)
                 {
                     var activity = orderedActivities[index];
                     if (!TryMapGatewayActivity(activity, out var mapped)
-                        || !TryParseUsage(orderedFrames[index].Data, out var usage))
+                        || !framesByIndex.TryGetValue(index + 1, out var usage))
                     {
                         result.GatewayFactsSkipped++;
                         continue;
@@ -309,7 +325,7 @@ public sealed class TokenUsageRebuildService(
                 group.Key.Item1,
                 group.Key.Item2,
                 orderedActivities.Count,
-                orderedFrames.Count);
+                framesByIndex?.Count ?? 0);
             foreach (var activity in orderedActivities)
             {
                 if (TryMapGatewayActivity(activity, out var mapped)
@@ -445,6 +461,50 @@ public sealed class TokenUsageRebuildService(
         catch (JsonException)
         {
             usage = default!;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 将 canonical usage.recorded v2 事实事件映射为网关流式 usage 帧。
+    /// payload 形态（TurnExecutorAdapter.CreateUsageRecordedPayload）：
+    /// { usage: {...}, providerId, profileId, modelId, role, invocationIndex }。
+    /// 仅接受带嵌套 usage 对象且 invocationIndex &gt; 0 的事件；缺少任一者即视为不可配对。
+    /// </summary>
+    private static bool TryMapGatewayUsageEvent(
+        ConversationEventEntity entity,
+        out GatewayUsageFrame frame)
+    {
+        frame = default!;
+        try
+        {
+            using var document = JsonDocument.Parse(entity.Payload);
+            var payload = document.RootElement;
+            if (payload.ValueKind != JsonValueKind.Object
+                || !payload.TryGetProperty("usage", out var usageElement)
+                || usageElement.ValueKind != JsonValueKind.Object
+                || !payload.TryGetProperty("invocationIndex", out var invocationElement)
+                || !invocationElement.TryGetInt32(out var invocationIndex)
+                || invocationIndex <= 0)
+            {
+                return false;
+            }
+
+            var usage = JsonSerializer.Deserialize<TokenUsageDto>(
+                usageElement.GetRawText(),
+                JsonOpts);
+            if (usage is null)
+                return false;
+
+            frame = new GatewayUsageFrame(
+                entity.WorkspaceId,
+                entity.ConversationId,
+                invocationIndex,
+                usage);
+            return true;
+        }
+        catch (JsonException)
+        {
             return false;
         }
     }
@@ -650,6 +710,12 @@ public sealed class TokenUsageRebuildService(
         string? AgentTemplateId,
         DateTimeOffset OccurredAtUtc,
         TokenUsageDto? Usage);
+
+    private sealed record GatewayUsageFrame(
+        string WorkspaceId,
+        string SessionId,
+        int InvocationIndex,
+        TokenUsageDto Usage);
 
     private sealed record GatewayDedupKey(
         string Operation,

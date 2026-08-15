@@ -139,17 +139,25 @@ public sealed class TokenUsageRebuildServiceTests
                     activityId: "stream-1",
                     operation: "chat_stream",
                     modelId: "deepseek-v4-pro"));
-            db.SessionEventLogs.Add(new SessionEventLogEntity
-            {
-                SessionId = "session-1",
-                WorkspaceId = "workspace-1",
-                SequenceNum = 1,
-                EventType = "usage",
-                Data = """
-                    {"promptTokens":1000,"completionTokens":200,"totalTokens":1200,"promptCacheHitTokens":600,"promptCacheMissTokens":400}
+            db.ConversationEvents.Add(CreateConversationUsageEvent(
+                eventId: "gateway-usage-1",
+                payload: """
+                    {
+                      "usage": {
+                        "promptTokens": 1000,
+                        "completionTokens": 200,
+                        "totalTokens": 1200,
+                        "promptCacheHitTokens": 600,
+                        "promptCacheMissTokens": 400
+                      },
+                      "providerId": "deepseek",
+                      "profileId": "agent:agent-1:conscious",
+                      "modelId": "deepseek-v4-pro",
+                      "role": "conscious",
+                      "invocationIndex": 1
+                    }
                     """,
-                RecordedAt = "2026-06-03T08:00:01+00:00",
-            });
+                conversationId: "session-1"));
             db.LlmGatewayUsageEvents.Add(new LlmGatewayUsageEventEntity
             {
                 SourceId = "llm:direct-chat-1",
@@ -203,10 +211,11 @@ public sealed class TokenUsageRebuildServiceTests
     private static ConversationEventEntity CreateConversationUsageEvent(
         string eventId,
         string payload,
-        int schemaVersion = 2)
+        int schemaVersion = 2,
+        string conversationId = "conversation-1")
         => new()
         {
-            ConversationId = "conversation-1",
+            ConversationId = conversationId,
             Sequence = 1,
             EventId = eventId,
             WorkspaceId = "workspace-1",
