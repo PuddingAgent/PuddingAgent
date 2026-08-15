@@ -153,31 +153,15 @@ public sealed class SessionApiControllerTests
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            db.SessionEventLogs.AddRange(
-                new SessionEventLogEntity
-                {
-                    SessionId = sid,
-                    WorkspaceId = "default",
-                    SequenceNum = 1,
-                    EventType = "metadata",
-                    Data = "{\"agent_id\":\"agent-tester\",\"source_id\":\"agent-tester\",\"source_name\":\"测试助手\"}",
-                    RecordedAt = now.ToString("O"),
-                },
-                new SessionEventLogEntity
-                {
-                    SessionId = sid,
-                    WorkspaceId = "default",
-                    SequenceNum = 2,
-                    EventType = "done",
-                    Data = "{\"reply\":\"ok\"}",
-                    RecordedAt = now.AddSeconds(1).ToString("O"),
-                });
-            db.ChatMessages.Add(new ChatMessageEntity
+            db.ConversationCatalogs.Add(new ConversationCatalogEntity
             {
-                SessionId = sid,
-                Role = "user",
-                Content = "测试助手历史会话",
-                CreatedAt = now.ToUnixTimeMilliseconds(),
+                ConversationId = sid,
+                WorkspaceId = "default",
+                PrincipalId = "agent-tester",
+                Title = "测试助手历史会话",
+                Status = "idle",
+                CreatedAt = now.ToString("O"),
+                LastActiveAt = now.AddSeconds(1).ToString("O"),
             });
             await db.SaveChangesAsync();
         }
@@ -302,11 +286,27 @@ public sealed class SessionApiControllerTests
                 Data = "{\"reply\":\"deleted\"}",
                 RecordedAt = now.ToString("O"),
             });
+            db.ConversationCatalogs.Add(new ConversationCatalogEntity
+            {
+                ConversationId = sid,
+                WorkspaceId = "default",
+                PrincipalId = "agent-tester",
+                Title = "待删除会话",
+                Status = "idle",
+                CreatedAt = now.ToString("O"),
+                LastActiveAt = now.AddSeconds(1).ToString("O"),
+            });
             await db.SaveChangesAsync();
         }
 
         var deleteResp = await _client.DeleteAsync($"/api/sessions/{sid}");
         Assert.AreEqual(HttpStatusCode.NoContent, deleteResp.StatusCode);
+
+        using (var verifyScope = _factory.Services.CreateScope())
+        {
+            var db = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            Assert.IsFalse(db.ConversationCatalogs.Any(c => c.ConversationId == sid));
+        }
 
         var listResp = await _client.GetAsync("/api/sessions?workspaceId=default");
         Assert.AreEqual(HttpStatusCode.OK, listResp.StatusCode);

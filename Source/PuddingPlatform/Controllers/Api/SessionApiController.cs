@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
-using System.Text.Json;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -201,75 +200,29 @@ public partial class SessionApiController
     private async Task<List<SessionRecord>> BuildTranscriptBackfillSessionsAsync(string? workspaceId, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var query = db.SessionEventLogs.AsNoTracking();
+        var query = db.ConversationCatalogs.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(workspaceId))
-            query = query.Where(e => e.WorkspaceId == workspaceId);
+            query = query.Where(c => c.WorkspaceId == workspaceId);
 
-        var facts = await query
-            .GroupBy(e => new { e.SessionId, e.WorkspaceId })
-            .Select(g => new
-            {
-                g.Key.SessionId,
-                g.Key.WorkspaceId,
-                FirstRecordedAt = g.Min(e => e.RecordedAt),
-                LastRecordedAt = g.Max(e => e.RecordedAt),
-            })
-            .ToListAsync(ct);
+        var catalogs = await query.ToListAsync(ct);
 
-        if (facts.Count == 0)
-            return [];
-
-        var sessionIds = facts.Select(f => f.SessionId).Distinct().ToList();
-        var titleRows = await db.ChatMessages
-            .AsNoTracking()
-            .Where(m => sessionIds.Contains(m.SessionId) && m.Role == "user")
-            .OrderBy(m => m.CreatedAt)
-            .Select(m => new { m.SessionId, m.Content })
-            .ToListAsync(ct);
-
-        var titles = titleRows
-            .GroupBy(m => m.SessionId)
-            .ToDictionary(
-                g => g.Key,
-                g => BuildSessionTitle(g.First().Content),
-                StringComparer.Ordinal);
-
-        var metadataRows = await db.SessionEventLogs
-            .AsNoTracking()
-            .Where(e => sessionIds.Contains(e.SessionId) && e.EventType == "metadata")
-            .OrderBy(e => e.SequenceNum)
-            .Select(e => new { e.SessionId, e.Data })
-            .ToListAsync(ct);
-
-        var principalIds = metadataRows
-            .GroupBy(e => e.SessionId)
-            .ToDictionary(
-                g => g.Key,
-                g => g.Select(e => TryReadMetadataString(e.Data, "agent_id")
-                        ?? TryReadMetadataString(e.Data, "source_id"))
-                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)),
-                StringComparer.Ordinal);
-
-        var sessions = new List<SessionRecord>(facts.Count);
-        foreach (var fact in facts)
+        var sessions = new List<SessionRecord>(catalogs.Count);
+        foreach (var c in catalogs)
         {
-            var createdAt = ParseRecordedAt(fact.FirstRecordedAt);
-            var lastActiveAt = ParseRecordedAt(fact.LastRecordedAt);
-            var principalId = principalIds.GetValueOrDefault(fact.SessionId);
             sessions.Add(new SessionRecord
             {
-                SessionId = fact.SessionId,
-                WorkspaceId = fact.WorkspaceId,
+                SessionId = c.ConversationId,
+                WorkspaceId = c.WorkspaceId,
                 AgentTemplateId = TranscriptBackfillAgentTemplateId,
                 ChannelId = TranscriptBackfillChannelId,
                 OwnerUserId = TranscriptBackfillOwnerUserId,
                 SessionType = SessionType.ServiceSession,
-                Status = SessionStatus.Idle,
-                PrincipalKind = string.IsNullOrWhiteSpace(principalId) ? null : "agent",
-                PrincipalId = principalId,
-                Title = titles.GetValueOrDefault(fact.SessionId) ?? "对话",
-                CreatedAt = createdAt,
-                LastActiveAt = lastActiveAt,
+                Status = MapCatalogStatus(c.Status),
+                PrincipalKind = string.IsNullOrWhiteSpace(c.PrincipalId) ? null : "agent",
+                PrincipalId = c.PrincipalId,
+                Title = c.Title ?? "对话",
+                CreatedAt = ParseRecordedAt(c.CreatedAt),
+                LastActiveAt = ParseRecordedAt(c.LastActiveAt),
             });
         }
 
@@ -281,24 +234,6 @@ public partial class SessionApiController
         return sessions;
     }
 
-    private static string? TryReadMetadataString(string json, string propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private static DateTimeOffset ParseRecordedAt(string? value)
     {
         return DateTimeOffset.TryParse(value, out var parsed)
@@ -306,20 +241,16 @@ public partial class SessionApiController
             : DateTimeOffset.UtcNow;
     }
 
-    private static string BuildSessionTitle(string? content)
+    private static SessionStatus MapCatalogStatus(string? status) => status switch
     {
-        var normalized = (content ?? string.Empty)
-            .Replace("\r", " ", StringComparison.Ordinal)
-            .Replace("\n", " ", StringComparison.Ordinal)
-            .Trim();
-
-        if (string.IsNullOrWhiteSpace(normalized))
-            return "对话";
-
-        return normalized.Length <= 30
-            ? normalized
-            : normalized[..30];
-    }
+        "active" => SessionStatus.Active,
+        "idle" => SessionStatus.Idle,
+        "completed" => SessionStatus.Completed,
+        "failed" => SessionStatus.Failed,
+        "frozen" => SessionStatus.Frozen,
+        "cancelled" => SessionStatus.Failed, // 取消=终止态，映射 Failed（无 Cancelled 枚举值）
+        _ => SessionStatus.Idle,
+    };
 
     private async Task DeletePlatformSessionArtifactsAsync(string sessionId, CancellationToken ct)
     {
@@ -333,12 +264,16 @@ public partial class SessionApiController
         var deletedSubAgents = await db.SessionSubAgents
             .Where(s => s.ParentSessionId == sessionId || s.SubSessionId == sessionId)
             .ExecuteDeleteAsync(ct);
+        var deletedCatalog = await db.ConversationCatalogs
+            .Where(c => c.ConversationId == sessionId)
+            .ExecuteDeleteAsync(ct);
 
         _logger.LogInformation(
-            "[SessionApi] Deleted session artifacts sessionId={SessionId} messages={Messages} events={Events} subAgents={SubAgents}",
+            "[SessionApi] Deleted session artifacts sessionId={SessionId} messages={Messages} events={Events} subAgents={SubAgents} catalog={Catalog}",
             sessionId,
             deletedMessages,
             deletedEvents,
-            deletedSubAgents);
+            deletedSubAgents,
+            deletedCatalog);
     }
 }
