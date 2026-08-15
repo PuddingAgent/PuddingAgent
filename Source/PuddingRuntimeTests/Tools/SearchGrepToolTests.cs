@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Tools;
@@ -464,6 +464,101 @@ public sealed class SearchGrepToolTests
 
             Assert.IsTrue(result.Success, result.Error);
             StringAssert.Contains(result.Output, "文件枚举已达上限 2000 个");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_MoreThan100Results_Are_Persisted_To_Temp_File()
+    {
+        // 回归：maxResults 不再是托管分支的硬上限。即使 max_results=10，
+        // 仍持续收集全部命中；总数 >100 时内联前 100 条并把完整结果写入临时文件。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        const int totalMatches = 120;
+        for (int i = 1; i <= totalMatches; i++)
+            await File.WriteAllTextAsync(Path.Combine(tempDir, $"f{i:D3}.txt"), "NEEDLE line\n");
+
+        string? tmpPath = null;
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.txt",
+                ["max_results"] = "10",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "超过预算 100");
+            StringAssert.Contains(result.Output, "file_read");
+            StringAssert.Contains(result.Output, "OffsetLines");
+
+            // 从报告行提取临时文件路径
+            const string marker = "路径为 ";
+            var idx = result.Output.IndexOf(marker, StringComparison.Ordinal);
+            Assert.IsTrue(idx >= 0, "output must contain temp file path marker");
+            var pathStart = idx + marker.Length;
+            var commaIdx = result.Output.IndexOf('，', pathStart);
+            Assert.IsTrue(commaIdx > pathStart, "temp file path must be delimited by full-width comma");
+            tmpPath = result.Output.Substring(pathStart, commaIdx - pathStart);
+
+            // 临时文件存在，内容行数 == 结果总数
+            Assert.IsTrue(File.Exists(tmpPath), "temp file must exist");
+            var lines = await File.ReadAllLinesAsync(tmpPath);
+            Assert.AreEqual(totalMatches, lines.Length, "temp file must contain all matches");
+            Assert.AreEqual("f001.txt:1: NEEDLE line", lines[0], "temp file entries must use relPath:lineNumber: text format");
+
+            // 内联恰返回 100 条
+            var inlineCount = result.Output.Split('\n').Count(l => l.Contains(":1: NEEDLE"));
+            Assert.AreEqual(100, inlineCount, "exactly 100 matches must be inline");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            if (tmpPath != null && File.Exists(tmpPath)) File.Delete(tmpPath);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_100OrFewer_Results_Are_Inline_Without_Temp_File()
+    {
+        // 边界：恰 100 条命中时行为不变，全部内联，不产生临时文件与分页报告。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        const int totalMatches = 100;
+        for (int i = 1; i <= totalMatches; i++)
+            await File.WriteAllTextAsync(Path.Combine(tempDir, $"f{i:D3}.txt"), "NEEDLE line\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.txt",
+                ["max_results"] = "200",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            var inlineCount = result.Output.Split('\n').Count(l => l.Contains(":1: NEEDLE"));
+            Assert.AreEqual(totalMatches, inlineCount, "all matches must be inline");
+            Assert.IsFalse(result.Output.Contains("超过预算"), "no pagination report expected when <=100 results");
+            Assert.IsFalse(result.Output.Contains("临时文件"), "no temp file report expected when <=100 results");
         }
         finally
         {

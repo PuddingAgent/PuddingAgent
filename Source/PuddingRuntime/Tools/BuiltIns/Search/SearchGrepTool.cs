@@ -34,10 +34,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const string TotalCapMessage = "结果已截断，共命中 {0} 处，请缩小范围";
     private const string EnumerationTruncatedMessage = "文件枚举已达上限 {0} 个，结果可能不完整（建议缩小 directory/pattern/file_ext 范围）";
     private const string ScanBudgetMessage = "扫描已达预算上限（{0} 个文件 / {1} 字节），结果可能不完整";
+    private const string PaginationReportMessage = "返回数量为 {0} 个超过预算 100，完整结果已释放到临时文件，路径为 {1}，如果需要阅读完整的请使用 file_read 工具以 OffsetLines 参数分页阅读。";
+    private const int MaxInlineResults = 100;
 
     private static readonly TimeSpan ManagedSearchTimeout = TimeSpan.FromSeconds(10);
     private const int MaxEnumeratedFiles = 2000;
-    private const int MaxScannedFiles = 1000;
+    private const int MaxScannedFiles = 2000;
     private const long MaxScannedBytes = 64 * 1024 * 1024;
     private const int MaxErrors = 100;
 
@@ -201,7 +203,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 bool scanBudgetExceeded = false;
         foreach (var file in files)
         {
-            if (cts.IsCancellationRequested || totalCapReached || results.Count >= maxResults) break;
+            if (cts.IsCancellationRequested || totalCapReached) break;
             if (errors >= MaxErrors) break;
             if (scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes)
             {
@@ -233,7 +235,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (results.Count >= maxResults || totalCapReached) break;
+                    if (totalCapReached) break;
                     var line = lines[i].TrimEnd('\r');
                     bool match = isRegex
                         ? regex?.IsMatch(line) == true
@@ -274,10 +276,34 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             return ToolExecutionResult.Ok(emptyMsg);
         }
 
-        var output = string.Join("\n", results);
+        if (results.Count > MaxInlineResults)
+        {
+            string? tmpPath = null;
+            try
+            {
+                tmpPath = Path.GetTempFileName();
+                File.WriteAllText(tmpPath, string.Join("\n", results), new UTF8Encoding(false));
+
+                var output = string.Join("\n", results.Take(MaxInlineResults));
+                if (notes.Count > 0)
+                    output += "\n" + string.Join("\n", notes);
+                output += "\n" + string.Format(PaginationReportMessage, results.Count, tmpPath);
+                return ToolExecutionResult.Ok(output);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[SearchGrep] Failed to persist results to temp file, falling back to inline output");
+                if (tmpPath != null)
+                {
+                    try { File.Delete(tmpPath); } catch { /* best effort */ }
+                }
+            }
+        }
+
+        var finalOutput = string.Join("\n", results);
         if (notes.Count > 0)
-            output += "\n" + string.Join("\n", notes);
-        return ToolExecutionResult.Ok(output);
+            finalOutput += "\n" + string.Join("\n", notes);
+        return ToolExecutionResult.Ok(finalOutput);
     }
 
         /// <summary>
