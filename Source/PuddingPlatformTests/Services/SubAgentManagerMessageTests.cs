@@ -407,23 +407,6 @@ public sealed class SubAgentManagerMessageTests
             string? component = null,
             string? operation = null) => Task.FromResult(1L);
 
-        public Task<SessionEventPage> GetEventsAsync(
-            string sessionId,
-            long? fromSequence = null,
-            int limit = 50,
-            CancellationToken ct = default) =>
-            Task.FromResult(new SessionEventPage
-            {
-                Events = [],
-                HasMore = false,
-                MinSequence = 0,
-                MaxSequence = 0,
-                TotalCount = 0,
-            });
-
-        public Task<long> GetEventCountAfterAsync(string sessionId, long afterSequence, CancellationToken ct = default) =>
-            Task.FromResult(0L);
-
         public ChannelReader<ServerSentEventFrame>? Subscribe(string sessionId) => null;
         public void Unsubscribe(string sessionId, ChannelReader<ServerSentEventFrame> reader) { }
         public ChannelReader<SessionNotification> SubscribeWorkspace(string workspaceId) =>
@@ -453,8 +436,6 @@ public sealed class SubAgentManagerMessageTests
                 ToolCalls = [],
                 SubAgents = [],
             });
-        public Task<long> GetLatestSequenceNumAsync(string sessionId, CancellationToken ct = default) =>
-            Task.FromResult(0L);
         public void Restore(string sessionId, SessionState state) { }
     }
 

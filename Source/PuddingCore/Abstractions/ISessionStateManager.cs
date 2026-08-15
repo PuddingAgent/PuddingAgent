@@ -39,31 +39,6 @@ public interface ISessionStateManager
         string? operation = null);
 
     // ════════════════════════════════════════════════════════
-    // 历史加载（分页/游标）
-    // ════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// 从指定序列号向前加载 N 条事件。
-    /// fromSequence=null 表示从最新事件开始（获取最新 N 条）。
-    /// fromSequence&gt;0 表示加载序列号 &lt;= fromSequence 的事件（加载更早的）。
-    /// </summary>
-    Task<SessionEventPage> GetEventsAsync(
-        string sessionId,
-        long? fromSequence = null,
-        int limit = 50,
-        CancellationToken ct = default);
-
-    /// <summary>
-    /// 获取会话中指定序列号之后的事件总数（用于增量加载判断）。
-    /// </summary>
-    Task<long> GetEventCountAfterAsync(string sessionId, long afterSequence, CancellationToken ct = default);
-
-    /// <summary>
-    /// 获取会话当前最大序列号（用于 eventCursor）。
-    /// </summary>
-    Task<long> GetLatestSequenceNumAsync(string sessionId, CancellationToken ct = default);
-
-    // ════════════════════════════════════════════════════════
     // 实时订阅
     // ════════════════════════════════════════════════════════
 
