@@ -24,7 +24,7 @@ public interface ISubAgentManager
     /// <summary>
     /// 派生子代理并异步执行。
     /// 返回子代理 ID，立即返回不阻塞。
-    /// 完成后自动触发事件通知（agent.sub_completed）和诊断日志。
+    /// 完成后自动触发消息通知（subagent_result 消息通道）和诊断日志。
     /// </summary>
     Task<SubAgentSpawnResult> SpawnAsync(
         SubAgentSpawnRequest request,

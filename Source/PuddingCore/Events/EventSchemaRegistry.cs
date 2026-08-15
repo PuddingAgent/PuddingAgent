@@ -208,9 +208,8 @@ public static class EventSchemaRegistry
         yield return new EventSchemaDefinition("agent.failed", 1, "agent",
             "Agent 执行失败", ["session_id", "agent_id", "error"]);
         yield return new EventSchemaDefinition("agent.cancelled", 1, "agent",
-            "Agent 执行被取消", ["session_id", "agent_id"]);
-        yield return new EventSchemaDefinition("agent.sub_completed", 1, "agent",
-            "子代理完成通知", ["session_id", "agent_id", "sub_agent_id", "success"], ["reply", "error"]);
+                        "Agent 执行被取消", ["session_id", "agent_id"]);
+
         yield return new EventSchemaDefinition("agent.permission_required", 1, "agent",
             "Agent 请求权限", ["session_id", "agent_id", "permission"]);
         yield return new EventSchemaDefinition("agent.thinking", 1, "agent",

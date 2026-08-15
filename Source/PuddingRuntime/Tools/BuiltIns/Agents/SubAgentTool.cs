@@ -37,7 +37,7 @@ namespace PuddingRuntime.Services.Skills;
                  "model（可选，如 mimo/mimo-v2.5-pro 或 deepseek/deepseek-v3，不指定则用平台默认模型）、" +
                  "sync（可选，true=同步阻塞等待结果 / false=异步立即返回，默认 true）。" +
                  "同步模式返回结构化结果合同：SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS。" +
-                 "异步模式下立即返回 agentId，稍后通过 agent.sub_completed 事件通知结果。" +
+                 "异步模式下立即返回 agentId，稍后通过 subagent_result 消息通道通知结果。" +
                  "provider 格式为 {providerId}/{modelId}，平台已在 LLM 资源池注册模型。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
@@ -476,7 +476,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
             return Success(
                 $"�첽�Ӵ����Ѵ�����sub_agent_id = {invocationResult.SubSessionId}��" +
-                $"��ɺ�ͨ�� 'agent.sub_completed' �¼�֪ͨ��",
+                $"完成后通过 subagent_result 消息通道通知。",
                 new
                 {
                     schema = "pudding-subagent-spawn",
