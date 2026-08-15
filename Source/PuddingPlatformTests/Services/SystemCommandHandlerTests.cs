@@ -307,6 +307,11 @@ public sealed class SystemCommandHandlerTests
         Assert.AreEqual("agent-1", command.AgentId);
         Assert.AreEqual(ContextCompactionLevel.Full, command.Level);
         Assert.AreEqual("request-compact", command.CompactionId);
+        // P0-4f: 系统命令边界创建根 Trace（入站 SystemCommandRequest 无 trace 字段可继承）。
+        Assert.IsNotNull(command.TraceId);
+        Assert.IsTrue(
+            Guid.TryParseExact(command.TraceId, "N", out _),
+            $"系统 /compact 入口必须创建 Guid-N 根 Trace，实际为 '{command.TraceId}'。");
         StringAssert.Contains(command.Reason, "feishu");
         StringAssert.Contains(result.Message, "Compacted 8 messages");
         StringAssert.Contains(result.Message, "1200 -> 240");
@@ -315,6 +320,63 @@ public sealed class SystemCommandHandlerTests
         Assert.AreEqual(result.Message, replay.Message);
         Assert.IsFalse(result.ForwardToAgent);
         Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task Compact_CreatesDistinctRootTraces_WhenInboundMessageHasNoTraceField()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var compaction = new RecordingRequestCompactionHandler();
+        var handler = CreateHandler(db, runtime, compaction);
+
+        var request1 = new SystemCommandRequest(
+            "conversation-web-1",
+            "default",
+            "agent-1",
+            "admin",
+            "request-web-1",
+            "user-message-web-1",
+            "system-message-web-1",
+            "/compact");
+        var request2 = new SystemCommandRequest(
+            "conversation-web-2",
+            "default",
+            "agent-1",
+            "admin",
+            "request-web-2",
+            "user-message-web-2",
+            "system-message-web-2",
+            "/compact");
+
+        await handler.HandleAsync(request1);
+        await handler.HandleAsync(request2);
+
+        Assert.HasCount(2, compaction.Requests);
+        var trace1 = compaction.Requests[0].TraceId;
+        var trace2 = compaction.Requests[1].TraceId;
+        Assert.IsNotNull(trace1);
+        Assert.IsNotNull(trace2);
+        Assert.IsTrue(
+            Guid.TryParseExact(trace1, "N", out _),
+            $"trace1 应为 Guid-N 根 Trace，实际为 '{trace1}'。");
+        Assert.IsTrue(
+            Guid.TryParseExact(trace2, "N", out _),
+            $"trace2 应为 Guid-N 根 Trace，实际为 '{trace2}'。");
+        Assert.AreNotEqual(
+            trace1,
+            trace2,
+            "每次 /compact 调用必须在系统命令边界创建各自的根 Trace，不能复用上一次的 TraceId。");
+        Assert.AreEqual(4, await db.ChatMessages.CountAsync());
         Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
         Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
     }

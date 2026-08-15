@@ -154,6 +154,11 @@ public sealed class SessionEventsControllerTests
 
         Assert.AreEqual(HttpStatusCode.OK, compactResp.StatusCode);
         Assert.IsNotNull(capture.LastRequest);
+        // P0-4f: HTTP /compact 服务端入口创建根 Trace（Guid N），并透传到压缩服务调用。
+        Assert.IsNotNull(capture.LastRequest!.TraceId);
+        Assert.IsTrue(
+            Guid.TryParseExact(capture.LastRequest.TraceId, "N", out _),
+            $"HTTP /compact 必须创建 Guid-N 根 Trace，实际为 '{capture.LastRequest.TraceId}'。");
         Assert.IsNotNull(capture.LastRequest!.LlmConfig);
         Assert.AreEqual("deepseek-v4-flash", capture.LastRequest.LlmConfig!.ModelId);
         Assert.IsNotNull(capture.LastRequest.CapabilityPolicy);

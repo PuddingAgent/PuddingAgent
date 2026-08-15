@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
@@ -286,6 +287,15 @@ public sealed class SystemCommandHandler(
         SystemCommandRequest request,
         CancellationToken ct)
     {
+        // P0-4f: 系统/飞书 /compact 入口。入站 SystemCommandRequest 无 TraceId/correlation
+        // 字段（唯一构造点 SystemCommandsController 亦无 trace 头/字段，见 EVIDENCE 调研结论），
+        // 因此在系统命令边界创建根 Trace。继承与创建两条路径必须显式区分、禁止静默 fallback：
+        // 未来入站消息若携带 trace 字段，应在此优先继承而非重新创建。
+        var trace = RuntimeTraceContext.CreateNew(
+            sessionId: request.ConversationId,
+            workspaceId: request.WorkspaceId,
+            userId: request.UserId,
+            executionId: request.ClientRequestId);
         try
         {
             var result = await requestCompactionHandler.HandleAsync(
@@ -296,7 +306,10 @@ public sealed class SystemCommandHandler(
                     ContextCompactionLevel.Full,
                     $"system command /compact from {request.SourceChannel ?? "web"}",
                     request.ClientRequestId,
-                    request.UserId),
+                    request.UserId)
+                {
+                    TraceId = trace.TraceId,
+                },
                 ct);
             var title = string.IsNullOrWhiteSpace(result.NewConversationTitle)
                 ? result.NewConversationId

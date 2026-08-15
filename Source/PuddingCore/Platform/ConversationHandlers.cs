@@ -73,7 +73,13 @@ public sealed record RequestCompactionCommand(
     string CompactionId,
     string? UserId)
 {
-    /// <summary>P0-4f-1a step6: 从发起压缩的上下文透传的 trace_id（可空；无 turn 的 HTTP/系统命令压缩为 null，不 fallback 生成）。</summary>
+    /// <summary>
+    /// P0-4f: 从发起压缩的上下文透传的 trace_id，由两个手动 /compact 入口显式赋值：
+    /// HTTP 入口在服务端创建根 Trace；系统/飞书入口在系统命令边界创建根 Trace
+    /// （入站 SystemCommandRequest 无 trace 字段，无继承来源；未来若入站消息携带
+    /// trace 字段应优先继承）。RequestCompactionHandler 只透传、不生成、不 fallback；
+    /// 历史 trace_id=null 保留、不回填。CompactionId 仍承担业务幂等，与 TraceId 不混用。
+    /// </summary>
     public string? TraceId { get; init; }
 }
 

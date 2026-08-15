@@ -713,6 +713,13 @@ public class SessionEventsController : ControllerBase
         var compactionId = string.IsNullOrWhiteSpace(request.CompactionId)
             ? Guid.NewGuid().ToString("N")
             : request.CompactionId.Trim();
+        // P0-4f: HTTP /compact 服务端入口创建根 Trace。同一 HTTP 请求的
+        // started/completed/failed 生命周期事件与压缩服务调用共用此 TraceId；
+        // CompactionId 仍承担业务幂等，TraceId 只承担执行链追踪，两者不混用。
+        var trace = RuntimeTraceContext.CreateNew(
+            sessionId: sessionId,
+            workspaceId: workspaceId,
+            userId: User.Identity?.Name);
         try
         {
             var result = await _requestCompactionHandler.HandleAsync(
@@ -723,7 +730,10 @@ public class SessionEventsController : ControllerBase
                     request.Level ?? ContextCompactionLevel.Full,
                     request.Reason ?? "manual compact",
                     compactionId,
-                    User.Identity?.Name),
+                    User.Identity?.Name)
+                {
+                    TraceId = trace.TraceId,
+                },
                 ct);
 
             return Ok(new CompactSessionResponse(

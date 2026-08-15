@@ -36,6 +36,11 @@ public sealed class RequestCompactionHandler(
         ArgumentException.ThrowIfNullOrWhiteSpace(command.AgentId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command.CompactionId);
 
+        // P0-4f: TraceId 由两个手动 /compact 入口显式赋值（HTTP Controller 创建根 Trace；
+        // SystemCommandHandler 在系统命令边界创建根 Trace，入站无 trace 字段可继承）。
+        // 本 Handler 只透传 command.TraceId 到 started/completed/failed/successor 生命周期事件
+        // 与压缩服务调用，禁止在此生成或 fallback —— 继承与创建由入口负责并显式区分；
+        // 历史 trace_id=null 原样保留，不回填。
         try
         {
             var profile = await profileResolver.ResolveAsync(
