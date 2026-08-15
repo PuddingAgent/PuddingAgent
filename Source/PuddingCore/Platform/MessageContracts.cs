@@ -1,4 +1,4 @@
-﻿using PuddingCode.Models;
+using PuddingCode.Models;
 using PuddingCode.Runtime;
 
 namespace PuddingCode.Platform;
@@ -231,6 +231,8 @@ public sealed record RuntimeDispatchRequest
     /// 压缩摘要请求会读取当前 Session 历史，如果再次触发压缩会形成递归。
     /// </summary>
     public bool SuppressContextAutoCompaction { get; init; }
+    /// <summary>P0-4f-2: 输出所有权契约（透传自 TurnExecutionContext）。默认 LegacySessionStream。</summary>
+    public TurnOutputOwnership OutputOwnership { get; set; } = TurnOutputOwnership.LegacySessionStream;
 }
 
 /// <summary>Agent 执行的最终状态。</summary>

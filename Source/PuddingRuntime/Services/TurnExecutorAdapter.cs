@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -41,6 +41,7 @@ public sealed class TurnExecutorAdapter(
             VisualArtifactIds = context.VisualArtifactIds,
             AudioArtifactIds = context.AudioArtifactIds,
             Origin = context.Origin,
+            OutputOwnership = context.OutputOwnership,
         };
 
         var sawTerminal = false;

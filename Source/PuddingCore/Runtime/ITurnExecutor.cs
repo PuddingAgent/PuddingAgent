@@ -64,6 +64,9 @@ public sealed record TurnExecutionContext(
     /// Runtime、工具与子代理只能缩短该预算，禁止重新从当前时间放宽。
     /// </summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
+
+    /// <summary>P0-4f-2: 输出所有权契约。默认 LegacySessionStream（不切流）；第 3 步 Coordinator 显式置 CoordinatorCanonical。</summary>
+    public TurnOutputOwnership OutputOwnership { get; init; } = TurnOutputOwnership.LegacySessionStream;
 }
 
 /// <summary>
@@ -104,4 +107,16 @@ public sealed record TurnTerminalInfo(
 
     public static TurnTerminalInfo Cancelled()
         => new(TurnTerminalKind.Cancelled, "execution_cancelled", "Turn was cancelled.", null, null);
+}
+
+/// <summary>
+/// 单次执行（Turn）的输出所有权契约（P0-4f）。
+/// 决定 Runtime 产出的领域事件由谁负责持久化与终态权威。
+/// </summary>
+public enum TurnOutputOwnership
+{
+    /// <summary>默认：旧路径，Runtime 仍写 session_event_log（历史行为，逐步退役）。</summary>
+    LegacySessionStream = 0,
+    /// <summary>Coordinator 执行：Runtime 只产流，持久化与终态由 Journal（conversation_events）负责。</summary>
+    CoordinatorCanonical = 1,
 }
