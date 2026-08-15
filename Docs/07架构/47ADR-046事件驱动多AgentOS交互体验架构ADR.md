@@ -377,6 +377,13 @@ Browser Microphone + Camera
 - `DashScopeOmniRealtimeEventMapper`：已覆盖 DashScope Qwen-Omni-Realtime 的关键 WebSocket 事件，将 `conversation.item.input_audio_transcription.delta` 映射为输入转录增量，将 `response.audio_transcript.delta` / `response.text.delta` 映射为助手文本增量，将 `response.audio.delta` 解码为音频字节，将 `response.done` 中的 usage 标准化。
 - `ChatOmniRealtimeSessionRunner`：把实时多模态流投影回现有聊天 SSE 协议。输入转录增量写入 `voice_capture_status`，助手文本写入 `delta`，输出音频块写入 `voice_playback_status`，完成时写 `done`，失败时写 `voice_playback_status(status=failed)` 和 `error`；所有帧补齐同一个 `messageId`、chat `sessionId` 和 `omniSessionId`，因此 Chat timeline、VoicePlayback、Avatar runtime 可以消费同一条会话流。
 
+- **演进说明（2026-08-15）**：`ChatOmniRealtimeSessionRunner` 旧实现已退役删除——能力保留、实现被 canonical 插件替代：
+  1. **退役对象**：退役的是 `Omni → SessionOutputWriter → SSM` 的旧实现；该类无生产 DI/控制器引用、仅测试实例化，属死路径，一并删除类及专属测试。
+  2. **能力保留与替代方向**：Omni 多模态流投影能力（ASR 转录、视觉帧理解、LLM 回复、TTS 音频输出合并为统一实时会话，并投影为 Chat SSE 的 `voice_capture_status` / `delta` / `voice_playback_status` / `done` / `error`）继续有效，未来以 `IRealtimeConversationAdapter` 插件重新接入。
+  3. **输出归属**：文本、状态和终态写 canonical Conversation Event。
+  4. **音频块**：走 Artifact/Realtime Transport，不塞入 Conversation Event 大载荷。
+  5. **清理原则**：不迁移这个无生产入口的死类，也不保留隐藏兼容路径。
+
 接入策略：
 
 - 浏览器低延迟实时语音优先 WebRTC，但 API Key 和 SDP signaling 必须由后端代理，不能让前端直接持有百炼 API Key。
