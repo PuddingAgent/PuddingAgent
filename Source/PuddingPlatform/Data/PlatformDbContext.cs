@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Data;
@@ -87,6 +87,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<ConversationHeadEntity> ConversationHeads => Set<ConversationHeadEntity>();
     public DbSet<ConversationEventEntity> ConversationEvents => Set<ConversationEventEntity>();
     public DbSet<ConversationProjectionCheckpointEntity> ConversationProjectionCheckpoints => Set<ConversationProjectionCheckpointEntity>();
+    public DbSet<ConversationCatalogEntity> ConversationCatalogs => Set<ConversationCatalogEntity>();
 
     // Connector streaming reply projection cursors (Feishu V1; generic storage contract)
     public DbSet<ConnectorStreamProjectionEntity> ConnectorStreamProjections => Set<ConnectorStreamProjectionEntity>();
@@ -501,6 +502,13 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         modelBuilder.Entity<ConversationProjectionCheckpointEntity>(e =>
         {
             e.ToTable("conversation_projection_checkpoints");
+        });
+
+        modelBuilder.Entity<ConversationCatalogEntity>(e =>
+        {
+            e.ToTable("conversation_catalog");
+            e.HasIndex(x => x.WorkspaceId);
+            e.HasIndex(x => x.Status);
         });
 
         modelBuilder.Entity<ConnectorStreamProjectionEntity>(e =>

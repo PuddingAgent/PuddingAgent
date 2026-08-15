@@ -450,6 +450,24 @@ public sealed class ConversationEventStore(
                 updated_at TEXT NOT NULL
             )", ct);
 
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS conversation_catalog (
+                conversation_id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                agent_id TEXT,
+                principal_id TEXT,
+                title TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                last_active_at TEXT NOT NULL,
+                parent_conversation_id TEXT,
+                successor_conversation_id TEXT
+            )", ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_conversation_catalog_workspace_id ON conversation_catalog(workspace_id)", ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_conversation_catalog_status ON conversation_catalog(status)", ct);
+
         // 列迁移：已有 SQLite 库不会因 CREATE TABLE IF NOT EXISTS 自动加列，
         // 通过 PRAGMA table_info 检查 + ALTER TABLE ADD COLUMN 补齐 agent_id / source_kind。
         await EnsureColumnAsync(db, "conversation_events", "agent_id", "TEXT", ct);
