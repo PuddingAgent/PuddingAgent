@@ -141,7 +141,9 @@ public static partial class PuddingServiceCollectionExtensions
 
             // ── Conversation Event Store（ADR-057 Phase 2）────
             builder.Services.AddSingleton<IConversationEventStore, ConversationEventStore>();
+            builder.Services.AddSingleton<ConversationCatalogWriter>();
             builder.Services.AddSingleton<ConversationProjector>();
+            builder.Services.AddSingleton<ConversationCatalogBackfillService>();
             builder.Services.AddHostedService<ConversationProjectionWorker>();
             builder.Services.AddSingleton<ChatTelemetryRecorder>();
 
