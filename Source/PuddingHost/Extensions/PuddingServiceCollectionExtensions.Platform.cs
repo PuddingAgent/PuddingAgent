@@ -182,6 +182,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TelemetryMetricSink>();
         builder.Services.AddSingleton<ITelemetryMetricSink>(sp => sp.GetRequiredService<TelemetryMetricSink>());
         builder.Services.AddSingleton<IDiagnosticRedactor, DiagnosticRedactor>();
+        builder.Services.AddSingleton<IConversationDiagnosticEventProjector, ConversationDiagnosticEventProjector>();
         builder.Services.AddSingleton<IExecutionLifecycleRecorder, RuntimeActivityExecutionLifecycleRecorder>();
         builder.Services.AddSingleton(new SessionTimelineRecorderOptions
         {
